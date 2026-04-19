@@ -1,0 +1,76 @@
+name: TheBrowser
+options:
+  bundleIdPrefix: com.levochkaa
+  minimumXcodeGenVersion: 2.45.3
+  xcodeVersion: 26.4
+  projectFormat: xcode16_3
+  indentWidth: 4
+  tabWidth: 4
+  deploymentTarget:
+    macOS: 26.0
+  groupSortPosition: top
+  generateEmptyDirectories: true
+  defaultSourceDirectoryType: syncedFolder
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    ARCHS: arm64
+    ENABLE_DEBUG_DYLIB: NO
+    CLANG_CXX_LANGUAGE_STANDARD: gnu++17
+    SWIFT_VERSION: 5.0
+    GCC_ENABLE_CPP_EXCEPTIONS: NO
+    GCC_ENABLE_CPP_RTTI: NO
+    GCC_PREPROCESSOR_DEFINITIONS:
+      - $(inherited)
+      - __STDC_CONSTANT_MACROS
+      - __STDC_FORMAT_MACROS
+    HEADER_SEARCH_PATHS:
+      - $(inherited)
+      - $(SRCROOT)/Sources
+      - $(SRCROOT)/ThirdParty/cef/current
+    OTHER_LDFLAGS:
+      - $(inherited)
+      - $(SRCROOT)/.build/cef-wrapper/libcef_dll_wrapper/$(CONFIGURATION)/libcef_dll_wrapper.a
+      - -lpthread
+      - -framework
+      - AppKit
+      - -framework
+      - Cocoa
+      - -framework
+      - IOSurface
+      - -framework
+      - UserNotifications
+targets:
+  TheBrowserHelper:
+    type: application
+    platform: macOS
+    productName: "TheBrowser Helper"
+    sources:
+      - path: Sources/Helper
+      - path: Sources/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser.helper
+        PRODUCT_NAME: "TheBrowser Helper"
+        INFOPLIST_FILE: Support/TheBrowserHelper-Info.plist
+        SWIFT_EMIT_LOC_STRINGS: NO
+  TheBrowser:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Browser
+      - path: Sources/Shared
+    dependencies:
+      - target: TheBrowserHelper
+    settings:
+      base:
+        PRODUCT_NAME: TheBrowser
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser
+        INFOPLIST_FILE: Support/TheBrowser-Info.plist
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/Browser/TheBrowser-Bridging-Header.h
+        SWIFT_EMIT_LOC_STRINGS: NO
+    scheme:
+      gatherCoverageData: false
+      testTargets: []
