@@ -14,12 +14,13 @@ options:
   createIntermediateGroups: true
 settings:
   base:
+    DEVELOPMENT_LANGUAGE: en
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
     ARCHS: arm64
     ENABLE_DEBUG_DYLIB: NO
     CLANG_CXX_LANGUAGE_STANDARD: gnu++17
-    SWIFT_VERSION: 5.0
+    SWIFT_VERSION: 5.10
     GCC_ENABLE_CPP_EXCEPTIONS: NO
     GCC_ENABLE_CPP_RTTI: NO
     GCC_PREPROCESSOR_DEFINITIONS:
@@ -71,6 +72,34 @@ targets:
         INFOPLIST_FILE: Support/TheBrowser-Info.plist
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Browser/TheBrowser-Bridging-Header.h
         SWIFT_EMIT_LOC_STRINGS: NO
+    postBuildScripts:
+      - name: Stage CEF Runtime
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        script: |
+          "$SRCROOT/script/stage_cef_bundle.sh" \
+            "$CONFIGURATION" \
+            "$TARGET_BUILD_DIR/$FULL_PRODUCT_NAME" \
+            "$BUILT_PRODUCTS_DIR/TheBrowser Helper.app"
     scheme:
       gatherCoverageData: false
-      testTargets: []
+      testTargets:
+        - TheBrowserTests
+  TheBrowserTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Sources/Browser/BrowserChromeModel.swift
+      - path: Sources/Browser/BrowserCommandBarModel.swift
+      - path: Sources/Browser/BrowserNavigationResolver.swift
+      - path: Sources/Browser/BrowserStrings.swift
+      - path: Sources/Browser/BrowserTabDriving.swift
+      - path: Sources/Browser/BrowserTabSessionPersistence.swift
+      - path: Sources/Browser/BrowserTooltipCoordinator.swift
+      - path: Tests/TheBrowserTests
+    settings:
+      base:
+        BUNDLE_LOADER: ""
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_NAME: TheBrowserTests
+        TEST_HOST: ""

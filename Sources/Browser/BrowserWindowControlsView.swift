@@ -4,7 +4,7 @@ import SwiftUI
 enum BrowserWindowControlsLayout {
     static let buttonSize: CGFloat = 14
     static let controlsHeight: CGFloat = buttonSize
-    static let buttonSpacing: CGFloat = 7
+    static let buttonSpacing: CGFloat = 9
     static let controlsWidth: CGFloat = buttonSize * 3 + buttonSpacing * 2
     static let trailingSpacing: CGFloat = 6
     static let totalWidth: CGFloat = controlsWidth + trailingSpacing
@@ -33,7 +33,12 @@ final class BrowserWindowControlsHostView: NSView {
 
     private let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
     private weak var observedWindow: NSWindow?
-    private var customButtons: [NSWindow.ButtonType: NSButton] = [:]
+    private var customButtons: [NSWindow.ButtonType: BrowserTrafficLightButton] = [:]
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isGroupHovered = false
+    private var suppressCustomButtonsUntilNextUpdate = false
+    private var hideSystemButtonsForFullscreenTransition = false
+    private var showsSidebarControlsDuringFullscreenExit = false
 
     var showsInSidebar = true {
         didSet {
@@ -49,7 +54,7 @@ final class BrowserWindowControlsHostView: NSView {
     override var intrinsicContentSize: NSSize {
         let shouldReserveSidebarWidth =
             showsInSidebar &&
-            !(window?.styleMask.contains(.fullScreen) ?? false)
+            (showsSidebarControlsDuringFullscreenExit || !usesSystemFullscreenControls)
 
         return NSSize(
             width: shouldReserveSidebarWidth ? BrowserWindowControlsLayout.totalWidth : 0,
@@ -75,8 +80,78 @@ final class BrowserWindowControlsHostView: NSView {
         layoutCustomButtons()
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        setGroupHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        setGroupHovered(false)
+    }
+
     @objc
-    private func handleWindowStateChange(_: Notification) {
+    private func handleWindowStateChange(_ notification: Notification) {
+        let shouldUseSystemFullscreenControls = hasSystemWindowButtons
+
+        switch notification.name {
+        case NSWindow.willEnterFullScreenNotification:
+            showsSidebarControlsDuringFullscreenExit = false
+            hideSystemButtonsForFullscreenTransition = shouldUseSystemFullscreenControls
+            suppressCustomButtonsUntilNextUpdate = shouldUseSystemFullscreenControls
+            setGroupHovered(false)
+        case NSWindow.didEnterFullScreenNotification:
+            showsSidebarControlsDuringFullscreenExit = false
+            hideSystemButtonsForFullscreenTransition = false
+            suppressCustomButtonsUntilNextUpdate = shouldUseSystemFullscreenControls
+            setGroupHovered(false)
+        case NSWindow.willExitFullScreenNotification:
+            showsSidebarControlsDuringFullscreenExit = true
+            hideSystemButtonsForFullscreenTransition = shouldUseSystemFullscreenControls
+            suppressCustomButtonsUntilNextUpdate = false
+            setGroupHovered(false)
+        case NSWindow.didExitFullScreenNotification:
+            showsSidebarControlsDuringFullscreenExit = false
+            hideSystemButtonsForFullscreenTransition = false
+            suppressCustomButtonsUntilNextUpdate = false
+            setGroupHovered(false)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+
+                self.invalidateIntrinsicContentSize()
+                self.updateWindowButtons()
+            }
+        case NSWindow.didResignKeyNotification,
+             NSWindow.didResignMainNotification,
+             NSApplication.didResignActiveNotification:
+            setGroupHovered(false)
+        case NSWindow.didBecomeKeyNotification,
+             NSWindow.didBecomeMainNotification,
+             NSApplication.didBecomeActiveNotification:
+            updateGroupHoverFromCurrentMouseLocation()
+        default:
+            break
+        }
+
         invalidateIntrinsicContentSize()
         updateWindowButtons()
     }
@@ -98,7 +173,19 @@ final class BrowserWindowControlsHostView: NSView {
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
+            name: NSWindow.willEnterFullScreenNotification,
+            object: window
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.didEnterFullScreenNotification,
+            object: window
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWindowStateChange(_:)),
+            name: NSWindow.willExitFullScreenNotification,
             object: window
         )
         notificationCenter.addObserver(
@@ -107,55 +194,103 @@ final class BrowserWindowControlsHostView: NSView {
             name: NSWindow.didExitFullScreenNotification,
             object: window
         )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWindowStateChange(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: window
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWindowStateChange(_:)),
+            name: NSWindow.didResignKeyNotification,
+            object: window
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWindowStateChange(_:)),
+            name: NSWindow.didBecomeMainNotification,
+            object: window
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWindowStateChange(_:)),
+            name: NSWindow.didResignMainNotification,
+            object: window
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWindowStateChange(_:)),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWindowStateChange(_:)),
+            name: NSApplication.didResignActiveNotification,
+            object: nil
+        )
     }
 
     private func stopObservingWindow() {
-        guard let observedWindow else {
-            return
-        }
-
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSWindow.didEnterFullScreenNotification,
-            object: observedWindow
-        )
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSWindow.didExitFullScreenNotification,
-            object: observedWindow
-        )
-        self.observedWindow = nil
+        NotificationCenter.default.removeObserver(self)
+        observedWindow = nil
     }
 
     private var displayMode: DisplayMode {
-        guard let window else {
+        guard window != nil else {
             return .hidden
         }
 
-        if window.styleMask.contains(.fullScreen) {
+        if showsSidebarControlsDuringFullscreenExit {
+            return showsInSidebar ? .sidebar : .hidden
+        }
+
+        if usesSystemFullscreenControls {
             return .system
         }
 
         return showsInSidebar ? .sidebar : .hidden
     }
 
+    private var hasSystemWindowButtons: Bool {
+        guard let window else {
+            return false
+        }
+
+        return buttonTypes.allSatisfy { window.standardWindowButton($0) != nil }
+    }
+
+    private var usesSystemFullscreenControls: Bool {
+        guard let window else {
+            return false
+        }
+
+        return hasSystemWindowButtons && window.styleMask.contains(.fullScreen)
+    }
+
+    private var shouldHideSystemButtons: Bool {
+        if hideSystemButtonsForFullscreenTransition {
+            return true
+        }
+
+        switch displayMode {
+        case .system:
+            return false
+        case .hidden, .sidebar:
+            return true
+        }
+    }
+
     private func ensureCustomButtons() {
-        guard customButtons.isEmpty, let window else {
+        guard customButtons.isEmpty else {
             return
         }
 
-        var styleMask = window.styleMask
-        styleMask.remove(.fullScreen)
-
         for buttonType in buttonTypes {
-            guard let button = NSWindow.standardWindowButton(buttonType, for: styleMask) else {
-                continue
-            }
-
+            let button = BrowserTrafficLightButton(buttonType: buttonType)
             button.target = self
             button.action = action(for: buttonType)
-            button.translatesAutoresizingMaskIntoConstraints = true
-            button.autoresizingMask = []
             addSubview(button)
             customButtons[buttonType] = button
         }
@@ -166,17 +301,15 @@ final class BrowserWindowControlsHostView: NSView {
     private func updateWindowButtons() {
         ensureCustomButtons()
         syncCustomButtonState()
+        updateSystemButtons(hidden: shouldHideSystemButtons, for: window)
 
         switch displayMode {
         case .hidden:
-            updateSystemButtons(hidden: true, for: window)
             setCustomButtonsHidden(true)
         case .sidebar:
-            updateSystemButtons(hidden: true, for: window)
-            setCustomButtonsHidden(false)
+            setCustomButtonsHidden(suppressCustomButtonsUntilNextUpdate)
             layoutCustomButtons()
         case .system:
-            updateSystemButtons(hidden: false, for: window)
             setCustomButtonsHidden(true)
         }
     }
@@ -186,16 +319,20 @@ final class BrowserWindowControlsHostView: NSView {
             return
         }
 
+        let isWindowFocused = NSApp.isActive && (window.isKeyWindow || window.isMainWindow)
+
         for buttonType in buttonTypes {
-            guard
-                let customButton = customButtons[buttonType],
-                let systemButton = window.standardWindowButton(buttonType)
-            else {
+            guard let customButton = customButtons[buttonType] else {
                 continue
             }
 
-            customButton.isEnabled = systemButton.isEnabled
-            customButton.toolTip = systemButton.toolTip
+            let systemButton = window.standardWindowButton(buttonType)
+            let isEnabled = systemButton?.isEnabled ?? fallbackEnabledState(for: buttonType, in: window)
+
+            customButton.isEnabled = isEnabled
+            customButton.toolTip = systemButton?.toolTip
+            customButton.isWindowFocused = isWindowFocused
+            customButton.showsHoverState = isGroupHovered
         }
     }
 
@@ -229,10 +366,48 @@ final class BrowserWindowControlsHostView: NSView {
         }
     }
 
-    private func setCustomButtonsHidden(_ hidden: Bool) {
-        customButtons.values.forEach {
-            $0.isHidden = hidden
+    private func fallbackEnabledState(for buttonType: NSWindow.ButtonType, in window: NSWindow) -> Bool {
+        switch buttonType {
+        case .closeButton:
+            true
+        case .miniaturizeButton:
+            window.styleMask.contains(.miniaturizable) && !window.styleMask.contains(.fullScreen)
+        case .zoomButton:
+            window.collectionBehavior.contains(.fullScreenPrimary) || window.styleMask.contains(.resizable)
+        default:
+            true
         }
+    }
+
+    private func setCustomButtonsHidden(_ hidden: Bool) {
+        for value in customButtons.values {
+            value.isHidden = hidden
+        }
+
+        if hidden {
+            setGroupHovered(false)
+        }
+    }
+
+    private func setGroupHovered(_ hovered: Bool) {
+        guard hovered != isGroupHovered else {
+            return
+        }
+
+        isGroupHovered = hovered
+        for value in customButtons.values {
+            value.showsHoverState = hovered
+        }
+    }
+
+    private func updateGroupHoverFromCurrentMouseLocation() {
+        guard let window else {
+            setGroupHovered(false)
+            return
+        }
+
+        let locationInView = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setGroupHovered(bounds.contains(locationInView))
     }
 
     private func action(for buttonType: NSWindow.ButtonType) -> Selector {
@@ -261,5 +436,166 @@ final class BrowserWindowControlsHostView: NSView {
     @objc
     private func toggleFullScreen(_ sender: Any?) {
         window?.toggleFullScreen(sender)
+    }
+}
+
+private final class BrowserTrafficLightButton: NSButton {
+    private enum VisualState {
+        case disabled
+        case unfocused
+        case normal
+        case hover
+        case pressed
+    }
+
+    private enum AssetName: String {
+        case closeNormal = "TrafficLightCloseNormal"
+        case closeHover = "TrafficLightCloseHover"
+        case closePressed = "TrafficLightClosePressed"
+        case minimizeNormal = "TrafficLightMinimizeNormal"
+        case minimizeHover = "TrafficLightMinimizeHover"
+        case minimizePressed = "TrafficLightMinimizePressed"
+        case fullscreenNormal = "TrafficLightFullscreenNormal"
+        case fullscreenHover = "TrafficLightFullscreenHover"
+        case fullscreenPressed = "TrafficLightFullscreenPressed"
+    }
+
+    private let buttonType: NSWindow.ButtonType
+    private static var imageCache: [AssetName: NSImage] = [:]
+
+    var isWindowFocused = true {
+        didSet {
+            guard isWindowFocused != oldValue else {
+                return
+            }
+
+            needsDisplay = true
+        }
+    }
+
+    var showsHoverState = false {
+        didSet {
+            guard showsHoverState != oldValue else {
+                return
+            }
+
+            needsDisplay = true
+        }
+    }
+
+    override var isEnabled: Bool {
+        didSet {
+            guard isEnabled != oldValue else {
+                return
+            }
+
+            needsDisplay = true
+        }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: BrowserWindowControlsLayout.buttonSize, height: BrowserWindowControlsLayout.buttonSize)
+    }
+
+    init(buttonType: NSWindow.ButtonType) {
+        self.buttonType = buttonType
+        super.init(frame: .zero)
+        isBordered = false
+        title = ""
+        image = nil
+        focusRingType = .none
+        setButtonType(.momentaryPushIn)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_: NSRect) {
+        guard let image = Self.image(named: currentAssetName) else {
+            return
+        }
+
+        image.draw(in: bounds)
+    }
+
+    private var visualState: VisualState {
+        if !isEnabled {
+            return .disabled
+        }
+
+        if !isWindowFocused {
+            return .unfocused
+        }
+
+        if cell?.isHighlighted == true {
+            return .pressed
+        }
+
+        if showsHoverState {
+            return .hover
+        }
+
+        return .normal
+    }
+
+    private var currentAssetName: AssetName {
+        switch visualState {
+        case .disabled:
+            return normalAssetName
+        case .unfocused, .normal:
+            return normalAssetName
+        case .hover:
+            switch buttonType {
+            case .closeButton:
+                return .closeHover
+            case .miniaturizeButton:
+                return .minimizeHover
+            case .zoomButton:
+                return .fullscreenHover
+            default:
+                return .fullscreenHover
+            }
+        case .pressed:
+            switch buttonType {
+            case .closeButton:
+                return .closePressed
+            case .miniaturizeButton:
+                return .minimizePressed
+            case .zoomButton:
+                return .fullscreenPressed
+            default:
+                return .fullscreenPressed
+            }
+        }
+    }
+
+    private var normalAssetName: AssetName {
+        switch buttonType {
+        case .closeButton:
+            return .closeNormal
+        case .miniaturizeButton:
+            return .minimizeNormal
+        case .zoomButton:
+            return .fullscreenNormal
+        default:
+            return .fullscreenNormal
+        }
+    }
+
+    private static func image(named assetName: AssetName) -> NSImage? {
+        if let image = imageCache[assetName] {
+            return image
+        }
+
+        guard let image = NSImage(named: NSImage.Name(assetName.rawValue)) else {
+            assertionFailure("Missing traffic light asset: \(assetName.rawValue)")
+            return nil
+        }
+
+        image.isTemplate = false
+        imageCache[assetName] = image
+        return image
     }
 }

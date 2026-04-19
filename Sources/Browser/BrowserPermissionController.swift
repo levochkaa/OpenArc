@@ -25,10 +25,10 @@ public final class BrowserPermissionController: NSObject {
 
     private static func presentSitePrompt(for origin: String) -> NSApplication.ModalResponse {
         let alert = NSAlert()
-        alert.messageText = "Allow notifications for this site?"
-        alert.informativeText = "\(origin) wants to send notifications."
-        alert.addButton(withTitle: "Allow")
-        alert.addButton(withTitle: "Don't Allow")
+        alert.messageText = BrowserStrings.notificationPermissionTitle
+        alert.informativeText = BrowserStrings.notificationPermissionMessage(origin: origin)
+        alert.addButton(withTitle: BrowserStrings.notificationPermissionAllow)
+        alert.addButton(withTitle: BrowserStrings.notificationPermissionDontAllow)
         alert.alertStyle = .informational
         return alert.runModal()
     }

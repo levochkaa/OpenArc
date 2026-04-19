@@ -1,7 +1,6 @@
 #import "Browser/BrowserTabController.h"
 
 #import <os/log.h>
-#import <QuartzCore/QuartzCore.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import "Browser/SwiftBridge.h"
@@ -37,9 +36,6 @@
 
 namespace {
 
-constexpr char kFallbackTabTitle[] = "New Tab";
-constexpr CGFloat kDefaultContentCornerRadius = 12.0;
-constexpr CFTimeInterval kCornerRadiusAnimationDuration = 0.18;
 constexpr char kSavePageResourceTreeMethod[] = "Page.getResourceTree";
 constexpr char kSavePageResourceContentMethod[] = "Page.getResourceContent";
 constexpr char kSavePageSingleFileMethod[] = "Page.captureSnapshot";
@@ -62,13 +58,17 @@ NSString *ToNSString(const std::string &value) {
   return [[NSString alloc] initWithUTF8String:value.c_str()];
 }
 
+NSString *LocalizedBrowserString(NSString *key) {
+  return [[NSBundle mainBundle] localizedStringForKey:key value:nil table:nil];
+}
+
 NSString *DefaultTitleForURLString(NSString *urlString) {
   NSURL *url = [NSURL URLWithString:urlString];
   NSString *host = url.host;
   if (host.length > 0) {
     return host;
   }
-  return @(kFallbackTabTitle);
+  return LocalizedBrowserString(@"browser.tab.new");
 }
 
 CefRect CefRectFromBounds(NSRect bounds) {
@@ -119,8 +119,9 @@ void PresentSavePageError(NSString *message) {
   dispatch_async(dispatch_get_main_queue(), ^{
     NSAlert *alert = [[NSAlert alloc] init];
     alert.alertStyle = NSAlertStyleWarning;
-    alert.messageText = @"Unable to Save Page";
-    alert.informativeText = message ?: @"The page could not be saved.";
+    alert.messageText = LocalizedBrowserString(@"browser.save_page.error.title");
+    alert.informativeText =
+        message ?: LocalizedBrowserString(@"browser.save_page.error.default");
     [alert runModal];
   });
 }
@@ -136,7 +137,8 @@ bool WriteStringToPath(NSString *contents, NSString *destination_path) {
     return true;
   }
 
-  PresentSavePageError(error.localizedDescription ?: @"The page could not be saved.");
+  PresentSavePageError(
+      error.localizedDescription ?: LocalizedBrowserString(@"browser.save_page.error.default"));
   return false;
 }
 
@@ -149,12 +151,13 @@ bool WriteDataToPath(NSData *contents, NSString *destination_path) {
     return true;
   }
 
-  PresentSavePageError(error.localizedDescription ?: @"The page could not be saved.");
+  PresentSavePageError(
+      error.localizedDescription ?: LocalizedBrowserString(@"browser.save_page.error.default"));
   return false;
 }
 
 NSString *SanitizedSavePageBaseName(NSString *value) {
-  NSString *fallback = @"page";
+  NSString *fallback = LocalizedBrowserString(@"browser.save_page.default_filename");
   if (value.length == 0) {
     return fallback;
   }
@@ -247,7 +250,8 @@ bool EnsureDirectoryAtPath(NSString *directory_path) {
     return true;
   }
 
-  PresentSavePageError(error.localizedDescription ?: @"The page could not be saved.");
+  PresentSavePageError(
+      error.localizedDescription ?: LocalizedBrowserString(@"browser.save_page.error.default"));
   return false;
 }
 
@@ -263,7 +267,8 @@ bool RemoveItemIfExistsAtPath(NSString *path) {
     return true;
   }
 
-  PresentSavePageError(error.localizedDescription ?: @"The page could not be saved.");
+  PresentSavePageError(
+      error.localizedDescription ?: LocalizedBrowserString(@"browser.save_page.error.default"));
   return false;
 }
 
@@ -665,7 +670,8 @@ class SavePageCompleteObserver final : public CefDevToolsMessageObserver {
 
   void Start(CefRefPtr<CefBrowserHost> host) {
     if (!host) {
-      PresentSavePageError(@"The browser could not save the page.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.browser_save_failed"));
       return;
     }
 
@@ -685,7 +691,8 @@ class SavePageCompleteObserver final : public CefDevToolsMessageObserver {
     CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
     if (!host) {
       registration_ = nullptr;
-      PresentSavePageError(@"The browser could not save the page.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.browser_save_failed"));
       return;
     }
 
@@ -710,7 +717,8 @@ class SavePageCompleteObserver final : public CefDevToolsMessageObserver {
     }
 
     registration_ = nullptr;
-    PresentSavePageError(@"The browser detached from DevTools before the page save completed.");
+    PresentSavePageError(
+        LocalizedBrowserString(@"browser.save_page.error.devtools_detached"));
   }
 
  private:
@@ -857,7 +865,8 @@ class SavePageCompleteObserver final : public CefDevToolsMessageObserver {
     if (host->ExecuteDevToolsMethod(message_id_, kSavePageResourceTreeMethod,
                                     nullptr) == 0) {
       registration_ = nullptr;
-      PresentSavePageError(@"The browser could not inspect the page resources.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.inspect_resources"));
     }
   }
 
@@ -967,7 +976,8 @@ class SavePageCompleteObserver final : public CefDevToolsMessageObserver {
 
     NSData *data = DecodedSaveResourceData(content, resource.base64_encoded);
     if (data == nil) {
-      PresentSavePageError(@"The browser returned an invalid resource payload.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.invalid_resource_payload"));
       return false;
     }
 
@@ -1012,7 +1022,8 @@ class SavePageCompleteObserver final : public CefDevToolsMessageObserver {
                                         ? (mainDocument != nullptr ? ToNSString(mainDocument->content) : @"")
                                         : ToNSString(serialized_main_document);
     if (mainDocumentContent.length == 0) {
-      PresentSavePageError(@"The browser could not serialize the page document.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.serialize_document"));
       return;
     }
 
@@ -1027,7 +1038,8 @@ class SavePageCompleteObserver final : public CefDevToolsMessageObserver {
                                 size_t result_size) {
     if (!success) {
       registration_ = nullptr;
-      PresentSavePageError(@"The browser could not inspect the page resources.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.inspect_resources"));
       return;
     }
 
@@ -1037,7 +1049,8 @@ class SavePageCompleteObserver final : public CefDevToolsMessageObserver {
         dictionary ? dictionary->GetDictionary("frameTree") : nullptr;
     if (!frameTree) {
       registration_ = nullptr;
-      PresentSavePageError(@"The browser returned an invalid resource tree.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.invalid_resource_tree"));
       return;
     }
 
@@ -1125,20 +1138,23 @@ class SavePageSnapshotObserver final : public CefDevToolsMessageObserver {
     registration_ = nullptr;
 
     if (!browser || !success || result == nullptr || result_size == 0) {
-      PresentSavePageError(@"The browser could not create a single-file snapshot.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.create_snapshot"));
       return;
     }
 
     CefRefPtr<CefDictionaryValue> dictionary =
         ParseDevToolsResultDictionary(result, result_size);
     if (!dictionary) {
-      PresentSavePageError(@"The browser returned an invalid snapshot payload.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.invalid_snapshot_payload"));
       return;
     }
 
     NSString *snapshot = ToNSString(dictionary->GetString("data").ToString());
     if (snapshot.length == 0) {
-      PresentSavePageError(@"The browser returned an empty single-file snapshot.");
+      PresentSavePageError(
+          LocalizedBrowserString(@"browser.save_page.error.empty_snapshot"));
       return;
     }
 
@@ -1151,7 +1167,8 @@ class SavePageSnapshotObserver final : public CefDevToolsMessageObserver {
     }
 
     registration_ = nullptr;
-    PresentSavePageError(@"The browser detached from DevTools before the single-file snapshot completed.");
+    PresentSavePageError(
+        LocalizedBrowserString(@"browser.save_page.error.snapshot_detached"));
   }
 
  private:
@@ -1239,6 +1256,29 @@ void ReloadBrowserOnUI(CefRefPtr<CefBrowser> browser, bool ignore_cache) {
           base::BindOnce(&ReloadBrowser, browser, ignore_cache)));
 }
 
+void StopLoadingBrowser(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  browser->StopLoad();
+}
+
+void StopLoadingBrowserOnUI(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    StopLoadingBrowser(browser);
+    return;
+  }
+
+  CefPostTask(
+      TID_UI,
+      CefCreateClosureTask(base::BindOnce(&StopLoadingBrowser, browser)));
+}
+
 void SavePageBrowser(CefRefPtr<CefBrowser> browser, NSString *suggested_name) {
   if (!browser) {
     return;
@@ -1261,16 +1301,17 @@ void SavePageBrowser(CefRefPtr<CefBrowser> browser, NSString *suggested_name) {
   dispatch_async(dispatch_get_main_queue(), ^{
     SavePageFormat defaultFormat = SavePageFormat::Complete;
     NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.title = @"Save Page";
-    panel.prompt = @"Save";
+    panel.title = LocalizedBrowserString(@"browser.save_page.title");
+    panel.prompt = LocalizedBrowserString(@"browser.save_page.prompt");
     panel.canCreateDirectories = YES;
     UpdateSavePanelSelection(panel, suggestedBaseName, defaultFormat);
 
-    NSTextField *formatLabel = [NSTextField labelWithString:@"Format:"];
+    NSTextField *formatLabel =
+        [NSTextField labelWithString:LocalizedBrowserString(@"browser.save_page.format")];
     NSPopUpButton *formatPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [formatPopup addItemWithTitle:@"Webpage, Complete"];
-    [formatPopup addItemWithTitle:@"Webpage, Single File"];
-    [formatPopup addItemWithTitle:@"Webpage, HTML Only"];
+    [formatPopup addItemWithTitle:LocalizedBrowserString(@"browser.save_page.format.complete")];
+    [formatPopup addItemWithTitle:LocalizedBrowserString(@"browser.save_page.format.single_file")];
+    [formatPopup addItemWithTitle:LocalizedBrowserString(@"browser.save_page.format.html_only")];
     [[formatPopup itemAtIndex:0] setTag:static_cast<NSInteger>(SavePageFormat::Complete)];
     [[formatPopup itemAtIndex:1] setTag:static_cast<NSInteger>(SavePageFormat::SingleFile)];
     [[formatPopup itemAtIndex:2] setTag:static_cast<NSInteger>(SavePageFormat::HTMLOnly)];
@@ -1309,7 +1350,8 @@ void SavePageBrowser(CefRefPtr<CefBrowser> browser, NSString *suggested_name) {
           SavePageFormatForTag(formatPopup.selectedTag);
       NSURL *destinationURL = NormalizedSaveURL(panel.URL, selectedFormat);
       if (destinationURL == nil) {
-        PresentSavePageError(@"The selected save location is invalid.");
+        PresentSavePageError(
+            LocalizedBrowserString(@"browser.save_page.error.invalid_location"));
         return;
       }
 
@@ -1321,7 +1363,8 @@ void SavePageBrowser(CefRefPtr<CefBrowser> browser, NSString *suggested_name) {
       switch (selectedFormat) {
         case SavePageFormat::Complete:
           if (!host) {
-            PresentSavePageError(@"The browser could not save the page.");
+            PresentSavePageError(
+                LocalizedBrowserString(@"browser.save_page.error.browser_save_failed"));
             return;
           }
 
@@ -1337,7 +1380,8 @@ void SavePageBrowser(CefRefPtr<CefBrowser> browser, NSString *suggested_name) {
           return;
         case SavePageFormat::SingleFile: {
           if (!host) {
-            PresentSavePageError(@"The browser could not save the page.");
+            PresentSavePageError(
+                LocalizedBrowserString(@"browser.save_page.error.browser_save_failed"));
             return;
           }
 
@@ -1355,7 +1399,8 @@ void SavePageBrowser(CefRefPtr<CefBrowser> browser, NSString *suggested_name) {
                   kSavePageSingleFileMethod,
                   params) == 0) {
             observer->SetRegistration(nullptr);
-            PresentSavePageError(@"The browser could not start a single-file snapshot.");
+            PresentSavePageError(
+                LocalizedBrowserString(@"browser.save_page.error.start_snapshot"));
           }
           return;
         }
@@ -1530,6 +1575,8 @@ struct TabRecord {
 - (void)handleAddressChange:(NSString *)urlString forTabID:(NSString *)tabID;
 - (void)handleFaviconURLChange:(nullable NSString *)faviconURLString
                       forTabID:(NSString *)tabID;
+- (void)handleLoadingStateChangeForTabID:(NSString *)tabID
+                               isLoading:(BOOL)isLoading;
 - (void)handleNavigationStateChangeForTabID:(NSString *)tabID
                                   canGoBack:(BOOL)canGoBack
                                canGoForward:(BOOL)canGoForward;
@@ -1550,39 +1597,7 @@ struct TabRecord {
 
   self.wantsLayer = YES;
   self.layer.backgroundColor = NSColor.clearColor.CGColor;
-  self.layer.cornerRadius = kDefaultContentCornerRadius;
-  self.layer.masksToBounds = YES;
   return self;
-}
-
-- (void)setContentCornerRadius:(CGFloat)contentCornerRadius animated:(BOOL)animated {
-  CALayer *layer = self.layer;
-  if (layer == nil) {
-    return;
-  }
-
-  CALayer *presentationLayer = layer.presentationLayer;
-  CGFloat currentCornerRadius =
-      presentationLayer != nil ? presentationLayer.cornerRadius : layer.cornerRadius;
-  if (currentCornerRadius == contentCornerRadius &&
-      layer.cornerRadius == contentCornerRadius) {
-    return;
-  }
-
-  [layer removeAnimationForKey:@"contentCornerRadius"];
-
-  if (animated) {
-    CABasicAnimation *animation =
-        [CABasicAnimation animationWithKeyPath:@"cornerRadius"];
-    animation.fromValue = @(currentCornerRadius);
-    animation.toValue = @(contentCornerRadius);
-    animation.duration = kCornerRadiusAnimationDuration;
-    animation.timingFunction =
-        [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-    [layer addAnimation:animation forKey:@"contentCornerRadius"];
-  }
-
-  layer.cornerRadius = contentCornerRadius;
 }
 
 - (void)setFrame:(NSRect)frame {
@@ -1732,6 +1747,16 @@ struct TabRecord {
   ReloadBrowserOnUI(it->second.browser, true);
 }
 
+- (void)stopLoadingActiveTab {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  StopLoadingBrowserOnUI(it->second.browser);
+}
+
 - (void)saveActiveTabWithSuggestedName:(NSString *)suggestedName {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
@@ -1864,6 +1889,13 @@ struct TabRecord {
                         faviconURLString:faviconURLString];
 }
 
+- (void)handleLoadingStateChangeForTabID:(NSString *)tabID
+                               isLoading:(BOOL)isLoading {
+  [self.delegate browserTabController:self
+      didUpdateLoadingStateForTabWithID:tabID
+                              isLoading:isLoading];
+}
+
 - (void)handleNavigationStateChangeForTabID:(NSString *)tabID
                                   canGoBack:(BOOL)canGoBack
                                canGoForward:(BOOL)canGoForward {
@@ -1955,7 +1987,7 @@ void BrowserTabClient::OnFaviconURLChange(
 }
 
 void BrowserTabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
-                                            bool /*isLoading*/,
+                                            bool isLoading,
                                             bool canGoBack,
                                             bool canGoForward) {
   CEF_REQUIRE_UI_THREAD();
@@ -1965,6 +1997,8 @@ void BrowserTabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
     return;
   }
 
+  [controller handleLoadingStateChangeForTabID:ToNSString(tab_id_)
+                                     isLoading:isLoading];
   [controller handleNavigationStateChangeForTabID:ToNSString(tab_id_)
                                         canGoBack:canGoBack
                                      canGoForward:canGoForward];

@@ -26,13 +26,15 @@ NS_ASSUME_NONNULL_BEGIN
                             canGoForward:(BOOL)canGoForward;
 
 - (void)browserTabController:(BrowserTabController *)controller
+       didUpdateLoadingStateForTabWithID:(NSString *)tabID
+                               isLoading:(BOOL)isLoading;
+
+- (void)browserTabController:(BrowserTabController *)controller
               didCloseTabWithID:(NSString *)tabID;
 
 @end
 
 @interface BrowserTabHostView : NSView
-
-- (void)setContentCornerRadius:(CGFloat)contentCornerRadius animated:(BOOL)animated;
 
 @end
 
@@ -50,6 +52,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)goForwardActiveTab;
 - (void)reloadActiveTab;
 - (void)reloadActiveTabIgnoringCache;
+- (void)stopLoadingActiveTab;
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
 - (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;
 - (void)closeTabWithID:(NSString *)tabID;

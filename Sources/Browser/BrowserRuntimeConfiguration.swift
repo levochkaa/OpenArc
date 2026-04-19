@@ -9,6 +9,7 @@ public final class BrowserRuntimeConfiguration: NSObject {
     public let mainBundlePath: String
     public let rootCachePath: String
     public let cachePath: String
+    public let sessionStoragePath: String
 
     @objc(currentConfiguration)
     public static func currentConfiguration() -> BrowserRuntimeConfiguration? {
@@ -27,6 +28,8 @@ public final class BrowserRuntimeConfiguration: NSObject {
 
         let browserSupportPath = applicationSupportPath
             .appendingPathComponent("TheBrowser", isDirectory: true)
+        let sessionStoragePath = browserSupportPath
+            .appendingPathComponent("Session", isDirectory: true)
         let rootCacheDirectory = runtimeSuffix()
             .map { "CEF-\($0)" } ?? "CEF"
         let rootCachePath = browserSupportPath
@@ -35,6 +38,7 @@ public final class BrowserRuntimeConfiguration: NSObject {
             .appendingPathComponent("Profile", isDirectory: true)
 
         do {
+            try fileManager.createDirectory(at: sessionStoragePath, withIntermediateDirectories: true)
             try fileManager.createDirectory(at: cachePath, withIntermediateDirectories: true)
         } catch {
             return nil
@@ -45,7 +49,8 @@ public final class BrowserRuntimeConfiguration: NSObject {
             frameworkPath: frameworkPath.path,
             mainBundlePath: bundlePath,
             rootCachePath: rootCachePath.path,
-            cachePath: cachePath.path
+            cachePath: cachePath.path,
+            sessionStoragePath: sessionStoragePath.path
         )
     }
 
@@ -97,13 +102,15 @@ public final class BrowserRuntimeConfiguration: NSObject {
         frameworkPath: String,
         mainBundlePath: String,
         rootCachePath: String,
-        cachePath: String
+        cachePath: String,
+        sessionStoragePath: String
     ) {
         self.helperExecutablePath = helperExecutablePath
         self.frameworkPath = frameworkPath
         self.mainBundlePath = mainBundlePath
         self.rootCachePath = rootCachePath
         self.cachePath = cachePath
+        self.sessionStoragePath = sessionStoragePath
         super.init()
     }
 }
