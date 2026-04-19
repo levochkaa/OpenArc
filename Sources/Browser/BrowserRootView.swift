@@ -15,45 +15,77 @@ private enum BrowserChromePalette {
     static let buttonHoverBackground = Color.white.opacity(0.16)
     static let buttonBorder = Color.white.opacity(0.12)
     static let buttonHoverBorder = Color.white.opacity(0.2)
+    static let buttonDisabledForeground = Color.white.opacity(0.32)
     static let resizeHandle = Color.white.opacity(0.16)
     static let resizeHandleHover = Color.white.opacity(0.28)
 }
 
 private enum BrowserChromeLayout {
     static let sidebarAnimationDuration = 0.18
-    static let contentInset: CGFloat = 10
-    static let expandedContentCornerRadius: CGFloat = 12
-    static let collapsedContentCornerRadius: CGFloat = 0
+    static let leadingContentCornerRadius: CGFloat = 12
     static let sidebarOuterPadding: CGFloat = 8
+    static let sidebarSectionSpacing: CGFloat = 10
     static let sidebarListSpacing: CGFloat = 5
+    static let sidebarRowHeight: CGFloat = 36
+    static let sidebarRowCornerRadius: CGFloat = 10
+    static let sidebarRowHorizontalPadding: CGFloat = 11
+    static let sidebarRowContentSpacing: CGFloat = 8
+    static let sidebarNewTabSymbolSize: CGFloat = 14
+    static let sidebarCloseButtonSize: CGFloat = 22
+    static let sidebarCloseCornerRadius: CGFloat = 7
+    static let sidebarCloseSymbolSize: CGFloat = 11
     static let sidebarResizeHitWidth: CGFloat = sidebarOuterPadding
     static let sidebarSnapThreshold: CGFloat = 10
+    static let chromeButtonSize: CGFloat = 28
+    static let chromeButtonCornerRadius: CGFloat = 9
+    static let chromeButtonSpacing: CGFloat = 6
+    static let windowControlsTrailingGap: CGFloat = 5
 }
 
 struct BrowserRootView: View {
     @ObservedObject var model: BrowserChromeModel
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            HStack(spacing: 0) {
-                BrowserSidebarContainerView(model: model)
-                    .frame(width: model.isSidebarVisible ? model.sidebarWidth : 0)
-                    .clipped()
-                    .allowsHitTesting(model.isSidebarVisible)
-
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
                 BrowserContentView(model: model)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+                    .frame(
+                        width: max(proxy.size.width - sidebarLayoutWidth, 0),
+                        height: proxy.size.height,
+                        alignment: .leading
+                    )
+                    .offset(x: sidebarLayoutWidth)
 
-            if model.isSidebarVisible {
-                BrowserSidebarResizeHandle(model: model)
-                    .frame(width: BrowserChromeLayout.sidebarResizeHitWidth)
-                    .offset(x: model.sidebarWidth - BrowserChromeLayout.sidebarResizeHitWidth)
-                    .zIndex(1)
+                BrowserSidebarChromeView(model: model)
+                    .frame(width: model.sidebarWidth, height: proxy.size.height, alignment: .leading)
+                    .offset(x: sidebarOffset)
+                    .allowsHitTesting(model.isSidebarVisible)
             }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
         }
         .background(BrowserChromePalette.shellBackground)
+        .clipped()
         .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+    }
+
+    private var sidebarLayoutWidth: CGFloat {
+        model.isSidebarVisible ? model.sidebarWidth : 0
+    }
+
+    private var sidebarOffset: CGFloat {
+        model.isSidebarVisible ? 0 : -model.sidebarWidth
+    }
+}
+
+private struct BrowserSidebarChromeView: View {
+    @ObservedObject var model: BrowserChromeModel
+
+    var body: some View {
+        BrowserSidebarContainerView(model: model)
+            .overlay(alignment: .trailing) {
+                BrowserSidebarResizeHandle(model: model)
+                    .frame(width: BrowserChromeLayout.sidebarResizeHitWidth)
+            }
     }
 }
 
@@ -76,14 +108,14 @@ private struct BrowserSidebarResizeHandle: View {
     @State private var pushedResizeCursor = false
 
     var body: some View {
-        ZStack {
-            Color.clear
-
-            Rectangle()
-                .fill(isResizeHovered ? BrowserChromePalette.resizeHandleHover : BrowserChromePalette.resizeHandle)
-                .frame(width: 2)
-                .opacity(shouldShowResizeHandle ? 1 : 0)
-        }
+        Rectangle()
+            .fill(Color.white.opacity(0.001))
+            .overlay {
+                Rectangle()
+                    .fill(isResizeHovered ? BrowserChromePalette.resizeHandleHover : BrowserChromePalette.resizeHandle)
+                    .frame(width: 2)
+                    .opacity(shouldShowResizeHandle ? 1 : 0)
+            }
         .padding(.vertical, BrowserChromeLayout.sidebarOuterPadding)
         .contentShape(Rectangle())
         .onHover(perform: handleResizeHover)
@@ -176,38 +208,29 @@ private struct BrowserSidebarView: View {
     @State private var isNewTabButtonHovered = false
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: BrowserChromeLayout.sidebarSectionSpacing) {
+            BrowserSidebarHeaderView(model: model)
+
             Button(action: model.createNewTab) {
-                HStack(spacing: 8) {
+                HStack(spacing: BrowserChromeLayout.sidebarRowContentSpacing) {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: BrowserChromeLayout.sidebarNewTabSymbolSize, weight: .semibold))
                     Text("Новый таб")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12.5, weight: .medium))
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .foregroundStyle(BrowserChromePalette.primaryText)
-                .padding(.horizontal, 12)
-                .frame(height: 36)
+                .padding(.horizontal, BrowserChromeLayout.sidebarRowHorizontalPadding)
+                .frame(height: BrowserChromeLayout.sidebarRowHeight)
                 .background(
-                    isNewTabButtonHovered
-                        ? BrowserChromePalette.buttonHoverBackground
-                        : BrowserChromePalette.buttonBackground
+                    RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
+                        .fill(isNewTabButtonHovered ? BrowserChromePalette.rowHover : Color.clear)
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 11)
-                        .stroke(
-                            isNewTabButtonHovered
-                                ? BrowserChromePalette.buttonHoverBorder
-                                : BrowserChromePalette.buttonBorder,
-                            lineWidth: 1
-                        )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 11))
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity)
-            .contentShape(RoundedRectangle(cornerRadius: 11))
+            .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
             .onHover { hovering in
                 isNewTabButtonHovered = hovering
             }
@@ -237,6 +260,121 @@ private struct BrowserSidebarView: View {
     }
 }
 
+private struct BrowserSidebarHeaderView: View {
+    @ObservedObject var model: BrowserChromeModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: BrowserChromeLayout.windowControlsTrailingGap) {
+                BrowserWindowControlsView(showsInSidebar: model.isSidebarVisible)
+                    .frame(height: BrowserChromeLayout.chromeButtonSize)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                BrowserChromeControlButton(
+                    systemImageName: "sidebar.left",
+                    helpText: "Скрыть сайдбар",
+                    action: model.toggleSidebar
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: BrowserChromeLayout.chromeButtonSpacing) {
+                BrowserChromeControlButton(
+                    systemImageName: "chevron.backward",
+                    helpText: "Назад",
+                    isEnabled: model.canGoBack,
+                    action: model.goBack
+                )
+
+                BrowserChromeControlButton(
+                    systemImageName: "chevron.forward",
+                    helpText: "Вперёд",
+                    isEnabled: model.canGoForward,
+                    action: model.goForward
+                )
+
+                BrowserChromeControlButton(
+                    systemImageName: "arrow.clockwise",
+                    helpText: "Перезагрузить",
+                    isEnabled: model.canReload,
+                    action: model.reloadCurrentTab
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: BrowserChromeLayout.chromeButtonSize)
+        .background(BrowserWindowDragRegion())
+    }
+}
+
+private struct BrowserWindowDragRegion: View {
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(WindowDragGesture())
+            .allowsWindowActivationEvents(true)
+    }
+}
+
+private struct BrowserChromeControlButton: View {
+    let systemImageName: String
+    let helpText: String
+    var isEnabled = true
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImageName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(
+                    isEnabled
+                        ? BrowserChromePalette.primaryText
+                        : BrowserChromePalette.buttonDisabledForeground
+                )
+                .frame(
+                    width: BrowserChromeLayout.chromeButtonSize,
+                    height: BrowserChromeLayout.chromeButtonSize
+                )
+                .background(backgroundColor)
+                .overlay(
+                    RoundedRectangle(cornerRadius: BrowserChromeLayout.chromeButtonCornerRadius)
+                        .stroke(borderColor, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.chromeButtonCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .help(helpText)
+        .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.chromeButtonCornerRadius))
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+
+    private var backgroundColor: Color {
+        guard isEnabled else {
+            return BrowserChromePalette.buttonBackground.opacity(0.5)
+        }
+
+        return isHovered
+            ? BrowserChromePalette.buttonHoverBackground
+            : BrowserChromePalette.buttonBackground
+    }
+
+    private var borderColor: Color {
+        guard isEnabled else {
+            return BrowserChromePalette.buttonBorder.opacity(0.6)
+        }
+
+        return isHovered
+            ? BrowserChromePalette.buttonHoverBorder
+            : BrowserChromePalette.buttonBorder
+    }
+}
+
 private struct BrowserSidebarRow: View {
     let tab: BrowserChromeModel.Tab
     let isSelected: Bool
@@ -247,7 +385,7 @@ private struct BrowserSidebarRow: View {
     @State private var isCloseHovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: BrowserChromeLayout.sidebarRowContentSpacing) {
             BrowserFaviconView(url: tab.faviconURL)
 
             Text(tab.displayTitle)
@@ -259,25 +397,37 @@ private struct BrowserSidebarRow: View {
 
             if isHovered || isSelected {
                 Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(BrowserChromePalette.rowCloseForeground)
-                        .frame(width: 18, height: 18)
-                        .background(
-                            Circle()
-                                .fill(isCloseHovered ? BrowserChromePalette.rowCloseHover : Color.clear)
-                        )
+                    ZStack {
+                        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarCloseCornerRadius, style: .continuous)
+                            .fill(isCloseHovered ? BrowserChromePalette.rowCloseHover : Color.clear)
+
+                        Image(systemName: "xmark")
+                            .font(.system(size: BrowserChromeLayout.sidebarCloseSymbolSize, weight: .bold))
+                            .foregroundStyle(BrowserChromePalette.rowCloseForeground)
+                    }
+                    .frame(
+                        width: BrowserChromeLayout.sidebarCloseButtonSize,
+                        height: BrowserChromeLayout.sidebarCloseButtonSize
+                    )
                 }
                 .buttonStyle(.plain)
+                .contentShape(
+                    RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarCloseCornerRadius, style: .continuous)
+                )
                 .onHover { hovering in
                     isCloseHovered = hovering
                 }
             }
         }
-        .padding(.horizontal, 11)
-        .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32, alignment: .leading)
+        .padding(.horizontal, BrowserChromeLayout.sidebarRowHorizontalPadding)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: BrowserChromeLayout.sidebarRowHeight,
+            maxHeight: BrowserChromeLayout.sidebarRowHeight,
+            alignment: .leading
+        )
         .background(backgroundShape)
-        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
         .onTapGesture(perform: onSelect)
         .onHover { hovering in
             isHovered = hovering
@@ -285,7 +435,7 @@ private struct BrowserSidebarRow: View {
     }
 
     private var backgroundShape: some View {
-        RoundedRectangle(cornerRadius: 10)
+        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
             .fill(
                 isSelected
                     ? BrowserChromePalette.rowSelected
@@ -328,19 +478,10 @@ private struct BrowserFaviconView: View {
 
 private struct BrowserContentView: View {
     @ObservedObject var model: BrowserChromeModel
-    @State private var appliedContentInsets: EdgeInsets
-
-    init(model: BrowserChromeModel) {
-        self.model = model
-        _appliedContentInsets = State(initialValue: Self.contentInsets(for: model.isSidebarVisible))
-    }
 
     var body: some View {
         ZStack {
-            BrowserViewportHostRepresentable(
-                hostView: model.hostView,
-                contentCornerRadius: contentCornerRadius
-            )
+            BrowserViewportHostRepresentable(hostView: model.hostView)
 
             if !model.isContextReady {
                 Rectangle()
@@ -356,46 +497,37 @@ private struct BrowserContentView: View {
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: contentCornerRadius))
-        .padding(appliedContentInsets)
-        .background(BrowserChromePalette.shellBackground)
-        .onChange(of: model.isSidebarVisible) { isSidebarVisible in
-            var transaction = Transaction()
-            transaction.animation = nil
-            withTransaction(transaction) {
-                appliedContentInsets = Self.contentInsets(for: isSidebarVisible)
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BrowserChromePalette.contentBackground)
+        .clipShape(
+            UnevenRoundedRectangle(
+                cornerRadii: RectangleCornerRadii(
+                    topLeading: leadingCornerRadius,
+                    bottomLeading: leadingCornerRadius,
+                    bottomTrailing: 0,
+                    topTrailing: 0
+                ),
+                style: .continuous
+            )
+        )
     }
 
-    private var contentCornerRadius: CGFloat {
-        model.isSidebarVisible
-            ? BrowserChromeLayout.expandedContentCornerRadius
-            : BrowserChromeLayout.collapsedContentCornerRadius
-    }
-
-    private static func contentInsets(for isSidebarVisible: Bool) -> EdgeInsets {
-        guard isSidebarVisible else {
-            return EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
-        }
-
-        let inset = BrowserChromeLayout.contentInset
-        return EdgeInsets(top: inset, leading: 0, bottom: inset, trailing: inset)
+    private var leadingCornerRadius: CGFloat {
+        model.isSidebarVisible ? BrowserChromeLayout.leadingContentCornerRadius : 0
     }
 }
 
 private struct BrowserViewportHostRepresentable: NSViewRepresentable {
     let hostView: BrowserTabHostView
-    let contentCornerRadius: CGFloat
 
     func makeNSView(context _: Context) -> BrowserTabHostView {
-        hostView.setContentCornerRadius(contentCornerRadius, animated: false)
+        hostView.setContentCornerRadius(0, animated: false)
         return hostView
     }
 
     func updateNSView(_ nsView: BrowserTabHostView, context: Context) {
         let shouldAnimate = context.transaction.animation != nil && !context.transaction.disablesAnimations
-        nsView.setContentCornerRadius(contentCornerRadius, animated: shouldAnimate)
+        nsView.setContentCornerRadius(0, animated: shouldAnimate)
         nsView.needsLayout = true
         nsView.layoutSubtreeIfNeeded()
     }

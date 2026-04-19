@@ -1,8 +1,14 @@
 #ifndef THEBROWSER_BROWSER_SWIFT_BRIDGE_H_
 #define THEBROWSER_BROWSER_SWIFT_BRIDGE_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void BrowserCreateApplication(void);
 void BrowserContextInitialized(void);
+int BrowserHasOpenBrowsers(void);
+void BrowserCloseAllBrowsers(void);
 
 #ifdef __OBJC__
 
@@ -20,6 +26,10 @@ BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
 void BrowserRequestNotificationPermission(NSString* origin,
                                           BrowserPermissionCompletion completion);
 
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif  // THEBROWSER_BROWSER_SWIFT_BRIDGE_H_

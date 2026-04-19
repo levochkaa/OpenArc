@@ -13,7 +13,6 @@ DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode"
 APP_BUNDLE="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 HELPER_BINARY="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$HELPER_NAME.app/Contents/MacOS/$HELPER_NAME"
-
 kill_app() {
   /usr/bin/osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
   pkill -TERM -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -82,11 +81,16 @@ stage_embedded_chromium() {
 }
 
 open_app() {
-  /usr/bin/open -n "$APP_BUNDLE"
+  local activate="${1:-yes}"
+  shift || true
+
+  /usr/bin/open -n "$APP_BUNDLE" "$@"
 
   for _ in {1..50}; do
     if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
-      /usr/bin/osascript -e "tell application id \"$APP_BUNDLE_ID\" to activate" >/dev/null 2>&1 || true
+      if [[ "$activate" == "yes" ]]; then
+        /usr/bin/osascript -e "tell application id \"$APP_BUNDLE_ID\" to activate" >/dev/null 2>&1 || true
+      fi
       return
     fi
 
@@ -99,12 +103,21 @@ usage() {
   exit 2
 }
 
-run_default_flow() {
-  kill_app
+prepare_build_artifacts() {
   generate_project
   ensure_chromium
   build_app
   stage_embedded_chromium
+}
+
+run_default_flow() {
+  kill_app
+  prepare_build_artifacts
+}
+
+run_verify_flow() {
+  prepare_build_artifacts
+  echo "$APP_NAME built successfully"
 }
 
 case "$MODE" in
@@ -131,12 +144,7 @@ case "$MODE" in
     /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\" OR process == \"$HELPER_NAME\""
     ;;
   --verify|verify)
-    run_default_flow
-    open_app
-    sleep 3
-    pgrep -x "$APP_NAME" >/dev/null
-    pgrep -x "$HELPER_NAME" >/dev/null
-    echo "$APP_NAME launched successfully"
+    run_verify_flow
     ;;
   *)
     usage

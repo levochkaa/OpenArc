@@ -21,6 +21,11 @@ NS_ASSUME_NONNULL_BEGIN
                faviconURLString:(nullable NSString *)faviconURLString;
 
 - (void)browserTabController:(BrowserTabController *)controller
+    didUpdateNavigationStateForTabWithID:(NSString *)tabID
+                               canGoBack:(BOOL)canGoBack
+                            canGoForward:(BOOL)canGoForward;
+
+- (void)browserTabController:(BrowserTabController *)controller
               didCloseTabWithID:(NSString *)tabID;
 
 @end
@@ -41,8 +46,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (NSString *)createTabWithURLString:(NSString *)urlString makeActive:(BOOL)makeActive;
 - (void)selectTabWithID:(NSString *)tabID;
+- (void)goBackActiveTab;
+- (void)goForwardActiveTab;
 - (void)reloadActiveTab;
 - (void)reloadActiveTabIgnoringCache;
+- (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
+- (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;
 - (void)closeTabWithID:(NSString *)tabID;
 - (void)closeAllTabs;
 - (void)hostViewDidLayout;

@@ -2,6 +2,8 @@
 
 #import "TheBrowser-Swift.h"
 
+#include "Shared/ClientManager.h"
+
 namespace {
 
 BrowserApplicationController* gController = nil;
@@ -34,6 +36,14 @@ void BrowserContextInitialized(void) {
       performSelectorOnMainThread:@selector(handleBrowserContextInitialized)
                        withObject:nil
                     waitUntilDone:NO];
+}
+
+int BrowserHasOpenBrowsers(void) {
+  return shared::ClientManager::GetInstance()->HasBrowsers() ? 1 : 0;
+}
+
+void BrowserCloseAllBrowsers(void) {
+  shared::ClientManager::GetInstance()->CloseAllBrowsers(false);
 }
 
 BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,

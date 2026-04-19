@@ -3,10 +3,11 @@ import SwiftUI
 
 @objcMembers
 @MainActor
-public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate {
+public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate, NSUserInterfaceValidations {
     private var window: NSWindow?
     private var chromeModel: BrowserChromeModel?
     private var hasReceivedBrowserContext = false
+    private var isTerminationRequested = false
 
     public func createApplication() {
         let app = NSApplication.shared
@@ -19,19 +20,51 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     }
 
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        .terminateNow
+        requestApplicationTermination(sender)
+        return .terminateCancel
+    }
+
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 
     public func windowShouldClose(_ sender: NSWindow) -> Bool {
-        chromeModel?.isShuttingDown = true
-        NSApp.terminate(sender)
-        return false
+        true
     }
 
     @objc
     public func handleBrowserContextInitialized() {
         hasReceivedBrowserContext = true
         chromeModel?.handleContextReady()
+    }
+
+    @objc
+    public func handleApplicationWillTerminate() {
+        chromeModel?.isShuttingDown = true
+    }
+
+    @objc
+    public func quitApplication(_ sender: Any?) {
+        NSApp.terminate(sender)
+    }
+
+    @objc
+    public func requestApplicationTermination(_ sender: Any?) {
+        guard !isTerminationRequested else {
+            return
+        }
+
+        isTerminationRequested = true
+        handleApplicationWillTerminate()
+        window?.orderOut(nil)
+        DispatchQueue.main.async {
+            if BrowserHasOpenBrowsers() != 0 {
+                BrowserCloseAllBrowsers()
+                return
+            }
+
+            NSApp.stop(nil)
+        }
     }
 
     @objc
@@ -45,6 +78,16 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     }
 
     @objc
+    public func goBack(_ sender: Any?) {
+        chromeModel?.goBack()
+    }
+
+    @objc
+    public func goForward(_ sender: Any?) {
+        chromeModel?.goForward()
+    }
+
+    @objc
     public func reloadCurrentTab(_ sender: Any?) {
         chromeModel?.reloadCurrentTab()
     }
@@ -52,6 +95,32 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     @objc
     public func forceReloadCurrentTab(_ sender: Any?) {
         chromeModel?.forceReloadCurrentTab()
+    }
+
+    @objc
+    public func saveCurrentPage(_ sender: Any?) {
+        chromeModel?.saveCurrentPage()
+    }
+
+    public func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        guard let action = item.action else {
+            return true
+        }
+
+        switch action {
+        case #selector(createNewTab(_:)):
+            return chromeModel?.canCreateTab ?? false
+        case #selector(goBack(_:)):
+            return chromeModel?.canGoBack ?? false
+        case #selector(goForward(_:)):
+            return chromeModel?.canGoForward ?? false
+        case #selector(reloadCurrentTab(_:)), #selector(forceReloadCurrentTab(_:)):
+            return chromeModel?.canReload ?? false
+        case #selector(saveCurrentPage(_:)):
+            return chromeModel?.canSavePage ?? false
+        default:
+            return true
+        }
     }
 
     private func installMainMenu(for app: NSApplication) {
@@ -70,9 +139,10 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         let appName = ProcessInfo.processInfo.processName
         let quitItem = NSMenuItem(
             title: "Quit \(appName)",
-            action: #selector(NSApplication.terminate(_:)),
+            action: #selector(quitApplication(_:)),
             keyEquivalent: "q"
         )
+        quitItem.target = self
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
 
@@ -84,9 +154,36 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         )
         newTabItem.target = self
         fileMenu.addItem(newTabItem)
+
+        let savePageItem = NSMenuItem(
+            title: "Save Page As...",
+            action: #selector(saveCurrentPage(_:)),
+            keyEquivalent: "s"
+        )
+        savePageItem.target = self
+        savePageItem.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(savePageItem)
         fileMenuItem.submenu = fileMenu
 
         let viewMenu = NSMenu(title: "View")
+        let backItem = NSMenuItem(
+            title: "Back",
+            action: #selector(goBack(_:)),
+            keyEquivalent: "["
+        )
+        backItem.target = self
+        viewMenu.addItem(backItem)
+
+        let forwardItem = NSMenuItem(
+            title: "Forward",
+            action: #selector(goForward(_:)),
+            keyEquivalent: "]"
+        )
+        forwardItem.target = self
+        viewMenu.addItem(forwardItem)
+
+        viewMenu.addItem(.separator())
+
         let refreshItem = NSMenuItem(
             title: "Refresh",
             action: #selector(reloadCurrentTab(_:)),
@@ -119,10 +216,13 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     private func createMainWindow() {
         let chromeModel = BrowserChromeModel { [weak self] title in
             self?.window?.title = title
-        }
+        } allTabsClosedHandler: {}
         self.chromeModel = chromeModel
 
-        let hostingView = NSHostingView(rootView: BrowserRootView(model: chromeModel))
+        let rootView = BrowserRootView(model: chromeModel)
+            .ignoresSafeArea(.container, edges: .top)
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.safeAreaRegions = []
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let window = NSWindow(
@@ -135,6 +235,9 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         window.delegate = self
         window.minSize = NSSize(width: 960, height: 640)
         window.isReleasedWhenClosed = false
+        window.styleMask.insert(.fullSizeContentView)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.center()
 
         let contentView = NSView(frame: window.contentRect(forFrameRect: window.frame))

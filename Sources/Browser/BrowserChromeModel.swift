@@ -1,18 +1,38 @@
 import AppKit
 import Combine
 import Foundation
+import OSLog
+
+private enum BrowserChromeCommandDiagnostics {
+    static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
+        category: "Commands"
+    )
+
+    static func rect(_ rect: CGRect) -> String {
+        String(
+            format: "(x:%.1f y:%.1f w:%.1f h:%.1f)",
+            rect.origin.x,
+            rect.origin.y,
+            rect.size.width,
+            rect.size.height
+        )
+    }
+}
 
 @MainActor
 final class BrowserChromeModel: NSObject, ObservableObject {
-    static let minSidebarWidth: CGFloat = 188
     static let defaultSidebarWidth: CGFloat = 224
-    static let maxSidebarWidth: CGFloat = 420
+    static let minSidebarWidth: CGFloat = defaultSidebarWidth
+    static let maxSidebarWidth: CGFloat = defaultSidebarWidth * 2
 
     struct Tab: Identifiable, Equatable {
         let id: String
         var title: String
         var urlString: String
         var faviconURLString: String?
+        var canGoBack = false
+        var canGoForward = false
 
         var displayTitle: String {
             let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -60,14 +80,43 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     private let tabController: BrowserTabController
     private let newTabURLString = "https://www.google.com"
     private let windowTitleHandler: (String) -> Void
+    private let allTabsClosedHandler: () -> Void
 
     private var hasCreatedInitialTab = false
     private var closingTabIDs = Set<String>()
     private(set) var isContextReady = false
     var isShuttingDown = false
 
-    init(windowTitleHandler: @escaping (String) -> Void) {
+    var canCreateTab: Bool {
+        isContextReady && !isShuttingDown
+    }
+
+    var canReload: Bool {
+        canCreateTab && selectedTabID != nil
+    }
+
+    var canSavePage: Bool {
+        canCreateTab && selectedTabID != nil
+    }
+
+    var canGoBack: Bool {
+        selectedTab?.canGoBack ?? false
+    }
+
+    var canGoForward: Bool {
+        selectedTab?.canGoForward ?? false
+    }
+
+    var hasTabs: Bool {
+        !tabs.isEmpty
+    }
+
+    init(
+        windowTitleHandler: @escaping (String) -> Void,
+        allTabsClosedHandler: @escaping () -> Void
+    ) {
         self.windowTitleHandler = windowTitleHandler
+        self.allTabsClosedHandler = allTabsClosedHandler
 
         let hostView = BrowserTabHostView(frame: .zero)
         self.hostView = hostView
@@ -88,7 +137,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     func createNewTab() {
-        guard isContextReady, !isShuttingDown else {
+        guard canCreateTab else {
             return
         }
 
@@ -98,7 +147,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     func reloadCurrentTab() {
-        guard isContextReady, !isShuttingDown else {
+        guard canReload else {
             return
         }
 
@@ -106,11 +155,50 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     func forceReloadCurrentTab() {
-        guard isContextReady, !isShuttingDown else {
+        guard canReload else {
             return
         }
 
         tabController.reloadActiveTabIgnoringCache()
+    }
+
+    func saveCurrentPage() {
+        guard canSavePage, let selectedTab else {
+            return
+        }
+
+        tabController.saveActiveTab(withSuggestedName: selectedTab.displayTitle)
+    }
+
+    func goBack() {
+        guard canGoBack else {
+            return
+        }
+
+        tabController.goBackActiveTab()
+    }
+
+    func goForward() {
+        guard canGoForward else {
+            return
+        }
+
+        tabController.goForwardActiveTab()
+    }
+
+    func closeAllTabs() {
+        let openTabIDs = tabs.map(\.id)
+        if isShuttingDown {
+            closingTabIDs.formUnion(openTabIDs)
+            for tabID in openTabIDs {
+                tabController.closeTab(withID: tabID, forceClose: true)
+            }
+            return
+        }
+
+        for tabID in openTabIDs {
+            closeTab(id: tabID)
+        }
     }
 
     func selectTab(id: String) {
@@ -127,7 +215,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         updateWindowTitle()
     }
 
-    func closeTab(id: String) {
+    func closeTab(id: String, forceClose: Bool = false) {
         guard
             let closingIndex = tabs.firstIndex(where: { $0.id == id }),
             !closingTabIDs.contains(id)
@@ -149,20 +237,48 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
 
         tabs.removeAll { $0.id == id }
-        tabController.closeTab(withID: id)
+        tabController.closeTab(withID: id, forceClose: forceClose)
         updateWindowTitle()
     }
 
     func toggleSidebar() {
-        isSidebarVisible.toggle()
+        let nextVisibility = !isSidebarVisible
+        let message = String(
+            format: "toggleSidebar current=%@ next=%@ width=%.1f hostFrame=%@ hostBounds=%@",
+            String(isSidebarVisible),
+            String(nextVisibility),
+            sidebarWidth,
+            BrowserChromeCommandDiagnostics.rect(hostView.frame),
+            BrowserChromeCommandDiagnostics.rect(hostView.bounds)
+        )
+        BrowserChromeCommandDiagnostics.logger.notice(
+            "\(message, privacy: .public)"
+        )
+        isSidebarVisible = nextVisibility
     }
 
     func setSidebarWidth(_ width: CGFloat) {
-        sidebarWidth = min(max(width, Self.minSidebarWidth), Self.maxSidebarWidth)
+        let clampedWidth = min(max(width, Self.minSidebarWidth), Self.maxSidebarWidth)
+        guard sidebarWidth != clampedWidth else {
+            return
+        }
+
+        let message = String(
+            format: "setSidebarWidth old=%.1f new=%.1f visible=%@ hostFrame=%@ hostBounds=%@",
+            sidebarWidth,
+            clampedWidth,
+            String(isSidebarVisible),
+            BrowserChromeCommandDiagnostics.rect(hostView.frame),
+            BrowserChromeCommandDiagnostics.rect(hostView.bounds)
+        )
+        BrowserChromeCommandDiagnostics.logger.notice(
+            "\(message, privacy: .public)"
+        )
+        sidebarWidth = clampedWidth
     }
 
     private func ensureInitialTab() {
-        guard isContextReady, !hasCreatedInitialTab, !isShuttingDown else {
+        guard canCreateTab, !hasCreatedInitialTab else {
             return
         }
 
@@ -175,6 +291,14 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     private func updateWindowTitle() {
         let title = tabs.first(where: { $0.id == selectedTabID })?.displayTitle ?? "TheBrowser"
         windowTitleHandler(title)
+    }
+
+    private var selectedTab: Tab? {
+        guard let selectedTabID else {
+            return nil
+        }
+
+        return tabs.first(where: { $0.id == selectedTabID })
     }
 }
 
@@ -210,6 +334,21 @@ extension BrowserChromeModel: BrowserTabControllerDelegate {
     nonisolated func browserTabController(_: BrowserTabController, didCloseTabWithID tabID: String) {
         Task { @MainActor [weak self] in
             self?.handleClosedTab(id: tabID)
+        }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didUpdateNavigationStateForTabWithID tabID: String,
+        canGoBack: Bool,
+        canGoForward: Bool
+    ) {
+        Task { @MainActor [weak self] in
+            self?.handleNavigationStateChange(
+                id: tabID,
+                canGoBack: canGoBack,
+                canGoForward: canGoForward
+            )
         }
     }
 }
@@ -273,8 +412,8 @@ private extension BrowserChromeModel {
     }
 
     func handleClosedTab(id: String) {
-        let didCloseOptimistically = closingTabIDs.remove(id) != nil
-        if !didCloseOptimistically {
+        closingTabIDs.remove(id)
+        if tabs.contains(where: { $0.id == id }) {
             tabs.removeAll { $0.id == id }
         }
 
@@ -289,11 +428,22 @@ private extension BrowserChromeModel {
             selectedTabID = nil
             hasCreatedInitialTab = false
 
-            if isContextReady, !isShuttingDown {
+            if isShuttingDown {
+                allTabsClosedHandler()
+            } else if isContextReady {
                 ensureInitialTab()
             }
         }
 
         updateWindowTitle()
+    }
+
+    func handleNavigationStateChange(id: String, canGoBack: Bool, canGoForward: Bool) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        tabs[index].canGoBack = canGoBack
+        tabs[index].canGoForward = canGoForward
     }
 }

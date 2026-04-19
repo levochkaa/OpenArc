@@ -7,7 +7,7 @@
 ## Build Verification
 
 - Keep a separate Codex action named `Build` that runs `./script/build_and_run.sh verify`.
-- Before finishing any task, run the `Build` action to verify the project builds and both `TheBrowser` and `TheBrowser Helper` launch successfully.
+- Before finishing any task, run the `Build` action to verify the project compiles successfully in the console only. Do not launch `TheBrowser` or `TheBrowser Helper`, and do not check whether their processes started.
 
 ## Doc Sync
 

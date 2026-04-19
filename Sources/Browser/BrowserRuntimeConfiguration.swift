@@ -2,6 +2,8 @@ import Foundation
 
 @objcMembers
 public final class BrowserRuntimeConfiguration: NSObject {
+    private static let runtimeSuffixArgumentPrefix = "--runtime-suffix="
+
     public let helperExecutablePath: String
     public let frameworkPath: String
     public let mainBundlePath: String
@@ -25,8 +27,10 @@ public final class BrowserRuntimeConfiguration: NSObject {
 
         let browserSupportPath = applicationSupportPath
             .appendingPathComponent("TheBrowser", isDirectory: true)
+        let rootCacheDirectory = runtimeSuffix()
+            .map { "CEF-\($0)" } ?? "CEF"
         let rootCachePath = browserSupportPath
-            .appendingPathComponent("CEF", isDirectory: true)
+            .appendingPathComponent(rootCacheDirectory, isDirectory: true)
         let cachePath = rootCachePath
             .appendingPathComponent("Profile", isDirectory: true)
 
@@ -43,6 +47,49 @@ public final class BrowserRuntimeConfiguration: NSObject {
             rootCachePath: rootCachePath.path,
             cachePath: cachePath.path
         )
+    }
+
+    private static func runtimeSuffix() -> String? {
+        for argument in ProcessInfo.processInfo.arguments {
+            guard argument.hasPrefix(runtimeSuffixArgumentPrefix) else {
+                continue
+            }
+
+            let rawSuffix = String(argument.dropFirst(runtimeSuffixArgumentPrefix.count))
+            return sanitizeRuntimeSuffix(rawSuffix)
+        }
+
+        return nil
+    }
+
+    private static func sanitizeRuntimeSuffix(_ rawSuffix: String) -> String? {
+        let allowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+        let trimmedRawSuffix = rawSuffix.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRawSuffix.isEmpty else {
+            return nil
+        }
+
+        var sanitizedSuffix = ""
+        sanitizedSuffix.reserveCapacity(trimmedRawSuffix.count)
+        var lastCharacterWasSeparator = false
+
+        for scalar in trimmedRawSuffix.unicodeScalars {
+            if allowedCharacters.contains(scalar) {
+                sanitizedSuffix.append(Character(scalar))
+                lastCharacterWasSeparator = false
+                continue
+            }
+
+            guard !lastCharacterWasSeparator else {
+                continue
+            }
+
+            sanitizedSuffix.append("-")
+            lastCharacterWasSeparator = true
+        }
+
+        sanitizedSuffix = sanitizedSuffix.trimmingCharacters(in: CharacterSet(charactersIn: "-."))
+        return sanitizedSuffix.isEmpty ? nil : sanitizedSuffix
     }
 
     private init(

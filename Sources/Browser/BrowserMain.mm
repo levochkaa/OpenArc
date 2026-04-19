@@ -30,22 +30,7 @@
 }
 
 - (void)terminate:(id)sender {
-  shared::ClientManager* manager = shared::ClientManager::GetInstance();
-  if (!manager) {
-    [super terminate:sender];
-    return;
-  }
-
-  if (manager->IsClosing()) {
-    return;
-  }
-
-  if (manager->HasBrowsers()) {
-    manager->CloseAllBrowsers(false);
-    return;
-  }
-
-  CefQuitMessageLoop();
+  [super terminate:sender];
 }
 @end
 

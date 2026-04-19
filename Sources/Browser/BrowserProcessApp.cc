@@ -20,7 +20,7 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
   }
 
   void OnContextInitialized() override {
-    BrowserContextInitialized();
+    ::BrowserContextInitialized();
   }
 
  private:
