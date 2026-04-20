@@ -1,6 +1,5 @@
 #import "Browser/BrowserTabController.h"
 
-#import <os/log.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import "Browser/SwiftBridge.h"
@@ -77,43 +76,6 @@ CefRect CefRectFromBounds(NSRect bounds) {
 }
 
 NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser);
-
-os_log_t BrowserCEFLayoutLog() {
-  static os_log_t log;
-  static dispatch_once_t onceToken;
-  dispatch_once(&onceToken, ^{
-    NSString *subsystem = NSBundle.mainBundle.bundleIdentifier;
-    if (subsystem.length == 0) {
-      subsystem = @"com.levochkaa.TheBrowser";
-    }
-    log = os_log_create(subsystem.UTF8String, "CEFLayout");
-  });
-  return log;
-}
-
-NSString *RectDescription(NSRect rect) {
-  return [NSString stringWithFormat:@"(x:%.1f y:%.1f w:%.1f h:%.1f)", rect.origin.x,
-                                    rect.origin.y, rect.size.width,
-                                    rect.size.height];
-}
-
-NSString *ViewHierarchyDescription(NSView *view) {
-  if (view == nil) {
-    return @"nil";
-  }
-
-  NSString *superviewClass =
-      view.superview != nil ? NSStringFromClass(view.superview.class) : @"nil";
-  return [NSString stringWithFormat:@"frame=%@ bounds=%@ hidden=%d super=%@",
-                                    RectDescription(view.frame),
-                                    RectDescription(view.bounds), view.hidden,
-                                    superviewClass];
-}
-
-void LogCEFLayout(NSString *message) {
-  os_log_with_type(BrowserCEFLayoutLog(), OS_LOG_TYPE_INFO, "%{public}@",
-                   message);
-}
 
 void PresentSavePageError(NSString *message) {
   dispatch_async(dispatch_get_main_queue(), ^{
@@ -1180,20 +1142,13 @@ class SavePageSnapshotObserver final : public CefDevToolsMessageObserver {
 };
 
 void SyncBrowserViewFrame(BrowserTabHostView *hostView,
-                          CefRefPtr<CefBrowser> browser,
-                          NSString *reason,
-                          NSString *tabID) {
+                          CefRefPtr<CefBrowser> browser) {
   if (hostView == nil || !browser) {
     return;
   }
 
   NSView *browserView = BrowserViewForBrowser(browser);
   if (browserView == nil) {
-    LogCEFLayout([NSString stringWithFormat:
-                                @"sync reason=%@ tab=%@ hostFrame=%@ "
-                                @"hostBounds=%@ browser=nil",
-                                reason, tabID, RectDescription(hostView.frame),
-                                RectDescription(hostView.bounds)]);
     return;
   }
 
@@ -1201,18 +1156,7 @@ void SyncBrowserViewFrame(BrowserTabHostView *hostView,
   const NSRect hostBounds = hostView.bounds;
   const NSRect targetFrame =
       NSMakeRect(0, 0, NSWidth(hostBounds), NSHeight(hostBounds));
-  const NSRect previousBrowserFrame = browserView.frame;
   browserView.frame = targetFrame;
-
-  LogCEFLayout([NSString stringWithFormat:
-                              @"sync reason=%@ tab=%@ hostFrame=%@ "
-                              @"hostBounds=%@ browserBefore=%@ "
-                              @"browserAfter=%@ browserView=%@",
-                              reason, tabID, RectDescription(hostView.frame),
-                              RectDescription(hostView.bounds),
-                              RectDescription(previousBrowserFrame),
-                              RectDescription(browserView.frame),
-                              ViewHierarchyDescription(browserView)]);
 }
 
 NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser) {
@@ -1582,7 +1526,6 @@ struct TabRecord {
                                canGoForward:(BOOL)canGoForward;
 - (void)openPopupTabWithURLString:(NSString *)urlString;
 - (void)syncBrowserFrames;
-- (void)syncBrowserFramesWithReason:(NSString *)reason;
 - (void)updateBrowserVisibility;
 
 @end
@@ -1605,12 +1548,7 @@ struct TabRecord {
   [super setFrame:frame];
 
   if (!NSEqualRects(previousFrame, frame)) {
-    LogCEFLayout([NSString stringWithFormat:
-                                @"hostView.setFrame old=%@ new=%@ bounds=%@",
-                                RectDescription(previousFrame),
-                                RectDescription(frame),
-                                RectDescription(self.bounds)]);
-    [self.controller syncBrowserFramesWithReason:@"hostView.setFrame"];
+    [self.controller syncBrowserFrames];
   }
 }
 
@@ -1619,33 +1557,18 @@ struct TabRecord {
   [super setBounds:bounds];
 
   if (!NSEqualRects(previousBounds, bounds)) {
-    LogCEFLayout([NSString stringWithFormat:
-                                @"hostView.setBounds old=%@ new=%@ frame=%@",
-                                RectDescription(previousBounds),
-                                RectDescription(bounds),
-                                RectDescription(self.frame)]);
-    [self.controller syncBrowserFramesWithReason:@"hostView.setBounds"];
+    [self.controller syncBrowserFrames];
   }
 }
 
 - (void)viewDidMoveToWindow {
   [super viewDidMoveToWindow];
-  NSString *windowFrame = self.window != nil ? RectDescription(self.window.frame)
-                                             : @"nil";
-  LogCEFLayout([NSString stringWithFormat:
-                              @"hostView.viewDidMoveToWindow frame=%@ bounds=%@ "
-                              @"window=%@",
-                              RectDescription(self.frame),
-                              RectDescription(self.bounds), windowFrame]);
-  [self.controller syncBrowserFramesWithReason:@"hostView.viewDidMoveToWindow"];
+  [self.controller syncBrowserFrames];
 }
 
 - (void)layout {
   [super layout];
-  LogCEFLayout([NSString stringWithFormat:@"hostView.layout frame=%@ bounds=%@",
-                                            RectDescription(self.frame),
-                                            RectDescription(self.bounds)]);
-  [self.controller syncBrowserFramesWithReason:@"hostView.layout"];
+  [self.controller syncBrowserFrames];
 }
 
 @end
@@ -1803,17 +1726,12 @@ struct TabRecord {
 }
 
 - (void)hostViewDidLayout {
-  [self syncBrowserFramesWithReason:@"controller.hostViewDidLayout"];
+  [self syncBrowserFrames];
 }
 
 - (void)syncBrowserFrames {
-  [self syncBrowserFramesWithReason:@"controller.syncBrowserFrames"];
-}
-
-- (void)syncBrowserFramesWithReason:(NSString *)reason {
   for (const auto &entry : _tabRecords) {
-    SyncBrowserViewFrame(_hostView, entry.second.browser, reason,
-                         ToNSString(entry.first));
+    SyncBrowserViewFrame(_hostView, entry.second.browser);
   }
 }
 
@@ -1827,7 +1745,7 @@ struct TabRecord {
   }
 
   it->second.browser = browser;
-  SyncBrowserViewFrame(_hostView, browser, @"handleBrowserCreated", tabID);
+  SyncBrowserViewFrame(_hostView, browser);
   [self handleNavigationStateChangeForTabID:tabID
                                   canGoBack:browser->CanGoBack()
                                canGoForward:browser->CanGoForward()];
@@ -1920,11 +1838,7 @@ struct TabRecord {
 
     BOOL isActive = entry.first == activeKey;
     browserView.hidden = !isActive;
-    SyncBrowserViewFrame(
-        _hostView, entry.second.browser,
-        isActive ? @"updateBrowserVisibility.active"
-                 : @"updateBrowserVisibility.inactive",
-        ToNSString(entry.first));
+    SyncBrowserViewFrame(_hostView, entry.second.browser);
 
     if (isActive) {
       entry.second.browser->GetHost()->SetFocus(true);

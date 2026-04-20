@@ -1,24 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import OSLog
-
-private enum BrowserChromeCommandDiagnostics {
-    static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
-        category: "Commands"
-    )
-
-    static func rect(_ rect: CGRect) -> String {
-        String(
-            format: "(x:%.1f y:%.1f w:%.1f h:%.1f)",
-            rect.origin.x,
-            rect.origin.y,
-            rect.size.width,
-            rect.size.height
-        )
-    }
-}
 
 @MainActor
 final class BrowserChromeModel: NSObject, ObservableObject {
@@ -534,19 +516,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     func toggleSidebar() {
-        let nextVisibility = !isSidebarVisible
-        let message = String(
-            format: "toggleSidebar current=%@ next=%@ width=%.1f hostFrame=%@ hostBounds=%@",
-            String(isSidebarVisible),
-            String(nextVisibility),
-            sidebarWidth,
-            BrowserChromeCommandDiagnostics.rect(hostView.frame),
-            BrowserChromeCommandDiagnostics.rect(hostView.bounds)
-        )
-        BrowserChromeCommandDiagnostics.logger.notice(
-            "\(message, privacy: .public)"
-        )
-        isSidebarVisible = nextVisibility
+        isSidebarVisible.toggle()
     }
 
     func setSidebarWidth(_ width: CGFloat) {
@@ -554,20 +524,15 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         guard sidebarWidth != clampedWidth else {
             return
         }
-
-        let message = String(
-            format: "setSidebarWidth old=%.1f new=%.1f visible=%@ hostFrame=%@ hostBounds=%@",
-            sidebarWidth,
-            clampedWidth,
-            String(isSidebarVisible),
-            BrowserChromeCommandDiagnostics.rect(hostView.frame),
-            BrowserChromeCommandDiagnostics.rect(hostView.bounds)
-        )
-        BrowserChromeCommandDiagnostics.logger.notice(
-            "\(message, privacy: .public)"
-        )
         sidebarWidth = clampedWidth
-        persistCurrentSessionIfAllowed()
+    }
+
+    func persistSidebarWidthPreferenceIfAllowed() {
+        guard isContextReady, isPersistenceEnabled, !isRestoringSession else {
+            return
+        }
+
+        sessionPreferencesStore.saveSidebarWidth(sidebarWidth)
     }
 
     private func ensureInitialTab() {

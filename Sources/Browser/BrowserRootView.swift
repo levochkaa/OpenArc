@@ -367,9 +367,19 @@ private struct BrowserSidebarResizeHandle: View {
     }
 
     private func finishResize() {
+        let shouldPersistSidebarWidth = if let dragStartWidth {
+            dragStartWidth != model.sidebarWidth
+        } else {
+            false
+        }
+
         dragStartWidth = nil
         isResizing = false
         isSnappedToDefaultWidth = false
+
+        if shouldPersistSidebarWidth {
+            model.persistSidebarWidthPreferenceIfAllowed()
+        }
 
         guard isHoveringResizeArea else {
             isResizeHovered = false

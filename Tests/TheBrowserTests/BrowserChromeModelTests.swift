@@ -169,7 +169,7 @@ func userTitleOverridePersistsAcrossUpdatesAndRestore() throws {
 
 @Test
 @MainActor
-func createSelectCloseAndSidebarWidthChangesPersistState() {
+func createSelectAndClosePersistState() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -197,13 +197,39 @@ func createSelectCloseAndSidebarWidthChangesPersistState() {
 
     #expect(preferencesStore.storedSelectedTabIndex == 0)
 
-    model.setSidebarWidth(BrowserChromeModel.maxSidebarWidth)
-
-    #expect(preferencesStore.savedSidebarWidths.last == BrowserChromeModel.maxSidebarWidth)
-
     model.closeTab(id: secondTabID)
 
     #expect(snapshotStore.savedSnapshots.last?.tabURLStrings.count == 1)
+}
+
+@Test
+@MainActor
+func sidebarWidthChangesOnlyPersistPreferencesWhenCommitted() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let initialSnapshotSaveCount = snapshotStore.savedSnapshots.count
+    let initialSidebarWidthSaveCount = preferencesStore.savedSidebarWidths.count
+
+    model.setSidebarWidth(BrowserChromeModel.maxSidebarWidth)
+
+    #expect(model.sidebarWidth == BrowserChromeModel.maxSidebarWidth)
+    #expect(preferencesStore.savedSidebarWidths.count == initialSidebarWidthSaveCount)
+    #expect(snapshotStore.savedSnapshots.count == initialSnapshotSaveCount)
+
+    model.persistSidebarWidthPreferenceIfAllowed()
+
+    #expect(preferencesStore.savedSidebarWidths.count == initialSidebarWidthSaveCount + 1)
+    #expect(preferencesStore.savedSidebarWidths.last == BrowserChromeModel.maxSidebarWidth)
+    #expect(snapshotStore.savedSnapshots.count == initialSnapshotSaveCount)
 }
 
 @Test
