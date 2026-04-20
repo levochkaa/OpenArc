@@ -231,6 +231,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
         automaticArchivalTimer?.invalidate()
         automaticArchivalTimer = nil
+        persistSidebarWidthPreferenceIfAllowed()
         persistCurrentSessionIfAllowed()
         isShuttingDown = true
         isPersistenceEnabled = false
@@ -620,7 +621,6 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             )
         )
         sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
-        sessionPreferencesStore.saveSidebarWidth(sidebarWidth)
     }
 
     private func updateWindowTitle() {

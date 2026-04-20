@@ -179,21 +179,29 @@ struct BrowserRootView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                BrowserContentView(model: model)
+                BrowserContentView(
+                    hostView: model.hostView,
+                    isContextReady: model.isContextReady,
+                    isSidebarVisible: model.isSidebarVisible
+                )
+                    .equatable()
                     .frame(
                         width: max(proxy.size.width - sidebarLayoutWidth, 0),
                         height: proxy.size.height,
                         alignment: .leading
                     )
                     .offset(x: sidebarLayoutWidth)
+                    .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
                 BrowserSidebarChromeView(
                     model: model,
+                    snapshot: sidebarSnapshot,
                     showsWindowControlsInSidebar: showsSidebarWindowControls
                 )
                 .frame(width: model.sidebarWidth, height: proxy.size.height, alignment: .leading)
                 .offset(x: sidebarOffset)
                 .allowsHitTesting(model.isSidebarVisible)
+                .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
                 if model.commandBarModel.isPresented, sidebarLayoutWidth > 0 {
                     BrowserPassthroughInteractionObserver {
@@ -218,7 +226,6 @@ struct BrowserRootView: View {
         .overlayPreferenceValue(BrowserTooltipPreferenceKey.self) { values in
             BrowserTooltipOverlay(entries: values)
         }
-        .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
         .onChange(of: model.isSidebarVisible) { _, isSidebarVisible in
             if isSidebarVisible {
                 showsSidebarWindowControls = true
@@ -240,39 +247,62 @@ struct BrowserRootView: View {
     private var sidebarVisibilityAnimationValue: CGFloat {
         model.isSidebarVisible ? 1 : 0
     }
+
+    private var sidebarSnapshot: BrowserSidebarSnapshot {
+        BrowserSidebarSnapshot(
+            pinnedTabs: model.pinnedTabs,
+            temporaryTabs: model.temporaryTabs,
+            selectedTabID: model.selectedTabID,
+            archivableTabIDs: Set(model.tabs.dropLast().map(\.id)),
+            canGoBack: model.canGoBack,
+            canGoForward: model.canGoForward,
+            canStopLoading: model.canStopLoading,
+            canReload: model.canReload
+        )
+    }
 }
 
 private struct BrowserSidebarChromeView: View {
     @ObservedObject var model: BrowserChromeModel
+    let snapshot: BrowserSidebarSnapshot
     let showsWindowControlsInSidebar: Bool
+    @State private var isSidebarResizing = false
 
     var body: some View {
         BrowserSidebarContainerView(
             model: model,
-            showsWindowControlsInSidebar: showsWindowControlsInSidebar
+            snapshot: snapshot,
+            showsWindowControlsInSidebar: showsWindowControlsInSidebar,
+            isSidebarResizing: isSidebarResizing
         )
         .overlay(alignment: .trailing) {
-            BrowserSidebarResizeHandle(model: model)
+            BrowserSidebarResizeHandle(model: model, isSidebarResizing: $isSidebarResizing)
                 .frame(width: BrowserChromeLayout.sidebarResizeHitWidth)
         }
     }
 }
 
 private struct BrowserSidebarContainerView: View {
-    @ObservedObject var model: BrowserChromeModel
+    let model: BrowserChromeModel
+    let snapshot: BrowserSidebarSnapshot
     let showsWindowControlsInSidebar: Bool
+    let isSidebarResizing: Bool
 
     var body: some View {
         BrowserSidebarView(
             model: model,
-            showsWindowControlsInSidebar: showsWindowControlsInSidebar
+            snapshot: snapshot,
+            showsWindowControlsInSidebar: showsWindowControlsInSidebar,
+            isSidebarResizing: isSidebarResizing
         )
+        .equatable()
         .background(BrowserChromePalette.sidebarBackground)
     }
 }
 
 private struct BrowserSidebarResizeHandle: View {
     @ObservedObject var model: BrowserChromeModel
+    @Binding var isSidebarResizing: Bool
 
     @State private var isHoveringResizeArea = false
     @State private var isResizeHovered = false
@@ -302,6 +332,7 @@ private struct BrowserSidebarResizeHandle: View {
                 isHoveringResizeArea = false
                 isResizeHovered = false
                 isResizing = false
+                isSidebarResizing = false
                 isSnappedToDefaultWidth = false
                 dragStartWidth = nil
             }
@@ -343,6 +374,7 @@ private struct BrowserSidebarResizeHandle: View {
         }
 
         isResizing = true
+        isSidebarResizing = true
 
         pushResizeCursorIfNeeded()
     }
@@ -375,6 +407,7 @@ private struct BrowserSidebarResizeHandle: View {
 
         dragStartWidth = nil
         isResizing = false
+        isSidebarResizing = false
         isSnappedToDefaultWidth = false
 
         if shouldPersistSidebarWidth {
@@ -431,8 +464,10 @@ private struct BrowserSidebarResizeHandle: View {
 }
 
 private struct BrowserSidebarView: View {
-    @ObservedObject var model: BrowserChromeModel
+    let model: BrowserChromeModel
+    let snapshot: BrowserSidebarSnapshot
     let showsWindowControlsInSidebar: Bool
+    let isSidebarResizing: Bool
     @State private var isNewTabButtonHovered = false
     @State private var isClearButtonHovered = false
     @State private var isSidebarHovered = false
@@ -441,13 +476,21 @@ private struct BrowserSidebarView: View {
     @State private var dropTarget: BrowserSidebarTabDropTarget?
 
     var body: some View {
-        let pinnedTabs = model.pinnedTabs
-        let temporaryTabs = model.temporaryTabs
+        let pinnedTabs = snapshot.pinnedTabs
+        let temporaryTabs = snapshot.temporaryTabs
 
         VStack(spacing: BrowserChromeLayout.sidebarSectionSpacing) {
             BrowserSidebarHeaderView(
-                model: model,
-                showsWindowControlsInSidebar: showsWindowControlsInSidebar
+                canGoBack: snapshot.canGoBack,
+                canGoForward: snapshot.canGoForward,
+                canStopLoading: snapshot.canStopLoading,
+                canReload: snapshot.canReload,
+                showsWindowControlsInSidebar: showsWindowControlsInSidebar,
+                onToggleSidebar: model.toggleSidebar,
+                onGoBack: model.goBack,
+                onGoForward: model.goForward,
+                onStopLoading: model.stopLoadingCurrentTab,
+                onReload: model.reloadCurrentTab
             )
             .zIndex(1)
 
@@ -464,7 +507,13 @@ private struct BrowserSidebarView: View {
                     BrowserSidebarTemporaryTabsDivider(
                         showsClearButton: isSidebarHovered && !temporaryTabs.isEmpty,
                         isClearButtonHovered: isClearButtonHovered,
-                        onHoverClearButton: { isClearButtonHovered = $0 },
+                        onHoverClearButton: { hovering in
+                            guard !isSidebarResizing else {
+                                return
+                            }
+
+                            isClearButtonHovered = hovering
+                        },
                         onClear: {
                             clearTabDragState()
                             dismissRenamingIfNeeded()
@@ -500,12 +549,25 @@ private struct BrowserSidebarView: View {
         .padding(.trailing, BrowserChromeLayout.sidebarOuterPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onHover { hovering in
+            guard !isSidebarResizing else {
+                return
+            }
+
             withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
                 isSidebarHovered = hovering
             }
             if !hovering {
                 isClearButtonHovered = false
             }
+        }
+        .onChange(of: isSidebarResizing) { _, isSidebarResizing in
+            guard isSidebarResizing else {
+                return
+            }
+
+            isNewTabButtonHovered = false
+            isClearButtonHovered = false
+            isSidebarHovered = false
         }
         .background(alignment: .topLeading) {
             BrowserWindowDragRegion()
@@ -552,12 +614,16 @@ private struct BrowserSidebarView: View {
         .frame(maxWidth: .infinity)
         .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
         .onHover { hovering in
+            guard !isSidebarResizing else {
+                return
+            }
+
             isNewTabButtonHovered = hovering
         }
         .browserTooltip(
             title: BrowserCommands.newTab.helpTitle,
             shortcut: BrowserCommands.newTab.shortcut,
-            isPresented: isNewTabButtonHovered
+            isPresented: isNewTabButtonHovered && !isSidebarResizing
         )
     }
 
@@ -568,9 +634,10 @@ private struct BrowserSidebarView: View {
     ) -> some View {
         BrowserSidebarRow(
             tab: tab,
-            isSelected: model.selectedTabID == tab.id,
+            isSelected: snapshot.selectedTabID == tab.id,
             isRenaming: renamingTabID == tab.id,
-            canArchiveTabsBelow: model.hasTabsBelow(id: tab.id),
+            canArchiveTabsBelow: snapshot.archivableTabIDs.contains(tab.id),
+            isSidebarResizing: isSidebarResizing,
             dropIndicatorEdge: dropIndicatorEdge(for: section, sectionIndex: sectionIndex),
             onSelect: {
                 if renamingTabID != tab.id {
@@ -721,6 +788,14 @@ private struct BrowserSidebarView: View {
     private func clearTabDragState() {
         draggedTabID = nil
         dropTarget = nil
+    }
+}
+
+extension BrowserSidebarView: Equatable {
+    static func == (lhs: BrowserSidebarView, rhs: BrowserSidebarView) -> Bool {
+        lhs.snapshot == rhs.snapshot
+            && lhs.showsWindowControlsInSidebar == rhs.showsWindowControlsInSidebar
+            && lhs.isSidebarResizing == rhs.isSidebarResizing
     }
 }
 
@@ -1726,8 +1801,16 @@ private struct BrowserVisualEffectView: NSViewRepresentable {
 }
 
 private struct BrowserSidebarHeaderView: View {
-    @ObservedObject var model: BrowserChromeModel
+    let canGoBack: Bool
+    let canGoForward: Bool
+    let canStopLoading: Bool
+    let canReload: Bool
     let showsWindowControlsInSidebar: Bool
+    let onToggleSidebar: () -> Void
+    let onGoBack: () -> Void
+    let onGoForward: () -> Void
+    let onStopLoading: () -> Void
+    let onReload: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1741,7 +1824,7 @@ private struct BrowserSidebarHeaderView: View {
                     tooltipTitle: BrowserCommands.toggleSidebar.helpTitle,
                     tooltipShortcut: BrowserCommands.toggleSidebar.shortcut,
                     pressEffect: .compress,
-                    action: model.toggleSidebar
+                    action: onToggleSidebar
                 )
             }
 
@@ -1752,37 +1835,37 @@ private struct BrowserSidebarHeaderView: View {
                     systemImageName: "arrow.backward",
                     tooltipTitle: BrowserCommands.goBack.helpTitle,
                     tooltipShortcut: BrowserCommands.goBack.shortcut,
-                    isEnabled: model.canGoBack,
+                    isEnabled: canGoBack,
                     pressEffect: .moveLeft,
-                    action: model.goBack
+                    action: onGoBack
                 )
 
                 BrowserChromeControlButton(
                     systemImageName: "arrow.forward",
                     tooltipTitle: BrowserCommands.goForward.helpTitle,
                     tooltipShortcut: BrowserCommands.goForward.shortcut,
-                    isEnabled: model.canGoForward,
+                    isEnabled: canGoForward,
                     pressEffect: .moveRight,
-                    action: model.goForward
+                    action: onGoForward
                 )
 
-                if model.canStopLoading {
+                if canStopLoading {
                     BrowserChromeControlButton(
                         systemImageName: "xmark",
                         tooltipTitle: BrowserStrings.navigationStopLoading,
                         tooltipShortcut: nil,
-                        isEnabled: model.canStopLoading,
+                        isEnabled: canStopLoading,
                         pressEffect: .compress,
-                        action: model.stopLoadingCurrentTab
+                        action: onStopLoading
                     )
                 } else {
                     BrowserChromeControlButton(
                         systemImageName: "arrow.clockwise",
                         tooltipTitle: BrowserCommands.reload.helpTitle,
                         tooltipShortcut: BrowserCommands.reload.shortcut,
-                        isEnabled: model.canReload,
+                        isEnabled: canReload,
                         pressEffect: .rotateClockwise,
-                        action: model.reloadCurrentTab
+                        action: onReload
                     )
                 }
             }
@@ -1790,6 +1873,17 @@ private struct BrowserSidebarHeaderView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: BrowserChromeLayout.chromeButtonSize)
     }
+}
+
+private struct BrowserSidebarSnapshot: Equatable {
+    let pinnedTabs: [BrowserChromeModel.Tab]
+    let temporaryTabs: [BrowserChromeModel.Tab]
+    let selectedTabID: String?
+    let archivableTabIDs: Set<String>
+    let canGoBack: Bool
+    let canGoForward: Bool
+    let canStopLoading: Bool
+    let canReload: Bool
 }
 
 private struct BrowserWindowDragRegion: View {
@@ -2168,6 +2262,7 @@ private struct BrowserSidebarRow: View {
     let isSelected: Bool
     let isRenaming: Bool
     let canArchiveTabsBelow: Bool
+    let isSidebarResizing: Bool
     let dropIndicatorEdge: VerticalEdge?
     let onSelect: () -> Void
     let onCopyLink: () -> Void
@@ -2180,7 +2275,6 @@ private struct BrowserSidebarRow: View {
     @State private var isRowHovered = false
     @State private var isCloseHovered = false
     @State private var draftTitle = ""
-    @State private var hoverTrackingWidth: CGFloat = 0
 
     var body: some View {
         let spacing = BrowserChromeLayout.sidebarRowContentSpacing
@@ -2214,7 +2308,7 @@ private struct BrowserSidebarRow: View {
             title: tab.displayTitle,
             caption: BrowserStrings.tabRenameTooltipCaption,
             shortcut: nil,
-            isPresented: isRowHovered && !isCloseHovered && !isRenaming
+            isPresented: isRowHovered && !isCloseHovered && !isRenaming && !isSidebarResizing
         )
         .padding(.leading, BrowserChromeLayout.sidebarRowHorizontalPadding)
         .padding(.trailing, BrowserChromeLayout.sidebarTabTrailingPadding)
@@ -2224,17 +2318,6 @@ private struct BrowserSidebarRow: View {
             maxHeight: BrowserChromeLayout.sidebarRowHeight,
             alignment: .leading
         )
-        .background {
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear {
-                        hoverTrackingWidth = proxy.size.width
-                    }
-                    .onChange(of: proxy.size.width) { _, width in
-                        hoverTrackingWidth = width
-                    }
-            }
-        }
         .overlay(alignment: .trailing) {
             if !isRenaming {
                 closeButtonOverlay
@@ -2259,19 +2342,21 @@ private struct BrowserSidebarRow: View {
         .onTapGesture(count: 2) {
             beginRename()
         }
-        .onContinuousHover(coordinateSpace: .local) { phase in
-            switch phase {
-            case let .active(location):
-                guard !isRenaming else {
-                    isRowHovered = true
-                    isCloseHovered = false
-                    return
-                }
+        .onHover { hovering in
+            guard !isSidebarResizing else {
+                return
+            }
 
-                isRowHovered = true
-                isCloseHovered = hoverTrackingWidth > 0 && location.x >= closeZoneMinX
-            case .ended:
-                isRowHovered = false
+            if isRenaming {
+                isRowHovered = hovering
+                if !hovering {
+                    isCloseHovered = false
+                }
+                return
+            }
+
+            isRowHovered = hovering
+            if !hovering {
                 isCloseHovered = false
             }
         }
@@ -2280,6 +2365,14 @@ private struct BrowserSidebarRow: View {
         }
         .onChange(of: isRenaming) { _, isRenaming in
             syncDraftTitleIfNeeded(isRenaming: isRenaming)
+        }
+        .onChange(of: isSidebarResizing) { _, isSidebarResizing in
+            guard isSidebarResizing else {
+                return
+            }
+
+            isRowHovered = false
+            isCloseHovered = false
         }
         .contextMenu {
             copyLinkMenuItem
@@ -2297,16 +2390,7 @@ private struct BrowserSidebarRow: View {
     }
 
     private var closeButtonBackgroundColor: Color {
-        (isCloseHovered || (isSelected && showsCloseButton)) ? BrowserChromePalette.rowCloseHover : .clear
-    }
-
-    private var closeZoneMinX: CGFloat {
-        max(
-            hoverTrackingWidth
-                - BrowserChromeLayout.sidebarTabTrailingPadding
-                - closeButtonReservedWidth,
-            0
-        )
+        isCloseHovered ? BrowserChromePalette.rowCloseHover : .clear
     }
 
     private var closeButtonReservedWidth: CGFloat {
@@ -2337,6 +2421,13 @@ private struct BrowserSidebarRow: View {
             .contentShape(
                 RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarCloseCornerRadius, style: .continuous)
             )
+            .onHover { hovering in
+                guard !isSidebarResizing else {
+                    return
+                }
+
+                isCloseHovered = hovering
+            }
             .opacity(showsCloseButton ? 1 : 0)
             .allowsHitTesting(showsCloseButton)
         }
@@ -2348,7 +2439,7 @@ private struct BrowserSidebarRow: View {
         .browserTooltip(
             title: BrowserStrings.tabArchiveTooltip,
             shortcut: nil,
-            isPresented: isCloseHovered
+            isPresented: isCloseHovered && !isSidebarResizing
         )
     }
 
@@ -2496,17 +2587,19 @@ private struct BrowserFaviconView: View {
 }
 
 private struct BrowserContentView: View {
-    @ObservedObject var model: BrowserChromeModel
+    let hostView: NSView
+    let isContextReady: Bool
+    let isSidebarVisible: Bool
 
     var body: some View {
         BrowserViewportHostRepresentable(
-            hostView: model.hostView,
+            hostView: hostView,
             leadingCornerRadius: leadingCornerRadius
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BrowserChromePalette.shellBackground)
         .overlay {
-            if !model.isContextReady {
+            if !isContextReady {
                 ZStack {
                     Rectangle()
                         .fill(BrowserChromePalette.contentBackground)
@@ -2526,7 +2619,7 @@ private struct BrowserContentView: View {
     }
 
     private var leadingCornerRadius: CGFloat {
-        model.isSidebarVisible ? BrowserChromeLayout.leadingContentCornerRadius : 0
+        isSidebarVisible ? BrowserChromeLayout.leadingContentCornerRadius : 0
     }
 
     private var contentShape: UnevenRoundedRectangle {
@@ -2539,6 +2632,14 @@ private struct BrowserContentView: View {
             ),
             style: .continuous
         )
+    }
+}
+
+extension BrowserContentView: Equatable {
+    static func == (lhs: BrowserContentView, rhs: BrowserContentView) -> Bool {
+        ObjectIdentifier(lhs.hostView) == ObjectIdentifier(rhs.hostView)
+            && lhs.isContextReady == rhs.isContextReady
+            && lhs.isSidebarVisible == rhs.isSidebarVisible
     }
 }
 

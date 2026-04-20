@@ -234,6 +234,51 @@ func sidebarWidthChangesOnlyPersistPreferencesWhenCommitted() {
 
 @Test
 @MainActor
+func sessionMutationsDoNotPersistSidebarWidthImplicitly() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.setSidebarWidth(BrowserChromeModel.maxSidebarWidth)
+    let initialSidebarWidthSaveCount = preferencesStore.savedSidebarWidths.count
+
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.selectTab(id: model.tabs[0].id)
+
+    #expect(preferencesStore.savedSidebarWidths.count == initialSidebarWidthSaveCount)
+}
+
+@Test
+@MainActor
+func terminationPersistsLatestSidebarWidthPreference() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.setSidebarWidth(BrowserChromeModel.maxSidebarWidth)
+
+    model.prepareForTermination()
+
+    #expect(preferencesStore.savedSidebarWidths.last == BrowserChromeModel.maxSidebarWidth)
+}
+
+@Test
+@MainActor
 func pinningAndClearingTemporaryTabsPreservesPinnedTabs() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
