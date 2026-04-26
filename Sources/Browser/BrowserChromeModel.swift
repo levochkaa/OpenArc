@@ -76,6 +76,18 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     @Published var isSidebarVisible = true
     @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
     @Published private(set) var temporaryTabLifetime: BrowserTemporaryTabLifetime
+    @Published private(set) var isFindBarPresented = false
+    @Published private(set) var findBarFocusRequest = 0
+    @Published private(set) var findResultMatchCount: Int?
+    @Published var findQuery = "" {
+        didSet {
+            guard findQuery != oldValue else {
+                return
+            }
+
+            handleFindQueryChange()
+        }
+    }
 
     let hostView: NSView
     lazy var commandBarModel: BrowserCommandBarModel = .init(
@@ -124,8 +136,28 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         canCreateTab && selectedTabID != nil
     }
 
+    var canPasteAndMatchStyle: Bool {
+        canCreateTab && selectedTabID != nil
+    }
+
+    var canFindInPage: Bool {
+        canCreateTab && selectedTabID != nil
+    }
+
+    var canStepThroughFindMatches: Bool {
+        canFindInPage && isFindBarPresented && !findQuery.isEmpty && findResultMatchCount != 0
+    }
+
+    var canPrintPage: Bool {
+        canCreateTab && selectedTabID != nil
+    }
+
     var canCopySelectedTabLink: Bool {
         selectedTab != nil
+    }
+
+    var canArchiveSelectedTab: Bool {
+        selectedTab != nil && !isShuttingDown
     }
 
     var canClearTemporaryTabs: Bool {
@@ -204,6 +236,14 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         tabDriver.onLoadingStateChanged = { [weak self] tabID, isLoading in
             self?.handleLoadingStateChange(id: tabID, isLoading: isLoading)
         }
+        tabDriver.onFindResultChanged = { [weak self] tabID, matchCount, activeMatchOrdinal, finalUpdate in
+            self?.handleFindResult(
+                id: tabID,
+                matchCount: matchCount,
+                activeMatchOrdinal: activeMatchOrdinal,
+                finalUpdate: finalUpdate
+            )
+        }
         updateWindowTitle()
     }
 
@@ -239,6 +279,10 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
     func createNewTab() {
         createTab(withURLString: newTabURLString)
+    }
+
+    func openURLInNewTab(_ url: URL) {
+        createTab(withURLString: url.absoluteString)
     }
 
     func togglePinned(forTabID tabID: String) {
@@ -335,6 +379,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             return
         }
 
+        dismissFindBar()
         commandBarModel.present()
     }
 
@@ -346,12 +391,51 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         if commandBarModel.isPresented {
             commandBarModel.dismiss()
         } else {
+            dismissFindBar()
             commandBarModel.present()
         }
     }
 
     func dismissCommandBar() {
         commandBarModel.dismiss()
+    }
+
+    func presentFindBar() {
+        guard canFindInPage else {
+            return
+        }
+
+        commandBarModel.dismiss()
+        isFindBarPresented = true
+        findBarFocusRequest += 1
+        findResultMatchCount = nil
+        runFind(forward: true, findNext: false)
+    }
+
+    func dismissFindBar() {
+        guard isFindBarPresented else {
+            return
+        }
+
+        isFindBarPresented = false
+        findResultMatchCount = nil
+        tabDriver.stopFindingInActiveTab(clearSelection: true)
+    }
+
+    func findNextInPage() {
+        guard canStepThroughFindMatches else {
+            return
+        }
+
+        runFind(forward: true, findNext: true)
+    }
+
+    func findPreviousInPage() {
+        guard canStepThroughFindMatches else {
+            return
+        }
+
+        runFind(forward: false, findNext: true)
     }
 
     func reloadCurrentTab() {
@@ -384,6 +468,24 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
 
         tabDriver.saveActiveTab(withSuggestedName: selectedTab.pageTitle)
+    }
+
+    @discardableResult
+    func pasteAndMatchStyleCurrentTab() -> Bool {
+        guard canPasteAndMatchStyle else {
+            return false
+        }
+
+        tabDriver.pasteAndMatchStyleActiveTab()
+        return true
+    }
+
+    func printCurrentPage() {
+        guard canPrintPage else {
+            return
+        }
+
+        tabDriver.printActiveTab()
     }
 
     @discardableResult
@@ -446,6 +548,16 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
     }
 
+    @discardableResult
+    func archiveSelectedTab() -> Bool {
+        guard canArchiveSelectedTab, let selectedTabID else {
+            return false
+        }
+
+        closeTab(id: selectedTabID)
+        return true
+    }
+
     func hasTabsBelow(id: String) -> Bool {
         !tabIDsBelowInSidebarOrder(forTabID: id).isEmpty
     }
@@ -464,10 +576,12 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
 
         selectedTabID = id
+        findResultMatchCount = nil
         tabDriver.selectTab(withID: id)
         touchTab(id: id)
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
+        runFind(forward: true, findNext: false)
     }
 
     func closeTab(id: String, forceClose: Bool = false) {
@@ -484,11 +598,14 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         if isReplacingLastTab {
             let replacementID = tabDriver.createTab(withURLString: newTabURLString, makeActive: true)
             selectedTabID = replacementID
+            findResultMatchCount = nil
         } else if selectedTabID == id {
             let fallbackTabID = fallbackTabID(afterClosingIndex: closingIndex)
             selectedTabID = fallbackTabID
+            findResultMatchCount = nil
             if let fallbackTabID {
                 tabDriver.selectTab(withID: fallbackTabID)
+                runFind(forward: true, findNext: false)
             }
         }
 
@@ -651,6 +768,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
         let tabID = tabDriver.createTab(withURLString: urlString, makeActive: true)
         selectedTabID = tabID
+        findResultMatchCount = nil
         updateWindowTitle()
     }
 
@@ -737,6 +855,52 @@ private extension BrowserChromeModel {
 
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
+    }
+
+    private func handleFindQueryChange() {
+        findResultMatchCount = nil
+        guard isFindBarPresented else {
+            return
+        }
+
+        runFind(forward: true, findNext: false)
+    }
+
+    private func runFind(forward: Bool, findNext: Bool) {
+        guard canFindInPage, isFindBarPresented else {
+            return
+        }
+
+        if !findNext {
+            findResultMatchCount = nil
+        }
+
+        guard !findQuery.isEmpty else {
+            tabDriver.stopFindingInActiveTab(clearSelection: true)
+            return
+        }
+
+        tabDriver.findInActiveTab(
+            text: findQuery,
+            forward: forward,
+            matchCase: false,
+            findNext: findNext
+        )
+    }
+
+    func handleFindResult(
+        id: String,
+        matchCount: Int,
+        activeMatchOrdinal _: Int,
+        finalUpdate: Bool
+    ) {
+        guard id == selectedTabID, isFindBarPresented, !findQuery.isEmpty else {
+            return
+        }
+
+        if finalUpdate || matchCount > 0 {
+            findResultMatchCount = max(matchCount, 0)
+        }
     }
 
     func handleUpdatedTab(
@@ -830,6 +994,10 @@ private extension BrowserChromeModel {
         tabs[index].lastActivityAt = dateProvider()
     }
 
+}
+
+@MainActor
+extension BrowserChromeModel {
     func reorderedTabs(
         movingTabID: String,
         toPinnedState isPinned: Bool,
@@ -868,7 +1036,10 @@ private extension BrowserChromeModel {
 
         return updatedPinnedTabs + updatedTemporaryTabs
     }
+}
 
+@MainActor
+private extension BrowserChromeModel {
     func adjustedSectionIndex(
         _ requestedSectionIndex: Int,
         movingWithinTargetSection: Bool,

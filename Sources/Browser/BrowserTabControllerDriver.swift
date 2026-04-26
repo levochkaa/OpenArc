@@ -8,6 +8,7 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
     var onTabClosed: ((String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
+    var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -57,6 +58,27 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
 
     func saveActiveTab(withSuggestedName suggestedName: String?) {
         controller.saveActiveTab(withSuggestedName: suggestedName)
+    }
+
+    func pasteAndMatchStyleActiveTab() {
+        controller.pasteAndMatchStyleActiveTab()
+    }
+
+    func printActiveTab() {
+        controller.printActiveTab()
+    }
+
+    func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool) {
+        controller.findInActiveTab(
+            withText: text,
+            forward: forward,
+            matchCase: matchCase,
+            findNext: findNext
+        )
+    }
+
+    func stopFindingInActiveTab(clearSelection: Bool) {
+        controller.stopFindingInActiveTab(clearSelection: clearSelection)
     }
 
     func closeTab(withID tabID: String, forceClose: Bool) {
@@ -112,6 +134,18 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     ) {
         Task { @MainActor [weak self] in
             self?.onLoadingStateChanged?(tabID, isLoading)
+        }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didUpdateFindResultForTabWithID tabID: String,
+        matchCount: Int,
+        activeMatchOrdinal: Int,
+        finalUpdate: Bool
+    ) {
+        Task { @MainActor [weak self] in
+            self?.onFindResultChanged?(tabID, matchCount, activeMatchOrdinal, finalUpdate)
         }
     }
 }

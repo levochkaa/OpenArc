@@ -35,26 +35,77 @@ func layoutIndependentBridgeMapsPasteWhenPhysicalShortcutDoesNotMatchLayout() {
 }
 
 @Test
+func layoutIndependentBridgeMapsPasteAndMatchStyleWhenPhysicalShortcutDoesNotMatchLayout() {
+    let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 9,
+        modifierFlags: [.command, .shift],
+        charactersIgnoringModifiers: "M"
+    )
+
+    #expect(command == .pasteAndMatchStyle)
+}
+
+@Test
 func layoutIndependentBridgeMapsBrowserCommandsFromPhysicalKeys() {
     let settingsCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 43,
         modifierFlags: [.command],
         charactersIgnoringModifiers: "б"
     )
+    let setAsDefaultBrowserCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 2,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "в"
+    )
     let newTabCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 17,
         modifierFlags: [.command],
         charactersIgnoringModifiers: "e"
+    )
+    let archiveTabCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 13,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "ц"
     )
     let savePageCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 1,
         modifierFlags: [.command, .shift],
         charactersIgnoringModifiers: "w"
     )
+    let printPageCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 35,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "з"
+    )
     let copyLinkCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 8,
         modifierFlags: [.command, .shift],
         charactersIgnoringModifiers: "с"
+    )
+    let findInPageCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 3,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "а"
+    )
+    let findAndReplaceCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 3,
+        modifierFlags: [.command, .option],
+        charactersIgnoringModifiers: "а"
+    )
+    let findNextCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 5,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "п"
+    )
+    let findPreviousCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 5,
+        modifierFlags: [.command, .shift],
+        charactersIgnoringModifiers: "П"
+    )
+    let jumpToSelectionCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 38,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "о"
     )
     let clearTemporaryTabsCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 40,
@@ -68,9 +119,17 @@ func layoutIndependentBridgeMapsBrowserCommandsFromPhysicalKeys() {
     )
 
     #expect(settingsCommand == .openSettings)
+    #expect(setAsDefaultBrowserCommand == .setAsDefaultBrowser)
     #expect(newTabCommand == .newTab)
+    #expect(archiveTabCommand == .archiveTab)
     #expect(savePageCommand == .savePage)
+    #expect(printPageCommand == .printPage)
     #expect(copyLinkCommand == .copyLink)
+    #expect(findInPageCommand == .findInPage)
+    #expect(findAndReplaceCommand == .findAndReplace)
+    #expect(findNextCommand == .findNextInPage)
+    #expect(findPreviousCommand == .findPreviousInPage)
+    #expect(jumpToSelectionCommand == .jumpToSelection)
     #expect(clearTemporaryTabsCommand == .clearTemporaryTabs)
     #expect(goBackCommand == .goBack)
 }

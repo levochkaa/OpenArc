@@ -24,7 +24,7 @@ private final class BrowserWindowContentContainerView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -34,8 +34,13 @@ private final class BrowserWindowContentContainerView: NSView {
 }
 
 private final class BrowserMainWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        true
+    }
 
     override var styleMask: NSWindow.StyleMask {
         didSet {
@@ -71,7 +76,11 @@ private final class BrowserMainWindow: NSWindow {
 public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate, NSUserInterfaceValidations {
     private var window: NSWindow?
     private var settingsWindow: NSWindow?
+    private var aboutWindow: NSWindow?
     private var chromeModel: BrowserChromeModel?
+    private let defaultBrowserService = BrowserDefaultBrowserService()
+    private weak var setAsDefaultBrowserMenuItem: NSMenuItem?
+    private var pendingNavigationURLs: [URL] = []
     private var hasReceivedBrowserContext = false
     private var isTerminationRequested = false
     private var layoutIndependentKeyMonitor: Any?
@@ -106,6 +115,13 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
     public func applicationDidBecomeActive(_: Notification) {
         chromeModel?.handleApplicationDidBecomeActive()
+        refreshSetAsDefaultBrowserMenuItem()
+    }
+
+    public func application(_: NSApplication, open urls: [URL]) {
+        for url in urls {
+            openAboutLink(url)
+        }
     }
 
     public func windowShouldClose(_: NSWindow) -> Bool {
@@ -115,6 +131,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     public func handleBrowserContextInitialized() {
         hasReceivedBrowserContext = true
         chromeModel?.handleContextReady()
+        openPendingNavigationURLsIfPossible()
     }
 
     public func handleApplicationWillTerminate() {
@@ -127,6 +144,20 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
     public func openSettings(_: Any?) {
         presentSettingsWindow()
+    }
+
+    public func openAbout(_: Any?) {
+        presentAboutWindow()
+    }
+
+    public func setAsDefaultBrowser(_: Any?) {
+        guard !defaultBrowserService.isDefaultBrowser else {
+            refreshSetAsDefaultBrowserMenuItem()
+            return
+        }
+
+        defaultBrowserService.setAsDefaultBrowser()
+        refreshSetAsDefaultBrowserMenuItem()
     }
 
     public func requestApplicationTermination(_: Any?) {
@@ -155,6 +186,10 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         chromeModel?.toggleCommandBar()
     }
 
+    public func archiveCurrentTab(_: Any?) {
+        chromeModel?.archiveSelectedTab()
+    }
+
     public func goBack(_: Any?) {
         chromeModel?.goBack()
     }
@@ -175,9 +210,35 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         chromeModel?.saveCurrentPage()
     }
 
+    public func pasteAndMatchStyle(_ sender: Any?) {
+        _ = performPasteAndMatchStyle(sender)
+    }
+
+    public func printCurrentPage(_: Any?) {
+        chromeModel?.printCurrentPage()
+    }
+
     public func copySelectedTabLink(_: Any?) {
         chromeModel?.copySelectedTabLink()
     }
+
+    public func findInPage(_: Any?) {
+        chromeModel?.presentFindBar()
+    }
+
+    public func findAndReplace(_: Any?) {}
+
+    public func findNextInPage(_: Any?) {
+        chromeModel?.findNextInPage()
+    }
+
+    public func findPreviousInPage(_: Any?) {
+        chromeModel?.findPreviousInPage()
+    }
+
+    public func useSelectionToFind(_: Any?) {}
+
+    public func jumpToSelection(_: Any?) {}
 
     public func clearTemporaryTabs(_: Any?) {
         chromeModel?.clearTemporaryTabs()
@@ -191,6 +252,8 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         switch action {
         case #selector(createNewTab(_:)):
             return chromeModel?.canCreateTab ?? false
+        case #selector(archiveCurrentTab(_:)):
+            return chromeModel?.canArchiveSelectedTab ?? false
         case #selector(goBack(_:)):
             return chromeModel?.canGoBack ?? false
         case #selector(goForward(_:)):
@@ -199,10 +262,22 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             return chromeModel?.canReload ?? false
         case #selector(saveCurrentPage(_:)):
             return chromeModel?.canSavePage ?? false
+        case #selector(pasteAndMatchStyle(_:)):
+            return chromeModel?.canPasteAndMatchStyle ?? true
+        case #selector(printCurrentPage(_:)):
+            return chromeModel?.canPrintPage ?? false
         case #selector(copySelectedTabLink(_:)):
             return chromeModel?.canCopySelectedTabLink ?? false
+        case #selector(findInPage(_:)):
+            return true
+        case #selector(findNextInPage(_:)), #selector(findPreviousInPage(_:)):
+            return chromeModel?.canStepThroughFindMatches ?? false
+        case #selector(findAndReplace(_:)), #selector(useSelectionToFind(_:)), #selector(jumpToSelection(_:)):
+            return false
         case #selector(clearTemporaryTabs(_:)):
             return chromeModel?.canClearTemporaryTabs ?? false
+        case #selector(setAsDefaultBrowser(_:)):
+            return updateSetAsDefaultBrowserMenuItem(item as? NSMenuItem)
         default:
             return true
         }
@@ -225,11 +300,28 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
         let appMenu = NSMenu()
         let appName = ProcessInfo.processInfo.processName
+        let aboutItem = NSMenuItem(
+            title: BrowserStrings.aboutMenuItem(appName: appName),
+            action: #selector(openAbout(_:)),
+            keyEquivalent: ""
+        )
+        aboutItem.target = self
+        appMenu.addItem(aboutItem)
+        appMenu.addItem(.separator())
+
         let settingsItem = makeMenuItem(
             descriptor: BrowserCommands.openSettings,
             action: #selector(openSettings(_:))
         )
         appMenu.addItem(settingsItem)
+
+        let setAsDefaultBrowserItem = makeMenuItem(
+            descriptor: BrowserCommands.setAsDefaultBrowser,
+            action: #selector(setAsDefaultBrowser(_:))
+        )
+        setAsDefaultBrowserMenuItem = setAsDefaultBrowserItem
+        updateSetAsDefaultBrowserMenuItem(setAsDefaultBrowserItem)
+        appMenu.addItem(setAsDefaultBrowserItem)
         appMenu.addItem(.separator())
         let quitItem = NSMenuItem(
             title: BrowserStrings.quitMenuItem(appName: appName),
@@ -247,11 +339,23 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         )
         fileMenu.addItem(newTabItem)
 
+        let archiveTabItem = makeMenuItem(
+            descriptor: BrowserCommands.archiveTab,
+            action: #selector(archiveCurrentTab(_:))
+        )
+        fileMenu.addItem(archiveTabItem)
+
         let savePageItem = makeMenuItem(
             descriptor: BrowserCommands.savePage,
             action: #selector(saveCurrentPage(_:))
         )
         fileMenu.addItem(savePageItem)
+
+        let printItem = makeMenuItem(
+            descriptor: BrowserCommands.printPage,
+            action: #selector(printCurrentPage(_:))
+        )
+        fileMenu.addItem(printItem)
         fileMenuItem.submenu = fileMenu
 
         let editMenu = NSMenu(title: BrowserStrings.menuEdit)
@@ -298,6 +402,15 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
                 keyEquivalent: "v"
             )
         )
+        editMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.menuPasteAndMatchStyle,
+                action: #selector(pasteAndMatchStyle(_:)),
+                keyEquivalent: "v",
+                modifiers: [.command, .shift],
+                target: self
+            )
+        )
         editMenu.addItem(.separator())
         editMenu.addItem(
             makeStandardMenuItem(
@@ -306,6 +419,50 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
                 keyEquivalent: "a"
             )
         )
+        editMenu.addItem(.separator())
+        let findMenuItem = NSMenuItem()
+        findMenuItem.title = BrowserStrings.menuFindTitle
+        editMenu.addItem(findMenuItem)
+        let findMenu = NSMenu(title: BrowserStrings.menuFindTitle)
+        findMenu.addItem(
+            makeMenuItem(
+                descriptor: BrowserCommands.findInPage,
+                action: #selector(findInPage(_:))
+            )
+        )
+        findMenu.addItem(
+            makeMenuItem(
+                descriptor: BrowserCommands.findAndReplace,
+                action: #selector(findAndReplace(_:))
+            )
+        )
+        findMenu.addItem(
+            makeMenuItem(
+                descriptor: BrowserCommands.findNext,
+                action: #selector(findNextInPage(_:))
+            )
+        )
+        findMenu.addItem(
+            makeMenuItem(
+                descriptor: BrowserCommands.findPrevious,
+                action: #selector(findPreviousInPage(_:))
+            )
+        )
+        findMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.menuUseSelectionToFind,
+                action: #selector(useSelectionToFind(_:)),
+                keyEquivalent: "",
+                target: self
+            )
+        )
+        findMenu.addItem(
+            makeMenuItem(
+                descriptor: BrowserCommands.jumpToSelection,
+                action: #selector(jumpToSelection(_:))
+            )
+        )
+        findMenuItem.submenu = findMenu
         editMenuItem.submenu = editMenu
 
         let viewMenu = NSMenu(title: BrowserStrings.menuView)
@@ -367,7 +524,8 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         title: String,
         action: Selector,
         keyEquivalent: String,
-        modifiers: NSEvent.ModifierFlags = [.command]
+        modifiers: NSEvent.ModifierFlags = [.command],
+        target: AnyObject? = nil
     ) -> NSMenuItem {
         let item = NSMenuItem(
             title: title,
@@ -375,6 +533,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             keyEquivalent: keyEquivalent
         )
         item.keyEquivalentModifierMask = modifiers
+        item.target = target
         return item
     }
 
@@ -422,6 +581,8 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             return NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
         case .paste:
             return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
+        case .pasteAndMatchStyle:
+            return performPasteAndMatchStyle(self)
         case .selectAll:
             return NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: self)
         case .quit:
@@ -430,6 +591,13 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         case .openSettings:
             openSettings(nil)
             return true
+        case .setAsDefaultBrowser:
+            guard !defaultBrowserService.isDefaultBrowser else {
+                return false
+            }
+
+            setAsDefaultBrowser(nil)
+            return true
         case .newTab:
             guard chromeModel?.canCreateTab ?? false else {
                 return false
@@ -437,6 +605,8 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
             createNewTab(nil)
             return true
+        case .archiveTab:
+            return chromeModel?.archiveSelectedTab() ?? false
         case .savePage:
             guard chromeModel?.canSavePage ?? false else {
                 return false
@@ -444,12 +614,40 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
             saveCurrentPage(nil)
             return true
+        case .printPage:
+            guard chromeModel?.canPrintPage ?? false else {
+                return false
+            }
+
+            printCurrentPage(nil)
+            return true
         case .copyLink:
             guard chromeModel?.canCopySelectedTabLink ?? false else {
                 return false
             }
 
             return chromeModel?.copySelectedTabLink() ?? false
+        case .findInPage:
+            findInPage(nil)
+            return true
+        case .findAndReplace:
+            return false
+        case .findNextInPage:
+            guard chromeModel?.canStepThroughFindMatches ?? false else {
+                return false
+            }
+
+            findNextInPage(nil)
+            return true
+        case .findPreviousInPage:
+            guard chromeModel?.canStepThroughFindMatches ?? false else {
+                return false
+            }
+
+            findPreviousInPage(nil)
+            return true
+        case .jumpToSelection:
+            return false
         case .clearTemporaryTabs:
             guard chromeModel?.canClearTemporaryTabs ?? false else {
                 return false
@@ -493,6 +691,18 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             toggleSidebar(nil)
             return true
         }
+    }
+
+    private func performPasteAndMatchStyle(_ sender: Any?) -> Bool {
+        if NSApp.sendAction(
+            #selector(NSTextView.pasteAsPlainText(_:)),
+            to: nil,
+            from: sender ?? self
+        ) {
+            return true
+        }
+
+        return chromeModel?.pasteAndMatchStyleCurrentTab() ?? false
     }
 
     private func createMainWindow() {
@@ -543,6 +753,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
         if hasReceivedBrowserContext {
             chromeModel.handleContextReady()
+            openPendingNavigationURLsIfPossible()
         }
     }
 
@@ -592,5 +803,85 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         self.settingsWindow = settingsWindow
         settingsWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func presentAboutWindow() {
+        if let aboutWindow {
+            aboutWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let info = BrowserAboutInfo.current()
+        let rootView = BrowserAboutView(info: info) { [weak self] url in
+            self?.openAboutLink(url)
+        }
+        let hostingView = NSHostingView(rootView: rootView)
+
+        let contentSize = NSSize(
+            width: BrowserAboutLayout.windowWidth,
+            height: BrowserAboutLayout.windowHeight
+        )
+        let aboutWindow = NSWindow(
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        aboutWindow.title = BrowserStrings.aboutWindowTitle(appName: info.applicationName)
+        aboutWindow.isReleasedWhenClosed = false
+        aboutWindow.titleVisibility = .hidden
+        aboutWindow.titlebarAppearsTransparent = true
+        aboutWindow.isMovableByWindowBackground = true
+        aboutWindow.setContentSize(contentSize)
+        aboutWindow.center()
+        aboutWindow.contentView = hostingView
+
+        self.aboutWindow = aboutWindow
+        aboutWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func openAboutLink(_ url: URL) {
+        if chromeModel?.canCreateTab == true {
+            chromeModel?.openURLInNewTab(url)
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        if chromeModel != nil, !isTerminationRequested {
+            pendingNavigationURLs.append(url)
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+    }
+
+    private func openPendingNavigationURLsIfPossible() {
+        guard chromeModel?.canCreateTab == true, !pendingNavigationURLs.isEmpty else {
+            return
+        }
+
+        let urls = pendingNavigationURLs
+        pendingNavigationURLs.removeAll()
+
+        for url in urls {
+            chromeModel?.openURLInNewTab(url)
+        }
+
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @discardableResult
+    private func updateSetAsDefaultBrowserMenuItem(_ item: NSMenuItem?) -> Bool {
+        let isDefaultBrowser = defaultBrowserService.isDefaultBrowser
+        item?.state = isDefaultBrowser ? .on : .off
+        return !isDefaultBrowser
+    }
+
+    private func refreshSetAsDefaultBrowserMenuItem() {
+        setAsDefaultBrowserMenuItem?.isEnabled = updateSetAsDefaultBrowserMenuItem(setAsDefaultBrowserMenuItem)
     }
 }

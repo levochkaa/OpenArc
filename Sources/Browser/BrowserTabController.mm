@@ -3,10 +3,12 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import "Browser/SwiftBridge.h"
+#include "Shared/BrowserSchemes.h"
 #include "Shared/ClientManager.h"
 #include "Shared/ClientUtil.h"
 
 #include <atomic>
+#include <cctype>
 #include <map>
 #include <set>
 #include <string>
@@ -16,11 +18,13 @@
 #include "include/cef_client.h"
 #include "include/cef_browser.h"
 #include "include/cef_devtools_message_observer.h"
+#include "include/cef_find_handler.h"
 #include "include/cef_frame.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
 #include "include/cef_parser.h"
 #include "include/cef_permission_handler.h"
+#include "include/cef_request_handler.h"
 #include "include/cef_values.h"
 #include "include/internal/cef_mac.h"
 #include "include/wrapper/cef_closure_task.h"
@@ -1377,6 +1381,124 @@ void SavePageBrowserOnUI(CefRefPtr<CefBrowser> browser, NSString *suggested_name
           base::BindOnce(&SavePageBrowser, browser, suggested_name)));
 }
 
+void PrintBrowser(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (host) {
+    host->Print();
+  }
+}
+
+void PrintBrowserOnUI(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    PrintBrowser(browser);
+    return;
+  }
+
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&PrintBrowser, browser)));
+}
+
+void PasteAndMatchStyleBrowser(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  CefRefPtr<CefFrame> frame = browser->GetFocusedFrame();
+  if (frame) {
+    frame->PasteAndMatchStyle();
+  }
+}
+
+void PasteAndMatchStyleBrowserOnUI(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    PasteAndMatchStyleBrowser(browser);
+    return;
+  }
+
+  CefPostTask(
+      TID_UI,
+      CefCreateClosureTask(base::BindOnce(&PasteAndMatchStyleBrowser, browser)));
+}
+
+void FindBrowser(CefRefPtr<CefBrowser> browser,
+                 NSString *text,
+                 bool forward,
+                 bool match_case,
+                 bool find_next) {
+  if (!browser) {
+    return;
+  }
+
+  if (text.length == 0) {
+    CefRefPtr<CefBrowserHost> host = browser->GetHost();
+    if (host) {
+      host->StopFinding(true);
+    }
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (host) {
+    host->Find(ToStdString(text), forward, match_case, find_next);
+  }
+}
+
+void FindBrowserOnUI(CefRefPtr<CefBrowser> browser,
+                     NSString *text,
+                     bool forward,
+                     bool match_case,
+                     bool find_next) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    FindBrowser(browser, text, forward, match_case, find_next);
+    return;
+  }
+
+  CefPostTask(TID_UI,
+              CefCreateClosureTask(base::BindOnce(
+                  &FindBrowser, browser, text, forward, match_case, find_next)));
+}
+
+void StopFindingBrowser(CefRefPtr<CefBrowser> browser, bool clear_selection) {
+  if (!browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (host) {
+    host->StopFinding(clear_selection);
+  }
+}
+
+void StopFindingBrowserOnUI(CefRefPtr<CefBrowser> browser, bool clear_selection) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    StopFindingBrowser(browser, clear_selection);
+    return;
+  }
+
+  CefPostTask(TID_UI,
+              CefCreateClosureTask(
+                  base::BindOnce(&StopFindingBrowser, browser, clear_selection)));
+}
+
 void GoBackBrowser(CefRefPtr<CefBrowser> browser) {
   if (browser && browser->CanGoBack()) {
     browser->GoBack();
@@ -1434,11 +1556,125 @@ bool IsNotificationsOnlyRequest(uint32_t requestedPermissions) {
   return requestedPermissions == CEF_PERMISSION_TYPE_NOTIFICATIONS;
 }
 
+std::string URLPartToString(const cef_string_t &value) {
+  return CefString(&value).ToString();
+}
+
+std::string LowercaseASCII(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char character) {
+                   return static_cast<char>(std::tolower(character));
+                 });
+  return value;
+}
+
+std::string TheBrowserURLForChromiumInternalURL(const CefString &url) {
+  std::string urlString = LowercaseASCII(url.ToString());
+  if (urlString == "about:credits") {
+    return shared::kTheBrowserCreditsURL;
+  }
+  if (urlString == "about:settings") {
+    return shared::kTheBrowserSettingsURL;
+  }
+
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return std::string();
+  }
+
+  if (LowercaseASCII(URLPartToString(parts.scheme)) != "chrome") {
+    return std::string();
+  }
+
+  std::string host = LowercaseASCII(URLPartToString(parts.host));
+  if (host.empty()) {
+    return std::string();
+  }
+
+  std::string path = URLPartToString(parts.path);
+  if (path.empty()) {
+    path = "/";
+  }
+
+  std::string redirectURL = std::string(shared::kTheBrowserScheme) + "://" +
+                            host + path;
+  std::string query = URLPartToString(parts.query);
+  if (!query.empty()) {
+    redirectURL += "?" + query;
+  }
+  std::string fragment = URLPartToString(parts.fragment);
+  if (!fragment.empty()) {
+    redirectURL += "#" + fragment;
+  }
+  return redirectURL;
+}
+
+bool IsChromiumSettingsURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserSettingsHost;
+}
+
+bool IsTheBrowserSettingsURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) ==
+             shared::kTheBrowserScheme &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserSettingsHost;
+}
+
+std::string ChromiumSettingsURLForTheBrowserSettingsURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts) || !IsTheBrowserSettingsURL(url)) {
+    return std::string();
+  }
+
+  std::string path = URLPartToString(parts.path);
+  if (path.empty()) {
+    path = "/";
+  }
+
+  std::string chromiumURL = "chrome://" +
+                            std::string(shared::kTheBrowserSettingsHost) +
+                            path;
+  std::string query = URLPartToString(parts.query);
+  if (!query.empty()) {
+    chromiumURL += "?" + query;
+  }
+  std::string fragment = URLPartToString(parts.fragment);
+  if (!fragment.empty()) {
+    chromiumURL += "#" + fragment;
+  }
+  return chromiumURL;
+}
+
+std::string DisplayURLStringForCommittedURL(const CefString &url) {
+  if (IsChromiumSettingsURL(url)) {
+    std::string displayURL = TheBrowserURLForChromiumInternalURL(url);
+    if (!displayURL.empty()) {
+      return displayURL;
+    }
+  }
+
+  return url.ToString();
+}
+
 class BrowserTabClient final : public CefClient,
                                public CefDisplayHandler,
                                public CefLifeSpanHandler,
                                public CefLoadHandler,
-                               public CefPermissionHandler {
+                               public CefRequestHandler,
+                               public CefPermissionHandler,
+                               public CefFindHandler {
  public:
   BrowserTabClient(BrowserTabController *controller, const std::string &tabID)
       : controller_(controller), tab_id_(tabID) {}
@@ -1446,9 +1682,11 @@ class BrowserTabClient final : public CefClient,
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
+  CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override {
     return this;
   }
+  CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
 
   void OnAddressChange(CefRefPtr<CefBrowser> browser,
                        CefRefPtr<CefFrame> frame,
@@ -1463,6 +1701,17 @@ class BrowserTabClient final : public CefClient,
                             bool /*isLoading*/,
                             bool canGoBack,
                             bool canGoForward) override;
+  bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
+                      CefRefPtr<CefFrame> frame,
+                      CefRefPtr<CefRequest> request,
+                      bool user_gesture,
+                      bool is_redirect) override;
+  void OnFindResult(CefRefPtr<CefBrowser> browser,
+                    int identifier,
+                    int count,
+                    const CefRect &selectionRect,
+                    int activeMatchOrdinal,
+                    bool finalUpdate) override;
 
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
   bool DoClose(CefRefPtr<CefBrowser> browser) override;
@@ -1492,6 +1741,7 @@ class BrowserTabClient final : public CefClient,
  private:
   __weak BrowserTabController *controller_;
   const std::string tab_id_;
+  bool allow_next_chromium_settings_navigation_ = false;
 
   IMPLEMENT_REFCOUNTING(BrowserTabClient);
 };
@@ -1524,6 +1774,10 @@ struct TabRecord {
 - (void)handleNavigationStateChangeForTabID:(NSString *)tabID
                                   canGoBack:(BOOL)canGoBack
                                canGoForward:(BOOL)canGoForward;
+- (void)handleFindResultForTabID:(NSString *)tabID
+                       matchCount:(NSInteger)matchCount
+               activeMatchOrdinal:(NSInteger)activeMatchOrdinal
+                      finalUpdate:(BOOL)finalUpdate;
 - (void)openPopupTabWithURLString:(NSString *)urlString;
 - (void)syncBrowserFrames;
 - (void)updateBrowserVisibility;
@@ -1690,6 +1944,49 @@ struct TabRecord {
   SavePageBrowserOnUI(it->second.browser, suggestedName);
 }
 
+- (void)pasteAndMatchStyleActiveTab {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  PasteAndMatchStyleBrowserOnUI(it->second.browser);
+}
+
+- (void)printActiveTab {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  PrintBrowserOnUI(it->second.browser);
+}
+
+- (void)findInActiveTabWithText:(NSString *)text
+                         forward:(BOOL)forward
+                       matchCase:(BOOL)matchCase
+                        findNext:(BOOL)findNext {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  FindBrowserOnUI(it->second.browser, text, forward, matchCase, findNext);
+}
+
+- (void)stopFindingInActiveTabWithClearSelection:(BOOL)clearSelection {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  StopFindingBrowserOnUI(it->second.browser, clearSelection);
+}
+
 - (void)closeTabWithID:(NSString *)tabID {
   [self closeTabWithID:tabID forceClose:NO];
 }
@@ -1823,6 +2120,17 @@ struct TabRecord {
                               canGoForward:canGoForward];
 }
 
+- (void)handleFindResultForTabID:(NSString *)tabID
+                       matchCount:(NSInteger)matchCount
+               activeMatchOrdinal:(NSInteger)activeMatchOrdinal
+                      finalUpdate:(BOOL)finalUpdate {
+  [self.delegate browserTabController:self
+      didUpdateFindResultForTabWithID:tabID
+                           matchCount:matchCount
+                   activeMatchOrdinal:activeMatchOrdinal
+                          finalUpdate:finalUpdate];
+}
+
 - (void)openPopupTabWithURLString:(NSString *)urlString {
   [self createTabWithURLString:urlString.length > 0 ? urlString : @"about:blank"
                     makeActive:YES];
@@ -1864,7 +2172,7 @@ void BrowserTabClient::OnAddressChange(CefRefPtr<CefBrowser> browser,
     return;
   }
 
-  [controller handleAddressChange:ToNSString(url.ToString())
+  [controller handleAddressChange:ToNSString(DisplayURLStringForCommittedURL(url))
                          forTabID:ToNSString(tab_id_)];
 }
 
@@ -1916,6 +2224,64 @@ void BrowserTabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
   [controller handleNavigationStateChangeForTabID:ToNSString(tab_id_)
                                         canGoBack:canGoBack
                                      canGoForward:canGoForward];
+}
+
+bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
+                                      CefRefPtr<CefFrame> frame,
+                                      CefRefPtr<CefRequest> request,
+                                      bool user_gesture,
+                                      bool is_redirect) {
+  CEF_REQUIRE_UI_THREAD();
+
+  if (!frame || !frame->IsMain() || !request) {
+    return false;
+  }
+
+  if (allow_next_chromium_settings_navigation_ &&
+      IsChromiumSettingsURL(request->GetURL())) {
+    allow_next_chromium_settings_navigation_ = false;
+    return false;
+  }
+  allow_next_chromium_settings_navigation_ = false;
+
+  std::string redirectURL =
+      TheBrowserURLForChromiumInternalURL(request->GetURL());
+  if (!redirectURL.empty()) {
+    frame->LoadURL(redirectURL);
+    return true;
+  }
+
+  if (IsTheBrowserSettingsURL(request->GetURL())) {
+    std::string chromiumSettingsURL =
+        ChromiumSettingsURLForTheBrowserSettingsURL(request->GetURL());
+    if (chromiumSettingsURL.empty()) {
+      chromiumSettingsURL = shared::kChromiumSettingsURL;
+    }
+    allow_next_chromium_settings_navigation_ = true;
+    frame->LoadURL(chromiumSettingsURL);
+    return true;
+  }
+
+  return false;
+}
+
+void BrowserTabClient::OnFindResult(CefRefPtr<CefBrowser>,
+                                    int,
+                                    int count,
+                                    const CefRect &,
+                                    int activeMatchOrdinal,
+                                    bool finalUpdate) {
+  CEF_REQUIRE_UI_THREAD();
+
+  BrowserTabController *controller = controller_;
+  if (controller == nil) {
+    return;
+  }
+
+  [controller handleFindResultForTabID:ToNSString(tab_id_)
+                            matchCount:count
+                    activeMatchOrdinal:activeMatchOrdinal
+                           finalUpdate:finalUpdate];
 }
 
 void BrowserTabClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {

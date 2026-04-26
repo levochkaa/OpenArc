@@ -22,6 +22,7 @@ BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
                                      NSString** main_bundle_path,
                                      NSString** root_cache_path,
                                      NSString** cache_path);
+NSString* BrowserChromiumVersionString(void);
 
 void BrowserRequestNotificationPermission(NSString* origin,
                                           BrowserPermissionCompletion completion);

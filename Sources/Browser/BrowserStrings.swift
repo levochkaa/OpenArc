@@ -51,10 +51,22 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut(",")
     )
 
+    static let setAsDefaultBrowser = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuSetAsDefaultBrowser,
+        helpTitle: BrowserStrings.menuSetAsDefaultBrowser,
+        shortcut: BrowserKeyboardShortcut("d")
+    )
+
     static let newTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNewTab,
         helpTitle: BrowserStrings.sidebarNewTab,
         shortcut: BrowserKeyboardShortcut("t")
+    )
+
+    static let archiveTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.tabArchiveAction,
+        helpTitle: BrowserStrings.tabArchiveTooltip,
+        shortcut: BrowserKeyboardShortcut("w")
     )
 
     static let savePage = BrowserCommandDescriptor(
@@ -63,10 +75,46 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("s", modifiers: [.command, .shift])
     )
 
+    static let printPage = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuPrint,
+        helpTitle: BrowserStrings.menuPrint,
+        shortcut: BrowserKeyboardShortcut("p")
+    )
+
     static let copyLink = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.tabCopyLinkAction,
         helpTitle: BrowserStrings.tabCopyLinkAction,
         shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .shift])
+    )
+
+    static let findInPage = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuFind,
+        helpTitle: BrowserStrings.menuFind,
+        shortcut: BrowserKeyboardShortcut("f")
+    )
+
+    static let findAndReplace = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuFindAndReplace,
+        helpTitle: BrowserStrings.menuFindAndReplace,
+        shortcut: BrowserKeyboardShortcut("f", modifiers: [.command, .option])
+    )
+
+    static let findNext = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuFindNext,
+        helpTitle: BrowserStrings.menuFindNext,
+        shortcut: BrowserKeyboardShortcut("g")
+    )
+
+    static let findPrevious = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuFindPrevious,
+        helpTitle: BrowserStrings.menuFindPrevious,
+        shortcut: BrowserKeyboardShortcut("g", modifiers: [.command, .shift])
+    )
+
+    static let jumpToSelection = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuJumpToSelection,
+        helpTitle: BrowserStrings.menuJumpToSelection,
+        shortcut: BrowserKeyboardShortcut("j")
     )
 
     static let clearTemporaryTabs = BrowserCommandDescriptor(
@@ -112,12 +160,21 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case cut
     case copy
     case paste
+    case pasteAndMatchStyle
     case selectAll
     case quit
     case openSettings
+    case setAsDefaultBrowser
     case newTab
+    case archiveTab
     case savePage
+    case printPage
     case copyLink
+    case findInPage
+    case findAndReplace
+    case findNextInPage
+    case findPreviousInPage
+    case jumpToSelection
     case clearTemporaryTabs
     case goBack
     case goForward
@@ -183,12 +240,21 @@ enum BrowserKeyboardShortcutBridge {
         ShortcutMatch(command: .cut, keyEquivalent: "x", modifiers: [.command]),
         ShortcutMatch(command: .copy, keyEquivalent: "c", modifiers: [.command]),
         ShortcutMatch(command: .paste, keyEquivalent: "v", modifiers: [.command]),
+        ShortcutMatch(command: .pasteAndMatchStyle, keyEquivalent: "v", modifiers: [.command, .shift]),
         ShortcutMatch(command: .selectAll, keyEquivalent: "a", modifiers: [.command]),
         ShortcutMatch(command: .quit, keyEquivalent: "q", modifiers: [.command]),
         ShortcutMatch(command: .openSettings, shortcut: BrowserCommands.openSettings.shortcut),
+        ShortcutMatch(command: .setAsDefaultBrowser, shortcut: BrowserCommands.setAsDefaultBrowser.shortcut),
         ShortcutMatch(command: .newTab, shortcut: BrowserCommands.newTab.shortcut),
+        ShortcutMatch(command: .archiveTab, shortcut: BrowserCommands.archiveTab.shortcut),
         ShortcutMatch(command: .savePage, shortcut: BrowserCommands.savePage.shortcut),
+        ShortcutMatch(command: .printPage, shortcut: BrowserCommands.printPage.shortcut),
         ShortcutMatch(command: .copyLink, shortcut: BrowserCommands.copyLink.shortcut),
+        ShortcutMatch(command: .findInPage, shortcut: BrowserCommands.findInPage.shortcut),
+        ShortcutMatch(command: .findAndReplace, shortcut: BrowserCommands.findAndReplace.shortcut),
+        ShortcutMatch(command: .findNextInPage, shortcut: BrowserCommands.findNext.shortcut),
+        ShortcutMatch(command: .findPreviousInPage, shortcut: BrowserCommands.findPrevious.shortcut),
+        ShortcutMatch(command: .jumpToSelection, shortcut: BrowserCommands.jumpToSelection.shortcut),
         ShortcutMatch(command: .clearTemporaryTabs, shortcut: BrowserCommands.clearTemporaryTabs.shortcut),
         ShortcutMatch(command: .goBack, shortcut: BrowserCommands.goBack.shortcut),
         ShortcutMatch(command: .goForward, shortcut: BrowserCommands.goForward.shortcut),
@@ -207,6 +273,12 @@ enum BrowserKeyboardShortcutBridge {
             "a"
         case 1:
             "s"
+        case 2:
+            "d"
+        case 3:
+            "f"
+        case 5:
+            "g"
         case 6:
             "z"
         case 7:
@@ -219,10 +291,16 @@ enum BrowserKeyboardShortcutBridge {
             "b"
         case 12:
             "q"
+        case 13:
+            "w"
         case 15:
             "r"
         case 17:
             "t"
+        case 35:
+            "p"
+        case 38:
+            "j"
         case 40:
             "k"
         case 30:
@@ -288,6 +366,26 @@ enum BrowserStrings {
         comment: "Placeholder shown in the command bar search field."
     )
 
+    static let findBarPlaceholder = NSLocalizedString(
+        "browser.find_bar.placeholder",
+        comment: "Placeholder shown in the page find field."
+    )
+
+    static let findBarPreviousMatch = NSLocalizedString(
+        "browser.find_bar.previous_match",
+        comment: "Tooltip for moving to the previous in-page search match."
+    )
+
+    static let findBarNextMatch = NSLocalizedString(
+        "browser.find_bar.next_match",
+        comment: "Tooltip for moving to the next in-page search match."
+    )
+
+    static let findBarClose = NSLocalizedString(
+        "browser.find_bar.close",
+        comment: "Tooltip for closing the page find bar."
+    )
+
     static let menuFile = NSLocalizedString(
         "browser.menu.file",
         comment: "File menu title."
@@ -303,9 +401,59 @@ enum BrowserStrings {
         comment: "View menu title."
     )
 
+    static let menuFindTitle = NSLocalizedString(
+        "browser.menu.find.title",
+        comment: "Find submenu title."
+    )
+
     static let menuSettings = NSLocalizedString(
         "browser.menu.settings",
         comment: "Settings menu item title."
+    )
+
+    static let menuSetAsDefaultBrowser = NSLocalizedString(
+        "browser.menu.set_as_default_browser",
+        comment: "Set as Default Browser menu item title."
+    )
+
+    static let aboutUnknownVersion = NSLocalizedString(
+        "browser.about.unknown_version",
+        comment: "Fallback version text when a bundle version is unavailable."
+    )
+
+    static let aboutCopyright = NSLocalizedString(
+        "browser.about.copyright",
+        comment: "Copyright text shown in the About window."
+    )
+
+    static let aboutMadePossiblePrefix = NSLocalizedString(
+        "browser.about.made_possible.prefix",
+        comment: "Opening text before the Chromium project link in the About window credits paragraph."
+    )
+
+    static let aboutChromiumProjectLinkTitle = NSLocalizedString(
+        "browser.about.chromium_project_link",
+        comment: "Linked Chromium project name in the About window credits paragraph."
+    )
+
+    static let aboutMadePossibleChromiumProjectSuffix = NSLocalizedString(
+        "browser.about.made_possible.chromium_project_suffix",
+        comment: "Text after the Chromium project link and before Chromium credits link in the About window."
+    )
+
+    static let aboutOpenSourceSoftwareLinkTitle = NSLocalizedString(
+        "browser.about.open_source_software_link",
+        comment: "Linked open source software phrase in the About window credits paragraph."
+    )
+
+    static let aboutMadePossibleOtherPrefix = NSLocalizedString(
+        "browser.about.made_possible.other_prefix",
+        comment: "Text between the Chromium credits link and TheBrowser credits link in the About window."
+    )
+
+    static let aboutMadePossibleSuffix = NSLocalizedString(
+        "browser.about.made_possible.suffix",
+        comment: "Closing punctuation for the About window credits paragraph."
     )
 
     static let menuUndo = NSLocalizedString(
@@ -333,9 +481,44 @@ enum BrowserStrings {
         comment: "Paste menu item title."
     )
 
+    static let menuPasteAndMatchStyle = NSLocalizedString(
+        "browser.menu.paste_and_match_style",
+        comment: "Paste and Match Style menu item title."
+    )
+
     static let menuSelectAll = NSLocalizedString(
         "browser.menu.select_all",
         comment: "Select All menu item title."
+    )
+
+    static let menuFind = NSLocalizedString(
+        "browser.menu.find",
+        comment: "Find menu item title."
+    )
+
+    static let menuFindAndReplace = NSLocalizedString(
+        "browser.menu.find_and_replace",
+        comment: "Find and Replace menu item title."
+    )
+
+    static let menuFindNext = NSLocalizedString(
+        "browser.menu.find_next",
+        comment: "Find Next menu item title."
+    )
+
+    static let menuFindPrevious = NSLocalizedString(
+        "browser.menu.find_previous",
+        comment: "Find Previous menu item title."
+    )
+
+    static let menuUseSelectionToFind = NSLocalizedString(
+        "browser.menu.use_selection_to_find",
+        comment: "Use Selection to Find menu item title."
+    )
+
+    static let menuJumpToSelection = NSLocalizedString(
+        "browser.menu.jump_to_selection",
+        comment: "Jump to Selection menu item title."
     )
 
     static let menuNewTab = NSLocalizedString(
@@ -346,6 +529,11 @@ enum BrowserStrings {
     static let menuSavePageAs = NSLocalizedString(
         "browser.menu.save_page_as",
         comment: "Save Page As menu item title."
+    )
+
+    static let menuPrint = NSLocalizedString(
+        "browser.menu.print",
+        comment: "Print menu item title."
     )
 
     static let menuForceRefresh = NSLocalizedString(
@@ -470,6 +658,47 @@ enum BrowserStrings {
                 comment: "Quit menu item title with the app name placeholder."
             ),
             appName
+        )
+    }
+
+    static func aboutMenuItem(appName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.menu.about",
+                comment: "About menu item title with the app name placeholder."
+            ),
+            appName
+        )
+    }
+
+    static func aboutWindowTitle(appName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.about.window_title",
+                comment: "About window title with the app name placeholder."
+            ),
+            appName
+        )
+    }
+
+    static func aboutApplicationVersion(marketingVersion: String, buildVersion: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.about.application_version",
+                comment: "Application version text with marketing version and build number placeholders."
+            ),
+            marketingVersion,
+            buildVersion
+        )
+    }
+
+    static func aboutChromiumVersion(_ chromiumVersion: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.about.chromium_version",
+                comment: "Chromium version text with the Chromium version placeholder."
+            ),
+            chromiumVersion
         )
     }
 

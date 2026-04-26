@@ -30,6 +30,12 @@ NS_ASSUME_NONNULL_BEGIN
                                isLoading:(BOOL)isLoading;
 
 - (void)browserTabController:(BrowserTabController *)controller
+    didUpdateFindResultForTabWithID:(NSString *)tabID
+                         matchCount:(NSInteger)matchCount
+                 activeMatchOrdinal:(NSInteger)activeMatchOrdinal
+                        finalUpdate:(BOOL)finalUpdate;
+
+- (void)browserTabController:(BrowserTabController *)controller
               didCloseTabWithID:(NSString *)tabID;
 
 @end
@@ -54,6 +60,15 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)reloadActiveTabIgnoringCache;
 - (void)stopLoadingActiveTab;
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
+- (void)pasteAndMatchStyleActiveTab;
+- (void)printActiveTab;
+- (void)findInActiveTabWithText:(NSString *)text
+                         forward:(BOOL)forward
+                       matchCase:(BOOL)matchCase
+                        findNext:(BOOL)findNext
+    NS_SWIFT_NAME(findInActiveTab(withText:forward:matchCase:findNext:));
+- (void)stopFindingInActiveTabWithClearSelection:(BOOL)clearSelection
+    NS_SWIFT_NAME(stopFindingInActiveTab(clearSelection:));
 - (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;
 - (void)closeTabWithID:(NSString *)tabID;
 - (void)closeAllTabs;

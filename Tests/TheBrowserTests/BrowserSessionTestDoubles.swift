@@ -15,6 +15,13 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
         let forceClose: Bool
     }
 
+    struct FindRequest: Equatable {
+        let text: String
+        let forward: Bool
+        let matchCase: Bool
+        let findNext: Bool
+    }
+
     let hostView = NSView(frame: .zero)
 
     var onTabCreated: ((String, String, String) -> Void)?
@@ -22,14 +29,19 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
     var onTabClosed: ((String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
+    var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
 
     private(set) var createdTabRequests: [CreatedTabRequest] = []
     private(set) var selectedTabIDs: [String] = []
     private(set) var closedTabRequests: [CloseTabRequest] = []
     private(set) var saveSuggestedNames: [String?] = []
+    private(set) var pasteAndMatchStyleCount = 0
+    private(set) var findRequests: [FindRequest] = []
+    private(set) var stopFindingClearSelectionRequests: [Bool] = []
     private(set) var reloadCount = 0
     private(set) var forceReloadCount = 0
     private(set) var stopLoadingCount = 0
+    private(set) var printCount = 0
     private(set) var goBackCount = 0
     private(set) var goForwardCount = 0
 
@@ -82,6 +94,29 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
         saveSuggestedNames.append(suggestedName)
     }
 
+    func pasteAndMatchStyleActiveTab() {
+        pasteAndMatchStyleCount += 1
+    }
+
+    func printActiveTab() {
+        printCount += 1
+    }
+
+    func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool) {
+        findRequests.append(
+            FindRequest(
+                text: text,
+                forward: forward,
+                matchCase: matchCase,
+                findNext: findNext
+            )
+        )
+    }
+
+    func stopFindingInActiveTab(clearSelection: Bool) {
+        stopFindingClearSelectionRequests.append(clearSelection)
+    }
+
     func closeTab(withID tabID: String, forceClose: Bool) {
         closedTabRequests.append(CloseTabRequest(id: tabID, forceClose: forceClose))
     }
@@ -105,6 +140,10 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
 
     func emitLoadingStateChange(id: String, isLoading: Bool) {
         onLoadingStateChanged?(id, isLoading)
+    }
+
+    func emitFindResult(id: String, matchCount: Int, activeMatchOrdinal: Int = 0, finalUpdate: Bool = true) {
+        onFindResultChanged?(id, matchCount, activeMatchOrdinal, finalUpdate)
     }
 
     private func defaultTitle(for urlString: String) -> String {

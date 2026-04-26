@@ -3,6 +3,7 @@
 #import "TheBrowser-Swift.h"
 
 #include "Shared/ClientManager.h"
+#include "include/cef_version.h"
 
 namespace {
 
@@ -74,6 +75,12 @@ BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
   }
 
   return YES;
+}
+
+NSString* BrowserChromiumVersionString(void) {
+  return [NSString
+      stringWithFormat:@"%d.%d.%d.%d", CHROME_VERSION_MAJOR, CHROME_VERSION_MINOR,
+                       CHROME_VERSION_BUILD, CHROME_VERSION_PATCH];
 }
 
 void BrowserRequestNotificationPermission(NSString* origin,

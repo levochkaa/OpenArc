@@ -1,3 +1,4 @@
+import DomainParser
 import Foundation
 import Network
 
@@ -11,6 +12,12 @@ struct BrowserNavigationResolver {
         let kind: Kind
         let displayText: String
         let resolvedURLString: String
+    }
+
+    private let domainParser: any BrowserDomainParsing
+
+    init(domainParser: any BrowserDomainParsing = BrowserPublicSuffixDomainParser.shared) {
+        self.domainParser = domainParser
     }
 
     func resolve(_ rawInput: String) -> Resolution? {
@@ -60,10 +67,34 @@ struct BrowserNavigationResolver {
     }
 
     private func hasExplicitScheme(_ input: String) -> Bool {
-        input.range(
-            of: #"^[A-Za-z][A-Za-z0-9+\-.]*:"#,
-            options: .regularExpression
-        ) != nil
+        guard let colonIndex = input.firstIndex(of: ":") else {
+            return false
+        }
+
+        let schemeCandidate = input[..<colonIndex]
+        guard
+            schemeCandidate.range(
+                of: #"^[A-Za-z][A-Za-z0-9+\-.]*$"#,
+                options: .regularExpression
+            ) != nil
+        else {
+            return false
+        }
+
+        let remainder = input[input.index(after: colonIndex)...]
+        if isLikelyBareHostPort(schemeCandidate: schemeCandidate, remainder: remainder) {
+            return false
+        }
+
+        return true
+    }
+
+    private func isLikelyBareHostPort(schemeCandidate: Substring, remainder: Substring) -> Bool {
+        guard remainder.first?.isNumber == true else {
+            return false
+        }
+
+        return schemeCandidate.caseInsensitiveCompare("localhost") == .orderedSame || schemeCandidate.contains(".")
     }
 
     private func isValidResolvedURL(
@@ -122,15 +153,11 @@ struct BrowserNavigationResolver {
             return false
         }
 
-        guard let topLevelLabel = labels.last else {
-            return false
-        }
-
         if labels.count == 1 {
             return true
         }
 
-        return isValidTopLevelDomainLabel(topLevelLabel)
+        return isKnownPublicSuffixOrRegistrableDomainHost(host)
     }
 
     private func isValidDomainLabel(_ label: Substring) -> Bool {
@@ -150,13 +177,12 @@ struct BrowserNavigationResolver {
         return label.unicodeScalars.allSatisfy(isDomainLabelCharacter)
     }
 
-    private func isValidTopLevelDomainLabel(_ label: Substring) -> Bool {
-        let lowercasedLabel = label.lowercased()
-        if lowercasedLabel.hasPrefix("xn--") {
-            return lowercasedLabel.count > 4 && isValidDomainLabel(Substring(lowercasedLabel))
+    private func isKnownPublicSuffixOrRegistrableDomainHost(_ host: String) -> Bool {
+        guard let parsedHost = domainParser.parse(host: host) else {
+            return false
         }
 
-        return label.count >= 2 && label.unicodeScalars.allSatisfy(isASCIIAlpha)
+        return parsedHost.registrableDomain != nil || parsedHost.publicSuffix.caseInsensitiveCompare(host) == .orderedSame
     }
 
     private func isDomainLabelCharacter(_ scalar: UnicodeScalar) -> Bool {
@@ -192,5 +218,48 @@ struct BrowserNavigationResolver {
         components.path = "/search"
         components.queryItems = [URLQueryItem(name: "q", value: query)]
         return components.url?.absoluteString ?? "https://www.google.com/search?q=\(query)"
+    }
+}
+
+struct BrowserParsedHost: Equatable {
+    let publicSuffix: String
+    let registrableDomain: String?
+}
+
+protocol BrowserDomainParsing {
+    func parse(host: String) -> BrowserParsedHost?
+}
+
+struct BrowserPublicSuffixDomainParser: BrowserDomainParsing {
+    static let shared: any BrowserDomainParsing = {
+        do {
+            return try BrowserPublicSuffixDomainParser()
+        } catch {
+            assertionFailure("Failed to initialize DomainParser: \(error)")
+            return BrowserNoopDomainParser()
+        }
+    }()
+
+    private let parser: DomainParser
+
+    init() throws {
+        parser = try DomainParser()
+    }
+
+    func parse(host: String) -> BrowserParsedHost? {
+        guard let parsedHost = parser.parse(host: host.lowercased()) else {
+            return nil
+        }
+
+        return BrowserParsedHost(
+            publicSuffix: parsedHost.publicSuffix,
+            registrableDomain: parsedHost.domain
+        )
+    }
+}
+
+private struct BrowserNoopDomainParser: BrowserDomainParsing {
+    func parse(host: String) -> BrowserParsedHost? {
+        nil
     }
 }

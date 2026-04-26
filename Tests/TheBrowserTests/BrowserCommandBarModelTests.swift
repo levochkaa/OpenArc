@@ -26,6 +26,70 @@ func resolveTreatsBareDomainAsURL() {
 }
 
 @Test
+func resolveTreatsPublicSuffixListDomainAsURL() {
+    let resolver = BrowserNavigationResolver()
+    let resolution = resolver.resolve("docs.google.co.uk")
+
+    #expect(resolution?.kind == .url)
+    #expect(resolution?.resolvedURLString == "https://docs.google.co.uk")
+}
+
+@Test
+func resolveTreatsLocalhostAsURL() {
+    let resolver = BrowserNavigationResolver()
+    let resolution = resolver.resolve("localhost:3000")
+
+    #expect(resolution?.kind == .url)
+    #expect(resolution?.resolvedURLString == "https://localhost:3000")
+}
+
+@Test
+func resolveTreatsLocalhostAsURLWithoutDomainParser() {
+    let resolver = BrowserNavigationResolver(domainParser: RejectingDomainParser())
+    let resolution = resolver.resolve("localhost:3000")
+
+    #expect(resolution?.kind == .url)
+    #expect(resolution?.resolvedURLString == "https://localhost:3000")
+}
+
+@Test
+func resolveTreatsBareDomainWithPortAsURL() {
+    let resolver = BrowserNavigationResolver()
+    let resolution = resolver.resolve("openai.com:443/research")
+
+    #expect(resolution?.kind == .url)
+    #expect(resolution?.resolvedURLString == "https://openai.com:443/research")
+}
+
+@Test
+func resolvePreservesTheBrowserInternalURL() {
+    let resolver = BrowserNavigationResolver()
+    let resolution = resolver.resolve("tb://settings")
+
+    #expect(
+        resolution == BrowserNavigationResolver.Resolution(
+            kind: .url,
+            displayText: "tb://settings",
+            resolvedURLString: "tb://settings"
+        )
+    )
+}
+
+@Test
+func resolvePreservesChromiumInternalURL() {
+    let resolver = BrowserNavigationResolver()
+    let resolution = resolver.resolve("chrome://settings")
+
+    #expect(
+        resolution == BrowserNavigationResolver.Resolution(
+            kind: .url,
+            displayText: "chrome://settings",
+            resolvedURLString: "chrome://settings"
+        )
+    )
+}
+
+@Test
 func resolveRejectsTrailingDotHost() throws {
     let resolver = BrowserNavigationResolver()
     let resolution = try #require(resolver.resolve("Google."))
@@ -290,4 +354,10 @@ private func queryValue(from urlString: String?, name: String) -> String? {
         .queryItems?
         .first(where: { $0.name == name })?
         .value
+}
+
+private struct RejectingDomainParser: BrowserDomainParsing {
+    func parse(host: String) -> BrowserParsedHost? {
+        nil
+    }
 }

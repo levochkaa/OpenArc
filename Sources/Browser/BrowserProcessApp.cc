@@ -1,5 +1,7 @@
 #include "Browser/SwiftBridge.h"
+#include "Browser/BrowserSchemeHandlers.h"
 #include "Shared/AppFactory.h"
+#include "Shared/BrowserSchemes.h"
 
 namespace browser {
 
@@ -19,7 +21,13 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
     }
   }
 
+  void OnRegisterCustomSchemes(
+      CefRawPtr<CefSchemeRegistrar> registrar) override {
+    shared::RegisterTheBrowserCustomSchemes(registrar);
+  }
+
   void OnContextInitialized() override {
+    RegisterBrowserSchemeHandlers();
     ::BrowserContextInitialized();
   }
 

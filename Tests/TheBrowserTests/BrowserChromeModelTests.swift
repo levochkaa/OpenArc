@@ -456,6 +456,40 @@ func archiveTabsBelowUsesVisibleSidebarOrder() {
 
 @Test
 @MainActor
+func archiveSelectedTabClosesCurrentTabAndSelectsFallback() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let firstTabID = model.tabs[0].id
+    let secondTabID = model.tabs[1].id
+    let thirdTabID = model.tabs[2].id
+
+    model.selectTab(id: secondTabID)
+
+    #expect(model.canArchiveSelectedTab)
+    #expect(model.archiveSelectedTab())
+
+    #expect(model.tabs.map(\.id) == [firstTabID, thirdTabID])
+    #expect(model.selectedTabID == thirdTabID)
+    #expect(driver.selectedTabIDs.last == thirdTabID)
+    #expect(driver.closedTabRequests.last == FakeBrowserTabDriver.CloseTabRequest(id: secondTabID, forceClose: false))
+}
+
+@Test
+@MainActor
 func expiredTemporaryTabsArchiveButPinnedTabsRemain() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
@@ -667,6 +701,168 @@ func loadingStateSwitchesToStopActionWithoutAffectingReloadAvailability() throws
     driver.emitLoadingStateChange(id: tabID, isLoading: false)
 
     #expect(!model.canStopLoading)
+}
+
+@Test
+@MainActor
+func printCurrentPageRequiresReadySelectedTab() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    #expect(!model.canPrintPage)
+    model.printCurrentPage()
+    #expect(driver.printCount == 0)
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    #expect(model.canPrintPage)
+    model.printCurrentPage()
+    #expect(driver.printCount == 1)
+}
+
+@Test
+@MainActor
+func pasteAndMatchStyleRequiresReadySelectedTab() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    #expect(!model.canPasteAndMatchStyle)
+    #expect(!model.pasteAndMatchStyleCurrentTab())
+    #expect(driver.pasteAndMatchStyleCount == 0)
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    #expect(model.canPasteAndMatchStyle)
+    #expect(model.pasteAndMatchStyleCurrentTab())
+    #expect(driver.pasteAndMatchStyleCount == 1)
+}
+
+@Test
+@MainActor
+func findBarRunsSearchAndClearsSelectionOnDismiss() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    #expect(!model.canFindInPage)
+    model.presentFindBar()
+    #expect(!model.isFindBarPresented)
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    #expect(model.canFindInPage)
+    model.presentFindBar()
+
+    #expect(model.isFindBarPresented)
+    #expect(model.findBarFocusRequest == 1)
+    #expect(driver.stopFindingClearSelectionRequests == [true])
+    #expect(driver.findRequests.isEmpty)
+
+    model.findQuery = "browser"
+
+    #expect(model.canStepThroughFindMatches)
+    #expect(
+        driver.findRequests.last == FakeBrowserTabDriver.FindRequest(
+            text: "browser",
+            forward: true,
+            matchCase: false,
+            findNext: false
+        )
+    )
+
+    model.findNextInPage()
+    model.findPreviousInPage()
+
+    #expect(Array(driver.findRequests.suffix(2)) == [
+        FakeBrowserTabDriver.FindRequest(
+            text: "browser",
+            forward: true,
+            matchCase: false,
+            findNext: true
+        ),
+        FakeBrowserTabDriver.FindRequest(
+            text: "browser",
+            forward: false,
+            matchCase: false,
+            findNext: true
+        ),
+    ])
+
+    model.dismissFindBar()
+
+    #expect(!model.isFindBarPresented)
+    #expect(driver.stopFindingClearSelectionRequests == [true, true])
+}
+
+@Test
+@MainActor
+func findBarUsesFindResultsToDisableMatchStepping() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.presentFindBar()
+    model.findQuery = "missing"
+
+    let selectedTabID = try #require(model.selectedTabID)
+    #expect(model.canStepThroughFindMatches)
+
+    driver.emitFindResult(id: selectedTabID, matchCount: 0, finalUpdate: false)
+    #expect(model.canStepThroughFindMatches)
+
+    driver.emitFindResult(id: selectedTabID, matchCount: 0, finalUpdate: true)
+    #expect(!model.canStepThroughFindMatches)
+
+    let findRequestCount = driver.findRequests.count
+    model.findNextInPage()
+    model.findPreviousInPage()
+
+    #expect(driver.findRequests.count == findRequestCount)
+
+    model.findQuery = "browser"
+    #expect(model.canStepThroughFindMatches)
+
+    driver.emitFindResult(id: selectedTabID, matchCount: 2, activeMatchOrdinal: 1)
+    #expect(model.canStepThroughFindMatches)
+}
+
+@Test
+@MainActor
+func presentingFindBarAgainRefreshesFocusRequest() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    model.presentFindBar()
+    model.presentFindBar()
+
+    #expect(model.isFindBarPresented)
+    #expect(model.findBarFocusRequest == 2)
 }
 
 @MainActor

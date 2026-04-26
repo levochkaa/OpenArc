@@ -70,7 +70,14 @@ if [[ ! -d "$CEF_FRAMEWORK_SOURCE" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$CEF_ROOT/CREDITS.html" ]]; then
+  echo "error: CEF credits not found at $CEF_ROOT/CREDITS.html" >&2
+  echo "Run ./script/chromium.sh ensure $CONFIGURATION first." >&2
+  exit 1
+fi
+
 mkdir -p "$APP_FRAMEWORKS_DIR"
+mkdir -p "$APP_RESOURCES_DIR"
 rm -rf "$CEF_FRAMEWORK_DEST" "$HELPER_DEST"
 rm -rf "$RESOURCE_HELPER_DEST"
 rm -rf "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Alerts).app"
@@ -81,6 +88,7 @@ rm -rf "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Renderer).app"
 ditto "$CEF_FRAMEWORK_SOURCE" "$CEF_FRAMEWORK_DEST"
 create_versioned_cef_framework "$CEF_FRAMEWORK_DEST"
 ditto "$HELPER_BUNDLE" "$HELPER_DEST"
+ditto "$CEF_ROOT/CREDITS.html" "$APP_RESOURCES_DIR/CEFCredits.html"
 
 create_helper_variant " (Alerts)" ".alerts"
 create_helper_variant " (GPU)" ".gpu"

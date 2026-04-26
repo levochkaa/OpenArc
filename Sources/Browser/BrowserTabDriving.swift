@@ -9,6 +9,7 @@ protocol BrowserTabDriving: AnyObject {
     var onTabClosed: ((String) -> Void)? { get set }
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)? { get set }
     var onLoadingStateChanged: ((String, Bool) -> Void)? { get set }
+    var onFindResultChanged: ((String, Int, Int, Bool) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     func selectTab(withID tabID: String)
@@ -18,5 +19,9 @@ protocol BrowserTabDriving: AnyObject {
     func reloadActiveTabIgnoringCache()
     func stopLoadingActiveTab()
     func saveActiveTab(withSuggestedName suggestedName: String?)
+    func pasteAndMatchStyleActiveTab()
+    func printActiveTab()
+    func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)
+    func stopFindingInActiveTab(clearSelection: Bool)
     func closeTab(withID tabID: String, forceClose: Bool)
 }
