@@ -5,8 +5,13 @@ common --repository_cache=~/.cache/bazel/thebrowser/repository
 build --macos_cpus=arm64
 build --action_env=PATH
 build --action_env=DEVELOPER_DIR
-# rules_python tool launchers run from Bazel's external repository. Without
-# this they can write __pycache__ there, making the next Bazel invocation refetch it.
+# rules_python tool launchers run from Bazel's external repository during both
+# repository fetches and build actions. Without this they can write __pycache__
+# there, making the next Bazel invocation refetch it.
+common --repo_env=PYTHONDONTWRITEBYTECODE=1
+common --repo_env=RULES_PYTHON_ADDITIONAL_INTERPRETER_ARGS=-B
+common --host_action_env=PYTHONDONTWRITEBYTECODE=1
+common --host_action_env=RULES_PYTHON_ADDITIONAL_INTERPRETER_ARGS=-B
 build --action_env=PYTHONDONTWRITEBYTECODE=1
 build --action_env=RULES_PYTHON_ADDITIONAL_INTERPRETER_ARGS=-B
 test --action_env=PYTHONDONTWRITEBYTECODE=1
