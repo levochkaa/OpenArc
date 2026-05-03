@@ -269,7 +269,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         case #selector(copySelectedTabLink(_:)):
             return chromeModel?.canCopySelectedTabLink ?? false
         case #selector(findInPage(_:)):
-            return true
+            return chromeModel?.canFindInPage ?? false
         case #selector(findNextInPage(_:)), #selector(findPreviousInPage(_:)):
             return chromeModel?.canStepThroughFindMatches ?? false
         case #selector(findAndReplace(_:)), #selector(useSelectionToFind(_:)), #selector(jumpToSelection(_:)):
@@ -628,6 +628,10 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
             return chromeModel?.copySelectedTabLink() ?? false
         case .findInPage:
+            guard chromeModel?.canFindInPage ?? false else {
+                return false
+            }
+
             findInPage(nil)
             return true
         case .findAndReplace:

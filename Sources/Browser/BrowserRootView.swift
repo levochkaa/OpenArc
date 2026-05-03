@@ -287,19 +287,22 @@ struct BrowserRootView: View {
                     .zIndex(9)
                 }
 
-                BrowserFindBarOverlay(
-                    model: model,
-                    blockedLeadingInset: sidebarLayoutWidth
-                )
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .zIndex(8)
+                if !usesDetachedBrowserOverlays {
+                    BrowserFindBarOverlay(
+                        model: model,
+                        blockedLeadingInset: sidebarLayoutWidth
+                    )
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .zIndex(8)
 
-                BrowserCommandBarOverlay(
-                    model: commandBarModel,
-                    blockedLeadingInset: sidebarLayoutWidth
-                )
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .zIndex(10)
+                    BrowserCommandBarOverlay(
+                        model: commandBarModel,
+                        blockedLeadingInset: sidebarLayoutWidth
+                    )
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .zIndex(10)
+                }
+
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
         }
@@ -307,7 +310,46 @@ struct BrowserRootView: View {
         .clipped()
         .environmentObject(tooltipCoordinator)
         .overlayPreferenceValue(BrowserTooltipPreferenceKey.self) { values in
-            BrowserTooltipOverlay(entries: values)
+            GeometryReader { proxy in
+                let tooltipEntries = values.map { entry in
+                    BrowserResolvedTooltipEntry(
+                        id: entry.id,
+                        sourceFrame: proxy[entry.bounds],
+                        title: entry.title,
+                        caption: entry.caption,
+                        shortcut: entry.shortcut
+                    )
+                }
+
+                if usesDetachedBrowserOverlays {
+                    BrowserDetachedOverlayWindowRepresentable(
+                        isVisible: model.isFindBarPresented || commandBarModel.isPresented,
+                        isInteractive: true,
+                        contentFrameLeadingInset: sidebarLayoutWidth,
+                        content: BrowserDetachedControlsOverlayContent(
+                            model: model,
+                            commandBarModel: commandBarModel,
+                            blockedLeadingInset: 0
+                        )
+                        .environmentObject(tooltipCoordinator)
+                    )
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .allowsHitTesting(false)
+
+                    BrowserDetachedOverlayWindowRepresentable(
+                        isVisible: !tooltipEntries.isEmpty,
+                        isInteractive: false,
+                        contentFrameLeadingInset: 0,
+                        content: BrowserTooltipOverlay(entries: tooltipEntries)
+                    )
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .allowsHitTesting(false)
+                } else {
+                    BrowserTooltipOverlay(entries: tooltipEntries)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .allowsHitTesting(false)
+                }
+            }
         }
         .onChange(of: model.isSidebarVisible) { _, isSidebarVisible in
             if isSidebarVisible {
@@ -329,6 +371,10 @@ struct BrowserRootView: View {
 
     private var sidebarVisibilityAnimationValue: CGFloat {
         model.isSidebarVisible ? 1 : 0
+    }
+
+    private var usesDetachedBrowserOverlays: Bool {
+        model.selectedTabUsesWindowedBrowser
     }
 
     private var sidebarSnapshot: BrowserSidebarSnapshot {
@@ -595,7 +641,6 @@ private struct BrowserSidebarView: View {
     @State private var newTabButtonWindowFrame: CGRect?
     @State private var renamingTabID: String?
     @State private var draggedTabID: String?
-    @State private var draggedTabSource: BrowserSidebarTabDropTarget?
     @State private var dropTarget: BrowserSidebarTabDropTarget?
     @StateObject private var dragPreviewStore = BrowserSidebarTabDragPreviewStore()
     @State private var suppressedTabSelectionAfterDragID: String?
@@ -997,7 +1042,6 @@ private struct BrowserSidebarView: View {
 
         dismissRenamingIfNeeded()
         draggedTabID = tabID
-        draggedTabSource = sourceTabLocation(for: tabID)
         withoutSidebarDragAnimation {
             dragPreviewStore.begin(
                 BrowserSidebarTabDragPreviewState(
@@ -1089,15 +1133,15 @@ private struct BrowserSidebarView: View {
     }
 
     private func canMoveDraggedTab(to target: BrowserSidebarTabDropTarget) -> Bool {
-        guard
-            draggedTabID != nil,
-            let draggedTabSource,
-            let finalTarget = finalDropTarget(from: draggedTabSource, requestedTarget: target)
-        else {
+        guard let draggedTabID else {
             return false
         }
 
-        return finalTarget != draggedTabSource
+        return model.canMoveTab(
+            withID: draggedTabID,
+            toPinnedState: target.section.isPinned,
+            atSectionIndex: target.sectionIndex
+        )
     }
 
     private func moveDraggedTab(to target: BrowserSidebarTabDropTarget) {
@@ -1117,50 +1161,8 @@ private struct BrowserSidebarView: View {
         }
     }
 
-    private func finalDropTarget(
-        from source: BrowserSidebarTabDropTarget,
-        requestedTarget: BrowserSidebarTabDropTarget
-    ) -> BrowserSidebarTabDropTarget? {
-        var sectionIndex = max(requestedTarget.sectionIndex, 0)
-        let movesWithinSection = source.section == requestedTarget.section
-
-        if movesWithinSection, source.sectionIndex < sectionIndex {
-            sectionIndex -= 1
-        }
-
-        let sectionCount = tabCount(in: requestedTarget.section) - (movesWithinSection ? 1 : 0)
-        sectionIndex = min(max(sectionIndex, 0), max(sectionCount, 0))
-
-        return BrowserSidebarTabDropTarget(
-            section: requestedTarget.section,
-            sectionIndex: sectionIndex
-        )
-    }
-
-    private func sourceTabLocation(for tabID: String) -> BrowserSidebarTabDropTarget? {
-        if let sectionIndex = snapshot.pinnedTabs.firstIndex(where: { $0.id == tabID }) {
-            return BrowserSidebarTabDropTarget(section: .pinned, sectionIndex: sectionIndex)
-        }
-
-        if let sectionIndex = snapshot.temporaryTabs.firstIndex(where: { $0.id == tabID }) {
-            return BrowserSidebarTabDropTarget(section: .temporary, sectionIndex: sectionIndex)
-        }
-
-        return nil
-    }
-
-    private func tabCount(in section: BrowserSidebarTabSection) -> Int {
-        switch section {
-        case .pinned:
-            snapshot.pinnedTabs.count
-        case .temporary:
-            snapshot.temporaryTabs.count
-        }
-    }
-
     private func clearTabDragState() {
         draggedTabID = nil
-        draggedTabSource = nil
         dropTarget = nil
         dragPreviewStore.clear()
     }
@@ -1848,6 +1850,7 @@ private struct BrowserCommandBarOverlay: View {
                     previewDisplayText: model.previewDisplayText,
                     inlineCompletionSuffix: model.inlineCompletionSuffix,
                     isFocused: model.isPresented,
+                    focusRequestID: model.focusRequestID,
                     onMoveUp: { model.moveSelection(by: -1) },
                     onMoveDown: { model.moveSelection(by: 1) },
                     onAcceptCompletion: { _ = model.acceptSelectedSuggestion() },
@@ -1996,6 +1999,7 @@ private struct BrowserCommandQueryTextField: NSViewRepresentable {
     let previewDisplayText: String?
     let inlineCompletionSuffix: String?
     let isFocused: Bool
+    let focusRequestID: Int
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
     let onAcceptCompletion: () -> Void
@@ -2034,7 +2038,8 @@ private struct BrowserCommandQueryTextField: NSViewRepresentable {
             text: text,
             previewDisplayText: previewDisplayText,
             inlineCompletionSuffix: inlineCompletionSuffix,
-            shouldFocus: isFocused
+            shouldFocus: isFocused,
+            focusRequestID: focusRequestID
         )
     }
 
@@ -2130,6 +2135,7 @@ private final class BrowserCommandNSTextField: NSTextField {
     fileprivate private(set) var isApplyingPresentation = false
 
     private var pendingFocus = false
+    private var lastFocusRequestID = -1
     private var committedText = ""
     private var previewDisplayText: String?
     private var inlineCompletionSuffix: String?
@@ -2190,17 +2196,20 @@ private final class BrowserCommandNSTextField: NSTextField {
         text: String,
         previewDisplayText: String?,
         inlineCompletionSuffix: String?,
-        shouldFocus: Bool
+        shouldFocus: Bool,
+        focusRequestID: Int
     ) {
         committedText = text
         self.previewDisplayText = previewDisplayText
         self.inlineCompletionSuffix = inlineCompletionSuffix
         pendingFocus = shouldFocus
         syncDisplayedText()
-        syncFocus(shouldFocus)
+        let shouldForceFocus = focusRequestID != lastFocusRequestID
+        lastFocusRequestID = focusRequestID
+        syncFocus(shouldFocus, force: shouldForceFocus)
     }
 
-    private func syncFocus(_ shouldFocus: Bool) {
+    private func syncFocus(_ shouldFocus: Bool, force: Bool = false) {
         pendingFocus = shouldFocus
 
         guard let window else {
@@ -2211,27 +2220,40 @@ private final class BrowserCommandNSTextField: NSTextField {
         let isEditing = window.firstResponder === currentEditor || window.firstResponder === self
 
         if shouldFocus {
-            guard !isEditing else {
+            guard force || !isEditing else {
                 syncDisplayedText()
                 applyEditorAppearance()
                 return
             }
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.window != nil else {
-                    return
-                }
-
-                _ = self.window?.makeFirstResponder(self)
-                syncDisplayedText()
-                applyEditorAppearance()
-            }
+            requestFocusOnNextRunLoop()
             return
         }
 
         if isEditing {
             window.makeFirstResponder(nil)
         }
+    }
+
+    private func requestFocusOnNextRunLoop() {
+        DispatchQueue.main.async { [weak self] in
+            self?.focusIfPossible()
+
+            DispatchQueue.main.async { [weak self] in
+                self?.focusIfPossible()
+            }
+        }
+    }
+
+    private func focusIfPossible() {
+        guard window != nil else {
+            return
+        }
+
+        window?.makeKey()
+        _ = window?.makeFirstResponder(self)
+        syncDisplayedText()
+        applyEditorAppearance()
     }
 
     private var desiredDisplayText: String {
@@ -2749,15 +2771,21 @@ private struct BrowserTooltipPreferenceKey: PreferenceKey {
     }
 }
 
+private struct BrowserResolvedTooltipEntry {
+    let id: UUID
+    let sourceFrame: CGRect
+    let title: String
+    let caption: String?
+    let shortcut: BrowserKeyboardShortcut?
+}
+
 private struct BrowserTooltipOverlay: View {
-    let entries: [BrowserTooltipPreferenceEntry]
+    let entries: [BrowserResolvedTooltipEntry]
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 ForEach(entries, id: \.id) { entry in
-                    let sourceFrame = proxy[entry.bounds]
-
                     BrowserShortcutTooltip(
                         title: entry.title,
                         caption: entry.caption,
@@ -2765,8 +2793,10 @@ private struct BrowserTooltipOverlay: View {
                     )
                     .fixedSize()
                     .offset(
-                        x: sourceFrame.minX + sourceFrame.width * BrowserChromeLayout.tooltipAnchorXFraction,
-                        y: sourceFrame.minY + sourceFrame.height * BrowserChromeLayout.tooltipAnchorYFraction
+                        x: entry.sourceFrame.minX
+                            + entry.sourceFrame.width * BrowserChromeLayout.tooltipAnchorXFraction,
+                        y: entry.sourceFrame.minY
+                            + entry.sourceFrame.height * BrowserChromeLayout.tooltipAnchorYFraction
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
                 }
@@ -3517,6 +3547,186 @@ private struct BrowserContentView: View {
             ),
             style: .continuous
         )
+    }
+}
+
+private struct BrowserDetachedControlsOverlayContent: View {
+    @ObservedObject var model: BrowserChromeModel
+    @ObservedObject var commandBarModel: BrowserCommandBarModel
+    let blockedLeadingInset: CGFloat
+
+    var body: some View {
+        ZStack {
+            BrowserFindBarOverlay(
+                model: model,
+                blockedLeadingInset: blockedLeadingInset
+            )
+            .zIndex(8)
+
+            BrowserCommandBarOverlay(
+                model: commandBarModel,
+                blockedLeadingInset: blockedLeadingInset
+            )
+            .zIndex(10)
+        }
+    }
+}
+
+private struct BrowserDetachedOverlayWindowRepresentable<Content: View>: NSViewRepresentable {
+    let isVisible: Bool
+    let isInteractive: Bool
+    let contentFrameLeadingInset: CGFloat
+    let content: Content
+
+    func makeNSView(context _: Context) -> BrowserDetachedOverlayHostView<Content> {
+        BrowserDetachedOverlayHostView(
+            rootView: content,
+            isVisible: isVisible,
+            isInteractive: isInteractive,
+            contentFrameLeadingInset: contentFrameLeadingInset
+        )
+    }
+
+    func updateNSView(_ nsView: BrowserDetachedOverlayHostView<Content>, context _: Context) {
+        nsView.update(
+            rootView: content,
+            isVisible: isVisible,
+            isInteractive: isInteractive,
+            contentFrameLeadingInset: contentFrameLeadingInset
+        )
+    }
+}
+
+private final class BrowserDetachedOverlayPanel: NSPanel {
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
+}
+
+private final class BrowserDetachedOverlayHostView<Content: View>: NSView {
+    private var overlayPanel: BrowserDetachedOverlayPanel?
+    private var hostingView: NSHostingView<Content>
+    private var isVisible: Bool
+    private var isInteractive: Bool
+    private var contentFrameLeadingInset: CGFloat
+
+    init(rootView: Content, isVisible: Bool, isInteractive: Bool, contentFrameLeadingInset: CGFloat) {
+        hostingView = NSHostingView(rootView: rootView)
+        self.isVisible = isVisible
+        self.isInteractive = isInteractive
+        self.contentFrameLeadingInset = contentFrameLeadingInset
+        super.init(frame: .zero)
+    }
+
+    deinit {
+        detachPanel()
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncPanel()
+    }
+
+    override func layout() {
+        super.layout()
+        syncPanelFrame()
+    }
+
+    func update(rootView: Content, isVisible: Bool, isInteractive: Bool, contentFrameLeadingInset: CGFloat) {
+        hostingView.rootView = rootView
+        self.isVisible = isVisible
+        self.isInteractive = isInteractive
+        self.contentFrameLeadingInset = contentFrameLeadingInset
+        syncPanel()
+    }
+
+    private func syncPanel() {
+        guard let window else {
+            detachPanel()
+            return
+        }
+
+        let panel = overlayPanel ?? makePanel()
+        overlayPanel = panel
+        panel.ignoresMouseEvents = !isInteractive
+
+        guard isVisible else {
+            panel.orderOut(nil)
+            return
+        }
+
+        if panel.parent !== window {
+            panel.parent?.removeChildWindow(panel)
+            window.addChildWindow(panel, ordered: .above)
+        } else {
+            panel.parent?.removeChildWindow(panel)
+            window.addChildWindow(panel, ordered: .above)
+        }
+
+        syncPanelFrame()
+        panel.orderFront(nil)
+    }
+
+    private func makePanel() -> BrowserDetachedOverlayPanel {
+        let panel = BrowserDetachedOverlayPanel(
+            contentRect: .zero,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.level = .floating
+        panel.collectionBehavior = [.fullScreenAuxiliary, .transient, .ignoresCycle]
+
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.safeAreaRegions = []
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView = hostingView
+        return panel
+    }
+
+    private func syncPanelFrame() {
+        guard let panel = overlayPanel, let window else {
+            return
+        }
+
+        var windowFrame = convert(bounds, to: nil)
+        if contentFrameLeadingInset > 0 {
+            let inset = min(contentFrameLeadingInset, windowFrame.width)
+            windowFrame.origin.x += inset
+            windowFrame.size.width -= inset
+        }
+
+        let screenFrame = window.convertToScreen(windowFrame)
+        guard !screenFrame.isEmpty else {
+            panel.orderOut(nil)
+            return
+        }
+
+        panel.setFrame(screenFrame, display: true)
+    }
+
+    private func detachPanel() {
+        guard let overlayPanel else {
+            return
+        }
+
+        overlayPanel.parent?.removeChildWindow(overlayPanel)
+        overlayPanel.orderOut(nil)
     }
 }
 

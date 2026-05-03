@@ -414,6 +414,54 @@ func movingWithinPinnedSectionReordersPinnedTabs() {
 
 @Test
 @MainActor
+func movingTabsBetweenSectionEndsKeepsMovedTabsSelectable() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let firstTabID = model.tabs[0].id
+    let secondTabID = model.tabs[1].id
+    let thirdTabID = model.tabs[2].id
+    let fourthTabID = model.tabs[3].id
+
+    model.togglePinned(forTabID: firstTabID)
+    model.togglePinned(forTabID: secondTabID)
+    model.selectTab(id: thirdTabID)
+    model.moveTab(withID: thirdTabID, toPinnedState: true, atSectionIndex: model.pinnedTabs.count)
+
+    #expect(model.tabs.map(\.id) == [firstTabID, secondTabID, thirdTabID, fourthTabID])
+    #expect(model.pinnedTabs.map(\.id) == [firstTabID, secondTabID, thirdTabID])
+    #expect(model.temporaryTabs.map(\.id) == [fourthTabID])
+    #expect(model.selectedTabID == thirdTabID)
+    #expect(preferencesStore.storedSelectedTabIndex == 2)
+
+    model.moveTab(withID: firstTabID, toPinnedState: false, atSectionIndex: model.temporaryTabs.count)
+    model.selectTab(id: firstTabID)
+
+    #expect(model.tabs.map(\.id) == [secondTabID, thirdTabID, fourthTabID, firstTabID])
+    #expect(model.pinnedTabs.map(\.id) == [secondTabID, thirdTabID])
+    #expect(model.temporaryTabs.map(\.id) == [fourthTabID, firstTabID])
+    #expect(model.selectedTabID == firstTabID)
+    #expect(driver.selectedTabIDs.last == firstTabID)
+    #expect(preferencesStore.storedSelectedTabIndex == 3)
+}
+
+@Test
+@MainActor
 func archiveTabsBelowUsesVisibleSidebarOrder() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
@@ -806,6 +854,64 @@ func findBarRunsSearchAndClearsSelectionOnDismiss() {
 
     #expect(!model.isFindBarPresented)
     #expect(driver.stopFindingClearSelectionRequests == [true, true])
+}
+
+@Test
+@MainActor
+func findBarIsDisabledForWindowedSettingsTabs() throws {
+    for urlString in ["tb://settings", "tb://settings/privacy", "chrome://settings", "about:settings"] {
+        let driver = FakeBrowserTabDriver()
+        let model = makeModel(
+            driver: driver,
+            snapshotStore: InMemorySessionSnapshotStore(),
+            preferencesStore: InMemorySessionPreferencesStore()
+        )
+
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        model.openURLInNewTab(try #require(URL(string: urlString)))
+        driver.flushPendingCreateEvents()
+
+        #expect(model.selectedTabUsesWindowedBrowser)
+        #expect(!model.canFindInPage)
+
+        model.presentFindBar()
+
+        #expect(!model.isFindBarPresented)
+        #expect(driver.findRequests.isEmpty)
+    }
+}
+
+@Test
+@MainActor
+func selectingWindowedSettingsTabDismissesFindBar() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let normalTabID = try #require(model.selectedTabID)
+
+    model.openURLInNewTab(try #require(URL(string: "tb://settings/privacy")))
+    driver.flushPendingCreateEvents()
+    let settingsTabID = try #require(model.selectedTabID)
+
+    model.selectTab(id: normalTabID)
+    model.presentFindBar()
+    model.findQuery = "browser"
+    let findRequestCount = driver.findRequests.count
+
+    model.selectTab(id: settingsTabID)
+
+    #expect(model.selectedTabUsesWindowedBrowser)
+    #expect(!model.canFindInPage)
+    #expect(!model.isFindBarPresented)
+    #expect(driver.findRequests.count == findRequestCount)
+    #expect(Array(driver.stopFindingClearSelectionRequests.suffix(2)) == [true, true])
 }
 
 @Test

@@ -96,6 +96,7 @@ final class BrowserCommandBarModel: ObservableObject {
     static let maximumVisibleSuggestions = 5
 
     @Published private(set) var isPresented = false
+    @Published private(set) var focusRequestID = 0
     @Published var query = "" {
         didSet {
             handleQueryChange()
@@ -182,6 +183,7 @@ final class BrowserCommandBarModel: ObservableObject {
 
     func present() {
         suggestionLoadTask?.cancel()
+        focusRequestID += 1
         isPresented = true
         query = ""
     }

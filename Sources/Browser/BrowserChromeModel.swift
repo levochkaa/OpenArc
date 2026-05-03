@@ -141,7 +141,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     var canFindInPage: Bool {
-        canCreateTab && selectedTabID != nil
+        canCreateTab && selectedTab != nil && !selectedTabUsesWindowedBrowser
     }
 
     var canStepThroughFindMatches: Bool {
@@ -154,6 +154,14 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
     var canCopySelectedTabLink: Bool {
         selectedTab != nil
+    }
+
+    var selectedTabUsesWindowedBrowser: Bool {
+        guard let selectedTab else {
+            return false
+        }
+
+        return Self.usesWindowedBrowser(for: selectedTab.urlString)
     }
 
     var canArchiveSelectedTab: Bool {
@@ -564,9 +572,9 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
     func selectTab(id: String) {
         guard
+            let targetTab = tabs.first(where: { $0.id == id }),
             selectedTabID != id,
-            !closingTabIDs.contains(id),
-            tabs.contains(where: { $0.id == id })
+            !closingTabIDs.contains(id)
         else {
             return
         }
@@ -575,13 +583,20 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             commandBarModel.dismiss()
         }
 
+        let targetUsesWindowedBrowser = Self.usesWindowedBrowser(for: targetTab.urlString)
+        if targetUsesWindowedBrowser {
+            dismissFindBar()
+        }
+
         selectedTabID = id
         findResultMatchCount = nil
         tabDriver.selectTab(withID: id)
         touchTab(id: id)
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
-        runFind(forward: true, findNext: false)
+        if !targetUsesWindowedBrowser {
+            runFind(forward: true, findNext: false)
+        }
     }
 
     func closeTab(id: String, forceClose: Bool = false) {
@@ -601,11 +616,17 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             findResultMatchCount = nil
         } else if selectedTabID == id {
             let fallbackTabID = fallbackTabID(afterClosingIndex: closingIndex)
+            let fallbackUsesWindowedBrowser = fallbackTabID.map { tabUsesWindowedBrowser(id: $0) } ?? false
+            if fallbackUsesWindowedBrowser {
+                dismissFindBar()
+            }
             selectedTabID = fallbackTabID
             findResultMatchCount = nil
             if let fallbackTabID {
                 tabDriver.selectTab(withID: fallbackTabID)
-                runFind(forward: true, findNext: false)
+                if !fallbackUsesWindowedBrowser {
+                    runFind(forward: true, findNext: false)
+                }
             }
         }
 
@@ -830,6 +851,30 @@ private extension BrowserChromeModel {
         return nil
     }
 
+    func tabUsesWindowedBrowser(id: String) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == id }) else {
+            return false
+        }
+
+        return Self.usesWindowedBrowser(for: tab.urlString)
+    }
+
+    static func usesWindowedBrowser(for urlString: String) -> Bool {
+        if urlString.caseInsensitiveCompare("about:settings") == .orderedSame {
+            return true
+        }
+
+        guard
+            let components = URLComponents(string: urlString),
+            let scheme = components.scheme?.lowercased(),
+            let host = components.host?.lowercased()
+        else {
+            return false
+        }
+
+        return (scheme == "tb" || scheme == "chrome") && host == "settings"
+    }
+
     func handleCreatedTab(id: String, title: String, urlString: String) {
         let restoredTab = isRestoringSession && !pendingRestoredTabs.isEmpty ? pendingRestoredTabs.removeFirst() : nil
         tabs.append(
@@ -923,6 +968,10 @@ private extension BrowserChromeModel {
             tabs[index].urlString = urlString
             tabs[index].lastActivityAt = dateProvider()
             didChangePersistentURL = true
+        }
+
+        if id == selectedTabID, Self.usesWindowedBrowser(for: tabs[index].urlString) {
+            dismissFindBar()
         }
 
         if let faviconURLString {
