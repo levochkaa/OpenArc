@@ -1,13 +1,36 @@
 import AppKit
 import Foundation
 
-struct BrowserKeyboardShortcut {
+struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
     let keyEquivalent: String
     let modifiers: NSEvent.ModifierFlags
 
     init(_ keyEquivalent: String, modifiers: NSEvent.ModifierFlags = [.command]) {
         self.keyEquivalent = keyEquivalent
         self.modifiers = modifiers
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case keyEquivalent
+        case modifiersRawValue
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        keyEquivalent = try container.decode(String.self, forKey: .keyEquivalent)
+        let modifiersRawValue = try container.decode(NSEvent.ModifierFlags.RawValue.self, forKey: .modifiersRawValue)
+        modifiers = NSEvent.ModifierFlags(rawValue: modifiersRawValue)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(keyEquivalent, forKey: .keyEquivalent)
+        try container.encode(modifiers.rawValue, forKey: .modifiersRawValue)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(keyEquivalent)
+        hasher.combine(modifiers.rawValue)
     }
 
     var keyCaps: [String] {
@@ -154,6 +177,37 @@ enum BrowserCommands {
     )
 }
 
+enum BrowserSpaceShortcuts {
+    static let maximumIndexedSpaces = 4
+
+    static func shortcut(forSpaceIndex index: Int) -> BrowserKeyboardShortcut? {
+        guard (0..<maximumIndexedSpaces).contains(index) else {
+            return nil
+        }
+
+        return BrowserKeyboardShortcut("\(index + 1)", modifiers: [.control])
+    }
+
+    static func spaceIndex(forPhysicalKeyCode keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) -> Int? {
+        guard modifierFlags.intersection(.deviceIndependentFlagsMask) == [.control] else {
+            return nil
+        }
+
+        switch keyCode {
+        case 18:
+            return 0
+        case 19:
+            return 1
+        case 20:
+            return 2
+        case 21:
+            return 3
+        default:
+            return nil
+        }
+    }
+}
+
 enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case undo
     case redo
@@ -187,7 +241,8 @@ enum BrowserKeyboardShortcutBridge {
     static func commandForLayoutIndependentDispatch(
         keyCode: UInt16,
         modifierFlags: NSEvent.ModifierFlags,
-        charactersIgnoringModifiers: String?
+        charactersIgnoringModifiers: String?,
+        shortcutResolver: BrowserShortcutResolving? = nil
     ) -> BrowserLayoutIndependentShortcutCommand? {
         let normalizedModifiers = modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard normalizedModifiers.contains(.command) else {
@@ -202,7 +257,7 @@ enum BrowserKeyboardShortcutBridge {
             return nil
         }
 
-        return shortcutMatches.first {
+        return shortcutMatches(shortcutResolver: shortcutResolver).first {
             $0.keyEquivalent == usKeyEquivalent && $0.modifiers == normalizedModifiers
         }?.command
     }
@@ -234,34 +289,28 @@ enum BrowserKeyboardShortcutBridge {
         }
     }
 
-    private static let shortcutMatches: [ShortcutMatch] = [
-        ShortcutMatch(command: .undo, keyEquivalent: "z", modifiers: [.command]),
-        ShortcutMatch(command: .redo, keyEquivalent: "z", modifiers: [.command, .shift]),
-        ShortcutMatch(command: .cut, keyEquivalent: "x", modifiers: [.command]),
-        ShortcutMatch(command: .copy, keyEquivalent: "c", modifiers: [.command]),
-        ShortcutMatch(command: .paste, keyEquivalent: "v", modifiers: [.command]),
-        ShortcutMatch(command: .pasteAndMatchStyle, keyEquivalent: "v", modifiers: [.command, .shift]),
-        ShortcutMatch(command: .selectAll, keyEquivalent: "a", modifiers: [.command]),
-        ShortcutMatch(command: .quit, keyEquivalent: "q", modifiers: [.command]),
-        ShortcutMatch(command: .openSettings, shortcut: BrowserCommands.openSettings.shortcut),
-        ShortcutMatch(command: .setAsDefaultBrowser, shortcut: BrowserCommands.setAsDefaultBrowser.shortcut),
-        ShortcutMatch(command: .newTab, shortcut: BrowserCommands.newTab.shortcut),
-        ShortcutMatch(command: .archiveTab, shortcut: BrowserCommands.archiveTab.shortcut),
-        ShortcutMatch(command: .savePage, shortcut: BrowserCommands.savePage.shortcut),
-        ShortcutMatch(command: .printPage, shortcut: BrowserCommands.printPage.shortcut),
-        ShortcutMatch(command: .copyLink, shortcut: BrowserCommands.copyLink.shortcut),
-        ShortcutMatch(command: .findInPage, shortcut: BrowserCommands.findInPage.shortcut),
-        ShortcutMatch(command: .findAndReplace, shortcut: BrowserCommands.findAndReplace.shortcut),
-        ShortcutMatch(command: .findNextInPage, shortcut: BrowserCommands.findNext.shortcut),
-        ShortcutMatch(command: .findPreviousInPage, shortcut: BrowserCommands.findPrevious.shortcut),
-        ShortcutMatch(command: .jumpToSelection, shortcut: BrowserCommands.jumpToSelection.shortcut),
-        ShortcutMatch(command: .clearTemporaryTabs, shortcut: BrowserCommands.clearTemporaryTabs.shortcut),
-        ShortcutMatch(command: .goBack, shortcut: BrowserCommands.goBack.shortcut),
-        ShortcutMatch(command: .goForward, shortcut: BrowserCommands.goForward.shortcut),
-        ShortcutMatch(command: .reload, shortcut: BrowserCommands.reload.shortcut),
-        ShortcutMatch(command: .forceReload, shortcut: BrowserCommands.forceReload.shortcut),
-        ShortcutMatch(command: .toggleSidebar, shortcut: BrowserCommands.toggleSidebar.shortcut),
-    ]
+    private static func shortcutMatches(shortcutResolver: BrowserShortcutResolving?) -> [ShortcutMatch] {
+        var matches = [
+            ShortcutMatch(command: .undo, keyEquivalent: "z", modifiers: [.command]),
+            ShortcutMatch(command: .redo, keyEquivalent: "z", modifiers: [.command, .shift]),
+            ShortcutMatch(command: .cut, keyEquivalent: "x", modifiers: [.command]),
+            ShortcutMatch(command: .copy, keyEquivalent: "c", modifiers: [.command]),
+            ShortcutMatch(command: .paste, keyEquivalent: "v", modifiers: [.command]),
+            ShortcutMatch(command: .pasteAndMatchStyle, keyEquivalent: "v", modifiers: [.command, .shift]),
+            ShortcutMatch(command: .selectAll, keyEquivalent: "a", modifiers: [.command]),
+            ShortcutMatch(command: .quit, keyEquivalent: "q", modifiers: [.command]),
+        ]
+
+        matches.append(
+            contentsOf: BrowserCommandID.allCases.map { commandID in
+                ShortcutMatch(
+                    command: commandID.layoutIndependentCommand,
+                    shortcut: shortcutResolver?.shortcut(for: commandID) ?? commandID.defaultDescriptor.shortcut
+                )
+            }
+        )
+        return matches
+    }
 
     private static func normalizedCharacters(from characters: String?) -> String? {
         characters?.lowercased()
@@ -329,6 +378,31 @@ enum BrowserStrings {
     static let sidebarNewTab = NSLocalizedString(
         "browser.sidebar.new_tab",
         comment: "Sidebar button title for creating a new tab."
+    )
+
+    static func defaultSpaceTitle(index: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.space.default_title",
+                comment: "Default title for a newly created browser space. The argument is the 1-based space number."
+            ),
+            index
+        )
+    }
+
+    static let spaceRenameAction = NSLocalizedString(
+        "browser.space.rename_action",
+        comment: "Context menu title for renaming a space."
+    )
+
+    static let spaceChangeIconAction = NSLocalizedString(
+        "browser.space.change_icon_action",
+        comment: "Context menu title for changing a space icon."
+    )
+
+    static let spaceNewAction = NSLocalizedString(
+        "browser.space.new_action",
+        comment: "Tooltip title for creating a new space."
     )
 
     static let sidebarHide = NSLocalizedString(
@@ -551,6 +625,11 @@ enum BrowserStrings {
         comment: "Clear Temporary Tabs menu item title."
     )
 
+    static let quitShortcutTitle = NSLocalizedString(
+        "browser.menu.quit_shortcut_title",
+        comment: "Conflict title for the system quit shortcut."
+    )
+
     static let sidebarClearTemporaryTabs = NSLocalizedString(
         "browser.sidebar.clear_temporary_tabs",
         comment: "Button title for clearing temporary tabs."
@@ -629,6 +708,226 @@ enum BrowserStrings {
     static let settingsGeneralTab = NSLocalizedString(
         "browser.settings.general",
         comment: "Title for the general settings tab."
+    )
+
+    static let settingsWindowTitle = NSLocalizedString(
+        "browser.settings.window_title",
+        comment: "Title for the settings window."
+    )
+
+    static let settingsAccountsTab = NSLocalizedString(
+        "browser.settings.accounts",
+        comment: "Title for the accounts settings tab."
+    )
+
+    static let settingsAccountsCurrentAccounts = NSLocalizedString(
+        "browser.settings.accounts.current_accounts",
+        comment: "Title for the current accounts section."
+    )
+
+    static let settingsAccountsEmpty = NSLocalizedString(
+        "browser.settings.accounts.empty",
+        comment: "Empty state text for accounts."
+    )
+
+    static let settingsAutomaticUpdates = NSLocalizedString(
+        "browser.settings.general.automatic_updates",
+        comment: "Automatic updates setting title."
+    )
+
+    static let settingsAutomaticUpdatesDetail = NSLocalizedString(
+        "browser.settings.general.automatic_updates.detail",
+        comment: "Automatic updates row detail."
+    )
+
+    static let settingsWarnBeforeQuitting = NSLocalizedString(
+        "browser.settings.general.warn_before_quitting",
+        comment: "Warn before quitting setting title."
+    )
+
+    static let settingsProfilesTab = NSLocalizedString(
+        "browser.settings.profiles",
+        comment: "Title for the profiles settings tab."
+    )
+
+    static let settingsProfilesIntro = NSLocalizedString(
+        "browser.settings.profiles.intro",
+        comment: "Intro copy for profiles."
+    )
+
+    static let settingsDefaultProfile = NSLocalizedString(
+        "browser.settings.profiles.default_profile",
+        comment: "Default profile title."
+    )
+
+    static let settingsDefaultProfileDetail = NSLocalizedString(
+        "browser.settings.profiles.default_profile.detail",
+        comment: "Default profile detail."
+    )
+
+    static let settingsSearchEngine = NSLocalizedString(
+        "browser.settings.profiles.search_engine",
+        comment: "Search engine setting title."
+    )
+
+    static let settingsSearchEngineGoogle = NSLocalizedString(
+        "browser.settings.search_engine.google",
+        comment: "Google search engine picker title."
+    )
+
+    static let settingsSearchEngineMicrosoftBing = NSLocalizedString(
+        "browser.settings.search_engine.microsoft_bing",
+        comment: "Microsoft Bing search engine picker title."
+    )
+
+    static let settingsSearchEngineYahoo = NSLocalizedString(
+        "browser.settings.search_engine.yahoo",
+        comment: "Yahoo search engine picker title."
+    )
+
+    static let settingsSearchEngineDuckDuckGo = NSLocalizedString(
+        "browser.settings.search_engine.duckduckgo",
+        comment: "DuckDuckGo search engine picker title."
+    )
+
+    static let settingsSearchEngineYandex = NSLocalizedString(
+        "browser.settings.search_engine.yandex",
+        comment: "Yandex search engine picker title."
+    )
+
+    static let settingsSearchEnginePerplexity = NSLocalizedString(
+        "browser.settings.search_engine.perplexity",
+        comment: "Perplexity search engine picker title."
+    )
+
+    static let settingsManageSearch = NSLocalizedString(
+        "browser.settings.profiles.manage_search",
+        comment: "Manage search button title."
+    )
+
+    static let settingsSearchSuggestions = NSLocalizedString(
+        "browser.settings.profiles.search_suggestions",
+        comment: "Search engine suggestions toggle title."
+    )
+
+    static let settingsPrivacyAndSecurity = NSLocalizedString(
+        "browser.settings.profiles.privacy_and_security",
+        comment: "Privacy and security settings link title."
+    )
+
+    static let settingsPasswords = NSLocalizedString(
+        "browser.settings.profiles.passwords",
+        comment: "Passwords settings link title."
+    )
+
+    static let settingsCreditCards = NSLocalizedString(
+        "browser.settings.profiles.credit_cards",
+        comment: "Credit cards settings link title."
+    )
+
+    static let settingsNotifications = NSLocalizedString(
+        "browser.settings.profiles.notifications",
+        comment: "Notifications settings link title."
+    )
+
+    static let settingsClearBrowsingData = NSLocalizedString(
+        "browser.settings.profiles.clear_browsing_data",
+        comment: "Clear browsing data settings link title."
+    )
+
+    static let settingsShortcutsTab = NSLocalizedString(
+        "browser.settings.shortcuts",
+        comment: "Title for the shortcuts settings tab."
+    )
+
+    static let settingsShortcutsSearchPlaceholder = NSLocalizedString(
+        "browser.settings.shortcuts.search_placeholder",
+        comment: "Placeholder for the shortcut search field."
+    )
+
+    static let settingsShortcutRecord = NSLocalizedString(
+        "browser.settings.shortcuts.record",
+        comment: "Button title for recording a shortcut."
+    )
+
+    static let settingsShortcutReset = NSLocalizedString(
+        "browser.settings.shortcuts.reset",
+        comment: "Button title for resetting one shortcut."
+    )
+
+    static let settingsShortcutResetAll = NSLocalizedString(
+        "browser.settings.shortcuts.reset_all",
+        comment: "Button title for resetting all shortcuts."
+    )
+
+    static let settingsShortcutPressShortcut = NSLocalizedString(
+        "browser.settings.shortcuts.press_shortcut",
+        comment: "Prompt shown while recording a shortcut."
+    )
+
+    static let settingsExtensionShortcuts = NSLocalizedString(
+        "browser.settings.shortcuts.extension_shortcuts",
+        comment: "Button title for opening extension shortcut settings."
+    )
+
+    static func settingsShortcutConflict(_ commandTitle: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.settings.shortcuts.conflict",
+                comment: "Shortcut conflict message with conflicting command title."
+            ),
+            commandTitle
+        )
+    }
+
+    static let settingsContentTab = NSLocalizedString(
+        "browser.settings.content",
+        comment: "Title for the content settings tab."
+    )
+
+    static let settingsHapticFeedback = NSLocalizedString(
+        "browser.settings.content.haptic_feedback",
+        comment: "Haptic feedback toggle title."
+    )
+
+    static let settingsRestoreWindows = NSLocalizedString(
+        "browser.settings.content.restore_windows",
+        comment: "Restore windows setting title."
+    )
+
+    static let settingsPictureInPicture = NSLocalizedString(
+        "browser.settings.content.picture_in_picture",
+        comment: "Picture in Picture setting title."
+    )
+
+    static let settingsMoreSettings = NSLocalizedString(
+        "browser.settings.content.more_settings",
+        comment: "More settings button title."
+    )
+
+    static let settingsTranslateSitePrompts = NSLocalizedString(
+        "browser.settings.content.translate_site_prompts",
+        comment: "Translate site prompts button title."
+    )
+
+    static let settingsQuitWarningTitle = NSLocalizedString(
+        "browser.settings.quit_warning.title",
+        comment: "Quit warning alert title."
+    )
+
+    static let settingsQuitWarningMessage = NSLocalizedString(
+        "browser.settings.quit_warning.message",
+        comment: "Quit warning alert message."
+    )
+
+    static let settingsQuitWarningQuit = NSLocalizedString(
+        "browser.settings.quit_warning.quit",
+        comment: "Quit button title in quit warning alert."
+    )
+
+    static let settingsQuitWarningCancel = NSLocalizedString(
+        "browser.settings.quit_warning.cancel",
+        comment: "Cancel button title in quit warning alert."
     )
 
     static let settingsTemporaryTabsDescription = NSLocalizedString(

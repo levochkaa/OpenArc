@@ -50,28 +50,29 @@ kill_app() {
 }
 
 app_bundle_path() {
-  local execution_root
-  local app_zip_relative_path
-  execution_root="$(bazel info --config="$BAZEL_CONFIG" execution_root)"
-  app_zip_relative_path="$(bazel cquery //:TheBrowser --config="$BAZEL_CONFIG" --output=files | awk "/\\/$APP_NAME\\.zip$/ { print; exit }")"
-
-  if [[ -z "$app_zip_relative_path" ]]; then
-    echo "error: could not resolve $APP_NAME.zip from Bazel outputs" >&2
-    exit 1
-  fi
-
-  local app_zip="$execution_root/$app_zip_relative_path"
+  local app_zip="$ROOT_DIR/bazel-bin/$APP_NAME.zip"
   local staging_dir="$ROOT_DIR/.build/bazel-run/$CONFIGURATION"
   local app_bundle="$staging_dir/$APP_NAME.app"
+  local stamp_file="$staging_dir/.$APP_NAME.zip.stamp"
 
   if [[ ! -f "$app_zip" ]]; then
     echo "error: app archive not found at $app_zip" >&2
     exit 1
   fi
 
+  local zip_stamp
+  zip_stamp="$(stat -f "%m:%z" "$app_zip")"
+  if [[ -d "$app_bundle" && -f "$stamp_file" ]] &&
+     [[ "$(cat "$stamp_file")" == "$zip_stamp" ]]; then
+    printf '%s\n' "$app_bundle"
+    return
+  fi
+
+  echo "Staging $APP_NAME.app from $app_zip" >&2
   rm -rf "$app_bundle"
   mkdir -p "$staging_dir"
   /usr/bin/ditto -x -k "$app_zip" "$staging_dir"
+  printf '%s\n' "$zip_stamp" > "$stamp_file"
 
   printf '%s\n' "$app_bundle"
 }
@@ -81,9 +82,6 @@ build_app() {
 }
 
 open_app() {
-  local activate="${1:-yes}"
-  shift || true
-
   local app_bundle
   app_bundle="$(app_bundle_path)"
 
@@ -92,18 +90,8 @@ open_app() {
     exit 1
   fi
 
+  echo "Launching $app_bundle"
   /usr/bin/open -n "$app_bundle" "$@"
-
-  for _ in {1..50}; do
-    if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
-      if [[ "$activate" == "yes" ]]; then
-        /usr/bin/osascript -e "tell application id \"$APP_BUNDLE_ID\" to activate" >/dev/null 2>&1 || true
-      fi
-      return
-    fi
-
-    sleep 0.1
-  done
 }
 
 usage() {

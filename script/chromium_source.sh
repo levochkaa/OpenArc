@@ -356,11 +356,39 @@ build_configuration() {
 }
 
 make_distribution() {
+  local args=("--ninja-build" "$CEF_ARCH_ARG")
+  local debug_only=false
+  if [[ $# -eq 1 && "$1" == "Debug" ]]; then
+    debug_only=true
+    args+=(
+      "--allow-partial"
+      "--no-symbols"
+      "--no-docs"
+      "--no-archive"
+      "--distrib-subdir-suffix=debug"
+    )
+  fi
+
   require_source_checkout
+  local hidden_release_app=""
+  local release_app="$CHROMIUM_SRC/out/Release_GN_${PROJECT_ARCH}/cefclient.app"
+  if [[ "$debug_only" == true && -e "$release_app" ]]; then
+    hidden_release_app="${release_app}.debug-distrib-hidden.$$"
+    mv "$release_app" "$hidden_release_app"
+  fi
+
+  restore_hidden_release_app() {
+    if [[ -n "$hidden_release_app" && -e "$hidden_release_app" ]]; then
+      rm -rf "$release_app"
+      mv "$hidden_release_app" "$release_app"
+    fi
+  }
+  trap restore_hidden_release_app RETURN
+
   (
     cd "$CEF_SRC/tools"
     export PATH="$DEPOT_TOOLS_DIR:$PATH"
-    ./make_distrib.sh --ninja-build "$CEF_ARCH_ARG"
+    ./make_distrib.sh "${args[@]}"
   )
 }
 
@@ -386,6 +414,29 @@ latest_distribution_dir() {
   printf '%s\n' "$latest"
 }
 
+copy_component_libraries_to_export() {
+  local export_root="$1"
+  local configuration
+  for configuration in Debug Release; do
+    local framework_dir="$export_root/$configuration/Chromium Embedded Framework.framework"
+    local build_dir="$CHROMIUM_SRC/out/${configuration}_GN_${PROJECT_ARCH}"
+    if [[ ! -d "$framework_dir" || ! -d "$build_dir" ]]; then
+      continue
+    fi
+
+    local copied=0
+    local dylib
+    while IFS= read -r -d '' dylib; do
+      cp -p "$dylib" "$framework_dir/"
+      copied=$((copied + 1))
+    done < <(find "$build_dir" -maxdepth 1 -type f -name "lib*.dylib" -print0)
+
+    if [[ "$copied" -gt 0 ]]; then
+      echo "Copied $copied component dylibs into $configuration CEF framework export." >&2
+    fi
+  done
+}
+
 install_export() {
   local distribution_dir
   distribution_dir="$(latest_distribution_dir)"
@@ -394,6 +445,7 @@ install_export() {
   rm -rf "$tmp_export"
   mkdir -p "$tmp_export"
   rsync -a --delete "$distribution_dir/" "$tmp_export/"
+  copy_component_libraries_to_export "$tmp_export"
   touch "$tmp_export/$CHROMIUM_FORK_MARKER"
 
   rm -rf "$EXPORT_ROOT"
@@ -422,7 +474,7 @@ package_all() {
     build_configuration "$configuration"
   done < <(configurations_from_args "$@")
 
-  make_distribution
+  make_distribution "$@"
   install_export
 }
 
@@ -451,7 +503,7 @@ case "$COMMAND" in
     done < <(configurations_from_args "$@")
     ;;
   distrib)
-    make_distribution
+    make_distribution "$@"
     ;;
   export)
     install_export
@@ -472,7 +524,7 @@ Usage:
   ./script/chromium_source.sh apply-overrides
   ./script/chromium_source.sh create-projects
   ./script/chromium_source.sh build [Debug|Release ...]
-  ./script/chromium_source.sh distrib
+  ./script/chromium_source.sh distrib [Debug]
   ./script/chromium_source.sh export
   ./script/chromium_source.sh package [Debug|Release ...]
   ./script/chromium_source.sh root
@@ -488,9 +540,9 @@ Defaults:
   Binary export: ThirdParty/cef/export
 
 With no configurations, build/package uses both Debug and Release. Use package
-Debug Release to create the project-local CEF export consumed by script/chromium.sh,
-Bazel, and the app bundle staging step. THEBROWSER_CHROMIUM_CHECKOUT can point
-at a Chromium tag or branch ref when intentionally moving the fork base.
+Debug for a development-only CEF export without Release artifacts, or package
+Debug Release for a full export. THEBROWSER_CHROMIUM_CHECKOUT can point at a
+Chromium tag or branch ref when intentionally moving the fork base.
 EOF
     ;;
   *)

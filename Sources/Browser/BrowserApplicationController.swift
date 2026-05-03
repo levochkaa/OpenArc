@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 private final class BrowserWindowContentContainerView: NSView {
@@ -76,13 +77,19 @@ private final class BrowserMainWindow: NSWindow {
 public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate, NSUserInterfaceValidations {
     private var window: NSWindow?
     private var aboutWindow: NSWindow?
+    private var settingsWindow: NSWindow?
     private var chromeModel: BrowserChromeModel?
+    private let userPreferencesStore = BrowserUserPreferencesStore()
+    private let shortcutStore = BrowserShortcutStore()
     private let defaultBrowserService = BrowserDefaultBrowserService()
     private weak var setAsDefaultBrowserMenuItem: NSMenuItem?
     private var pendingNavigationURLs: [URL] = []
     private var hasReceivedBrowserContext = false
     private var isTerminationRequested = false
+    private var isQuitWarningPresented = false
+    private var didConfirmTerminationWarning = false
     private var layoutIndependentKeyMonitor: Any?
+    private var shortcutStoreCancellable: AnyCancellable?
 
     deinit {
         guard let layoutIndependentKeyMonitor else {
@@ -96,6 +103,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         installMainMenu(for: app)
+        observeShortcutStore()
         installLayoutIndependentKeyMonitor()
         app.delegate = self
         createMainWindow()
@@ -142,7 +150,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     }
 
     public func openSettings(_: Any?) {
-        openBrowserInternalPage(BrowserInternalPageRouting.settingsURL)
+        presentSettingsWindow()
     }
 
     public func openAbout(_: Any?) {
@@ -159,11 +167,20 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         refreshSetAsDefaultBrowserMenuItem()
     }
 
-    public func requestApplicationTermination(_: Any?) {
+    public func requestApplicationTermination(_ sender: Any?) {
         guard !isTerminationRequested else {
             return
         }
 
+        if shouldPresentQuitWarning {
+            presentQuitWarning(sender)
+            return
+        }
+
+        beginApplicationTermination()
+    }
+
+    private func beginApplicationTermination() {
         isTerminationRequested = true
         handleApplicationWillTerminate()
         window?.orderOut(nil)
@@ -309,13 +326,13 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         appMenu.addItem(.separator())
 
         let settingsItem = makeMenuItem(
-            descriptor: BrowserCommands.openSettings,
+            descriptor: shortcutStore.descriptor(for: .openSettings),
             action: #selector(openSettings(_:))
         )
         appMenu.addItem(settingsItem)
 
         let setAsDefaultBrowserItem = makeMenuItem(
-            descriptor: BrowserCommands.setAsDefaultBrowser,
+            descriptor: shortcutStore.descriptor(for: .setAsDefaultBrowser),
             action: #selector(setAsDefaultBrowser(_:))
         )
         setAsDefaultBrowserMenuItem = setAsDefaultBrowserItem
@@ -333,25 +350,25 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
         let fileMenu = NSMenu(title: BrowserStrings.menuFile)
         let newTabItem = makeMenuItem(
-            descriptor: BrowserCommands.newTab,
+            descriptor: shortcutStore.descriptor(for: .newTab),
             action: #selector(createNewTab(_:))
         )
         fileMenu.addItem(newTabItem)
 
         let archiveTabItem = makeMenuItem(
-            descriptor: BrowserCommands.archiveTab,
+            descriptor: shortcutStore.descriptor(for: .archiveTab),
             action: #selector(archiveCurrentTab(_:))
         )
         fileMenu.addItem(archiveTabItem)
 
         let savePageItem = makeMenuItem(
-            descriptor: BrowserCommands.savePage,
+            descriptor: shortcutStore.descriptor(for: .savePage),
             action: #selector(saveCurrentPage(_:))
         )
         fileMenu.addItem(savePageItem)
 
         let printItem = makeMenuItem(
-            descriptor: BrowserCommands.printPage,
+            descriptor: shortcutStore.descriptor(for: .printPage),
             action: #selector(printCurrentPage(_:))
         )
         fileMenu.addItem(printItem)
@@ -390,7 +407,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         )
         editMenu.addItem(
             makeMenuItem(
-                descriptor: BrowserCommands.copyLink,
+                descriptor: shortcutStore.descriptor(for: .copyLink),
                 action: #selector(copySelectedTabLink(_:))
             )
         )
@@ -425,25 +442,25 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         let findMenu = NSMenu(title: BrowserStrings.menuFindTitle)
         findMenu.addItem(
             makeMenuItem(
-                descriptor: BrowserCommands.findInPage,
+                descriptor: shortcutStore.descriptor(for: .findInPage),
                 action: #selector(findInPage(_:))
             )
         )
         findMenu.addItem(
             makeMenuItem(
-                descriptor: BrowserCommands.findAndReplace,
+                descriptor: shortcutStore.descriptor(for: .findAndReplace),
                 action: #selector(findAndReplace(_:))
             )
         )
         findMenu.addItem(
             makeMenuItem(
-                descriptor: BrowserCommands.findNext,
+                descriptor: shortcutStore.descriptor(for: .findNext),
                 action: #selector(findNextInPage(_:))
             )
         )
         findMenu.addItem(
             makeMenuItem(
-                descriptor: BrowserCommands.findPrevious,
+                descriptor: shortcutStore.descriptor(for: .findPrevious),
                 action: #selector(findPreviousInPage(_:))
             )
         )
@@ -457,7 +474,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         )
         findMenu.addItem(
             makeMenuItem(
-                descriptor: BrowserCommands.jumpToSelection,
+                descriptor: shortcutStore.descriptor(for: .jumpToSelection),
                 action: #selector(jumpToSelection(_:))
             )
         )
@@ -466,13 +483,13 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
         let viewMenu = NSMenu(title: BrowserStrings.menuView)
         let backItem = makeMenuItem(
-            descriptor: BrowserCommands.goBack,
+            descriptor: shortcutStore.descriptor(for: .goBack),
             action: #selector(goBack(_:))
         )
         viewMenu.addItem(backItem)
 
         let forwardItem = makeMenuItem(
-            descriptor: BrowserCommands.goForward,
+            descriptor: shortcutStore.descriptor(for: .goForward),
             action: #selector(goForward(_:))
         )
         viewMenu.addItem(forwardItem)
@@ -480,13 +497,13 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         viewMenu.addItem(.separator())
 
         let refreshItem = makeMenuItem(
-            descriptor: BrowserCommands.reload,
+            descriptor: shortcutStore.descriptor(for: .reload),
             action: #selector(reloadCurrentTab(_:))
         )
         viewMenu.addItem(refreshItem)
 
         let forceRefreshItem = makeMenuItem(
-            descriptor: BrowserCommands.forceReload,
+            descriptor: shortcutStore.descriptor(for: .forceReload),
             action: #selector(forceReloadCurrentTab(_:))
         )
         viewMenu.addItem(forceRefreshItem)
@@ -494,14 +511,14 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         viewMenu.addItem(.separator())
 
         let toggleSidebarItem = makeMenuItem(
-            descriptor: BrowserCommands.toggleSidebar,
+            descriptor: shortcutStore.descriptor(for: .toggleSidebar),
             action: #selector(toggleSidebar(_:))
         )
         viewMenu.addItem(toggleSidebarItem)
         viewMenu.addItem(.separator())
 
         let clearTemporaryTabsItem = makeMenuItem(
-            descriptor: BrowserCommands.clearTemporaryTabs,
+            descriptor: shortcutStore.descriptor(for: .clearTemporaryTabs),
             action: #selector(clearTemporaryTabs(_:))
         )
         viewMenu.addItem(clearTemporaryTabsItem)
@@ -555,15 +572,32 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     }
 
     private func handleLayoutIndependentKeyEvent(_ event: NSEvent) -> Bool {
+        if let spaceIndex = BrowserSpaceShortcuts.spaceIndex(
+            forPhysicalKeyCode: event.keyCode,
+            modifierFlags: event.modifierFlags
+        ) {
+            return selectSpace(at: spaceIndex)
+        }
+
         guard let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
             keyCode: event.keyCode,
             modifierFlags: event.modifierFlags,
-            charactersIgnoringModifiers: event.charactersIgnoringModifiers
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+            shortcutResolver: shortcutStore
         ) else {
             return false
         }
 
         return performLayoutIndependentShortcutCommand(command)
+    }
+
+    private func selectSpace(at index: Int) -> Bool {
+        guard let chromeModel, chromeModel.spaces.indices.contains(index) else {
+            return false
+        }
+
+        chromeModel.selectSpace(id: chromeModel.spaces[index].id)
+        return true
     }
 
     private func performLayoutIndependentShortcutCommand(
@@ -707,6 +741,122 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         return chromeModel?.pasteAndMatchStyleCurrentTab() ?? false
     }
 
+    private var shouldPresentQuitWarning: Bool {
+        guard !didConfirmTerminationWarning, !isQuitWarningPresented else {
+            return false
+        }
+
+        return BrowserQuitWarningPolicy(
+            warnsBeforeQuitting: userPreferencesStore.warnBeforeQuitting,
+            openTabCount: chromeModel?.tabs.count ?? 0
+        ).shouldWarn
+    }
+
+    private func presentQuitWarning(_ sender: Any?) {
+        isQuitWarningPresented = true
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = BrowserStrings.settingsQuitWarningTitle
+        alert.informativeText = BrowserStrings.settingsQuitWarningMessage
+        alert.addButton(withTitle: BrowserStrings.settingsQuitWarningQuit)
+        alert.addButton(withTitle: BrowserStrings.settingsQuitWarningCancel)
+
+        let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else {
+                return
+            }
+
+            isQuitWarningPresented = false
+            guard response == .alertFirstButtonReturn else {
+                return
+            }
+
+            didConfirmTerminationWarning = true
+            requestApplicationTermination(sender)
+        }
+
+        if let window, window.isVisible {
+            alert.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            completion(alert.runModal())
+        }
+    }
+
+    private func observeShortcutStore() {
+        shortcutStoreCancellable = shortcutStore.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+
+                installMainMenu(for: NSApp)
+                refreshSetAsDefaultBrowserMenuItem()
+            }
+        }
+    }
+
+    private func presentSettingsWindow() {
+        guard let chromeModel else {
+            return
+        }
+
+        if let settingsWindow {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let rootView = BrowserSettingsView(model: chromeModel) { [weak self] url in
+            self?.openBrowserInternalPage(url)
+        }
+        let hostingView = NSHostingView(rootView: rootView)
+        let contentSize = NSSize(
+            width: BrowserSettingsLayout.windowWidth,
+            height: BrowserSettingsLayout.windowHeight
+        )
+        let settingsWindow = NSWindow(
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+
+        settingsWindow.title = BrowserStrings.settingsWindowTitle
+        settingsWindow.isReleasedWhenClosed = false
+        settingsWindow.titleVisibility = .hidden
+        settingsWindow.titlebarAppearsTransparent = true
+        settingsWindow.isMovableByWindowBackground = true
+        settingsWindow.collectionBehavior = [.fullScreenAuxiliary]
+        settingsWindow.setContentSize(contentSize)
+        settingsWindow.contentView = hostingView
+
+        center(settingsWindow, over: window)
+        if let window {
+            window.addChildWindow(settingsWindow, ordered: .above)
+        }
+
+        self.settingsWindow = settingsWindow
+        settingsWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func center(_ childWindow: NSWindow, over parentWindow: NSWindow?) {
+        guard let parentWindow else {
+            childWindow.center()
+            return
+        }
+
+        let parentFrame = parentWindow.frame
+        let childFrame = childWindow.frame
+        childWindow.setFrameOrigin(
+            NSPoint(
+                x: parentFrame.midX - childFrame.width / 2,
+                y: parentFrame.midY - childFrame.height / 2
+            )
+        )
+    }
+
     private func createMainWindow() {
         let sessionSnapshotURL = BrowserRuntimeConfiguration.currentConfiguration().map {
             URL(fileURLWithPath: $0.sessionStoragePath, isDirectory: true)
@@ -716,6 +866,8 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             tabDriver: BrowserTabControllerDriver(),
             sessionSnapshotStore: BrowserTabSessionSnapshotStore(snapshotURL: sessionSnapshotURL),
             sessionPreferencesStore: BrowserSessionPreferencesStore(),
+            userPreferencesStore: userPreferencesStore,
+            shortcutStore: shortcutStore,
             extensionManager: BrowserChromiumExtensionManager(),
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}

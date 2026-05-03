@@ -50,7 +50,7 @@ require_chromium_fork_cef_export() {
   if [[ -z "$CHROMIUM_FORK_CEF_ROOT" ]]; then
     cat >&2 <<'EOF'
 error: TheBrowser requires a Chromium fork CEF export.
-Create the project-local export with ./script/chromium_source.sh package Debug Release,
+Create the project-local export with ./script/chromium_source.sh package Debug,
 or set THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export.
 Stock CEF downloads are intentionally disabled because full Chrome extension support is mandatory.
 EOF
@@ -59,7 +59,7 @@ EOF
 
   if [[ ! -d "$CHROMIUM_FORK_CEF_ROOT" ]]; then
     echo "error: Chromium fork CEF export does not exist: $CHROMIUM_FORK_CEF_ROOT" >&2
-    echo "Run ./script/chromium_source.sh package Debug Release to create the project-local export." >&2
+    echo "Run ./script/chromium_source.sh package $CONFIGURATION to create the project-local export." >&2
     exit 1
   fi
 
@@ -78,8 +78,7 @@ EOF
   for required_path in \
     "CMakeLists.txt" \
     "CREDITS.html" \
-    "Debug/Chromium Embedded Framework.framework" \
-    "Release/Chromium Embedded Framework.framework" \
+    "$CONFIGURATION/Chromium Embedded Framework.framework" \
     "libcef_dll/CMakeLists.txt"; do
     if [[ ! -e "$CHROMIUM_FORK_CEF_ROOT/$required_path" ]]; then
       echo "error: Chromium fork CEF export is missing $required_path: $CHROMIUM_FORK_CEF_ROOT" >&2
@@ -162,7 +161,7 @@ Usage:
   ./script/chromium.sh version
 
 Project-local source/export workflow:
-  ./script/chromium_source.sh package Debug Release
+  ./script/chromium_source.sh package Debug
     Checks out CEF/Chromium under ThirdParty/cef/source, builds the fork, and
     stages a binary export under ThirdParty/cef/export.
 
@@ -173,8 +172,8 @@ Environment:
 	    .thebrowser-chromium-fork
 	    include/cef_app.h
 	    libcef_dll/CMakeLists.txt
-	    Debug/Chromium Embedded Framework.framework
-	    Release/Chromium Embedded Framework.framework
+	    Debug/Chromium Embedded Framework.framework for Debug builds
+	    Release/Chromium Embedded Framework.framework for Release builds
 
 Stock CEF downloads are intentionally unavailable.
 EOF

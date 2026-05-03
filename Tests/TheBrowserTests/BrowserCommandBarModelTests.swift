@@ -159,6 +159,16 @@ func resolveTurnsPlainTextIntoGoogleSearch() throws {
 }
 
 @Test
+func resolveUsesSelectedSearchEngineForPlainTextSearch() throws {
+    let resolver = BrowserNavigationResolver(searchEngineProvider: { .duckDuckGo })
+    let resolution = try #require(resolver.resolve("command bar"))
+
+    #expect(resolution.kind == .search)
+    #expect(URLComponents(string: resolution.resolvedURLString)?.host == "duckduckgo.com")
+    #expect(queryValue(from: resolution.resolvedURLString, name: "q") == "command bar")
+}
+
+@Test
 func resolveReturnsNilForEmptyInput() {
     let resolver = BrowserNavigationResolver()
 
@@ -193,6 +203,25 @@ func primarySuggestionIsSelectedByDefault() async {
     #expect(model.isPresented)
     #expect(model.suggestions.map(\.displayText) == ["привет", "привет макет", "привет мир"])
     #expect(model.selectedSuggestion?.displayText == "привет")
+}
+
+@Test
+@MainActor
+func disabledRemoteSuggestionsKeepPrimarySuggestionOnly() async {
+    let suggestionProvider = FakeSuggestionProvider(
+        suggestionsByQuery: ["browser": ["browser settings"]]
+    )
+    let model = makeModel(
+        suggestionProvider: suggestionProvider,
+        remoteSuggestionsEnabledProvider: { false }
+    )
+
+    model.present()
+    model.query = "browser"
+    await model.waitForPendingSuggestionLoad()
+
+    #expect(suggestionProvider.requestedQueries.isEmpty)
+    #expect(model.suggestions.map(\.displayText) == ["browser"])
 }
 
 @Test
@@ -383,11 +412,13 @@ func dismissClearsTransientState() async {
 @MainActor
 private func makeModel(
     suggestionProvider: BrowserSuggestionProviding,
+    remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
     submitHandler: @escaping (String) -> Void = { _ in }
 ) -> BrowserCommandBarModel {
     BrowserCommandBarModel(
         suggestionProvider: suggestionProvider,
         suggestionDebounceNanoseconds: 0,
+        remoteSuggestionsEnabledProvider: remoteSuggestionsEnabledProvider,
         submitHandler: submitHandler
     )
 }

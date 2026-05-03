@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import OSLog
 
-enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hashable, Sendable {
+enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hashable {
     case twelveHours = "12h"
     case twentyFourHours = "24h"
     case sevenDays = "7d"
@@ -24,27 +24,60 @@ enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hash
     }
 }
 
+enum BrowserTabPlacement: String, Codable, Equatable, Hashable {
+    case temporary
+    case spacePinned
+    case app
+}
+
+struct BrowserSpaceSessionSnapshot: Codable, Equatable {
+    let id: String
+    let title: String
+    let systemImageName: String
+    let isPinnedSectionCollapsed: Bool
+    let selectedTabIndex: Int?
+
+    init(
+        id: String,
+        title: String,
+        systemImageName: String,
+        isPinnedSectionCollapsed: Bool = false,
+        selectedTabIndex: Int? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
+        self.selectedTabIndex = selectedTabIndex
+    }
+}
+
 struct BrowserTabSessionSnapshotTab: Codable, Equatable {
     let urlString: String
     let userTitleOverride: String?
-    let isPinned: Bool
+    let placement: BrowserTabPlacement
+    let spaceID: String?
     let lastActivityTimestamp: TimeInterval?
 
     init(
         urlString: String,
         userTitleOverride: String? = nil,
-        isPinned: Bool = false,
+        placement: BrowserTabPlacement = .temporary,
+        spaceID: String? = nil,
         lastActivityTimestamp: TimeInterval? = nil
     ) {
         self.urlString = urlString
         self.userTitleOverride = userTitleOverride
-        self.isPinned = isPinned
+        self.placement = placement
+        self.spaceID = spaceID
         self.lastActivityTimestamp = lastActivityTimestamp
     }
 
     private enum CodingKeys: String, CodingKey {
         case urlString
         case userTitleOverride
+        case placement
+        case spaceID
         case isPinned
         case lastActivityTimestamp
     }
@@ -53,7 +86,13 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         urlString = try container.decode(String.self, forKey: .urlString)
         userTitleOverride = try container.decodeIfPresent(String.self, forKey: .userTitleOverride)
-        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        if let placement = try container.decodeIfPresent(BrowserTabPlacement.self, forKey: .placement) {
+            self.placement = placement
+        } else {
+            let legacyPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+            placement = legacyPinned ? .spacePinned : .temporary
+        }
+        spaceID = try container.decodeIfPresent(String.self, forKey: .spaceID)
         lastActivityTimestamp = try container.decodeIfPresent(TimeInterval.self, forKey: .lastActivityTimestamp)
     }
 
@@ -61,23 +100,30 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(urlString, forKey: .urlString)
         try container.encodeIfPresent(userTitleOverride, forKey: .userTitleOverride)
-        try container.encode(isPinned, forKey: .isPinned)
+        try container.encode(placement, forKey: .placement)
+        try container.encodeIfPresent(spaceID, forKey: .spaceID)
         try container.encodeIfPresent(lastActivityTimestamp, forKey: .lastActivityTimestamp)
     }
 }
 
 struct BrowserTabSessionSnapshot: Codable, Equatable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     let version: Int
+    let spaces: [BrowserSpaceSessionSnapshot]?
     let tabs: [BrowserTabSessionSnapshotTab]
 
     var tabURLStrings: [String] {
         tabs.map(\.urlString)
     }
 
-    init(version: Int = currentVersion, tabs: [BrowserTabSessionSnapshotTab]) {
+    init(
+        version: Int = currentVersion,
+        spaces: [BrowserSpaceSessionSnapshot]? = nil,
+        tabs: [BrowserTabSessionSnapshotTab]
+    ) {
         self.version = version
+        self.spaces = spaces
         self.tabs = tabs
     }
 
@@ -90,6 +136,7 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case version
+        case spaces
         case tabs
         case tabURLStrings
     }
@@ -97,6 +144,7 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decode(Int.self, forKey: .version)
+        spaces = try container.decodeIfPresent([BrowserSpaceSessionSnapshot].self, forKey: .spaces)
 
         if let tabs = try container.decodeIfPresent([BrowserTabSessionSnapshotTab].self, forKey: .tabs) {
             self.tabs = tabs
@@ -110,6 +158,7 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(version, forKey: .version)
+        try container.encodeIfPresent(spaces, forKey: .spaces)
         try container.encode(tabs, forKey: .tabs)
         try container.encode(tabURLStrings, forKey: .tabURLStrings)
     }
@@ -123,6 +172,8 @@ protocol BrowserTabSessionSnapshotStoring {
 protocol BrowserSessionPreferencesStoring {
     func loadSelectedTabIndex(tabCount: Int) -> Int?
     func saveSelectedTabIndex(_ index: Int?)
+    func loadSelectedSpaceIndex(spaceCount: Int) -> Int?
+    func saveSelectedSpaceIndex(_ index: Int?)
     func loadSidebarWidth(minimum: CGFloat, maximum: CGFloat) -> CGFloat?
     func saveSidebarWidth(_ width: CGFloat)
     func loadTemporaryTabLifetime() -> BrowserTemporaryTabLifetime
@@ -199,6 +250,7 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
 final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
     private enum Key {
         static let selectedTabIndex = "browser.session.selectedTabIndex"
+        static let selectedSpaceIndex = "browser.session.selectedSpaceIndex"
         static let sidebarWidth = "browser.session.sidebarWidth"
         static let temporaryTabLifetime = "browser.settings.temporaryTabLifetime"
     }
@@ -229,6 +281,28 @@ final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
         }
 
         userDefaults.set(index, forKey: Key.selectedTabIndex)
+    }
+
+    func loadSelectedSpaceIndex(spaceCount: Int) -> Int? {
+        guard spaceCount > 0 else {
+            return nil
+        }
+
+        guard userDefaults.object(forKey: Key.selectedSpaceIndex) != nil else {
+            return nil
+        }
+
+        let storedIndex = userDefaults.integer(forKey: Key.selectedSpaceIndex)
+        return min(max(storedIndex, 0), spaceCount - 1)
+    }
+
+    func saveSelectedSpaceIndex(_ index: Int?) {
+        guard let index else {
+            userDefaults.removeObject(forKey: Key.selectedSpaceIndex)
+            return
+        }
+
+        userDefaults.set(index, forKey: Key.selectedSpaceIndex)
     }
 
     func loadSidebarWidth(minimum: CGFloat, maximum: CGFloat) -> CGFloat? {

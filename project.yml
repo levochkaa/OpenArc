@@ -106,6 +106,7 @@ targets:
       - path: Sources/Browser/BrowserTabSessionPersistence.swift
       - path: Sources/Browser/BrowserTooltipCoordinator.swift
       - path: Sources/Browser/BrowserURLDisplayFormatter.swift
+      - path: Sources/Browser/BrowserUserPreferences.swift
       - path: Tests/TheBrowserTests
     settings:
       base:

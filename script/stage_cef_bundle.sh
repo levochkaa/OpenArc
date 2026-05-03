@@ -15,12 +15,23 @@ CEF_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Chromium Embedded Framework.framework"
 HELPER_DEST="$APP_FRAMEWORKS_DIR/TheBrowser Helper.app"
 RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/TheBrowser Helper.app"
 
+move_root_dylibs_to_version() {
+  local framework_root="$1"
+  local version_root="$2"
+  local dylib
+
+  while IFS= read -r -d '' dylib; do
+    mv "$dylib" "$version_root/$(basename "$dylib")"
+  done < <(find "$framework_root" -maxdepth 1 -type f -name "*.dylib" -print0)
+}
+
 create_versioned_cef_framework() {
   local framework_root="$1"
   local versions_dir="$framework_root/Versions"
   local version_root="$versions_dir/A"
 
   if [[ -d "$version_root" ]]; then
+    move_root_dylibs_to_version "$framework_root" "$version_root"
     return
   fi
 
@@ -33,6 +44,8 @@ create_versioned_cef_framework() {
   ln -sfn "Versions/Current/Chromium Embedded Framework" "$framework_root/Chromium Embedded Framework"
   ln -sfn "Versions/Current/Libraries" "$framework_root/Libraries"
   ln -sfn "Versions/Current/Resources" "$framework_root/Resources"
+
+  move_root_dylibs_to_version "$framework_root" "$version_root"
 }
 
 create_helper_variant() {
@@ -67,19 +80,19 @@ fi
 
 if [[ ! -f "$CHROMIUM_FORK_MARKER" ]]; then
   echo "error: TheBrowser Chromium fork marker not found at $CHROMIUM_FORK_MARKER" >&2
-  echo "Run ./script/chromium_source.sh package Debug Release first, then ./script/chromium.sh root $CONFIGURATION." >&2
+  echo "Run ./script/chromium_source.sh package $CONFIGURATION first, then ./script/chromium.sh root $CONFIGURATION." >&2
   exit 1
 fi
 
 if [[ ! -d "$CEF_FRAMEWORK_SOURCE" ]]; then
   echo "error: CEF framework not found at $CEF_FRAMEWORK_SOURCE" >&2
-  echo "Run ./script/chromium_source.sh package Debug Release first, then ./script/chromium.sh root $CONFIGURATION." >&2
+  echo "Run ./script/chromium_source.sh package $CONFIGURATION first, then ./script/chromium.sh root $CONFIGURATION." >&2
   exit 1
 fi
 
 if [[ ! -f "$CEF_ROOT/CREDITS.html" ]]; then
   echo "error: CEF credits not found at $CEF_ROOT/CREDITS.html" >&2
-  echo "Run ./script/chromium_source.sh package Debug Release first, then ./script/chromium.sh root $CONFIGURATION." >&2
+  echo "Run ./script/chromium_source.sh package $CONFIGURATION first, then ./script/chromium.sh root $CONFIGURATION." >&2
   exit 1
 fi
 

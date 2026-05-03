@@ -13,12 +13,54 @@ func snapshotRoundTripPersistsJSONToDisk() throws {
             BrowserTabSessionSnapshotTab(
                 urlString: "https://one.example",
                 userTitleOverride: "Pinned",
-                isPinned: true,
-                lastActivityTimestamp: 1_234
+                placement: .spacePinned,
+                spaceID: "space-1",
+                lastActivityTimestamp: 1234
             ),
             BrowserTabSessionSnapshotTab(
                 urlString: "https://two.example/path",
-                lastActivityTimestamp: 5_678
+                spaceID: "space-2",
+                lastActivityTimestamp: 5678
+            ),
+        ]
+    )
+
+    store.saveSnapshot(snapshot)
+
+    #expect(store.loadSnapshot() == snapshot)
+}
+
+@Test
+func snapshotRoundTripPersistsSpaces() throws {
+    let harness = try PersistenceHarness()
+    defer { harness.cleanup() }
+
+    let store = BrowserTabSessionSnapshotStore(snapshotURL: harness.snapshotURL)
+    let snapshot = BrowserTabSessionSnapshot(
+        spaces: [
+            BrowserSpaceSessionSnapshot(
+                id: "space-1",
+                title: "Work",
+                systemImageName: "briefcase",
+                isPinnedSectionCollapsed: true,
+                selectedTabIndex: 1
+            ),
+            BrowserSpaceSessionSnapshot(
+                id: "space-2",
+                title: "Read",
+                systemImageName: "book",
+                selectedTabIndex: nil
+            ),
+        ],
+        tabs: [
+            BrowserTabSessionSnapshotTab(
+                urlString: "https://one.example",
+                placement: .spacePinned,
+                spaceID: "space-1"
+            ),
+            BrowserTabSessionSnapshotTab(
+                urlString: "https://two.example",
+                spaceID: "space-2"
             ),
         ]
     )
@@ -86,7 +128,46 @@ func snapshotLoadMigratesVersionOneTabsWithoutPinMetadata() throws {
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://one.example",
                     userTitleOverride: "Workspace"
-                )
+                ),
+            ]
+        )
+    )
+}
+
+@Test
+func snapshotLoadMigratesLegacyPinnedMetadataToSpacePinnedPlacement() throws {
+    let harness = try PersistenceHarness()
+    defer { harness.cleanup() }
+
+    let legacyJSON = """
+    {
+      "version": 2,
+      "tabs": [
+        {
+          "urlString": "https://one.example",
+          "isPinned": true
+        },
+        {
+          "urlString": "https://two.example",
+          "isPinned": false
+        }
+      ]
+    }
+    """
+
+    try Data(legacyJSON.utf8).write(to: harness.snapshotURL, options: .atomic)
+
+    let store = BrowserTabSessionSnapshotStore(snapshotURL: harness.snapshotURL)
+
+    #expect(
+        store.loadSnapshot() == BrowserTabSessionSnapshot(
+            version: 2,
+            tabs: [
+                BrowserTabSessionSnapshotTab(
+                    urlString: "https://one.example",
+                    placement: .spacePinned
+                ),
+                BrowserTabSessionSnapshotTab(urlString: "https://two.example"),
             ]
         )
     )
@@ -126,6 +207,21 @@ func selectedTabIndexLoadsWithClamping() throws {
     harness.userDefaults.set(-5, forKey: "browser.session.selectedTabIndex")
 
     #expect(store.loadSelectedTabIndex(tabCount: 3) == 0)
+}
+
+@Test
+func selectedSpaceIndexLoadsWithClamping() throws {
+    let harness = try PersistenceHarness()
+    defer { harness.cleanup() }
+
+    let store = BrowserSessionPreferencesStore(userDefaults: harness.userDefaults)
+    harness.userDefaults.set(99, forKey: "browser.session.selectedSpaceIndex")
+
+    #expect(store.loadSelectedSpaceIndex(spaceCount: 3) == 2)
+
+    harness.userDefaults.set(-5, forKey: "browser.session.selectedSpaceIndex")
+
+    #expect(store.loadSelectedSpaceIndex(spaceCount: 3) == 0)
 }
 
 @Test

@@ -30,7 +30,7 @@ mixed_language_library(
     clang_copts = [
         "-fno-exceptions",
         "-fno-rtti",
-        "-std=c++17",
+        "-std=c++20",
     ],
     clang_defines = [
         "__STDC_CONSTANT_MACROS",
@@ -85,7 +85,7 @@ objc_library(
     copts = [
         "-fno-exceptions",
         "-fno-rtti",
-        "-std=c++17",
+        "-std=c++20",
     ],
     defines = [
         "__STDC_CONSTANT_MACROS",
@@ -168,6 +168,7 @@ swift_test(
         "Sources/Browser/BrowserTabSessionPersistence.swift",
         "Sources/Browser/BrowserTooltipCoordinator.swift",
         "Sources/Browser/BrowserURLDisplayFormatter.swift",
+        "Sources/Browser/BrowserUserPreferences.swift",
     ] + glob(["Tests/TheBrowserTests/*.swift"]),
     deps = [
         "@swiftpkg_swiftdomainparser//:DomainParser",

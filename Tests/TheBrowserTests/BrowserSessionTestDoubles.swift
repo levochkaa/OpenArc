@@ -33,6 +33,7 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
 
     private(set) var createdTabRequests: [CreatedTabRequest] = []
     private(set) var selectedTabIDs: [String] = []
+    private(set) var deselectActiveTabCount = 0
     private(set) var activeTabNavigationURLStrings: [String] = []
     private(set) var closedTabRequests: [CloseTabRequest] = []
     private(set) var saveSuggestedNames: [String?] = []
@@ -69,6 +70,10 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
 
     func selectTab(withID tabID: String) {
         selectedTabIDs.append(tabID)
+    }
+
+    func deselectActiveTab() {
+        deselectActiveTabCount += 1
     }
 
     func navigateActiveTab(toURLString urlString: String) {
@@ -183,19 +188,23 @@ final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
 
 final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
     var storedSelectedTabIndex: Int?
+    var storedSelectedSpaceIndex: Int?
     var storedSidebarWidth: CGFloat?
     var storedTemporaryTabLifetime: BrowserTemporaryTabLifetime
 
     private(set) var savedSelectedTabIndices: [Int?] = []
+    private(set) var savedSelectedSpaceIndices: [Int?] = []
     private(set) var savedSidebarWidths: [CGFloat] = []
     private(set) var savedTemporaryTabLifetimes: [BrowserTemporaryTabLifetime] = []
 
     init(
         storedSelectedTabIndex: Int? = nil,
+        storedSelectedSpaceIndex: Int? = nil,
         storedSidebarWidth: CGFloat? = nil,
         storedTemporaryTabLifetime: BrowserTemporaryTabLifetime = .defaultValue
     ) {
         self.storedSelectedTabIndex = storedSelectedTabIndex
+        self.storedSelectedSpaceIndex = storedSelectedSpaceIndex
         self.storedSidebarWidth = storedSidebarWidth
         self.storedTemporaryTabLifetime = storedTemporaryTabLifetime
     }
@@ -211,6 +220,19 @@ final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
     func saveSelectedTabIndex(_ index: Int?) {
         storedSelectedTabIndex = index
         savedSelectedTabIndices.append(index)
+    }
+
+    func loadSelectedSpaceIndex(spaceCount: Int) -> Int? {
+        guard spaceCount > 0, let storedSelectedSpaceIndex else {
+            return nil
+        }
+
+        return min(max(storedSelectedSpaceIndex, 0), spaceCount - 1)
+    }
+
+    func saveSelectedSpaceIndex(_ index: Int?) {
+        storedSelectedSpaceIndex = index
+        savedSelectedSpaceIndices.append(index)
     }
 
     func loadSidebarWidth(minimum: CGFloat, maximum: CGFloat) -> CGFloat? {

@@ -133,3 +133,14 @@ func layoutIndependentBridgeMapsBrowserCommandsFromPhysicalKeys() {
     #expect(clearTemporaryTabsCommand == .clearTemporaryTabs)
     #expect(goBackCommand == .goBack)
 }
+
+@Test
+func browserSpaceShortcutsMapControlNumberRowKeys() {
+    #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 18, modifierFlags: [.control]) == 0)
+    #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 19, modifierFlags: [.control]) == 1)
+    #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 20, modifierFlags: [.control]) == 2)
+    #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 21, modifierFlags: [.control]) == 3)
+    #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 18, modifierFlags: [.command]) == nil)
+    #expect(BrowserSpaceShortcuts.shortcut(forSpaceIndex: 0) == BrowserKeyboardShortcut("1", modifiers: [.control]))
+    #expect(BrowserSpaceShortcuts.shortcut(forSpaceIndex: 4) == nil)
+}

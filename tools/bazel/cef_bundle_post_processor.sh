@@ -13,12 +13,23 @@ if [[ ! -d "$APP_BUNDLE" ]]; then
   exit 1
 fi
 
+move_root_dylibs_to_version() {
+  local framework_root="$1"
+  local version_root="$2"
+  local dylib
+
+  while IFS= read -r -d '' dylib; do
+    mv "$dylib" "$version_root/$(basename "$dylib")"
+  done < <(find "$framework_root" -maxdepth 1 -type f -name "*.dylib" -print0)
+}
+
 create_versioned_cef_framework() {
   local framework_root="$1"
   local versions_dir="$framework_root/Versions"
   local version_root="$versions_dir/A"
 
   if [[ -d "$version_root" ]]; then
+    move_root_dylibs_to_version "$framework_root" "$version_root"
     return
   fi
 
@@ -31,6 +42,8 @@ create_versioned_cef_framework() {
   ln -sfn "Versions/Current/Chromium Embedded Framework" "$framework_root/Chromium Embedded Framework"
   ln -sfn "Versions/Current/Libraries" "$framework_root/Libraries"
   ln -sfn "Versions/Current/Resources" "$framework_root/Resources"
+
+  move_root_dylibs_to_version "$framework_root" "$version_root"
 }
 
 create_helper_variant() {

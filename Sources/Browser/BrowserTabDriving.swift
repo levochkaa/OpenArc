@@ -13,6 +13,7 @@ protocol BrowserTabDriving: AnyObject {
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     func selectTab(withID tabID: String)
+    func deselectActiveTab()
     func navigateActiveTab(toURLString urlString: String)
     func goBackActiveTab()
     func goForwardActiveTab()

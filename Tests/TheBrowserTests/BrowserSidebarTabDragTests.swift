@@ -10,13 +10,13 @@ func tabDragResolverSnapsToNearestReachableRowEdge() {
     let rowFrames = [
         BrowserSidebarTabRowFrame(
             tabID: "pinned-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
         BrowserSidebarTabRowFrame(
             tabID: "pinned-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
         ),
@@ -34,7 +34,7 @@ func tabDragResolverSnapsToNearestReachableRowEdge() {
             rowFrames: rowFrames,
             emptySectionFrames: [],
             canMoveToTarget: { _ in true }
-        ) == BrowserSidebarTabDropTarget(section: .pinned, sectionIndex: 0)
+        ) == BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: 0)
     )
     #expect(
         resolver.target(
@@ -42,7 +42,7 @@ func tabDragResolverSnapsToNearestReachableRowEdge() {
             rowFrames: rowFrames,
             emptySectionFrames: [],
             canMoveToTarget: { _ in true }
-        ) == BrowserSidebarTabDropTarget(section: .pinned, sectionIndex: 2)
+        ) == BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: 2)
     )
     #expect(
         resolver.target(
@@ -67,12 +67,12 @@ func tabDragResolverUsesEmptySectionFrames() {
             rowFrames: [],
             emptySectionFrames: [
                 BrowserSidebarEmptySectionFrame(
-                    section: .pinned,
+                    section: .spacePinned,
                     frame: CGRect(x: 0, y: 0, width: 200, height: 14)
                 ),
             ],
             canMoveToTarget: { _ in true }
-        ) == BrowserSidebarTabDropTarget(section: .pinned, sectionIndex: 0)
+        ) == BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: 0)
     )
 }
 
@@ -81,7 +81,7 @@ func tabFrameSynchronizerDropsFramesFromPreviousSectionAfterMove() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
@@ -95,7 +95,7 @@ func tabFrameSynchronizerDropsFramesFromPreviousSectionAfterMove() {
 
     let synchronizedFrames = BrowserSidebarTabFrameSynchronizer.synchronizedRowFrames(
         rowFrames,
-        pinnedTabIDs: ["tab-1", "tab-3"],
+        spacePinnedTabIDs: ["tab-1", "tab-3"],
         temporaryTabIDs: ["tab-2"]
     )
 
@@ -109,13 +109,13 @@ func tabFrameSynchronizerDropsFramesWithPreviousSectionIndexAfterReorder() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
         "tab-2": BrowserSidebarTabRowFrame(
             tabID: "tab-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
         ),
@@ -123,7 +123,7 @@ func tabFrameSynchronizerDropsFramesWithPreviousSectionIndexAfterReorder() {
 
     let synchronizedFrames = BrowserSidebarTabFrameSynchronizer.synchronizedRowFrames(
         rowFrames,
-        pinnedTabIDs: ["tab-2", "tab-1"],
+        spacePinnedTabIDs: ["tab-2", "tab-1"],
         temporaryTabIDs: []
     )
 
@@ -135,13 +135,13 @@ func tabFrameSynchronizerEstimatesDropFramesForFreshlyMovedTab() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
         "tab-2": BrowserSidebarTabRowFrame(
             tabID: "tab-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
         ),
@@ -152,17 +152,17 @@ func tabFrameSynchronizerEstimatesDropFramesForFreshlyMovedTab() {
             frame: CGRect(x: 0, y: 112, width: 200, height: 36)
         ),
     ]
-    let pinnedTabIDs = ["tab-1", "tab-3", "tab-2"]
+    let spacePinnedTabIDs = ["tab-1", "tab-3", "tab-2"]
 
     let synchronizedFrames = BrowserSidebarTabFrameSynchronizer.synchronizedRowFrames(
         rowFrames,
-        pinnedTabIDs: pinnedTabIDs,
+        spacePinnedTabIDs: spacePinnedTabIDs,
         temporaryTabIDs: []
     )
     let dropRowFrames = BrowserSidebarTabFrameSynchronizer.synchronizedDropRowFrameList(
         rowFrames,
         emptySectionFrames: [],
-        pinnedTabIDs: pinnedTabIDs,
+        spacePinnedTabIDs: spacePinnedTabIDs,
         temporaryTabIDs: [],
         rowHeight: 36,
         rowSpacing: 5
@@ -172,19 +172,19 @@ func tabFrameSynchronizerEstimatesDropFramesForFreshlyMovedTab() {
     #expect(dropRowFrames == [
         BrowserSidebarTabRowFrame(
             tabID: "tab-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
         BrowserSidebarTabRowFrame(
             tabID: "tab-3",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
         ),
         BrowserSidebarTabRowFrame(
             tabID: "tab-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 2,
             frame: CGRect(x: 0, y: 82, width: 200, height: 36)
         ),
@@ -196,23 +196,23 @@ func tabFrameSynchronizerEstimatesDropFramesAfterSameSectionReorder() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
         "tab-2": BrowserSidebarTabRowFrame(
             tabID: "tab-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
         ),
     ]
-    let pinnedTabIDs = ["tab-2", "tab-1"]
+    let spacePinnedTabIDs = ["tab-2", "tab-1"]
 
     let dropRowFrames = BrowserSidebarTabFrameSynchronizer.synchronizedDropRowFrameList(
         rowFrames,
         emptySectionFrames: [],
-        pinnedTabIDs: pinnedTabIDs,
+        spacePinnedTabIDs: spacePinnedTabIDs,
         temporaryTabIDs: [],
         rowHeight: 36,
         rowSpacing: 5
@@ -221,15 +221,52 @@ func tabFrameSynchronizerEstimatesDropFramesAfterSameSectionReorder() {
     #expect(dropRowFrames == [
         BrowserSidebarTabRowFrame(
             tabID: "tab-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
         BrowserSidebarTabRowFrame(
             tabID: "tab-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
+        ),
+    ])
+}
+
+@Test
+func tabFrameSynchronizerAllowsDuplicateFallbackFramesDuringCrossSectionDrag() {
+    let fallbackRowFrames = [
+        BrowserSidebarTabRowFrame(
+            tabID: "tab-1",
+            section: .temporary,
+            sectionIndex: 0,
+            frame: CGRect(x: 0, y: 112, width: 200, height: 36)
+        ),
+        BrowserSidebarTabRowFrame(
+            tabID: "tab-1",
+            section: .spacePinned,
+            sectionIndex: 0,
+            frame: CGRect(x: 0, y: 0, width: 200, height: 36)
+        ),
+    ]
+
+    let dropRowFrames = BrowserSidebarTabFrameSynchronizer.synchronizedDropRowFrameList(
+        [:],
+        fallbackRowFrames: fallbackRowFrames,
+        emptySectionFrames: [],
+        spacePinnedTabIDs: ["tab-1"],
+        temporaryTabIDs: [],
+        rowHeight: 36,
+        rowSpacing: 5
+    )
+
+    #expect(dropRowFrames == [
+        BrowserSidebarTabRowFrame(
+            tabID: "tab-1",
+            section: .spacePinned,
+            sectionIndex: 0,
+            frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
     ])
 }
@@ -249,11 +286,11 @@ func tabFrameSynchronizerUsesEmptySectionAnchorForFirstDropFrame() {
         rowFrames,
         emptySectionFrames: [
             BrowserSidebarEmptySectionFrame(
-                section: .pinned,
+                section: .spacePinned,
                 frame: CGRect(x: 0, y: 0, width: 200, height: 14)
             ),
         ],
-        pinnedTabIDs: ["tab-1"],
+        spacePinnedTabIDs: ["tab-1"],
         temporaryTabIDs: [],
         rowHeight: 36,
         rowSpacing: 5
@@ -262,7 +299,7 @@ func tabFrameSynchronizerUsesEmptySectionAnchorForFirstDropFrame() {
     #expect(dropRowFrames == [
         BrowserSidebarTabRowFrame(
             tabID: "tab-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
@@ -282,7 +319,7 @@ func tabFrameSynchronizerUsesFallbackDropFrameWhenPreferencesLag() {
     let fallbackRowFrames = [
         BrowserSidebarTabRowFrame(
             tabID: "tab-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
@@ -292,7 +329,7 @@ func tabFrameSynchronizerUsesFallbackDropFrameWhenPreferencesLag() {
         rowFrames,
         fallbackRowFrames: fallbackRowFrames,
         emptySectionFrames: [],
-        pinnedTabIDs: ["tab-1"],
+        spacePinnedTabIDs: ["tab-1"],
         temporaryTabIDs: [],
         rowHeight: 36,
         rowSpacing: 5
@@ -305,7 +342,7 @@ func tabFrameSynchronizerUsesFallbackDropFrameWhenPreferencesLag() {
 func tabFrameSynchronizerKeepsOnlyCurrentlyEmptySectionFrames() {
     let emptySectionFrames = [
         BrowserSidebarEmptySectionFrame(
-            section: .pinned,
+            section: .spacePinned,
             frame: CGRect(x: 0, y: 0, width: 200, height: 14)
         ),
         BrowserSidebarEmptySectionFrame(
@@ -317,7 +354,7 @@ func tabFrameSynchronizerKeepsOnlyCurrentlyEmptySectionFrames() {
     #expect(
         BrowserSidebarTabFrameSynchronizer.synchronizedEmptySectionFrames(
             emptySectionFrames,
-            pinnedTabIDs: [],
+            spacePinnedTabIDs: [],
             temporaryTabIDs: ["tab-1"]
         ) == [emptySectionFrames[0]]
     )
@@ -359,17 +396,17 @@ func tabDragResolverIgnoresFarAndInvalidTargets() {
 @Test
 func tabDropIndicatorFrameResolverDrawsOnlyOneLineBetweenRows() {
     let resolver = BrowserSidebarTabDropIndicatorFrameResolver()
-    let target = BrowserSidebarTabDropTarget(section: .pinned, sectionIndex: 1)
+    let target = BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: 1)
     let rowFrames = [
         BrowserSidebarTabRowFrame(
             tabID: "pinned-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
         BrowserSidebarTabRowFrame(
             tabID: "pinned-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
         ),
@@ -392,7 +429,7 @@ func tabDropIndicatorFrameResolverFallsBackToFollowingRowTopEdge() {
     let rowFrames = [
         BrowserSidebarTabRowFrame(
             tabID: "pinned-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
         ),
@@ -400,7 +437,7 @@ func tabDropIndicatorFrameResolverFallsBackToFollowingRowTopEdge() {
 
     #expect(
         resolver.frame(
-            for: BrowserSidebarTabDropTarget(section: .pinned, sectionIndex: 1),
+            for: BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: 1),
             rowFrames: rowFrames,
             emptySectionFrames: [],
             horizontalInset: 6,
@@ -415,13 +452,13 @@ func tabDropIndicatorFrameResolverUsesPreviousRowBottomAtSectionEnd() {
     let rowFrames = [
         BrowserSidebarTabRowFrame(
             tabID: "pinned-1",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 0,
             frame: CGRect(x: 0, y: 0, width: 200, height: 36)
         ),
         BrowserSidebarTabRowFrame(
             tabID: "pinned-2",
-            section: .pinned,
+            section: .spacePinned,
             sectionIndex: 1,
             frame: CGRect(x: 0, y: 41, width: 200, height: 36)
         ),
@@ -429,7 +466,7 @@ func tabDropIndicatorFrameResolverUsesPreviousRowBottomAtSectionEnd() {
 
     #expect(
         resolver.frame(
-            for: BrowserSidebarTabDropTarget(section: .pinned, sectionIndex: 2),
+            for: BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: 2),
             rowFrames: rowFrames,
             emptySectionFrames: [],
             horizontalInset: 6,
@@ -465,5 +502,150 @@ func tabDropIndicatorFrameResolverUsesTopEdgeOnlyAtSectionStart() {
             horizontalInset: 6,
             thickness: 2
         ) == CGRect(x: 6, y: 111, width: 188, height: 2)
+    )
+}
+
+@Test
+func appTabGridLayoutStretchesOneToThreeItemsAcrossOneRow() {
+    let layout = BrowserSidebarAppTabGridLayout(spacing: 5)
+
+    #expect(layout.frames(for: 1, availableWidth: 200) == [
+        CGRect(x: 0, y: 0, width: 200, height: 46.25),
+    ])
+    #expect(layout.frames(for: 2, availableWidth: 200) == [
+        CGRect(x: 0, y: 0, width: 97.5, height: 46.25),
+        CGRect(x: 102.5, y: 0, width: 97.5, height: 46.25),
+    ])
+    #expect(layout.frames(for: 3, availableWidth: 200) == [
+        CGRect(x: 0, y: 0, width: 63.333333333333336, height: 46.25),
+        CGRect(x: 68.33333333333334, y: 0, width: 63.333333333333336, height: 46.25),
+        CGRect(x: 136.66666666666669, y: 0, width: 63.333333333333336, height: 46.25),
+    ])
+}
+
+@Test
+func appTabGridLayoutUsesFourColumnsAndTwoRowsForFiveToEightItems() {
+    let layout = BrowserSidebarAppTabGridLayout(spacing: 5)
+
+    #expect(layout.frames(for: 4, availableWidth: 200) == [
+        CGRect(x: 0, y: 0, width: 46.25, height: 46.25),
+        CGRect(x: 51.25, y: 0, width: 46.25, height: 46.25),
+        CGRect(x: 102.5, y: 0, width: 46.25, height: 46.25),
+        CGRect(x: 153.75, y: 0, width: 46.25, height: 46.25),
+    ])
+    #expect(layout.frames(for: 5, availableWidth: 200).last == CGRect(x: 0, y: 51.25, width: 200, height: 46.25))
+    #expect(layout.frames(for: 8, availableWidth: 200).last == CGRect(x: 153.75, y: 51.25, width: 46.25, height: 46.25))
+    #expect(layout.height(for: 8, availableWidth: 200) == 97.5)
+}
+
+@Test
+func appTabDropFrameListUsesContainerFrame() {
+    let frames = BrowserSidebarAppTabFrameSynchronizer.dropFrameList(
+        containerFrame: CGRect(x: 10, y: 20, width: 200, height: 100),
+        appTabIDs: ["tab-1", "tab-2"],
+        spacing: 5
+    )
+
+    #expect(frames == [
+        BrowserSidebarAppTabFrame(
+            tabID: "tab-1",
+            sectionIndex: 0,
+            frame: CGRect(x: 10, y: 20, width: 97.5, height: 46.25)
+        ),
+        BrowserSidebarAppTabFrame(
+            tabID: "tab-2",
+            sectionIndex: 1,
+            frame: CGRect(x: 112.5, y: 20, width: 97.5, height: 46.25)
+        ),
+    ])
+}
+
+@Test
+func tabDragResolverUsesEmptyAppTabContainerFrame() {
+    let resolver = BrowserSidebarTabDragTargetResolver(
+        verticalSnapDistance: 24,
+        horizontalTolerance: 48
+    )
+
+    #expect(
+        resolver.target(
+            for: CGPoint(x: 30, y: 8),
+            rowFrames: [],
+            emptySectionFrames: [],
+            appTabContainerFrame: CGRect(x: 0, y: 0, width: 200, height: 14),
+            canMoveToTarget: { _ in true }
+        ) == BrowserSidebarTabDropTarget(section: .app, sectionIndex: 0)
+    )
+}
+
+@Test
+func tabDragResolverFindsAppTabGridInsertionIndex() {
+    let resolver = BrowserSidebarTabDragTargetResolver(
+        verticalSnapDistance: 24,
+        horizontalTolerance: 48
+    )
+    let appTabFrames = BrowserSidebarAppTabFrameSynchronizer.dropFrameList(
+        containerFrame: CGRect(x: 0, y: 0, width: 200, height: 100),
+        appTabIDs: ["tab-1", "tab-2", "tab-3", "tab-4"],
+        spacing: 5
+    )
+
+    #expect(
+        resolver.target(
+            for: CGPoint(x: 10, y: 10),
+            rowFrames: [],
+            emptySectionFrames: [],
+            appTabFrames: appTabFrames,
+            canMoveToTarget: { _ in true }
+        ) == BrowserSidebarTabDropTarget(section: .app, sectionIndex: 0)
+    )
+    #expect(
+        resolver.target(
+            for: CGPoint(x: 130, y: 10),
+            rowFrames: [],
+            emptySectionFrames: [],
+            appTabFrames: appTabFrames,
+            canMoveToTarget: { _ in true }
+        ) == BrowserSidebarTabDropTarget(section: .app, sectionIndex: 3)
+    )
+}
+
+@Test
+func tabDragResolverSwitchesBetweenGridAndRows() {
+    let resolver = BrowserSidebarTabDragTargetResolver(
+        verticalSnapDistance: 24,
+        horizontalTolerance: 48
+    )
+    let appTabFrames = BrowserSidebarAppTabFrameSynchronizer.dropFrameList(
+        containerFrame: CGRect(x: 0, y: 0, width: 200, height: 60),
+        appTabIDs: ["tab-1"],
+        spacing: 5
+    )
+    let rowFrames = [
+        BrowserSidebarTabRowFrame(
+            tabID: "temporary-1",
+            section: .temporary,
+            sectionIndex: 0,
+            frame: CGRect(x: 0, y: 90, width: 200, height: 36)
+        ),
+    ]
+
+    #expect(
+        resolver.target(
+            for: CGPoint(x: 40, y: 20),
+            rowFrames: rowFrames,
+            emptySectionFrames: [],
+            appTabFrames: appTabFrames,
+            canMoveToTarget: { _ in true }
+        ) == BrowserSidebarTabDropTarget(section: .app, sectionIndex: 0)
+    )
+    #expect(
+        resolver.target(
+            for: CGPoint(x: 40, y: 91),
+            rowFrames: rowFrames,
+            emptySectionFrames: [],
+            appTabFrames: appTabFrames,
+            canMoveToTarget: { _ in true }
+        ) == BrowserSidebarTabDropTarget(section: .temporary, sectionIndex: 0)
     )
 }

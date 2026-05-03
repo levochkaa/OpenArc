@@ -13,14 +13,18 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     nonisolated static let maxSidebarWidth: CGFloat = defaultSidebarWidth * 2
     nonisolated static let defaultNewTabURLString = "https://www.google.com"
     nonisolated static let automaticArchivalCheckInterval: TimeInterval = 60 * 60
+    nonisolated static let appTabCapacity = 8
+    nonisolated static let defaultSpaceID = "default-space"
+    nonisolated static let defaultSpaceIconName = "square.grid.2x2"
 
     struct Tab: Identifiable, Equatable {
         let id: String
+        var spaceID: String
         var title: String
         var userTitleOverride: String?
         var urlString: String
         var faviconURLString: String?
-        var isPinned = false
+        var placement: BrowserTabPlacement = .temporary
         var lastActivityAt = Date()
         var canGoBack = false
         var canGoForward = false
@@ -75,12 +79,28 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
     }
 
+    struct Space: Identifiable, Equatable {
+        let id: String
+        var title: String
+        var systemImageName: String
+        var isPinnedSectionCollapsed: Bool
+        var selectedTabID: String?
+    }
+
+    private struct PendingCreatedTabContext {
+        let spaceID: String
+        let placement: BrowserTabPlacement
+    }
+
     enum BrowserInternalPage: Equatable {
         case settings
         case extensions
+        case passwordManager
     }
 
     @Published private(set) var tabs: [Tab] = []
+    @Published private(set) var spaces: [Space] = []
+    @Published private(set) var selectedSpaceID: String?
     @Published private(set) var selectedTabID: String?
     @Published var isSidebarVisible = true
     @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
@@ -100,9 +120,14 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     let hostView: NSView
+    let userPreferencesStore: BrowserUserPreferencesStore
+    let shortcutStore: BrowserShortcutStore
     lazy var commandBarModel: BrowserCommandBarModel = .init(
         suggestionProvider: commandBarSuggestionProvider,
         navigationResolver: navigationResolver,
+        remoteSuggestionsEnabledProvider: { [weak self] in
+            self?.canLoadRemoteSearchSuggestions ?? false
+        },
         submitHandler: { [weak self] resolvedURLString in
             self?.openResolvedSelectionInNewTab(resolvedURLString)
         }
@@ -110,6 +135,9 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     lazy var currentPageCommandBarModel: BrowserCommandBarModel = .init(
         suggestionProvider: commandBarSuggestionProvider,
         navigationResolver: navigationResolver,
+        remoteSuggestionsEnabledProvider: { [weak self] in
+            self?.canLoadRemoteSearchSuggestions ?? false
+        },
         submitHandler: { [weak self] resolvedURLString in
             self?.navigateSelectedTab(toURLString: resolvedURLString)
         }
@@ -125,6 +153,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     private let windowTitleHandler: (String) -> Void
     private let allTabsClosedHandler: () -> Void
     private let dateProvider: () -> Date
+    private let spaceIDProvider: () -> String
 
     private var hasCreatedInitialTab = false
     private var closingTabIDs = Set<String>()
@@ -132,6 +161,8 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     private var isRestoringSession = false
     private var pendingRestoredSelectedTabIndex: Int?
     private var pendingRestoredTabs: [BrowserTabSessionSnapshotTab] = []
+    private var pendingRestoredSpaces: [BrowserSpaceSessionSnapshot] = []
+    private var pendingCreatedTabContexts: [String: PendingCreatedTabContext] = [:]
     private var remainingRestoredTabCreations = 0
     private var automaticArchivalTimer: Timer?
 
@@ -178,6 +209,10 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         selectedTab != nil
     }
 
+    var canLoadRemoteSearchSuggestions: Bool {
+        userPreferencesStore.searchEngineSuggestionsEnabled && userPreferencesStore.searchEngine == .google
+    }
+
     var selectedTabUsesWindowedBrowser: Bool {
         guard let selectedTab else {
             return false
@@ -210,16 +245,44 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         !tabs.isEmpty
     }
 
+    var appTabs: [Tab] {
+        tabs.filter { $0.placement == .app }
+    }
+
+    var activeSpace: Space? {
+        guard let selectedSpaceID else {
+            return nil
+        }
+
+        return spaces.first { $0.id == selectedSpaceID }
+    }
+
+    var activeSpaceTabs: [Tab] {
+        guard let selectedSpaceID else {
+            return []
+        }
+
+        return tabs.filter { $0.spaceID == selectedSpaceID }
+    }
+
     var pinnedTabs: [Tab] {
-        tabs.filter(\.isPinned)
+        spacePinnedTabs
+    }
+
+    var spacePinnedTabs: [Tab] {
+        activeSpaceTabs.filter { $0.placement == .spacePinned }
     }
 
     var temporaryTabs: [Tab] {
-        tabs.filter { !$0.isPinned }
+        activeSpaceTabs.filter { $0.placement == .temporary }
     }
 
     var hasTemporaryTabs: Bool {
-        tabs.contains { !$0.isPinned }
+        !temporaryTabs.isEmpty
+    }
+
+    var isActiveSpacePinnedSectionCollapsed: Bool {
+        activeSpace?.isPinnedSectionCollapsed ?? false
     }
 
     init(
@@ -228,9 +291,12 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         sessionPreferencesStore: BrowserSessionPreferencesStoring,
         newTabURLString: String = BrowserChromeModel.defaultNewTabURLString,
         commandBarSuggestionProvider: BrowserSuggestionProviding = BrowserGoogleSuggestionService(),
-        navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver(),
+        navigationResolver: BrowserNavigationResolver? = nil,
+        userPreferencesStore: BrowserUserPreferencesStore = BrowserUserPreferencesStore(),
+        shortcutStore: BrowserShortcutStore = BrowserShortcutStore(),
         extensionManager: any BrowserExtensionManaging,
         dateProvider: @escaping () -> Date = Date.init,
+        spaceIDProvider: @escaping () -> String = { UUID().uuidString },
         windowTitleHandler: @escaping (String) -> Void,
         allTabsClosedHandler: @escaping () -> Void
     ) {
@@ -239,10 +305,15 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         self.sessionPreferencesStore = sessionPreferencesStore
         self.newTabURLString = newTabURLString
         self.commandBarSuggestionProvider = commandBarSuggestionProvider
-        self.navigationResolver = navigationResolver
+        self.userPreferencesStore = userPreferencesStore
+        self.shortcutStore = shortcutStore
+        self.navigationResolver = navigationResolver ?? BrowserNavigationResolver(
+            searchEngineProvider: { userPreferencesStore.searchEngine }
+        )
         self.extensionManager = extensionManager
         temporaryTabLifetime = sessionPreferencesStore.loadTemporaryTabLifetime()
         self.dateProvider = dateProvider
+        self.spaceIDProvider = spaceIDProvider
         self.windowTitleHandler = windowTitleHandler
         self.allTabsClosedHandler = allTabsClosedHandler
         hostView = tabDriver.hostView
@@ -297,6 +368,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             return
         }
 
+        ensureDefaultSpace()
         ensureInitialTab()
         archiveExpiredTemporaryTabs()
     }
@@ -322,22 +394,95 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         createTab(withURLString: url.absoluteString)
     }
 
-    func togglePinned(forTabID tabID: String) {
-        guard let tab = tabs.first(where: { $0.id == tabID }) else {
+    func createNewSpace() {
+        let space = makeSpace()
+        spaces.append(space)
+        selectSpace(id: space.id)
+        persistCurrentSessionIfAllowed()
+    }
+
+    func selectSpace(id spaceID: String) {
+        guard
+            spaces.contains(where: { $0.id == spaceID }),
+            selectedSpaceID != spaceID
+        else {
             return
         }
 
-        let targetPinnedState = !tab.isPinned
-        let targetSectionIndex = targetPinnedState ? pinnedTabs.count : temporaryTabs.count
-        moveTab(withID: tabID, toPinnedState: targetPinnedState, atSectionIndex: targetSectionIndex)
+        dismissCommandBar()
+        selectedSpaceID = spaceID
+        selectActiveTabForSelectedSpace()
+        persistCurrentSessionIfAllowed()
     }
 
-    func canMoveTab(withID tabID: String, toPinnedState isPinned: Bool, atSectionIndex sectionIndex: Int) -> Bool {
+    func selectNextSpace() {
+        selectAdjacentSpace(offset: 1)
+    }
+
+    func selectPreviousSpace() {
+        selectAdjacentSpace(offset: -1)
+    }
+
+    func toggleActiveSpacePinnedSectionCollapsed() {
+        guard let index = selectedSpaceIndex else {
+            return
+        }
+
+        spaces[index].isPinnedSectionCollapsed.toggle()
+        persistCurrentSessionIfAllowed()
+    }
+
+    func setTitle(_ title: String?, forSpaceID spaceID: String) {
+        guard let index = spaces.firstIndex(where: { $0.id == spaceID }) else {
+            return
+        }
+
+        let sanitizedTitle = sanitizedSpaceTitle(from: title) ?? defaultSpaceTitle(forDisplayIndex: index + 1)
+        guard spaces[index].title != sanitizedTitle else {
+            return
+        }
+
+        spaces[index].title = sanitizedTitle
+        persistCurrentSessionIfAllowed()
+    }
+
+    func setIcon(_ systemImageName: String, forSpaceID spaceID: String) {
+        guard
+            let index = spaces.firstIndex(where: { $0.id == spaceID }),
+            spaces[index].systemImageName != systemImageName
+        else {
+            return
+        }
+
+        spaces[index].systemImageName = systemImageName
+        persistCurrentSessionIfAllowed()
+    }
+
+    func togglePinned(forTabID tabID: String) {
+        guard
+            let tab = tabs.first(where: { $0.id == tabID }),
+            tab.spaceID == selectedSpaceID
+        else {
+            return
+        }
+
+        let targetPlacement: BrowserTabPlacement = tab.placement == .spacePinned ? .temporary : .spacePinned
+        let targetSectionIndex = tabCount(for: targetPlacement)
+        moveTab(withID: tabID, toPlacement: targetPlacement, atSectionIndex: targetSectionIndex)
+    }
+
+    func canMoveTab(
+        withID tabID: String,
+        toPlacement placement: BrowserTabPlacement,
+        atSectionIndex sectionIndex: Int,
+        targetSpaceID: String? = nil
+    ) -> Bool {
         guard
             let reorderedTabs = reorderedTabs(
                 movingTabID: tabID,
-                toPinnedState: isPinned,
-                requestedSectionIndex: sectionIndex
+                toPlacement: placement,
+                requestedSectionIndex: sectionIndex,
+                targetSpaceID: targetSpaceID
             )
         else {
             return false
@@ -346,23 +491,45 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         return reorderedTabs != tabs
     }
 
-    func moveTab(withID tabID: String, toPinnedState isPinned: Bool, atSectionIndex sectionIndex: Int) {
+    func moveTab(
+        withID tabID: String,
+        toPlacement placement: BrowserTabPlacement,
+        atSectionIndex sectionIndex: Int,
+        targetSpaceID: String? = nil
+    ) {
         guard
+            let movingTab = tabs.first(where: { $0.id == tabID }),
             var reorderedTabs = reorderedTabs(
                 movingTabID: tabID,
-                toPinnedState: isPinned,
-                requestedSectionIndex: sectionIndex
+                toPlacement: placement,
+                requestedSectionIndex: sectionIndex,
+                targetSpaceID: targetSpaceID
             ),
             reorderedTabs != tabs
         else {
             return
         }
 
+        let wasSelectedInSourceSpace = spaces.first { $0.id == movingTab.spaceID }?.selectedTabID == tabID
+            || selectedTabID == tabID
+
         if let movedTabIndex = reorderedTabs.firstIndex(where: { $0.id == tabID }) {
             reorderedTabs[movedTabIndex].lastActivityAt = dateProvider()
         }
 
         tabs = reorderedTabs
+        if
+            let movedTab = tabs.first(where: { $0.id == tabID }),
+            movedTab.placement != .app
+        {
+            if wasSelectedInSourceSpace {
+                clearSelectedTab(tabID, forSpaceID: movingTab.spaceID)
+                setSelectedTabID(tabID, forSpaceID: movedTab.spaceID)
+            }
+        }
+        if selectedTabID == tabID {
+            selectActiveTabForSelectedSpace()
+        }
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
     }
@@ -395,9 +562,11 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
 
         let cutoffDate = dateProvider().addingTimeInterval(-temporaryTabLifetime.timeInterval)
+        let activeSpaceID = selectedSpaceID
         let tabIDsToArchive = tabs.compactMap { tab -> String? in
             guard
-                !tab.isPinned,
+                tab.spaceID == activeSpaceID,
+                tab.placement == .temporary,
                 tab.id != selectedTabID,
                 tab.lastActivityAt <= cutoffDate
             else {
@@ -664,7 +833,8 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
     func selectTab(id: String) {
         guard
-            tabs.contains(where: { $0.id == id }),
+            let tab = tabs.first(where: { $0.id == id }),
+            tab.spaceID == selectedSpaceID,
             selectedTabID != id,
             !closingTabIDs.contains(id)
         else {
@@ -674,6 +844,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         dismissCommandBar()
 
         selectedTabID = id
+        setSelectedTabID(id, forSpaceID: tab.spaceID)
         findResultMatchCount = nil
         tabDriver.selectTab(withID: id)
         touchTab(id: id)
@@ -690,15 +861,15 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             return
         }
 
-        let isReplacingLastTab = tabs.count == 1 && !isShuttingDown
+        let closingTab = tabs[closingIndex]
+        let closingTabWasSelected = selectedTabID == id
         closingTabIDs.insert(id)
 
-        if isReplacingLastTab {
-            let replacementID = tabDriver.createTab(withURLString: newTabURLString, makeActive: true)
-            selectedTabID = replacementID
-            findResultMatchCount = nil
-        } else if selectedTabID == id {
-            let fallbackTabID = fallbackTabID(afterClosingIndex: closingIndex)
+        tabs.removeAll { $0.id == id }
+        clearSelectedTab(id, forSpaceID: closingTab.spaceID)
+
+        if closingTabWasSelected {
+            let fallbackTabID = fallbackTabID(afterClosingTab: closingTab)
             let fallbackUsesWindowedBrowser = fallbackTabID.map { tabUsesWindowedBrowser(id: $0) } ?? false
             if fallbackUsesWindowedBrowser {
                 dismissFindBar()
@@ -707,19 +878,20 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             findResultMatchCount = nil
             if let fallbackTabID {
                 tabDriver.selectTab(withID: fallbackTabID)
+                setSelectedTabID(fallbackTabID, forSpaceID: closingTab.spaceID)
                 if !fallbackUsesWindowedBrowser {
                     runFind(forward: true, findNext: false)
                 }
+            } else {
+                tabDriver.deselectActiveTab()
             }
+        } else if selectedTabID == id {
+            selectedTabID = nil
         }
 
-        tabs.removeAll { $0.id == id }
         tabDriver.closeTab(withID: id, forceClose: forceClose)
         updateWindowTitle()
-
-        if !isReplacingLastTab {
-            persistCurrentSessionIfAllowed()
-        }
+        persistCurrentSessionIfAllowed()
     }
 
     func setUserTitleOverride(_ titleOverride: String?, forTabID tabID: String) {
@@ -762,28 +934,46 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             return
         }
 
+        ensureDefaultSpace()
         hasCreatedInitialTab = true
         createTab(withURLString: newTabURLString)
     }
 
     private func restoreSessionIfAvailable() -> Bool {
-        guard
-            let snapshot = sessionSnapshotStore.loadSnapshot(),
-            !snapshot.tabURLStrings.isEmpty
-        else {
+        guard userPreferencesStore.restoreWindowsOnLaunch else {
+            return false
+        }
+
+        guard let snapshot = sessionSnapshotStore.loadSnapshot() else {
+            return false
+        }
+
+        let restoredSpaces = restoredSpaces(from: snapshot)
+        guard !restoredSpaces.isEmpty || !snapshot.tabs.isEmpty else {
             return false
         }
 
         isRestoringSession = true
         hasCreatedInitialTab = true
+        spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
+        let selectedSpaceIndex = sessionPreferencesStore.loadSelectedSpaceIndex(
+            spaceCount: spaces.count
+        ) ?? 0
+        selectedSpaceID = spaces.indices.contains(selectedSpaceIndex) ? spaces[selectedSpaceIndex].id : spaces.first?.id
         pendingRestoredSelectedTabIndex = sessionPreferencesStore.loadSelectedTabIndex(
             tabCount: snapshot.tabs.count
         )
+        pendingRestoredSpaces = snapshot.spaces ?? []
         pendingRestoredTabs = snapshot.tabs
         remainingRestoredTabCreations = snapshot.tabs.count
 
+        guard !snapshot.tabs.isEmpty else {
+            finishSessionRestoreIfNeeded()
+            return true
+        }
+
         for (index, tabSnapshot) in snapshot.tabs.enumerated() {
-            _ = tabDriver.createTab(withURLString: tabSnapshot.urlString, makeActive: index == 0)
+            _ = tabDriver.createTab(withURLString: tabSnapshot.urlString, makeActive: index == pendingRestoredSelectedTabIndex)
         }
 
         return true
@@ -805,19 +995,12 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             return
         }
 
-        if
-            let selectedTabIndex = pendingRestoredSelectedTabIndex,
-            tabs.indices.contains(selectedTabIndex)
-        {
-            let restoredTabID = tabs[selectedTabIndex].id
-            selectedTabID = restoredTabID
-            tabDriver.selectTab(withID: restoredTabID)
-        } else {
-            selectedTabID = tabs.first?.id
-        }
+        restoreSelectedTabsForSpaces()
+        selectActiveTabForSelectedSpace()
 
         pendingRestoredSelectedTabIndex = nil
         pendingRestoredTabs.removeAll()
+        pendingRestoredSpaces.removeAll()
         isRestoringSession = false
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
@@ -831,16 +1014,27 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
         sessionSnapshotStore.saveSnapshot(
             BrowserTabSessionSnapshot(
+                spaces: spaces.map { space in
+                    BrowserSpaceSessionSnapshot(
+                        id: space.id,
+                        title: space.title,
+                        systemImageName: space.systemImageName,
+                        isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
+                        selectedTabIndex: selectedTabIndex(inSpace: space.id)
+                    )
+                },
                 tabs: tabs.map { tab in
                     BrowserTabSessionSnapshotTab(
                         urlString: tab.urlString,
                         userTitleOverride: tab.userTitleOverride,
-                        isPinned: tab.isPinned,
+                        placement: tab.placement,
+                        spaceID: tab.spaceID,
                         lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970
                     )
                 }
             )
         )
+        sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
         sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
     }
 
@@ -865,13 +1059,34 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         return tabs.firstIndex(where: { $0.id == selectedTabID })
     }
 
+    private var selectedSpaceIndex: Int? {
+        guard let selectedSpaceID else {
+            return nil
+        }
+
+        return spaces.firstIndex(where: { $0.id == selectedSpaceID })
+    }
+
     private func createTab(withURLString urlString: String) {
         guard canCreateTab else {
             return
         }
 
+        ensureDefaultSpace()
+        guard let selectedSpaceID else {
+            return
+        }
+
         let tabID = tabDriver.createTab(withURLString: urlString, makeActive: true)
+        let context = PendingCreatedTabContext(spaceID: selectedSpaceID, placement: .temporary)
+        if let index = tabs.firstIndex(where: { $0.id == tabID }) {
+            tabs[index].spaceID = selectedSpaceID
+            tabs[index].placement = context.placement
+        } else {
+            pendingCreatedTabContexts[tabID] = context
+        }
         selectedTabID = tabID
+        setSelectedTabID(tabID, forSpaceID: selectedSpaceID)
         findResultMatchCount = nil
         updateWindowTitle()
     }
@@ -893,7 +1108,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     private func tabIDsBelowInSidebarOrder(forTabID tabID: String) -> [String] {
-        let sidebarTabIDs = (pinnedTabs + temporaryTabs).map(\.id)
+        let sidebarTabIDs = (appTabs + spacePinnedTabs + temporaryTabs).map(\.id)
         guard let tabIndex = sidebarTabIDs.firstIndex(of: tabID) else {
             return []
         }
@@ -928,18 +1143,30 @@ private extension BrowserChromeModel {
         return trimmedTitleOverride.isEmpty ? nil : trimmedTitleOverride
     }
 
-    func fallbackTabID(afterClosingIndex closingIndex: Int) -> String? {
-        let nextIndex = closingIndex + 1
-        if tabs.indices.contains(nextIndex) {
-            return tabs[nextIndex].id
+    func fallbackTabID(afterClosingTab closingTab: Tab?) -> String? {
+        guard let closingTab else {
+            return sidebarTabsForSelectedSpace().first?.id
+        }
+
+        let visibleTabs = sidebarTabs(forSpaceID: closingTab.spaceID)
+        let previousSidebarOrder = sidebarTabs(
+            forSpaceID: closingTab.spaceID,
+            including: closingTab
+        )
+        guard let closingIndex = previousSidebarOrder.firstIndex(where: { $0.id == closingTab.id }) else {
+            return visibleTabs.first?.id
+        }
+
+        if visibleTabs.indices.contains(closingIndex) {
+            return visibleTabs[closingIndex].id
         }
 
         let previousIndex = closingIndex - 1
-        if tabs.indices.contains(previousIndex) {
-            return tabs[previousIndex].id
+        if visibleTabs.indices.contains(previousIndex) {
+            return visibleTabs[previousIndex].id
         }
 
-        return nil
+        return visibleTabs.first?.id
     }
 
     func tabUsesWindowedBrowser(id: String) -> Bool {
@@ -976,6 +1203,8 @@ private extension BrowserChromeModel {
             return .settings
         case "extensions":
             return .extensions
+        case "password-manager":
+            return .passwordManager
         default:
             return nil
         }
@@ -983,20 +1212,31 @@ private extension BrowserChromeModel {
 
     func handleCreatedTab(id: String, title: String, urlString: String) {
         let restoredTab = isRestoringSession && !pendingRestoredTabs.isEmpty ? pendingRestoredTabs.removeFirst() : nil
+        let pendingContext = pendingCreatedTabContexts.removeValue(forKey: id)
+        let fallbackSpaceID = selectedSpaceID ?? spaces.first?.id ?? Self.defaultSpaceID
+        let tabSpaceID = restoredTab?.spaceID ?? pendingContext?.spaceID ?? fallbackSpaceID
+        if spaces.isEmpty {
+            spaces = [makeDefaultSpace()]
+            selectedSpaceID = tabSpaceID
+        }
         tabs.append(
             Tab(
                 id: id,
+                spaceID: tabSpaceID,
                 title: title,
                 userTitleOverride: restoredTab?.userTitleOverride,
                 urlString: urlString,
                 faviconURLString: nil,
-                isPinned: restoredTab?.isPinned ?? false,
+                placement: restoredTab?.placement ?? pendingContext?.placement ?? .temporary,
                 lastActivityAt: restoredTab.flatMap(lastActivityDate(from:)) ?? dateProvider()
             )
         )
 
         if selectedTabID == nil {
             selectedTabID = id
+        }
+        if selectedTabID == id {
+            setSelectedTabID(id, forSpaceID: tabSpaceID)
         }
 
         if isRestoringSession {
@@ -1089,35 +1329,34 @@ private extension BrowserChromeModel {
 
     func handleClosedTab(id: String) {
         closingTabIDs.remove(id)
-        if tabs.contains(where: { $0.id == id }) {
+        let closedTab = tabs.first { $0.id == id }
+        if closedTab != nil {
             tabs.removeAll { $0.id == id }
+        }
+        if let closedTab {
+            clearSelectedTab(id, forSpaceID: closedTab.spaceID)
         }
 
         if selectedTabID == id {
-            selectedTabID = tabs.first?.id
+            selectedTabID = fallbackTabID(afterClosingTab: closedTab) ?? sidebarTabsForSelectedSpace().first?.id
             if let selectedTabID {
                 tabDriver.selectTab(withID: selectedTabID)
+                setSelectedTabID(selectedTabID, forSpaceID: selectedSpaceID)
+            } else {
+                tabDriver.deselectActiveTab()
             }
         }
 
-        var shouldPersist = true
         if tabs.isEmpty, selectedTabID == nil {
             selectedTabID = nil
-            hasCreatedInitialTab = false
 
             if isShuttingDown {
                 allTabsClosedHandler()
-            } else if isContextReady {
-                shouldPersist = false
-                ensureInitialTab()
             }
         }
 
         updateWindowTitle()
-
-        if shouldPersist {
-            persistCurrentSessionIfAllowed()
-        }
+        persistCurrentSessionIfAllowed()
     }
 
     func handleNavigationStateChange(id: String, canGoBack: Bool, canGoForward: Bool) {
@@ -1144,37 +1383,268 @@ private extension BrowserChromeModel {
 
         tabs[index].lastActivityAt = dateProvider()
     }
+
+    func ensureDefaultSpace() {
+        guard spaces.isEmpty else {
+            if selectedSpaceID == nil {
+                selectedSpaceID = spaces.first?.id
+            }
+            return
+        }
+
+        let defaultSpace = makeDefaultSpace()
+        spaces = [defaultSpace]
+        selectedSpaceID = defaultSpace.id
+    }
+
+    func makeDefaultSpace() -> Space {
+        Space(
+            id: Self.defaultSpaceID,
+            title: defaultSpaceTitle(forDisplayIndex: 1),
+            systemImageName: Self.defaultSpaceIconName,
+            isPinnedSectionCollapsed: false,
+            selectedTabID: nil
+        )
+    }
+
+    func makeSpace() -> Space {
+        Space(
+            id: uniqueSpaceID(),
+            title: defaultSpaceTitle(forDisplayIndex: spaces.count + 1),
+            systemImageName: Self.defaultSpaceIconName,
+            isPinnedSectionCollapsed: false,
+            selectedTabID: nil
+        )
+    }
+
+    func uniqueSpaceID() -> String {
+        var id = spaceIDProvider()
+        while spaces.contains(where: { $0.id == id }) {
+            id = spaceIDProvider()
+        }
+        return id
+    }
+
+    func restoredSpaces(from snapshot: BrowserTabSessionSnapshot) -> [Space] {
+        guard let spaceSnapshots = snapshot.spaces, !spaceSnapshots.isEmpty else {
+            return [makeDefaultSpace()]
+        }
+
+        var seenIDs = Set<String>()
+        return spaceSnapshots.enumerated().compactMap { index, snapshot -> Space? in
+            let id = snapshot.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty, !seenIDs.contains(id) else {
+                return nil
+            }
+
+            seenIDs.insert(id)
+            return Space(
+                id: id,
+                title: sanitizedSpaceTitle(from: snapshot.title) ?? defaultSpaceTitle(forDisplayIndex: index + 1),
+                systemImageName: snapshot.systemImageName.isEmpty ? Self.defaultSpaceIconName : snapshot.systemImageName,
+                isPinnedSectionCollapsed: snapshot.isPinnedSectionCollapsed,
+                selectedTabID: nil
+            )
+        }
+    }
+
+    func restoreSelectedTabsForSpaces() {
+        for index in spaces.indices {
+            let spaceID = spaces[index].id
+            let visibleTabs = sidebarTabs(forSpaceID: spaceID)
+            let selectedIndex = pendingRestoredSpaces.first { $0.id == spaceID }?.selectedTabIndex
+
+            if
+                let selectedIndex,
+                visibleTabs.indices.contains(selectedIndex)
+            {
+                spaces[index].selectedTabID = visibleTabs[selectedIndex].id
+            } else if
+                spaceID == selectedSpaceID,
+                let legacySelectedTabIndex = pendingRestoredSelectedTabIndex,
+                tabs.indices.contains(legacySelectedTabIndex),
+                tabs[legacySelectedTabIndex].spaceID == spaceID
+            {
+                spaces[index].selectedTabID = tabs[legacySelectedTabIndex].id
+            } else {
+                spaces[index].selectedTabID = visibleTabs.first?.id
+            }
+        }
+    }
+
+    func selectActiveTabForSelectedSpace() {
+        guard let selectedSpaceID else {
+            selectedTabID = nil
+            tabDriver.deselectActiveTab()
+            updateWindowTitle()
+            return
+        }
+
+        let selectedTabIDForSpace = spaces.first { $0.id == selectedSpaceID }?.selectedTabID
+        let fallbackTabID = selectedTabIDForSpace.flatMap { tabID -> String? in
+            guard tabs.contains(where: { $0.id == tabID && $0.spaceID == selectedSpaceID }) else {
+                return nil
+            }
+            return tabID
+        } ?? sidebarTabs(forSpaceID: selectedSpaceID).first?.id
+
+        selectedTabID = fallbackTabID
+        findResultMatchCount = nil
+
+        if let fallbackTabID {
+            setSelectedTabID(fallbackTabID, forSpaceID: selectedSpaceID)
+            tabDriver.selectTab(withID: fallbackTabID)
+            runFind(forward: true, findNext: false)
+        } else {
+            tabDriver.deselectActiveTab()
+        }
+
+        updateWindowTitle()
+    }
+
+    func selectAdjacentSpace(offset: Int) {
+        guard
+            spaces.count > 1,
+            let selectedSpaceIndex
+        else {
+            return
+        }
+
+        let nextIndex = (selectedSpaceIndex + offset + spaces.count) % spaces.count
+        selectSpace(id: spaces[nextIndex].id)
+    }
+
+    func setSelectedTabID(_ tabID: String?, forSpaceID spaceID: String?) {
+        guard
+            let spaceID,
+            let index = spaces.firstIndex(where: { $0.id == spaceID })
+        else {
+            return
+        }
+
+        spaces[index].selectedTabID = tabID
+    }
+
+    func clearSelectedTab(_ tabID: String, forSpaceID spaceID: String) {
+        guard
+            let index = spaces.firstIndex(where: { $0.id == spaceID }),
+            spaces[index].selectedTabID == tabID
+        else {
+            return
+        }
+
+        spaces[index].selectedTabID = nil
+    }
+
+    func sidebarTabsForSelectedSpace() -> [Tab] {
+        guard let selectedSpaceID else {
+            return []
+        }
+
+        return sidebarTabs(forSpaceID: selectedSpaceID)
+    }
+
+    func sidebarTabs(forSpaceID spaceID: String, including extraTab: Tab? = nil) -> [Tab] {
+        var spaceTabs = tabs.filter { $0.spaceID == spaceID && $0.placement != .app }
+        if let extraTab, !spaceTabs.contains(where: { $0.id == extraTab.id }) {
+            spaceTabs.append(extraTab)
+        }
+
+        return spaceTabs
+            .filter { $0.placement == .spacePinned }
+            + spaceTabs.filter { $0.placement == .temporary }
+    }
+
+    func selectedTabIndex(inSpace spaceID: String) -> Int? {
+        guard
+            let selectedTabID = spaces.first(where: { $0.id == spaceID })?.selectedTabID,
+            let index = sidebarTabs(forSpaceID: spaceID).firstIndex(where: { $0.id == selectedTabID })
+        else {
+            return nil
+        }
+
+        return index
+    }
+
+    func defaultSpaceTitle(forDisplayIndex displayIndex: Int) -> String {
+        BrowserStrings.defaultSpaceTitle(index: displayIndex)
+    }
+
+    func sanitizedSpaceTitle(from title: String?) -> String? {
+        guard let title else {
+            return nil
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? nil : trimmedTitle
+    }
 }
 
 @MainActor
 extension BrowserChromeModel {
     func reorderedTabs(
         movingTabID: String,
-        toPinnedState isPinned: Bool,
-        requestedSectionIndex: Int
+        toPlacement placement: BrowserTabPlacement,
+        requestedSectionIndex: Int,
+        targetSpaceID: String? = nil
     ) -> [Tab]? {
-        guard let movingTab = tabs.first(where: { $0.id == movingTabID }) else {
+        guard
+            let movingTab = tabs.first(where: { $0.id == movingTabID })
+        else {
             return nil
         }
 
-        let movingWithinTargetSection = movingTab.isPinned == isPinned
-        let sourceSectionTabs = movingTab.isPinned ? pinnedTabs : temporaryTabs
+        if targetSpaceID == nil, movingTab.placement != .app, movingTab.spaceID != selectedSpaceID {
+            return nil
+        }
+
+        let resolvedTargetSpaceID = targetSpaceID ?? selectedSpaceID ?? movingTab.spaceID
+        guard placement == .app || spaces.contains(where: { $0.id == resolvedTargetSpaceID }) else {
+            return nil
+        }
+
+        guard canMoveTab(movingTab, to: placement) else {
+            return nil
+        }
+
+        let movingWithinTargetSection = movingTab.placement == placement
+            && (placement == .app || movingTab.spaceID == resolvedTargetSpaceID)
+        let sourceSectionTabs = tabs(
+            for: movingTab.placement,
+            inSpaceID: movingTab.placement == .app ? nil : movingTab.spaceID
+        )
         let sourceSectionIndex = sourceSectionTabs.firstIndex(where: { $0.id == movingTabID })
 
-        var updatedPinnedTabs = pinnedTabs.filter { $0.id != movingTabID }
-        var updatedTemporaryTabs = temporaryTabs.filter { $0.id != movingTabID }
+        var updatedAppTabs = appTabs.filter { $0.id != movingTabID }
+        var updatedSpacePinnedTabsBySpaceID = tabsBySpaceID(for: .spacePinned, removingTabID: movingTabID)
+        var updatedTemporaryTabsBySpaceID = tabsBySpaceID(for: .temporary, removingTabID: movingTabID)
         var updatedTab = movingTab
-        updatedTab.isPinned = isPinned
+        updatedTab.placement = placement
+        if placement != .app {
+            updatedTab.spaceID = resolvedTargetSpaceID
+        }
 
-        if isPinned {
+        switch placement {
+        case .app:
             let destinationIndex = adjustedSectionIndex(
                 requestedSectionIndex,
                 movingWithinTargetSection: movingWithinTargetSection,
                 sourceSectionIndex: sourceSectionIndex,
-                sectionCount: updatedPinnedTabs.count
+                sectionCount: updatedAppTabs.count
             )
-            updatedPinnedTabs.insert(updatedTab, at: destinationIndex)
-        } else {
+            updatedAppTabs.insert(updatedTab, at: destinationIndex)
+        case .spacePinned:
+            var updatedSpacePinnedTabs = updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] ?? []
+            let destinationIndex = adjustedSectionIndex(
+                requestedSectionIndex,
+                movingWithinTargetSection: movingWithinTargetSection,
+                sourceSectionIndex: sourceSectionIndex,
+                sectionCount: updatedSpacePinnedTabs.count
+            )
+            updatedSpacePinnedTabs.insert(updatedTab, at: destinationIndex)
+            updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] = updatedSpacePinnedTabs
+        case .temporary:
+            var updatedTemporaryTabs = updatedTemporaryTabsBySpaceID[resolvedTargetSpaceID] ?? []
             let destinationIndex = adjustedSectionIndex(
                 requestedSectionIndex,
                 movingWithinTargetSection: movingWithinTargetSection,
@@ -1182,14 +1652,72 @@ extension BrowserChromeModel {
                 sectionCount: updatedTemporaryTabs.count
             )
             updatedTemporaryTabs.insert(updatedTab, at: destinationIndex)
+            updatedTemporaryTabsBySpaceID[resolvedTargetSpaceID] = updatedTemporaryTabs
         }
 
-        return updatedPinnedTabs + updatedTemporaryTabs
+        return tabsByReplacingTabs(
+            spacePinnedTabsBySpaceID: updatedSpacePinnedTabsBySpaceID,
+            temporaryTabsBySpaceID: updatedTemporaryTabsBySpaceID,
+            appTabs: updatedAppTabs
+        )
     }
 }
 
 @MainActor
 private extension BrowserChromeModel {
+    func tabCount(for placement: BrowserTabPlacement) -> Int {
+        tabs(for: placement).count
+    }
+
+    func tabs(for placement: BrowserTabPlacement) -> [Tab] {
+        tabs(for: placement, inSpaceID: selectedSpaceID)
+    }
+
+    func tabs(for placement: BrowserTabPlacement, inSpaceID spaceID: String?) -> [Tab] {
+        switch placement {
+        case .app:
+            appTabs
+        case .spacePinned:
+            tabs.filter { $0.spaceID == spaceID && $0.placement == .spacePinned }
+        case .temporary:
+            tabs.filter { $0.spaceID == spaceID && $0.placement == .temporary }
+        }
+    }
+
+    func canMoveTab(_ tab: Tab, to placement: BrowserTabPlacement) -> Bool {
+        guard placement == .app, tab.placement != .app else {
+            return true
+        }
+
+        return appTabs.count < Self.appTabCapacity
+    }
+
+    func tabsBySpaceID(
+        for placement: BrowserTabPlacement,
+        removingTabID tabID: String
+    ) -> [String: [Tab]] {
+        spaces.reduce(into: [:]) { result, space in
+            result[space.id] = tabs(for: placement, inSpaceID: space.id)
+                .filter { $0.id != tabID }
+        }
+    }
+
+    func tabsByReplacingTabs(
+        spacePinnedTabsBySpaceID: [String: [Tab]],
+        temporaryTabsBySpaceID: [String: [Tab]],
+        appTabs: [Tab]
+    ) -> [Tab] {
+        var result = appTabs
+        for space in spaces {
+            result.append(contentsOf: spacePinnedTabsBySpaceID[space.id] ?? [])
+            result.append(contentsOf: temporaryTabsBySpaceID[space.id] ?? [])
+        }
+
+        let knownSpaceIDs = Set(spaces.map(\.id))
+        result.append(contentsOf: tabs.filter { !knownSpaceIDs.contains($0.spaceID) && $0.placement != .app })
+        return result
+    }
+
     func adjustedSectionIndex(
         _ requestedSectionIndex: Int,
         movingWithinTargetSection: Bool,

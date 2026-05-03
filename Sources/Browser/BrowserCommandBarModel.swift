@@ -110,6 +110,7 @@ final class BrowserCommandBarModel: ObservableObject {
     private let navigationResolver: BrowserNavigationResolver
     private let submitHandler: (String) -> Void
     private let suggestionDebounceNanoseconds: UInt64
+    private let remoteSuggestionsEnabledProvider: () -> Bool
 
     private var suggestionLoadTask: Task<Void, Never>?
 
@@ -117,12 +118,14 @@ final class BrowserCommandBarModel: ObservableObject {
         suggestionProvider: BrowserSuggestionProviding,
         navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver(),
         suggestionDebounceNanoseconds: UInt64 = 150_000_000,
+        remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
         submitHandler: @escaping (String) -> Void
     ) {
         self.suggestionProvider = suggestionProvider
         self.navigationResolver = navigationResolver
         self.submitHandler = submitHandler
         self.suggestionDebounceNanoseconds = suggestionDebounceNanoseconds
+        self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
     }
 
     var selectedSuggestion: BrowserCommandSuggestion? {
@@ -254,6 +257,10 @@ private extension BrowserCommandBarModel {
             return
         }
 
+        guard remoteSuggestionsEnabledProvider() else {
+            return
+        }
+
         let currentQuery = trimmedQuery
         suggestionLoadTask = Task { [weak self] in
             guard let self else {
@@ -269,6 +276,10 @@ private extension BrowserCommandBarModel {
             }
 
             guard !Task.isCancelled else {
+                return
+            }
+
+            guard self.remoteSuggestionsEnabledProvider() else {
                 return
             }
 

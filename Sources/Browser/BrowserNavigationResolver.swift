@@ -15,9 +15,14 @@ struct BrowserNavigationResolver {
     }
 
     private let domainParser: any BrowserDomainParsing
+    private let searchEngineProvider: () -> BrowserSearchEngine
 
-    init(domainParser: any BrowserDomainParsing = BrowserPublicSuffixDomainParser.shared) {
+    init(
+        domainParser: any BrowserDomainParsing = BrowserPublicSuffixDomainParser.shared,
+        searchEngineProvider: @escaping () -> BrowserSearchEngine = { .google }
+    ) {
         self.domainParser = domainParser
+        self.searchEngineProvider = searchEngineProvider
     }
 
     func resolve(_ rawInput: String) -> Resolution? {
@@ -37,7 +42,7 @@ struct BrowserNavigationResolver {
         return Resolution(
             kind: .search,
             displayText: trimmedInput,
-            resolvedURLString: googleSearchURLString(for: trimmedInput)
+            resolvedURLString: searchEngineProvider().searchURLString(for: trimmedInput)
         )
     }
 
@@ -210,15 +215,6 @@ struct BrowserNavigationResolver {
             return false
         }
     }
-
-    private func googleSearchURLString(for query: String) -> String {
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "www.google.com"
-        components.path = "/search"
-        components.queryItems = [URLQueryItem(name: "q", value: query)]
-        return components.url?.absoluteString ?? "https://www.google.com/search?q=\(query)"
-    }
 }
 
 struct BrowserParsedHost: Equatable {
@@ -259,7 +255,7 @@ struct BrowserPublicSuffixDomainParser: BrowserDomainParsing {
 }
 
 private struct BrowserNoopDomainParser: BrowserDomainParsing {
-    func parse(host: String) -> BrowserParsedHost? {
+    func parse(host _: String) -> BrowserParsedHost? {
         nil
     }
 }

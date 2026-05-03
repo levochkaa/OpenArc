@@ -54,6 +54,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (NSString *)createTabWithURLString:(NSString *)urlString makeActive:(BOOL)makeActive;
 - (void)selectTabWithID:(NSString *)tabID;
+- (void)deselectActiveTab;
 - (void)navigateActiveTabToURLString:(NSString *)urlString
     NS_SWIFT_NAME(navigateActiveTab(toURLString:));
 - (void)goBackActiveTab;

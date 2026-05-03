@@ -1661,8 +1661,20 @@ bool IsChromiumExtensionsURL(const CefString &url) {
              shared::kTheBrowserExtensionsHost;
 }
 
+bool IsChromiumPasswordManagerURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserPasswordManagerHost;
+}
+
 bool IsChromiumInternalWindowURL(const CefString &url) {
-  return IsChromiumSettingsURL(url) || IsChromiumExtensionsURL(url);
+  return IsChromiumSettingsURL(url) || IsChromiumExtensionsURL(url) ||
+         IsChromiumPasswordManagerURL(url);
 }
 
 bool IsTheBrowserSettingsURL(const CefString &url) {
@@ -1689,8 +1701,21 @@ bool IsTheBrowserExtensionsURL(const CefString &url) {
              shared::kTheBrowserExtensionsHost;
 }
 
+bool IsTheBrowserPasswordManagerURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) ==
+             shared::kTheBrowserScheme &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserPasswordManagerHost;
+}
+
 bool IsTheBrowserInternalWindowURL(const CefString &url) {
-  return IsTheBrowserSettingsURL(url) || IsTheBrowserExtensionsURL(url);
+  return IsTheBrowserSettingsURL(url) || IsTheBrowserExtensionsURL(url) ||
+         IsTheBrowserPasswordManagerURL(url);
 }
 
 std::string ChromiumInternalWindowURLForTheBrowserURL(const CefString &url) {
@@ -1961,6 +1986,11 @@ struct TabRecord {
 
 - (void)selectTabWithID:(NSString *)tabID {
   _activeTabID = [tabID copy];
+  [self updateBrowserVisibility];
+}
+
+- (void)deselectActiveTab {
+  _activeTabID = nil;
   [self updateBrowserVisibility];
 }
 
@@ -2256,6 +2286,7 @@ struct TabRecord {
     case CEF_WOD_IGNORE_ACTION:
       return YES;
     case CEF_WOD_NEW_FOREGROUND_TAB:
+    case CEF_WOD_NEW_SPLIT_VIEW:
     case CEF_WOD_NEW_POPUP:
     case CEF_WOD_NEW_WINDOW:
     case CEF_WOD_OFF_THE_RECORD:
@@ -2401,9 +2432,13 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     std::string chromiumInternalURL =
         ChromiumInternalWindowURLForTheBrowserURL(request->GetURL());
     if (chromiumInternalURL.empty()) {
-      chromiumInternalURL = IsTheBrowserExtensionsURL(request->GetURL())
-                                ? shared::kChromiumExtensionsURL
-                                : shared::kChromiumSettingsURL;
+      if (IsTheBrowserExtensionsURL(request->GetURL())) {
+        chromiumInternalURL = shared::kChromiumExtensionsURL;
+      } else if (IsTheBrowserPasswordManagerURL(request->GetURL())) {
+        chromiumInternalURL = shared::kChromiumPasswordManagerURL;
+      } else {
+        chromiumInternalURL = shared::kChromiumSettingsURL;
+      }
     }
     allow_next_chromium_internal_navigation_ = true;
     frame->LoadURL(chromiumInternalURL);

@@ -36,6 +36,10 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
         controller.selectTab(withID: tabID)
     }
 
+    func deselectActiveTab() {
+        controller.deselectActiveTab()
+    }
+
     func navigateActiveTab(toURLString urlString: String) {
         controller.navigateActiveTab(toURLString: urlString)
     }
