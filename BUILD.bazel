@@ -70,7 +70,7 @@ mixed_language_library(
         "-swift-version",
         "5",
     ],
-    swift_srcs = glob(["Sources/Browser/*.swift"]),
+    swift_srcs = glob(["Sources/Browser/**/*.swift"]),
     textual_hdrs = glob([
         "Sources/Browser/*.h",
         "Sources/Shared/*.h",
