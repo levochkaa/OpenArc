@@ -5,6 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURATION="${CONFIGURATION:-Debug}"
 TARGET="${BAZEL_TEST_TARGET:-//:TheBrowserTests}"
 
+source "$ROOT_DIR/script/bazel_environment.sh"
+configure_bazel_environment
+
 case "$CONFIGURATION" in
   Debug)
     BAZEL_CONFIG="debug"
@@ -19,7 +22,6 @@ case "$CONFIGURATION" in
 esac
 
 cd "$ROOT_DIR"
-mkdir -p "$HOME/.cache/bazel/thebrowser/disk" "$HOME/.cache/bazel/thebrowser/repository"
 
 "$ROOT_DIR/script/chromium.sh" root "$CONFIGURATION" >/dev/null
-bazel test --config="$BAZEL_CONFIG" "$TARGET"
+bazel test "${BAZEL_TEST_ARGS[@]}" --config="$BAZEL_CONFIG" "$TARGET"
