@@ -8,7 +8,7 @@ script = ""
 [[actions]]
 name = "Build"
 icon = "tool"
-command = "./script/build_and_run.sh verify"
+command = "./script/build.sh"
 
 [[actions]]
 name = "Test"
@@ -18,4 +18,4 @@ command = "./script/test.sh"
 [[actions]]
 name = "Run"
 icon = "run"
-command = "./script/build_and_run.sh"
+command = "./script/run.sh"

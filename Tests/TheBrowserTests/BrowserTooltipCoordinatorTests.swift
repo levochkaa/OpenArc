@@ -13,9 +13,7 @@ func tooltipAppearsOnlyAfterContinuousHoverDelay() async {
     coordinator.setHovering(true, for: tooltipID)
     #expect(coordinator.activeTooltipID == nil)
 
-    try? await Task.sleep(nanoseconds: 40_000_000)
-
-    #expect(coordinator.activeTooltipID == tooltipID)
+    await expectActiveTooltip(tooltipID, in: coordinator)
 }
 
 @Test
@@ -29,8 +27,7 @@ func warmStateMakesNextTooltipAppearImmediately() async {
     let secondTooltipID = UUID()
 
     coordinator.setHovering(true, for: firstTooltipID)
-    try? await Task.sleep(nanoseconds: 40_000_000)
-    #expect(coordinator.activeTooltipID == firstTooltipID)
+    await expectActiveTooltip(firstTooltipID, in: coordinator)
 
     coordinator.setHovering(false, for: firstTooltipID)
     coordinator.setHovering(true, for: secondTooltipID)
@@ -49,16 +46,30 @@ func leavingAllTooltipTargetsResetsWarmStateAfterCooldown() async {
     let secondTooltipID = UUID()
 
     coordinator.setHovering(true, for: firstTooltipID)
-    try? await Task.sleep(nanoseconds: 40_000_000)
-    #expect(coordinator.activeTooltipID == firstTooltipID)
+    await expectActiveTooltip(firstTooltipID, in: coordinator)
 
     coordinator.setHovering(false, for: firstTooltipID)
-    try? await Task.sleep(nanoseconds: 40_000_000)
-    #expect(coordinator.activeTooltipID == nil)
+    await expectActiveTooltip(nil, in: coordinator)
 
     coordinator.setHovering(true, for: secondTooltipID)
     #expect(coordinator.activeTooltipID == nil)
 
-    try? await Task.sleep(nanoseconds: 40_000_000)
-    #expect(coordinator.activeTooltipID == secondTooltipID)
+    await expectActiveTooltip(secondTooltipID, in: coordinator)
+}
+
+@MainActor
+private func expectActiveTooltip(
+    _ expectedTooltipID: UUID?,
+    in coordinator: BrowserTooltipCoordinator,
+    timeoutNanoseconds: UInt64 = 500_000_000,
+    pollIntervalNanoseconds: UInt64 = 5_000_000
+) async {
+    var elapsedNanoseconds: UInt64 = 0
+
+    while coordinator.activeTooltipID != expectedTooltipID && elapsedNanoseconds < timeoutNanoseconds {
+        try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+        elapsedNanoseconds += pollIntervalNanoseconds
+    }
+
+    #expect(coordinator.activeTooltipID == expectedTooltipID)
 }

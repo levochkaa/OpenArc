@@ -1,0 +1,12 @@
+common --enable_bzlmod
+common --disk_cache=~/.cache/bazel/thebrowser/disk
+common --repository_cache=~/.cache/bazel/thebrowser/repository
+
+build --macos_cpus=arm64
+build --action_env=PATH
+build --action_env=DEVELOPER_DIR
+
+build:debug -c dbg
+build:release -c opt
+
+test --test_output=errors

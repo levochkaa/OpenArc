@@ -2,12 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT_SPEC="$ROOT_DIR/project.yml"
 
-if [[ ! -f "$PROJECT_SPEC" ]]; then
-  echo "error: missing project spec at $PROJECT_SPEC" >&2
-  exit 1
-fi
+cd "$ROOT_DIR"
+mkdir -p "$HOME/.cache/bazel/thebrowser/disk" "$HOME/.cache/bazel/thebrowser/repository"
 
-echo "Generating TheBrowser.xcodeproj from project.yml"
-xcodegen generate --spec "$PROJECT_SPEC"
+bazel run //:xcodeproj

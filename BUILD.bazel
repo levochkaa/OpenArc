@@ -1,0 +1,205 @@
+load("@build_bazel_rules_apple//apple:macos.bzl", "macos_application")
+load("@build_bazel_rules_swift//mixed_language:mixed_language_library.bzl", "mixed_language_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_test")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@rules_xcodeproj//xcodeproj:defs.bzl", "xcodeproj")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "release_build",
+    values = {"compilation_mode": "opt"},
+)
+
+genrule(
+    name = "cef_credits",
+    srcs = ["@cef_macosarm64//:credits"],
+    outs = ["CEFCredits.html"],
+    cmd = "cp $(SRCS) $@",
+)
+
+sh_binary(
+    name = "cef_bundle_post_processor",
+    srcs = ["tools/bazel/cef_bundle_post_processor.sh"],
+)
+
+mixed_language_library(
+    name = "BrowserCore",
+    clang_copts = [
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-std=c++17",
+    ],
+    clang_defines = [
+        "__STDC_CONSTANT_MACROS",
+        "__STDC_FORMAT_MACROS",
+    ],
+    clang_deps = [
+        "@cef_macosarm64//:libcef_dll_wrapper",
+    ],
+    clang_srcs = glob([
+        "Sources/Browser/*.cc",
+        "Sources/Browser/*.mm",
+        "Sources/Shared/*.cc",
+        "Sources/Shared/*.mm",
+    ]),
+    deps = [
+        "@swiftpkg_swiftdomainparser//:DomainParser",
+    ],
+    enable_modules = True,
+    hdrs = [
+        "Sources/Browser/BrowserTabController.h",
+        "Sources/Browser/SwiftBridge.h",
+    ],
+    includes = [
+        "Sources",
+    ],
+    linkopts = [
+        "-lpthread",
+    ],
+    module_name = "TheBrowser",
+    sdk_frameworks = [
+        "AppKit",
+        "Cocoa",
+        "IOSurface",
+        "UserNotifications",
+    ],
+    swift_copts = [
+        "-swift-version",
+        "5",
+    ],
+    swift_srcs = glob(["Sources/Browser/*.swift"]),
+    textual_hdrs = glob([
+        "Sources/Browser/*.h",
+        "Sources/Shared/*.h",
+    ], exclude = [
+        "Sources/Browser/BrowserTabController.h",
+        "Sources/Browser/SwiftBridge.h",
+    ]),
+)
+
+objc_library(
+    name = "HelperCore",
+    copts = [
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-std=c++17",
+    ],
+    defines = [
+        "__STDC_CONSTANT_MACROS",
+        "__STDC_FORMAT_MACROS",
+    ],
+    deps = [
+        "@cef_macosarm64//:libcef_dll_wrapper",
+    ],
+    srcs = glob([
+        "Sources/Helper/*.cc",
+        "Sources/Shared/*.cc",
+        "Sources/Shared/*.mm",
+    ]),
+    hdrs = glob([
+        "Sources/Helper/*.h",
+        "Sources/Shared/*.h",
+    ]),
+    includes = [
+        "Sources",
+    ],
+    linkopts = [
+        "-lpthread",
+    ],
+    module_name = "TheBrowserHelper",
+    sdk_frameworks = [
+        "AppKit",
+        "Cocoa",
+        "IOSurface",
+        "UserNotifications",
+    ],
+)
+
+macos_application(
+    name = "TheBrowserHelper",
+    bundle_id = "com.levochkaa.TheBrowser.helper",
+    bundle_name = "TheBrowser Helper",
+    executable_name = "TheBrowser Helper",
+    infoplists = ["Support/Bazel-TheBrowserHelper-Info.plist"],
+    minimum_os_version = "26.0",
+    deps = [":HelperCore"],
+)
+
+macos_application(
+    name = "TheBrowser",
+    additional_contents = {
+        ":TheBrowserHelper": "Frameworks",
+    },
+    bundle_id = "com.levochkaa.TheBrowser",
+    bundle_name = "TheBrowser",
+    executable_name = "TheBrowser",
+    infoplists = ["Support/Bazel-TheBrowser-Info.plist"],
+    ipa_post_processor = ":cef_bundle_post_processor",
+    minimum_os_version = "26.0",
+    resources = glob([
+        "Sources/Browser/Assets.xcassets/**",
+        "Sources/Browser/Resources/**",
+    ]) + [
+        ":cef_credits",
+    ],
+    deps = [
+        ":BrowserCore",
+    ] + select({
+        ":release_build": ["@cef_macosarm64//:cef_framework_release"],
+        "//conditions:default": ["@cef_macosarm64//:cef_framework_debug"],
+    }),
+)
+
+swift_test(
+    name = "TheBrowserTestsBinary",
+    srcs = [
+        "Sources/Browser/BrowserChromeModel.swift",
+        "Sources/Browser/BrowserCommandBarModel.swift",
+        "Sources/Browser/BrowserDefaultBrowserService.swift",
+        "Sources/Browser/BrowserFaviconCache.swift",
+        "Sources/Browser/BrowserNavigationResolver.swift",
+        "Sources/Browser/BrowserStrings.swift",
+        "Sources/Browser/BrowserSidebarTabDrag.swift",
+        "Sources/Browser/BrowserTabDriving.swift",
+        "Sources/Browser/BrowserTabSessionPersistence.swift",
+        "Sources/Browser/BrowserTooltipCoordinator.swift",
+        "Sources/Browser/BrowserURLDisplayFormatter.swift",
+    ] + glob(["Tests/TheBrowserTests/*.swift"]),
+    deps = [
+        "@swiftpkg_swiftdomainparser//:DomainParser",
+    ],
+    copts = [
+        "-swift-version",
+        "5",
+    ],
+    linkopts = [
+        "-framework",
+        "AppKit",
+        "-framework",
+        "CoreServices",
+    ],
+    module_name = "TheBrowserTests",
+    tags = ["manual"],
+)
+
+sh_test(
+    name = "TheBrowserTests",
+    srcs = ["tools/bazel/run_swift_test_with_resources.sh"],
+    data = [
+        ":TheBrowserTestsBinary",
+        "@swiftdomainparser_public_suffix_list//file",
+    ],
+)
+
+xcodeproj(
+    name = "xcodeproj",
+    project_name = "TheBrowser",
+    tags = ["manual"],
+    top_level_targets = [
+        ":TheBrowser",
+        ":TheBrowserTests",
+    ],
+)

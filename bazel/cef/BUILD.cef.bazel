@@ -1,0 +1,55 @@
+load("@build_bazel_rules_apple//apple:apple.bzl", "apple_dynamic_framework_import")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+objc_library(
+    name = "libcef_dll_wrapper",
+    srcs = glob([
+        "libcef_dll/**/*.cc",
+        "libcef_dll/**/*.mm",
+    ]),
+    hdrs = glob([
+        "include/**/*.h",
+        "libcef_dll/**/*.h",
+    ]),
+    copts = [
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fno-strict-aliasing",
+        "-fno-threadsafe-statics",
+        "-fobjc-call-cxx-cdtors",
+        "-fstack-protector",
+        "-fvisibility=hidden",
+        "-fvisibility-inlines-hidden",
+        "-std=c++17",
+        "-Wno-missing-field-initializers",
+        "-Wno-narrowing",
+        "-Wno-unused-parameter",
+    ],
+    defines = [
+        "__STDC_CONSTANT_MACROS",
+        "__STDC_FORMAT_MACROS",
+        "WRAPPING_CEF_SHARED",
+    ],
+    includes = [
+        ".",
+    ],
+)
+
+apple_dynamic_framework_import(
+    name = "cef_framework_debug",
+    bundle_only = True,
+    framework_imports = glob(["Debug/Chromium Embedded Framework.framework/**"]),
+)
+
+apple_dynamic_framework_import(
+    name = "cef_framework_release",
+    bundle_only = True,
+    framework_imports = glob(["Release/Chromium Embedded Framework.framework/**"]),
+)
+
+filegroup(
+    name = "credits",
+    srcs = ["CREDITS.html"],
+)

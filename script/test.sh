@@ -2,20 +2,23 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT_NAME="TheBrowser"
-SCHEME="TheBrowser"
 CONFIGURATION="${CONFIGURATION:-Debug}"
-DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode"
+TARGET="${BAZEL_TEST_TARGET:-//:TheBrowserTests}"
 
-"$ROOT_DIR/script/generate_xcodeproj.sh"
-"$ROOT_DIR/script/chromium.sh" ensure "$CONFIGURATION"
+case "$CONFIGURATION" in
+  Debug)
+    BAZEL_CONFIG="debug"
+    ;;
+  Release)
+    BAZEL_CONFIG="release"
+    ;;
+  *)
+    echo "error: unsupported CONFIGURATION '$CONFIGURATION' (expected Debug or Release)" >&2
+    exit 2
+    ;;
+esac
 
-xcodebuild \
-  -project "$ROOT_DIR/$PROJECT_NAME.xcodeproj" \
-  -scheme "$SCHEME" \
-  -configuration "$CONFIGURATION" \
-  -derivedDataPath "$DERIVED_DATA_PATH" \
-  -destination "platform=macOS,arch=arm64" \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  test
+cd "$ROOT_DIR"
+mkdir -p "$HOME/.cache/bazel/thebrowser/disk" "$HOME/.cache/bazel/thebrowser/repository"
+
+bazel test --config="$BAZEL_CONFIG" "$TARGET"
