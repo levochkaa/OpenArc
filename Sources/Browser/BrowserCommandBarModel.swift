@@ -315,8 +315,16 @@ private extension BrowserCommandBarModel {
                 continue
             }
 
+            let suggestionKind: BrowserCommandSuggestion.Kind
+            switch resolvedSuggestion.kind {
+            case .url:
+                suggestionKind = .url
+            case .search:
+                suggestionKind = .googleSuggestion
+            }
+
             let suggestion = BrowserCommandSuggestion(
-                kind: .googleSuggestion,
+                kind: suggestionKind,
                 displayText: trimmedSuggestion,
                 resolvedURLString: resolvedSuggestion.resolvedURLString
             )

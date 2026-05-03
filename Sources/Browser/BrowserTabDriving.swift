@@ -22,6 +22,7 @@ protocol BrowserTabDriving: AnyObject {
     func pasteAndMatchStyleActiveTab()
     func printActiveTab()
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)
+    func focusSearchInActiveChromeSettingsTab() -> Bool
     func stopFindingInActiveTab(clearSelection: Bool)
     func closeTab(withID tabID: String, forceClose: Bool)
 }

@@ -170,6 +170,26 @@ func primarySuggestionIsSelectedByDefault() async {
 
 @Test
 @MainActor
+func remoteURLSuggestionUsesURLPresentationKind() async throws {
+    let suggestionProvider = FakeSuggestionProvider(
+        suggestionsByQuery: ["https://google.com/": ["https://google.com/business"]]
+    )
+    let model = makeModel(suggestionProvider: suggestionProvider)
+
+    model.present()
+    model.query = "https://google.com/"
+    await model.waitForPendingSuggestionLoad()
+
+    #expect(model.suggestions.map(\.displayText) == ["https://google.com/", "https://google.com/business"])
+
+    let urlSuggestion = try #require(model.suggestions.last)
+    #expect(urlSuggestion.kind == .url)
+    #expect(urlSuggestion.systemImageName == "globe")
+    #expect(urlSuggestion.resolvedURLString == "https://google.com/business")
+}
+
+@Test
+@MainActor
 func arrowNavigationUpdatesSelectedSuggestionAndInlineSuffix() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["привет": ["привет макет", "привет мир"]]

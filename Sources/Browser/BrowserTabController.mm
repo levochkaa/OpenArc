@@ -56,6 +56,43 @@ constexpr char kSavePageResourceTreeMethod[] = "Page.getResourceTree";
 constexpr char kSavePageResourceContentMethod[] = "Page.getResourceContent";
 constexpr char kSavePageSingleFileMethod[] = "Page.captureSnapshot";
 constexpr char kSavePageSerializeDocumentMethod[] = "Runtime.evaluate";
+constexpr char kFocusSettingsSearchScript[] = R"JS(
+(() => {
+  const focusSettingsSearch = (attempt) => {
+    const settingsUI = document.querySelector('settings-ui');
+    const toolbar = settingsUI && settingsUI.shadowRoot &&
+      settingsUI.shadowRoot.querySelector('cr-toolbar');
+
+    if (settingsUI && typeof settingsUI.handleFindShortcut === 'function' &&
+        settingsUI.handleFindShortcut(false)) {
+      return;
+    }
+
+    const searchField = toolbar && typeof toolbar.getSearchField === 'function' &&
+      toolbar.getSearchField();
+    if (searchField && typeof searchField.showAndFocus === 'function') {
+      searchField.showAndFocus();
+      return;
+    }
+
+    const toolbarSearchField = toolbar && toolbar.shadowRoot &&
+      toolbar.shadowRoot.querySelector('cr-toolbar-search-field');
+    const searchInput = toolbarSearchField && toolbarSearchField.shadowRoot &&
+      toolbarSearchField.shadowRoot.querySelector('#searchInput, input[type="search"]');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+
+    if (attempt < 10) {
+      window.setTimeout(() => focusSettingsSearch(attempt + 1), 50);
+    }
+  };
+
+  focusSettingsSearch(0);
+})();
+)JS";
 
 enum class SavePageFormat : NSInteger {
   Complete = 0,
@@ -1771,6 +1808,42 @@ bool ShouldUseChromeWindowForURL(const std::string &urlString) {
   return IsChromiumSettingsURL(url) || IsTheBrowserSettingsURL(url);
 }
 
+bool FocusSettingsSearchInBrowser(CefRefPtr<CefBrowser> browser) {
+  CEF_REQUIRE_UI_THREAD();
+
+  if (!browser || !CefBrowserView::GetForBrowser(browser)) {
+    return false;
+  }
+
+  CefRefPtr<CefFrame> mainFrame = browser->GetMainFrame();
+  if (!mainFrame || !ShouldUseChromeWindowForURL(mainFrame->GetURL().ToString())) {
+    return false;
+  }
+
+  mainFrame->ExecuteJavaScript(kFocusSettingsSearchScript, mainFrame->GetURL(), 1);
+  return true;
+}
+
+void FocusSettingsSearchInBrowserIgnoringResult(CefRefPtr<CefBrowser> browser) {
+  (void)FocusSettingsSearchInBrowser(browser);
+}
+
+bool FocusSettingsSearchInBrowserOnUI(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return false;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    return FocusSettingsSearchInBrowser(browser);
+  }
+
+  CefPostTask(
+      TID_UI,
+      CefCreateClosureTask(
+          base::BindOnce(&FocusSettingsSearchInBrowserIgnoringResult, browser)));
+  return true;
+}
+
 bool IsCommandFindShortcut(const CefKeyEvent &event) {
   if (event.type != KEYEVENT_RAWKEYDOWN && event.type != KEYEVENT_KEYDOWN) {
     return false;
@@ -2273,6 +2346,16 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
   FindBrowserOnUI(it->second.browser, text, forward, matchCase, findNext);
 }
 
+- (BOOL)focusSearchInActiveChromeSettingsTab {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return NO;
+  }
+
+  return FocusSettingsSearchInBrowserOnUI(it->second.browser) ? YES : NO;
+}
+
 - (void)stopFindingInActiveTabWithClearSelection:(BOOL)clearSelection {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
@@ -2690,10 +2773,12 @@ bool BrowserTabClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
   CEF_REQUIRE_UI_THREAD();
 
   if (CefBrowserView::GetForBrowser(browser) && IsCommandFindShortcut(event)) {
-    if (is_keyboard_shortcut != nullptr) {
-      *is_keyboard_shortcut = true;
+    if (FocusSettingsSearchInBrowser(browser)) {
+      if (is_keyboard_shortcut != nullptr) {
+        *is_keyboard_shortcut = true;
+      }
+      return true;
     }
-    return true;
   }
 
   return false;

@@ -67,6 +67,7 @@ NS_ASSUME_NONNULL_BEGIN
                        matchCase:(BOOL)matchCase
                         findNext:(BOOL)findNext
     NS_SWIFT_NAME(findInActiveTab(withText:forward:matchCase:findNext:));
+- (BOOL)focusSearchInActiveChromeSettingsTab;
 - (void)stopFindingInActiveTabWithClearSelection:(BOOL)clearSelection
     NS_SWIFT_NAME(stopFindingInActiveTab(clearSelection:));
 - (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;

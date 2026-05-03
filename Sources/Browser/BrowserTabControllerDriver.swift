@@ -77,6 +77,10 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
         )
     }
 
+    func focusSearchInActiveChromeSettingsTab() -> Bool {
+        controller.focusSearchInActiveChromeSettingsTab()
+    }
+
     func stopFindingInActiveTab(clearSelection: Bool) {
         controller.stopFindingInActiveTab(clearSelection: clearSelection)
     }

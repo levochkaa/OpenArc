@@ -144,6 +144,10 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         canCreateTab && selectedTab != nil && !selectedTabUsesWindowedBrowser
     }
 
+    var canPresentFindInPage: Bool {
+        canCreateTab && selectedTab != nil
+    }
+
     var canStepThroughFindMatches: Bool {
         canFindInPage && isFindBarPresented && !findQuery.isEmpty && findResultMatchCount != 0
     }
@@ -418,6 +422,22 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         findBarFocusRequest += 1
         findResultMatchCount = nil
         runFind(forward: true, findNext: false)
+    }
+
+    func presentFindInPage() -> Bool {
+        guard canPresentFindInPage else {
+            return false
+        }
+
+        if selectedTabUsesWindowedBrowser {
+            commandBarModel.dismiss()
+            dismissFindBar()
+            findResultMatchCount = nil
+            return tabDriver.focusSearchInActiveChromeSettingsTab()
+        }
+
+        presentFindBar()
+        return isFindBarPresented
     }
 
     func dismissFindBar() {

@@ -884,6 +884,34 @@ func findBarIsDisabledForWindowedSettingsTabs() throws {
 
 @Test
 @MainActor
+func findCommandFocusesSettingsSearchForWindowedSettingsTabs() throws {
+    for urlString in ["tb://settings", "tb://settings/privacy", "chrome://settings", "about:settings"] {
+        let driver = FakeBrowserTabDriver()
+        let model = makeModel(
+            driver: driver,
+            snapshotStore: InMemorySessionSnapshotStore(),
+            preferencesStore: InMemorySessionPreferencesStore()
+        )
+
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        model.openURLInNewTab(try #require(URL(string: urlString)))
+        driver.flushPendingCreateEvents()
+
+        #expect(model.selectedTabUsesWindowedBrowser)
+        #expect(model.canPresentFindInPage)
+        #expect(!model.canFindInPage)
+
+        #expect(model.presentFindInPage())
+
+        #expect(!model.isFindBarPresented)
+        #expect(driver.findRequests.isEmpty)
+        #expect(driver.focusSearchInActiveChromeSettingsTabCount == 1)
+    }
+}
+
+@Test
+@MainActor
 func selectingWindowedSettingsTabDismissesFindBar() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(

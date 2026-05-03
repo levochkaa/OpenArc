@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 private final class BrowserWindowContentContainerView: NSView {
-    static let defaultCornerRadius: CGFloat = 12
+    static let defaultCornerRadius: CGFloat = BrowserWindowGeometry.windowCornerRadius
 
     var cornerRadius: CGFloat = defaultCornerRadius {
         didSet {
@@ -223,7 +223,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     }
 
     public func findInPage(_: Any?) {
-        chromeModel?.presentFindBar()
+        _ = chromeModel?.presentFindInPage()
     }
 
     public func findAndReplace(_: Any?) {}
@@ -269,7 +269,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         case #selector(copySelectedTabLink(_:)):
             return chromeModel?.canCopySelectedTabLink ?? false
         case #selector(findInPage(_:)):
-            return chromeModel?.canFindInPage ?? false
+            return chromeModel?.canPresentFindInPage ?? false
         case #selector(findNextInPage(_:)), #selector(findPreviousInPage(_:)):
             return chromeModel?.canStepThroughFindMatches ?? false
         case #selector(findAndReplace(_:)), #selector(useSelectionToFind(_:)), #selector(jumpToSelection(_:)):
@@ -628,12 +628,11 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
             return chromeModel?.copySelectedTabLink() ?? false
         case .findInPage:
-            guard chromeModel?.canFindInPage ?? false else {
+            guard chromeModel?.canPresentFindInPage ?? false else {
                 return false
             }
 
-            findInPage(nil)
-            return true
+            return chromeModel?.presentFindInPage() ?? false
         case .findAndReplace:
             return false
         case .findNextInPage:

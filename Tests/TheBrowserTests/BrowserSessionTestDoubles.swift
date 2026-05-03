@@ -37,6 +37,7 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
     private(set) var saveSuggestedNames: [String?] = []
     private(set) var pasteAndMatchStyleCount = 0
     private(set) var findRequests: [FindRequest] = []
+    private(set) var focusSearchInActiveChromeSettingsTabCount = 0
     private(set) var stopFindingClearSelectionRequests: [Bool] = []
     private(set) var reloadCount = 0
     private(set) var forceReloadCount = 0
@@ -111,6 +112,11 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
                 findNext: findNext
             )
         )
+    }
+
+    func focusSearchInActiveChromeSettingsTab() -> Bool {
+        focusSearchInActiveChromeSettingsTabCount += 1
+        return true
     }
 
     func stopFindingInActiveTab(clearSelection: Bool) {

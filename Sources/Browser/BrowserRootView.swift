@@ -52,9 +52,8 @@ private enum BrowserChromePalette {
 private enum BrowserChromeLayout {
     static let sidebarAnimationDuration = 0.18
     static let sidebarResizeHoverDelayNanoseconds: UInt64 = 500_000_000
-    static let leadingContentCornerRadius: CGFloat = 12
+    static let leadingContentCornerRadius: CGFloat = BrowserWindowGeometry.browserContentCornerRadius
     static let sidebarOuterPadding: CGFloat = 8
-    static let sidebarTopDragRegionHeight: CGFloat = sidebarOuterPadding + chromeButtonSize
     static let sidebarSectionSpacing: CGFloat = 10
     static let sidebarListSpacing: CGFloat = 5
     static let sidebarRowHeight: CGFloat = 36
@@ -85,6 +84,7 @@ private enum BrowserChromeLayout {
     static let sidebarClearButtonVerticalPadding: CGFloat = 2
     static let sidebarResizeHitWidth: CGFloat = sidebarOuterPadding
     static let sidebarSnapThreshold: CGFloat = 10
+    static let browserContentEdgeInset: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
     static let chromeButtonSize: CGFloat = 28
     static let chromeButtonSymbolSize: CGFloat = 13.5
     static let chromeButtonCornerRadius: CGFloat = 9
@@ -211,6 +211,12 @@ private extension View {
             }
         }
     }
+
+    func browserWindowDragGesture() -> some View {
+        contentShape(Rectangle())
+            .gesture(WindowDragGesture(), including: .gesture)
+            .allowsWindowActivationEvents(true)
+    }
 }
 
 private struct BrowserSidebarTabRowFramePreferenceKey: PreferenceKey {
@@ -239,6 +245,7 @@ struct BrowserRootView: View {
     @ObservedObject var model: BrowserChromeModel
     @ObservedObject private var commandBarModel: BrowserCommandBarModel
     @State private var showsSidebarWindowControls: Bool
+    @State private var isWindowFullscreen = false
     @StateObject private var tooltipCoordinator = BrowserTooltipCoordinator()
 
     init(model: BrowserChromeModel) {
@@ -249,19 +256,20 @@ struct BrowserRootView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .leading) {
+            ZStack(alignment: .topLeading) {
                 BrowserContentView(
                     hostView: model.hostView,
                     isContextReady: model.isContextReady,
-                    isSidebarVisible: model.isSidebarVisible
+                    isSidebarVisible: model.isSidebarVisible,
+                    usesWindowContentInsets: usesWindowContentInsets
                 )
                     .equatable()
                     .frame(
-                        width: max(proxy.size.width - sidebarLayoutWidth, 0),
-                        height: proxy.size.height,
+                        width: browserContentWidth(in: proxy.size),
+                        height: browserContentHeight(in: proxy.size),
                         alignment: .leading
                     )
-                    .offset(x: sidebarLayoutWidth)
+                    .offset(x: browserContentMinX, y: browserContentMinY)
                     .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
                 BrowserSidebarChromeView(
@@ -273,6 +281,16 @@ struct BrowserRootView: View {
                 .frame(width: model.sidebarWidth, height: proxy.size.height, alignment: .leading)
                 .offset(x: sidebarOffset)
                 .allowsHitTesting(model.isSidebarVisible)
+                .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+
+                BrowserContentEdgeDragRegions(
+                    windowSize: proxy.size,
+                    blockedLeadingWidth: sidebarLayoutWidth,
+                    leadingInset: browserContentLeadingInset,
+                    topInset: browserContentTopInset,
+                    trailingInset: browserContentTrailingInset,
+                    bottomInset: browserContentBottomInset
+                )
                 .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
                 if commandBarModel.isPresented, sidebarLayoutWidth > 0 {
@@ -290,23 +308,29 @@ struct BrowserRootView: View {
                 if !usesDetachedBrowserOverlays {
                     BrowserFindBarOverlay(
                         model: model,
-                        blockedLeadingInset: sidebarLayoutWidth
+                        blockedLeadingInset: browserContentMinX
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .zIndex(8)
 
                     BrowserCommandBarOverlay(
                         model: commandBarModel,
-                        blockedLeadingInset: sidebarLayoutWidth
+                        blockedLeadingInset: browserContentMinX
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .zIndex(10)
                 }
 
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
         .background(BrowserChromePalette.shellBackground)
+        .background {
+            BrowserWindowFullscreenReader { isFullscreen in
+                isWindowFullscreen = isFullscreen
+            }
+            .allowsHitTesting(false)
+        }
         .clipped()
         .environmentObject(tooltipCoordinator)
         .overlayPreferenceValue(BrowserTooltipPreferenceKey.self) { values in
@@ -325,7 +349,7 @@ struct BrowserRootView: View {
                     BrowserDetachedOverlayWindowRepresentable(
                         isVisible: model.isFindBarPresented || commandBarModel.isPresented,
                         isInteractive: true,
-                        contentFrameLeadingInset: sidebarLayoutWidth,
+                        contentFrameLeadingInset: browserContentMinX,
                         content: BrowserDetachedControlsOverlayContent(
                             model: model,
                             commandBarModel: commandBarModel,
@@ -371,6 +395,46 @@ struct BrowserRootView: View {
 
     private var sidebarVisibilityAnimationValue: CGFloat {
         model.isSidebarVisible ? 1 : 0
+    }
+
+    private var usesWindowContentInsets: Bool {
+        !isWindowFullscreen
+    }
+
+    private var browserContentEdgeInset: CGFloat {
+        usesWindowContentInsets ? BrowserChromeLayout.browserContentEdgeInset : 0
+    }
+
+    private var browserContentLeadingInset: CGFloat {
+        model.isSidebarVisible ? 0 : browserContentEdgeInset
+    }
+
+    private var browserContentTopInset: CGFloat {
+        browserContentEdgeInset
+    }
+
+    private var browserContentTrailingInset: CGFloat {
+        browserContentEdgeInset
+    }
+
+    private var browserContentBottomInset: CGFloat {
+        browserContentEdgeInset
+    }
+
+    private var browserContentMinX: CGFloat {
+        sidebarLayoutWidth + browserContentLeadingInset
+    }
+
+    private var browserContentMinY: CGFloat {
+        browserContentTopInset
+    }
+
+    private func browserContentWidth(in windowSize: CGSize) -> CGFloat {
+        max(windowSize.width - browserContentMinX - browserContentTrailingInset, 0)
+    }
+
+    private func browserContentHeight(in windowSize: CGSize) -> CGFloat {
+        max(windowSize.height - browserContentTopInset - browserContentBottomInset, 0)
     }
 
     private var usesDetachedBrowserOverlays: Bool {
@@ -644,8 +708,11 @@ private struct BrowserSidebarView: View {
     @State private var dropTarget: BrowserSidebarTabDropTarget?
     @StateObject private var dragPreviewStore = BrowserSidebarTabDragPreviewStore()
     @State private var suppressedTabSelectionAfterDragID: String?
+    @State private var tabRowInteractionResetID = 0
+    @State private var rawTabRowFrames: [String: BrowserSidebarTabRowFrame] = [:]
     @State private var tabRowFrames: [String: BrowserSidebarTabRowFrame] = [:]
-    @State private var tabRowFrameList: [BrowserSidebarTabRowFrame] = []
+    @State private var tabDropRowFrameList: [BrowserSidebarTabRowFrame] = []
+    @State private var rawEmptySectionFrames: [BrowserSidebarEmptySectionFrame] = []
     @State private var emptySectionFrames: [BrowserSidebarEmptySectionFrame] = []
 
     var body: some View {
@@ -709,28 +776,24 @@ private struct BrowserSidebarView: View {
             }
             .coordinateSpace(name: BrowserChromeLayout.sidebarTabDragCoordinateSpaceName)
             .frame(maxWidth: .infinity)
+            .browserWindowDragGesture()
             .onPreferenceChange(BrowserSidebarTabRowFramePreferenceKey.self) { frames in
-                tabRowFrames = frames
-                tabRowFrameList = frames.values.sorted { lhs, rhs in
-                    if lhs.section.sortPriority == rhs.section.sortPriority {
-                        return lhs.sectionIndex < rhs.sectionIndex
-                    }
-
-                    return lhs.section.sortPriority < rhs.section.sortPriority
-                }
+                setTabRowFrames(frames, for: snapshot)
             }
             .onPreferenceChange(BrowserSidebarEmptySectionFramePreferenceKey.self) { frames in
-                emptySectionFrames = frames
+                setEmptySectionFrames(frames, for: snapshot)
             }
             .background {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
+                BrowserWindowDragRegion()
+                    .simultaneousGesture(TapGesture().onEnded {
                         dismissRenamingIfNeeded()
-                    }
+                    })
             }
             .overlay(alignment: .topLeading) {
-                tabDragPreviewOverlay
+                ZStack(alignment: .topLeading) {
+                    tabDropIndicatorOverlay
+                    tabDragPreviewOverlay
+                }
             }
         }
         .padding(.top, BrowserChromeLayout.sidebarOuterPadding)
@@ -738,6 +801,7 @@ private struct BrowserSidebarView: View {
         .padding(.bottom, BrowserChromeLayout.sidebarOuterPadding)
         .padding(.trailing, BrowserChromeLayout.sidebarOuterPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .browserWindowDragGesture()
         .overlay {
             BrowserPassthroughInteractionObserver { event, observerView in
                 resignRenamingFirstResponderIfNeeded(for: event, in: observerView)
@@ -767,6 +831,9 @@ private struct BrowserSidebarView: View {
             isSidebarHovered = false
         }
         .onChange(of: snapshot) { _, snapshot in
+            setTabRowFrames(rawTabRowFrames, for: snapshot)
+            setEmptySectionFrames(rawEmptySectionFrames, for: snapshot)
+
             guard let draggedTabID, !snapshot.containsTab(withID: draggedTabID) else {
                 return
             }
@@ -781,20 +848,14 @@ private struct BrowserSidebarView: View {
         .onDisappear {
             clearTabDragState()
         }
-        .background(alignment: .topLeading) {
-            BrowserWindowDragRegion()
-                .frame(width: max(model.sidebarWidth - BrowserChromeLayout.sidebarResizeHitWidth, 0))
-                .frame(height: BrowserChromeLayout.sidebarTopDragRegionHeight)
-        }
         .background {
             ZStack {
                 BrowserChromePalette.sidebarBackground
 
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
+                BrowserWindowDragRegion()
+                    .simultaneousGesture(TapGesture().onEnded {
                         dismissRenamingIfNeeded()
-                    }
+                    })
             }
         }
     }
@@ -879,6 +940,30 @@ private struct BrowserSidebarView: View {
         )
     }
 
+    @ViewBuilder
+    private var tabDropIndicatorOverlay: some View {
+        if let dropIndicatorFrame {
+            BrowserSidebarDropIndicator()
+                .frame(width: dropIndicatorFrame.width, height: dropIndicatorFrame.height)
+                .position(x: dropIndicatorFrame.midX, y: dropIndicatorFrame.midY)
+                .transaction { transaction in
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var dropIndicatorFrame: CGRect? {
+        BrowserSidebarTabDropIndicatorFrameResolver().frame(
+            for: dropTarget,
+            rowFrames: tabDropRowFrameList,
+            emptySectionFrames: emptySectionFrames,
+            horizontalInset: 6,
+            thickness: BrowserChromeLayout.sidebarDropIndicatorThickness
+        )
+    }
+
     private func sidebarRow(
         for tab: BrowserChromeModel.Tab,
         in section: BrowserSidebarTabSection,
@@ -890,7 +975,7 @@ private struct BrowserSidebarView: View {
             isRenaming: renamingTabID == tab.id,
             canArchiveTabsBelow: snapshot.archivableTabIDs.contains(tab.id),
             isSidebarResizing: isSidebarResizing,
-            dropIndicatorEdge: dropIndicatorEdge(for: section, sectionIndex: sectionIndex),
+            interactionResetID: tabRowInteractionResetID,
             onSelect: {
                 guard suppressedTabSelectionAfterDragID != tab.id else {
                     return
@@ -1082,10 +1167,52 @@ private struct BrowserSidebarView: View {
         )
         .target(
             for: location,
-            rowFrames: tabRowFrameList,
+            rowFrames: tabDropRowFrameList,
             emptySectionFrames: emptySectionFrames,
             canMoveToTarget: canMoveDraggedTab(to:)
         )
+    }
+
+    private func setTabRowFrames(
+        _ frames: [String: BrowserSidebarTabRowFrame],
+        for snapshot: BrowserSidebarSnapshot
+    ) {
+        rawTabRowFrames = frames
+        updateSynchronizedTabFrames(for: snapshot)
+    }
+
+    private func updateSynchronizedTabFrames(for snapshot: BrowserSidebarSnapshot) {
+        let pinnedTabIDs = snapshot.pinnedTabs.map(\.id)
+        let temporaryTabIDs = snapshot.temporaryTabs.map(\.id)
+        let synchronizedFrames = BrowserSidebarTabFrameSynchronizer.synchronizedRowFrames(
+            rawTabRowFrames,
+            pinnedTabIDs: pinnedTabIDs,
+            temporaryTabIDs: temporaryTabIDs
+        )
+
+        tabRowFrames = synchronizedFrames
+        tabDropRowFrameList = BrowserSidebarTabFrameSynchronizer.synchronizedDropRowFrameList(
+            rawTabRowFrames,
+            fallbackRowFrames: tabDropRowFrameList,
+            emptySectionFrames: rawEmptySectionFrames,
+            pinnedTabIDs: pinnedTabIDs,
+            temporaryTabIDs: temporaryTabIDs,
+            rowHeight: BrowserChromeLayout.sidebarRowHeight,
+            rowSpacing: BrowserChromeLayout.sidebarListSpacing
+        )
+    }
+
+    private func setEmptySectionFrames(
+        _ frames: [BrowserSidebarEmptySectionFrame],
+        for snapshot: BrowserSidebarSnapshot
+    ) {
+        rawEmptySectionFrames = frames
+        emptySectionFrames = BrowserSidebarTabFrameSynchronizer.synchronizedEmptySectionFrames(
+            frames,
+            pinnedTabIDs: snapshot.pinnedTabs.map(\.id),
+            temporaryTabIDs: snapshot.temporaryTabs.map(\.id)
+        )
+        updateSynchronizedTabFrames(for: snapshot)
     }
 
     private func setDropTarget(_ target: BrowserSidebarTabDropTarget?) {
@@ -1111,24 +1238,6 @@ private struct BrowserSidebarView: View {
             }
 
             suppressedTabSelectionAfterDragID = nil
-        }
-    }
-
-    private func dropIndicatorEdge(
-        for section: BrowserSidebarTabSection,
-        sectionIndex: Int
-    ) -> VerticalEdge? {
-        switch BrowserSidebarTabDropIndicatorResolver().edge(
-            for: section,
-            sectionIndex: sectionIndex,
-            target: dropTarget
-        ) {
-        case .top:
-            .top
-        case .bottom:
-            .bottom
-        case nil:
-            nil
         }
     }
 
@@ -1162,9 +1271,14 @@ private struct BrowserSidebarView: View {
     }
 
     private func clearTabDragState() {
+        let hadTabDragState = draggedTabID != nil || dropTarget != nil || dragPreviewStore.preview != nil
         draggedTabID = nil
         dropTarget = nil
         dragPreviewStore.clear()
+
+        if hadTabDragState {
+            tabRowInteractionResetID += 1
+        }
     }
 
     private func withoutSidebarDragAnimation(_ updates: () -> Void) {
@@ -1425,6 +1539,107 @@ private final class BrowserWindowFrameReaderNSView: NSView {
 
         lastFrameInWindow = frameInWindow
         onFrameChange(frameInWindow)
+    }
+}
+
+private struct BrowserWindowFullscreenReader: NSViewRepresentable {
+    let onFullscreenChange: (Bool) -> Void
+
+    func makeNSView(context _: Context) -> BrowserWindowFullscreenReaderNSView {
+        let view = BrowserWindowFullscreenReaderNSView()
+        view.onFullscreenChange = onFullscreenChange
+        return view
+    }
+
+    func updateNSView(_ nsView: BrowserWindowFullscreenReaderNSView, context _: Context) {
+        nsView.onFullscreenChange = onFullscreenChange
+        nsView.sendFullscreenChangeIfNeeded()
+    }
+}
+
+private final class BrowserWindowFullscreenReaderNSView: NSView {
+    var onFullscreenChange: (Bool) -> Void = { _ in }
+
+    private weak var observedWindow: NSWindow?
+    private var notificationObservers: [NSObjectProtocol] = []
+    private var lastIsFullscreen: Bool?
+
+    deinit {
+        removeNotificationObservers()
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateObservedWindow()
+        sendFullscreenChangeIfNeeded()
+    }
+
+    func sendFullscreenChangeIfNeeded() {
+        let isFullscreen = window?.styleMask.contains(.fullScreen) ?? false
+        sendFullscreenChangeIfNeeded(isFullscreen)
+    }
+
+    private func updateObservedWindow() {
+        guard observedWindow !== window else {
+            return
+        }
+
+        removeNotificationObservers()
+        observedWindow = window
+
+        guard let window else {
+            return
+        }
+
+        addNotificationObserver(for: NSWindow.willEnterFullScreenNotification, window: window) { [weak self] in
+            self?.sendFullscreenChangeIfNeeded(true)
+        }
+        addNotificationObserver(for: NSWindow.didEnterFullScreenNotification, window: window) { [weak self] in
+            self?.sendFullscreenChangeIfNeeded(true)
+        }
+        addNotificationObserver(for: NSWindow.didExitFullScreenNotification, window: window) { [weak self] in
+            self?.sendFullscreenChangeIfNeeded(false)
+        }
+    }
+
+    private func addNotificationObserver(
+        for name: NSNotification.Name,
+        window: NSWindow,
+        handler: @escaping () -> Void
+    ) {
+        let observer = NotificationCenter.default.addObserver(
+            forName: name,
+            object: window,
+            queue: .main
+        ) { _ in
+            handler()
+        }
+        notificationObservers.append(observer)
+    }
+
+    private func removeNotificationObservers() {
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        notificationObservers = []
+    }
+
+    private func sendFullscreenChangeIfNeeded(_ isFullscreen: Bool) {
+        guard lastIsFullscreen != isFullscreen else {
+            return
+        }
+
+        lastIsFullscreen = isFullscreen
+        onFullscreenChange(isFullscreen)
     }
 }
 
@@ -2652,6 +2867,44 @@ private struct BrowserSidebarSnapshot: Equatable {
     }
 }
 
+private struct BrowserContentEdgeDragRegions: View {
+    let windowSize: CGSize
+    let blockedLeadingWidth: CGFloat
+    let leadingInset: CGFloat
+    let topInset: CGFloat
+    let trailingInset: CGFloat
+    let bottomInset: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if topInset > 0 {
+                BrowserWindowDragRegion()
+                    .frame(width: max(windowSize.width - blockedLeadingWidth, 0), height: topInset)
+                    .offset(x: blockedLeadingWidth)
+            }
+
+            if bottomInset > 0 {
+                BrowserWindowDragRegion()
+                    .frame(width: max(windowSize.width - blockedLeadingWidth, 0), height: bottomInset)
+                    .offset(x: blockedLeadingWidth, y: max(windowSize.height - bottomInset, 0))
+            }
+
+            if trailingInset > 0 {
+                BrowserWindowDragRegion()
+                    .frame(width: trailingInset, height: windowSize.height)
+                    .offset(x: max(windowSize.width - trailingInset, 0))
+            }
+
+            if leadingInset > 0 {
+                BrowserWindowDragRegion()
+                    .frame(width: leadingInset, height: windowSize.height)
+                    .offset(x: blockedLeadingWidth)
+            }
+        }
+        .frame(width: windowSize.width, height: windowSize.height, alignment: .topLeading)
+    }
+}
+
 private struct BrowserWindowDragRegion: View {
     var body: some View {
         Color.clear
@@ -2892,6 +3145,44 @@ private struct BrowserShortcutKeyCapsView: View {
                     )
             }
         }
+    }
+}
+
+private extension View {
+    func browserKeyboardShortcut(_ shortcut: BrowserKeyboardShortcut) -> some View {
+        keyboardShortcut(shortcut.swiftUIKeyEquivalent, modifiers: shortcut.swiftUIModifiers)
+    }
+}
+
+private extension BrowserKeyboardShortcut {
+    var swiftUIKeyEquivalent: KeyEquivalent {
+        guard let keyEquivalent = keyEquivalent.first else {
+            return KeyEquivalent(Character(" "))
+        }
+
+        return KeyEquivalent(keyEquivalent)
+    }
+
+    var swiftUIModifiers: EventModifiers {
+        var result: EventModifiers = []
+
+        if modifiers.contains(.control) {
+            result.insert(.control)
+        }
+
+        if modifiers.contains(.option) {
+            result.insert(.option)
+        }
+
+        if modifiers.contains(.shift) {
+            result.insert(.shift)
+        }
+
+        if modifiers.contains(.command) {
+            result.insert(.command)
+        }
+
+        return result
     }
 }
 
@@ -3141,7 +3432,7 @@ private struct BrowserSidebarRow: View {
     let isRenaming: Bool
     let canArchiveTabsBelow: Bool
     let isSidebarResizing: Bool
-    let dropIndicatorEdge: VerticalEdge?
+    let interactionResetID: Int
     let onSelect: () -> Void
     let onCopyLink: () -> Void
     let onBeginRename: () -> Void
@@ -3190,21 +3481,20 @@ private struct BrowserSidebarRow: View {
                     return
                 }
 
-                isRowHovered = false
-                isCloseHovered = false
-                isRowPressed = false
+                resetTransientInteractionState()
+            }
+            .onChange(of: interactionResetID) { _, _ in
+                resetTransientInteractionState()
             }
             .onDisappear {
-                isRowHovered = false
-                isCloseHovered = false
-                isRowPressed = false
+                resetTransientInteractionState()
             }
             .contextMenu {
                 copyLinkMenuItem
                 shareMenuItem
                 Button(BrowserStrings.tabRenameAction, action: beginRename)
                 Divider()
-                Button(BrowserStrings.tabArchiveAction, role: .destructive, action: onClose)
+                archiveTabMenuItem
                 Button(
                     BrowserStrings.tabArchiveTabsBelowAction,
                     role: .destructive,
@@ -3295,12 +3585,6 @@ private struct BrowserSidebarRow: View {
             alignment: .leading
         )
         .background(backgroundShape)
-        .overlay(alignment: dropIndicatorAlignment) {
-            if dropIndicatorEdge != nil {
-                BrowserSidebarDropIndicator()
-                    .padding(.horizontal, 6)
-            }
-        }
         .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
     }
 
@@ -3367,17 +3651,6 @@ private struct BrowserSidebarRow: View {
             )
     }
 
-    private var dropIndicatorAlignment: Alignment {
-        switch dropIndicatorEdge {
-        case .top:
-            .top
-        case .bottom:
-            .bottom
-        case nil:
-            .center
-        }
-    }
-
     private func beginRename() {
         draftTitle = tab.userTitleOverride ?? tab.displayTitle
         onBeginRename()
@@ -3392,6 +3665,12 @@ private struct BrowserSidebarRow: View {
         onCancelRename()
     }
 
+    private func resetTransientInteractionState() {
+        isRowHovered = false
+        isCloseHovered = false
+        isRowPressed = false
+    }
+
     private func syncDraftTitleIfNeeded(isRenaming: Bool) {
         guard isRenaming else {
             return
@@ -3403,10 +3682,20 @@ private struct BrowserSidebarRow: View {
     @ViewBuilder
     private var copyLinkMenuItem: some View {
         if isSelected {
-            Button(BrowserStrings.tabCopyLinkAction, action: onCopyLink)
-                .keyboardShortcut("c", modifiers: [.command, .shift])
+            Button(BrowserCommands.copyLink.menuTitle, action: onCopyLink)
+                .browserKeyboardShortcut(BrowserCommands.copyLink.shortcut)
         } else {
-            Button(BrowserStrings.tabCopyLinkAction, action: onCopyLink)
+            Button(BrowserCommands.copyLink.menuTitle, action: onCopyLink)
+        }
+    }
+
+    @ViewBuilder
+    private var archiveTabMenuItem: some View {
+        if isSelected {
+            Button(BrowserCommands.archiveTab.menuTitle, role: .destructive, action: onClose)
+                .browserKeyboardShortcut(BrowserCommands.archiveTab.shortcut)
+        } else {
+            Button(BrowserCommands.archiveTab.menuTitle, role: .destructive, action: onClose)
         }
     }
 
@@ -3505,11 +3794,13 @@ private struct BrowserContentView: View {
     let hostView: NSView
     let isContextReady: Bool
     let isSidebarVisible: Bool
+    let usesWindowContentInsets: Bool
 
     var body: some View {
         BrowserViewportHostRepresentable(
             hostView: hostView,
-            leadingCornerRadius: leadingCornerRadius
+            cornerRadius: contentCornerRadius,
+            maskedCorners: maskedContentCorners
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BrowserChromePalette.shellBackground)
@@ -3533,17 +3824,41 @@ private struct BrowserContentView: View {
         }
     }
 
-    private var leadingCornerRadius: CGFloat {
-        isSidebarVisible ? BrowserChromeLayout.leadingContentCornerRadius : 0
+    private var contentCornerRadius: CGFloat {
+        shouldRoundLeadingCorners || shouldRoundTrailingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0
+    }
+
+    private var shouldRoundLeadingCorners: Bool {
+        isSidebarVisible || usesWindowContentInsets
+    }
+
+    private var shouldRoundTrailingCorners: Bool {
+        usesWindowContentInsets
+    }
+
+    private var maskedContentCorners: CACornerMask {
+        var corners: CACornerMask = []
+
+        if shouldRoundLeadingCorners {
+            corners.insert(.layerMinXMinYCorner)
+            corners.insert(.layerMinXMaxYCorner)
+        }
+
+        if shouldRoundTrailingCorners {
+            corners.insert(.layerMaxXMinYCorner)
+            corners.insert(.layerMaxXMaxYCorner)
+        }
+
+        return corners
     }
 
     private var contentShape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
             cornerRadii: RectangleCornerRadii(
-                topLeading: leadingCornerRadius,
-                bottomLeading: leadingCornerRadius,
-                bottomTrailing: 0,
-                topTrailing: 0
+                topLeading: shouldRoundLeadingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0,
+                bottomLeading: shouldRoundLeadingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0,
+                bottomTrailing: shouldRoundTrailingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0,
+                topTrailing: shouldRoundTrailingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0
             ),
             style: .continuous
         )
@@ -3735,27 +4050,28 @@ extension BrowserContentView: Equatable {
         ObjectIdentifier(lhs.hostView) == ObjectIdentifier(rhs.hostView)
             && lhs.isContextReady == rhs.isContextReady
             && lhs.isSidebarVisible == rhs.isSidebarVisible
+            && lhs.usesWindowContentInsets == rhs.usesWindowContentInsets
     }
 }
 
 private struct BrowserViewportHostRepresentable: NSViewRepresentable {
     let hostView: NSView
-    let leadingCornerRadius: CGFloat
+    let cornerRadius: CGFloat
+    let maskedCorners: CACornerMask
 
     func makeNSView(context _: Context) -> BrowserViewportClipView {
         let clipView = BrowserViewportClipView(hostView: hostView)
-        clipView.updateLeadingCornerRadius(leadingCornerRadius)
+        clipView.updateClipping(cornerRadius: cornerRadius, maskedCorners: maskedCorners)
         return clipView
     }
 
     func updateNSView(_ nsView: BrowserViewportClipView, context _: Context) {
         nsView.update(hostView: hostView)
-        nsView.updateLeadingCornerRadius(leadingCornerRadius)
+        nsView.updateClipping(cornerRadius: cornerRadius, maskedCorners: maskedCorners)
     }
 }
 
 private final class BrowserViewportClipView: NSView {
-    private let maskedLeadingCorners: CACornerMask = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
     private var hostedView: NSView
 
     override var mouseDownCanMoveWindow: Bool {
@@ -3769,7 +4085,6 @@ private final class BrowserViewportClipView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.cornerCurve = .continuous
-        layer?.maskedCorners = maskedLeadingCorners
         layer?.masksToBounds = true
 
         attachHostedViewIfNeeded()
@@ -3798,14 +4113,15 @@ private final class BrowserViewportClipView: NSView {
         needsLayout = true
     }
 
-    func updateLeadingCornerRadius(_ leadingCornerRadius: CGFloat) {
+    func updateClipping(cornerRadius: CGFloat, maskedCorners: CACornerMask) {
         guard let layer else {
             return
         }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer.cornerRadius = max(leadingCornerRadius, 0)
+        layer.cornerRadius = max(cornerRadius, 0)
+        layer.maskedCorners = maskedCorners
         CATransaction.commit()
     }
 
