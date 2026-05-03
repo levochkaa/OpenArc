@@ -3,20 +3,17 @@ import Foundation
 @MainActor
 final class BrowserChromiumExtensionManager: BrowserExtensionManaging {
     func installedExtensions() -> [BrowserExtension] {
-        guard
-            let jsonString = BrowserCopyInstalledExtensionsJSON(),
-            let jsonData = jsonString.data(using: .utf8)
-        else {
+        if let extensions = installedExtensionsFromBridge(), !extensions.isEmpty {
+            return extensions
+        }
+
+        guard let configuration = BrowserRuntimeConfiguration.currentConfiguration() else {
             return []
         }
 
-        do {
-            return try JSONDecoder()
-                .decode([BrowserChromiumExtensionPayload].self, from: jsonData)
-                .map(\.browserExtension)
-        } catch {
-            return []
-        }
+        return BrowserExtensionProfileSnapshotStore.installedExtensions(
+            profileDirectories: extensionProfileDirectories(configuration: configuration)
+        )
     }
 
     func setExtension(id: String, isEnabled: Bool) -> Bool {
@@ -25,6 +22,31 @@ final class BrowserChromiumExtensionManager: BrowserExtensionManaging {
 
     func removeExtension(id: String) -> Bool {
         BrowserRemoveExtension(id)
+    }
+
+    private func installedExtensionsFromBridge() -> [BrowserExtension]? {
+        guard
+            let jsonString = BrowserCopyInstalledExtensionsJSON(),
+            let jsonData = jsonString.data(using: .utf8)
+        else {
+            return nil
+        }
+
+        return try? JSONDecoder()
+            .decode([BrowserChromiumExtensionPayload].self, from: jsonData)
+            .map(\.browserExtension)
+    }
+
+    private func extensionProfileDirectories(configuration: BrowserRuntimeConfiguration) -> [URL] {
+        let cacheURL = URL(fileURLWithPath: configuration.cachePath, isDirectory: true)
+        let rootCacheURL = URL(fileURLWithPath: configuration.rootCachePath, isDirectory: true)
+
+        return [
+            cacheURL,
+            cacheURL.appendingPathComponent("Default", isDirectory: true),
+            rootCacheURL.appendingPathComponent("Default", isDirectory: true),
+            rootCacheURL.appendingPathComponent("Profile", isDirectory: true),
+        ]
     }
 }
 

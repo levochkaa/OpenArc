@@ -65,11 +65,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)pasteAndMatchStyleActiveTab;
 - (void)printActiveTab;
 - (void)findInActiveTabWithText:(NSString *)text
-                         forward:(BOOL)forward
-                       matchCase:(BOOL)matchCase
-                        findNext:(BOOL)findNext
+                        forward:(BOOL)forward
+                      matchCase:(BOOL)matchCase
+                       findNext:(BOOL)findNext
     NS_SWIFT_NAME(findInActiveTab(withText:forward:matchCase:findNext:));
-- (BOOL)focusSearchInActiveChromeSettingsTab;
 - (void)stopFindingInActiveTabWithClearSelection:(BOOL)clearSelection
     NS_SWIFT_NAME(stopFindingInActiveTab(clearSelection:));
 - (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;

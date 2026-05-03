@@ -707,7 +707,7 @@ struct BrowserRootView: View {
     }
 
     private var usesDetachedBrowserOverlays: Bool {
-        model.selectedTabUsesWindowedBrowser
+        false
     }
 
     private func handleSidebarRevealEdgeHoverChange(_ hovering: Bool) {

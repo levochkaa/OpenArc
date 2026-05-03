@@ -75,7 +75,6 @@ private final class BrowserMainWindow: NSWindow {
 @MainActor
 public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate, NSUserInterfaceValidations {
     private var window: NSWindow?
-    private var settingsWindow: NSWindow?
     private var aboutWindow: NSWindow?
     private var chromeModel: BrowserChromeModel?
     private let defaultBrowserService = BrowserDefaultBrowserService()
@@ -143,7 +142,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
     }
 
     public func openSettings(_: Any?) {
-        presentSettingsWindow()
+        openBrowserInternalPage(BrowserInternalPageRouting.settingsURL)
     }
 
     public func openAbout(_: Any?) {
@@ -761,54 +760,6 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         }
     }
 
-    private func presentSettingsWindow() {
-        guard let chromeModel else {
-            return
-        }
-
-        if let settingsWindow {
-            settingsWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        let rootView = BrowserSettingsView(model: chromeModel)
-        let hostingView = NSHostingView(rootView: rootView)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-
-        let contentSize = NSSize(
-            width: BrowserSettingsLayout.windowWidth,
-            height: BrowserSettingsLayout.windowHeight
-        )
-        let settingsWindow = NSWindow(
-            contentRect: NSRect(origin: .zero, size: contentSize),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        settingsWindow.title = BrowserStrings.menuSettings
-        settingsWindow.isReleasedWhenClosed = false
-        settingsWindow.titleVisibility = .hidden
-        settingsWindow.titlebarAppearsTransparent = true
-        settingsWindow.toolbarStyle = .preference
-        settingsWindow.setContentSize(contentSize)
-        settingsWindow.center()
-
-        let contentView = NSView(frame: settingsWindow.contentRect(forFrameRect: settingsWindow.frame))
-        contentView.addSubview(hostingView)
-        NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-        ])
-
-        settingsWindow.contentView = contentView
-        self.settingsWindow = settingsWindow
-        settingsWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
     private func presentAboutWindow() {
         if let aboutWindow {
             aboutWindow.makeKeyAndOrderFront(nil)
@@ -860,6 +811,19 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         }
 
         NSWorkspace.shared.open(url)
+    }
+
+    private func openBrowserInternalPage(_ url: URL) {
+        if chromeModel?.canCreateTab == true {
+            chromeModel?.openURLInNewTab(url)
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        if chromeModel != nil, !isTerminationRequested {
+            pendingNavigationURLs.append(url)
+        }
     }
 
     private func openPendingNavigationURLsIfPossible() {

@@ -28,10 +28,6 @@
 #include "include/cef_request_handler.h"
 #include "include/cef_values.h"
 #include "include/internal/cef_mac.h"
-#include "include/views/cef_browser_view.h"
-#include "include/views/cef_browser_view_delegate.h"
-#include "include/views/cef_window.h"
-#include "include/views/cef_window_delegate.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -42,57 +38,12 @@
 
 @end
 
-@interface BrowserTabController (ChromeWindowHosting)
-
-- (void)handleChromeWindowCreated:(CefRefPtr<CefWindow>)window
-                          forTabID:(NSString *)tabID;
-- (void)handleChromeWindowDestroyedForTabID:(NSString *)tabID;
-
-@end
-
 namespace {
 
 constexpr char kSavePageResourceTreeMethod[] = "Page.getResourceTree";
 constexpr char kSavePageResourceContentMethod[] = "Page.getResourceContent";
 constexpr char kSavePageSingleFileMethod[] = "Page.captureSnapshot";
 constexpr char kSavePageSerializeDocumentMethod[] = "Runtime.evaluate";
-constexpr char kFocusSettingsSearchScript[] = R"JS(
-(() => {
-  const focusSettingsSearch = (attempt) => {
-    const settingsUI = document.querySelector('settings-ui');
-    const toolbar = settingsUI && settingsUI.shadowRoot &&
-      settingsUI.shadowRoot.querySelector('cr-toolbar');
-
-    if (settingsUI && typeof settingsUI.handleFindShortcut === 'function' &&
-        settingsUI.handleFindShortcut(false)) {
-      return;
-    }
-
-    const searchField = toolbar && typeof toolbar.getSearchField === 'function' &&
-      toolbar.getSearchField();
-    if (searchField && typeof searchField.showAndFocus === 'function') {
-      searchField.showAndFocus();
-      return;
-    }
-
-    const toolbarSearchField = toolbar && toolbar.shadowRoot &&
-      toolbar.shadowRoot.querySelector('cr-toolbar-search-field');
-    const searchInput = toolbarSearchField && toolbarSearchField.shadowRoot &&
-      toolbarSearchField.shadowRoot.querySelector('#searchInput, input[type="search"]');
-    if (searchInput) {
-      searchInput.focus();
-      searchInput.select();
-      return;
-    }
-
-    if (attempt < 10) {
-      window.setTimeout(() => focusSettingsSearch(attempt + 1), 50);
-    }
-  };
-
-  focusSettingsSearch(0);
-})();
-)JS";
 
 enum class SavePageFormat : NSInteger {
   Complete = 0,
@@ -1217,88 +1168,7 @@ NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser) {
   if (!browser) {
     return nil;
   }
-  if (CefBrowserView::GetForBrowser(browser)) {
-    return nil;
-  }
   return CAST_CEF_WINDOW_HANDLE_TO_NSVIEW(browser->GetHost()->GetWindowHandle());
-}
-
-NSWindow *NativeWindowForCefWindow(CefRefPtr<CefWindow> window) {
-  if (!window) {
-    return nil;
-  }
-
-  id nativeHandle = (__bridge id)window->GetWindowHandle();
-  if ([nativeHandle isKindOfClass:NSWindow.class]) {
-    return (NSWindow *)nativeHandle;
-  }
-  if ([nativeHandle isKindOfClass:NSView.class]) {
-    return [(NSView *)nativeHandle window];
-  }
-  return nil;
-}
-
-NSRect ScreenFrameForHostView(BrowserTabHostView *hostView) {
-  if (hostView == nil || hostView.window == nil || NSIsEmptyRect(hostView.bounds)) {
-    return NSZeroRect;
-  }
-
-  NSRect windowFrame = [hostView convertRect:hostView.bounds toView:nil];
-  return [hostView.window convertRectToScreen:windowFrame];
-}
-
-void ConfigureNativeBrowserWindow(NSWindow *browserWindow) {
-  if (browserWindow == nil) {
-    return;
-  }
-
-  browserWindow.hasShadow = false;
-  browserWindow.opaque = true;
-  browserWindow.backgroundColor = NSColor.blackColor;
-  browserWindow.styleMask = browserWindow.styleMask & ~NSWindowStyleMaskResizable;
-  browserWindow.movable = false;
-  browserWindow.movableByWindowBackground = false;
-  browserWindow.collectionBehavior =
-      browserWindow.collectionBehavior | NSWindowCollectionBehaviorFullScreenAuxiliary;
-}
-
-void AttachBrowserWindowToHost(NSWindow *browserWindow, BrowserTabHostView *hostView) {
-  if (browserWindow == nil || hostView.window == nil) {
-    return;
-  }
-
-  NSWindow *parentWindow = hostView.window;
-  if (browserWindow.parentWindow != parentWindow) {
-    [browserWindow.parentWindow removeChildWindow:browserWindow];
-    [parentWindow addChildWindow:browserWindow ordered:NSWindowAbove];
-  }
-}
-
-void DetachBrowserWindow(NSWindow *browserWindow) {
-  if (browserWindow == nil) {
-    return;
-  }
-
-  [browserWindow.parentWindow removeChildWindow:browserWindow];
-  [browserWindow orderOut:nil];
-}
-
-void SyncNativeBrowserWindowFrame(BrowserTabHostView *hostView,
-                                  NSWindow *browserWindow) {
-  if (browserWindow == nil) {
-    return;
-  }
-
-  NSRect screenFrame = ScreenFrameForHostView(hostView);
-  if (NSIsEmptyRect(screenFrame)) {
-    [browserWindow orderOut:nil];
-    return;
-  }
-
-  AttachBrowserWindowToHost(browserWindow, hostView);
-  if (!NSEqualRects(browserWindow.frame, screenFrame)) {
-    [browserWindow setFrame:screenFrame display:YES];
-  }
 }
 
 void ContinuePermissionRequest(
@@ -1858,79 +1728,8 @@ std::string DisplayURLStringForCommittedURL(const CefString &url) {
   return url.ToString();
 }
 
-bool IsSettingsURLString(const std::string &urlString) {
-  if (LowercaseASCII(urlString) == "about:settings") {
-    return true;
-  }
-
-  CefString url(urlString);
-  return IsChromiumSettingsURL(url) || IsTheBrowserSettingsURL(url);
-}
-
-bool ShouldUseChromeWindowForURL(const std::string &urlString) {
-  if (LowercaseASCII(urlString) == "about:settings") {
-    return true;
-  }
-
-  CefString url(urlString);
-  return IsChromiumInternalWindowURL(url) || IsTheBrowserInternalWindowURL(url);
-}
-
-bool FocusSettingsSearchInBrowser(CefRefPtr<CefBrowser> browser) {
-  CEF_REQUIRE_UI_THREAD();
-
-  if (!browser || !CefBrowserView::GetForBrowser(browser)) {
-    return false;
-  }
-
-  CefRefPtr<CefFrame> mainFrame = browser->GetMainFrame();
-  if (!mainFrame || !IsSettingsURLString(mainFrame->GetURL().ToString())) {
-    return false;
-  }
-
-  mainFrame->ExecuteJavaScript(kFocusSettingsSearchScript, mainFrame->GetURL(), 1);
-  return true;
-}
-
-void FocusSettingsSearchInBrowserIgnoringResult(CefRefPtr<CefBrowser> browser) {
-  (void)FocusSettingsSearchInBrowser(browser);
-}
-
-bool FocusSettingsSearchInBrowserOnUI(CefRefPtr<CefBrowser> browser) {
-  if (!browser) {
-    return false;
-  }
-
-  if (CefCurrentlyOn(TID_UI)) {
-    return FocusSettingsSearchInBrowser(browser);
-  }
-
-  CefPostTask(
-      TID_UI,
-      CefCreateClosureTask(
-          base::BindOnce(&FocusSettingsSearchInBrowserIgnoringResult, browser)));
-  return true;
-}
-
-bool IsCommandFindShortcut(const CefKeyEvent &event) {
-  if (event.type != KEYEVENT_RAWKEYDOWN && event.type != KEYEVENT_KEYDOWN) {
-    return false;
-  }
-
-  if ((event.modifiers & EVENTFLAG_COMMAND_DOWN) == 0) {
-    return false;
-  }
-
-  if ((event.modifiers &
-       (EVENTFLAG_SHIFT_DOWN | EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN)) != 0) {
-    return false;
-  }
-
-  return event.windows_key_code == 'F' ||
-         event.unmodified_character == 'f' ||
-         event.unmodified_character == 'F' ||
-         event.character == 'f' ||
-         event.character == 'F';
+bool ShouldUseEmbeddedChromeRuntimeForURL(const std::string &) {
+  return false;
 }
 
 class BrowserTabClient final : public CefClient,
@@ -1973,6 +1772,11 @@ class BrowserTabClient final : public CefClient,
                       CefRefPtr<CefRequest> request,
                       bool user_gesture,
                       bool is_redirect) override;
+  bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefFrame> frame,
+                        const CefString &target_url,
+                        WindowOpenDisposition target_disposition,
+                        bool user_gesture) override;
   void OnFindResult(CefRefPtr<CefBrowser> browser,
                     int identifier,
                     int count,
@@ -2017,161 +1821,10 @@ class BrowserTabClient final : public CefClient,
   IMPLEMENT_REFCOUNTING(BrowserTabClient);
 };
 
-class BrowserPopupWindowDelegate final : public CefWindowDelegate {
- public:
-  explicit BrowserPopupWindowDelegate(CefRefPtr<CefBrowserView> browser_view)
-      : browser_view_(browser_view) {}
-
-  void OnWindowCreated(CefRefPtr<CefWindow> window) override {
-    window->AddChildView(browser_view_);
-    window->Show();
-    browser_view_->RequestFocus();
-  }
-
-  void OnWindowDestroyed(CefRefPtr<CefWindow> window) override {
-    browser_view_ = nullptr;
-  }
-
-  bool CanClose(CefRefPtr<CefWindow> window) override {
-    auto browser = browser_view_ ? browser_view_->GetBrowser() : nullptr;
-    return browser ? browser->GetHost()->TryCloseBrowser() : true;
-  }
-
-  CefSize GetPreferredSize(CefRefPtr<CefView> view) override {
-    return CefSize(960, 700);
-  }
-
-  cef_runtime_style_t GetWindowRuntimeStyle() override {
-    return CEF_RUNTIME_STYLE_CHROME;
-  }
-
- private:
-  CefRefPtr<CefBrowserView> browser_view_;
-
-  IMPLEMENT_REFCOUNTING(BrowserPopupWindowDelegate);
-};
-
-class BrowserTabBrowserViewDelegate final : public CefBrowserViewDelegate {
- public:
-  CefRefPtr<CefBrowserViewDelegate> GetDelegateForPopupBrowserView(
-      CefRefPtr<CefBrowserView> browser_view,
-      const CefBrowserSettings& settings,
-      CefRefPtr<CefClient> client,
-      bool is_devtools) override {
-    return new BrowserTabBrowserViewDelegate();
-  }
-
-  bool OnPopupBrowserViewCreated(CefRefPtr<CefBrowserView> browser_view,
-                                 CefRefPtr<CefBrowserView> popup_browser_view,
-                                 bool is_devtools) override {
-    CefWindow::CreateTopLevelWindow(
-        new BrowserPopupWindowDelegate(popup_browser_view));
-    return true;
-  }
-
-  ChromeToolbarType GetChromeToolbarType(
-      CefRefPtr<CefBrowserView> browser_view) override {
-    return CEF_CTT_NONE;
-  }
-
-  cef_runtime_style_t GetBrowserRuntimeStyle() override {
-    return CEF_RUNTIME_STYLE_CHROME;
-  }
-
- private:
-  IMPLEMENT_REFCOUNTING(BrowserTabBrowserViewDelegate);
-};
-
-class BrowserTabWindowDelegate final : public CefWindowDelegate {
- public:
-  BrowserTabWindowDelegate(BrowserTabController *controller,
-                           std::string tab_id,
-                           CefRefPtr<CefBrowserView> browser_view)
-      : controller_(controller),
-        tab_id_(std::move(tab_id)),
-        browser_view_(browser_view) {}
-
-  void OnWindowCreated(CefRefPtr<CefWindow> window) override {
-    window->AddChildView(browser_view_);
-
-    BrowserTabController *controller = controller_;
-    if (controller != nil) {
-      [controller handleChromeWindowCreated:window forTabID:ToNSString(tab_id_)];
-    }
-  }
-
-  void OnWindowDestroyed(CefRefPtr<CefWindow> window) override {
-    browser_view_ = nullptr;
-
-    BrowserTabController *controller = controller_;
-    if (controller != nil) {
-      [controller handleChromeWindowDestroyedForTabID:ToNSString(tab_id_)];
-    }
-  }
-
-  bool CanClose(CefRefPtr<CefWindow> window) override {
-    auto browser = browser_view_ ? browser_view_->GetBrowser() : nullptr;
-    return browser ? browser->GetHost()->TryCloseBrowser() : true;
-  }
-
-  CefSize GetPreferredSize(CefRefPtr<CefView> view) override {
-    return CefSize(1280, 900);
-  }
-
-  cef_show_state_t GetInitialShowState(CefRefPtr<CefWindow> window) override {
-    return CEF_SHOW_STATE_HIDDEN;
-  }
-
-  bool IsFrameless(CefRefPtr<CefWindow> window) override {
-    return true;
-  }
-
-  bool WithStandardWindowButtons(CefRefPtr<CefWindow> window) override {
-    return false;
-  }
-
-  bool CanResize(CefRefPtr<CefWindow> window) override {
-    return false;
-  }
-
-  bool CanMaximize(CefRefPtr<CefWindow> window) override {
-    return false;
-  }
-
-  bool CanMinimize(CefRefPtr<CefWindow> window) override {
-    return false;
-  }
-
-  cef_runtime_style_t GetWindowRuntimeStyle() override {
-    return CEF_RUNTIME_STYLE_CHROME;
-  }
-
- private:
-  __weak BrowserTabController *controller_;
-  const std::string tab_id_;
-  CefRefPtr<CefBrowserView> browser_view_;
-
-  IMPLEMENT_REFCOUNTING(BrowserTabWindowDelegate);
-};
-
 struct TabRecord {
   CefRefPtr<CefClient> client;
-  CefRefPtr<CefBrowserView> browser_view;
-  CefRefPtr<CefWindow> window;
-  NSWindow *native_window = nil;
   CefRefPtr<CefBrowser> browser;
-  bool pending_close = false;
 };
-
-NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
-  if (record.native_window != nil) {
-    return record.native_window;
-  }
-
-  record.native_window = NativeWindowForCefWindow(record.window);
-  ConfigureNativeBrowserWindow(record.native_window);
-  return record.native_window;
-}
 
 }  // namespace
 
@@ -2186,9 +1839,6 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser
                      forTabID:(NSString *)tabID;
 - (void)handleBrowserClosedForTabID:(NSString *)tabID;
-- (void)handleChromeWindowCreated:(CefRefPtr<CefWindow>)window
-                          forTabID:(NSString *)tabID;
-- (void)handleChromeWindowDestroyedForTabID:(NSString *)tabID;
 - (void)handleTitleChange:(NSString *)title forTabID:(NSString *)tabID;
 - (void)handleAddressChange:(NSString *)urlString forTabID:(NSString *)tabID;
 - (void)handleFaviconURLChange:(nullable NSString *)faviconURLString
@@ -2203,6 +1853,9 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
                activeMatchOrdinal:(NSInteger)activeMatchOrdinal
                       finalUpdate:(BOOL)finalUpdate;
 - (void)openPopupTabWithURLString:(NSString *)urlString;
+- (BOOL)openURLFromTabWithURLString:(NSString *)urlString
+                         sourceTabID:(NSString *)sourceTabID
+                   targetDisposition:(cef_window_open_disposition_t)targetDisposition;
 - (void)syncBrowserFrames;
 - (void)updateBrowserVisibility;
 
@@ -2291,27 +1944,17 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
                                urlString:resolvedURLString];
 
   std::string resolvedURL = ToStdString(resolvedURLString);
-  if (ShouldUseChromeWindowForURL(resolvedURL)) {
-    CefRefPtr<CefBrowserView> browserView = CefBrowserView::CreateBrowserView(
-        client, resolvedURL, CefBrowserSettings(), nullptr,
-        nullptr, new BrowserTabBrowserViewDelegate());
-    auto recordIt = _tabRecords.find(tabKey);
-    if (recordIt != _tabRecords.end()) {
-      recordIt->second.browser_view = browserView;
-    }
-    CefWindow::CreateTopLevelWindow(
-        new BrowserTabWindowDelegate(self, tabKey, browserView));
-  } else {
-    CefWindowInfo windowInfo;
-    windowInfo.SetAsChild((__bridge CefWindowHandle)_hostView,
-                          CefRectFromBounds(_hostView.bounds));
-    if (shared::IsAlloyStyleEnabled()) {
-      windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
-    }
-
-    CefBrowserHost::CreateBrowser(windowInfo, client, resolvedURL,
-                                  CefBrowserSettings(), nullptr, nullptr);
+  CefWindowInfo windowInfo;
+  windowInfo.SetAsChild((__bridge CefWindowHandle)_hostView,
+                        CefRectFromBounds(_hostView.bounds));
+  if (ShouldUseEmbeddedChromeRuntimeForURL(resolvedURL)) {
+    windowInfo.runtime_style = CEF_RUNTIME_STYLE_CHROME;
+  } else if (shared::IsAlloyStyleEnabled()) {
+    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   }
+
+  CefBrowserHost::CreateBrowser(windowInfo, client, resolvedURL,
+                                CefBrowserSettings(), nullptr, nullptr);
   [self updateBrowserVisibility];
   return tabID;
 }
@@ -2428,16 +2071,6 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
   FindBrowserOnUI(it->second.browser, text, forward, matchCase, findNext);
 }
 
-- (BOOL)focusSearchInActiveChromeSettingsTab {
-  std::string activeKey = ToStdString(_activeTabID);
-  auto it = _tabRecords.find(activeKey);
-  if (it == _tabRecords.end()) {
-    return NO;
-  }
-
-  return FocusSettingsSearchInBrowserOnUI(it->second.browser) ? YES : NO;
-}
-
 - (void)stopFindingInActiveTabWithClearSelection:(BOOL)clearSelection {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
@@ -2464,13 +2097,6 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
     return;
   }
 
-  if (it->second.window) {
-    it->second.pending_close = true;
-    it->second.window->Close();
-    return;
-  }
-
-  DetachBrowserWindow(it->second.native_window);
   _tabRecords.erase(tabKey);
   [self.delegate browserTabController:self didCloseTabWithID:tabID];
   [self updateBrowserVisibility];
@@ -2478,22 +2104,15 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
 
 - (void)closeAllTabs {
   std::vector<CefRefPtr<CefBrowser>> browsers;
-  std::vector<CefRefPtr<CefWindow>> windows;
   browsers.reserve(_tabRecords.size());
-  windows.reserve(_tabRecords.size());
   for (const auto &entry : _tabRecords) {
     if (entry.second.browser) {
       browsers.push_back(entry.second.browser);
-    } else if (entry.second.window) {
-      windows.push_back(entry.second.window);
     }
   }
 
   for (const auto &browser : browsers) {
     browser->GetHost()->CloseBrowser(false);
-  }
-  for (const auto &window : windows) {
-    window->Close();
   }
 }
 
@@ -2505,17 +2124,7 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
   std::string activeKey = ToStdString(_activeTabID);
   for (auto &entry : _tabRecords) {
     BOOL isActive = entry.first == activeKey;
-    NSWindow *nativeWindow = EnsureNativeWindowForRecord(entry.second);
-    if (nativeWindow != nil) {
-      if (isActive) {
-        SyncNativeBrowserWindowFrame(_hostView, nativeWindow);
-      } else {
-        if (entry.second.window) {
-          entry.second.window->Hide();
-        }
-        [nativeWindow orderOut:nil];
-      }
-    } else if (isActive) {
+    if (isActive) {
       SyncBrowserViewFrame(_hostView, entry.second.browser);
     }
   }
@@ -2531,63 +2140,16 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
   }
 
   it->second.browser = browser;
-  NSWindow *nativeWindow = EnsureNativeWindowForRecord(it->second);
-  if (nativeWindow != nil) {
-    SyncNativeBrowserWindowFrame(_hostView, nativeWindow);
-  } else {
-    SyncBrowserViewFrame(_hostView, browser);
-  }
+  SyncBrowserViewFrame(_hostView, browser);
   [self handleNavigationStateChangeForTabID:tabID
                                   canGoBack:browser->CanGoBack()
                                canGoForward:browser->CanGoForward()];
 
-  if (it->second.pending_close) {
-    browser->GetHost()->CloseBrowser(false);
-    return;
-  }
-
   [self updateBrowserVisibility];
-}
-
-- (void)handleChromeWindowCreated:(CefRefPtr<CefWindow>)window
-                          forTabID:(NSString *)tabID {
-  std::string tabKey = ToStdString(tabID);
-  auto it = _tabRecords.find(tabKey);
-  if (it == _tabRecords.end()) {
-    window->Close();
-    return;
-  }
-
-  it->second.window = window;
-  NSWindow *nativeWindow = EnsureNativeWindowForRecord(it->second);
-  SyncNativeBrowserWindowFrame(_hostView, nativeWindow);
-
-  if (it->second.pending_close) {
-    window->Close();
-    return;
-  }
-
-  [self updateBrowserVisibility];
-}
-
-- (void)handleChromeWindowDestroyedForTabID:(NSString *)tabID {
-  std::string tabKey = ToStdString(tabID);
-  auto it = _tabRecords.find(tabKey);
-  if (it == _tabRecords.end()) {
-    return;
-  }
-
-  DetachBrowserWindow(it->second.native_window);
-  it->second.native_window = nil;
-  it->second.window = nullptr;
 }
 
 - (void)handleBrowserClosedForTabID:(NSString *)tabID {
   std::string tabKey = ToStdString(tabID);
-  auto it = _tabRecords.find(tabKey);
-  if (it != _tabRecords.end()) {
-    DetachBrowserWindow(it->second.native_window);
-  }
   _tabRecords.erase(tabKey);
 
   if ([_activeTabID isEqualToString:tabID]) {
@@ -2667,6 +2229,47 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
                     makeActive:YES];
 }
 
+- (BOOL)openURLFromTabWithURLString:(NSString *)urlString
+                         sourceTabID:(NSString *)sourceTabID
+                   targetDisposition:(cef_window_open_disposition_t)targetDisposition {
+  NSString *resolvedURLString =
+      urlString.length > 0 ? urlString : @"about:blank";
+
+  switch (targetDisposition) {
+    case CEF_WOD_CURRENT_TAB:
+    case CEF_WOD_SINGLETON_TAB:
+    case CEF_WOD_SWITCH_TO_TAB:
+    case CEF_WOD_UNKNOWN: {
+      std::string tabKey = ToStdString(sourceTabID);
+      auto it = _tabRecords.find(tabKey);
+      if (it == _tabRecords.end()) {
+        [self createTabWithURLString:resolvedURLString makeActive:YES];
+        return YES;
+      }
+
+      NavigateBrowserOnUI(it->second.browser, ToStdString(resolvedURLString));
+      return YES;
+    }
+    case CEF_WOD_NEW_BACKGROUND_TAB:
+      [self createTabWithURLString:resolvedURLString makeActive:NO];
+      return YES;
+    case CEF_WOD_IGNORE_ACTION:
+      return YES;
+    case CEF_WOD_NEW_FOREGROUND_TAB:
+    case CEF_WOD_NEW_POPUP:
+    case CEF_WOD_NEW_WINDOW:
+    case CEF_WOD_OFF_THE_RECORD:
+      [self createTabWithURLString:resolvedURLString makeActive:YES];
+      return YES;
+    case CEF_WOD_SAVE_TO_DISK:
+    case CEF_WOD_NEW_PICTURE_IN_PICTURE:
+    case CEF_WOD_NUM_VALUES:
+      return NO;
+  }
+
+  return NO;
+}
+
 - (void)updateBrowserVisibility {
   std::string activeKey = ToStdString(_activeTabID);
   for (auto &entry : _tabRecords) {
@@ -2675,18 +2278,8 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
       continue;
     }
 
-    NSWindow *nativeWindow = EnsureNativeWindowForRecord(entry.second);
-    if (nativeWindow != nil) {
-      if (entry.second.window) {
-        entry.second.window->Hide();
-      }
-      [nativeWindow orderOut:nil];
-    } else {
-      NSView *browserView = BrowserViewForBrowser(entry.second.browser);
-      if (browserView == nil) {
-        continue;
-      }
-
+    NSView *browserView = BrowserViewForBrowser(entry.second.browser);
+    if (browserView != nil) {
       browserView.hidden = YES;
     }
   }
@@ -2696,21 +2289,10 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
     return;
   }
 
-  NSWindow *nativeWindow = EnsureNativeWindowForRecord(activeIt->second);
-  if (nativeWindow != nil) {
-    SyncNativeBrowserWindowFrame(_hostView, nativeWindow);
-    if (!NSIsEmptyRect(ScreenFrameForHostView(_hostView))) {
-      if (activeIt->second.window) {
-        activeIt->second.window->Show();
-      }
-      [nativeWindow orderFront:nil];
-    }
-  } else {
-    NSView *browserView = BrowserViewForBrowser(activeIt->second.browser);
-    if (browserView != nil) {
-      browserView.hidden = NO;
-      SyncBrowserViewFrame(_hostView, activeIt->second.browser);
-    }
+  NSView *browserView = BrowserViewForBrowser(activeIt->second.browser);
+  if (browserView != nil) {
+    browserView.hidden = NO;
+    SyncBrowserViewFrame(_hostView, activeIt->second.browser);
   }
 
   if (activeIt->second.browser) {
@@ -2831,6 +2413,25 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
   return false;
 }
 
+bool BrowserTabClient::OnOpenURLFromTab(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    const CefString &target_url,
+    WindowOpenDisposition target_disposition,
+    bool user_gesture) {
+  CEF_REQUIRE_UI_THREAD();
+
+  BrowserTabController *controller = controller_;
+  if (controller == nil) {
+    return false;
+  }
+
+  NSString *urlString = ToNSString(target_url.ToString());
+  return [controller openURLFromTabWithURLString:urlString
+                                     sourceTabID:ToNSString(tab_id_)
+                               targetDisposition:target_disposition];
+}
+
 void BrowserTabClient::OnFindResult(CefRefPtr<CefBrowser>,
                                     int,
                                     int count,
@@ -2850,21 +2451,11 @@ void BrowserTabClient::OnFindResult(CefRefPtr<CefBrowser>,
                            finalUpdate:finalUpdate];
 }
 
-bool BrowserTabClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
-                                     const CefKeyEvent &event,
+bool BrowserTabClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
+                                     const CefKeyEvent &,
                                      CefEventHandle,
-                                     bool *is_keyboard_shortcut) {
+                                     bool *) {
   CEF_REQUIRE_UI_THREAD();
-
-  if (CefBrowserView::GetForBrowser(browser) && IsCommandFindShortcut(event)) {
-    if (FocusSettingsSearchInBrowser(browser)) {
-      if (is_keyboard_shortcut != nullptr) {
-        *is_keyboard_shortcut = true;
-      }
-      return true;
-    }
-  }
-
   return false;
 }
 
@@ -2885,10 +2476,6 @@ void BrowserTabClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
 bool BrowserTabClient::DoClose(CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UI_THREAD();
   shared::ClientManager::GetInstance()->DoClose(browser);
-
-  if (CefBrowserView::GetForBrowser(browser)) {
-    return false;
-  }
 
   NSView *browserView = BrowserViewForBrowser(browser);
   if (browserView != nil) {

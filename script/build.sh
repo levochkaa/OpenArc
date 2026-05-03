@@ -21,6 +21,7 @@ esac
 cd "$ROOT_DIR"
 mkdir -p "$HOME/.cache/bazel/thebrowser/disk" "$HOME/.cache/bazel/thebrowser/repository"
 
+"$ROOT_DIR/script/chromium.sh" root "$CONFIGURATION" >/dev/null
 bazel build --config="$BAZEL_CONFIG" "$TARGET"
 
 echo "TheBrowser built successfully"

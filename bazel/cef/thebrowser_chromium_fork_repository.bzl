@@ -7,13 +7,16 @@ def _require_path(repository_ctx, fork_root, relative_path):
 def _thebrowser_chromium_fork_repository_impl(repository_ctx):
     fork_root = repository_ctx.getenv("THEBROWSER_CHROMIUM_FORK_CEF_ROOT")
     if not fork_root:
-        fail("""TheBrowser requires a Chromium fork CEF export.
-Set THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export.
-Stock CEF downloads are intentionally disabled because full Chrome extension support is mandatory.""")
+        workspace_root = repository_ctx.path(repository_ctx.attr.workspace_file).dirname
+        fork_root = str(workspace_root) + "/ThirdParty/cef/export"
 
     root_path = repository_ctx.path(fork_root)
     if not root_path.exists:
-        fail("THEBROWSER_CHROMIUM_FORK_CEF_ROOT does not exist: %s" % fork_root)
+        fail("""TheBrowser requires a Chromium fork CEF export.
+Create the project-local export with ./script/chromium_source.sh package Debug Release,
+or set THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export.
+Missing export: %s
+Stock CEF downloads are intentionally disabled because full Chrome extension support is mandatory.""" % fork_root)
 
     _require_path(repository_ctx, fork_root, ".thebrowser-chromium-fork")
 
@@ -41,6 +44,7 @@ thebrowser_chromium_fork_repository = repository_rule(
     implementation = _thebrowser_chromium_fork_repository_impl,
     attrs = {
         "build_file": attr.label(allow_single_file = True, mandatory = True),
+        "workspace_file": attr.label(allow_single_file = True, default = "//:MODULE.bazel"),
     },
     environ = ["THEBROWSER_CHROMIUM_FORK_CEF_ROOT"],
 )

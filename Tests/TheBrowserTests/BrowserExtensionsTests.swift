@@ -30,6 +30,114 @@ func extensionControlCenterGridShowsAddTileWhenNoExtensionsAreInstalled() {
 }
 
 @Test
+func extensionProfileSnapshotReadsUserInstalledExtensions() throws {
+    let profileDirectory = try makeProfileDirectory()
+    defer { try? FileManager.default.removeItem(at: profileDirectory) }
+
+    let iconData = Data([0x89, 0x50, 0x4E, 0x47])
+    let extensionDirectory = profileDirectory
+        .appendingPathComponent("Extensions", isDirectory: true)
+        .appendingPathComponent("reader", isDirectory: true)
+        .appendingPathComponent("2.0.1_0", isDirectory: true)
+    try FileManager.default.createDirectory(at: extensionDirectory, withIntermediateDirectories: true)
+    try iconData.write(to: extensionDirectory.appendingPathComponent("icon.png", isDirectory: false))
+
+    try writeSecurePreferences(
+        """
+        {
+          "extensions": {
+            "settings": {
+              "component": {
+                "location": 5,
+                "manifest": {
+                  "name": "Chromium PDF Viewer",
+                  "version": "1"
+                },
+                "path": "/component/pdf"
+              },
+              "reader": {
+                "disable_reasons": [],
+                "from_webstore": true,
+                "location": 1,
+                "manifest": {
+                  "icons": {
+                    "16": "icon.png"
+                  },
+                  "name": "Reader Mode",
+                  "version": "2.0.1"
+                },
+                "path": "reader/2.0.1_0"
+              }
+            }
+          }
+        }
+        """,
+        in: profileDirectory
+    )
+
+    let extensions = BrowserExtensionProfileSnapshotStore.installedExtensions(profileDirectories: [profileDirectory])
+
+    #expect(extensions == [
+        BrowserExtension(
+            id: "reader",
+            name: "Reader Mode",
+            version: "2.0.1",
+            isEnabled: true,
+            iconData: iconData
+        ),
+    ])
+}
+
+@Test
+func extensionProfileSnapshotResolvesLocalizedNamesAndDisabledState() throws {
+    let profileDirectory = try makeProfileDirectory()
+    defer { try? FileManager.default.removeItem(at: profileDirectory) }
+
+    let extensionDirectory = profileDirectory
+        .appendingPathComponent("Extensions", isDirectory: true)
+        .appendingPathComponent("clipper", isDirectory: true)
+        .appendingPathComponent("1.0_0", isDirectory: true)
+    let localeDirectory = extensionDirectory
+        .appendingPathComponent("_locales", isDirectory: true)
+        .appendingPathComponent("en", isDirectory: true)
+    try FileManager.default.createDirectory(at: localeDirectory, withIntermediateDirectories: true)
+    try Data("""
+    {
+      "extension_name": {
+        "message": "Localized Clipper"
+      }
+    }
+    """.utf8).write(to: localeDirectory.appendingPathComponent("messages.json", isDirectory: false))
+
+    try writeSecurePreferences(
+        """
+        {
+          "extensions": {
+            "settings": {
+              "clipper": {
+                "disable_reasons": ["permissions_increase"],
+                "location": 1,
+                "manifest": {
+                  "default_locale": "en",
+                  "name": "__MSG_extension_name__",
+                  "version": "1.0"
+                },
+                "path": "clipper/1.0_0"
+              }
+            }
+          }
+        }
+        """,
+        in: profileDirectory
+    )
+
+    let extensions = BrowserExtensionProfileSnapshotStore.installedExtensions(profileDirectories: [profileDirectory])
+
+    #expect(extensions.map(\.name) == ["Localized Clipper"])
+    #expect(extensions.first?.isEnabled == false)
+}
+
+@Test
 @MainActor
 func extensionManagerActionsRefreshFromEngineSource() {
     let manager = FakeBrowserExtensionManager(
@@ -82,6 +190,18 @@ private func makeExtension(id: String, isEnabled: Bool = true) -> BrowserExtensi
         isEnabled: isEnabled,
         iconData: nil
     )
+}
+
+private func makeProfileDirectory() throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("TheBrowserTests", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+}
+
+private func writeSecurePreferences(_ json: String, in profileDirectory: URL) throws {
+    try Data(json.utf8).write(to: profileDirectory.appendingPathComponent("Secure Preferences", isDirectory: false))
 }
 
 @MainActor

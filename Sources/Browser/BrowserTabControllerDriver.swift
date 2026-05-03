@@ -24,7 +24,7 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
         controller.delegate = self
     }
 
-    convenience override init() {
+    override convenience init() {
         self.init(hostView: BrowserTabHostView(frame: .zero))
     }
 
@@ -79,10 +79,6 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
             matchCase: matchCase,
             findNext: findNext
         )
-    }
-
-    func focusSearchInActiveChromeSettingsTab() -> Bool {
-        controller.focusSearchInActiveChromeSettingsTab()
     }
 
     func stopFindingInActiveTab(clearSelection: Bool) {

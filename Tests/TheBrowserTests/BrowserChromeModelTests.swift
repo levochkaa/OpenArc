@@ -932,7 +932,7 @@ func findBarRunsSearchAndClearsSelectionOnDismiss() {
 
 @Test
 @MainActor
-func findBarIsDisabledForWindowedSettingsTabs() throws {
+func findBarIsEnabledForInternalWebUITabs() throws {
     for urlString in [
         "tb://settings",
         "tb://settings/privacy",
@@ -954,20 +954,29 @@ func findBarIsDisabledForWindowedSettingsTabs() throws {
         try model.openURLInNewTab(#require(URL(string: urlString)))
         driver.flushPendingCreateEvents()
 
-        #expect(model.selectedTabUsesWindowedBrowser)
-        #expect(!model.canFindInPage)
+        #expect(!model.selectedTabUsesWindowedBrowser)
+        #expect(model.canFindInPage)
+        #expect(model.canPresentFindInPage)
 
         model.presentFindBar()
 
-        #expect(!model.isFindBarPresented)
-        #expect(driver.findRequests.isEmpty)
+        #expect(model.isFindBarPresented)
+        #expect(driver.stopFindingClearSelectionRequests == [true])
     }
 }
 
 @Test
 @MainActor
-func findCommandIsDisabledForWindowedExtensionsTabs() throws {
-    for urlString in ["tb://extensions", "tb://extensions/?id=abc", "chrome://extensions"] {
+func findCommandUsesNormalFindBarForInternalWebUITabs() throws {
+    for urlString in [
+        "tb://settings",
+        "tb://settings/privacy",
+        "chrome://settings",
+        "about:settings",
+        "tb://extensions",
+        "tb://extensions/?id=abc",
+        "chrome://extensions",
+    ] {
         let driver = FakeBrowserTabDriver()
         let model = makeModel(
             driver: driver,
@@ -980,45 +989,21 @@ func findCommandIsDisabledForWindowedExtensionsTabs() throws {
         try model.openURLInNewTab(#require(URL(string: urlString)))
         driver.flushPendingCreateEvents()
 
-        #expect(model.selectedTabUsesWindowedBrowser)
-        #expect(!model.canFindInPage)
-        #expect(!model.canPresentFindInPage)
-        #expect(!model.presentFindInPage())
-        #expect(driver.focusSearchInActiveChromeSettingsTabCount == 0)
-    }
-}
-
-@Test
-@MainActor
-func findCommandFocusesSettingsSearchForWindowedSettingsTabs() throws {
-    for urlString in ["tb://settings", "tb://settings/privacy", "chrome://settings", "about:settings"] {
-        let driver = FakeBrowserTabDriver()
-        let model = makeModel(
-            driver: driver,
-            snapshotStore: InMemorySessionSnapshotStore(),
-            preferencesStore: InMemorySessionPreferencesStore()
-        )
-
-        model.handleContextReady()
-        driver.flushPendingCreateEvents()
-        try model.openURLInNewTab(#require(URL(string: urlString)))
-        driver.flushPendingCreateEvents()
-
-        #expect(model.selectedTabUsesWindowedBrowser)
+        #expect(!model.selectedTabUsesWindowedBrowser)
         #expect(model.canPresentFindInPage)
-        #expect(!model.canFindInPage)
+        #expect(model.canFindInPage)
 
         #expect(model.presentFindInPage())
 
-        #expect(!model.isFindBarPresented)
+        #expect(model.isFindBarPresented)
         #expect(driver.findRequests.isEmpty)
-        #expect(driver.focusSearchInActiveChromeSettingsTabCount == 1)
+        #expect(driver.stopFindingClearSelectionRequests == [true])
     }
 }
 
 @Test
 @MainActor
-func selectingWindowedSettingsTabDismissesFindBar() throws {
+func selectingInternalWebUITabKeepsFindBarMounted() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1041,11 +1026,11 @@ func selectingWindowedSettingsTabDismissesFindBar() throws {
 
     model.selectTab(id: settingsTabID)
 
-    #expect(model.selectedTabUsesWindowedBrowser)
-    #expect(!model.canFindInPage)
-    #expect(!model.isFindBarPresented)
-    #expect(driver.findRequests.count == findRequestCount)
-    #expect(Array(driver.stopFindingClearSelectionRequests.suffix(2)) == [true, true])
+    #expect(!model.selectedTabUsesWindowedBrowser)
+    #expect(model.canFindInPage)
+    #expect(model.isFindBarPresented)
+    #expect(driver.findRequests.count == findRequestCount + 1)
+    #expect(driver.findRequests.last?.text == "browser")
 }
 
 @Test

@@ -2,6 +2,10 @@ import AppKit
 import Combine
 import Foundation
 
+enum BrowserInternalPageRouting {
+    static let settingsURL = URL(string: "tb://settings/")!
+}
+
 @MainActor
 final class BrowserChromeModel: NSObject, ObservableObject {
     nonisolated static let defaultSidebarWidth: CGFloat = 224
@@ -155,15 +159,11 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     var canFindInPage: Bool {
-        canCreateTab && selectedTab != nil && !selectedTabUsesWindowedBrowser
+        canCreateTab && selectedTab != nil
     }
 
     var canPresentFindInPage: Bool {
-        guard canCreateTab, selectedTab != nil else {
-            return false
-        }
-
-        return !selectedTabUsesWindowedBrowser || selectedTabInternalPage == .settings
+        canFindInPage
     }
 
     var canStepThroughFindMatches: Bool {
@@ -386,6 +386,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
     func handleApplicationDidBecomeActive() {
         archiveExpiredTemporaryTabs()
+        refreshBrowserExtensions()
     }
 
     func archiveExpiredTemporaryTabs() {
@@ -469,14 +470,6 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     func presentFindInPage() -> Bool {
         guard canPresentFindInPage else {
             return false
-        }
-
-        if selectedTabUsesWindowedBrowser {
-            commandBarModel.dismiss()
-            currentPageCommandBarModel.dismiss()
-            dismissFindBar()
-            findResultMatchCount = nil
-            return tabDriver.focusSearchInActiveChromeSettingsTab()
         }
 
         presentFindBar()
@@ -671,7 +664,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
     func selectTab(id: String) {
         guard
-            let targetTab = tabs.first(where: { $0.id == id }),
+            tabs.contains(where: { $0.id == id }),
             selectedTabID != id,
             !closingTabIDs.contains(id)
         else {
@@ -680,20 +673,13 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
         dismissCommandBar()
 
-        let targetUsesWindowedBrowser = Self.usesWindowedBrowser(for: targetTab.urlString)
-        if targetUsesWindowedBrowser {
-            dismissFindBar()
-        }
-
         selectedTabID = id
         findResultMatchCount = nil
         tabDriver.selectTab(withID: id)
         touchTab(id: id)
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
-        if !targetUsesWindowedBrowser {
-            runFind(forward: true, findNext: false)
-        }
+        runFind(forward: true, findNext: false)
     }
 
     func closeTab(id: String, forceClose: Bool = false) {
@@ -964,8 +950,8 @@ private extension BrowserChromeModel {
         return Self.usesWindowedBrowser(for: tab.urlString)
     }
 
-    static func usesWindowedBrowser(for urlString: String) -> Bool {
-        internalPage(for: urlString) != nil
+    static func usesWindowedBrowser(for _: String) -> Bool {
+        false
     }
 
     static func internalPage(for urlString: String) -> BrowserInternalPage? {
@@ -1088,10 +1074,6 @@ private extension BrowserChromeModel {
             tabs[index].urlString = urlString
             tabs[index].lastActivityAt = dateProvider()
             didChangePersistentURL = true
-        }
-
-        if id == selectedTabID, Self.usesWindowedBrowser(for: tabs[index].urlString) {
-            dismissFindBar()
         }
 
         if let faviconURLString {

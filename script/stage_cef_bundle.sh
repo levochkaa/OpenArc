@@ -67,19 +67,19 @@ fi
 
 if [[ ! -f "$CHROMIUM_FORK_MARKER" ]]; then
   echo "error: TheBrowser Chromium fork marker not found at $CHROMIUM_FORK_MARKER" >&2
-  echo "Run THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export ./script/chromium.sh root $CONFIGURATION first." >&2
+  echo "Run ./script/chromium_source.sh package Debug Release first, then ./script/chromium.sh root $CONFIGURATION." >&2
   exit 1
 fi
 
 if [[ ! -d "$CEF_FRAMEWORK_SOURCE" ]]; then
   echo "error: CEF framework not found at $CEF_FRAMEWORK_SOURCE" >&2
-  echo "Run THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export ./script/chromium.sh root $CONFIGURATION first." >&2
+  echo "Run ./script/chromium_source.sh package Debug Release first, then ./script/chromium.sh root $CONFIGURATION." >&2
   exit 1
 fi
 
 if [[ ! -f "$CEF_ROOT/CREDITS.html" ]]; then
   echo "error: CEF credits not found at $CEF_ROOT/CREDITS.html" >&2
-  echo "Run THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export ./script/chromium.sh root $CONFIGURATION first." >&2
+  echo "Run ./script/chromium_source.sh package Debug Release first, then ./script/chromium.sh root $CONFIGURATION." >&2
   exit 1
 fi
 

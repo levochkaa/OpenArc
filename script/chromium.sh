@@ -6,7 +6,8 @@ CONFIGURATION="${2:-Debug}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 THIRD_PARTY_DIR="$ROOT_DIR/ThirdParty/cef"
 WRAPPER_BUILD_DIR="$ROOT_DIR/.build/cef-wrapper"
-CHROMIUM_FORK_CEF_ROOT="${THEBROWSER_CHROMIUM_FORK_CEF_ROOT:-}"
+LOCAL_CHROMIUM_FORK_CEF_ROOT="$THIRD_PARTY_DIR/export"
+CHROMIUM_FORK_CEF_ROOT="${THEBROWSER_CHROMIUM_FORK_CEF_ROOT:-$LOCAL_CHROMIUM_FORK_CEF_ROOT}"
 CHROMIUM_FORK_MARKER=".thebrowser-chromium-fork"
 
 case "$(uname -m)" in
@@ -49,14 +50,16 @@ require_chromium_fork_cef_export() {
   if [[ -z "$CHROMIUM_FORK_CEF_ROOT" ]]; then
     cat >&2 <<'EOF'
 error: TheBrowser requires a Chromium fork CEF export.
-Set THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export.
+Create the project-local export with ./script/chromium_source.sh package Debug Release,
+or set THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export.
 Stock CEF downloads are intentionally disabled because full Chrome extension support is mandatory.
 EOF
     exit 1
   fi
 
   if [[ ! -d "$CHROMIUM_FORK_CEF_ROOT" ]]; then
-    echo "error: THEBROWSER_CHROMIUM_FORK_CEF_ROOT does not exist: $CHROMIUM_FORK_CEF_ROOT" >&2
+    echo "error: Chromium fork CEF export does not exist: $CHROMIUM_FORK_CEF_ROOT" >&2
+    echo "Run ./script/chromium_source.sh package Debug Release to create the project-local export." >&2
     exit 1
   fi
 
@@ -158,9 +161,15 @@ Usage:
   ./script/chromium.sh wrapper [Debug|Release]
   ./script/chromium.sh version
 
+Project-local source/export workflow:
+  ./script/chromium_source.sh package Debug Release
+    Checks out CEF/Chromium under ThirdParty/cef/source, builds the fork, and
+    stages a binary export under ThirdParty/cef/export.
+
 Environment:
 	  THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export
-	    Required. The export must come from TheBrowser's Chromium fork and include:
+	    Optional override. By default this script uses ThirdParty/cef/export.
+	    The export must come from TheBrowser's Chromium fork and include:
 	    .thebrowser-chromium-fork
 	    include/cef_app.h
 	    libcef_dll/CMakeLists.txt
