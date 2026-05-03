@@ -17,6 +17,7 @@ private enum BrowserChromePalette {
     static let rowCloseHover = Color.white.opacity(0.12)
     static let rowCloseForeground = Color.white.opacity(0.82)
     static let sidebarDivider = Color.white.opacity(0.12)
+    static let sidebarOverlayBorder = Color.white.opacity(0.18)
     static let sidebarTopChromeDivider = Color.white.opacity(0.2)
     static let sidebarClearButtonForeground = Color.white.opacity(0.3)
     static let sidebarDropIndicator = Color.white.opacity(0.96)
@@ -60,6 +61,7 @@ private enum BrowserChromePalette {
 private enum BrowserChromeLayout {
     static let sidebarAnimationDuration = 0.18
     static let sidebarResizeHoverDelayNanoseconds: UInt64 = 500_000_000
+    static let sidebarHoverRevealDelayNanoseconds: UInt64 = 500_000_000
     static let leadingContentCornerRadius: CGFloat = BrowserWindowGeometry.browserContentCornerRadius
     static let sidebarOuterPadding: CGFloat = 8
     static let sidebarSectionSpacing: CGFloat = 10
@@ -93,6 +95,7 @@ private enum BrowserChromeLayout {
     static var sidebarTabDropListAnimation: Animation {
         .spring(response: 0.28, dampingFraction: 0.82)
     }
+
     static let sidebarDragPreviewShadowRadius: CGFloat = 14
     static let sidebarDragPreviewShadowY: CGFloat = 8
     static let sidebarClearButtonHorizontalPadding: CGFloat = 8
@@ -100,6 +103,10 @@ private enum BrowserChromeLayout {
     static let sidebarTopChromeDividerHeight: CGFloat = 1
     static let sidebarTopChromeDividerScrollThreshold: CGFloat = 0.5
     static let sidebarResizeHitWidth: CGFloat = sidebarOuterPadding
+    static let sidebarHoverRevealWidth: CGFloat = browserContentEdgeInset
+    static let sidebarHoverOverlayEdgeInset: CGFloat = browserContentEdgeInset
+    static let sidebarOverlayBorderWidth: CGFloat = 0.5
+    static let sidebarOverlayCornerRadius: CGFloat = leadingContentCornerRadius
     static let sidebarSnapThreshold: CGFloat = 10
     static let browserContentEdgeInset: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
     static let chromeButtonSize: CGFloat = 28
@@ -277,6 +284,14 @@ struct BrowserRootView: View {
     @ObservedObject private var currentPageCommandBarModel: BrowserCommandBarModel
     @State private var showsSidebarWindowControls: Bool
     @State private var isWindowFullscreen = false
+    @State private var isWindowFullscreenTransitioning = false
+    @State private var isSidebarHoverOverlayPresented = false
+    @State private var isSidebarHoverOverlayChromeVisible = false
+    @State private var isSidebarOverlayBorderVisible = false
+    @State private var preservesSidebarHoverOverlayDuringFullscreenTransition = false
+    @State private var isSidebarHoverOverlayPointerSyncSuspended = false
+    @State private var isSidebarRevealEdgeHovered = false
+    @State private var sidebarRevealHoverTaskID = 0
     @State private var currentURLRowWindowFrame: CGRect?
     @StateObject private var tooltipCoordinator = BrowserTooltipCoordinator()
     @ObservedObject private var faviconCache = BrowserFaviconCache.shared
@@ -297,31 +312,43 @@ struct BrowserRootView: View {
                     isSidebarVisible: model.isSidebarVisible,
                     usesWindowContentInsets: usesWindowContentInsets
                 )
-                    .equatable()
-                    .frame(
-                        width: browserContentWidth(in: proxy.size),
-                        height: browserContentHeight(in: proxy.size),
-                        alignment: .leading
-                    )
-                    .offset(x: browserContentMinX, y: browserContentMinY)
-                    .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+                .equatable()
+                .frame(
+                    width: browserContentWidth(in: proxy.size),
+                    height: browserContentHeight(in: proxy.size),
+                    alignment: .leading
+                )
+                .offset(x: browserContentMinX, y: browserContentMinY)
+                .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
                 BrowserSidebarChromeView(
                     model: model,
                     snapshot: sidebarSnapshot,
-                    showsWindowControlsInSidebar: showsSidebarWindowControls,
+                    showsWindowControlsInSidebar: showsWindowControlsInSidebarChrome,
                     isCommandBarPresented: commandBarModel.isPresented,
                     isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
+                    isOverlayPresentation: isSidebarOverlayPresentation,
+                    showsOverlayBorder: isSidebarOverlayBorderVisible,
+                    onToggleSidebar: toggleSidebarFromChrome,
                     onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
                 )
-                .frame(width: model.sidebarWidth, height: proxy.size.height, alignment: .leading)
-                .offset(x: sidebarOffset)
-                .allowsHitTesting(model.isSidebarVisible)
+                .frame(
+                    width: model.sidebarWidth,
+                    height: sidebarHeight(in: proxy.size),
+                    alignment: .leading
+                )
+                .offset(x: sidebarOffset, y: sidebarOffsetY)
+                .allowsHitTesting(isSidebarPresented)
+                .zIndex(6)
                 .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+                .animation(
+                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                    value: isSidebarHoverOverlayPresented
+                )
 
                 BrowserContentEdgeDragRegions(
                     windowSize: proxy.size,
-                    blockedLeadingWidth: sidebarLayoutWidth,
+                    blockedLeadingWidth: contentEdgeDragBlockedLeadingWidth,
                     leadingInset: browserContentLeadingInset,
                     topInset: browserContentTopInset,
                     trailingInset: browserContentTrailingInset,
@@ -329,7 +356,23 @@ struct BrowserRootView: View {
                 )
                 .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
-                if commandBarModel.isPresented && !currentPageCommandBarModel.isPresented && sidebarLayoutWidth > 0 {
+                if !model.isSidebarVisible {
+                    BrowserSidebarHoverRevealEdge(onHoverChange: handleSidebarRevealEdgeHoverChange)
+                        .frame(width: BrowserChromeLayout.sidebarHoverRevealWidth, height: proxy.size.height)
+                        .allowsHitTesting(!isSidebarPresented)
+                        .zIndex(7)
+                }
+
+                BrowserSidebarHoverOverlayDismissReader(
+                    isPresented: isSidebarHoverOverlayActive,
+                    sidebarFrame: sidebarFrame(in: proxy.size),
+                    allowsPointerSyncDismissal: allowsSidebarHoverOverlayPointerSyncDismissal,
+                    onPointerMovement: handleSidebarHoverOverlayPointerMovement,
+                    onDismiss: dismissSidebarHoverOverlay
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height)
+
+                if commandBarModel.isPresented, !currentPageCommandBarModel.isPresented, sidebarLayoutWidth > 0 {
                     BrowserPassthroughInteractionObserver(
                         eventMask: [.leftMouseUp, .rightMouseUp, .otherMouseUp]
                     ) {
@@ -374,14 +417,13 @@ struct BrowserRootView: View {
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .zIndex(10)
                 }
-
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
         .background(BrowserChromePalette.shellBackground)
         .background {
-            BrowserWindowFullscreenReader { isFullscreen in
-                isWindowFullscreen = isFullscreen
+            BrowserWindowFullscreenReader { fullscreenState in
+                handleWindowFullscreenStateChange(fullscreenState)
             }
             .allowsHitTesting(false)
         }
@@ -451,11 +493,23 @@ struct BrowserRootView: View {
         }
         .onChange(of: model.isSidebarVisible) { _, isSidebarVisible in
             if isSidebarVisible {
-                showsSidebarWindowControls = true
+                finishSidebarHoverOverlayPromotionIfNeeded()
             }
         }
         .onAnimationCompleted(for: sidebarVisibilityAnimationValue) { completedValue in
+            if completedValue == 0 {
+                isSidebarHoverOverlayChromeVisible = false
+                isSidebarOverlayBorderVisible = false
+            }
             showsSidebarWindowControls = model.isSidebarVisible || completedValue > 0
+        }
+        .onAnimationCompleted(for: sidebarOverlayPresentationAnimationValue) { completedValue in
+            if completedValue == 0 {
+                isSidebarOverlayBorderVisible = false
+            }
+        }
+        .task(id: sidebarRevealHoverTaskID) {
+            await presentSidebarHoverOverlayAfterDelayIfNeeded()
         }
     }
 
@@ -463,12 +517,56 @@ struct BrowserRootView: View {
         model.isSidebarVisible ? model.sidebarWidth : 0
     }
 
+    private var isSidebarPresented: Bool {
+        model.isSidebarVisible || isSidebarHoverOverlayPresented
+    }
+
+    private var isSidebarHoverOverlayActive: Bool {
+        !model.isSidebarVisible && isSidebarHoverOverlayPresented
+    }
+
+    private var isSidebarOverlayPresentation: Bool {
+        !model.isSidebarVisible && isSidebarHoverOverlayChromeVisible
+    }
+
+    private var showsWindowControlsInSidebarChrome: Bool {
+        showsSidebarWindowControls || isSidebarHoverOverlayChromeVisible
+    }
+
+    private var allowsSidebarHoverOverlayPointerSyncDismissal: Bool {
+        !isWindowFullscreenTransitioning && !isSidebarHoverOverlayPointerSyncSuspended
+    }
+
+    private var contentEdgeDragBlockedLeadingWidth: CGFloat {
+        sidebarLayoutWidth
+    }
+
     private var sidebarOffset: CGFloat {
-        model.isSidebarVisible ? 0 : -model.sidebarWidth
+        if model.isSidebarVisible {
+            return 0
+        }
+
+        if isSidebarHoverOverlayPresented {
+            return BrowserChromeLayout.sidebarHoverOverlayEdgeInset
+        }
+
+        if isSidebarOverlayPresentation {
+            return -model.sidebarWidth + BrowserChromeLayout.sidebarHoverOverlayEdgeInset
+        }
+
+        return -model.sidebarWidth
+    }
+
+    private var sidebarOffsetY: CGFloat {
+        isSidebarOverlayPresentation ? BrowserChromeLayout.sidebarHoverOverlayEdgeInset : 0
     }
 
     private var sidebarVisibilityAnimationValue: CGFloat {
-        model.isSidebarVisible ? 1 : 0
+        isSidebarPresented ? 1 : 0
+    }
+
+    private var sidebarOverlayPresentationAnimationValue: CGFloat {
+        isSidebarOverlayPresentation ? 1 : 0
     }
 
     private var currentPageCommandBarFaviconCandidate: BrowserCommandBarFaviconCandidate? {
@@ -519,8 +617,188 @@ struct BrowserRootView: View {
         max(windowSize.height - browserContentTopInset - browserContentBottomInset, 0)
     }
 
+    private func sidebarHeight(in windowSize: CGSize) -> CGFloat {
+        guard isSidebarOverlayPresentation else {
+            return windowSize.height
+        }
+
+        return max(windowSize.height - BrowserChromeLayout.sidebarHoverOverlayEdgeInset * 2, 0)
+    }
+
+    private func sidebarFrame(in windowSize: CGSize) -> CGRect {
+        CGRect(
+            x: sidebarOffset,
+            y: sidebarOffsetY,
+            width: model.sidebarWidth,
+            height: sidebarHeight(in: windowSize)
+        )
+    }
+
     private var usesDetachedBrowserOverlays: Bool {
         model.selectedTabUsesWindowedBrowser
+    }
+
+    private func handleSidebarRevealEdgeHoverChange(_ hovering: Bool) {
+        guard !model.isSidebarVisible, isSidebarRevealEdgeHovered != hovering else {
+            return
+        }
+
+        isSidebarRevealEdgeHovered = hovering
+        sidebarRevealHoverTaskID += 1
+    }
+
+    private func handleWindowFullscreenStateChange(_ fullscreenState: BrowserWindowFullscreenState) {
+        isWindowFullscreen = fullscreenState.isFullscreen
+        isWindowFullscreenTransitioning = fullscreenState.isTransitioning
+
+        if fullscreenState.isTransitioning {
+            preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded()
+            return
+        }
+
+        restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded()
+    }
+
+    private func toggleSidebarFromChrome() {
+        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
+            model.toggleSidebar()
+        }
+    }
+
+    private func finishSidebarHoverOverlayPromotionIfNeeded() {
+        let updates = {
+            isSidebarHoverOverlayPresented = false
+            isSidebarHoverOverlayChromeVisible = false
+            preservesSidebarHoverOverlayDuringFullscreenTransition = false
+            isSidebarHoverOverlayPointerSyncSuspended = false
+            isSidebarRevealEdgeHovered = false
+            sidebarRevealHoverTaskID += 1
+            showsSidebarWindowControls = true
+        }
+
+        guard isSidebarHoverOverlayPresented || isSidebarHoverOverlayChromeVisible else {
+            updates()
+            return
+        }
+
+        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), updates)
+    }
+
+    private func presentSidebarHoverOverlayAfterDelayIfNeeded() async {
+        guard isSidebarRevealEdgeHovered, !isSidebarPresented else {
+            return
+        }
+
+        do {
+            try await Task.sleep(nanoseconds: BrowserChromeLayout.sidebarHoverRevealDelayNanoseconds)
+        } catch {
+            return
+        }
+
+        guard isSidebarRevealEdgeHovered, !isSidebarPresented else {
+            return
+        }
+
+        presentSidebarHoverOverlay()
+    }
+
+    private func presentSidebarHoverOverlay() {
+        guard !model.isSidebarVisible, !isSidebarHoverOverlayPresented else {
+            return
+        }
+
+        withoutSidebarPresentationAnimation {
+            isSidebarRevealEdgeHovered = false
+            sidebarRevealHoverTaskID += 1
+            isSidebarHoverOverlayPointerSyncSuspended = false
+            isSidebarOverlayBorderVisible = true
+            isSidebarHoverOverlayChromeVisible = true
+        }
+
+        DispatchQueue.main.async {
+            guard !model.isSidebarVisible,
+                  isSidebarHoverOverlayChromeVisible,
+                  !isSidebarHoverOverlayPresented
+            else {
+                return
+            }
+
+            withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
+                isSidebarHoverOverlayPresented = true
+            }
+        }
+    }
+
+    private func withoutSidebarPresentationAnimation(_ updates: () -> Void) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction, updates)
+    }
+
+    private func dismissSidebarHoverOverlay() {
+        guard isSidebarHoverOverlayPresented else {
+            return
+        }
+
+        guard !isWindowFullscreenTransitioning else {
+            preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded()
+            return
+        }
+
+        guard !isSidebarHoverOverlayPointerSyncSuspended else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
+            isSidebarRevealEdgeHovered = false
+            sidebarRevealHoverTaskID += 1
+            isSidebarHoverOverlayPointerSyncSuspended = false
+            isSidebarHoverOverlayPresented = false
+        }
+    }
+
+    private func preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded() {
+        guard isSidebarHoverOverlayActive || isSidebarOverlayPresentation else {
+            return
+        }
+
+        preservesSidebarHoverOverlayDuringFullscreenTransition = true
+        isSidebarHoverOverlayPointerSyncSuspended = true
+        isSidebarRevealEdgeHovered = false
+        sidebarRevealHoverTaskID += 1
+        isSidebarOverlayBorderVisible = true
+        isSidebarHoverOverlayChromeVisible = true
+        isSidebarHoverOverlayPresented = true
+    }
+
+    private func restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded() {
+        guard preservesSidebarHoverOverlayDuringFullscreenTransition else {
+            return
+        }
+
+        preservesSidebarHoverOverlayDuringFullscreenTransition = false
+
+        guard !model.isSidebarVisible else {
+            isSidebarHoverOverlayPointerSyncSuspended = false
+            isSidebarHoverOverlayPresented = false
+            isSidebarHoverOverlayChromeVisible = false
+            isSidebarOverlayBorderVisible = false
+            return
+        }
+
+        isSidebarRevealEdgeHovered = false
+        sidebarRevealHoverTaskID += 1
+        isSidebarOverlayBorderVisible = true
+        isSidebarHoverOverlayChromeVisible = true
+        isSidebarHoverOverlayPresented = true
+    }
+
+    private func handleSidebarHoverOverlayPointerMovement() {
+        guard !isWindowFullscreenTransitioning, isSidebarHoverOverlayPointerSyncSuspended else {
+            return
+        }
+
+        isSidebarHoverOverlayPointerSyncSuspended = false
     }
 
     private var sidebarSnapshot: BrowserSidebarSnapshot {
@@ -543,10 +821,27 @@ private struct BrowserSidebarChromeView: View {
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
+    let isOverlayPresentation: Bool
+    let showsOverlayBorder: Bool
+    let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
     @State private var isSidebarResizing = false
 
     var body: some View {
+        sidebarContent
+            .clipShape(sidebarShape)
+            .overlay {
+                if showsOverlayBorder {
+                    sidebarShape
+                        .stroke(
+                            BrowserChromePalette.sidebarOverlayBorder,
+                            lineWidth: BrowserChromeLayout.sidebarOverlayBorderWidth
+                        )
+                }
+            }
+    }
+
+    private var sidebarContent: some View {
         BrowserSidebarContainerView(
             model: model,
             snapshot: snapshot,
@@ -554,12 +849,31 @@ private struct BrowserSidebarChromeView: View {
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
             isSidebarResizing: isSidebarResizing,
+            onToggleSidebar: onToggleSidebar,
             onURLRowFrameChange: onURLRowFrameChange
         )
         .overlay(alignment: .trailing) {
             BrowserSidebarResizeHandle(model: model, isSidebarResizing: $isSidebarResizing)
                 .frame(width: BrowserChromeLayout.sidebarResizeHitWidth)
         }
+    }
+
+    private var sidebarShape: UnevenRoundedRectangle {
+        let cornerRadius = usesOverlayShape ? BrowserChromeLayout.sidebarOverlayCornerRadius : 0
+
+        return UnevenRoundedRectangle(
+            cornerRadii: RectangleCornerRadii(
+                topLeading: cornerRadius,
+                bottomLeading: cornerRadius,
+                bottomTrailing: cornerRadius,
+                topTrailing: cornerRadius
+            ),
+            style: .continuous
+        )
+    }
+
+    private var usesOverlayShape: Bool {
+        isOverlayPresentation || showsOverlayBorder
     }
 }
 
@@ -570,6 +884,7 @@ private struct BrowserSidebarContainerView: View {
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
     let isSidebarResizing: Bool
+    let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
 
     var body: some View {
@@ -580,6 +895,7 @@ private struct BrowserSidebarContainerView: View {
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
             isSidebarResizing: isSidebarResizing,
+            onToggleSidebar: onToggleSidebar,
             onURLRowFrameChange: onURLRowFrameChange
         )
         .equatable()
@@ -790,6 +1106,7 @@ private struct BrowserSidebarView: View {
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
     let isSidebarResizing: Bool
+    let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
     @State private var isNewTabButtonHovered = false
     @State private var isClearButtonHovered = false
@@ -954,7 +1271,7 @@ private struct BrowserSidebarView: View {
                 canStopLoading: snapshot.canStopLoading,
                 canReload: snapshot.canReload,
                 showsWindowControlsInSidebar: showsWindowControlsInSidebar,
-                onToggleSidebar: model.toggleSidebar,
+                onToggleSidebar: onToggleSidebar,
                 onGoBack: model.goBack,
                 onGoForward: model.goForward,
                 onStopLoading: model.stopLoadingCurrentTab,
@@ -1684,27 +2001,32 @@ private final class BrowserWindowFrameReaderNSView: NSView {
     }
 }
 
+private struct BrowserWindowFullscreenState: Equatable {
+    let isFullscreen: Bool
+    let isTransitioning: Bool
+}
+
 private struct BrowserWindowFullscreenReader: NSViewRepresentable {
-    let onFullscreenChange: (Bool) -> Void
+    let onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void
 
     func makeNSView(context _: Context) -> BrowserWindowFullscreenReaderNSView {
         let view = BrowserWindowFullscreenReaderNSView()
-        view.onFullscreenChange = onFullscreenChange
+        view.onFullscreenStateChange = onFullscreenStateChange
         return view
     }
 
     func updateNSView(_ nsView: BrowserWindowFullscreenReaderNSView, context _: Context) {
-        nsView.onFullscreenChange = onFullscreenChange
-        nsView.sendFullscreenChangeIfNeeded()
+        nsView.onFullscreenStateChange = onFullscreenStateChange
+        nsView.sendFullscreenStateIfNeeded()
     }
 }
 
 private final class BrowserWindowFullscreenReaderNSView: NSView {
-    var onFullscreenChange: (Bool) -> Void = { _ in }
+    var onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void = { _ in }
 
     private weak var observedWindow: NSWindow?
     private var notificationObservers: [NSObjectProtocol] = []
-    private var lastIsFullscreen: Bool?
+    private var lastFullscreenState: BrowserWindowFullscreenState?
 
     deinit {
         removeNotificationObservers()
@@ -1722,12 +2044,16 @@ private final class BrowserWindowFullscreenReaderNSView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateObservedWindow()
-        sendFullscreenChangeIfNeeded()
+        sendFullscreenStateIfNeeded()
     }
 
-    func sendFullscreenChangeIfNeeded() {
-        let isFullscreen = window?.styleMask.contains(.fullScreen) ?? false
-        sendFullscreenChangeIfNeeded(isFullscreen)
+    func sendFullscreenStateIfNeeded() {
+        sendFullscreenStateIfNeeded(
+            BrowserWindowFullscreenState(
+                isFullscreen: window?.styleMask.contains(.fullScreen) ?? false,
+                isTransitioning: false
+            )
+        )
     }
 
     private func updateObservedWindow() {
@@ -1743,13 +2069,24 @@ private final class BrowserWindowFullscreenReaderNSView: NSView {
         }
 
         addNotificationObserver(for: NSWindow.willEnterFullScreenNotification, window: window) { [weak self] in
-            self?.sendFullscreenChangeIfNeeded(true)
+            self?.sendFullscreenStateIfNeeded(
+                BrowserWindowFullscreenState(isFullscreen: true, isTransitioning: true)
+            )
         }
         addNotificationObserver(for: NSWindow.didEnterFullScreenNotification, window: window) { [weak self] in
-            self?.sendFullscreenChangeIfNeeded(true)
+            self?.sendFullscreenStateIfNeeded(
+                BrowserWindowFullscreenState(isFullscreen: true, isTransitioning: false)
+            )
+        }
+        addNotificationObserver(for: NSWindow.willExitFullScreenNotification, window: window) { [weak self] in
+            self?.sendFullscreenStateIfNeeded(
+                BrowserWindowFullscreenState(isFullscreen: false, isTransitioning: true)
+            )
         }
         addNotificationObserver(for: NSWindow.didExitFullScreenNotification, window: window) { [weak self] in
-            self?.sendFullscreenChangeIfNeeded(false)
+            self?.sendFullscreenStateIfNeeded(
+                BrowserWindowFullscreenState(isFullscreen: false, isTransitioning: false)
+            )
         }
     }
 
@@ -1775,13 +2112,13 @@ private final class BrowserWindowFullscreenReaderNSView: NSView {
         notificationObservers = []
     }
 
-    private func sendFullscreenChangeIfNeeded(_ isFullscreen: Bool) {
-        guard lastIsFullscreen != isFullscreen else {
+    private func sendFullscreenStateIfNeeded(_ fullscreenState: BrowserWindowFullscreenState) {
+        guard lastFullscreenState != fullscreenState else {
             return
         }
 
-        lastIsFullscreen = isFullscreen
-        onFullscreenChange(isFullscreen)
+        lastFullscreenState = fullscreenState
+        onFullscreenStateChange(fullscreenState)
     }
 }
 
@@ -2284,7 +2621,7 @@ private struct BrowserCommandBarOverlay: View {
                     model: model,
                     faviconCandidate: faviconCandidate
                 )
-                    .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
+                .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
             }
         }
         .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
@@ -2424,12 +2761,12 @@ private struct BrowserCommandBarOverlay: View {
     private func panelOffset(in availableSize: CGSize) -> CGSize {
         switch style {
         case .standard:
-            return CGSize(
+            CGSize(
                 width: max((availableSize.width - BrowserChromeLayout.commandBarWidth) / 2, 0),
                 height: commandBarTopInset(for: availableSize.height)
             )
         case let .compact(anchorFrame, _):
-            return CGSize(
+            CGSize(
                 width: compactPanelOriginX(anchorFrame: anchorFrame),
                 height: compactPanelOriginY(anchorFrame: anchorFrame, availableHeight: availableSize.height)
             )
@@ -3410,7 +3747,7 @@ private struct BrowserSidebarCurrentURLRow: View {
                     cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
                     style: .continuous
                 )
-                    .fill(isHovered ? BrowserChromePalette.currentURLButtonHoverResolved : Color.clear)
+                .fill(isHovered ? BrowserChromePalette.currentURLButtonHoverResolved : Color.clear)
 
                 ForEach([systemImageName], id: \.self) { imageName in
                     Image(systemName: imageName)
@@ -3571,6 +3908,192 @@ private struct BrowserContentEdgeDragRegions: View {
     }
 }
 
+private struct BrowserSidebarHoverRevealEdge: View {
+    let onHoverChange: (Bool) -> Void
+
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onHover(perform: onHoverChange)
+            .gesture(WindowDragGesture())
+            .allowsWindowActivationEvents(true)
+    }
+}
+
+private struct BrowserSidebarHoverOverlayDismissReader: NSViewRepresentable {
+    let isPresented: Bool
+    let sidebarFrame: CGRect
+    let allowsPointerSyncDismissal: Bool
+    let onPointerMovement: () -> Void
+    let onDismiss: () -> Void
+
+    func makeNSView(context _: Context) -> BrowserSidebarHoverOverlayDismissNSView {
+        let view = BrowserSidebarHoverOverlayDismissNSView()
+        view.update(
+            isPresented: isPresented,
+            sidebarFrame: sidebarFrame,
+            allowsPointerSyncDismissal: allowsPointerSyncDismissal,
+            onPointerMovement: onPointerMovement,
+            onDismiss: onDismiss
+        )
+        return view
+    }
+
+    func updateNSView(_ nsView: BrowserSidebarHoverOverlayDismissNSView, context _: Context) {
+        nsView.update(
+            isPresented: isPresented,
+            sidebarFrame: sidebarFrame,
+            allowsPointerSyncDismissal: allowsPointerSyncDismissal,
+            onPointerMovement: onPointerMovement,
+            onDismiss: onDismiss
+        )
+    }
+}
+
+private final class BrowserSidebarHoverOverlayDismissNSView: NSView {
+    private var isPresented = false
+    private var sidebarFrame: CGRect = .zero
+    private var allowsPointerSyncDismissal = true
+    private var onPointerMovement: () -> Void = {}
+    private var onDismiss: () -> Void = {}
+    private var trackingArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        postsFrameChangedNotifications = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        removeHoverTrackingArea()
+    }
+
+    override func hitTest(_: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateTrackingAreas()
+        schedulePointerSync()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        schedulePointerSync()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        removeHoverTrackingArea()
+
+        guard isPresented else {
+            return
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        self.trackingArea = trackingArea
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onPointerMovement()
+        dismissIfNeeded(for: event.locationInWindow)
+    }
+
+    override func mouseExited(with _: NSEvent) {
+        guard isPresented else {
+            return
+        }
+
+        onPointerMovement()
+        dismissIfPointerIsPastSidebarTrailingEdge()
+    }
+
+    func update(
+        isPresented: Bool,
+        sidebarFrame: CGRect,
+        allowsPointerSyncDismissal: Bool,
+        onPointerMovement: @escaping () -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        let shouldRefreshTracking = self.isPresented != isPresented
+        let shouldSyncPointer = shouldRefreshTracking
+            || self.sidebarFrame != sidebarFrame
+            || self.allowsPointerSyncDismissal != allowsPointerSyncDismissal
+
+        self.isPresented = isPresented
+        self.sidebarFrame = sidebarFrame
+        self.allowsPointerSyncDismissal = allowsPointerSyncDismissal
+        self.onPointerMovement = onPointerMovement
+        self.onDismiss = onDismiss
+
+        if shouldRefreshTracking {
+            updateTrackingAreas()
+        }
+
+        if shouldSyncPointer {
+            schedulePointerSync()
+        }
+    }
+
+    private func schedulePointerSync() {
+        guard allowsPointerSyncDismissal else {
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.dismissIfPointerOutsideSidebar()
+        }
+    }
+
+    private func dismissIfPointerOutsideSidebar() {
+        guard isPresented, !bounds.isEmpty, let window else {
+            return
+        }
+
+        dismissIfNeeded(for: window.mouseLocationOutsideOfEventStream)
+    }
+
+    private func dismissIfNeeded(for locationInWindow: NSPoint) {
+        guard isPresented, !bounds.isEmpty, locationInWindow.x > sidebarFrameInWindow.maxX else {
+            return
+        }
+
+        onDismiss()
+    }
+
+    private func dismissIfPointerIsPastSidebarTrailingEdge() {
+        guard isPresented, let window else {
+            return
+        }
+
+        dismissIfNeeded(for: window.mouseLocationOutsideOfEventStream)
+    }
+
+    private var sidebarFrameInWindow: CGRect {
+        convert(sidebarFrame, to: nil)
+    }
+
+    private func removeHoverTrackingArea() {
+        guard let trackingArea else {
+            return
+        }
+
+        removeTrackingArea(trackingArea)
+        self.trackingArea = nil
+    }
+}
+
 private struct BrowserWindowDragRegion: View {
     var body: some View {
         Color.clear
@@ -3702,7 +4225,7 @@ private struct BrowserTooltipOverlay: View {
     let entries: [BrowserResolvedTooltipEntry]
 
     var body: some View {
-        GeometryReader { proxy in
+        GeometryReader { _ in
             ZStack(alignment: .topLeading) {
                 ForEach(entries, id: \.id) { entry in
                     BrowserShortcutTooltip(
@@ -4086,11 +4609,7 @@ private struct BrowserSidebarTabDragPreview: View {
     }
 }
 
-extension BrowserSidebarTabDragPreview: Equatable {
-    static func == (lhs: BrowserSidebarTabDragPreview, rhs: BrowserSidebarTabDragPreview) -> Bool {
-        lhs.tab == rhs.tab
-    }
-}
+extension BrowserSidebarTabDragPreview: Equatable {}
 
 private struct BrowserSidebarRow: View {
     let tab: BrowserChromeModel.Tab
@@ -4170,7 +4689,6 @@ private struct BrowserSidebarRow: View {
             }
     }
 
-    @ViewBuilder
     private var rowInteractionSurface: some View {
         ZStack(alignment: .trailing) {
             rowSurface
@@ -4302,8 +4820,8 @@ private struct BrowserSidebarRow: View {
             alignment: .trailing
         )
         .browserTooltip(
-            title: BrowserStrings.tabArchiveTooltip,
-            shortcut: nil,
+            title: BrowserCommands.archiveTab.helpTitle,
+            shortcut: isSelected ? BrowserCommands.archiveTab.shortcut : nil,
             isPresented: showsCloseButton && isCloseHovered && !isSidebarResizing
         )
     }
