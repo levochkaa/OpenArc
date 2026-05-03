@@ -17,7 +17,7 @@ private enum BrowserChromePalette {
     static let rowCloseHover = Color.white.opacity(0.12)
     static let rowCloseForeground = Color.white.opacity(0.82)
     static let sidebarDivider = Color.white.opacity(0.12)
-    static let sidebarOverlayBorder = Color.white.opacity(0.18)
+    static let sidebarOverlayBorder = Color.white.opacity(0.28)
     static let sidebarTopChromeDivider = Color.white.opacity(0.2)
     static let sidebarClearButtonForeground = Color.white.opacity(0.3)
     static let sidebarDropIndicator = Color.white.opacity(0.96)
@@ -105,7 +105,7 @@ private enum BrowserChromeLayout {
     static let sidebarResizeHitWidth: CGFloat = sidebarOuterPadding
     static let sidebarHoverRevealWidth: CGFloat = browserContentEdgeInset
     static let sidebarHoverOverlayEdgeInset: CGFloat = browserContentEdgeInset
-    static let sidebarOverlayBorderWidth: CGFloat = 0.5
+    static let sidebarOverlayBorderWidth: CGFloat = 1
     static let sidebarOverlayCornerRadius: CGFloat = leadingContentCornerRadius
     static let sidebarSnapThreshold: CGFloat = 10
     static let browserContentEdgeInset: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
@@ -287,7 +287,6 @@ struct BrowserRootView: View {
     @State private var isWindowFullscreenTransitioning = false
     @State private var isSidebarHoverOverlayPresented = false
     @State private var isSidebarHoverOverlayChromeVisible = false
-    @State private var isSidebarOverlayBorderVisible = false
     @State private var preservesSidebarHoverOverlayDuringFullscreenTransition = false
     @State private var isSidebarHoverOverlayPointerSyncSuspended = false
     @State private var isSidebarRevealEdgeHovered = false
@@ -328,7 +327,7 @@ struct BrowserRootView: View {
                     isCommandBarPresented: commandBarModel.isPresented,
                     isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
                     isOverlayPresentation: isSidebarOverlayPresentation,
-                    showsOverlayBorder: isSidebarOverlayBorderVisible,
+                    showsOverlayBorder: isSidebarHoverOverlayPresented,
                     onToggleSidebar: toggleSidebarFromChrome,
                     onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
                 )
@@ -499,14 +498,8 @@ struct BrowserRootView: View {
         .onAnimationCompleted(for: sidebarVisibilityAnimationValue) { completedValue in
             if completedValue == 0 {
                 isSidebarHoverOverlayChromeVisible = false
-                isSidebarOverlayBorderVisible = false
             }
             showsSidebarWindowControls = model.isSidebarVisible || completedValue > 0
-        }
-        .onAnimationCompleted(for: sidebarOverlayPresentationAnimationValue) { completedValue in
-            if completedValue == 0 {
-                isSidebarOverlayBorderVisible = false
-            }
         }
         .task(id: sidebarRevealHoverTaskID) {
             await presentSidebarHoverOverlayAfterDelayIfNeeded()
@@ -563,10 +556,6 @@ struct BrowserRootView: View {
 
     private var sidebarVisibilityAnimationValue: CGFloat {
         isSidebarPresented ? 1 : 0
-    }
-
-    private var sidebarOverlayPresentationAnimationValue: CGFloat {
-        isSidebarOverlayPresentation ? 1 : 0
     }
 
     private var currentPageCommandBarFaviconCandidate: BrowserCommandBarFaviconCandidate? {
@@ -711,7 +700,6 @@ struct BrowserRootView: View {
             isSidebarRevealEdgeHovered = false
             sidebarRevealHoverTaskID += 1
             isSidebarHoverOverlayPointerSyncSuspended = false
-            isSidebarOverlayBorderVisible = true
             isSidebarHoverOverlayChromeVisible = true
         }
 
@@ -766,7 +754,6 @@ struct BrowserRootView: View {
         isSidebarHoverOverlayPointerSyncSuspended = true
         isSidebarRevealEdgeHovered = false
         sidebarRevealHoverTaskID += 1
-        isSidebarOverlayBorderVisible = true
         isSidebarHoverOverlayChromeVisible = true
         isSidebarHoverOverlayPresented = true
     }
@@ -782,13 +769,11 @@ struct BrowserRootView: View {
             isSidebarHoverOverlayPointerSyncSuspended = false
             isSidebarHoverOverlayPresented = false
             isSidebarHoverOverlayChromeVisible = false
-            isSidebarOverlayBorderVisible = false
             return
         }
 
         isSidebarRevealEdgeHovered = false
         sidebarRevealHoverTaskID += 1
-        isSidebarOverlayBorderVisible = true
         isSidebarHoverOverlayChromeVisible = true
         isSidebarHoverOverlayPresented = true
     }
@@ -831,13 +816,16 @@ private struct BrowserSidebarChromeView: View {
         sidebarContent
             .clipShape(sidebarShape)
             .overlay {
-                if showsOverlayBorder {
-                    sidebarShape
-                        .stroke(
-                            BrowserChromePalette.sidebarOverlayBorder,
-                            lineWidth: BrowserChromeLayout.sidebarOverlayBorderWidth
-                        )
-                }
+                sidebarShape
+                    .strokeBorder(
+                        BrowserChromePalette.sidebarOverlayBorder,
+                        lineWidth: BrowserChromeLayout.sidebarOverlayBorderWidth
+                    )
+                    .opacity(showsOverlayBorder ? 1 : 0)
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: showsOverlayBorder
+                    )
             }
     }
 
