@@ -105,6 +105,7 @@ private enum BrowserChromeLayout {
     static let sidebarResizeHitWidth: CGFloat = sidebarOuterPadding
     static let sidebarHoverRevealWidth: CGFloat = browserContentEdgeInset
     static let sidebarHoverOverlayEdgeInset: CGFloat = browserContentEdgeInset
+    static let detachedSidebarWindowBorderInset: CGFloat = 1
     static let sidebarOverlayBorderWidth: CGFloat = 1
     static let sidebarOverlayCornerRadius: CGFloat = leadingContentCornerRadius
     static let sidebarSnapThreshold: CGFloat = 10
@@ -320,30 +321,32 @@ struct BrowserRootView: View {
                 .offset(x: browserContentMinX, y: browserContentMinY)
                 .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
-                BrowserSidebarChromeView(
-                    model: model,
-                    snapshot: sidebarSnapshot,
-                    showsWindowControlsInSidebar: showsWindowControlsInSidebarChrome,
-                    isCommandBarPresented: commandBarModel.isPresented,
-                    isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
-                    isOverlayPresentation: isSidebarOverlayPresentation,
-                    showsOverlayBorder: isSidebarHoverOverlayPresented,
-                    onToggleSidebar: toggleSidebarFromChrome,
-                    onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
-                )
-                .frame(
-                    width: model.sidebarWidth,
-                    height: sidebarHeight(in: proxy.size),
-                    alignment: .leading
-                )
-                .offset(x: sidebarOffset, y: sidebarOffsetY)
-                .allowsHitTesting(isSidebarPresented)
-                .zIndex(6)
-                .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
-                .animation(
-                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                    value: isSidebarHoverOverlayPresented
-                )
+                if usesInlineSidebarChrome {
+                    BrowserSidebarChromeView(
+                        model: model,
+                        snapshot: sidebarSnapshot,
+                        showsWindowControlsInSidebar: showsWindowControlsInSidebarChrome,
+                        isCommandBarPresented: commandBarModel.isPresented,
+                        isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
+                        isOverlayPresentation: isSidebarOverlayPresentation,
+                        showsOverlayBorder: isSidebarHoverOverlayPresented,
+                        onToggleSidebar: toggleSidebarFromChrome,
+                        onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
+                    )
+                    .frame(
+                        width: model.sidebarWidth,
+                        height: sidebarHeight(in: proxy.size),
+                        alignment: .leading
+                    )
+                    .offset(x: sidebarOffset, y: sidebarOffsetY)
+                    .allowsHitTesting(isSidebarPresented)
+                    .zIndex(6)
+                    .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: isSidebarHoverOverlayPresented
+                    )
+                }
 
                 BrowserContentEdgeDragRegions(
                     windowSize: proxy.size,
@@ -355,11 +358,60 @@ struct BrowserRootView: View {
                 )
                 .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
-                if !model.isSidebarVisible {
+                if !model.isSidebarVisible, !usesDetachedBrowserOverlays {
                     BrowserSidebarHoverRevealEdge(onHoverChange: handleSidebarRevealEdgeHoverChange)
                         .frame(width: BrowserChromeLayout.sidebarHoverRevealWidth, height: proxy.size.height)
                         .allowsHitTesting(!isSidebarPresented)
                         .zIndex(7)
+                }
+
+                if usesDetachedBrowserOverlays {
+                    BrowserDetachedOverlayWindowRepresentable(
+                        isVisible: isDetachedSidebarHoverRevealEdgeVisible,
+                        isInteractive: true,
+                        contentFrameLeadingInset: 0,
+                        content: BrowserSidebarHoverRevealEdge(onHoverChange: handleSidebarRevealEdgeHoverChange)
+                    )
+                    .frame(width: BrowserChromeLayout.sidebarHoverRevealWidth, height: proxy.size.height)
+                    .allowsHitTesting(false)
+                    .zIndex(11)
+
+                    BrowserDetachedOverlayWindowRepresentable(
+                        isVisible: true,
+                        isInteractive: isDetachedSidebarChromeInteractive,
+                        contentFrameLeadingInset: 0,
+                        content: BrowserDetachedSidebarHoverOverlayContent(
+                            model: model,
+                            snapshot: sidebarSnapshot,
+                            showsWindowControlsInSidebar: showsWindowControlsInSidebarChrome,
+                            isCommandBarPresented: commandBarModel.isPresented,
+                            isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
+                            isOverlayPresentation: isSidebarOverlayPresentation,
+                            showsOverlayBorder: isSidebarHoverOverlayPresented,
+                            roundsWindowLeadingCorners: usesWindowContentInsets,
+                            sidebarWidth: model.sidebarWidth,
+                            sidebarHeight: sidebarHeight(in: proxy.size),
+                            containerWidth: detachedSidebarChromeWidth,
+                            containerHeight: proxy.size.height,
+                            isPresented: isDetachedSidebarChromePresented,
+                            onToggleSidebar: toggleSidebarFromChrome,
+                            onURLRowFrameChange: { _ in }
+                        )
+                        .environmentObject(tooltipCoordinator)
+                        .environmentObject(faviconCache)
+                    )
+                    .frame(
+                        width: detachedSidebarChromeWidth,
+                        height: proxy.size.height,
+                        alignment: .leading
+                    )
+                    .allowsHitTesting(false)
+                    .zIndex(12)
+                    .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: isSidebarHoverOverlayPresented
+                    )
                 }
 
                 BrowserSidebarHoverOverlayDismissReader(
@@ -518,8 +570,32 @@ struct BrowserRootView: View {
         !model.isSidebarVisible && isSidebarHoverOverlayPresented
     }
 
+    private var usesInlineSidebarChrome: Bool {
+        !usesDetachedBrowserOverlays
+    }
+
+    private var isDetachedSidebarHoverRevealEdgeVisible: Bool {
+        usesDetachedBrowserOverlays && !model.isSidebarVisible && !isSidebarPresented
+    }
+
+    private var isDetachedSidebarChromeInteractive: Bool {
+        model.isSidebarVisible || isSidebarHoverOverlayPresented
+    }
+
+    private var isDetachedSidebarChromePresented: Bool {
+        model.isSidebarVisible || isSidebarHoverOverlayPresented
+    }
+
     private var isSidebarOverlayPresentation: Bool {
         !model.isSidebarVisible && isSidebarHoverOverlayChromeVisible
+    }
+
+    private var detachedSidebarChromeWidth: CGFloat {
+        if isSidebarOverlayPresentation {
+            return model.sidebarWidth + BrowserChromeLayout.sidebarHoverOverlayEdgeInset * 2
+        }
+
+        return model.sidebarWidth
     }
 
     private var showsWindowControlsInSidebarChrome: Bool {
@@ -808,6 +884,7 @@ private struct BrowserSidebarChromeView: View {
     let isCurrentPageCommandBarPresented: Bool
     let isOverlayPresentation: Bool
     let showsOverlayBorder: Bool
+    var roundsWindowLeadingCorners = false
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
     @State private var isSidebarResizing = false
@@ -847,17 +924,34 @@ private struct BrowserSidebarChromeView: View {
     }
 
     private var sidebarShape: UnevenRoundedRectangle {
-        let cornerRadius = usesOverlayShape ? BrowserChromeLayout.sidebarOverlayCornerRadius : 0
+        UnevenRoundedRectangle(
+            cornerRadii: sidebarCornerRadii,
+            style: .continuous
+        )
+    }
 
-        return UnevenRoundedRectangle(
-            cornerRadii: RectangleCornerRadii(
+    private var sidebarCornerRadii: RectangleCornerRadii {
+        if usesOverlayShape {
+            let cornerRadius = BrowserChromeLayout.sidebarOverlayCornerRadius
+            return RectangleCornerRadii(
                 topLeading: cornerRadius,
                 bottomLeading: cornerRadius,
                 bottomTrailing: cornerRadius,
                 topTrailing: cornerRadius
-            ),
-            style: .continuous
-        )
+            )
+        }
+
+        if roundsWindowLeadingCorners {
+            let cornerRadius = BrowserWindowGeometry.windowCornerRadius
+            return RectangleCornerRadii(
+                topLeading: cornerRadius,
+                bottomLeading: cornerRadius,
+                bottomTrailing: 0,
+                topTrailing: 0
+            )
+        }
+
+        return RectangleCornerRadii()
     }
 
     private var usesOverlayShape: Bool {
@@ -3945,6 +4039,7 @@ private final class BrowserSidebarHoverOverlayDismissNSView: NSView {
     private var onPointerMovement: () -> Void = {}
     private var onDismiss: () -> Void = {}
     private var trackingArea: NSTrackingArea?
+    private var localMonitor: Any?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -3958,6 +4053,7 @@ private final class BrowserSidebarHoverOverlayDismissNSView: NSView {
 
     deinit {
         removeHoverTrackingArea()
+        removeLocalMonitor()
     }
 
     override func hitTest(_: NSPoint) -> NSView? {
@@ -3967,6 +4063,7 @@ private final class BrowserSidebarHoverOverlayDismissNSView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateTrackingAreas()
+        syncLocalMonitor()
         schedulePointerSync()
     }
 
@@ -4027,6 +4124,7 @@ private final class BrowserSidebarHoverOverlayDismissNSView: NSView {
 
         if shouldRefreshTracking {
             updateTrackingAreas()
+            syncLocalMonitor()
         }
 
         if shouldSyncPointer {
@@ -4060,6 +4158,54 @@ private final class BrowserSidebarHoverOverlayDismissNSView: NSView {
         onDismiss()
     }
 
+    private func syncLocalMonitor() {
+        guard isPresented, window != nil else {
+            removeLocalMonitor()
+            return
+        }
+
+        installLocalMonitorIfNeeded()
+    }
+
+    private func installLocalMonitorIfNeeded() {
+        guard localMonitor == nil else {
+            return
+        }
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            guard let self else {
+                return event
+            }
+
+            handleMonitoredEvent(event)
+            return event
+        }
+    }
+
+    private func handleMonitoredEvent(_ event: NSEvent) {
+        guard isPresented,
+              let sourceWindow = event.window,
+              let targetWindow = window
+        else {
+            return
+        }
+
+        let locationInTargetWindow: NSPoint
+        if sourceWindow === targetWindow {
+            locationInTargetWindow = event.locationInWindow
+        } else {
+            let screenRect = sourceWindow.convertToScreen(
+                NSRect(origin: event.locationInWindow, size: .zero)
+            )
+            locationInTargetWindow = targetWindow.convertFromScreen(screenRect).origin
+        }
+
+        onPointerMovement()
+        dismissIfNeeded(for: locationInTargetWindow)
+    }
+
     private func dismissIfPointerIsPastSidebarTrailingEdge() {
         guard isPresented, let window else {
             return
@@ -4079,6 +4225,15 @@ private final class BrowserSidebarHoverOverlayDismissNSView: NSView {
 
         removeTrackingArea(trackingArea)
         self.trackingArea = nil
+    }
+
+    private func removeLocalMonitor() {
+        guard let localMonitor else {
+            return
+        }
+
+        NSEvent.removeMonitor(localMonitor)
+        self.localMonitor = nil
     }
 }
 
@@ -4906,7 +5061,7 @@ private enum BrowserShareMenuServiceProvider {
     static func sharingServices(for items: [Any]) -> [NSSharingService] {
         let readingListMenuTitle = NSSharingService(named: .addToSafariReadingList)?.menuItemTitle
 
-        return deprecatedSharingServices(for: items).filter { service in
+        return legacySharingServices(for: items).filter { service in
             guard let readingListMenuTitle else {
                 return true
             }
@@ -4915,10 +5070,16 @@ private enum BrowserShareMenuServiceProvider {
         }
     }
 
-    /// AppKit's newer picker API exposes a ready-made "Share…" item, not a submenu.
-    @available(macOS, deprecated: 13.0)
-    private static func deprecatedSharingServices(for items: [Any]) -> [NSSharingService] {
-        NSSharingService.sharingServices(forItems: items)
+    private static func legacySharingServices(for items: [Any]) -> [NSSharingService] {
+        let selector = NSSelectorFromString("sharingServicesForItems:")
+
+        guard NSSharingService.responds(to: selector),
+              let result = NSSharingService.perform(selector, with: items as NSArray)?.takeUnretainedValue()
+        else {
+            return []
+        }
+
+        return result as? [NSSharingService] ?? []
     }
 }
 
@@ -5077,6 +5238,265 @@ private struct BrowserDetachedCurrentPageCommandBarOverlayContent: View {
     }
 }
 
+private struct BrowserDetachedSidebarHoverOverlayContent: View {
+    @ObservedObject var model: BrowserChromeModel
+    @EnvironmentObject private var tooltipCoordinator: BrowserTooltipCoordinator
+    @EnvironmentObject private var faviconCache: BrowserFaviconCache
+
+    let snapshot: BrowserSidebarSnapshot
+    let showsWindowControlsInSidebar: Bool
+    let isCommandBarPresented: Bool
+    let isCurrentPageCommandBarPresented: Bool
+    let isOverlayPresentation: Bool
+    let showsOverlayBorder: Bool
+    let roundsWindowLeadingCorners: Bool
+    let sidebarWidth: CGFloat
+    let sidebarHeight: CGFloat
+    let containerWidth: CGFloat
+    let containerHeight: CGFloat
+    let isPresented: Bool
+    let onToggleSidebar: () -> Void
+    let onURLRowFrameChange: (CGRect?) -> Void
+
+    var body: some View {
+        BrowserSidebarChromePresentationHost(
+            content: BrowserSidebarChromeView(
+                model: model,
+                snapshot: snapshot,
+                showsWindowControlsInSidebar: showsWindowControlsInSidebar,
+                isCommandBarPresented: isCommandBarPresented,
+                isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
+                isOverlayPresentation: isOverlayPresentation,
+                showsOverlayBorder: showsOverlayBorder,
+                roundsWindowLeadingCorners: roundsWindowLeadingCorners,
+                onToggleSidebar: onToggleSidebar,
+                onURLRowFrameChange: onURLRowFrameChange
+            )
+            .frame(width: sidebarWidth, height: sidebarHeight, alignment: .leading)
+            .environmentObject(tooltipCoordinator)
+            .environmentObject(faviconCache),
+            contentSize: sidebarContentSize,
+            contentOffset: sidebarContentOffset,
+            cornerRadius: sidebarClipCornerRadius,
+            maskedCorners: sidebarClipMaskedCorners,
+            animationDuration: BrowserChromeLayout.sidebarAnimationDuration,
+            animatesOffsetChanges: true
+        )
+        .frame(width: containerWidth, height: containerHeight, alignment: .topLeading)
+    }
+
+    private var sidebarXOffset: CGFloat {
+        if isPresented {
+            return isOverlayPresentation ? BrowserChromeLayout.sidebarHoverOverlayEdgeInset : 0
+        }
+
+        return -sidebarWidth
+    }
+
+    private var sidebarYOffset: CGFloat {
+        isOverlayPresentation ? BrowserChromeLayout.sidebarHoverOverlayEdgeInset : 0
+    }
+
+    private var sidebarContentSize: CGSize {
+        CGSize(
+            width: max(sidebarWidth - dockedWindowBorderInset, 0),
+            height: max(sidebarHeight - dockedWindowBorderInset * 2, 0)
+        )
+    }
+
+    private var sidebarContentOffset: CGPoint {
+        CGPoint(
+            x: sidebarXOffset + dockedWindowBorderInset,
+            y: sidebarYOffset + dockedWindowBorderInset
+        )
+    }
+
+    private var dockedWindowBorderInset: CGFloat {
+        guard !isOverlayPresentation, !showsOverlayBorder, roundsWindowLeadingCorners else {
+            return 0
+        }
+
+        return BrowserChromeLayout.detachedSidebarWindowBorderInset
+    }
+
+    private var sidebarClipCornerRadius: CGFloat {
+        if isOverlayPresentation || showsOverlayBorder {
+            return BrowserChromeLayout.sidebarOverlayCornerRadius
+        }
+
+        return roundsWindowLeadingCorners ? BrowserWindowGeometry.windowCornerRadius : 0
+    }
+
+    private var sidebarClipMaskedCorners: CACornerMask {
+        if isOverlayPresentation || showsOverlayBorder {
+            return [
+                .layerMinXMinYCorner,
+                .layerMinXMaxYCorner,
+                .layerMaxXMinYCorner,
+                .layerMaxXMaxYCorner,
+            ]
+        }
+
+        guard roundsWindowLeadingCorners else {
+            return []
+        }
+
+        return [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+    }
+}
+
+private struct BrowserSidebarChromePresentationHost<Content: View>: NSViewRepresentable {
+    let content: Content
+    let contentSize: CGSize
+    let contentOffset: CGPoint
+    let cornerRadius: CGFloat
+    let maskedCorners: CACornerMask
+    let animationDuration: TimeInterval
+    let animatesOffsetChanges: Bool
+
+    func makeNSView(context _: Context) -> BrowserSidebarChromePresentationNSView<Content> {
+        BrowserSidebarChromePresentationNSView(
+            rootView: content,
+            contentSize: contentSize,
+            contentOffset: contentOffset,
+            cornerRadius: cornerRadius,
+            maskedCorners: maskedCorners,
+            animationDuration: animationDuration,
+            animatesOffsetChanges: animatesOffsetChanges
+        )
+    }
+
+    func updateNSView(_ nsView: BrowserSidebarChromePresentationNSView<Content>, context _: Context) {
+        nsView.update(
+            rootView: content,
+            contentSize: contentSize,
+            contentOffset: contentOffset,
+            cornerRadius: cornerRadius,
+            maskedCorners: maskedCorners,
+            animationDuration: animationDuration,
+            animatesOffsetChanges: animatesOffsetChanges
+        )
+    }
+}
+
+private final class BrowserSidebarChromePresentationNSView<Content: View>: NSView {
+    private var hostingView: NSHostingView<Content>
+    private var contentSize: CGSize
+    private var contentOffset: CGPoint
+    private var cornerRadius: CGFloat
+    private var maskedCorners: CACornerMask
+    private var animationDuration: TimeInterval
+    private var animatesOffsetChanges: Bool
+    private var didApplyInitialFrame = false
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    init(
+        rootView: Content,
+        contentSize: CGSize,
+        contentOffset: CGPoint,
+        cornerRadius: CGFloat,
+        maskedCorners: CACornerMask,
+        animationDuration: TimeInterval,
+        animatesOffsetChanges: Bool
+    ) {
+        hostingView = NSHostingView(rootView: rootView)
+        self.contentSize = contentSize
+        self.contentOffset = contentOffset
+        self.cornerRadius = cornerRadius
+        self.maskedCorners = maskedCorners
+        self.animationDuration = animationDuration
+        self.animatesOffsetChanges = animatesOffsetChanges
+        super.init(frame: .zero)
+
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.masksToBounds = true
+
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
+        hostingView.autoresizingMask = []
+        hostingView.safeAreaRegions = []
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.layer?.cornerCurve = .continuous
+        hostingView.layer?.masksToBounds = true
+        addSubview(hostingView)
+
+        updateClipping()
+        applyHostingFrame(animated: false)
+        didApplyInitialFrame = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(
+        rootView: Content,
+        contentSize: CGSize,
+        contentOffset: CGPoint,
+        cornerRadius: CGFloat,
+        maskedCorners: CACornerMask,
+        animationDuration: TimeInterval,
+        animatesOffsetChanges: Bool
+    ) {
+        let shouldAnimateOffset = didApplyInitialFrame
+            && animatesOffsetChanges
+            && self.contentOffset != contentOffset
+            && self.contentSize == contentSize
+            && animationDuration > 0
+
+        hostingView.rootView = rootView
+        self.contentSize = contentSize
+        self.contentOffset = contentOffset
+        self.cornerRadius = cornerRadius
+        self.maskedCorners = maskedCorners
+        self.animationDuration = animationDuration
+        self.animatesOffsetChanges = animatesOffsetChanges
+
+        updateClipping()
+        applyHostingFrame(animated: shouldAnimateOffset)
+        didApplyInitialFrame = true
+    }
+
+    private func updateClipping() {
+        guard let layer, let hostingLayer = hostingView.layer else {
+            return
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.masksToBounds = true
+        hostingLayer.cornerRadius = max(cornerRadius, 0)
+        hostingLayer.maskedCorners = maskedCorners
+        hostingLayer.cornerCurve = .continuous
+        hostingLayer.masksToBounds = true
+        CATransaction.commit()
+    }
+
+    private func applyHostingFrame(animated: Bool) {
+        let targetFrame = CGRect(origin: contentOffset, size: contentSize)
+        guard !NSEqualRects(hostingView.frame, targetFrame) else {
+            return
+        }
+
+        guard animated else {
+            hostingView.frame = targetFrame
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            hostingView.animator().frame = targetFrame
+        }
+    }
+}
+
 private struct BrowserDetachedOverlayWindowRepresentable<Content: View>: NSViewRepresentable {
     let isVisible: Bool
     let isInteractive: Bool
@@ -5109,6 +5529,32 @@ private final class BrowserDetachedOverlayPanel: NSPanel {
 
     override var canBecomeMain: Bool {
         false
+    }
+
+    override func performDrag(with event: NSEvent) {
+        guard let parent else {
+            super.performDrag(with: event)
+            return
+        }
+
+        let screenRect = convertToScreen(NSRect(origin: event.locationInWindow, size: .zero))
+        let parentLocation = parent.convertFromScreen(screenRect).origin
+        guard let parentEvent = NSEvent.mouseEvent(
+            with: event.type,
+            location: parentLocation,
+            modifierFlags: event.modifierFlags,
+            timestamp: event.timestamp,
+            windowNumber: parent.windowNumber,
+            context: nil,
+            eventNumber: event.eventNumber,
+            clickCount: event.clickCount,
+            pressure: event.pressure
+        ) else {
+            parent.performDrag(with: event)
+            return
+        }
+
+        parent.performDrag(with: parentEvent)
     }
 }
 
@@ -5163,6 +5609,9 @@ private final class BrowserDetachedOverlayHostView<Content: View>: NSView {
         let panel = overlayPanel ?? makePanel()
         overlayPanel = panel
         panel.ignoresMouseEvents = !isInteractive
+        panel.isMovable = false
+        panel.isMovableByWindowBackground = false
+        panel.level = window.level
 
         guard isVisible else {
             panel.orderOut(nil)
@@ -5192,7 +5641,6 @@ private final class BrowserDetachedOverlayHostView<Content: View>: NSView {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
-        panel.level = .floating
         panel.collectionBehavior = [.fullScreenAuxiliary, .transient, .ignoresCycle]
 
         hostingView.translatesAutoresizingMaskIntoConstraints = true

@@ -192,6 +192,7 @@ sh_test(
         ":TheBrowserTestsBinary",
         "@swiftdomainparser_public_suffix_list//file",
     ],
+    size = "small",
 )
 
 xcodeproj(
