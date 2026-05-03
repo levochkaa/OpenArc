@@ -29,18 +29,16 @@ use_repo(
     "swiftpkg_swiftdomainparser",
 )
 
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-http_archive(
+thebrowser_chromium_fork_repository = use_repo_rule(
+    "//bazel/cef:thebrowser_chromium_fork_repository.bzl",
+    "thebrowser_chromium_fork_repository",
+)
+
+thebrowser_chromium_fork_repository(
     name = "cef_macosarm64",
     build_file = "//bazel/cef:BUILD.cef.bazel",
-    sha256 = "196407015336c8f29c2ee34f1ba819b17fff79a139ae537b1ef7b39ceef84d41",
-    strip_prefix = "cef_binary_141.0.5+gfe26daa+chromium-141.0.7390.55_macosarm64",
-    urls = [
-        "https://cef-builds.spotifycdn.com/cef_binary_141.0.5%2Bgfe26daa%2Bchromium-141.0.7390.55_macosarm64.tar.bz2",
-    ],
 )
 
 http_file(

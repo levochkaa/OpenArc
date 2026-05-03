@@ -1,0 +1,46 @@
+def _require_path(repository_ctx, fork_root, relative_path):
+    path = repository_ctx.path(fork_root + "/" + relative_path)
+    if not path.exists:
+        fail("Chromium fork CEF export is missing %s: %s" % (relative_path, fork_root))
+    return path
+
+def _thebrowser_chromium_fork_repository_impl(repository_ctx):
+    fork_root = repository_ctx.getenv("THEBROWSER_CHROMIUM_FORK_CEF_ROOT")
+    if not fork_root:
+        fail("""TheBrowser requires a Chromium fork CEF export.
+Set THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export.
+Stock CEF downloads are intentionally disabled because full Chrome extension support is mandatory.""")
+
+    root_path = repository_ctx.path(fork_root)
+    if not root_path.exists:
+        fail("THEBROWSER_CHROMIUM_FORK_CEF_ROOT does not exist: %s" % fork_root)
+
+    _require_path(repository_ctx, fork_root, ".thebrowser-chromium-fork")
+
+    for required_path in [
+        "CREDITS.html",
+        "Debug/Chromium Embedded Framework.framework",
+        "Release/Chromium Embedded Framework.framework",
+        "include/cef_app.h",
+        "libcef_dll/CMakeLists.txt",
+    ]:
+        _require_path(repository_ctx, fork_root, required_path)
+
+    for linked_path in [
+        "CREDITS.html",
+        "Debug",
+        "Release",
+        "include",
+        "libcef_dll",
+    ]:
+        repository_ctx.symlink(repository_ctx.path(fork_root + "/" + linked_path), linked_path)
+
+    repository_ctx.symlink(repository_ctx.path(repository_ctx.attr.build_file), "BUILD.bazel")
+
+thebrowser_chromium_fork_repository = repository_rule(
+    implementation = _thebrowser_chromium_fork_repository_impl,
+    attrs = {
+        "build_file": attr.label(allow_single_file = True, mandatory = True),
+    },
+    environ = ["THEBROWSER_CHROMIUM_FORK_CEF_ROOT"],
+)

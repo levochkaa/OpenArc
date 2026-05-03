@@ -9,7 +9,10 @@ const char kTheBrowserCreditsHost[] = "credits";
 const char kTheBrowserCreditsURL[] = "tb://credits/";
 const char kTheBrowserSettingsHost[] = "settings";
 const char kTheBrowserSettingsURL[] = "tb://settings/";
+const char kTheBrowserExtensionsHost[] = "extensions";
+const char kTheBrowserExtensionsURL[] = "tb://extensions/";
 const char kChromiumSettingsURL[] = "chrome://settings/";
+const char kChromiumExtensionsURL[] = "chrome://extensions/";
 
 void RegisterTheBrowserCustomSchemes(
     CefRawPtr<CefSchemeRegistrar> registrar) {

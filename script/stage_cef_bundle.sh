@@ -4,6 +4,7 @@ set -euo pipefail
 CONFIGURATION="${1:-Debug}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CEF_ROOT="$ROOT_DIR/ThirdParty/cef/current"
+CHROMIUM_FORK_MARKER="$CEF_ROOT/.thebrowser-chromium-fork"
 DEFAULT_PRODUCTS_DIR="$ROOT_DIR/.build/xcode/Build/Products/$CONFIGURATION"
 APP_BUNDLE="${2:-$DEFAULT_PRODUCTS_DIR/TheBrowser.app}"
 HELPER_BUNDLE="${3:-$DEFAULT_PRODUCTS_DIR/TheBrowser Helper.app}"
@@ -64,15 +65,21 @@ if [[ ! -d "$HELPER_BUNDLE" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$CHROMIUM_FORK_MARKER" ]]; then
+  echo "error: TheBrowser Chromium fork marker not found at $CHROMIUM_FORK_MARKER" >&2
+  echo "Run THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export ./script/chromium.sh root $CONFIGURATION first." >&2
+  exit 1
+fi
+
 if [[ ! -d "$CEF_FRAMEWORK_SOURCE" ]]; then
   echo "error: CEF framework not found at $CEF_FRAMEWORK_SOURCE" >&2
-  echo "Run ./script/chromium.sh ensure $CONFIGURATION first." >&2
+  echo "Run THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export ./script/chromium.sh root $CONFIGURATION first." >&2
   exit 1
 fi
 
 if [[ ! -f "$CEF_ROOT/CREDITS.html" ]]; then
   echo "error: CEF credits not found at $CEF_ROOT/CREDITS.html" >&2
-  echo "Run ./script/chromium.sh ensure $CONFIGURATION first." >&2
+  echo "Run THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export ./script/chromium.sh root $CONFIGURATION first." >&2
   exit 1
 fi
 

@@ -71,6 +71,11 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
     }
 
+    enum BrowserInternalPage: Equatable {
+        case settings
+        case extensions
+    }
+
     @Published private(set) var tabs: [Tab] = []
     @Published private(set) var selectedTabID: String?
     @Published var isSidebarVisible = true
@@ -79,6 +84,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     @Published private(set) var isFindBarPresented = false
     @Published private(set) var findBarFocusRequest = 0
     @Published private(set) var findResultMatchCount: Int?
+    @Published private(set) var browserExtensions: [BrowserExtension] = []
     @Published var findQuery = "" {
         didSet {
             guard findQuery != oldValue else {
@@ -111,6 +117,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     private let newTabURLString: String
     private let commandBarSuggestionProvider: BrowserSuggestionProviding
     private let navigationResolver: BrowserNavigationResolver
+    private let extensionManager: any BrowserExtensionManaging
     private let windowTitleHandler: (String) -> Void
     private let allTabsClosedHandler: () -> Void
     private let dateProvider: () -> Date
@@ -152,7 +159,11 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 
     var canPresentFindInPage: Bool {
-        canCreateTab && selectedTab != nil
+        guard canCreateTab, selectedTab != nil else {
+            return false
+        }
+
+        return !selectedTabUsesWindowedBrowser || selectedTabInternalPage == .settings
     }
 
     var canStepThroughFindMatches: Bool {
@@ -173,6 +184,10 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
 
         return Self.usesWindowedBrowser(for: selectedTab.urlString)
+    }
+
+    var selectedTabInternalPage: BrowserInternalPage? {
+        selectedTab.flatMap { Self.internalPage(for: $0.urlString) }
     }
 
     var canArchiveSelectedTab: Bool {
@@ -214,6 +229,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         newTabURLString: String = BrowserChromeModel.defaultNewTabURLString,
         commandBarSuggestionProvider: BrowserSuggestionProviding = BrowserGoogleSuggestionService(),
         navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver(),
+        extensionManager: any BrowserExtensionManaging,
         dateProvider: @escaping () -> Date = Date.init,
         windowTitleHandler: @escaping (String) -> Void,
         allTabsClosedHandler: @escaping () -> Void
@@ -224,6 +240,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         self.newTabURLString = newTabURLString
         self.commandBarSuggestionProvider = commandBarSuggestionProvider
         self.navigationResolver = navigationResolver
+        self.extensionManager = extensionManager
         temporaryTabLifetime = sessionPreferencesStore.loadTemporaryTabLifetime()
         self.dateProvider = dateProvider
         self.windowTitleHandler = windowTitleHandler
@@ -273,6 +290,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
         isContextReady = true
         restoreSidebarWidthIfNeeded()
+        refreshBrowserExtensions()
         startAutomaticArchivalTimerIfNeeded()
 
         if restoreSessionIfAvailable() {
@@ -562,6 +580,42 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         return pasteboard.setString(urlString, forType: .string)
+    }
+
+    func refreshBrowserExtensions() {
+        browserExtensions = extensionManager.installedExtensions()
+    }
+
+    func openExtensionsManager() {
+        openURLInNewTab(URL(string: BrowserExtensionRouting.extensionsURLString)!)
+    }
+
+    func openExtensionDetails(id: String) {
+        openURLInNewTab(URL(string: BrowserExtensionRouting.detailsURLString(forExtensionID: id))!)
+    }
+
+    func openExtensionStore() {
+        openURLInNewTab(URL(string: BrowserExtensionRouting.chromeWebStoreURLString)!)
+    }
+
+    @discardableResult
+    func setExtension(id: String, isEnabled: Bool) -> Bool {
+        guard extensionManager.setExtension(id: id, isEnabled: isEnabled) else {
+            return false
+        }
+
+        refreshBrowserExtensions()
+        return true
+    }
+
+    @discardableResult
+    func removeExtension(id: String) -> Bool {
+        guard extensionManager.removeExtension(id: id) else {
+            return false
+        }
+
+        refreshBrowserExtensions()
+        return true
     }
 
     func goBack() {
@@ -911,8 +965,12 @@ private extension BrowserChromeModel {
     }
 
     static func usesWindowedBrowser(for urlString: String) -> Bool {
+        internalPage(for: urlString) != nil
+    }
+
+    static func internalPage(for urlString: String) -> BrowserInternalPage? {
         if urlString.caseInsensitiveCompare("about:settings") == .orderedSame {
-            return true
+            return .settings
         }
 
         guard
@@ -920,10 +978,21 @@ private extension BrowserChromeModel {
             let scheme = components.scheme?.lowercased(),
             let host = components.host?.lowercased()
         else {
-            return false
+            return nil
         }
 
-        return (scheme == "tb" || scheme == "chrome") && host == "settings"
+        guard scheme == "tb" || scheme == "chrome" else {
+            return nil
+        }
+
+        switch host {
+        case "settings":
+            return .settings
+        case "extensions":
+            return .extensions
+        default:
+            return nil
+        }
     }
 
     func handleCreatedTab(id: String, title: String, urlString: String) {
@@ -1093,7 +1162,6 @@ private extension BrowserChromeModel {
 
         tabs[index].lastActivityAt = dateProvider()
     }
-
 }
 
 @MainActor

@@ -933,7 +933,15 @@ func findBarRunsSearchAndClearsSelectionOnDismiss() {
 @Test
 @MainActor
 func findBarIsDisabledForWindowedSettingsTabs() throws {
-    for urlString in ["tb://settings", "tb://settings/privacy", "chrome://settings", "about:settings"] {
+    for urlString in [
+        "tb://settings",
+        "tb://settings/privacy",
+        "chrome://settings",
+        "about:settings",
+        "tb://extensions",
+        "tb://extensions/?id=abc",
+        "chrome://extensions",
+    ] {
         let driver = FakeBrowserTabDriver()
         let model = makeModel(
             driver: driver,
@@ -943,7 +951,7 @@ func findBarIsDisabledForWindowedSettingsTabs() throws {
 
         model.handleContextReady()
         driver.flushPendingCreateEvents()
-        model.openURLInNewTab(try #require(URL(string: urlString)))
+        try model.openURLInNewTab(#require(URL(string: urlString)))
         driver.flushPendingCreateEvents()
 
         #expect(model.selectedTabUsesWindowedBrowser)
@@ -953,6 +961,30 @@ func findBarIsDisabledForWindowedSettingsTabs() throws {
 
         #expect(!model.isFindBarPresented)
         #expect(driver.findRequests.isEmpty)
+    }
+}
+
+@Test
+@MainActor
+func findCommandIsDisabledForWindowedExtensionsTabs() throws {
+    for urlString in ["tb://extensions", "tb://extensions/?id=abc", "chrome://extensions"] {
+        let driver = FakeBrowserTabDriver()
+        let model = makeModel(
+            driver: driver,
+            snapshotStore: InMemorySessionSnapshotStore(),
+            preferencesStore: InMemorySessionPreferencesStore()
+        )
+
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        try model.openURLInNewTab(#require(URL(string: urlString)))
+        driver.flushPendingCreateEvents()
+
+        #expect(model.selectedTabUsesWindowedBrowser)
+        #expect(!model.canFindInPage)
+        #expect(!model.canPresentFindInPage)
+        #expect(!model.presentFindInPage())
+        #expect(driver.focusSearchInActiveChromeSettingsTabCount == 0)
     }
 }
 
@@ -969,7 +1001,7 @@ func findCommandFocusesSettingsSearchForWindowedSettingsTabs() throws {
 
         model.handleContextReady()
         driver.flushPendingCreateEvents()
-        model.openURLInNewTab(try #require(URL(string: urlString)))
+        try model.openURLInNewTab(#require(URL(string: urlString)))
         driver.flushPendingCreateEvents()
 
         #expect(model.selectedTabUsesWindowedBrowser)
@@ -998,7 +1030,7 @@ func selectingWindowedSettingsTabDismissesFindBar() throws {
     driver.flushPendingCreateEvents()
     let normalTabID = try #require(model.selectedTabID)
 
-    model.openURLInNewTab(try #require(URL(string: "tb://settings/privacy")))
+    try model.openURLInNewTab(#require(URL(string: "tb://settings/privacy")))
     driver.flushPendingCreateEvents()
     let settingsTabID = try #require(model.selectedTabID)
 
@@ -1079,6 +1111,7 @@ private func makeModel(
     snapshotStore: InMemorySessionSnapshotStore,
     preferencesStore: InMemorySessionPreferencesStore,
     suggestionProvider: BrowserSuggestionProviding = FakeSuggestionProvider(),
+    extensionManager: (any BrowserExtensionManaging)? = nil,
     dateProvider: @escaping () -> Date = Date.init
 ) -> BrowserChromeModel {
     BrowserChromeModel(
@@ -1086,6 +1119,7 @@ private func makeModel(
         sessionSnapshotStore: snapshotStore,
         sessionPreferencesStore: preferencesStore,
         commandBarSuggestionProvider: suggestionProvider,
+        extensionManager: extensionManager ?? FakeBrowserExtensionManager(),
         dateProvider: dateProvider,
         windowTitleHandler: { _ in },
         allTabsClosedHandler: {}

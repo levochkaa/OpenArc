@@ -159,6 +159,7 @@ swift_test(
         "Sources/Browser/BrowserChromeModel.swift",
         "Sources/Browser/BrowserCommandBarModel.swift",
         "Sources/Browser/BrowserDefaultBrowserService.swift",
+        "Sources/Browser/BrowserExtensions.swift",
         "Sources/Browser/BrowserFaviconCache.swift",
         "Sources/Browser/BrowserNavigationResolver.swift",
         "Sources/Browser/BrowserStrings.swift",

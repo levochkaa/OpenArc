@@ -591,6 +591,21 @@ enum BrowserStrings {
         comment: "Tooltip title for opening the current site's controls."
     )
 
+    static let extensionsSectionTitle = NSLocalizedString(
+        "browser.extensions.section.title",
+        comment: "Section title for extensions in the site control center popover."
+    )
+
+    static let extensionsManageAction = NSLocalizedString(
+        "browser.extensions.manage",
+        comment: "Button title for opening the extensions management page."
+    )
+
+    static let extensionsAddAction = NSLocalizedString(
+        "browser.extensions.add",
+        comment: "Accessibility title for adding an extension."
+    )
+
     static let tabRenameAction = NSLocalizedString(
         "browser.tab.rename_action",
         comment: "Context menu title for renaming a tab."

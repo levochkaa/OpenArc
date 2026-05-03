@@ -26,6 +26,9 @@ NSString* BrowserChromiumVersionString(void);
 
 void BrowserRequestNotificationPermission(NSString* origin,
                                           BrowserPermissionCompletion completion);
+NSString* BrowserCopyInstalledExtensionsJSON(void);
+BOOL BrowserSetExtensionEnabled(NSString* extension_id, BOOL is_enabled);
+BOOL BrowserRemoveExtension(NSString* extension_id);
 
 #endif
 

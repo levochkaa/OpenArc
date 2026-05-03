@@ -3,19 +3,17 @@ set -euo pipefail
 
 COMMAND="${1:-help}"
 CONFIGURATION="${2:-Debug}"
-CEF_VERSION="${CEF_VERSION:-141.0.5+gfe26daa+chromium-141.0.7390.55}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 THIRD_PARTY_DIR="$ROOT_DIR/ThirdParty/cef"
-DOWNLOAD_DIR="$THIRD_PARTY_DIR/downloads"
 WRAPPER_BUILD_DIR="$ROOT_DIR/.build/cef-wrapper"
+CHROMIUM_FORK_CEF_ROOT="${THEBROWSER_CHROMIUM_FORK_CEF_ROOT:-}"
+CHROMIUM_FORK_MARKER=".thebrowser-chromium-fork"
 
 case "$(uname -m)" in
   arm64)
-    CEF_PLATFORM="macosarm64"
     PROJECT_ARCH="arm64"
     ;;
   x86_64)
-    CEF_PLATFORM="macosx64"
     PROJECT_ARCH="x86_64"
     ;;
   *)
@@ -24,44 +22,83 @@ case "$(uname -m)" in
     ;;
 esac
 
-CEF_DISTRIBUTION="cef_binary_${CEF_VERSION}_${CEF_PLATFORM}"
-CEF_ARCHIVE="${CEF_DISTRIBUTION}.tar.bz2"
-CEF_ARCHIVE_PATH="$DOWNLOAD_DIR/$CEF_ARCHIVE"
-CEF_ROOT="$THIRD_PARTY_DIR/$CEF_DISTRIBUTION"
 CURRENT_LINK="$THIRD_PARTY_DIR/current"
-CEF_DOWNLOAD_URL="https://cef-builds.spotifycdn.com/${CEF_ARCHIVE//+/%2B}"
 WRAPPER_LIB="$WRAPPER_BUILD_DIR/libcef_dll_wrapper/$CONFIGURATION/libcef_dll_wrapper.a"
 
 ensure_directories() {
-  mkdir -p "$DOWNLOAD_DIR"
   mkdir -p "$THIRD_PARTY_DIR"
 }
 
-download_cef_distribution() {
-  ensure_directories
+validate_configuration() {
+  case "$CONFIGURATION" in
+    Debug|Release)
+      ;;
+    *)
+      echo "error: unsupported CONFIGURATION '$CONFIGURATION' (expected Debug or Release)" >&2
+      exit 2
+      ;;
+  esac
+}
 
-  if [[ ! -f "$CEF_ARCHIVE_PATH" ]]; then
-    echo "Downloading CEF ${CEF_VERSION} for ${CEF_PLATFORM}"
-    curl -fsSL "${CEF_DOWNLOAD_URL}.sha1" -o "${CEF_ARCHIVE_PATH}.sha1"
-    curl -L "${CEF_DOWNLOAD_URL}" -o "$CEF_ARCHIVE_PATH"
+resolved_chromium_fork_cef_root() {
+  cd "$CHROMIUM_FORK_CEF_ROOT"
+  pwd -P
+}
 
-    local expected_sha
-    local actual_sha
-    expected_sha="$(tr -d '\n' < "${CEF_ARCHIVE_PATH}.sha1")"
-    actual_sha="$(shasum -a 1 "$CEF_ARCHIVE_PATH" | awk '{print $1}')"
-    if [[ "$expected_sha" != "$actual_sha" ]]; then
-      echo "error: SHA1 mismatch for $CEF_ARCHIVE_PATH" >&2
+require_chromium_fork_cef_export() {
+  if [[ -z "$CHROMIUM_FORK_CEF_ROOT" ]]; then
+    cat >&2 <<'EOF'
+error: TheBrowser requires a Chromium fork CEF export.
+Set THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export.
+Stock CEF downloads are intentionally disabled because full Chrome extension support is mandatory.
+EOF
+    exit 1
+  fi
+
+  if [[ ! -d "$CHROMIUM_FORK_CEF_ROOT" ]]; then
+    echo "error: THEBROWSER_CHROMIUM_FORK_CEF_ROOT does not exist: $CHROMIUM_FORK_CEF_ROOT" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "$CHROMIUM_FORK_CEF_ROOT/include/cef_app.h" ]]; then
+    echo "error: Chromium fork CEF export is missing include/cef_app.h: $CHROMIUM_FORK_CEF_ROOT" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "$CHROMIUM_FORK_CEF_ROOT/$CHROMIUM_FORK_MARKER" ]]; then
+    echo "error: Chromium fork CEF export is missing $CHROMIUM_FORK_MARKER: $CHROMIUM_FORK_CEF_ROOT" >&2
+    echo "The runtime must come from TheBrowser's Chromium fork, not a stock CEF bundle." >&2
+    exit 1
+  fi
+
+  local required_path
+  for required_path in \
+    "CMakeLists.txt" \
+    "CREDITS.html" \
+    "Debug/Chromium Embedded Framework.framework" \
+    "Release/Chromium Embedded Framework.framework" \
+    "libcef_dll/CMakeLists.txt"; do
+    if [[ ! -e "$CHROMIUM_FORK_CEF_ROOT/$required_path" ]]; then
+      echo "error: Chromium fork CEF export is missing $required_path: $CHROMIUM_FORK_CEF_ROOT" >&2
       exit 1
     fi
-  fi
+  done
+}
 
-  if [[ ! -d "$CEF_ROOT" ]]; then
-    echo "Extracting $CEF_ARCHIVE"
-    tar -xjf "$CEF_ARCHIVE_PATH" -C "$THIRD_PARTY_DIR"
-  fi
+use_chromium_fork_cef_export() {
+  require_chromium_fork_cef_export
+  local resolved_root
+  resolved_root="$(resolved_chromium_fork_cef_root)"
 
+  ensure_directories
+  local current_target
+  current_target="$(readlink "$CURRENT_LINK" 2>/dev/null || true)"
+  if [[ "$current_target" != "$resolved_root" ]]; then
+    rm -rf "$WRAPPER_BUILD_DIR"
+  fi
   rm -f "$CURRENT_LINK"
-  ln -s "$CEF_ROOT" "$CURRENT_LINK"
+  ln -s "$resolved_root" "$CURRENT_LINK"
+  echo "Using TheBrowser Chromium fork CEF export: $resolved_root"
 }
 
 build_wrapper_library() {
@@ -88,24 +125,29 @@ build_wrapper_library() {
 
 case "$COMMAND" in
   ensure)
-    download_cef_distribution
+    validate_configuration
+    use_chromium_fork_cef_export
     build_wrapper_library
     ;;
   update)
-    rm -rf "$CEF_ROOT" "$WRAPPER_BUILD_DIR"
-    download_cef_distribution
+    validate_configuration
+    rm -rf "$WRAPPER_BUILD_DIR"
+    use_chromium_fork_cef_export
     build_wrapper_library
     ;;
   root)
-    download_cef_distribution
+    validate_configuration
+    use_chromium_fork_cef_export
     printf '%s\n' "$CURRENT_LINK"
     ;;
   wrapper)
-    download_cef_distribution
+    validate_configuration
+    use_chromium_fork_cef_export
     build_wrapper_library
     ;;
   version)
-    printf '%s\n' "$CEF_VERSION"
+    require_chromium_fork_cef_export
+    basename "$(resolved_chromium_fork_cef_root)"
     ;;
   help|--help|-h)
     cat <<'EOF'
@@ -117,9 +159,15 @@ Usage:
   ./script/chromium.sh version
 
 Environment:
-  CEF_VERSION=<official-cef-version>
-    Example:
-    CEF_VERSION=141.0.5+gfe26daa+chromium-141.0.7390.55 ./script/chromium.sh update Debug
+	  THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export
+	    Required. The export must come from TheBrowser's Chromium fork and include:
+	    .thebrowser-chromium-fork
+	    include/cef_app.h
+	    libcef_dll/CMakeLists.txt
+	    Debug/Chromium Embedded Framework.framework
+	    Release/Chromium Embedded Framework.framework
+
+Stock CEF downloads are intentionally unavailable.
 EOF
     ;;
   *)

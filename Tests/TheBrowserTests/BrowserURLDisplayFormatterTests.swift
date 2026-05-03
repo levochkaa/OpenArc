@@ -32,6 +32,7 @@ func urlDisplayFormatterKeepsIPAddressPort() {
 @Test
 func urlDisplayFormatterFallsBackForInternalURLs() {
     #expect(BrowserURLDisplayFormatter.displayString(for: "tb://settings/privacy") == "tb://settings/privacy")
+    #expect(BrowserURLDisplayFormatter.displayString(for: "tb://extensions/?id=abc") == "tb://extensions/?id=abc")
 }
 
 @Test

@@ -76,6 +76,20 @@ func resolvePreservesTheBrowserInternalURL() {
 }
 
 @Test
+func resolvePreservesTheBrowserExtensionsURL() {
+    let resolver = BrowserNavigationResolver()
+    let resolution = resolver.resolve("tb://extensions/?id=abc")
+
+    #expect(
+        resolution == BrowserNavigationResolver.Resolution(
+            kind: .url,
+            displayText: "tb://extensions/?id=abc",
+            resolvedURLString: "tb://extensions/?id=abc"
+        )
+    )
+}
+
+@Test
 func resolvePreservesChromiumInternalURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("chrome://settings")
@@ -390,7 +404,7 @@ private func queryValue(from urlString: String?, name: String) -> String? {
 }
 
 private struct RejectingDomainParser: BrowserDomainParsing {
-    func parse(host: String) -> BrowserParsedHost? {
+    func parse(host _: String) -> BrowserParsedHost? {
         nil
     }
 }

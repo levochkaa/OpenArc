@@ -547,7 +547,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
                 return event
             }
 
-            if self.handleLayoutIndependentKeyEvent(event) {
+            if handleLayoutIndependentKeyEvent(event) {
                 return nil
             }
 
@@ -717,6 +717,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             tabDriver: BrowserTabControllerDriver(),
             sessionSnapshotStore: BrowserTabSessionSnapshotStore(snapshotURL: sessionSnapshotURL),
             sessionPreferencesStore: BrowserSessionPreferencesStore(),
+            extensionManager: BrowserChromiumExtensionManager(),
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
         )

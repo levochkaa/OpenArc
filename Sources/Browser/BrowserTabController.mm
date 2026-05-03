@@ -1780,6 +1780,21 @@ bool IsChromiumSettingsURL(const CefString &url) {
              shared::kTheBrowserSettingsHost;
 }
 
+bool IsChromiumExtensionsURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserExtensionsHost;
+}
+
+bool IsChromiumInternalWindowURL(const CefString &url) {
+  return IsChromiumSettingsURL(url) || IsChromiumExtensionsURL(url);
+}
+
 bool IsTheBrowserSettingsURL(const CefString &url) {
   CefURLParts parts;
   if (!CefParseURL(url, parts)) {
@@ -1792,20 +1807,35 @@ bool IsTheBrowserSettingsURL(const CefString &url) {
              shared::kTheBrowserSettingsHost;
 }
 
-std::string ChromiumSettingsURLForTheBrowserSettingsURL(const CefString &url) {
+bool IsTheBrowserExtensionsURL(const CefString &url) {
   CefURLParts parts;
-  if (!CefParseURL(url, parts) || !IsTheBrowserSettingsURL(url)) {
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) ==
+             shared::kTheBrowserScheme &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserExtensionsHost;
+}
+
+bool IsTheBrowserInternalWindowURL(const CefString &url) {
+  return IsTheBrowserSettingsURL(url) || IsTheBrowserExtensionsURL(url);
+}
+
+std::string ChromiumInternalWindowURLForTheBrowserURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts) || !IsTheBrowserInternalWindowURL(url)) {
     return std::string();
   }
 
+  std::string host = LowercaseASCII(URLPartToString(parts.host));
   std::string path = URLPartToString(parts.path);
   if (path.empty()) {
     path = "/";
   }
 
-  std::string chromiumURL = "chrome://" +
-                            std::string(shared::kTheBrowserSettingsHost) +
-                            path;
+  std::string chromiumURL = "chrome://" + host + path;
   std::string query = URLPartToString(parts.query);
   if (!query.empty()) {
     chromiumURL += "?" + query;
@@ -1818,7 +1848,7 @@ std::string ChromiumSettingsURLForTheBrowserSettingsURL(const CefString &url) {
 }
 
 std::string DisplayURLStringForCommittedURL(const CefString &url) {
-  if (IsChromiumSettingsURL(url)) {
+  if (IsChromiumInternalWindowURL(url)) {
     std::string displayURL = TheBrowserURLForChromiumInternalURL(url);
     if (!displayURL.empty()) {
       return displayURL;
@@ -1828,13 +1858,22 @@ std::string DisplayURLStringForCommittedURL(const CefString &url) {
   return url.ToString();
 }
 
-bool ShouldUseChromeWindowForURL(const std::string &urlString) {
+bool IsSettingsURLString(const std::string &urlString) {
   if (LowercaseASCII(urlString) == "about:settings") {
     return true;
   }
 
   CefString url(urlString);
   return IsChromiumSettingsURL(url) || IsTheBrowserSettingsURL(url);
+}
+
+bool ShouldUseChromeWindowForURL(const std::string &urlString) {
+  if (LowercaseASCII(urlString) == "about:settings") {
+    return true;
+  }
+
+  CefString url(urlString);
+  return IsChromiumInternalWindowURL(url) || IsTheBrowserInternalWindowURL(url);
 }
 
 bool FocusSettingsSearchInBrowser(CefRefPtr<CefBrowser> browser) {
@@ -1845,7 +1884,7 @@ bool FocusSettingsSearchInBrowser(CefRefPtr<CefBrowser> browser) {
   }
 
   CefRefPtr<CefFrame> mainFrame = browser->GetMainFrame();
-  if (!mainFrame || !ShouldUseChromeWindowForURL(mainFrame->GetURL().ToString())) {
+  if (!mainFrame || !IsSettingsURLString(mainFrame->GetURL().ToString())) {
     return false;
   }
 
@@ -1973,7 +2012,7 @@ class BrowserTabClient final : public CefClient,
  private:
   __weak BrowserTabController *controller_;
   const std::string tab_id_;
-  bool allow_next_chromium_settings_navigation_ = false;
+  bool allow_next_chromium_internal_navigation_ = false;
 
   IMPLEMENT_REFCOUNTING(BrowserTabClient);
 };
@@ -2762,12 +2801,12 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     return false;
   }
 
-  if (allow_next_chromium_settings_navigation_ &&
-      IsChromiumSettingsURL(request->GetURL())) {
-    allow_next_chromium_settings_navigation_ = false;
+  if (allow_next_chromium_internal_navigation_ &&
+      IsChromiumInternalWindowURL(request->GetURL())) {
+    allow_next_chromium_internal_navigation_ = false;
     return false;
   }
-  allow_next_chromium_settings_navigation_ = false;
+  allow_next_chromium_internal_navigation_ = false;
 
   std::string redirectURL =
       TheBrowserURLForChromiumInternalURL(request->GetURL());
@@ -2776,14 +2815,16 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     return true;
   }
 
-  if (IsTheBrowserSettingsURL(request->GetURL())) {
-    std::string chromiumSettingsURL =
-        ChromiumSettingsURLForTheBrowserSettingsURL(request->GetURL());
-    if (chromiumSettingsURL.empty()) {
-      chromiumSettingsURL = shared::kChromiumSettingsURL;
+  if (IsTheBrowserInternalWindowURL(request->GetURL())) {
+    std::string chromiumInternalURL =
+        ChromiumInternalWindowURLForTheBrowserURL(request->GetURL());
+    if (chromiumInternalURL.empty()) {
+      chromiumInternalURL = IsTheBrowserExtensionsURL(request->GetURL())
+                                ? shared::kChromiumExtensionsURL
+                                : shared::kChromiumSettingsURL;
     }
-    allow_next_chromium_settings_navigation_ = true;
-    frame->LoadURL(chromiumSettingsURL);
+    allow_next_chromium_internal_navigation_ = true;
+    frame->LoadURL(chromiumInternalURL);
     return true;
   }
 

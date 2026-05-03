@@ -88,3 +88,20 @@ void BrowserRequestNotificationPermission(NSString* origin,
   [BrowserPermissionController requestNotificationPermissionFor:origin
                                                     completion:completion];
 }
+
+NSString* BrowserCopyInstalledExtensionsJSON(void) {
+  // TheBrowser's Chromium fork owns extension state and must wire this bridge to
+  // Chromium's extension service. Stock CEF is not a supported runtime fallback.
+  return @"[]";
+}
+
+BOOL BrowserSetExtensionEnabled(NSString* extension_id, BOOL is_enabled) {
+  (void)extension_id;
+  (void)is_enabled;
+  return NO;
+}
+
+BOOL BrowserRemoveExtension(NSString* extension_id) {
+  (void)extension_id;
+  return NO;
+}

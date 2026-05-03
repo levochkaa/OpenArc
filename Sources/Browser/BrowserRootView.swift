@@ -81,6 +81,13 @@ private enum BrowserChromeLayout {
     static let sidebarCurrentURLButtonSize: CGFloat = 26
     static let sidebarCurrentURLButtonCornerRadius: CGFloat = 8
     static let sidebarCurrentURLButtonSymbolSize: CGFloat = 12.5
+    static let siteControlPopoverWidth: CGFloat = 284
+    static let siteControlPopoverPadding: CGFloat = 16
+    static let siteControlPopoverSpacing: CGFloat = 14
+    static let extensionGridSpacing: CGFloat = 10
+    static let extensionTileSize: CGFloat = 52
+    static let extensionTileCornerRadius: CGFloat = 12
+    static let extensionTileIconSize: CGFloat = 24
     static let sidebarCloseButtonSize: CGFloat = 22
     static let sidebarCloseButtonLeadingSpacing: CGFloat = 4
     static let sidebarCloseCornerRadius: CGFloat = 7
@@ -910,6 +917,7 @@ private struct BrowserSidebarChromeView: View {
         BrowserSidebarContainerView(
             model: model,
             snapshot: snapshot,
+            extensions: model.browserExtensions,
             showsWindowControlsInSidebar: showsWindowControlsInSidebar,
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
@@ -962,6 +970,7 @@ private struct BrowserSidebarChromeView: View {
 private struct BrowserSidebarContainerView: View {
     let model: BrowserChromeModel
     let snapshot: BrowserSidebarSnapshot
+    let extensions: [BrowserExtension]
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
@@ -973,6 +982,7 @@ private struct BrowserSidebarContainerView: View {
         BrowserSidebarView(
             model: model,
             snapshot: snapshot,
+            extensions: extensions,
             showsWindowControlsInSidebar: showsWindowControlsInSidebar,
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
@@ -1184,6 +1194,7 @@ private final class BrowserSidebarTabDragPreviewStore: ObservableObject {
 private struct BrowserSidebarView: View {
     let model: BrowserChromeModel
     let snapshot: BrowserSidebarSnapshot
+    let extensions: [BrowserExtension]
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
@@ -1362,13 +1373,18 @@ private struct BrowserSidebarView: View {
 
             BrowserSidebarCurrentURLRow(
                 tab: snapshot.selectedTab,
+                extensions: extensions,
                 isSearchPresented: isCurrentPageCommandBarPresented,
                 isSidebarResizing: isSidebarResizing,
                 onFrameChange: onURLRowFrameChange,
                 onOpenSearch: model.presentCurrentPageCommandBar,
                 onCopyURL: {
                     model.copySelectedTabLink()
-                }
+                },
+                onRefreshExtensions: model.refreshBrowserExtensions,
+                onOpenExtensionsManager: model.openExtensionsManager,
+                onOpenExtensionStore: model.openExtensionStore,
+                onOpenExtensionDetails: model.openExtensionDetails
             )
         }
         .overlay(alignment: .bottom) {
@@ -1819,6 +1835,7 @@ private struct BrowserSidebarView: View {
 extension BrowserSidebarView: Equatable {
     static func == (lhs: BrowserSidebarView, rhs: BrowserSidebarView) -> Bool {
         lhs.snapshot == rhs.snapshot
+            && lhs.extensions == rhs.extensions
             && lhs.showsWindowControlsInSidebar == rhs.showsWindowControlsInSidebar
             && lhs.isCommandBarPresented == rhs.isCommandBarPresented
             && lhs.isCurrentPageCommandBarPresented == rhs.isCurrentPageCommandBarPresented
@@ -3711,13 +3728,142 @@ private struct BrowserSidebarSnapshot: Equatable {
     }
 }
 
+private struct BrowserSiteControlCenterPopover: View {
+    let extensions: [BrowserExtension]
+    let onManageExtensions: () -> Void
+    let onAddExtension: () -> Void
+    let onSelectExtension: (String) -> Void
+
+    private var gridItems: [BrowserExtensionControlCenterItem] {
+        BrowserExtensionControlCenterModel.gridItems(for: extensions)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BrowserChromeLayout.siteControlPopoverSpacing) {
+            HStack(spacing: 10) {
+                Text(BrowserStrings.extensionsSectionTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 0)
+
+                Button(BrowserStrings.extensionsManageAction, action: onManageExtensions)
+                    .buttonStyle(.link)
+                    .font(.system(size: 12, weight: .medium))
+            }
+
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.fixed(BrowserChromeLayout.extensionTileSize), spacing: BrowserChromeLayout.extensionGridSpacing),
+                    count: BrowserExtensionControlCenterModel.maximumVisibleTiles
+                ),
+                alignment: .leading,
+                spacing: BrowserChromeLayout.extensionGridSpacing
+            ) {
+                ForEach(gridItems) { item in
+                    BrowserExtensionControlCenterTile(
+                        item: item,
+                        onAddExtension: onAddExtension,
+                        onSelectExtension: onSelectExtension
+                    )
+                }
+            }
+        }
+        .padding(BrowserChromeLayout.siteControlPopoverPadding)
+        .frame(width: BrowserChromeLayout.siteControlPopoverWidth, alignment: .topLeading)
+    }
+}
+
+private struct BrowserExtensionControlCenterTile: View {
+    let item: BrowserExtensionControlCenterItem
+    let onAddExtension: () -> Void
+    let onSelectExtension: (String) -> Void
+
+    var body: some View {
+        Button(action: performAction) {
+            ZStack {
+                RoundedRectangle(
+                    cornerRadius: BrowserChromeLayout.extensionTileCornerRadius,
+                    style: .continuous
+                )
+                .fill(Color(nsColor: .controlBackgroundColor))
+
+                tileIcon
+                    .opacity(iconOpacity)
+            }
+            .frame(
+                width: BrowserChromeLayout.extensionTileSize,
+                height: BrowserChromeLayout.extensionTileSize
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    @ViewBuilder
+    private var tileIcon: some View {
+        switch item.kind {
+        case let .installed(browserExtension):
+            if let iconImage = browserExtension.iconImage {
+                Image(nsImage: iconImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(
+                        width: BrowserChromeLayout.extensionTileIconSize,
+                        height: BrowserChromeLayout.extensionTileIconSize
+                    )
+            } else {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: BrowserChromeLayout.extensionTileIconSize, weight: .medium))
+                    .foregroundStyle(.primary)
+            }
+        case .add:
+            Image(systemName: "plus")
+                .font(.system(size: BrowserChromeLayout.extensionTileIconSize, weight: .semibold))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private var iconOpacity: Double {
+        switch item.kind {
+        case let .installed(browserExtension):
+            browserExtension.isEnabled ? 1 : 0.38
+        case .add:
+            1
+        }
+    }
+
+    private var accessibilityLabel: String {
+        switch item.kind {
+        case let .installed(browserExtension):
+            browserExtension.name
+        case .add:
+            BrowserStrings.extensionsAddAction
+        }
+    }
+
+    private func performAction() {
+        switch item.kind {
+        case let .installed(browserExtension):
+            onSelectExtension(browserExtension.id)
+        case .add:
+            onAddExtension()
+        }
+    }
+}
+
 private struct BrowserSidebarCurrentURLRow: View {
     let tab: BrowserChromeModel.Tab?
+    let extensions: [BrowserExtension]
     let isSearchPresented: Bool
     let isSidebarResizing: Bool
     let onFrameChange: (CGRect?) -> Void
     let onOpenSearch: () -> Void
     let onCopyURL: () -> Bool
+    let onRefreshExtensions: () -> Void
+    let onOpenExtensionsManager: () -> Void
+    let onOpenExtensionStore: () -> Void
+    let onOpenExtensionDetails: (String) -> Void
 
     @State private var isRowHovered = false
     @State private var isCopyHovered = false
@@ -3801,8 +3947,22 @@ private struct BrowserSidebarCurrentURLRow: View {
                 action: { isSiteControlCenterPresented = true }
             )
             .popover(isPresented: $isSiteControlCenterPresented, arrowEdge: .trailing) {
-                Color.clear
-                    .frame(width: 260, height: 180)
+                BrowserSiteControlCenterPopover(
+                    extensions: extensions,
+                    onManageExtensions: {
+                        isSiteControlCenterPresented = false
+                        onOpenExtensionsManager()
+                    },
+                    onAddExtension: {
+                        isSiteControlCenterPresented = false
+                        onOpenExtensionStore()
+                    },
+                    onSelectExtension: { extensionID in
+                        isSiteControlCenterPresented = false
+                        onOpenExtensionDetails(extensionID)
+                    }
+                )
+                .onAppear(perform: onRefreshExtensions)
             }
         }
         .padding(.trailing, BrowserChromeLayout.sidebarTabTrailingPadding)

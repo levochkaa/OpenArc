@@ -97,6 +97,7 @@ targets:
       - path: Sources/Browser/BrowserChromeModel.swift
       - path: Sources/Browser/BrowserCommandBarModel.swift
       - path: Sources/Browser/BrowserDefaultBrowserService.swift
+      - path: Sources/Browser/BrowserExtensions.swift
       - path: Sources/Browser/BrowserFaviconCache.swift
       - path: Sources/Browser/BrowserNavigationResolver.swift
       - path: Sources/Browser/BrowserStrings.swift

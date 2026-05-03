@@ -10,7 +10,10 @@ extern const char kTheBrowserCreditsHost[];
 extern const char kTheBrowserCreditsURL[];
 extern const char kTheBrowserSettingsHost[];
 extern const char kTheBrowserSettingsURL[];
+extern const char kTheBrowserExtensionsHost[];
+extern const char kTheBrowserExtensionsURL[];
 extern const char kChromiumSettingsURL[];
+extern const char kChromiumExtensionsURL[];
 
 void RegisterTheBrowserCustomSchemes(
     CefRawPtr<CefSchemeRegistrar> registrar);

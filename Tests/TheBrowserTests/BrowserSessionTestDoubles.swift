@@ -255,3 +255,40 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding {
         return Array((suggestionsByQuery[query] ?? []).prefix(maximumCount))
     }
 }
+
+@MainActor
+final class FakeBrowserExtensionManager: BrowserExtensionManaging {
+    var extensions: [BrowserExtension]
+    private(set) var enabledStateRequests: [(id: String, isEnabled: Bool)] = []
+    private(set) var removedExtensionIDs: [String] = []
+
+    init(extensions: [BrowserExtension] = []) {
+        self.extensions = extensions
+    }
+
+    func installedExtensions() -> [BrowserExtension] {
+        extensions
+    }
+
+    func setExtension(id: String, isEnabled: Bool) -> Bool {
+        enabledStateRequests.append((id: id, isEnabled: isEnabled))
+
+        guard let index = extensions.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+
+        extensions[index].isEnabled = isEnabled
+        return true
+    }
+
+    func removeExtension(id: String) -> Bool {
+        removedExtensionIDs.append(id)
+
+        guard extensions.contains(where: { $0.id == id }) else {
+            return false
+        }
+
+        extensions.removeAll { $0.id == id }
+        return true
+    }
+}

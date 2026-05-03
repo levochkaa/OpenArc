@@ -58,6 +58,9 @@
 "browser.tab.copy_link_action" = "Copy Link";
 "browser.tab.copy_url_action" = "Copy URL";
 "browser.site_control_center.action" = "Site Control Center";
+"browser.extensions.section.title" = "Extensions";
+"browser.extensions.manage" = "Manage";
+"browser.extensions.add" = "Add Extension";
 "browser.tab.rename_action" = "Rename...";
 "browser.tab.share_action" = "Share";
 "browser.tab.rename_tooltip_caption" = "Double-click to rename";
