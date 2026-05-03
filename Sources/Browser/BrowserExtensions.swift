@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
 
+// MARK: - BrowserExtension
+
 struct BrowserExtension: Identifiable, Equatable {
     let id: String
     var name: String
@@ -17,14 +19,19 @@ struct BrowserExtension: Identifiable, Equatable {
     }
 }
 
-@MainActor
-protocol BrowserExtensionManaging: AnyObject {
+// MARK: - BrowserExtensionManaging
+
+@MainActor protocol BrowserExtensionManaging: AnyObject {
     func installedExtensions() -> [BrowserExtension]
     func setExtension(id: String, isEnabled: Bool) -> Bool
     func removeExtension(id: String) -> Bool
 }
 
+// MARK: - BrowserExtensionProfileSnapshotStore
+
 enum BrowserExtensionProfileSnapshotStore {
+    // MARK: Internal
+
     static func installedExtensions(profileDirectories: [URL]) -> [BrowserExtension] {
         for profileDirectory in uniqueExistingDirectories(profileDirectories) {
             let extensions = installedExtensions(profileDirectory: profileDirectory)
@@ -35,6 +42,8 @@ enum BrowserExtensionProfileSnapshotStore {
 
         return []
     }
+
+    // MARK: Private
 
     private static func installedExtensions(profileDirectory: URL) -> [BrowserExtension] {
         guard
@@ -49,7 +58,10 @@ enum BrowserExtensionProfileSnapshotStore {
             guard
                 entry.isUserVisible,
                 let manifest = entry.manifest,
-                let name = extensionName(from: manifest, extensionDirectory: extensionDirectory(for: id, entry: entry, profileDirectory: profileDirectory))
+                let name = extensionName(
+                    from: manifest,
+                    extensionDirectory: extensionDirectory(for: id, entry: entry, profileDirectory: profileDirectory)
+                )
             else {
                 return nil
             }
@@ -69,7 +81,7 @@ enum BrowserExtensionProfileSnapshotStore {
     private static func uniqueExistingDirectories(_ urls: [URL]) -> [URL] {
         let fileManager = FileManager.default
         var seenPaths = Set<String>()
-        var directories: [URL] = []
+        var directories = [URL]()
 
         for url in urls {
             let standardizedURL = url.standardizedFileURL
@@ -78,7 +90,9 @@ enum BrowserExtensionProfileSnapshotStore {
             }
 
             var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: standardizedURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            guard fileManager.fileExists(atPath: standardizedURL.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue
+            else {
                 continue
             }
 
@@ -139,9 +153,10 @@ enum BrowserExtensionProfileSnapshotStore {
                 includingPropertiesForKeys: nil
             ),
             let latestVersionURL = versionURLs
-            .filter(\.hasDirectoryPath)
-            .sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending })
-            .first
+                .filter(\.hasDirectoryPath)
+                .sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending
+                })
+                .first
         else {
             return extensionRootURL
         }
@@ -175,14 +190,14 @@ enum BrowserExtensionProfileSnapshotStore {
 
         let keyStart = value.index(value.startIndex, offsetBy: "__MSG_".count)
         let keyEnd = value.index(value.endIndex, offsetBy: -2)
-        let messageKey = String(value[keyStart ..< keyEnd])
+        let messageKey = String(value[keyStart..<keyEnd])
         let localeCandidates = [
             manifest.currentLocale,
             manifest.defaultLocale,
             manifest.currentLocale?.split(separator: "_").first.map(String.init),
             manifest.defaultLocale?.split(separator: "_").first.map(String.init),
         ]
-        .compactMap { $0 }
+            .compactMap(\.self)
 
         for locale in localeCandidates {
             let messagesURL = extensionDirectory
@@ -221,6 +236,8 @@ enum BrowserExtensionProfileSnapshotStore {
     }
 }
 
+// MARK: - BrowserExtensionRouting
+
 enum BrowserExtensionRouting {
     static let extensionsURLString = "tb://extensions/"
     static let chromeWebStoreURLString = "https://chromewebstore.google.com/"
@@ -237,6 +254,8 @@ enum BrowserExtensionRouting {
     }
 }
 
+// MARK: - BrowserExtensionControlCenterItem
+
 struct BrowserExtensionControlCenterItem: Identifiable, Equatable {
     enum Kind: Equatable {
         case installed(BrowserExtension)
@@ -247,13 +266,15 @@ struct BrowserExtensionControlCenterItem: Identifiable, Equatable {
 
     var id: String {
         switch kind {
-        case let .installed(browserExtension):
+        case .installed(let browserExtension):
             "extension:\(browserExtension.id)"
         case .add:
             "extension:add"
         }
     }
 }
+
+// MARK: - BrowserExtensionControlCenterModel
 
 enum BrowserExtensionControlCenterModel {
     static let maximumVisibleTiles = 4
@@ -275,15 +296,32 @@ enum BrowserExtensionControlCenterModel {
     }
 }
 
+// MARK: - BrowserExtensionPreferencesSnapshot
+
 private struct BrowserExtensionPreferencesSnapshot: Decodable {
     let extensions: BrowserExtensionPreferencesContainer?
 }
+
+// MARK: - BrowserExtensionPreferencesContainer
 
 private struct BrowserExtensionPreferencesContainer: Decodable {
     let settings: [String: BrowserExtensionPreferencesEntry]?
 }
 
+// MARK: - BrowserExtensionPreferencesEntry
+
 private struct BrowserExtensionPreferencesEntry: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case disableReasons = "disable_reasons"
+        case location
+        case manifest
+        case path
+        case state
+        case version
+        case wasInstalledByDefault = "was_installed_by_default"
+        case wasInstalledByOem = "was_installed_by_oem"
+    }
+
     let disableReasons: BrowserExtensionDisableReasons?
     let location: Int?
     let manifest: BrowserExtensionManifest?
@@ -319,30 +357,11 @@ private struct BrowserExtensionPreferencesEntry: Decodable {
 
         return true
     }
-
-    enum CodingKeys: String, CodingKey {
-        case disableReasons = "disable_reasons"
-        case location
-        case manifest
-        case path
-        case state
-        case version
-        case wasInstalledByDefault = "was_installed_by_default"
-        case wasInstalledByOem = "was_installed_by_oem"
-    }
 }
 
-private struct BrowserExtensionManifest: Decodable {
-    let action: BrowserExtensionAction?
-    let browserAction: BrowserExtensionAction?
-    let currentLocale: String?
-    let defaultLocale: String?
-    let icons: BrowserExtensionIconSet?
-    let name: String?
-    let pageAction: BrowserExtensionAction?
-    let shortName: String?
-    let version: String?
+// MARK: - BrowserExtensionManifest
 
+private struct BrowserExtensionManifest: Decodable {
     enum CodingKeys: String, CodingKey {
         case action
         case browserAction = "browser_action"
@@ -354,17 +373,49 @@ private struct BrowserExtensionManifest: Decodable {
         case shortName = "short_name"
         case version
     }
+
+    let action: BrowserExtensionAction?
+    let browserAction: BrowserExtensionAction?
+    let currentLocale: String?
+    let defaultLocale: String?
+    let icons: BrowserExtensionIconSet?
+    let name: String?
+    let pageAction: BrowserExtensionAction?
+    let shortName: String?
+    let version: String?
 }
 
-private struct BrowserExtensionAction: Decodable {
-    let defaultIcon: BrowserExtensionIconSet?
+// MARK: - BrowserExtensionAction
 
+private struct BrowserExtensionAction: Decodable {
     enum CodingKeys: String, CodingKey {
         case defaultIcon = "default_icon"
     }
+
+    let defaultIcon: BrowserExtensionIconSet?
 }
 
+// MARK: - BrowserExtensionIconSet
+
 private struct BrowserExtensionIconSet: Decodable {
+    // MARK: Lifecycle
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if let path = try? container.decode(String.self) {
+            self.pathsBySize = [0: path]
+            return
+        }
+
+        let rawPathsBySize = try container.decode([String: String].self)
+        self.pathsBySize = rawPathsBySize.reduce(into: [:]) { result, item in
+            result[Int(item.key) ?? 0] = item.value
+        }
+    }
+
+    // MARK: Internal
+
     let pathsBySize: [Int: String]
 
     var preferredPath: String? {
@@ -378,51 +429,45 @@ private struct BrowserExtensionIconSet: Decodable {
 
         return sortedIcons.first { $0.key <= 128 }?.value ?? sortedIcons.last?.value
     }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-
-        if let path = try? container.decode(String.self) {
-            pathsBySize = [0: path]
-            return
-        }
-
-        let rawPathsBySize = try container.decode([String: String].self)
-        pathsBySize = rawPathsBySize.reduce(into: [:]) { result, item in
-            result[Int(item.key) ?? 0] = item.value
-        }
-    }
 }
 
+// MARK: - BrowserExtensionDisableReasons
+
 private struct BrowserExtensionDisableReasons: Decodable {
-    let isEmpty: Bool
+    // MARK: Lifecycle
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
 
         if let reasons = try? container.decode([String].self) {
-            isEmpty = reasons.isEmpty
+            self.isEmpty = reasons.isEmpty
             return
         }
 
         if let reasons = try? container.decode([Int].self) {
-            isEmpty = reasons.isEmpty
+            self.isEmpty = reasons.isEmpty
             return
         }
 
         if let reasons = try? container.decode([String: Bool].self) {
-            isEmpty = reasons.isEmpty
+            self.isEmpty = reasons.isEmpty
             return
         }
 
         if let reasonMask = try? container.decode(Int.self) {
-            isEmpty = reasonMask == 0
+            self.isEmpty = reasonMask == 0
             return
         }
 
-        isEmpty = true
+        self.isEmpty = true
     }
+
+    // MARK: Internal
+
+    let isEmpty: Bool
 }
+
+// MARK: - BrowserExtensionLocaleMessage
 
 private struct BrowserExtensionLocaleMessage: Decodable {
     let message: String

@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSidebarEmptySectionDropZone
+
 struct BrowserSidebarEmptySectionDropZone: View {
     let height: CGFloat
     let showsDropIndicator: Bool
@@ -17,6 +19,9 @@ struct BrowserSidebarEmptySectionDropZone: View {
             .contentShape(Rectangle())
     }
 }
+
+// MARK: - BrowserSidebarTopChromeDivider
+
 struct BrowserSidebarTopChromeDivider: View {
     let isVisible: Bool
 
@@ -28,6 +33,9 @@ struct BrowserSidebarTopChromeDivider: View {
             .allowsHitTesting(false)
     }
 }
+
+// MARK: - BrowserSidebarTemporaryTabsDivider
+
 struct BrowserSidebarTemporaryTabsDivider: View {
     let clearTemporaryTabsDescriptor: BrowserCommandDescriptor
     let showsClearButton: Bool
@@ -69,6 +77,9 @@ struct BrowserSidebarTemporaryTabsDivider: View {
         .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: showsClearButton)
     }
 }
+
+// MARK: - BrowserSidebarDropIndicator
+
 struct BrowserSidebarDropIndicator: View {
     var body: some View {
         RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarDropIndicatorThickness / 2, style: .continuous)

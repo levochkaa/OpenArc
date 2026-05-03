@@ -1,8 +1,7 @@
 import Foundation
 import Testing
 
-@Test
-func resolvePreservesFullURLInput() {
+@Test func resolvePreservesFullURLInput() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("https://openai.com/research?q=browser")
 
@@ -15,8 +14,7 @@ func resolvePreservesFullURLInput() {
     )
 }
 
-@Test
-func resolveTreatsBareDomainAsURL() {
+@Test func resolveTreatsBareDomainAsURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("openai.com/research")
 
@@ -25,8 +23,7 @@ func resolveTreatsBareDomainAsURL() {
     #expect(resolution?.resolvedURLString == "https://openai.com/research")
 }
 
-@Test
-func resolveTreatsPublicSuffixListDomainAsURL() {
+@Test func resolveTreatsPublicSuffixListDomainAsURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("docs.google.co.uk")
 
@@ -34,8 +31,7 @@ func resolveTreatsPublicSuffixListDomainAsURL() {
     #expect(resolution?.resolvedURLString == "https://docs.google.co.uk")
 }
 
-@Test
-func resolveTreatsLocalhostAsURL() {
+@Test func resolveTreatsLocalhostAsURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("localhost:3000")
 
@@ -43,8 +39,7 @@ func resolveTreatsLocalhostAsURL() {
     #expect(resolution?.resolvedURLString == "https://localhost:3000")
 }
 
-@Test
-func resolveTreatsLocalhostAsURLWithoutDomainParser() {
+@Test func resolveTreatsLocalhostAsURLWithoutDomainParser() {
     let resolver = BrowserNavigationResolver(domainParser: RejectingDomainParser())
     let resolution = resolver.resolve("localhost:3000")
 
@@ -52,8 +47,7 @@ func resolveTreatsLocalhostAsURLWithoutDomainParser() {
     #expect(resolution?.resolvedURLString == "https://localhost:3000")
 }
 
-@Test
-func resolveTreatsBareDomainWithPortAsURL() {
+@Test func resolveTreatsBareDomainWithPortAsURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("openai.com:443/research")
 
@@ -61,8 +55,7 @@ func resolveTreatsBareDomainWithPortAsURL() {
     #expect(resolution?.resolvedURLString == "https://openai.com:443/research")
 }
 
-@Test
-func resolvePreservesTheBrowserInternalURL() {
+@Test func resolvePreservesTheBrowserInternalURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("tb://settings")
 
@@ -75,8 +68,7 @@ func resolvePreservesTheBrowserInternalURL() {
     )
 }
 
-@Test
-func resolvePreservesTheBrowserExtensionsURL() {
+@Test func resolvePreservesTheBrowserExtensionsURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("tb://extensions/?id=abc")
 
@@ -89,8 +81,7 @@ func resolvePreservesTheBrowserExtensionsURL() {
     )
 }
 
-@Test
-func resolvePreservesChromiumInternalURL() {
+@Test func resolvePreservesChromiumInternalURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("chrome://settings")
 
@@ -103,8 +94,7 @@ func resolvePreservesChromiumInternalURL() {
     )
 }
 
-@Test
-func resolveRejectsTrailingDotHost() throws {
+@Test func resolveRejectsTrailingDotHost() throws {
     let resolver = BrowserNavigationResolver()
     let resolution = try #require(resolver.resolve("Google."))
 
@@ -112,8 +102,7 @@ func resolveRejectsTrailingDotHost() throws {
     #expect(queryValue(from: resolution.resolvedURLString, name: "q") == "Google.")
 }
 
-@Test
-func resolveRejectsSingleCharacterTopLevelDomain() throws {
+@Test func resolveRejectsSingleCharacterTopLevelDomain() throws {
     let resolver = BrowserNavigationResolver()
     let resolution = try #require(resolver.resolve("Google.c"))
 
@@ -121,8 +110,7 @@ func resolveRejectsSingleCharacterTopLevelDomain() throws {
     #expect(queryValue(from: resolution.resolvedURLString, name: "q") == "Google.c")
 }
 
-@Test
-func resolveAcceptsTwoCharacterTopLevelDomain() {
+@Test func resolveAcceptsTwoCharacterTopLevelDomain() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("Google.co")
 
@@ -130,8 +118,7 @@ func resolveAcceptsTwoCharacterTopLevelDomain() {
     #expect(resolution?.resolvedURLString == "https://Google.co")
 }
 
-@Test
-func resolveRejectsExplicitHTTPURLWithSingleCharacterTopLevelDomain() throws {
+@Test func resolveRejectsExplicitHTTPURLWithSingleCharacterTopLevelDomain() throws {
     let resolver = BrowserNavigationResolver()
     let resolution = try #require(resolver.resolve("https://Google.c"))
 
@@ -139,8 +126,7 @@ func resolveRejectsExplicitHTTPURLWithSingleCharacterTopLevelDomain() throws {
     #expect(queryValue(from: resolution.resolvedURLString, name: "q") == "https://Google.c")
 }
 
-@Test
-func resolveTreatsIPv4AddressAsURL() {
+@Test func resolveTreatsIPv4AddressAsURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("127.0.0.1:9222")
 
@@ -148,8 +134,7 @@ func resolveTreatsIPv4AddressAsURL() {
     #expect(resolution?.resolvedURLString == "https://127.0.0.1:9222")
 }
 
-@Test
-func resolveTurnsPlainTextIntoGoogleSearch() throws {
+@Test func resolveTurnsPlainTextIntoGoogleSearch() throws {
     let resolver = BrowserNavigationResolver()
     let resolution = try #require(resolver.resolve("command bar"))
 
@@ -158,8 +143,7 @@ func resolveTurnsPlainTextIntoGoogleSearch() throws {
     #expect(queryValue(from: resolution.resolvedURLString, name: "q") == "command bar")
 }
 
-@Test
-func resolveUsesSelectedSearchEngineForPlainTextSearch() throws {
+@Test func resolveUsesSelectedSearchEngineForPlainTextSearch() throws {
     let resolver = BrowserNavigationResolver(searchEngineProvider: { .duckDuckGo })
     let resolution = try #require(resolver.resolve("command bar"))
 
@@ -168,16 +152,14 @@ func resolveUsesSelectedSearchEngineForPlainTextSearch() throws {
     #expect(queryValue(from: resolution.resolvedURLString, name: "q") == "command bar")
 }
 
-@Test
-func resolveReturnsNilForEmptyInput() {
+@Test func resolveReturnsNilForEmptyInput() {
     let resolver = BrowserNavigationResolver()
 
     #expect(resolver.resolve("   \n") == nil)
 }
 
 @Test
-@MainActor
-func presentCanSeedInitialQuery() async {
+@MainActor func presentCanSeedInitialQuery() async {
     let model = makeModel(suggestionProvider: FakeSuggestionProvider())
 
     model.present(initialQuery: "https://openai.com")
@@ -189,8 +171,7 @@ func presentCanSeedInitialQuery() async {
 }
 
 @Test
-@MainActor
-func primarySuggestionIsSelectedByDefault() async {
+@MainActor func primarySuggestionIsSelectedByDefault() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["привет": ["привет макет", "привет мир"]]
     )
@@ -206,8 +187,7 @@ func primarySuggestionIsSelectedByDefault() async {
 }
 
 @Test
-@MainActor
-func disabledRemoteSuggestionsKeepPrimarySuggestionOnly() async {
+@MainActor func disabledRemoteSuggestionsKeepPrimarySuggestionOnly() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["browser": ["browser settings"]]
     )
@@ -225,8 +205,7 @@ func disabledRemoteSuggestionsKeepPrimarySuggestionOnly() async {
 }
 
 @Test
-@MainActor
-func remoteURLSuggestionUsesURLPresentationKind() async throws {
+@MainActor func remoteURLSuggestionUsesURLPresentationKind() async throws {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["https://google.com/": ["https://google.com/business"]]
     )
@@ -245,8 +224,7 @@ func remoteURLSuggestionUsesURLPresentationKind() async throws {
 }
 
 @Test
-@MainActor
-func arrowNavigationUpdatesSelectedSuggestionAndInlineSuffix() async {
+@MainActor func arrowNavigationUpdatesSelectedSuggestionAndInlineSuffix() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["привет": ["привет макет", "привет мир"]]
     )
@@ -263,8 +241,7 @@ func arrowNavigationUpdatesSelectedSuggestionAndInlineSuffix() async {
 }
 
 @Test
-@MainActor
-func acceptSelectedSuggestionPromotesInlineCompletionIntoQuery() async {
+@MainActor func acceptSelectedSuggestionPromotesInlineCompletionIntoQuery() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["привет": ["привет макет"]]
     )
@@ -280,8 +257,7 @@ func acceptSelectedSuggestionPromotesInlineCompletionIntoQuery() async {
 }
 
 @Test
-@MainActor
-func trailingSpaceDoesNotTriggerPrimarySuggestionPreview() async {
+@MainActor func trailingSpaceDoesNotTriggerPrimarySuggestionPreview() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["hello": ["hello world"]]
     )
@@ -297,8 +273,7 @@ func trailingSpaceDoesNotTriggerPrimarySuggestionPreview() async {
 }
 
 @Test
-@MainActor
-func inlineCompletionPreservesTypedTrailingSpace() async {
+@MainActor func inlineCompletionPreservesTypedTrailingSpace() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["hello": ["hello world"]]
     )
@@ -315,10 +290,11 @@ func inlineCompletionPreservesTypedTrailingSpace() async {
 }
 
 @Test
-@MainActor
-func nonPrefixSuggestionUsesFullPreviewText() async {
+@MainActor func nonPrefixSuggestionUsesFullPreviewText() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["test english com listening b2": ["https test english com listening b2 inside google's office"]]
+        suggestionsByQuery: [
+            "test english com listening b2": ["https test english com listening b2 inside google's office"],
+        ]
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -333,10 +309,11 @@ func nonPrefixSuggestionUsesFullPreviewText() async {
 }
 
 @Test
-@MainActor
-func acceptSelectedSuggestionReplacesQueryForNonPrefixSuggestion() async {
+@MainActor func acceptSelectedSuggestionReplacesQueryForNonPrefixSuggestion() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["test english com listening b2": ["https test english com listening b2 inside google's office"]]
+        suggestionsByQuery: [
+            "test english com listening b2": ["https test english com listening b2 inside google's office"],
+        ]
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -350,9 +327,8 @@ func acceptSelectedSuggestionReplacesQueryForNonPrefixSuggestion() async {
 }
 
 @Test
-@MainActor
-func submitFallsBackToTypedURLWhenOnlyPrimarySuggestionExists() async {
-    var submittedURLStrings: [String] = []
+@MainActor func submitFallsBackToTypedURLWhenOnlyPrimarySuggestionExists() async {
+    var submittedURLStrings = [String]()
     let model = makeModel(
         suggestionProvider: FakeSuggestionProvider(),
         submitHandler: { submittedURLStrings.append($0) }
@@ -368,9 +344,8 @@ func submitFallsBackToTypedURLWhenOnlyPrimarySuggestionExists() async {
 }
 
 @Test
-@MainActor
-func submitUsesCurrentlySelectedSuggestion() async {
-    var submittedURLStrings: [String] = []
+@MainActor func submitUsesCurrentlySelectedSuggestion() async {
+    var submittedURLStrings = [String]()
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["привет": ["привет макет"]]
     )
@@ -390,8 +365,7 @@ func submitUsesCurrentlySelectedSuggestion() async {
 }
 
 @Test
-@MainActor
-func dismissClearsTransientState() async {
+@MainActor func dismissClearsTransientState() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["browser": ["browser command bar"]]
     )
@@ -409,8 +383,7 @@ func dismissClearsTransientState() async {
     #expect(model.selectedSuggestion == nil)
 }
 
-@MainActor
-private func makeModel(
+@MainActor private func makeModel(
     suggestionProvider: BrowserSuggestionProviding,
     remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
     submitHandler: @escaping (String) -> Void = { _ in }
@@ -433,6 +406,8 @@ private func queryValue(from urlString: String?, name: String) -> String? {
         .first(where: { $0.name == name })?
         .value
 }
+
+// MARK: - RejectingDomainParser
 
 private struct RejectingDomainParser: BrowserDomainParsing {
     func parse(host _: String) -> BrowserParsedHost? {

@@ -2,13 +2,17 @@ import CoreGraphics
 import Foundation
 import OSLog
 
+// MARK: - BrowserTemporaryTabLifetime
+
 enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hashable {
     case twelveHours = "12h"
     case twentyFourHours = "24h"
     case sevenDays = "7d"
     case thirtyDays = "30d"
 
-    static let defaultValue: BrowserTemporaryTabLifetime = .thirtyDays
+    // MARK: Internal
+
+    static let defaultValue = BrowserTemporaryTabLifetime.thirtyDays
 
     var timeInterval: TimeInterval {
         switch self {
@@ -24,18 +28,18 @@ enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hash
     }
 }
 
+// MARK: - BrowserTabPlacement
+
 enum BrowserTabPlacement: String, Codable, Equatable, Hashable {
     case temporary
     case spacePinned
     case app
 }
 
+// MARK: - BrowserSpaceSessionSnapshot
+
 struct BrowserSpaceSessionSnapshot: Codable, Equatable {
-    let id: String
-    let title: String
-    let systemImageName: String
-    let isPinnedSectionCollapsed: Bool
-    let selectedTabIndex: Int?
+    // MARK: Lifecycle
 
     init(
         id: String,
@@ -50,14 +54,20 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
         self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
         self.selectedTabIndex = selectedTabIndex
     }
+
+    // MARK: Internal
+
+    let id: String
+    let title: String
+    let systemImageName: String
+    let isPinnedSectionCollapsed: Bool
+    let selectedTabIndex: Int?
 }
 
+// MARK: - BrowserTabSessionSnapshotTab
+
 struct BrowserTabSessionSnapshotTab: Codable, Equatable {
-    let urlString: String
-    let userTitleOverride: String?
-    let placement: BrowserTabPlacement
-    let spaceID: String?
-    let lastActivityTimestamp: TimeInterval?
+    // MARK: Lifecycle
 
     init(
         urlString: String,
@@ -73,28 +83,27 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         self.lastActivityTimestamp = lastActivityTimestamp
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case urlString
-        case userTitleOverride
-        case placement
-        case spaceID
-        case isPinned
-        case lastActivityTimestamp
-    }
-
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        urlString = try container.decode(String.self, forKey: .urlString)
-        userTitleOverride = try container.decodeIfPresent(String.self, forKey: .userTitleOverride)
+        self.urlString = try container.decode(String.self, forKey: .urlString)
+        self.userTitleOverride = try container.decodeIfPresent(String.self, forKey: .userTitleOverride)
         if let placement = try container.decodeIfPresent(BrowserTabPlacement.self, forKey: .placement) {
             self.placement = placement
         } else {
             let legacyPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
-            placement = legacyPinned ? .spacePinned : .temporary
+            self.placement = legacyPinned ? .spacePinned : .temporary
         }
-        spaceID = try container.decodeIfPresent(String.self, forKey: .spaceID)
-        lastActivityTimestamp = try container.decodeIfPresent(TimeInterval.self, forKey: .lastActivityTimestamp)
+        self.spaceID = try container.decodeIfPresent(String.self, forKey: .spaceID)
+        self.lastActivityTimestamp = try container.decodeIfPresent(TimeInterval.self, forKey: .lastActivityTimestamp)
     }
+
+    // MARK: Internal
+
+    let urlString: String
+    let userTitleOverride: String?
+    let placement: BrowserTabPlacement
+    let spaceID: String?
+    let lastActivityTimestamp: TimeInterval?
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -104,18 +113,23 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         try container.encodeIfPresent(spaceID, forKey: .spaceID)
         try container.encodeIfPresent(lastActivityTimestamp, forKey: .lastActivityTimestamp)
     }
+
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case urlString
+        case userTitleOverride
+        case placement
+        case spaceID
+        case isPinned
+        case lastActivityTimestamp
+    }
 }
 
+// MARK: - BrowserTabSessionSnapshot
+
 struct BrowserTabSessionSnapshot: Codable, Equatable {
-    static let currentVersion = 3
-
-    let version: Int
-    let spaces: [BrowserSpaceSessionSnapshot]?
-    let tabs: [BrowserTabSessionSnapshotTab]
-
-    var tabURLStrings: [String] {
-        tabs.map(\.urlString)
-    }
+    // MARK: Lifecycle
 
     init(
         version: Int = currentVersion,
@@ -134,17 +148,10 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         )
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case version
-        case spaces
-        case tabs
-        case tabURLStrings
-    }
-
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decode(Int.self, forKey: .version)
-        spaces = try container.decodeIfPresent([BrowserSpaceSessionSnapshot].self, forKey: .spaces)
+        self.version = try container.decode(Int.self, forKey: .version)
+        self.spaces = try container.decodeIfPresent([BrowserSpaceSessionSnapshot].self, forKey: .spaces)
 
         if let tabs = try container.decodeIfPresent([BrowserTabSessionSnapshotTab].self, forKey: .tabs) {
             self.tabs = tabs
@@ -152,7 +159,19 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         }
 
         let tabURLStrings = try container.decode([String].self, forKey: .tabURLStrings)
-        tabs = tabURLStrings.map { BrowserTabSessionSnapshotTab(urlString: $0) }
+        self.tabs = tabURLStrings.map { BrowserTabSessionSnapshotTab(urlString: $0) }
+    }
+
+    // MARK: Internal
+
+    static let currentVersion = 3
+
+    let version: Int
+    let spaces: [BrowserSpaceSessionSnapshot]?
+    let tabs: [BrowserTabSessionSnapshotTab]
+
+    var tabURLStrings: [String] {
+        tabs.map(\.urlString)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -162,12 +181,25 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         try container.encode(tabs, forKey: .tabs)
         try container.encode(tabURLStrings, forKey: .tabURLStrings)
     }
+
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case spaces
+        case tabs
+        case tabURLStrings
+    }
 }
+
+// MARK: - BrowserTabSessionSnapshotStoring
 
 protocol BrowserTabSessionSnapshotStoring {
     func loadSnapshot() -> BrowserTabSessionSnapshot?
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot)
 }
+
+// MARK: - BrowserSessionPreferencesStoring
 
 protocol BrowserSessionPreferencesStoring {
     func loadSelectedTabIndex(tabCount: Int) -> Int?
@@ -180,6 +212,8 @@ protocol BrowserSessionPreferencesStoring {
     func saveTemporaryTabLifetime(_ lifetime: BrowserTemporaryTabLifetime)
 }
 
+// MARK: - BrowserSessionDiagnostics
+
 private enum BrowserSessionDiagnostics {
     static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
@@ -187,18 +221,19 @@ private enum BrowserSessionDiagnostics {
     )
 }
 
-final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
-    static let snapshotFileName = "tabs.json"
+// MARK: - BrowserTabSessionSnapshotStore
 
-    private let snapshotURL: URL?
-    private let fileManager: FileManager
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
+final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
+    // MARK: Lifecycle
 
     init(snapshotURL: URL?, fileManager: FileManager = .default) {
         self.snapshotURL = snapshotURL
         self.fileManager = fileManager
     }
+
+    // MARK: Internal
+
+    static let snapshotFileName = "tabs.json"
 
     func loadSnapshot() -> BrowserTabSessionSnapshot? {
         guard let snapshotURL else {
@@ -212,7 +247,7 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
         do {
             let data = try Data(contentsOf: snapshotURL)
             let snapshot = try decoder.decode(BrowserTabSessionSnapshot.self, from: data)
-            guard (1 ... BrowserTabSessionSnapshot.currentVersion).contains(snapshot.version) else {
+            guard (1...BrowserTabSessionSnapshot.currentVersion).contains(snapshot.version) else {
                 BrowserSessionDiagnostics.logger.warning(
                     "Ignoring session snapshot with unsupported version \(snapshot.version, privacy: .public)"
                 )
@@ -245,21 +280,25 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
             )
         }
     }
+
+    // MARK: Private
+
+    private let snapshotURL: URL?
+    private let fileManager: FileManager
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
 }
 
-final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
-    private enum Key {
-        static let selectedTabIndex = "browser.session.selectedTabIndex"
-        static let selectedSpaceIndex = "browser.session.selectedSpaceIndex"
-        static let sidebarWidth = "browser.session.sidebarWidth"
-        static let temporaryTabLifetime = "browser.settings.temporaryTabLifetime"
-    }
+// MARK: - BrowserSessionPreferencesStore
 
-    private let userDefaults: UserDefaults
+final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
+    // MARK: Lifecycle
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
     }
+
+    // MARK: Internal
 
     func loadSelectedTabIndex(tabCount: Int) -> Int? {
         guard tabCount > 0 else {
@@ -340,4 +379,15 @@ final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
     func saveTemporaryTabLifetime(_ lifetime: BrowserTemporaryTabLifetime) {
         userDefaults.set(lifetime.rawValue, forKey: Key.temporaryTabLifetime)
     }
+
+    // MARK: Private
+
+    private enum Key {
+        static let selectedTabIndex = "browser.session.selectedTabIndex"
+        static let selectedSpaceIndex = "browser.session.selectedSpaceIndex"
+        static let sidebarWidth = "browser.session.sidebarWidth"
+        static let temporaryTabLifetime = "browser.settings.temporaryTabLifetime"
+    }
+
+    private let userDefaults: UserDefaults
 }

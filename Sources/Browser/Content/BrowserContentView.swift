@@ -2,41 +2,14 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserContentView
+
 struct BrowserContentView: View {
     let hostView: NSView
     let isContextReady: Bool
     let hasSelectedTab: Bool
     let isSidebarVisible: Bool
     let usesWindowContentInsets: Bool
-
-    var body: some View {
-        BrowserViewportHostRepresentable(
-            hostView: hostView,
-            cornerRadius: contentCornerRadius,
-            maskedCorners: maskedContentCorners
-        )
-        .opacity(hasSelectedTab ? 1 : 0)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BrowserChromePalette.shellBackground)
-        .overlay {
-            if !isContextReady {
-                ZStack {
-                    Rectangle()
-                        .fill(BrowserChromePalette.contentBackground)
-
-                    VStack(spacing: 10) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(.black)
-                        Text(BrowserStrings.loadingLaunchingBrowser)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.black.opacity(0.58))
-                    }
-                }
-                .clipShape(contentShape)
-            }
-        }
-    }
 
     var contentCornerRadius: CGFloat {
         shouldRoundLeadingCorners || shouldRoundTrailingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0
@@ -77,7 +50,39 @@ struct BrowserContentView: View {
             style: .continuous
         )
     }
+
+    var body: some View {
+        BrowserViewportHostRepresentable(
+            hostView: hostView,
+            cornerRadius: contentCornerRadius,
+            maskedCorners: maskedContentCorners
+        )
+        .opacity(hasSelectedTab ? 1 : 0)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BrowserChromePalette.shellBackground)
+        .overlay {
+            if !isContextReady {
+                ZStack {
+                    Rectangle()
+                        .fill(BrowserChromePalette.contentBackground)
+
+                    VStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.black)
+                        Text(BrowserStrings.loadingLaunchingBrowser)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.black.opacity(0.58))
+                    }
+                }
+                .clipShape(contentShape)
+            }
+        }
+    }
 }
+
+// MARK: Equatable
+
 extension BrowserContentView: Equatable {
     static func == (lhs: BrowserContentView, rhs: BrowserContentView) -> Bool {
         ObjectIdentifier(lhs.hostView) == ObjectIdentifier(rhs.hostView)
@@ -87,6 +92,9 @@ extension BrowserContentView: Equatable {
             && lhs.usesWindowContentInsets == rhs.usesWindowContentInsets
     }
 }
+
+// MARK: - BrowserViewportHostRepresentable
+
 struct BrowserViewportHostRepresentable: NSViewRepresentable {
     let hostView: NSView
     let cornerRadius: CGFloat
@@ -103,15 +111,14 @@ struct BrowserViewportHostRepresentable: NSViewRepresentable {
         nsView.updateClipping(cornerRadius: cornerRadius, maskedCorners: maskedCorners)
     }
 }
-final class BrowserViewportClipView: NSView {
-    var hostedView: NSView
 
-    override var mouseDownCanMoveWindow: Bool {
-        false
-    }
+// MARK: - BrowserViewportClipView
+
+final class BrowserViewportClipView: NSView {
+    // MARK: Lifecycle
 
     init(hostView: NSView) {
-        hostedView = hostView
+        self.hostedView = hostView
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -122,10 +129,17 @@ final class BrowserViewportClipView: NSView {
         attachHostedViewIfNeeded()
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    // MARK: Internal
+
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
+
+    var hostedView: NSView
 
     override func layout() {
         super.layout()
@@ -156,6 +170,8 @@ final class BrowserViewportClipView: NSView {
         layer.maskedCorners = maskedCorners
         CATransaction.commit()
     }
+
+    // MARK: Private
 
     private func attachHostedViewIfNeeded() {
         if hostedView.superview !== self {

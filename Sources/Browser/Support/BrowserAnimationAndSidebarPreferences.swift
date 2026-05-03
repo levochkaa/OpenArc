@@ -2,7 +2,19 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - AnimationCompletionObserverModifier
+
 struct AnimationCompletionObserverModifier<Value: VectorArithmetic>: AnimatableModifier {
+    // MARK: Lifecycle
+
+    init(observedValue: Value, completion: @escaping (Value) -> Void) {
+        self.targetValue = observedValue
+        self.animatableData = observedValue
+        self.completion = completion
+    }
+
+    // MARK: Internal
+
     var targetValue: Value
     var completion: (Value) -> Void
 
@@ -12,15 +24,11 @@ struct AnimationCompletionObserverModifier<Value: VectorArithmetic>: AnimatableM
         }
     }
 
-    init(observedValue: Value, completion: @escaping (Value) -> Void) {
-        targetValue = observedValue
-        animatableData = observedValue
-        self.completion = completion
-    }
-
     func body(content: Content) -> some View {
         content
     }
+
+    // MARK: Private
 
     private func notifyCompletionIfFinished() {
         guard animatableData == targetValue else {
@@ -32,6 +40,7 @@ struct AnimationCompletionObserverModifier<Value: VectorArithmetic>: AnimatableM
         }
     }
 }
+
 extension View {
     func onAnimationCompleted<Value: VectorArithmetic>(
         for value: Value,
@@ -120,8 +129,7 @@ extension View {
         }
     }
 
-    @ViewBuilder
-    func browserWindowDragGesture(isEnabled: Bool = true) -> some View {
+    @ViewBuilder func browserWindowDragGesture(isEnabled: Bool = true) -> some View {
         if isEnabled {
             contentShape(Rectangle())
                 .gesture(WindowDragGesture(), including: .gesture)
@@ -131,8 +139,11 @@ extension View {
         }
     }
 }
+
+// MARK: - BrowserSidebarAppTabFramePreferenceKey
+
 struct BrowserSidebarAppTabFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [String: BrowserSidebarAppTabFrame] = [:]
+    static var defaultValue = [String: BrowserSidebarAppTabFrame]()
 
     static func reduce(
         value: inout [String: BrowserSidebarAppTabFrame],
@@ -141,6 +152,9 @@ struct BrowserSidebarAppTabFramePreferenceKey: PreferenceKey {
         value.merge(nextValue()) { _, newValue in newValue }
     }
 }
+
+// MARK: - BrowserSidebarAppTabsContainerFramePreferenceKey
+
 struct BrowserSidebarAppTabsContainerFramePreferenceKey: PreferenceKey {
     static var defaultValue: CGRect?
 
@@ -148,8 +162,11 @@ struct BrowserSidebarAppTabsContainerFramePreferenceKey: PreferenceKey {
         value = nextValue() ?? value
     }
 }
+
+// MARK: - BrowserSidebarTabRowFramePreferenceKey
+
 struct BrowserSidebarTabRowFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [String: BrowserSidebarTabRowFrame] = [:]
+    static var defaultValue = [String: BrowserSidebarTabRowFrame]()
 
     static func reduce(
         value: inout [String: BrowserSidebarTabRowFrame],
@@ -158,8 +175,11 @@ struct BrowserSidebarTabRowFramePreferenceKey: PreferenceKey {
         value.merge(nextValue()) { _, newValue in newValue }
     }
 }
+
+// MARK: - BrowserSidebarEmptySectionFramePreferenceKey
+
 struct BrowserSidebarEmptySectionFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [BrowserSidebarEmptySectionFrame] = []
+    static var defaultValue = [BrowserSidebarEmptySectionFrame]()
 
     static func reduce(
         value: inout [BrowserSidebarEmptySectionFrame],

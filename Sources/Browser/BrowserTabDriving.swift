@@ -1,8 +1,7 @@
 import AppKit
 import Foundation
 
-@MainActor
-protocol BrowserTabDriving: AnyObject {
+@MainActor protocol BrowserTabDriving: AnyObject {
     var hostView: NSView { get }
     var onTabCreated: ((String, String, String) -> Void)? { get set }
     var onTabUpdated: ((String, String?, String?, String?) -> Void)? { get set }

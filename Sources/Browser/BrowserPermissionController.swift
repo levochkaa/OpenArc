@@ -2,8 +2,9 @@ import AppKit
 import Foundation
 import UserNotifications
 
-@objcMembers
-public final class BrowserPermissionController: NSObject {
+@objcMembers public final class BrowserPermissionController: NSObject {
+    // MARK: Public
+
     public static func requestNotificationPermission(for origin: String, completion: @escaping (Bool) -> Void) {
         let handlePromptResponse = {
             let response = presentSitePrompt(for: origin)
@@ -22,6 +23,8 @@ public final class BrowserPermissionController: NSObject {
 
         DispatchQueue.main.sync(execute: handlePromptResponse)
     }
+
+    // MARK: Private
 
     private static func presentSitePrompt(for origin: String) -> NSApplication.ModalResponse {
         let alert = NSAlert()

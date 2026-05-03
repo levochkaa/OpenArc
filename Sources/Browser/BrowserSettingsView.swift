@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 
+// MARK: - BrowserSettingsLayout
+
 enum BrowserSettingsLayout {
     static let windowWidth: CGFloat = 760
     static let windowHeight: CGFloat = 560
@@ -11,25 +13,10 @@ enum BrowserSettingsLayout {
     static let shortcutCaptureWidth: CGFloat = 132
 }
 
+// MARK: - BrowserSettingsView
+
 struct BrowserSettingsView: View {
-    private enum Tab: Hashable {
-        case accounts
-        case general
-        case profiles
-        case shortcuts
-        case content
-    }
-
-    @ObservedObject var model: BrowserChromeModel
-    @ObservedObject private var preferences: BrowserUserPreferencesStore
-    @ObservedObject private var shortcutStore: BrowserShortcutStore
-
-    @State private var selectedTab: Tab = .accounts
-    @State private var shortcutSearchText = ""
-    @State private var recordingCommandID: BrowserCommandID?
-    @State private var shortcutConflictMessage: String?
-
-    private let openURL: (URL) -> Void
+    // MARK: Lifecycle
 
     init(model: BrowserChromeModel, openURL: @escaping (URL) -> Void) {
         self.model = model
@@ -37,6 +24,10 @@ struct BrowserSettingsView: View {
         _shortcutStore = ObservedObject(wrappedValue: model.shortcutStore)
         self.openURL = openURL
     }
+
+    // MARK: Internal
+
+    @ObservedObject var model: BrowserChromeModel
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -62,6 +53,40 @@ struct BrowserSettingsView: View {
         }
         .frame(width: BrowserSettingsLayout.windowWidth, height: BrowserSettingsLayout.windowHeight)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: Private
+
+    private enum Tab: Hashable {
+        case accounts
+        case general
+        case profiles
+        case shortcuts
+        case content
+    }
+
+    @ObservedObject private var preferences: BrowserUserPreferencesStore
+    @ObservedObject private var shortcutStore: BrowserShortcutStore
+
+    @State private var selectedTab = Tab.accounts
+    @State private var shortcutSearchText = ""
+    @State private var recordingCommandID: BrowserCommandID?
+    @State private var shortcutConflictMessage: String?
+
+    private let openURL: (URL) -> Void
+
+    private var filteredCommandIDs: [BrowserCommandID] {
+        let query = shortcutSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return shortcutStore.commandIDs
+        }
+
+        return shortcutStore.commandIDs.filter { commandID in
+            let descriptor = shortcutStore.descriptor(for: commandID)
+            return descriptor.menuTitle.localizedCaseInsensitiveContains(query)
+                || descriptor.helpTitle.localizedCaseInsensitiveContains(query)
+                || descriptor.shortcut.displayText.localizedCaseInsensitiveContains(query)
+        }
     }
 
     private var accountsTab: some View {
@@ -228,22 +253,13 @@ struct BrowserSettingsView: View {
         }
     }
 
-    private var filteredCommandIDs: [BrowserCommandID] {
-        let query = shortcutSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
-            return shortcutStore.commandIDs
-        }
-
-        return shortcutStore.commandIDs.filter { commandID in
-            let descriptor = shortcutStore.descriptor(for: commandID)
-            return descriptor.menuTitle.localizedCaseInsensitiveContains(query)
-                || descriptor.helpTitle.localizedCaseInsensitiveContains(query)
-                || descriptor.shortcut.displayText.localizedCaseInsensitiveContains(query)
-        }
+    private var settingsDivider: some View {
+        Divider()
+            .padding(.leading, 1)
     }
 
-    private func settingsScrollContent<Content: View>(
-        @ViewBuilder content: () -> Content
+    private func settingsScrollContent(
+        @ViewBuilder content: () -> some View
     ) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: BrowserSettingsLayout.contentSpacing) {
@@ -254,9 +270,9 @@ struct BrowserSettingsView: View {
         }
     }
 
-    private func settingsSection<Content: View>(
+    private func settingsSection(
         title: String,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: () -> some View
     ) -> some View {
         VStack(alignment: .leading, spacing: BrowserSettingsLayout.rowSpacing) {
             Text(title)
@@ -272,11 +288,6 @@ struct BrowserSettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var settingsDivider: some View {
-        Divider()
-            .padding(.leading, 1)
     }
 
     private func toggleRow(
@@ -303,10 +314,10 @@ struct BrowserSettingsView: View {
         .padding(.vertical, 6)
     }
 
-    private func pickerRow<Selection: Hashable, Content: View>(
+    private func pickerRow(
         title: String,
-        selection: Binding<Selection>,
-        @ViewBuilder content: () -> Content
+        selection: Binding<some Hashable>,
+        @ViewBuilder content: () -> some View
     ) -> some View {
         HStack(spacing: 16) {
             titleDetailLabel(title: title)
@@ -427,6 +438,8 @@ struct BrowserSettingsView: View {
     }
 }
 
+// MARK: - BrowserShortcutCaptureView
+
 private struct BrowserShortcutCaptureView: NSViewRepresentable {
     let onCapture: (BrowserKeyboardShortcut) -> Void
     let onCancel: () -> Void
@@ -448,13 +461,15 @@ private struct BrowserShortcutCaptureView: NSViewRepresentable {
     }
 }
 
-private final class BrowserShortcutCaptureNSView: NSView {
-    var onCapture: ((BrowserKeyboardShortcut) -> Void)?
-    var onCancel: (() -> Void)?
+// MARK: - BrowserShortcutCaptureNSView
 
+private final class BrowserShortcutCaptureNSView: NSView {
     override var acceptsFirstResponder: Bool {
         true
     }
+
+    var onCapture: ((BrowserKeyboardShortcut) -> Void)?
+    var onCancel: (() -> Void)?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

@@ -1,8 +1,7 @@
 import AppKit
 import Testing
 
-@Test
-func layoutIndependentBridgeIgnoresShortcutsThatAlreadyMatchCurrentLayout() {
+@Test func layoutIndependentBridgeIgnoresShortcutsThatAlreadyMatchCurrentLayout() {
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 8,
         modifierFlags: [.command],
@@ -12,8 +11,7 @@ func layoutIndependentBridgeIgnoresShortcutsThatAlreadyMatchCurrentLayout() {
     #expect(command == nil)
 }
 
-@Test
-func layoutIndependentBridgeMapsSelectAllWhenPhysicalShortcutDoesNotMatchLayout() {
+@Test func layoutIndependentBridgeMapsSelectAllWhenPhysicalShortcutDoesNotMatchLayout() {
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 0,
         modifierFlags: [.command],
@@ -23,8 +21,7 @@ func layoutIndependentBridgeMapsSelectAllWhenPhysicalShortcutDoesNotMatchLayout(
     #expect(command == .selectAll)
 }
 
-@Test
-func layoutIndependentBridgeMapsPasteWhenPhysicalShortcutDoesNotMatchLayout() {
+@Test func layoutIndependentBridgeMapsPasteWhenPhysicalShortcutDoesNotMatchLayout() {
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 9,
         modifierFlags: [.command],
@@ -34,8 +31,7 @@ func layoutIndependentBridgeMapsPasteWhenPhysicalShortcutDoesNotMatchLayout() {
     #expect(command == .paste)
 }
 
-@Test
-func layoutIndependentBridgeMapsPasteAndMatchStyleWhenPhysicalShortcutDoesNotMatchLayout() {
+@Test func layoutIndependentBridgeMapsPasteAndMatchStyleWhenPhysicalShortcutDoesNotMatchLayout() {
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 9,
         modifierFlags: [.command, .shift],
@@ -45,8 +41,7 @@ func layoutIndependentBridgeMapsPasteAndMatchStyleWhenPhysicalShortcutDoesNotMat
     #expect(command == .pasteAndMatchStyle)
 }
 
-@Test
-func layoutIndependentBridgeMapsBrowserCommandsFromPhysicalKeys() {
+@Test func layoutIndependentBridgeMapsBrowserCommandsFromPhysicalKeys() {
     let settingsCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 43,
         modifierFlags: [.command],
@@ -134,8 +129,7 @@ func layoutIndependentBridgeMapsBrowserCommandsFromPhysicalKeys() {
     #expect(goBackCommand == .goBack)
 }
 
-@Test
-func browserSpaceShortcutsMapControlNumberRowKeys() {
+@Test func browserSpaceShortcutsMapControlNumberRowKeys() {
     #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 18, modifierFlags: [.control]) == 0)
     #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 19, modifierFlags: [.control]) == 1)
     #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 20, modifierFlags: [.control]) == 2)

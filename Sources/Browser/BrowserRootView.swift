@@ -3,22 +3,7 @@ import QuartzCore
 import SwiftUI
 
 struct BrowserRootView: View {
-    @ObservedObject var model: BrowserChromeModel
-    @ObservedObject private var commandBarModel: BrowserCommandBarModel
-    @ObservedObject private var currentPageCommandBarModel: BrowserCommandBarModel
-    @ObservedObject private var shortcutStore: BrowserShortcutStore
-    @State private var showsSidebarWindowControls: Bool
-    @State private var isWindowFullscreen = false
-    @State private var isWindowFullscreenTransitioning = false
-    @State private var isSidebarHoverOverlayPresented = false
-    @State private var isSidebarHoverOverlayChromeVisible = false
-    @State private var preservesSidebarHoverOverlayDuringFullscreenTransition = false
-    @State private var isSidebarHoverOverlayPointerSyncSuspended = false
-    @State private var isSidebarRevealEdgeHovered = false
-    @State private var sidebarRevealHoverTaskID = 0
-    @State private var currentURLRowWindowFrame: CGRect?
-    @StateObject private var tooltipCoordinator = BrowserTooltipCoordinator()
-    @ObservedObject private var faviconCache = BrowserFaviconCache.shared
+    // MARK: Lifecycle
 
     init(model: BrowserChromeModel) {
         self.model = model
@@ -27,6 +12,10 @@ struct BrowserRootView: View {
         _shortcutStore = ObservedObject(wrappedValue: model.shortcutStore)
         _showsSidebarWindowControls = State(initialValue: model.isSidebarVisible)
     }
+
+    // MARK: Internal
+
+    @ObservedObject var model: BrowserChromeModel
 
     var body: some View {
         GeometryReader { proxy in
@@ -45,7 +34,10 @@ struct BrowserRootView: View {
                     alignment: .leading
                 )
                 .offset(x: browserContentMinX, y: browserContentMinY)
-                .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+                .animation(
+                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                    value: model.isSidebarVisible
+                )
 
                 if usesInlineSidebarChrome {
                     BrowserSidebarChromeView(
@@ -67,7 +59,10 @@ struct BrowserRootView: View {
                     .offset(x: sidebarOffset, y: sidebarOffsetY)
                     .allowsHitTesting(isSidebarPresented)
                     .zIndex(6)
-                    .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: model.isSidebarVisible
+                    )
                     .animation(
                         .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
                         value: isSidebarHoverOverlayPresented
@@ -82,7 +77,10 @@ struct BrowserRootView: View {
                     trailingInset: browserContentTrailingInset,
                     bottomInset: browserContentBottomInset
                 )
-                .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+                .animation(
+                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                    value: model.isSidebarVisible
+                )
 
                 if !model.isSidebarVisible, !usesDetachedBrowserOverlays {
                     BrowserSidebarHoverRevealEdge(onHoverChange: handleSidebarRevealEdgeHoverChange)
@@ -133,7 +131,10 @@ struct BrowserRootView: View {
                     )
                     .allowsHitTesting(false)
                     .zIndex(12)
-                    .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: model.isSidebarVisible
+                    )
                     .animation(
                         .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
                         value: isSidebarHoverOverlayPresented
@@ -293,6 +294,24 @@ struct BrowserRootView: View {
         }
     }
 
+    // MARK: Private
+
+    @ObservedObject private var commandBarModel: BrowserCommandBarModel
+    @ObservedObject private var currentPageCommandBarModel: BrowserCommandBarModel
+    @ObservedObject private var shortcutStore: BrowserShortcutStore
+    @ObservedObject private var faviconCache = BrowserFaviconCache.shared
+    @State private var showsSidebarWindowControls: Bool
+    @State private var isWindowFullscreen = false
+    @State private var isWindowFullscreenTransitioning = false
+    @State private var isSidebarHoverOverlayPresented = false
+    @State private var isSidebarHoverOverlayChromeVisible = false
+    @State private var preservesSidebarHoverOverlayDuringFullscreenTransition = false
+    @State private var isSidebarHoverOverlayPointerSyncSuspended = false
+    @State private var isSidebarRevealEdgeHovered = false
+    @State private var sidebarRevealHoverTaskID = 0
+    @State private var currentURLRowWindowFrame: CGRect?
+    @StateObject private var tooltipCoordinator = BrowserTooltipCoordinator()
+
     private var sidebarLayoutWidth: CGFloat {
         model.isSidebarVisible ? model.sidebarWidth : 0
     }
@@ -409,6 +428,29 @@ struct BrowserRootView: View {
         browserContentTopInset
     }
 
+    private var usesDetachedBrowserOverlays: Bool {
+        false
+    }
+
+    private var sidebarSnapshot: BrowserSidebarSnapshot {
+        BrowserSidebarSnapshot(
+            spaces: model.spaces,
+            selectedSpaceID: model.selectedSpaceID,
+            activeSpace: model.activeSpace,
+            isActiveSpacePinnedSectionCollapsed: model.isActiveSpacePinnedSectionCollapsed,
+            allTabs: model.tabs,
+            appTabs: model.appTabs,
+            spacePinnedTabs: model.spacePinnedTabs,
+            temporaryTabs: model.temporaryTabs,
+            selectedTabID: model.selectedTabID,
+            archivableTabIDs: Set((model.spacePinnedTabs + model.temporaryTabs).dropLast().map(\.id)),
+            canGoBack: model.canGoBack,
+            canGoForward: model.canGoForward,
+            canStopLoading: model.canStopLoading,
+            canReload: model.canReload
+        )
+    }
+
     private func browserContentWidth(in windowSize: CGSize) -> CGFloat {
         max(windowSize.width - browserContentMinX - browserContentTrailingInset, 0)
     }
@@ -432,10 +474,6 @@ struct BrowserRootView: View {
             width: model.sidebarWidth,
             height: sidebarHeight(in: windowSize)
         )
-    }
-
-    private var usesDetachedBrowserOverlays: Bool {
-        false
     }
 
     private func handleSidebarRevealEdgeHoverChange(_ hovering: Bool) {
@@ -595,24 +633,5 @@ struct BrowserRootView: View {
         }
 
         isSidebarHoverOverlayPointerSyncSuspended = false
-    }
-
-    private var sidebarSnapshot: BrowserSidebarSnapshot {
-        BrowserSidebarSnapshot(
-            spaces: model.spaces,
-            selectedSpaceID: model.selectedSpaceID,
-            activeSpace: model.activeSpace,
-            isActiveSpacePinnedSectionCollapsed: model.isActiveSpacePinnedSectionCollapsed,
-            allTabs: model.tabs,
-            appTabs: model.appTabs,
-            spacePinnedTabs: model.spacePinnedTabs,
-            temporaryTabs: model.temporaryTabs,
-            selectedTabID: model.selectedTabID,
-            archivableTabIDs: Set((model.spacePinnedTabs + model.temporaryTabs).dropLast().map(\.id)),
-            canGoBack: model.canGoBack,
-            canGoForward: model.canGoForward,
-            canStopLoading: model.canStopLoading,
-            canReload: model.canReload
-        )
     }
 }

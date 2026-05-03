@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSpaceIconCatalog
+
 enum BrowserSpaceIconCatalog {
     static let systemImageNames = [
         "square.grid.2x2",
@@ -18,7 +20,12 @@ enum BrowserSpaceIconCatalog {
         "heart",
     ]
 }
+
+// MARK: - BrowserSidebarSpaceHeaderRow
+
 struct BrowserSidebarSpaceHeaderRow: View {
+    // MARK: Internal
+
     let space: BrowserChromeModel.Space
     let isRenaming: Bool
     let isCollapsed: Bool
@@ -34,6 +41,30 @@ struct BrowserSidebarSpaceHeaderRow: View {
     @State var isMenuHovered = false
     @State var isRowPressed = false
     @State var draftTitle = ""
+
+    var leadingSystemImageName: String {
+        isShowingDisclosure ? "chevron.right" : space.systemImageName
+    }
+
+    var leadingSymbolColor: Color {
+        isShowingDisclosure ? BrowserChromePalette.secondaryText : BrowserChromePalette.primaryText
+    }
+
+    var leadingSymbolRotation: Angle {
+        isShowingDisclosure && !isCollapsed ? .degrees(90) : .zero
+    }
+
+    var isShowingDisclosure: Bool {
+        isRowHovered && !isRenaming
+    }
+
+    var menuButtonReservedWidth: CGFloat {
+        BrowserChromeLayout.sidebarCloseButtonSize + BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
+    }
+
+    var showsMenuButton: Bool {
+        isRowHovered && !isRenaming
+    }
 
     var body: some View {
         rowInteractionSurface
@@ -192,8 +223,7 @@ struct BrowserSidebarSpaceHeaderRow: View {
         )
     }
 
-    @ViewBuilder
-    var menuItems: some View {
+    @ViewBuilder var menuItems: some View {
         Button(BrowserStrings.spaceRenameAction, action: beginRename)
         Menu(BrowserStrings.spaceChangeIconAction) {
             ForEach(BrowserSpaceIconCatalog.systemImageNames, id: \.self) { systemImageName in
@@ -209,34 +239,12 @@ struct BrowserSidebarSpaceHeaderRow: View {
         }
     }
 
-    var leadingSystemImageName: String {
-        isShowingDisclosure ? "chevron.right" : space.systemImageName
-    }
-
-    var leadingSymbolColor: Color {
-        isShowingDisclosure ? BrowserChromePalette.secondaryText : BrowserChromePalette.primaryText
-    }
-
-    var leadingSymbolRotation: Angle {
-        isShowingDisclosure && !isCollapsed ? .degrees(90) : .zero
-    }
-
-    var isShowingDisclosure: Bool {
-        isRowHovered && !isRenaming
-    }
-
-    var menuButtonReservedWidth: CGFloat {
-        BrowserChromeLayout.sidebarCloseButtonSize + BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
-    }
-
-    var showsMenuButton: Bool {
-        isRowHovered && !isRenaming
-    }
-
     var backgroundShape: some View {
         RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
             .fill(isRowHovered ? BrowserChromePalette.rowHover : Color.clear)
     }
+
+    // MARK: Private
 
     private func beginRename() {
         draftTitle = space.title
@@ -266,12 +274,19 @@ struct BrowserSidebarSpaceHeaderRow: View {
         draftTitle = space.title
     }
 }
+
+// MARK: - BrowserSidebarSpacesBar
+
 struct BrowserSidebarSpacesBar: View {
     let spaces: [BrowserChromeModel.Space]
     let selectedSpaceID: String?
     let isSidebarResizing: Bool
     let onSelectSpace: (String) -> Void
     let onCreateSpace: () -> Void
+
+    var sideReserveWidth: CGFloat {
+        BrowserChromeLayout.chromeButtonSize + BrowserChromeLayout.chromeButtonSpacing
+    }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -315,11 +330,10 @@ struct BrowserSidebarSpacesBar: View {
         .frame(height: BrowserChromeLayout.chromeButtonSize)
         .allowsHitTesting(!isSidebarResizing)
     }
-
-    var sideReserveWidth: CGFloat {
-        BrowserChromeLayout.chromeButtonSize + BrowserChromeLayout.chromeButtonSpacing
-    }
 }
+
+// MARK: - BrowserSidebarSpaceBarButton
+
 struct BrowserSidebarSpaceBarButton: View {
     let space: BrowserChromeModel.Space
     let shortcut: BrowserKeyboardShortcut?
@@ -338,6 +352,9 @@ struct BrowserSidebarSpaceBarButton: View {
         )
     }
 }
+
+// MARK: - BrowserSidebarCreateSpaceButton
+
 struct BrowserSidebarCreateSpaceButton: View {
     let onCreate: () -> Void
 

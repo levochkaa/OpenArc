@@ -2,7 +2,11 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSidebarRow
+
 struct BrowserSidebarRow: View {
+    // MARK: Internal
+
     let tab: BrowserChromeModel.Tab
     let copyLinkDescriptor: BrowserCommandDescriptor
     let archiveTabDescriptor: BrowserCommandDescriptor
@@ -23,6 +27,26 @@ struct BrowserSidebarRow: View {
     @State var isCloseHovered = false
     @State var isRowPressed = false
     @State var draftTitle = ""
+
+    var closeButtonBackgroundColor: Color {
+        isCloseHovered ? BrowserChromePalette.rowCloseHover : .clear
+    }
+
+    var closeButtonReservedWidth: CGFloat {
+        BrowserChromeLayout.sidebarCloseButtonSize + BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
+    }
+
+    var showsCloseButton: Bool {
+        isRowHovered && !isRenaming
+    }
+
+    var sharingItems: [Any] {
+        if let pageURL = tab.pageURL {
+            return [pageURL]
+        }
+
+        return [NSString(string: tab.urlString)]
+    }
 
     var body: some View {
         rowInteractionSurface
@@ -165,18 +189,6 @@ struct BrowserSidebarRow: View {
         .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
     }
 
-    var closeButtonBackgroundColor: Color {
-        isCloseHovered ? BrowserChromePalette.rowCloseHover : .clear
-    }
-
-    var closeButtonReservedWidth: CGFloat {
-        BrowserChromeLayout.sidebarCloseButtonSize + BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
-    }
-
-    var showsCloseButton: Bool {
-        isRowHovered && !isRenaming
-    }
-
     var closeButtonOverlay: some View {
         ZStack(alignment: .trailing) {
             Button(action: onClose) {
@@ -228,6 +240,47 @@ struct BrowserSidebarRow: View {
             )
     }
 
+    @ViewBuilder var copyLinkMenuItem: some View {
+        if isSelected {
+            Button(copyLinkDescriptor.menuTitle, action: onCopyLink)
+                .browserKeyboardShortcut(copyLinkDescriptor.shortcut)
+        } else {
+            Button(copyLinkDescriptor.menuTitle, action: onCopyLink)
+        }
+    }
+
+    @ViewBuilder var archiveTabMenuItem: some View {
+        if isSelected {
+            Button(archiveTabDescriptor.menuTitle, role: .destructive, action: onClose)
+                .browserKeyboardShortcut(archiveTabDescriptor.shortcut)
+        } else {
+            Button(archiveTabDescriptor.menuTitle, role: .destructive, action: onClose)
+        }
+    }
+
+    @ViewBuilder var shareMenuItem: some View {
+        let sharingServices = BrowserShareMenuServiceProvider.sharingServices(for: sharingItems)
+
+        if !sharingServices.isEmpty {
+            Menu(BrowserStrings.tabShareAction) {
+                ForEach(Array(sharingServices.enumerated()), id: \.offset) { _, service in
+                    Button {
+                        service.subject = tab.displayTitle
+                        service.perform(withItems: sharingItems)
+                    } label: {
+                        Label {
+                            Text(service.menuItemTitle)
+                        } icon: {
+                            Image(nsImage: service.image)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Private
+
     private func beginRename() {
         draftTitle = tab.userTitleOverride ?? tab.displayTitle
         onBeginRename()
@@ -255,58 +308,13 @@ struct BrowserSidebarRow: View {
 
         draftTitle = tab.userTitleOverride ?? tab.displayTitle
     }
-
-    @ViewBuilder
-    var copyLinkMenuItem: some View {
-        if isSelected {
-            Button(copyLinkDescriptor.menuTitle, action: onCopyLink)
-                .browserKeyboardShortcut(copyLinkDescriptor.shortcut)
-        } else {
-            Button(copyLinkDescriptor.menuTitle, action: onCopyLink)
-        }
-    }
-
-    @ViewBuilder
-    var archiveTabMenuItem: some View {
-        if isSelected {
-            Button(archiveTabDescriptor.menuTitle, role: .destructive, action: onClose)
-                .browserKeyboardShortcut(archiveTabDescriptor.shortcut)
-        } else {
-            Button(archiveTabDescriptor.menuTitle, role: .destructive, action: onClose)
-        }
-    }
-
-    @ViewBuilder
-    var shareMenuItem: some View {
-        let sharingServices = BrowserShareMenuServiceProvider.sharingServices(for: sharingItems)
-
-        if !sharingServices.isEmpty {
-            Menu(BrowserStrings.tabShareAction) {
-                ForEach(Array(sharingServices.enumerated()), id: \.offset) { _, service in
-                    Button {
-                        service.subject = tab.displayTitle
-                        service.perform(withItems: sharingItems)
-                    } label: {
-                        Label {
-                            Text(service.menuItemTitle)
-                        } icon: {
-                            Image(nsImage: service.image)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    var sharingItems: [Any] {
-        if let pageURL = tab.pageURL {
-            return [pageURL]
-        }
-
-        return [NSString(string: tab.urlString)]
-    }
 }
+
+// MARK: - BrowserShareMenuServiceProvider
+
 enum BrowserShareMenuServiceProvider {
+    // MARK: Internal
+
     static func sharingServices(for items: [Any]) -> [NSSharingService] {
         let readingListMenuTitle = NSSharingService(named: .addToSafariReadingList)?.menuItemTitle
 
@@ -318,6 +326,8 @@ enum BrowserShareMenuServiceProvider {
             return service.menuItemTitle != readingListMenuTitle
         }
     }
+
+    // MARK: Private
 
     private static func legacySharingServices(for items: [Any]) -> [NSSharingService] {
         let selector = NSSelectorFromString("sharingServicesForItems:")

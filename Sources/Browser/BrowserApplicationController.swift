@@ -2,7 +2,26 @@ import AppKit
 import Combine
 import SwiftUI
 
+// MARK: - BrowserWindowContentContainerView
+
 private final class BrowserWindowContentContainerView: NSView {
+    // MARK: Lifecycle
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        updateCornerRadius()
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    // MARK: Internal
+
     static let defaultCornerRadius: CGFloat = BrowserWindowGeometry.windowCornerRadius
 
     var cornerRadius: CGFloat = defaultCornerRadius {
@@ -15,26 +34,18 @@ private final class BrowserWindowContentContainerView: NSView {
         }
     }
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        updateCornerRadius()
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+    // MARK: Private
 
     private func updateCornerRadius() {
         layer?.cornerRadius = cornerRadius
     }
 }
 
+// MARK: - BrowserMainWindow
+
 private final class BrowserMainWindow: NSWindow {
+    // MARK: Internal
+
     override var canBecomeKey: Bool {
         true
     }
@@ -63,33 +74,25 @@ private final class BrowserMainWindow: NSWindow {
         updateWindowShape()
     }
 
+    // MARK: Private
+
     private func updateWindowShape() {
         guard let containerView = contentView as? BrowserWindowContentContainerView else {
             return
         }
 
-        containerView.cornerRadius = styleMask.contains(.fullScreen) ? 0 : BrowserWindowContentContainerView.defaultCornerRadius
+        containerView.cornerRadius = styleMask.contains(.fullScreen)
+            ? 0
+            : BrowserWindowContentContainerView.defaultCornerRadius
     }
 }
 
+// MARK: - BrowserApplicationController
+
 @objcMembers
-@MainActor
-public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate, NSUserInterfaceValidations {
-    private var window: NSWindow?
-    private var aboutWindow: NSWindow?
-    private var settingsWindow: NSWindow?
-    private var chromeModel: BrowserChromeModel?
-    private let userPreferencesStore = BrowserUserPreferencesStore()
-    private let shortcutStore = BrowserShortcutStore()
-    private let defaultBrowserService = BrowserDefaultBrowserService()
-    private weak var setAsDefaultBrowserMenuItem: NSMenuItem?
-    private var pendingNavigationURLs: [URL] = []
-    private var hasReceivedBrowserContext = false
-    private var isTerminationRequested = false
-    private var isQuitWarningPresented = false
-    private var didConfirmTerminationWarning = false
-    private var layoutIndependentKeyMonitor: Any?
-    private var shortcutStoreCancellable: AnyCancellable?
+@MainActor public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate,
+NSUserInterfaceValidations {
+    // MARK: Lifecycle
 
     deinit {
         guard let layoutIndependentKeyMonitor else {
@@ -98,6 +101,8 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
 
         NSEvent.removeMonitor(layoutIndependentKeyMonitor)
     }
+
+    // MARK: Public
 
     public func createApplication() {
         let app = NSApplication.shared
@@ -180,20 +185,6 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         beginApplicationTermination()
     }
 
-    private func beginApplicationTermination() {
-        isTerminationRequested = true
-        handleApplicationWillTerminate()
-        window?.orderOut(nil)
-        DispatchQueue.main.async {
-            if BrowserHasOpenBrowsers() != 0 {
-                BrowserCloseAllBrowsers()
-                return
-            }
-
-            NSApp.stop(nil)
-        }
-    }
-
     public func toggleSidebar(_: Any?) {
         chromeModel?.toggleSidebar()
     }
@@ -274,7 +265,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             return chromeModel?.canGoBack ?? false
         case #selector(goForward(_:)):
             return chromeModel?.canGoForward ?? false
-        case #selector(reloadCurrentTab(_:)), #selector(forceReloadCurrentTab(_:)):
+        case #selector(forceReloadCurrentTab(_:)), #selector(reloadCurrentTab(_:)):
             return chromeModel?.canReload ?? false
         case #selector(saveCurrentPage(_:)):
             return chromeModel?.canSavePage ?? false
@@ -288,7 +279,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             return chromeModel?.canPresentFindInPage ?? false
         case #selector(findNextInPage(_:)), #selector(findPreviousInPage(_:)):
             return chromeModel?.canStepThroughFindMatches ?? false
-        case #selector(findAndReplace(_:)), #selector(useSelectionToFind(_:)), #selector(jumpToSelection(_:)):
+        case #selector(findAndReplace(_:)), #selector(jumpToSelection(_:)), #selector(useSelectionToFind(_:)):
             return false
         case #selector(clearTemporaryTabs(_:)):
             return chromeModel?.canClearTemporaryTabs ?? false
@@ -296,6 +287,49 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
             return updateSetAsDefaultBrowserMenuItem(item as? NSMenuItem)
         default:
             return true
+        }
+    }
+
+    // MARK: Private
+
+    private var window: NSWindow?
+    private var aboutWindow: NSWindow?
+    private var settingsWindow: NSWindow?
+    private var chromeModel: BrowserChromeModel?
+    private let userPreferencesStore = BrowserUserPreferencesStore()
+    private let shortcutStore = BrowserShortcutStore()
+    private let defaultBrowserService = BrowserDefaultBrowserService()
+    private weak var setAsDefaultBrowserMenuItem: NSMenuItem?
+    private var pendingNavigationURLs = [URL]()
+    private var hasReceivedBrowserContext = false
+    private var isTerminationRequested = false
+    private var isQuitWarningPresented = false
+    private var didConfirmTerminationWarning = false
+    private var layoutIndependentKeyMonitor: Any?
+    private var shortcutStoreCancellable: AnyCancellable?
+
+    private var shouldPresentQuitWarning: Bool {
+        guard !didConfirmTerminationWarning, !isQuitWarningPresented else {
+            return false
+        }
+
+        return BrowserQuitWarningPolicy(
+            warnsBeforeQuitting: userPreferencesStore.warnBeforeQuitting,
+            openTabCount: chromeModel?.tabs.count ?? 0
+        ).shouldWarn
+    }
+
+    private func beginApplicationTermination() {
+        isTerminationRequested = true
+        handleApplicationWillTerminate()
+        window?.orderOut(nil)
+        DispatchQueue.main.async {
+            if BrowserHasOpenBrowsers() != 0 {
+                BrowserCloseAllBrowsers()
+                return
+            }
+
+            NSApp.stop(nil)
         }
     }
 
@@ -741,17 +775,6 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         return chromeModel?.pasteAndMatchStyleCurrentTab() ?? false
     }
 
-    private var shouldPresentQuitWarning: Bool {
-        guard !didConfirmTerminationWarning, !isQuitWarningPresented else {
-            return false
-        }
-
-        return BrowserQuitWarningPolicy(
-            warnsBeforeQuitting: userPreferencesStore.warnBeforeQuitting,
-            openTabCount: chromeModel?.tabs.count ?? 0
-        ).shouldWarn
-    }
-
     private func presentQuitWarning(_ sender: Any?) {
         isQuitWarningPresented = true
 
@@ -994,8 +1017,7 @@ public final class BrowserApplicationController: NSObject, NSApplicationDelegate
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    @discardableResult
-    private func updateSetAsDefaultBrowserMenuItem(_ item: NSMenuItem?) -> Bool {
+    @discardableResult private func updateSetAsDefaultBrowserMenuItem(_ item: NSMenuItem?) -> Bool {
         let isDefaultBrowser = defaultBrowserService.isDefaultBrowser
         item?.state = isDefaultBrowser ? .on : .off
         return !isDefaultBrowser

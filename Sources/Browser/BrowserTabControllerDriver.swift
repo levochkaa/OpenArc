@@ -1,8 +1,24 @@
 import AppKit
 import Foundation
 
-@MainActor
-final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
+// MARK: - BrowserTabControllerDriver
+
+@MainActor final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
+    // MARK: Lifecycle
+
+    init(hostView: BrowserTabHostView) {
+        self.browserHostView = hostView
+        self.controller = BrowserTabController(hostView: hostView)
+        super.init()
+        controller.delegate = self
+    }
+
+    override convenience init() {
+        self.init(hostView: BrowserTabHostView(frame: .zero))
+    }
+
+    // MARK: Internal
+
     var onTabCreated: ((String, String, String) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabClosed: ((String) -> Void)?
@@ -12,20 +28,6 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
 
     var hostView: NSView {
         browserHostView
-    }
-
-    private let browserHostView: BrowserTabHostView
-    private let controller: BrowserTabController
-
-    init(hostView: BrowserTabHostView) {
-        browserHostView = hostView
-        controller = BrowserTabController(hostView: hostView)
-        super.init()
-        controller.delegate = self
-    }
-
-    override convenience init() {
-        self.init(hostView: BrowserTabHostView(frame: .zero))
     }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {
@@ -92,7 +94,14 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
     func closeTab(withID tabID: String, forceClose: Bool) {
         controller.closeTab(withID: tabID, forceClose: forceClose)
     }
+
+    // MARK: Private
+
+    private let browserHostView: BrowserTabHostView
+    private let controller: BrowserTabController
 }
+
+// MARK: BrowserTabControllerDelegate
 
 extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(

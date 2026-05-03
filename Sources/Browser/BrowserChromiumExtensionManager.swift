@@ -1,7 +1,10 @@
 import Foundation
 
-@MainActor
-final class BrowserChromiumExtensionManager: BrowserExtensionManaging {
+// MARK: - BrowserChromiumExtensionManager
+
+@MainActor final class BrowserChromiumExtensionManager: BrowserExtensionManaging {
+    // MARK: Internal
+
     func installedExtensions() -> [BrowserExtension] {
         if let extensions = installedExtensionsFromBridge(), !extensions.isEmpty {
             return extensions
@@ -23,6 +26,8 @@ final class BrowserChromiumExtensionManager: BrowserExtensionManaging {
     func removeExtension(id: String) -> Bool {
         BrowserRemoveExtension(id)
     }
+
+    // MARK: Private
 
     private func installedExtensionsFromBridge() -> [BrowserExtension]? {
         guard
@@ -49,6 +54,8 @@ final class BrowserChromiumExtensionManager: BrowserExtensionManaging {
         ]
     }
 }
+
+// MARK: - BrowserChromiumExtensionPayload
 
 private struct BrowserChromiumExtensionPayload: Decodable {
     let id: String

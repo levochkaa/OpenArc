@@ -1,9 +1,13 @@
 import CoreGraphics
 
+// MARK: - BrowserSidebarTabSection
+
 enum BrowserSidebarTabSection: Equatable {
     case app
     case spacePinned
     case temporary
+
+    // MARK: Internal
 
     var placement: BrowserTabPlacement {
         switch self {
@@ -28,24 +32,28 @@ enum BrowserSidebarTabSection: Equatable {
     }
 }
 
+// MARK: - BrowserSidebarTabDropTarget
+
 struct BrowserSidebarTabDropTarget: Equatable {
-    let section: BrowserSidebarTabSection
-    let sectionIndex: Int
-    let spaceID: String?
+    // MARK: Lifecycle
 
     init(section: BrowserSidebarTabSection, sectionIndex: Int, spaceID: String? = nil) {
         self.section = section
         self.sectionIndex = sectionIndex
         self.spaceID = spaceID
     }
-}
 
-struct BrowserSidebarTabRowFrame: Equatable {
-    let tabID: String
+    // MARK: Internal
+
     let section: BrowserSidebarTabSection
     let sectionIndex: Int
     let spaceID: String?
-    let frame: CGRect
+}
+
+// MARK: - BrowserSidebarTabRowFrame
+
+struct BrowserSidebarTabRowFrame: Equatable {
+    // MARK: Lifecycle
 
     init(
         tabID: String,
@@ -60,7 +68,17 @@ struct BrowserSidebarTabRowFrame: Equatable {
         self.spaceID = spaceID
         self.frame = frame
     }
+
+    // MARK: Internal
+
+    let tabID: String
+    let section: BrowserSidebarTabSection
+    let sectionIndex: Int
+    let spaceID: String?
+    let frame: CGRect
 }
+
+// MARK: - BrowserSidebarAppTabFrame
 
 struct BrowserSidebarAppTabFrame: Equatable {
     let tabID: String
@@ -68,10 +86,10 @@ struct BrowserSidebarAppTabFrame: Equatable {
     let frame: CGRect
 }
 
+// MARK: - BrowserSidebarEmptySectionFrame
+
 struct BrowserSidebarEmptySectionFrame: Equatable {
-    let section: BrowserSidebarTabSection
-    let spaceID: String?
-    let frame: CGRect
+    // MARK: Lifecycle
 
     init(section: BrowserSidebarTabSection, spaceID: String? = nil, frame: CGRect) {
         self.section = section
@@ -79,12 +97,22 @@ struct BrowserSidebarEmptySectionFrame: Equatable {
         self.frame = frame
     }
 
+    // MARK: Internal
+
+    let section: BrowserSidebarTabSection
+    let spaceID: String?
+    let frame: CGRect
+
     var target: BrowserSidebarTabDropTarget {
         BrowserSidebarTabDropTarget(section: section, sectionIndex: 0, spaceID: spaceID)
     }
 }
 
+// MARK: - BrowserSidebarAppTabGridLayout
+
 struct BrowserSidebarAppTabGridLayout: Equatable {
+    // MARK: Internal
+
     static let maxColumns = 4
     static let maxRows = 2
     static let capacity = maxColumns * maxRows
@@ -99,7 +127,7 @@ struct BrowserSidebarAppTabGridLayout: Equatable {
 
         let availableWidth = max(availableWidth, 0)
         let baseTileSide = tileSide(availableWidth: availableWidth)
-        var frames: [CGRect] = []
+        var frames = [CGRect]()
         frames.reserveCapacity(count)
 
         var remainingCount = count
@@ -109,7 +137,7 @@ struct BrowserSidebarAppTabGridLayout: Equatable {
             let itemWidth = tileWidth(rowItemCount: rowItemCount, availableWidth: availableWidth)
             let y = CGFloat(rowIndex) * (baseTileSide + spacing)
 
-            for columnIndex in 0 ..< rowItemCount {
+            for columnIndex in 0..<rowItemCount {
                 frames.append(
                     CGRect(
                         x: CGFloat(columnIndex) * (itemWidth + spacing),
@@ -137,6 +165,8 @@ struct BrowserSidebarAppTabGridLayout: Equatable {
         return CGFloat(rowCount) * baseTileSide + CGFloat(rowCount - 1) * spacing
     }
 
+    // MARK: Private
+
     private func tileSide(availableWidth: CGFloat) -> CGFloat {
         max((availableWidth - CGFloat(Self.maxColumns - 1) * spacing) / CGFloat(Self.maxColumns), 0)
     }
@@ -154,7 +184,11 @@ struct BrowserSidebarAppTabGridLayout: Equatable {
     }
 }
 
+// MARK: - BrowserSidebarTabFrameSynchronizer
+
 enum BrowserSidebarTabFrameSynchronizer {
+    // MARK: Internal
+
     static func synchronizedRowFrames(
         _ rowFrames: [String: BrowserSidebarTabRowFrame],
         spacePinnedTabIDs: [String],
@@ -253,12 +287,14 @@ enum BrowserSidebarTabFrameSynchronizer {
         }
     }
 
+    // MARK: Private
+
     private static func expectedRowLocations(
         spacePinnedTabIDs: [String],
         temporaryTabIDs: [String],
         spaceID: String?
     ) -> [String: BrowserSidebarTabDropTarget] {
-        var locations: [String: BrowserSidebarTabDropTarget] = [:]
+        var locations = [String: BrowserSidebarTabDropTarget]()
 
         for (index, tabID) in spacePinnedTabIDs.enumerated() {
             locations[tabID] = BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: index, spaceID: spaceID)
@@ -319,7 +355,7 @@ enum BrowserSidebarTabFrameSynchronizer {
         }
 
         let candidateRowFrames = tabIDs.flatMap { tabID in
-            [rowFrames[tabID]].compactMap { $0 } + fallbackRowFrames.filter {
+            [rowFrames[tabID]].compactMap(\.self) + fallbackRowFrames.filter {
                 $0.tabID == tabID && $0.spaceID == spaceID
             }
         }
@@ -423,10 +459,14 @@ enum BrowserSidebarTabFrameSynchronizer {
     }
 }
 
+// MARK: - BrowserSidebarTabDropFrameAnchor
+
 private struct BrowserSidebarTabDropFrameAnchor {
     let sectionIndex: Int
     let frame: CGRect
 }
+
+// MARK: - BrowserSidebarAppTabFrameSynchronizer
 
 enum BrowserSidebarAppTabFrameSynchronizer {
     static func synchronizedFrames(
@@ -483,26 +523,26 @@ enum BrowserSidebarAppTabFrameSynchronizer {
     }
 }
 
+// MARK: - BrowserSidebarTabDragPreviewState
+
 struct BrowserSidebarTabDragPreviewState: Equatable {
-    let tabID: String
-    var size: CGSize
-    private let pointerOffsetFromCenterUnit: CGSize
-    var location: CGPoint
+    // MARK: Lifecycle
 
     init(tabID: String, sourceFrame: CGRect, location: CGPoint) {
         self.tabID = tabID
-        size = sourceFrame.size
-        pointerOffsetFromCenterUnit = CGSize(
+        self.size = sourceFrame.size
+        self.pointerOffsetFromCenterUnit = CGSize(
             width: sourceFrame.width > 0 ? (location.x - sourceFrame.midX) / sourceFrame.width : 0,
             height: sourceFrame.height > 0 ? (location.y - sourceFrame.midY) / sourceFrame.height : 0
         )
         self.location = location
     }
 
-    mutating func update(location: CGPoint, size: CGSize) {
-        self.location = location
-        self.size = size
-    }
+    // MARK: Internal
+
+    let tabID: String
+    var size: CGSize
+    var location: CGPoint
 
     var center: CGPoint {
         CGPoint(
@@ -510,9 +550,22 @@ struct BrowserSidebarTabDragPreviewState: Equatable {
             y: location.y - pointerOffsetFromCenterUnit.height * size.height
         )
     }
+
+    mutating func update(location: CGPoint, size: CGSize) {
+        self.location = location
+        self.size = size
+    }
+
+    // MARK: Private
+
+    private let pointerOffsetFromCenterUnit: CGSize
 }
 
+// MARK: - BrowserSidebarTabDragTargetResolver
+
 struct BrowserSidebarTabDragTargetResolver {
+    // MARK: Internal
+
     let verticalSnapDistance: CGFloat
     let horizontalTolerance: CGFloat
 
@@ -596,6 +649,8 @@ struct BrowserSidebarTabDragTargetResolver {
         return bestCandidate?.target
     }
 
+    // MARK: Private
+
     private func makeAppTabCandidate(
         for appTabFrame: BrowserSidebarAppTabFrame,
         location: CGPoint
@@ -645,27 +700,33 @@ struct BrowserSidebarTabDragTargetResolver {
     }
 
     private func distanceFrom(_ location: CGPoint, to frame: CGRect) -> CGFloat {
-        let dx = if location.x < frame.minX {
-            frame.minX - location.x
-        } else if location.x > frame.maxX {
-            location.x - frame.maxX
-        } else {
-            CGFloat(0)
-        }
+        let dx =
+            if location.x < frame.minX {
+                frame.minX - location.x
+            } else if location.x > frame.maxX {
+                location.x - frame.maxX
+            } else {
+                CGFloat(0)
+            }
 
-        let dy = if location.y < frame.minY {
-            frame.minY - location.y
-        } else if location.y > frame.maxY {
-            location.y - frame.maxY
-        } else {
-            CGFloat(0)
-        }
+        let dy =
+            if location.y < frame.minY {
+                frame.minY - location.y
+            } else if location.y > frame.maxY {
+                location.y - frame.maxY
+            } else {
+                CGFloat(0)
+            }
 
         return hypot(dx, dy)
     }
 }
 
+// MARK: - BrowserSidebarTabDropIndicatorFrameResolver
+
 struct BrowserSidebarTabDropIndicatorFrameResolver {
+    // MARK: Internal
+
     func frame(
         for target: BrowserSidebarTabDropTarget?,
         rowFrames: [BrowserSidebarTabRowFrame],
@@ -720,6 +781,8 @@ struct BrowserSidebarTabDropIndicatorFrameResolver {
         return nil
     }
 
+    // MARK: Private
+
     private func indicatorFrame(
         alignedTo frame: CGRect,
         yPosition: CGFloat,
@@ -734,6 +797,8 @@ struct BrowserSidebarTabDropIndicatorFrameResolver {
         )
     }
 }
+
+// MARK: - BrowserSidebarTabDropCandidate
 
 private struct BrowserSidebarTabDropCandidate {
     let target: BrowserSidebarTabDropTarget

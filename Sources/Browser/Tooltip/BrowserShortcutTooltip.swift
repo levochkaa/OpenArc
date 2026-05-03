@@ -2,10 +2,15 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserTooltipPlacement
+
 enum BrowserTooltipPlacement {
     case belowLeading
     case aboveCapsule
 }
+
+// MARK: - BrowserShortcutTooltipModifier
+
 struct BrowserShortcutTooltipModifier: ViewModifier {
     @EnvironmentObject var tooltipCoordinator: BrowserTooltipCoordinator
 
@@ -48,6 +53,7 @@ struct BrowserShortcutTooltipModifier: ViewModifier {
             }
     }
 }
+
 extension View {
     func browserTooltip(
         title: String,
@@ -67,6 +73,9 @@ extension View {
         )
     }
 }
+
+// MARK: - BrowserTooltipPreferenceEntry
+
 struct BrowserTooltipPreferenceEntry {
     let id: UUID
     let bounds: Anchor<CGRect>
@@ -75,13 +84,19 @@ struct BrowserTooltipPreferenceEntry {
     let shortcut: BrowserKeyboardShortcut?
     let placement: BrowserTooltipPlacement
 }
+
+// MARK: - BrowserTooltipPreferenceKey
+
 struct BrowserTooltipPreferenceKey: PreferenceKey {
-    static var defaultValue: [BrowserTooltipPreferenceEntry] = []
+    static var defaultValue = [BrowserTooltipPreferenceEntry]()
 
     static func reduce(value: inout [BrowserTooltipPreferenceEntry], nextValue: () -> [BrowserTooltipPreferenceEntry]) {
         value.append(contentsOf: nextValue())
     }
 }
+
+// MARK: - BrowserResolvedTooltipEntry
+
 struct BrowserResolvedTooltipEntry {
     let id: UUID
     let sourceFrame: CGRect
@@ -90,7 +105,12 @@ struct BrowserResolvedTooltipEntry {
     let shortcut: BrowserKeyboardShortcut?
     let placement: BrowserTooltipPlacement
 }
+
+// MARK: - BrowserTooltipOverlay
+
 struct BrowserTooltipOverlay: View {
+    // MARK: Internal
+
     let entries: [BrowserResolvedTooltipEntry]
 
     var body: some View {
@@ -113,6 +133,8 @@ struct BrowserTooltipOverlay: View {
         .animation(.easeOut(duration: 0.14), value: entries.map(\.id))
     }
 
+    // MARK: Private
+
     private func transition(for placement: BrowserTooltipPlacement) -> AnyTransition {
         switch placement {
         case .belowLeading:
@@ -122,6 +144,9 @@ struct BrowserTooltipOverlay: View {
         }
     }
 }
+
+// MARK: - BrowserTooltipPlacementModifier
+
 struct BrowserTooltipPlacementModifier: ViewModifier {
     let entry: BrowserResolvedTooltipEntry
 
@@ -137,16 +162,32 @@ struct BrowserTooltipPlacementModifier: ViewModifier {
         case .aboveCapsule:
             content.position(
                 x: entry.sourceFrame.midX,
-                y: entry.sourceFrame.minY - BrowserChromeLayout.tooltipVerticalGap - BrowserChromeLayout.tooltipKeyHeight
+                y: entry.sourceFrame.minY - BrowserChromeLayout.tooltipVerticalGap - BrowserChromeLayout
+                    .tooltipKeyHeight
             )
         }
     }
 }
+
+// MARK: - BrowserShortcutTooltip
+
 struct BrowserShortcutTooltip: View {
     let title: String
     let caption: String?
     let shortcut: BrowserKeyboardShortcut?
     let placement: BrowserTooltipPlacement
+
+    var tooltipCornerShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            cornerRadii: RectangleCornerRadii(
+                topLeading: 0,
+                bottomLeading: BrowserChromeLayout.tooltipCornerRadius,
+                bottomTrailing: BrowserChromeLayout.tooltipCornerRadius,
+                topTrailing: BrowserChromeLayout.tooltipCornerRadius
+            ),
+            style: .continuous
+        )
+    }
 
     var body: some View {
         HStack(spacing: BrowserChromeLayout.tooltipContentSpacing) {
@@ -204,19 +245,10 @@ struct BrowserShortcutTooltip: View {
             }
         }
     }
-
-    var tooltipCornerShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            cornerRadii: RectangleCornerRadii(
-                topLeading: 0,
-                bottomLeading: BrowserChromeLayout.tooltipCornerRadius,
-                bottomTrailing: BrowserChromeLayout.tooltipCornerRadius,
-                topTrailing: BrowserChromeLayout.tooltipCornerRadius
-            ),
-            style: .continuous
-        )
-    }
 }
+
+// MARK: - BrowserShortcutKeyCapsView
+
 struct BrowserShortcutKeyCapsView: View {
     let shortcut: BrowserKeyboardShortcut
 
@@ -243,11 +275,13 @@ struct BrowserShortcutKeyCapsView: View {
         }
     }
 }
+
 extension View {
     func browserKeyboardShortcut(_ shortcut: BrowserKeyboardShortcut) -> some View {
         keyboardShortcut(shortcut.swiftUIKeyEquivalent, modifiers: shortcut.swiftUIModifiers)
     }
 }
+
 extension BrowserKeyboardShortcut {
     var swiftUIKeyEquivalent: KeyEquivalent {
         guard let keyEquivalent = keyEquivalent.first else {

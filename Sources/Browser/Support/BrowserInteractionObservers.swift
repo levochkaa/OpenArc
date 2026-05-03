@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSpaceSwipeObserver
+
 struct BrowserSpaceSwipeObserver: NSViewRepresentable {
     let canSwitchSpaces: Bool
     let onSwipeLeft: () -> Void
@@ -21,25 +23,31 @@ struct BrowserSpaceSwipeObserver: NSViewRepresentable {
         nsView.onSwipeRight = onSwipeRight
     }
 }
-final class BrowserSpaceSwipeNSView: NSView {
-    var canSwitchSpaces = false
-    var onSwipeLeft: () -> Void = {}
-    var onSwipeRight: () -> Void = {}
 
-    var localMonitor: Any?
+// MARK: - BrowserSpaceSwipeNSView
+
+final class BrowserSpaceSwipeNSView: NSView {
+    // MARK: Lifecycle
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
     deinit {
         removeLocalMonitor()
     }
+
+    // MARK: Internal
+
+    var canSwitchSpaces = false
+    var onSwipeLeft: () -> Void = {}
+    var onSwipeRight: () -> Void = {}
+
+    var localMonitor: Any?
 
     override func hitTest(_: NSPoint) -> NSView? {
         nil
@@ -54,6 +62,8 @@ final class BrowserSpaceSwipeNSView: NSView {
             installLocalMonitorIfNeeded()
         }
     }
+
+    // MARK: Private
 
     private func installLocalMonitorIfNeeded() {
         guard localMonitor == nil else {
@@ -91,9 +101,11 @@ final class BrowserSpaceSwipeNSView: NSView {
         self.localMonitor = nil
     }
 }
+
+// MARK: - BrowserPassthroughInteractionObserver
+
 struct BrowserPassthroughInteractionObserver: NSViewRepresentable {
-    let eventMask: NSEvent.EventTypeMask
-    let onInteraction: (NSEvent, NSView) -> Void
+    // MARK: Lifecycle
 
     init(
         eventMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown],
@@ -113,6 +125,11 @@ struct BrowserPassthroughInteractionObserver: NSViewRepresentable {
         self.onInteraction = onInteraction
     }
 
+    // MARK: Internal
+
+    let eventMask: NSEvent.EventTypeMask
+    let onInteraction: (NSEvent, NSView) -> Void
+
     func makeNSView(context _: Context) -> BrowserPassthroughInteractionNSView {
         let view = BrowserPassthroughInteractionNSView()
         view.eventMask = eventMask
@@ -125,7 +142,31 @@ struct BrowserPassthroughInteractionObserver: NSViewRepresentable {
         nsView.onInteraction = onInteraction
     }
 }
+
+// MARK: - BrowserPassthroughInteractionNSView
+
 final class BrowserPassthroughInteractionNSView: NSView {
+    // MARK: Lifecycle
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        postsFrameChangedNotifications = true
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        removeLocalMonitor()
+    }
+
+    // MARK: Internal
+
+    var onInteraction: (NSEvent, NSView) -> Void = { _, _ in }
+
+    var localMonitor: Any?
+
     var eventMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown] {
         didSet {
             guard eventMask != oldValue else {
@@ -134,24 +175,6 @@ final class BrowserPassthroughInteractionNSView: NSView {
 
             reinstallLocalMonitorIfNeeded()
         }
-    }
-
-    var onInteraction: (NSEvent, NSView) -> Void = { _, _ in }
-
-    var localMonitor: Any?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        postsFrameChangedNotifications = true
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    deinit {
-        removeLocalMonitor()
     }
 
     override func hitTest(_: NSPoint) -> NSView? {
@@ -167,6 +190,8 @@ final class BrowserPassthroughInteractionNSView: NSView {
             installLocalMonitorIfNeeded()
         }
     }
+
+    // MARK: Private
 
     private func reinstallLocalMonitorIfNeeded() {
         guard window != nil else {
@@ -211,6 +236,9 @@ final class BrowserPassthroughInteractionNSView: NSView {
         self.localMonitor = nil
     }
 }
+
+// MARK: - BrowserWindowFrameReader
+
 struct BrowserWindowFrameReader: NSViewRepresentable {
     let onFrameChange: (CGRect?) -> Void
 
@@ -225,20 +253,26 @@ struct BrowserWindowFrameReader: NSViewRepresentable {
         nsView.scheduleFrameUpdate()
     }
 }
-final class BrowserWindowFrameReaderNSView: NSView {
-    var onFrameChange: (CGRect?) -> Void = { _ in }
 
-    var lastFrameInWindow: CGRect?
+// MARK: - BrowserWindowFrameReaderNSView
+
+final class BrowserWindowFrameReaderNSView: NSView {
+    // MARK: Lifecycle
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         postsFrameChangedNotifications = true
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    // MARK: Internal
+
+    var onFrameChange: (CGRect?) -> Void = { _ in }
+
+    var lastFrameInWindow: CGRect?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -266,6 +300,8 @@ final class BrowserWindowFrameReaderNSView: NSView {
         }
     }
 
+    // MARK: Private
+
     private func sendFrameUpdateIfNeeded() {
         let frameInWindow = window.map { _ in convert(bounds, to: nil) }
         guard frameInWindow != lastFrameInWindow else {
@@ -276,10 +312,16 @@ final class BrowserWindowFrameReaderNSView: NSView {
         onFrameChange(frameInWindow)
     }
 }
+
+// MARK: - BrowserWindowFullscreenState
+
 struct BrowserWindowFullscreenState: Equatable {
     let isFullscreen: Bool
     let isTransitioning: Bool
 }
+
+// MARK: - BrowserWindowFullscreenReader
+
 struct BrowserWindowFullscreenReader: NSViewRepresentable {
     let onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void
 
@@ -294,12 +336,11 @@ struct BrowserWindowFullscreenReader: NSViewRepresentable {
         nsView.sendFullscreenStateIfNeeded()
     }
 }
-final class BrowserWindowFullscreenReaderNSView: NSView {
-    var onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void = { _ in }
 
-    private weak var observedWindow: NSWindow?
-    var notificationObservers: [NSObjectProtocol] = []
-    var lastFullscreenState: BrowserWindowFullscreenState?
+// MARK: - BrowserWindowFullscreenReaderNSView
+
+final class BrowserWindowFullscreenReaderNSView: NSView {
+    // MARK: Lifecycle
 
     deinit {
         removeNotificationObservers()
@@ -309,10 +350,16 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
         super.init(frame: frameRect)
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    // MARK: Internal
+
+    var onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void = { _ in }
+
+    var notificationObservers = [NSObjectProtocol]()
+    var lastFullscreenState: BrowserWindowFullscreenState?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -328,6 +375,10 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
             )
         )
     }
+
+    // MARK: Private
+
+    private weak var observedWindow: NSWindow?
 
     private func updateObservedWindow() {
         guard observedWindow !== window else {
@@ -394,6 +445,7 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
         onFullscreenStateChange(fullscreenState)
     }
 }
+
 extension NSView {
     func containsWindowPoint<T: NSView>(_ windowPoint: NSPoint, inDescendantOfType descendantType: T.Type) -> Bool {
         if self is T, bounds.contains(convert(windowPoint, from: nil)) {

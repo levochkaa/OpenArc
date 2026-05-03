@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSidebarTabDragPreviewStore
+
 final class BrowserSidebarTabDragPreviewStore: ObservableObject {
     @Published var preview: BrowserSidebarTabDragPreviewState?
 
@@ -34,7 +36,12 @@ final class BrowserSidebarTabDragPreviewStore: ObservableObject {
         preview = nil
     }
 }
+
+// MARK: - BrowserSidebarView
+
 struct BrowserSidebarView: View {
+    // MARK: Internal
+
     let model: BrowserChromeModel
     let snapshot: BrowserSidebarSnapshot
     let extensions: [BrowserExtension]
@@ -44,6 +51,7 @@ struct BrowserSidebarView: View {
     let isSidebarResizing: Bool
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
+
     @State var isNewTabButtonHovered = false
     @State var isClearButtonHovered = false
     @State var isSidebarHovered = false
@@ -55,18 +63,48 @@ struct BrowserSidebarView: View {
     @StateObject var dragPreviewStore = BrowserSidebarTabDragPreviewStore()
     @State var suppressedTabSelectionAfterDragID: String?
     @State var tabRowInteractionResetID = 0
-    @State var rawTabRowFrames: [String: BrowserSidebarTabRowFrame] = [:]
-    @State var tabRowFrames: [String: BrowserSidebarTabRowFrame] = [:]
-    @State var tabDropRowFrameList: [BrowserSidebarTabRowFrame] = []
-    @State var rawAppTabFrames: [String: BrowserSidebarAppTabFrame] = [:]
-    @State var appTabFrames: [String: BrowserSidebarAppTabFrame] = [:]
-    @State var appTabDropFrameList: [BrowserSidebarAppTabFrame] = []
+    @State var rawTabRowFrames = [String: BrowserSidebarTabRowFrame]()
+    @State var tabRowFrames = [String: BrowserSidebarTabRowFrame]()
+    @State var tabDropRowFrameList = [BrowserSidebarTabRowFrame]()
+    @State var rawAppTabFrames = [String: BrowserSidebarAppTabFrame]()
+    @State var appTabFrames = [String: BrowserSidebarAppTabFrame]()
+    @State var appTabDropFrameList = [BrowserSidebarAppTabFrame]()
     @State var appTabsContainerFrame: CGRect?
-    @State var rawEmptySectionFrames: [BrowserSidebarEmptySectionFrame] = []
-    @State var emptySectionFrames: [BrowserSidebarEmptySectionFrame] = []
+    @State var rawEmptySectionFrames = [BrowserSidebarEmptySectionFrame]()
+    @State var emptySectionFrames = [BrowserSidebarEmptySectionFrame]()
     @State var showsTopChromeDivider = false
     @State var showsBottomChromeDivider = false
     @State var visibleSpaceID: String?
+
+    var displayedSnapshot: BrowserSidebarSnapshot {
+        displayedSnapshot(for: snapshot)
+    }
+
+    var newTabButtonBackgroundColor: Color {
+        guard !isSidebarResizing else {
+            return .clear
+        }
+
+        if isCommandBarPresented {
+            return BrowserChromePalette.rowSelected
+        }
+
+        if isNewTabButtonHovered {
+            return BrowserChromePalette.rowHover
+        }
+
+        return .clear
+    }
+
+    var dropIndicatorFrame: CGRect? {
+        BrowserSidebarTabDropIndicatorFrameResolver().frame(
+            for: dropTarget,
+            rowFrames: tabDropRowFrameList,
+            emptySectionFrames: emptySectionFrames,
+            horizontalInset: 6,
+            thickness: BrowserChromeLayout.sidebarDropIndicatorThickness
+        )
+    }
 
     var body: some View {
         let visibleSnapshot = displayedSnapshot
@@ -222,6 +260,107 @@ struct BrowserSidebarView: View {
         }
     }
 
+    var newTabButton: some View {
+        Button(action: toggleCommandBar) {
+            HStack(spacing: BrowserChromeLayout.sidebarRowContentSpacing) {
+                Image(systemName: "plus")
+                    .font(.system(size: BrowserChromeLayout.sidebarNewTabSymbolSize, weight: .semibold))
+                Text(BrowserStrings.sidebarNewTab)
+                    .font(.system(size: 12.5, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(BrowserChromePalette.secondaryText)
+            .padding(.horizontal, BrowserChromeLayout.sidebarRowHorizontalPadding)
+            .frame(height: BrowserChromeLayout.sidebarRowHeight)
+            .background(
+                RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
+                    .fill(newTabButtonBackgroundColor)
+            )
+            .background {
+                BrowserWindowFrameReader { frame in
+                    newTabButtonWindowFrame = frame
+                }
+            }
+        }
+        .buttonStyle(BrowserSidebarPressButtonStyle())
+        .frame(maxWidth: .infinity)
+        .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
+        .onHover { hovering in
+            guard !isSidebarResizing else {
+                return
+            }
+
+            isNewTabButtonHovered = hovering
+        }
+        .browserTooltip(
+            title: model.shortcutStore.descriptor(for: .newTab).helpTitle,
+            shortcut: model.shortcutStore.shortcut(for: .newTab),
+            isPresented: isNewTabButtonHovered && !isCommandBarPresented && !isSidebarResizing
+        )
+    }
+
+    var spacesBar: some View {
+        BrowserSidebarSpacesBar(
+            spaces: snapshot.spaces,
+            selectedSpaceID: snapshot.selectedSpaceID,
+            isSidebarResizing: isSidebarResizing,
+            onSelectSpace: { spaceID in
+                dismissRenamingIfNeeded()
+                model.selectSpace(id: spaceID)
+            },
+            onCreateSpace: {
+                dismissRenamingIfNeeded()
+                model.createNewSpace()
+            }
+        )
+    }
+
+    var bottomChrome: some View {
+        VStack(spacing: 0) {
+            BrowserSidebarTopChromeDivider(isVisible: showsBottomChromeDivider)
+            Color.clear
+                .frame(height: BrowserChromeLayout.sidebarBottomChromeTopSpacing)
+            spacesBar
+        }
+        .background(BrowserChromePalette.sidebarBackground)
+        .zIndex(1)
+    }
+
+    var tabDragPreviewOverlay: some View {
+        BrowserSidebarTabDragPreviewOverlay(
+            store: dragPreviewStore,
+            snapshot: snapshot
+        )
+    }
+
+    @ViewBuilder var tabDragEventMonitor: some View {
+        if let draggedTabID {
+            BrowserSidebarTabDragEventMonitor(
+                tabID: draggedTabID,
+                onDragged: updateActiveTabDrag(for:location:),
+                onEnded: finishActiveTabDrag(for:location:)
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder var tabDropIndicatorOverlay: some View {
+        if let dropIndicatorFrame {
+            BrowserSidebarDropIndicator()
+                .frame(width: dropIndicatorFrame.width, height: dropIndicatorFrame.height)
+                .position(x: dropIndicatorFrame.midX, y: dropIndicatorFrame.midY)
+                .transaction { transaction in
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+                .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: Private
+
     private func spacePages(
         for renderedSidebarSnapshot: BrowserSidebarSnapshot,
         sidebarContentWidth: CGFloat
@@ -358,7 +497,8 @@ struct BrowserSidebarView: View {
             updateTopChromeDividerVisibility(shouldShow)
         }
         .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.visibleRect.maxY < geometry.contentSize.height - BrowserChromeLayout.sidebarTopChromeDividerScrollThreshold
+            geometry.visibleRect.maxY < geometry.contentSize.height - BrowserChromeLayout
+                .sidebarTopChromeDividerScrollThreshold
         } action: { _, shouldShow in
             guard renderedSidebarSnapshot.selectedSpaceID == space.id else {
                 return
@@ -366,258 +506,6 @@ struct BrowserSidebarView: View {
 
             updateBottomChromeDividerVisibility(shouldShow)
         }
-    }
-
-    private func syncVisibleSpaceID(with selectedSpaceID: String?, animated: Bool) {
-        guard visibleSpaceID != selectedSpaceID else {
-            return
-        }
-
-        let update = {
-            visibleSpaceID = selectedSpaceID
-        }
-
-        if animated {
-            withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation, update)
-        } else {
-            update()
-        }
-    }
-
-    var displayedSnapshot: BrowserSidebarSnapshot {
-        displayedSnapshot(for: snapshot)
-    }
-
-    private func displayedSnapshot(for snapshot: BrowserSidebarSnapshot) -> BrowserSidebarSnapshot {
-        guard
-            let draggedTabID,
-            let dropTarget,
-            let reorderedTabs = model.reorderedTabs(
-                movingTabID: draggedTabID,
-                toPlacement: dropTarget.section.placement,
-                requestedSectionIndex: dropTarget.sectionIndex,
-                targetSpaceID: dropTarget.spaceID
-            )
-        else {
-            return snapshot
-        }
-
-        return snapshot.replacingTabs(reorderedTabs)
-    }
-
-    private func renderedSnapshot(for visibleSnapshot: BrowserSidebarSnapshot) -> BrowserSidebarSnapshot {
-        guard
-            let draggedTabID,
-            let draggedTab = snapshot.tab(withID: draggedTabID)
-        else {
-            return visibleSnapshot
-        }
-
-        return BrowserSidebarSnapshot(
-            spaces: visibleSnapshot.spaces,
-            selectedSpaceID: visibleSnapshot.selectedSpaceID,
-            activeSpace: visibleSnapshot.activeSpace,
-            isActiveSpacePinnedSectionCollapsed: visibleSnapshot.isActiveSpacePinnedSectionCollapsed,
-            allTabs: renderedAllTabs(in: visibleSnapshot, draggedTab: draggedTab),
-            appTabs: renderedAppTabs(visibleSnapshot.appTabs, draggedTab: draggedTab),
-            spacePinnedTabs: renderedRowTabs(
-                visibleSnapshot.spacePinnedTabs,
-                in: .spacePinned,
-                draggedTab: draggedTab
-            ),
-            temporaryTabs: renderedRowTabs(
-                visibleSnapshot.temporaryTabs,
-                in: .temporary,
-                draggedTab: draggedTab
-            ),
-            selectedTabID: visibleSnapshot.selectedTabID,
-            archivableTabIDs: visibleSnapshot.archivableTabIDs,
-            canGoBack: visibleSnapshot.canGoBack,
-            canGoForward: visibleSnapshot.canGoForward,
-            canStopLoading: visibleSnapshot.canStopLoading,
-            canReload: visibleSnapshot.canReload
-        )
-    }
-
-    private func renderedAllTabs(
-        in visibleSnapshot: BrowserSidebarSnapshot,
-        draggedTab: BrowserChromeModel.Tab
-    ) -> [BrowserChromeModel.Tab] {
-        guard
-            let dropTarget,
-            dropTarget.section.placement != .app,
-            let targetSpaceID = dropTarget.spaceID,
-            draggedTab.placement != dropTarget.section.placement || draggedTab.spaceID != targetSpaceID,
-            visibleSnapshot.allTabs.contains(where: { $0.id == draggedTab.id })
-        else {
-            return visibleSnapshot.allTabs
-        }
-
-        var renderedTabs = visibleSnapshot.allTabs.filter { $0.id != draggedTab.id }
-        var renderedTab = draggedTab
-        renderedTab.spaceID = targetSpaceID
-        renderedTab.placement = dropTarget.section.placement
-
-        let targetTabs = renderedTabs.filter {
-            $0.spaceID == targetSpaceID && $0.placement == dropTarget.section.placement
-        }
-        let insertionReferenceIndex = targetTabs.dropFirst(
-            min(max(dropTarget.sectionIndex, 0), targetTabs.count)
-        ).first.flatMap { referenceTab in
-            renderedTabs.firstIndex { $0.id == referenceTab.id }
-        }
-
-        renderedTabs.insert(renderedTab, at: insertionReferenceIndex ?? renderedTabs.count)
-        return renderedTabs
-    }
-
-    private func renderedAppTabs(
-        _ visibleTabs: [BrowserChromeModel.Tab],
-        draggedTab: BrowserChromeModel.Tab
-    ) -> [BrowserChromeModel.Tab] {
-        guard draggedTab.placement == .app, !visibleTabs.contains(where: { $0.id == draggedTab.id }) else {
-            return visibleTabs
-        }
-
-        var renderedTabs = visibleTabs
-        let sourceIndex = snapshot.appTabs.firstIndex(where: { $0.id == draggedTab.id }) ?? renderedTabs.count
-        renderedTabs.insert(draggedTab, at: min(sourceIndex, renderedTabs.count))
-        return renderedTabs
-    }
-
-    private func renderedRowTabs(
-        _ visibleTabs: [BrowserChromeModel.Tab],
-        in section: BrowserSidebarTabSection,
-        draggedTab: BrowserChromeModel.Tab
-    ) -> [BrowserChromeModel.Tab] {
-        var renderedTabs = visibleTabs
-
-        if section == .spacePinned, draggedTab.placement != section.placement {
-            renderedTabs.removeAll { $0.id == draggedTab.id }
-        }
-
-        guard draggedTab.placement == section.placement, !renderedTabs.contains(where: { $0.id == draggedTab.id }) else {
-            return renderedTabs
-        }
-
-        let sourceTabs = tabs(in: section, from: snapshot)
-        let sourceIndex = sourceTabs.firstIndex(where: { $0.id == draggedTab.id }) ?? renderedTabs.count
-        renderedTabs.insert(draggedTab, at: min(sourceIndex, renderedTabs.count))
-        return renderedTabs
-    }
-
-    private func tabs(
-        in section: BrowserSidebarTabSection,
-        from snapshot: BrowserSidebarSnapshot
-    ) -> [BrowserChromeModel.Tab] {
-        switch section {
-        case .app:
-            snapshot.appTabs
-        case .spacePinned:
-            snapshot.spacePinnedTabs
-        case .temporary:
-            snapshot.temporaryTabs
-        }
-    }
-
-    private func toggleCommandBar() {
-        dismissRenamingIfNeeded()
-        model.toggleCommandBar()
-    }
-
-    private func syncNewTabHoverStateWithPointer() {
-        guard
-            let newTabButtonWindowFrame,
-            let window = NSApp.keyWindow
-        else {
-            isNewTabButtonHovered = false
-            return
-        }
-
-        isNewTabButtonHovered = newTabButtonWindowFrame.contains(window.mouseLocationOutsideOfEventStream)
-    }
-
-    var newTabButtonBackgroundColor: Color {
-        guard !isSidebarResizing else {
-            return .clear
-        }
-
-        if isCommandBarPresented {
-            return BrowserChromePalette.rowSelected
-        }
-
-        if isNewTabButtonHovered {
-            return BrowserChromePalette.rowHover
-        }
-
-        return .clear
-    }
-
-    var newTabButton: some View {
-        Button(action: toggleCommandBar) {
-            HStack(spacing: BrowserChromeLayout.sidebarRowContentSpacing) {
-                Image(systemName: "plus")
-                    .font(.system(size: BrowserChromeLayout.sidebarNewTabSymbolSize, weight: .semibold))
-                Text(BrowserStrings.sidebarNewTab)
-                    .font(.system(size: 12.5, weight: .medium))
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .foregroundStyle(BrowserChromePalette.secondaryText)
-            .padding(.horizontal, BrowserChromeLayout.sidebarRowHorizontalPadding)
-            .frame(height: BrowserChromeLayout.sidebarRowHeight)
-            .background(
-                RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
-                    .fill(newTabButtonBackgroundColor)
-            )
-            .background {
-                BrowserWindowFrameReader { frame in
-                    newTabButtonWindowFrame = frame
-                }
-            }
-        }
-        .buttonStyle(BrowserSidebarPressButtonStyle())
-        .frame(maxWidth: .infinity)
-        .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
-        .onHover { hovering in
-            guard !isSidebarResizing else {
-                return
-            }
-
-            isNewTabButtonHovered = hovering
-        }
-        .browserTooltip(
-            title: model.shortcutStore.descriptor(for: .newTab).helpTitle,
-            shortcut: model.shortcutStore.shortcut(for: .newTab),
-            isPresented: isNewTabButtonHovered && !isCommandBarPresented && !isSidebarResizing
-        )
-    }
-
-    var spacesBar: some View {
-        BrowserSidebarSpacesBar(
-            spaces: snapshot.spaces,
-            selectedSpaceID: snapshot.selectedSpaceID,
-            isSidebarResizing: isSidebarResizing,
-            onSelectSpace: { spaceID in
-                dismissRenamingIfNeeded()
-                model.selectSpace(id: spaceID)
-            },
-            onCreateSpace: {
-                dismissRenamingIfNeeded()
-                model.createNewSpace()
-            }
-        )
-    }
-
-    var bottomChrome: some View {
-        VStack(spacing: 0) {
-            BrowserSidebarTopChromeDivider(isVisible: showsBottomChromeDivider)
-            Color.clear
-                .frame(height: BrowserChromeLayout.sidebarBottomChromeTopSpacing)
-            spacesBar
-        }
-        .background(BrowserChromePalette.sidebarBackground)
-        .zIndex(1)
     }
 
     private func spaceHeaderRow(for space: BrowserChromeModel.Space) -> some View {
@@ -646,50 +534,6 @@ struct BrowserSidebarView: View {
             onChangeIcon: { systemImageName in
                 model.setIcon(systemImageName, forSpaceID: space.id)
             }
-        )
-    }
-
-    var tabDragPreviewOverlay: some View {
-        BrowserSidebarTabDragPreviewOverlay(
-            store: dragPreviewStore,
-            snapshot: snapshot
-        )
-    }
-
-    @ViewBuilder
-    var tabDragEventMonitor: some View {
-        if let draggedTabID {
-            BrowserSidebarTabDragEventMonitor(
-                tabID: draggedTabID,
-                onDragged: updateActiveTabDrag(for:location:),
-                onEnded: finishActiveTabDrag(for:location:)
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .allowsHitTesting(false)
-        }
-    }
-
-    @ViewBuilder
-    var tabDropIndicatorOverlay: some View {
-        if let dropIndicatorFrame {
-            BrowserSidebarDropIndicator()
-                .frame(width: dropIndicatorFrame.width, height: dropIndicatorFrame.height)
-                .position(x: dropIndicatorFrame.midX, y: dropIndicatorFrame.midY)
-                .transaction { transaction in
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
-                }
-                .allowsHitTesting(false)
-        }
-    }
-
-    var dropIndicatorFrame: CGRect? {
-        BrowserSidebarTabDropIndicatorFrameResolver().frame(
-            for: dropTarget,
-            rowFrames: tabDropRowFrameList,
-            emptySectionFrames: emptySectionFrames,
-            horizontalInset: 6,
-            thickness: BrowserChromeLayout.sidebarDropIndicatorThickness
         )
     }
 
@@ -794,6 +638,175 @@ struct BrowserSidebarView: View {
             )
         )
         .browserSidebarEmptySectionFrame(section: section, spaceID: spaceID)
+    }
+
+    private func syncVisibleSpaceID(with selectedSpaceID: String?, animated: Bool) {
+        guard visibleSpaceID != selectedSpaceID else {
+            return
+        }
+
+        let update = {
+            visibleSpaceID = selectedSpaceID
+        }
+
+        if animated {
+            withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation, update)
+        } else {
+            update()
+        }
+    }
+
+    private func displayedSnapshot(for snapshot: BrowserSidebarSnapshot) -> BrowserSidebarSnapshot {
+        guard
+            let draggedTabID,
+            let dropTarget,
+            let reorderedTabs = model.reorderedTabs(
+                movingTabID: draggedTabID,
+                toPlacement: dropTarget.section.placement,
+                requestedSectionIndex: dropTarget.sectionIndex,
+                targetSpaceID: dropTarget.spaceID
+            )
+        else {
+            return snapshot
+        }
+
+        return snapshot.replacingTabs(reorderedTabs)
+    }
+
+    private func renderedSnapshot(for visibleSnapshot: BrowserSidebarSnapshot) -> BrowserSidebarSnapshot {
+        guard
+            let draggedTabID,
+            let draggedTab = snapshot.tab(withID: draggedTabID)
+        else {
+            return visibleSnapshot
+        }
+
+        return BrowserSidebarSnapshot(
+            spaces: visibleSnapshot.spaces,
+            selectedSpaceID: visibleSnapshot.selectedSpaceID,
+            activeSpace: visibleSnapshot.activeSpace,
+            isActiveSpacePinnedSectionCollapsed: visibleSnapshot.isActiveSpacePinnedSectionCollapsed,
+            allTabs: renderedAllTabs(in: visibleSnapshot, draggedTab: draggedTab),
+            appTabs: renderedAppTabs(visibleSnapshot.appTabs, draggedTab: draggedTab),
+            spacePinnedTabs: renderedRowTabs(
+                visibleSnapshot.spacePinnedTabs,
+                in: .spacePinned,
+                draggedTab: draggedTab
+            ),
+            temporaryTabs: renderedRowTabs(
+                visibleSnapshot.temporaryTabs,
+                in: .temporary,
+                draggedTab: draggedTab
+            ),
+            selectedTabID: visibleSnapshot.selectedTabID,
+            archivableTabIDs: visibleSnapshot.archivableTabIDs,
+            canGoBack: visibleSnapshot.canGoBack,
+            canGoForward: visibleSnapshot.canGoForward,
+            canStopLoading: visibleSnapshot.canStopLoading,
+            canReload: visibleSnapshot.canReload
+        )
+    }
+
+    private func renderedAllTabs(
+        in visibleSnapshot: BrowserSidebarSnapshot,
+        draggedTab: BrowserChromeModel.Tab
+    ) -> [BrowserChromeModel.Tab] {
+        guard
+            let dropTarget,
+            dropTarget.section.placement != .app,
+            let targetSpaceID = dropTarget.spaceID,
+            draggedTab.placement != dropTarget.section.placement || draggedTab.spaceID != targetSpaceID,
+            visibleSnapshot.allTabs.contains(where: { $0.id == draggedTab.id })
+        else {
+            return visibleSnapshot.allTabs
+        }
+
+        var renderedTabs = visibleSnapshot.allTabs.filter { $0.id != draggedTab.id }
+        var renderedTab = draggedTab
+        renderedTab.spaceID = targetSpaceID
+        renderedTab.placement = dropTarget.section.placement
+
+        let targetTabs = renderedTabs.filter {
+            $0.spaceID == targetSpaceID && $0.placement == dropTarget.section.placement
+        }
+        let insertionReferenceIndex = targetTabs.dropFirst(
+            min(max(dropTarget.sectionIndex, 0), targetTabs.count)
+        )
+        .first
+        .flatMap { referenceTab in
+            renderedTabs.firstIndex { $0.id == referenceTab.id }
+        }
+
+        renderedTabs.insert(renderedTab, at: insertionReferenceIndex ?? renderedTabs.count)
+        return renderedTabs
+    }
+
+    private func renderedAppTabs(
+        _ visibleTabs: [BrowserChromeModel.Tab],
+        draggedTab: BrowserChromeModel.Tab
+    ) -> [BrowserChromeModel.Tab] {
+        guard draggedTab.placement == .app, !visibleTabs.contains(where: { $0.id == draggedTab.id }) else {
+            return visibleTabs
+        }
+
+        var renderedTabs = visibleTabs
+        let sourceIndex = snapshot.appTabs.firstIndex(where: { $0.id == draggedTab.id }) ?? renderedTabs.count
+        renderedTabs.insert(draggedTab, at: min(sourceIndex, renderedTabs.count))
+        return renderedTabs
+    }
+
+    private func renderedRowTabs(
+        _ visibleTabs: [BrowserChromeModel.Tab],
+        in section: BrowserSidebarTabSection,
+        draggedTab: BrowserChromeModel.Tab
+    ) -> [BrowserChromeModel.Tab] {
+        var renderedTabs = visibleTabs
+
+        if section == .spacePinned, draggedTab.placement != section.placement {
+            renderedTabs.removeAll { $0.id == draggedTab.id }
+        }
+
+        guard draggedTab.placement == section.placement,
+              !renderedTabs.contains(where: { $0.id == draggedTab.id })
+        else {
+            return renderedTabs
+        }
+
+        let sourceTabs = tabs(in: section, from: snapshot)
+        let sourceIndex = sourceTabs.firstIndex(where: { $0.id == draggedTab.id }) ?? renderedTabs.count
+        renderedTabs.insert(draggedTab, at: min(sourceIndex, renderedTabs.count))
+        return renderedTabs
+    }
+
+    private func tabs(
+        in section: BrowserSidebarTabSection,
+        from snapshot: BrowserSidebarSnapshot
+    ) -> [BrowserChromeModel.Tab] {
+        switch section {
+        case .app:
+            snapshot.appTabs
+        case .spacePinned:
+            snapshot.spacePinnedTabs
+        case .temporary:
+            snapshot.temporaryTabs
+        }
+    }
+
+    private func toggleCommandBar() {
+        dismissRenamingIfNeeded()
+        model.toggleCommandBar()
+    }
+
+    private func syncNewTabHoverStateWithPointer() {
+        guard
+            let newTabButtonWindowFrame,
+            let window = NSApp.keyWindow
+        else {
+            isNewTabButtonHovered = false
+            return
+        }
+
+        isNewTabButtonHovered = newTabButtonWindowFrame.contains(window.mouseLocationOutsideOfEventStream)
     }
 
     private func dismissRenamingIfNeeded(in window: NSWindow? = NSApp.keyWindow) {
@@ -1097,11 +1110,13 @@ struct BrowserSidebarView: View {
     }
 
     private func updateSynchronizedTabFrames(for snapshot: BrowserSidebarSnapshot) {
-        var synchronizedFrames: [String: BrowserSidebarTabRowFrame] = [:]
-        var synchronizedDropFrames: [BrowserSidebarTabRowFrame] = []
+        var synchronizedFrames = [String: BrowserSidebarTabRowFrame]()
+        var synchronizedDropFrames = [BrowserSidebarTabRowFrame]()
 
         for space in snapshot.spaces {
-            let spacePinnedTabIDs = snapshot.isPinnedSectionCollapsed(in: space.id) ? [] : snapshot.spacePinnedTabs(in: space.id).map(\.id)
+            let spacePinnedTabIDs = snapshot.isPinnedSectionCollapsed(in: space.id)
+                ? []
+                : snapshot.spacePinnedTabs(in: space.id).map(\.id)
             let temporaryTabIDs = snapshot.temporaryTabs(in: space.id).map(\.id)
 
             synchronizedFrames.merge(
@@ -1168,7 +1183,9 @@ struct BrowserSidebarView: View {
         emptySectionFrames = snapshot.spaces.flatMap { space in
             BrowserSidebarTabFrameSynchronizer.synchronizedEmptySectionFrames(
                 frames,
-                spacePinnedTabIDs: snapshot.isPinnedSectionCollapsed(in: space.id) ? [] : snapshot.spacePinnedTabs(in: space.id).map(\.id),
+                spacePinnedTabIDs: snapshot.isPinnedSectionCollapsed(in: space.id)
+                    ? []
+                    : snapshot.spacePinnedTabs(in: space.id).map(\.id),
                 temporaryTabIDs: snapshot.temporaryTabs(in: space.id).map(\.id),
                 spaceID: space.id
             )
@@ -1270,6 +1287,9 @@ struct BrowserSidebarView: View {
         withTransaction(transaction, updates)
     }
 }
+
+// MARK: Equatable
+
 extension BrowserSidebarView: Equatable {
     static func == (lhs: BrowserSidebarView, rhs: BrowserSidebarView) -> Bool {
         lhs.snapshot == rhs.snapshot

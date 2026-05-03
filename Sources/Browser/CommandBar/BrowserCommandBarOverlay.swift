@@ -2,9 +2,13 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserCommandBarOverlayStyle
+
 enum BrowserCommandBarOverlayStyle {
     case standard
     case compact(anchorFrame: CGRect?, sidebarWidth: CGFloat)
+
+    // MARK: Internal
 
     var fontSize: CGFloat {
         switch self {
@@ -60,6 +64,9 @@ enum BrowserCommandBarOverlayStyle {
         }
     }
 }
+
+// MARK: - BrowserCommandBarTextWidthMeasurer
+
 enum BrowserCommandBarTextWidthMeasurer {
     static func width(for text: String, fontSize: CGFloat) -> CGFloat {
         let measuredText = text.isEmpty ? BrowserStrings.commandBarPlaceholder : text
@@ -70,14 +77,21 @@ enum BrowserCommandBarTextWidthMeasurer {
         return ceil((measuredText as NSString).size(withAttributes: attributes).width)
     }
 }
+
+// MARK: - BrowserCommandBarFaviconCandidate
+
 struct BrowserCommandBarFaviconCandidate: Equatable {
-    let pageURLString: String
-    let faviconURL: URL?
+    // MARK: Lifecycle
 
     init(tab: BrowserChromeModel.Tab) {
-        pageURLString = tab.urlString
-        faviconURL = tab.faviconURL
+        self.pageURLString = tab.urlString
+        self.faviconURL = tab.faviconURL
     }
+
+    // MARK: Internal
+
+    let pageURLString: String
+    let faviconURL: URL?
 
     func faviconURL(for suggestion: BrowserCommandSuggestion?) -> URL? {
         guard
@@ -90,6 +104,8 @@ struct BrowserCommandBarFaviconCandidate: Equatable {
 
         return faviconURL
     }
+
+    // MARK: Private
 
     private static func matchesPageURL(_ lhs: String, _ rhs: String) -> Bool {
         normalizedPageURLString(lhs) == normalizedPageURLString(rhs)
@@ -109,12 +125,26 @@ struct BrowserCommandBarFaviconCandidate: Equatable {
         return components.url?.absoluteString ?? urlString
     }
 }
+
+// MARK: - BrowserCommandBarOverlay
+
 struct BrowserCommandBarOverlay: View {
+    // MARK: Internal
+
     @EnvironmentObject var faviconCache: BrowserFaviconCache
     @ObservedObject var model: BrowserCommandBarModel
+
     let blockedLeadingInset: CGFloat
     let style: BrowserCommandBarOverlayStyle
     let faviconCandidate: BrowserCommandBarFaviconCandidate?
+
+    var leadingSymbolName: String {
+        model.selectedSuggestion?.systemImageName ?? "magnifyingglass"
+    }
+
+    var cachedLeadingFavicon: NSImage? {
+        faviconCache.image(for: faviconCandidate?.faviconURL(for: model.selectedSuggestion))
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -132,7 +162,11 @@ struct BrowserCommandBarOverlay: View {
                             )
                         )
                         .overlay(panelBorder)
-                        .shadow(color: Color.black.opacity(0.38), radius: BrowserChromeLayout.commandBarShadowRadius, y: 18)
+                        .shadow(
+                            color: Color.black.opacity(0.38),
+                            radius: BrowserChromeLayout.commandBarShadowRadius,
+                            y: 18
+                        )
                         .offset(panelOffset(in: proxy.size))
                 }
             }
@@ -224,12 +258,7 @@ struct BrowserCommandBarOverlay: View {
             .stroke(BrowserChromePalette.commandBarPanelBorder, lineWidth: 1)
     }
 
-    var leadingSymbolName: String {
-        model.selectedSuggestion?.systemImageName ?? "magnifyingglass"
-    }
-
-    @ViewBuilder
-    var leadingIcon: some View {
+    @ViewBuilder var leadingIcon: some View {
         if let cachedLeadingFavicon {
             Image(nsImage: cachedLeadingFavicon)
                 .resizable()
@@ -242,9 +271,7 @@ struct BrowserCommandBarOverlay: View {
         }
     }
 
-    var cachedLeadingFavicon: NSImage? {
-        faviconCache.image(for: faviconCandidate?.faviconURL(for: model.selectedSuggestion))
-    }
+    // MARK: Private
 
     private func dismissLayer(in availableSize: CGSize) -> some View {
         HStack(spacing: 0) {
@@ -266,7 +293,7 @@ struct BrowserCommandBarOverlay: View {
         switch style {
         case .standard:
             return BrowserChromeLayout.commandBarWidth
-        case let .compact(anchorFrame, sidebarWidth):
+        case .compact(let anchorFrame, let sidebarWidth):
             let originX = compactPanelOriginX(anchorFrame: anchorFrame)
             let viewportMaximum = max(
                 availableSize.width - originX - BrowserChromeLayout.compactCommandBarHorizontalViewportPadding,
@@ -300,7 +327,7 @@ struct BrowserCommandBarOverlay: View {
                 width: max((availableSize.width - BrowserChromeLayout.commandBarWidth) / 2, 0),
                 height: commandBarTopInset(for: availableSize.height)
             )
-        case let .compact(anchorFrame, _):
+        case .compact(let anchorFrame, _):
             CGSize(
                 width: compactPanelOriginX(anchorFrame: anchorFrame),
                 height: compactPanelOriginY(anchorFrame: anchorFrame, availableHeight: availableSize.height)
@@ -337,9 +364,34 @@ struct BrowserCommandBarOverlay: View {
         )
     }
 }
+
+// MARK: - BrowserCommandSuggestionList
+
 struct BrowserCommandSuggestionList: View {
     @ObservedObject var model: BrowserCommandBarModel
+
     let faviconCandidate: BrowserCommandBarFaviconCandidate?
+
+    var visibleSuggestionCount: Int {
+        min(model.suggestions.count, BrowserCommandBarModel.maximumVisibleSuggestions)
+    }
+
+    var visibleHeight: CGFloat {
+        guard visibleSuggestionCount > 0 else {
+            return 0
+        }
+
+        return CGFloat(visibleSuggestionCount) * BrowserChromeLayout.commandBarSuggestionRowHeight
+            + CGFloat(max(visibleSuggestionCount - 1, 0)) * BrowserChromeLayout.commandBarSuggestionSpacing
+            + BrowserChromeLayout.commandBarSuggestionVerticalInset * 2
+            + visibleViewportAllowance
+    }
+
+    var visibleViewportAllowance: CGFloat {
+        model.suggestions.count > visibleSuggestionCount
+            ? BrowserChromeLayout.commandBarSuggestionViewportAllowance
+            : 0
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -369,28 +421,10 @@ struct BrowserCommandSuggestionList: View {
             }
         }
     }
-
-    var visibleSuggestionCount: Int {
-        min(model.suggestions.count, BrowserCommandBarModel.maximumVisibleSuggestions)
-    }
-
-    var visibleHeight: CGFloat {
-        guard visibleSuggestionCount > 0 else {
-            return 0
-        }
-
-        return CGFloat(visibleSuggestionCount) * BrowserChromeLayout.commandBarSuggestionRowHeight
-            + CGFloat(max(visibleSuggestionCount - 1, 0)) * BrowserChromeLayout.commandBarSuggestionSpacing
-            + BrowserChromeLayout.commandBarSuggestionVerticalInset * 2
-            + visibleViewportAllowance
-    }
-
-    var visibleViewportAllowance: CGFloat {
-        model.suggestions.count > visibleSuggestionCount
-            ? BrowserChromeLayout.commandBarSuggestionViewportAllowance
-            : 0
-    }
 }
+
+// MARK: - BrowserCommandSuggestionRow
+
 struct BrowserCommandSuggestionRow: View {
     @EnvironmentObject var faviconCache: BrowserFaviconCache
 
@@ -400,6 +434,10 @@ struct BrowserCommandSuggestionRow: View {
     let onPress: () -> Void
 
     @State var isHovered = false
+
+    var cachedFavicon: NSImage? {
+        faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion))
+    }
 
     var body: some View {
         Button(action: onPress) {
@@ -431,8 +469,7 @@ struct BrowserCommandSuggestionRow: View {
             .fill((isSelected || isHovered) ? BrowserChromePalette.commandBarSuggestionSelected : Color.clear)
     }
 
-    @ViewBuilder
-    var leadingIcon: some View {
+    @ViewBuilder var leadingIcon: some View {
         if let cachedFavicon {
             Image(nsImage: cachedFavicon)
                 .resizable()
@@ -447,73 +484,13 @@ struct BrowserCommandSuggestionRow: View {
                 .foregroundStyle(BrowserChromePalette.primaryText)
         }
     }
-
-    var cachedFavicon: NSImage? {
-        faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion))
-    }
 }
+
+// MARK: - BrowserCommandQueryTextField
+
 struct BrowserCommandQueryTextField: NSViewRepresentable {
-    @Binding var text: String
-    let previewDisplayText: String?
-    let inlineCompletionSuffix: String?
-    let isFocused: Bool
-    let focusRequestID: Int
-    let fontSize: CGFloat
-    let selectAllOnFocus: Bool
-    let onMoveUp: () -> Void
-    let onMoveDown: () -> Void
-    let onAcceptCompletion: () -> Void
-    let onSubmit: () -> Void
-    let onDismiss: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(
-            text: $text,
-            onMoveUp: onMoveUp,
-            onMoveDown: onMoveDown,
-            onAcceptCompletion: onAcceptCompletion,
-            onSubmit: onSubmit,
-            onDismiss: onDismiss
-        )
-    }
-
-    func makeNSView(context: Context) -> BrowserCommandNSTextField {
-        let textField = BrowserCommandNSTextField()
-        textField.delegate = context.coordinator
-        textField.stringValue = text
-        textField.fontSize = fontSize
-        textField.selectAllOnFocus = selectAllOnFocus
-        return textField
-    }
-
-    func updateNSView(_ nsView: BrowserCommandNSTextField, context: Context) {
-        context.coordinator.update(
-            text: $text,
-            onMoveUp: onMoveUp,
-            onMoveDown: onMoveDown,
-            onAcceptCompletion: onAcceptCompletion,
-            onSubmit: onSubmit,
-            onDismiss: onDismiss
-        )
-
-        nsView.syncCommandPresentation(
-            text: text,
-            previewDisplayText: previewDisplayText,
-            inlineCompletionSuffix: inlineCompletionSuffix,
-            shouldFocus: isFocused,
-            focusRequestID: focusRequestID,
-            fontSize: fontSize,
-            selectAllOnFocus: selectAllOnFocus
-        )
-    }
-
     final class Coordinator: NSObject, NSTextFieldDelegate {
-        var text: Binding<String>
-        var onMoveUp: () -> Void
-        var onMoveDown: () -> Void
-        var onAcceptCompletion: () -> Void
-        var onSubmit: () -> Void
-        var onDismiss: () -> Void
+        // MARK: Lifecycle
 
         init(
             text: Binding<String>,
@@ -530,6 +507,15 @@ struct BrowserCommandQueryTextField: NSViewRepresentable {
             self.onSubmit = onSubmit
             self.onDismiss = onDismiss
         }
+
+        // MARK: Internal
+
+        var text: Binding<String>
+        var onMoveUp: () -> Void
+        var onMoveDown: () -> Void
+        var onAcceptCompletion: () -> Void
+        var onSubmit: () -> Void
+        var onDismiss: () -> Void
 
         func update(
             text: Binding<String>,
@@ -594,27 +580,67 @@ struct BrowserCommandQueryTextField: NSViewRepresentable {
             }
         }
     }
-}
-final class BrowserCommandNSTextField: NSTextField {
-    fileprivate private(set) var isApplyingPresentation = false
-    var selectAllOnFocus = false
-    var fontSize: CGFloat = 22 {
-        didSet {
-            guard fontSize != oldValue else {
-                return
-            }
 
-            applyFont()
-            applyEditorAppearance()
-        }
+    @Binding var text: String
+
+    let previewDisplayText: String?
+    let inlineCompletionSuffix: String?
+    let isFocused: Bool
+    let focusRequestID: Int
+    let fontSize: CGFloat
+    let selectAllOnFocus: Bool
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
+    let onAcceptCompletion: () -> Void
+    let onSubmit: () -> Void
+    let onDismiss: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            text: $text,
+            onMoveUp: onMoveUp,
+            onMoveDown: onMoveDown,
+            onAcceptCompletion: onAcceptCompletion,
+            onSubmit: onSubmit,
+            onDismiss: onDismiss
+        )
     }
 
-    var pendingFocus = false
-    var lastFocusRequestID = -1
-    var focusSelectionRequestID: Int?
-    var committedText = ""
-    var previewDisplayText: String?
-    var inlineCompletionSuffix: String?
+    func makeNSView(context: Context) -> BrowserCommandNSTextField {
+        let textField = BrowserCommandNSTextField()
+        textField.delegate = context.coordinator
+        textField.stringValue = text
+        textField.fontSize = fontSize
+        textField.selectAllOnFocus = selectAllOnFocus
+        return textField
+    }
+
+    func updateNSView(_ nsView: BrowserCommandNSTextField, context: Context) {
+        context.coordinator.update(
+            text: $text,
+            onMoveUp: onMoveUp,
+            onMoveDown: onMoveDown,
+            onAcceptCompletion: onAcceptCompletion,
+            onSubmit: onSubmit,
+            onDismiss: onDismiss
+        )
+
+        nsView.syncCommandPresentation(
+            text: text,
+            previewDisplayText: previewDisplayText,
+            inlineCompletionSuffix: inlineCompletionSuffix,
+            shouldFocus: isFocused,
+            focusRequestID: focusRequestID,
+            fontSize: fontSize,
+            selectAllOnFocus: selectAllOnFocus
+        )
+    }
+}
+
+// MARK: - BrowserCommandNSTextField
+
+final class BrowserCommandNSTextField: NSTextField {
+    // MARK: Lifecycle
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -633,13 +659,64 @@ final class BrowserCommandNSTextField: NSTextField {
         cell?.lineBreakMode = .byClipping
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // MARK: Internal
+
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: 28)
+    }
+
+    var selectAllOnFocus = false
+    var pendingFocus = false
+    var lastFocusRequestID = -1
+    var focusSelectionRequestID: Int?
+    var committedText = ""
+    var previewDisplayText: String?
+    var inlineCompletionSuffix: String?
+
+    var fontSize: CGFloat = 22 {
+        didSet {
+            guard fontSize != oldValue else {
+                return
+            }
+
+            applyFont()
+            applyEditorAppearance()
+        }
+    }
+
+    var hasSuggestionPreview: Bool {
+        guard previewDisplayText != nil else {
+            return false
+        }
+
+        if let editor = currentEditor() as? NSTextView {
+            return editor.string == desiredDisplayText
+        }
+
+        return stringValue == desiredDisplayText
+    }
+
+    var desiredDisplayText: String {
+        previewDisplayText ?? committedText
+    }
+
+    var previewSelectionRange: NSRange? {
+        guard let previewDisplayText, previewDisplayText != committedText else {
+            return nil
+        }
+
+        if let inlineCompletionSuffix, !inlineCompletionSuffix.isEmpty {
+            return NSRange(
+                location: (committedText as NSString).length,
+                length: (inlineCompletionSuffix as NSString).length
+            )
+        }
+
+        return nil
     }
 
     override func becomeFirstResponder() -> Bool {
@@ -654,18 +731,6 @@ final class BrowserCommandNSTextField: NSTextField {
         if pendingFocus {
             syncFocus(true)
         }
-    }
-
-    var hasSuggestionPreview: Bool {
-        guard previewDisplayText != nil else {
-            return false
-        }
-
-        if let editor = currentEditor() as? NSTextView {
-            return editor.string == desiredDisplayText
-        }
-
-        return stringValue == desiredDisplayText
     }
 
     func syncCommandPresentation(
@@ -695,6 +760,12 @@ final class BrowserCommandNSTextField: NSTextField {
     func clearFocusSelectionRequest() {
         focusSelectionRequestID = nil
     }
+
+    // MARK: Fileprivate
+
+    fileprivate private(set) var isApplyingPresentation = false
+
+    // MARK: Private
 
     private func syncFocus(_ shouldFocus: Bool, force: Bool = false) {
         pendingFocus = shouldFocus
@@ -741,25 +812,6 @@ final class BrowserCommandNSTextField: NSTextField {
         _ = window?.makeFirstResponder(self)
         syncDisplayedText()
         applyEditorAppearance()
-    }
-
-    var desiredDisplayText: String {
-        previewDisplayText ?? committedText
-    }
-
-    var previewSelectionRange: NSRange? {
-        guard let previewDisplayText, previewDisplayText != committedText else {
-            return nil
-        }
-
-        if let inlineCompletionSuffix, !inlineCompletionSuffix.isEmpty {
-            return NSRange(
-                location: (committedText as NSString).length,
-                length: (inlineCompletionSuffix as NSString).length
-            )
-        }
-
-        return nil
     }
 
     private func syncDisplayedText() {

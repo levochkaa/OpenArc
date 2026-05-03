@@ -1,8 +1,26 @@
 import Foundation
 
-@objcMembers
-public final class BrowserRuntimeConfiguration: NSObject {
-    private static let runtimeSuffixArgumentPrefix = "--runtime-suffix="
+@objcMembers public final class BrowserRuntimeConfiguration: NSObject {
+    // MARK: Lifecycle
+
+    private init(
+        helperExecutablePath: String,
+        frameworkPath: String,
+        mainBundlePath: String,
+        rootCachePath: String,
+        cachePath: String,
+        sessionStoragePath: String
+    ) {
+        self.helperExecutablePath = helperExecutablePath
+        self.frameworkPath = frameworkPath
+        self.mainBundlePath = mainBundlePath
+        self.rootCachePath = rootCachePath
+        self.cachePath = cachePath
+        self.sessionStoragePath = sessionStoragePath
+        super.init()
+    }
+
+    // MARK: Public
 
     public let helperExecutablePath: String
     public let frameworkPath: String
@@ -11,8 +29,7 @@ public final class BrowserRuntimeConfiguration: NSObject {
     public let cachePath: String
     public let sessionStoragePath: String
 
-    @objc(currentConfiguration)
-    public static func currentConfiguration() -> BrowserRuntimeConfiguration? {
+    @objc(currentConfiguration) public static func currentConfiguration() -> BrowserRuntimeConfiguration? {
         let fileManager = FileManager.default
         let bundlePath = Bundle.main.bundlePath
         let frameworksPath = URL(fileURLWithPath: bundlePath, isDirectory: true)
@@ -22,7 +39,9 @@ public final class BrowserRuntimeConfiguration: NSObject {
             .appendingPathComponent("Contents/MacOS/TheBrowser Helper", isDirectory: false)
         let frameworkPath = frameworksPath
             .appendingPathComponent("Chromium Embedded Framework.framework", isDirectory: true)
-        guard let applicationSupportPath = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        guard let applicationSupportPath = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first
+        else {
             return nil
         }
 
@@ -54,6 +73,10 @@ public final class BrowserRuntimeConfiguration: NSObject {
         )
     }
 
+    // MARK: Private
+
+    private static let runtimeSuffixArgumentPrefix = "--runtime-suffix="
+
     private static func runtimeSuffix() -> String? {
         for argument in ProcessInfo.processInfo.arguments {
             guard argument.hasPrefix(runtimeSuffixArgumentPrefix) else {
@@ -68,7 +91,8 @@ public final class BrowserRuntimeConfiguration: NSObject {
     }
 
     private static func sanitizeRuntimeSuffix(_ rawSuffix: String) -> String? {
-        let allowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+        let allowedCharacters =
+            CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
         let trimmedRawSuffix = rawSuffix.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedRawSuffix.isEmpty else {
             return nil
@@ -95,22 +119,5 @@ public final class BrowserRuntimeConfiguration: NSObject {
 
         sanitizedSuffix = sanitizedSuffix.trimmingCharacters(in: CharacterSet(charactersIn: "-."))
         return sanitizedSuffix.isEmpty ? nil : sanitizedSuffix
-    }
-
-    private init(
-        helperExecutablePath: String,
-        frameworkPath: String,
-        mainBundlePath: String,
-        rootCachePath: String,
-        cachePath: String,
-        sessionStoragePath: String
-    ) {
-        self.helperExecutablePath = helperExecutablePath
-        self.frameworkPath = frameworkPath
-        self.mainBundlePath = mainBundlePath
-        self.rootCachePath = rootCachePath
-        self.cachePath = cachePath
-        self.sessionStoragePath = sessionStoragePath
-        super.init()
     }
 }

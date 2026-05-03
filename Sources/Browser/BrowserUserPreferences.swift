@@ -2,6 +2,8 @@ import AppKit
 import Combine
 import Foundation
 
+// MARK: - BrowserSettingsRoute
+
 enum BrowserSettingsRoute {
     static let rootURL = URL(string: "tb://settings/")!
     static let searchEnginesURL = URL(string: "tb://settings/searchEngines")!
@@ -13,6 +15,8 @@ enum BrowserSettingsRoute {
     static let extensionShortcutsURL = URL(string: "tb://extensions/shortcuts")!
 }
 
+// MARK: - BrowserSearchEngine
+
 enum BrowserSearchEngine: String, CaseIterable, Codable, Identifiable {
     case google
     case microsoftBing
@@ -20,6 +24,8 @@ enum BrowserSearchEngine: String, CaseIterable, Codable, Identifiable {
     case duckDuckGo
     case yandex
     case perplexity
+
+    // MARK: Internal
 
     var id: String {
         rawValue
@@ -77,18 +83,28 @@ enum BrowserSearchEngine: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+// MARK: - BrowserUserPreferencesStore
+
 final class BrowserUserPreferencesStore: ObservableObject {
-    private enum Key {
-        static let automaticUpdatesEnabled = "browser.settings.automaticUpdatesEnabled"
-        static let warnBeforeQuitting = "browser.settings.warnBeforeQuitting"
-        static let searchEngine = "browser.settings.searchEngine"
-        static let searchEngineSuggestionsEnabled = "browser.settings.searchEngineSuggestionsEnabled"
-        static let hapticFeedbackEnabled = "browser.settings.hapticFeedbackEnabled"
-        static let restoreWindowsOnLaunch = "browser.settings.restoreWindowsOnLaunch"
-        static let pictureInPictureEnabled = "browser.settings.pictureInPictureEnabled"
+    // MARK: Lifecycle
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+        self.automaticUpdatesEnabled = Self.loadBool(userDefaults, key: Key.automaticUpdatesEnabled, defaultValue: true)
+        self.warnBeforeQuitting = Self.loadBool(userDefaults, key: Key.warnBeforeQuitting, defaultValue: true)
+        let rawSearchEngine = userDefaults.string(forKey: Key.searchEngine)
+        self.searchEngine = rawSearchEngine.flatMap(BrowserSearchEngine.init(rawValue:)) ?? .google
+        self.searchEngineSuggestionsEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.searchEngineSuggestionsEnabled,
+            defaultValue: true
+        )
+        self.hapticFeedbackEnabled = Self.loadBool(userDefaults, key: Key.hapticFeedbackEnabled, defaultValue: true)
+        self.restoreWindowsOnLaunch = Self.loadBool(userDefaults, key: Key.restoreWindowsOnLaunch, defaultValue: true)
+        self.pictureInPictureEnabled = Self.loadBool(userDefaults, key: Key.pictureInPictureEnabled, defaultValue: true)
     }
 
-    private let userDefaults: UserDefaults
+    // MARK: Internal
 
     @Published var automaticUpdatesEnabled: Bool {
         didSet { userDefaults.set(automaticUpdatesEnabled, forKey: Key.automaticUpdatesEnabled) }
@@ -118,21 +134,19 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(pictureInPictureEnabled, forKey: Key.pictureInPictureEnabled) }
     }
 
-    init(userDefaults: UserDefaults = .standard) {
-        self.userDefaults = userDefaults
-        automaticUpdatesEnabled = Self.loadBool(userDefaults, key: Key.automaticUpdatesEnabled, defaultValue: true)
-        warnBeforeQuitting = Self.loadBool(userDefaults, key: Key.warnBeforeQuitting, defaultValue: true)
-        let rawSearchEngine = userDefaults.string(forKey: Key.searchEngine)
-        searchEngine = rawSearchEngine.flatMap(BrowserSearchEngine.init(rawValue:)) ?? .google
-        searchEngineSuggestionsEnabled = Self.loadBool(
-            userDefaults,
-            key: Key.searchEngineSuggestionsEnabled,
-            defaultValue: true
-        )
-        hapticFeedbackEnabled = Self.loadBool(userDefaults, key: Key.hapticFeedbackEnabled, defaultValue: true)
-        restoreWindowsOnLaunch = Self.loadBool(userDefaults, key: Key.restoreWindowsOnLaunch, defaultValue: true)
-        pictureInPictureEnabled = Self.loadBool(userDefaults, key: Key.pictureInPictureEnabled, defaultValue: true)
+    // MARK: Private
+
+    private enum Key {
+        static let automaticUpdatesEnabled = "browser.settings.automaticUpdatesEnabled"
+        static let warnBeforeQuitting = "browser.settings.warnBeforeQuitting"
+        static let searchEngine = "browser.settings.searchEngine"
+        static let searchEngineSuggestionsEnabled = "browser.settings.searchEngineSuggestionsEnabled"
+        static let hapticFeedbackEnabled = "browser.settings.hapticFeedbackEnabled"
+        static let restoreWindowsOnLaunch = "browser.settings.restoreWindowsOnLaunch"
+        static let pictureInPictureEnabled = "browser.settings.pictureInPictureEnabled"
     }
+
+    private let userDefaults: UserDefaults
 
     private static func loadBool(_ userDefaults: UserDefaults, key: String, defaultValue: Bool) -> Bool {
         guard userDefaults.object(forKey: key) != nil else {
@@ -142,6 +156,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         return userDefaults.bool(forKey: key)
     }
 }
+
+// MARK: - BrowserCommandID
 
 enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case openSettings
@@ -162,6 +178,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case reload
     case forceReload
     case toggleSidebar
+
+    // MARK: Internal
 
     var id: String {
         rawValue
@@ -250,26 +268,24 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+// MARK: - BrowserShortcutResolving
+
 protocol BrowserShortcutResolving: AnyObject {
     func shortcut(for commandID: BrowserCommandID) -> BrowserKeyboardShortcut
     func descriptor(for commandID: BrowserCommandID) -> BrowserCommandDescriptor
 }
 
+// MARK: - BrowserShortcutStore
+
 final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
-    private enum Key {
-        static let overrides = "browser.settings.shortcutOverrides"
-    }
-
-    private let userDefaults: UserDefaults
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    @Published private var overrides: [BrowserCommandID: BrowserKeyboardShortcut]
+    // MARK: Lifecycle
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
-        overrides = Self.loadOverrides(userDefaults: userDefaults, decoder: decoder)
+        self.overrides = Self.loadOverrides(userDefaults: userDefaults, decoder: decoder)
     }
+
+    // MARK: Internal
 
     var commandIDs: [BrowserCommandID] {
         BrowserCommandID.allCases
@@ -292,17 +308,17 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         overrides[commandID] != nil
     }
 
-    @discardableResult
-    func setShortcut(_ shortcut: BrowserKeyboardShortcut, for commandID: BrowserCommandID) -> Bool {
+    @discardableResult func setShortcut(_ shortcut: BrowserKeyboardShortcut, for commandID: BrowserCommandID) -> Bool {
         guard conflictDescription(for: shortcut, excluding: commandID) == nil else {
             return false
         }
 
-        if shortcut == commandID.defaultDescriptor.shortcut {
-            overrides[commandID] = nil
-        } else {
-            overrides[commandID] = shortcut
-        }
+        overrides[commandID] =
+            if shortcut == commandID.defaultDescriptor.shortcut {
+                nil
+            } else {
+                shortcut
+            }
         persistOverrides()
         return true
     }
@@ -328,19 +344,30 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         return BrowserShortcutStore.reservedShortcutTitles[normalizedShortcut]
     }
 
-    private func persistOverrides() {
-        let rawOverrides = Dictionary(uniqueKeysWithValues: overrides.map { ($0.key.rawValue, $0.value) })
-        if rawOverrides.isEmpty {
-            userDefaults.removeObject(forKey: Key.overrides)
-            return
-        }
+    // MARK: Private
 
-        guard let data = try? encoder.encode(rawOverrides) else {
-            return
-        }
-
-        userDefaults.set(data, forKey: Key.overrides)
+    private enum Key {
+        static let overrides = "browser.settings.shortcutOverrides"
     }
+
+    private static let reservedShortcutTitles: [BrowserKeyboardShortcut: String] = [
+        BrowserKeyboardShortcut("z"): BrowserStrings.menuUndo,
+        BrowserKeyboardShortcut("z", modifiers: [.command, .shift]): BrowserStrings.menuRedo,
+        BrowserKeyboardShortcut("x"): BrowserStrings.menuCut,
+        BrowserKeyboardShortcut("c"): BrowserStrings.menuCopy,
+        BrowserKeyboardShortcut("v"): BrowserStrings.menuPaste,
+        BrowserKeyboardShortcut("v", modifiers: [.command, .shift]): BrowserStrings.menuPasteAndMatchStyle,
+        BrowserKeyboardShortcut("a"): BrowserStrings.menuSelectAll,
+        BrowserKeyboardShortcut("q"): BrowserStrings.quitShortcutTitle,
+    ].reduce(into: [:]) { result, item in
+        result[item.key.normalizedForMatching] = item.value
+    }
+
+    private let userDefaults: UserDefaults
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    @Published private var overrides: [BrowserCommandID: BrowserKeyboardShortcut]
 
     private static func loadOverrides(
         userDefaults: UserDefaults,
@@ -363,17 +390,18 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         }
     }
 
-    private static let reservedShortcutTitles: [BrowserKeyboardShortcut: String] = [
-        BrowserKeyboardShortcut("z"): BrowserStrings.menuUndo,
-        BrowserKeyboardShortcut("z", modifiers: [.command, .shift]): BrowserStrings.menuRedo,
-        BrowserKeyboardShortcut("x"): BrowserStrings.menuCut,
-        BrowserKeyboardShortcut("c"): BrowserStrings.menuCopy,
-        BrowserKeyboardShortcut("v"): BrowserStrings.menuPaste,
-        BrowserKeyboardShortcut("v", modifiers: [.command, .shift]): BrowserStrings.menuPasteAndMatchStyle,
-        BrowserKeyboardShortcut("a"): BrowserStrings.menuSelectAll,
-        BrowserKeyboardShortcut("q"): BrowserStrings.quitShortcutTitle,
-    ].reduce(into: [:]) { result, item in
-        result[item.key.normalizedForMatching] = item.value
+    private func persistOverrides() {
+        let rawOverrides = Dictionary(uniqueKeysWithValues: overrides.map { ($0.key.rawValue, $0.value) })
+        if rawOverrides.isEmpty {
+            userDefaults.removeObject(forKey: Key.overrides)
+            return
+        }
+
+        guard let data = try? encoder.encode(rawOverrides) else {
+            return
+        }
+
+        userDefaults.set(data, forKey: Key.overrides)
     }
 }
 
@@ -385,6 +413,8 @@ extension BrowserKeyboardShortcut {
         )
     }
 }
+
+// MARK: - BrowserQuitWarningPolicy
 
 struct BrowserQuitWarningPolicy {
     let warnsBeforeQuitting: Bool

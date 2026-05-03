@@ -3,8 +3,7 @@ import Foundation
 import Testing
 
 @Test
-@MainActor
-func faviconCacheReturnsStoredImageSynchronously() throws {
+@MainActor func faviconCacheReturnsStoredImageSynchronously() throws {
     let cache = BrowserFaviconCache(dataLoader: { _ in nil })
     let url = try #require(URL(string: "https://example.com/favicon.ico"))
     let image = NSImage(size: NSSize(width: 16, height: 16))
@@ -18,8 +17,7 @@ func faviconCacheReturnsStoredImageSynchronously() throws {
 }
 
 @Test
-@MainActor
-func faviconCacheLoadsImageDataOnDemand() async throws {
+@MainActor func faviconCacheLoadsImageDataOnDemand() async throws {
     let url = try #require(URL(string: "https://example.com/favicon.ico"))
     let imageData = try #require(makeTestFaviconImage().tiffRepresentation)
     let cache = BrowserFaviconCache(dataLoader: { requestedURL in

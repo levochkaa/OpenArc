@@ -2,8 +2,11 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-@MainActor
-final class FakeBrowserTabDriver: BrowserTabDriving {
+// MARK: - FakeBrowserTabDriver
+
+@MainActor final class FakeBrowserTabDriver: BrowserTabDriving {
+    // MARK: Internal
+
     struct CreatedTabRequest: Equatable {
         let id: String
         let urlString: String
@@ -31,24 +34,21 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
 
-    private(set) var createdTabRequests: [CreatedTabRequest] = []
-    private(set) var selectedTabIDs: [String] = []
+    private(set) var createdTabRequests = [CreatedTabRequest]()
+    private(set) var selectedTabIDs = [String]()
     private(set) var deselectActiveTabCount = 0
-    private(set) var activeTabNavigationURLStrings: [String] = []
-    private(set) var closedTabRequests: [CloseTabRequest] = []
-    private(set) var saveSuggestedNames: [String?] = []
+    private(set) var activeTabNavigationURLStrings = [String]()
+    private(set) var closedTabRequests = [CloseTabRequest]()
+    private(set) var saveSuggestedNames = [String?]()
     private(set) var pasteAndMatchStyleCount = 0
-    private(set) var findRequests: [FindRequest] = []
-    private(set) var stopFindingClearSelectionRequests: [Bool] = []
+    private(set) var findRequests = [FindRequest]()
+    private(set) var stopFindingClearSelectionRequests = [Bool]()
     private(set) var reloadCount = 0
     private(set) var forceReloadCount = 0
     private(set) var stopLoadingCount = 0
     private(set) var printCount = 0
     private(set) var goBackCount = 0
     private(set) var goForwardCount = 0
-
-    private var pendingCreateRequests: [CreatedTabRequest] = []
-    private var nextTabNumber = 0
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {
         nextTabNumber += 1
@@ -156,6 +156,11 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
         onFindResultChanged?(id, matchCount, activeMatchOrdinal, finalUpdate)
     }
 
+    // MARK: Private
+
+    private var pendingCreateRequests = [CreatedTabRequest]()
+    private var nextTabNumber = 0
+
     private func defaultTitle(for urlString: String) -> String {
         guard
             let url = URL(string: urlString),
@@ -169,13 +174,19 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
     }
 }
 
+// MARK: - InMemorySessionSnapshotStore
+
 final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
-    var loadedSnapshot: BrowserTabSessionSnapshot?
-    private(set) var savedSnapshots: [BrowserTabSessionSnapshot] = []
+    // MARK: Lifecycle
 
     init(loadedSnapshot: BrowserTabSessionSnapshot? = nil) {
         self.loadedSnapshot = loadedSnapshot
     }
+
+    // MARK: Internal
+
+    var loadedSnapshot: BrowserTabSessionSnapshot?
+    private(set) var savedSnapshots = [BrowserTabSessionSnapshot]()
 
     func loadSnapshot() -> BrowserTabSessionSnapshot? {
         loadedSnapshot
@@ -186,16 +197,10 @@ final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
     }
 }
 
-final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
-    var storedSelectedTabIndex: Int?
-    var storedSelectedSpaceIndex: Int?
-    var storedSidebarWidth: CGFloat?
-    var storedTemporaryTabLifetime: BrowserTemporaryTabLifetime
+// MARK: - InMemorySessionPreferencesStore
 
-    private(set) var savedSelectedTabIndices: [Int?] = []
-    private(set) var savedSelectedSpaceIndices: [Int?] = []
-    private(set) var savedSidebarWidths: [CGFloat] = []
-    private(set) var savedTemporaryTabLifetimes: [BrowserTemporaryTabLifetime] = []
+final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
+    // MARK: Lifecycle
 
     init(
         storedSelectedTabIndex: Int? = nil,
@@ -208,6 +213,18 @@ final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
         self.storedSidebarWidth = storedSidebarWidth
         self.storedTemporaryTabLifetime = storedTemporaryTabLifetime
     }
+
+    // MARK: Internal
+
+    var storedSelectedTabIndex: Int?
+    var storedSelectedSpaceIndex: Int?
+    var storedSidebarWidth: CGFloat?
+    var storedTemporaryTabLifetime: BrowserTemporaryTabLifetime
+
+    private(set) var savedSelectedTabIndices = [Int?]()
+    private(set) var savedSelectedSpaceIndices = [Int?]()
+    private(set) var savedSidebarWidths = [CGFloat]()
+    private(set) var savedTemporaryTabLifetimes = [BrowserTemporaryTabLifetime]()
 
     func loadSelectedTabIndex(tabCount: Int) -> Int? {
         guard tabCount > 0, let storedSelectedTabIndex else {
@@ -258,29 +275,40 @@ final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
     }
 }
 
+// MARK: - FakeSuggestionProvider
+
 final class FakeSuggestionProvider: BrowserSuggestionProviding {
-    var suggestionsByQuery: [String: [String]]
-    private(set) var requestedQueries: [String] = []
+    // MARK: Lifecycle
 
     init(suggestionsByQuery: [String: [String]] = [:]) {
         self.suggestionsByQuery = suggestionsByQuery
     }
 
-    func suggestions(for query: String, maximumCount: Int) async -> [String] {
+    // MARK: Internal
+
+    var suggestionsByQuery: [String: [String]]
+    private(set) var requestedQueries = [String]()
+
+    func suggestions(for query: String, maximumCount: Int) -> [String] {
         requestedQueries.append(query)
         return Array((suggestionsByQuery[query] ?? []).prefix(maximumCount))
     }
 }
 
-@MainActor
-final class FakeBrowserExtensionManager: BrowserExtensionManaging {
-    var extensions: [BrowserExtension]
-    private(set) var enabledStateRequests: [(id: String, isEnabled: Bool)] = []
-    private(set) var removedExtensionIDs: [String] = []
+// MARK: - FakeBrowserExtensionManager
+
+@MainActor final class FakeBrowserExtensionManager: BrowserExtensionManaging {
+    // MARK: Lifecycle
 
     init(extensions: [BrowserExtension] = []) {
         self.extensions = extensions
     }
+
+    // MARK: Internal
+
+    var extensions: [BrowserExtension]
+    private(set) var enabledStateRequests = [(id: String, isEnabled: Bool)]()
+    private(set) var removedExtensionIDs = [String]()
 
     func installedExtensions() -> [BrowserExtension] {
         extensions

@@ -2,41 +2,12 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSidebarTabDragEventMonitor
+
 struct BrowserSidebarTabDragEventMonitor: NSViewRepresentable {
-    let tabID: String
-    let onDragged: (String, CGPoint) -> Void
-    let onEnded: (String, CGPoint) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> BrowserSidebarTabDragEventMonitorView {
-        let view = BrowserSidebarTabDragEventMonitorView()
-        context.coordinator.update(
-            view: view,
-            tabID: tabID,
-            onDragged: onDragged,
-            onEnded: onEnded
-        )
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserSidebarTabDragEventMonitorView, context: Context) {
-        context.coordinator.update(
-            view: nsView,
-            tabID: tabID,
-            onDragged: onDragged,
-            onEnded: onEnded
-        )
-    }
-
-    static func dismantleNSView(_: BrowserSidebarTabDragEventMonitorView, coordinator: Coordinator) {
-        coordinator.removeMonitor()
-    }
-
     final class Coordinator {
-        private weak var view: BrowserSidebarTabDragEventMonitorView?
+        // MARK: Internal
+
         var localMonitor: Any?
         var tabID: String?
         var onDragged: ((String, CGPoint) -> Void)?
@@ -64,12 +35,19 @@ struct BrowserSidebarTabDragEventMonitor: NSViewRepresentable {
             self.localMonitor = nil
         }
 
+        // MARK: Private
+
+        private weak var view: BrowserSidebarTabDragEventMonitorView?
+
         private func installMonitorIfNeeded() {
             guard localMonitor == nil else {
                 return
             }
 
-            localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            localMonitor = NSEvent.addLocalMonitorForEvents(matching: [
+                .leftMouseDragged,
+                .leftMouseUp,
+            ]) { [weak self] event in
                 self?.handle(event)
                 return event
             }
@@ -96,7 +74,42 @@ struct BrowserSidebarTabDragEventMonitor: NSViewRepresentable {
             }
         }
     }
+
+    let tabID: String
+    let onDragged: (String, CGPoint) -> Void
+    let onEnded: (String, CGPoint) -> Void
+
+    static func dismantleNSView(_: BrowserSidebarTabDragEventMonitorView, coordinator: Coordinator) {
+        coordinator.removeMonitor()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> BrowserSidebarTabDragEventMonitorView {
+        let view = BrowserSidebarTabDragEventMonitorView()
+        context.coordinator.update(
+            view: view,
+            tabID: tabID,
+            onDragged: onDragged,
+            onEnded: onEnded
+        )
+        return view
+    }
+
+    func updateNSView(_ nsView: BrowserSidebarTabDragEventMonitorView, context: Context) {
+        context.coordinator.update(
+            view: nsView,
+            tabID: tabID,
+            onDragged: onDragged,
+            onEnded: onEnded
+        )
+    }
 }
+
+// MARK: - BrowserSidebarTabDragEventMonitorView
+
 final class BrowserSidebarTabDragEventMonitorView: NSView {
     override var isFlipped: Bool {
         true
@@ -106,8 +119,14 @@ final class BrowserSidebarTabDragEventMonitorView: NSView {
         nil
     }
 }
+
+// MARK: - BrowserSidebarTabDragPreviewOverlay
+
 struct BrowserSidebarTabDragPreviewOverlay: View {
+    // MARK: Internal
+
     @ObservedObject var store: BrowserSidebarTabDragPreviewStore
+
     let snapshot: BrowserSidebarSnapshot
 
     var body: some View {
@@ -124,10 +143,15 @@ struct BrowserSidebarTabDragPreviewOverlay: View {
         }
     }
 
+    // MARK: Private
+
     private func dragPreviewStyle(for size: CGSize) -> BrowserSidebarTabDragPreview.Style {
         abs(size.height - BrowserChromeLayout.sidebarRowHeight) > 0.5 ? .appTile : .row
     }
 }
+
+// MARK: - BrowserSidebarTabDragPreview
+
 struct BrowserSidebarTabDragPreview: View {
     enum Style {
         case row
@@ -155,8 +179,7 @@ struct BrowserSidebarTabDragPreview: View {
             .compositingGroup()
     }
 
-    @ViewBuilder
-    var content: some View {
+    @ViewBuilder var content: some View {
         switch style {
         case .row:
             HStack(spacing: 0) {
@@ -184,4 +207,7 @@ struct BrowserSidebarTabDragPreview: View {
         }
     }
 }
+
+// MARK: Equatable
+
 extension BrowserSidebarTabDragPreview: Equatable {}

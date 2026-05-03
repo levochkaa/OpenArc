@@ -1,17 +1,8 @@
 import Foundation
 import SwiftUI
 
-@MainActor
-final class BrowserTooltipCoordinator: ObservableObject {
-    @Published private(set) var activeTooltipID: UUID?
-
-    private let activationDelayNanoseconds: UInt64
-    private let cooldownDelayNanoseconds: UInt64
-
-    private var hoveredTooltipID: UUID?
-    private var isWarm = false
-    private var activationTask: Task<Void, Never>?
-    private var cooldownTask: Task<Void, Never>?
+@MainActor final class BrowserTooltipCoordinator: ObservableObject {
+    // MARK: Lifecycle
 
     init(
         activationDelayNanoseconds: UInt64 = 1_000_000_000,
@@ -26,6 +17,10 @@ final class BrowserTooltipCoordinator: ObservableObject {
         cooldownTask?.cancel()
     }
 
+    // MARK: Internal
+
+    @Published private(set) var activeTooltipID: UUID?
+
     func setHovering(_ isHovering: Bool, for tooltipID: UUID) {
         if isHovering {
             beginHover(for: tooltipID)
@@ -33,6 +28,16 @@ final class BrowserTooltipCoordinator: ObservableObject {
             endHover(for: tooltipID)
         }
     }
+
+    // MARK: Private
+
+    private let activationDelayNanoseconds: UInt64
+    private let cooldownDelayNanoseconds: UInt64
+
+    private var hoveredTooltipID: UUID?
+    private var isWarm = false
+    private var activationTask: Task<Void, Never>?
+    private var cooldownTask: Task<Void, Never>?
 
     private func beginHover(for tooltipID: UUID) {
         cooldownTask?.cancel()
@@ -57,12 +62,12 @@ final class BrowserTooltipCoordinator: ObservableObject {
             }
 
             do {
-                try await Task.sleep(nanoseconds: self.activationDelayNanoseconds)
+                try await Task.sleep(nanoseconds: activationDelayNanoseconds)
             } catch {
                 return
             }
 
-            self.activateTooltipIfStillHovered(tooltipID)
+            activateTooltipIfStillHovered(tooltipID)
         }
     }
 
@@ -85,12 +90,12 @@ final class BrowserTooltipCoordinator: ObservableObject {
             }
 
             do {
-                try await Task.sleep(nanoseconds: self.cooldownDelayNanoseconds)
+                try await Task.sleep(nanoseconds: cooldownDelayNanoseconds)
             } catch {
                 return
             }
 
-            self.resetIfNoTooltipIsHovered()
+            resetIfNoTooltipIsHovered()
         }
     }
 

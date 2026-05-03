@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSiteControlCenterPopover
+
 struct BrowserSiteControlCenterPopover: View {
     let extensions: [BrowserExtension]
     let onManageExtensions: () -> Void
@@ -28,7 +30,10 @@ struct BrowserSiteControlCenterPopover: View {
 
             LazyVGrid(
                 columns: Array(
-                    repeating: GridItem(.fixed(BrowserChromeLayout.extensionTileSize), spacing: BrowserChromeLayout.extensionGridSpacing),
+                    repeating: GridItem(
+                        .fixed(BrowserChromeLayout.extensionTileSize),
+                        spacing: BrowserChromeLayout.extensionGridSpacing
+                    ),
                     count: BrowserExtensionControlCenterModel.maximumVisibleTiles
                 ),
                 alignment: .leading,
@@ -47,10 +52,33 @@ struct BrowserSiteControlCenterPopover: View {
         .frame(width: BrowserChromeLayout.siteControlPopoverWidth, alignment: .topLeading)
     }
 }
+
+// MARK: - BrowserExtensionControlCenterTile
+
 struct BrowserExtensionControlCenterTile: View {
+    // MARK: Internal
+
     let item: BrowserExtensionControlCenterItem
     let onAddExtension: () -> Void
     let onSelectExtension: (String) -> Void
+
+    var iconOpacity: Double {
+        switch item.kind {
+        case .installed(let browserExtension):
+            browserExtension.isEnabled ? 1 : 0.38
+        case .add:
+            1
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch item.kind {
+        case .installed(let browserExtension):
+            browserExtension.name
+        case .add:
+            BrowserStrings.extensionsAddAction
+        }
+    }
 
     var body: some View {
         Button(action: performAction) {
@@ -73,10 +101,9 @@ struct BrowserExtensionControlCenterTile: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
-    @ViewBuilder
-    var tileIcon: some View {
+    @ViewBuilder var tileIcon: some View {
         switch item.kind {
-        case let .installed(browserExtension):
+        case .installed(let browserExtension):
             if let iconImage = browserExtension.iconImage {
                 Image(nsImage: iconImage)
                     .resizable()
@@ -97,34 +124,23 @@ struct BrowserExtensionControlCenterTile: View {
         }
     }
 
-    var iconOpacity: Double {
-        switch item.kind {
-        case let .installed(browserExtension):
-            browserExtension.isEnabled ? 1 : 0.38
-        case .add:
-            1
-        }
-    }
-
-    var accessibilityLabel: String {
-        switch item.kind {
-        case let .installed(browserExtension):
-            browserExtension.name
-        case .add:
-            BrowserStrings.extensionsAddAction
-        }
-    }
+    // MARK: Private
 
     private func performAction() {
         switch item.kind {
-        case let .installed(browserExtension):
+        case .installed(let browserExtension):
             onSelectExtension(browserExtension.id)
         case .add:
             onAddExtension()
         }
     }
 }
+
+// MARK: - BrowserSidebarCurrentURLRow
+
 struct BrowserSidebarCurrentURLRow: View {
+    // MARK: Internal
+
     let tab: BrowserChromeModel.Tab?
     let extensions: [BrowserExtension]
     let copyLinkShortcut: BrowserKeyboardShortcut
@@ -144,6 +160,38 @@ struct BrowserSidebarCurrentURLRow: View {
     @State var didCopyURL = false
     @State var isSiteControlCenterPresented = false
     @State var copyFeedbackTask: Task<Void, Never>?
+
+    var rowBackgroundColor: Color {
+        isRowHovered || isSearchPresented
+            ? BrowserChromePalette.currentURLRowHover
+            : BrowserChromePalette.currentURLRow
+    }
+
+    var rowBackgroundResolvedColor: Color {
+        isRowHovered || isSearchPresented
+            ? BrowserChromePalette.currentURLRowHoverResolved
+            : BrowserChromePalette.currentURLRowResolved
+    }
+
+    var showsActionButtons: Bool {
+        isRowHovered && !isSidebarResizing && tab != nil
+    }
+
+    var isActionButtonHovered: Bool {
+        isCopyHovered || isSiteControlHovered
+    }
+
+    var displayURL: String {
+        guard let tab else {
+            return BrowserStrings.newTabTitle
+        }
+
+        return BrowserURLDisplayFormatter.displayString(for: tab.urlString)
+    }
+
+    var fullURLString: String {
+        tab?.urlString ?? BrowserStrings.newTabTitle
+    }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -248,6 +296,33 @@ struct BrowserSidebarCurrentURLRow: View {
         .background(actionButtonOverlayBackground)
     }
 
+    var actionButtonOverlayBackground: some View {
+        HStack(spacing: 0) {
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    rowBackgroundResolvedColor,
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlayFadeWidth)
+
+            rowBackgroundResolvedColor
+                .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlaySolidWidth)
+        }
+        .clipShape(
+            RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
+        )
+    }
+
+    var rowBackgroundShape: some View {
+        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
+            .fill(rowBackgroundColor)
+    }
+
+    // MARK: Private
+
     private func currentURLActionButton(
         systemImageName: String,
         tooltipTitle: String,
@@ -296,63 +371,6 @@ struct BrowserSidebarCurrentURLRow: View {
             shortcut: tooltipShortcut,
             isPresented: isHovered && !isSidebarResizing
         )
-    }
-
-    var actionButtonOverlayBackground: some View {
-        HStack(spacing: 0) {
-            LinearGradient(
-                colors: [
-                    Color.clear,
-                    rowBackgroundResolvedColor,
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlayFadeWidth)
-
-            rowBackgroundResolvedColor
-                .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlaySolidWidth)
-        }
-        .clipShape(
-            RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
-        )
-    }
-
-    var rowBackgroundShape: some View {
-        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
-            .fill(rowBackgroundColor)
-    }
-
-    var rowBackgroundColor: Color {
-        isRowHovered || isSearchPresented
-            ? BrowserChromePalette.currentURLRowHover
-            : BrowserChromePalette.currentURLRow
-    }
-
-    var rowBackgroundResolvedColor: Color {
-        isRowHovered || isSearchPresented
-            ? BrowserChromePalette.currentURLRowHoverResolved
-            : BrowserChromePalette.currentURLRowResolved
-    }
-
-    var showsActionButtons: Bool {
-        isRowHovered && !isSidebarResizing && tab != nil
-    }
-
-    var isActionButtonHovered: Bool {
-        isCopyHovered || isSiteControlHovered
-    }
-
-    var displayURL: String {
-        guard let tab else {
-            return BrowserStrings.newTabTitle
-        }
-
-        return BrowserURLDisplayFormatter.displayString(for: tab.urlString)
-    }
-
-    var fullURLString: String {
-        tab?.urlString ?? BrowserStrings.newTabTitle
     }
 
     private func copyURL() {

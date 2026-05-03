@@ -2,7 +2,11 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSidebarAppTabsGrid
+
 struct BrowserSidebarAppTabsGrid: View {
+    // MARK: Internal
+
     let tabs: [BrowserChromeModel.Tab]
     let draggedTabID: String?
     let isSidebarResizing: Bool
@@ -12,6 +16,13 @@ struct BrowserSidebarAppTabsGrid: View {
     let onDragEnded: (String, DragGesture.Value) -> Void
 
     let layout = BrowserSidebarAppTabGridLayout(spacing: BrowserChromeLayout.appTabGridSpacing)
+
+    var gridHeight: CGFloat {
+        max(
+            layout.height(for: tabs.count, availableWidth: sidebarContentWidth),
+            BrowserChromeLayout.sidebarEmptySectionDropZoneHeight
+        )
+    }
 
     var body: some View {
         let frames = layout.frames(for: tabs.count, availableWidth: sidebarContentWidth)
@@ -37,12 +48,7 @@ struct BrowserSidebarAppTabsGrid: View {
         .browserSidebarAppTabsContainerFrame()
     }
 
-    var gridHeight: CGFloat {
-        max(
-            layout.height(for: tabs.count, availableWidth: sidebarContentWidth),
-            BrowserChromeLayout.sidebarEmptySectionDropZoneHeight
-        )
-    }
+    // MARK: Private
 
     private func appTabTile(_ tab: BrowserChromeModel.Tab, sectionIndex: Int) -> some View {
         BrowserSidebarAppTabTile(
@@ -70,6 +76,9 @@ struct BrowserSidebarAppTabsGrid: View {
         )
     }
 }
+
+// MARK: - BrowserSidebarAppTabTile
+
 struct BrowserSidebarAppTabTile: View {
     let tab: BrowserChromeModel.Tab
     let isSidebarResizing: Bool
@@ -77,6 +86,10 @@ struct BrowserSidebarAppTabTile: View {
 
     @State var isHovered = false
     @State var isPressed = false
+
+    var backgroundColor: Color {
+        isHovered ? BrowserChromePalette.currentURLRowHover : BrowserChromePalette.currentURLRow
+    }
 
     var body: some View {
         Button(action: onSelect) {
@@ -86,7 +99,10 @@ struct BrowserSidebarAppTabTile: View {
 
                 BrowserFaviconView(url: tab.faviconURL, size: BrowserChromeLayout.appTabIconSize)
             }
-            .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous))
+            .contentShape(RoundedRectangle(
+                cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius,
+                style: .continuous
+            ))
         }
         .buttonStyle(
             BrowserSidebarPressTrackingButtonStyle { isPressed in
@@ -115,9 +131,5 @@ struct BrowserSidebarAppTabTile: View {
             shortcut: nil,
             isPresented: isHovered && !isSidebarResizing
         )
-    }
-
-    var backgroundColor: Color {
-        isHovered ? BrowserChromePalette.currentURLRowHover : BrowserChromePalette.currentURLRow
     }
 }

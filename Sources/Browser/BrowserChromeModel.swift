@@ -2,20 +2,87 @@ import AppKit
 import Combine
 import Foundation
 
+// MARK: - BrowserInternalPageRouting
+
 enum BrowserInternalPageRouting {
     static let settingsURL = URL(string: "tb://settings/")!
 }
 
-@MainActor
-final class BrowserChromeModel: NSObject, ObservableObject {
-    nonisolated static let defaultSidebarWidth: CGFloat = 224
-    nonisolated static let minSidebarWidth: CGFloat = defaultSidebarWidth
-    nonisolated static let maxSidebarWidth: CGFloat = defaultSidebarWidth * 2
-    nonisolated static let defaultNewTabURLString = "https://www.google.com"
-    nonisolated static let automaticArchivalCheckInterval: TimeInterval = 60 * 60
-    nonisolated static let appTabCapacity = 8
-    nonisolated static let defaultSpaceID = "default-space"
-    nonisolated static let defaultSpaceIconName = "square.grid.2x2"
+// MARK: - BrowserChromeModel
+
+@MainActor final class BrowserChromeModel: NSObject, ObservableObject {
+    // MARK: Lifecycle
+
+    init(
+        tabDriver: BrowserTabDriving,
+        sessionSnapshotStore: BrowserTabSessionSnapshotStoring,
+        sessionPreferencesStore: BrowserSessionPreferencesStoring,
+        newTabURLString: String = BrowserChromeModel.defaultNewTabURLString,
+        commandBarSuggestionProvider: BrowserSuggestionProviding = BrowserGoogleSuggestionService(),
+        navigationResolver: BrowserNavigationResolver? = nil,
+        userPreferencesStore: BrowserUserPreferencesStore = BrowserUserPreferencesStore(),
+        shortcutStore: BrowserShortcutStore = BrowserShortcutStore(),
+        extensionManager: any BrowserExtensionManaging,
+        dateProvider: @escaping () -> Date = Date.init,
+        spaceIDProvider: @escaping () -> String = { UUID().uuidString },
+        windowTitleHandler: @escaping (String) -> Void,
+        allTabsClosedHandler: @escaping () -> Void
+    ) {
+        self.tabDriver = tabDriver
+        self.sessionSnapshotStore = sessionSnapshotStore
+        self.sessionPreferencesStore = sessionPreferencesStore
+        self.newTabURLString = newTabURLString
+        self.commandBarSuggestionProvider = commandBarSuggestionProvider
+        self.userPreferencesStore = userPreferencesStore
+        self.shortcutStore = shortcutStore
+        self.navigationResolver = navigationResolver ?? BrowserNavigationResolver(
+            searchEngineProvider: { userPreferencesStore.searchEngine }
+        )
+        self.extensionManager = extensionManager
+        self.temporaryTabLifetime = sessionPreferencesStore.loadTemporaryTabLifetime()
+        self.dateProvider = dateProvider
+        self.spaceIDProvider = spaceIDProvider
+        self.windowTitleHandler = windowTitleHandler
+        self.allTabsClosedHandler = allTabsClosedHandler
+        self.hostView = tabDriver.hostView
+
+        super.init()
+        tabDriver.onTabCreated = { [weak self] tabID, title, urlString in
+            self?.handleCreatedTab(id: tabID, title: title, urlString: urlString)
+        }
+        tabDriver.onTabUpdated = { [weak self] tabID, title, urlString, faviconURLString in
+            self?.handleUpdatedTab(
+                id: tabID,
+                title: title,
+                urlString: urlString,
+                faviconURLString: faviconURLString
+            )
+        }
+        tabDriver.onTabClosed = { [weak self] tabID in
+            self?.handleClosedTab(id: tabID)
+        }
+        tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
+            self?.handleNavigationStateChange(
+                id: tabID,
+                canGoBack: canGoBack,
+                canGoForward: canGoForward
+            )
+        }
+        tabDriver.onLoadingStateChanged = { [weak self] tabID, isLoading in
+            self?.handleLoadingStateChange(id: tabID, isLoading: isLoading)
+        }
+        tabDriver.onFindResultChanged = { [weak self] tabID, matchCount, activeMatchOrdinal, finalUpdate in
+            self?.handleFindResult(
+                id: tabID,
+                matchCount: matchCount,
+                activeMatchOrdinal: activeMatchOrdinal,
+                finalUpdate: finalUpdate
+            )
+        }
+        updateWindowTitle()
+    }
+
+    // MARK: Internal
 
     struct Tab: Identifiable, Equatable {
         let id: String
@@ -24,7 +91,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         var userTitleOverride: String?
         var urlString: String
         var faviconURLString: String?
-        var placement: BrowserTabPlacement = .temporary
+        var placement = BrowserTabPlacement.temporary
         var lastActivityAt = Date()
         var canGoBack = false
         var canGoForward = false
@@ -87,19 +154,23 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         var selectedTabID: String?
     }
 
-    private struct PendingCreatedTabContext {
-        let spaceID: String
-        let placement: BrowserTabPlacement
-    }
-
     enum BrowserInternalPage: Equatable {
         case settings
         case extensions
         case passwordManager
     }
 
-    @Published private(set) var tabs: [Tab] = []
-    @Published private(set) var spaces: [Space] = []
+    nonisolated static let defaultSidebarWidth: CGFloat = 224
+    nonisolated static let minSidebarWidth: CGFloat = defaultSidebarWidth
+    nonisolated static let maxSidebarWidth: CGFloat = defaultSidebarWidth * 2
+    nonisolated static let defaultNewTabURLString = "https://www.google.com"
+    nonisolated static let automaticArchivalCheckInterval: TimeInterval = 60 * 60
+    nonisolated static let appTabCapacity = 8
+    nonisolated static let defaultSpaceID = "default-space"
+    nonisolated static let defaultSpaceIconName = "square.grid.2x2"
+
+    @Published private(set) var tabs = [Tab]()
+    @Published private(set) var spaces = [Space]()
     @Published private(set) var selectedSpaceID: String?
     @Published private(set) var selectedTabID: String?
     @Published var isSidebarVisible = true
@@ -108,21 +179,11 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     @Published private(set) var isFindBarPresented = false
     @Published private(set) var findBarFocusRequest = 0
     @Published private(set) var findResultMatchCount: Int?
-    @Published private(set) var browserExtensions: [BrowserExtension] = []
-    @Published var findQuery = "" {
-        didSet {
-            guard findQuery != oldValue else {
-                return
-            }
-
-            handleFindQueryChange()
-        }
-    }
-
+    @Published private(set) var browserExtensions = [BrowserExtension]()
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
     let shortcutStore: BrowserShortcutStore
-    lazy var commandBarModel: BrowserCommandBarModel = .init(
+    lazy var commandBarModel = BrowserCommandBarModel(
         suggestionProvider: commandBarSuggestionProvider,
         navigationResolver: navigationResolver,
         remoteSuggestionsEnabledProvider: { [weak self] in
@@ -132,7 +193,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             self?.openResolvedSelectionInNewTab(resolvedURLString)
         }
     )
-    lazy var currentPageCommandBarModel: BrowserCommandBarModel = .init(
+    lazy var currentPageCommandBarModel = BrowserCommandBarModel(
         suggestionProvider: commandBarSuggestionProvider,
         navigationResolver: navigationResolver,
         remoteSuggestionsEnabledProvider: { [weak self] in
@@ -143,31 +204,18 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
     )
 
-    private let tabDriver: BrowserTabDriving
-    private let sessionSnapshotStore: BrowserTabSessionSnapshotStoring
-    private let sessionPreferencesStore: BrowserSessionPreferencesStoring
-    private let newTabURLString: String
-    private let commandBarSuggestionProvider: BrowserSuggestionProviding
-    private let navigationResolver: BrowserNavigationResolver
-    private let extensionManager: any BrowserExtensionManaging
-    private let windowTitleHandler: (String) -> Void
-    private let allTabsClosedHandler: () -> Void
-    private let dateProvider: () -> Date
-    private let spaceIDProvider: () -> String
-
-    private var hasCreatedInitialTab = false
-    private var closingTabIDs = Set<String>()
-    private var isPersistenceEnabled = true
-    private var isRestoringSession = false
-    private var pendingRestoredSelectedTabIndex: Int?
-    private var pendingRestoredTabs: [BrowserTabSessionSnapshotTab] = []
-    private var pendingRestoredSpaces: [BrowserSpaceSessionSnapshot] = []
-    private var pendingCreatedTabContexts: [String: PendingCreatedTabContext] = [:]
-    private var remainingRestoredTabCreations = 0
-    private var automaticArchivalTimer: Timer?
-
     private(set) var isContextReady = false
     var isShuttingDown = false
+
+    @Published var findQuery = "" {
+        didSet {
+            guard findQuery != oldValue else {
+                return
+            }
+
+            handleFindQueryChange()
+        }
+    }
 
     var canCreateTab: Bool {
         isContextReady && !isShuttingDown
@@ -283,75 +331,6 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
     var isActiveSpacePinnedSectionCollapsed: Bool {
         activeSpace?.isPinnedSectionCollapsed ?? false
-    }
-
-    init(
-        tabDriver: BrowserTabDriving,
-        sessionSnapshotStore: BrowserTabSessionSnapshotStoring,
-        sessionPreferencesStore: BrowserSessionPreferencesStoring,
-        newTabURLString: String = BrowserChromeModel.defaultNewTabURLString,
-        commandBarSuggestionProvider: BrowserSuggestionProviding = BrowserGoogleSuggestionService(),
-        navigationResolver: BrowserNavigationResolver? = nil,
-        userPreferencesStore: BrowserUserPreferencesStore = BrowserUserPreferencesStore(),
-        shortcutStore: BrowserShortcutStore = BrowserShortcutStore(),
-        extensionManager: any BrowserExtensionManaging,
-        dateProvider: @escaping () -> Date = Date.init,
-        spaceIDProvider: @escaping () -> String = { UUID().uuidString },
-        windowTitleHandler: @escaping (String) -> Void,
-        allTabsClosedHandler: @escaping () -> Void
-    ) {
-        self.tabDriver = tabDriver
-        self.sessionSnapshotStore = sessionSnapshotStore
-        self.sessionPreferencesStore = sessionPreferencesStore
-        self.newTabURLString = newTabURLString
-        self.commandBarSuggestionProvider = commandBarSuggestionProvider
-        self.userPreferencesStore = userPreferencesStore
-        self.shortcutStore = shortcutStore
-        self.navigationResolver = navigationResolver ?? BrowserNavigationResolver(
-            searchEngineProvider: { userPreferencesStore.searchEngine }
-        )
-        self.extensionManager = extensionManager
-        temporaryTabLifetime = sessionPreferencesStore.loadTemporaryTabLifetime()
-        self.dateProvider = dateProvider
-        self.spaceIDProvider = spaceIDProvider
-        self.windowTitleHandler = windowTitleHandler
-        self.allTabsClosedHandler = allTabsClosedHandler
-        hostView = tabDriver.hostView
-
-        super.init()
-        tabDriver.onTabCreated = { [weak self] tabID, title, urlString in
-            self?.handleCreatedTab(id: tabID, title: title, urlString: urlString)
-        }
-        tabDriver.onTabUpdated = { [weak self] tabID, title, urlString, faviconURLString in
-            self?.handleUpdatedTab(
-                id: tabID,
-                title: title,
-                urlString: urlString,
-                faviconURLString: faviconURLString
-            )
-        }
-        tabDriver.onTabClosed = { [weak self] tabID in
-            self?.handleClosedTab(id: tabID)
-        }
-        tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
-            self?.handleNavigationStateChange(
-                id: tabID,
-                canGoBack: canGoBack,
-                canGoForward: canGoForward
-            )
-        }
-        tabDriver.onLoadingStateChanged = { [weak self] tabID, isLoading in
-            self?.handleLoadingStateChange(id: tabID, isLoading: isLoading)
-        }
-        tabDriver.onFindResultChanged = { [weak self] tabID, matchCount, activeMatchOrdinal, finalUpdate in
-            self?.handleFindResult(
-                id: tabID,
-                matchCount: matchCount,
-                activeMatchOrdinal: activeMatchOrdinal,
-                finalUpdate: finalUpdate
-            )
-        }
-        updateWindowTitle()
     }
 
     func handleContextReady() {
@@ -703,8 +682,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         tabDriver.saveActiveTab(withSuggestedName: selectedTab.pageTitle)
     }
 
-    @discardableResult
-    func pasteAndMatchStyleCurrentTab() -> Bool {
+    @discardableResult func pasteAndMatchStyleCurrentTab() -> Bool {
         guard canPasteAndMatchStyle else {
             return false
         }
@@ -721,8 +699,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         tabDriver.printActiveTab()
     }
 
-    @discardableResult
-    func copySelectedTabLink() -> Bool {
+    @discardableResult func copySelectedTabLink() -> Bool {
         guard let selectedTabID else {
             return false
         }
@@ -730,8 +707,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         return copyTabLink(forTabID: selectedTabID)
     }
 
-    @discardableResult
-    func copyTabLink(forTabID tabID: String) -> Bool {
+    @discardableResult func copyTabLink(forTabID tabID: String) -> Bool {
         guard
             let urlString = tabURLString(forTabID: tabID),
             !urlString.isEmpty
@@ -760,8 +736,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         openURLInNewTab(URL(string: BrowserExtensionRouting.chromeWebStoreURLString)!)
     }
 
-    @discardableResult
-    func setExtension(id: String, isEnabled: Bool) -> Bool {
+    @discardableResult func setExtension(id: String, isEnabled: Bool) -> Bool {
         guard extensionManager.setExtension(id: id, isEnabled: isEnabled) else {
             return false
         }
@@ -770,8 +745,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         return true
     }
 
-    @discardableResult
-    func removeExtension(id: String) -> Bool {
+    @discardableResult func removeExtension(id: String) -> Bool {
         guard extensionManager.removeExtension(id: id) else {
             return false
         }
@@ -817,8 +791,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
     }
 
-    @discardableResult
-    func archiveSelectedTab() -> Bool {
+    @discardableResult func archiveSelectedTab() -> Bool {
         guard canArchiveSelectedTab, let selectedTabID else {
             return false
         }
@@ -929,6 +902,60 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         sessionPreferencesStore.saveSidebarWidth(sidebarWidth)
     }
 
+    // MARK: Private
+
+    private struct PendingCreatedTabContext {
+        let spaceID: String
+        let placement: BrowserTabPlacement
+    }
+
+    private let tabDriver: BrowserTabDriving
+    private let sessionSnapshotStore: BrowserTabSessionSnapshotStoring
+    private let sessionPreferencesStore: BrowserSessionPreferencesStoring
+    private let newTabURLString: String
+    private let commandBarSuggestionProvider: BrowserSuggestionProviding
+    private let navigationResolver: BrowserNavigationResolver
+    private let extensionManager: any BrowserExtensionManaging
+    private let windowTitleHandler: (String) -> Void
+    private let allTabsClosedHandler: () -> Void
+    private let dateProvider: () -> Date
+    private let spaceIDProvider: () -> String
+
+    private var hasCreatedInitialTab = false
+    private var closingTabIDs = Set<String>()
+    private var isPersistenceEnabled = true
+    private var isRestoringSession = false
+    private var pendingRestoredSelectedTabIndex: Int?
+    private var pendingRestoredTabs = [BrowserTabSessionSnapshotTab]()
+    private var pendingRestoredSpaces = [BrowserSpaceSessionSnapshot]()
+    private var pendingCreatedTabContexts = [String: PendingCreatedTabContext]()
+    private var remainingRestoredTabCreations = 0
+    private var automaticArchivalTimer: Timer?
+
+    private var selectedTab: Tab? {
+        guard let selectedTabID else {
+            return nil
+        }
+
+        return tabs.first(where: { $0.id == selectedTabID })
+    }
+
+    private var selectedTabIndex: Int? {
+        guard let selectedTabID else {
+            return nil
+        }
+
+        return tabs.firstIndex(where: { $0.id == selectedTabID })
+    }
+
+    private var selectedSpaceIndex: Int? {
+        guard let selectedSpaceID else {
+            return nil
+        }
+
+        return spaces.firstIndex(where: { $0.id == selectedSpaceID })
+    }
+
     private func ensureInitialTab() {
         guard canCreateTab, !hasCreatedInitialTab else {
             return
@@ -973,7 +1000,10 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
 
         for (index, tabSnapshot) in snapshot.tabs.enumerated() {
-            _ = tabDriver.createTab(withURLString: tabSnapshot.urlString, makeActive: index == pendingRestoredSelectedTabIndex)
+            _ = tabDriver.createTab(
+                withURLString: tabSnapshot.urlString,
+                makeActive: index == pendingRestoredSelectedTabIndex
+            )
         }
 
         return true
@@ -1043,30 +1073,6 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         windowTitleHandler(title)
     }
 
-    private var selectedTab: Tab? {
-        guard let selectedTabID else {
-            return nil
-        }
-
-        return tabs.first(where: { $0.id == selectedTabID })
-    }
-
-    private var selectedTabIndex: Int? {
-        guard let selectedTabID else {
-            return nil
-        }
-
-        return tabs.firstIndex(where: { $0.id == selectedTabID })
-    }
-
-    private var selectedSpaceIndex: Int? {
-        guard let selectedSpaceID else {
-            return nil
-        }
-
-        return spaces.firstIndex(where: { $0.id == selectedSpaceID })
-    }
-
     private func createTab(withURLString urlString: String) {
         guard canCreateTab else {
             return
@@ -1117,8 +1123,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
     }
 }
 
-@MainActor
-private extension BrowserChromeModel {
+@MainActor private extension BrowserChromeModel {
     func startAutomaticArchivalTimerIfNeeded() {
         guard automaticArchivalTimer == nil else {
             return
@@ -1441,7 +1446,10 @@ private extension BrowserChromeModel {
             return Space(
                 id: id,
                 title: sanitizedSpaceTitle(from: snapshot.title) ?? defaultSpaceTitle(forDisplayIndex: index + 1),
-                systemImageName: snapshot.systemImageName.isEmpty ? Self.defaultSpaceIconName : snapshot.systemImageName,
+                systemImageName: snapshot.systemImageName.isEmpty
+                    ? Self.defaultSpaceIconName
+                    : snapshot
+                        .systemImageName,
                 isPinnedSectionCollapsed: snapshot.isPinnedSectionCollapsed,
                 selectedTabID: nil
             )
@@ -1454,21 +1462,22 @@ private extension BrowserChromeModel {
             let visibleTabs = sidebarTabs(forSpaceID: spaceID)
             let selectedIndex = pendingRestoredSpaces.first { $0.id == spaceID }?.selectedTabIndex
 
-            if
-                let selectedIndex,
-                visibleTabs.indices.contains(selectedIndex)
-            {
-                spaces[index].selectedTabID = visibleTabs[selectedIndex].id
-            } else if
-                spaceID == selectedSpaceID,
-                let legacySelectedTabIndex = pendingRestoredSelectedTabIndex,
-                tabs.indices.contains(legacySelectedTabIndex),
-                tabs[legacySelectedTabIndex].spaceID == spaceID
-            {
-                spaces[index].selectedTabID = tabs[legacySelectedTabIndex].id
-            } else {
-                spaces[index].selectedTabID = visibleTabs.first?.id
-            }
+            spaces[index].selectedTabID =
+                if
+                    let selectedIndex,
+                    visibleTabs.indices.contains(selectedIndex)
+                {
+                    visibleTabs[selectedIndex].id
+                } else if
+                    spaceID == selectedSpaceID,
+                    let legacySelectedTabIndex = pendingRestoredSelectedTabIndex,
+                    tabs.indices.contains(legacySelectedTabIndex),
+                    tabs[legacySelectedTabIndex].spaceID == spaceID
+                {
+                    tabs[legacySelectedTabIndex].id
+                } else {
+                    visibleTabs.first?.id
+                }
         }
     }
 
@@ -1580,8 +1589,7 @@ private extension BrowserChromeModel {
     }
 }
 
-@MainActor
-extension BrowserChromeModel {
+@MainActor extension BrowserChromeModel {
     func reorderedTabs(
         movingTabID: String,
         toPlacement placement: BrowserTabPlacement,
@@ -1663,8 +1671,7 @@ extension BrowserChromeModel {
     }
 }
 
-@MainActor
-private extension BrowserChromeModel {
+@MainActor private extension BrowserChromeModel {
     func tabCount(for placement: BrowserTabPlacement) -> Int {
         tabs(for: placement).count
     }

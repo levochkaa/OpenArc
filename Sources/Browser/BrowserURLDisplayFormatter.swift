@@ -2,6 +2,8 @@ import Foundation
 import Network
 
 enum BrowserURLDisplayFormatter {
+    // MARK: Internal
+
     static func displayString(for urlString: String) -> String {
         let trimmedURLString = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedURLString.isEmpty else {
@@ -29,6 +31,8 @@ enum BrowserURLDisplayFormatter {
 
         return displayHost
     }
+
+    // MARK: Private
 
     private static func fallbackDisplayString(for urlString: String) -> String {
         urlString

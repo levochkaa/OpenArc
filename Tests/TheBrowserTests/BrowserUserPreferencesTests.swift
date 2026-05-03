@@ -2,8 +2,7 @@ import AppKit
 import Foundation
 import Testing
 
-@Test
-func settingsDefaultsAndPersistenceUseUserDefaults() throws {
+@Test func settingsDefaultsAndPersistenceUseUserDefaults() throws {
     let suiteName = "TheBrowserTests.\(UUID().uuidString)"
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
@@ -35,8 +34,7 @@ func settingsDefaultsAndPersistenceUseUserDefaults() throws {
     #expect(!reloadedStore.pictureInPictureEnabled)
 }
 
-@Test
-func shortcutOverridesPersistBlockConflictsAndReset() throws {
+@Test func shortcutOverridesPersistBlockConflictsAndReset() throws {
     let suiteName = "TheBrowserTests.\(UUID().uuidString)"
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
@@ -52,7 +50,8 @@ func shortcutOverridesPersistBlockConflictsAndReset() throws {
 
     let reloadedStore = BrowserShortcutStore(userDefaults: userDefaults)
     #expect(reloadedStore.shortcut(for: .newTab) == customShortcut)
-    #expect(reloadedStore.conflictDescription(for: customShortcut, excluding: .openSettings) == BrowserCommands.newTab.menuTitle)
+    #expect(reloadedStore.conflictDescription(for: customShortcut, excluding: .openSettings) == BrowserCommands.newTab
+        .menuTitle)
 
     reloadedStore.resetShortcut(for: .newTab)
     #expect(reloadedStore.shortcut(for: .newTab) == BrowserCommands.newTab.shortcut)
@@ -63,8 +62,7 @@ func shortcutOverridesPersistBlockConflictsAndReset() throws {
     #expect(reloadedStore.shortcut(for: .newTab) == BrowserCommands.newTab.shortcut)
 }
 
-@Test
-func layoutIndependentBridgeUsesShortcutOverrides() throws {
+@Test func layoutIndependentBridgeUsesShortcutOverrides() throws {
     let suiteName = "TheBrowserTests.\(UUID().uuidString)"
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
@@ -82,8 +80,7 @@ func layoutIndependentBridgeUsesShortcutOverrides() throws {
     #expect(command == .newTab)
 }
 
-@Test
-func settingsRoutesMatchChromiumButtonDestinations() {
+@Test func settingsRoutesMatchChromiumButtonDestinations() {
     #expect(BrowserSettingsRoute.searchEnginesURL.absoluteString == "tb://settings/searchEngines")
     #expect(BrowserSettingsRoute.privacyURL.absoluteString == "tb://settings/privacy")
     #expect(BrowserSettingsRoute.passwordManagerURL.absoluteString == "tb://password-manager/passwords")
@@ -94,8 +91,7 @@ func settingsRoutesMatchChromiumButtonDestinations() {
     #expect(BrowserSettingsRoute.extensionShortcutsURL.absoluteString == "tb://extensions/shortcuts")
 }
 
-@Test
-func quitWarningPolicyRequiresEnabledPreferenceAndOpenTabs() {
+@Test func quitWarningPolicyRequiresEnabledPreferenceAndOpenTabs() {
     #expect(BrowserQuitWarningPolicy(warnsBeforeQuitting: true, openTabCount: 1).shouldWarn)
     #expect(!BrowserQuitWarningPolicy(warnsBeforeQuitting: true, openTabCount: 0).shouldWarn)
     #expect(!BrowserQuitWarningPolicy(warnsBeforeQuitting: false, openTabCount: 3).shouldWarn)

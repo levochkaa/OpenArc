@@ -1,10 +1,14 @@
 import AppKit
 import SwiftUI
 
+// MARK: - BrowserAboutLayout
+
 enum BrowserAboutLayout {
     static let windowWidth: CGFloat = 440
     static let windowHeight: CGFloat = 420
 }
+
+// MARK: - BrowserAboutInfo
 
 struct BrowserAboutInfo {
     let applicationName: String
@@ -37,6 +41,8 @@ struct BrowserAboutInfo {
     }
 }
 
+// MARK: - BrowserAboutResources
+
 enum BrowserAboutResources {
     static let chromiumProjectURL = URL(string: "https://www.chromium.org/chromium-projects/")!
     static let chromiumCreditsLinkURL = URL(string: "tb://credits/")!
@@ -47,7 +53,11 @@ enum BrowserAboutResources {
     }
 }
 
+// MARK: - BrowserAboutView
+
 struct BrowserAboutView: View {
+    // MARK: Internal
+
     let info: BrowserAboutInfo
     let openLink: (URL) -> Void
 
@@ -100,6 +110,8 @@ struct BrowserAboutView: View {
         )
         .background(Color(nsColor: .windowBackgroundColor))
     }
+
+    // MARK: Private
 
     private var madePossibleText: AttributedString {
         var text = AttributedString(BrowserStrings.aboutMadePossiblePrefix)

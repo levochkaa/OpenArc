@@ -2,8 +2,7 @@ import CoreServices
 import Foundation
 import Testing
 
-@Test
-func defaultBrowserServiceIsDefaultOnlyWhenAllWebSchemesUseTheAppBundleIdentifier() {
+@Test func defaultBrowserServiceIsDefaultOnlyWhenAllWebSchemesUseTheAppBundleIdentifier() {
     let service = BrowserDefaultBrowserService(
         bundleIdentifier: "com.example.Browser",
         schemes: ["http", "https"],
@@ -21,8 +20,7 @@ func defaultBrowserServiceIsDefaultOnlyWhenAllWebSchemesUseTheAppBundleIdentifie
     #expect(service.isDefaultBrowser)
 }
 
-@Test
-func defaultBrowserServiceRequiresEveryWebSchemeToMatch() {
+@Test func defaultBrowserServiceRequiresEveryWebSchemeToMatch() {
     let service = BrowserDefaultBrowserService(
         bundleIdentifier: "com.example.Browser",
         schemes: ["http", "https"],
@@ -35,9 +33,8 @@ func defaultBrowserServiceRequiresEveryWebSchemeToMatch() {
     #expect(!service.isDefaultBrowser)
 }
 
-@Test
-func defaultBrowserServiceSetsEveryConfiguredWebScheme() {
-    var requests: [(scheme: String, bundleIdentifier: String)] = []
+@Test func defaultBrowserServiceSetsEveryConfiguredWebScheme() {
+    var requests = [(scheme: String, bundleIdentifier: String)]()
     let service = BrowserDefaultBrowserService(
         bundleIdentifier: "com.example.Browser",
         schemes: ["http", "https"],

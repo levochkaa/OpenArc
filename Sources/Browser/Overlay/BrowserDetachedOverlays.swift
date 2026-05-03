@@ -2,9 +2,12 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserDetachedControlsOverlayContent
+
 struct BrowserDetachedControlsOverlayContent: View {
     @ObservedObject var model: BrowserChromeModel
     @ObservedObject var commandBarModel: BrowserCommandBarModel
+
     let blockedLeadingInset: CGFloat
 
     var body: some View {
@@ -25,8 +28,12 @@ struct BrowserDetachedControlsOverlayContent: View {
         }
     }
 }
+
+// MARK: - BrowserDetachedCurrentPageCommandBarOverlayContent
+
 struct BrowserDetachedCurrentPageCommandBarOverlayContent: View {
     @ObservedObject var currentPageCommandBarModel: BrowserCommandBarModel
+
     let blockedLeadingInset: CGFloat
     let anchorFrame: CGRect?
     let sidebarWidth: CGFloat
@@ -42,6 +49,9 @@ struct BrowserDetachedCurrentPageCommandBarOverlayContent: View {
         .zIndex(10)
     }
 }
+
+// MARK: - BrowserDetachedSidebarHoverOverlayContent
+
 struct BrowserDetachedSidebarHoverOverlayContent: View {
     @ObservedObject var model: BrowserChromeModel
     @EnvironmentObject var tooltipCoordinator: BrowserTooltipCoordinator
@@ -61,33 +71,6 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
     let isPresented: Bool
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
-
-    var body: some View {
-        BrowserSidebarChromePresentationHost(
-            content: BrowserSidebarChromeView(
-                model: model,
-                snapshot: snapshot,
-                showsWindowControlsInSidebar: showsWindowControlsInSidebar,
-                isCommandBarPresented: isCommandBarPresented,
-                isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
-                isOverlayPresentation: isOverlayPresentation,
-                showsOverlayBorder: showsOverlayBorder,
-                roundsWindowLeadingCorners: roundsWindowLeadingCorners,
-                onToggleSidebar: onToggleSidebar,
-                onURLRowFrameChange: onURLRowFrameChange
-            )
-            .frame(width: sidebarWidth, height: sidebarHeight, alignment: .leading)
-            .environmentObject(tooltipCoordinator)
-            .environmentObject(faviconCache),
-            contentSize: sidebarContentSize,
-            contentOffset: sidebarContentOffset,
-            cornerRadius: sidebarClipCornerRadius,
-            maskedCorners: sidebarClipMaskedCorners,
-            animationDuration: BrowserChromeLayout.sidebarAnimationDuration,
-            animatesOffsetChanges: true
-        )
-        .frame(width: containerWidth, height: containerHeight, alignment: .topLeading)
-    }
 
     var sidebarXOffset: CGFloat {
         if isPresented {
@@ -147,7 +130,37 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
 
         return [.layerMinXMinYCorner, .layerMinXMaxYCorner]
     }
+
+    var body: some View {
+        BrowserSidebarChromePresentationHost(
+            content: BrowserSidebarChromeView(
+                model: model,
+                snapshot: snapshot,
+                showsWindowControlsInSidebar: showsWindowControlsInSidebar,
+                isCommandBarPresented: isCommandBarPresented,
+                isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
+                isOverlayPresentation: isOverlayPresentation,
+                showsOverlayBorder: showsOverlayBorder,
+                roundsWindowLeadingCorners: roundsWindowLeadingCorners,
+                onToggleSidebar: onToggleSidebar,
+                onURLRowFrameChange: onURLRowFrameChange
+            )
+            .frame(width: sidebarWidth, height: sidebarHeight, alignment: .leading)
+            .environmentObject(tooltipCoordinator)
+            .environmentObject(faviconCache),
+            contentSize: sidebarContentSize,
+            contentOffset: sidebarContentOffset,
+            cornerRadius: sidebarClipCornerRadius,
+            maskedCorners: sidebarClipMaskedCorners,
+            animationDuration: BrowserChromeLayout.sidebarAnimationDuration,
+            animatesOffsetChanges: true
+        )
+        .frame(width: containerWidth, height: containerHeight, alignment: .topLeading)
+    }
 }
+
+// MARK: - BrowserSidebarChromePresentationHost
+
 struct BrowserSidebarChromePresentationHost<Content: View>: NSViewRepresentable {
     let content: Content
     let contentSize: CGSize
@@ -181,19 +194,11 @@ struct BrowserSidebarChromePresentationHost<Content: View>: NSViewRepresentable 
         )
     }
 }
-final class BrowserSidebarChromePresentationNSView<Content: View>: NSView {
-    var hostingView: NSHostingView<Content>
-    var contentSize: CGSize
-    var contentOffset: CGPoint
-    var cornerRadius: CGFloat
-    var maskedCorners: CACornerMask
-    var animationDuration: TimeInterval
-    var animatesOffsetChanges: Bool
-    var didApplyInitialFrame = false
 
-    override var isFlipped: Bool {
-        true
-    }
+// MARK: - BrowserSidebarChromePresentationNSView
+
+final class BrowserSidebarChromePresentationNSView<Content: View>: NSView {
+    // MARK: Lifecycle
 
     init(
         rootView: Content,
@@ -204,7 +209,7 @@ final class BrowserSidebarChromePresentationNSView<Content: View>: NSView {
         animationDuration: TimeInterval,
         animatesOffsetChanges: Bool
     ) {
-        hostingView = NSHostingView(rootView: rootView)
+        self.hostingView = NSHostingView(rootView: rootView)
         self.contentSize = contentSize
         self.contentOffset = contentOffset
         self.cornerRadius = cornerRadius
@@ -228,13 +233,27 @@ final class BrowserSidebarChromePresentationNSView<Content: View>: NSView {
 
         updateClipping()
         applyHostingFrame(animated: false)
-        didApplyInitialFrame = true
+        self.didApplyInitialFrame = true
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    // MARK: Internal
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    var hostingView: NSHostingView<Content>
+    var contentSize: CGSize
+    var contentOffset: CGPoint
+    var cornerRadius: CGFloat
+    var maskedCorners: CACornerMask
+    var animationDuration: TimeInterval
+    var animatesOffsetChanges: Bool
+    var didApplyInitialFrame = false
 
     func update(
         rootView: Content,
@@ -263,6 +282,8 @@ final class BrowserSidebarChromePresentationNSView<Content: View>: NSView {
         applyHostingFrame(animated: shouldAnimateOffset)
         didApplyInitialFrame = true
     }
+
+    // MARK: Private
 
     private func updateClipping() {
         guard let layer, let hostingLayer = hostingView.layer else {
@@ -298,6 +319,9 @@ final class BrowserSidebarChromePresentationNSView<Content: View>: NSView {
         }
     }
 }
+
+// MARK: - BrowserDetachedOverlayWindowRepresentable
+
 struct BrowserDetachedOverlayWindowRepresentable<Content: View>: NSViewRepresentable {
     let isVisible: Bool
     let isInteractive: Bool
@@ -322,6 +346,9 @@ struct BrowserDetachedOverlayWindowRepresentable<Content: View>: NSViewRepresent
         )
     }
 }
+
+// MARK: - BrowserDetachedOverlayPanel
+
 final class BrowserDetachedOverlayPanel: NSPanel {
     override var canBecomeKey: Bool {
         true
@@ -357,15 +384,14 @@ final class BrowserDetachedOverlayPanel: NSPanel {
         parent.performDrag(with: parentEvent)
     }
 }
+
+// MARK: - BrowserDetachedOverlayHostView
+
 final class BrowserDetachedOverlayHostView<Content: View>: NSView {
-    var overlayPanel: BrowserDetachedOverlayPanel?
-    var hostingView: NSHostingView<Content>
-    var isVisible: Bool
-    var isInteractive: Bool
-    var contentFrameLeadingInset: CGFloat
+    // MARK: Lifecycle
 
     init(rootView: Content, isVisible: Bool, isInteractive: Bool, contentFrameLeadingInset: CGFloat) {
-        hostingView = NSHostingView(rootView: rootView)
+        self.hostingView = NSHostingView(rootView: rootView)
         self.isVisible = isVisible
         self.isInteractive = isInteractive
         self.contentFrameLeadingInset = contentFrameLeadingInset
@@ -376,10 +402,17 @@ final class BrowserDetachedOverlayHostView<Content: View>: NSView {
         detachPanel()
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    // MARK: Internal
+
+    var overlayPanel: BrowserDetachedOverlayPanel?
+    var hostingView: NSHostingView<Content>
+    var isVisible: Bool
+    var isInteractive: Bool
+    var contentFrameLeadingInset: CGFloat
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -398,6 +431,8 @@ final class BrowserDetachedOverlayHostView<Content: View>: NSView {
         self.contentFrameLeadingInset = contentFrameLeadingInset
         syncPanel()
     }
+
+    // MARK: Private
 
     private func syncPanel() {
         guard let window else {

@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserChromePalette
+
 enum BrowserChromePalette {
     static let shellBackground = Color.black
     static let sidebarBackground = Color.black
@@ -11,9 +13,24 @@ enum BrowserChromePalette {
     static let currentURLRow = Color.white.opacity(0.1)
     static let currentURLRowHover = Color.white.opacity(0.12)
     static let currentURLButtonHover = Color.white.opacity(0.16)
-    static let currentURLRowResolved = Color(nsColor: NSColor(srgbRed: 25 / 255, green: 25 / 255, blue: 25 / 255, alpha: 1))
-    static let currentURLRowHoverResolved = Color(nsColor: NSColor(srgbRed: 31 / 255, green: 31 / 255, blue: 31 / 255, alpha: 1))
-    static let currentURLButtonHoverResolved = Color(nsColor: NSColor(srgbRed: 41 / 255, green: 41 / 255, blue: 41 / 255, alpha: 1))
+    static let currentURLRowResolved = Color(nsColor: NSColor(
+        srgbRed: 25 / 255,
+        green: 25 / 255,
+        blue: 25 / 255,
+        alpha: 1
+    ))
+    static let currentURLRowHoverResolved = Color(nsColor: NSColor(
+        srgbRed: 31 / 255,
+        green: 31 / 255,
+        blue: 31 / 255,
+        alpha: 1
+    ))
+    static let currentURLButtonHoverResolved = Color(nsColor: NSColor(
+        srgbRed: 41 / 255,
+        green: 41 / 255,
+        blue: 41 / 255,
+        alpha: 1
+    ))
     static let rowCloseHover = Color.white.opacity(0.12)
     static let rowCloseForeground = Color.white.opacity(0.82)
     static let sidebarDivider = Color.white.opacity(0.12)
@@ -57,6 +74,9 @@ enum BrowserChromePalette {
     static let tooltipKeyText = Color.black.opacity(0.92)
     static let tooltipKeyShadow = Color.black.opacity(0.12)
 }
+
+// MARK: - BrowserChromeLayout
+
 enum BrowserChromeLayout {
     static let sidebarAnimationDuration = 0.18
     static let sidebarResizeHoverDelayNanoseconds: UInt64 = 500_000_000
@@ -100,21 +120,6 @@ enum BrowserChromeLayout {
     static let sidebarTabDragMinimumDistance: CGFloat = 4
     static let sidebarTabDropVerticalSnapDistance: CGFloat = sidebarRowHeight * 0.62
     static let sidebarTabDropHorizontalTolerance: CGFloat = 48
-    static var sidebarTabDropListAnimation: Animation {
-        .spring(response: 0.28, dampingFraction: 0.82)
-    }
-
-    static var sidebarTabDragPreviewAnimation: Animation {
-        .spring(response: 0.2, dampingFraction: 0.86)
-    }
-
-    static var sidebarTabVisibilityTransition: AnyTransition {
-        .asymmetric(
-            insertion: .move(edge: .top).combined(with: .opacity),
-            removal: .move(edge: .top).combined(with: .opacity)
-        )
-    }
-
     static let sidebarDragPreviewShadowRadius: CGFloat = 14
     static let sidebarDragPreviewShadowY: CGFloat = 8
     static let sidebarClearButtonHorizontalPadding: CGFloat = 8
@@ -184,6 +189,22 @@ enum BrowserChromeLayout {
     static let tooltipBorderWidth: CGFloat = 0.5
     static let tooltipAnchorXFraction: CGFloat = 0.75
     static let tooltipAnchorYFraction: CGFloat = 0.75
+
+    static var sidebarTabDropListAnimation: Animation {
+        .spring(response: 0.28, dampingFraction: 0.82)
+    }
+
+    static var sidebarTabDragPreviewAnimation: Animation {
+        .spring(response: 0.2, dampingFraction: 0.86)
+    }
+
+    static var sidebarTabVisibilityTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity),
+            removal: .move(edge: .top).combined(with: .opacity)
+        )
+    }
+
     static var currentURLCopyIconAnimation: Animation {
         .spring(response: 0.22, dampingFraction: 0.68)
     }

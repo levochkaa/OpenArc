@@ -2,8 +2,7 @@ import Foundation
 import Testing
 
 @Test
-@MainActor
-func restoreCreatesTabsInSavedOrderAndSelectsSavedIndex() {
+@MainActor func restoreCreatesTabsInSavedOrderAndSelectsSavedIndex() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
         loadedSnapshot: BrowserTabSessionSnapshot(
@@ -44,8 +43,7 @@ func restoreCreatesTabsInSavedOrderAndSelectsSavedIndex() {
 }
 
 @Test
-@MainActor
-func restorePersistsSpacesAndSelectsSavedSpaceTab() {
+@MainActor func restorePersistsSpacesAndSelectsSavedSpaceTab() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
         loadedSnapshot: BrowserTabSessionSnapshot(
@@ -101,8 +99,7 @@ func restorePersistsSpacesAndSelectsSavedSpaceTab() {
 }
 
 @Test
-@MainActor
-func restoreEmptySelectedSpaceDeselectsBrowserView() {
+@MainActor func restoreEmptySelectedSpaceDeselectsBrowserView() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
         loadedSnapshot: BrowserTabSessionSnapshot(
@@ -135,8 +132,7 @@ func restoreEmptySelectedSpaceDeselectsBrowserView() {
 }
 
 @Test
-@MainActor
-func restoreSessionPreferenceOffSkipsSavedTabs() throws {
+@MainActor func restoreSessionPreferenceOffSkipsSavedTabs() throws {
     let suiteName = "TheBrowserTests.\(UUID().uuidString)"
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
@@ -168,8 +164,7 @@ func restoreSessionPreferenceOffSkipsSavedTabs() throws {
 }
 
 @Test
-@MainActor
-func emptySnapshotFallsBackToInitialTab() {
+@MainActor func emptySnapshotFallsBackToInitialTab() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -185,8 +180,7 @@ func emptySnapshotFallsBackToInitialTab() {
 }
 
 @Test
-@MainActor
-func createEmptySpaceSelectsItWithoutCreatingTab() {
+@MainActor func createEmptySpaceSelectsItWithoutCreatingTab() {
     let driver = FakeBrowserTabDriver()
     var nextSpaceNumber = 0
     let model = makeModel(
@@ -216,8 +210,7 @@ func createEmptySpaceSelectsItWithoutCreatingTab() {
 }
 
 @Test
-@MainActor
-func creatingTabInEmptySpaceKeepsOriginalSpaceTabsSeparate() {
+@MainActor func creatingTabInEmptySpaceKeepsOriginalSpaceTabsSeparate() {
     let driver = FakeBrowserTabDriver()
     var nextSpaceNumber = 0
     let model = makeModel(
@@ -252,8 +245,7 @@ func creatingTabInEmptySpaceKeepsOriginalSpaceTabsSeparate() {
 }
 
 @Test
-@MainActor
-func movingTabToAnotherSpaceUpdatesOnlyTheTargetSpace() {
+@MainActor func movingTabToAnotherSpaceUpdatesOnlyTheTargetSpace() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -292,8 +284,7 @@ func movingTabToAnotherSpaceUpdatesOnlyTheTargetSpace() {
 }
 
 @Test
-@MainActor
-func spaceMetadataMutationsPersistAndRestore() {
+@MainActor func spaceMetadataMutationsPersistAndRestore() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -332,8 +323,7 @@ func spaceMetadataMutationsPersistAndRestore() {
 }
 
 @Test
-@MainActor
-func closingLastTabLeavesSelectedSpaceEmptyWithoutReplacement() {
+@MainActor func closingLastTabLeavesSelectedSpaceEmptyWithoutReplacement() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -358,8 +348,7 @@ func closingLastTabLeavesSelectedSpaceEmptyWithoutReplacement() {
 }
 
 @Test
-@MainActor
-func clearTemporaryTabsOnlyClearsActiveSpace() {
+@MainActor func clearTemporaryTabsOnlyClearsActiveSpace() {
     let driver = FakeBrowserTabDriver()
     var nextSpaceNumber = 0
     let model = makeModel(
@@ -396,8 +385,7 @@ func clearTemporaryTabsOnlyClearsActiveSpace() {
 }
 
 @Test
-@MainActor
-func archiveExpiredTemporaryTabsOnlyArchivesActiveSpace() {
+@MainActor func archiveExpiredTemporaryTabsOnlyArchivesActiveSpace() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
         loadedSnapshot: BrowserTabSessionSnapshot(
@@ -452,8 +440,7 @@ func archiveExpiredTemporaryTabsOnlyArchivesActiveSpace() {
 }
 
 @Test
-@MainActor
-func archiveTabsBelowOnlyUsesActiveSpaceTabs() {
+@MainActor func archiveTabsBelowOnlyUsesActiveSpaceTabs() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
         loadedSnapshot: BrowserTabSessionSnapshot(
@@ -489,8 +476,7 @@ func archiveTabsBelowOnlyUsesActiveSpaceTabs() {
 }
 
 @Test
-@MainActor
-func launchStartsWithVisibleSidebarEvenIfPreviousInstanceHidIt() {
+@MainActor func launchStartsWithVisibleSidebarEvenIfPreviousInstanceHidIt() {
     let firstDriver = FakeBrowserTabDriver()
     let firstSnapshotStore = InMemorySessionSnapshotStore()
     let firstPreferencesStore = InMemorySessionPreferencesStore()
@@ -522,8 +508,7 @@ func launchStartsWithVisibleSidebarEvenIfPreviousInstanceHidIt() {
 }
 
 @Test
-@MainActor
-func persistentURLChangesTriggerSaveButTitleFaviconAndNavigationDoNot() throws {
+@MainActor func persistentURLChangesTriggerSaveButTitleFaviconAndNavigationDoNot() throws {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -556,8 +541,7 @@ func persistentURLChangesTriggerSaveButTitleFaviconAndNavigationDoNot() throws {
 }
 
 @Test
-@MainActor
-func userTitleOverridePersistsAcrossUpdatesAndRestore() throws {
+@MainActor func userTitleOverridePersistsAcrossUpdatesAndRestore() throws {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -598,8 +582,7 @@ func userTitleOverridePersistsAcrossUpdatesAndRestore() throws {
 }
 
 @Test
-@MainActor
-func createSelectAndClosePersistState() {
+@MainActor func createSelectAndClosePersistState() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -633,8 +616,7 @@ func createSelectAndClosePersistState() {
 }
 
 @Test
-@MainActor
-func sidebarWidthChangesOnlyPersistPreferencesWhenCommitted() {
+@MainActor func sidebarWidthChangesOnlyPersistPreferencesWhenCommitted() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -663,8 +645,7 @@ func sidebarWidthChangesOnlyPersistPreferencesWhenCommitted() {
 }
 
 @Test
-@MainActor
-func sessionMutationsDoNotPersistSidebarWidthImplicitly() {
+@MainActor func sessionMutationsDoNotPersistSidebarWidthImplicitly() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -687,8 +668,7 @@ func sessionMutationsDoNotPersistSidebarWidthImplicitly() {
 }
 
 @Test
-@MainActor
-func terminationPersistsLatestSidebarWidthPreference() {
+@MainActor func terminationPersistsLatestSidebarWidthPreference() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -708,8 +688,7 @@ func terminationPersistsLatestSidebarWidthPreference() {
 }
 
 @Test
-@MainActor
-func pinningAndClearingTemporaryTabsPreservesPinnedTabs() {
+@MainActor func pinningAndClearingTemporaryTabsPreservesPinnedTabs() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -742,8 +721,7 @@ func pinningAndClearingTemporaryTabsPreservesPinnedTabs() {
 }
 
 @Test
-@MainActor
-func movingTemporaryTabIntoPinnedSectionPinsAndPersistsSidebarOrder() {
+@MainActor func movingTemporaryTabIntoPinnedSectionPinsAndPersistsSidebarOrder() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -778,8 +756,7 @@ func movingTemporaryTabIntoPinnedSectionPinsAndPersistsSidebarOrder() {
 }
 
 @Test
-@MainActor
-func movingPinnedTabIntoTemporarySectionUnpinsAndPersistsSidebarOrder() {
+@MainActor func movingPinnedTabIntoTemporarySectionUnpinsAndPersistsSidebarOrder() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -810,8 +787,7 @@ func movingPinnedTabIntoTemporarySectionUnpinsAndPersistsSidebarOrder() {
 }
 
 @Test
-@MainActor
-func movingWithinPinnedSectionReordersPinnedTabs() {
+@MainActor func movingWithinPinnedSectionReordersPinnedTabs() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -843,8 +819,7 @@ func movingWithinPinnedSectionReordersPinnedTabs() {
 }
 
 @Test
-@MainActor
-func movingTabsBetweenSectionEndsKeepsMovedTabsSelectable() {
+@MainActor func movingTabsBetweenSectionEndsKeepsMovedTabsSelectable() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -891,8 +866,7 @@ func movingTabsBetweenSectionEndsKeepsMovedTabsSelectable() {
 }
 
 @Test
-@MainActor
-func appTabPlacementPersistsAndRestores() {
+@MainActor func appTabPlacementPersistsAndRestores() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -930,8 +904,7 @@ func appTabPlacementPersistsAndRestores() {
 }
 
 @Test
-@MainActor
-func appTabsAreNotArchivedWithExpiredTemporaryTabs() {
+@MainActor func appTabsAreNotArchivedWithExpiredTemporaryTabs() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
         loadedSnapshot: BrowserTabSessionSnapshot(
@@ -977,8 +950,7 @@ func appTabsAreNotArchivedWithExpiredTemporaryTabs() {
 }
 
 @Test
-@MainActor
-func appTabCapacityBlocksNinthAppTabButAllowsInternalReorder() throws {
+@MainActor func appTabCapacityBlocksNinthAppTabButAllowsInternalReorder() throws {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -990,7 +962,7 @@ func appTabCapacityBlocksNinthAppTabButAllowsInternalReorder() throws {
 
     model.handleContextReady()
     driver.flushPendingCreateEvents()
-    for _ in 0 ..< BrowserChromeModel.appTabCapacity {
+    for _ in 0..<BrowserChromeModel.appTabCapacity {
         model.createNewTab()
         driver.flushPendingCreateEvents()
     }
@@ -1011,8 +983,7 @@ func appTabCapacityBlocksNinthAppTabButAllowsInternalReorder() throws {
 }
 
 @Test
-@MainActor
-func movingAcrossAppSpacePinnedAndTemporaryPreservesOrderAndSelection() {
+@MainActor func movingAcrossAppSpacePinnedAndTemporaryPreservesOrderAndSelection() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -1048,8 +1019,7 @@ func movingAcrossAppSpacePinnedAndTemporaryPreservesOrderAndSelection() {
 }
 
 @Test
-@MainActor
-func archiveTabsBelowUsesVisibleSidebarOrder() {
+@MainActor func archiveTabsBelowUsesVisibleSidebarOrder() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -1090,8 +1060,7 @@ func archiveTabsBelowUsesVisibleSidebarOrder() {
 }
 
 @Test
-@MainActor
-func archiveSelectedTabClosesCurrentTabAndSelectsFallback() {
+@MainActor func archiveSelectedTabClosesCurrentTabAndSelectsFallback() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -1124,8 +1093,7 @@ func archiveSelectedTabClosesCurrentTabAndSelectsFallback() {
 }
 
 @Test
-@MainActor
-func expiredTemporaryTabsArchiveButPinnedTabsRemain() {
+@MainActor func expiredTemporaryTabsArchiveButPinnedTabsRemain() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
         loadedSnapshot: BrowserTabSessionSnapshot(
@@ -1171,8 +1139,7 @@ func expiredTemporaryTabsArchiveButPinnedTabsRemain() {
 }
 
 @Test
-@MainActor
-func changingTemporaryTabLifetimePersistsAndArchivesExpiredTabs() {
+@MainActor func changingTemporaryTabLifetimePersistsAndArchivesExpiredTabs() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -1199,8 +1166,7 @@ func changingTemporaryTabLifetimePersistsAndArchivesExpiredTabs() {
 }
 
 @Test
-@MainActor
-func cleanShutdownPersistsLastSessionAndSuppressesFurtherCloseCallbacks() {
+@MainActor func cleanShutdownPersistsLastSessionAndSuppressesFurtherCloseCallbacks() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -1234,8 +1200,7 @@ func cleanShutdownPersistsLastSessionAndSuppressesFurtherCloseCallbacks() {
 }
 
 @Test
-@MainActor
-func presentCommandBarDoesNotCreateTabUntilSubmit() async {
+@MainActor func presentCommandBarDoesNotCreateTabUntilSubmit() async {
     let driver = FakeBrowserTabDriver()
     let suggestionProvider = FakeSuggestionProvider()
     let model = makeModel(
@@ -1264,8 +1229,7 @@ func presentCommandBarDoesNotCreateTabUntilSubmit() async {
 }
 
 @Test
-@MainActor
-func currentPageCommandBarNavigatesSelectedTabWithoutCreatingNewTab() async {
+@MainActor func currentPageCommandBarNavigatesSelectedTabWithoutCreatingNewTab() async {
     let driver = FakeBrowserTabDriver()
     let suggestionProvider = FakeSuggestionProvider()
     let model = makeModel(
@@ -1294,8 +1258,7 @@ func currentPageCommandBarNavigatesSelectedTabWithoutCreatingNewTab() async {
 }
 
 @Test
-@MainActor
-func presentingNewTabCommandBarDismissesCurrentPageCommandBar() {
+@MainActor func presentingNewTabCommandBarDismissesCurrentPageCommandBar() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1316,8 +1279,7 @@ func presentingNewTabCommandBarDismissesCurrentPageCommandBar() {
 }
 
 @Test
-@MainActor
-func presentingCurrentPageCommandBarDismissesNewTabCommandBar() {
+@MainActor func presentingCurrentPageCommandBarDismissesNewTabCommandBar() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1338,8 +1300,7 @@ func presentingCurrentPageCommandBarDismissesNewTabCommandBar() {
 }
 
 @Test
-@MainActor
-func selectingAnotherTabDismissesCommandBar() throws {
+@MainActor func selectingAnotherTabDismissesCommandBar() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1362,8 +1323,7 @@ func selectingAnotherTabDismissesCommandBar() throws {
 }
 
 @Test
-@MainActor
-func toggleCommandBarDismissesWhenAlreadyPresented() {
+@MainActor func toggleCommandBarDismissesWhenAlreadyPresented() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1382,8 +1342,7 @@ func toggleCommandBarDismissesWhenAlreadyPresented() {
 }
 
 @Test
-@MainActor
-func loadingStateSwitchesToStopActionWithoutAffectingReloadAvailability() throws {
+@MainActor func loadingStateSwitchesToStopActionWithoutAffectingReloadAvailability() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1413,8 +1372,7 @@ func loadingStateSwitchesToStopActionWithoutAffectingReloadAvailability() throws
 }
 
 @Test
-@MainActor
-func printCurrentPageRequiresReadySelectedTab() {
+@MainActor func printCurrentPageRequiresReadySelectedTab() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1435,8 +1393,7 @@ func printCurrentPageRequiresReadySelectedTab() {
 }
 
 @Test
-@MainActor
-func pasteAndMatchStyleRequiresReadySelectedTab() {
+@MainActor func pasteAndMatchStyleRequiresReadySelectedTab() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1457,8 +1414,7 @@ func pasteAndMatchStyleRequiresReadySelectedTab() {
 }
 
 @Test
-@MainActor
-func findBarRunsSearchAndClearsSelectionOnDismiss() {
+@MainActor func findBarRunsSearchAndClearsSelectionOnDismiss() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1518,8 +1474,7 @@ func findBarRunsSearchAndClearsSelectionOnDismiss() {
 }
 
 @Test
-@MainActor
-func findBarIsEnabledForInternalWebUITabs() throws {
+@MainActor func findBarIsEnabledForInternalWebUITabs() throws {
     for urlString in [
         "tb://settings",
         "tb://settings/privacy",
@@ -1555,8 +1510,7 @@ func findBarIsEnabledForInternalWebUITabs() throws {
 }
 
 @Test
-@MainActor
-func findCommandUsesNormalFindBarForInternalWebUITabs() throws {
+@MainActor func findCommandUsesNormalFindBarForInternalWebUITabs() throws {
     for urlString in [
         "tb://settings",
         "tb://settings/privacy",
@@ -1593,8 +1547,7 @@ func findCommandUsesNormalFindBarForInternalWebUITabs() throws {
 }
 
 @Test
-@MainActor
-func selectingInternalWebUITabKeepsFindBarMounted() throws {
+@MainActor func selectingInternalWebUITabKeepsFindBarMounted() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1625,8 +1578,7 @@ func selectingInternalWebUITabKeepsFindBarMounted() throws {
 }
 
 @Test
-@MainActor
-func findBarUsesFindResultsToDisableMatchStepping() throws {
+@MainActor func findBarUsesFindResultsToDisableMatchStepping() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1662,8 +1614,7 @@ func findBarUsesFindResultsToDisableMatchStepping() throws {
 }
 
 @Test
-@MainActor
-func presentingFindBarAgainRefreshesFocusRequest() {
+@MainActor func presentingFindBarAgainRefreshesFocusRequest() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
         driver: driver,
@@ -1681,8 +1632,7 @@ func presentingFindBarAgainRefreshesFocusRequest() {
     #expect(model.findBarFocusRequest == 2)
 }
 
-@MainActor
-private func makeModel(
+@MainActor private func makeModel(
     driver: FakeBrowserTabDriver,
     snapshotStore: InMemorySessionSnapshotStore,
     preferencesStore: InMemorySessionPreferencesStore,
@@ -1716,8 +1666,7 @@ private func isolatedUserDefaults() -> UserDefaults {
     return userDefaults
 }
 
-@MainActor
-private func tabID(from model: BrowserChromeModel) throws -> String {
+@MainActor private func tabID(from model: BrowserChromeModel) throws -> String {
     #expect(model.tabs.count == 1)
     guard let tabID = model.tabs.first?.id else {
         throw BrowserChromeModelTestError.missingTab
@@ -1725,6 +1674,8 @@ private func tabID(from model: BrowserChromeModel) throws -> String {
 
     return tabID
 }
+
+// MARK: - BrowserChromeModelTestError
 
 private enum BrowserChromeModelTestError: Error {
     case missingTab

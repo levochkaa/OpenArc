@@ -2,8 +2,7 @@ import CoreGraphics
 import Foundation
 import Testing
 
-@Test
-func snapshotRoundTripPersistsJSONToDisk() throws {
+@Test func snapshotRoundTripPersistsJSONToDisk() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -30,8 +29,7 @@ func snapshotRoundTripPersistsJSONToDisk() throws {
     #expect(store.loadSnapshot() == snapshot)
 }
 
-@Test
-func snapshotRoundTripPersistsSpaces() throws {
+@Test func snapshotRoundTripPersistsSpaces() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -70,8 +68,7 @@ func snapshotRoundTripPersistsSpaces() throws {
     #expect(store.loadSnapshot() == snapshot)
 }
 
-@Test
-func snapshotLoadMigratesLegacyTabURLStringFormat() throws {
+@Test func snapshotLoadMigratesLegacyTabURLStringFormat() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -100,8 +97,7 @@ func snapshotLoadMigratesLegacyTabURLStringFormat() throws {
     )
 }
 
-@Test
-func snapshotLoadMigratesVersionOneTabsWithoutPinMetadata() throws {
+@Test func snapshotLoadMigratesVersionOneTabsWithoutPinMetadata() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -134,8 +130,7 @@ func snapshotLoadMigratesVersionOneTabsWithoutPinMetadata() throws {
     )
 }
 
-@Test
-func snapshotLoadMigratesLegacyPinnedMetadataToSpacePinnedPlacement() throws {
+@Test func snapshotLoadMigratesLegacyPinnedMetadataToSpacePinnedPlacement() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -173,8 +168,7 @@ func snapshotLoadMigratesLegacyPinnedMetadataToSpacePinnedPlacement() throws {
     )
 }
 
-@Test
-func missingSnapshotFileReturnsNil() throws {
+@Test func missingSnapshotFileReturnsNil() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -183,8 +177,7 @@ func missingSnapshotFileReturnsNil() throws {
     #expect(store.loadSnapshot() == nil)
 }
 
-@Test
-func invalidSnapshotJSONReturnsNil() throws {
+@Test func invalidSnapshotJSONReturnsNil() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -194,8 +187,7 @@ func invalidSnapshotJSONReturnsNil() throws {
     #expect(store.loadSnapshot() == nil)
 }
 
-@Test
-func selectedTabIndexLoadsWithClamping() throws {
+@Test func selectedTabIndexLoadsWithClamping() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -209,8 +201,7 @@ func selectedTabIndexLoadsWithClamping() throws {
     #expect(store.loadSelectedTabIndex(tabCount: 3) == 0)
 }
 
-@Test
-func selectedSpaceIndexLoadsWithClamping() throws {
+@Test func selectedSpaceIndexLoadsWithClamping() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -224,8 +215,7 @@ func selectedSpaceIndexLoadsWithClamping() throws {
     #expect(store.loadSelectedSpaceIndex(spaceCount: 3) == 0)
 }
 
-@Test
-func sidebarWidthLoadsWithClamping() throws {
+@Test func sidebarWidthLoadsWithClamping() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -244,8 +234,7 @@ func sidebarWidthLoadsWithClamping() throws {
     )
 }
 
-@Test
-func temporaryTabLifetimeDefaultsAndPersists() throws {
+@Test func temporaryTabLifetimeDefaultsAndPersists() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -258,8 +247,7 @@ func temporaryTabLifetimeDefaultsAndPersists() throws {
     #expect(store.loadTemporaryTabLifetime() == .sevenDays)
 }
 
-@Test
-func invalidTemporaryTabLifetimeFallsBackToDefault() throws {
+@Test func invalidTemporaryTabLifetimeFallsBackToDefault() throws {
     let harness = try PersistenceHarness()
     defer { harness.cleanup() }
 
@@ -269,30 +257,39 @@ func invalidTemporaryTabLifetimeFallsBackToDefault() throws {
     #expect(store.loadTemporaryTabLifetime() == .thirtyDays)
 }
 
+// MARK: - PersistenceHarness
+
 private struct PersistenceHarness {
-    let snapshotURL: URL
-    let userDefaultsSuiteName: String
-    let userDefaults: UserDefaults
+    // MARK: Lifecycle
 
     init() throws {
-        let temporaryDirectory = FileManager.default.temporaryDirectory
+        let temporaryDirectory = FileManager.default
+            .temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
-        snapshotURL = temporaryDirectory
+        self.snapshotURL = temporaryDirectory
             .appendingPathComponent(BrowserTabSessionSnapshotStore.snapshotFileName, isDirectory: false)
 
-        userDefaultsSuiteName = "TheBrowserTests.\(UUID().uuidString)"
+        self.userDefaultsSuiteName = "TheBrowserTests.\(UUID().uuidString)"
         guard let userDefaults = UserDefaults(suiteName: userDefaultsSuiteName) else {
             throw PersistenceHarnessError.missingUserDefaultsSuite
         }
         self.userDefaults = userDefaults
     }
 
+    // MARK: Internal
+
+    let snapshotURL: URL
+    let userDefaultsSuiteName: String
+    let userDefaults: UserDefaults
+
     func cleanup() {
         try? FileManager.default.removeItem(at: snapshotURL.deletingLastPathComponent())
         userDefaults.removePersistentDomain(forName: userDefaultsSuiteName)
     }
 }
+
+// MARK: - PersistenceHarnessError
 
 private enum PersistenceHarnessError: Error {
     case missingUserDefaultsSuite

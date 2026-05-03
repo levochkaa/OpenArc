@@ -2,8 +2,7 @@ import Foundation
 import Testing
 
 @Test
-@MainActor
-func tooltipAppearsOnlyAfterContinuousHoverDelay() async {
+@MainActor func tooltipAppearsOnlyAfterContinuousHoverDelay() async {
     let coordinator = BrowserTooltipCoordinator(
         activationDelayNanoseconds: 20_000_000,
         cooldownDelayNanoseconds: 10_000_000
@@ -17,8 +16,7 @@ func tooltipAppearsOnlyAfterContinuousHoverDelay() async {
 }
 
 @Test
-@MainActor
-func warmStateMakesNextTooltipAppearImmediately() async {
+@MainActor func warmStateMakesNextTooltipAppearImmediately() async {
     let coordinator = BrowserTooltipCoordinator(
         activationDelayNanoseconds: 20_000_000,
         cooldownDelayNanoseconds: 30_000_000
@@ -36,8 +34,7 @@ func warmStateMakesNextTooltipAppearImmediately() async {
 }
 
 @Test
-@MainActor
-func leavingAllTooltipTargetsResetsWarmStateAfterCooldown() async {
+@MainActor func leavingAllTooltipTargetsResetsWarmStateAfterCooldown() async {
     let coordinator = BrowserTooltipCoordinator(
         activationDelayNanoseconds: 20_000_000,
         cooldownDelayNanoseconds: 20_000_000
@@ -57,8 +54,7 @@ func leavingAllTooltipTargetsResetsWarmStateAfterCooldown() async {
     await expectActiveTooltip(secondTooltipID, in: coordinator)
 }
 
-@MainActor
-private func expectActiveTooltip(
+@MainActor private func expectActiveTooltip(
     _ expectedTooltipID: UUID?,
     in coordinator: BrowserTooltipCoordinator,
     timeoutNanoseconds: UInt64 = 500_000_000,
@@ -66,7 +62,7 @@ private func expectActiveTooltip(
 ) async {
     var elapsedNanoseconds: UInt64 = 0
 
-    while coordinator.activeTooltipID != expectedTooltipID && elapsedNanoseconds < timeoutNanoseconds {
+    while coordinator.activeTooltipID != expectedTooltipID, elapsedNanoseconds < timeoutNanoseconds {
         try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
         elapsedNanoseconds += pollIntervalNanoseconds
     }

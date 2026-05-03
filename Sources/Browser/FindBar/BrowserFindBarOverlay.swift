@@ -2,8 +2,11 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserFindBarOverlay
+
 struct BrowserFindBarOverlay: View {
     @ObservedObject var model: BrowserChromeModel
+
     let blockedLeadingInset: CGFloat
 
     var body: some View {
@@ -33,8 +36,15 @@ struct BrowserFindBarOverlay: View {
         .animation(.easeOut(duration: 0.12), value: model.isFindBarPresented)
     }
 }
+
+// MARK: - BrowserFindBarPanel
+
 struct BrowserFindBarPanel: View {
     @ObservedObject var model: BrowserChromeModel
+
+    var canStepThroughMatches: Bool {
+        model.canStepThroughFindMatches
+    }
 
     var body: some View {
         HStack(spacing: BrowserChromeLayout.findBarContentSpacing) {
@@ -100,10 +110,6 @@ struct BrowserFindBarPanel: View {
         .shadow(color: Color.black.opacity(0.24), radius: 18, y: 8)
     }
 
-    var canStepThroughMatches: Bool {
-        model.canStepThroughFindMatches
-    }
-
     var panelBackground: some View {
         RoundedRectangle(cornerRadius: BrowserChromeLayout.findBarCornerRadius, style: .continuous)
             .fill(BrowserChromePalette.findBarPanelTint)
@@ -123,33 +129,12 @@ struct BrowserFindBarPanel: View {
             .stroke(BrowserChromePalette.findBarPanelBorder, lineWidth: 1)
     }
 }
+
+// MARK: - BrowserFindQueryTextField
+
 struct BrowserFindQueryTextField: NSViewRepresentable {
-    @Binding var text: String
-    let isFocused: Bool
-    let focusRequestID: Int
-    let onSubmit: () -> Void
-    let onCancel: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onSubmit: onSubmit, onCancel: onCancel)
-    }
-
-    func makeNSView(context: Context) -> BrowserFindNSTextField {
-        let textField = BrowserFindNSTextField()
-        textField.delegate = context.coordinator
-        textField.stringValue = text
-        return textField
-    }
-
-    func updateNSView(_ nsView: BrowserFindNSTextField, context: Context) {
-        context.coordinator.update(text: $text, onSubmit: onSubmit, onCancel: onCancel)
-        nsView.sync(text: text, shouldFocus: isFocused, focusRequestID: focusRequestID)
-    }
-
     final class Coordinator: NSObject, NSTextFieldDelegate {
-        var text: Binding<String>
-        var onSubmit: () -> Void
-        var onCancel: () -> Void
+        // MARK: Lifecycle
 
         init(
             text: Binding<String>,
@@ -160,6 +145,12 @@ struct BrowserFindQueryTextField: NSViewRepresentable {
             self.onSubmit = onSubmit
             self.onCancel = onCancel
         }
+
+        // MARK: Internal
+
+        var text: Binding<String>
+        var onSubmit: () -> Void
+        var onCancel: () -> Void
 
         func update(
             text: Binding<String>,
@@ -198,11 +189,35 @@ struct BrowserFindQueryTextField: NSViewRepresentable {
             }
         }
     }
+
+    @Binding var text: String
+
+    let isFocused: Bool
+    let focusRequestID: Int
+    let onSubmit: () -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, onSubmit: onSubmit, onCancel: onCancel)
+    }
+
+    func makeNSView(context: Context) -> BrowserFindNSTextField {
+        let textField = BrowserFindNSTextField()
+        textField.delegate = context.coordinator
+        textField.stringValue = text
+        return textField
+    }
+
+    func updateNSView(_ nsView: BrowserFindNSTextField, context: Context) {
+        context.coordinator.update(text: $text, onSubmit: onSubmit, onCancel: onCancel)
+        nsView.sync(text: text, shouldFocus: isFocused, focusRequestID: focusRequestID)
+    }
 }
+
+// MARK: - BrowserFindNSTextField
+
 final class BrowserFindNSTextField: NSTextField {
-    var pendingFocus = false
-    var pendingSelectAll = false
-    var lastFocusRequestID = 0
+    // MARK: Lifecycle
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -221,14 +236,19 @@ final class BrowserFindNSTextField: NSTextField {
         cell?.lineBreakMode = .byClipping
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    // MARK: Internal
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: 18)
     }
+
+    var pendingFocus = false
+    var pendingSelectAll = false
+    var lastFocusRequestID = 0
 
     override func becomeFirstResponder() -> Bool {
         let didBecomeFirstResponder = super.becomeFirstResponder()
@@ -262,6 +282,8 @@ final class BrowserFindNSTextField: NSTextField {
         pendingFocus = shouldFocus
         syncFocus(shouldFocus)
     }
+
+    // MARK: Private
 
     private func syncFocus(_ shouldFocus: Bool) {
         pendingFocus = shouldFocus

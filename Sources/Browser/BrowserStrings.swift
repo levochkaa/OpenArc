@@ -1,40 +1,30 @@
 import AppKit
 import Foundation
 
+// MARK: - BrowserKeyboardShortcut
+
 struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
-    let keyEquivalent: String
-    let modifiers: NSEvent.ModifierFlags
+    // MARK: Lifecycle
 
     init(_ keyEquivalent: String, modifiers: NSEvent.ModifierFlags = [.command]) {
         self.keyEquivalent = keyEquivalent
         self.modifiers = modifiers
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case keyEquivalent
-        case modifiersRawValue
-    }
-
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        keyEquivalent = try container.decode(String.self, forKey: .keyEquivalent)
+        self.keyEquivalent = try container.decode(String.self, forKey: .keyEquivalent)
         let modifiersRawValue = try container.decode(NSEvent.ModifierFlags.RawValue.self, forKey: .modifiersRawValue)
-        modifiers = NSEvent.ModifierFlags(rawValue: modifiersRawValue)
+        self.modifiers = NSEvent.ModifierFlags(rawValue: modifiersRawValue)
     }
 
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(keyEquivalent, forKey: .keyEquivalent)
-        try container.encode(modifiers.rawValue, forKey: .modifiersRawValue)
-    }
+    // MARK: Internal
 
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(keyEquivalent)
-        hasher.combine(modifiers.rawValue)
-    }
+    let keyEquivalent: String
+    let modifiers: NSEvent.ModifierFlags
 
     var keyCaps: [String] {
-        var result: [String] = []
+        var result = [String]()
 
         if modifiers.contains(.control) {
             result.append("\u{2303}")
@@ -59,13 +49,35 @@ struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
     var displayText: String {
         keyCaps.joined()
     }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(keyEquivalent, forKey: .keyEquivalent)
+        try container.encode(modifiers.rawValue, forKey: .modifiersRawValue)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(keyEquivalent)
+        hasher.combine(modifiers.rawValue)
+    }
+
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case keyEquivalent
+        case modifiersRawValue
+    }
 }
+
+// MARK: - BrowserCommandDescriptor
 
 struct BrowserCommandDescriptor {
     let menuTitle: String
     let helpTitle: String
     let shortcut: BrowserKeyboardShortcut
 }
+
+// MARK: - BrowserCommands
 
 enum BrowserCommands {
     static let openSettings = BrowserCommandDescriptor(
@@ -177,6 +189,8 @@ enum BrowserCommands {
     )
 }
 
+// MARK: - BrowserSpaceShortcuts
+
 enum BrowserSpaceShortcuts {
     static let maximumIndexedSpaces = 4
 
@@ -208,6 +222,8 @@ enum BrowserSpaceShortcuts {
     }
 }
 
+// MARK: - BrowserLayoutIndependentShortcutCommand
+
 enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case undo
     case redo
@@ -237,7 +253,11 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case toggleSidebar
 }
 
+// MARK: - BrowserKeyboardShortcutBridge
+
 enum BrowserKeyboardShortcutBridge {
+    // MARK: Internal
+
     static func commandForLayoutIndependentDispatch(
         keyCode: UInt16,
         modifierFlags: NSEvent.ModifierFlags,
@@ -257,15 +277,16 @@ enum BrowserKeyboardShortcutBridge {
             return nil
         }
 
-        return shortcutMatches(shortcutResolver: shortcutResolver).first {
-            $0.keyEquivalent == usKeyEquivalent && $0.modifiers == normalizedModifiers
-        }?.command
+        return shortcutMatches(shortcutResolver: shortcutResolver)
+            .first {
+                $0.keyEquivalent == usKeyEquivalent && $0.modifiers == normalizedModifiers
+            }?.command
     }
 
+    // MARK: Private
+
     private struct ShortcutMatch {
-        let command: BrowserLayoutIndependentShortcutCommand
-        let keyEquivalent: String
-        let modifiers: NSEvent.ModifierFlags
+        // MARK: Lifecycle
 
         init(
             command: BrowserLayoutIndependentShortcutCommand,
@@ -287,6 +308,12 @@ enum BrowserKeyboardShortcutBridge {
                 modifiers: shortcut.modifiers
             )
         }
+
+        // MARK: Internal
+
+        let command: BrowserLayoutIndependentShortcutCommand
+        let keyEquivalent: String
+        let modifiers: NSEvent.ModifierFlags
     }
 
     private static func shortcutMatches(shortcutResolver: BrowserShortcutResolving?) -> [ShortcutMatch] {
@@ -364,6 +391,8 @@ enum BrowserKeyboardShortcutBridge {
     }
 }
 
+// MARK: - BrowserStrings
+
 enum BrowserStrings {
     static let applicationName = NSLocalizedString(
         "browser.app.name",
@@ -379,16 +408,6 @@ enum BrowserStrings {
         "browser.sidebar.new_tab",
         comment: "Sidebar button title for creating a new tab."
     )
-
-    static func defaultSpaceTitle(index: Int) -> String {
-        String(
-            format: NSLocalizedString(
-                "browser.space.default_title",
-                comment: "Default title for a newly created browser space. The argument is the 1-based space number."
-            ),
-            index
-        )
-    }
 
     static let spaceRenameAction = NSLocalizedString(
         "browser.space.rename_action",
@@ -870,16 +889,6 @@ enum BrowserStrings {
         comment: "Button title for opening extension shortcut settings."
     )
 
-    static func settingsShortcutConflict(_ commandTitle: String) -> String {
-        String(
-            format: NSLocalizedString(
-                "browser.settings.shortcuts.conflict",
-                comment: "Shortcut conflict message with conflicting command title."
-            ),
-            commandTitle
-        )
-    }
-
     static let settingsContentTab = NSLocalizedString(
         "browser.settings.content",
         comment: "Title for the content settings tab."
@@ -974,6 +983,26 @@ enum BrowserStrings {
         "browser.permissions.dont_allow",
         comment: "Don't Allow button title for notification permissions."
     )
+
+    static func defaultSpaceTitle(index: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.space.default_title",
+                comment: "Default title for a newly created browser space. The argument is the 1-based space number."
+            ),
+            index
+        )
+    }
+
+    static func settingsShortcutConflict(_ commandTitle: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.settings.shortcuts.conflict",
+                comment: "Shortcut conflict message with conflicting command title."
+            ),
+            commandTitle
+        )
+    }
 
     static func quitMenuItem(appName: String) -> String {
         String(

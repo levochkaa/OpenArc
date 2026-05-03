@@ -1,6 +1,8 @@
 import Combine
 import Foundation
 
+// MARK: - BrowserCommandSuggestion
+
 struct BrowserCommandSuggestion: Identifiable, Equatable {
     enum Kind: String, Equatable {
         case url
@@ -19,9 +21,9 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     var systemImageName: String {
         switch kind {
         case .url:
-            return "globe"
-        case .search, .googleSuggestion:
-            return "magnifyingglass"
+            "globe"
+        case .googleSuggestion, .search:
+            "magnifyingglass"
         }
     }
 
@@ -43,16 +45,22 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     }
 }
 
+// MARK: - BrowserSuggestionProviding
+
 protocol BrowserSuggestionProviding {
     func suggestions(for query: String, maximumCount: Int) async -> [String]
 }
 
+// MARK: - BrowserGoogleSuggestionService
+
 struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
-    private let session: URLSession
+    // MARK: Lifecycle
 
     init(session: URLSession = .shared) {
         self.session = session
     }
+
+    // MARK: Internal
 
     func suggestions(for query: String, maximumCount: Int) async -> [String] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -88,31 +96,16 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             return []
         }
     }
+
+    // MARK: Private
+
+    private let session: URLSession
 }
 
-@MainActor
-final class BrowserCommandBarModel: ObservableObject {
-    static let maximumSuggestions = 10
-    static let maximumVisibleSuggestions = 5
+// MARK: - BrowserCommandBarModel
 
-    @Published private(set) var isPresented = false
-    @Published private(set) var focusRequestID = 0
-    @Published var query = "" {
-        didSet {
-            handleQueryChange()
-        }
-    }
-
-    @Published private(set) var suggestions: [BrowserCommandSuggestion] = []
-    @Published private(set) var selectedSuggestionIndex: Int?
-
-    private let suggestionProvider: BrowserSuggestionProviding
-    private let navigationResolver: BrowserNavigationResolver
-    private let submitHandler: (String) -> Void
-    private let suggestionDebounceNanoseconds: UInt64
-    private let remoteSuggestionsEnabledProvider: () -> Bool
-
-    private var suggestionLoadTask: Task<Void, Never>?
+@MainActor final class BrowserCommandBarModel: ObservableObject {
+    // MARK: Lifecycle
 
     init(
         suggestionProvider: BrowserSuggestionProviding,
@@ -126,6 +119,22 @@ final class BrowserCommandBarModel: ObservableObject {
         self.submitHandler = submitHandler
         self.suggestionDebounceNanoseconds = suggestionDebounceNanoseconds
         self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
+    }
+
+    // MARK: Internal
+
+    static let maximumSuggestions = 10
+    static let maximumVisibleSuggestions = 5
+
+    @Published private(set) var isPresented = false
+    @Published private(set) var focusRequestID = 0
+    @Published private(set) var suggestions = [BrowserCommandSuggestion]()
+    @Published private(set) var selectedSuggestionIndex: Int?
+
+    @Published var query = "" {
+        didSet {
+            handleQueryChange()
+        }
     }
 
     var selectedSuggestion: BrowserCommandSuggestion? {
@@ -164,8 +173,7 @@ final class BrowserCommandBarModel: ObservableObject {
         return previewDisplayText
     }
 
-    @discardableResult
-    func acceptSelectedSuggestion() -> Bool {
+    @discardableResult func acceptSelectedSuggestion() -> Bool {
         guard let selectedSuggestion else {
             return false
         }
@@ -235,10 +243,19 @@ final class BrowserCommandBarModel: ObservableObject {
     func waitForPendingSuggestionLoad() async {
         await suggestionLoadTask?.value
     }
+
+    // MARK: Private
+
+    private let suggestionProvider: BrowserSuggestionProviding
+    private let navigationResolver: BrowserNavigationResolver
+    private let submitHandler: (String) -> Void
+    private let suggestionDebounceNanoseconds: UInt64
+    private let remoteSuggestionsEnabledProvider: () -> Bool
+
+    private var suggestionLoadTask: Task<Void, Never>?
 }
 
-@MainActor
-private extension BrowserCommandBarModel {
+@MainActor private extension BrowserCommandBarModel {
     func handleQueryChange() {
         suggestionLoadTask?.cancel()
         suggestionLoadTask = nil
@@ -267,9 +284,9 @@ private extension BrowserCommandBarModel {
                 return
             }
 
-            if self.suggestionDebounceNanoseconds > 0 {
+            if suggestionDebounceNanoseconds > 0 {
                 do {
-                    try await Task.sleep(nanoseconds: self.suggestionDebounceNanoseconds)
+                    try await Task.sleep(nanoseconds: suggestionDebounceNanoseconds)
                 } catch {
                     return
                 }
@@ -279,12 +296,12 @@ private extension BrowserCommandBarModel {
                 return
             }
 
-            guard self.remoteSuggestionsEnabledProvider() else {
+            guard remoteSuggestionsEnabledProvider() else {
                 return
             }
 
             let remoteSuggestionLimit = max(Self.maximumSuggestions - 1, 0)
-            let remoteSuggestions = await self.suggestionProvider.suggestions(
+            let remoteSuggestions = await suggestionProvider.suggestions(
                 for: currentQuery,
                 maximumCount: remoteSuggestionLimit
             )
@@ -293,13 +310,15 @@ private extension BrowserCommandBarModel {
                 return
             }
 
-            let trimmedLiveQuery = self.query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard self.isPresented, trimmedLiveQuery == currentQuery else {
+            let trimmedLiveQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard isPresented, trimmedLiveQuery == currentQuery else {
                 return
             }
 
-            self.suggestions = self.assembledSuggestions(for: currentQuery, remoteSuggestions: remoteSuggestions)
-            self.selectedSuggestionIndex = self.suggestions.isEmpty ? nil : min(self.selectedSuggestionIndex ?? 0, self.suggestions.count - 1)
+            suggestions = assembledSuggestions(for: currentQuery, remoteSuggestions: remoteSuggestions)
+            selectedSuggestionIndex = suggestions.isEmpty
+                ? nil
+                : min(selectedSuggestionIndex ?? 0, suggestions.count - 1)
         }
     }
 
@@ -308,7 +327,7 @@ private extension BrowserCommandBarModel {
             return []
         }
 
-        var assembledSuggestions: [BrowserCommandSuggestion] = []
+        var assembledSuggestions = [BrowserCommandSuggestion]()
         var seenDisplayTexts = Set<String>()
 
         if let primarySuggestion = primarySuggestion(for: query) {
@@ -326,13 +345,13 @@ private extension BrowserCommandBarModel {
                 continue
             }
 
-            let suggestionKind: BrowserCommandSuggestion.Kind
-            switch resolvedSuggestion.kind {
-            case .url:
-                suggestionKind = .url
-            case .search:
-                suggestionKind = .googleSuggestion
-            }
+            let suggestionKind: BrowserCommandSuggestion.Kind =
+                switch resolvedSuggestion.kind {
+                case .url:
+                    .url
+                case .search:
+                    .googleSuggestion
+                }
 
             let suggestion = BrowserCommandSuggestion(
                 kind: suggestionKind,
@@ -355,13 +374,13 @@ private extension BrowserCommandBarModel {
             return nil
         }
 
-        let kind: BrowserCommandSuggestion.Kind
-        switch resolvedQuery.kind {
-        case .url:
-            kind = .url
-        case .search:
-            kind = .search
-        }
+        let kind: BrowserCommandSuggestion.Kind =
+            switch resolvedQuery.kind {
+            case .url:
+                .url
+            case .search:
+                .search
+            }
 
         return BrowserCommandSuggestion(
             kind: kind,

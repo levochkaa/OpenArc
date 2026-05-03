@@ -1,8 +1,7 @@
 import CoreGraphics
 import Testing
 
-@Test
-func tabDragResolverSnapsToNearestReachableRowEdge() {
+@Test func tabDragResolverSnapsToNearestReachableRowEdge() {
     let resolver = BrowserSidebarTabDragTargetResolver(
         verticalSnapDistance: 24,
         horizontalTolerance: 48
@@ -54,8 +53,7 @@ func tabDragResolverSnapsToNearestReachableRowEdge() {
     )
 }
 
-@Test
-func tabDragResolverUsesEmptySectionFrames() {
+@Test func tabDragResolverUsesEmptySectionFrames() {
     let resolver = BrowserSidebarTabDragTargetResolver(
         verticalSnapDistance: 24,
         horizontalTolerance: 48
@@ -76,8 +74,7 @@ func tabDragResolverUsesEmptySectionFrames() {
     )
 }
 
-@Test
-func tabFrameSynchronizerDropsFramesFromPreviousSectionAfterMove() {
+@Test func tabFrameSynchronizerDropsFramesFromPreviousSectionAfterMove() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
@@ -104,8 +101,7 @@ func tabFrameSynchronizerDropsFramesFromPreviousSectionAfterMove() {
     #expect(BrowserSidebarTabFrameSynchronizer.sortedRowFrameList(synchronizedFrames).map(\.tabID) == ["tab-1"])
 }
 
-@Test
-func tabFrameSynchronizerDropsFramesWithPreviousSectionIndexAfterReorder() {
+@Test func tabFrameSynchronizerDropsFramesWithPreviousSectionIndexAfterReorder() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
@@ -130,8 +126,7 @@ func tabFrameSynchronizerDropsFramesWithPreviousSectionIndexAfterReorder() {
     #expect(synchronizedFrames.isEmpty)
 }
 
-@Test
-func tabFrameSynchronizerEstimatesDropFramesForFreshlyMovedTab() {
+@Test func tabFrameSynchronizerEstimatesDropFramesForFreshlyMovedTab() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
@@ -191,8 +186,7 @@ func tabFrameSynchronizerEstimatesDropFramesForFreshlyMovedTab() {
     ])
 }
 
-@Test
-func tabFrameSynchronizerEstimatesDropFramesAfterSameSectionReorder() {
+@Test func tabFrameSynchronizerEstimatesDropFramesAfterSameSectionReorder() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
@@ -234,8 +228,7 @@ func tabFrameSynchronizerEstimatesDropFramesAfterSameSectionReorder() {
     ])
 }
 
-@Test
-func tabFrameSynchronizerAllowsDuplicateFallbackFramesDuringCrossSectionDrag() {
+@Test func tabFrameSynchronizerAllowsDuplicateFallbackFramesDuringCrossSectionDrag() {
     let fallbackRowFrames = [
         BrowserSidebarTabRowFrame(
             tabID: "tab-1",
@@ -271,8 +264,7 @@ func tabFrameSynchronizerAllowsDuplicateFallbackFramesDuringCrossSectionDrag() {
     ])
 }
 
-@Test
-func tabFrameSynchronizerUsesEmptySectionAnchorForFirstDropFrame() {
+@Test func tabFrameSynchronizerUsesEmptySectionAnchorForFirstDropFrame() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
@@ -306,8 +298,7 @@ func tabFrameSynchronizerUsesEmptySectionAnchorForFirstDropFrame() {
     ])
 }
 
-@Test
-func tabFrameSynchronizerUsesFallbackDropFrameWhenPreferencesLag() {
+@Test func tabFrameSynchronizerUsesFallbackDropFrameWhenPreferencesLag() {
     let rowFrames = [
         "tab-1": BrowserSidebarTabRowFrame(
             tabID: "tab-1",
@@ -338,8 +329,7 @@ func tabFrameSynchronizerUsesFallbackDropFrameWhenPreferencesLag() {
     #expect(dropRowFrames == fallbackRowFrames)
 }
 
-@Test
-func tabFrameSynchronizerKeepsOnlyCurrentlyEmptySectionFrames() {
+@Test func tabFrameSynchronizerKeepsOnlyCurrentlyEmptySectionFrames() {
     let emptySectionFrames = [
         BrowserSidebarEmptySectionFrame(
             section: .spacePinned,
@@ -360,8 +350,7 @@ func tabFrameSynchronizerKeepsOnlyCurrentlyEmptySectionFrames() {
     )
 }
 
-@Test
-func tabDragResolverIgnoresFarAndInvalidTargets() {
+@Test func tabDragResolverIgnoresFarAndInvalidTargets() {
     let resolver = BrowserSidebarTabDragTargetResolver(
         verticalSnapDistance: 24,
         horizontalTolerance: 48
@@ -393,8 +382,7 @@ func tabDragResolverIgnoresFarAndInvalidTargets() {
     )
 }
 
-@Test
-func tabDropIndicatorFrameResolverDrawsOnlyOneLineBetweenRows() {
+@Test func tabDropIndicatorFrameResolverDrawsOnlyOneLineBetweenRows() {
     let resolver = BrowserSidebarTabDropIndicatorFrameResolver()
     let target = BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: 1)
     let rowFrames = [
@@ -423,8 +411,7 @@ func tabDropIndicatorFrameResolverDrawsOnlyOneLineBetweenRows() {
     )
 }
 
-@Test
-func tabDropIndicatorFrameResolverFallsBackToFollowingRowTopEdge() {
+@Test func tabDropIndicatorFrameResolverFallsBackToFollowingRowTopEdge() {
     let resolver = BrowserSidebarTabDropIndicatorFrameResolver()
     let rowFrames = [
         BrowserSidebarTabRowFrame(
@@ -446,8 +433,7 @@ func tabDropIndicatorFrameResolverFallsBackToFollowingRowTopEdge() {
     )
 }
 
-@Test
-func tabDropIndicatorFrameResolverUsesPreviousRowBottomAtSectionEnd() {
+@Test func tabDropIndicatorFrameResolverUsesPreviousRowBottomAtSectionEnd() {
     let resolver = BrowserSidebarTabDropIndicatorFrameResolver()
     let rowFrames = [
         BrowserSidebarTabRowFrame(
@@ -475,8 +461,7 @@ func tabDropIndicatorFrameResolverUsesPreviousRowBottomAtSectionEnd() {
     )
 }
 
-@Test
-func tabDropIndicatorFrameResolverUsesTopEdgeOnlyAtSectionStart() {
+@Test func tabDropIndicatorFrameResolverUsesTopEdgeOnlyAtSectionStart() {
     let resolver = BrowserSidebarTabDropIndicatorFrameResolver()
     let target = BrowserSidebarTabDropTarget(section: .temporary, sectionIndex: 0)
     let rowFrames = [
@@ -505,8 +490,7 @@ func tabDropIndicatorFrameResolverUsesTopEdgeOnlyAtSectionStart() {
     )
 }
 
-@Test
-func appTabGridLayoutStretchesOneToThreeItemsAcrossOneRow() {
+@Test func appTabGridLayoutStretchesOneToThreeItemsAcrossOneRow() {
     let layout = BrowserSidebarAppTabGridLayout(spacing: 5)
 
     #expect(layout.frames(for: 1, availableWidth: 200) == [
@@ -523,8 +507,7 @@ func appTabGridLayoutStretchesOneToThreeItemsAcrossOneRow() {
     ])
 }
 
-@Test
-func appTabGridLayoutUsesFourColumnsAndTwoRowsForFiveToEightItems() {
+@Test func appTabGridLayoutUsesFourColumnsAndTwoRowsForFiveToEightItems() {
     let layout = BrowserSidebarAppTabGridLayout(spacing: 5)
 
     #expect(layout.frames(for: 4, availableWidth: 200) == [
@@ -538,8 +521,7 @@ func appTabGridLayoutUsesFourColumnsAndTwoRowsForFiveToEightItems() {
     #expect(layout.height(for: 8, availableWidth: 200) == 97.5)
 }
 
-@Test
-func appTabDropFrameListUsesContainerFrame() {
+@Test func appTabDropFrameListUsesContainerFrame() {
     let frames = BrowserSidebarAppTabFrameSynchronizer.dropFrameList(
         containerFrame: CGRect(x: 10, y: 20, width: 200, height: 100),
         appTabIDs: ["tab-1", "tab-2"],
@@ -560,8 +542,7 @@ func appTabDropFrameListUsesContainerFrame() {
     ])
 }
 
-@Test
-func tabDragResolverUsesEmptyAppTabContainerFrame() {
+@Test func tabDragResolverUsesEmptyAppTabContainerFrame() {
     let resolver = BrowserSidebarTabDragTargetResolver(
         verticalSnapDistance: 24,
         horizontalTolerance: 48
@@ -578,8 +559,7 @@ func tabDragResolverUsesEmptyAppTabContainerFrame() {
     )
 }
 
-@Test
-func tabDragResolverFindsAppTabGridInsertionIndex() {
+@Test func tabDragResolverFindsAppTabGridInsertionIndex() {
     let resolver = BrowserSidebarTabDragTargetResolver(
         verticalSnapDistance: 24,
         horizontalTolerance: 48
@@ -610,8 +590,7 @@ func tabDragResolverFindsAppTabGridInsertionIndex() {
     )
 }
 
-@Test
-func tabDragResolverSwitchesBetweenGridAndRows() {
+@Test func tabDragResolverSwitchesBetweenGridAndRows() {
     let resolver = BrowserSidebarTabDragTargetResolver(
         verticalSnapDistance: 24,
         horizontalTolerance: 48

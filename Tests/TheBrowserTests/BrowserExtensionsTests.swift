@@ -1,8 +1,7 @@
 import Foundation
 import Testing
 
-@Test
-func extensionControlCenterGridAlwaysKeepsAddTileLast() {
+@Test func extensionControlCenterGridAlwaysKeepsAddTileLast() {
     let extensions = [
         makeExtension(id: "one"),
         makeExtension(id: "two"),
@@ -22,15 +21,13 @@ func extensionControlCenterGridAlwaysKeepsAddTileLast() {
     ])
 }
 
-@Test
-func extensionControlCenterGridShowsAddTileWhenNoExtensionsAreInstalled() {
+@Test func extensionControlCenterGridShowsAddTileWhenNoExtensionsAreInstalled() {
     let items = BrowserExtensionControlCenterModel.gridItems(for: [])
 
     #expect(items.map(\.id) == ["extension:add"])
 }
 
-@Test
-func extensionProfileSnapshotReadsUserInstalledExtensions() throws {
+@Test func extensionProfileSnapshotReadsUserInstalledExtensions() throws {
     let profileDirectory = try makeProfileDirectory()
     defer { try? FileManager.default.removeItem(at: profileDirectory) }
 
@@ -88,8 +85,7 @@ func extensionProfileSnapshotReadsUserInstalledExtensions() throws {
     ])
 }
 
-@Test
-func extensionProfileSnapshotResolvesLocalizedNamesAndDisabledState() throws {
+@Test func extensionProfileSnapshotResolvesLocalizedNamesAndDisabledState() throws {
     let profileDirectory = try makeProfileDirectory()
     defer { try? FileManager.default.removeItem(at: profileDirectory) }
 
@@ -138,8 +134,7 @@ func extensionProfileSnapshotResolvesLocalizedNamesAndDisabledState() throws {
 }
 
 @Test
-@MainActor
-func extensionManagerActionsRefreshFromEngineSource() {
+@MainActor func extensionManagerActionsRefreshFromEngineSource() {
     let manager = FakeBrowserExtensionManager(
         extensions: [
             makeExtension(id: "reader", isEnabled: true),
@@ -163,8 +158,7 @@ func extensionManagerActionsRefreshFromEngineSource() {
 }
 
 @Test
-@MainActor
-func extensionRoutesOpenExpectedTabs() {
+@MainActor func extensionRoutesOpenExpectedTabs() {
     let driver = FakeBrowserTabDriver()
     let model = makeExtensionModel(driver: driver)
 
@@ -193,7 +187,8 @@ private func makeExtension(id: String, isEnabled: Bool = true) -> BrowserExtensi
 }
 
 private func makeProfileDirectory() throws -> URL {
-    let url = FileManager.default.temporaryDirectory
+    let url = FileManager.default
+        .temporaryDirectory
         .appendingPathComponent("TheBrowserTests", isDirectory: true)
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -204,8 +199,7 @@ private func writeSecurePreferences(_ json: String, in profileDirectory: URL) th
     try Data(json.utf8).write(to: profileDirectory.appendingPathComponent("Secure Preferences", isDirectory: false))
 }
 
-@MainActor
-private func makeExtensionModel(
+@MainActor private func makeExtensionModel(
     driver: FakeBrowserTabDriver? = nil,
     extensionManager: (any BrowserExtensionManaging)? = nil
 ) -> BrowserChromeModel {

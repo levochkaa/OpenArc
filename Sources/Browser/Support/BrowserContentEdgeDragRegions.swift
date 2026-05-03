@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserContentEdgeDragRegions
+
 struct BrowserContentEdgeDragRegions: View {
     let windowSize: CGSize
     let blockedLeadingWidth: CGFloat
@@ -39,6 +41,9 @@ struct BrowserContentEdgeDragRegions: View {
         .frame(width: windowSize.width, height: windowSize.height, alignment: .topLeading)
     }
 }
+
+// MARK: - BrowserSidebarHoverRevealEdge
+
 struct BrowserSidebarHoverRevealEdge: View {
     let onHoverChange: (Bool) -> Void
 
@@ -50,6 +55,9 @@ struct BrowserSidebarHoverRevealEdge: View {
             .allowsWindowActivationEvents(true)
     }
 }
+
+// MARK: - BrowserSidebarHoverOverlayDismissReader
+
 struct BrowserSidebarHoverOverlayDismissReader: NSViewRepresentable {
     let isPresented: Bool
     let sidebarFrame: CGRect
@@ -79,28 +87,38 @@ struct BrowserSidebarHoverOverlayDismissReader: NSViewRepresentable {
         )
     }
 }
+
+// MARK: - BrowserSidebarHoverOverlayDismissNSView
+
 final class BrowserSidebarHoverOverlayDismissNSView: NSView {
-    var isPresented = false
-    var sidebarFrame: CGRect = .zero
-    var allowsPointerSyncDismissal = true
-    var onPointerMovement: () -> Void = {}
-    var onDismiss: () -> Void = {}
-    var trackingArea: NSTrackingArea?
-    var localMonitor: Any?
+    // MARK: Lifecycle
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         postsFrameChangedNotifications = true
     }
 
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
+    @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
     deinit {
         removeHoverTrackingArea()
         removeLocalMonitor()
+    }
+
+    // MARK: Internal
+
+    var isPresented = false
+    var sidebarFrame = CGRect.zero
+    var allowsPointerSyncDismissal = true
+    var onPointerMovement: () -> Void = {}
+    var onDismiss: () -> Void = {}
+    var trackingArea: NSTrackingArea?
+    var localMonitor: Any?
+
+    var sidebarFrameInWindow: CGRect {
+        convert(sidebarFrame, to: nil)
     }
 
     override func hitTest(_: NSPoint) -> NSView? {
@@ -178,6 +196,8 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
             schedulePointerSync()
         }
     }
+
+    // MARK: Private
 
     private func schedulePointerSync() {
         guard allowsPointerSyncDismissal else {
@@ -261,10 +281,6 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
         dismissIfNeeded(for: window.mouseLocationOutsideOfEventStream)
     }
 
-    var sidebarFrameInWindow: CGRect {
-        convert(sidebarFrame, to: nil)
-    }
-
     private func removeHoverTrackingArea() {
         guard let trackingArea else {
             return
@@ -283,6 +299,9 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
         self.localMonitor = nil
     }
 }
+
+// MARK: - BrowserWindowDragRegion
+
 struct BrowserWindowDragRegion: View {
     var isEnabled = true
 
