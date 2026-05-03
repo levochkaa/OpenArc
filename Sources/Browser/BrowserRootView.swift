@@ -8,13 +8,21 @@ private enum BrowserChromePalette {
     static let contentBackground = Color.white
     static let rowHover = Color.white.opacity(0.08)
     static let rowSelected = Color.white.opacity(0.14)
+    static let currentURLRow = Color.white.opacity(0.1)
+    static let currentURLRowHover = Color.white.opacity(0.12)
+    static let currentURLButtonHover = Color.white.opacity(0.16)
+    static let currentURLRowResolved = Color(nsColor: NSColor(srgbRed: 25 / 255, green: 25 / 255, blue: 25 / 255, alpha: 1))
+    static let currentURLRowHoverResolved = Color(nsColor: NSColor(srgbRed: 31 / 255, green: 31 / 255, blue: 31 / 255, alpha: 1))
+    static let currentURLButtonHoverResolved = Color(nsColor: NSColor(srgbRed: 41 / 255, green: 41 / 255, blue: 41 / 255, alpha: 1))
     static let rowCloseHover = Color.white.opacity(0.12)
     static let rowCloseForeground = Color.white.opacity(0.82)
     static let sidebarDivider = Color.white.opacity(0.12)
+    static let sidebarTopChromeDivider = Color.white.opacity(0.2)
     static let sidebarClearButtonForeground = Color.white.opacity(0.3)
     static let sidebarDropIndicator = Color.white.opacity(0.96)
     static let primaryText = Color.white.opacity(0.92)
     static let secondaryText = Color.white.opacity(0.58)
+    static let currentURLText = Color.white.opacity(0.5)
     static let buttonBackground = Color.white.opacity(0.1)
     static let buttonHoverBackground = Color.white.opacity(0.16)
     static let buttonBorder = Color.white.opacity(0.12)
@@ -64,6 +72,13 @@ private enum BrowserChromeLayout {
     static let sidebarButtonPressedScale: CGFloat = 0.985
     static let sidebarCloseButtonPressedScale: CGFloat = 0.92
     static let sidebarNewTabSymbolSize: CGFloat = 14
+    static let sidebarCurrentURLOverlayWidth: CGFloat = 76
+    static let sidebarCurrentURLOverlaySolidWidth: CGFloat = 66
+    static let sidebarCurrentURLOverlayFadeWidth: CGFloat = 10
+    static let sidebarCurrentURLButtonSpacing: CGFloat = 2
+    static let sidebarCurrentURLButtonSize: CGFloat = 26
+    static let sidebarCurrentURLButtonCornerRadius: CGFloat = 8
+    static let sidebarCurrentURLButtonSymbolSize: CGFloat = 12.5
     static let sidebarCloseButtonSize: CGFloat = 22
     static let sidebarCloseButtonLeadingSpacing: CGFloat = 4
     static let sidebarCloseCornerRadius: CGFloat = 7
@@ -82,6 +97,8 @@ private enum BrowserChromeLayout {
     static let sidebarDragPreviewShadowY: CGFloat = 8
     static let sidebarClearButtonHorizontalPadding: CGFloat = 8
     static let sidebarClearButtonVerticalPadding: CGFloat = 2
+    static let sidebarTopChromeDividerHeight: CGFloat = 1
+    static let sidebarTopChromeDividerScrollThreshold: CGFloat = 0.5
     static let sidebarResizeHitWidth: CGFloat = sidebarOuterPadding
     static let sidebarSnapThreshold: CGFloat = 10
     static let browserContentEdgeInset: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
@@ -91,6 +108,16 @@ private enum BrowserChromeLayout {
     static let chromeButtonSpacing: CGFloat = 6
     static let windowControlsTrailingGap: CGFloat = 5
     static let commandBarWidth: CGFloat = 720
+    static let compactCommandBarMinimumSidebarMultiplier: CGFloat = 2
+    static let compactCommandBarMaximumWindowFraction: CGFloat = 0.5
+    static let compactCommandBarHorizontalViewportPadding: CGFloat = 12
+    static let compactCommandBarTextWidthBuffer: CGFloat = 104
+    static let compactCommandBarFieldHeight: CGFloat = 42
+    static let compactCommandBarCornerRadius: CGFloat = 14
+    static let compactCommandBarFontSize: CGFloat = 15
+    static let compactCommandBarSymbolSize: CGFloat = 13
+    static let compactCommandBarTopGap: CGFloat = 0
+    static let compactCommandBarTextFieldVerticalOffset: CGFloat = 4
     static let commandBarCornerRadius: CGFloat = 20
     static let commandBarShadowRadius: CGFloat = 40
     static let commandBarTopInsetMinimum: CGFloat = 92
@@ -129,6 +156,9 @@ private enum BrowserChromeLayout {
     static let tooltipBorderWidth: CGFloat = 0.5
     static let tooltipAnchorXFraction: CGFloat = 0.75
     static let tooltipAnchorYFraction: CGFloat = 0.75
+    static var currentURLCopyIconAnimation: Animation {
+        .spring(response: 0.22, dampingFraction: 0.68)
+    }
 }
 
 private struct AnimationCompletionObserverModifier<Value: VectorArithmetic>: AnimatableModifier {
@@ -244,13 +274,17 @@ private struct BrowserSidebarEmptySectionFramePreferenceKey: PreferenceKey {
 struct BrowserRootView: View {
     @ObservedObject var model: BrowserChromeModel
     @ObservedObject private var commandBarModel: BrowserCommandBarModel
+    @ObservedObject private var currentPageCommandBarModel: BrowserCommandBarModel
     @State private var showsSidebarWindowControls: Bool
     @State private var isWindowFullscreen = false
+    @State private var currentURLRowWindowFrame: CGRect?
     @StateObject private var tooltipCoordinator = BrowserTooltipCoordinator()
+    @ObservedObject private var faviconCache = BrowserFaviconCache.shared
 
     init(model: BrowserChromeModel) {
         self.model = model
         _commandBarModel = ObservedObject(wrappedValue: model.commandBarModel)
+        _currentPageCommandBarModel = ObservedObject(wrappedValue: model.currentPageCommandBarModel)
         _showsSidebarWindowControls = State(initialValue: model.isSidebarVisible)
     }
 
@@ -276,7 +310,9 @@ struct BrowserRootView: View {
                     model: model,
                     snapshot: sidebarSnapshot,
                     showsWindowControlsInSidebar: showsSidebarWindowControls,
-                    isCommandBarPresented: commandBarModel.isPresented
+                    isCommandBarPresented: commandBarModel.isPresented,
+                    isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
+                    onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
                 )
                 .frame(width: model.sidebarWidth, height: proxy.size.height, alignment: .leading)
                 .offset(x: sidebarOffset)
@@ -293,12 +329,16 @@ struct BrowserRootView: View {
                 )
                 .animation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), value: model.isSidebarVisible)
 
-                if commandBarModel.isPresented, sidebarLayoutWidth > 0 {
+                if commandBarModel.isPresented && !currentPageCommandBarModel.isPresented && sidebarLayoutWidth > 0 {
                     BrowserPassthroughInteractionObserver(
                         eventMask: [.leftMouseUp, .rightMouseUp, .otherMouseUp]
                     ) {
                         DispatchQueue.main.async {
-                            model.dismissCommandBar()
+                            guard commandBarModel.isPresented, !currentPageCommandBarModel.isPresented else {
+                                return
+                            }
+
+                            commandBarModel.dismiss()
                         }
                     }
                     .frame(width: sidebarLayoutWidth, height: proxy.size.height)
@@ -315,7 +355,21 @@ struct BrowserRootView: View {
 
                     BrowserCommandBarOverlay(
                         model: commandBarModel,
-                        blockedLeadingInset: browserContentMinX
+                        blockedLeadingInset: browserContentMinX,
+                        style: .standard,
+                        faviconCandidate: nil
+                    )
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .zIndex(10)
+
+                    BrowserCommandBarOverlay(
+                        model: currentPageCommandBarModel,
+                        blockedLeadingInset: browserContentMinX,
+                        style: .compact(
+                            anchorFrame: currentURLRowWindowFrame,
+                            sidebarWidth: model.sidebarWidth
+                        ),
+                        faviconCandidate: currentPageCommandBarFaviconCandidate
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .zIndex(10)
@@ -333,6 +387,7 @@ struct BrowserRootView: View {
         }
         .clipped()
         .environmentObject(tooltipCoordinator)
+        .environmentObject(faviconCache)
         .overlayPreferenceValue(BrowserTooltipPreferenceKey.self) { values in
             GeometryReader { proxy in
                 let tooltipEntries = values.map { entry in
@@ -347,7 +402,8 @@ struct BrowserRootView: View {
 
                 if usesDetachedBrowserOverlays {
                     BrowserDetachedOverlayWindowRepresentable(
-                        isVisible: model.isFindBarPresented || commandBarModel.isPresented,
+                        isVisible: model.isFindBarPresented
+                            || commandBarModel.isPresented,
                         isInteractive: true,
                         contentFrameLeadingInset: browserContentMinX,
                         content: BrowserDetachedControlsOverlayContent(
@@ -356,6 +412,24 @@ struct BrowserRootView: View {
                             blockedLeadingInset: 0
                         )
                         .environmentObject(tooltipCoordinator)
+                        .environmentObject(faviconCache)
+                    )
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .allowsHitTesting(false)
+
+                    BrowserDetachedOverlayWindowRepresentable(
+                        isVisible: currentPageCommandBarModel.isPresented,
+                        isInteractive: true,
+                        contentFrameLeadingInset: 0,
+                        content: BrowserDetachedCurrentPageCommandBarOverlayContent(
+                            currentPageCommandBarModel: currentPageCommandBarModel,
+                            blockedLeadingInset: browserContentMinX,
+                            anchorFrame: currentURLRowWindowFrame,
+                            sidebarWidth: model.sidebarWidth,
+                            faviconCandidate: currentPageCommandBarFaviconCandidate
+                        )
+                        .environmentObject(tooltipCoordinator)
+                        .environmentObject(faviconCache)
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .allowsHitTesting(false)
@@ -395,6 +469,14 @@ struct BrowserRootView: View {
 
     private var sidebarVisibilityAnimationValue: CGFloat {
         model.isSidebarVisible ? 1 : 0
+    }
+
+    private var currentPageCommandBarFaviconCandidate: BrowserCommandBarFaviconCandidate? {
+        guard let selectedTab = sidebarSnapshot.selectedTab else {
+            return nil
+        }
+
+        return BrowserCommandBarFaviconCandidate(tab: selectedTab)
     }
 
     private var usesWindowContentInsets: Bool {
@@ -460,6 +542,8 @@ private struct BrowserSidebarChromeView: View {
     let snapshot: BrowserSidebarSnapshot
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
+    let isCurrentPageCommandBarPresented: Bool
+    let onURLRowFrameChange: (CGRect?) -> Void
     @State private var isSidebarResizing = false
 
     var body: some View {
@@ -468,7 +552,9 @@ private struct BrowserSidebarChromeView: View {
             snapshot: snapshot,
             showsWindowControlsInSidebar: showsWindowControlsInSidebar,
             isCommandBarPresented: isCommandBarPresented,
-            isSidebarResizing: isSidebarResizing
+            isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
+            isSidebarResizing: isSidebarResizing,
+            onURLRowFrameChange: onURLRowFrameChange
         )
         .overlay(alignment: .trailing) {
             BrowserSidebarResizeHandle(model: model, isSidebarResizing: $isSidebarResizing)
@@ -482,7 +568,9 @@ private struct BrowserSidebarContainerView: View {
     let snapshot: BrowserSidebarSnapshot
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
+    let isCurrentPageCommandBarPresented: Bool
     let isSidebarResizing: Bool
+    let onURLRowFrameChange: (CGRect?) -> Void
 
     var body: some View {
         BrowserSidebarView(
@@ -490,7 +578,9 @@ private struct BrowserSidebarContainerView: View {
             snapshot: snapshot,
             showsWindowControlsInSidebar: showsWindowControlsInSidebar,
             isCommandBarPresented: isCommandBarPresented,
-            isSidebarResizing: isSidebarResizing
+            isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
+            isSidebarResizing: isSidebarResizing,
+            onURLRowFrameChange: onURLRowFrameChange
         )
         .equatable()
         .background(BrowserChromePalette.sidebarBackground)
@@ -698,7 +788,9 @@ private struct BrowserSidebarView: View {
     let snapshot: BrowserSidebarSnapshot
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
+    let isCurrentPageCommandBarPresented: Bool
     let isSidebarResizing: Bool
+    let onURLRowFrameChange: (CGRect?) -> Void
     @State private var isNewTabButtonHovered = false
     @State private var isClearButtonHovered = false
     @State private var isSidebarHovered = false
@@ -714,25 +806,14 @@ private struct BrowserSidebarView: View {
     @State private var tabDropRowFrameList: [BrowserSidebarTabRowFrame] = []
     @State private var rawEmptySectionFrames: [BrowserSidebarEmptySectionFrame] = []
     @State private var emptySectionFrames: [BrowserSidebarEmptySectionFrame] = []
+    @State private var showsTopChromeDivider = false
 
     var body: some View {
         let pinnedTabs = snapshot.pinnedTabs
         let temporaryTabs = snapshot.temporaryTabs
 
         VStack(spacing: BrowserChromeLayout.sidebarSectionSpacing) {
-            BrowserSidebarHeaderView(
-                canGoBack: snapshot.canGoBack,
-                canGoForward: snapshot.canGoForward,
-                canStopLoading: snapshot.canStopLoading,
-                canReload: snapshot.canReload,
-                showsWindowControlsInSidebar: showsWindowControlsInSidebar,
-                onToggleSidebar: model.toggleSidebar,
-                onGoBack: model.goBack,
-                onGoForward: model.goForward,
-                onStopLoading: model.stopLoadingCurrentTab,
-                onReload: model.reloadCurrentTab
-            )
-            .zIndex(1)
+            topChrome
 
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: BrowserChromeLayout.sidebarListSpacing) {
@@ -777,6 +858,11 @@ private struct BrowserSidebarView: View {
             .coordinateSpace(name: BrowserChromeLayout.sidebarTabDragCoordinateSpaceName)
             .frame(maxWidth: .infinity)
             .browserWindowDragGesture()
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y > BrowserChromeLayout.sidebarTopChromeDividerScrollThreshold
+            } action: { _, shouldShow in
+                updateTopChromeDividerVisibility(shouldShow)
+            }
             .onPreferenceChange(BrowserSidebarTabRowFramePreferenceKey.self) { frames in
                 setTabRowFrames(frames, for: snapshot)
             }
@@ -858,6 +944,39 @@ private struct BrowserSidebarView: View {
                     })
             }
         }
+    }
+
+    private var topChrome: some View {
+        VStack(spacing: BrowserChromeLayout.sidebarSectionSpacing) {
+            BrowserSidebarHeaderView(
+                canGoBack: snapshot.canGoBack,
+                canGoForward: snapshot.canGoForward,
+                canStopLoading: snapshot.canStopLoading,
+                canReload: snapshot.canReload,
+                showsWindowControlsInSidebar: showsWindowControlsInSidebar,
+                onToggleSidebar: model.toggleSidebar,
+                onGoBack: model.goBack,
+                onGoForward: model.goForward,
+                onStopLoading: model.stopLoadingCurrentTab,
+                onReload: model.reloadCurrentTab
+            )
+
+            BrowserSidebarCurrentURLRow(
+                tab: snapshot.selectedTab,
+                isSearchPresented: isCurrentPageCommandBarPresented,
+                isSidebarResizing: isSidebarResizing,
+                onFrameChange: onURLRowFrameChange,
+                onOpenSearch: model.presentCurrentPageCommandBar,
+                onCopyURL: {
+                    model.copySelectedTabLink()
+                }
+            )
+        }
+        .overlay(alignment: .bottom) {
+            BrowserSidebarTopChromeDivider(isVisible: showsTopChromeDivider)
+                .offset(y: BrowserChromeLayout.sidebarSectionSpacing)
+        }
+        .zIndex(1)
     }
 
     private func toggleCommandBar() {
@@ -1215,6 +1334,16 @@ private struct BrowserSidebarView: View {
         updateSynchronizedTabFrames(for: snapshot)
     }
 
+    private func updateTopChromeDividerVisibility(_ shouldShow: Bool) {
+        guard showsTopChromeDivider != shouldShow else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
+            showsTopChromeDivider = shouldShow
+        }
+    }
+
     private func setDropTarget(_ target: BrowserSidebarTabDropTarget?) {
         guard dropTarget != target else {
             return
@@ -1293,6 +1422,7 @@ extension BrowserSidebarView: Equatable {
         lhs.snapshot == rhs.snapshot
             && lhs.showsWindowControlsInSidebar == rhs.showsWindowControlsInSidebar
             && lhs.isCommandBarPresented == rhs.isCommandBarPresented
+            && lhs.isCurrentPageCommandBarPresented == rhs.isCurrentPageCommandBarPresented
             && lhs.isSidebarResizing == rhs.isSidebarResizing
     }
 }
@@ -1309,6 +1439,18 @@ private struct BrowserSidebarEmptySectionDropZone: View {
                 }
             }
             .contentShape(Rectangle())
+    }
+}
+
+private struct BrowserSidebarTopChromeDivider: View {
+    let isVisible: Bool
+
+    var body: some View {
+        Rectangle()
+            .fill(BrowserChromePalette.sidebarTopChromeDivider)
+            .frame(height: BrowserChromeLayout.sidebarTopChromeDividerHeight)
+            .opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(false)
     }
 }
 
@@ -1985,74 +2127,180 @@ private final class BrowserFindNSTextField: NSTextField {
     }
 }
 
+private enum BrowserCommandBarOverlayStyle {
+    case standard
+    case compact(anchorFrame: CGRect?, sidebarWidth: CGFloat)
+
+    var fontSize: CGFloat {
+        switch self {
+        case .standard:
+            22
+        case .compact:
+            BrowserChromeLayout.compactCommandBarFontSize
+        }
+    }
+
+    var symbolSize: CGFloat {
+        switch self {
+        case .standard:
+            BrowserChromeLayout.commandBarSymbolSize
+        case .compact:
+            BrowserChromeLayout.compactCommandBarSymbolSize
+        }
+    }
+
+    var cornerRadius: CGFloat {
+        switch self {
+        case .standard:
+            BrowserChromeLayout.commandBarCornerRadius
+        case .compact:
+            BrowserChromeLayout.compactCommandBarCornerRadius
+        }
+    }
+
+    var fieldHeight: CGFloat {
+        switch self {
+        case .standard:
+            BrowserChromeLayout.commandBarFieldHeight
+        case .compact:
+            BrowserChromeLayout.compactCommandBarFieldHeight
+        }
+    }
+
+    var textFieldVerticalOffset: CGFloat {
+        switch self {
+        case .standard:
+            0
+        case .compact:
+            BrowserChromeLayout.compactCommandBarTextFieldVerticalOffset
+        }
+    }
+
+    var selectsTextOnFocus: Bool {
+        switch self {
+        case .standard:
+            false
+        case .compact:
+            true
+        }
+    }
+}
+
+private enum BrowserCommandBarTextWidthMeasurer {
+    static func width(for text: String, fontSize: CGFloat) -> CGFloat {
+        let measuredText = text.isEmpty ? BrowserStrings.commandBarPlaceholder : text
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
+        ]
+
+        return ceil((measuredText as NSString).size(withAttributes: attributes).width)
+    }
+}
+
+private struct BrowserCommandBarFaviconCandidate: Equatable {
+    let pageURLString: String
+    let faviconURL: URL?
+
+    init(tab: BrowserChromeModel.Tab) {
+        pageURLString = tab.urlString
+        faviconURL = tab.faviconURL
+    }
+
+    func faviconURL(for suggestion: BrowserCommandSuggestion?) -> URL? {
+        guard
+            let suggestion,
+            suggestion.kind == .url,
+            Self.matchesPageURL(suggestion.resolvedURLString, pageURLString)
+        else {
+            return nil
+        }
+
+        return faviconURL
+    }
+
+    private static func matchesPageURL(_ lhs: String, _ rhs: String) -> Bool {
+        normalizedPageURLString(lhs) == normalizedPageURLString(rhs)
+    }
+
+    private static func normalizedPageURLString(_ urlString: String) -> String {
+        guard var components = URLComponents(string: urlString) else {
+            return urlString
+        }
+
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        if components.path == "/" {
+            components.path = ""
+        }
+
+        return components.url?.absoluteString ?? urlString
+    }
+}
+
 private struct BrowserCommandBarOverlay: View {
+    @EnvironmentObject private var faviconCache: BrowserFaviconCache
     @ObservedObject var model: BrowserCommandBarModel
     let blockedLeadingInset: CGFloat
+    let style: BrowserCommandBarOverlayStyle
+    let faviconCandidate: BrowserCommandBarFaviconCandidate?
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .top) {
+            ZStack(alignment: .topLeading) {
                 if model.isPresented {
-                    HStack(spacing: 0) {
-                        Color.clear
-                            .frame(width: blockedLeadingInset)
-                            .allowsHitTesting(false)
+                    dismissLayer(in: proxy.size)
 
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                model.dismiss()
-                            }
-                    }
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-                    .ignoresSafeArea()
-
-                    VStack(spacing: 0) {
-                        inputField
-
-                        if !model.suggestions.isEmpty {
-                            Rectangle()
-                                .fill(BrowserChromePalette.commandBarPanelBorder)
-                                .frame(height: 1)
-                                .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
-
-                            BrowserCommandSuggestionList(model: model)
-                                .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
-                        }
-                    }
-                    .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
-                    .padding(.top, BrowserChromeLayout.commandBarOuterPadding)
-                    .padding(.bottom, model.suggestions.isEmpty ? BrowserChromeLayout.commandBarOuterPadding : 0)
-                    .frame(width: BrowserChromeLayout.commandBarWidth, alignment: .top)
-                    .background(panelBackground)
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: BrowserChromeLayout.commandBarCornerRadius,
-                            style: .continuous
+                    panel
+                        .frame(width: panelWidth(in: proxy.size), alignment: .top)
+                        .background(panelBackground)
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: style.cornerRadius,
+                                style: .continuous
+                            )
                         )
-                    )
-                    .overlay(panelBorder)
-                    .shadow(color: Color.black.opacity(0.38), radius: BrowserChromeLayout.commandBarShadowRadius, y: 18)
-                    .padding(.top, commandBarTopInset(for: proxy.size.height))
+                        .overlay(panelBorder)
+                        .shadow(color: Color.black.opacity(0.38), radius: BrowserChromeLayout.commandBarShadowRadius, y: 18)
+                        .offset(panelOffset(in: proxy.size))
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(model.isPresented)
     }
 
+    private var panel: some View {
+        VStack(spacing: 0) {
+            inputField
+
+            if !model.suggestions.isEmpty {
+                Rectangle()
+                    .fill(BrowserChromePalette.commandBarPanelBorder)
+                    .frame(height: 1)
+                    .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
+
+                BrowserCommandSuggestionList(
+                    model: model,
+                    faviconCandidate: faviconCandidate
+                )
+                    .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
+            }
+        }
+        .padding(.horizontal, BrowserChromeLayout.commandBarOuterPadding)
+        .padding(.top, BrowserChromeLayout.commandBarOuterPadding)
+        .padding(.bottom, model.suggestions.isEmpty ? BrowserChromeLayout.commandBarOuterPadding : 0)
+    }
+
     private var inputField: some View {
         HStack(spacing: BrowserChromeLayout.commandBarRowContentSpacing) {
-            Image(systemName: leadingSymbolName)
-                .font(.system(size: BrowserChromeLayout.commandBarSymbolSize, weight: .semibold))
-                .foregroundStyle(BrowserChromePalette.primaryText)
+            leadingIcon
                 .frame(width: BrowserChromeLayout.commandBarSymbolWidth)
 
             ZStack(alignment: .leading) {
                 if model.query.isEmpty {
                     Text(BrowserStrings.commandBarPlaceholder)
-                        .font(.system(size: 22, weight: .medium))
+                        .font(.system(size: style.fontSize, weight: .medium))
                         .foregroundStyle(BrowserChromePalette.commandBarPlaceholder)
                         .allowsHitTesting(false)
                 }
@@ -2066,12 +2314,15 @@ private struct BrowserCommandBarOverlay: View {
                     inlineCompletionSuffix: model.inlineCompletionSuffix,
                     isFocused: model.isPresented,
                     focusRequestID: model.focusRequestID,
+                    fontSize: style.fontSize,
+                    selectAllOnFocus: style.selectsTextOnFocus,
                     onMoveUp: { model.moveSelection(by: -1) },
                     onMoveDown: { model.moveSelection(by: 1) },
                     onAcceptCompletion: { _ = model.acceptSelectedSuggestion() },
                     onSubmit: { model.submitSelection() },
                     onDismiss: { model.dismiss() }
                 )
+                .offset(y: style.textFieldVerticalOffset)
             }
         }
         .padding(
@@ -2079,17 +2330,17 @@ private struct BrowserCommandBarOverlay: View {
             BrowserChromeLayout.commandBarRowHorizontalPadding + BrowserChromeLayout.commandBarOuterPadding
         )
         .padding(.vertical, BrowserChromeLayout.commandBarRowVerticalPadding)
-        .frame(minHeight: BrowserChromeLayout.commandBarFieldHeight)
+        .frame(minHeight: style.fieldHeight)
     }
 
     private var panelBackground: some View {
-        RoundedRectangle(cornerRadius: BrowserChromeLayout.commandBarCornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
             .fill(BrowserChromePalette.commandBarPanelTint)
             .background(
                 BrowserVisualEffectView(material: .hudWindow)
                     .clipShape(
                         RoundedRectangle(
-                            cornerRadius: BrowserChromeLayout.commandBarCornerRadius,
+                            cornerRadius: style.cornerRadius,
                             style: .continuous
                         )
                     )
@@ -2097,12 +2348,111 @@ private struct BrowserCommandBarOverlay: View {
     }
 
     private var panelBorder: some View {
-        RoundedRectangle(cornerRadius: BrowserChromeLayout.commandBarCornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
             .stroke(BrowserChromePalette.commandBarPanelBorder, lineWidth: 1)
     }
 
     private var leadingSymbolName: String {
         model.selectedSuggestion?.systemImageName ?? "magnifyingglass"
+    }
+
+    @ViewBuilder
+    private var leadingIcon: some View {
+        if let cachedLeadingFavicon {
+            Image(nsImage: cachedLeadingFavicon)
+                .resizable()
+                .scaledToFit()
+                .frame(width: style.symbolSize, height: style.symbolSize)
+        } else {
+            Image(systemName: leadingSymbolName)
+                .font(.system(size: style.symbolSize, weight: .semibold))
+                .foregroundStyle(BrowserChromePalette.primaryText)
+        }
+    }
+
+    private var cachedLeadingFavicon: NSImage? {
+        faviconCache.image(for: faviconCandidate?.faviconURL(for: model.selectedSuggestion))
+    }
+
+    private func dismissLayer(in availableSize: CGSize) -> some View {
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: blockedLeadingInset)
+                .allowsHitTesting(false)
+
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    model.dismiss()
+                }
+        }
+        .frame(width: availableSize.width, height: availableSize.height, alignment: .topLeading)
+        .ignoresSafeArea()
+    }
+
+    private func panelWidth(in availableSize: CGSize) -> CGFloat {
+        switch style {
+        case .standard:
+            return BrowserChromeLayout.commandBarWidth
+        case let .compact(anchorFrame, sidebarWidth):
+            let originX = compactPanelOriginX(anchorFrame: anchorFrame)
+            let viewportMaximum = max(
+                availableSize.width - originX - BrowserChromeLayout.compactCommandBarHorizontalViewportPadding,
+                0
+            )
+            let maximumWidth = min(
+                max(availableSize.width * BrowserChromeLayout.compactCommandBarMaximumWindowFraction, 0),
+                viewportMaximum
+            )
+            let minimumWidth = min(
+                max(
+                    sidebarWidth,
+                    BrowserChromeModel.minSidebarWidth
+                        * BrowserChromeLayout.compactCommandBarMinimumSidebarMultiplier
+                ),
+                maximumWidth
+            )
+            let measuredWidth = BrowserCommandBarTextWidthMeasurer.width(
+                for: model.previewDisplayText ?? model.query,
+                fontSize: style.fontSize
+            ) + BrowserChromeLayout.compactCommandBarTextWidthBuffer
+
+            return max(min(max(measuredWidth, minimumWidth), maximumWidth), 0)
+        }
+    }
+
+    private func panelOffset(in availableSize: CGSize) -> CGSize {
+        switch style {
+        case .standard:
+            return CGSize(
+                width: max((availableSize.width - BrowserChromeLayout.commandBarWidth) / 2, 0),
+                height: commandBarTopInset(for: availableSize.height)
+            )
+        case let .compact(anchorFrame, _):
+            return CGSize(
+                width: compactPanelOriginX(anchorFrame: anchorFrame),
+                height: compactPanelOriginY(anchorFrame: anchorFrame, availableHeight: availableSize.height)
+            )
+        }
+    }
+
+    private func compactPanelOriginX(anchorFrame: CGRect?) -> CGFloat {
+        max(anchorFrame?.minX ?? BrowserChromeLayout.sidebarOuterPadding, BrowserChromeLayout.sidebarOuterPadding)
+    }
+
+    private func compactPanelOriginY(anchorFrame: CGRect?, availableHeight: CGFloat) -> CGFloat {
+        if let anchorFrame {
+            return max(
+                availableHeight - anchorFrame.maxY + BrowserChromeLayout.compactCommandBarTopGap,
+                BrowserChromeLayout.sidebarOuterPadding
+            )
+        }
+
+        let fallbackY = BrowserChromeLayout.sidebarOuterPadding
+            + BrowserChromeLayout.chromeButtonSize
+            + BrowserChromeLayout.sidebarSectionSpacing
+
+        return fallbackY + BrowserChromeLayout.compactCommandBarTopGap
     }
 
     private func commandBarTopInset(for availableHeight: CGFloat) -> CGFloat {
@@ -2118,6 +2468,7 @@ private struct BrowserCommandBarOverlay: View {
 
 private struct BrowserCommandSuggestionList: View {
     @ObservedObject var model: BrowserCommandBarModel
+    let faviconCandidate: BrowserCommandBarFaviconCandidate?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -2127,6 +2478,7 @@ private struct BrowserCommandSuggestionList: View {
                         BrowserCommandSuggestionRow(
                             suggestion: suggestion,
                             isSelected: model.selectedSuggestionID == suggestion.id,
+                            faviconCandidate: faviconCandidate,
                             onPress: { model.submitSuggestion(id: suggestion.id) }
                         )
                         .id(suggestion.id)
@@ -2170,8 +2522,11 @@ private struct BrowserCommandSuggestionList: View {
 }
 
 private struct BrowserCommandSuggestionRow: View {
+    @EnvironmentObject private var faviconCache: BrowserFaviconCache
+
     let suggestion: BrowserCommandSuggestion
     let isSelected: Bool
+    let faviconCandidate: BrowserCommandBarFaviconCandidate?
     let onPress: () -> Void
 
     @State private var isHovered = false
@@ -2179,9 +2534,7 @@ private struct BrowserCommandSuggestionRow: View {
     var body: some View {
         Button(action: onPress) {
             HStack(spacing: BrowserChromeLayout.commandBarRowContentSpacing) {
-                Image(systemName: suggestion.systemImageName)
-                    .font(.system(size: BrowserChromeLayout.commandBarSymbolSize, weight: .semibold))
-                    .foregroundStyle(BrowserChromePalette.primaryText)
+                leadingIcon
                     .frame(width: BrowserChromeLayout.commandBarSymbolWidth)
 
                 Text(suggestion.displayText)
@@ -2207,6 +2560,27 @@ private struct BrowserCommandSuggestionRow: View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill((isSelected || isHovered) ? BrowserChromePalette.commandBarSuggestionSelected : Color.clear)
     }
+
+    @ViewBuilder
+    private var leadingIcon: some View {
+        if let cachedFavicon {
+            Image(nsImage: cachedFavicon)
+                .resizable()
+                .scaledToFit()
+                .frame(
+                    width: BrowserChromeLayout.commandBarSymbolSize,
+                    height: BrowserChromeLayout.commandBarSymbolSize
+                )
+        } else {
+            Image(systemName: suggestion.systemImageName)
+                .font(.system(size: BrowserChromeLayout.commandBarSymbolSize, weight: .semibold))
+                .foregroundStyle(BrowserChromePalette.primaryText)
+        }
+    }
+
+    private var cachedFavicon: NSImage? {
+        faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion))
+    }
 }
 
 private struct BrowserCommandQueryTextField: NSViewRepresentable {
@@ -2215,6 +2589,8 @@ private struct BrowserCommandQueryTextField: NSViewRepresentable {
     let inlineCompletionSuffix: String?
     let isFocused: Bool
     let focusRequestID: Int
+    let fontSize: CGFloat
+    let selectAllOnFocus: Bool
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
     let onAcceptCompletion: () -> Void
@@ -2236,6 +2612,8 @@ private struct BrowserCommandQueryTextField: NSViewRepresentable {
         let textField = BrowserCommandNSTextField()
         textField.delegate = context.coordinator
         textField.stringValue = text
+        textField.fontSize = fontSize
+        textField.selectAllOnFocus = selectAllOnFocus
         return textField
     }
 
@@ -2254,7 +2632,9 @@ private struct BrowserCommandQueryTextField: NSViewRepresentable {
             previewDisplayText: previewDisplayText,
             inlineCompletionSuffix: inlineCompletionSuffix,
             shouldFocus: isFocused,
-            focusRequestID: focusRequestID
+            focusRequestID: focusRequestID,
+            fontSize: fontSize,
+            selectAllOnFocus: selectAllOnFocus
         )
     }
 
@@ -2309,6 +2689,7 @@ private struct BrowserCommandQueryTextField: NSViewRepresentable {
             if text.wrappedValue != textField.stringValue {
                 text.wrappedValue = textField.stringValue
             }
+            textField.clearFocusSelectionRequest()
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -2348,9 +2729,21 @@ private struct BrowserCommandQueryTextField: NSViewRepresentable {
 
 private final class BrowserCommandNSTextField: NSTextField {
     fileprivate private(set) var isApplyingPresentation = false
+    var selectAllOnFocus = false
+    var fontSize: CGFloat = 22 {
+        didSet {
+            guard fontSize != oldValue else {
+                return
+            }
+
+            applyFont()
+            applyEditorAppearance()
+        }
+    }
 
     private var pendingFocus = false
     private var lastFocusRequestID = -1
+    private var focusSelectionRequestID: Int?
     private var committedText = ""
     private var previewDisplayText: String?
     private var inlineCompletionSuffix: String?
@@ -2364,7 +2757,7 @@ private final class BrowserCommandNSTextField: NSTextField {
         focusRingType = .none
         isEditable = true
         isSelectable = true
-        font = .systemFont(ofSize: 22, weight: .medium)
+        applyFont()
         textColor = NSColor.white.withAlphaComponent(0.92)
         cell?.usesSingleLineMode = true
         cell?.wraps = false
@@ -2412,16 +2805,27 @@ private final class BrowserCommandNSTextField: NSTextField {
         previewDisplayText: String?,
         inlineCompletionSuffix: String?,
         shouldFocus: Bool,
-        focusRequestID: Int
+        focusRequestID: Int,
+        fontSize: CGFloat,
+        selectAllOnFocus: Bool
     ) {
+        self.fontSize = fontSize
+        self.selectAllOnFocus = selectAllOnFocus
         committedText = text
         self.previewDisplayText = previewDisplayText
         self.inlineCompletionSuffix = inlineCompletionSuffix
         pendingFocus = shouldFocus
-        syncDisplayedText()
         let shouldForceFocus = focusRequestID != lastFocusRequestID
+        if shouldFocus, shouldForceFocus, selectAllOnFocus {
+            focusSelectionRequestID = focusRequestID
+        }
         lastFocusRequestID = focusRequestID
+        syncDisplayedText()
         syncFocus(shouldFocus, force: shouldForceFocus)
+    }
+
+    func clearFocusSelectionRequest() {
+        focusSelectionRequestID = nil
     }
 
     private func syncFocus(_ shouldFocus: Bool, force: Bool = false) {
@@ -2492,7 +2896,7 @@ private final class BrowserCommandNSTextField: NSTextField {
 
     private func syncDisplayedText() {
         let targetDisplayText = desiredDisplayText
-        let targetSelectionRange = previewSelectionRange
+        let targetSelectionRange = fullTextSelectionRange(for: targetDisplayText) ?? previewSelectionRange
 
         if let editor = currentEditor() as? NSTextView {
             let needsStringUpdate = editor.string != targetDisplayText || stringValue != targetDisplayText
@@ -2541,6 +2945,19 @@ private final class BrowserCommandNSTextField: NSTextField {
         editor.insertionPointColor = .white
         editor.textColor = .white.withAlphaComponent(0.92)
         editor.drawsBackground = false
+        editor.font = .systemFont(ofSize: fontSize, weight: .medium)
+    }
+
+    private func applyFont() {
+        font = .systemFont(ofSize: fontSize, weight: .medium)
+    }
+
+    private func fullTextSelectionRange(for text: String) -> NSRange? {
+        guard focusSelectionRequestID == lastFocusRequestID else {
+            return nil
+        }
+
+        return NSRange(location: 0, length: (text as NSString).length)
     }
 }
 
@@ -2858,12 +3275,261 @@ private struct BrowserSidebarSnapshot: Equatable {
     let canStopLoading: Bool
     let canReload: Bool
 
+    var selectedTab: BrowserChromeModel.Tab? {
+        guard let selectedTabID else {
+            return nil
+        }
+
+        return tab(withID: selectedTabID)
+    }
+
     func containsTab(withID tabID: String) -> Bool {
         pinnedTabs.contains { $0.id == tabID } || temporaryTabs.contains { $0.id == tabID }
     }
 
     func tab(withID tabID: String) -> BrowserChromeModel.Tab? {
         pinnedTabs.first { $0.id == tabID } ?? temporaryTabs.first { $0.id == tabID }
+    }
+}
+
+private struct BrowserSidebarCurrentURLRow: View {
+    let tab: BrowserChromeModel.Tab?
+    let isSearchPresented: Bool
+    let isSidebarResizing: Bool
+    let onFrameChange: (CGRect?) -> Void
+    let onOpenSearch: () -> Void
+    let onCopyURL: () -> Bool
+
+    @State private var isRowHovered = false
+    @State private var isCopyHovered = false
+    @State private var isSiteControlHovered = false
+    @State private var didCopyURL = false
+    @State private var isSiteControlCenterPresented = false
+    @State private var copyFeedbackTask: Task<Void, Never>?
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(action: onOpenSearch) {
+                Text(displayURL)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(BrowserChromePalette.currentURLText)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, BrowserChromeLayout.sidebarRowHorizontalPadding)
+                    .frame(height: BrowserChromeLayout.sidebarRowHeight)
+                    .background(rowBackgroundShape)
+                    .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
+            }
+            .buttonStyle(BrowserSidebarPressButtonStyle())
+            .disabled(tab == nil)
+            .browserTooltip(
+                title: fullURLString,
+                shortcut: nil,
+                isPresented: isRowHovered && !isActionButtonHovered && !isSidebarResizing
+            )
+
+            actionButtonOverlay
+                .opacity(showsActionButtons ? 1 : 0)
+                .allowsHitTesting(showsActionButtons)
+        }
+        .frame(maxWidth: .infinity)
+        .background {
+            BrowserWindowFrameReader(onFrameChange: onFrameChange)
+        }
+        .onHover { hovering in
+            guard !isSidebarResizing else {
+                return
+            }
+
+            isRowHovered = hovering
+            if !hovering {
+                isCopyHovered = false
+                isSiteControlHovered = false
+            }
+        }
+        .onChange(of: isSidebarResizing) { _, isSidebarResizing in
+            guard isSidebarResizing else {
+                return
+            }
+
+            resetTransientInteractionState()
+        }
+        .onDisappear {
+            copyFeedbackTask?.cancel()
+            copyFeedbackTask = nil
+            onFrameChange(nil)
+            resetTransientInteractionState()
+        }
+    }
+
+    private var actionButtonOverlay: some View {
+        HStack(spacing: BrowserChromeLayout.sidebarCurrentURLButtonSpacing) {
+            currentURLActionButton(
+                systemImageName: didCopyURL ? "checkmark" : "link",
+                tooltipTitle: BrowserStrings.tabCopyURLAction,
+                tooltipShortcut: BrowserCommands.copyLink.shortcut,
+                isHovered: isCopyHovered,
+                onHover: { isCopyHovered = $0 },
+                action: copyURL
+            )
+
+            currentURLActionButton(
+                systemImageName: "slider.horizontal.3",
+                tooltipTitle: BrowserStrings.siteControlCenterAction,
+                tooltipShortcut: nil,
+                isHovered: isSiteControlHovered,
+                onHover: { isSiteControlHovered = $0 },
+                action: { isSiteControlCenterPresented = true }
+            )
+            .popover(isPresented: $isSiteControlCenterPresented, arrowEdge: .trailing) {
+                Color.clear
+                    .frame(width: 260, height: 180)
+            }
+        }
+        .padding(.trailing, BrowserChromeLayout.sidebarTabTrailingPadding)
+        .padding(.leading, BrowserChromeLayout.sidebarCloseButtonLeadingSpacing)
+        .frame(
+            width: BrowserChromeLayout.sidebarCurrentURLOverlayWidth,
+            height: BrowserChromeLayout.sidebarRowHeight,
+            alignment: .trailing
+        )
+        .background(actionButtonOverlayBackground)
+    }
+
+    private func currentURLActionButton(
+        systemImageName: String,
+        tooltipTitle: String,
+        tooltipShortcut: BrowserKeyboardShortcut?,
+        isHovered: Bool,
+        onHover: @escaping (Bool) -> Void,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                RoundedRectangle(
+                    cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
+                    style: .continuous
+                )
+                    .fill(isHovered ? BrowserChromePalette.currentURLButtonHoverResolved : Color.clear)
+
+                ForEach([systemImageName], id: \.self) { imageName in
+                    Image(systemName: imageName)
+                        .font(.system(size: BrowserChromeLayout.sidebarCurrentURLButtonSymbolSize, weight: .bold))
+                        .foregroundStyle(BrowserChromePalette.currentURLText)
+                        .transition(.scale(scale: 0.58).combined(with: .opacity))
+                }
+            }
+            .frame(
+                width: BrowserChromeLayout.sidebarCurrentURLButtonSize,
+                height: BrowserChromeLayout.sidebarCurrentURLButtonSize
+            )
+        }
+        .animation(BrowserChromeLayout.currentURLCopyIconAnimation, value: systemImageName)
+        .buttonStyle(BrowserSidebarCloseButtonStyle())
+        .contentShape(
+            RoundedRectangle(
+                cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
+                style: .continuous
+            )
+        )
+        .onHover { hovering in
+            guard !isSidebarResizing else {
+                return
+            }
+
+            onHover(hovering)
+        }
+        .browserTooltip(
+            title: tooltipTitle,
+            shortcut: tooltipShortcut,
+            isPresented: isHovered && !isSidebarResizing
+        )
+    }
+
+    private var actionButtonOverlayBackground: some View {
+        HStack(spacing: 0) {
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    rowBackgroundResolvedColor,
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlayFadeWidth)
+
+            rowBackgroundResolvedColor
+                .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlaySolidWidth)
+        }
+        .clipShape(
+            RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
+        )
+    }
+
+    private var rowBackgroundShape: some View {
+        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
+            .fill(rowBackgroundColor)
+    }
+
+    private var rowBackgroundColor: Color {
+        isRowHovered || isSearchPresented
+            ? BrowserChromePalette.currentURLRowHover
+            : BrowserChromePalette.currentURLRow
+    }
+
+    private var rowBackgroundResolvedColor: Color {
+        isRowHovered || isSearchPresented
+            ? BrowserChromePalette.currentURLRowHoverResolved
+            : BrowserChromePalette.currentURLRowResolved
+    }
+
+    private var showsActionButtons: Bool {
+        isRowHovered && !isSidebarResizing && tab != nil
+    }
+
+    private var isActionButtonHovered: Bool {
+        isCopyHovered || isSiteControlHovered
+    }
+
+    private var displayURL: String {
+        guard let tab else {
+            return BrowserStrings.newTabTitle
+        }
+
+        return BrowserURLDisplayFormatter.displayString(for: tab.urlString)
+    }
+
+    private var fullURLString: String {
+        tab?.urlString ?? BrowserStrings.newTabTitle
+    }
+
+    private func copyURL() {
+        guard onCopyURL() else {
+            return
+        }
+
+        withAnimation(BrowserChromeLayout.currentURLCopyIconAnimation) {
+            didCopyURL = true
+        }
+        copyFeedbackTask?.cancel()
+        copyFeedbackTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            } catch {
+                return
+            }
+
+            withAnimation(BrowserChromeLayout.currentURLCopyIconAnimation) {
+                didCopyURL = false
+            }
+        }
+    }
+
+    private func resetTransientInteractionState() {
+        isRowHovered = false
+        isCopyHovered = false
+        isSiteControlHovered = false
+        isSiteControlCenterPresented = false
     }
 }
 
@@ -3759,26 +4425,24 @@ private struct BrowserSidebarDropIndicator: View {
 }
 
 private struct BrowserFaviconView: View {
+    @EnvironmentObject private var faviconCache: BrowserFaviconCache
+
     let url: URL?
 
     var body: some View {
         Group {
-            if let url {
-                AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                    default:
-                        placeholder
-                    }
-                }
+            if let image = faviconCache.image(for: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
             } else {
                 placeholder
             }
         }
         .frame(width: 14, height: 14)
+        .task(id: url) {
+            await faviconCache.loadImageIfNeeded(from: url)
+        }
     }
 
     private var placeholder: some View {
@@ -3880,10 +4544,30 @@ private struct BrowserDetachedControlsOverlayContent: View {
 
             BrowserCommandBarOverlay(
                 model: commandBarModel,
-                blockedLeadingInset: blockedLeadingInset
+                blockedLeadingInset: blockedLeadingInset,
+                style: .standard,
+                faviconCandidate: nil
             )
             .zIndex(10)
         }
+    }
+}
+
+private struct BrowserDetachedCurrentPageCommandBarOverlayContent: View {
+    @ObservedObject var currentPageCommandBarModel: BrowserCommandBarModel
+    let blockedLeadingInset: CGFloat
+    let anchorFrame: CGRect?
+    let sidebarWidth: CGFloat
+    let faviconCandidate: BrowserCommandBarFaviconCandidate?
+
+    var body: some View {
+        BrowserCommandBarOverlay(
+            model: currentPageCommandBarModel,
+            blockedLeadingInset: blockedLeadingInset,
+            style: .compact(anchorFrame: anchorFrame, sidebarWidth: sidebarWidth),
+            faviconCandidate: faviconCandidate
+        )
+        .zIndex(10)
     }
 }
 

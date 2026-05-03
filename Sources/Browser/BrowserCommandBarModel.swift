@@ -181,11 +181,11 @@ final class BrowserCommandBarModel: ObservableObject {
         return true
     }
 
-    func present() {
+    func present(initialQuery: String = "") {
         suggestionLoadTask?.cancel()
         focusRequestID += 1
         isPresented = true
-        query = ""
+        query = initialQuery
     }
 
     func dismiss() {

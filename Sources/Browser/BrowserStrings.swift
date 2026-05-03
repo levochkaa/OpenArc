@@ -581,6 +581,16 @@ enum BrowserStrings {
         comment: "Menu item title for copying a tab link."
     )
 
+    static let tabCopyURLAction = NSLocalizedString(
+        "browser.tab.copy_url_action",
+        comment: "Tooltip title for copying the current page URL."
+    )
+
+    static let siteControlCenterAction = NSLocalizedString(
+        "browser.site_control_center.action",
+        comment: "Tooltip title for opening the current site's controls."
+    )
+
     static let tabRenameAction = NSLocalizedString(
         "browser.tab.rename_action",
         comment: "Context menu title for renaming a tab."

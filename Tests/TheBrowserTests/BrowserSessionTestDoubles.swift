@@ -33,6 +33,7 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
 
     private(set) var createdTabRequests: [CreatedTabRequest] = []
     private(set) var selectedTabIDs: [String] = []
+    private(set) var activeTabNavigationURLStrings: [String] = []
     private(set) var closedTabRequests: [CloseTabRequest] = []
     private(set) var saveSuggestedNames: [String?] = []
     private(set) var pasteAndMatchStyleCount = 0
@@ -69,6 +70,10 @@ final class FakeBrowserTabDriver: BrowserTabDriving {
 
     func selectTab(withID tabID: String) {
         selectedTabIDs.append(tabID)
+    }
+
+    func navigateActiveTab(toURLString urlString: String) {
+        activeTabNavigationURLStrings.append(urlString)
     }
 
     func goBackActiveTab() {

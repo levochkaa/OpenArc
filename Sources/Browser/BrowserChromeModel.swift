@@ -97,6 +97,13 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             self?.openResolvedSelectionInNewTab(resolvedURLString)
         }
     )
+    lazy var currentPageCommandBarModel: BrowserCommandBarModel = .init(
+        suggestionProvider: commandBarSuggestionProvider,
+        navigationResolver: navigationResolver,
+        submitHandler: { [weak self] resolvedURLString in
+            self?.navigateSelectedTab(toURLString: resolvedURLString)
+        }
+    )
 
     private let tabDriver: BrowserTabDriving
     private let sessionSnapshotStore: BrowserTabSessionSnapshotStoring
@@ -392,6 +399,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
 
         dismissFindBar()
+        currentPageCommandBarModel.dismiss()
         commandBarModel.present()
     }
 
@@ -404,12 +412,27 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             commandBarModel.dismiss()
         } else {
             dismissFindBar()
+            currentPageCommandBarModel.dismiss()
             commandBarModel.present()
         }
     }
 
     func dismissCommandBar() {
         commandBarModel.dismiss()
+        currentPageCommandBarModel.dismiss()
+    }
+
+    func presentCurrentPageCommandBar() {
+        guard
+            canCreateTab,
+            let selectedTab
+        else {
+            return
+        }
+
+        dismissFindBar()
+        commandBarModel.dismiss()
+        currentPageCommandBarModel.present(initialQuery: selectedTab.urlString)
     }
 
     func presentFindBar() {
@@ -418,6 +441,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
         }
 
         commandBarModel.dismiss()
+        currentPageCommandBarModel.dismiss()
         isFindBarPresented = true
         findBarFocusRequest += 1
         findResultMatchCount = nil
@@ -431,6 +455,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
         if selectedTabUsesWindowedBrowser {
             commandBarModel.dismiss()
+            currentPageCommandBarModel.dismiss()
             dismissFindBar()
             findResultMatchCount = nil
             return tabDriver.focusSearchInActiveChromeSettingsTab()
@@ -599,9 +624,7 @@ final class BrowserChromeModel: NSObject, ObservableObject {
             return
         }
 
-        if commandBarModel.isPresented {
-            commandBarModel.dismiss()
-        }
+        dismissCommandBar()
 
         let targetUsesWindowedBrowser = Self.usesWindowedBrowser(for: targetTab.urlString)
         if targetUsesWindowedBrowser {
@@ -815,6 +838,14 @@ final class BrowserChromeModel: NSObject, ObservableObject {
 
     private func openResolvedSelectionInNewTab(_ resolvedURLString: String) {
         createTab(withURLString: resolvedURLString)
+    }
+
+    private func navigateSelectedTab(toURLString urlString: String) {
+        guard canCreateTab, selectedTabID != nil else {
+            return
+        }
+
+        tabDriver.navigateActiveTab(toURLString: urlString)
     }
 
     private func tabURLString(forTabID tabID: String) -> String? {

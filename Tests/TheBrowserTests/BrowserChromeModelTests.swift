@@ -678,6 +678,80 @@ func presentCommandBarDoesNotCreateTabUntilSubmit() async {
 
 @Test
 @MainActor
+func currentPageCommandBarNavigatesSelectedTabWithoutCreatingNewTab() async {
+    let driver = FakeBrowserTabDriver()
+    let suggestionProvider = FakeSuggestionProvider()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        suggestionProvider: suggestionProvider
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let initialCreatedTabCount = driver.createdTabRequests.count
+
+    model.presentCurrentPageCommandBar()
+
+    #expect(model.currentPageCommandBarModel.isPresented)
+    #expect(model.currentPageCommandBarModel.query == BrowserChromeModel.defaultNewTabURLString)
+
+    model.currentPageCommandBarModel.query = "openai.com"
+    await model.currentPageCommandBarModel.waitForPendingSuggestionLoad()
+    model.currentPageCommandBarModel.submitSelection()
+
+    #expect(driver.createdTabRequests.count == initialCreatedTabCount)
+    #expect(driver.activeTabNavigationURLStrings == ["https://openai.com"])
+    #expect(!model.currentPageCommandBarModel.isPresented)
+}
+
+@Test
+@MainActor
+func presentingNewTabCommandBarDismissesCurrentPageCommandBar() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    model.presentCurrentPageCommandBar()
+    #expect(model.currentPageCommandBarModel.isPresented)
+
+    model.presentCommandBar()
+
+    #expect(model.commandBarModel.isPresented)
+    #expect(!model.currentPageCommandBarModel.isPresented)
+}
+
+@Test
+@MainActor
+func presentingCurrentPageCommandBarDismissesNewTabCommandBar() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    model.presentCommandBar()
+    #expect(model.commandBarModel.isPresented)
+
+    model.presentCurrentPageCommandBar()
+
+    #expect(!model.commandBarModel.isPresented)
+    #expect(model.currentPageCommandBarModel.isPresented)
+}
+
+@Test
+@MainActor
 func selectingAnotherTabDismissesCommandBar() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(

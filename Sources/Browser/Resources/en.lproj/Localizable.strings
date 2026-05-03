@@ -56,6 +56,8 @@
 "browser.tab.archive_tabs_below_action" = "Archive Tabs Below";
 "browser.tab.archive_tooltip" = "Archive this tab";
 "browser.tab.copy_link_action" = "Copy Link";
+"browser.tab.copy_url_action" = "Copy URL";
+"browser.site_control_center.action" = "Site Control Center";
 "browser.tab.rename_action" = "Rename...";
 "browser.tab.share_action" = "Share";
 "browser.tab.rename_tooltip_caption" = "Double-click to rename";

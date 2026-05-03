@@ -1335,6 +1335,35 @@ void ReloadBrowserOnUI(CefRefPtr<CefBrowser> browser, bool ignore_cache) {
           base::BindOnce(&ReloadBrowser, browser, ignore_cache)));
 }
 
+void NavigateBrowser(CefRefPtr<CefBrowser> browser, std::string url) {
+  if (!browser || url.empty()) {
+    return;
+  }
+
+  CefRefPtr<CefFrame> frame = browser->GetMainFrame();
+  if (!frame) {
+    return;
+  }
+
+  frame->LoadURL(url);
+}
+
+void NavigateBrowserOnUI(CefRefPtr<CefBrowser> browser,
+                         std::string url) {
+  if (!browser || url.empty()) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    NavigateBrowser(browser, url);
+    return;
+  }
+
+  CefPostTask(TID_UI,
+              CefCreateClosureTask(
+                  base::BindOnce(&NavigateBrowser, browser, url)));
+}
+
 void StopLoadingBrowser(CefRefPtr<CefBrowser> browser) {
   if (!browser) {
     return;
@@ -2251,6 +2280,20 @@ NSWindow *EnsureNativeWindowForRecord(TabRecord &record) {
 - (void)selectTabWithID:(NSString *)tabID {
   _activeTabID = [tabID copy];
   [self updateBrowserVisibility];
+}
+
+- (void)navigateActiveTabToURLString:(NSString *)urlString {
+  if (urlString.length == 0) {
+    return;
+  }
+
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  NavigateBrowserOnUI(it->second.browser, ToStdString(urlString));
 }
 
 - (void)goBackActiveTab {

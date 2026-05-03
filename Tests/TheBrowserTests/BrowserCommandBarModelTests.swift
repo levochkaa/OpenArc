@@ -153,6 +153,19 @@ func resolveReturnsNilForEmptyInput() {
 
 @Test
 @MainActor
+func presentCanSeedInitialQuery() async {
+    let model = makeModel(suggestionProvider: FakeSuggestionProvider())
+
+    model.present(initialQuery: "https://openai.com")
+    await model.waitForPendingSuggestionLoad()
+
+    #expect(model.isPresented)
+    #expect(model.query == "https://openai.com")
+    #expect(model.selectedSuggestion?.resolvedURLString == "https://openai.com")
+}
+
+@Test
+@MainActor
 func primarySuggestionIsSelectedByDefault() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["привет": ["привет макет", "привет мир"]]

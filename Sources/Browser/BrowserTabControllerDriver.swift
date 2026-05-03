@@ -36,6 +36,10 @@ final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
         controller.selectTab(withID: tabID)
     }
 
+    func navigateActiveTab(toURLString urlString: String) {
+        controller.navigateActiveTab(toURLString: urlString)
+    }
+
     func goBackActiveTab() {
         controller.goBackActiveTab()
     }
