@@ -31,6 +31,7 @@ Stock CEF downloads are intentionally disabled because full Chrome extension sup
     for linked_path in [
         "CREDITS.html",
         "Debug",
+        "Release",
         "include",
         "libcef_dll",
     ]:

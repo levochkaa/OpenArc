@@ -356,15 +356,18 @@ build_configuration() {
 }
 
 make_distribution() {
-  local args=("--ninja-build" "$CEF_ARCH_ARG")
+  local args=(
+    "--ninja-build"
+    "$CEF_ARCH_ARG"
+    "--no-symbols"
+    "--no-docs"
+    "--no-archive"
+  )
   local debug_only=false
   if [[ $# -eq 1 && "$1" == "Debug" ]]; then
     debug_only=true
     args+=(
       "--allow-partial"
-      "--no-symbols"
-      "--no-docs"
-      "--no-archive"
       "--distrib-subdir-suffix=debug"
     )
   fi
@@ -393,17 +396,33 @@ make_distribution() {
 }
 
 latest_distribution_dir() {
+  local debug_only=false
+  if [[ $# -eq 1 && "$1" == "Debug" ]]; then
+    debug_only=true
+  fi
+
   local latest
-  latest="$(
-    find "$BINARY_DISTRIB_DIR" \
-      -maxdepth 1 \
-      -type d \
-      -name "cef_binary_*_${CEF_PLATFORM_SUFFIX}*" \
-      ! -name "*debug_symbols*" \
-      -print 2>/dev/null \
-      | sort \
-      | tail -n 1
-  )"
+  if [[ "$debug_only" == true ]]; then
+    latest="$(
+      find "$BINARY_DISTRIB_DIR" \
+        -maxdepth 1 \
+        -type d \
+        -name "cef_binary_*_${CEF_PLATFORM_SUFFIX}_debug" \
+        -print 2>/dev/null \
+        | sort \
+        | tail -n 1
+    )"
+  else
+    latest="$(
+      find "$BINARY_DISTRIB_DIR" \
+        -maxdepth 1 \
+        -type d \
+        -name "cef_binary_*_${CEF_PLATFORM_SUFFIX}" \
+        -print 2>/dev/null \
+        | sort \
+        | tail -n 1
+    )"
+  fi
 
   if [[ -z "$latest" ]]; then
     echo "error: no CEF binary distribution found in $BINARY_DISTRIB_DIR" >&2
@@ -439,7 +458,7 @@ copy_component_libraries_to_export() {
 
 install_export() {
   local distribution_dir
-  distribution_dir="$(latest_distribution_dir)"
+  distribution_dir="$(latest_distribution_dir "$@")"
 
   local tmp_export="$EXPORT_ROOT.tmp"
   rm -rf "$tmp_export"
@@ -475,7 +494,7 @@ package_all() {
   done < <(configurations_from_args "$@")
 
   make_distribution "$@"
-  install_export
+  install_export "$@"
 }
 
 case "$COMMAND" in
