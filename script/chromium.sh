@@ -25,6 +25,7 @@ esac
 
 CURRENT_LINK="$THIRD_PARTY_DIR/current"
 WRAPPER_LIB="$WRAPPER_BUILD_DIR/libcef_dll_wrapper/$CONFIGURATION/libcef_dll_wrapper.a"
+DOXYGEN_STUB="$WRAPPER_BUILD_DIR/doxygen-stub/doxygen"
 
 ensure_directories() {
   mkdir -p "$THIRD_PARTY_DIR"
@@ -109,12 +110,14 @@ build_wrapper_library() {
     return 0
   fi
 
+  ensure_doxygen_stub
   echo "Building libcef_dll_wrapper ($CONFIGURATION)"
   cmake \
     -S "$CURRENT_LINK" \
     -B "$WRAPPER_BUILD_DIR" \
     -G Xcode \
     -DPROJECT_ARCH="$PROJECT_ARCH" \
+    -DDOXYGEN_EXECUTABLE="$DOXYGEN_STUB" \
     -DUSE_SANDBOX=OFF
 
   cmake \
@@ -123,6 +126,40 @@ build_wrapper_library() {
     --target libcef_dll_wrapper
 
   printf '%s\n' "$WRAPPER_LIB"
+}
+
+ensure_doxygen_stub() {
+  mkdir -p "$(dirname "$DOXYGEN_STUB")"
+  cat > "$DOXYGEN_STUB" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+  echo "1.9.8"
+  exit 0
+fi
+
+output=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -g)
+      shift
+      output="${1:-}"
+      ;;
+  esac
+  shift || true
+done
+
+if [[ -n "$output" ]]; then
+  cat > "$output" <<'DOXYFILE'
+PROJECT_NAME = "CEF"
+OUTPUT_DIRECTORY = docs
+GENERATE_HTML = YES
+GENERATE_LATEX = NO
+DOXYFILE
+fi
+EOF
+  chmod +x "$DOXYGEN_STUB"
 }
 
 case "$COMMAND" in

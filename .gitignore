@@ -5,4 +5,3 @@ dist/
 TheBrowser.xcodeproj/
 ThirdParty/cef/*
 !ThirdParty/cef/.gitkeep
-bazel-*

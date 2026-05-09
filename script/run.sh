@@ -7,13 +7,12 @@ APP_NAME="TheBrowser"
 HELPER_NAME="TheBrowser Helper"
 APP_BUNDLE_ID="com.levochkaa.TheBrowser"
 CONFIGURATION="${CONFIGURATION:-Debug}"
+DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode"
+APP_BUNDLE="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
+APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 case "$CONFIGURATION" in
-  Debug)
-    BAZEL_CONFIG="debug"
-    ;;
-  Release)
-    BAZEL_CONFIG="release"
+  Debug|Release)
     ;;
   *)
     echo "error: unsupported CONFIGURATION '$CONFIGURATION' (expected Debug or Release)" >&2
@@ -50,31 +49,7 @@ kill_app() {
 }
 
 app_bundle_path() {
-  local app_zip="$ROOT_DIR/bazel-bin/$APP_NAME.zip"
-  local staging_dir="$ROOT_DIR/.build/bazel-run/$CONFIGURATION"
-  local app_bundle="$staging_dir/$APP_NAME.app"
-  local stamp_file="$staging_dir/.$APP_NAME.zip.stamp"
-
-  if [[ ! -f "$app_zip" ]]; then
-    echo "error: app archive not found at $app_zip" >&2
-    exit 1
-  fi
-
-  local zip_stamp
-  zip_stamp="$(stat -f "%m:%z" "$app_zip")"
-  if [[ -d "$app_bundle" && -f "$stamp_file" ]] &&
-     [[ "$(cat "$stamp_file")" == "$zip_stamp" ]]; then
-    printf '%s\n' "$app_bundle"
-    return
-  fi
-
-  echo "Staging $APP_NAME.app from $app_zip" >&2
-  rm -rf "$app_bundle"
-  mkdir -p "$staging_dir"
-  /usr/bin/ditto -x -k "$app_zip" "$staging_dir"
-  printf '%s\n' "$zip_stamp" > "$stamp_file"
-
-  printf '%s\n' "$app_bundle"
+  printf '%s\n' "$APP_BUNDLE"
 }
 
 build_app() {
@@ -111,7 +86,7 @@ case "$MODE" in
     ;;
   --debug|debug)
     run_default_flow
-    lldb -- "$(app_bundle_path)/Contents/MacOS/$APP_NAME"
+    lldb -- "$APP_BINARY"
     ;;
   --logs|logs)
     run_default_flow

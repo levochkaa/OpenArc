@@ -2,26 +2,32 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_NAME="TheBrowser"
+SCHEME="TheBrowser"
 CONFIGURATION="${CONFIGURATION:-Debug}"
-TARGET="${BAZEL_TEST_TARGET:-//:TheBrowserTests}"
+DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode"
 
-source "$ROOT_DIR/script/bazel_environment.sh"
-configure_bazel_environment
+validate_configuration() {
+  case "$CONFIGURATION" in
+    Debug|Release)
+      ;;
+    *)
+      echo "error: unsupported CONFIGURATION '$CONFIGURATION' (expected Debug or Release)" >&2
+      exit 2
+      ;;
+  esac
+}
 
-case "$CONFIGURATION" in
-  Debug)
-    BAZEL_CONFIG="debug"
-    ;;
-  Release)
-    BAZEL_CONFIG="release"
-    ;;
-  *)
-    echo "error: unsupported CONFIGURATION '$CONFIGURATION' (expected Debug or Release)" >&2
-    exit 2
-    ;;
-esac
+validate_configuration
+"$ROOT_DIR/script/generate_xcodeproj.sh"
+"$ROOT_DIR/script/chromium.sh" ensure "$CONFIGURATION" >/dev/null
 
-cd "$ROOT_DIR"
-
-"$ROOT_DIR/script/chromium.sh" root "$CONFIGURATION" >/dev/null
-bazel test "${BAZEL_TEST_ARGS[@]}" --config="$BAZEL_CONFIG" "$TARGET"
+xcodebuild \
+  -project "$ROOT_DIR/$PROJECT_NAME.xcodeproj" \
+  -scheme "$SCHEME" \
+  -configuration "$CONFIGURATION" \
+  -derivedDataPath "$DERIVED_DATA_PATH" \
+  -destination "platform=macOS,arch=arm64" \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  test
