@@ -49,6 +49,7 @@
 "browser.menu.use_selection_to_find" = "Use Selection to Find";
 "browser.menu.jump_to_selection" = "Jump to Selection";
 "browser.menu.new_tab" = "New Tab";
+"browser.menu.history" = "History";
 "browser.menu.save_page_as" = "Save Page As...";
 "browser.menu.print" = "Print...";
 "browser.menu.force_refresh" = "Force Refresh";
@@ -77,6 +78,7 @@
 "browser.settings.general.automatic_updates" = "Automatic Updates";
 "browser.settings.general.automatic_updates.detail" = "My Browser";
 "browser.settings.general.warn_before_quitting" = "Warn Before Quitting";
+"browser.settings.general.blurred_background" = "Blur Browser Background";
 "browser.settings.profiles" = "Profiles";
 "browser.settings.profiles.intro" = "The list of the world's profiles. Profiles help to keep your data separate across spaces. My history, logins, cookies, and extensions. You can use any profile for one or more spaces.";
 "browser.settings.profiles.default_profile" = "Default";

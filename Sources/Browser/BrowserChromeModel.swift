@@ -6,6 +6,7 @@ import Foundation
 
 enum BrowserInternalPageRouting {
     static let settingsURL = URL(string: "tb://settings/")!
+    static let historyURL = URL(string: "tb://history")!
 }
 
 // MARK: - BrowserChromeModel
@@ -157,6 +158,7 @@ enum BrowserInternalPageRouting {
     enum BrowserInternalPage: Equatable {
         case settings
         case extensions
+        case history
         case passwordManager
     }
 
@@ -1208,6 +1210,8 @@ enum BrowserInternalPageRouting {
             return .settings
         case "extensions":
             return .extensions
+        case "history":
+            return .history
         case "password-manager":
             return .passwordManager
         default:

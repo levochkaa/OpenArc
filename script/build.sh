@@ -21,6 +21,12 @@ validate_configuration() {
   esac
 }
 
+filter_xcodebuild_output() {
+  # Xcode 26 still runs AppIntents metadata extraction for Swift app targets
+  # and logs this warning even when metadata generation is explicitly disabled.
+  sed '/warning: Metadata extraction disabled by --disable/d'
+}
+
 clear_staged_runtime_artifacts() {
   local frameworks_dir="$APP_BUNDLE/Contents/Frameworks"
   local resources_dir="$APP_BUNDLE/Contents/Resources"
@@ -48,6 +54,6 @@ xcodebuild \
   -destination "platform=macOS,arch=arm64" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
-  build
+  build 2>&1 | filter_xcodebuild_output
 
 echo "TheBrowser built successfully"

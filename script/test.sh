@@ -18,6 +18,12 @@ validate_configuration() {
   esac
 }
 
+filter_xcodebuild_output() {
+  # Xcode 26 still runs AppIntents metadata extraction for Swift app targets
+  # and logs this warning even when metadata generation is explicitly disabled.
+  sed '/warning: Metadata extraction disabled by --disable/d'
+}
+
 validate_configuration
 "$ROOT_DIR/script/generate_xcodeproj.sh"
 "$ROOT_DIR/script/chromium.sh" ensure "$CONFIGURATION" >/dev/null
@@ -30,4 +36,4 @@ xcodebuild \
   -destination "platform=macOS,arch=arm64" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
-  test
+  test 2>&1 | filter_xcodebuild_output

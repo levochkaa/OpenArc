@@ -12,10 +12,13 @@ extern const char kTheBrowserSettingsHost[];
 extern const char kTheBrowserSettingsURL[];
 extern const char kTheBrowserExtensionsHost[];
 extern const char kTheBrowserExtensionsURL[];
+extern const char kTheBrowserHistoryHost[];
+extern const char kTheBrowserHistoryURL[];
 extern const char kTheBrowserPasswordManagerHost[];
 extern const char kTheBrowserPasswordManagerURL[];
 extern const char kChromiumSettingsURL[];
 extern const char kChromiumExtensionsURL[];
+extern const char kChromiumHistoryURL[];
 extern const char kChromiumPasswordManagerURL[];
 
 void RegisterTheBrowserCustomSchemes(

@@ -64,6 +64,7 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
     let isOverlayPresentation: Bool
     let showsOverlayBorder: Bool
     let roundsWindowLeadingCorners: Bool
+    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let sidebarWidth: CGFloat
     let sidebarHeight: CGFloat
     let containerWidth: CGFloat
@@ -142,6 +143,7 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
                 isOverlayPresentation: isOverlayPresentation,
                 showsOverlayBorder: showsOverlayBorder,
                 roundsWindowLeadingCorners: roundsWindowLeadingCorners,
+                chromeBackgroundMode: chromeBackgroundMode,
                 onToggleSidebar: onToggleSidebar,
                 onURLRowFrameChange: onURLRowFrameChange
             )

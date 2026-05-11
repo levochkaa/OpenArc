@@ -98,6 +98,12 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("t")
     )
 
+    static let openHistory = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuHistory,
+        helpTitle: BrowserStrings.menuHistory,
+        shortcut: BrowserKeyboardShortcut("y")
+    )
+
     static let archiveTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.tabArchiveAction,
         helpTitle: BrowserStrings.tabArchiveTooltip,
@@ -236,6 +242,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case openSettings
     case setAsDefaultBrowser
     case newTab
+    case openHistory
     case archiveTab
     case savePage
     case printPage
@@ -371,6 +378,8 @@ enum BrowserKeyboardShortcutBridge {
             "w"
         case 15:
             "r"
+        case 16:
+            "y"
         case 17:
             "t"
         case 35:
@@ -619,6 +628,11 @@ enum BrowserStrings {
         comment: "New Tab menu item title."
     )
 
+    static let menuHistory = NSLocalizedString(
+        "browser.menu.history",
+        comment: "History menu item title."
+    )
+
     static let menuSavePageAs = NSLocalizedString(
         "browser.menu.save_page_as",
         comment: "Save Page As menu item title."
@@ -762,6 +776,11 @@ enum BrowserStrings {
     static let settingsWarnBeforeQuitting = NSLocalizedString(
         "browser.settings.general.warn_before_quitting",
         comment: "Warn before quitting setting title."
+    )
+
+    static let settingsBlurredBackground = NSLocalizedString(
+        "browser.settings.general.blurred_background",
+        comment: "Blurred browser background setting title."
     )
 
     static let settingsProfilesTab = NSLocalizedString(

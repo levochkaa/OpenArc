@@ -115,6 +115,13 @@ struct BrowserSettingsView: View {
                     title: BrowserStrings.settingsWarnBeforeQuitting,
                     isOn: $preferences.warnBeforeQuitting
                 )
+
+                settingsDivider
+
+                toggleRow(
+                    title: BrowserStrings.settingsBlurredBackground,
+                    isOn: $preferences.blurredChromeBackgroundEnabled
+                )
             }
 
             settingsSection(title: BrowserStrings.settingsTemporaryTabsTitle) {

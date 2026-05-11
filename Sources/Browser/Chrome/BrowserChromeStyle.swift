@@ -2,11 +2,34 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserChromeBackgroundMode
+
+enum BrowserChromeBackgroundMode: Equatable {
+    case blurred
+    case black
+}
+
+// MARK: - BrowserChromeBackgroundView
+
+struct BrowserChromeBackgroundView: View {
+    let mode: BrowserChromeBackgroundMode
+
+    var body: some View {
+        switch mode {
+        case .blurred:
+            BrowserVisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+        case .black:
+            BrowserChromePalette.solidBackground
+        }
+    }
+}
+
 // MARK: - BrowserChromePalette
 
 enum BrowserChromePalette {
-    static let shellBackground = Color.black
-    static let sidebarBackground = Color.black
+    static let solidBackground = Color.black
+    static let shellBackground = solidBackground
+    static let sidebarBackground = solidBackground
     static let contentBackground = Color.white
     static let rowHover = Color.white.opacity(0.08)
     static let rowSelected = Color.white.opacity(0.14)
@@ -90,7 +113,9 @@ enum BrowserChromeLayout {
     static let sidebarRowHorizontalPadding: CGFloat = 11
     static let sidebarTabTrailingPadding: CGFloat = 7
     static let sidebarRowContentSpacing: CGFloat = 8
+    static let sidebarFaviconSize: CGFloat = 14
     static let sidebarButtonPressedScale: CGFloat = 0.985
+    static let sidebarRenameActivationGraceInterval: TimeInterval = 0.25
     static let sidebarCloseButtonPressedScale: CGFloat = 0.92
     static let sidebarNewTabSymbolSize: CGFloat = 14
     static let sidebarCurrentURLOverlayWidth: CGFloat = 76

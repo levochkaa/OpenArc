@@ -59,7 +59,6 @@ struct BrowserContentView: View {
         )
         .opacity(hasSelectedTab ? 1 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BrowserChromePalette.shellBackground)
         .overlay {
             if !isContextReady {
                 ZStack {

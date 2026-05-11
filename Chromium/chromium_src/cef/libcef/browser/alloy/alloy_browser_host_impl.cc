@@ -69,6 +69,7 @@ const char* kAllowedWebUIHosts[] = {
     chrome::kChromeUIChromeURLsHost,
     chrome::kChromeUICreditsHost,
     chrome::kChromeUIExtensionsHost,
+    chrome::kChromeUIHistoryHost,
     content::kChromeUIGpuHost,
     content::kChromeUIHistogramHost,
     content::kChromeUIIndexedDBInternalsHost,

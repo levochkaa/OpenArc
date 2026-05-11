@@ -193,6 +193,10 @@ NSUserInterfaceValidations {
         chromeModel?.toggleCommandBar()
     }
 
+    public func openHistory(_: Any?) {
+        openBrowserInternalPage(BrowserInternalPageRouting.historyURL)
+    }
+
     public func archiveCurrentTab(_: Any?) {
         chromeModel?.archiveSelectedTab()
     }
@@ -259,6 +263,8 @@ NSUserInterfaceValidations {
         switch action {
         case #selector(createNewTab(_:)):
             return chromeModel?.canCreateTab ?? false
+        case #selector(openHistory(_:)):
+            return chromeModel != nil && !isTerminationRequested
         case #selector(archiveCurrentTab(_:)):
             return chromeModel?.canArchiveSelectedTab ?? false
         case #selector(goBack(_:)):
@@ -528,6 +534,12 @@ NSUserInterfaceValidations {
         )
         viewMenu.addItem(forwardItem)
 
+        let historyItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .openHistory),
+            action: #selector(openHistory(_:))
+        )
+        viewMenu.addItem(historyItem)
+
         viewMenu.addItem(.separator())
 
         let refreshItem = makeMenuItem(
@@ -671,6 +683,13 @@ NSUserInterfaceValidations {
             }
 
             createNewTab(nil)
+            return true
+        case .openHistory:
+            guard chromeModel != nil, !isTerminationRequested else {
+                return false
+            }
+
+            openHistory(nil)
             return true
         case .archiveTab:
             return chromeModel?.archiveSelectedTab() ?? false

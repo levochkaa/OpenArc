@@ -57,6 +57,11 @@ import Testing
         modifierFlags: [.command],
         charactersIgnoringModifiers: "e"
     )
+    let openHistoryCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 16,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "н"
+    )
     let archiveTabCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 13,
         modifierFlags: [.command],
@@ -116,6 +121,7 @@ import Testing
     #expect(settingsCommand == .openSettings)
     #expect(setAsDefaultBrowserCommand == .setAsDefaultBrowser)
     #expect(newTabCommand == .newTab)
+    #expect(openHistoryCommand == .openHistory)
     #expect(archiveTabCommand == .archiveTab)
     #expect(savePageCommand == .savePage)
     #expect(printPageCommand == .printPage)

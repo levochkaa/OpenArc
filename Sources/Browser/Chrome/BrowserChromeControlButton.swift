@@ -5,6 +5,8 @@ import SwiftUI
 // MARK: - BrowserChromeControlButton
 
 struct BrowserChromeControlButton: View {
+    // MARK: Internal
+
     let systemImageName: String
     let tooltipTitle: String
     let tooltipShortcut: BrowserKeyboardShortcut?
@@ -13,16 +15,6 @@ struct BrowserChromeControlButton: View {
     var isSelected = false
     var pressEffect = BrowserChromeControlPressEffect.none
     let action: () -> Void
-
-    @State var isHovered = false
-    @State var isPressed = false
-
-    var buttonShape: RoundedRectangle {
-        RoundedRectangle(
-            cornerRadius: BrowserChromeLayout.chromeButtonCornerRadius,
-            style: .continuous
-        )
-    }
 
     var effectiveIsPressed: Bool {
         isEnabled && isPressed
@@ -33,15 +25,15 @@ struct BrowserChromeControlButton: View {
             return .clear
         }
 
-        if effectiveIsPressed {
-            return BrowserChromePalette.chromeButtonPressedBackground
-        }
-
         if isHovered {
-            return BrowserChromePalette.chromeButtonHoverBackground
+            return BrowserChromePalette.rowHover
         }
 
         return .clear
+    }
+
+    var backgroundScale: CGFloat {
+        effectiveIsPressed ? backgroundPressScale : 1
     }
 
     var foregroundColor: Color {
@@ -51,10 +43,6 @@ struct BrowserChromeControlButton: View {
 
         if effectiveIsPressed {
             return BrowserChromePalette.chromeButtonPressedForeground
-        }
-
-        if isHovered {
-            return BrowserChromePalette.chromeButtonHoverForeground
         }
 
         if isSelected {
@@ -114,47 +102,33 @@ struct BrowserChromeControlButton: View {
 
         switch pressEffect {
         case .compress:
-            return 0.9
+            return compressIconPressScale
         case .moveDown, .moveLeft, .moveRight, .moveUp, .none, .rotateClockwise:
             return 1
         }
     }
 
-    var shadowColor: Color {
-        guard isEnabled, isHovered || effectiveIsPressed else {
-            return .clear
-        }
-
-        return BrowserChromePalette.chromeButtonHighlightGlow
-    }
-
-    var shadowRadius: CGFloat {
-        guard isEnabled, isHovered || effectiveIsPressed else {
-            return 0
-        }
-
-        return effectiveIsPressed ? 10 : 8
-    }
-
     var body: some View {
         Button(action: action) {
-            ZStack {
-                buttonShape
+            Image(systemName: systemImageName)
+                .symbolRenderingMode(.monochrome)
+                .font(.system(size: BrowserChromeLayout.chromeButtonSymbolSize, weight: .semibold))
+                .foregroundStyle(foregroundColor)
+                .offset(x: horizontalOffset, y: verticalOffset)
+                .rotationEffect(.degrees(rotationAngle))
+                .scaleEffect(scale)
+                .frame(
+                    width: BrowserChromeLayout.chromeButtonSize,
+                    height: BrowserChromeLayout.chromeButtonSize
+                )
+                .background(
+                    RoundedRectangle(
+                        cornerRadius: BrowserChromeLayout.chromeButtonCornerRadius,
+                        style: .continuous
+                    )
                     .fill(backgroundColor)
-
-                Image(systemName: systemImageName)
-                    .symbolRenderingMode(.monochrome)
-                    .font(.system(size: BrowserChromeLayout.chromeButtonSymbolSize, weight: .semibold))
-                    .foregroundColor(foregroundColor)
-                    .offset(x: horizontalOffset, y: verticalOffset)
-                    .rotationEffect(.degrees(rotationAngle))
-                    .scaleEffect(scale)
-            }
-            .frame(
-                width: BrowserChromeLayout.chromeButtonSize,
-                height: BrowserChromeLayout.chromeButtonSize
-            )
-            .shadow(color: shadowColor, radius: shadowRadius)
+                    .scaleEffect(backgroundScale)
+                )
         }
         .buttonStyle(BrowserChromeControlPressTrackingButtonStyle { isPressed in
             self.isPressed = isEnabled && isPressed
@@ -163,6 +137,15 @@ struct BrowserChromeControlButton: View {
         .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.chromeButtonCornerRadius))
         .onHover { hovering in
             isHovered = hovering
+        }
+        .onChange(of: isEnabled) { _, isEnabled in
+            if !isEnabled {
+                isPressed = false
+            }
+        }
+        .onDisappear {
+            isPressed = false
+            isHovered = false
         }
         .browserTooltip(
             title: tooltipTitle,
@@ -173,6 +156,14 @@ struct BrowserChromeControlButton: View {
         .animation(.easeOut(duration: 0.14), value: isHovered)
         .animation(.spring(response: 0.18, dampingFraction: 0.72), value: isPressed)
     }
+
+    // MARK: Private
+
+    @State private var isHovered = false
+    @State private var isPressed = false
+
+    private let backgroundPressScale: CGFloat = 0.95
+    private let compressIconPressScale: CGFloat = 0.9
 }
 
 // MARK: - BrowserChromeControlPressEffect
@@ -189,7 +180,7 @@ enum BrowserChromeControlPressEffect {
 
 // MARK: - BrowserChromeControlPressTrackingButtonStyle
 
-struct BrowserChromeControlPressTrackingButtonStyle: ButtonStyle {
+private struct BrowserChromeControlPressTrackingButtonStyle: ButtonStyle {
     let onPressChanged: (Bool) -> Void
 
     func makeBody(configuration: Configuration) -> some View {

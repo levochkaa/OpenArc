@@ -1661,6 +1661,17 @@ bool IsChromiumExtensionsURL(const CefString &url) {
              shared::kTheBrowserExtensionsHost;
 }
 
+bool IsChromiumHistoryURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserHistoryHost;
+}
+
 bool IsChromiumPasswordManagerURL(const CefString &url) {
   CefURLParts parts;
   if (!CefParseURL(url, parts)) {
@@ -1674,6 +1685,7 @@ bool IsChromiumPasswordManagerURL(const CefString &url) {
 
 bool IsChromiumInternalWindowURL(const CefString &url) {
   return IsChromiumSettingsURL(url) || IsChromiumExtensionsURL(url) ||
+         IsChromiumHistoryURL(url) ||
          IsChromiumPasswordManagerURL(url);
 }
 
@@ -1701,6 +1713,18 @@ bool IsTheBrowserExtensionsURL(const CefString &url) {
              shared::kTheBrowserExtensionsHost;
 }
 
+bool IsTheBrowserHistoryURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) ==
+             shared::kTheBrowserScheme &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserHistoryHost;
+}
+
 bool IsTheBrowserPasswordManagerURL(const CefString &url) {
   CefURLParts parts;
   if (!CefParseURL(url, parts)) {
@@ -1715,6 +1739,7 @@ bool IsTheBrowserPasswordManagerURL(const CefString &url) {
 
 bool IsTheBrowserInternalWindowURL(const CefString &url) {
   return IsTheBrowserSettingsURL(url) || IsTheBrowserExtensionsURL(url) ||
+         IsTheBrowserHistoryURL(url) ||
          IsTheBrowserPasswordManagerURL(url);
 }
 
@@ -2434,6 +2459,8 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     if (chromiumInternalURL.empty()) {
       if (IsTheBrowserExtensionsURL(request->GetURL())) {
         chromiumInternalURL = shared::kChromiumExtensionsURL;
+      } else if (IsTheBrowserHistoryURL(request->GetURL())) {
+        chromiumInternalURL = shared::kChromiumHistoryURL;
       } else if (IsTheBrowserPasswordManagerURL(request->GetURL())) {
         chromiumInternalURL = shared::kChromiumPasswordManagerURL;
       } else {

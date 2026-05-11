@@ -6,7 +6,7 @@ struct BrowserFaviconView: View {
     @EnvironmentObject var faviconCache: BrowserFaviconCache
 
     let url: URL?
-    var size: CGFloat = 14
+    var size: CGFloat = BrowserChromeLayout.sidebarFaviconSize
 
     var body: some View {
         Group {

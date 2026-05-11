@@ -15,6 +15,7 @@ import Testing
     #expect(store.hapticFeedbackEnabled)
     #expect(store.restoreWindowsOnLaunch)
     #expect(store.pictureInPictureEnabled)
+    #expect(store.blurredChromeBackgroundEnabled)
 
     store.automaticUpdatesEnabled = false
     store.warnBeforeQuitting = false
@@ -23,6 +24,7 @@ import Testing
     store.hapticFeedbackEnabled = false
     store.restoreWindowsOnLaunch = false
     store.pictureInPictureEnabled = false
+    store.blurredChromeBackgroundEnabled = false
 
     let reloadedStore = BrowserUserPreferencesStore(userDefaults: userDefaults)
     #expect(!reloadedStore.automaticUpdatesEnabled)
@@ -32,6 +34,7 @@ import Testing
     #expect(!reloadedStore.hapticFeedbackEnabled)
     #expect(!reloadedStore.restoreWindowsOnLaunch)
     #expect(!reloadedStore.pictureInPictureEnabled)
+    #expect(!reloadedStore.blurredChromeBackgroundEnabled)
 }
 
 @Test func shortcutOverridesPersistBlockConflictsAndReset() throws {
@@ -81,6 +84,7 @@ import Testing
 }
 
 @Test func settingsRoutesMatchChromiumButtonDestinations() {
+    #expect(BrowserInternalPageRouting.historyURL.absoluteString == "tb://history")
     #expect(BrowserSettingsRoute.searchEnginesURL.absoluteString == "tb://settings/searchEngines")
     #expect(BrowserSettingsRoute.privacyURL.absoluteString == "tb://settings/privacy")
     #expect(BrowserSettingsRoute.passwordManagerURL.absoluteString == "tb://password-manager/passwords")

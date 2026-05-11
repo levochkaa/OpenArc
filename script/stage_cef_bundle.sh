@@ -1,19 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIGURATION="${1:-Debug}"
+CEF_CONFIGURATION="${1:-Release}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CEF_ROOT="$ROOT_DIR/ThirdParty/cef/current"
 CHROMIUM_FORK_MARKER="$CEF_ROOT/.thebrowser-chromium-fork"
-DEFAULT_PRODUCTS_DIR="$ROOT_DIR/.build/xcode/Build/Products/$CONFIGURATION"
+APP_CONFIGURATION="${CONFIGURATION:-Debug}"
+DEFAULT_PRODUCTS_DIR="$ROOT_DIR/.build/xcode/Build/Products/$APP_CONFIGURATION"
 APP_BUNDLE="${2:-$DEFAULT_PRODUCTS_DIR/TheBrowser.app}"
 HELPER_BUNDLE="${3:-$DEFAULT_PRODUCTS_DIR/TheBrowser Helper.app}"
 APP_FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 APP_RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
-CEF_FRAMEWORK_SOURCE="$CEF_ROOT/$CONFIGURATION/Chromium Embedded Framework.framework"
+CEF_FRAMEWORK_SOURCE="$CEF_ROOT/$CEF_CONFIGURATION/Chromium Embedded Framework.framework"
 CEF_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Chromium Embedded Framework.framework"
 HELPER_DEST="$APP_FRAMEWORKS_DIR/TheBrowser Helper.app"
 RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/TheBrowser Helper.app"
+
+validate_cef_configuration() {
+  case "$CEF_CONFIGURATION" in
+    Debug|Release)
+      ;;
+    *)
+      echo "error: unsupported CEF runtime configuration '$CEF_CONFIGURATION' (expected Debug or Release)" >&2
+      exit 2
+      ;;
+  esac
+}
 
 move_root_dylibs_to_version() {
   local framework_root="$1"
@@ -21,7 +33,18 @@ move_root_dylibs_to_version() {
   local dylib
 
   while IFS= read -r -d '' dylib; do
-    mv "$dylib" "$version_root/$(basename "$dylib")"
+    local destination="$version_root/$(basename "$dylib")"
+    if [[ ! -e "$dylib" ]]; then
+      continue
+    fi
+
+    if ! mv "$dylib" "$destination"; then
+      if [[ -e "$destination" && ! -e "$dylib" ]]; then
+        continue
+      fi
+
+      return 1
+    fi
   done < <(find "$framework_root" -maxdepth 1 -type f -name "*.dylib" -print0)
 }
 
@@ -68,6 +91,14 @@ create_helper_variant() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleName $app_name" "$plist"
 }
 
+sign_app_bundle() {
+  # Xcode signing is disabled for local builds, so seal the staged CEF bundle
+  # after copying framework and helper variants.
+  /usr/bin/codesign --force --deep --sign - --timestamp=none "$APP_BUNDLE"
+}
+
+validate_cef_configuration
+
 if [[ ! -d "$APP_BUNDLE" ]]; then
   echo "error: app bundle not found at $APP_BUNDLE" >&2
   exit 1
@@ -80,13 +111,13 @@ fi
 
 if [[ ! -f "$CHROMIUM_FORK_MARKER" ]]; then
   echo "error: TheBrowser Chromium fork marker not found at $CHROMIUM_FORK_MARKER" >&2
-  echo "Run ./script/chromium_source.sh package $CONFIGURATION first, then ./script/chromium.sh root $CONFIGURATION." >&2
+  echo "Run ./script/chromium_source.sh package $CEF_CONFIGURATION first, then ./script/chromium.sh root $CEF_CONFIGURATION." >&2
   exit 1
 fi
 
 if [[ ! -d "$CEF_FRAMEWORK_SOURCE" ]]; then
   echo "error: CEF framework not found at $CEF_FRAMEWORK_SOURCE" >&2
-  echo "Run ./script/chromium_source.sh package $CONFIGURATION first, then ./script/chromium.sh root $CONFIGURATION." >&2
+  echo "Run ./script/chromium_source.sh package $CEF_CONFIGURATION first, then ./script/chromium.sh root $CEF_CONFIGURATION." >&2
   exit 1
 fi
 
@@ -114,3 +145,5 @@ create_helper_variant " (Alerts)" ".alerts"
 create_helper_variant " (GPU)" ".gpu"
 create_helper_variant " (Plugin)" ".plugin"
 create_helper_variant " (Renderer)" ".renderer"
+
+sign_app_bundle

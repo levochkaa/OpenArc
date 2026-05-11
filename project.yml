@@ -20,6 +20,8 @@ settings:
     ARCHS: arm64
     ENABLE_DEBUG_DYLIB: NO
     ENABLE_APP_INTENTS_METADATA_GENERATION: NO
+    LM_FILTER_WARNINGS: YES
+    LM_ENABLE_LINK_GENERATION: NO
     SWIFT_EMIT_CONST_VALUE_PROTOCOLS: ""
     CLANG_CXX_LANGUAGE_STANDARD: gnu++20
     SWIFT_VERSION: "5.10"
@@ -77,6 +79,7 @@ targets:
         PRODUCT_NAME: TheBrowser
         PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser
         INFOPLIST_FILE: Support/TheBrowser-Info.plist
+        ENABLE_APP_INTENTS_METADATA_GENERATION: NO
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Browser/TheBrowser-Bridging-Header.h
         SWIFT_EMIT_LOC_STRINGS: NO
     postBuildScripts:
@@ -85,7 +88,7 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           "$SRCROOT/script/stage_cef_bundle.sh" \
-            "$CONFIGURATION" \
+            "${CEF_RUNTIME_CONFIGURATION:-Release}" \
             "$TARGET_BUILD_DIR/$FULL_PRODUCT_NAME" \
             "$BUILT_PRODUCTS_DIR/TheBrowser Helper.app"
     scheme:

@@ -29,6 +29,7 @@ struct BrowserSidebarSpaceHeaderRow: View {
     let space: BrowserChromeModel.Space
     let isRenaming: Bool
     let isCollapsed: Bool
+    let hasPinnedTabs: Bool
     let isSidebarResizing: Bool
     let interactionResetID: Int
     let onToggleCollapsed: () -> Void
@@ -55,7 +56,7 @@ struct BrowserSidebarSpaceHeaderRow: View {
     }
 
     var isShowingDisclosure: Bool {
-        isRowHovered && !isRenaming
+        hasPinnedTabs && isRowHovered && !isRenaming
     }
 
     var menuButtonReservedWidth: CGFloat {
@@ -121,7 +122,7 @@ struct BrowserSidebarSpaceHeaderRow: View {
     }
 
     var rowSelectionButton: some View {
-        Button(action: onToggleCollapsed) {
+        Button(action: performPrimaryAction) {
             Color.clear
                 .frame(
                     maxWidth: .infinity,
@@ -245,6 +246,14 @@ struct BrowserSidebarSpaceHeaderRow: View {
     }
 
     // MARK: Private
+
+    private func performPrimaryAction() {
+        if hasPinnedTabs {
+            onToggleCollapsed()
+        } else {
+            beginRename()
+        }
+    }
 
     private func beginRename() {
         draftTitle = space.title

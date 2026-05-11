@@ -102,6 +102,186 @@ final class BrowserSpaceSwipeNSView: NSView {
     }
 }
 
+// MARK: - BrowserSpacePagerScrollObserver
+
+struct BrowserSpacePagerScrollObserver: NSViewRepresentable {
+    let isEnabled: Bool
+    let onScrollDelta: (CGFloat) -> Void
+    let onScrollReleased: () -> Void
+    let onScrollEnded: () -> Void
+
+    func makeNSView(context _: Context) -> BrowserSpacePagerScrollNSView {
+        let view = BrowserSpacePagerScrollNSView()
+        view.isEnabled = isEnabled
+        view.onScrollDelta = onScrollDelta
+        view.onScrollReleased = onScrollReleased
+        view.onScrollEnded = onScrollEnded
+        return view
+    }
+
+    func updateNSView(_ nsView: BrowserSpacePagerScrollNSView, context _: Context) {
+        nsView.isEnabled = isEnabled
+        nsView.onScrollDelta = onScrollDelta
+        nsView.onScrollReleased = onScrollReleased
+        nsView.onScrollEnded = onScrollEnded
+    }
+}
+
+// MARK: - BrowserSpacePagerScrollNSView
+
+final class BrowserSpacePagerScrollNSView: NSView {
+    // MARK: Lifecycle
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        removeLocalMonitor()
+        scrollEndWorkItem?.cancel()
+    }
+
+    // MARK: Internal
+
+    var isEnabled = false
+    var onScrollDelta: (CGFloat) -> Void = { _ in }
+    var onScrollReleased: () -> Void = {}
+    var onScrollEnded: () -> Void = {}
+
+    var isTrackingHorizontalScroll = false
+    var didSendScrollRelease = false
+    var localMonitor: Any?
+    var scrollEndWorkItem: DispatchWorkItem?
+
+    override func hitTest(_: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+
+        if window == nil {
+            removeLocalMonitor()
+        } else {
+            installLocalMonitorIfNeeded()
+        }
+    }
+
+    // MARK: Private
+
+    private func installLocalMonitorIfNeeded() {
+        guard localMonitor == nil else {
+            return
+        }
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            self?.handleScrollWheel(event) ?? event
+        }
+    }
+
+    private func handleScrollWheel(_ event: NSEvent) -> NSEvent? {
+        guard
+            isEnabled,
+            let window,
+            event.window === window,
+            bounds.contains(convert(event.locationInWindow, from: nil))
+        else {
+            finishHorizontalScrollIfNeeded()
+            return event
+        }
+
+        let horizontalDelta = event.scrollingDeltaX
+        let verticalDelta = event.scrollingDeltaY
+        guard isTrackingHorizontalScroll || isHorizontalScroll(horizontalDelta, verticalDelta) else {
+            return event
+        }
+
+        if !isTrackingHorizontalScroll {
+            isTrackingHorizontalScroll = true
+            didSendScrollRelease = false
+        }
+
+        if horizontalDelta != 0, !didSendScrollRelease {
+            onScrollDelta(horizontalDelta)
+        }
+
+        if scrollWasReleased(event) {
+            sendScrollReleasedIfNeeded()
+        }
+
+        if scrollWasCancelled(event) || momentumScrollDidEnd(event) {
+            finishHorizontalScrollIfNeeded()
+        } else {
+            scheduleScrollEndFallback()
+        }
+
+        return nil
+    }
+
+    private func isHorizontalScroll(_ horizontalDelta: CGFloat, _ verticalDelta: CGFloat) -> Bool {
+        let horizontal = abs(horizontalDelta)
+        let vertical = abs(verticalDelta)
+        return horizontal > max(vertical * 1.08, 0.5)
+    }
+
+    private func scrollWasReleased(_ event: NSEvent) -> Bool {
+        event.phase.contains(.ended)
+    }
+
+    private func scrollWasCancelled(_ event: NSEvent) -> Bool {
+        event.phase.contains(.cancelled)
+            || event.momentumPhase.contains(.cancelled)
+    }
+
+    private func momentumScrollDidEnd(_ event: NSEvent) -> Bool {
+        event.momentumPhase.contains(.ended)
+    }
+
+    private func scheduleScrollEndFallback() {
+        scrollEndWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.finishHorizontalScrollIfNeeded()
+        }
+        scrollEndWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
+    }
+
+    private func finishHorizontalScrollIfNeeded() {
+        guard isTrackingHorizontalScroll else {
+            return
+        }
+
+        sendScrollReleasedIfNeeded()
+        scrollEndWorkItem?.cancel()
+        scrollEndWorkItem = nil
+        isTrackingHorizontalScroll = false
+        didSendScrollRelease = false
+        onScrollEnded()
+    }
+
+    private func sendScrollReleasedIfNeeded() {
+        guard !didSendScrollRelease else {
+            return
+        }
+
+        didSendScrollRelease = true
+        onScrollReleased()
+    }
+
+    private func removeLocalMonitor() {
+        guard let localMonitor else {
+            return
+        }
+
+        NSEvent.removeMonitor(localMonitor)
+        self.localMonitor = nil
+    }
+}
+
 // MARK: - BrowserPassthroughInteractionObserver
 
 struct BrowserPassthroughInteractionObserver: NSViewRepresentable {
@@ -310,6 +490,118 @@ final class BrowserWindowFrameReaderNSView: NSView {
 
         lastFrameInWindow = frameInWindow
         onFrameChange(frameInWindow)
+    }
+}
+
+// MARK: - BrowserScreenFrameReader
+
+struct BrowserScreenFrameReader: NSViewRepresentable {
+    let onFrameChange: (CGRect?) -> Void
+
+    func makeNSView(context _: Context) -> BrowserScreenFrameReaderNSView {
+        let view = BrowserScreenFrameReaderNSView()
+        view.onFrameChange = onFrameChange
+        return view
+    }
+
+    func updateNSView(_ nsView: BrowserScreenFrameReaderNSView, context _: Context) {
+        nsView.onFrameChange = onFrameChange
+        nsView.scheduleFrameUpdate()
+    }
+}
+
+// MARK: - BrowserScreenFrameReaderNSView
+
+final class BrowserScreenFrameReaderNSView: NSView {
+    // MARK: Lifecycle
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        postsFrameChangedNotifications = true
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        removeWindowObservers()
+    }
+
+    // MARK: Internal
+
+    var onFrameChange: (CGRect?) -> Void = { _ in }
+
+    var lastFrameInScreen: CGRect?
+    var windowObservers = [NSObjectProtocol]()
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateWindowObservers()
+        scheduleFrameUpdate()
+    }
+
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        scheduleFrameUpdate()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scheduleFrameUpdate()
+    }
+
+    override func layout() {
+        super.layout()
+        scheduleFrameUpdate()
+    }
+
+    func scheduleFrameUpdate() {
+        DispatchQueue.main.async { [weak self] in
+            self?.sendFrameUpdateIfNeeded()
+        }
+    }
+
+    // MARK: Private
+
+    private func updateWindowObservers() {
+        removeWindowObservers()
+
+        guard let window else {
+            return
+        }
+
+        let notificationCenter = NotificationCenter.default
+        for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
+            let observer = notificationCenter.addObserver(
+                forName: name,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.scheduleFrameUpdate()
+            }
+            windowObservers.append(observer)
+        }
+    }
+
+    private func removeWindowObservers() {
+        let notificationCenter = NotificationCenter.default
+        for observer in windowObservers {
+            notificationCenter.removeObserver(observer)
+        }
+        windowObservers.removeAll()
+    }
+
+    private func sendFrameUpdateIfNeeded() {
+        let frameInScreen = window.map { window in
+            window.convertToScreen(convert(bounds, to: nil))
+        }
+        guard frameInScreen != lastFrameInScreen else {
+            return
+        }
+
+        lastFrameInScreen = frameInScreen
+        onFrameChange(frameInScreen)
     }
 }
 

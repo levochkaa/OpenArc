@@ -10,6 +10,7 @@ struct BrowserRootView: View {
         _commandBarModel = ObservedObject(wrappedValue: model.commandBarModel)
         _currentPageCommandBarModel = ObservedObject(wrappedValue: model.currentPageCommandBarModel)
         _shortcutStore = ObservedObject(wrappedValue: model.shortcutStore)
+        _preferences = ObservedObject(wrappedValue: model.userPreferencesStore)
         _showsSidebarWindowControls = State(initialValue: model.isSidebarVisible)
     }
 
@@ -48,6 +49,7 @@ struct BrowserRootView: View {
                         isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
                         isOverlayPresentation: isSidebarOverlayPresentation,
                         showsOverlayBorder: isSidebarHoverOverlayPresented,
+                        chromeBackgroundMode: chromeBackgroundMode,
                         onToggleSidebar: toggleSidebarFromChrome,
                         onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
                     )
@@ -113,6 +115,7 @@ struct BrowserRootView: View {
                             isOverlayPresentation: isSidebarOverlayPresentation,
                             showsOverlayBorder: isSidebarHoverOverlayPresented,
                             roundsWindowLeadingCorners: usesWindowContentInsets,
+                            chromeBackgroundMode: chromeBackgroundMode,
                             sidebarWidth: model.sidebarWidth,
                             sidebarHeight: sidebarHeight(in: proxy.size),
                             containerWidth: detachedSidebarChromeWidth,
@@ -149,14 +152,6 @@ struct BrowserRootView: View {
                     onDismiss: dismissSidebarHoverOverlay
                 )
                 .frame(width: proxy.size.width, height: proxy.size.height)
-
-                BrowserSpaceSwipeObserver(
-                    canSwitchSpaces: model.spaces.count > 1,
-                    onSwipeLeft: model.selectNextSpace,
-                    onSwipeRight: model.selectPreviousSpace
-                )
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .allowsHitTesting(false)
 
                 if commandBarModel.isPresented, !currentPageCommandBarModel.isPresented, sidebarLayoutWidth > 0 {
                     BrowserPassthroughInteractionObserver(
@@ -206,7 +201,9 @@ struct BrowserRootView: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
-        .background(BrowserChromePalette.shellBackground)
+        .background {
+            BrowserChromeBackgroundView(mode: chromeBackgroundMode)
+        }
         .background {
             BrowserWindowFullscreenReader { fullscreenState in
                 handleWindowFullscreenStateChange(fullscreenState)
@@ -299,6 +296,7 @@ struct BrowserRootView: View {
     @ObservedObject private var commandBarModel: BrowserCommandBarModel
     @ObservedObject private var currentPageCommandBarModel: BrowserCommandBarModel
     @ObservedObject private var shortcutStore: BrowserShortcutStore
+    @ObservedObject private var preferences: BrowserUserPreferencesStore
     @ObservedObject private var faviconCache = BrowserFaviconCache.shared
     @State private var showsSidebarWindowControls: Bool
     @State private var isWindowFullscreen = false
@@ -314,6 +312,10 @@ struct BrowserRootView: View {
 
     private var sidebarLayoutWidth: CGFloat {
         model.isSidebarVisible ? model.sidebarWidth : 0
+    }
+
+    private var chromeBackgroundMode: BrowserChromeBackgroundMode {
+        preferences.blurredChromeBackgroundEnabled ? .blurred : .black
     }
 
     private var isSidebarPresented: Bool {

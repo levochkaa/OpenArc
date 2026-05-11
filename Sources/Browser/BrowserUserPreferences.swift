@@ -102,6 +102,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.hapticFeedbackEnabled = Self.loadBool(userDefaults, key: Key.hapticFeedbackEnabled, defaultValue: true)
         self.restoreWindowsOnLaunch = Self.loadBool(userDefaults, key: Key.restoreWindowsOnLaunch, defaultValue: true)
         self.pictureInPictureEnabled = Self.loadBool(userDefaults, key: Key.pictureInPictureEnabled, defaultValue: true)
+        self.blurredChromeBackgroundEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.blurredChromeBackgroundEnabled,
+            defaultValue: true
+        )
     }
 
     // MARK: Internal
@@ -134,6 +139,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(pictureInPictureEnabled, forKey: Key.pictureInPictureEnabled) }
     }
 
+    @Published var blurredChromeBackgroundEnabled: Bool {
+        didSet { userDefaults.set(blurredChromeBackgroundEnabled, forKey: Key.blurredChromeBackgroundEnabled) }
+    }
+
     // MARK: Private
 
     private enum Key {
@@ -144,6 +153,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let hapticFeedbackEnabled = "browser.settings.hapticFeedbackEnabled"
         static let restoreWindowsOnLaunch = "browser.settings.restoreWindowsOnLaunch"
         static let pictureInPictureEnabled = "browser.settings.pictureInPictureEnabled"
+        static let blurredChromeBackgroundEnabled = "browser.settings.blurredChromeBackgroundEnabled"
     }
 
     private let userDefaults: UserDefaults
@@ -163,6 +173,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case openSettings
     case setAsDefaultBrowser
     case newTab
+    case openHistory
     case archiveTab
     case savePage
     case printPage
@@ -193,6 +204,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.setAsDefaultBrowser
         case .newTab:
             BrowserCommands.newTab
+        case .openHistory:
+            BrowserCommands.openHistory
         case .archiveTab:
             BrowserCommands.archiveTab
         case .savePage:
@@ -234,6 +247,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .setAsDefaultBrowser
         case .newTab:
             .newTab
+        case .openHistory:
+            .openHistory
         case .archiveTab:
             .archiveTab
         case .savePage:

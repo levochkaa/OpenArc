@@ -1,5 +1,4 @@
 import AppKit
-import QuartzCore
 import SwiftUI
 
 // MARK: - BrowserSidebarRow
@@ -27,6 +26,7 @@ struct BrowserSidebarRow: View {
     @State var isCloseHovered = false
     @State var isRowPressed = false
     @State var draftTitle = ""
+    @State var initialRenameTitle = ""
 
     var closeButtonBackgroundColor: Color {
         isCloseHovered ? BrowserChromePalette.rowCloseHover : .clear
@@ -40,12 +40,13 @@ struct BrowserSidebarRow: View {
         isRowHovered && !isRenaming
     }
 
-    var sharingItems: [Any] {
-        if let pageURL = tab.pageURL {
-            return [pageURL]
-        }
+    var hasUserTitleOverride: Bool {
+        let trimmedUserTitleOverride = tab.userTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !trimmedUserTitleOverride.isEmpty
+    }
 
-        return [NSString(string: tab.urlString)]
+    var renameTooltipCaption: String? {
+        hasUserTitleOverride ? nil : BrowserStrings.tabRenameTooltipCaption
     }
 
     var body: some View {
@@ -92,17 +93,9 @@ struct BrowserSidebarRow: View {
                 resetTransientInteractionState()
             }
             .contextMenu {
-                copyLinkMenuItem
-                shareMenuItem
-                Button(BrowserStrings.tabRenameAction, action: beginRename)
-                Divider()
-                archiveTabMenuItem
-                Button(
-                    BrowserStrings.tabArchiveTabsBelowAction,
-                    role: .destructive,
-                    action: onArchiveTabsBelow
-                )
-                .disabled(!canArchiveTabsBelow)
+                let sharingItems = makeSharingItems()
+
+                tabContextMenuItems(sharingItems: sharingItems)
             }
     }
 
@@ -121,7 +114,7 @@ struct BrowserSidebarRow: View {
     }
 
     var rowSelectionButton: some View {
-        Button(action: onSelect) {
+        Button(action: handlePrimaryTap) {
             Color.clear
                 .frame(
                     maxWidth: .infinity,
@@ -138,7 +131,7 @@ struct BrowserSidebarRow: View {
         .simultaneousGesture(
             TapGesture(count: 2)
                 .onEnded {
-                    beginRename()
+                    handlePrimaryDoubleTap()
                 }
         )
     }
@@ -155,9 +148,9 @@ struct BrowserSidebarRow: View {
                 BrowserSidebarTitleTextField(
                     text: $draftTitle,
                     isFocused: isRenaming,
-                    onSubmit: commitRename,
+                    onSubmit: submitRename,
                     onCancel: cancelRename,
-                    onBlur: commitRename
+                    onBlur: blurRename
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .offset(y: 1)
@@ -173,9 +166,12 @@ struct BrowserSidebarRow: View {
         .contentShape(Rectangle())
         .browserTooltip(
             title: tab.displayTitle,
-            caption: BrowserStrings.tabRenameTooltipCaption,
+            caption: renameTooltipCaption,
             shortcut: nil,
-            isPresented: isRowHovered && !isCloseHovered && !isRenaming && !isSidebarResizing
+            isPresented: isRowHovered
+                && !isCloseHovered
+                && !isRenaming
+                && !isSidebarResizing
         )
         .padding(.leading, BrowserChromeLayout.sidebarRowHorizontalPadding)
         .padding(.trailing, BrowserChromeLayout.sidebarTabTrailingPadding)
@@ -258,40 +254,85 @@ struct BrowserSidebarRow: View {
         }
     }
 
-    @ViewBuilder var shareMenuItem: some View {
-        let sharingServices = BrowserShareMenuServiceProvider.sharingServices(for: sharingItems)
+    @ViewBuilder func tabContextMenuItems(sharingItems: [Any]) -> some View {
+        copyLinkMenuItem
+        shareMenuItem(sharingItems: sharingItems)
+        Button(BrowserStrings.tabRenameAction, action: beginRename)
+        Divider()
+        archiveTabMenuItem
+        Button(
+            BrowserStrings.tabArchiveTabsBelowAction,
+            role: .destructive,
+            action: onArchiveTabsBelow
+        )
+        .disabled(!canArchiveTabsBelow)
+    }
 
-        if !sharingServices.isEmpty {
-            Menu(BrowserStrings.tabShareAction) {
-                ForEach(Array(sharingServices.enumerated()), id: \.offset) { _, service in
-                    Button {
-                        service.subject = tab.displayTitle
-                        service.perform(withItems: sharingItems)
-                    } label: {
-                        Label {
-                            Text(service.menuItemTitle)
-                        } icon: {
-                            Image(nsImage: service.image)
-                        }
-                    }
-                }
-            }
-        }
+    func shareMenuItem(sharingItems: [Any]) -> some View {
+        BrowserSharingServicesMenu(
+            sharingItems: sharingItems,
+            subject: tab.displayTitle
+        )
     }
 
     // MARK: Private
 
+    private var hasRenameChanged: Bool {
+        normalizedRenameTitle(draftTitle) != normalizedRenameTitle(initialRenameTitle)
+    }
+
+    private func makeSharingItems() -> [Any] {
+        if let pageURL = tab.pageURL {
+            return [pageURL]
+        }
+
+        return [NSString(string: tab.urlString)]
+    }
+
+    private func handlePrimaryTap() {
+        if isSelected {
+            beginRename()
+            return
+        }
+
+        onSelect()
+    }
+
+    private func handlePrimaryDoubleTap() {
+        if !isSelected {
+            onSelect()
+        }
+
+        beginRename()
+    }
+
     private func beginRename() {
-        draftTitle = tab.userTitleOverride ?? tab.displayTitle
+        let title = tab.userTitleOverride ?? tab.displayTitle
+        draftTitle = title
+        initialRenameTitle = title
         onBeginRename()
     }
 
-    private func commitRename() {
+    private func submitRename() {
+        if hasRenameChanged {
+            onCommitRename(draftTitle)
+        } else {
+            onCancelRename()
+        }
+    }
+
+    private func blurRename() {
+        guard hasRenameChanged else {
+            return
+        }
+
         onCommitRename(draftTitle)
     }
 
     private func cancelRename() {
-        draftTitle = tab.userTitleOverride ?? tab.displayTitle
+        let title = tab.userTitleOverride ?? tab.displayTitle
+        draftTitle = title
+        initialRenameTitle = title
         onCancelRename()
     }
 
@@ -306,7 +347,39 @@ struct BrowserSidebarRow: View {
             return
         }
 
-        draftTitle = tab.userTitleOverride ?? tab.displayTitle
+        let title = tab.userTitleOverride ?? tab.displayTitle
+        draftTitle = title
+        initialRenameTitle = title
+    }
+
+    private func normalizedRenameTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - BrowserSharingServicesMenu
+
+struct BrowserSharingServicesMenu: View {
+    let sharingItems: [Any]
+    let subject: String
+
+    var body: some View {
+        Menu(BrowserStrings.tabShareAction) {
+            let sharingServices = BrowserShareMenuServiceProvider.sharingServices(for: sharingItems)
+
+            ForEach(Array(sharingServices.enumerated()), id: \.offset) { _, service in
+                Button {
+                    service.subject = subject
+                    service.perform(withItems: sharingItems)
+                } label: {
+                    Label {
+                        Text(service.menuItemTitle)
+                    } icon: {
+                        Image(nsImage: service.image)
+                    }
+                }
+            }
+        }
     }
 }
 

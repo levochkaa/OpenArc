@@ -146,6 +146,7 @@ struct BrowserSidebarCurrentURLRow: View {
     let copyLinkShortcut: BrowserKeyboardShortcut
     let isSearchPresented: Bool
     let isSidebarResizing: Bool
+    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onFrameChange: (CGRect?) -> Void
     let onOpenSearch: () -> Void
     let onCopyURL: () -> Bool
@@ -191,6 +192,10 @@ struct BrowserSidebarCurrentURLRow: View {
 
     var fullURLString: String {
         tab?.urlString ?? BrowserStrings.newTabTitle
+    }
+
+    var actionButtonOverlayShape: some Shape {
+        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
     }
 
     var body: some View {
@@ -296,7 +301,25 @@ struct BrowserSidebarCurrentURLRow: View {
         .background(actionButtonOverlayBackground)
     }
 
-    var actionButtonOverlayBackground: some View {
+    @ViewBuilder var actionButtonOverlayBackground: some View {
+        switch chromeBackgroundMode {
+        case .blurred:
+            actionButtonOverlayBlurredBackground
+        case .black:
+            actionButtonOverlaySolidBackground
+        }
+    }
+
+    var actionButtonOverlayBlurredBackground: some View {
+        ZStack {
+            BrowserChromeBackgroundView(mode: .blurred)
+            rowBackgroundColor
+        }
+        .mask(actionButtonOverlayMask)
+        .clipShape(actionButtonOverlayShape)
+    }
+
+    var actionButtonOverlaySolidBackground: some View {
         HStack(spacing: 0) {
             LinearGradient(
                 colors: [
@@ -311,9 +334,24 @@ struct BrowserSidebarCurrentURLRow: View {
             rowBackgroundResolvedColor
                 .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlaySolidWidth)
         }
-        .clipShape(
-            RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
-        )
+        .clipShape(actionButtonOverlayShape)
+    }
+
+    var actionButtonOverlayMask: some View {
+        HStack(spacing: 0) {
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.black,
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlayFadeWidth)
+
+            Color.black
+                .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlaySolidWidth)
+        }
     }
 
     var rowBackgroundShape: some View {

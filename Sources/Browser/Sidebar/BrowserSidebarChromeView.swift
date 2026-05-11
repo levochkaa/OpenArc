@@ -13,6 +13,7 @@ struct BrowserSidebarChromeView: View {
     let isOverlayPresentation: Bool
     let showsOverlayBorder: Bool
     var roundsWindowLeadingCorners = false
+    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
 
@@ -79,6 +80,7 @@ struct BrowserSidebarChromeView: View {
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
             isSidebarResizing: isSidebarResizing,
+            chromeBackgroundMode: chromeBackgroundMode,
             onToggleSidebar: onToggleSidebar,
             onURLRowFrameChange: onURLRowFrameChange
         )
@@ -99,6 +101,7 @@ struct BrowserSidebarContainerView: View {
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
     let isSidebarResizing: Bool
+    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
 
@@ -111,10 +114,13 @@ struct BrowserSidebarContainerView: View {
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
             isSidebarResizing: isSidebarResizing,
+            chromeBackgroundMode: chromeBackgroundMode,
             onToggleSidebar: onToggleSidebar,
             onURLRowFrameChange: onURLRowFrameChange
         )
-        .background(BrowserChromePalette.sidebarBackground)
+        .background {
+            BrowserChromeBackgroundView(mode: chromeBackgroundMode)
+        }
     }
 }
 

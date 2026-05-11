@@ -1483,6 +1483,8 @@ import Testing
         "tb://extensions",
         "tb://extensions/?id=abc",
         "chrome://extensions",
+        "tb://history",
+        "chrome://history",
         "tb://password-manager/passwords",
         "chrome://password-manager/passwords",
     ] {
@@ -1519,6 +1521,8 @@ import Testing
         "tb://extensions",
         "tb://extensions/?id=abc",
         "chrome://extensions",
+        "tb://history",
+        "chrome://history",
         "tb://password-manager/passwords",
         "chrome://password-manager/passwords",
     ] {
