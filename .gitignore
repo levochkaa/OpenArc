@@ -2,6 +2,11 @@
 .build/
 DerivedData/
 dist/
+Backend/dist/
+Backend/node_modules/
+Website/.screenshots/
+Website/.reference-screenshots/
+Website/node_modules/
 TheBrowser.xcodeproj/
 ThirdParty/cef/*
 !ThirdParty/cef/.gitkeep
