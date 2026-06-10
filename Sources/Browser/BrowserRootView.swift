@@ -2,15 +2,19 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserRootView
+
 struct BrowserRootView: View {
     // MARK: Lifecycle
 
-    init(model: BrowserChromeModel) {
+    init(model: BrowserChromeModel, updateController: BrowserUpdateController) {
         self.model = model
         _commandBarModel = ObservedObject(wrappedValue: model.commandBarModel)
         _currentPageCommandBarModel = ObservedObject(wrappedValue: model.currentPageCommandBarModel)
         _shortcutStore = ObservedObject(wrappedValue: model.shortcutStore)
         _preferences = ObservedObject(wrappedValue: model.userPreferencesStore)
+        _bookmarksModel = ObservedObject(wrappedValue: model.bookmarksModel)
+        _updateController = ObservedObject(wrappedValue: updateController)
         _showsSidebarWindowControls = State(initialValue: model.isSidebarVisible)
     }
 
@@ -21,6 +25,13 @@ struct BrowserRootView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
+                BrowserScreenFrameReader { screenFrame in
+                    rootViewScreenFrame = screenFrame
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .allowsHitTesting(false)
+                .zIndex(-1)
+
                 BrowserContentView(
                     hostView: model.hostView,
                     isContextReady: model.isContextReady,
@@ -39,16 +50,146 @@ struct BrowserRootView: View {
                     .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
                     value: model.isSidebarVisible
                 )
+                .animation(
+                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                    value: model.extensionSidePanel
+                )
+
+                if showsSiteToolbar {
+                    BrowserSiteToolbar(
+                        tab: sidebarSnapshot.selectedTab,
+                        extensions: model.browserExtensions,
+                        pinnedExtensionIDs: model.pinnedExtensionIDs,
+                        canGoBack: sidebarSnapshot.canGoBack,
+                        canGoForward: sidebarSnapshot.canGoForward,
+                        canStopLoading: sidebarSnapshot.canStopLoading,
+                        canReload: sidebarSnapshot.canReload,
+                        copyLinkShortcut: shortcutStore.shortcut(for: .copyLink),
+                        showsFullURL: preferences.siteToolbarShowsFullURL,
+                        chromeBackgroundMode: chromeBackgroundMode,
+                        onURLButtonFrameChange: { currentURLRowWindowFrame = $0 },
+                        onOpenSearch: model.presentCurrentPageCommandBar,
+                        onGoBack: model.goBack,
+                        onGoForward: model.goForward,
+                        onStopLoading: model.stopLoadingCurrentTab,
+                        onReload: model.reloadCurrentTab,
+                        onCopyURL: model.copySelectedTabLink,
+                        onCaptureFullPage: model.captureFullPageSelectedTabToPasteboard,
+                        onToggleToolbar: {
+                            preferences.siteURLToolbarEnabled.toggle()
+                        },
+                        onToggleShowsFullURL: {
+                            preferences.siteToolbarShowsFullURL.toggle()
+                        },
+                        onRefreshExtensions: model.refreshBrowserExtensions,
+                        onOpenExtensionsManager: model.openExtensionsManager,
+                        onOpenExtensionStore: model.openExtensionStore,
+                        onOpenExtensionStorePage: model.openExtensionStore,
+                        onOpenExtensionDetails: model.openExtensionDetails,
+                        onRemoveExtension: { extensionID in
+                            model.removeExtension(id: extensionID)
+                        },
+                        onToggleExtensionPinned: { extensionID in
+                            model.toggleExtensionPinned(id: extensionID)
+                        },
+                        onOpenExtension: model.openExtension
+                    )
+                    .frame(
+                        width: bookmarksBarWidth(in: proxy.size),
+                        height: BrowserChromeLayout.siteToolbarHeight,
+                        alignment: .leading
+                    )
+                    .offset(x: browserContentMinX, y: siteToolbarMinY)
+                    .zIndex(5)
+                }
+
+                if showsBookmarksBar {
+                    BrowserBookmarksBar(
+                        items: bookmarksModel.bookmarkBarItems,
+                        selectedTab: sidebarSnapshot.selectedTab,
+                        isSelectedTabBookmarked: isSelectedTabBookmarked,
+                        toggleBookmarkShortcut: shortcutStore.shortcut(for: .toggleBookmark),
+                        chromeBackgroundMode: chromeBackgroundMode,
+                        onOpenBookmark: model.openBookmark,
+                        onOpenBookmarks: model.openBookmarks,
+                        onToggleSelectedTabBookmark: {
+                            _ = model.toggleSelectedTabBookmark()
+                        },
+                        onRenameBookmark: model.renameBookmark,
+                        onEditBookmarkAddress: model.updateBookmarkAddress,
+                        onMoveBookmark: model.moveBookmark,
+                        onCreateFolder: model.createBookmarkFolder,
+                        onCreateFolderAndMoveBookmark: model.createBookmarkFolderAndMoveBookmark,
+                        onDeleteBookmark: model.deleteBookmark,
+                        onManageBookmarks: model.openBookmarksManager,
+                        onHideBookmarksBar: {
+                            preferences.bookmarksBarVisible = false
+                        }
+                    )
+                    .frame(
+                        width: bookmarksBarWidth(in: proxy.size),
+                        height: BrowserChromeLayout.bookmarksBarHeight,
+                        alignment: .leading
+                    )
+                    .offset(x: browserContentMinX, y: bookmarksBarMinY)
+                    .zIndex(5)
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: model.isSidebarVisible
+                    )
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: model.extensionSidePanel
+                    )
+                }
+
+                if let extensionSidePanel = model.extensionSidePanel,
+                   let extensionSidePanelHostView = model.extensionSidePanelHostView
+                {
+                    BrowserExtensionSidePanelView(
+                        sidePanel: extensionSidePanel,
+                        hostView: extensionSidePanelHostView,
+                        isContextReady: model.isContextReady,
+                        usesWindowContentInsets: usesWindowContentInsets,
+                        onClose: model.closeExtensionSidePanel
+                    )
+                    .frame(
+                        width: model.extensionSidePanelWidth,
+                        height: browserContentHeight(in: proxy.size),
+                        alignment: .leading
+                    )
+                    .offset(x: extensionSidePanelMinX(in: proxy.size), y: browserContentMinY)
+                    .zIndex(7)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: model.extensionSidePanel
+                    )
+
+                    BrowserExtensionSidePanelResizeHandle(model: model)
+                        .frame(
+                            width: extensionSidePanelResizeHandleWidth,
+                            height: browserContentHeight(in: proxy.size)
+                        )
+                        .offset(
+                            x: extensionSidePanelMinX(in: proxy.size) - extensionSidePanelResizeHandleWidth,
+                            y: browserContentMinY
+                        )
+                        .zIndex(8)
+                }
 
                 if usesInlineSidebarChrome {
                     BrowserSidebarChromeView(
                         model: model,
+                        updateController: updateController,
                         snapshot: sidebarSnapshot,
                         showsWindowControlsInSidebar: showsWindowControlsInSidebarChrome,
                         isCommandBarPresented: commandBarModel.isPresented,
                         isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
+                        showsCurrentURLRow: !preferences.siteURLToolbarEnabled,
                         isOverlayPresentation: isSidebarOverlayPresentation,
                         showsOverlayBorder: isSidebarHoverOverlayPresented,
+                        toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
                         chromeBackgroundMode: chromeBackgroundMode,
                         onToggleSidebar: toggleSidebarFromChrome,
                         onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
@@ -58,6 +199,7 @@ struct BrowserRootView: View {
                         height: sidebarHeight(in: proxy.size),
                         alignment: .leading
                     )
+                    .animation(nil, value: model.sidebarWidth)
                     .offset(x: sidebarOffset, y: sidebarOffsetY)
                     .allowsHitTesting(isSidebarPresented)
                     .zIndex(6)
@@ -108,13 +250,16 @@ struct BrowserRootView: View {
                         contentFrameLeadingInset: 0,
                         content: BrowserDetachedSidebarHoverOverlayContent(
                             model: model,
+                            updateController: updateController,
                             snapshot: sidebarSnapshot,
                             showsWindowControlsInSidebar: showsWindowControlsInSidebarChrome,
                             isCommandBarPresented: commandBarModel.isPresented,
                             isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
+                            showsCurrentURLRow: !preferences.siteURLToolbarEnabled,
                             isOverlayPresentation: isSidebarOverlayPresentation,
                             showsOverlayBorder: isSidebarHoverOverlayPresented,
                             roundsWindowLeadingCorners: usesWindowContentInsets,
+                            toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
                             chromeBackgroundMode: chromeBackgroundMode,
                             sidebarWidth: model.sidebarWidth,
                             sidebarHeight: sidebarHeight(in: proxy.size),
@@ -198,6 +343,31 @@ struct BrowserRootView: View {
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .zIndex(10)
                 }
+
+                BrowserTabSwitcherEventObserver(
+                    isEnabled: model.selectedTabID != nil,
+                    onTab: { reverse in
+                        model.advanceTabSwitcher(reverse: reverse)
+                    },
+                    onCommit: {
+                        model.commitTabSwitcher()
+                    },
+                    onCancel: {
+                        model.cancelTabSwitcher()
+                    }
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .allowsHitTesting(false)
+                .zIndex(18)
+
+                if let tabSwitcherState = model.tabSwitcherState, tabSwitcherState.isVisible {
+                    BrowserTabSwitcherOverlay(state: tabSwitcherState)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .allowsHitTesting(false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                        .animation(.easeOut(duration: 0.12), value: tabSwitcherState.isVisible)
+                        .zIndex(19)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
@@ -215,10 +385,14 @@ struct BrowserRootView: View {
         .environmentObject(faviconCache)
         .overlayPreferenceValue(BrowserTooltipPreferenceKey.self) { values in
             GeometryReader { proxy in
+                let tooltipViewport = tooltipOverlayViewport(in: proxy.size)
                 let tooltipEntries = values.map { entry in
                     BrowserResolvedTooltipEntry(
                         id: entry.id,
-                        sourceFrame: proxy[entry.bounds],
+                        sourceFrame: proxy[entry.bounds].offsetBy(
+                            dx: tooltipViewport.sourceFrameOffset.x,
+                            dy: tooltipViewport.sourceFrameOffset.y
+                        ),
                         title: entry.title,
                         caption: entry.caption,
                         shortcut: entry.shortcut,
@@ -259,20 +433,22 @@ struct BrowserRootView: View {
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .allowsHitTesting(false)
-
-                    BrowserDetachedOverlayWindowRepresentable(
-                        isVisible: !tooltipEntries.isEmpty,
-                        isInteractive: false,
-                        contentFrameLeadingInset: 0,
-                        content: BrowserTooltipOverlay(entries: tooltipEntries)
-                    )
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .allowsHitTesting(false)
-                } else {
-                    BrowserTooltipOverlay(entries: tooltipEntries)
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .allowsHitTesting(false)
                 }
+
+                BrowserDetachedOverlayWindowRepresentable(
+                    isVisible: !tooltipEntries.isEmpty,
+                    isInteractive: false,
+                    contentFrameLeadingInset: 0,
+                    framePolicy: tooltipOverlayFramePolicy,
+                    content: BrowserTooltipOverlay(entries: tooltipEntries)
+                        .frame(
+                            width: tooltipViewport.size.width,
+                            height: tooltipViewport.size.height,
+                            alignment: .topLeading
+                        )
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .allowsHitTesting(false)
             }
         }
         .onChange(of: model.isSidebarVisible) { _, isSidebarVisible in
@@ -297,6 +473,8 @@ struct BrowserRootView: View {
     @ObservedObject private var currentPageCommandBarModel: BrowserCommandBarModel
     @ObservedObject private var shortcutStore: BrowserShortcutStore
     @ObservedObject private var preferences: BrowserUserPreferencesStore
+    @ObservedObject private var bookmarksModel: BrowserBookmarksModel
+    @ObservedObject private var updateController: BrowserUpdateController
     @ObservedObject private var faviconCache = BrowserFaviconCache.shared
     @State private var showsSidebarWindowControls: Bool
     @State private var isWindowFullscreen = false
@@ -308,10 +486,63 @@ struct BrowserRootView: View {
     @State private var isSidebarRevealEdgeHovered = false
     @State private var sidebarRevealHoverTaskID = 0
     @State private var currentURLRowWindowFrame: CGRect?
+    @State private var rootViewScreenFrame: CGRect?
     @StateObject private var tooltipCoordinator = BrowserTooltipCoordinator()
 
     private var sidebarLayoutWidth: CGFloat {
         model.isSidebarVisible ? model.sidebarWidth : 0
+    }
+
+    private var extensionSidePanelLayoutWidth: CGFloat {
+        isExtensionSidePanelPresented ? model.extensionSidePanelWidth + extensionSidePanelContentGap : 0
+    }
+
+    private var extensionSidePanelResizeHandleWidth: CGFloat {
+        BrowserChromeLayout.sidebarResizeHitWidth
+    }
+
+    private var extensionSidePanelContentGap: CGFloat {
+        isExtensionSidePanelPresented ? BrowserChromeLayout.sidebarOuterPadding : 0
+    }
+
+    private var showsBookmarksBar: Bool {
+        model.isContextReady && preferences.bookmarksBarVisible
+    }
+
+    private var showsSiteToolbar: Bool {
+        model.isContextReady && preferences.siteURLToolbarEnabled
+    }
+
+    private var siteToolbarReservedHeight: CGFloat {
+        showsSiteToolbar
+            ? BrowserChromeLayout.siteToolbarHeight + BrowserChromeLayout.bookmarksBarContentGap
+            : 0
+    }
+
+    private var bookmarksBarReservedHeight: CGFloat {
+        showsBookmarksBar
+            ? BrowserChromeLayout.bookmarksBarHeight + BrowserChromeLayout.bookmarksBarContentGap
+            : 0
+    }
+
+    private var siteToolbarMinY: CGFloat {
+        browserChromeTopInset
+    }
+
+    private var bookmarksBarMinY: CGFloat {
+        browserChromeTopInset + siteToolbarReservedHeight
+    }
+
+    private var isSelectedTabBookmarked: Bool {
+        guard let selectedTab = sidebarSnapshot.selectedTab else {
+            return false
+        }
+
+        return model.isBookmarked(urlString: selectedTab.urlString)
+    }
+
+    private var isExtensionSidePanelPresented: Bool {
+        model.extensionSidePanel != nil && model.extensionSidePanelHostView != nil
     }
 
     private var chromeBackgroundMode: BrowserChromeBackgroundMode {
@@ -398,6 +629,18 @@ struct BrowserRootView: View {
         return BrowserCommandBarFaviconCandidate(tab: selectedTab)
     }
 
+    private var tooltipOverlayFramePolicy: BrowserDetachedOverlayFramePolicy {
+        guard rootViewScreenFrame != nil else {
+            return .windowBounds
+        }
+
+        return isWindowFullscreen ? .windowBounds : .screenVisibleBounds
+    }
+
+    private var toggleSidebarTooltipTitle: String {
+        model.isSidebarVisible ? BrowserStrings.sidebarHide : BrowserStrings.sidebarShow
+    }
+
     private var usesWindowContentInsets: Bool {
         !isWindowFullscreen
     }
@@ -414,6 +657,12 @@ struct BrowserRootView: View {
         browserContentEdgeInset
     }
 
+    private var browserChromeTopInset: CGFloat {
+        showsSiteToolbar || showsBookmarksBar
+            ? max(browserContentTopInset, BrowserChromeLayout.sidebarOuterPadding)
+            : browserContentTopInset
+    }
+
     private var browserContentTrailingInset: CGFloat {
         browserContentEdgeInset
     }
@@ -427,7 +676,9 @@ struct BrowserRootView: View {
     }
 
     private var browserContentMinY: CGFloat {
-        browserContentTopInset
+        browserChromeTopInset
+            + siteToolbarReservedHeight
+            + bookmarksBarReservedHeight
     }
 
     private var usesDetachedBrowserOverlays: Bool {
@@ -441,6 +692,7 @@ struct BrowserRootView: View {
             activeSpace: model.activeSpace,
             isActiveSpacePinnedSectionCollapsed: model.isActiveSpacePinnedSectionCollapsed,
             allTabs: model.tabs,
+            pinnedTabFolders: model.pinnedTabFolders,
             appTabs: model.appTabs,
             spacePinnedTabs: model.spacePinnedTabs,
             temporaryTabs: model.temporaryTabs,
@@ -454,11 +706,15 @@ struct BrowserRootView: View {
     }
 
     private func browserContentWidth(in windowSize: CGSize) -> CGFloat {
+        max(windowSize.width - browserContentMinX - browserContentTrailingInset - extensionSidePanelLayoutWidth, 0)
+    }
+
+    private func bookmarksBarWidth(in windowSize: CGSize) -> CGFloat {
         max(windowSize.width - browserContentMinX - browserContentTrailingInset, 0)
     }
 
     private func browserContentHeight(in windowSize: CGSize) -> CGFloat {
-        max(windowSize.height - browserContentTopInset - browserContentBottomInset, 0)
+        max(windowSize.height - browserContentMinY - browserContentBottomInset, 0)
     }
 
     private func sidebarHeight(in windowSize: CGSize) -> CGFloat {
@@ -476,6 +732,27 @@ struct BrowserRootView: View {
             width: model.sidebarWidth,
             height: sidebarHeight(in: windowSize)
         )
+    }
+
+    private func extensionSidePanelMinX(in windowSize: CGSize) -> CGFloat {
+        max(windowSize.width - browserContentTrailingInset - model.extensionSidePanelWidth, 0)
+    }
+
+    private func tooltipOverlayViewport(in windowSize: CGSize) -> BrowserTooltipOverlayViewport {
+        BrowserTooltipOverlayViewportResolver.viewport(
+            windowSize: windowSize,
+            windowScreenFrame: rootViewScreenFrame,
+            screenVisibleFrame: tooltipScreenVisibleFrame(),
+            isWindowFullscreen: isWindowFullscreen
+        )
+    }
+
+    private func tooltipScreenVisibleFrame() -> CGRect? {
+        guard let rootViewScreenFrame else {
+            return nil
+        }
+
+        return NSScreen.browserBestMatchingScreen(for: rootViewScreenFrame)?.visibleFrame
     }
 
     private func handleSidebarRevealEdgeHoverChange(_ hovering: Bool) {
@@ -635,5 +912,24 @@ struct BrowserRootView: View {
         }
 
         isSidebarHoverOverlayPointerSyncSuspended = false
+    }
+}
+
+private extension NSScreen {
+    static func browserBestMatchingScreen(for frame: CGRect) -> NSScreen? {
+        screens.max { lhs, rhs in
+            lhs.frame.intersectionArea(with: frame) < rhs.frame.intersectionArea(with: frame)
+        } ?? main
+    }
+}
+
+private extension CGRect {
+    func intersectionArea(with frame: CGRect) -> CGFloat {
+        let intersection = intersection(frame)
+        guard !intersection.isNull else {
+            return 0
+        }
+
+        return max(intersection.width, 0) * max(intersection.height, 0)
     }
 }

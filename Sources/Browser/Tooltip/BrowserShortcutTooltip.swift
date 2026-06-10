@@ -2,13 +2,6 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-// MARK: - BrowserTooltipPlacement
-
-enum BrowserTooltipPlacement {
-    case belowLeading
-    case aboveCapsule
-}
-
 // MARK: - BrowserShortcutTooltipModifier
 
 struct BrowserShortcutTooltipModifier: ViewModifier {
@@ -88,7 +81,7 @@ struct BrowserTooltipPreferenceEntry {
 // MARK: - BrowserTooltipPreferenceKey
 
 struct BrowserTooltipPreferenceKey: PreferenceKey {
-    static var defaultValue = [BrowserTooltipPreferenceEntry]()
+    static let defaultValue = [BrowserTooltipPreferenceEntry]()
 
     static func reduce(value: inout [BrowserTooltipPreferenceEntry], nextValue: () -> [BrowserTooltipPreferenceEntry]) {
         value.append(contentsOf: nextValue())
@@ -114,18 +107,11 @@ struct BrowserTooltipOverlay: View {
     let entries: [BrowserResolvedTooltipEntry]
 
     var body: some View {
-        GeometryReader { _ in
+        GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 ForEach(entries, id: \.id) { entry in
-                    BrowserShortcutTooltip(
-                        title: entry.title,
-                        caption: entry.caption,
-                        shortcut: entry.shortcut,
-                        placement: entry.placement
-                    )
-                    .fixedSize()
-                    .modifier(BrowserTooltipPlacementModifier(entry: entry))
-                    .transition(transition(for: entry.placement))
+                    BrowserTooltipPresenter(entry: entry, containerSize: proxy.size)
+                        .transition(transition(for: entry.placement))
                 }
             }
         }
@@ -145,26 +131,115 @@ struct BrowserTooltipOverlay: View {
     }
 }
 
-// MARK: - BrowserTooltipPlacementModifier
+// MARK: - BrowserTooltipPresenter
 
-struct BrowserTooltipPlacementModifier: ViewModifier {
+struct BrowserTooltipPresenter: View {
+    // MARK: Internal
+
     let entry: BrowserResolvedTooltipEntry
+    let containerSize: CGSize
 
-    func body(content: Content) -> some View {
-        switch entry.placement {
-        case .belowLeading:
-            content.offset(
-                x: entry.sourceFrame.minX
-                    + entry.sourceFrame.width * BrowserChromeLayout.tooltipAnchorXFraction,
-                y: entry.sourceFrame.minY
-                    + entry.sourceFrame.height * BrowserChromeLayout.tooltipAnchorYFraction
+    var body: some View {
+        BrowserTooltipMeasuredLayout(maximumWidth: maximumTooltipWidth) {
+            BrowserShortcutTooltip(
+                title: entry.title,
+                caption: entry.caption,
+                shortcut: entry.shortcut,
+                placement: entry.placement
             )
-        case .aboveCapsule:
-            content.position(
-                x: entry.sourceFrame.midX,
-                y: entry.sourceFrame.minY - BrowserChromeLayout.tooltipVerticalGap - BrowserChromeLayout
-                    .tooltipKeyHeight
-            )
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: BrowserTooltipSizePreferenceKey.self,
+                    value: proxy.size
+                )
+            }
+        }
+        .onPreferenceChange(BrowserTooltipSizePreferenceKey.self) { tooltipSize = $0 }
+        .position(
+            x: resolvedTopLeft.x + tooltipSize.width / 2,
+            y: resolvedTopLeft.y + tooltipSize.height / 2
+        )
+    }
+
+    // MARK: Private
+
+    @State private var tooltipSize = CGSize.zero
+
+    private var maximumTooltipWidth: CGFloat {
+        min(
+            BrowserChromeLayout.tooltipMaximumWidth,
+            max(containerSize.width - BrowserChromeLayout.tooltipViewportPadding * 2, 0)
+        )
+    }
+
+    private var resolvedTopLeft: CGPoint {
+        BrowserTooltipPlacementResolver.topLeft(
+            sourceFrame: entry.sourceFrame,
+            tooltipSize: tooltipSize,
+            containerSize: containerSize,
+            placement: entry.placement,
+            verticalGap: BrowserChromeLayout.tooltipVerticalGap,
+            anchorXFraction: BrowserChromeLayout.tooltipAnchorXFraction,
+            anchorYFraction: BrowserChromeLayout.tooltipAnchorYFraction,
+            viewportPadding: BrowserChromeLayout.tooltipViewportPadding
+        )
+    }
+}
+
+// MARK: - BrowserTooltipMeasuredLayout
+
+struct BrowserTooltipMeasuredLayout: Layout {
+    let maximumWidth: CGFloat
+
+    func sizeThatFits(
+        proposal _: ProposedViewSize,
+        subviews: Subviews,
+        cache _: inout ()
+    ) -> CGSize {
+        guard let subview = subviews.first else {
+            return .zero
+        }
+
+        let idealSize = subview.sizeThatFits(.unspecified)
+        let constrainedSize = idealSize.width > maximumWidth
+            ? subview.sizeThatFits(ProposedViewSize(width: maximumWidth, height: nil))
+            : idealSize
+
+        return BrowserTooltipMeasuredSizeResolver.resolvedSize(
+            idealSize: idealSize,
+            constrainedSize: constrainedSize,
+            maximumWidth: maximumWidth
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal _: ProposedViewSize,
+        subviews: Subviews,
+        cache _: inout ()
+    ) {
+        guard let subview = subviews.first else {
+            return
+        }
+
+        subview.place(
+            at: bounds.origin,
+            proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+        )
+    }
+}
+
+// MARK: - BrowserTooltipSizePreferenceKey
+
+struct BrowserTooltipSizePreferenceKey: PreferenceKey {
+    static let defaultValue = CGSize.zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let nextValue = nextValue()
+        if nextValue != .zero {
+            value = nextValue
         }
     }
 }
@@ -195,13 +270,15 @@ struct BrowserShortcutTooltip: View {
                 Text(title)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(BrowserChromePalette.tooltipText)
-                    .fixedSize()
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if let caption {
                     Text(caption)
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(BrowserChromePalette.tooltipCaption)
-                        .fixedSize()
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -212,7 +289,6 @@ struct BrowserShortcutTooltip: View {
         .padding(.horizontal, BrowserChromeLayout.tooltipHorizontalPadding)
         .padding(.vertical, BrowserChromeLayout.tooltipVerticalPadding)
         .background(tooltipBackground)
-        .fixedSize()
         .shadow(
             color: BrowserChromePalette.tooltipShadow,
             radius: 18,

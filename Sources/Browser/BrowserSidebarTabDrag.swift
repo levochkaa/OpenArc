@@ -37,10 +37,16 @@ enum BrowserSidebarTabSection: Equatable {
 struct BrowserSidebarTabDropTarget: Equatable {
     // MARK: Lifecycle
 
-    init(section: BrowserSidebarTabSection, sectionIndex: Int, spaceID: String? = nil) {
+    init(
+        section: BrowserSidebarTabSection,
+        sectionIndex: Int,
+        spaceID: String? = nil,
+        pinnedFolderID: String? = nil
+    ) {
         self.section = section
         self.sectionIndex = sectionIndex
         self.spaceID = spaceID
+        self.pinnedFolderID = pinnedFolderID
     }
 
     // MARK: Internal
@@ -48,6 +54,7 @@ struct BrowserSidebarTabDropTarget: Equatable {
     let section: BrowserSidebarTabSection
     let sectionIndex: Int
     let spaceID: String?
+    let pinnedFolderID: String?
 }
 
 // MARK: - BrowserSidebarTabRowFrame
@@ -60,12 +67,16 @@ struct BrowserSidebarTabRowFrame: Equatable {
         section: BrowserSidebarTabSection,
         sectionIndex: Int,
         spaceID: String? = nil,
+        pinnedFolderID: String? = nil,
+        folderChildIndex: Int? = nil,
         frame: CGRect
     ) {
         self.tabID = tabID
         self.section = section
         self.sectionIndex = sectionIndex
         self.spaceID = spaceID
+        self.pinnedFolderID = pinnedFolderID
+        self.folderChildIndex = folderChildIndex
         self.frame = frame
     }
 
@@ -74,6 +85,19 @@ struct BrowserSidebarTabRowFrame: Equatable {
     let tabID: String
     let section: BrowserSidebarTabSection
     let sectionIndex: Int
+    let spaceID: String?
+    let pinnedFolderID: String?
+    let folderChildIndex: Int?
+    let frame: CGRect
+}
+
+// MARK: - BrowserSidebarPinnedFolderRowFrame
+
+struct BrowserSidebarPinnedFolderRowFrame: Equatable {
+    let folderID: String
+    let firstSectionIndex: Int
+    let afterSectionIndex: Int
+    let childCount: Int
     let spaceID: String?
     let frame: CGRect
 }
@@ -193,12 +217,14 @@ enum BrowserSidebarTabFrameSynchronizer {
         _ rowFrames: [String: BrowserSidebarTabRowFrame],
         spacePinnedTabIDs: [String],
         temporaryTabIDs: [String],
-        spaceID: String? = nil
+        spaceID: String? = nil,
+        spacePinnedSectionIndices: [String: Int] = [:]
     ) -> [String: BrowserSidebarTabRowFrame] {
         let expectedLocations = expectedRowLocations(
             spacePinnedTabIDs: spacePinnedTabIDs,
             temporaryTabIDs: temporaryTabIDs,
-            spaceID: spaceID
+            spaceID: spaceID,
+            spacePinnedSectionIndices: spacePinnedSectionIndices
         )
 
         return rowFrames.reduce(into: [:]) { synchronizedRowFrames, item in
@@ -239,12 +265,14 @@ enum BrowserSidebarTabFrameSynchronizer {
         temporaryTabIDs: [String],
         rowHeight: CGFloat,
         rowSpacing: CGFloat,
-        spaceID: String? = nil
+        spaceID: String? = nil,
+        spacePinnedSectionIndices: [String: Int] = [:]
     ) -> [BrowserSidebarTabRowFrame] {
         let spacePinnedRowFrames = estimatedRowFrames(
             for: .spacePinned,
             tabIDs: spacePinnedTabIDs,
             spaceID: spaceID,
+            sectionIndices: spacePinnedSectionIndices,
             rowFrames: rowFrames,
             fallbackRowFrames: fallbackRowFrames,
             emptySectionFrames: emptySectionFrames,
@@ -255,6 +283,7 @@ enum BrowserSidebarTabFrameSynchronizer {
             for: .temporary,
             tabIDs: temporaryTabIDs,
             spaceID: spaceID,
+            sectionIndices: [:],
             rowFrames: rowFrames,
             fallbackRowFrames: fallbackRowFrames,
             emptySectionFrames: emptySectionFrames,
@@ -292,12 +321,17 @@ enum BrowserSidebarTabFrameSynchronizer {
     private static func expectedRowLocations(
         spacePinnedTabIDs: [String],
         temporaryTabIDs: [String],
-        spaceID: String?
+        spaceID: String?,
+        spacePinnedSectionIndices: [String: Int]
     ) -> [String: BrowserSidebarTabDropTarget] {
         var locations = [String: BrowserSidebarTabDropTarget]()
 
         for (index, tabID) in spacePinnedTabIDs.enumerated() {
-            locations[tabID] = BrowserSidebarTabDropTarget(section: .spacePinned, sectionIndex: index, spaceID: spaceID)
+            locations[tabID] = BrowserSidebarTabDropTarget(
+                section: .spacePinned,
+                sectionIndex: spacePinnedSectionIndices[tabID] ?? index,
+                spaceID: spaceID
+            )
         }
 
         for (index, tabID) in temporaryTabIDs.enumerated() {
@@ -311,6 +345,7 @@ enum BrowserSidebarTabFrameSynchronizer {
         for section: BrowserSidebarTabSection,
         tabIDs: [String],
         spaceID: String?,
+        sectionIndices: [String: Int],
         rowFrames: [String: BrowserSidebarTabRowFrame],
         fallbackRowFrames: [BrowserSidebarTabRowFrame],
         emptySectionFrames: [BrowserSidebarEmptySectionFrame],
@@ -322,31 +357,33 @@ enum BrowserSidebarTabFrameSynchronizer {
         }
 
         let anchors = tabIDs.enumerated().compactMap { index, tabID -> BrowserSidebarTabDropFrameAnchor? in
+            let sectionIndex = sectionIndices[tabID] ?? index
             guard
                 let rowFrame = synchronizedDropRowFrame(
                     for: tabID,
                     section: section,
-                    sectionIndex: index,
+                    sectionIndex: sectionIndex,
                     spaceID: spaceID,
                     rowFrames: rowFrames,
                     fallbackRowFrames: fallbackRowFrames
                 ),
                 rowFrame.section == section,
-                rowFrame.sectionIndex == index
+                rowFrame.sectionIndex == sectionIndex
             else {
                 return nil
             }
 
-            return BrowserSidebarTabDropFrameAnchor(sectionIndex: index, frame: rowFrame.frame)
+            return BrowserSidebarTabDropFrameAnchor(sectionIndex: sectionIndex, frame: rowFrame.frame)
         }
 
         if !anchors.isEmpty {
             return tabIDs.enumerated().map { index, tabID in
-                let anchor = nearestAnchor(to: index, anchors: anchors)
+                let sectionIndex = sectionIndices[tabID] ?? index
+                let anchor = nearestAnchor(to: sectionIndex, anchors: anchors)
                 return rowFrame(
                     tabID: tabID,
                     section: section,
-                    sectionIndex: index,
+                    sectionIndex: sectionIndex,
                     spaceID: spaceID,
                     anchor: anchor,
                     rowSpacing: rowSpacing
@@ -367,10 +404,11 @@ enum BrowserSidebarTabFrameSynchronizer {
         {
             let anchor = BrowserSidebarTabDropFrameAnchor(sectionIndex: 0, frame: firstSectionFrame)
             return tabIDs.enumerated().map { index, tabID in
-                rowFrame(
+                let sectionIndex = sectionIndices[tabID] ?? index
+                return rowFrame(
                     tabID: tabID,
                     section: section,
-                    sectionIndex: index,
+                    sectionIndex: sectionIndex,
                     spaceID: spaceID,
                     anchor: anchor,
                     rowSpacing: rowSpacing
@@ -389,10 +427,11 @@ enum BrowserSidebarTabFrameSynchronizer {
             )
             let anchor = BrowserSidebarTabDropFrameAnchor(sectionIndex: 0, frame: firstRowFrame)
             return tabIDs.enumerated().map { index, tabID in
-                rowFrame(
+                let sectionIndex = sectionIndices[tabID] ?? index
+                return rowFrame(
                     tabID: tabID,
                     section: section,
-                    sectionIndex: index,
+                    sectionIndex: sectionIndex,
                     spaceID: spaceID,
                     anchor: anchor,
                     rowSpacing: rowSpacing
@@ -573,6 +612,7 @@ struct BrowserSidebarTabDragTargetResolver {
         for location: CGPoint,
         rowFrames: [BrowserSidebarTabRowFrame],
         emptySectionFrames: [BrowserSidebarEmptySectionFrame],
+        pinnedFolderFrames: [BrowserSidebarPinnedFolderRowFrame] = [],
         appTabFrames: [BrowserSidebarAppTabFrame] = [],
         appTabContainerFrame: CGRect? = nil,
         canMoveToTarget: (BrowserSidebarTabDropTarget) -> Bool
@@ -619,13 +659,42 @@ struct BrowserSidebarTabDragTargetResolver {
             )
         }
 
+        for folderFrame in pinnedFolderFrames {
+            consider(makePinnedFolderOpenCandidate(for: folderFrame, location: location))
+            consider(
+                makeCandidate(
+                    target: BrowserSidebarTabDropTarget(
+                        section: .spacePinned,
+                        sectionIndex: folderFrame.firstSectionIndex,
+                        spaceID: folderFrame.spaceID
+                    ),
+                    location: location,
+                    frame: folderFrame.frame,
+                    yPosition: folderFrame.frame.minY
+                )
+            )
+            consider(
+                makeCandidate(
+                    target: BrowserSidebarTabDropTarget(
+                        section: .spacePinned,
+                        sectionIndex: folderFrame.afterSectionIndex,
+                        spaceID: folderFrame.spaceID
+                    ),
+                    location: location,
+                    frame: folderFrame.frame,
+                    yPosition: folderFrame.frame.maxY
+                )
+            )
+        }
+
         for rowFrame in rowFrames {
             consider(
                 makeCandidate(
                     target: BrowserSidebarTabDropTarget(
                         section: rowFrame.section,
-                        sectionIndex: rowFrame.sectionIndex,
-                        spaceID: rowFrame.spaceID
+                        sectionIndex: rowFrame.folderChildIndex ?? rowFrame.sectionIndex,
+                        spaceID: rowFrame.spaceID,
+                        pinnedFolderID: rowFrame.pinnedFolderID
                     ),
                     location: location,
                     frame: rowFrame.frame,
@@ -636,8 +705,9 @@ struct BrowserSidebarTabDragTargetResolver {
                 makeCandidate(
                     target: BrowserSidebarTabDropTarget(
                         section: rowFrame.section,
-                        sectionIndex: rowFrame.sectionIndex + 1,
-                        spaceID: rowFrame.spaceID
+                        sectionIndex: (rowFrame.folderChildIndex ?? rowFrame.sectionIndex) + 1,
+                        spaceID: rowFrame.spaceID,
+                        pinnedFolderID: rowFrame.pinnedFolderID
                     ),
                     location: location,
                     frame: rowFrame.frame,
@@ -691,6 +761,27 @@ struct BrowserSidebarTabDragTargetResolver {
         )
     }
 
+    private func makePinnedFolderOpenCandidate(
+        for folderFrame: BrowserSidebarPinnedFolderRowFrame,
+        location: CGPoint
+    ) -> BrowserSidebarTabDropCandidate? {
+        guard isReachable(location, in: folderFrame.frame) else {
+            return nil
+        }
+
+        let distance = distanceFrom(location, to: folderFrame.frame)
+        return BrowserSidebarTabDropCandidate(
+            target: BrowserSidebarTabDropTarget(
+                section: .spacePinned,
+                sectionIndex: folderFrame.childCount,
+                spaceID: folderFrame.spaceID,
+                pinnedFolderID: folderFrame.folderID
+            ),
+            verticalDistance: distance + 1,
+            sectionDistance: distance
+        )
+    }
+
     private func isHorizontallyReachable(_ xLocation: CGFloat, in frame: CGRect) -> Bool {
         xLocation >= frame.minX - horizontalTolerance && xLocation <= frame.maxX + horizontalTolerance
     }
@@ -731,6 +822,7 @@ struct BrowserSidebarTabDropIndicatorFrameResolver {
         for target: BrowserSidebarTabDropTarget?,
         rowFrames: [BrowserSidebarTabRowFrame],
         emptySectionFrames: [BrowserSidebarEmptySectionFrame],
+        pinnedFolderFrames: [BrowserSidebarPinnedFolderRowFrame] = [],
         horizontalInset: CGFloat,
         thickness: CGFloat
     ) -> CGRect? {
@@ -743,10 +835,38 @@ struct BrowserSidebarTabDropIndicatorFrameResolver {
         }
 
         let sectionRowFrames = rowFrames.filter {
-            $0.section == target.section && $0.spaceID == target.spaceID
+            $0.section == target.section
+                && $0.spaceID == target.spaceID
+                && $0.pinnedFolderID == target.pinnedFolderID
         }
 
-        if let previousRowFrame = sectionRowFrames.first(where: { $0.sectionIndex == target.sectionIndex - 1 }) {
+        if target.pinnedFolderID == nil {
+            if let folderFrame = pinnedFolderFrames.first(where: {
+                $0.spaceID == target.spaceID && $0.firstSectionIndex == target.sectionIndex
+            }) {
+                return indicatorFrame(
+                    alignedTo: folderFrame.frame,
+                    yPosition: folderFrame.frame.minY,
+                    horizontalInset: horizontalInset,
+                    thickness: thickness
+                )
+            }
+
+            if let folderFrame = pinnedFolderFrames.first(where: {
+                $0.spaceID == target.spaceID && $0.afterSectionIndex == target.sectionIndex
+            }) {
+                return indicatorFrame(
+                    alignedTo: folderFrame.frame,
+                    yPosition: folderFrame.frame.maxY,
+                    horizontalInset: horizontalInset,
+                    thickness: thickness
+                )
+            }
+        }
+
+        if let previousRowFrame = sectionRowFrames.first(where: {
+            ($0.folderChildIndex ?? $0.sectionIndex) == target.sectionIndex - 1
+        }) {
             return indicatorFrame(
                 alignedTo: previousRowFrame.frame,
                 yPosition: previousRowFrame.frame.maxY,
@@ -755,10 +875,26 @@ struct BrowserSidebarTabDropIndicatorFrameResolver {
             )
         }
 
-        if let targetRowFrame = sectionRowFrames.first(where: { $0.sectionIndex == target.sectionIndex }) {
+        if let targetRowFrame = sectionRowFrames.first(where: {
+            ($0.folderChildIndex ?? $0.sectionIndex) == target.sectionIndex
+        }) {
             return indicatorFrame(
                 alignedTo: targetRowFrame.frame,
                 yPosition: targetRowFrame.frame.minY,
+                horizontalInset: horizontalInset,
+                thickness: thickness
+            )
+        }
+
+        if
+            let targetFolderID = target.pinnedFolderID,
+            let folderFrame = pinnedFolderFrames.first(where: {
+                $0.folderID == targetFolderID && $0.spaceID == target.spaceID
+            })
+        {
+            return indicatorFrame(
+                alignedTo: folderFrame.frame,
+                yPosition: folderFrame.frame.maxY,
                 horizontalInset: horizontalInset,
                 thickness: thickness
             )

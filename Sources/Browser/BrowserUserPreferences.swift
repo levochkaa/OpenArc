@@ -22,8 +22,11 @@ enum BrowserSearchEngine: String, CaseIterable, Codable, Identifiable {
     case microsoftBing
     case yahoo
     case duckDuckGo
+    case ecosia
+    case brave
+    case qwant
     case yandex
-    case perplexity
+    case baidu
 
     // MARK: Internal
 
@@ -41,10 +44,16 @@ enum BrowserSearchEngine: String, CaseIterable, Codable, Identifiable {
             BrowserStrings.settingsSearchEngineYahoo
         case .duckDuckGo:
             BrowserStrings.settingsSearchEngineDuckDuckGo
+        case .ecosia:
+            BrowserStrings.settingsSearchEngineEcosia
+        case .brave:
+            BrowserStrings.settingsSearchEngineBrave
+        case .qwant:
+            BrowserStrings.settingsSearchEngineQwant
         case .yandex:
             BrowserStrings.settingsSearchEngineYandex
-        case .perplexity:
-            BrowserStrings.settingsSearchEnginePerplexity
+        case .baidu:
+            BrowserStrings.settingsSearchEngineBaidu
         }
     }
 
@@ -69,17 +78,151 @@ enum BrowserSearchEngine: String, CaseIterable, Codable, Identifiable {
             components.host = "duckduckgo.com"
             components.path = "/"
             components.queryItems = [URLQueryItem(name: "q", value: query)]
+        case .ecosia:
+            components.host = "www.ecosia.org"
+            components.path = "/search"
+            components.queryItems = [URLQueryItem(name: "q", value: query)]
+        case .brave:
+            components.host = "search.brave.com"
+            components.path = "/search"
+            components.queryItems = [URLQueryItem(name: "q", value: query)]
+        case .qwant:
+            components.host = "www.qwant.com"
+            components.path = "/"
+            components.queryItems = [URLQueryItem(name: "q", value: query)]
         case .yandex:
             components.host = "yandex.com"
             components.path = "/search/"
             components.queryItems = [URLQueryItem(name: "text", value: query)]
+        case .baidu:
+            components.host = "www.baidu.com"
+            components.path = "/s"
+            components.queryItems = [URLQueryItem(name: "wd", value: query)]
+        }
+
+        return components.url?.absoluteString ?? BrowserSearchEngine.google.searchURLString(for: query)
+    }
+}
+
+// MARK: - BrowserAISearchProvider
+
+enum BrowserAISearchProvider: String, CaseIterable, Codable, Identifiable {
+    case chatGPT
+    case claude
+    case gemini
+    case perplexity
+    case deepSeek
+
+    // MARK: Internal
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .chatGPT:
+            BrowserStrings.settingsAISearchProviderChatGPT
+        case .claude:
+            BrowserStrings.settingsAISearchProviderClaude
+        case .gemini:
+            BrowserStrings.settingsAISearchProviderGemini
+        case .perplexity:
+            BrowserStrings.settingsAISearchProviderPerplexity
+        case .deepSeek:
+            BrowserStrings.settingsAISearchProviderDeepSeek
+        }
+    }
+
+    func searchURLString(for query: String) -> String {
+        var components = URLComponents()
+        components.scheme = "https"
+
+        switch self {
+        case .chatGPT:
+            components.host = "chatgpt.com"
+            components.path = "/"
+            components.queryItems = [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "hints", value: "search"),
+            ]
+        case .claude:
+            components.host = "claude.ai"
+            components.path = "/new"
+            components.queryItems = [URLQueryItem(name: "q", value: query)]
+        case .gemini:
+            components.host = "gemini.google.com"
+            components.path = "/app"
+            components.queryItems = [URLQueryItem(name: "q", value: query)]
         case .perplexity:
             components.host = "www.perplexity.ai"
             components.path = "/search"
             components.queryItems = [URLQueryItem(name: "q", value: query)]
+        case .deepSeek:
+            components.host = "chat.deepseek.com"
+            components.path = "/"
+            components.queryItems = [URLQueryItem(name: "q", value: query)]
         }
 
-        return components.url?.absoluteString ?? BrowserSearchEngine.google.searchURLString(for: query)
+        return components.url?.absoluteString ?? "https://chatgpt.com/"
+    }
+}
+
+// MARK: - BrowserUpdateChannel
+
+enum BrowserUpdateChannel: String, CaseIterable, Codable, Identifiable {
+    case stable
+    case beta
+
+    // MARK: Internal
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .stable:
+            BrowserStrings.updateChannelStable
+        case .beta:
+            BrowserStrings.updateChannelBeta
+        }
+    }
+}
+
+// MARK: - BrowserAppearancePreference
+
+enum BrowserAppearancePreference: String, CaseIterable, Codable, Identifiable {
+    case system
+    case light
+    case dark
+
+    // MARK: Internal
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .system:
+            BrowserStrings.settingsAppearanceSystem
+        case .light:
+            BrowserStrings.settingsAppearanceLight
+        case .dark:
+            BrowserStrings.settingsAppearanceDark
+        }
+    }
+
+    var nsAppearanceName: NSAppearance.Name? {
+        switch self {
+        case .system:
+            nil
+        case .light:
+            .aqua
+        case .dark:
+            .darkAqua
+        }
     }
 }
 
@@ -91,9 +234,17 @@ final class BrowserUserPreferencesStore: ObservableObject {
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         self.automaticUpdatesEnabled = Self.loadBool(userDefaults, key: Key.automaticUpdatesEnabled, defaultValue: true)
+        let rawUpdateChannel = userDefaults.string(forKey: Key.updateChannel)
+        self.updateChannel = rawUpdateChannel.flatMap(BrowserUpdateChannel.init(rawValue:)) ?? .stable
+        let rawAppearancePreference = userDefaults.string(forKey: Key.appearancePreference)
+        self.appearancePreference = rawAppearancePreference
+            .flatMap(BrowserAppearancePreference.init(rawValue:)) ?? .system
         self.warnBeforeQuitting = Self.loadBool(userDefaults, key: Key.warnBeforeQuitting, defaultValue: true)
         let rawSearchEngine = userDefaults.string(forKey: Key.searchEngine)
         self.searchEngine = rawSearchEngine.flatMap(BrowserSearchEngine.init(rawValue:)) ?? .google
+        let rawAISearchProvider = userDefaults.string(forKey: Key.aiSearchProvider)
+        self.aiSearchProvider = rawAISearchProvider.flatMap(BrowserAISearchProvider.init(rawValue:))
+            ?? (rawSearchEngine == "perplexity" ? .perplexity : .chatGPT)
         self.searchEngineSuggestionsEnabled = Self.loadBool(
             userDefaults,
             key: Key.searchEngineSuggestionsEnabled,
@@ -102,11 +253,24 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.hapticFeedbackEnabled = Self.loadBool(userDefaults, key: Key.hapticFeedbackEnabled, defaultValue: true)
         self.restoreWindowsOnLaunch = Self.loadBool(userDefaults, key: Key.restoreWindowsOnLaunch, defaultValue: true)
         self.pictureInPictureEnabled = Self.loadBool(userDefaults, key: Key.pictureInPictureEnabled, defaultValue: true)
+        self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: true)
+        self.siteURLToolbarEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.siteURLToolbarEnabled,
+            defaultValue: false
+        )
+        self.siteToolbarShowsFullURL = Self.loadBool(
+            userDefaults,
+            key: Key.siteToolbarShowsFullURL,
+            defaultValue: false
+        )
         self.blurredChromeBackgroundEnabled = Self.loadBool(
             userDefaults,
             key: Key.blurredChromeBackgroundEnabled,
             defaultValue: true
         )
+        self.batterySaverEnabled = Self.loadBool(userDefaults, key: Key.batterySaverEnabled, defaultValue: true)
+        self.pinnedExtensionIDs = Self.loadStringArray(userDefaults, key: Key.pinnedExtensionIDs)
     }
 
     // MARK: Internal
@@ -115,12 +279,24 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(automaticUpdatesEnabled, forKey: Key.automaticUpdatesEnabled) }
     }
 
+    @Published var updateChannel: BrowserUpdateChannel {
+        didSet { userDefaults.set(updateChannel.rawValue, forKey: Key.updateChannel) }
+    }
+
+    @Published var appearancePreference: BrowserAppearancePreference {
+        didSet { userDefaults.set(appearancePreference.rawValue, forKey: Key.appearancePreference) }
+    }
+
     @Published var warnBeforeQuitting: Bool {
         didSet { userDefaults.set(warnBeforeQuitting, forKey: Key.warnBeforeQuitting) }
     }
 
     @Published var searchEngine: BrowserSearchEngine {
         didSet { userDefaults.set(searchEngine.rawValue, forKey: Key.searchEngine) }
+    }
+
+    @Published var aiSearchProvider: BrowserAISearchProvider {
+        didSet { userDefaults.set(aiSearchProvider.rawValue, forKey: Key.aiSearchProvider) }
     }
 
     @Published var searchEngineSuggestionsEnabled: Bool {
@@ -139,21 +315,49 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(pictureInPictureEnabled, forKey: Key.pictureInPictureEnabled) }
     }
 
+    @Published var bookmarksBarVisible: Bool {
+        didSet { userDefaults.set(bookmarksBarVisible, forKey: Key.bookmarksBarVisible) }
+    }
+
+    @Published var siteURLToolbarEnabled: Bool {
+        didSet { userDefaults.set(siteURLToolbarEnabled, forKey: Key.siteURLToolbarEnabled) }
+    }
+
+    @Published var siteToolbarShowsFullURL: Bool {
+        didSet { userDefaults.set(siteToolbarShowsFullURL, forKey: Key.siteToolbarShowsFullURL) }
+    }
+
     @Published var blurredChromeBackgroundEnabled: Bool {
         didSet { userDefaults.set(blurredChromeBackgroundEnabled, forKey: Key.blurredChromeBackgroundEnabled) }
+    }
+
+    @Published var batterySaverEnabled: Bool {
+        didSet { userDefaults.set(batterySaverEnabled, forKey: Key.batterySaverEnabled) }
+    }
+
+    @Published var pinnedExtensionIDs: [String] {
+        didSet { userDefaults.set(pinnedExtensionIDs, forKey: Key.pinnedExtensionIDs) }
     }
 
     // MARK: Private
 
     private enum Key {
         static let automaticUpdatesEnabled = "browser.settings.automaticUpdatesEnabled"
+        static let updateChannel = "browser.settings.updateChannel"
+        static let appearancePreference = "browser.settings.appearancePreference"
         static let warnBeforeQuitting = "browser.settings.warnBeforeQuitting"
         static let searchEngine = "browser.settings.searchEngine"
+        static let aiSearchProvider = "browser.settings.aiSearchProvider"
         static let searchEngineSuggestionsEnabled = "browser.settings.searchEngineSuggestionsEnabled"
         static let hapticFeedbackEnabled = "browser.settings.hapticFeedbackEnabled"
         static let restoreWindowsOnLaunch = "browser.settings.restoreWindowsOnLaunch"
         static let pictureInPictureEnabled = "browser.settings.pictureInPictureEnabled"
+        static let bookmarksBarVisible = "browser.settings.bookmarksBarVisible"
+        static let siteURLToolbarEnabled = "browser.settings.siteURLToolbarEnabled"
+        static let siteToolbarShowsFullURL = "browser.settings.siteToolbarShowsFullURL"
         static let blurredChromeBackgroundEnabled = "browser.settings.blurredChromeBackgroundEnabled"
+        static let batterySaverEnabled = "browser.settings.batterySaverEnabled"
+        static let pinnedExtensionIDs = "browser.extensions.pinnedExtensionIDs"
     }
 
     private let userDefaults: UserDefaults
@@ -165,6 +369,22 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
         return userDefaults.bool(forKey: key)
     }
+
+    private static func loadStringArray(_ userDefaults: UserDefaults, key: String) -> [String] {
+        guard let values = userDefaults.stringArray(forKey: key) else {
+            return []
+        }
+
+        var seen = Set<String>()
+        return values.filter { value in
+            guard !value.isEmpty, !seen.contains(value) else {
+                return false
+            }
+
+            seen.insert(value)
+            return true
+        }
+    }
 }
 
 // MARK: - BrowserCommandID
@@ -173,7 +393,9 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case openSettings
     case setAsDefaultBrowser
     case newTab
+    case newIncognitoWindow
     case openHistory
+    case toggleBookmark
     case archiveTab
     case savePage
     case printPage
@@ -204,8 +426,12 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.setAsDefaultBrowser
         case .newTab:
             BrowserCommands.newTab
+        case .newIncognitoWindow:
+            BrowserCommands.newIncognitoWindow
         case .openHistory:
             BrowserCommands.openHistory
+        case .toggleBookmark:
+            BrowserCommands.toggleBookmark
         case .archiveTab:
             BrowserCommands.archiveTab
         case .savePage:
@@ -247,8 +473,12 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .setAsDefaultBrowser
         case .newTab:
             .newTab
+        case .newIncognitoWindow:
+            .newIncognitoWindow
         case .openHistory:
             .openHistory
+        case .toggleBookmark:
+            .toggleBookmark
         case .archiveTab:
             .archiveTab
         case .savePage:

@@ -54,7 +54,7 @@ import Foundation
         let rootCachePath = browserSupportPath
             .appendingPathComponent(rootCacheDirectory, isDirectory: true)
         let cachePath = rootCachePath
-            .appendingPathComponent("Profile", isDirectory: true)
+            .appendingPathComponent(BrowserProfile.defaultDirectoryName, isDirectory: true)
 
         do {
             try fileManager.createDirectory(at: sessionStoragePath, withIntermediateDirectories: true)

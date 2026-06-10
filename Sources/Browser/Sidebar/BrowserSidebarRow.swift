@@ -10,8 +10,11 @@ struct BrowserSidebarRow: View {
     let copyLinkDescriptor: BrowserCommandDescriptor
     let archiveTabDescriptor: BrowserCommandDescriptor
     let isSelected: Bool
+    let isMultiSelected: Bool
     let isRenaming: Bool
     let canArchiveTabsBelow: Bool
+    let canCreateFolderFromSelection: Bool
+    let indentLevel: Int
     let isSidebarResizing: Bool
     let interactionResetID: Int
     let onSelect: () -> Void
@@ -19,6 +22,7 @@ struct BrowserSidebarRow: View {
     let onBeginRename: () -> Void
     let onCommitRename: (String) -> Void
     let onCancelRename: () -> Void
+    let onCreateFolderFromSelection: () -> Void
     let onClose: () -> Void
     let onArchiveTabsBelow: () -> Void
 
@@ -46,7 +50,23 @@ struct BrowserSidebarRow: View {
     }
 
     var renameTooltipCaption: String? {
-        hasUserTitleOverride ? nil : BrowserStrings.tabRenameTooltipCaption
+        BrowserURLDisplayFormatter.displayString(for: tab.urlString)
+    }
+
+    var rowBackgroundColor: Color {
+        if isSelected {
+            return BrowserChromePalette.rowSelected
+        }
+
+        if isMultiSelected {
+            return BrowserChromePalette.rowSelected.opacity(0.82)
+        }
+
+        return isRowHovered ? BrowserChromePalette.rowHover : .clear
+    }
+
+    var rowBackgroundLeadingInset: CGFloat {
+        CGFloat(max(indentLevel, 0)) * BrowserChromeLayout.sidebarPinnedFolderTabIndent
     }
 
     var body: some View {
@@ -174,6 +194,7 @@ struct BrowserSidebarRow: View {
                 && !isSidebarResizing
         )
         .padding(.leading, BrowserChromeLayout.sidebarRowHorizontalPadding)
+        .padding(.leading, rowBackgroundLeadingInset)
         .padding(.trailing, BrowserChromeLayout.sidebarTabTrailingPadding)
         .frame(
             maxWidth: .infinity,
@@ -228,12 +249,15 @@ struct BrowserSidebarRow: View {
     }
 
     var backgroundShape: some View {
-        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
-            .fill(
-                isSelected
-                    ? BrowserChromePalette.rowSelected
-                    : (isRowHovered ? BrowserChromePalette.rowHover : Color.clear)
-            )
+        HStack(spacing: 0) {
+            if rowBackgroundLeadingInset > 0 {
+                Color.clear
+                    .frame(width: rowBackgroundLeadingInset)
+            }
+
+            RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
+                .fill(rowBackgroundColor)
+        }
     }
 
     @ViewBuilder var copyLinkMenuItem: some View {
@@ -257,6 +281,9 @@ struct BrowserSidebarRow: View {
     @ViewBuilder func tabContextMenuItems(sharingItems: [Any]) -> some View {
         copyLinkMenuItem
         shareMenuItem(sharingItems: sharingItems)
+        if canCreateFolderFromSelection {
+            Button(BrowserStrings.pinnedTabFolderNewAction, action: onCreateFolderFromSelection)
+        }
         Button(BrowserStrings.tabRenameAction, action: beginRename)
         Divider()
         archiveTabMenuItem
@@ -354,6 +381,254 @@ struct BrowserSidebarRow: View {
 
     private func normalizedRenameTitle(_ title: String) -> String {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - BrowserSidebarPinnedFolderRowView
+
+struct BrowserSidebarPinnedFolderRowView: View {
+    // MARK: Internal
+
+    let folder: BrowserChromeModel.PinnedTabFolder
+    let isRenaming: Bool
+    let indentLevel: Int
+    let isSidebarResizing: Bool
+    let interactionResetID: Int
+    let onToggleExpanded: () -> Void
+    let onBeginRename: () -> Void
+    let onCommitRename: (String) -> Void
+    let onCancelRename: () -> Void
+    let onChangeIcon: (String?) -> Void
+
+    @State var isRowHovered = false
+    @State var isRowPressed = false
+    @State var draftTitle = ""
+    @State var initialRenameTitle = ""
+
+    var rowBackgroundLeadingInset: CGFloat {
+        CGFloat(max(indentLevel, 0)) * BrowserChromeLayout.sidebarPinnedFolderTabIndent
+    }
+
+    var body: some View {
+        rowInteractionSurface
+            .onHover { hovering in
+                guard !isSidebarResizing else {
+                    return
+                }
+
+                isRowHovered = hovering
+            }
+            .onAppear {
+                syncDraftTitleIfNeeded(isRenaming: isRenaming)
+            }
+            .onChange(of: isRenaming) { _, isRenaming in
+                syncDraftTitleIfNeeded(isRenaming: isRenaming)
+                if isRenaming {
+                    isRowPressed = false
+                }
+            }
+            .onChange(of: isSidebarResizing) { _, isSidebarResizing in
+                guard isSidebarResizing else {
+                    return
+                }
+
+                resetTransientInteractionState()
+            }
+            .onChange(of: interactionResetID) { _, _ in
+                resetTransientInteractionState()
+            }
+            .onDisappear {
+                resetTransientInteractionState()
+            }
+            .contextMenu {
+                menuItems
+            }
+    }
+
+    var rowInteractionSurface: some View {
+        ZStack {
+            rowSurface
+
+            Button(action: onToggleExpanded) {
+                Color.clear
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: BrowserChromeLayout.sidebarRowHeight,
+                        maxHeight: BrowserChromeLayout.sidebarRowHeight
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
+            }
+            .buttonStyle(
+                BrowserSidebarPressTrackingButtonStyle { isPressed in
+                    isRowPressed = isPressed
+                }
+            )
+            .allowsHitTesting(!isRenaming)
+            .simultaneousGesture(
+                TapGesture(count: 2)
+                    .onEnded {
+                        beginRename()
+                    }
+            )
+        }
+        .scaleEffect(isRowPressed ? BrowserChromeLayout.sidebarButtonPressedScale : 1)
+        .animation(.spring(response: 0.18, dampingFraction: 0.72), value: isRowPressed)
+    }
+
+    var rowSurface: some View {
+        HStack(spacing: BrowserChromeLayout.sidebarRowContentSpacing) {
+            BrowserPinnedTabFolderIcon(
+                systemImageName: folder.systemImageName,
+                isExpanded: folder.isExpanded
+            )
+
+            if isRenaming {
+                BrowserSidebarTitleTextField(
+                    text: $draftTitle,
+                    isFocused: isRenaming,
+                    onSubmit: submitRename,
+                    onCancel: cancelRename,
+                    onBlur: blurRename
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .offset(y: 1)
+            } else {
+                Text(folder.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(BrowserChromePalette.primaryText)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.leading, BrowserChromeLayout.sidebarRowHorizontalPadding)
+        .padding(.leading, rowBackgroundLeadingInset)
+        .padding(.trailing, BrowserChromeLayout.sidebarTabTrailingPadding)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: BrowserChromeLayout.sidebarRowHeight,
+            maxHeight: BrowserChromeLayout.sidebarRowHeight,
+            alignment: .leading
+        )
+        .background(backgroundShape)
+        .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
+    }
+
+    var backgroundShape: some View {
+        HStack(spacing: 0) {
+            if rowBackgroundLeadingInset > 0 {
+                Color.clear
+                    .frame(width: rowBackgroundLeadingInset)
+            }
+
+            RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
+                .fill(isRowHovered ? BrowserChromePalette.rowHover : Color.clear)
+        }
+    }
+
+    @ViewBuilder var menuItems: some View {
+        Button(BrowserStrings.pinnedTabFolderRenameAction, action: beginRename)
+        Menu(BrowserStrings.pinnedTabFolderChangeIconAction) {
+            Button(BrowserStrings.pinnedTabFolderNoIconAction) {
+                onChangeIcon(nil)
+            }
+            Divider()
+            ForEach(BrowserSpaceIconCatalog.systemImageNames, id: \.self) { systemImageName in
+                Button {
+                    onChangeIcon(systemImageName)
+                } label: {
+                    Label(
+                        systemImageName,
+                        systemImage: folder.systemImageName == systemImageName ? "checkmark" : systemImageName
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: Private
+
+    private var hasRenameChanged: Bool {
+        normalizedRenameTitle(draftTitle) != normalizedRenameTitle(initialRenameTitle)
+    }
+
+    private func beginRename() {
+        let title = folder.title
+        draftTitle = title
+        initialRenameTitle = title
+        onBeginRename()
+    }
+
+    private func submitRename() {
+        if hasRenameChanged {
+            onCommitRename(draftTitle)
+        } else {
+            onCancelRename()
+        }
+    }
+
+    private func blurRename() {
+        guard hasRenameChanged else {
+            return
+        }
+
+        onCommitRename(draftTitle)
+    }
+
+    private func cancelRename() {
+        draftTitle = folder.title
+        initialRenameTitle = folder.title
+        onCancelRename()
+    }
+
+    private func resetTransientInteractionState() {
+        isRowHovered = false
+        isRowPressed = false
+    }
+
+    private func syncDraftTitleIfNeeded(isRenaming: Bool) {
+        guard isRenaming else {
+            return
+        }
+
+        draftTitle = folder.title
+        initialRenameTitle = folder.title
+    }
+
+    private func normalizedRenameTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - BrowserPinnedTabFolderIcon
+
+struct BrowserPinnedTabFolderIcon: View {
+    let systemImageName: String?
+    let isExpanded: Bool
+
+    var body: some View {
+        ZStack {
+            Image(systemName: isExpanded ? "folder.fill" : "folder")
+                .font(.system(size: BrowserChromeLayout.sidebarPinnedFolderIconSize, weight: .semibold))
+                .foregroundStyle(Color.yellow.opacity(0.88))
+                .frame(
+                    width: BrowserChromeLayout.sidebarPinnedFolderIconSize,
+                    height: BrowserChromeLayout.sidebarPinnedFolderIconSize
+                )
+
+            if let systemImageName {
+                Image(systemName: systemImageName)
+                    .font(.system(
+                        size: BrowserChromeLayout.sidebarPinnedFolderBadgeIconSize,
+                        weight: .bold
+                    ))
+                    .foregroundStyle(Color.black.opacity(0.78))
+                    .offset(y: 1)
+            }
+        }
+        .frame(
+            width: BrowserChromeLayout.sidebarPinnedFolderIconSize,
+            height: BrowserChromeLayout.sidebarPinnedFolderIconSize
+        )
     }
 }
 

@@ -61,6 +61,9 @@ import Testing
                     "16": "icon.png"
                   },
                   "name": "Reader Mode",
+                  "side_panel": {
+                    "default_path": "panel.html"
+                  },
                   "version": "2.0.1"
                 },
                 "path": "reader/2.0.1_0"
@@ -80,9 +83,19 @@ import Testing
             name: "Reader Mode",
             version: "2.0.1",
             isEnabled: true,
-            iconData: iconData
+            iconData: iconData,
+            sidePanelURLString: "chrome-extension://reader/panel.html"
         ),
     ])
+}
+
+@Test func extensionResourceRouteNormalizesManifestSidePanelPath() {
+    #expect(
+        BrowserExtensionRouting.extensionResourceURLString(
+            forExtensionID: "abc",
+            path: "/panel/index.html"
+        ) == "chrome-extension://abc/panel/index.html"
+    )
 }
 
 @Test func extensionProfileSnapshotResolvesLocalizedNamesAndDisabledState() throws {
@@ -168,21 +181,239 @@ import Testing
     model.openExtensionsManager()
     model.openExtensionDetails(id: "abc 123")
     model.openExtensionStore()
+    model.openExtensionStore(id: "abc123")
 
-    #expect(Array(driver.createdTabRequests.suffix(3).map(\.urlString)) == [
+    #expect(Array(driver.createdTabRequests.suffix(4).map(\.urlString)) == [
         BrowserExtensionRouting.extensionsURLString,
         "tb://extensions/?id=abc%20123",
         BrowserExtensionRouting.chromeWebStoreURLString,
+        "https://chromewebstore.google.com/detail/abc123",
     ])
 }
 
-private func makeExtension(id: String, isEnabled: Bool = true) -> BrowserExtension {
+@Test
+@MainActor func openingExtensionWithSidePanelUsesRightPanelInsteadOfDetailsTab() {
+    let panelURLString = "chrome-extension://reader/panel.html"
+    let manager = FakeBrowserExtensionManager(
+        extensions: [
+            makeExtension(id: "reader", sidePanelURLString: panelURLString),
+        ]
+    )
+    manager.actionResults["reader"] = .sidePanel
+    let driver = FakeBrowserTabDriver()
+    let sidePanelDriver = FakeBrowserExtensionSidePanelDriver()
+    let model = makeExtensionModel(
+        driver: driver,
+        extensionManager: manager,
+        extensionSidePanelDriver: sidePanelDriver
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let createdTabCount = driver.createdTabRequests.count
+
+    model.openExtension(id: "reader")
+
+    #expect(manager.actionRequests == ["reader"])
+    #expect(sidePanelDriver.openedURLStrings == [panelURLString])
+    #expect(model.extensionSidePanel?.extensionID == "reader")
+    #expect(model.extensionSidePanel?.urlString == panelURLString)
+    #expect(driver.createdTabRequests.count == createdTabCount)
+}
+
+@Test
+@MainActor func extensionWithoutPopupRunsActionWithoutOpeningDetailsTab() {
+    let manager = FakeBrowserExtensionManager(
+        extensions: [
+            makeExtension(id: "reader"),
+        ]
+    )
+    manager.actionResults["reader"] = .handled
+    let driver = FakeBrowserTabDriver()
+    let sidePanelDriver = FakeBrowserExtensionSidePanelDriver()
+    let model = makeExtensionModel(
+        driver: driver,
+        extensionManager: manager,
+        extensionSidePanelDriver: sidePanelDriver
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let createdTabCount = driver.createdTabRequests.count
+
+    model.openExtension(id: "reader")
+
+    #expect(manager.actionRequests == ["reader"])
+    #expect(sidePanelDriver.openedURLStrings.isEmpty)
+    #expect(driver.createdTabRequests.count == createdTabCount)
+}
+
+@Test
+@MainActor func handledExtensionActionOpensKnownSidePanel() {
+    let panelURLString = "chrome-extension://reader/panel.html"
+    let manager = FakeBrowserExtensionManager(
+        extensions: [
+            makeExtension(id: "reader", sidePanelURLString: panelURLString),
+        ]
+    )
+    manager.actionResults["reader"] = .handled
+    let sidePanelDriver = FakeBrowserExtensionSidePanelDriver()
+    let model = makeExtensionModel(
+        extensionManager: manager,
+        extensionSidePanelDriver: sidePanelDriver
+    )
+
+    model.handleContextReady()
+    model.openExtension(id: "reader")
+
+    #expect(manager.actionRequests == ["reader"])
+    #expect(sidePanelDriver.openedURLStrings == [panelURLString])
+    #expect(model.extensionSidePanel?.extensionID == "reader")
+}
+
+@Test
+@MainActor func extensionPopupActionOpensActionPopoverInsteadOfDetailsTab() throws {
+    let manager = FakeBrowserExtensionManager(
+        extensions: [
+            makeExtension(id: "reader"),
+        ]
+    )
+    manager.actionResults["reader"] = .popup(urlString: "chrome-extension://reader/popup.html")
+    let driver = FakeBrowserTabDriver()
+    let popupDriver = FakeBrowserExtensionActionPopupDriver()
+    let model = makeExtensionModel(
+        driver: driver,
+        extensionManager: manager,
+        extensionActionPopupDriver: popupDriver
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let createdTabCount = driver.createdTabRequests.count
+
+    let popup = try #require(model.openExtension(id: "reader"))
+
+    #expect(manager.actionRequests == ["reader"])
+    #expect(popup.extensionID == "reader")
+    #expect(popup.title == "Reader")
+    #expect(popupDriver.openedURLStrings == ["chrome-extension://reader/popup.html"])
+    #expect(driver.createdTabRequests.count == createdTabCount)
+
+    popup.close()
+    #expect(popupDriver.closedPopupIDs == ["popup-1"])
+}
+
+@Test
+@MainActor func pinnedExtensionsPersistAndAreRemovedWithExtension() throws {
+    let suiteName = "TheBrowserTests.\(UUID().uuidString)"
+    let userDefaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+    let preferencesStore = BrowserUserPreferencesStore(userDefaults: userDefaults)
+    let manager = FakeBrowserExtensionManager(
+        extensions: [
+            makeExtension(id: "reader"),
+            makeExtension(id: "clipper"),
+        ]
+    )
+    let model = makeExtensionModel(
+        userPreferencesStore: preferencesStore,
+        extensionManager: manager
+    )
+
+    model.refreshBrowserExtensions()
+
+    #expect(model.toggleExtensionPinned(id: "reader"))
+    #expect(model.pinnedExtensionIDs == ["reader"])
+    #expect(preferencesStore.pinnedExtensionIDs == ["reader"])
+    #expect(model.toggleExtensionPinned(id: "reader"))
+    #expect(model.pinnedExtensionIDs.isEmpty)
+
+    #expect(model.setExtension(id: "clipper", isPinned: true))
+    #expect(model.removeExtension(id: "clipper"))
+    #expect(model.pinnedExtensionIDs.isEmpty)
+    #expect(preferencesStore.pinnedExtensionIDs.isEmpty)
+}
+
+@Test
+@MainActor func removingExtensionClosesActiveSidePanel() throws {
+    let panelURLString = "chrome-extension://reader/panel.html"
+    let manager = FakeBrowserExtensionManager(
+        extensions: [
+            makeExtension(id: "reader", sidePanelURLString: panelURLString),
+        ]
+    )
+    manager.actionResults["reader"] = .sidePanel
+    let sidePanelDriver = FakeBrowserExtensionSidePanelDriver()
+    let model = makeExtensionModel(
+        extensionManager: manager,
+        extensionSidePanelDriver: sidePanelDriver
+    )
+
+    model.handleContextReady()
+    model.openExtension(id: "reader")
+    let panelID = try #require(model.extensionSidePanel?.panelID)
+
+    #expect(model.removeExtension(id: "reader"))
+
+    #expect(model.extensionSidePanel == nil)
+    #expect(sidePanelDriver.closedPanelIDs == [panelID])
+}
+
+@Test func profileSnapshotInfersSidePanelFileForSidePanelExtensions() throws {
+    let profileDirectory = try makeProfileDirectory()
+    defer { try? FileManager.default.removeItem(at: profileDirectory) }
+
+    let extensionDirectory = profileDirectory
+        .appendingPathComponent("Extensions", isDirectory: true)
+        .appendingPathComponent("reader", isDirectory: true)
+        .appendingPathComponent("1.0_0", isDirectory: true)
+    try FileManager.default.createDirectory(at: extensionDirectory, withIntermediateDirectories: true)
+    try Data("<html></html>".utf8).write(
+        to: extensionDirectory.appendingPathComponent("sidepanel.html", isDirectory: false)
+    )
+
+    try writeSecurePreferences(
+        """
+        {
+          "extensions": {
+            "settings": {
+              "reader": {
+                "disable_reasons": [],
+                "location": 1,
+                "manifest": {
+                  "manifest_version": 3,
+                  "name": "Reader",
+                  "permissions": ["sidePanel"],
+                  "version": "1.0"
+                },
+                "path": "reader/1.0_0"
+              }
+            }
+          }
+        }
+        """,
+        in: profileDirectory
+    )
+
+    let extensionSnapshot = try #require(
+        BrowserExtensionProfileSnapshotStore.installedExtensions(profileDirectories: [profileDirectory]).first
+    )
+
+    #expect(extensionSnapshot.sidePanelURLString == "chrome-extension://reader/sidepanel.html")
+}
+
+private func makeExtension(
+    id: String,
+    isEnabled: Bool = true,
+    sidePanelURLString: String? = nil
+) -> BrowserExtension {
     BrowserExtension(
         id: id,
         name: id.capitalized,
         version: "1.0",
         isEnabled: isEnabled,
-        iconData: nil
+        iconData: nil,
+        sidePanelURLString: sidePanelURLString
     )
 }
 
@@ -201,14 +432,20 @@ private func writeSecurePreferences(_ json: String, in profileDirectory: URL) th
 
 @MainActor private func makeExtensionModel(
     driver: FakeBrowserTabDriver? = nil,
-    extensionManager: (any BrowserExtensionManaging)? = nil
+    userPreferencesStore: BrowserUserPreferencesStore? = nil,
+    extensionManager: (any BrowserExtensionManaging)? = nil,
+    extensionSidePanelDriver: (any BrowserExtensionSidePanelDriving)? = nil,
+    extensionActionPopupDriver: (any BrowserExtensionActionPopupDriving)? = nil
 ) -> BrowserChromeModel {
     BrowserChromeModel(
         tabDriver: driver ?? FakeBrowserTabDriver(),
         sessionSnapshotStore: InMemorySessionSnapshotStore(),
         sessionPreferencesStore: InMemorySessionPreferencesStore(),
         commandBarSuggestionProvider: FakeSuggestionProvider(),
+        userPreferencesStore: userPreferencesStore ?? BrowserUserPreferencesStore(),
         extensionManager: extensionManager ?? FakeBrowserExtensionManager(),
+        extensionSidePanelDriver: extensionSidePanelDriver,
+        extensionActionPopupDriver: extensionActionPopupDriver,
         windowTitleHandler: { _ in },
         allTabsClosedHandler: {}
     )

@@ -180,6 +180,62 @@ import Testing
 }
 
 @Test
+@MainActor func incognitoWindowSkipsRestoreAndPersistence() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore(
+        loadedSnapshot: BrowserTabSessionSnapshot(tabURLStrings: ["https://saved.example"])
+    )
+    let preferencesStore = InMemorySessionPreferencesStore(storedSidebarWidth: BrowserChromeModel.maxSidebarWidth)
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore,
+        windowMode: .incognito
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    #expect(model.isIncognito)
+    #expect(!model.supportsSpaces)
+    #expect(!model.supportsAppTabs)
+    #expect(model.tabs.map(\.urlString) == [
+        BrowserChromeModel.defaultNewTabURLString,
+        BrowserChromeModel.defaultNewTabURLString,
+    ])
+    #expect(model.sidebarWidth == BrowserChromeModel.defaultSidebarWidth)
+    #expect(snapshotStore.savedSnapshots.isEmpty)
+    #expect(preferencesStore.savedSelectedTabIndices.isEmpty)
+    #expect(preferencesStore.savedSelectedSpaceIndices.isEmpty)
+}
+
+@Test
+@MainActor func incognitoWindowKeepsSingleSpaceAndRejectsAppTabs() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        windowMode: .incognito
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let initialTabID = try #require(model.selectedTabID)
+
+    model.createNewSpace()
+    model.moveTab(withID: initialTabID, toPlacement: .app, atSectionIndex: 0)
+    model.togglePinned(forTabID: initialTabID)
+
+    #expect(model.spaces.map(\.id) == [BrowserChromeModel.defaultSpaceID])
+    #expect(model.selectedSpaceID == BrowserChromeModel.defaultSpaceID)
+    #expect(model.appTabs.isEmpty)
+    #expect(model.spacePinnedTabs.map(\.id) == [initialTabID])
+}
+
+@Test
 @MainActor func createEmptySpaceSelectsItWithoutCreatingTab() {
     let driver = FakeBrowserTabDriver()
     var nextSpaceNumber = 0
@@ -242,6 +298,74 @@ import Testing
     #expect(model.selectedSpaceID == BrowserChromeModel.defaultSpaceID)
     #expect(model.spacePinnedTabs.map(\.id) == [defaultTabID])
     #expect(model.temporaryTabs.isEmpty)
+}
+
+@Test
+@MainActor func deleteSelectedSpaceClosesItsTabsAndSelectsAdjacentSpace() throws {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    var nextSpaceNumber = 0
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore,
+        spaceIDProvider: {
+            nextSpaceNumber += 1
+            return "space-\(nextSpaceNumber)"
+        }
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let defaultTabID = try #require(model.tabs.first?.id)
+
+    model.createNewSpace()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let deletedSpaceID = "space-1"
+    let deletedTabIDs = model.tabs.filter { $0.spaceID == deletedSpaceID }.map(\.id)
+    for tabID in deletedTabIDs {
+        model.togglePinned(forTabID: tabID)
+    }
+    let folderID = try #require(model.createPinnedTabFolder(containingTabIDs: Set(deletedTabIDs)))
+
+    #expect(model.canDeleteSpace(id: deletedSpaceID))
+    #expect(model.pinnedTabFolders.map(\.id) == [folderID])
+    #expect(model.deleteSpace(id: deletedSpaceID))
+
+    #expect(model.spaces.map(\.id) == [BrowserChromeModel.defaultSpaceID])
+    #expect(model.selectedSpaceID == BrowserChromeModel.defaultSpaceID)
+    #expect(model.selectedTabID == defaultTabID)
+    #expect(model.tabs.map(\.id) == [defaultTabID])
+    #expect(model.pinnedTabFolders.isEmpty)
+    #expect(driver.closedTabRequests.map(\.id) == deletedTabIDs)
+    #expect(driver.closedTabRequests.map(\.forceClose) == Array(repeating: false, count: deletedTabIDs.count))
+    #expect(snapshotStore.savedSnapshots.last?.spaces?.map(\.id) == [BrowserChromeModel.defaultSpaceID])
+    #expect(snapshotStore.savedSnapshots.last?.tabs.map(\.id) == [model.tabs[0].syncID])
+    #expect(preferencesStore.storedSelectedSpaceIndex == 0)
+}
+
+@Test
+@MainActor func deleteOnlySpaceIsIgnored() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    #expect(!model.canDeleteSpace(id: BrowserChromeModel.defaultSpaceID))
+    #expect(!model.deleteSpace(id: BrowserChromeModel.defaultSpaceID))
+    #expect(model.spaces.map(\.id) == [BrowserChromeModel.defaultSpaceID])
+    #expect(model.tabs.count == 1)
+    #expect(driver.closedTabRequests.isEmpty)
 }
 
 @Test
@@ -819,6 +943,195 @@ import Testing
 }
 
 @Test
+@MainActor func creatingPinnedTabFolderGroupsSelectedPinnedTabsAndPersists() throws {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let firstTabID = model.tabs[0].id
+    let secondTabID = model.tabs[1].id
+    let thirdTabID = model.tabs[2].id
+
+    model.togglePinned(forTabID: firstTabID)
+    model.togglePinned(forTabID: secondTabID)
+    let folderID = try #require(model.createPinnedTabFolder(containingTabIDs: Set([firstTabID, secondTabID])))
+
+    #expect(model.pinnedTabFolders.map(\.id) == [folderID])
+    #expect(model.pinnedTabFolders.first?.title == BrowserStrings.pinnedTabFolderDefaultTitle)
+    #expect(model.spacePinnedTabs.map(\.id) == [firstTabID, secondTabID])
+    #expect(model.spacePinnedTabs.map(\.pinnedFolderID) == [folderID, folderID])
+    #expect(model.temporaryTabs.map(\.id) == [thirdTabID])
+    #expect(snapshotStore.savedSnapshots.last?.pinnedTabFolders?.map(\.id) == [folderID])
+    #expect(snapshotStore.savedSnapshots.last?.tabs.map(\.pinnedFolderID) == [folderID, folderID, nil])
+}
+
+@Test
+@MainActor func movingTabsIntoAndOutOfPinnedFolderUpdatesFolderMembership() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let firstTabID = model.tabs[0].id
+    let secondTabID = model.tabs[1].id
+    let thirdTabID = model.tabs[2].id
+
+    model.togglePinned(forTabID: firstTabID)
+    model.togglePinned(forTabID: secondTabID)
+    model.togglePinned(forTabID: thirdTabID)
+    let folderID = try #require(model.createPinnedTabFolder(containingTabIDs: Set([firstTabID, secondTabID])))
+
+    model.moveTab(
+        withID: thirdTabID,
+        toPlacement: .spacePinned,
+        atSectionIndex: 2,
+        targetPinnedFolderID: folderID
+    )
+
+    #expect(model.spacePinnedTabs.map(\.id) == [firstTabID, secondTabID, thirdTabID])
+    #expect(model.spacePinnedTabs.map(\.pinnedFolderID) == [folderID, folderID, folderID])
+
+    model.moveTab(withID: firstTabID, toPlacement: .spacePinned, atSectionIndex: 0)
+
+    #expect(model.spacePinnedTabs.map(\.id) == [firstTabID, secondTabID, thirdTabID])
+    #expect(model.spacePinnedTabs.map(\.pinnedFolderID) == [nil, folderID, folderID])
+    #expect(model.pinnedTabFolders.map(\.id) == [folderID])
+}
+
+@Test
+@MainActor func movingPinnedTabFolderReordersItsChildrenAsAGroup() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let firstTabID = model.tabs[0].id
+    let secondTabID = model.tabs[1].id
+    let thirdTabID = model.tabs[2].id
+
+    model.togglePinned(forTabID: firstTabID)
+    model.togglePinned(forTabID: secondTabID)
+    model.togglePinned(forTabID: thirdTabID)
+    let folderID = try #require(model.createPinnedTabFolder(containingTabIDs: Set([firstTabID, secondTabID])))
+
+    model.movePinnedTabFolder(withID: folderID, toRootSectionIndex: 1)
+
+    #expect(model.spacePinnedTabs.map(\.id) == [thirdTabID, firstTabID, secondTabID])
+    #expect(model.spacePinnedTabs.map(\.pinnedFolderID) == [nil, folderID, folderID])
+}
+
+@Test
+@MainActor func movingMultiplePinnedTabsPreservesSelectionOrder() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let firstTabID = model.tabs[0].id
+    let secondTabID = model.tabs[1].id
+    let thirdTabID = model.tabs[2].id
+
+    model.togglePinned(forTabID: firstTabID)
+    model.togglePinned(forTabID: secondTabID)
+    model.togglePinned(forTabID: thirdTabID)
+
+    model.moveTabs(
+        withIDs: Set([firstTabID, secondTabID]),
+        toPlacement: .spacePinned,
+        atSectionIndex: 3
+    )
+
+    #expect(model.spacePinnedTabs.map(\.id) == [thirdTabID, firstTabID, secondTabID])
+}
+
+@Test
+@MainActor func movingPinnedTabFolderIntoAnotherFolderNestsIt() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let firstTabID = model.tabs[0].id
+    let secondTabID = model.tabs[1].id
+    let thirdTabID = model.tabs[2].id
+    let fourthTabID = model.tabs[3].id
+
+    model.togglePinned(forTabID: firstTabID)
+    model.togglePinned(forTabID: secondTabID)
+    model.togglePinned(forTabID: thirdTabID)
+    model.togglePinned(forTabID: fourthTabID)
+    let parentFolderID = try #require(model.createPinnedTabFolder(containingTabIDs: Set([firstTabID, secondTabID])))
+    let childFolderID = try #require(model.createPinnedTabFolder(containingTabIDs: Set([thirdTabID, fourthTabID])))
+
+    model.movePinnedTabFolder(
+        withID: childFolderID,
+        toRootSectionIndex: 2,
+        targetParentFolderID: parentFolderID
+    )
+
+    #expect(model.pinnedTabFolders.first { $0.id == childFolderID }?.parentFolderID == parentFolderID)
+    #expect(!model.canMovePinnedTabFolder(
+        withID: parentFolderID,
+        toRootSectionIndex: 2,
+        targetParentFolderID: childFolderID
+    ))
+
+    model.movePinnedTabFolder(withID: childFolderID, toRootSectionIndex: 0)
+
+    #expect(model.pinnedTabFolders.first { $0.id == childFolderID }?.parentFolderID == nil)
+}
+
+@Test
 @MainActor func movingTabsBetweenSectionEndsKeepsMovedTabsSelectable() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
@@ -1090,6 +1403,120 @@ import Testing
     #expect(model.selectedTabID == thirdTabID)
     #expect(driver.selectedTabIDs.last == thirdTabID)
     #expect(driver.closedTabRequests.last == FakeBrowserTabDriver.CloseTabRequest(id: secondTabID, forceClose: false))
+}
+
+@Test
+@MainActor func undoNewTabArchivesCreatedTabAndRedoRestoresIt() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let initialTabID = try #require(model.tabs.first?.id)
+
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let createdTabID = try #require(model.tabs.last?.id)
+
+    #expect(model.undoManager.canUndo)
+    model.undoManager.undo()
+
+    #expect(model.tabs.map(\.id) == [initialTabID])
+    #expect(model.selectedTabID == initialTabID)
+    #expect(driver.closedTabRequests.last == FakeBrowserTabDriver.CloseTabRequest(id: createdTabID, forceClose: false))
+
+    driver.emitClose(id: createdTabID)
+    #expect(model.undoManager.canRedo)
+    model.undoManager.redo()
+    driver.flushPendingCreateEvents()
+
+    let restoredTabID = try #require(model.tabs.last?.id)
+    #expect(model.tabs.map(\.urlString) == [
+        BrowserChromeModel.defaultNewTabURLString,
+        BrowserChromeModel.defaultNewTabURLString,
+    ])
+    #expect(restoredTabID != createdTabID)
+    #expect(model.selectedTabID == restoredTabID)
+    #expect(driver.createdTabRequests.last?.makeActive == true)
+}
+
+@Test
+@MainActor func undoArchivedTabRestoresTabStateAndRedoArchivesRestoredTab() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    try model.openURLInNewTab(#require(URL(string: "https://two.example")))
+    driver.flushPendingCreateEvents()
+    try model.openURLInNewTab(#require(URL(string: "https://three.example")))
+    driver.flushPendingCreateEvents()
+
+    let secondTabID = model.tabs[1].id
+    let expectedURLStrings = model.tabs.map(\.urlString)
+    model.setUserTitleOverride("Docs", forTabID: secondTabID)
+    model.selectTab(id: secondTabID)
+
+    #expect(model.archiveSelectedTab())
+    driver.emitClose(id: secondTabID)
+
+    model.undoManager.undo()
+    driver.flushPendingCreateEvents()
+
+    let restoredTab = model.tabs[1]
+    #expect(model.tabs.map(\.urlString) == expectedURLStrings)
+    #expect(restoredTab.id != secondTabID)
+    #expect(restoredTab.userTitleOverride == "Docs")
+    #expect(model.selectedTabID == restoredTab.id)
+
+    #expect(model.undoManager.canRedo)
+    model.undoManager.redo()
+
+    #expect(model.tabs.map(\.urlString) == [
+        BrowserChromeModel.defaultNewTabURLString,
+        "https://three.example",
+    ])
+    #expect(driver.closedTabRequests.last == FakeBrowserTabDriver.CloseTabRequest(
+        id: restoredTab.id,
+        forceClose: false
+    ))
+}
+
+@Test
+@MainActor func undoCreationTracksTabAcrossArchiveRestore() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let initialTabID = try #require(model.tabs.first?.id)
+
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let createdTabID = try #require(model.tabs.last?.id)
+
+    #expect(model.archiveSelectedTab())
+    driver.emitClose(id: createdTabID)
+    model.undoManager.undo()
+    driver.flushPendingCreateEvents()
+    let restoredTabID = try #require(model.tabs.last?.id)
+
+    model.undoManager.undo()
+
+    #expect(model.tabs.map(\.id) == [initialTabID])
+    #expect(driver.closedTabRequests.last == FakeBrowserTabDriver.CloseTabRequest(id: restoredTabID, forceClose: false))
 }
 
 @Test
@@ -1414,6 +1841,25 @@ import Testing
 }
 
 @Test
+@MainActor func captureFullPageRequiresSelectedTab() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    #expect(!model.captureFullPageSelectedTabToPasteboard())
+    #expect(driver.captureFullPageToPasteboardCount == 0)
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    #expect(model.captureFullPageSelectedTabToPasteboard())
+    #expect(driver.captureFullPageToPasteboardCount == 1)
+}
+
+@Test
 @MainActor func findBarRunsSearchAndClearsSelectionOnDismiss() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
@@ -1636,6 +2082,116 @@ import Testing
     #expect(model.findBarFocusRequest == 2)
 }
 
+@Test
+@MainActor func tabSwitcherCommitsPreviousTabOnOptionRelease() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let previousTabID = try #require(model.tabs.dropLast().last?.id)
+
+    #expect(model.advanceTabSwitcher())
+    #expect(model.tabSwitcherState?.selectedTabID == previousTabID)
+    #expect(model.commitTabSwitcher())
+    #expect(model.selectedTabID == previousTabID)
+    #expect(model.tabSwitcherState == nil)
+}
+
+@Test
+@MainActor func tabSwitcherCyclesThroughRecentTabsWhileHeld() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+
+    let oldestTabID = try #require(model.tabs.first?.id)
+
+    #expect(model.advanceTabSwitcher())
+    #expect(model.advanceTabSwitcher())
+    #expect(model.tabSwitcherState?.selectedTabID == oldestTabID)
+    #expect(model.commitTabSwitcher())
+    #expect(model.selectedTabID == oldestTabID)
+}
+
+@Test
+@MainActor func tabSwitcherLimitsOverlayToFiveMostRecentTabs() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    for _ in 0..<5 {
+        model.createNewTab()
+        driver.flushPendingCreateEvents()
+    }
+
+    let expectedIDs = Array(model.tabs.suffix(5).reversed().map(\.id))
+
+    #expect(model.advanceTabSwitcher())
+    #expect(model.tabSwitcherState?.entries.map(\.id) == expectedIDs)
+    #expect(model.cancelTabSwitcher())
+}
+
+@Test
+@MainActor func commandBarSuggestsInternalChromiumPages() async throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        suggestionProvider: FakeSuggestionProvider()
+    )
+
+    model.commandBarModel.present()
+    model.commandBarModel.query = "bookmarks"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let bookmarkSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.displayText == "Open Bookmarks" }
+    )
+    #expect(bookmarkSuggestion.resolvedURLString == "tb://bookmarks/")
+    #expect(bookmarkSuggestion.detailText == "tb://bookmarks")
+}
+
+@Test
+@MainActor func openBookmarksManagerCreatesCanonicalInternalTab() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.openBookmarksManager()
+
+    #expect(driver.createdTabRequests.last?.urlString == "tb://bookmarks/")
+}
+
 @MainActor private func makeModel(
     driver: FakeBrowserTabDriver,
     snapshotStore: InMemorySessionSnapshotStore,
@@ -1644,6 +2200,7 @@ import Testing
     userPreferencesStore: BrowserUserPreferencesStore? = nil,
     shortcutStore: BrowserShortcutStore? = nil,
     extensionManager: (any BrowserExtensionManaging)? = nil,
+    windowMode: BrowserWindowMode = .normal,
     dateProvider: @escaping () -> Date = Date.init,
     spaceIDProvider: @escaping () -> String = { UUID().uuidString }
 ) -> BrowserChromeModel {
@@ -1656,6 +2213,7 @@ import Testing
         userPreferencesStore: userPreferencesStore ?? BrowserUserPreferencesStore(userDefaults: userDefaults),
         shortcutStore: shortcutStore ?? BrowserShortcutStore(userDefaults: userDefaults),
         extensionManager: extensionManager ?? FakeBrowserExtensionManager(),
+        windowMode: windowMode,
         dateProvider: dateProvider,
         spaceIDProvider: spaceIDProvider,
         windowTitleHandler: { _ in },

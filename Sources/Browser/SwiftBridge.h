@@ -23,12 +23,16 @@ BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
                                      NSString** root_cache_path,
                                      NSString** cache_path);
 NSString* BrowserChromiumVersionString(void);
+void BrowserSetBatterySaverModeEnabled(BOOL enabled);
 
 void BrowserRequestNotificationPermission(NSString* origin,
                                           BrowserPermissionCompletion completion);
-NSString* BrowserCopyInstalledExtensionsJSON(void);
-BOOL BrowserSetExtensionEnabled(NSString* extension_id, BOOL is_enabled);
-BOOL BrowserRemoveExtension(NSString* extension_id);
+NSString* BrowserCopyInstalledExtensionsJSON(NSString* profile_path);
+BOOL BrowserSetExtensionEnabled(NSString* profile_path, NSString* extension_id,
+                                BOOL is_enabled);
+NSString* BrowserRunExtensionAction(NSString* profile_path,
+                                    NSString* extension_id);
+BOOL BrowserRemoveExtension(NSString* profile_path, NSString* extension_id);
 
 #endif
 

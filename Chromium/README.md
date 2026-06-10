@@ -4,7 +4,7 @@
 project-local Chromium checkout.
 
 The project-local checkout defaults to CEF branch `7778` and Chromium
-`refs/tags/148.0.7778.96`. Override the Chromium checkout with
+`refs/tags/148.0.7778.180`. Override the Chromium checkout with
 `THEBROWSER_CHROMIUM_CHECKOUT` when intentionally moving the Chromium base.
 
 Run `./script/chromium_source.sh apply-overrides` after checkout, or use

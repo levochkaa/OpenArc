@@ -1,12 +1,15 @@
 import AppKit
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 @objcMembers public final class BrowserPermissionController: NSObject {
     // MARK: Public
 
-    public static func requestNotificationPermission(for origin: String, completion: @escaping (Bool) -> Void) {
-        let handlePromptResponse = {
+    public static func requestNotificationPermission(
+        for origin: String,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
+        let handlePromptResponse: @MainActor () -> Void = {
             let response = presentSitePrompt(for: origin)
             guard response == .alertFirstButtonReturn else {
                 completion(false)
@@ -17,16 +20,22 @@ import UserNotifications
         }
 
         if Thread.isMainThread {
-            handlePromptResponse()
+            MainActor.assumeIsolated {
+                handlePromptResponse()
+            }
             return
         }
 
-        DispatchQueue.main.sync(execute: handlePromptResponse)
+        DispatchQueue.main.sync {
+            MainActor.assumeIsolated {
+                handlePromptResponse()
+            }
+        }
     }
 
     // MARK: Private
 
-    private static func presentSitePrompt(for origin: String) -> NSApplication.ModalResponse {
+    @MainActor private static func presentSitePrompt(for origin: String) -> NSApplication.ModalResponse {
         let alert = NSAlert()
         alert.messageText = BrowserStrings.notificationPermissionTitle
         alert.informativeText = BrowserStrings.notificationPermissionMessage(origin: origin)
@@ -36,17 +45,21 @@ import UserNotifications
         return alert.runModal()
     }
 
-    private static func requestSystemNotificationAuthorization(completion: @escaping (Bool) -> Void) {
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { settings in
+    private static func requestSystemNotificationAuthorization(completion: @escaping @Sendable (Bool) -> Void) {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
             switch settings.authorizationStatus {
             case .authorized, .provisional:
                 completion(true)
             case .denied:
                 completion(false)
             case .notDetermined:
-                center.requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+                do {
+                    let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
                     completion(granted)
+                } catch {
+                    completion(false)
                 }
             @unknown default:
                 completion(false)

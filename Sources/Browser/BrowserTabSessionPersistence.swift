@@ -64,27 +64,63 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
     let selectedTabIndex: Int?
 }
 
+// MARK: - BrowserPinnedTabFolderSessionSnapshot
+
+struct BrowserPinnedTabFolderSessionSnapshot: Codable, Equatable {
+    // MARK: Lifecycle
+
+    init(
+        id: String,
+        spaceID: String,
+        parentFolderID: String? = nil,
+        title: String,
+        systemImageName: String? = nil,
+        isExpanded: Bool = true
+    ) {
+        self.id = id
+        self.spaceID = spaceID
+        self.parentFolderID = parentFolderID
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isExpanded = isExpanded
+    }
+
+    // MARK: Internal
+
+    let id: String
+    let spaceID: String
+    let parentFolderID: String?
+    let title: String
+    let systemImageName: String?
+    let isExpanded: Bool
+}
+
 // MARK: - BrowserTabSessionSnapshotTab
 
 struct BrowserTabSessionSnapshotTab: Codable, Equatable {
     // MARK: Lifecycle
 
     init(
+        id: String? = nil,
         urlString: String,
         userTitleOverride: String? = nil,
         placement: BrowserTabPlacement = .temporary,
         spaceID: String? = nil,
+        pinnedFolderID: String? = nil,
         lastActivityTimestamp: TimeInterval? = nil
     ) {
+        self.id = id
         self.urlString = urlString
         self.userTitleOverride = userTitleOverride
         self.placement = placement
         self.spaceID = spaceID
+        self.pinnedFolderID = pinnedFolderID
         self.lastActivityTimestamp = lastActivityTimestamp
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id)
         self.urlString = try container.decode(String.self, forKey: .urlString)
         self.userTitleOverride = try container.decodeIfPresent(String.self, forKey: .userTitleOverride)
         if let placement = try container.decodeIfPresent(BrowserTabPlacement.self, forKey: .placement) {
@@ -94,33 +130,40 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
             self.placement = legacyPinned ? .spacePinned : .temporary
         }
         self.spaceID = try container.decodeIfPresent(String.self, forKey: .spaceID)
+        self.pinnedFolderID = try container.decodeIfPresent(String.self, forKey: .pinnedFolderID)
         self.lastActivityTimestamp = try container.decodeIfPresent(TimeInterval.self, forKey: .lastActivityTimestamp)
     }
 
     // MARK: Internal
 
+    let id: String?
     let urlString: String
     let userTitleOverride: String?
     let placement: BrowserTabPlacement
     let spaceID: String?
+    let pinnedFolderID: String?
     let lastActivityTimestamp: TimeInterval?
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(id, forKey: .id)
         try container.encode(urlString, forKey: .urlString)
         try container.encodeIfPresent(userTitleOverride, forKey: .userTitleOverride)
         try container.encode(placement, forKey: .placement)
         try container.encodeIfPresent(spaceID, forKey: .spaceID)
+        try container.encodeIfPresent(pinnedFolderID, forKey: .pinnedFolderID)
         try container.encodeIfPresent(lastActivityTimestamp, forKey: .lastActivityTimestamp)
     }
 
     // MARK: Private
 
     private enum CodingKeys: String, CodingKey {
+        case id
         case urlString
         case userTitleOverride
         case placement
         case spaceID
+        case pinnedFolderID
         case isPinned
         case lastActivityTimestamp
     }
@@ -134,10 +177,12 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
     init(
         version: Int = currentVersion,
         spaces: [BrowserSpaceSessionSnapshot]? = nil,
+        pinnedTabFolders: [BrowserPinnedTabFolderSessionSnapshot]? = nil,
         tabs: [BrowserTabSessionSnapshotTab]
     ) {
         self.version = version
         self.spaces = spaces
+        self.pinnedTabFolders = pinnedTabFolders
         self.tabs = tabs
     }
 
@@ -152,6 +197,10 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.version = try container.decode(Int.self, forKey: .version)
         self.spaces = try container.decodeIfPresent([BrowserSpaceSessionSnapshot].self, forKey: .spaces)
+        self.pinnedTabFolders = try container.decodeIfPresent(
+            [BrowserPinnedTabFolderSessionSnapshot].self,
+            forKey: .pinnedTabFolders
+        )
 
         if let tabs = try container.decodeIfPresent([BrowserTabSessionSnapshotTab].self, forKey: .tabs) {
             self.tabs = tabs
@@ -164,10 +213,11 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
 
     // MARK: Internal
 
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     let version: Int
     let spaces: [BrowserSpaceSessionSnapshot]?
+    let pinnedTabFolders: [BrowserPinnedTabFolderSessionSnapshot]?
     let tabs: [BrowserTabSessionSnapshotTab]
 
     var tabURLStrings: [String] {
@@ -178,6 +228,7 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(version, forKey: .version)
         try container.encodeIfPresent(spaces, forKey: .spaces)
+        try container.encodeIfPresent(pinnedTabFolders, forKey: .pinnedTabFolders)
         try container.encode(tabs, forKey: .tabs)
         try container.encode(tabURLStrings, forKey: .tabURLStrings)
     }
@@ -187,6 +238,7 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case version
         case spaces
+        case pinnedTabFolders
         case tabs
         case tabURLStrings
     }
@@ -210,6 +262,40 @@ protocol BrowserSessionPreferencesStoring {
     func saveSidebarWidth(_ width: CGFloat)
     func loadTemporaryTabLifetime() -> BrowserTemporaryTabLifetime
     func saveTemporaryTabLifetime(_ lifetime: BrowserTemporaryTabLifetime)
+}
+
+// MARK: - BrowserEphemeralSessionStore
+
+final class BrowserEphemeralSessionStore: BrowserTabSessionSnapshotStoring, BrowserSessionPreferencesStoring {
+    func loadSnapshot() -> BrowserTabSessionSnapshot? {
+        nil
+    }
+
+    func saveSnapshot(_: BrowserTabSessionSnapshot) {}
+
+    func loadSelectedTabIndex(tabCount _: Int) -> Int? {
+        nil
+    }
+
+    func saveSelectedTabIndex(_: Int?) {}
+
+    func loadSelectedSpaceIndex(spaceCount _: Int) -> Int? {
+        nil
+    }
+
+    func saveSelectedSpaceIndex(_: Int?) {}
+
+    func loadSidebarWidth(minimum _: CGFloat, maximum _: CGFloat) -> CGFloat? {
+        nil
+    }
+
+    func saveSidebarWidth(_: CGFloat) {}
+
+    func loadTemporaryTabLifetime() -> BrowserTemporaryTabLifetime {
+        .defaultValue
+    }
+
+    func saveTemporaryTabLifetime(_: BrowserTemporaryTabLifetime) {}
 }
 
 // MARK: - BrowserSessionDiagnostics

@@ -9,32 +9,80 @@ import Testing
 
     let store = BrowserUserPreferencesStore(userDefaults: userDefaults)
     #expect(store.automaticUpdatesEnabled)
+    #expect(store.updateChannel == .stable)
+    #expect(store.appearancePreference == .system)
     #expect(store.warnBeforeQuitting)
     #expect(store.searchEngine == .google)
+    #expect(store.aiSearchProvider == .chatGPT)
     #expect(store.searchEngineSuggestionsEnabled)
     #expect(store.hapticFeedbackEnabled)
     #expect(store.restoreWindowsOnLaunch)
     #expect(store.pictureInPictureEnabled)
+    #expect(store.bookmarksBarVisible)
+    #expect(!store.siteURLToolbarEnabled)
+    #expect(!store.siteToolbarShowsFullURL)
     #expect(store.blurredChromeBackgroundEnabled)
+    #expect(store.batterySaverEnabled)
+    #expect(store.pinnedExtensionIDs.isEmpty)
+    #expect(BrowserSearchEngine.allCases == [
+        .google,
+        .microsoftBing,
+        .yahoo,
+        .duckDuckGo,
+        .ecosia,
+        .brave,
+        .qwant,
+        .yandex,
+        .baidu,
+    ])
+    #expect(BrowserAISearchProvider.allCases == [.chatGPT, .claude, .gemini, .perplexity, .deepSeek])
 
     store.automaticUpdatesEnabled = false
+    store.updateChannel = .beta
+    store.appearancePreference = .dark
     store.warnBeforeQuitting = false
     store.searchEngine = .yandex
+    store.aiSearchProvider = .deepSeek
     store.searchEngineSuggestionsEnabled = false
     store.hapticFeedbackEnabled = false
     store.restoreWindowsOnLaunch = false
     store.pictureInPictureEnabled = false
+    store.bookmarksBarVisible = false
+    store.siteURLToolbarEnabled = true
+    store.siteToolbarShowsFullURL = true
     store.blurredChromeBackgroundEnabled = false
+    store.batterySaverEnabled = false
+    store.pinnedExtensionIDs = ["reader", "clipper"]
 
     let reloadedStore = BrowserUserPreferencesStore(userDefaults: userDefaults)
     #expect(!reloadedStore.automaticUpdatesEnabled)
+    #expect(reloadedStore.updateChannel == .beta)
+    #expect(reloadedStore.appearancePreference == .dark)
     #expect(!reloadedStore.warnBeforeQuitting)
     #expect(reloadedStore.searchEngine == .yandex)
+    #expect(reloadedStore.aiSearchProvider == .deepSeek)
     #expect(!reloadedStore.searchEngineSuggestionsEnabled)
     #expect(!reloadedStore.hapticFeedbackEnabled)
     #expect(!reloadedStore.restoreWindowsOnLaunch)
     #expect(!reloadedStore.pictureInPictureEnabled)
+    #expect(!reloadedStore.bookmarksBarVisible)
+    #expect(reloadedStore.siteURLToolbarEnabled)
+    #expect(reloadedStore.siteToolbarShowsFullURL)
     #expect(!reloadedStore.blurredChromeBackgroundEnabled)
+    #expect(!reloadedStore.batterySaverEnabled)
+    #expect(reloadedStore.pinnedExtensionIDs == ["reader", "clipper"])
+}
+
+@Test func legacyPerplexitySearchEnginePreferenceMigratesToAIProvider() throws {
+    let suiteName = "TheBrowserTests.\(UUID().uuidString)"
+    let userDefaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+    userDefaults.set("perplexity", forKey: "browser.settings.searchEngine")
+
+    let store = BrowserUserPreferencesStore(userDefaults: userDefaults)
+    #expect(store.searchEngine == .google)
+    #expect(store.aiSearchProvider == .perplexity)
 }
 
 @Test func shortcutOverridesPersistBlockConflictsAndReset() throws {
@@ -83,8 +131,19 @@ import Testing
     #expect(command == .newTab)
 }
 
+@Test func layoutIndependentBridgeRoutesNewIncognitoWindowShortcut() {
+    let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 45,
+        modifierFlags: [.command, .shift],
+        charactersIgnoringModifiers: "т"
+    )
+
+    #expect(command == .newIncognitoWindow)
+}
+
 @Test func settingsRoutesMatchChromiumButtonDestinations() {
     #expect(BrowserInternalPageRouting.historyURL.absoluteString == "tb://history")
+    #expect(BrowserInternalPageRouting.bookmarksURL.absoluteString == "tb://bookmarks/")
     #expect(BrowserSettingsRoute.searchEnginesURL.absoluteString == "tb://settings/searchEngines")
     #expect(BrowserSettingsRoute.privacyURL.absoluteString == "tb://settings/privacy")
     #expect(BrowserSettingsRoute.passwordManagerURL.absoluteString == "tb://password-manager/passwords")

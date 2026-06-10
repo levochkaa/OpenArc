@@ -33,7 +33,7 @@ struct BrowserWindowControlsView: NSViewRepresentable {
 final class BrowserWindowControlsHostView: NSView {
     // MARK: Lifecycle
 
-    deinit {
+    isolated deinit {
         updateSystemButtons(hidden: false, for: observedWindow)
         stopObservingWindow()
     }
@@ -434,8 +434,16 @@ final class BrowserWindowControlsHostView: NSView {
         }
     }
 
-    @objc private func closeWindow(_ sender: Any?) {
-        window?.performClose(sender)
+    @objc private func closeWindow(_: Any?) {
+        guard let window else {
+            return
+        }
+
+        if window.delegate?.windowShouldClose?(window) == false {
+            return
+        }
+
+        window.close()
     }
 
     @objc private func miniaturizeWindow(_ sender: Any?) {

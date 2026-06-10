@@ -17,7 +17,7 @@ struct BrowserAboutInfo {
     let copyrightText: String
     let icon: NSImage
 
-    static func current(bundle: Bundle = .main) -> BrowserAboutInfo {
+    @MainActor static func current(bundle: Bundle = .main) -> BrowserAboutInfo {
         let applicationName = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? BrowserStrings.applicationName

@@ -33,6 +33,7 @@ import Foundation
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
+    var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)?
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
     private(set) var selectedTabIDs = [String]()
@@ -40,6 +41,7 @@ import Foundation
     private(set) var activeTabNavigationURLStrings = [String]()
     private(set) var closedTabRequests = [CloseTabRequest]()
     private(set) var saveSuggestedNames = [String?]()
+    private(set) var captureFullPageToPasteboardCount = 0
     private(set) var pasteAndMatchStyleCount = 0
     private(set) var findRequests = [FindRequest]()
     private(set) var stopFindingClearSelectionRequests = [Bool]()
@@ -104,6 +106,10 @@ import Foundation
         saveSuggestedNames.append(suggestedName)
     }
 
+    func captureFullPageActiveTabToPasteboard() {
+        captureFullPageToPasteboardCount += 1
+    }
+
     func pasteAndMatchStyleActiveTab() {
         pasteAndMatchStyleCount += 1
     }
@@ -154,6 +160,10 @@ import Foundation
 
     func emitFindResult(id: String, matchCount: Int, activeMatchOrdinal: Int = 0, finalUpdate: Bool = true) {
         onFindResultChanged?(id, matchCount, activeMatchOrdinal, finalUpdate)
+    }
+
+    func emitDownloadUpdate(_ update: BrowserDownloadUpdate) {
+        onDownloadUpdated?(update)
     }
 
     // MARK: Private
@@ -277,7 +287,7 @@ final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
 
 // MARK: - FakeSuggestionProvider
 
-final class FakeSuggestionProvider: BrowserSuggestionProviding {
+final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Sendable {
     // MARK: Lifecycle
 
     init(suggestionsByQuery: [String: [String]] = [:]) {
@@ -307,11 +317,18 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding {
     // MARK: Internal
 
     var extensions: [BrowserExtension]
+    var actionResults = [String: BrowserExtensionActionResult]()
+    private(set) var actionRequests = [String]()
     private(set) var enabledStateRequests = [(id: String, isEnabled: Bool)]()
     private(set) var removedExtensionIDs = [String]()
 
     func installedExtensions() -> [BrowserExtension] {
         extensions
+    }
+
+    func runAction(id: String) -> BrowserExtensionActionResult {
+        actionRequests.append(id)
+        return actionResults[id] ?? .failed
     }
 
     func setExtension(id: String, isEnabled: Bool) -> Bool {
@@ -335,4 +352,79 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding {
         extensions.removeAll { $0.id == id }
         return true
     }
+}
+
+// MARK: - FakeBrowserExtensionSidePanelDriver
+
+@MainActor final class FakeBrowserExtensionSidePanelDriver: BrowserExtensionSidePanelDriving {
+    // MARK: Internal
+
+    let hostView = NSView(frame: .zero)
+    var onPanelClosed: ((String) -> Void)?
+
+    private(set) var openedURLStrings = [String]()
+    private(set) var closedPanelIDs = [String]()
+    private(set) var closeAllPanelsCount = 0
+
+    func openPanel(urlString: String) -> String {
+        openedURLStrings.append(urlString)
+        nextPanelNumber += 1
+        let panelID = "panel-\(nextPanelNumber)"
+        activePanelID = panelID
+        return panelID
+    }
+
+    func closePanel(id: String) {
+        closedPanelIDs.append(id)
+        if activePanelID == id {
+            activePanelID = nil
+        }
+    }
+
+    func closeAllPanels() {
+        closeAllPanelsCount += 1
+        activePanelID = nil
+    }
+
+    func emitClose(id: String) {
+        if activePanelID == id {
+            activePanelID = nil
+        }
+        onPanelClosed?(id)
+    }
+
+    // MARK: Private
+
+    private var nextPanelNumber = 0
+    private var activePanelID: String?
+}
+
+// MARK: - FakeBrowserExtensionActionPopupDriver
+
+@MainActor final class FakeBrowserExtensionActionPopupDriver: BrowserExtensionActionPopupDriving {
+    // MARK: Internal
+
+    let hostView = NSView(frame: .zero)
+
+    private(set) var openedURLStrings = [String]()
+    private(set) var closedPopupIDs = [String]()
+    private(set) var closeAllPopupsCount = 0
+
+    func openPopup(urlString: String) -> String {
+        openedURLStrings.append(urlString)
+        nextPopupNumber += 1
+        return "popup-\(nextPopupNumber)"
+    }
+
+    func closePopup(id: String) {
+        closedPopupIDs.append(id)
+    }
+
+    func closeAllPopups() {
+        closeAllPopupsCount += 1
+    }
+
+    // MARK: Private
+
+    private var nextPopupNumber = 0
 }

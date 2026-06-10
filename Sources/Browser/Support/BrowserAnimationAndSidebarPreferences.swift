@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - AnimationCompletionObserverModifier
 
-struct AnimationCompletionObserverModifier<Value: VectorArithmetic>: AnimatableModifier {
+struct AnimationCompletionObserverModifier<Value: VectorArithmetic>: @MainActor AnimatableModifier {
     // MARK: Lifecycle
 
     init(observedValue: Value, completion: @escaping (Value) -> Void) {
@@ -53,7 +53,9 @@ extension View {
         tabID: String,
         section: BrowserSidebarTabSection,
         sectionIndex: Int,
-        spaceID: String?
+        spaceID: String?,
+        pinnedFolderID: String? = nil,
+        folderChildIndex: Int? = nil
     ) -> some View {
         background {
             GeometryReader { proxy in
@@ -65,6 +67,8 @@ extension View {
                             section: section,
                             sectionIndex: sectionIndex,
                             spaceID: spaceID,
+                            pinnedFolderID: pinnedFolderID,
+                            folderChildIndex: folderChildIndex,
                             frame: proxy.frame(
                                 in: .named(BrowserChromeLayout.sidebarTabDragCoordinateSpaceName)
                             )
@@ -129,6 +133,34 @@ extension View {
         }
     }
 
+    func browserSidebarPinnedFolderRowFrame(
+        folderID: String,
+        firstSectionIndex: Int,
+        afterSectionIndex: Int,
+        childCount: Int,
+        spaceID: String?
+    ) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: BrowserSidebarPinnedFolderRowFramePreferenceKey.self,
+                    value: [
+                        BrowserSidebarPinnedFolderRowFrame(
+                            folderID: folderID,
+                            firstSectionIndex: firstSectionIndex,
+                            afterSectionIndex: afterSectionIndex,
+                            childCount: childCount,
+                            spaceID: spaceID,
+                            frame: proxy.frame(
+                                in: .named(BrowserChromeLayout.sidebarTabDragCoordinateSpaceName)
+                            )
+                        ),
+                    ]
+                )
+            }
+        }
+    }
+
     @ViewBuilder func browserWindowDragGesture(isEnabled: Bool = true) -> some View {
         if isEnabled {
             contentShape(Rectangle())
@@ -143,7 +175,7 @@ extension View {
 // MARK: - BrowserSidebarAppTabFramePreferenceKey
 
 struct BrowserSidebarAppTabFramePreferenceKey: PreferenceKey {
-    static var defaultValue = [String: BrowserSidebarAppTabFrame]()
+    static let defaultValue = [String: BrowserSidebarAppTabFrame]()
 
     static func reduce(
         value: inout [String: BrowserSidebarAppTabFrame],
@@ -156,7 +188,7 @@ struct BrowserSidebarAppTabFramePreferenceKey: PreferenceKey {
 // MARK: - BrowserSidebarAppTabsContainerFramePreferenceKey
 
 struct BrowserSidebarAppTabsContainerFramePreferenceKey: PreferenceKey {
-    static var defaultValue: CGRect?
+    static let defaultValue: CGRect? = nil
 
     static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
         value = nextValue() ?? value
@@ -166,7 +198,7 @@ struct BrowserSidebarAppTabsContainerFramePreferenceKey: PreferenceKey {
 // MARK: - BrowserSidebarTabRowFramePreferenceKey
 
 struct BrowserSidebarTabRowFramePreferenceKey: PreferenceKey {
-    static var defaultValue = [String: BrowserSidebarTabRowFrame]()
+    static let defaultValue = [String: BrowserSidebarTabRowFrame]()
 
     static func reduce(
         value: inout [String: BrowserSidebarTabRowFrame],
@@ -179,11 +211,24 @@ struct BrowserSidebarTabRowFramePreferenceKey: PreferenceKey {
 // MARK: - BrowserSidebarEmptySectionFramePreferenceKey
 
 struct BrowserSidebarEmptySectionFramePreferenceKey: PreferenceKey {
-    static var defaultValue = [BrowserSidebarEmptySectionFrame]()
+    static let defaultValue = [BrowserSidebarEmptySectionFrame]()
 
     static func reduce(
         value: inout [BrowserSidebarEmptySectionFrame],
         nextValue: () -> [BrowserSidebarEmptySectionFrame]
+    ) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+// MARK: - BrowserSidebarPinnedFolderRowFramePreferenceKey
+
+struct BrowserSidebarPinnedFolderRowFramePreferenceKey: PreferenceKey {
+    static let defaultValue = [BrowserSidebarPinnedFolderRowFrame]()
+
+    static func reduce(
+        value: inout [BrowserSidebarPinnedFolderRowFrame],
+        nextValue: () -> [BrowserSidebarPinnedFolderRowFrame]
     ) {
         value.append(contentsOf: nextValue())
     }

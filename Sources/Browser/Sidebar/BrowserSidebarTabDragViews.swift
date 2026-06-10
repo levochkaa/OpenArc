@@ -1,11 +1,11 @@
-import AppKit
+@preconcurrency import AppKit
 import QuartzCore
 import SwiftUI
 
 // MARK: - BrowserSidebarTabDragEventMonitor
 
 struct BrowserSidebarTabDragEventMonitor: NSViewRepresentable {
-    final class Coordinator {
+    final class Coordinator: @unchecked Sendable {
         // MARK: Internal
 
         var localMonitor: Any?
@@ -48,22 +48,31 @@ struct BrowserSidebarTabDragEventMonitor: NSViewRepresentable {
                 .leftMouseDragged,
                 .leftMouseUp,
             ]) { [weak self] event in
-                self?.handle(event)
+                let eventType = event.type
+                let locationInWindow = event.locationInWindow
+                let windowNumber = event.windowNumber
+                MainActor.assumeIsolated {
+                    self?.handle(type: eventType, locationInWindow: locationInWindow, windowNumber: windowNumber)
+                }
                 return event
             }
         }
 
-        private func handle(_ event: NSEvent) {
+        @MainActor private func handle(
+            type: NSEvent.EventType,
+            locationInWindow: CGPoint,
+            windowNumber: Int
+        ) {
             guard
                 let view,
-                event.window === view.window,
+                view.window?.windowNumber == windowNumber,
                 let tabID
             else {
                 return
             }
 
-            let location = view.convert(event.locationInWindow, from: nil)
-            switch event.type {
+            let location = view.convert(locationInWindow, from: nil)
+            switch type {
             case .leftMouseDragged:
                 onDragged?(tabID, location)
             case .leftMouseUp:

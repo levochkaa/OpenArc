@@ -36,6 +36,7 @@
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/common/webui_url_constants.h"
 #include "components/input/native_web_keyboard_event.h"
+#include "components/password_manager/content/common/web_ui_constants.h"
 #include "components/printing/browser/print_composite_client.h"
 #include "components/zoom/page_zoom.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -65,6 +66,7 @@ static constexpr base::TimeDelta kRecentlyAudibleTimeout = base::Seconds(2);
 // functionality in CEF.
 const char* kAllowedWebUIHosts[] = {
     chrome::kChromeUIAccessibilityHost,
+    chrome::kChromeUIBookmarksHost,
     content::kChromeUIBlobInternalsHost,
     chrome::kChromeUIChromeURLsHost,
     chrome::kChromeUICreditsHost,
@@ -79,6 +81,7 @@ const char* kAllowedWebUIHosts[] = {
     chrome::kChromeUINetInternalsHost,
     content::kChromeUINetworkErrorHost,
     content::kChromeUINetworkErrorsListingHost,
+    password_manager::kChromeUIPasswordManagerHost,
     chrome::kChromeUIPrintHost,
     content::kChromeUIProcessInternalsHost,
     content::kChromeUIResourcesHost,

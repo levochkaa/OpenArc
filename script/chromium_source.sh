@@ -12,17 +12,63 @@ SOURCE_ROOT="$THIRD_PARTY_DIR/source"
 DEPOT_TOOLS_DIR="$THIRD_PARTY_DIR/depot_tools"
 AUTOMATE_DIR="$THIRD_PARTY_DIR/automate"
 AUTOMATE_SCRIPT="$AUTOMATE_DIR/automate-git.py"
-CEF_BRANCH="${CEF_BRANCH:-7778}"
-DEFAULT_CHROMIUM_CHECKOUT="refs/tags/148.0.7778.96"
-CHROMIUM_CHECKOUT="${THEBROWSER_CHROMIUM_CHECKOUT:-$DEFAULT_CHROMIUM_CHECKOUT}"
-GCLIENT_JOBS="${GCLIENT_JOBS:-4}"
-CHROMIUM_FORK_MARKER=".thebrowser-chromium-fork"
 EXPORT_ROOT="$THIRD_PARTY_DIR/export"
+EXPORT_VERSION_HEADER="$EXPORT_ROOT/include/cef_version.h"
 CHROMIUM_CHECKOUT_ROOT="$SOURCE_ROOT/chromium"
 CHROMIUM_SRC="$SOURCE_ROOT/chromium/src"
 CEF_SRC="$CHROMIUM_SRC/cef"
 BINARY_DISTRIB_DIR="$CEF_SRC/binary_distrib"
 CHROMIUM_SRC_OVERRIDES="$ROOT_DIR/Chromium/chromium_src"
+CHROMIUM_FORK_MARKER=".thebrowser-chromium-fork"
+FALLBACK_CEF_CHECKOUT="0d9d52a65c74c729e568ebf8506141a1e754eaeb"
+FALLBACK_CHROMIUM_CHECKOUT="refs/tags/148.0.7778.180"
+DEFAULT_CEF_BRANCH="7778"
+
+export_cef_commit_hash() {
+  if [[ ! -f "$EXPORT_VERSION_HEADER" ]]; then
+    return
+  fi
+
+  sed -n 's/^#define CEF_COMMIT_HASH "\([^"]*\)".*/\1/p' \
+    "$EXPORT_VERSION_HEADER" \
+    | head -n 1
+}
+
+export_chromium_checkout() {
+  if [[ ! -f "$EXPORT_VERSION_HEADER" ]]; then
+    return
+  fi
+
+  local major
+  local minor
+  local build
+  local patch
+  major="$(sed -n 's/^#define CHROME_VERSION_MAJOR \([0-9][0-9]*\).*/\1/p' "$EXPORT_VERSION_HEADER" | head -n 1)"
+  minor="$(sed -n 's/^#define CHROME_VERSION_MINOR \([0-9][0-9]*\).*/\1/p' "$EXPORT_VERSION_HEADER" | head -n 1)"
+  build="$(sed -n 's/^#define CHROME_VERSION_BUILD \([0-9][0-9]*\).*/\1/p' "$EXPORT_VERSION_HEADER" | head -n 1)"
+  patch="$(sed -n 's/^#define CHROME_VERSION_PATCH \([0-9][0-9]*\).*/\1/p' "$EXPORT_VERSION_HEADER" | head -n 1)"
+
+  if [[ -n "$major" && -n "$minor" && -n "$build" && -n "$patch" ]]; then
+    printf 'refs/tags/%s.%s.%s.%s\n' "$major" "$minor" "$build" "$patch"
+  fi
+}
+
+EXPLICIT_CEF_BRANCH="${CEF_BRANCH+x}"
+EXPLICIT_CHROMIUM_CHECKOUT="${THEBROWSER_CHROMIUM_CHECKOUT+x}"
+CEF_BRANCH="${CEF_BRANCH:-$DEFAULT_CEF_BRANCH}"
+DEFAULT_CEF_CHECKOUT="$(export_cef_commit_hash)"
+DEFAULT_CEF_CHECKOUT="${DEFAULT_CEF_CHECKOUT:-$FALLBACK_CEF_CHECKOUT}"
+DEFAULT_CHROMIUM_CHECKOUT="$(export_chromium_checkout)"
+DEFAULT_CHROMIUM_CHECKOUT="${DEFAULT_CHROMIUM_CHECKOUT:-$FALLBACK_CHROMIUM_CHECKOUT}"
+CEF_CHECKOUT="${THEBROWSER_CEF_CHECKOUT:-}"
+if [[ -z "$CEF_CHECKOUT" && -z "$EXPLICIT_CEF_BRANCH" ]]; then
+  CEF_CHECKOUT="$DEFAULT_CEF_CHECKOUT"
+fi
+CHROMIUM_CHECKOUT="${THEBROWSER_CHROMIUM_CHECKOUT:-}"
+if [[ -z "$CHROMIUM_CHECKOUT" && -z "$EXPLICIT_CEF_BRANCH" ]]; then
+  CHROMIUM_CHECKOUT="$DEFAULT_CHROMIUM_CHECKOUT"
+fi
+GCLIENT_JOBS="${GCLIENT_JOBS:-4}"
 
 case "$(uname -m)" in
   arm64)
@@ -56,22 +102,40 @@ ensure_bootstrap_tools() {
   fi
 }
 
+print_source_plan() {
+  local cef_ref="${CEF_CHECKOUT:-$CEF_BRANCH}"
+  local chromium_ref="${CHROMIUM_CHECKOUT:-CEF compatibility file}"
+  echo "Using CEF checkout: $cef_ref"
+  echo "Using Chromium checkout: $chromium_ref"
+}
+
 checkout_source() {
   ensure_bootstrap_tools
   mkdir -p "$SOURCE_ROOT"
 
-  PATH="$DEPOT_TOOLS_DIR:$PATH" python3 "$AUTOMATE_SCRIPT" \
+  local automate_args=(
     --download-dir="$SOURCE_ROOT" \
     --depot-tools-dir="$DEPOT_TOOLS_DIR" \
     --branch="$CEF_BRANCH" \
     --force-config \
-    --chromium-checkout="$CHROMIUM_CHECKOUT" \
     --no-chromium-history \
     --no-distrib \
     --no-build \
     "$CEF_ARCH_ARG"
+  )
+  if [[ -n "$CEF_CHECKOUT" ]]; then
+    automate_args+=(--checkout="$CEF_CHECKOUT")
+  fi
+  if [[ -n "$CHROMIUM_CHECKOUT" ]]; then
+    automate_args+=(--chromium-checkout="$CHROMIUM_CHECKOUT")
+  fi
 
-  write_cef_chromium_compatibility "$CHROMIUM_CHECKOUT"
+  print_source_plan
+  PATH="$DEPOT_TOOLS_DIR:$PATH" python3 "$AUTOMATE_SCRIPT" "${automate_args[@]}"
+
+  if [[ -n "$EXPLICIT_CHROMIUM_CHECKOUT" ]]; then
+    write_cef_chromium_compatibility "$CHROMIUM_CHECKOUT"
+  fi
 }
 
 checkout_cef_source_revision() {
@@ -79,15 +143,34 @@ checkout_cef_source_revision() {
     return
   fi
 
+  local cef_ref="${CEF_CHECKOUT:-$CEF_BRANCH}"
   (
     cd "$SOURCE_ROOT/cef"
     git reset --hard
     git clean -fd
-    git fetch origin "$CEF_BRANCH" --depth=1
-    git checkout --force FETCH_HEAD
+
+    local current_head
+    local target_commit
+    current_head="$(git rev-parse HEAD)"
+    target_commit="$(git rev-parse --verify --quiet "$cef_ref^{commit}" || true)"
+    if [[ -n "$target_commit" && "$current_head" == "$target_commit" ]]; then
+      echo "CEF checkout already at $cef_ref ($current_head); skipping fetch."
+      return
+    fi
+
+    if git fetch origin "$cef_ref" --depth=1; then
+      git checkout --force FETCH_HEAD
+    elif [[ -n "$CEF_CHECKOUT" ]]; then
+      git fetch origin "$CEF_BRANCH" --depth=200
+      git checkout --force "$CEF_CHECKOUT"
+    else
+      exit 1
+    fi
   )
 
-  write_cef_chromium_compatibility "$CHROMIUM_CHECKOUT"
+  if [[ -n "$EXPLICIT_CHROMIUM_CHECKOUT" ]]; then
+    write_cef_chromium_compatibility "$CHROMIUM_CHECKOUT"
+  fi
 }
 
 clean_interrupted_chromium_checkout() {
@@ -176,6 +259,16 @@ checkout_compatible_chromium_revision() {
   (
     cd "$CHROMIUM_SRC"
     git reset --hard
+
+    local current_head
+    local target_commit
+    current_head="$(git rev-parse HEAD)"
+    target_commit="$(git rev-parse --verify --quiet "$chromium_checkout^{commit}" || true)"
+    if [[ -n "$target_commit" && "$current_head" == "$target_commit" ]]; then
+      echo "Chromium checkout already at $chromium_checkout ($current_head); skipping fetch."
+      return
+    fi
+
     git fetch origin "$chromium_checkout" --no-tags --depth=1
     git checkout --force FETCH_HEAD
   )
@@ -232,12 +325,16 @@ resume_source_checkout() {
   local chromium_checkout
   local chromium_version
 
+  if [[ -z "$CHROMIUM_CHECKOUT" ]]; then
+    CHROMIUM_CHECKOUT="$(chromium_compat_checkout)"
+  fi
   chromium_checkout="$(chromium_compat_checkout)"
   if [[ -z "$chromium_checkout" ]]; then
     echo "error: failed to read chromium_checkout from $SOURCE_ROOT/cef/CHROMIUM_BUILD_COMPATIBILITY.txt" >&2
     exit 1
   fi
 
+  print_source_plan
   chromium_version="$(chromium_compat_version "$chromium_checkout")"
   write_chromium_gclient_config "$chromium_version"
   checkout_compatible_chromium_revision "$chromium_checkout"
@@ -267,7 +364,9 @@ resume_source_checkout() {
     rsync -a --delete "$SOURCE_ROOT/cef/" "$CEF_SRC/"
   fi
 
-  rm -rf "$CHROMIUM_SRC/out"
+  if [[ "${THEBROWSER_CEF_CLOBBER_OUT:-0}" == "1" ]]; then
+    rm -rf "$CHROMIUM_SRC/out"
+  fi
   mkdir -p "$CHROMIUM_SRC/out"
   printf "{\n  'branch': '%s',\n}\n" "$CEF_BRANCH" > "$CHROMIUM_SRC/out/cef.branch"
 }
@@ -485,8 +584,8 @@ configurations_from_args() {
 
 package_all() {
   checkout_source
-  apply_chromium_src_overrides
   create_projects
+  apply_chromium_src_overrides
 
   local configuration
   while IFS= read -r configuration; do
@@ -549,8 +648,12 @@ Usage:
   ./script/chromium_source.sh root
 
 Defaults:
-  CEF_BRANCH=7778
-  THEBROWSER_CHROMIUM_CHECKOUT=refs/tags/148.0.7778.96
+  CEF checkout comes from ThirdParty/cef/export/include/cef_version.h when
+  available, then falls back to 0d9d52a65c74c729e568ebf8506141a1e754eaeb.
+  Chromium checkout comes from the same exported cef_version.h when available,
+  then falls back to refs/tags/148.0.7778.180.
+  Existing Chromium out/ build directories are preserved by default. Set
+  THEBROWSER_CEF_CLOBBER_OUT=1 only when an explicit full CEF rebuild is wanted.
   GCLIENT_JOBS=4
   Source checkout: ThirdParty/cef/source
   Chromium checkout mode: --no-chromium-history
@@ -560,8 +663,12 @@ Defaults:
 
 With no configurations, build/package uses both Debug and Release. Use package
 Debug for a development-only CEF export without Release artifacts, or package
-Debug Release for a full export. THEBROWSER_CHROMIUM_CHECKOUT can point at a
-Chromium tag or branch ref when intentionally moving the fork base.
+Debug Release for a full export. Set THEBROWSER_CEF_CHECKOUT and
+THEBROWSER_CHROMIUM_CHECKOUT when intentionally moving the fork base. Setting
+CEF_BRANCH without THEBROWSER_CEF_CHECKOUT intentionally follows that branch and
+uses its compatibility file. package runs CEF patch/project generation before
+applying Chromium/chromium_src overrides so local overrides do not break CEF
+patch application.
 EOF
     ;;
   *)

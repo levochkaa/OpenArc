@@ -1,91 +1,7 @@
 import AppKit
 import Combine
+import Settings
 import SwiftUI
-
-// MARK: - BrowserWindowContentContainerView
-
-private final class BrowserWindowContentContainerView: NSView {
-    // MARK: Lifecycle
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        updateCornerRadius()
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    // MARK: Internal
-
-    static let defaultCornerRadius: CGFloat = BrowserWindowGeometry.windowCornerRadius
-
-    var cornerRadius: CGFloat = defaultCornerRadius {
-        didSet {
-            guard cornerRadius != oldValue else {
-                return
-            }
-
-            updateCornerRadius()
-        }
-    }
-
-    // MARK: Private
-
-    private func updateCornerRadius() {
-        layer?.cornerRadius = cornerRadius
-    }
-}
-
-// MARK: - BrowserMainWindow
-
-private final class BrowserMainWindow: NSWindow {
-    // MARK: Internal
-
-    override var canBecomeKey: Bool {
-        true
-    }
-
-    override var canBecomeMain: Bool {
-        true
-    }
-
-    override var styleMask: NSWindow.StyleMask {
-        didSet {
-            updateWindowShape()
-        }
-    }
-
-    override var contentView: NSView? {
-        didSet {
-            updateWindowShape()
-        }
-    }
-
-    func configureBrowserChrome() {
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        collectionBehavior.insert(.fullScreenPrimary)
-        updateWindowShape()
-    }
-
-    // MARK: Private
-
-    private func updateWindowShape() {
-        guard let containerView = contentView as? BrowserWindowContentContainerView else {
-            return
-        }
-
-        containerView.cornerRadius = styleMask.contains(.fullScreen)
-            ? 0
-            : BrowserWindowContentContainerView.defaultCornerRadius
-    }
-}
 
 // MARK: - BrowserApplicationController
 
@@ -94,7 +10,7 @@ private final class BrowserMainWindow: NSWindow {
 NSUserInterfaceValidations {
     // MARK: Lifecycle
 
-    deinit {
+    isolated deinit {
         guard let layoutIndependentKeyMonitor else {
             return
         }
@@ -105,14 +21,20 @@ NSUserInterfaceValidations {
     // MARK: Public
 
     public func createApplication() {
+        BrowserTelemetry.startIfConfigured()
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
+        configureUpdateControllerIfNeeded()
         installMainMenu(for: app)
         observeShortcutStore()
+        observeAppearancePreference()
         installLayoutIndependentKeyMonitor()
+        startBatterySaverController()
         app.delegate = self
         createMainWindow()
         app.finishLaunching()
+        updateController?.start()
+        BrowserTelemetry.captureUsage(.appBecameActive)
         app.activate(ignoringOtherApps: true)
     }
 
@@ -126,7 +48,10 @@ NSUserInterfaceValidations {
     }
 
     public func applicationDidBecomeActive(_: Notification) {
-        chromeModel?.handleApplicationDidBecomeActive()
+        for chromeModel in allChromeModels {
+            chromeModel.handleApplicationDidBecomeActive()
+        }
+        BrowserTelemetry.captureUsage(.appBecameActive)
         refreshSetAsDefaultBrowserMenuItem()
     }
 
@@ -140,14 +65,49 @@ NSUserInterfaceValidations {
         true
     }
 
+    public func windowWillClose(_ notification: Notification) {
+        guard let closedWindow = notification.object as? NSWindow else {
+            return
+        }
+
+        if closedWindow === settingsWindowController?.window {
+            settingsWindowController = nil
+            return
+        }
+
+        if closedWindow === aboutWindow {
+            aboutWindow = nil
+            return
+        }
+
+        if let index = profileWindowSessions.firstIndex(where: { $0.window === closedWindow }) {
+            let session = profileWindowSessions.remove(at: index)
+            session.chromeModel.prepareForTermination()
+            updateProfilePresentationForOpenWindows()
+            return
+        }
+
+        guard let index = incognitoWindowSessions.firstIndex(where: { $0.window === closedWindow }) else {
+            return
+        }
+
+        let session = incognitoWindowSessions.remove(at: index)
+        session.chromeModel.prepareForTermination()
+    }
+
     public func handleBrowserContextInitialized() {
         hasReceivedBrowserContext = true
-        chromeModel?.handleContextReady()
+        for chromeModel in allChromeModels {
+            chromeModel.handleContextReady()
+        }
         openPendingNavigationURLsIfPossible()
     }
 
     public func handleApplicationWillTerminate() {
-        chromeModel?.prepareForTermination()
+        batterySaverController?.stop()
+        for chromeModel in allChromeModels {
+            chromeModel.prepareForTermination()
+        }
     }
 
     public func quitApplication(_ sender: Any?) {
@@ -160,6 +120,10 @@ NSUserInterfaceValidations {
 
     public func openAbout(_: Any?) {
         presentAboutWindow()
+    }
+
+    public func checkForUpdates(_ sender: Any?) {
+        updateController?.checkForUpdates(sender)
     }
 
     public func setAsDefaultBrowser(_: Any?) {
@@ -186,39 +150,49 @@ NSUserInterfaceValidations {
     }
 
     public func toggleSidebar(_: Any?) {
-        chromeModel?.toggleSidebar()
+        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
+            activeChromeModel?.toggleSidebar()
+        }
     }
 
     public func createNewTab(_: Any?) {
-        chromeModel?.toggleCommandBar()
+        activeChromeModel?.toggleCommandBar()
+    }
+
+    public func createNewIncognitoWindow(_: Any?) {
+        createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow)
     }
 
     public func openHistory(_: Any?) {
         openBrowserInternalPage(BrowserInternalPageRouting.historyURL)
     }
 
+    public func toggleCurrentPageBookmark(_: Any?) {
+        activeChromeModel?.toggleSelectedTabBookmark()
+    }
+
     public func archiveCurrentTab(_: Any?) {
-        chromeModel?.archiveSelectedTab()
+        activeChromeModel?.archiveSelectedTab()
     }
 
     public func goBack(_: Any?) {
-        chromeModel?.goBack()
+        activeChromeModel?.goBack()
     }
 
     public func goForward(_: Any?) {
-        chromeModel?.goForward()
+        activeChromeModel?.goForward()
     }
 
     public func reloadCurrentTab(_: Any?) {
-        chromeModel?.reloadCurrentTab()
+        activeChromeModel?.reloadCurrentTab()
     }
 
     public func forceReloadCurrentTab(_: Any?) {
-        chromeModel?.forceReloadCurrentTab()
+        activeChromeModel?.forceReloadCurrentTab()
     }
 
     public func saveCurrentPage(_: Any?) {
-        chromeModel?.saveCurrentPage()
+        activeChromeModel?.saveCurrentPage()
     }
 
     public func pasteAndMatchStyle(_ sender: Any?) {
@@ -226,25 +200,25 @@ NSUserInterfaceValidations {
     }
 
     public func printCurrentPage(_: Any?) {
-        chromeModel?.printCurrentPage()
+        activeChromeModel?.printCurrentPage()
     }
 
     public func copySelectedTabLink(_: Any?) {
-        chromeModel?.copySelectedTabLink()
+        activeChromeModel?.copySelectedTabLink()
     }
 
     public func findInPage(_: Any?) {
-        _ = chromeModel?.presentFindInPage()
+        _ = activeChromeModel?.presentFindInPage()
     }
 
     public func findAndReplace(_: Any?) {}
 
     public func findNextInPage(_: Any?) {
-        chromeModel?.findNextInPage()
+        activeChromeModel?.findNextInPage()
     }
 
     public func findPreviousInPage(_: Any?) {
-        chromeModel?.findPreviousInPage()
+        activeChromeModel?.findPreviousInPage()
     }
 
     public func useSelectionToFind(_: Any?) {}
@@ -252,7 +226,7 @@ NSUserInterfaceValidations {
     public func jumpToSelection(_: Any?) {}
 
     public func clearTemporaryTabs(_: Any?) {
-        chromeModel?.clearTemporaryTabs()
+        activeChromeModel?.clearTemporaryTabs()
     }
 
     public func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
@@ -262,35 +236,39 @@ NSUserInterfaceValidations {
 
         switch action {
         case #selector(createNewTab(_:)):
-            return chromeModel?.canCreateTab ?? false
+            return activeChromeModel?.canCreateTab ?? false
+        case #selector(createNewIncognitoWindow(_:)):
+            return !isTerminationRequested
         case #selector(openHistory(_:)):
-            return chromeModel != nil && !isTerminationRequested
+            return activeChromeModel != nil && !isTerminationRequested
         case #selector(archiveCurrentTab(_:)):
-            return chromeModel?.canArchiveSelectedTab ?? false
+            return activeChromeModel?.canArchiveSelectedTab ?? false
         case #selector(goBack(_:)):
-            return chromeModel?.canGoBack ?? false
+            return activeChromeModel?.canGoBack ?? false
         case #selector(goForward(_:)):
-            return chromeModel?.canGoForward ?? false
+            return activeChromeModel?.canGoForward ?? false
         case #selector(forceReloadCurrentTab(_:)), #selector(reloadCurrentTab(_:)):
-            return chromeModel?.canReload ?? false
+            return activeChromeModel?.canReload ?? false
         case #selector(saveCurrentPage(_:)):
-            return chromeModel?.canSavePage ?? false
+            return activeChromeModel?.canSavePage ?? false
         case #selector(pasteAndMatchStyle(_:)):
-            return chromeModel?.canPasteAndMatchStyle ?? true
+            return activeChromeModel?.canPasteAndMatchStyle ?? true
         case #selector(printCurrentPage(_:)):
-            return chromeModel?.canPrintPage ?? false
+            return activeChromeModel?.canPrintPage ?? false
         case #selector(copySelectedTabLink(_:)):
-            return chromeModel?.canCopySelectedTabLink ?? false
+            return activeChromeModel?.canCopySelectedTabLink ?? false
         case #selector(findInPage(_:)):
-            return chromeModel?.canPresentFindInPage ?? false
+            return activeChromeModel?.canPresentFindInPage ?? false
         case #selector(findNextInPage(_:)), #selector(findPreviousInPage(_:)):
-            return chromeModel?.canStepThroughFindMatches ?? false
+            return activeChromeModel?.canStepThroughFindMatches ?? false
         case #selector(findAndReplace(_:)), #selector(jumpToSelection(_:)), #selector(useSelectionToFind(_:)):
             return false
         case #selector(clearTemporaryTabs(_:)):
-            return chromeModel?.canClearTemporaryTabs ?? false
+            return activeChromeModel?.canClearTemporaryTabs ?? false
         case #selector(setAsDefaultBrowser(_:)):
             return updateSetAsDefaultBrowserMenuItem(item as? NSMenuItem)
+        case #selector(checkForUpdates(_:)):
+            return updateController?.canCheckForUpdates ?? false
         default:
             return true
         }
@@ -298,12 +276,15 @@ NSUserInterfaceValidations {
 
     // MARK: Private
 
-    private var window: NSWindow?
     private var aboutWindow: NSWindow?
-    private var settingsWindow: NSWindow?
-    private var chromeModel: BrowserChromeModel?
+    private var settingsWindowController: SettingsWindowController?
+    private var incognitoWindowSessions = [BrowserIncognitoWindowSession]()
+    private var profileWindowSessions = [BrowserProfileWindowSession]()
+    private var profileStore: BrowserProfileStore?
+    private var updateController: BrowserUpdateController?
     private let userPreferencesStore = BrowserUserPreferencesStore()
     private let shortcutStore = BrowserShortcutStore()
+    private var batterySaverController: BrowserBatterySaverController?
     private let defaultBrowserService = BrowserDefaultBrowserService()
     private weak var setAsDefaultBrowserMenuItem: NSMenuItem?
     private var pendingNavigationURLs = [URL]()
@@ -313,6 +294,8 @@ NSUserInterfaceValidations {
     private var didConfirmTerminationWarning = false
     private var layoutIndependentKeyMonitor: Any?
     private var shortcutStoreCancellable: AnyCancellable?
+    private var appearancePreferenceCancellable: AnyCancellable?
+    private var profileStoreCancellable: AnyCancellable?
 
     private var shouldPresentQuitWarning: Bool {
         guard !didConfirmTerminationWarning, !isQuitWarningPresented else {
@@ -321,14 +304,73 @@ NSUserInterfaceValidations {
 
         return BrowserQuitWarningPolicy(
             warnsBeforeQuitting: userPreferencesStore.warnBeforeQuitting,
-            openTabCount: chromeModel?.tabs.count ?? 0
+            openTabCount: allChromeModels.reduce(0) { $0 + $1.tabs.count }
         ).shouldWarn
+    }
+
+    private var allChromeModels: [BrowserChromeModel] {
+        profileWindowSessions.map(\.chromeModel) + incognitoWindowSessions.map(\.chromeModel)
+    }
+
+    private var activeChromeModel: BrowserChromeModel? {
+        if let session = activeIncognitoWindowSession {
+            return session.chromeModel
+        }
+
+        return activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
+    }
+
+    private var activeBrowserWindow: NSWindow? {
+        if let session = activeIncognitoWindowSession {
+            return session.window
+        }
+
+        return activeProfileWindowSession?.window ?? profileWindowSessions.first?.window
+    }
+
+    private var activeProfileWindowSession: BrowserProfileWindowSession? {
+        profileWindowSession(containing: NSApp.keyWindow)
+            ?? profileWindowSession(containing: NSApp.mainWindow)
+    }
+
+    private var activeIncognitoWindowSession: BrowserIncognitoWindowSession? {
+        incognitoWindowSession(containing: NSApp.keyWindow)
+            ?? incognitoWindowSession(containing: NSApp.mainWindow)
+    }
+
+    private func profileWindowSession(containing candidateWindow: NSWindow?) -> BrowserProfileWindowSession? {
+        var currentWindow = candidateWindow
+        while let window = currentWindow {
+            if let session = profileWindowSessions.first(where: { $0.window === window }) {
+                return session
+            }
+            currentWindow = window.parent
+        }
+
+        return nil
+    }
+
+    private func incognitoWindowSession(containing candidateWindow: NSWindow?) -> BrowserIncognitoWindowSession? {
+        var currentWindow = candidateWindow
+        while let window = currentWindow {
+            if let session = incognitoWindowSessions.first(where: { $0.window === window }) {
+                return session
+            }
+            currentWindow = window.parent
+        }
+
+        return nil
     }
 
     private func beginApplicationTermination() {
         isTerminationRequested = true
         handleApplicationWillTerminate()
-        window?.orderOut(nil)
+        for session in profileWindowSessions {
+            session.window.orderOut(nil)
+        }
+        for session in incognitoWindowSessions {
+            session.window.orderOut(nil)
+        }
         DispatchQueue.main.async {
             if BrowserHasOpenBrowsers() != 0 {
                 BrowserCloseAllBrowsers()
@@ -371,6 +413,14 @@ NSUserInterfaceValidations {
         )
         appMenu.addItem(settingsItem)
 
+        let checkForUpdatesItem = NSMenuItem(
+            title: BrowserStrings.menuCheckForUpdates,
+            action: #selector(checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        checkForUpdatesItem.target = self
+        appMenu.addItem(checkForUpdatesItem)
+
         let setAsDefaultBrowserItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .setAsDefaultBrowser),
             action: #selector(setAsDefaultBrowser(_:))
@@ -394,6 +444,19 @@ NSUserInterfaceValidations {
             action: #selector(createNewTab(_:))
         )
         fileMenu.addItem(newTabItem)
+
+        let newIncognitoWindowItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newIncognitoWindow),
+            action: #selector(createNewIncognitoWindow(_:))
+        )
+        fileMenu.addItem(newIncognitoWindowItem)
+        fileMenu.addItem(.separator())
+
+        let toggleBookmarkItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .toggleBookmark),
+            action: #selector(toggleCurrentPageBookmark(_:))
+        )
+        fileMenu.addItem(toggleBookmarkItem)
 
         let archiveTabItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .archiveTab),
@@ -638,7 +701,11 @@ NSUserInterfaceValidations {
     }
 
     private func selectSpace(at index: Int) -> Bool {
-        guard let chromeModel, chromeModel.spaces.indices.contains(index) else {
+        guard
+            let chromeModel = activeChromeModel,
+            chromeModel.supportsSpaces,
+            chromeModel.spaces.indices.contains(index)
+        else {
             return false
         }
 
@@ -678,58 +745,68 @@ NSUserInterfaceValidations {
             setAsDefaultBrowser(nil)
             return true
         case .newTab:
-            guard chromeModel?.canCreateTab ?? false else {
+            guard activeChromeModel?.canCreateTab ?? false else {
                 return false
             }
 
             createNewTab(nil)
             return true
+        case .newIncognitoWindow:
+            createNewIncognitoWindow(nil)
+            return true
         case .openHistory:
-            guard chromeModel != nil, !isTerminationRequested else {
+            guard activeChromeModel != nil, !isTerminationRequested else {
                 return false
             }
 
             openHistory(nil)
             return true
+        case .toggleBookmark:
+            guard activeChromeModel?.selectedTabID != nil else {
+                return false
+            }
+
+            toggleCurrentPageBookmark(nil)
+            return true
         case .archiveTab:
-            return chromeModel?.archiveSelectedTab() ?? false
+            return activeChromeModel?.archiveSelectedTab() ?? false
         case .savePage:
-            guard chromeModel?.canSavePage ?? false else {
+            guard activeChromeModel?.canSavePage ?? false else {
                 return false
             }
 
             saveCurrentPage(nil)
             return true
         case .printPage:
-            guard chromeModel?.canPrintPage ?? false else {
+            guard activeChromeModel?.canPrintPage ?? false else {
                 return false
             }
 
             printCurrentPage(nil)
             return true
         case .copyLink:
-            guard chromeModel?.canCopySelectedTabLink ?? false else {
+            guard activeChromeModel?.canCopySelectedTabLink ?? false else {
                 return false
             }
 
-            return chromeModel?.copySelectedTabLink() ?? false
+            return activeChromeModel?.copySelectedTabLink() ?? false
         case .findInPage:
-            guard chromeModel?.canPresentFindInPage ?? false else {
+            guard activeChromeModel?.canPresentFindInPage ?? false else {
                 return false
             }
 
-            return chromeModel?.presentFindInPage() ?? false
+            return activeChromeModel?.presentFindInPage() ?? false
         case .findAndReplace:
             return false
         case .findNextInPage:
-            guard chromeModel?.canStepThroughFindMatches ?? false else {
+            guard activeChromeModel?.canStepThroughFindMatches ?? false else {
                 return false
             }
 
             findNextInPage(nil)
             return true
         case .findPreviousInPage:
-            guard chromeModel?.canStepThroughFindMatches ?? false else {
+            guard activeChromeModel?.canStepThroughFindMatches ?? false else {
                 return false
             }
 
@@ -738,42 +815,42 @@ NSUserInterfaceValidations {
         case .jumpToSelection:
             return false
         case .clearTemporaryTabs:
-            guard chromeModel?.canClearTemporaryTabs ?? false else {
+            guard activeChromeModel?.canClearTemporaryTabs ?? false else {
                 return false
             }
 
             clearTemporaryTabs(nil)
             return true
         case .goBack:
-            guard chromeModel?.canGoBack ?? false else {
+            guard activeChromeModel?.canGoBack ?? false else {
                 return false
             }
 
             goBack(nil)
             return true
         case .goForward:
-            guard chromeModel?.canGoForward ?? false else {
+            guard activeChromeModel?.canGoForward ?? false else {
                 return false
             }
 
             goForward(nil)
             return true
         case .reload:
-            guard chromeModel?.canReload ?? false else {
+            guard activeChromeModel?.canReload ?? false else {
                 return false
             }
 
             reloadCurrentTab(nil)
             return true
         case .forceReload:
-            guard chromeModel?.canReload ?? false else {
+            guard activeChromeModel?.canReload ?? false else {
                 return false
             }
 
             forceReloadCurrentTab(nil)
             return true
         case .toggleSidebar:
-            guard chromeModel != nil else {
+            guard activeChromeModel != nil else {
                 return false
             }
 
@@ -791,7 +868,7 @@ NSUserInterfaceValidations {
             return true
         }
 
-        return chromeModel?.pasteAndMatchStyleCurrentTab() ?? false
+        return activeChromeModel?.pasteAndMatchStyleCurrentTab() ?? false
     }
 
     private func presentQuitWarning(_ sender: Any?) {
@@ -818,8 +895,8 @@ NSUserInterfaceValidations {
             requestApplicationTermination(sender)
         }
 
-        if let window, window.isVisible {
-            alert.beginSheetModal(for: window, completionHandler: completion)
+        if let activeBrowserWindow, activeBrowserWindow.isVisible {
+            alert.beginSheetModal(for: activeBrowserWindow, completionHandler: completion)
         } else {
             completion(alert.runModal())
         }
@@ -838,49 +915,91 @@ NSUserInterfaceValidations {
         }
     }
 
-    private func presentSettingsWindow() {
-        guard let chromeModel else {
+    private func configureUpdateControllerIfNeeded() {
+        guard updateController == nil else {
             return
         }
 
-        if let settingsWindow {
-            settingsWindow.makeKeyAndOrderFront(nil)
+        updateController = BrowserUpdateController(preferencesStore: userPreferencesStore)
+    }
+
+    private func startBatterySaverController() {
+        guard batterySaverController == nil else {
+            return
+        }
+
+        let controller = BrowserBatterySaverController(preferencesStore: userPreferencesStore)
+        batterySaverController = controller
+        controller.start()
+    }
+
+    private func presentSettingsWindow() {
+        guard
+            let profileStore,
+            let profileSession = activeProfileWindowSession ?? profileWindowSessions.first
+        else {
+            return
+        }
+
+        if let settingsWindowController {
+            settingsWindowController.show()
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let rootView = BrowserSettingsView(model: chromeModel) { [weak self] url in
-            self?.openBrowserInternalPage(url)
-        }
-        let hostingView = NSHostingView(rootView: rootView)
-        let contentSize = NSSize(
-            width: BrowserSettingsLayout.windowWidth,
-            height: BrowserSettingsLayout.windowHeight
+        let settingsWindowController = SettingsWindowController(
+            panes: settingsPanes(
+                model: profileSession.chromeModel,
+                profileStore: profileStore,
+                currentProfileID: profileSession.profile.id,
+                accountStore: profileSession.accountStore
+            ),
+            style: .toolbarItems,
+            animated: false,
+            hidesToolbarForSingleItem: false
         )
-        let settingsWindow = NSWindow(
-            contentRect: NSRect(origin: .zero, size: contentSize),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
+        self.settingsWindowController = settingsWindowController
+        settingsWindowController.show()
 
-        settingsWindow.title = BrowserStrings.settingsWindowTitle
-        settingsWindow.isReleasedWhenClosed = false
-        settingsWindow.titleVisibility = .hidden
-        settingsWindow.titlebarAppearsTransparent = true
-        settingsWindow.isMovableByWindowBackground = true
-        settingsWindow.collectionBehavior = [.fullScreenAuxiliary]
-        settingsWindow.setContentSize(contentSize)
-        settingsWindow.contentView = hostingView
-
-        center(settingsWindow, over: window)
-        if let window {
-            window.addChildWindow(settingsWindow, ordered: .above)
+        if let settingsWindow = settingsWindowController.window {
+            settingsWindow.isReleasedWhenClosed = false
+            settingsWindow.collectionBehavior = [.fullScreenAuxiliary]
+            settingsWindow.delegate = self
+            center(settingsWindow, over: profileSession.window)
+            profileSession.window.addChildWindow(settingsWindow, ordered: .above)
         }
+    }
 
-        self.settingsWindow = settingsWindow
-        settingsWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+    private func settingsPanes(
+        model: BrowserChromeModel,
+        profileStore: BrowserProfileStore,
+        currentProfileID: String,
+        accountStore: BrowserAccountStore?
+    ) -> [SettingsPaneConvertible] {
+        BrowserSettingsPane.allCases.map { pane in
+            Settings.Pane(
+                identifier: Settings.PaneIdentifier(pane.rawValue),
+                title: pane.title,
+                toolbarIcon: NSImage(
+                    systemSymbolName: pane.systemImageName,
+                    accessibilityDescription: pane.title
+                ) ?? NSImage()
+            ) {
+                BrowserSettingsView(
+                    model: model,
+                    profileStore: profileStore,
+                    currentProfileID: currentProfileID,
+                    accountStore: accountStore,
+                    pane: pane,
+                    openProfile: { [weak self] profile in
+                        self?.openProfile(profile)
+                    },
+                    openURL: { [weak self] url in
+                        self?.openBrowserInternalPage(url)
+                    }
+                )
+            }
+        }
     }
 
     private func center(_ childWindow: NSWindow, over parentWindow: NSWindow?) {
@@ -900,23 +1019,110 @@ NSUserInterfaceValidations {
     }
 
     private func createMainWindow() {
-        let sessionSnapshotURL = BrowserRuntimeConfiguration.currentConfiguration().map {
-            URL(fileURLWithPath: $0.sessionStoragePath, isDirectory: true)
-                .appendingPathComponent(BrowserTabSessionSnapshotStore.snapshotFileName, isDirectory: false)
+        guard let runtimeConfiguration = BrowserRuntimeConfiguration.currentConfiguration() else {
+            return
         }
+
+        let rootCacheURL = URL(fileURLWithPath: runtimeConfiguration.rootCachePath, isDirectory: true)
+        let profileStore = BrowserProfileStore(rootCacheURL: rootCacheURL)
+        self.profileStore = profileStore
+        observeProfileStore(profileStore)
+        createProfileWindow(
+            for: profileStore.defaultProfile,
+            runtimeConfiguration: runtimeConfiguration,
+            copyingFullscreenFrom: nil
+        )
+    }
+
+    private func openProfile(_ profile: BrowserProfile) {
+        if let session = profileWindowSessions.first(where: { $0.profile.id == profile.id }) {
+            session.window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        guard let runtimeConfiguration = BrowserRuntimeConfiguration.currentConfiguration() else {
+            return
+        }
+
+        createProfileWindow(
+            for: profile,
+            runtimeConfiguration: runtimeConfiguration,
+            copyingFullscreenFrom: activeBrowserWindow
+        )
+    }
+
+    private func createProfileWindow(
+        for profile: BrowserProfile,
+        runtimeConfiguration: BrowserRuntimeConfiguration,
+        copyingFullscreenFrom sourceWindow: NSWindow?
+    ) {
+        configureUpdateControllerIfNeeded()
+        guard let updateController else {
+            return
+        }
+
+        let rootCacheURL = URL(fileURLWithPath: runtimeConfiguration.rootCachePath, isDirectory: true)
+        let profileDirectoryURL = profileStore?.profileDirectoryURL(for: profile)
+            ?? rootCacheURL.appendingPathComponent(profile.directoryName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: profileDirectoryURL, withIntermediateDirectories: true)
+
+        let sessionStorageDirectoryURL = profileSessionStorageDirectoryURL(
+            for: profile,
+            runtimeConfiguration: runtimeConfiguration
+        )
+        let sessionSnapshotURL = sessionStorageDirectoryURL
+            .appendingPathComponent(BrowserTabSessionSnapshotStore.snapshotFileName, isDirectory: false)
+        let sqliteSessionStore = try? BrowserSQLiteSessionStore(
+            databaseURL: sessionStorageDirectoryURL
+                .appendingPathComponent(BrowserSQLiteSessionStore.databaseFileName, isDirectory: false)
+        )
+        let profileDirectoryCandidates = BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
+            profileDirectoryURL: profileDirectoryURL
+        )
+        let bookmarksModel = BrowserBookmarksModel(
+            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates)
+        )
+        let historyStore = BrowserChromiumHistoryStore(profileDirectoryCandidates: profileDirectoryCandidates)
+        let authSessionStore = BrowserAuthSessionStore(profileID: profile.isDefault ? nil : profile.id)
+        let syncClient = BrowserSyncConfiguration.current().map { configuration in
+            BrowserRemoteSyncClient(configuration: configuration)
+        }
+        let syncCoordinator: BrowserSyncService? =
+            if let sqliteSessionStore, let syncClient {
+                BrowserSyncService(
+                    localStore: sqliteSessionStore,
+                    remoteClient: syncClient,
+                    authSessionStore: authSessionStore
+                )
+            } else {
+                nil
+            }
+        let accountStore = BrowserAccountStore(
+            syncClient: syncClient,
+            authSessionStore: authSessionStore
+        )
         let chromeModel = BrowserChromeModel(
-            tabDriver: BrowserTabControllerDriver(),
-            sessionSnapshotStore: BrowserTabSessionSnapshotStore(snapshotURL: sessionSnapshotURL),
-            sessionPreferencesStore: BrowserSessionPreferencesStore(),
+            tabDriver: BrowserTabControllerDriver(profileCachePath: profileDirectoryURL.path),
+            sessionSnapshotStore: sqliteSessionStore ?? BrowserTabSessionSnapshotStore(snapshotURL: sessionSnapshotURL),
+            sessionPreferencesStore: sqliteSessionStore ?? BrowserSessionPreferencesStore(),
             userPreferencesStore: userPreferencesStore,
             shortcutStore: shortcutStore,
-            extensionManager: BrowserChromiumExtensionManager(),
+            bookmarksModel: bookmarksModel,
+            historyStore: historyStore,
+            extensionManager: BrowserChromiumExtensionManager(profileDirectoryURL: profileDirectoryURL),
+            extensionSidePanelDriver: BrowserExtensionSidePanelController(profileCachePath: profileDirectoryURL.path),
+            extensionActionPopupDriver: BrowserExtensionActionPopupController(profileCachePath: profileDirectoryURL
+                .path),
+            syncCoordinator: syncCoordinator,
+            profile: profile,
+            availableProfileCount: profileStore?.profiles.count ?? 1,
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
         )
-        self.chromeModel = chromeModel
+        syncCoordinator?.setSnapshotApplier(chromeModel)
 
-        let rootView = BrowserRootView(model: chromeModel)
+        let rootView = BrowserRootView(model: chromeModel, updateController: updateController)
             .ignoresSafeArea(.container, edges: .top)
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.safeAreaRegions = []
@@ -928,12 +1134,19 @@ NSUserInterfaceValidations {
             backing: .buffered,
             defer: false
         )
-        window.title = BrowserStrings.applicationName
+        window.title = windowTitle(for: profile)
         window.delegate = self
+        window.browserUndoManager = chromeModel.undoManager
         window.minSize = NSSize(width: 960, height: 640)
         window.isReleasedWhenClosed = false
         window.configureBrowserChrome()
-        window.center()
+
+        if let sourceWindow, !sourceWindow.styleMask.contains(.fullScreen) {
+            let sourceFrame = sourceWindow.frame
+            window.setFrameOrigin(NSPoint(x: sourceFrame.minX + 28, y: sourceFrame.minY - 28))
+        } else {
+            window.center()
+        }
 
         let contentView = BrowserWindowContentContainerView(frame: window.contentRect(forFrameRect: window.frame))
         contentView.addSubview(hostingView)
@@ -944,13 +1157,187 @@ NSUserInterfaceValidations {
             hostingView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
         ])
 
+        let shouldEnterFullscreen = sourceWindow?.styleMask.contains(.fullScreen) == true
+        let session = BrowserProfileWindowSession(
+            window: window,
+            chromeModel: chromeModel,
+            accountStore: accountStore,
+            profile: profile
+        )
+        profileWindowSessions.append(session)
         window.contentView = contentView
         window.makeKeyAndOrderFront(nil)
-        self.window = window
+        NSApp.activate(ignoringOtherApps: true)
+        BrowserTelemetry.captureUsage(
+            .profileWindowOpened,
+            properties: [
+                "profile": profile.isDefault ? "default" : "custom",
+                "profile_count": "\(profileStore?.profiles.count ?? 1)",
+            ]
+        )
+        updateProfilePresentationForOpenWindows()
 
         if hasReceivedBrowserContext {
             chromeModel.handleContextReady()
             openPendingNavigationURLsIfPossible()
+        }
+
+        if shouldEnterFullscreen {
+            DispatchQueue.main.async {
+                guard !window.styleMask.contains(.fullScreen) else {
+                    return
+                }
+
+                window.toggleFullScreen(nil)
+            }
+        }
+    }
+
+    private func profileSessionStorageDirectoryURL(
+        for profile: BrowserProfile,
+        runtimeConfiguration: BrowserRuntimeConfiguration
+    ) -> URL {
+        let sessionStorageURL = URL(fileURLWithPath: runtimeConfiguration.sessionStoragePath, isDirectory: true)
+        guard !profile.isDefault else {
+            return sessionStorageURL
+        }
+
+        return sessionStorageURL.appendingPathComponent(profile.directoryName, isDirectory: true)
+    }
+
+    private func observeProfileStore(_ profileStore: BrowserProfileStore) {
+        profileStoreCancellable = profileStore.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                self?.updateProfilePresentationForOpenWindows()
+            }
+        }
+    }
+
+    private func observeAppearancePreference() {
+        appearancePreferenceCancellable = userPreferencesStore.$appearancePreference.sink { [weak self] preference in
+            self?.applyAppearancePreference(preference)
+        }
+    }
+
+    private func applyAppearancePreference(_ preference: BrowserAppearancePreference) {
+        let appearance = preference.nsAppearanceName.flatMap(NSAppearance.init(named:))
+        NSApp.appearance = appearance
+
+        for window in NSApp.windows {
+            window.appearance = appearance
+        }
+    }
+
+    private func updateProfilePresentationForOpenWindows() {
+        let profileCount = profileStore?.profiles.count ?? 1
+        for session in profileWindowSessions {
+            let profile = profileStore?.profile(withID: session.profile.id) ?? session.profile
+            session.chromeModel.updateProfilePresentation(profile: profile, availableProfileCount: profileCount)
+            session.window.title = windowTitle(for: profile)
+        }
+    }
+
+    private func windowTitle(for profile: BrowserProfile) -> String {
+        guard profileStore?.profiles.count ?? 1 > 1 else {
+            return BrowserStrings.applicationName
+        }
+
+        return "\(BrowserStrings.applicationName) - \(profile.displayName)"
+    }
+
+    private func createIncognitoWindow(copyingFullscreenFrom sourceWindow: NSWindow?) {
+        configureUpdateControllerIfNeeded()
+        guard let updateController else {
+            return
+        }
+
+        let runtimeConfiguration = BrowserRuntimeConfiguration.currentConfiguration()
+        let sourceProfile = activeProfileWindowSession?.profile ?? profileStore?.defaultProfile
+        let profileDirectoryCandidates: [URL] =
+            if
+                let runtimeConfiguration,
+                let sourceProfile
+            {
+                BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
+                    profileDirectoryURL: profileStore?.profileDirectoryURL(for: sourceProfile)
+                        ?? URL(fileURLWithPath: runtimeConfiguration.rootCachePath, isDirectory: true)
+                        .appendingPathComponent(sourceProfile.directoryName, isDirectory: true)
+                )
+            } else {
+                []
+            }
+        let bookmarksModel = BrowserBookmarksModel(
+            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates)
+        )
+        let ephemeralSessionStore = BrowserEphemeralSessionStore()
+        let chromeModel = BrowserChromeModel(
+            tabDriver: BrowserTabControllerDriver(usesEphemeralRequestContext: true),
+            sessionSnapshotStore: ephemeralSessionStore,
+            sessionPreferencesStore: ephemeralSessionStore,
+            userPreferencesStore: userPreferencesStore,
+            shortcutStore: shortcutStore,
+            bookmarksModel: bookmarksModel,
+            historyStore: BrowserEmptyHistoryStore(),
+            extensionManager: BrowserEmptyExtensionManager(),
+            windowMode: .incognito,
+            windowTitleHandler: { _ in },
+            allTabsClosedHandler: {}
+        )
+
+        let rootView = BrowserRootView(model: chromeModel, updateController: updateController)
+            .ignoresSafeArea(.container, edges: .top)
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.safeAreaRegions = []
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+
+        let window = BrowserMainWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1360, height: 860),
+            styleMask: [.borderless, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = BrowserStrings.menuNewIncognitoWindow
+        window.delegate = self
+        window.browserUndoManager = chromeModel.undoManager
+        window.minSize = NSSize(width: 960, height: 640)
+        window.isReleasedWhenClosed = false
+        window.configureBrowserChrome()
+
+        if let sourceWindow, !sourceWindow.styleMask.contains(.fullScreen) {
+            let sourceFrame = sourceWindow.frame
+            window.setFrameOrigin(NSPoint(x: sourceFrame.minX + 28, y: sourceFrame.minY - 28))
+        } else {
+            window.center()
+        }
+
+        let contentView = BrowserWindowContentContainerView(frame: window.contentRect(forFrameRect: window.frame))
+        contentView.addSubview(hostingView)
+        NSLayoutConstraint.activate([
+            hostingView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            hostingView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
+
+        let shouldEnterFullscreen = sourceWindow?.styleMask.contains(.fullScreen) == true
+        let session = BrowserIncognitoWindowSession(window: window, chromeModel: chromeModel)
+        incognitoWindowSessions.append(session)
+        window.contentView = contentView
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        if hasReceivedBrowserContext {
+            chromeModel.handleContextReady()
+        }
+
+        if shouldEnterFullscreen {
+            DispatchQueue.main.async {
+                guard !window.styleMask.contains(.fullScreen) else {
+                    return
+                }
+
+                window.toggleFullScreen(nil)
+            }
         }
     }
 
@@ -985,6 +1372,7 @@ NSUserInterfaceValidations {
         aboutWindow.setContentSize(contentSize)
         aboutWindow.center()
         aboutWindow.contentView = hostingView
+        aboutWindow.delegate = self
 
         self.aboutWindow = aboutWindow
         aboutWindow.makeKeyAndOrderFront(nil)
@@ -992,14 +1380,15 @@ NSUserInterfaceValidations {
     }
 
     private func openAboutLink(_ url: URL) {
-        if chromeModel?.canCreateTab == true {
-            chromeModel?.openURLInNewTab(url)
-            window?.makeKeyAndOrderFront(nil)
+        let targetSession = activeProfileWindowSession ?? profileWindowSessions.first
+        if targetSession?.chromeModel.canCreateTab == true {
+            targetSession?.chromeModel.openURLInNewTab(url)
+            targetSession?.window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        if chromeModel != nil, !isTerminationRequested {
+        if targetSession != nil, !isTerminationRequested {
             pendingNavigationURLs.append(url)
             return
         }
@@ -1008,20 +1397,24 @@ NSUserInterfaceValidations {
     }
 
     private func openBrowserInternalPage(_ url: URL) {
-        if chromeModel?.canCreateTab == true {
-            chromeModel?.openURLInNewTab(url)
-            window?.makeKeyAndOrderFront(nil)
+        let targetChromeModel = activeChromeModel
+        let targetWindow = activeBrowserWindow
+
+        if targetChromeModel?.canCreateTab == true {
+            targetChromeModel?.openURLInNewTab(url)
+            targetWindow?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        if chromeModel != nil, !isTerminationRequested {
+        if targetChromeModel != nil, !isTerminationRequested {
             pendingNavigationURLs.append(url)
         }
     }
 
     private func openPendingNavigationURLsIfPossible() {
-        guard chromeModel?.canCreateTab == true, !pendingNavigationURLs.isEmpty else {
+        let targetSession = activeProfileWindowSession ?? profileWindowSessions.first
+        guard targetSession?.chromeModel.canCreateTab == true, !pendingNavigationURLs.isEmpty else {
             return
         }
 
@@ -1029,10 +1422,10 @@ NSUserInterfaceValidations {
         pendingNavigationURLs.removeAll()
 
         for url in urls {
-            chromeModel?.openURLInNewTab(url)
+            targetSession?.chromeModel.openURLInNewTab(url)
         }
 
-        window?.makeKeyAndOrderFront(nil)
+        targetSession?.window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 

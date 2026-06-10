@@ -16,10 +16,13 @@ extern const char kTheBrowserHistoryHost[];
 extern const char kTheBrowserHistoryURL[];
 extern const char kTheBrowserPasswordManagerHost[];
 extern const char kTheBrowserPasswordManagerURL[];
+extern const char kTheBrowserBookmarksHost[];
+extern const char kTheBrowserBookmarksURL[];
 extern const char kChromiumSettingsURL[];
 extern const char kChromiumExtensionsURL[];
 extern const char kChromiumHistoryURL[];
 extern const char kChromiumPasswordManagerURL[];
+extern const char kChromiumBookmarksURL[];
 
 void RegisterTheBrowserCustomSchemes(
     CefRawPtr<CefSchemeRegistrar> registrar);

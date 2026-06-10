@@ -55,6 +55,10 @@ struct BrowserNavigationResolver {
     private let searchEngineProvider: () -> BrowserSearchEngine
 
     private func resolvedURLString(for input: String) -> String? {
+        if let canonicalInternalURLString = BrowserInternalURLNormalizer.canonicalURLString(for: input) {
+            return canonicalInternalURLString
+        }
+
         if hasExplicitScheme(input) {
             guard
                 let components = URLComponents(string: input),
@@ -226,6 +230,111 @@ struct BrowserNavigationResolver {
     }
 }
 
+// MARK: - BrowserInternalURLNormalizer
+
+enum BrowserInternalURLNormalizer {
+    // MARK: Internal
+
+    static let canonicalScheme = "tb"
+    static let chromiumScheme = "chrome"
+    static let aliasSchemes: Set<String> = [canonicalScheme, chromiumScheme, "arc", "dia"]
+
+    static let settingsHost = "settings"
+    static let extensionsHost = "extensions"
+    static let historyHost = "history"
+    static let passwordManagerHost = "password-manager"
+    static let bookmarksHost = "bookmarks"
+    static let creditsHost = "credits"
+
+    static func canonicalURLString(for rawURLString: String) -> String? {
+        let trimmedURLString = rawURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURLString.isEmpty else {
+            return nil
+        }
+
+        if trimmedURLString.caseInsensitiveCompare("about:settings") == .orderedSame {
+            return "tb://settings/"
+        }
+
+        if trimmedURLString.caseInsensitiveCompare("about:bookmarks") == .orderedSame {
+            return "tb://bookmarks/"
+        }
+
+        guard
+            var components = URLComponents(string: trimmedURLString),
+            let rawScheme = components.scheme?.lowercased(),
+            aliasSchemes.contains(rawScheme),
+            let rawHost = components.host?.lowercased(),
+            !rawHost.isEmpty,
+            rawHost != creditsHost
+        else {
+            return nil
+        }
+
+        components.scheme = canonicalScheme
+        components.host = rawHost
+        if components.path.isEmpty, shouldPreferRootPath(forHost: rawHost) {
+            components.path = "/"
+        }
+        return components.url?.absoluteString
+    }
+
+    static func chromiumURLString(forCanonicalURLString urlString: String) -> String? {
+        guard
+            var components = URLComponents(string: urlString),
+            components.scheme?.lowercased() == canonicalScheme,
+            let host = components.host?.lowercased(),
+            !host.isEmpty,
+            host != creditsHost
+        else {
+            return nil
+        }
+
+        components.scheme = chromiumScheme
+        components.host = host
+        if components.path.isEmpty, shouldPreferRootPath(forHost: host) {
+            components.path = "/"
+        }
+        return components.url?.absoluteString
+    }
+
+    static func host(for urlString: String) -> String? {
+        guard let canonicalURLString = canonicalURLString(for: urlString) ??
+            canonicalURLStringIfAlreadyCanonical(urlString),
+            let components = URLComponents(string: canonicalURLString)
+        else {
+            return nil
+        }
+
+        return components.host?.lowercased()
+    }
+
+    // MARK: Private
+
+    private static func canonicalURLStringIfAlreadyCanonical(_ urlString: String) -> String? {
+        guard
+            let components = URLComponents(string: urlString),
+            components.scheme?.lowercased() == canonicalScheme,
+            let host = components.host,
+            !host.isEmpty,
+            host.lowercased() != creditsHost
+        else {
+            return nil
+        }
+
+        return components.url?.absoluteString
+    }
+
+    private static func shouldPreferRootPath(forHost host: String) -> Bool {
+        switch host {
+        case bookmarksHost, extensionsHost, settingsHost:
+            true
+        default:
+            false
+        }
+    }
+}
+
 // MARK: - BrowserParsedHost
 
 struct BrowserParsedHost: Equatable {
@@ -235,13 +344,13 @@ struct BrowserParsedHost: Equatable {
 
 // MARK: - BrowserDomainParsing
 
-protocol BrowserDomainParsing {
+protocol BrowserDomainParsing: Sendable {
     func parse(host: String) -> BrowserParsedHost?
 }
 
 // MARK: - BrowserPublicSuffixDomainParser
 
-struct BrowserPublicSuffixDomainParser: BrowserDomainParsing {
+struct BrowserPublicSuffixDomainParser: BrowserDomainParsing, @unchecked Sendable {
     // MARK: Lifecycle
 
     init() throws {

@@ -36,6 +36,16 @@ NS_ASSUME_NONNULL_BEGIN
                         finalUpdate:(BOOL)finalUpdate;
 
 - (void)browserTabController:(BrowserTabController *)controller
+    didUpdateDownloadWithID:(NSString *)downloadID
+                   fileName:(NSString *)fileName
+                  urlString:(NSString *)urlString
+                   fullPath:(nullable NSString *)fullPath
+              receivedBytes:(int64_t)receivedBytes
+                 totalBytes:(int64_t)totalBytes
+        currentSpeedBytesPerSecond:(int64_t)currentSpeedBytesPerSecond
+              stateRawValue:(NSString *)stateRawValue;
+
+- (void)browserTabController:(BrowserTabController *)controller
               didCloseTabWithID:(NSString *)tabID;
 
 @end
@@ -48,7 +58,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(nonatomic, weak, nullable) id<BrowserTabControllerDelegate> delegate;
 
-- (instancetype)initWithHostView:(BrowserTabHostView *)hostView NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithHostView:(BrowserTabHostView *)hostView;
+- (instancetype)initWithHostView:(BrowserTabHostView *)hostView
+    usesEphemeralRequestContext:(BOOL)usesEphemeralRequestContext
+                profileCachePath:(nullable NSString *)profileCachePath NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 
@@ -63,6 +76,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)reloadActiveTabIgnoringCache;
 - (void)stopLoadingActiveTab;
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
+- (void)captureFullPageActiveTabToPasteboard;
 - (void)pasteAndMatchStyleActiveTab;
 - (void)printActiveTab;
 - (void)findInActiveTabWithText:(NSString *)text

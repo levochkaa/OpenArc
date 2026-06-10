@@ -68,10 +68,10 @@ struct BrowserContentView: View {
                     VStack(spacing: 10) {
                         ProgressView()
                             .controlSize(.small)
-                            .tint(.black)
+                            .tint(BrowserChromePalette.primaryText)
                         Text(BrowserStrings.loadingLaunchingBrowser)
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.black.opacity(0.58))
+                            .foregroundStyle(BrowserChromePalette.secondaryText)
                     }
                 }
                 .clipShape(contentShape)
@@ -80,9 +80,9 @@ struct BrowserContentView: View {
     }
 }
 
-// MARK: Equatable
+// MARK: @MainActor Equatable
 
-extension BrowserContentView: Equatable {
+extension BrowserContentView: @MainActor Equatable {
     static func == (lhs: BrowserContentView, rhs: BrowserContentView) -> Bool {
         ObjectIdentifier(lhs.hostView) == ObjectIdentifier(rhs.hostView)
             && lhs.isContextReady == rhs.isContextReady

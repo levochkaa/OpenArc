@@ -1,404 +1,4 @@
-import AppKit
 import Foundation
-
-// MARK: - BrowserKeyboardShortcut
-
-struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
-    // MARK: Lifecycle
-
-    init(_ keyEquivalent: String, modifiers: NSEvent.ModifierFlags = [.command]) {
-        self.keyEquivalent = keyEquivalent
-        self.modifiers = modifiers
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.keyEquivalent = try container.decode(String.self, forKey: .keyEquivalent)
-        let modifiersRawValue = try container.decode(NSEvent.ModifierFlags.RawValue.self, forKey: .modifiersRawValue)
-        self.modifiers = NSEvent.ModifierFlags(rawValue: modifiersRawValue)
-    }
-
-    // MARK: Internal
-
-    let keyEquivalent: String
-    let modifiers: NSEvent.ModifierFlags
-
-    var keyCaps: [String] {
-        var result = [String]()
-
-        if modifiers.contains(.control) {
-            result.append("\u{2303}")
-        }
-
-        if modifiers.contains(.option) {
-            result.append("\u{2325}")
-        }
-
-        if modifiers.contains(.shift) {
-            result.append("\u{21E7}")
-        }
-
-        if modifiers.contains(.command) {
-            result.append("\u{2318}")
-        }
-
-        result.append(keyEquivalent.uppercased())
-        return result
-    }
-
-    var displayText: String {
-        keyCaps.joined()
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(keyEquivalent, forKey: .keyEquivalent)
-        try container.encode(modifiers.rawValue, forKey: .modifiersRawValue)
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(keyEquivalent)
-        hasher.combine(modifiers.rawValue)
-    }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case keyEquivalent
-        case modifiersRawValue
-    }
-}
-
-// MARK: - BrowserCommandDescriptor
-
-struct BrowserCommandDescriptor {
-    let menuTitle: String
-    let helpTitle: String
-    let shortcut: BrowserKeyboardShortcut
-}
-
-// MARK: - BrowserCommands
-
-enum BrowserCommands {
-    static let openSettings = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuSettings,
-        helpTitle: BrowserStrings.menuSettings,
-        shortcut: BrowserKeyboardShortcut(",")
-    )
-
-    static let setAsDefaultBrowser = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuSetAsDefaultBrowser,
-        helpTitle: BrowserStrings.menuSetAsDefaultBrowser,
-        shortcut: BrowserKeyboardShortcut("d")
-    )
-
-    static let newTab = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuNewTab,
-        helpTitle: BrowserStrings.sidebarNewTab,
-        shortcut: BrowserKeyboardShortcut("t")
-    )
-
-    static let openHistory = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuHistory,
-        helpTitle: BrowserStrings.menuHistory,
-        shortcut: BrowserKeyboardShortcut("y")
-    )
-
-    static let archiveTab = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.tabArchiveAction,
-        helpTitle: BrowserStrings.tabArchiveTooltip,
-        shortcut: BrowserKeyboardShortcut("w")
-    )
-
-    static let savePage = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuSavePageAs,
-        helpTitle: BrowserStrings.menuSavePageAs,
-        shortcut: BrowserKeyboardShortcut("s", modifiers: [.command, .shift])
-    )
-
-    static let printPage = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuPrint,
-        helpTitle: BrowserStrings.menuPrint,
-        shortcut: BrowserKeyboardShortcut("p")
-    )
-
-    static let copyLink = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.tabCopyLinkAction,
-        helpTitle: BrowserStrings.tabCopyLinkAction,
-        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .shift])
-    )
-
-    static let findInPage = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuFind,
-        helpTitle: BrowserStrings.menuFind,
-        shortcut: BrowserKeyboardShortcut("f")
-    )
-
-    static let findAndReplace = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuFindAndReplace,
-        helpTitle: BrowserStrings.menuFindAndReplace,
-        shortcut: BrowserKeyboardShortcut("f", modifiers: [.command, .option])
-    )
-
-    static let findNext = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuFindNext,
-        helpTitle: BrowserStrings.menuFindNext,
-        shortcut: BrowserKeyboardShortcut("g")
-    )
-
-    static let findPrevious = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuFindPrevious,
-        helpTitle: BrowserStrings.menuFindPrevious,
-        shortcut: BrowserKeyboardShortcut("g", modifiers: [.command, .shift])
-    )
-
-    static let jumpToSelection = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuJumpToSelection,
-        helpTitle: BrowserStrings.menuJumpToSelection,
-        shortcut: BrowserKeyboardShortcut("j")
-    )
-
-    static let clearTemporaryTabs = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuClearTemporaryTabs,
-        helpTitle: BrowserStrings.sidebarClearTemporaryTabsTooltip,
-        shortcut: BrowserKeyboardShortcut("k", modifiers: [.command, .shift])
-    )
-
-    static let goBack = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.navigationBack,
-        helpTitle: BrowserStrings.navigationBack,
-        shortcut: BrowserKeyboardShortcut("[")
-    )
-
-    static let goForward = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.navigationForward,
-        helpTitle: BrowserStrings.navigationForward,
-        shortcut: BrowserKeyboardShortcut("]")
-    )
-
-    static let reload = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.navigationRefresh,
-        helpTitle: BrowserStrings.navigationRefresh,
-        shortcut: BrowserKeyboardShortcut("r")
-    )
-
-    static let forceReload = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuForceRefresh,
-        helpTitle: BrowserStrings.menuForceRefresh,
-        shortcut: BrowserKeyboardShortcut("r", modifiers: [.command, .shift])
-    )
-
-    static let toggleSidebar = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuToggleSidebar,
-        helpTitle: BrowserStrings.sidebarHide,
-        shortcut: BrowserKeyboardShortcut("s")
-    )
-}
-
-// MARK: - BrowserSpaceShortcuts
-
-enum BrowserSpaceShortcuts {
-    static let maximumIndexedSpaces = 4
-
-    static func shortcut(forSpaceIndex index: Int) -> BrowserKeyboardShortcut? {
-        guard (0..<maximumIndexedSpaces).contains(index) else {
-            return nil
-        }
-
-        return BrowserKeyboardShortcut("\(index + 1)", modifiers: [.control])
-    }
-
-    static func spaceIndex(forPhysicalKeyCode keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) -> Int? {
-        guard modifierFlags.intersection(.deviceIndependentFlagsMask) == [.control] else {
-            return nil
-        }
-
-        switch keyCode {
-        case 18:
-            return 0
-        case 19:
-            return 1
-        case 20:
-            return 2
-        case 21:
-            return 3
-        default:
-            return nil
-        }
-    }
-}
-
-// MARK: - BrowserLayoutIndependentShortcutCommand
-
-enum BrowserLayoutIndependentShortcutCommand: Equatable {
-    case undo
-    case redo
-    case cut
-    case copy
-    case paste
-    case pasteAndMatchStyle
-    case selectAll
-    case quit
-    case openSettings
-    case setAsDefaultBrowser
-    case newTab
-    case openHistory
-    case archiveTab
-    case savePage
-    case printPage
-    case copyLink
-    case findInPage
-    case findAndReplace
-    case findNextInPage
-    case findPreviousInPage
-    case jumpToSelection
-    case clearTemporaryTabs
-    case goBack
-    case goForward
-    case reload
-    case forceReload
-    case toggleSidebar
-}
-
-// MARK: - BrowserKeyboardShortcutBridge
-
-enum BrowserKeyboardShortcutBridge {
-    // MARK: Internal
-
-    static func commandForLayoutIndependentDispatch(
-        keyCode: UInt16,
-        modifierFlags: NSEvent.ModifierFlags,
-        charactersIgnoringModifiers: String?,
-        shortcutResolver: BrowserShortcutResolving? = nil
-    ) -> BrowserLayoutIndependentShortcutCommand? {
-        let normalizedModifiers = modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard normalizedModifiers.contains(.command) else {
-            return nil
-        }
-
-        guard let usKeyEquivalent = usKeyEquivalent(for: keyCode) else {
-            return nil
-        }
-
-        guard normalizedCharacters(from: charactersIgnoringModifiers) != usKeyEquivalent else {
-            return nil
-        }
-
-        return shortcutMatches(shortcutResolver: shortcutResolver)
-            .first {
-                $0.keyEquivalent == usKeyEquivalent && $0.modifiers == normalizedModifiers
-            }?.command
-    }
-
-    // MARK: Private
-
-    private struct ShortcutMatch {
-        // MARK: Lifecycle
-
-        init(
-            command: BrowserLayoutIndependentShortcutCommand,
-            keyEquivalent: String,
-            modifiers: NSEvent.ModifierFlags
-        ) {
-            self.command = command
-            self.keyEquivalent = keyEquivalent.lowercased()
-            self.modifiers = modifiers.intersection(.deviceIndependentFlagsMask)
-        }
-
-        init(
-            command: BrowserLayoutIndependentShortcutCommand,
-            shortcut: BrowserKeyboardShortcut
-        ) {
-            self.init(
-                command: command,
-                keyEquivalent: shortcut.keyEquivalent,
-                modifiers: shortcut.modifiers
-            )
-        }
-
-        // MARK: Internal
-
-        let command: BrowserLayoutIndependentShortcutCommand
-        let keyEquivalent: String
-        let modifiers: NSEvent.ModifierFlags
-    }
-
-    private static func shortcutMatches(shortcutResolver: BrowserShortcutResolving?) -> [ShortcutMatch] {
-        var matches = [
-            ShortcutMatch(command: .undo, keyEquivalent: "z", modifiers: [.command]),
-            ShortcutMatch(command: .redo, keyEquivalent: "z", modifiers: [.command, .shift]),
-            ShortcutMatch(command: .cut, keyEquivalent: "x", modifiers: [.command]),
-            ShortcutMatch(command: .copy, keyEquivalent: "c", modifiers: [.command]),
-            ShortcutMatch(command: .paste, keyEquivalent: "v", modifiers: [.command]),
-            ShortcutMatch(command: .pasteAndMatchStyle, keyEquivalent: "v", modifiers: [.command, .shift]),
-            ShortcutMatch(command: .selectAll, keyEquivalent: "a", modifiers: [.command]),
-            ShortcutMatch(command: .quit, keyEquivalent: "q", modifiers: [.command]),
-        ]
-
-        matches.append(
-            contentsOf: BrowserCommandID.allCases.map { commandID in
-                ShortcutMatch(
-                    command: commandID.layoutIndependentCommand,
-                    shortcut: shortcutResolver?.shortcut(for: commandID) ?? commandID.defaultDescriptor.shortcut
-                )
-            }
-        )
-        return matches
-    }
-
-    private static func normalizedCharacters(from characters: String?) -> String? {
-        characters?.lowercased()
-    }
-
-    private static func usKeyEquivalent(for keyCode: UInt16) -> String? {
-        switch keyCode {
-        case 0:
-            "a"
-        case 1:
-            "s"
-        case 2:
-            "d"
-        case 3:
-            "f"
-        case 5:
-            "g"
-        case 6:
-            "z"
-        case 7:
-            "x"
-        case 8:
-            "c"
-        case 9:
-            "v"
-        case 11:
-            "b"
-        case 12:
-            "q"
-        case 13:
-            "w"
-        case 15:
-            "r"
-        case 16:
-            "y"
-        case 17:
-            "t"
-        case 35:
-            "p"
-        case 38:
-            "j"
-        case 40:
-            "k"
-        case 30:
-            "]"
-        case 33:
-            "["
-        case 43:
-            ","
-        default:
-            nil
-        }
-    }
-}
 
 // MARK: - BrowserStrings
 
@@ -433,9 +33,44 @@ enum BrowserStrings {
         comment: "Tooltip title for creating a new space."
     )
 
+    static let spaceDeleteAction = NSLocalizedString(
+        "browser.space.delete_action",
+        comment: "Context menu title for deleting a space."
+    )
+
+    static let pinnedTabFolderDefaultTitle = NSLocalizedString(
+        "browser.pinned_tab_folder.default_title",
+        comment: "Default title for a pinned tab folder."
+    )
+
+    static let pinnedTabFolderNewAction = NSLocalizedString(
+        "browser.pinned_tab_folder.new_action",
+        comment: "Context menu title for creating a pinned tab folder from selected tabs."
+    )
+
+    static let pinnedTabFolderRenameAction = NSLocalizedString(
+        "browser.pinned_tab_folder.rename_action",
+        comment: "Context menu title for renaming a pinned tab folder."
+    )
+
+    static let pinnedTabFolderChangeIconAction = NSLocalizedString(
+        "browser.pinned_tab_folder.change_icon_action",
+        comment: "Context menu title for changing a pinned tab folder icon."
+    )
+
+    static let pinnedTabFolderNoIconAction = NSLocalizedString(
+        "browser.pinned_tab_folder.no_icon_action",
+        comment: "Menu title for removing a pinned tab folder icon."
+    )
+
     static let sidebarHide = NSLocalizedString(
         "browser.sidebar.hide",
         comment: "Tooltip for hiding the sidebar."
+    )
+
+    static let sidebarShow = NSLocalizedString(
+        "browser.sidebar.show",
+        comment: "Tooltip for showing the sidebar."
     )
 
     static let navigationBack = NSLocalizedString(
@@ -466,6 +101,186 @@ enum BrowserStrings {
     static let commandBarPlaceholder = NSLocalizedString(
         "browser.command_bar.placeholder",
         comment: "Placeholder shown in the command bar search field."
+    )
+
+    static let bookmarksAddCurrentPage = NSLocalizedString(
+        "browser.bookmarks.add_current_page",
+        comment: "Tooltip for adding the selected page to bookmarks."
+    )
+
+    static let bookmarksRemoveCurrentPage = NSLocalizedString(
+        "browser.bookmarks.remove_current_page",
+        comment: "Tooltip for removing the selected page from bookmarks."
+    )
+
+    static let bookmarksRenameAction = NSLocalizedString(
+        "browser.bookmarks.rename_action",
+        comment: "Context menu title for renaming a bookmark."
+    )
+
+    static let bookmarksEditAddressAction = NSLocalizedString(
+        "browser.bookmarks.edit_address_action",
+        comment: "Context menu title for editing a bookmark address."
+    )
+
+    static let bookmarksMoveToAction = NSLocalizedString(
+        "browser.bookmarks.move_to_action",
+        comment: "Context menu title for moving a bookmark."
+    )
+
+    static let bookmarksBarDestination = NSLocalizedString(
+        "browser.bookmarks.bar_destination",
+        comment: "Bookmark move destination title for the bookmarks bar root."
+    )
+
+    static let bookmarksNewFolderAction = NSLocalizedString(
+        "browser.bookmarks.new_folder_action",
+        comment: "Context menu title for creating a bookmark folder."
+    )
+
+    static let bookmarksDeleteAction = NSLocalizedString(
+        "browser.bookmarks.delete_action",
+        comment: "Context menu title for deleting a bookmark."
+    )
+
+    static let bookmarksManageAction = NSLocalizedString(
+        "browser.bookmarks.manage_action",
+        comment: "Context menu title for opening bookmark management."
+    )
+
+    static let bookmarksRenamePromptTitle = NSLocalizedString(
+        "browser.bookmarks.rename_prompt.title",
+        comment: "Prompt title for renaming a bookmark."
+    )
+
+    static let bookmarksEditAddressPromptTitle = NSLocalizedString(
+        "browser.bookmarks.edit_address_prompt.title",
+        comment: "Prompt title for editing a bookmark URL."
+    )
+
+    static let bookmarksNewFolderPromptTitle = NSLocalizedString(
+        "browser.bookmarks.new_folder_prompt.title",
+        comment: "Prompt title for creating a bookmark folder."
+    )
+
+    static let bookmarksImport = NSLocalizedString(
+        "browser.bookmarks.import",
+        comment: "Menu title for importing bookmarks."
+    )
+
+    static let bookmarksImportArc = NSLocalizedString(
+        "browser.bookmarks.import.arc",
+        comment: "Menu item title for importing bookmarks from Arc."
+    )
+
+    static let bookmarksImportDia = NSLocalizedString(
+        "browser.bookmarks.import.dia",
+        comment: "Menu item title for importing bookmarks from Dia."
+    )
+
+    static let bookmarksImportChrome = NSLocalizedString(
+        "browser.bookmarks.import.chrome",
+        comment: "Menu item title for importing bookmarks from Chrome."
+    )
+
+    static let bookmarksImportSafari = NSLocalizedString(
+        "browser.bookmarks.import.safari",
+        comment: "Menu item title for importing bookmarks from Safari."
+    )
+
+    static let bookmarksImportedFromArc = NSLocalizedString(
+        "browser.bookmarks.imported_from.arc",
+        comment: "Folder title for bookmarks imported from Arc."
+    )
+
+    static let bookmarksImportedFromDia = NSLocalizedString(
+        "browser.bookmarks.imported_from.dia",
+        comment: "Folder title for bookmarks imported from Dia."
+    )
+
+    static let bookmarksImportedFromChrome = NSLocalizedString(
+        "browser.bookmarks.imported_from.chrome",
+        comment: "Folder title for bookmarks imported from Chrome."
+    )
+
+    static let bookmarksImportedFromSafari = NSLocalizedString(
+        "browser.bookmarks.imported_from.safari",
+        comment: "Folder title for bookmarks imported from Safari."
+    )
+
+    static let bookmarksUntitledFolder = NSLocalizedString(
+        "browser.bookmarks.untitled_folder",
+        comment: "Fallback title for an untitled bookmarks folder."
+    )
+
+    static let bookmarksHideBarAction = NSLocalizedString(
+        "browser.bookmarks.hide_bar_action",
+        comment: "Context menu title for hiding the bookmarks bar."
+    )
+
+    static let downloadsTitle = NSLocalizedString(
+        "browser.downloads.title",
+        comment: "Title and tooltip for the downloads manager."
+    )
+
+    static let downloadsEmpty = NSLocalizedString(
+        "browser.downloads.empty",
+        comment: "Message shown when there are no downloads."
+    )
+
+    static let downloadsClearFinished = NSLocalizedString(
+        "browser.downloads.clear_finished",
+        comment: "Button title for clearing finished downloads."
+    )
+
+    static let downloadsOpen = NSLocalizedString(
+        "browser.downloads.open",
+        comment: "Button title for opening a downloaded file."
+    )
+
+    static let downloadsReveal = NSLocalizedString(
+        "browser.downloads.reveal",
+        comment: "Button title for revealing a downloaded file in Finder."
+    )
+
+    static let downloadsDefaultFileName = NSLocalizedString(
+        "browser.downloads.default_file_name",
+        comment: "Fallback file name for downloads without a suggested name."
+    )
+
+    static let downloadsStatusInProgress = NSLocalizedString(
+        "browser.downloads.status.in_progress",
+        comment: "Status text for a download that is still running."
+    )
+
+    static let downloadsStatusCompleted = NSLocalizedString(
+        "browser.downloads.status.completed",
+        comment: "Status text for a completed download."
+    )
+
+    static let downloadsStatusCanceled = NSLocalizedString(
+        "browser.downloads.status.canceled",
+        comment: "Status text for a canceled download."
+    )
+
+    static let downloadsStatusInterrupted = NSLocalizedString(
+        "browser.downloads.status.interrupted",
+        comment: "Status text for an interrupted download."
+    )
+
+    static let downloadsCompletedDetail = NSLocalizedString(
+        "browser.downloads.detail.completed",
+        comment: "Detail text for a completed download."
+    )
+
+    static let downloadsCanceledDetail = NSLocalizedString(
+        "browser.downloads.detail.canceled",
+        comment: "Detail text for a canceled download."
+    )
+
+    static let downloadsInterruptedDetail = NSLocalizedString(
+        "browser.downloads.detail.interrupted",
+        comment: "Detail text for an interrupted download."
     )
 
     static let findBarPlaceholder = NSLocalizedString(
@@ -511,6 +326,11 @@ enum BrowserStrings {
     static let menuSettings = NSLocalizedString(
         "browser.menu.settings",
         comment: "Settings menu item title."
+    )
+
+    static let menuCheckForUpdates = NSLocalizedString(
+        "browser.menu.check_for_updates",
+        comment: "Check for Updates menu item title."
     )
 
     static let menuSetAsDefaultBrowser = NSLocalizedString(
@@ -628,6 +448,21 @@ enum BrowserStrings {
         comment: "New Tab menu item title."
     )
 
+    static let menuNewIncognitoWindow = NSLocalizedString(
+        "browser.menu.new_incognito_window",
+        comment: "New Incognito Window menu item title."
+    )
+
+    static let incognitoBannerTitle = NSLocalizedString(
+        "browser.incognito.banner.title",
+        comment: "Banner title shown above web content in incognito windows."
+    )
+
+    static let incognitoTabsTitle = NSLocalizedString(
+        "browser.incognito.tabs.title",
+        comment: "Sidebar label shown above the new tab button in incognito windows."
+    )
+
     static let menuHistory = NSLocalizedString(
         "browser.menu.history",
         comment: "History menu item title."
@@ -703,6 +538,31 @@ enum BrowserStrings {
         comment: "Tooltip title for opening the current site's controls."
     )
 
+    static let siteCaptureFullPageAction = NSLocalizedString(
+        "browser.site.capture_full_page",
+        comment: "Context menu item for capturing the full current page to the pasteboard."
+    )
+
+    static let siteShowAsToolbarAction = NSLocalizedString(
+        "browser.site.show_as_toolbar",
+        comment: "Context menu item for showing the URL row as a toolbar."
+    )
+
+    static let siteShowInSidebarAction = NSLocalizedString(
+        "browser.site.show_in_sidebar",
+        comment: "Context menu item for moving the URL toolbar back into the sidebar."
+    )
+
+    static let siteShowFullURLAction = NSLocalizedString(
+        "browser.site.show_full_url",
+        comment: "Context menu item for showing the full URL in the URL toolbar."
+    )
+
+    static let siteHideFullURLAction = NSLocalizedString(
+        "browser.site.hide_full_url",
+        comment: "Context menu item for hiding the full URL in the URL toolbar."
+    )
+
     static let extensionsSectionTitle = NSLocalizedString(
         "browser.extensions.section.title",
         comment: "Section title for extensions in the site control center popover."
@@ -716,6 +576,66 @@ enum BrowserStrings {
     static let extensionsAddAction = NSLocalizedString(
         "browser.extensions.add",
         comment: "Accessibility title for adding an extension."
+    )
+
+    static let extensionsCloseSidePanel = NSLocalizedString(
+        "browser.extensions.close_side_panel",
+        comment: "Tooltip title for closing an extension side panel."
+    )
+
+    static let extensionsSiteAccessMenu = NSLocalizedString(
+        "browser.extensions.site_access.menu",
+        comment: "Context menu title for extension site access controls."
+    )
+
+    static let extensionsSiteAccessOnClick = NSLocalizedString(
+        "browser.extensions.site_access.on_click",
+        comment: "Context menu item for extension access when clicked."
+    )
+
+    static let extensionsSiteAccessCurrentSite = NSLocalizedString(
+        "browser.extensions.site_access.current_site",
+        comment: "Context menu item for extension access on the current site; receives the host name."
+    )
+
+    static let extensionsSiteAccessAllSites = NSLocalizedString(
+        "browser.extensions.site_access.all_sites",
+        comment: "Context menu item for extension access on all sites."
+    )
+
+    static let extensionsSiteAccessLearnMore = NSLocalizedString(
+        "browser.extensions.site_access.learn_more",
+        comment: "Context menu item for learning about extension site access."
+    )
+
+    static let extensionsRemoveFromTheBrowser = NSLocalizedString(
+        "browser.extensions.remove_from_thebrowser",
+        comment: "Context menu item for removing an extension from TheBrowser."
+    )
+
+    static let extensionsPinAction = NSLocalizedString(
+        "browser.extensions.pin",
+        comment: "Context menu item for pinning an extension."
+    )
+
+    static let extensionsUnpinAction = NSLocalizedString(
+        "browser.extensions.unpin",
+        comment: "Context menu item for unpinning an extension."
+    )
+
+    static let extensionsManageExtension = NSLocalizedString(
+        "browser.extensions.manage_extension",
+        comment: "Context menu item for opening an extension's details page."
+    )
+
+    static let extensionsViewWebPermissions = NSLocalizedString(
+        "browser.extensions.view_web_permissions",
+        comment: "Context menu item for opening extension web permissions."
+    )
+
+    static let extensionsInspectPopup = NSLocalizedString(
+        "browser.extensions.inspect_popup",
+        comment: "Context menu item for inspecting an extension popup."
     )
 
     static let tabRenameAction = NSLocalizedString(
@@ -763,6 +683,26 @@ enum BrowserStrings {
         comment: "Empty state text for accounts."
     )
 
+    static let syncAccountSignInWithApple = NSLocalizedString(
+        "browser.sync.account.sign_in_with_apple",
+        comment: "Button title for signing into sync with Apple."
+    )
+
+    static let syncAccountSignOut = NSLocalizedString(
+        "browser.sync.account.sign_out",
+        comment: "Button title for signing out of sync."
+    )
+
+    static let syncAccountSignedIn = NSLocalizedString(
+        "browser.sync.account.signed_in",
+        comment: "Fallback title for a signed-in sync account."
+    )
+
+    static let syncAccountServerNotConfigured = NSLocalizedString(
+        "browser.sync.account.server_not_configured",
+        comment: "Message shown when sync is disabled because no server URL is configured."
+    )
+
     static let settingsAutomaticUpdates = NSLocalizedString(
         "browser.settings.general.automatic_updates",
         comment: "Automatic updates setting title."
@@ -773,6 +713,66 @@ enum BrowserStrings {
         comment: "Automatic updates row detail."
     )
 
+    static let settingsUpdateChannel = NSLocalizedString(
+        "browser.settings.general.update_channel",
+        comment: "Update channel setting title."
+    )
+
+    static let settingsUpdateChannelDetail = NSLocalizedString(
+        "browser.settings.general.update_channel.detail",
+        comment: "Update channel setting detail."
+    )
+
+    static let updateChannelStable = NSLocalizedString(
+        "browser.updates.channel.stable",
+        comment: "Stable update channel title."
+    )
+
+    static let updateChannelBeta = NSLocalizedString(
+        "browser.updates.channel.beta",
+        comment: "Beta update channel title."
+    )
+
+    static let updateReadyTitle = NSLocalizedString(
+        "browser.updates.ready.title",
+        comment: "Title shown when an update has been downloaded."
+    )
+
+    static let updateRestartAction = NSLocalizedString(
+        "browser.updates.restart_action",
+        comment: "Button title for installing a downloaded update immediately."
+    )
+
+    static let updateDismissAction = NSLocalizedString(
+        "browser.updates.dismiss_action",
+        comment: "Accessibility label for dismissing the update toast."
+    )
+
+    static let settingsAppearance = NSLocalizedString(
+        "browser.settings.general.appearance",
+        comment: "Appearance setting title."
+    )
+
+    static let settingsAppearanceDetail = NSLocalizedString(
+        "browser.settings.general.appearance.detail",
+        comment: "Appearance setting detail."
+    )
+
+    static let settingsAppearanceSystem = NSLocalizedString(
+        "browser.settings.general.appearance.system",
+        comment: "Appearance setting option that follows the system appearance."
+    )
+
+    static let settingsAppearanceLight = NSLocalizedString(
+        "browser.settings.general.appearance.light",
+        comment: "Appearance setting option that forces the light appearance."
+    )
+
+    static let settingsAppearanceDark = NSLocalizedString(
+        "browser.settings.general.appearance.dark",
+        comment: "Appearance setting option that forces the dark appearance."
+    )
+
     static let settingsWarnBeforeQuitting = NSLocalizedString(
         "browser.settings.general.warn_before_quitting",
         comment: "Warn before quitting setting title."
@@ -781,6 +781,16 @@ enum BrowserStrings {
     static let settingsBlurredBackground = NSLocalizedString(
         "browser.settings.general.blurred_background",
         comment: "Blurred browser background setting title."
+    )
+
+    static let settingsBatterySaver = NSLocalizedString(
+        "browser.settings.general.battery_saver",
+        comment: "Battery Saver setting title."
+    )
+
+    static let settingsBatterySaverDetail = NSLocalizedString(
+        "browser.settings.general.battery_saver.detail",
+        comment: "Battery Saver setting description."
     )
 
     static let settingsProfilesTab = NSLocalizedString(
@@ -803,8 +813,48 @@ enum BrowserStrings {
         comment: "Default profile detail."
     )
 
+    static let settingsCurrentProfile = NSLocalizedString(
+        "browser.settings.profiles.current_profile",
+        comment: "Label for the profile used by the current browser window."
+    )
+
+    static let settingsOpenProfile = NSLocalizedString(
+        "browser.settings.profiles.open_profile",
+        comment: "Button title for opening a browser window with a profile."
+    )
+
+    static let settingsNewProfile = NSLocalizedString(
+        "browser.settings.profiles.new_profile",
+        comment: "Button title for creating a new browser profile."
+    )
+
+    static let settingsBackUpProfile = NSLocalizedString(
+        "browser.settings.profiles.back_up",
+        comment: "Button title for creating a backup archive of a browser profile."
+    )
+
+    static let settingsDeleteProfile = NSLocalizedString(
+        "browser.settings.profiles.delete",
+        comment: "Button title for deleting a browser profile."
+    )
+
+    static let settingsDefaultBrowserPrompt = NSLocalizedString(
+        "browser.settings.default_browser.prompt",
+        comment: "Settings row title prompting the user to set TheBrowser as default."
+    )
+
+    static let settingsDefaultBrowserAction = NSLocalizedString(
+        "browser.settings.default_browser.action",
+        comment: "Settings row button title for setting TheBrowser as default."
+    )
+
+    static let settingsSearch = NSLocalizedString(
+        "browser.settings.search",
+        comment: "Search settings section title."
+    )
+
     static let settingsSearchEngine = NSLocalizedString(
-        "browser.settings.profiles.search_engine",
+        "browser.settings.search_engine",
         comment: "Search engine setting title."
     )
 
@@ -828,24 +878,69 @@ enum BrowserStrings {
         comment: "DuckDuckGo search engine picker title."
     )
 
+    static let settingsSearchEngineEcosia = NSLocalizedString(
+        "browser.settings.search_engine.ecosia",
+        comment: "Ecosia search engine picker title."
+    )
+
+    static let settingsSearchEngineBrave = NSLocalizedString(
+        "browser.settings.search_engine.brave",
+        comment: "Brave Search engine picker title."
+    )
+
+    static let settingsSearchEngineQwant = NSLocalizedString(
+        "browser.settings.search_engine.qwant",
+        comment: "Qwant search engine picker title."
+    )
+
     static let settingsSearchEngineYandex = NSLocalizedString(
         "browser.settings.search_engine.yandex",
         comment: "Yandex search engine picker title."
     )
 
-    static let settingsSearchEnginePerplexity = NSLocalizedString(
-        "browser.settings.search_engine.perplexity",
-        comment: "Perplexity search engine picker title."
+    static let settingsSearchEngineBaidu = NSLocalizedString(
+        "browser.settings.search_engine.baidu",
+        comment: "Baidu search engine picker title."
     )
 
     static let settingsManageSearch = NSLocalizedString(
-        "browser.settings.profiles.manage_search",
+        "browser.settings.manage_search",
         comment: "Manage search button title."
     )
 
     static let settingsSearchSuggestions = NSLocalizedString(
-        "browser.settings.profiles.search_suggestions",
+        "browser.settings.search_suggestions",
         comment: "Search engine suggestions toggle title."
+    )
+
+    static let settingsAISearchProvider = NSLocalizedString(
+        "browser.settings.ai_search_provider",
+        comment: "AI provider picker title."
+    )
+
+    static let settingsAISearchProviderChatGPT = NSLocalizedString(
+        "browser.settings.ai_search_provider.chatgpt",
+        comment: "ChatGPT AI provider picker title."
+    )
+
+    static let settingsAISearchProviderClaude = NSLocalizedString(
+        "browser.settings.ai_search_provider.claude",
+        comment: "Claude AI provider picker title."
+    )
+
+    static let settingsAISearchProviderGemini = NSLocalizedString(
+        "browser.settings.ai_search_provider.gemini",
+        comment: "Gemini AI provider picker title."
+    )
+
+    static let settingsAISearchProviderPerplexity = NSLocalizedString(
+        "browser.settings.ai_search_provider.perplexity",
+        comment: "Perplexity AI provider picker title."
+    )
+
+    static let settingsAISearchProviderDeepSeek = NSLocalizedString(
+        "browser.settings.ai_search_provider.deepseek",
+        comment: "DeepSeek AI provider picker title."
     )
 
     static let settingsPrivacyAndSecurity = NSLocalizedString(
@@ -928,6 +1023,11 @@ enum BrowserStrings {
         comment: "Picture in Picture setting title."
     )
 
+    static let settingsShowBookmarksBar = NSLocalizedString(
+        "browser.settings.content.show_bookmarks_bar",
+        comment: "Show bookmarks bar setting title."
+    )
+
     static let settingsMoreSettings = NSLocalizedString(
         "browser.settings.content.more_settings",
         comment: "More settings button title."
@@ -1003,6 +1103,66 @@ enum BrowserStrings {
         comment: "Don't Allow button title for notification permissions."
     )
 
+    static func bookmarksOpenAllAction(count: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.bookmarks.open_all_action",
+                comment: "Context menu title for opening all bookmarks in a folder. Receives the bookmark count."
+            ),
+            count
+        )
+    }
+
+    static func commandBarAskAI(_ providerName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.command_bar.ask_ai",
+                comment: "Command bar suggestion title for opening the query in the selected AI provider."
+            ),
+            providerName
+        )
+    }
+
+    static func settingsProfileDirectory(_ directoryName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.settings.profiles.directory",
+                comment: "Detail text showing the Chromium profile directory name."
+            ),
+            directoryName
+        )
+    }
+
+    static func settingsProfileBackupCreated(_ filename: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.settings.profiles.backup_created",
+                comment: "Message shown after a profile backup archive was created. The argument is the archive filename."
+            ),
+            filename
+        )
+    }
+
+    static func settingsProfileBackupFailed(_ message: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.settings.profiles.backup_failed",
+                comment: "Message shown when creating a profile backup archive fails. The argument is the error message."
+            ),
+            message
+        )
+    }
+
+    static func syncAccountDevice(_ deviceID: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.sync.account.device",
+                comment: "Sync account device detail with device identifier placeholder."
+            ),
+            deviceID
+        )
+    }
+
     static func defaultSpaceTitle(index: Int) -> String {
         String(
             format: NSLocalizedString(
@@ -1020,6 +1180,64 @@ enum BrowserStrings {
                 comment: "Shortcut conflict message with conflicting command title."
             ),
             commandTitle
+        )
+    }
+
+    static func updateReadyMessage(version: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.updates.ready.message",
+                comment: "Message shown when an update is ready. The argument is the update version."
+            ),
+            version
+        )
+    }
+
+    static func downloadsProgressKnownTotal(received: String, total: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.downloads.progress.known_total",
+                comment: "Download progress detail with received and total byte counts."
+            ),
+            received,
+            total
+        )
+    }
+
+    static func downloadsProgressKnownTotalWithSpeed(
+        received: String,
+        total: String,
+        speed: String
+    ) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.downloads.progress.known_total_with_speed",
+                comment: "Download progress detail with received bytes, total bytes, and speed."
+            ),
+            received,
+            total,
+            speed
+        )
+    }
+
+    static func downloadsProgressUnknownTotal(_ received: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.downloads.progress.unknown_total",
+                comment: "Download progress detail when total size is unknown."
+            ),
+            received
+        )
+    }
+
+    static func downloadsProgressUnknownTotalWithSpeed(received: String, speed: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.downloads.progress.unknown_total_with_speed",
+                comment: "Download progress detail with received bytes and speed when total size is unknown."
+            ),
+            received,
+            speed
         )
     }
 

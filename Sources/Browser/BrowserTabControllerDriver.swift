@@ -6,15 +6,37 @@ import Foundation
 @MainActor final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
     // MARK: Lifecycle
 
-    init(hostView: BrowserTabHostView) {
+    init(
+        hostView: BrowserTabHostView,
+        usesEphemeralRequestContext: Bool = false,
+        profileCachePath: String? = nil
+    ) {
         self.browserHostView = hostView
-        self.controller = BrowserTabController(hostView: hostView)
+        self.controller = BrowserTabController(
+            hostView: hostView,
+            usesEphemeralRequestContext: usesEphemeralRequestContext,
+            profileCachePath: profileCachePath
+        )
         super.init()
         controller.delegate = self
     }
 
     override convenience init() {
         self.init(hostView: BrowserTabHostView(frame: .zero))
+    }
+
+    convenience init(usesEphemeralRequestContext: Bool) {
+        self.init(
+            hostView: BrowserTabHostView(frame: .zero),
+            usesEphemeralRequestContext: usesEphemeralRequestContext
+        )
+    }
+
+    convenience init(profileCachePath: String) {
+        self.init(
+            hostView: BrowserTabHostView(frame: .zero),
+            profileCachePath: profileCachePath
+        )
     }
 
     // MARK: Internal
@@ -25,6 +47,7 @@ import Foundation
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
+    var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -68,6 +91,10 @@ import Foundation
 
     func saveActiveTab(withSuggestedName suggestedName: String?) {
         controller.saveActiveTab(withSuggestedName: suggestedName)
+    }
+
+    func captureFullPageActiveTabToPasteboard() {
+        controller.captureFullPageActiveTabToPasteboard()
     }
 
     func pasteAndMatchStyleActiveTab() {
@@ -163,6 +190,32 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     ) {
         Task { @MainActor [weak self] in
             self?.onFindResultChanged?(tabID, matchCount, activeMatchOrdinal, finalUpdate)
+        }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didUpdateDownloadWithID downloadID: String,
+        fileName: String,
+        urlString: String,
+        fullPath: String?,
+        receivedBytes: Int64,
+        totalBytes: Int64,
+        currentSpeedBytesPerSecond: Int64,
+        stateRawValue: String
+    ) {
+        Task { @MainActor [weak self] in
+            let state = BrowserDownloadState(rawValue: stateRawValue) ?? .interrupted
+            self?.onDownloadUpdated?(BrowserDownloadUpdate(
+                id: downloadID,
+                fileName: fileName,
+                urlString: urlString,
+                fullPath: fullPath,
+                receivedBytes: receivedBytes,
+                totalBytes: totalBytes,
+                currentSpeedBytesPerSecond: currentSpeedBytesPerSecond,
+                state: state
+            ))
         }
     }
 }

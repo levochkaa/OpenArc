@@ -1,6 +1,8 @@
 import Foundation
 import Testing
 
+private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAISearchProvider.chatGPT.title)
+
 @Test func resolvePreservesFullURLInput() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("https://openai.com/research?q=browser")
@@ -63,7 +65,7 @@ import Testing
         resolution == BrowserNavigationResolver.Resolution(
             kind: .url,
             displayText: "tb://settings",
-            resolvedURLString: "tb://settings"
+            resolvedURLString: "tb://settings/"
         )
     )
 }
@@ -81,7 +83,7 @@ import Testing
     )
 }
 
-@Test func resolvePreservesChromiumInternalURL() {
+@Test func resolveNormalizesChromiumInternalURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("chrome://settings")
 
@@ -89,8 +91,29 @@ import Testing
         resolution == BrowserNavigationResolver.Resolution(
             kind: .url,
             displayText: "chrome://settings",
-            resolvedURLString: "chrome://settings"
+            resolvedURLString: "tb://settings/"
         )
+    )
+}
+
+@Test func resolveNormalizesInternalBrowserAliases() {
+    let resolver = BrowserNavigationResolver()
+
+    #expect(resolver.resolve("arc://bookmarks")?.resolvedURLString == "tb://bookmarks/")
+    #expect(resolver.resolve("dia://password-manager/passwords")?
+        .resolvedURLString == "tb://password-manager/passwords")
+    #expect(resolver.resolve("about:bookmarks")?.resolvedURLString == "tb://bookmarks/")
+}
+
+@Test func internalURLNormalizerMapsBookmarksAndPasswordManagerToChromiumURLs() {
+    #expect(
+        BrowserInternalURLNormalizer
+            .chromiumURLString(forCanonicalURLString: "tb://bookmarks/") == "chrome://bookmarks/"
+    )
+    #expect(
+        BrowserInternalURLNormalizer
+            .chromiumURLString(forCanonicalURLString: "tb://password-manager/passwords")
+            == "chrome://password-manager/passwords"
     )
 }
 
@@ -182,12 +205,12 @@ import Testing
     await model.waitForPendingSuggestionLoad()
 
     #expect(model.isPresented)
-    #expect(model.suggestions.map(\.displayText) == ["привет", "привет макет", "привет мир"])
+    #expect(model.suggestions.map(\.displayText) == ["привет", defaultAISuggestionTitle, "привет макет", "привет мир"])
     #expect(model.selectedSuggestion?.displayText == "привет")
 }
 
 @Test
-@MainActor func disabledRemoteSuggestionsKeepPrimarySuggestionOnly() async {
+@MainActor func disabledRemoteSuggestionsKeepPrimaryAndAIOnly() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["browser": ["browser settings"]]
     )
@@ -201,7 +224,7 @@ import Testing
     await model.waitForPendingSuggestionLoad()
 
     #expect(suggestionProvider.requestedQueries.isEmpty)
-    #expect(model.suggestions.map(\.displayText) == ["browser"])
+    #expect(model.suggestions.map(\.displayText) == ["browser", defaultAISuggestionTitle])
 }
 
 @Test
@@ -215,12 +238,129 @@ import Testing
     model.query = "https://google.com/"
     await model.waitForPendingSuggestionLoad()
 
-    #expect(model.suggestions.map(\.displayText) == ["https://google.com/", "https://google.com/business"])
+    #expect(model.suggestions.map(\.displayText) == [
+        "https://google.com/",
+        defaultAISuggestionTitle,
+        "https://google.com/business",
+    ])
 
     let urlSuggestion = try #require(model.suggestions.last)
     #expect(urlSuggestion.kind == .url)
     #expect(urlSuggestion.systemImageName == "globe")
     #expect(urlSuggestion.resolvedURLString == "https://google.com/business")
+}
+
+@Test
+@MainActor func localSuggestionsAreShownBeforeRemoteSuggestions() async {
+    let suggestionProvider = FakeSuggestionProvider(
+        suggestionsByQuery: ["docs": ["docs remote"]]
+    )
+    let localSuggestions = [
+        BrowserCommandSuggestion(
+            kind: .openTab,
+            displayText: "Docs Tab",
+            detailText: "docs.example",
+            resolvedURLString: "https://docs.example",
+            tabID: "tab-1"
+        ),
+        BrowserCommandSuggestion(
+            kind: .bookmark,
+            displayText: "Docs Bookmark",
+            detailText: "bookmarks.example",
+            resolvedURLString: "https://bookmarks.example"
+        ),
+    ]
+    let model = makeModel(
+        suggestionProvider: suggestionProvider,
+        localSuggestionProvider: { query, maximumCount in
+            query == "docs" ? Array(localSuggestions.prefix(maximumCount)) : []
+        }
+    )
+
+    model.present()
+    model.query = "docs"
+    await model.waitForPendingSuggestionLoad()
+
+    #expect(model.suggestions.map(\.displayText) == [
+        "docs",
+        defaultAISuggestionTitle,
+        "Docs Tab",
+        "Docs Bookmark",
+        "docs remote",
+    ])
+    #expect(model.suggestions.map(\.kind) == [.search, .aiSearch, .openTab, .bookmark, .googleSuggestion])
+}
+
+@Test
+@MainActor func aiSuggestionSubmitsSelectedProviderQueryURL() async throws {
+    var submittedURLStrings = [String]()
+    let model = makeModel(
+        suggestionProvider: FakeSuggestionProvider(),
+        aiSearchProviderProvider: { .deepSeek },
+        submitHandler: { submittedURLStrings.append($0) }
+    )
+
+    model.present()
+    model.query = "explain swift 6"
+    await model.waitForPendingSuggestionLoad()
+
+    model.moveSelection(by: 1)
+    #expect(model.selectedSuggestion?.kind == .aiSearch)
+    #expect(model.selectedSuggestion?.displayText == BrowserStrings
+        .commandBarAskAI(BrowserAISearchProvider.deepSeek.title))
+
+    model.submitSelection()
+
+    let submittedURLString = try #require(submittedURLStrings.first)
+    #expect(URLComponents(string: submittedURLString)?.host == "chat.deepseek.com")
+    #expect(queryValue(from: submittedURLString, name: "q") == "explain swift 6")
+    #expect(!model.isPresented)
+}
+
+@Test
+@MainActor func aiSuggestionDoesNotReplaceTypedQueryDuringCompletion() async {
+    let model = makeModel(suggestionProvider: FakeSuggestionProvider())
+
+    model.present()
+    model.query = "browser settings"
+    await model.waitForPendingSuggestionLoad()
+    model.moveSelection(by: 1)
+
+    #expect(model.selectedSuggestion?.kind == .aiSearch)
+    #expect(model.previewDisplayText == nil)
+    #expect(!model.acceptSelectedSuggestion())
+    #expect(model.query == "browser settings")
+}
+
+@Test
+@MainActor func openTabSuggestionSwitchesTabInsteadOfSubmittingURL() async {
+    var switchedTabIDs = [String]()
+    var submittedURLStrings = [String]()
+    let model = makeModel(
+        suggestionProvider: FakeSuggestionProvider(),
+        localSuggestionProvider: { _, _ in
+            [
+                BrowserCommandSuggestion(
+                    kind: .openTab,
+                    displayText: "Open Tab",
+                    resolvedURLString: "https://open.example",
+                    tabID: "tab-1"
+                ),
+            ]
+        },
+        submitHandler: { submittedURLStrings.append($0) },
+        switchToTabHandler: { switchedTabIDs.append($0) }
+    )
+
+    model.present()
+    model.query = "open"
+    await model.waitForPendingSuggestionLoad()
+    model.moveSelection(by: 2)
+    model.submitSelection()
+
+    #expect(switchedTabIDs == ["tab-1"])
+    #expect(submittedURLStrings.isEmpty)
+    #expect(!model.isPresented)
 }
 
 @Test
@@ -234,7 +374,7 @@ import Testing
     model.query = "привет"
     await model.waitForPendingSuggestionLoad()
 
-    model.moveSelection(by: 1)
+    model.moveSelection(by: 2)
 
     #expect(model.selectedSuggestion?.displayText == "привет макет")
     #expect(model.inlineCompletionSuffix == " макет")
@@ -250,7 +390,7 @@ import Testing
     model.present()
     model.query = "привет"
     await model.waitForPendingSuggestionLoad()
-    model.moveSelection(by: 1)
+    model.moveSelection(by: 2)
 
     #expect(model.acceptSelectedSuggestion())
     #expect(model.query == "привет макет")
@@ -282,7 +422,7 @@ import Testing
     model.present()
     model.query = "hello "
     await model.waitForPendingSuggestionLoad()
-    model.moveSelection(by: 1)
+    model.moveSelection(by: 2)
 
     #expect(model.inlineCompletionSuffix == "world")
     #expect(model.acceptSelectedSuggestion())
@@ -301,7 +441,7 @@ import Testing
     model.present()
     model.query = "test english com listening b2"
     await model.waitForPendingSuggestionLoad()
-    model.moveSelection(by: 1)
+    model.moveSelection(by: 2)
 
     #expect(model.selectedSuggestion?.displayText == "https test english com listening b2 inside google's office")
     #expect(model.inlineCompletionSuffix == nil)
@@ -320,14 +460,14 @@ import Testing
     model.present()
     model.query = "test english com listening b2"
     await model.waitForPendingSuggestionLoad()
-    model.moveSelection(by: 1)
+    model.moveSelection(by: 2)
 
     #expect(model.acceptSelectedSuggestion())
     #expect(model.query == "https test english com listening b2 inside google's office")
 }
 
 @Test
-@MainActor func submitFallsBackToTypedURLWhenOnlyPrimarySuggestionExists() async {
+@MainActor func submitUsesPrimarySuggestionByDefault() async {
     var submittedURLStrings = [String]()
     let model = makeModel(
         suggestionProvider: FakeSuggestionProvider(),
@@ -357,7 +497,7 @@ import Testing
     model.present()
     model.query = "привет"
     await model.waitForPendingSuggestionLoad()
-    model.moveSelection(by: 1)
+    model.moveSelection(by: 2)
     model.submitSelection()
 
     #expect(queryValue(from: submittedURLStrings.first, name: "q") == "привет макет")
@@ -385,14 +525,20 @@ import Testing
 
 @MainActor private func makeModel(
     suggestionProvider: BrowserSuggestionProviding,
+    localSuggestionProvider: @escaping (String, Int) -> [BrowserCommandSuggestion] = { _, _ in [] },
     remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
-    submitHandler: @escaping (String) -> Void = { _ in }
+    aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
+    submitHandler: @escaping (String) -> Void = { _ in },
+    switchToTabHandler: @escaping (String) -> Void = { _ in }
 ) -> BrowserCommandBarModel {
     BrowserCommandBarModel(
         suggestionProvider: suggestionProvider,
         suggestionDebounceNanoseconds: 0,
+        localSuggestionProvider: localSuggestionProvider,
         remoteSuggestionsEnabledProvider: remoteSuggestionsEnabledProvider,
-        submitHandler: submitHandler
+        aiSearchProviderProvider: aiSearchProviderProvider,
+        submitHandler: submitHandler,
+        switchToTabHandler: switchToTabHandler
     )
 }
 

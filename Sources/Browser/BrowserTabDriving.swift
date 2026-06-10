@@ -9,6 +9,7 @@ import Foundation
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)? { get set }
     var onLoadingStateChanged: ((String, Bool) -> Void)? { get set }
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)? { get set }
+    var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     func selectTab(withID tabID: String)
@@ -20,6 +21,7 @@ import Foundation
     func reloadActiveTabIgnoringCache()
     func stopLoadingActiveTab()
     func saveActiveTab(withSuggestedName suggestedName: String?)
+    func captureFullPageActiveTabToPasteboard()
     func pasteAndMatchStyleActiveTab()
     func printActiveTab()
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)

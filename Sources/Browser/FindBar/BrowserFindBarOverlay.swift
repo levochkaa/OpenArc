@@ -229,7 +229,7 @@ final class BrowserFindNSTextField: NSTextField {
         isEditable = true
         isSelectable = true
         font = .systemFont(ofSize: 13, weight: .medium)
-        textColor = .white.withAlphaComponent(0.92)
+        textColor = activeTextColor
         cell?.usesSingleLineMode = true
         cell?.wraps = false
         cell?.isScrollable = true
@@ -284,6 +284,12 @@ final class BrowserFindNSTextField: NSTextField {
     }
 
     // MARK: Private
+
+    private var activeTextColor: NSColor {
+        effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.92)
+            : .labelColor
+    }
 
     private func syncFocus(_ shouldFocus: Bool) {
         pendingFocus = shouldFocus
@@ -343,8 +349,8 @@ final class BrowserFindNSTextField: NSTextField {
             return
         }
 
-        editor.insertionPointColor = .white
-        editor.textColor = .white.withAlphaComponent(0.92)
+        editor.insertionPointColor = activeTextColor
+        editor.textColor = activeTextColor
         editor.drawsBackground = false
         editor.font = .systemFont(ofSize: 13, weight: .medium)
         editor.textContainerInset = NSSize(width: 0, height: 1)

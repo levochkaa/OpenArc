@@ -13,13 +13,68 @@ enum BrowserSettingsLayout {
     static let shortcutCaptureWidth: CGFloat = 132
 }
 
+// MARK: - BrowserSettingsPane
+
+enum BrowserSettingsPane: String, CaseIterable, Hashable {
+    case accounts
+    case general
+    case profiles
+    case shortcuts
+    case content
+
+    // MARK: Internal
+
+    var title: String {
+        switch self {
+        case .accounts:
+            BrowserStrings.settingsAccountsTab
+        case .general:
+            BrowserStrings.settingsGeneralTab
+        case .profiles:
+            BrowserStrings.settingsProfilesTab
+        case .shortcuts:
+            BrowserStrings.settingsShortcutsTab
+        case .content:
+            BrowserStrings.settingsContentTab
+        }
+    }
+
+    var systemImageName: String {
+        switch self {
+        case .accounts:
+            "person.crop.circle"
+        case .general:
+            "gearshape"
+        case .profiles:
+            "person.2"
+        case .shortcuts:
+            "keyboard"
+        case .content:
+            "doc.text"
+        }
+    }
+}
+
 // MARK: - BrowserSettingsView
 
 struct BrowserSettingsView: View {
     // MARK: Lifecycle
 
-    init(model: BrowserChromeModel, openURL: @escaping (URL) -> Void) {
+    init(
+        model: BrowserChromeModel,
+        profileStore: BrowserProfileStore,
+        currentProfileID: String,
+        accountStore: BrowserAccountStore? = nil,
+        pane: BrowserSettingsPane? = nil,
+        openProfile: @escaping (BrowserProfile) -> Void,
+        openURL: @escaping (URL) -> Void
+    ) {
         self.model = model
+        _profileStore = ObservedObject(wrappedValue: profileStore)
+        self.currentProfileID = currentProfileID
+        self.accountStore = accountStore
+        self.pane = pane
+        self.openProfile = openProfile
         _preferences = ObservedObject(wrappedValue: model.userPreferencesStore)
         _shortcutStore = ObservedObject(wrappedValue: model.shortcutStore)
         self.openURL = openURL
@@ -30,50 +85,62 @@ struct BrowserSettingsView: View {
     @ObservedObject var model: BrowserChromeModel
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            accountsTab
-                .tabItem { Text(BrowserStrings.settingsAccountsTab) }
-                .tag(Tab.accounts)
+        Group {
+            if let pane {
+                content(for: pane)
+            } else {
+                TabView(selection: $selectedTab) {
+                    accountsTab
+                        .tabItem { Text(BrowserStrings.settingsAccountsTab) }
+                        .tag(BrowserSettingsPane.accounts)
 
-            generalTab
-                .tabItem { Text(BrowserStrings.settingsGeneralTab) }
-                .tag(Tab.general)
+                    generalTab
+                        .tabItem { Text(BrowserStrings.settingsGeneralTab) }
+                        .tag(BrowserSettingsPane.general)
 
-            profilesTab
-                .tabItem { Text(BrowserStrings.settingsProfilesTab) }
-                .tag(Tab.profiles)
+                    profilesTab
+                        .tabItem { Text(BrowserStrings.settingsProfilesTab) }
+                        .tag(BrowserSettingsPane.profiles)
 
-            shortcutsTab
-                .tabItem { Text(BrowserStrings.settingsShortcutsTab) }
-                .tag(Tab.shortcuts)
+                    shortcutsTab
+                        .tabItem { Text(BrowserStrings.settingsShortcutsTab) }
+                        .tag(BrowserSettingsPane.shortcuts)
 
-            contentTab
-                .tabItem { Text(BrowserStrings.settingsContentTab) }
-                .tag(Tab.content)
+                    contentTab
+                        .tabItem { Text(BrowserStrings.settingsContentTab) }
+                        .tag(BrowserSettingsPane.content)
+                }
+            }
         }
         .frame(width: BrowserSettingsLayout.windowWidth, height: BrowserSettingsLayout.windowHeight)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(settingsBackground.ignoresSafeArea())
+        .onAppear(perform: refreshDefaultBrowserState)
     }
 
     // MARK: Private
 
-    private enum Tab: Hashable {
-        case accounts
-        case general
-        case profiles
-        case shortcuts
-        case content
-    }
-
     @ObservedObject private var preferences: BrowserUserPreferencesStore
     @ObservedObject private var shortcutStore: BrowserShortcutStore
+    @ObservedObject private var profileStore: BrowserProfileStore
 
-    @State private var selectedTab = Tab.accounts
+    @State private var selectedTab = BrowserSettingsPane.accounts
     @State private var shortcutSearchText = ""
     @State private var recordingCommandID: BrowserCommandID?
     @State private var shortcutConflictMessage: String?
+    @State private var profileBackupInProgressID: BrowserProfile.ID?
+    @State private var profileBackupMessage: String?
+    @State private var isDefaultBrowser = false
 
+    private let currentProfileID: String
+    private let openProfile: (BrowserProfile) -> Void
     private let openURL: (URL) -> Void
+    private let accountStore: BrowserAccountStore?
+    private let pane: BrowserSettingsPane?
+    private let defaultBrowserService = BrowserDefaultBrowserService()
+
+    private var settingsBackground: Color {
+        Color(nsColor: .windowBackgroundColor)
+    }
 
     private var filteredCommandIDs: [BrowserCommandID] {
         let query = shortcutSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -91,11 +158,19 @@ struct BrowserSettingsView: View {
 
     private var accountsTab: some View {
         settingsScrollContent {
+            settingsSection(title: BrowserStrings.settingsGeneralTab) {
+                defaultBrowserRow
+            }
+
             settingsSection(title: BrowserStrings.settingsAccountsCurrentAccounts) {
-                Text(BrowserStrings.settingsAccountsEmpty)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let accountStore {
+                    BrowserAccountSettingsView(accountStore: accountStore)
+                } else {
+                    Text(BrowserStrings.settingsAccountsEmpty)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
     }
@@ -111,6 +186,32 @@ struct BrowserSettingsView: View {
 
                 settingsDivider
 
+                pickerRow(
+                    title: BrowserStrings.settingsUpdateChannel,
+                    detail: BrowserStrings.settingsUpdateChannelDetail,
+                    selection: $preferences.updateChannel
+                ) {
+                    ForEach(BrowserUpdateChannel.allCases) { channel in
+                        Text(channel.title)
+                            .tag(channel)
+                    }
+                }
+
+                settingsDivider
+
+                pickerRow(
+                    title: BrowserStrings.settingsAppearance,
+                    detail: BrowserStrings.settingsAppearanceDetail,
+                    selection: $preferences.appearancePreference
+                ) {
+                    ForEach(BrowserAppearancePreference.allCases) { preference in
+                        Text(preference.title)
+                            .tag(preference)
+                    }
+                }
+
+                settingsDivider
+
                 toggleRow(
                     title: BrowserStrings.settingsWarnBeforeQuitting,
                     isOn: $preferences.warnBeforeQuitting
@@ -122,7 +223,17 @@ struct BrowserSettingsView: View {
                     title: BrowserStrings.settingsBlurredBackground,
                     isOn: $preferences.blurredChromeBackgroundEnabled
                 )
+
+                settingsDivider
+
+                toggleRow(
+                    title: BrowserStrings.settingsBatterySaver,
+                    detail: BrowserStrings.settingsBatterySaverDetail,
+                    isOn: $preferences.batterySaverEnabled
+                )
             }
+
+            searchSettingsSection
 
             settingsSection(title: BrowserStrings.settingsTemporaryTabsTitle) {
                 pickerRow(
@@ -150,33 +261,27 @@ struct BrowserSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             settingsSection(title: BrowserStrings.settingsProfilesTab) {
-                detailRow(
-                    title: BrowserStrings.settingsDefaultProfile,
-                    detail: BrowserStrings.settingsDefaultProfileDetail
-                )
-            }
+                ForEach(profileStore.profiles) { profile in
+                    profileRow(profile)
 
-            settingsSection(title: BrowserStrings.settingsSearchEngine) {
-                pickerRow(
-                    title: BrowserStrings.settingsSearchEngine,
-                    selection: $preferences.searchEngine
-                ) {
-                    ForEach(BrowserSearchEngine.allCases) { engine in
-                        Text(engine.title)
-                            .tag(engine)
+                    if profile.id != profileStore.profiles.last?.id {
+                        settingsDivider
                     }
                 }
+            }
 
-                settingsDivider
+            if let profileBackupMessage {
+                Text(profileBackupMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
-                toggleRow(
-                    title: BrowserStrings.settingsSearchSuggestions,
-                    isOn: $preferences.searchEngineSuggestionsEnabled
-                )
-
-                settingsDivider
-
-                linkButton(title: BrowserStrings.settingsManageSearch, url: BrowserSettingsRoute.searchEnginesURL)
+            Button {
+                let profile = profileStore.createProfile()
+                openProfile(profile)
+            } label: {
+                Label(BrowserStrings.settingsNewProfile, systemImage: "plus")
             }
 
             settingsSection(title: BrowserStrings.settingsProfilesTab) {
@@ -190,6 +295,43 @@ struct BrowserSettingsView: View {
                 settingsDivider
                 linkButton(title: BrowserStrings.settingsClearBrowsingData, url: BrowserSettingsRoute.privacyURL)
             }
+        }
+    }
+
+    private var searchSettingsSection: some View {
+        settingsSection(title: BrowserStrings.settingsSearch) {
+            pickerRow(
+                title: BrowserStrings.settingsSearchEngine,
+                selection: $preferences.searchEngine
+            ) {
+                ForEach(BrowserSearchEngine.allCases) { engine in
+                    Text(engine.title)
+                        .tag(engine)
+                }
+            }
+
+            settingsDivider
+
+            toggleRow(
+                title: BrowserStrings.settingsSearchSuggestions,
+                isOn: $preferences.searchEngineSuggestionsEnabled
+            )
+
+            settingsDivider
+
+            pickerRow(
+                title: BrowserStrings.settingsAISearchProvider,
+                selection: $preferences.aiSearchProvider
+            ) {
+                ForEach(BrowserAISearchProvider.allCases) { provider in
+                    Text(provider.title)
+                        .tag(provider)
+                }
+            }
+
+            settingsDivider
+
+            linkButton(title: BrowserStrings.settingsManageSearch, url: BrowserSettingsRoute.searchEnginesURL)
         }
     }
 
@@ -250,7 +392,16 @@ struct BrowserSettingsView: View {
                     title: BrowserStrings.settingsPictureInPicture,
                     isOn: $preferences.pictureInPictureEnabled
                 )
+
+                settingsDivider
+
+                toggleRow(
+                    title: BrowserStrings.settingsShowBookmarksBar,
+                    isOn: $preferences.bookmarksBarVisible
+                )
             }
+
+            bookmarksImportSection
 
             settingsSection(title: BrowserStrings.settingsContentTab) {
                 linkButton(title: BrowserStrings.settingsMoreSettings, url: BrowserSettingsRoute.rootURL)
@@ -265,6 +416,49 @@ struct BrowserSettingsView: View {
             .padding(.leading, 1)
     }
 
+    private var bookmarksImportSection: some View {
+        settingsSection(title: BrowserStrings.bookmarksImport) {
+            ForEach(BrowserBookmarkImportSource.allCases) { source in
+                bookmarkImportButton(for: source)
+
+                if source.id != BrowserBookmarkImportSource.allCases.last?.id {
+                    settingsDivider
+                }
+            }
+        }
+    }
+
+    private var defaultBrowserRow: some View {
+        HStack(spacing: 16) {
+            Text(BrowserStrings.settingsDefaultBrowserPrompt)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(BrowserStrings.settingsDefaultBrowserAction) {
+                _ = defaultBrowserService.setAsDefaultBrowser()
+                refreshDefaultBrowserState()
+            }
+            .disabled(isDefaultBrowser)
+        }
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder private func content(for pane: BrowserSettingsPane) -> some View {
+        switch pane {
+        case .accounts:
+            accountsTab
+        case .general:
+            generalTab
+        case .profiles:
+            profilesTab
+        case .shortcuts:
+            shortcutsTab
+        case .content:
+            contentTab
+        }
+    }
+
     private func settingsScrollContent(
         @ViewBuilder content: () -> some View
     ) -> some View {
@@ -275,6 +469,8 @@ struct BrowserSettingsView: View {
             .padding(BrowserSettingsLayout.contentPadding)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .background(settingsBackground)
+        .scrollContentBackground(.hidden)
     }
 
     private func settingsSection(
@@ -297,6 +493,26 @@ struct BrowserSettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func bookmarkImportButton(for source: BrowserBookmarkImportSource) -> some View {
+        Button {
+            _ = model.importBookmarks(from: source)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
+
+                Text(source.title)
+                    .font(.system(size: 13))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 8)
+    }
+
     private func toggleRow(
         title: String,
         detail: String? = nil,
@@ -313,21 +529,53 @@ struct BrowserSettingsView: View {
         .padding(.vertical, 6)
     }
 
-    private func detailRow(title: String, detail: String) -> some View {
+    private func profileRow(_ profile: BrowserProfile) -> some View {
         HStack(spacing: 16) {
-            titleDetailLabel(title: title, detail: detail)
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+
+                titleDetailLabel(
+                    title: profile.displayName,
+                    detail: BrowserStrings.settingsProfileDirectory(profile.directoryName)
+                )
+            }
+
             Spacer(minLength: 0)
+
+            if profile.id == currentProfileID {
+                Text(BrowserStrings.settingsCurrentProfile)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            } else {
+                Button(BrowserStrings.settingsOpenProfile) {
+                    openProfile(profile)
+                }
+            }
+
+            Button(BrowserStrings.settingsBackUpProfile) {
+                createProfileBackup(profile)
+            }
+            .disabled(profileBackupInProgressID != nil)
+
+            Button(BrowserStrings.settingsDeleteProfile, role: .destructive) {
+                _ = profileStore.deleteProfile(profile)
+            }
+            .disabled(profile.id == currentProfileID || profile.isDefault)
         }
         .padding(.vertical, 6)
     }
 
     private func pickerRow(
         title: String,
+        detail: String? = nil,
         selection: Binding<some Hashable>,
         @ViewBuilder content: () -> some View
     ) -> some View {
         HStack(spacing: 16) {
-            titleDetailLabel(title: title)
+            titleDetailLabel(title: title, detail: detail)
 
             Spacer(minLength: 0)
 
@@ -433,6 +681,10 @@ struct BrowserSettingsView: View {
         .frame(width: BrowserSettingsLayout.shortcutCaptureWidth, height: 28)
     }
 
+    private func refreshDefaultBrowserState() {
+        isDefaultBrowser = defaultBrowserService.isDefaultBrowser
+    }
+
     private func apply(_ shortcut: BrowserKeyboardShortcut, to commandID: BrowserCommandID) {
         if shortcutStore.setShortcut(shortcut, for: commandID) {
             recordingCommandID = nil
@@ -442,6 +694,94 @@ struct BrowserSettingsView: View {
 
         let conflictTitle = shortcutStore.conflictDescription(for: shortcut, excluding: commandID) ?? ""
         shortcutConflictMessage = BrowserStrings.settingsShortcutConflict(conflictTitle)
+    }
+
+    private func createProfileBackup(_ profile: BrowserProfile) {
+        let rootCacheURL = profileStore.rootCacheURL
+        profileBackupInProgressID = profile.id
+        profileBackupMessage = nil
+
+        Task { @MainActor in
+            do {
+                let backupURL = try await Task.detached {
+                    try BrowserProfileBackupArchiver(rootCacheURL: rootCacheURL).createBackup(for: profile)
+                }
+                .value
+                profileBackupInProgressID = nil
+                profileBackupMessage = BrowserStrings.settingsProfileBackupCreated(backupURL.lastPathComponent)
+                BrowserTelemetry.captureUsage(
+                    .profileBackupCreated,
+                    properties: ["profile": profile.isDefault ? "default" : "custom"]
+                )
+                NSWorkspace.shared.activateFileViewerSelecting([backupURL])
+            } catch {
+                profileBackupInProgressID = nil
+                profileBackupMessage = BrowserStrings.settingsProfileBackupFailed(error.localizedDescription)
+                BrowserTelemetry.captureError(
+                    error,
+                    event: .profileBackupFailed,
+                    properties: ["profile": profile.isDefault ? "default" : "custom"]
+                )
+            }
+        }
+    }
+}
+
+// MARK: - BrowserAccountSettingsView
+
+private struct BrowserAccountSettingsView: View {
+    // MARK: Internal
+
+    @ObservedObject var accountStore: BrowserAccountStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let session = accountStore.session {
+                titleDetailLabel(
+                    title: session.userEmail ?? BrowserStrings.syncAccountSignedIn,
+                    detail: BrowserStrings.syncAccountDevice(session.deviceID)
+                )
+
+                Button(BrowserStrings.syncAccountSignOut) {
+                    accountStore.signOut()
+                }
+            } else {
+                Text(accountStore.isConfigured
+                    ? BrowserStrings.settingsAccountsEmpty
+                    : BrowserStrings
+                        .syncAccountServerNotConfigured)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+
+                Button(BrowserStrings.syncAccountSignInWithApple) {
+                    Task {
+                        await accountStore.signInWithApple()
+                    }
+                }
+                .disabled(!accountStore.isConfigured || accountStore.isSigningIn)
+            }
+
+            if let lastError = accountStore.lastError {
+                Text(lastError)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.red)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Private
+
+    private func titleDetailLabel(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

@@ -7,11 +7,29 @@ import Foundation
 enum BrowserInternalPageRouting {
     static let settingsURL = URL(string: "tb://settings/")!
     static let historyURL = URL(string: "tb://history")!
+    static let bookmarksURL = URL(string: "tb://bookmarks/")!
+}
+
+// MARK: - BrowserWindowMode
+
+enum BrowserWindowMode: Equatable {
+    case normal
+    case incognito
+
+    // MARK: Internal
+
+    var isIncognito: Bool {
+        self == .incognito
+    }
+
+    var persistsSession: Bool {
+        !isIncognito
+    }
 }
 
 // MARK: - BrowserChromeModel
 
-@MainActor final class BrowserChromeModel: NSObject, ObservableObject {
+@MainActor final class BrowserChromeModel: NSObject, ObservableObject, BrowserSyncSnapshotApplying {
     // MARK: Lifecycle
 
     init(
@@ -23,9 +41,19 @@ enum BrowserInternalPageRouting {
         navigationResolver: BrowserNavigationResolver? = nil,
         userPreferencesStore: BrowserUserPreferencesStore = BrowserUserPreferencesStore(),
         shortcutStore: BrowserShortcutStore = BrowserShortcutStore(),
+        bookmarksModel: BrowserBookmarksModel? = nil,
+        historyStore: BrowserHistorySearching = BrowserEmptyHistoryStore(),
+        downloadsModel: BrowserDownloadsModel? = nil,
         extensionManager: any BrowserExtensionManaging,
+        extensionSidePanelDriver: (any BrowserExtensionSidePanelDriving)? = nil,
+        extensionActionPopupDriver: (any BrowserExtensionActionPopupDriving)? = nil,
+        syncCoordinator: BrowserSyncCoordinating? = nil,
+        windowMode: BrowserWindowMode = .normal,
+        profile: BrowserProfile = .defaultProfile,
+        availableProfileCount: Int = 1,
         dateProvider: @escaping () -> Date = Date.init,
         spaceIDProvider: @escaping () -> String = { UUID().uuidString },
+        tabSyncIDProvider: @escaping () -> String = { UUID().uuidString },
         windowTitleHandler: @escaping (String) -> Void,
         allTabsClosedHandler: @escaping () -> Void
     ) {
@@ -36,18 +64,32 @@ enum BrowserInternalPageRouting {
         self.commandBarSuggestionProvider = commandBarSuggestionProvider
         self.userPreferencesStore = userPreferencesStore
         self.shortcutStore = shortcutStore
+        self.bookmarksModel = bookmarksModel ?? BrowserBookmarksModel()
+        self.historyStore = historyStore
+        self.downloadsModel = downloadsModel ?? BrowserDownloadsModel()
         self.navigationResolver = navigationResolver ?? BrowserNavigationResolver(
             searchEngineProvider: { userPreferencesStore.searchEngine }
         )
         self.extensionManager = extensionManager
+        self.extensionSidePanelDriver = extensionSidePanelDriver
+        self.extensionActionPopupDriver = extensionActionPopupDriver
+        self.syncCoordinator = syncCoordinator
+        self.windowMode = windowMode
+        self.profile = profile
+        self.profileDisplayName = profile.displayName
+        self.availableProfileCount = availableProfileCount
+        self.isPersistenceEnabled = windowMode.persistsSession
         self.temporaryTabLifetime = sessionPreferencesStore.loadTemporaryTabLifetime()
+        self.pinnedExtensionIDs = userPreferencesStore.pinnedExtensionIDs
         self.dateProvider = dateProvider
         self.spaceIDProvider = spaceIDProvider
+        self.tabSyncIDProvider = tabSyncIDProvider
         self.windowTitleHandler = windowTitleHandler
         self.allTabsClosedHandler = allTabsClosedHandler
         self.hostView = tabDriver.hostView
 
         super.init()
+        undoManager.groupsByEvent = false
         tabDriver.onTabCreated = { [weak self] tabID, title, urlString in
             self?.handleCreatedTab(id: tabID, title: title, urlString: urlString)
         }
@@ -80,101 +122,37 @@ enum BrowserInternalPageRouting {
                 finalUpdate: finalUpdate
             )
         }
+        tabDriver.onDownloadUpdated = { [weak self] update in
+            self?.handleDownloadUpdate(update)
+        }
+        extensionSidePanelDriver?.onPanelClosed = { [weak self] panelID in
+            self?.handleExtensionSidePanelClosed(panelID: panelID)
+        }
         updateWindowTitle()
     }
 
     // MARK: Internal
 
-    struct Tab: Identifiable, Equatable {
-        let id: String
-        var spaceID: String
-        var title: String
-        var userTitleOverride: String?
-        var urlString: String
-        var faviconURLString: String?
-        var placement = BrowserTabPlacement.temporary
-        var lastActivityAt = Date()
-        var canGoBack = false
-        var canGoForward = false
-        var isLoading = false
-
-        var displayTitle: String {
-            let trimmedUserTitleOverride = userTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !trimmedUserTitleOverride.isEmpty {
-                return trimmedUserTitleOverride
-            }
-
-            return pageTitle
-        }
-
-        var pageTitle: String {
-            let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedTitle.isEmpty {
-                return trimmedTitle
-            }
-
-            if
-                let url = URL(string: urlString),
-                let host = url.host,
-                !host.isEmpty
-            {
-                return host
-            }
-
-            return BrowserStrings.newTabTitle
-        }
-
-        var faviconURL: URL? {
-            if
-                let faviconURLString,
-                let faviconURL = URL(string: faviconURLString)
-            {
-                return faviconURL
-            }
-
-            guard
-                !urlString.isEmpty,
-                let encodedURL = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-            else {
-                return nil
-            }
-
-            return URL(string: "https://www.google.com/s2/favicons?sz=64&domain_url=\(encodedURL)")
-        }
-
-        var pageURL: URL? {
-            URL(string: urlString)
-        }
-    }
-
-    struct Space: Identifiable, Equatable {
-        let id: String
-        var title: String
-        var systemImageName: String
-        var isPinnedSectionCollapsed: Bool
-        var selectedTabID: String?
-    }
-
-    enum BrowserInternalPage: Equatable {
-        case settings
-        case extensions
-        case history
-        case passwordManager
-    }
-
     nonisolated static let defaultSidebarWidth: CGFloat = 224
     nonisolated static let minSidebarWidth: CGFloat = defaultSidebarWidth
     nonisolated static let maxSidebarWidth: CGFloat = defaultSidebarWidth * 2
+    nonisolated static let defaultExtensionSidePanelWidth: CGFloat = 360
+    nonisolated static let minExtensionSidePanelWidth: CGFloat = 280
+    nonisolated static let maxExtensionSidePanelWidth: CGFloat = 560
     nonisolated static let defaultNewTabURLString = "https://www.google.com"
     nonisolated static let automaticArchivalCheckInterval: TimeInterval = 60 * 60
     nonisolated static let appTabCapacity = 8
     nonisolated static let defaultSpaceID = "default-space"
     nonisolated static let defaultSpaceIconName = "square.grid.2x2"
+    nonisolated static let tabSwitcherMaximumEntries = 5
+    nonisolated static let tabSwitcherPresentationDelayNanoseconds: UInt64 = 180_000_000
 
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var spaces = [Space]()
+    @Published private(set) var pinnedTabFolders = [PinnedTabFolder]()
     @Published private(set) var selectedSpaceID: String?
     @Published private(set) var selectedTabID: String?
+    @Published private(set) var tabSwitcherState: TabSwitcherState?
     @Published var isSidebarVisible = true
     @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
     @Published private(set) var temporaryTabLifetime: BrowserTemporaryTabLifetime
@@ -182,32 +160,68 @@ enum BrowserInternalPageRouting {
     @Published private(set) var findBarFocusRequest = 0
     @Published private(set) var findResultMatchCount: Int?
     @Published private(set) var browserExtensions = [BrowserExtension]()
+    @Published private(set) var extensionSidePanel: BrowserExtensionSidePanel?
+    @Published private(set) var extensionSidePanelWidth = BrowserChromeModel.defaultExtensionSidePanelWidth
+    @Published private(set) var pinnedExtensionIDs = [String]()
+    @Published private(set) var profileDisplayName: String
+    @Published private(set) var availableProfileCount: Int
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
     let shortcutStore: BrowserShortcutStore
+    let bookmarksModel: BrowserBookmarksModel
+    let downloadsModel: BrowserDownloadsModel
+    let windowMode: BrowserWindowMode
+    let profile: BrowserProfile
+    let undoManager = UndoManager()
     lazy var commandBarModel = BrowserCommandBarModel(
         suggestionProvider: commandBarSuggestionProvider,
         navigationResolver: navigationResolver,
+        localSuggestionProvider: { [weak self] query, maximumCount in
+            self?.localCommandSuggestions(for: query, maximumCount: maximumCount) ?? []
+        },
         remoteSuggestionsEnabledProvider: { [weak self] in
             self?.canLoadRemoteSearchSuggestions ?? false
         },
+        aiSearchProviderProvider: { [weak self] in
+            self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
+        },
         submitHandler: { [weak self] resolvedURLString in
             self?.openResolvedSelectionInNewTab(resolvedURLString)
+        },
+        switchToTabHandler: { [weak self] tabID in
+            self?.selectTab(id: tabID)
         }
     )
     lazy var currentPageCommandBarModel = BrowserCommandBarModel(
         suggestionProvider: commandBarSuggestionProvider,
         navigationResolver: navigationResolver,
+        localSuggestionProvider: { [weak self] query, maximumCount in
+            self?.localCommandSuggestions(for: query, maximumCount: maximumCount) ?? []
+        },
         remoteSuggestionsEnabledProvider: { [weak self] in
             self?.canLoadRemoteSearchSuggestions ?? false
         },
+        aiSearchProviderProvider: { [weak self] in
+            self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
+        },
         submitHandler: { [weak self] resolvedURLString in
             self?.navigateSelectedTab(toURLString: resolvedURLString)
+        },
+        switchToTabHandler: { [weak self] tabID in
+            self?.selectTab(id: tabID)
         }
     )
 
     private(set) var isContextReady = false
     var isShuttingDown = false
+
+    var extensionSidePanelHostView: NSView? {
+        extensionSidePanelDriver?.hostView
+    }
+
+    var extensionActionPopupHostView: NSView? {
+        extensionActionPopupDriver?.hostView
+    }
 
     @Published var findQuery = "" {
         didSet {
@@ -295,8 +309,28 @@ enum BrowserInternalPageRouting {
         !tabs.isEmpty
     }
 
+    var isIncognito: Bool {
+        windowMode.isIncognito
+    }
+
+    var showsProfileIndicator: Bool {
+        !windowMode.isIncognito && availableProfileCount > 1
+    }
+
+    var supportsSpaces: Bool {
+        !windowMode.isIncognito
+    }
+
+    var supportsAppTabs: Bool {
+        !windowMode.isIncognito
+    }
+
     var appTabs: [Tab] {
-        tabs.filter { $0.placement == .app }
+        guard supportsAppTabs else {
+            return []
+        }
+
+        return tabs.filter { $0.placement == .app }
     }
 
     var activeSpace: Space? {
@@ -342,16 +376,19 @@ enum BrowserInternalPageRouting {
 
         isContextReady = true
         restoreSidebarWidthIfNeeded()
+        bookmarksModel.reload()
         refreshBrowserExtensions()
         startAutomaticArchivalTimerIfNeeded()
 
         if restoreSessionIfAvailable() {
+            syncCoordinator?.schedulePull()
             return
         }
 
         ensureDefaultSpace()
         ensureInitialTab()
         archiveExpiredTemporaryTabs()
+        syncCoordinator?.schedulePull()
     }
 
     func prepareForTermination() {
@@ -361,6 +398,10 @@ enum BrowserInternalPageRouting {
 
         automaticArchivalTimer?.invalidate()
         automaticArchivalTimer = nil
+        undoManager.removeAllActions()
+        extensionSidePanelDriver?.closeAllPanels()
+        extensionActionPopupDriver?.closeAllPopups()
+        extensionSidePanel = nil
         persistSidebarWidthPreferenceIfAllowed()
         persistCurrentSessionIfAllowed()
         isShuttingDown = true
@@ -375,14 +416,129 @@ enum BrowserInternalPageRouting {
         createTab(withURLString: url.absoluteString)
     }
 
+    func openBookmark(urlString: String) {
+        BrowserTelemetry.captureUsage(.bookmarkOpened, properties: telemetryProperties)
+        navigateSelectedTabOrOpenNewTab(toURLString: urlString)
+    }
+
+    @discardableResult func addSelectedTabBookmark() -> Bool {
+        guard let selectedTab, !selectedTab.urlString.isEmpty else {
+            return false
+        }
+
+        return bookmarksModel.addBookmark(
+            title: selectedTab.displayTitle,
+            urlString: selectedTab.urlString
+        )
+    }
+
+    @discardableResult func toggleSelectedTabBookmark() -> Bool {
+        guard let selectedTab, !selectedTab.urlString.isEmpty else {
+            return false
+        }
+
+        return bookmarksModel.toggleBookmark(
+            title: selectedTab.displayTitle,
+            urlString: selectedTab.urlString
+        )
+    }
+
+    @discardableResult func renameBookmark(id: String, title: String) -> Bool {
+        bookmarksModel.renameBookmark(id: id, title: title)
+    }
+
+    @discardableResult func updateBookmarkAddress(id: String, urlString: String) -> Bool {
+        bookmarksModel.updateBookmarkAddress(id: id, urlString: urlString)
+    }
+
+    @discardableResult func moveBookmark(id: String, toFolderID: String?) -> Bool {
+        bookmarksModel.moveBookmark(id: id, toFolderID: toFolderID)
+    }
+
+    @discardableResult func createBookmarkFolder(title: String) -> String? {
+        bookmarksModel.createFolder(title: title)
+    }
+
+    @discardableResult func createBookmarkFolderAndMoveBookmark(title: String, bookmarkID: String) -> Bool {
+        bookmarksModel.createFolderAndMoveBookmark(title: title, bookmarkID: bookmarkID)
+    }
+
+    @discardableResult func deleteBookmark(id: String) -> Bool {
+        bookmarksModel.deleteBookmark(id: id)
+    }
+
+    func openBookmarks(_ urlStrings: [String]) {
+        for urlString in urlStrings where !urlString.isEmpty {
+            createTab(withURLString: urlString)
+        }
+    }
+
+    func openBookmarksManager() {
+        openURLInNewTab(BrowserInternalPageRouting.bookmarksURL)
+    }
+
+    @discardableResult func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult {
+        bookmarksModel.importBookmarks(from: source)
+    }
+
+    func isBookmarked(urlString: String) -> Bool {
+        bookmarksModel.containsBookmark(urlString: urlString)
+    }
+
     func createNewSpace() {
+        guard supportsSpaces else {
+            return
+        }
+
         let space = makeSpace()
         spaces.append(space)
         selectSpace(id: space.id)
+        BrowserTelemetry.captureUsage(.spaceCreated, properties: telemetryProperties)
         persistCurrentSessionIfAllowed()
     }
 
+    func canDeleteSpace(id spaceID: String) -> Bool {
+        supportsSpaces && spaces.count > 1 && spaces.contains { $0.id == spaceID }
+    }
+
+    @discardableResult func deleteSpace(id spaceID: String) -> Bool {
+        guard
+            canDeleteSpace(id: spaceID),
+            let spaceIndex = spaces.firstIndex(where: { $0.id == spaceID })
+        else {
+            return false
+        }
+
+        let fallbackSpaceID = fallbackSpaceID(afterDeletingSpaceAt: spaceIndex)
+        if selectedSpaceID == spaceID {
+            selectedSpaceID = fallbackSpaceID
+            selectActiveTabForSelectedSpace()
+        }
+
+        let wasPersistenceEnabled = isPersistenceEnabled
+        isPersistenceEnabled = false
+        for tabID in tabs.filter({ $0.spaceID == spaceID }).map(\.id) {
+            closeTab(id: tabID, registersUndo: false)
+        }
+        isPersistenceEnabled = wasPersistenceEnabled
+
+        spaces.removeAll { $0.id == spaceID }
+        pinnedTabFolders.removeAll { $0.spaceID == spaceID }
+        if selectedSpaceID == spaceID || selectedSpaceID == nil {
+            selectedSpaceID = spaces.first?.id
+            selectActiveTabForSelectedSpace()
+        }
+
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+        return true
+    }
+
     func selectSpace(id spaceID: String) {
+        guard supportsSpaces else {
+            return
+        }
+
         guard
             spaces.contains(where: { $0.id == spaceID }),
             selectedSpaceID != spaceID
@@ -390,21 +546,35 @@ enum BrowserInternalPageRouting {
             return
         }
 
+        captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
         selectedSpaceID = spaceID
         selectActiveTabForSelectedSpace()
+        BrowserTelemetry.captureUsage(.spaceSelected, properties: telemetryProperties)
         persistCurrentSessionIfAllowed()
     }
 
     func selectNextSpace() {
+        guard supportsSpaces else {
+            return
+        }
+
         selectAdjacentSpace(offset: 1)
     }
 
     func selectPreviousSpace() {
+        guard supportsSpaces else {
+            return
+        }
+
         selectAdjacentSpace(offset: -1)
     }
 
     func toggleActiveSpacePinnedSectionCollapsed() {
+        guard supportsSpaces else {
+            return
+        }
+
         guard let index = selectedSpaceIndex else {
             return
         }
@@ -414,6 +584,10 @@ enum BrowserInternalPageRouting {
     }
 
     func setTitle(_ title: String?, forSpaceID spaceID: String) {
+        guard supportsSpaces else {
+            return
+        }
+
         guard let index = spaces.firstIndex(where: { $0.id == spaceID }) else {
             return
         }
@@ -428,6 +602,10 @@ enum BrowserInternalPageRouting {
     }
 
     func setIcon(_ systemImageName: String, forSpaceID spaceID: String) {
+        guard supportsSpaces else {
+            return
+        }
+
         guard
             let index = spaces.firstIndex(where: { $0.id == spaceID }),
             spaces[index].systemImageName != systemImageName
@@ -436,6 +614,87 @@ enum BrowserInternalPageRouting {
         }
 
         spaces[index].systemImageName = systemImageName
+        persistCurrentSessionIfAllowed()
+    }
+
+    @discardableResult func createPinnedTabFolder(containingTabIDs tabIDs: Set<String>) -> String? {
+        guard let selectedSpaceID else {
+            return nil
+        }
+
+        let selectedTabIDs = Set(tabIDs)
+        let orderedTabs = spacePinnedTabs.filter { selectedTabIDs.contains($0.id) }
+        guard orderedTabs.count >= 2 else {
+            return nil
+        }
+
+        let folderID = uniquePinnedTabFolderID()
+        let folder = PinnedTabFolder(
+            id: folderID,
+            spaceID: selectedSpaceID,
+            parentFolderID: nil,
+            title: BrowserStrings.pinnedTabFolderDefaultTitle,
+            systemImageName: nil,
+            isExpanded: true
+        )
+
+        var updatedPinnedTabs = spacePinnedTabs.filter { !selectedTabIDs.contains($0.id) }
+        let firstSelectedIndex = spacePinnedTabs.firstIndex { selectedTabIDs.contains($0.id) } ?? updatedPinnedTabs
+            .count
+        let folderTabs = orderedTabs.map { tab in
+            var updatedTab = tab
+            updatedTab.pinnedFolderID = folderID
+            return updatedTab
+        }
+        updatedPinnedTabs.insert(contentsOf: folderTabs, at: min(firstSelectedIndex, updatedPinnedTabs.count))
+
+        pinnedTabFolders.append(folder)
+        tabs = tabsByReplacingTabs(
+            spacePinnedTabsBySpaceID: tabsBySpaceID(
+                replacing: updatedPinnedTabs,
+                for: .spacePinned,
+                inSpaceID: selectedSpaceID
+            ),
+            temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: selectedTabIDs),
+            appTabs: appTabs
+        )
+        persistCurrentSessionIfAllowed()
+        return folderID
+    }
+
+    func togglePinnedTabFolderExpanded(id folderID: String) {
+        guard let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }) else {
+            return
+        }
+
+        pinnedTabFolders[index].isExpanded.toggle()
+        persistCurrentSessionIfAllowed()
+    }
+
+    func setTitle(_ title: String?, forPinnedTabFolderID folderID: String) {
+        guard let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }) else {
+            return
+        }
+
+        let sanitizedTitle = sanitizedPinnedTabFolderTitle(from: title) ?? BrowserStrings
+            .pinnedTabFolderDefaultTitle
+        guard pinnedTabFolders[index].title != sanitizedTitle else {
+            return
+        }
+
+        pinnedTabFolders[index].title = sanitizedTitle
+        persistCurrentSessionIfAllowed()
+    }
+
+    func setIcon(_ systemImageName: String?, forPinnedTabFolderID folderID: String) {
+        guard
+            let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }),
+            pinnedTabFolders[index].systemImageName != systemImageName
+        else {
+            return
+        }
+
+        pinnedTabFolders[index].systemImageName = systemImageName
         persistCurrentSessionIfAllowed()
     }
 
@@ -456,14 +715,38 @@ enum BrowserInternalPageRouting {
         withID tabID: String,
         toPlacement placement: BrowserTabPlacement,
         atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil
+        targetSpaceID: String? = nil,
+        targetPinnedFolderID: String? = nil
     ) -> Bool {
         guard
             let reorderedTabs = reorderedTabs(
                 movingTabID: tabID,
                 toPlacement: placement,
                 requestedSectionIndex: sectionIndex,
-                targetSpaceID: targetSpaceID
+                targetSpaceID: targetSpaceID,
+                targetPinnedFolderID: targetPinnedFolderID
+            )
+        else {
+            return false
+        }
+
+        return reorderedTabs != tabs
+    }
+
+    func canMoveTabs(
+        withIDs tabIDs: Set<String>,
+        toPlacement placement: BrowserTabPlacement,
+        atSectionIndex sectionIndex: Int,
+        targetSpaceID: String? = nil,
+        targetPinnedFolderID: String? = nil
+    ) -> Bool {
+        guard
+            let reorderedTabs = reorderedTabs(
+                movingTabIDs: tabIDs,
+                toPlacement: placement,
+                requestedSectionIndex: sectionIndex,
+                targetSpaceID: targetSpaceID,
+                targetPinnedFolderID: targetPinnedFolderID
             )
         else {
             return false
@@ -476,7 +759,8 @@ enum BrowserInternalPageRouting {
         withID tabID: String,
         toPlacement placement: BrowserTabPlacement,
         atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil
+        targetSpaceID: String? = nil,
+        targetPinnedFolderID: String? = nil
     ) {
         guard
             let movingTab = tabs.first(where: { $0.id == tabID }),
@@ -484,7 +768,8 @@ enum BrowserInternalPageRouting {
                 movingTabID: tabID,
                 toPlacement: placement,
                 requestedSectionIndex: sectionIndex,
-                targetSpaceID: targetSpaceID
+                targetSpaceID: targetSpaceID,
+                targetPinnedFolderID: targetPinnedFolderID
             ),
             reorderedTabs != tabs
         else {
@@ -499,6 +784,7 @@ enum BrowserInternalPageRouting {
         }
 
         tabs = reorderedTabs
+        removeEmptyPinnedTabFolders()
         if
             let movedTab = tabs.first(where: { $0.id == tabID }),
             movedTab.placement != .app
@@ -512,6 +798,119 @@ enum BrowserInternalPageRouting {
             selectActiveTabForSelectedSpace()
         }
         updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+    }
+
+    func moveTabs(
+        withIDs tabIDs: Set<String>,
+        toPlacement placement: BrowserTabPlacement,
+        atSectionIndex sectionIndex: Int,
+        targetSpaceID: String? = nil,
+        targetPinnedFolderID: String? = nil
+    ) {
+        let movingTabIDs = Set(tabIDs)
+        guard
+            movingTabIDs.count > 1,
+            var reorderedTabs = reorderedTabs(
+                movingTabIDs: movingTabIDs,
+                toPlacement: placement,
+                requestedSectionIndex: sectionIndex,
+                targetSpaceID: targetSpaceID,
+                targetPinnedFolderID: targetPinnedFolderID
+            ),
+            reorderedTabs != tabs
+        else {
+            return
+        }
+
+        let now = dateProvider()
+        for index in reorderedTabs.indices where movingTabIDs.contains(reorderedTabs[index].id) {
+            reorderedTabs[index].lastActivityAt = now
+        }
+
+        let selectedMovedTabID = selectedTabID.flatMap { movingTabIDs.contains($0) ? $0 : nil }
+        tabs = reorderedTabs
+        removeEmptyPinnedTabFolders()
+
+        if
+            let selectedMovedTabID,
+            let movedTab = tabs.first(where: { $0.id == selectedMovedTabID }),
+            movedTab.placement != .app
+        {
+            setSelectedTabID(selectedMovedTabID, forSpaceID: movedTab.spaceID)
+        }
+
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+    }
+
+    func canMovePinnedTabFolder(
+        withID folderID: String,
+        toRootSectionIndex rootSectionIndex: Int,
+        targetSpaceID: String? = nil,
+        targetParentFolderID: String? = nil
+    ) -> Bool {
+        guard
+            let folder = pinnedTabFolders.first(where: { $0.id == folderID }),
+            let reorderedTabs = reorderedTabs(
+                movingPinnedTabFolderID: folderID,
+                toRootSectionIndex: rootSectionIndex,
+                targetSpaceID: targetSpaceID,
+                targetParentFolderID: targetParentFolderID
+            )
+        else {
+            return false
+        }
+
+        let resolvedTargetSpaceID = targetParentFolderID
+            .flatMap { parentFolderID in pinnedTabFolders.first { $0.id == parentFolderID }?.spaceID }
+            ?? targetSpaceID
+            ?? selectedSpaceID
+            ?? folder.spaceID
+        return reorderedTabs != tabs
+            || folder.parentFolderID != targetParentFolderID
+            || folder.spaceID != resolvedTargetSpaceID
+    }
+
+    func movePinnedTabFolder(
+        withID folderID: String,
+        toRootSectionIndex rootSectionIndex: Int,
+        targetSpaceID: String? = nil,
+        targetParentFolderID: String? = nil
+    ) {
+        guard
+            let folderIndex = pinnedTabFolders.firstIndex(where: { $0.id == folderID }),
+            let reorderedTabs = reorderedTabs(
+                movingPinnedTabFolderID: folderID,
+                toRootSectionIndex: rootSectionIndex,
+                targetSpaceID: targetSpaceID,
+                targetParentFolderID: targetParentFolderID
+            )
+        else {
+            return
+        }
+
+        let resolvedTargetSpaceID = targetParentFolderID
+            .flatMap { parentFolderID in pinnedTabFolders.first { $0.id == parentFolderID }?.spaceID }
+            ?? targetSpaceID
+            ?? selectedSpaceID
+            ?? pinnedTabFolders[folderIndex].spaceID
+        guard reorderedTabs != tabs
+            || pinnedTabFolders[folderIndex].parentFolderID != targetParentFolderID
+            || pinnedTabFolders[folderIndex].spaceID != resolvedTargetSpaceID
+        else {
+            return
+        }
+
+        let movedFolderIDs = descendantPinnedTabFolderIDs(including: folderID)
+        for index in pinnedTabFolders.indices where movedFolderIDs.contains(pinnedTabFolders[index].id) {
+            pinnedTabFolders[index].spaceID = resolvedTargetSpaceID
+        }
+        pinnedTabFolders[folderIndex].parentFolderID = targetParentFolderID
+        if targetParentFolderID != nil {
+            pinnedTabFolders[folderIndex].isExpanded = true
+        }
+        tabs = reorderedTabs
         persistCurrentSessionIfAllowed()
     }
 
@@ -534,7 +933,14 @@ enum BrowserInternalPageRouting {
 
     func handleApplicationDidBecomeActive() {
         archiveExpiredTemporaryTabs()
+        bookmarksModel.reload()
         refreshBrowserExtensions()
+        syncCoordinator?.schedulePull()
+    }
+
+    func updateProfilePresentation(profile: BrowserProfile, availableProfileCount: Int) {
+        profileDisplayName = profile.displayName
+        self.availableProfileCount = availableProfileCount
     }
 
     func archiveExpiredTemporaryTabs() {
@@ -558,7 +964,7 @@ enum BrowserInternalPageRouting {
         }
 
         for tabID in tabIDsToArchive {
-            closeTab(id: tabID)
+            closeTab(id: tabID, registersUndo: false)
         }
     }
 
@@ -567,9 +973,11 @@ enum BrowserInternalPageRouting {
             return
         }
 
+        bookmarksModel.reload()
         dismissFindBar()
         currentPageCommandBarModel.dismiss()
         commandBarModel.present()
+        BrowserTelemetry.captureUsage(.commandBarPresented, properties: telemetryProperties)
     }
 
     func toggleCommandBar() {
@@ -580,9 +988,11 @@ enum BrowserInternalPageRouting {
         if commandBarModel.isPresented {
             commandBarModel.dismiss()
         } else {
+            bookmarksModel.reload()
             dismissFindBar()
             currentPageCommandBarModel.dismiss()
             commandBarModel.present()
+            BrowserTelemetry.captureUsage(.commandBarPresented, properties: telemetryProperties)
         }
     }
 
@@ -599,9 +1009,11 @@ enum BrowserInternalPageRouting {
             return
         }
 
+        bookmarksModel.reload()
         dismissFindBar()
         commandBarModel.dismiss()
         currentPageCommandBarModel.present(initialQuery: selectedTab.urlString)
+        BrowserTelemetry.captureUsage(.currentPageCommandBarPresented, properties: telemetryProperties)
     }
 
     func presentFindBar() {
@@ -614,6 +1026,7 @@ enum BrowserInternalPageRouting {
         isFindBarPresented = true
         findBarFocusRequest += 1
         findResultMatchCount = nil
+        BrowserTelemetry.captureUsage(.findPresented, properties: telemetryProperties)
         runFind(forward: true, findNext: false)
     }
 
@@ -658,6 +1071,7 @@ enum BrowserInternalPageRouting {
         }
 
         tabDriver.reloadActiveTab()
+        BrowserTelemetry.captureUsage(.tabReloaded, properties: telemetryProperties)
     }
 
     func forceReloadCurrentTab() {
@@ -666,6 +1080,10 @@ enum BrowserInternalPageRouting {
         }
 
         tabDriver.reloadActiveTabIgnoringCache()
+        BrowserTelemetry.captureUsage(
+            .tabReloaded,
+            properties: telemetryProperties.merging(["force": "true"]) { _, new in new }
+        )
     }
 
     func stopLoadingCurrentTab() {
@@ -709,6 +1127,15 @@ enum BrowserInternalPageRouting {
         return copyTabLink(forTabID: selectedTabID)
     }
 
+    @discardableResult func captureFullPageSelectedTabToPasteboard() -> Bool {
+        guard selectedTabID != nil else {
+            return false
+        }
+
+        tabDriver.captureFullPageActiveTabToPasteboard()
+        return true
+    }
+
     @discardableResult func copyTabLink(forTabID tabID: String) -> Bool {
         guard
             let urlString = tabURLString(forTabID: tabID),
@@ -724,10 +1151,53 @@ enum BrowserInternalPageRouting {
 
     func refreshBrowserExtensions() {
         browserExtensions = extensionManager.installedExtensions()
+        removeUnavailablePinnedExtensionsIfNeeded()
+        closeExtensionSidePanelIfNeeded()
     }
 
     func openExtensionsManager() {
         openURLInNewTab(URL(string: BrowserExtensionRouting.extensionsURLString)!)
+    }
+
+    @discardableResult func openExtension(id: String) -> BrowserExtensionActionPopup? {
+        guard
+            isContextReady,
+            let browserExtension = browserExtensions.first(where: { $0.id == id }),
+            browserExtension.isEnabled
+        else {
+            return nil
+        }
+
+        switch extensionManager.runAction(id: id) {
+        case .popup(let urlString):
+            guard let extensionActionPopupDriver else {
+                return nil
+            }
+
+            let popupID = extensionActionPopupDriver.openPopup(urlString: urlString)
+            return BrowserExtensionActionPopup(
+                id: popupID,
+                extensionID: browserExtension.id,
+                title: browserExtension.name,
+                hostView: extensionActionPopupDriver.hostView,
+                closeHandler: { [weak extensionActionPopupDriver] in
+                    extensionActionPopupDriver?.closePopup(id: popupID)
+                }
+            )
+        case .sidePanel:
+            openExtensionSidePanel(id: id)
+            return nil
+        case .handled:
+            if browserExtension.sidePanelURLString != nil {
+                openExtensionSidePanel(id: id)
+            }
+            return nil
+        case .failed:
+            if browserExtension.sidePanelURLString != nil {
+                openExtensionSidePanel(id: id)
+            }
+            return nil
+        }
     }
 
     func openExtensionDetails(id: String) {
@@ -736,6 +1206,10 @@ enum BrowserInternalPageRouting {
 
     func openExtensionStore() {
         openURLInNewTab(URL(string: BrowserExtensionRouting.chromeWebStoreURLString)!)
+    }
+
+    func openExtensionStore(id: String) {
+        openURLInNewTab(URL(string: BrowserExtensionRouting.chromeWebStoreURLString(forExtensionID: id))!)
     }
 
     @discardableResult func setExtension(id: String, isEnabled: Bool) -> Bool {
@@ -747,13 +1221,67 @@ enum BrowserInternalPageRouting {
         return true
     }
 
+    @discardableResult func openExtensionSidePanel(id: String) -> Bool {
+        guard
+            isContextReady,
+            let extensionSidePanelDriver,
+            let browserExtension = browserExtensions.first(where: { $0.id == id }),
+            browserExtension.isEnabled,
+            let urlString = browserExtension.sidePanelURLString
+        else {
+            return false
+        }
+
+        let panelID = extensionSidePanelDriver.openPanel(urlString: urlString)
+        extensionSidePanel = BrowserExtensionSidePanel(
+            panelID: panelID,
+            extensionID: browserExtension.id,
+            title: browserExtension.name,
+            urlString: urlString,
+            iconData: browserExtension.iconData
+        )
+        return true
+    }
+
+    func closeExtensionSidePanel() {
+        guard let sidePanel = extensionSidePanel else {
+            return
+        }
+
+        extensionSidePanel = nil
+        extensionSidePanelDriver?.closePanel(id: sidePanel.panelID)
+    }
+
     @discardableResult func removeExtension(id: String) -> Bool {
         guard extensionManager.removeExtension(id: id) else {
             return false
         }
 
+        setExtension(id: id, isPinned: false)
         refreshBrowserExtensions()
         return true
+    }
+
+    func isExtensionPinned(id: String) -> Bool {
+        pinnedExtensionIDs.contains(id)
+    }
+
+    @discardableResult func setExtension(id: String, isPinned: Bool) -> Bool {
+        let isCurrentlyPinned = pinnedExtensionIDs.contains(id)
+        guard isCurrentlyPinned != isPinned else {
+            return false
+        }
+
+        var updatedIDs = pinnedExtensionIDs.filter { $0 != id }
+        if isPinned {
+            updatedIDs.append(id)
+        }
+        setPinnedExtensionIDs(updatedIDs)
+        return true
+    }
+
+    @discardableResult func toggleExtensionPinned(id: String) -> Bool {
+        setExtension(id: id, isPinned: !isExtensionPinned(id: id))
     }
 
     func goBack() {
@@ -783,7 +1311,48 @@ enum BrowserInternalPageRouting {
         }
 
         for tabID in openTabIDs {
-            closeTab(id: tabID)
+            closeTab(id: tabID, registersUndo: false)
+        }
+    }
+
+    func applyRemoteSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
+        guard isContextReady, !isRestoringSession, !isApplyingRemoteSync else {
+            return
+        }
+
+        isApplyingRemoteSync = true
+        dismissCommandBar()
+        dismissFindBar()
+
+        for tabID in tabs.map(\.id) {
+            closeTab(id: tabID, forceClose: true, registersUndo: false)
+        }
+        tabCreationUndoReferences.removeAll()
+
+        let restoredSpaces = restoredSpaces(from: snapshot)
+        spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
+        pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
+        selectedSpaceID = selectedSpaceID.flatMap { selectedSpaceID in
+            spaces.contains(where: { $0.id == selectedSpaceID }) ? selectedSpaceID : nil
+        } ?? spaces.first?.id
+
+        isRestoringSession = true
+        hasCreatedInitialTab = true
+        pendingRestoredSelectedTabIndex = remoteSelectedTabIndex(in: snapshot)
+        pendingRestoredSpaces = snapshot.spaces ?? []
+        pendingRestoredTabs = snapshot.tabs
+        remainingRestoredTabCreations = snapshot.tabs.count
+
+        guard !snapshot.tabs.isEmpty else {
+            finishSessionRestoreIfNeeded()
+            return
+        }
+
+        for (index, tabSnapshot) in snapshot.tabs.enumerated() {
+            _ = tabDriver.createTab(
+                withURLString: tabSnapshot.urlString,
+                makeActive: index == pendingRestoredSelectedTabIndex
+            )
         }
     }
 
@@ -798,8 +1367,7 @@ enum BrowserInternalPageRouting {
             return false
         }
 
-        closeTab(id: selectedTabID)
-        return true
+        return closeTab(id: selectedTabID)
     }
 
     func hasTabsBelow(id: String) -> Bool {
@@ -809,39 +1377,101 @@ enum BrowserInternalPageRouting {
     func selectTab(id: String) {
         guard
             let tab = tabs.first(where: { $0.id == id }),
-            tab.spaceID == selectedSpaceID,
             selectedTabID != id,
             !closingTabIDs.contains(id)
         else {
             return
         }
 
+        captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
 
+        if tab.spaceID != selectedSpaceID {
+            selectedSpaceID = tab.spaceID
+        }
         selectedTabID = id
         setSelectedTabID(id, forSpaceID: tab.spaceID)
         findResultMatchCount = nil
         tabDriver.selectTab(withID: id)
         touchTab(id: id)
+        recordSelectedTab(id)
         updateWindowTitle()
+        BrowserTelemetry.captureUsage(.tabSelected, properties: telemetryProperties(for: tab))
         persistCurrentSessionIfAllowed()
         runFind(forward: true, findNext: false)
     }
 
-    func closeTab(id: String, forceClose: Bool = false) {
+    @discardableResult func advanceTabSwitcher(reverse: Bool = false) -> Bool {
+        if var state = tabSwitcherState, !state.entries.isEmpty {
+            let selectedIndex = state.entries.firstIndex { $0.id == state.selectedTabID } ?? 0
+            let offset = reverse ? -1 : 1
+            let nextIndex = (selectedIndex + offset + state.entries.count) % state.entries.count
+            state.selectedTabID = state.entries[nextIndex].id
+            tabSwitcherState = state
+            return true
+        }
+
+        captureSelectedTabPreviewIfNeeded()
+        let entries = tabSwitcherEntries()
+        guard entries.count > 1 else {
+            return false
+        }
+
+        let initialSelectionIndex = reverse ? entries.count - 1 : 1
+        tabSwitcherState = TabSwitcherState(
+            entries: entries,
+            selectedTabID: entries[initialSelectionIndex].id,
+            isVisible: false
+        )
+        scheduleTabSwitcherPresentation()
+        return true
+    }
+
+    @discardableResult func commitTabSwitcher() -> Bool {
+        guard let state = tabSwitcherState else {
+            return false
+        }
+
+        clearTabSwitcherState()
+        if selectedTabID != state.selectedTabID {
+            selectTab(id: state.selectedTabID)
+        }
+        return true
+    }
+
+    @discardableResult func cancelTabSwitcher() -> Bool {
+        guard tabSwitcherState != nil else {
+            return false
+        }
+
+        clearTabSwitcherState()
+        return true
+    }
+
+    @discardableResult func closeTab(
+        id: String,
+        forceClose: Bool = false,
+        registersUndo: Bool = true,
+        undoActionName: String = BrowserStrings.tabArchiveAction
+    ) -> Bool {
         guard
             let closingIndex = tabs.firstIndex(where: { $0.id == id }),
             !closingTabIDs.contains(id)
         else {
-            return
+            return false
         }
 
         let closingTab = tabs[closingIndex]
+        let undoSnapshot = tabUndoSnapshot(forClosingTabAt: closingIndex)
         let closingTabWasSelected = selectedTabID == id
         closingTabIDs.insert(id)
+        BrowserTelemetry.captureUsage(.tabClosed, properties: telemetryProperties(for: closingTab))
 
         tabs.removeAll { $0.id == id }
+        removeTabFromSwitcherTracking(id)
+        tabCreationUndoReferences.removeValue(forKey: id)?.currentTabID = nil
         clearSelectedTab(id, forSpaceID: closingTab.spaceID)
+        removeEmptyPinnedTabFolders()
 
         if closingTabWasSelected {
             let fallbackTabID = fallbackTabID(afterClosingTab: closingTab)
@@ -854,6 +1484,7 @@ enum BrowserInternalPageRouting {
             if let fallbackTabID {
                 tabDriver.selectTab(withID: fallbackTabID)
                 setSelectedTabID(fallbackTabID, forSpaceID: closingTab.spaceID)
+                recordSelectedTab(fallbackTabID)
                 if !fallbackUsesWindowedBrowser {
                     runFind(forward: true, findNext: false)
                 }
@@ -867,6 +1498,10 @@ enum BrowserInternalPageRouting {
         tabDriver.closeTab(withID: id, forceClose: forceClose)
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
+        if registersUndo, let undoSnapshot {
+            registerTabArchiveUndo(undoSnapshot, actionName: undoActionName)
+        }
+        return true
     }
 
     func setUserTitleOverride(_ titleOverride: String?, forTabID tabID: String) {
@@ -896,6 +1531,14 @@ enum BrowserInternalPageRouting {
         sidebarWidth = clampedWidth
     }
 
+    func setExtensionSidePanelWidth(_ width: CGFloat) {
+        let clampedWidth = min(max(width, Self.minExtensionSidePanelWidth), Self.maxExtensionSidePanelWidth)
+        guard extensionSidePanelWidth != clampedWidth else {
+            return
+        }
+        extensionSidePanelWidth = clampedWidth
+    }
+
     func persistSidebarWidthPreferenceIfAllowed() {
         guard isContextReady, isPersistenceEnabled, !isRestoringSession else {
             return
@@ -909,6 +1552,32 @@ enum BrowserInternalPageRouting {
     private struct PendingCreatedTabContext {
         let spaceID: String
         let placement: BrowserTabPlacement
+        let undoSnapshot: TabUndoSnapshot?
+    }
+
+    private final class TabCreationUndoReference {
+        // MARK: Lifecycle
+
+        init(tabID: String) {
+            self.currentTabID = tabID
+        }
+
+        // MARK: Internal
+
+        var currentTabID: String?
+    }
+
+    private struct TabUndoSnapshot {
+        let tab: Tab
+        let insertionIndex: Int
+        let wasSelectedTab: Bool
+        let wasSelectedInSpace: Bool
+        let creationUndoReference: TabCreationUndoReference?
+    }
+
+    private struct PinnedRootItem {
+        let firstSectionIndex: Int
+        let afterSectionIndex: Int
     }
 
     private let tabDriver: BrowserTabDriving
@@ -917,22 +1586,33 @@ enum BrowserInternalPageRouting {
     private let newTabURLString: String
     private let commandBarSuggestionProvider: BrowserSuggestionProviding
     private let navigationResolver: BrowserNavigationResolver
+    private let historyStore: BrowserHistorySearching
     private let extensionManager: any BrowserExtensionManaging
+    private let extensionSidePanelDriver: (any BrowserExtensionSidePanelDriving)?
+    private let extensionActionPopupDriver: (any BrowserExtensionActionPopupDriving)?
+    private let syncCoordinator: BrowserSyncCoordinating?
     private let windowTitleHandler: (String) -> Void
     private let allTabsClosedHandler: () -> Void
     private let dateProvider: () -> Date
     private let spaceIDProvider: () -> String
+    private let tabSyncIDProvider: () -> String
 
     private var hasCreatedInitialTab = false
     private var closingTabIDs = Set<String>()
     private var isPersistenceEnabled = true
     private var isRestoringSession = false
+    private var isApplyingRemoteSync = false
     private var pendingRestoredSelectedTabIndex: Int?
     private var pendingRestoredTabs = [BrowserTabSessionSnapshotTab]()
     private var pendingRestoredSpaces = [BrowserSpaceSessionSnapshot]()
     private var pendingCreatedTabContexts = [String: PendingCreatedTabContext]()
+    private var tabCreationUndoReferences = [String: TabCreationUndoReference]()
     private var remainingRestoredTabCreations = 0
     private var automaticArchivalTimer: Timer?
+    private var recentlySelectedTabIDs = [String]()
+    private var tabPreviewImagesByID = [String: NSImage]()
+    private var tabSwitcherPresentationTask: Task<Void, Never>?
+    private var tabSwitcherSessionID = UUID()
 
     private var selectedTab: Tab? {
         guard let selectedTabID else {
@@ -958,6 +1638,90 @@ enum BrowserInternalPageRouting {
         return spaces.firstIndex(where: { $0.id == selectedSpaceID })
     }
 
+    private var telemetryProperties: [String: String] {
+        [
+            "profile": profile.isDefault ? "default" : "custom",
+            "window_mode": windowMode.isIncognito ? "incognito" : "normal",
+            "space_count": "\(spaces.count)",
+            "tab_count": "\(tabs.count)",
+        ]
+    }
+
+    private var canRegisterTabUndo: Bool {
+        isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
+    }
+
+    private func telemetryProperties(for tab: Tab) -> [String: String] {
+        var properties = telemetryProperties
+        properties["placement"] = tab.placement.rawValue
+        properties["is_selected"] = selectedTabID == tab.id ? "true" : "false"
+        properties["is_internal_page"] = Self.internalPage(for: tab.urlString) == nil ? "false" : "true"
+        if let scheme = URL(string: tab.urlString)?.scheme {
+            properties["scheme"] = scheme.lowercased()
+        }
+        return properties
+    }
+
+    private func handleExtensionSidePanelClosed(panelID: String) {
+        guard extensionSidePanel?.panelID == panelID else {
+            return
+        }
+
+        extensionSidePanel = nil
+    }
+
+    private func closeExtensionSidePanelIfNeeded() {
+        guard let sidePanel = extensionSidePanel else {
+            return
+        }
+
+        guard
+            let browserExtension = browserExtensions.first(where: { $0.id == sidePanel.extensionID }),
+            browserExtension.isEnabled,
+            browserExtension.sidePanelURLString == sidePanel.urlString
+        else {
+            closeExtensionSidePanel()
+            return
+        }
+
+        extensionSidePanel = BrowserExtensionSidePanel(
+            panelID: sidePanel.panelID,
+            extensionID: browserExtension.id,
+            title: browserExtension.name,
+            urlString: sidePanel.urlString,
+            iconData: browserExtension.iconData
+        )
+    }
+
+    private func removeUnavailablePinnedExtensionsIfNeeded() {
+        guard !browserExtensions.isEmpty else {
+            return
+        }
+
+        let availableExtensionIDs = Set(browserExtensions.map(\.id))
+        let availablePinnedExtensionIDs = pinnedExtensionIDs.filter(availableExtensionIDs.contains)
+        guard availablePinnedExtensionIDs != pinnedExtensionIDs else {
+            return
+        }
+
+        setPinnedExtensionIDs(availablePinnedExtensionIDs)
+    }
+
+    private func setPinnedExtensionIDs(_ ids: [String]) {
+        var seen = Set<String>()
+        let normalizedIDs = ids.filter { id in
+            guard !id.isEmpty, !seen.contains(id) else {
+                return false
+            }
+
+            seen.insert(id)
+            return true
+        }
+
+        pinnedExtensionIDs = normalizedIDs
+        userPreferencesStore.pinnedExtensionIDs = normalizedIDs
+    }
+
     private func ensureInitialTab() {
         guard canCreateTab, !hasCreatedInitialTab else {
             return
@@ -965,10 +1729,14 @@ enum BrowserInternalPageRouting {
 
         ensureDefaultSpace()
         hasCreatedInitialTab = true
-        createTab(withURLString: newTabURLString)
+        createTab(withURLString: newTabURLString, registersUndo: false)
     }
 
     private func restoreSessionIfAvailable() -> Bool {
+        guard windowMode.persistsSession else {
+            return false
+        }
+
         guard userPreferencesStore.restoreWindowsOnLaunch else {
             return false
         }
@@ -985,6 +1753,7 @@ enum BrowserInternalPageRouting {
         isRestoringSession = true
         hasCreatedInitialTab = true
         spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
+        pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
         let selectedSpaceIndex = sessionPreferencesStore.loadSelectedSpaceIndex(
             spaceCount: spaces.count
         ) ?? 0
@@ -1012,6 +1781,10 @@ enum BrowserInternalPageRouting {
     }
 
     private func restoreSidebarWidthIfNeeded() {
+        guard isPersistenceEnabled else {
+            return
+        }
+
         guard let storedSidebarWidth = sessionPreferencesStore.loadSidebarWidth(
             minimum: Self.minSidebarWidth,
             maximum: Self.maxSidebarWidth
@@ -1027,6 +1800,8 @@ enum BrowserInternalPageRouting {
             return
         }
 
+        removeInvalidPinnedTabFolderAssignments()
+        removeEmptyPinnedTabFolders()
         restoreSelectedTabsForSpaces()
         selectActiveTabForSelectedSpace()
 
@@ -1035,39 +1810,63 @@ enum BrowserInternalPageRouting {
         pendingRestoredSpaces.removeAll()
         isRestoringSession = false
         updateWindowTitle()
-        persistCurrentSessionIfAllowed()
-        archiveExpiredTemporaryTabs()
+
+        if isApplyingRemoteSync {
+            sessionSnapshotStore.saveSnapshot(currentSessionSnapshot())
+            sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
+            sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
+            isApplyingRemoteSync = false
+        } else {
+            persistCurrentSessionIfAllowed()
+            archiveExpiredTemporaryTabs()
+        }
     }
 
     private func persistCurrentSessionIfAllowed() {
-        guard isContextReady, isPersistenceEnabled, !isRestoringSession else {
+        guard isContextReady, isPersistenceEnabled, !isRestoringSession, !isApplyingRemoteSync else {
             return
         }
 
-        sessionSnapshotStore.saveSnapshot(
-            BrowserTabSessionSnapshot(
-                spaces: spaces.map { space in
-                    BrowserSpaceSessionSnapshot(
-                        id: space.id,
-                        title: space.title,
-                        systemImageName: space.systemImageName,
-                        isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                        selectedTabIndex: selectedTabIndex(inSpace: space.id)
-                    )
-                },
-                tabs: tabs.map { tab in
-                    BrowserTabSessionSnapshotTab(
-                        urlString: tab.urlString,
-                        userTitleOverride: tab.userTitleOverride,
-                        placement: tab.placement,
-                        spaceID: tab.spaceID,
-                        lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970
-                    )
-                }
-            )
-        )
+        let snapshot = currentSessionSnapshot()
+        sessionSnapshotStore.saveSnapshot(snapshot)
         sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
         sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
+        syncCoordinator?.schedulePush(snapshot: snapshot)
+    }
+
+    private func currentSessionSnapshot() -> BrowserTabSessionSnapshot {
+        BrowserTabSessionSnapshot(
+            spaces: spaces.map { space in
+                BrowserSpaceSessionSnapshot(
+                    id: space.id,
+                    title: space.title,
+                    systemImageName: space.systemImageName,
+                    isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
+                    selectedTabIndex: selectedTabIndex(inSpace: space.id)
+                )
+            },
+            pinnedTabFolders: pinnedTabFolders.map { folder in
+                BrowserPinnedTabFolderSessionSnapshot(
+                    id: folder.id,
+                    spaceID: folder.spaceID,
+                    parentFolderID: folder.parentFolderID,
+                    title: folder.title,
+                    systemImageName: folder.systemImageName,
+                    isExpanded: folder.isExpanded
+                )
+            },
+            tabs: tabs.map { tab in
+                BrowserTabSessionSnapshotTab(
+                    id: tab.syncID,
+                    urlString: tab.urlString,
+                    userTitleOverride: tab.userTitleOverride,
+                    placement: tab.placement,
+                    spaceID: tab.spaceID,
+                    pinnedFolderID: tab.pinnedFolderID,
+                    lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970
+                )
+            }
+        )
     }
 
     private func updateWindowTitle() {
@@ -1075,7 +1874,30 @@ enum BrowserInternalPageRouting {
         windowTitleHandler(title)
     }
 
-    private func createTab(withURLString urlString: String) {
+    private func remoteSelectedTabIndex(in snapshot: BrowserTabSessionSnapshot) -> Int? {
+        guard
+            let selectedSpaceID,
+            let spaceSnapshot = snapshot.spaces?.first(where: { $0.id == selectedSpaceID }),
+            let selectedTabIndex = spaceSnapshot.selectedTabIndex
+        else {
+            return nil
+        }
+
+        let visibleTabs = snapshot.tabs.enumerated().filter { _, tab in
+            (tab.spaceID ?? Self.defaultSpaceID) == selectedSpaceID
+        }
+        guard visibleTabs.indices.contains(selectedTabIndex) else {
+            return nil
+        }
+
+        return visibleTabs[selectedTabIndex].offset
+    }
+
+    private func createTab(
+        withURLString urlString: String,
+        registersUndo: Bool = true,
+        undoActionName: String = BrowserStrings.menuNewTab
+    ) {
         guard canCreateTab else {
             return
         }
@@ -1085,13 +1907,19 @@ enum BrowserInternalPageRouting {
             return
         }
 
-        let tabID = tabDriver.createTab(withURLString: urlString, makeActive: true)
-        let context = PendingCreatedTabContext(spaceID: selectedSpaceID, placement: .temporary)
-        if let index = tabs.firstIndex(where: { $0.id == tabID }) {
-            tabs[index].spaceID = selectedSpaceID
-            tabs[index].placement = context.placement
-        } else {
-            pendingCreatedTabContexts[tabID] = context
+        captureSelectedTabPreviewIfNeeded()
+        let resolvedURLString = resolvedBrowserURLString(urlString)
+        let tabID = tabDriver.createTab(withURLString: resolvedURLString, makeActive: true)
+        let context = PendingCreatedTabContext(
+            spaceID: selectedSpaceID,
+            placement: .temporary,
+            undoSnapshot: nil
+        )
+        applyCreatedTabContext(context, toTabID: tabID)
+        if registersUndo, canRegisterTabUndo {
+            let creationUndoReference = TabCreationUndoReference(tabID: tabID)
+            tabCreationUndoReferences[tabID] = creationUndoReference
+            registerTabCreationUndo(creationUndoReference, actionName: undoActionName)
         }
         selectedTabID = tabID
         setSelectedTabID(tabID, forSpaceID: selectedSpaceID)
@@ -1103,12 +1931,170 @@ enum BrowserInternalPageRouting {
         createTab(withURLString: resolvedURLString)
     }
 
+    private func navigateSelectedTabOrOpenNewTab(toURLString urlString: String) {
+        guard canCreateTab else {
+            return
+        }
+
+        if selectedTabID == nil {
+            createTab(withURLString: urlString)
+            return
+        }
+
+        tabDriver.navigateActiveTab(toURLString: resolvedBrowserURLString(urlString))
+    }
+
     private func navigateSelectedTab(toURLString urlString: String) {
         guard canCreateTab, selectedTabID != nil else {
             return
         }
 
-        tabDriver.navigateActiveTab(toURLString: urlString)
+        tabDriver.navigateActiveTab(toURLString: resolvedBrowserURLString(urlString))
+    }
+
+    private func localCommandSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty, maximumCount > 0 else {
+            return []
+        }
+
+        var suggestions = [BrowserCommandSuggestion]()
+        suggestions.append(
+            contentsOf: internalPageSuggestions(
+                for: trimmedQuery,
+                maximumCount: maximumCount
+            )
+        )
+
+        let remainingAfterInternalPages = maximumCount - suggestions.count
+        if remainingAfterInternalPages > 0 {
+            suggestions.append(
+                contentsOf: openTabSuggestions(
+                    for: trimmedQuery,
+                    maximumCount: remainingAfterInternalPages
+                )
+            )
+        }
+
+        let remainingAfterTabs = maximumCount - suggestions.count
+        if remainingAfterTabs > 0 {
+            suggestions.append(
+                contentsOf: bookmarksModel.suggestions(
+                    for: trimmedQuery,
+                    maximumCount: remainingAfterTabs
+                )
+            )
+        }
+
+        let remainingAfterBookmarks = maximumCount - suggestions.count
+        if remainingAfterBookmarks > 0 {
+            suggestions.append(
+                contentsOf: historyStore.suggestions(
+                    for: trimmedQuery,
+                    maximumCount: remainingAfterBookmarks
+                )
+            )
+        }
+
+        return Array(suggestions.prefix(maximumCount))
+    }
+
+    private func internalPageSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+        guard maximumCount > 0 else {
+            return []
+        }
+
+        let normalizedQuery = normalizedCommandSearchText(query)
+        let pages = [
+            (
+                title: "Open Settings",
+                detail: "tb://settings",
+                aliases: ["settings", "chrome://settings", "arc://settings", "dia://settings"],
+                urlString: "tb://settings/"
+            ),
+            (
+                title: "Open Bookmarks",
+                detail: "tb://bookmarks",
+                aliases: ["bookmarks", "chrome://bookmarks", "arc://bookmarks", "dia://bookmarks"],
+                urlString: "tb://bookmarks/"
+            ),
+            (
+                title: "Open History",
+                detail: "tb://history",
+                aliases: ["history", "chrome://history", "arc://history", "dia://history"],
+                urlString: "tb://history"
+            ),
+            (
+                title: "Open Extensions",
+                detail: "tb://extensions",
+                aliases: ["extensions", "chrome://extensions", "arc://extensions", "dia://extensions"],
+                urlString: "tb://extensions/"
+            ),
+            (
+                title: "Open Passwords",
+                detail: "tb://password-manager/passwords",
+                aliases: [
+                    "passwords",
+                    "password manager",
+                    "password-manager",
+                    "chrome://password-manager/passwords",
+                    "arc://password-manager/passwords",
+                    "dia://password-manager/passwords",
+                ],
+                urlString: "tb://password-manager/passwords"
+            ),
+        ]
+
+        return pages
+            .filter { page in
+                normalizedCommandSearchText(page.title).contains(normalizedQuery)
+                    || normalizedCommandSearchText(page.detail).contains(normalizedQuery)
+                    || page.aliases.contains { normalizedCommandSearchText($0).contains(normalizedQuery) }
+            }
+            .prefix(maximumCount)
+            .map { page in
+                BrowserCommandSuggestion(
+                    kind: .url,
+                    displayText: page.title,
+                    detailText: page.detail,
+                    resolvedURLString: page.urlString
+                )
+            }
+    }
+
+    private func openTabSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+        let normalizedQuery = query
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+
+        return activeSpaceTabs
+            .filter { tab in
+                tab.id != selectedTabID
+                    && (
+                        normalizedCommandSearchText(tab.displayTitle).contains(normalizedQuery)
+                            || normalizedCommandSearchText(tab.urlString).contains(normalizedQuery)
+                    )
+            }
+            .prefix(maximumCount)
+            .map { tab in
+                BrowserCommandSuggestion(
+                    kind: .openTab,
+                    displayText: tab.displayTitle,
+                    detailText: BrowserURLDisplayFormatter.displayString(for: tab.urlString),
+                    resolvedURLString: tab.urlString,
+                    tabID: tab.id
+                )
+            }
+    }
+
+    private func normalizedCommandSearchText(_ text: String) -> String {
+        text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    private func resolvedBrowserURLString(_ urlString: String) -> String {
+        BrowserInternalURLNormalizer.canonicalURLString(for: urlString) ?? urlString
     }
 
     private func tabURLString(forTabID tabID: String) -> String? {
@@ -1122,6 +2108,219 @@ enum BrowserInternalPageRouting {
         }
 
         return Array(sidebarTabIDs.dropFirst(tabIndex + 1))
+    }
+
+    private func applyCreatedTabContext(_ context: PendingCreatedTabContext, toTabID tabID: String) {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else {
+            pendingCreatedTabContexts[tabID] = context
+            return
+        }
+
+        guard let undoSnapshot = context.undoSnapshot else {
+            tabs[index].spaceID = context.spaceID
+            tabs[index].placement = context.placement
+            return
+        }
+
+        tabs[index] = restoredTab(from: undoSnapshot, id: tabID)
+        moveTab(id: tabID, toGlobalIndex: undoSnapshot.insertionIndex)
+        restoreCreationUndoReference(from: undoSnapshot, toTabID: tabID)
+        restoreSelection(from: undoSnapshot, toTabID: tabID)
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+    }
+
+    private func restoredTab(from undoSnapshot: TabUndoSnapshot, id: String) -> Tab {
+        Tab(
+            id: id,
+            syncID: undoSnapshot.tab.syncID,
+            spaceID: undoSnapshot.tab.spaceID,
+            title: undoSnapshot.tab.title,
+            userTitleOverride: undoSnapshot.tab.userTitleOverride,
+            urlString: undoSnapshot.tab.urlString,
+            faviconURLString: undoSnapshot.tab.faviconURLString,
+            placement: undoSnapshot.tab.placement,
+            pinnedFolderID: undoSnapshot.tab.pinnedFolderID,
+            lastActivityAt: undoSnapshot.tab.lastActivityAt
+        )
+    }
+
+    private func moveTab(id tabID: String, toGlobalIndex insertionIndex: Int) {
+        guard let currentIndex = tabs.firstIndex(where: { $0.id == tabID }) else {
+            return
+        }
+
+        let tab = tabs.remove(at: currentIndex)
+        let targetIndex = min(max(insertionIndex, 0), tabs.count)
+        tabs.insert(tab, at: targetIndex)
+    }
+
+    private func restoreSelection(from undoSnapshot: TabUndoSnapshot, toTabID tabID: String) {
+        let tabSpaceID = undoSnapshot.tab.spaceID
+        if undoSnapshot.wasSelectedInSpace {
+            setSelectedTabID(tabID, forSpaceID: tabSpaceID)
+        }
+
+        guard undoSnapshot.wasSelectedTab || selectedTabID == nil else {
+            return
+        }
+
+        selectedSpaceID = tabSpaceID
+        selectedTabID = tabID
+        findResultMatchCount = nil
+        setSelectedTabID(tabID, forSpaceID: tabSpaceID)
+        recordSelectedTab(tabID)
+    }
+
+    private func restoreCreationUndoReference(from undoSnapshot: TabUndoSnapshot, toTabID tabID: String) {
+        guard let creationUndoReference = undoSnapshot.creationUndoReference else {
+            return
+        }
+
+        creationUndoReference.currentTabID = tabID
+        tabCreationUndoReferences[tabID] = creationUndoReference
+    }
+
+    private func tabUndoSnapshot(forClosingTabAt closingIndex: Int) -> TabUndoSnapshot? {
+        guard tabs.indices.contains(closingIndex) else {
+            return nil
+        }
+
+        let tab = tabs[closingIndex]
+        return TabUndoSnapshot(
+            tab: tab,
+            insertionIndex: closingIndex,
+            wasSelectedTab: selectedTabID == tab.id,
+            wasSelectedInSpace: spaces.first { $0.id == tab.spaceID }?.selectedTabID == tab.id,
+            creationUndoReference: tabCreationUndoReferences[tab.id]
+        )
+    }
+
+    private func registerTabUndo(actionName: String, registration: () -> Void) {
+        guard canRegisterTabUndo else {
+            return
+        }
+
+        let managesGroup = undoManager.groupingLevel == 0
+        if managesGroup {
+            undoManager.beginUndoGrouping()
+        }
+        registration()
+        undoManager.setActionName(actionName)
+        if managesGroup {
+            undoManager.endUndoGrouping()
+        }
+    }
+
+    private func registerTabCreationUndo(
+        _ creationUndoReference: TabCreationUndoReference,
+        actionName: String
+    ) {
+        registerTabUndo(actionName: actionName) {
+            undoManager.registerUndo(withTarget: self) { target in
+                target.undoCreatedTab(creationUndoReference, actionName: actionName)
+            }
+        }
+    }
+
+    private func registerTabArchiveUndo(_ undoSnapshot: TabUndoSnapshot, actionName: String) {
+        registerTabUndo(actionName: actionName) {
+            undoManager.registerUndo(withTarget: self) { target in
+                target.undoArchivedTab(undoSnapshot, actionName: actionName)
+            }
+        }
+    }
+
+    private func undoCreatedTab(
+        _ creationUndoReference: TabCreationUndoReference,
+        actionName: String
+    ) {
+        guard
+            let tabID = creationUndoReference.currentTabID,
+            let undoSnapshot = closeTabForUndoRedo(id: tabID)
+        else {
+            return
+        }
+
+        registerTabUndo(actionName: actionName) {
+            undoManager.registerUndo(withTarget: self) { target in
+                target.redoCreatedTab(from: undoSnapshot, actionName: actionName)
+            }
+        }
+    }
+
+    private func redoCreatedTab(from undoSnapshot: TabUndoSnapshot, actionName: String) {
+        guard let tabID = restoreTab(from: undoSnapshot) else {
+            return
+        }
+
+        let creationUndoReference = undoSnapshot.creationUndoReference ?? TabCreationUndoReference(tabID: tabID)
+        creationUndoReference.currentTabID = tabID
+        tabCreationUndoReferences[tabID] = creationUndoReference
+        registerTabCreationUndo(creationUndoReference, actionName: actionName)
+    }
+
+    private func undoArchivedTab(_ undoSnapshot: TabUndoSnapshot, actionName: String) {
+        guard let tabID = restoreTab(from: undoSnapshot) else {
+            return
+        }
+
+        registerTabUndo(actionName: actionName) {
+            undoManager.registerUndo(withTarget: self) { target in
+                target.redoArchivedTab(id: tabID, actionName: actionName)
+            }
+        }
+    }
+
+    private func redoArchivedTab(id tabID: String, actionName: String) {
+        guard let undoSnapshot = closeTabForUndoRedo(id: tabID) else {
+            return
+        }
+
+        registerTabArchiveUndo(undoSnapshot, actionName: actionName)
+    }
+
+    private func closeTabForUndoRedo(id tabID: String) -> TabUndoSnapshot? {
+        guard
+            let closingIndex = tabs.firstIndex(where: { $0.id == tabID }),
+            !closingTabIDs.contains(tabID),
+            let undoSnapshot = tabUndoSnapshot(forClosingTabAt: closingIndex)
+        else {
+            return nil
+        }
+
+        guard closeTab(id: tabID, registersUndo: false) else {
+            return nil
+        }
+
+        return undoSnapshot
+    }
+
+    private func restoreTab(from undoSnapshot: TabUndoSnapshot) -> String? {
+        guard canCreateTab else {
+            return nil
+        }
+
+        ensureDefaultSpace()
+        let context = PendingCreatedTabContext(
+            spaceID: undoSnapshot.tab.spaceID,
+            placement: undoSnapshot.tab.placement,
+            undoSnapshot: undoSnapshot
+        )
+        let tabID = tabDriver.createTab(
+            withURLString: undoSnapshot.tab.urlString,
+            makeActive: undoSnapshot.wasSelectedTab
+        )
+        applyCreatedTabContext(context, toTabID: tabID)
+        restoreCreationUndoReference(from: undoSnapshot, toTabID: tabID)
+        if undoSnapshot.wasSelectedTab {
+            selectedSpaceID = undoSnapshot.tab.spaceID
+            selectedTabID = tabID
+            setSelectedTabID(tabID, forSpaceID: undoSnapshot.tab.spaceID)
+            findResultMatchCount = nil
+        }
+        updateWindowTitle()
+        return tabID
     }
 }
 
@@ -1189,41 +2388,32 @@ enum BrowserInternalPageRouting {
     }
 
     static func internalPage(for urlString: String) -> BrowserInternalPage? {
-        if urlString.caseInsensitiveCompare("about:settings") == .orderedSame {
-            return .settings
-        }
-
-        guard
-            let components = URLComponents(string: urlString),
-            let scheme = components.scheme?.lowercased(),
-            let host = components.host?.lowercased()
-        else {
-            return nil
-        }
-
-        guard scheme == "tb" || scheme == "chrome" else {
+        guard let host = BrowserInternalURLNormalizer.host(for: urlString) else {
             return nil
         }
 
         switch host {
-        case "settings":
+        case BrowserInternalURLNormalizer.settingsHost:
             return .settings
-        case "extensions":
+        case BrowserInternalURLNormalizer.extensionsHost:
             return .extensions
-        case "history":
+        case BrowserInternalURLNormalizer.historyHost:
             return .history
-        case "password-manager":
+        case BrowserInternalURLNormalizer.passwordManagerHost:
             return .passwordManager
+        case BrowserInternalURLNormalizer.bookmarksHost:
+            return .bookmarks
         default:
-            return nil
+            return .chromiumWebUI
         }
     }
 
     func handleCreatedTab(id: String, title: String, urlString: String) {
         let restoredTab = isRestoringSession && !pendingRestoredTabs.isEmpty ? pendingRestoredTabs.removeFirst() : nil
         let pendingContext = pendingCreatedTabContexts.removeValue(forKey: id)
+        let undoSnapshot = pendingContext?.undoSnapshot
         let fallbackSpaceID = selectedSpaceID ?? spaces.first?.id ?? Self.defaultSpaceID
-        let tabSpaceID = restoredTab?.spaceID ?? pendingContext?.spaceID ?? fallbackSpaceID
+        let tabSpaceID = restoredTab?.spaceID ?? undoSnapshot?.tab.spaceID ?? pendingContext?.spaceID ?? fallbackSpaceID
         if spaces.isEmpty {
             spaces = [makeDefaultSpace()]
             selectedSpaceID = tabSpaceID
@@ -1231,26 +2421,40 @@ enum BrowserInternalPageRouting {
         tabs.append(
             Tab(
                 id: id,
+                syncID: restoredTab?.id ?? undoSnapshot?.tab.syncID ?? tabSyncIDProvider(),
                 spaceID: tabSpaceID,
-                title: title,
-                userTitleOverride: restoredTab?.userTitleOverride,
-                urlString: urlString,
-                faviconURLString: nil,
-                placement: restoredTab?.placement ?? pendingContext?.placement ?? .temporary,
-                lastActivityAt: restoredTab.flatMap(lastActivityDate(from:)) ?? dateProvider()
+                title: undoSnapshot?.tab.title ?? title,
+                userTitleOverride: restoredTab?.userTitleOverride ?? undoSnapshot?.tab.userTitleOverride,
+                urlString: undoSnapshot?.tab.urlString ?? urlString,
+                faviconURLString: undoSnapshot?.tab.faviconURLString,
+                placement: restoredTab?.placement ?? undoSnapshot?.tab.placement ?? pendingContext?
+                    .placement ?? .temporary,
+                pinnedFolderID: restoredTab?.pinnedFolderID ?? undoSnapshot?.tab.pinnedFolderID,
+                lastActivityAt: restoredTab.flatMap(lastActivityDate(from:)) ?? undoSnapshot?.tab
+                    .lastActivityAt ?? dateProvider()
             )
         )
 
-        if selectedTabID == nil {
-            selectedTabID = id
+        if let pendingContext {
+            applyCreatedTabContext(pendingContext, toTabID: id)
+        } else {
+            if selectedTabID == nil {
+                selectedTabID = id
+            }
+            if selectedTabID == id {
+                setSelectedTabID(id, forSpaceID: tabSpaceID)
+            }
         }
+
         if selectedTabID == id {
-            setSelectedTabID(id, forSpaceID: tabSpaceID)
+            recordSelectedTab(id)
         }
 
         if isRestoringSession {
             remainingRestoredTabCreations = max(remainingRestoredTabCreations - 1, 0)
             finishSessionRestoreIfNeeded()
+        } else if let tab = tabs.first(where: { $0.id == id }) {
+            BrowserTelemetry.captureUsage(.tabCreated, properties: telemetryProperties(for: tab))
         }
 
         updateWindowTitle()
@@ -1303,6 +2507,10 @@ enum BrowserInternalPageRouting {
         }
     }
 
+    func handleDownloadUpdate(_ update: BrowserDownloadUpdate) {
+        downloadsModel.apply(update)
+    }
+
     func handleUpdatedTab(
         id: String,
         title: String?,
@@ -1332,6 +2540,7 @@ enum BrowserInternalPageRouting {
         updateWindowTitle()
 
         if didChangePersistentURL {
+            BrowserTelemetry.captureUsage(.tabNavigated, properties: telemetryProperties(for: tabs[index]))
             persistCurrentSessionIfAllowed()
         }
     }
@@ -1342,15 +2551,18 @@ enum BrowserInternalPageRouting {
         if closedTab != nil {
             tabs.removeAll { $0.id == id }
         }
+        removeTabFromSwitcherTracking(id)
         if let closedTab {
             clearSelectedTab(id, forSpaceID: closedTab.spaceID)
         }
+        removeEmptyPinnedTabFolders()
 
         if selectedTabID == id {
             selectedTabID = fallbackTabID(afterClosingTab: closedTab) ?? sidebarTabsForSelectedSpace().first?.id
             if let selectedTabID {
                 tabDriver.selectTab(withID: selectedTabID)
                 setSelectedTabID(selectedTabID, forSpaceID: selectedSpaceID)
+                recordSelectedTab(selectedTabID)
             } else {
                 tabDriver.deselectActiveTab()
             }
@@ -1460,6 +2672,43 @@ enum BrowserInternalPageRouting {
         }
     }
 
+    func restoredPinnedTabFolders(from snapshot: BrowserTabSessionSnapshot) -> [PinnedTabFolder] {
+        guard let folderSnapshots = snapshot.pinnedTabFolders, !folderSnapshots.isEmpty else {
+            return []
+        }
+
+        let validSpaceIDs = Set(spaces.map(\.id))
+        let validFolderSpaceIDsByID = folderSnapshots.reduce(into: [String: String]()) { result, snapshot in
+            result[snapshot.id] = result[snapshot.id] ?? snapshot.spaceID
+        }
+        var seenIDs = Set<String>()
+        return folderSnapshots.compactMap { snapshot -> PinnedTabFolder? in
+            let id = snapshot.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty, !seenIDs.contains(id), validSpaceIDs.contains(snapshot.spaceID) else {
+                return nil
+            }
+
+            let parentFolderID: String? =
+                if let snapshotParentFolderID = snapshot.parentFolderID,
+                snapshotParentFolderID != id,
+                validFolderSpaceIDsByID[snapshotParentFolderID] == snapshot.spaceID {
+                    snapshotParentFolderID
+                } else {
+                    nil
+                }
+            seenIDs.insert(id)
+            return PinnedTabFolder(
+                id: id,
+                spaceID: snapshot.spaceID,
+                parentFolderID: parentFolderID,
+                title: sanitizedPinnedTabFolderTitle(from: snapshot.title)
+                    ?? BrowserStrings.pinnedTabFolderDefaultTitle,
+                systemImageName: snapshot.systemImageName,
+                isExpanded: snapshot.isExpanded
+            )
+        }
+    }
+
     func restoreSelectedTabsForSpaces() {
         for index in spaces.indices {
             let spaceID = spaces[index].id
@@ -1487,6 +2736,7 @@ enum BrowserInternalPageRouting {
 
     func selectActiveTabForSelectedSpace() {
         guard let selectedSpaceID else {
+            captureSelectedTabPreviewIfNeeded()
             selectedTabID = nil
             tabDriver.deselectActiveTab()
             updateWindowTitle()
@@ -1501,12 +2751,16 @@ enum BrowserInternalPageRouting {
             return tabID
         } ?? sidebarTabs(forSpaceID: selectedSpaceID).first?.id
 
+        if selectedTabID != fallbackTabID {
+            captureSelectedTabPreviewIfNeeded()
+        }
         selectedTabID = fallbackTabID
         findResultMatchCount = nil
 
         if let fallbackTabID {
             setSelectedTabID(fallbackTabID, forSpaceID: selectedSpaceID)
             tabDriver.selectTab(withID: fallbackTabID)
+            recordSelectedTab(fallbackTabID)
             runFind(forward: true, findNext: false)
         } else {
             tabDriver.deselectActiveTab()
@@ -1525,6 +2779,15 @@ enum BrowserInternalPageRouting {
 
         let nextIndex = (selectedSpaceIndex + offset + spaces.count) % spaces.count
         selectSpace(id: spaces[nextIndex].id)
+    }
+
+    func fallbackSpaceID(afterDeletingSpaceAt index: Int) -> String? {
+        guard spaces.count > 1 else {
+            return nil
+        }
+
+        let fallbackIndex = index < spaces.count - 1 ? index + 1 : index - 1
+        return spaces[fallbackIndex].id
     }
 
     func setSelectedTabID(_ tabID: String?, forSpaceID spaceID: String?) {
@@ -1598,8 +2861,13 @@ enum BrowserInternalPageRouting {
         movingTabID: String,
         toPlacement placement: BrowserTabPlacement,
         requestedSectionIndex: Int,
-        targetSpaceID: String? = nil
+        targetSpaceID: String? = nil,
+        targetPinnedFolderID: String? = nil
     ) -> [Tab]? {
+        guard supportsAppTabs || placement != .app else {
+            return nil
+        }
+
         guard
             let movingTab = tabs.first(where: { $0.id == movingTabID })
         else {
@@ -1610,8 +2878,18 @@ enum BrowserInternalPageRouting {
             return nil
         }
 
-        let resolvedTargetSpaceID = targetSpaceID ?? selectedSpaceID ?? movingTab.spaceID
+        let targetFolder = targetPinnedFolderID.flatMap { folderID in
+            pinnedTabFolders.first { $0.id == folderID }
+        }
+        guard targetPinnedFolderID == nil || targetFolder != nil else {
+            return nil
+        }
+
+        let resolvedTargetSpaceID = targetFolder?.spaceID ?? targetSpaceID ?? selectedSpaceID ?? movingTab.spaceID
         guard placement == .app || spaces.contains(where: { $0.id == resolvedTargetSpaceID }) else {
+            return nil
+        }
+        guard targetFolder == nil || placement == .spacePinned else {
             return nil
         }
 
@@ -1635,6 +2913,7 @@ enum BrowserInternalPageRouting {
         if placement != .app {
             updatedTab.spaceID = resolvedTargetSpaceID
         }
+        updatedTab.pinnedFolderID = placement == .spacePinned ? targetPinnedFolderID : nil
 
         switch placement {
         case .app:
@@ -1647,12 +2926,21 @@ enum BrowserInternalPageRouting {
             updatedAppTabs.insert(updatedTab, at: destinationIndex)
         case .spacePinned:
             var updatedSpacePinnedTabs = updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] ?? []
-            let destinationIndex = adjustedSectionIndex(
-                requestedSectionIndex,
-                movingWithinTargetSection: movingWithinTargetSection,
-                sourceSectionIndex: sourceSectionIndex,
-                sectionCount: updatedSpacePinnedTabs.count
-            )
+            let destinationIndex =
+                if let targetPinnedFolderID {
+                    pinnedFolderChildInsertionIndex(
+                        requestedSectionIndex,
+                        in: updatedSpacePinnedTabs,
+                        folderID: targetPinnedFolderID
+                    )
+                } else {
+                    adjustedSectionIndex(
+                        requestedSectionIndex,
+                        movingWithinTargetSection: movingWithinTargetSection,
+                        sourceSectionIndex: sourceSectionIndex,
+                        sectionCount: updatedSpacePinnedTabs.count
+                    )
+                }
             updatedSpacePinnedTabs.insert(updatedTab, at: destinationIndex)
             updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] = updatedSpacePinnedTabs
         case .temporary:
@@ -1673,9 +2961,295 @@ enum BrowserInternalPageRouting {
             appTabs: updatedAppTabs
         )
     }
+
+    func reorderedTabs(
+        movingTabIDs tabIDs: Set<String>,
+        toPlacement placement: BrowserTabPlacement,
+        requestedSectionIndex: Int,
+        targetSpaceID: String? = nil,
+        targetPinnedFolderID: String? = nil
+    ) -> [Tab]? {
+        guard placement == .spacePinned else {
+            return nil
+        }
+
+        let movingTabIDs = Set(tabIDs)
+        let movingTabs = tabs.filter { movingTabIDs.contains($0.id) }
+        guard movingTabs.count == movingTabIDs.count, movingTabs.count > 1 else {
+            return nil
+        }
+
+        if targetSpaceID == nil,
+           movingTabs.contains(where: { $0.placement != .app && $0.spaceID != selectedSpaceID })
+        {
+            return nil
+        }
+
+        let targetFolder = targetPinnedFolderID.flatMap { folderID in
+            pinnedTabFolders.first { $0.id == folderID }
+        }
+        guard targetPinnedFolderID == nil || targetFolder != nil else {
+            return nil
+        }
+
+        let resolvedTargetSpaceID = targetFolder?.spaceID ?? targetSpaceID ?? selectedSpaceID ?? movingTabs[0].spaceID
+        guard spaces.contains(where: { $0.id == resolvedTargetSpaceID }) else {
+            return nil
+        }
+        guard movingTabs.allSatisfy({ canMoveTab($0, to: placement) }) else {
+            return nil
+        }
+
+        let movingWithinTargetSection = movingTabs.allSatisfy {
+            $0.placement == placement && $0.spaceID == resolvedTargetSpaceID
+        }
+        let sourceSectionTabs = tabs(for: placement, inSpaceID: resolvedTargetSpaceID)
+        let sourceSectionIndices = sourceSectionTabs.enumerated().compactMap { index, tab -> Int? in
+            movingTabIDs.contains(tab.id) ? index : nil
+        }
+        let removedBeforeTarget = movingWithinTargetSection
+            ? sourceSectionIndices.filter { $0 < requestedSectionIndex }.count
+            : 0
+
+        var updatedSpacePinnedTabsBySpaceID = tabsBySpaceID(for: .spacePinned, removingTabIDs: movingTabIDs)
+        var targetPinnedTabs = updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] ?? []
+        let destinationIndex =
+            if let targetPinnedFolderID {
+                pinnedFolderChildInsertionIndex(
+                    requestedSectionIndex,
+                    in: targetPinnedTabs,
+                    folderID: targetPinnedFolderID
+                )
+            } else {
+                min(max(requestedSectionIndex - removedBeforeTarget, 0), targetPinnedTabs.count)
+            }
+        let movedTabs = movingTabs.map { tab in
+            var updatedTab = tab
+            updatedTab.spaceID = resolvedTargetSpaceID
+            updatedTab.placement = placement
+            updatedTab.pinnedFolderID = targetPinnedFolderID
+            return updatedTab
+        }
+        targetPinnedTabs.insert(contentsOf: movedTabs, at: destinationIndex)
+        updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] = targetPinnedTabs
+
+        return tabsByReplacingTabs(
+            spacePinnedTabsBySpaceID: updatedSpacePinnedTabsBySpaceID,
+            temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: movingTabIDs),
+            appTabs: appTabs.filter { !movingTabIDs.contains($0.id) }
+        )
+    }
+
+    func reorderedTabs(
+        movingPinnedTabFolderID folderID: String,
+        toRootSectionIndex rootSectionIndex: Int,
+        targetSpaceID: String? = nil,
+        targetParentFolderID: String? = nil
+    ) -> [Tab]? {
+        guard let folder = pinnedTabFolders.first(where: { $0.id == folderID }) else {
+            return nil
+        }
+
+        let targetParentFolder = targetParentFolderID.flatMap { parentFolderID in
+            pinnedTabFolders.first { $0.id == parentFolderID }
+        }
+        guard targetParentFolderID == nil || targetParentFolder != nil else {
+            return nil
+        }
+        guard targetParentFolderID == nil || !descendantPinnedTabFolderIDs(including: folderID).contains(
+            targetParentFolderID ?? ""
+        ) else {
+            return nil
+        }
+
+        if targetSpaceID == nil, targetParentFolderID == nil, folder.spaceID != selectedSpaceID {
+            return nil
+        }
+
+        let resolvedTargetSpaceID = targetParentFolder?.spaceID ?? targetSpaceID ?? selectedSpaceID ?? folder.spaceID
+        guard spaces.contains(where: { $0.id == resolvedTargetSpaceID }) else {
+            return nil
+        }
+
+        let movingFolderIDs = descendantPinnedTabFolderIDs(including: folderID)
+        let movingChildren = tabs.filter {
+            $0.spaceID == folder.spaceID
+                && $0.placement == .spacePinned
+                && $0.pinnedFolderID.map { movingFolderIDs.contains($0) } == true
+        }
+        guard !movingChildren.isEmpty else {
+            return nil
+        }
+
+        var updatedSpacePinnedTabsBySpaceID = tabsBySpaceID(
+            for: .spacePinned,
+            removingTabIDs: Set(movingChildren.map(\.id))
+        )
+        var targetPinnedTabs = updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] ?? []
+        let destinationIndex: Int
+        if let targetParentFolderID {
+            destinationIndex = pinnedFolderChildInsertionIndex(
+                rootSectionIndex,
+                in: targetPinnedTabs,
+                folderID: targetParentFolderID
+            )
+        } else {
+            let targetRootItems = pinnedRootItems(from: targetPinnedTabs, inSpaceID: resolvedTargetSpaceID)
+            let clampedRootIndex = min(max(rootSectionIndex, 0), targetRootItems.count)
+            destinationIndex = targetRootItems.dropFirst(clampedRootIndex).first?.firstSectionIndex
+                ?? targetPinnedTabs.count
+        }
+
+        let movedChildren = movingChildren.map { tab in
+            var updatedTab = tab
+            updatedTab.spaceID = resolvedTargetSpaceID
+            updatedTab.placement = .spacePinned
+            return updatedTab
+        }
+        targetPinnedTabs.insert(contentsOf: movedChildren, at: destinationIndex)
+        updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] = targetPinnedTabs
+
+        return tabsByReplacingTabs(
+            spacePinnedTabsBySpaceID: updatedSpacePinnedTabsBySpaceID,
+            temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: Set(movingChildren.map(\.id))),
+            appTabs: appTabs.filter { tab in
+                !movingChildren.contains { $0.id == tab.id }
+            }
+        )
+    }
 }
 
 @MainActor private extension BrowserChromeModel {
+    func tabSwitcherEntries() -> [TabSwitcherEntry] {
+        pruneTabSwitcherTracking()
+
+        guard
+            let selectedTabID,
+            tabs.contains(where: { $0.id == selectedTabID }),
+            !closingTabIDs.contains(selectedTabID)
+        else {
+            return []
+        }
+
+        var seenTabIDs = Set<String>()
+        var orderedTabIDs = [String]()
+
+        func appendTabID(_ tabID: String) {
+            guard !closingTabIDs.contains(tabID), seenTabIDs.insert(tabID).inserted else {
+                return
+            }
+
+            orderedTabIDs.append(tabID)
+        }
+
+        appendTabID(selectedTabID)
+        recentlySelectedTabIDs.forEach(appendTabID)
+
+        let fallbackTabs = tabs
+            .filter { !seenTabIDs.contains($0.id) && !closingTabIDs.contains($0.id) }
+            .sorted { lhs, rhs in
+                lhs.lastActivityAt > rhs.lastActivityAt
+            }
+        fallbackTabs.map(\.id).forEach(appendTabID)
+
+        return orderedTabIDs
+            .compactMap { tabID in
+                tabs.first { $0.id == tabID }
+            }
+            .prefix(Self.tabSwitcherMaximumEntries)
+            .map { tab in
+                TabSwitcherEntry(tab: tab, previewImage: tabPreviewImagesByID[tab.id])
+            }
+    }
+
+    func scheduleTabSwitcherPresentation() {
+        tabSwitcherPresentationTask?.cancel()
+
+        let sessionID = UUID()
+        tabSwitcherSessionID = sessionID
+        tabSwitcherPresentationTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: Self.tabSwitcherPresentationDelayNanoseconds)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else {
+                return
+            }
+
+            self?.presentTabSwitcher(sessionID: sessionID)
+        }
+    }
+
+    func presentTabSwitcher(sessionID: UUID) {
+        guard tabSwitcherSessionID == sessionID, var state = tabSwitcherState else {
+            return
+        }
+
+        state.isVisible = true
+        tabSwitcherState = state
+    }
+
+    func clearTabSwitcherState() {
+        tabSwitcherPresentationTask?.cancel()
+        tabSwitcherPresentationTask = nil
+        tabSwitcherSessionID = UUID()
+        tabSwitcherState = nil
+    }
+
+    func recordSelectedTab(_ tabID: String?) {
+        guard
+            let tabID,
+            tabs.contains(where: { $0.id == tabID }),
+            !closingTabIDs.contains(tabID)
+        else {
+            return
+        }
+
+        recentlySelectedTabIDs.removeAll { $0 == tabID }
+        recentlySelectedTabIDs.insert(tabID, at: 0)
+        pruneTabSwitcherTracking()
+    }
+
+    func removeTabFromSwitcherTracking(_ tabID: String) {
+        recentlySelectedTabIDs.removeAll { $0 == tabID }
+        tabPreviewImagesByID.removeValue(forKey: tabID)
+
+        guard var state = tabSwitcherState else {
+            return
+        }
+
+        state.entries.removeAll { $0.id == tabID }
+        if state.entries.isEmpty {
+            clearTabSwitcherState()
+        } else if !state.entries.contains(where: { $0.id == state.selectedTabID }) {
+            state.selectedTabID = state.entries.first?.id ?? state.selectedTabID
+            tabSwitcherState = state
+        }
+    }
+
+    func pruneTabSwitcherTracking() {
+        let openTabIDs = Set(tabs.map(\.id)).subtracting(closingTabIDs)
+        recentlySelectedTabIDs.removeAll { !openTabIDs.contains($0) }
+
+        for tabID in Array(tabPreviewImagesByID.keys) where !openTabIDs.contains(tabID) {
+            tabPreviewImagesByID.removeValue(forKey: tabID)
+        }
+    }
+
+    func captureSelectedTabPreviewIfNeeded() {
+        guard
+            let selectedTabID,
+            !closingTabIDs.contains(selectedTabID),
+            let previewImage = BrowserTabPreviewCapture.image(for: hostView)
+        else {
+            return
+        }
+
+        tabPreviewImagesByID[selectedTabID] = previewImage
+    }
+
     func tabCount(for placement: BrowserTabPlacement) -> Int {
         tabs(for: placement).count
     }
@@ -1696,6 +3270,10 @@ enum BrowserInternalPageRouting {
     }
 
     func canMoveTab(_ tab: Tab, to placement: BrowserTabPlacement) -> Bool {
+        guard supportsAppTabs || placement != .app else {
+            return false
+        }
+
         guard placement == .app, tab.placement != .app else {
             return true
         }
@@ -1707,10 +3285,27 @@ enum BrowserInternalPageRouting {
         for placement: BrowserTabPlacement,
         removingTabID tabID: String
     ) -> [String: [Tab]] {
+        tabsBySpaceID(for: placement, removingTabIDs: [tabID])
+    }
+
+    func tabsBySpaceID(
+        for placement: BrowserTabPlacement,
+        removingTabIDs tabIDs: Set<String>
+    ) -> [String: [Tab]] {
         spaces.reduce(into: [:]) { result, space in
             result[space.id] = tabs(for: placement, inSpaceID: space.id)
-                .filter { $0.id != tabID }
+                .filter { !tabIDs.contains($0.id) }
         }
+    }
+
+    func tabsBySpaceID(
+        replacing replacementTabs: [Tab],
+        for placement: BrowserTabPlacement,
+        inSpaceID spaceID: String
+    ) -> [String: [Tab]] {
+        var result = tabsBySpaceID(for: placement, removingTabIDs: [])
+        result[spaceID] = replacementTabs
+        return result
     }
 
     func tabsByReplacingTabs(
@@ -1748,11 +3343,208 @@ enum BrowserInternalPageRouting {
         return min(max(adjustedSectionIndex, 0), sectionCount)
     }
 
+    func pinnedFolderChildInsertionIndex(
+        _ requestedChildIndex: Int,
+        in pinnedTabs: [Tab],
+        folderID: String
+    ) -> Int {
+        let childIndices = pinnedTabs.indices.filter { pinnedTabs[$0].pinnedFolderID == folderID }
+        guard !childIndices.isEmpty else {
+            return pinnedTabs.count
+        }
+
+        let clampedChildIndex = min(max(requestedChildIndex, 0), childIndices.count)
+        if clampedChildIndex < childIndices.count {
+            return childIndices[clampedChildIndex]
+        }
+
+        return childIndices[childIndices.count - 1] + 1
+    }
+
+    private func pinnedRootItems(from pinnedTabs: [Tab], inSpaceID spaceID: String) -> [PinnedRootItem] {
+        let foldersByID = Dictionary(uniqueKeysWithValues: pinnedTabFolders.filter { $0.spaceID == spaceID }.map {
+            ($0.id, $0)
+        })
+        var seenFolderIDs = Set<String>()
+        return pinnedTabs.indices.compactMap { index -> PinnedRootItem? in
+            let tab = pinnedTabs[index]
+            guard
+                let folderID = tab.pinnedFolderID,
+                let folder = foldersByID[folderID]
+            else {
+                return PinnedRootItem(firstSectionIndex: index, afterSectionIndex: index + 1)
+            }
+
+            guard folder.parentFolderID == nil else {
+                return nil
+            }
+
+            guard !seenFolderIDs.contains(folderID) else {
+                return nil
+            }
+
+            seenFolderIDs.insert(folderID)
+            let childCount = pinnedTabs.filter { tab in
+                tab.pinnedFolderID.map { descendantPinnedTabFolderIDs(including: folderID).contains($0) } == true
+            }
+            .count
+            return PinnedRootItem(firstSectionIndex: index, afterSectionIndex: index + childCount)
+        }
+    }
+
+    func descendantPinnedTabFolderIDs(including folderID: String) -> Set<String> {
+        var result = Set<String>()
+
+        func appendDescendants(of folderID: String) {
+            guard !result.contains(folderID) else {
+                return
+            }
+
+            result.insert(folderID)
+            for childFolder in pinnedTabFolders where childFolder.parentFolderID == folderID {
+                appendDescendants(of: childFolder.id)
+            }
+        }
+
+        appendDescendants(of: folderID)
+        return result
+    }
+
+    func uniquePinnedTabFolderID() -> String {
+        var id = UUID().uuidString
+        while pinnedTabFolders.contains(where: { $0.id == id }) {
+            id = UUID().uuidString
+        }
+        return id
+    }
+
+    func removeInvalidPinnedTabFolderAssignments() {
+        let folderSpaceIDsByID = Dictionary(uniqueKeysWithValues: pinnedTabFolders.map { ($0.id, $0.spaceID) })
+        for index in pinnedTabFolders.indices {
+            guard let parentFolderID = pinnedTabFolders[index].parentFolderID else {
+                continue
+            }
+
+            guard parentFolderID != pinnedTabFolders[index].id,
+                  folderSpaceIDsByID[parentFolderID] == pinnedTabFolders[index].spaceID,
+                  !descendantPinnedTabFolderIDs(including: pinnedTabFolders[index].id).contains(parentFolderID)
+            else {
+                pinnedTabFolders[index].parentFolderID = nil
+                continue
+            }
+        }
+
+        for index in tabs.indices {
+            guard let folderID = tabs[index].pinnedFolderID else {
+                continue
+            }
+
+            guard
+                tabs[index].placement == .spacePinned,
+                folderSpaceIDsByID[folderID] == tabs[index].spaceID
+            else {
+                tabs[index].pinnedFolderID = nil
+                continue
+            }
+        }
+    }
+
+    func removeEmptyPinnedTabFolders() {
+        var folderIDsWithChildren = Set(tabs.compactMap { tab -> String? in
+            tab.placement == .spacePinned ? tab.pinnedFolderID : nil
+        })
+        var didAddParent = true
+        while didAddParent {
+            didAddParent = false
+            for folder in pinnedTabFolders {
+                guard let parentFolderID = folder.parentFolderID,
+                      folderIDsWithChildren.contains(folder.id),
+                      !folderIDsWithChildren.contains(parentFolderID)
+                else {
+                    continue
+                }
+
+                folderIDsWithChildren.insert(parentFolderID)
+                didAddParent = true
+            }
+        }
+        pinnedTabFolders.removeAll { !folderIDsWithChildren.contains($0.id) }
+    }
+
+    func sanitizedPinnedTabFolderTitle(from title: String?) -> String? {
+        guard let title else {
+            return nil
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? nil : trimmedTitle
+    }
+
     func lastActivityDate(from snapshotTab: BrowserTabSessionSnapshotTab) -> Date? {
         guard let lastActivityTimestamp = snapshotTab.lastActivityTimestamp else {
             return nil
         }
 
         return Date(timeIntervalSince1970: lastActivityTimestamp)
+    }
+}
+
+// MARK: - BrowserTabPreviewCapture
+
+private enum BrowserTabPreviewCapture {
+    // MARK: Internal
+
+    @MainActor static func image(for view: NSView) -> NSImage? {
+        guard
+            view.bounds.width >= minimumCaptureDimension,
+            view.bounds.height >= minimumCaptureDimension
+        else {
+            return nil
+        }
+
+        return viewSnapshot(for: view).flatMap(resizedPreviewImage)
+    }
+
+    // MARK: Private
+
+    private static let maximumPreviewPixelWidth: CGFloat = 960
+    private static let minimumCaptureDimension: CGFloat = 24
+
+    @MainActor private static func viewSnapshot(for view: NSView) -> NSImage? {
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            return nil
+        }
+
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(bitmap)
+        return image
+    }
+
+    private static func resizedPreviewImage(_ image: NSImage) -> NSImage? {
+        guard image.size.width > 0, image.size.height > 0 else {
+            return nil
+        }
+
+        let scale = min(maximumPreviewPixelWidth / image.size.width, 1)
+        guard scale < 1 else {
+            return image
+        }
+
+        let targetSize = CGSize(
+            width: floor(image.size.width * scale),
+            height: floor(image.size.height * scale)
+        )
+        return NSImage(size: targetSize, flipped: false) { bounds in
+            NSGraphicsContext.current?.imageInterpolation = .high
+            image.draw(
+                in: bounds,
+                from: CGRect(origin: .zero, size: image.size),
+                operation: .copy,
+                fraction: 1
+            )
+            return true
+        }
     }
 }

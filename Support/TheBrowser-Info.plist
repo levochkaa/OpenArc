@@ -55,5 +55,29 @@
   <string>NSApplication</string>
   <key>NSHumanReadableCopyright</key>
   <string>Copyright © 2026 TheBrowser. All rights reserved.</string>
+  <key>TheBrowserSentryDSN</key>
+  <string>$(THEBROWSER_SENTRY_DSN)</string>
+  <key>TheBrowserSentryEnvironment</key>
+  <string>$(THEBROWSER_SENTRY_ENVIRONMENT)</string>
+  <key>TheBrowserSentryProfilesSampleRate</key>
+  <string>$(THEBROWSER_SENTRY_PROFILES_SAMPLE_RATE)</string>
+  <key>TheBrowserSentryTracesSampleRate</key>
+  <string>$(THEBROWSER_SENTRY_TRACES_SAMPLE_RATE)</string>
+  <key>TheBrowserSentryUsageAnalyticsEnabled</key>
+  <string>$(THEBROWSER_SENTRY_USAGE_ANALYTICS_ENABLED)</string>
+  <key>SUAllowsAutomaticUpdates</key>
+  <true/>
+  <key>SUAutomaticallyUpdate</key>
+  <true/>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <key>SUFeedURL</key>
+  <string>$(THEBROWSER_SPARKLE_FEED_URL)</string>
+  <key>SUPublicEDKey</key>
+  <string>$(THEBROWSER_SPARKLE_PUBLIC_KEY)</string>
+  <key>SUScheduledCheckInterval</key>
+  <integer>3600</integer>
+  <key>SUScheduledImpatientCheckInterval</key>
+  <integer>86400</integer>
 </dict>
 </plist>

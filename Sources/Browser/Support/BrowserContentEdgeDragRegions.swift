@@ -2,6 +2,34 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserSidebarLocalMonitorCleanup
+
+private final class BrowserSidebarLocalMonitorCleanup: @unchecked Sendable {
+    // MARK: Lifecycle
+
+    deinit {
+        remove()
+    }
+
+    // MARK: Internal
+
+    var monitor: Any?
+
+    func set(_ monitor: Any?) {
+        remove()
+        self.monitor = monitor
+    }
+
+    func remove() {
+        guard let monitor else {
+            return
+        }
+
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+    }
+}
+
 // MARK: - BrowserContentEdgeDragRegions
 
 struct BrowserContentEdgeDragRegions: View {
@@ -102,11 +130,6 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        removeHoverTrackingArea()
-        removeLocalMonitor()
-    }
-
     // MARK: Internal
 
     var isPresented = false
@@ -115,7 +138,6 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
     var onPointerMovement: () -> Void = {}
     var onDismiss: () -> Void = {}
     var trackingArea: NSTrackingArea?
-    var localMonitor: Any?
 
     var sidebarFrameInWindow: CGRect {
         convert(sidebarFrame, to: nil)
@@ -199,6 +221,8 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
 
     // MARK: Private
 
+    private let localMonitorCleanup = BrowserSidebarLocalMonitorCleanup()
+
     private func schedulePointerSync() {
         guard allowsPointerSyncDismissal else {
             return
@@ -235,11 +259,11 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
     }
 
     private func installLocalMonitorIfNeeded() {
-        guard localMonitor == nil else {
+        guard localMonitorCleanup.monitor == nil else {
             return
         }
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(
+        localMonitorCleanup.set(NSEvent.addLocalMonitorForEvents(
             matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { [weak self] event in
             guard let self else {
@@ -248,7 +272,7 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
 
             handleMonitoredEvent(event)
             return event
-        }
+        })
     }
 
     private func handleMonitoredEvent(_ event: NSEvent) {
@@ -291,12 +315,7 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
     }
 
     private func removeLocalMonitor() {
-        guard let localMonitor else {
-            return
-        }
-
-        NSEvent.removeMonitor(localMonitor)
-        self.localMonitor = nil
+        localMonitorCleanup.remove()
     }
 }
 

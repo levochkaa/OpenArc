@@ -15,10 +15,13 @@ const char kTheBrowserHistoryHost[] = "history";
 const char kTheBrowserHistoryURL[] = "tb://history";
 const char kTheBrowserPasswordManagerHost[] = "password-manager";
 const char kTheBrowserPasswordManagerURL[] = "tb://password-manager/passwords";
+const char kTheBrowserBookmarksHost[] = "bookmarks";
+const char kTheBrowserBookmarksURL[] = "tb://bookmarks/";
 const char kChromiumSettingsURL[] = "chrome://settings/";
 const char kChromiumExtensionsURL[] = "chrome://extensions/";
 const char kChromiumHistoryURL[] = "chrome://history/";
 const char kChromiumPasswordManagerURL[] = "chrome://password-manager/passwords";
+const char kChromiumBookmarksURL[] = "chrome://bookmarks/";
 
 void RegisterTheBrowserCustomSchemes(
     CefRawPtr<CefSchemeRegistrar> registrar) {

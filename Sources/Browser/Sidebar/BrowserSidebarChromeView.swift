@@ -6,13 +6,16 @@ import SwiftUI
 
 struct BrowserSidebarChromeView: View {
     @ObservedObject var model: BrowserChromeModel
+    @ObservedObject var updateController: BrowserUpdateController
     let snapshot: BrowserSidebarSnapshot
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
+    let showsCurrentURLRow: Bool
     let isOverlayPresentation: Bool
     let showsOverlayBorder: Bool
     var roundsWindowLeadingCorners = false
+    let toggleSidebarTooltipTitle: String
     let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
@@ -74,12 +77,15 @@ struct BrowserSidebarChromeView: View {
     var sidebarContent: some View {
         BrowserSidebarContainerView(
             model: model,
+            updateController: updateController,
             snapshot: snapshot,
             extensions: model.browserExtensions,
             showsWindowControlsInSidebar: showsWindowControlsInSidebar,
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
+            showsCurrentURLRow: showsCurrentURLRow,
             isSidebarResizing: isSidebarResizing,
+            toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
             chromeBackgroundMode: chromeBackgroundMode,
             onToggleSidebar: onToggleSidebar,
             onURLRowFrameChange: onURLRowFrameChange
@@ -95,12 +101,15 @@ struct BrowserSidebarChromeView: View {
 
 struct BrowserSidebarContainerView: View {
     let model: BrowserChromeModel
+    let updateController: BrowserUpdateController
     let snapshot: BrowserSidebarSnapshot
     let extensions: [BrowserExtension]
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
+    let showsCurrentURLRow: Bool
     let isSidebarResizing: Bool
+    let toggleSidebarTooltipTitle: String
     let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
@@ -108,12 +117,15 @@ struct BrowserSidebarContainerView: View {
     var body: some View {
         BrowserSidebarView(
             model: model,
+            updateController: updateController,
             snapshot: snapshot,
             extensions: extensions,
             showsWindowControlsInSidebar: showsWindowControlsInSidebar,
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
+            showsCurrentURLRow: showsCurrentURLRow,
             isSidebarResizing: isSidebarResizing,
+            toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
             chromeBackgroundMode: chromeBackgroundMode,
             onToggleSidebar: onToggleSidebar,
             onURLRowFrameChange: onURLRowFrameChange

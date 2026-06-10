@@ -54,6 +54,7 @@ struct BrowserDetachedCurrentPageCommandBarOverlayContent: View {
 
 struct BrowserDetachedSidebarHoverOverlayContent: View {
     @ObservedObject var model: BrowserChromeModel
+    @ObservedObject var updateController: BrowserUpdateController
     @EnvironmentObject var tooltipCoordinator: BrowserTooltipCoordinator
     @EnvironmentObject var faviconCache: BrowserFaviconCache
 
@@ -61,9 +62,11 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
     let showsWindowControlsInSidebar: Bool
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
+    let showsCurrentURLRow: Bool
     let isOverlayPresentation: Bool
     let showsOverlayBorder: Bool
     let roundsWindowLeadingCorners: Bool
+    let toggleSidebarTooltipTitle: String
     let chromeBackgroundMode: BrowserChromeBackgroundMode
     let sidebarWidth: CGFloat
     let sidebarHeight: CGFloat
@@ -136,13 +139,16 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
         BrowserSidebarChromePresentationHost(
             content: BrowserSidebarChromeView(
                 model: model,
+                updateController: updateController,
                 snapshot: snapshot,
                 showsWindowControlsInSidebar: showsWindowControlsInSidebar,
                 isCommandBarPresented: isCommandBarPresented,
                 isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
+                showsCurrentURLRow: showsCurrentURLRow,
                 isOverlayPresentation: isOverlayPresentation,
                 showsOverlayBorder: showsOverlayBorder,
                 roundsWindowLeadingCorners: roundsWindowLeadingCorners,
+                toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
                 chromeBackgroundMode: chromeBackgroundMode,
                 onToggleSidebar: onToggleSidebar,
                 onURLRowFrameChange: onURLRowFrameChange
@@ -322,12 +328,20 @@ final class BrowserSidebarChromePresentationNSView<Content: View>: NSView {
     }
 }
 
+// MARK: - BrowserDetachedOverlayFramePolicy
+
+enum BrowserDetachedOverlayFramePolicy: Equatable {
+    case windowBounds
+    case screenVisibleBounds
+}
+
 // MARK: - BrowserDetachedOverlayWindowRepresentable
 
 struct BrowserDetachedOverlayWindowRepresentable<Content: View>: NSViewRepresentable {
     let isVisible: Bool
     let isInteractive: Bool
     let contentFrameLeadingInset: CGFloat
+    var framePolicy = BrowserDetachedOverlayFramePolicy.windowBounds
     let content: Content
 
     func makeNSView(context _: Context) -> BrowserDetachedOverlayHostView<Content> {
@@ -335,7 +349,8 @@ struct BrowserDetachedOverlayWindowRepresentable<Content: View>: NSViewRepresent
             rootView: content,
             isVisible: isVisible,
             isInteractive: isInteractive,
-            contentFrameLeadingInset: contentFrameLeadingInset
+            contentFrameLeadingInset: contentFrameLeadingInset,
+            framePolicy: framePolicy
         )
     }
 
@@ -344,7 +359,8 @@ struct BrowserDetachedOverlayWindowRepresentable<Content: View>: NSViewRepresent
             rootView: content,
             isVisible: isVisible,
             isInteractive: isInteractive,
-            contentFrameLeadingInset: contentFrameLeadingInset
+            contentFrameLeadingInset: contentFrameLeadingInset,
+            framePolicy: framePolicy
         )
     }
 }
@@ -392,15 +408,22 @@ final class BrowserDetachedOverlayPanel: NSPanel {
 final class BrowserDetachedOverlayHostView<Content: View>: NSView {
     // MARK: Lifecycle
 
-    init(rootView: Content, isVisible: Bool, isInteractive: Bool, contentFrameLeadingInset: CGFloat) {
+    init(
+        rootView: Content,
+        isVisible: Bool,
+        isInteractive: Bool,
+        contentFrameLeadingInset: CGFloat,
+        framePolicy: BrowserDetachedOverlayFramePolicy
+    ) {
         self.hostingView = NSHostingView(rootView: rootView)
         self.isVisible = isVisible
         self.isInteractive = isInteractive
         self.contentFrameLeadingInset = contentFrameLeadingInset
+        self.framePolicy = framePolicy
         super.init(frame: .zero)
     }
 
-    deinit {
+    isolated deinit {
         detachPanel()
     }
 
@@ -412,9 +435,11 @@ final class BrowserDetachedOverlayHostView<Content: View>: NSView {
 
     var overlayPanel: BrowserDetachedOverlayPanel?
     var hostingView: NSHostingView<Content>
+    var containerView = NSView()
     var isVisible: Bool
     var isInteractive: Bool
     var contentFrameLeadingInset: CGFloat
+    var framePolicy: BrowserDetachedOverlayFramePolicy
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -426,11 +451,18 @@ final class BrowserDetachedOverlayHostView<Content: View>: NSView {
         syncPanelFrame()
     }
 
-    func update(rootView: Content, isVisible: Bool, isInteractive: Bool, contentFrameLeadingInset: CGFloat) {
+    func update(
+        rootView: Content,
+        isVisible: Bool,
+        isInteractive: Bool,
+        contentFrameLeadingInset: CGFloat,
+        framePolicy: BrowserDetachedOverlayFramePolicy
+    ) {
         hostingView.rootView = rootView
         self.isVisible = isVisible
         self.isInteractive = isInteractive
         self.contentFrameLeadingInset = contentFrameLeadingInset
+        self.framePolicy = framePolicy
         syncPanel()
     }
 
@@ -480,11 +512,15 @@ final class BrowserDetachedOverlayHostView<Content: View>: NSView {
         panel.collectionBehavior = [.fullScreenAuxiliary, .transient, .ignoresCycle]
 
         hostingView.translatesAutoresizingMaskIntoConstraints = true
-        hostingView.autoresizingMask = [.width, .height]
+        hostingView.autoresizingMask = []
         hostingView.safeAreaRegions = []
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        panel.contentView = hostingView
+
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor.clear.cgColor
+        containerView.addSubview(hostingView)
+        panel.contentView = containerView
         return panel
     }
 
@@ -500,13 +536,45 @@ final class BrowserDetachedOverlayHostView<Content: View>: NSView {
             windowFrame.size.width -= inset
         }
 
-        let screenFrame = window.convertToScreen(windowFrame)
-        guard !screenFrame.isEmpty else {
+        let contentScreenFrame = window.convertToScreen(windowFrame)
+        guard !contentScreenFrame.isEmpty else {
             panel.orderOut(nil)
             return
         }
 
-        panel.setFrame(screenFrame, display: true)
+        let panelFrame = resolvedPanelFrame(for: contentScreenFrame, in: window)
+        guard !panelFrame.isEmpty else {
+            panel.orderOut(nil)
+            return
+        }
+
+        panel.setFrame(panelFrame, display: true)
+        containerView.frame = NSRect(origin: .zero, size: panelFrame.size)
+        hostingView.frame = hostingFrame(for: contentScreenFrame, in: panelFrame)
+    }
+
+    private func resolvedPanelFrame(for contentScreenFrame: CGRect, in window: NSWindow) -> CGRect {
+        guard framePolicy == .screenVisibleBounds,
+              !window.styleMask.contains(.fullScreen),
+              let visibleFrame = window.screen?.visibleFrame
+        else {
+            return contentScreenFrame
+        }
+
+        return visibleFrame
+    }
+
+    private func hostingFrame(for contentScreenFrame: CGRect, in panelFrame: CGRect) -> CGRect {
+        if framePolicy == .screenVisibleBounds, panelFrame != contentScreenFrame {
+            return CGRect(origin: .zero, size: panelFrame.size)
+        }
+
+        return CGRect(
+            x: contentScreenFrame.minX - panelFrame.minX,
+            y: contentScreenFrame.minY - panelFrame.minY,
+            width: contentScreenFrame.width,
+            height: contentScreenFrame.height
+        )
     }
 
     private func detachPanel() {

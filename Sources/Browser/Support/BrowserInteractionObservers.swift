@@ -2,6 +2,61 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+// MARK: - BrowserLocalMonitorCleanup
+
+private final class BrowserLocalMonitorCleanup: @unchecked Sendable {
+    // MARK: Lifecycle
+
+    deinit {
+        remove()
+    }
+
+    // MARK: Internal
+
+    var monitor: Any?
+
+    func set(_ monitor: Any?) {
+        remove()
+        self.monitor = monitor
+    }
+
+    func remove() {
+        guard let monitor else {
+            return
+        }
+
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+    }
+}
+
+// MARK: - BrowserNotificationObserverCleanup
+
+private final class BrowserNotificationObserverCleanup: @unchecked Sendable {
+    // MARK: Lifecycle
+
+    deinit {
+        removeAll()
+    }
+
+    // MARK: Internal
+
+    func append(_ observer: NSObjectProtocol) {
+        observers.append(observer)
+    }
+
+    func removeAll() {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observers.removeAll()
+    }
+
+    // MARK: Private
+
+    private var observers = [NSObjectProtocol]()
+}
+
 // MARK: - BrowserSpaceSwipeObserver
 
 struct BrowserSpaceSwipeObserver: NSViewRepresentable {
@@ -37,17 +92,11 @@ final class BrowserSpaceSwipeNSView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        removeLocalMonitor()
-    }
-
     // MARK: Internal
 
     var canSwitchSpaces = false
     var onSwipeLeft: () -> Void = {}
     var onSwipeRight: () -> Void = {}
-
-    var localMonitor: Any?
 
     override func hitTest(_: NSPoint) -> NSView? {
         nil
@@ -65,12 +114,14 @@ final class BrowserSpaceSwipeNSView: NSView {
 
     // MARK: Private
 
+    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
+
     private func installLocalMonitorIfNeeded() {
-        guard localMonitor == nil else {
+        guard localMonitorCleanup.monitor == nil else {
             return
         }
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .swipe) { [weak self] event in
+        localMonitorCleanup.set(NSEvent.addLocalMonitorForEvents(matching: .swipe) { [weak self] event in
             guard
                 let self,
                 canSwitchSpaces,
@@ -89,16 +140,11 @@ final class BrowserSpaceSwipeNSView: NSView {
             }
 
             return nil
-        }
+        })
     }
 
     private func removeLocalMonitor() {
-        guard let localMonitor else {
-            return
-        }
-
-        NSEvent.removeMonitor(localMonitor)
-        self.localMonitor = nil
+        localMonitorCleanup.remove()
     }
 }
 
@@ -140,11 +186,6 @@ final class BrowserSpacePagerScrollNSView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        removeLocalMonitor()
-        scrollEndWorkItem?.cancel()
-    }
-
     // MARK: Internal
 
     var isEnabled = false
@@ -154,7 +195,6 @@ final class BrowserSpacePagerScrollNSView: NSView {
 
     var isTrackingHorizontalScroll = false
     var didSendScrollRelease = false
-    var localMonitor: Any?
     var scrollEndWorkItem: DispatchWorkItem?
 
     override func hitTest(_: NSPoint) -> NSView? {
@@ -173,14 +213,16 @@ final class BrowserSpacePagerScrollNSView: NSView {
 
     // MARK: Private
 
+    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
+
     private func installLocalMonitorIfNeeded() {
-        guard localMonitor == nil else {
+        guard localMonitorCleanup.monitor == nil else {
             return
         }
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+        localMonitorCleanup.set(NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             self?.handleScrollWheel(event) ?? event
-        }
+        })
     }
 
     private func handleScrollWheel(_ event: NSEvent) -> NSEvent? {
@@ -273,12 +315,7 @@ final class BrowserSpacePagerScrollNSView: NSView {
     }
 
     private func removeLocalMonitor() {
-        guard let localMonitor else {
-            return
-        }
-
-        NSEvent.removeMonitor(localMonitor)
-        self.localMonitor = nil
+        localMonitorCleanup.remove()
     }
 }
 
@@ -337,15 +374,9 @@ final class BrowserPassthroughInteractionNSView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        removeLocalMonitor()
-    }
-
     // MARK: Internal
 
     var onInteraction: (NSEvent, NSView) -> Void = { _, _ in }
-
-    var localMonitor: Any?
 
     var eventMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown] {
         didSet {
@@ -373,6 +404,8 @@ final class BrowserPassthroughInteractionNSView: NSView {
 
     // MARK: Private
 
+    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
+
     private func reinstallLocalMonitorIfNeeded() {
         guard window != nil else {
             return
@@ -383,11 +416,11 @@ final class BrowserPassthroughInteractionNSView: NSView {
     }
 
     private func installLocalMonitorIfNeeded() {
-        guard localMonitor == nil else {
+        guard localMonitorCleanup.monitor == nil else {
             return
         }
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(
+        localMonitorCleanup.set(NSEvent.addLocalMonitorForEvents(
             matching: eventMask
         ) { [weak self] event in
             guard let self else {
@@ -404,16 +437,11 @@ final class BrowserPassthroughInteractionNSView: NSView {
             }
 
             return event
-        }
+        })
     }
 
     private func removeLocalMonitor() {
-        guard let localMonitor else {
-            return
-        }
-
-        NSEvent.removeMonitor(localMonitor)
-        self.localMonitor = nil
+        localMonitorCleanup.remove()
     }
 }
 
@@ -524,16 +552,11 @@ final class BrowserScreenFrameReaderNSView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        removeWindowObservers()
-    }
-
     // MARK: Internal
 
     var onFrameChange: (CGRect?) -> Void = { _ in }
 
     var lastFrameInScreen: CGRect?
-    var windowObservers = [NSObjectProtocol]()
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -564,6 +587,8 @@ final class BrowserScreenFrameReaderNSView: NSView {
 
     // MARK: Private
 
+    private let windowObserverCleanup = BrowserNotificationObserverCleanup()
+
     private func updateWindowObservers() {
         removeWindowObservers()
 
@@ -578,18 +603,16 @@ final class BrowserScreenFrameReaderNSView: NSView {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                self?.scheduleFrameUpdate()
+                Task { @MainActor [weak self] in
+                    self?.scheduleFrameUpdate()
+                }
             }
-            windowObservers.append(observer)
+            windowObserverCleanup.append(observer)
         }
     }
 
     private func removeWindowObservers() {
-        let notificationCenter = NotificationCenter.default
-        for observer in windowObservers {
-            notificationCenter.removeObserver(observer)
-        }
-        windowObservers.removeAll()
+        windowObserverCleanup.removeAll()
     }
 
     private func sendFrameUpdateIfNeeded() {
@@ -634,10 +657,6 @@ struct BrowserWindowFullscreenReader: NSViewRepresentable {
 final class BrowserWindowFullscreenReaderNSView: NSView {
     // MARK: Lifecycle
 
-    deinit {
-        removeNotificationObservers()
-    }
-
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
     }
@@ -650,7 +669,6 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
 
     var onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void = { _ in }
 
-    var notificationObservers = [NSObjectProtocol]()
     var lastFullscreenState: BrowserWindowFullscreenState?
 
     override func viewDidMoveToWindow() {
@@ -669,6 +687,8 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
     }
 
     // MARK: Private
+
+    private let notificationObserverCleanup = BrowserNotificationObserverCleanup()
 
     private weak var observedWindow: NSWindow?
 
@@ -709,23 +729,22 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
     private func addNotificationObserver(
         for name: NSNotification.Name,
         window: NSWindow,
-        handler: @escaping () -> Void
+        handler: @escaping @MainActor @Sendable () -> Void
     ) {
         let observer = NotificationCenter.default.addObserver(
             forName: name,
             object: window,
             queue: .main
         ) { _ in
-            handler()
+            Task { @MainActor in
+                handler()
+            }
         }
-        notificationObservers.append(observer)
+        notificationObserverCleanup.append(observer)
     }
 
     private func removeNotificationObservers() {
-        for observer in notificationObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        notificationObservers = []
+        notificationObserverCleanup.removeAll()
     }
 
     private func sendFullscreenStateIfNeeded(_ fullscreenState: BrowserWindowFullscreenState) {

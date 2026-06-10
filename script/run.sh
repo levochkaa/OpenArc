@@ -53,7 +53,7 @@ app_bundle_path() {
 }
 
 build_app() {
-  "$ROOT_DIR/script/build.sh"
+  "$ROOT_DIR/script/build.sh" --full-output
 }
 
 open_app() {

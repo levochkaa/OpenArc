@@ -11,8 +11,17 @@ APP_BUNDLE="${2:-$DEFAULT_PRODUCTS_DIR/TheBrowser.app}"
 HELPER_BUNDLE="${3:-$DEFAULT_PRODUCTS_DIR/TheBrowser Helper.app}"
 APP_FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 APP_RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
+DEFAULT_APP_ENTITLEMENTS="Support/TheBrowser.entitlements"
+if [[ "$APP_CONFIGURATION" == "Debug" ]]; then
+  DEFAULT_APP_ENTITLEMENTS="Support/TheBrowser-Debug.entitlements"
+fi
+APP_ENTITLEMENTS="${CODE_SIGN_ENTITLEMENTS:-$DEFAULT_APP_ENTITLEMENTS}"
+if [[ "$APP_ENTITLEMENTS" != /* ]]; then
+  APP_ENTITLEMENTS="$ROOT_DIR/$APP_ENTITLEMENTS"
+fi
 CEF_FRAMEWORK_SOURCE="$CEF_ROOT/$CEF_CONFIGURATION/Chromium Embedded Framework.framework"
 CEF_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Chromium Embedded Framework.framework"
+SENTRY_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Sentry.framework"
 HELPER_DEST="$APP_FRAMEWORKS_DIR/TheBrowser Helper.app"
 RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/TheBrowser Helper.app"
 
@@ -91,10 +100,43 @@ create_helper_variant() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleName $app_name" "$plist"
 }
 
+signing_identity() {
+  if [[ "${CODE_SIGNING_ALLOWED:-NO}" == "YES" ]]; then
+    if [[ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" && "${EXPANDED_CODE_SIGN_IDENTITY:-}" != "-" ]]; then
+      printf '%s\n' "$EXPANDED_CODE_SIGN_IDENTITY"
+      return
+    fi
+
+    if [[ -n "${CODE_SIGN_IDENTITY:-}" && "${CODE_SIGN_IDENTITY:-}" != "-" ]]; then
+      printf '%s\n' "$CODE_SIGN_IDENTITY"
+      return
+    fi
+  fi
+
+  printf '%s\n' "-"
+}
+
 sign_app_bundle() {
-  # Xcode signing is disabled for local builds, so seal the staged CEF bundle
-  # after copying framework and helper variants.
-  /usr/bin/codesign --force --deep --sign - --timestamp=none "$APP_BUNDLE"
+  local identity
+  identity="$(signing_identity)"
+
+  if [[ ! -f "$APP_ENTITLEMENTS" ]]; then
+    echo "error: app entitlements not found at $APP_ENTITLEMENTS" >&2
+    exit 1
+  fi
+
+  # The CEF runtime is copied after Xcode's normal dependency processing, so
+  # seal nested code here using the active Xcode identity when available.
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$CEF_FRAMEWORK_DEST"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$HELPER_DEST"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Alerts).app"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (GPU).app"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Plugin).app"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Renderer).app"
+  if [[ -d "$SENTRY_FRAMEWORK_DEST" ]]; then
+    /usr/bin/codesign --force --sign "$identity" --timestamp=none "$SENTRY_FRAMEWORK_DEST"
+  fi
+  /usr/bin/codesign --force --sign "$identity" --timestamp=none --entitlements "$APP_ENTITLEMENTS" "$APP_BUNDLE"
 }
 
 validate_cef_configuration

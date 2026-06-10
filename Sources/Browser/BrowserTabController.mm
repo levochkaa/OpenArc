@@ -18,6 +18,8 @@
 #include "include/cef_client.h"
 #include "include/cef_browser.h"
 #include "include/cef_devtools_message_observer.h"
+#include "include/cef_download_handler.h"
+#include "include/cef_download_item.h"
 #include "include/cef_find_handler.h"
 #include "include/cef_frame.h"
 #include "include/cef_keyboard_handler.h"
@@ -25,6 +27,7 @@
 #include "include/cef_load_handler.h"
 #include "include/cef_parser.h"
 #include "include/cef_permission_handler.h"
+#include "include/cef_request_context.h"
 #include "include/cef_request_handler.h"
 #include "include/cef_values.h"
 #include "include/internal/cef_mac.h"
@@ -44,6 +47,8 @@ constexpr char kSavePageResourceTreeMethod[] = "Page.getResourceTree";
 constexpr char kSavePageResourceContentMethod[] = "Page.getResourceContent";
 constexpr char kSavePageSingleFileMethod[] = "Page.captureSnapshot";
 constexpr char kSavePageSerializeDocumentMethod[] = "Runtime.evaluate";
+constexpr char kPageLayoutMetricsMethod[] = "Page.getLayoutMetrics";
+constexpr char kPageCaptureScreenshotMethod[] = "Page.captureScreenshot";
 
 enum class SavePageFormat : NSInteger {
   Complete = 0,
@@ -73,6 +78,113 @@ NSString *DefaultTitleForURLString(NSString *urlString) {
     return host;
   }
   return LocalizedBrowserString(@"browser.tab.new");
+}
+
+NSString *SanitizedDownloadFileName(NSString *value) {
+  NSString *fallback =
+      LocalizedBrowserString(@"browser.downloads.default_file_name");
+  NSString *candidate = value.length > 0 ? value.lastPathComponent : fallback;
+  if (candidate.length == 0) {
+    candidate = fallback;
+  }
+
+  NSCharacterSet *invalidCharacters =
+      [NSCharacterSet characterSetWithCharactersInString:@"/:\\?%*|\"<>"];
+  candidate = [[candidate componentsSeparatedByCharactersInSet:invalidCharacters]
+      componentsJoinedByString:@"-"];
+  candidate = [candidate stringByTrimmingCharactersInSet:
+                             NSCharacterSet.whitespaceAndNewlineCharacterSet];
+
+  return candidate.length > 0 ? candidate : fallback;
+}
+
+NSString *SuggestedDownloadFileName(CefRefPtr<CefDownloadItem> download_item,
+                                    const CefString &suggested_name) {
+  NSString *suggestedName = ToNSString(suggested_name.ToString());
+  if (suggestedName.length > 0) {
+    return SanitizedDownloadFileName(suggestedName);
+  }
+
+  if (download_item && download_item->IsValid()) {
+    NSString *downloadSuggestedName =
+        ToNSString(download_item->GetSuggestedFileName().ToString());
+    if (downloadSuggestedName.length > 0) {
+      return SanitizedDownloadFileName(downloadSuggestedName);
+    }
+
+    NSString *urlString = ToNSString(download_item->GetURL().ToString());
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (url.lastPathComponent.length > 0) {
+      return SanitizedDownloadFileName(url.lastPathComponent);
+    }
+  }
+
+  return SanitizedDownloadFileName(nil);
+}
+
+NSString *DownloadsDirectoryPath() {
+  NSArray<NSURL *> *urls =
+      [NSFileManager.defaultManager URLsForDirectory:NSDownloadsDirectory
+                                           inDomains:NSUserDomainMask];
+  NSURL *downloadsURL = urls.firstObject;
+  return downloadsURL.path.length > 0 ? downloadsURL.path : NSTemporaryDirectory();
+}
+
+NSString *UniqueDownloadPathForFileName(NSString *fileName) {
+  NSString *downloadsDirectory = DownloadsDirectoryPath();
+  NSError *directoryError = nil;
+  [NSFileManager.defaultManager createDirectoryAtPath:downloadsDirectory
+                         withIntermediateDirectories:YES
+                                          attributes:nil
+                                               error:&directoryError];
+
+  NSString *sanitizedFileName = SanitizedDownloadFileName(fileName);
+  NSString *baseName = sanitizedFileName.stringByDeletingPathExtension;
+  NSString *pathExtension = sanitizedFileName.pathExtension;
+  if (baseName.length == 0) {
+    baseName = LocalizedBrowserString(@"browser.downloads.default_file_name");
+  }
+
+  for (NSInteger index = 0; index < 1000; index += 1) {
+    NSString *candidateName = sanitizedFileName;
+    if (index > 0) {
+      candidateName = pathExtension.length > 0
+                          ? [NSString stringWithFormat:@"%@ %ld.%@", baseName,
+                                                       static_cast<long>(index + 1),
+                                                       pathExtension]
+                          : [NSString stringWithFormat:@"%@ %ld", baseName,
+                                                       static_cast<long>(index + 1)];
+    }
+
+    NSString *candidatePath =
+        [downloadsDirectory stringByAppendingPathComponent:candidateName];
+    if (![NSFileManager.defaultManager fileExistsAtPath:candidatePath]) {
+      return candidatePath;
+    }
+  }
+
+  NSString *fallbackName =
+      [NSString stringWithFormat:@"%@-%@", NSUUID.UUID.UUIDString,
+                                 sanitizedFileName];
+  return [downloadsDirectory stringByAppendingPathComponent:fallbackName];
+}
+
+NSString *DownloadStateRawValue(CefRefPtr<CefDownloadItem> download_item) {
+  if (!download_item || !download_item->IsValid()) {
+    return @"interrupted";
+  }
+
+  if (download_item->IsComplete()) {
+    return @"completed";
+  }
+  if (download_item->IsCanceled()) {
+    return @"canceled";
+  }
+  if (download_item->IsInterrupted()) {
+    return @"interrupted";
+  }
+
+  return @"inProgress";
 }
 
 CefRect CefRectFromBounds(NSRect bounds) {
@@ -1146,6 +1258,119 @@ class SavePageSnapshotObserver final : public CefDevToolsMessageObserver {
   IMPLEMENT_REFCOUNTING(SavePageSnapshotObserver);
 };
 
+void CopyBase64PNGToPasteboardOnMain(const std::string &base64_png) {
+  NSString *base64String = ToNSString(base64_png);
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSData *pngData =
+        [[NSData alloc] initWithBase64EncodedString:base64String options:0];
+    if (pngData.length == 0) {
+      return;
+    }
+
+    NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+    [pasteboard clearContents];
+    [pasteboard setData:pngData forType:NSPasteboardTypePNG];
+  });
+}
+
+class FullPageScreenshotObserver final : public CefDevToolsMessageObserver {
+ public:
+  void Start(CefRefPtr<CefBrowserHost> host) {
+    if (!host) {
+      return;
+    }
+
+    registration_ = host->AddDevToolsMessageObserver(this);
+    message_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(message_id_, kPageLayoutMetricsMethod,
+                                    nullptr) == 0) {
+      registration_ = nullptr;
+    }
+  }
+
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser> browser,
+                              int message_id,
+                              bool success,
+                              const void *result,
+                              size_t result_size) override {
+    if (message_id != message_id_) {
+      return;
+    }
+
+    CefRefPtr<CefDictionaryValue> dictionary =
+        success ? ParseDevToolsResultDictionary(result, result_size) : nullptr;
+    if (!dictionary) {
+      registration_ = nullptr;
+      return;
+    }
+
+    if (stage_ == Stage::LayoutMetrics) {
+      CaptureScreenshot(browser, dictionary);
+      return;
+    }
+
+    registration_ = nullptr;
+    std::string pngData = dictionary->GetString("data").ToString();
+    if (!pngData.empty()) {
+      CopyBase64PNGToPasteboardOnMain(pngData);
+    }
+  }
+
+  void OnDevToolsAgentDetached(CefRefPtr<CefBrowser>) override {
+    registration_ = nullptr;
+  }
+
+ private:
+  enum class Stage {
+    LayoutMetrics,
+    Screenshot,
+  };
+
+  void CaptureScreenshot(CefRefPtr<CefBrowser> browser,
+                         CefRefPtr<CefDictionaryValue> metrics) {
+    CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+    CefRefPtr<CefDictionaryValue> contentSize =
+        metrics->GetDictionary("cssContentSize");
+    if (!host || !contentSize) {
+      registration_ = nullptr;
+      return;
+    }
+
+    double width = contentSize->GetDouble("width");
+    double height = contentSize->GetDouble("height");
+    if (width <= 0 || height <= 0) {
+      registration_ = nullptr;
+      return;
+    }
+
+    CefRefPtr<CefDictionaryValue> clip = CefDictionaryValue::Create();
+    clip->SetDouble("x", 0);
+    clip->SetDouble("y", 0);
+    clip->SetDouble("width", width);
+    clip->SetDouble("height", height);
+    clip->SetDouble("scale", 1);
+
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("format", "png");
+    params->SetBool("fromSurface", true);
+    params->SetBool("captureBeyondViewport", true);
+    params->SetDictionary("clip", clip);
+
+    stage_ = Stage::Screenshot;
+    message_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(message_id_, kPageCaptureScreenshotMethod,
+                                    params) == 0) {
+      registration_ = nullptr;
+    }
+  }
+
+  Stage stage_ = Stage::LayoutMetrics;
+  int message_id_ = 0;
+  CefRefPtr<CefRegistration> registration_;
+
+  IMPLEMENT_REFCOUNTING(FullPageScreenshotObserver);
+};
+
 void SyncBrowserViewFrame(BrowserTabHostView *hostView,
                           CefRefPtr<CefBrowser> browser) {
   if (hostView == nil || !browser) {
@@ -1598,6 +1823,21 @@ std::string LowercaseASCII(std::string value) {
   return value;
 }
 
+bool URLHasSchemeAndInternalHost(const CefString &url,
+                                 const std::string &scheme) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  std::string host = LowercaseASCII(URLPartToString(parts.host));
+  if (host.empty() || host == shared::kTheBrowserCreditsHost) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) == scheme;
+}
+
 std::string TheBrowserURLForChromiumInternalURL(const CefString &url) {
   std::string urlString = LowercaseASCII(url.ToString());
   if (urlString == "about:credits") {
@@ -1683,10 +1923,19 @@ bool IsChromiumPasswordManagerURL(const CefString &url) {
              shared::kTheBrowserPasswordManagerHost;
 }
 
+bool IsChromiumBookmarksURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserBookmarksHost;
+}
+
 bool IsChromiumInternalWindowURL(const CefString &url) {
-  return IsChromiumSettingsURL(url) || IsChromiumExtensionsURL(url) ||
-         IsChromiumHistoryURL(url) ||
-         IsChromiumPasswordManagerURL(url);
+  return URLHasSchemeAndInternalHost(url, "chrome");
 }
 
 bool IsTheBrowserSettingsURL(const CefString &url) {
@@ -1737,10 +1986,20 @@ bool IsTheBrowserPasswordManagerURL(const CefString &url) {
              shared::kTheBrowserPasswordManagerHost;
 }
 
+bool IsTheBrowserBookmarksURL(const CefString &url) {
+  CefURLParts parts;
+  if (!CefParseURL(url, parts)) {
+    return false;
+  }
+
+  return LowercaseASCII(URLPartToString(parts.scheme)) ==
+             shared::kTheBrowserScheme &&
+         LowercaseASCII(URLPartToString(parts.host)) ==
+             shared::kTheBrowserBookmarksHost;
+}
+
 bool IsTheBrowserInternalWindowURL(const CefString &url) {
-  return IsTheBrowserSettingsURL(url) || IsTheBrowserExtensionsURL(url) ||
-         IsTheBrowserHistoryURL(url) ||
-         IsTheBrowserPasswordManagerURL(url);
+  return URLHasSchemeAndInternalHost(url, shared::kTheBrowserScheme);
 }
 
 std::string ChromiumInternalWindowURLForTheBrowserURL(const CefString &url) {
@@ -1784,6 +2043,7 @@ bool ShouldUseEmbeddedChromeRuntimeForURL(const std::string &) {
 
 class BrowserTabClient final : public CefClient,
                                public CefDisplayHandler,
+                               public CefDownloadHandler,
                                public CefKeyboardHandler,
                                public CefLifeSpanHandler,
                                public CefLoadHandler,
@@ -1795,6 +2055,7 @@ class BrowserTabClient final : public CefClient,
       : controller_(controller), tab_id_(tabID) {}
 
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
@@ -1813,6 +2074,15 @@ class BrowserTabClient final : public CefClient,
 
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                           const std::vector<CefString> &icon_urls) override;
+  bool OnBeforeDownload(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefDownloadItem> download_item,
+      const CefString &suggested_name,
+      CefRefPtr<CefBeforeDownloadCallback> callback) override;
+  void OnDownloadUpdated(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefDownloadItem> download_item,
+      CefRefPtr<CefDownloadItemCallback> callback) override;
   void OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
                             bool /*isLoading*/,
                             bool canGoBack,
@@ -1902,7 +2172,14 @@ struct TabRecord {
                        matchCount:(NSInteger)matchCount
                activeMatchOrdinal:(NSInteger)activeMatchOrdinal
                       finalUpdate:(BOOL)finalUpdate;
-- (void)openPopupTabWithURLString:(NSString *)urlString;
+- (void)handleDownloadUpdateWithID:(NSString *)downloadID
+                          fileName:(NSString *)fileName
+                         urlString:(NSString *)urlString
+                          fullPath:(nullable NSString *)fullPath
+                     receivedBytes:(int64_t)receivedBytes
+                        totalBytes:(int64_t)totalBytes
+        currentSpeedBytesPerSecond:(int64_t)currentSpeedBytesPerSecond
+                     stateRawValue:(NSString *)stateRawValue;
 - (BOOL)openURLFromTabWithURLString:(NSString *)urlString
                          sourceTabID:(NSString *)sourceTabID
                    targetDisposition:(cef_window_open_disposition_t)targetDisposition;
@@ -1957,10 +2234,19 @@ struct TabRecord {
 @implementation BrowserTabController {
   __weak BrowserTabHostView *_hostView;
   std::map<std::string, TabRecord> _tabRecords;
+  CefRefPtr<CefRequestContext> _requestContext;
   NSString *_activeTabID;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
+  return [self initWithHostView:hostView
+    usesEphemeralRequestContext:NO
+                profileCachePath:nil];
+}
+
+- (instancetype)initWithHostView:(BrowserTabHostView *)hostView
+    usesEphemeralRequestContext:(BOOL)usesEphemeralRequestContext
+                profileCachePath:(NSString *)profileCachePath {
   self = [super init];
   if (self == nil) {
     return nil;
@@ -1968,6 +2254,14 @@ struct TabRecord {
 
   _hostView = hostView;
   _hostView.controller = self;
+  if (usesEphemeralRequestContext) {
+    CefRequestContextSettings settings;
+    _requestContext = CefRequestContext::CreateContext(settings, nullptr);
+  } else if (profileCachePath.length > 0) {
+    CefRequestContextSettings settings;
+    CefString(&settings.cache_path) = ToStdString(profileCachePath);
+    _requestContext = CefRequestContext::CreateContext(settings, nullptr);
+  }
   return self;
 }
 
@@ -2004,7 +2298,7 @@ struct TabRecord {
   }
 
   CefBrowserHost::CreateBrowser(windowInfo, client, resolvedURL,
-                                CefBrowserSettings(), nullptr, nullptr);
+                                CefBrowserSettings(), nullptr, _requestContext);
   [self updateBrowserVisibility];
   return tabID;
 }
@@ -2091,6 +2385,23 @@ struct TabRecord {
   }
 
   SavePageBrowserOnUI(it->second.browser, suggestedName);
+}
+
+- (void)captureFullPageActiveTabToPasteboard {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = it->second.browser->GetHost();
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(
+                          [](CefRefPtr<CefBrowserHost> host) {
+                            CefRefPtr<FullPageScreenshotObserver> observer =
+                                new FullPageScreenshotObserver();
+                            observer->Start(host);
+                          },
+                          host)));
 }
 
 - (void)pasteAndMatchStyleActiveTab {
@@ -2279,9 +2590,23 @@ struct TabRecord {
                           finalUpdate:finalUpdate];
 }
 
-- (void)openPopupTabWithURLString:(NSString *)urlString {
-  [self createTabWithURLString:urlString.length > 0 ? urlString : @"about:blank"
-                    makeActive:YES];
+- (void)handleDownloadUpdateWithID:(NSString *)downloadID
+                          fileName:(NSString *)fileName
+                         urlString:(NSString *)urlString
+                          fullPath:(NSString *)fullPath
+                     receivedBytes:(int64_t)receivedBytes
+                        totalBytes:(int64_t)totalBytes
+        currentSpeedBytesPerSecond:(int64_t)currentSpeedBytesPerSecond
+                     stateRawValue:(NSString *)stateRawValue {
+  [self.delegate browserTabController:self
+              didUpdateDownloadWithID:downloadID
+                             fileName:fileName
+                            urlString:urlString
+                             fullPath:fullPath
+                        receivedBytes:receivedBytes
+                           totalBytes:totalBytes
+           currentSpeedBytesPerSecond:currentSpeedBytesPerSecond
+                        stateRawValue:stateRawValue];
 }
 
 - (BOOL)openURLFromTabWithURLString:(NSString *)urlString
@@ -2410,6 +2735,67 @@ void BrowserTabClient::OnFaviconURLChange(
                             forTabID:ToNSString(tab_id_)];
 }
 
+bool BrowserTabClient::OnBeforeDownload(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefDownloadItem> download_item,
+    const CefString &suggested_name,
+    CefRefPtr<CefBeforeDownloadCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+
+  if (!download_item || !download_item->IsValid() || !callback) {
+    return false;
+  }
+
+  NSString *fileName = SuggestedDownloadFileName(download_item, suggested_name);
+  NSString *downloadPath = UniqueDownloadPathForFileName(fileName);
+  callback->Continue(ToStdString(downloadPath), false);
+
+  BrowserTabController *controller = controller_;
+  if (controller == nil) {
+    return true;
+  }
+
+  [controller handleDownloadUpdateWithID:ToNSString(std::to_string(download_item->GetId()))
+                                fileName:fileName
+                               urlString:ToNSString(download_item->GetURL().ToString())
+                                fullPath:downloadPath
+                           receivedBytes:download_item->GetReceivedBytes()
+                              totalBytes:download_item->GetTotalBytes()
+              currentSpeedBytesPerSecond:download_item->GetCurrentSpeed()
+                           stateRawValue:DownloadStateRawValue(download_item)];
+  return true;
+}
+
+void BrowserTabClient::OnDownloadUpdated(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefDownloadItem> download_item,
+    CefRefPtr<CefDownloadItemCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+
+  if (!download_item || !download_item->IsValid()) {
+    return;
+  }
+
+  BrowserTabController *controller = controller_;
+  if (controller == nil) {
+    return;
+  }
+
+  NSString *fullPath = ToNSString(download_item->GetFullPath().ToString());
+  if (fullPath.length == 0) {
+    fullPath = nil;
+  }
+
+  [controller handleDownloadUpdateWithID:ToNSString(std::to_string(download_item->GetId()))
+                                fileName:SuggestedDownloadFileName(download_item, CefString())
+                               urlString:ToNSString(download_item->GetURL().ToString())
+                                fullPath:fullPath
+                           receivedBytes:download_item->GetReceivedBytes()
+                              totalBytes:download_item->GetTotalBytes()
+              currentSpeedBytesPerSecond:download_item->GetCurrentSpeed()
+                           stateRawValue:DownloadStateRawValue(download_item)];
+}
+
 void BrowserTabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
                                             bool isLoading,
                                             bool canGoBack,
@@ -2463,6 +2849,8 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
         chromiumInternalURL = shared::kChromiumHistoryURL;
       } else if (IsTheBrowserPasswordManagerURL(request->GetURL())) {
         chromiumInternalURL = shared::kChromiumPasswordManagerURL;
+      } else if (IsTheBrowserBookmarksURL(request->GetURL())) {
+        chromiumInternalURL = shared::kChromiumBookmarksURL;
       } else {
         chromiumInternalURL = shared::kChromiumSettingsURL;
       }
@@ -2586,8 +2974,9 @@ bool BrowserTabClient::OnBeforePopup(
   }
 
   NSString *urlString = ToNSString(target_url.ToString());
-  [controller openPopupTabWithURLString:urlString];
-  return true;
+  return [controller openURLFromTabWithURLString:urlString
+                                    sourceTabID:ToNSString(tab_id_)
+                              targetDisposition:target_disposition];
 }
 
 bool BrowserTabClient::OnShowPermissionPrompt(

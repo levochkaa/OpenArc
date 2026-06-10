@@ -8,12 +8,23 @@ import Testing
 
     let store = BrowserTabSessionSnapshotStore(snapshotURL: harness.snapshotURL)
     let snapshot = BrowserTabSessionSnapshot(
+        pinnedTabFolders: [
+            BrowserPinnedTabFolderSessionSnapshot(
+                id: "folder-1",
+                spaceID: "space-1",
+                parentFolderID: "folder-parent",
+                title: "Reading",
+                systemImageName: "book",
+                isExpanded: false
+            ),
+        ],
         tabs: [
             BrowserTabSessionSnapshotTab(
                 urlString: "https://one.example",
                 userTitleOverride: "Pinned",
                 placement: .spacePinned,
                 spaceID: "space-1",
+                pinnedFolderID: "folder-1",
                 lastActivityTimestamp: 1234
             ),
             BrowserTabSessionSnapshotTab(

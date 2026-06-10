@@ -9,6 +9,8 @@ struct BrowserSidebarHeaderView: View {
     let canReload: Bool
     let shortcutStore: BrowserShortcutStore
     let showsWindowControlsInSidebar: Bool
+    let showsNavigationControls: Bool
+    let toggleSidebarTooltipTitle: String
     let onToggleSidebar: () -> Void
     let onGoBack: () -> Void
     let onGoForward: () -> Void
@@ -24,7 +26,7 @@ struct BrowserSidebarHeaderView: View {
 
                 BrowserChromeControlButton(
                     systemImageName: "sidebar.left",
-                    tooltipTitle: shortcutStore.descriptor(for: .toggleSidebar).helpTitle,
+                    tooltipTitle: toggleSidebarTooltipTitle,
                     tooltipShortcut: shortcutStore.shortcut(for: .toggleSidebar),
                     pressEffect: .compress,
                     action: onToggleSidebar
@@ -33,43 +35,45 @@ struct BrowserSidebarHeaderView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: BrowserChromeLayout.chromeButtonSpacing) {
-                BrowserChromeControlButton(
-                    systemImageName: "arrow.backward",
-                    tooltipTitle: shortcutStore.descriptor(for: .goBack).helpTitle,
-                    tooltipShortcut: shortcutStore.shortcut(for: .goBack),
-                    isEnabled: canGoBack,
-                    pressEffect: .moveLeft,
-                    action: onGoBack
-                )
-
-                BrowserChromeControlButton(
-                    systemImageName: "arrow.forward",
-                    tooltipTitle: shortcutStore.descriptor(for: .goForward).helpTitle,
-                    tooltipShortcut: shortcutStore.shortcut(for: .goForward),
-                    isEnabled: canGoForward,
-                    pressEffect: .moveRight,
-                    action: onGoForward
-                )
-
-                if canStopLoading {
+            if showsNavigationControls {
+                HStack(spacing: BrowserChromeLayout.chromeButtonSpacing) {
                     BrowserChromeControlButton(
-                        systemImageName: "xmark",
-                        tooltipTitle: BrowserStrings.navigationStopLoading,
-                        tooltipShortcut: nil,
-                        isEnabled: canStopLoading,
-                        pressEffect: .compress,
-                        action: onStopLoading
+                        systemImageName: "arrow.backward",
+                        tooltipTitle: shortcutStore.descriptor(for: .goBack).helpTitle,
+                        tooltipShortcut: shortcutStore.shortcut(for: .goBack),
+                        isEnabled: canGoBack,
+                        pressEffect: .moveLeft,
+                        action: onGoBack
                     )
-                } else {
+
                     BrowserChromeControlButton(
-                        systemImageName: "arrow.clockwise",
-                        tooltipTitle: shortcutStore.descriptor(for: .reload).helpTitle,
-                        tooltipShortcut: shortcutStore.shortcut(for: .reload),
-                        isEnabled: canReload,
-                        pressEffect: .rotateClockwise,
-                        action: onReload
+                        systemImageName: "arrow.forward",
+                        tooltipTitle: shortcutStore.descriptor(for: .goForward).helpTitle,
+                        tooltipShortcut: shortcutStore.shortcut(for: .goForward),
+                        isEnabled: canGoForward,
+                        pressEffect: .moveRight,
+                        action: onGoForward
                     )
+
+                    if canStopLoading {
+                        BrowserChromeControlButton(
+                            systemImageName: "xmark",
+                            tooltipTitle: BrowserStrings.navigationStopLoading,
+                            tooltipShortcut: nil,
+                            isEnabled: canStopLoading,
+                            pressEffect: .compress,
+                            action: onStopLoading
+                        )
+                    } else {
+                        BrowserChromeControlButton(
+                            systemImageName: "arrow.clockwise",
+                            tooltipTitle: shortcutStore.descriptor(for: .reload).helpTitle,
+                            tooltipShortcut: shortcutStore.shortcut(for: .reload),
+                            isEnabled: canReload,
+                            pressEffect: .rotateClockwise,
+                            action: onReload
+                        )
+                    }
                 }
             }
         }

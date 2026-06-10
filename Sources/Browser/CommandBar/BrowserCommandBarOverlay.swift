@@ -355,13 +355,27 @@ struct BrowserCommandBarOverlay: View {
     }
 
     private func commandBarTopInset(for availableHeight: CGFloat) -> CGFloat {
-        min(
-            max(
-                availableHeight * BrowserChromeLayout.commandBarTopInsetFraction,
-                BrowserChromeLayout.commandBarTopInsetMinimum
-            ),
-            BrowserChromeLayout.commandBarTopInsetMaximum
+        let estimatedPanelHeight = estimatedExpandedPanelHeight()
+        let centeredTopInset = (availableHeight - estimatedPanelHeight) / 2
+        let maximumTopInset = max(
+            availableHeight - estimatedPanelHeight - BrowserChromeLayout.commandBarTopInsetMinimum,
+            BrowserChromeLayout.sidebarOuterPadding
         )
+        return min(
+            max(centeredTopInset, BrowserChromeLayout.commandBarTopInsetMinimum),
+            maximumTopInset
+        )
+    }
+
+    private func estimatedExpandedPanelHeight() -> CGFloat {
+        let visibleSuggestionCount = BrowserCommandBarModel.maximumVisibleSuggestions
+        return BrowserChromeLayout.commandBarOuterPadding
+            + style.fieldHeight
+            + 1
+            + CGFloat(visibleSuggestionCount) * BrowserChromeLayout.commandBarSuggestionRowHeight
+            + CGFloat(visibleSuggestionCount - 1) * BrowserChromeLayout.commandBarSuggestionSpacing
+            + BrowserChromeLayout.commandBarSuggestionVerticalInset * 2
+            + BrowserChromeLayout.commandBarSuggestionViewportAllowance
     }
 }
 
@@ -449,6 +463,13 @@ struct BrowserCommandSuggestionRow: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(BrowserChromePalette.primaryText)
                     .lineLimit(1)
+
+                if let detailText = suggestion.detailText, !detailText.isEmpty {
+                    Text(detailText)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(BrowserChromePalette.secondaryText)
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 0)
             }
@@ -652,7 +673,7 @@ final class BrowserCommandNSTextField: NSTextField {
         isEditable = true
         isSelectable = true
         applyFont()
-        textColor = NSColor.white.withAlphaComponent(0.92)
+        textColor = activeTextColor
         cell?.usesSingleLineMode = true
         cell?.wraps = false
         cell?.isScrollable = true
@@ -767,6 +788,12 @@ final class BrowserCommandNSTextField: NSTextField {
 
     // MARK: Private
 
+    private var activeTextColor: NSColor {
+        effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.92)
+            : .labelColor
+    }
+
     private func syncFocus(_ shouldFocus: Bool, force: Bool = false) {
         pendingFocus = shouldFocus
 
@@ -862,8 +889,8 @@ final class BrowserCommandNSTextField: NSTextField {
             return
         }
 
-        editor.insertionPointColor = .white
-        editor.textColor = .white.withAlphaComponent(0.92)
+        editor.insertionPointColor = activeTextColor
+        editor.textColor = activeTextColor
         editor.drawsBackground = false
         editor.font = .systemFont(ofSize: fontSize, weight: .medium)
     }
