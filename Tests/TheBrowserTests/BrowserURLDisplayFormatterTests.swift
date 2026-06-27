@@ -8,6 +8,23 @@ import Testing
     #expect(BrowserURLDisplayFormatter.displayString(for: "https://www.youtube.com/feed") == "youtube.com")
 }
 
+@Test func urlDisplayFormatterKeepsNonDefaultHTTPSPort() {
+    #expect(BrowserURLDisplayFormatter.displayString(for: "https://example.com:8443/path") == "example.com:8443")
+}
+
+@Test func urlDisplayFormatterKeepsNonDefaultHTTPPort() {
+    #expect(BrowserURLDisplayFormatter.displayString(for: "http://example.com:8080/path") == "example.com:8080")
+}
+
+@Test func urlDisplayFormatterStripsLeadingWWWBeforeKeepingNonDefaultPort() {
+    #expect(BrowserURLDisplayFormatter.displayString(for: "https://www.example.com:8443/path") == "example.com:8443")
+}
+
+@Test func urlDisplayFormatterHidesDefaultHTTPAndHTTPSPorts() {
+    #expect(BrowserURLDisplayFormatter.displayString(for: "http://example.com:80/path") == "example.com")
+    #expect(BrowserURLDisplayFormatter.displayString(for: "https://example.com:443/path") == "example.com")
+}
+
 @Test func urlDisplayFormatterPreservesImportantSubdomains() {
     #expect(
         BrowserURLDisplayFormatter.displayString(
@@ -22,6 +39,11 @@ import Testing
 
 @Test func urlDisplayFormatterKeepsIPAddressPort() {
     #expect(BrowserURLDisplayFormatter.displayString(for: "http://127.0.0.1:9222/json") == "127.0.0.1:9222")
+}
+
+@Test func urlDisplayFormatterKeepsDefaultLocalhostAndIPAddressPorts() {
+    #expect(BrowserURLDisplayFormatter.displayString(for: "http://localhost:80/path") == "localhost:80")
+    #expect(BrowserURLDisplayFormatter.displayString(for: "https://127.0.0.1:443/json") == "127.0.0.1:443")
 }
 
 @Test func urlDisplayFormatterFallsBackForInternalURLs() {

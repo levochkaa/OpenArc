@@ -25,7 +25,7 @@ enum BrowserURLDisplayFormatter {
             displayHost.removeFirst(4)
         }
 
-        if shouldDisplayPort(for: displayHost), let port = components.port {
+        if let port = components.port, shouldDisplayPort(port, for: scheme, host: displayHost) {
             return "\(displayHost):\(port)"
         }
 
@@ -38,7 +38,22 @@ enum BrowserURLDisplayFormatter {
         urlString
     }
 
-    private static func shouldDisplayPort(for host: String) -> Bool {
+    private static func shouldDisplayPort(_ port: Int, for scheme: String, host: String) -> Bool {
+        isLocalHostOrIPAddress(host) || isNonDefaultPort(port, for: scheme)
+    }
+
+    private static func isNonDefaultPort(_ port: Int, for scheme: String) -> Bool {
+        switch scheme {
+        case "http":
+            port != 80
+        case "https":
+            port != 443
+        default:
+            false
+        }
+    }
+
+    private static func isLocalHostOrIPAddress(_ host: String) -> Bool {
         host.caseInsensitiveCompare("localhost") == .orderedSame
             || IPv4Address(host) != nil
             || IPv6Address(host) != nil
