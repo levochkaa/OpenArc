@@ -57,9 +57,10 @@ export class UpdatesController {
   @ApiOperation({ summary: "Download a public release asset" })
   async releaseAssetDownload(
     @Param("assetID") assetID: string,
+    @Param("assetName") assetName: string,
     @Res() reply: Response
   ) {
-    const download = await this.updates.releaseAssetDownload(assetID);
+    const download = await this.updates.releaseAssetDownload(assetID, assetName);
     if (download.asset.size) {
       reply.setHeader("Content-Length", String(download.asset.size));
     }

@@ -9,6 +9,7 @@ process.env.JWT_SECRET ??= "test-secret-with-at-least-thirty-two-bytes";
 process.env.JWT_ISSUER ??= "thebrowser-sync-test";
 process.env.JWT_AUDIENCE ??= "thebrowser-test-clients";
 process.env.THEBROWSER_PUBLIC_BASE_URL ??= "https://updates.thebrowser.test";
+process.env.GITHUB_RELEASE_REPOSITORY ??= "thebrowser/app";
 
 const { buildApp } = await import("../src/app.js");
 const { UpdatesService } = await import("../src/updates.service.js");
@@ -139,6 +140,50 @@ describe("sync API", () => {
 
     assert.equal(response.statusCode, 401);
     assert.deepEqual(response.json(), { error: "unauthorized" });
+  });
+
+  it("rejects mismatched release asset filenames before fetching the asset body", async () => {
+    const originalFetch = globalThis.fetch;
+    const repository = process.env.GITHUB_RELEASE_REPOSITORY ?? "thebrowser/app";
+    const metadataURL = `https://api.github.com/repos/${repository}/releases/assets/12345`;
+    const downloadURL = "https://github-assets.test/releases/assets/12345";
+    const fetchCalls: Array<{ url: string; accept: string | null }> = [];
+
+    globalThis.fetch = (async (input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (!url.startsWith("https://api.github.com/") && !url.startsWith("https://github-assets.test/")) {
+        return originalFetch(input, init);
+      }
+
+      const headers = new Headers(init?.headers);
+      fetchCalls.push({ url, accept: headers.get("accept") });
+
+      if (url === metadataURL) {
+        return Response.json({
+          id: 12345,
+          name: "TheBrowser-1.0.0.dmg",
+          url: downloadURL,
+          content_type: "application/x-apple-diskimage",
+          size: 42
+        });
+      }
+
+      throw new Error(`Unexpected GitHub fetch: ${url}`);
+    }) as typeof fetch;
+
+    try {
+      const response = await request(baseURL, {
+        method: "GET",
+        path: "/v1/releases/assets/12345/Misleading.dmg"
+      });
+
+      assert.equal(response.statusCode, 404);
+      assert.ok(fetchCalls.some((call) => call.url === metadataURL));
+      assert.equal(fetchCalls.some((call) => call.url === downloadURL), false);
+      assert.equal(fetchCalls.some((call) => call.accept === "application/octet-stream"), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

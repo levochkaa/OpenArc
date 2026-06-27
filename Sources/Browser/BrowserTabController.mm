@@ -1879,75 +1879,8 @@ std::string TheBrowserURLForChromiumInternalURL(const CefString &url) {
   return redirectURL;
 }
 
-bool IsChromiumSettingsURL(const CefString &url) {
-  CefURLParts parts;
-  if (!CefParseURL(url, parts)) {
-    return false;
-  }
-
-  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
-         LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserSettingsHost;
-}
-
-bool IsChromiumExtensionsURL(const CefString &url) {
-  CefURLParts parts;
-  if (!CefParseURL(url, parts)) {
-    return false;
-  }
-
-  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
-         LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserExtensionsHost;
-}
-
-bool IsChromiumHistoryURL(const CefString &url) {
-  CefURLParts parts;
-  if (!CefParseURL(url, parts)) {
-    return false;
-  }
-
-  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
-         LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserHistoryHost;
-}
-
-bool IsChromiumPasswordManagerURL(const CefString &url) {
-  CefURLParts parts;
-  if (!CefParseURL(url, parts)) {
-    return false;
-  }
-
-  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
-         LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserPasswordManagerHost;
-}
-
-bool IsChromiumBookmarksURL(const CefString &url) {
-  CefURLParts parts;
-  if (!CefParseURL(url, parts)) {
-    return false;
-  }
-
-  return LowercaseASCII(URLPartToString(parts.scheme)) == "chrome" &&
-         LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserBookmarksHost;
-}
-
 bool IsChromiumInternalWindowURL(const CefString &url) {
   return URLHasSchemeAndInternalHost(url, "chrome");
-}
-
-bool IsTheBrowserSettingsURL(const CefString &url) {
-  CefURLParts parts;
-  if (!CefParseURL(url, parts)) {
-    return false;
-  }
-
-  return LowercaseASCII(URLPartToString(parts.scheme)) ==
-             shared::kTheBrowserScheme &&
-         LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserSettingsHost;
 }
 
 bool IsTheBrowserExtensionsURL(const CefString &url) {

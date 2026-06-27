@@ -71,8 +71,12 @@ export class UpdatesService {
     return this.downloadAsset(asset);
   }
 
-  async releaseAssetDownload(assetID: string): Promise<DownloadResponse> {
+  async releaseAssetDownload(assetID: string, assetName: string): Promise<DownloadResponse> {
     const asset = await this.fetchGitHubReleaseAsset(assetID);
+    if (asset.name !== assetName) {
+      throw httpError(404, `Release asset '${assetName}' was not found`);
+    }
+
     return this.downloadAsset(asset);
   }
 
