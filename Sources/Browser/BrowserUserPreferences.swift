@@ -411,6 +411,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case reload
     case forceReload
     case toggleSidebar
+    case toggleBookmarksBar
 
     // MARK: Internal
 
@@ -462,6 +463,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.forceReload
         case .toggleSidebar:
             BrowserCommands.toggleSidebar
+        case .toggleBookmarksBar:
+            BrowserCommands.toggleBookmarksBar
         }
     }
 
@@ -509,6 +512,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .forceReload
         case .toggleSidebar:
             .toggleSidebar
+        case .toggleBookmarksBar:
+            .toggleBookmarksBar
         }
     }
 }

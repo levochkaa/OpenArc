@@ -110,6 +110,24 @@ NSUserInterfaceValidations {
         }
     }
 
+    public func prepareForCefShutdown() {
+        handleApplicationWillTerminate()
+        NSApp.delegate = nil
+        removeLayoutIndependentKeyMonitor()
+        tearDownWindow(settingsWindowController?.window)
+        settingsWindowController = nil
+        tearDownWindow(aboutWindow)
+        aboutWindow = nil
+        tearDownBrowserWindowSessions()
+        pendingNavigationURLs.removeAll()
+        profileStoreCancellable = nil
+        shortcutStoreCancellable = nil
+        appearancePreferenceCancellable = nil
+        profileStore = nil
+        updateController = nil
+        batterySaverController = nil
+    }
+
     public func quitApplication(_ sender: Any?) {
         NSApp.terminate(sender)
     }
@@ -152,6 +170,12 @@ NSUserInterfaceValidations {
     public func toggleSidebar(_: Any?) {
         withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
             activeChromeModel?.toggleSidebar()
+        }
+    }
+
+    public func toggleBookmarksBar(_: Any?) {
+        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
+            userPreferencesStore.bookmarksBarVisible.toggle()
         }
     }
 
@@ -265,6 +289,11 @@ NSUserInterfaceValidations {
             return false
         case #selector(clearTemporaryTabs(_:)):
             return activeChromeModel?.canClearTemporaryTabs ?? false
+        case #selector(toggleBookmarksBar(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
+            }
+            return true
         case #selector(setAsDefaultBrowser(_:)):
             return updateSetAsDefaultBrowserMenuItem(item as? NSMenuItem)
         case #selector(checkForUpdates(_:)):
@@ -379,6 +408,36 @@ NSUserInterfaceValidations {
 
             NSApp.stop(nil)
         }
+    }
+
+    private func tearDownBrowserWindowSessions() {
+        let windows = profileWindowSessions.map(\.window) + incognitoWindowSessions.map(\.window)
+        profileWindowSessions.removeAll()
+        incognitoWindowSessions.removeAll()
+
+        for window in windows {
+            tearDownWindow(window)
+        }
+    }
+
+    private func tearDownWindow(_ window: NSWindow?) {
+        guard let window else {
+            return
+        }
+
+        window.delegate = nil
+        window.contentView = nil
+        window.orderOut(nil)
+        window.close()
+    }
+
+    private func removeLayoutIndependentKeyMonitor() {
+        guard let layoutIndependentKeyMonitor else {
+            return
+        }
+
+        NSEvent.removeMonitor(layoutIndependentKeyMonitor)
+        self.layoutIndependentKeyMonitor = nil
     }
 
     private func installMainMenu(for app: NSApplication) {
@@ -624,6 +683,13 @@ NSUserInterfaceValidations {
             action: #selector(toggleSidebar(_:))
         )
         viewMenu.addItem(toggleSidebarItem)
+
+        let toggleBookmarksBarItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .toggleBookmarksBar),
+            action: #selector(toggleBookmarksBar(_:))
+        )
+        toggleBookmarksBarItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
+        viewMenu.addItem(toggleBookmarksBarItem)
         viewMenu.addItem(.separator())
 
         let clearTemporaryTabsItem = makeMenuItem(
@@ -855,6 +921,9 @@ NSUserInterfaceValidations {
             }
 
             toggleSidebar(nil)
+            return true
+        case .toggleBookmarksBar:
+            toggleBookmarksBar(nil)
             return true
         }
     }
@@ -1117,6 +1186,9 @@ NSUserInterfaceValidations {
             syncCoordinator: syncCoordinator,
             profile: profile,
             availableProfileCount: profileStore?.profiles.count ?? 1,
+            commandHandler: { [weak self] commandID in
+                _ = self?.performLayoutIndependentShortcutCommand(commandID.layoutIndependentCommand)
+            },
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
         )
@@ -1280,6 +1352,9 @@ NSUserInterfaceValidations {
             historyStore: BrowserEmptyHistoryStore(),
             extensionManager: BrowserEmptyExtensionManager(),
             windowMode: .incognito,
+            commandHandler: { [weak self] commandID in
+                _ = self?.performLayoutIndependentShortcutCommand(commandID.layoutIndependentCommand)
+            },
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
         )

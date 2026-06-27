@@ -39,7 +39,7 @@ extension BrowserChromeModel {
                 let host = url.host,
                 !host.isEmpty
             {
-                return host
+                return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
             }
 
             return BrowserStrings.newTabTitle

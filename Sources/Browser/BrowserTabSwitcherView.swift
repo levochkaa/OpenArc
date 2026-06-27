@@ -246,15 +246,7 @@ private struct BrowserTabSwitcherCard: View {
     }
 
     private var displayURL: String {
-        guard
-            let url = URL(string: entry.tab.urlString),
-            let host = url.host,
-            !host.isEmpty
-        else {
-            return entry.tab.urlString
-        }
-
-        return host
+        BrowserURLDisplayFormatter.displayString(for: entry.tab.urlString)
     }
 
     private var preview: some View {

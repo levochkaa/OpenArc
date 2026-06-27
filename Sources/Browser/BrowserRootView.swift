@@ -54,6 +54,10 @@ struct BrowserRootView: View {
                     .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
                     value: model.extensionSidePanel
                 )
+                .animation(
+                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                    value: showsBookmarksBar
+                )
 
                 if showsSiteToolbar {
                     BrowserSiteToolbar(
@@ -64,8 +68,13 @@ struct BrowserRootView: View {
                         canGoForward: sidebarSnapshot.canGoForward,
                         canStopLoading: sidebarSnapshot.canStopLoading,
                         canReload: sidebarSnapshot.canReload,
+                        goBackShortcut: shortcutStore.shortcut(for: .goBack),
+                        goForwardShortcut: shortcutStore.shortcut(for: .goForward),
+                        reloadShortcut: shortcutStore.shortcut(for: .reload),
                         copyLinkShortcut: shortcutStore.shortcut(for: .copyLink),
+                        toggleBookmarksBarShortcut: shortcutStore.shortcut(for: .toggleBookmarksBar),
                         showsFullURL: preferences.siteToolbarShowsFullURL,
+                        isBookmarksBarVisible: preferences.bookmarksBarVisible,
                         chromeBackgroundMode: chromeBackgroundMode,
                         onURLButtonFrameChange: { currentURLRowWindowFrame = $0 },
                         onOpenSearch: model.presentCurrentPageCommandBar,
@@ -81,6 +90,7 @@ struct BrowserRootView: View {
                         onToggleShowsFullURL: {
                             preferences.siteToolbarShowsFullURL.toggle()
                         },
+                        onToggleBookmarksBar: toggleBookmarksBarVisibility,
                         onRefreshExtensions: model.refreshBrowserExtensions,
                         onOpenExtensionsManager: model.openExtensionsManager,
                         onOpenExtensionStore: model.openExtensionStore,
@@ -109,6 +119,7 @@ struct BrowserRootView: View {
                         selectedTab: sidebarSnapshot.selectedTab,
                         isSelectedTabBookmarked: isSelectedTabBookmarked,
                         toggleBookmarkShortcut: shortcutStore.shortcut(for: .toggleBookmark),
+                        toggleBookmarksBarShortcut: shortcutStore.shortcut(for: .toggleBookmarksBar),
                         chromeBackgroundMode: chromeBackgroundMode,
                         onOpenBookmark: model.openBookmark,
                         onOpenBookmarks: model.openBookmarks,
@@ -122,9 +133,7 @@ struct BrowserRootView: View {
                         onCreateFolderAndMoveBookmark: model.createBookmarkFolderAndMoveBookmark,
                         onDeleteBookmark: model.deleteBookmark,
                         onManageBookmarks: model.openBookmarksManager,
-                        onHideBookmarksBar: {
-                            preferences.bookmarksBarVisible = false
-                        }
+                        onHideBookmarksBar: hideBookmarksBar
                     )
                     .frame(
                         width: bookmarksBarWidth(in: proxy.size),
@@ -133,6 +142,7 @@ struct BrowserRootView: View {
                     )
                     .offset(x: browserContentMinX, y: bookmarksBarMinY)
                     .zIndex(5)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                     .animation(
                         .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
                         value: model.isSidebarVisible
@@ -187,6 +197,7 @@ struct BrowserRootView: View {
                         isCommandBarPresented: commandBarModel.isPresented,
                         isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
                         showsCurrentURLRow: !preferences.siteURLToolbarEnabled,
+                        sidebarWidth: model.sidebarWidth,
                         isOverlayPresentation: isSidebarOverlayPresentation,
                         showsOverlayBorder: isSidebarHoverOverlayPresented,
                         toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
@@ -199,6 +210,7 @@ struct BrowserRootView: View {
                         height: sidebarHeight(in: proxy.size),
                         alignment: .leading
                     )
+                    .clipped()
                     .animation(nil, value: model.sidebarWidth)
                     .offset(x: sidebarOffset, y: sidebarOffsetY)
                     .allowsHitTesting(isSidebarPresented)
@@ -225,6 +237,24 @@ struct BrowserRootView: View {
                     .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
                     value: model.isSidebarVisible
                 )
+
+                if !preferences.bookmarksBarVisible {
+                    BrowserBookmarksBarChromeBackgroundContextMenuRegions(
+                        windowSize: proxy.size,
+                        blockedLeadingWidth: contentEdgeDragBlockedLeadingWidth,
+                        leadingInset: browserContentLeadingInset,
+                        topInset: browserContentTopInset,
+                        trailingInset: browserContentTrailingInset,
+                        bottomInset: browserContentBottomInset,
+                        toggleBookmarksBarShortcut: shortcutStore.shortcut(for: .toggleBookmarksBar),
+                        onToggleBookmarksBar: toggleBookmarksBarVisibility
+                    )
+                    .zIndex(4)
+                    .animation(
+                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                        value: model.isSidebarVisible
+                    )
+                }
 
                 if !model.isSidebarVisible, !usesDetachedBrowserOverlays {
                     BrowserSidebarHoverRevealEdge(onHoverChange: handleSidebarRevealEdgeHoverChange)
@@ -370,6 +400,10 @@ struct BrowserRootView: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            .animation(
+                .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                value: showsBookmarksBar
+            )
         }
         .background {
             BrowserChromeBackgroundView(mode: chromeBackgroundMode)
@@ -782,6 +816,20 @@ struct BrowserRootView: View {
         }
     }
 
+    private func toggleBookmarksBarVisibility() {
+        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
+            preferences.bookmarksBarVisible.toggle()
+        }
+    }
+
+    private func hideBookmarksBar() {
+        guard preferences.bookmarksBarVisible else {
+            return
+        }
+
+        toggleBookmarksBarVisibility()
+    }
+
     private func finishSidebarHoverOverlayPromotionIfNeeded() {
         let updates = {
             isSidebarHoverOverlayPresented = false
@@ -912,6 +960,82 @@ struct BrowserRootView: View {
         }
 
         isSidebarHoverOverlayPointerSyncSuspended = false
+    }
+}
+
+// MARK: - BrowserBookmarksBarVisibilityMenuContent
+
+struct BrowserBookmarksBarVisibilityMenuContent: View {
+    let isBookmarksBarVisible: Bool
+    let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
+    let onToggleBookmarksBar: () -> Void
+
+    var body: some View {
+        Button(
+            isBookmarksBarVisible ? BrowserStrings.bookmarksHideBarAction : BrowserStrings.settingsShowBookmarksBar,
+            action: onToggleBookmarksBar
+        )
+        .browserKeyboardShortcut(toggleBookmarksBarShortcut)
+    }
+}
+
+// MARK: - BrowserBookmarksBarChromeBackgroundContextMenuRegions
+
+private struct BrowserBookmarksBarChromeBackgroundContextMenuRegions: View {
+    // MARK: Internal
+
+    let windowSize: CGSize
+    let blockedLeadingWidth: CGFloat
+    let leadingInset: CGFloat
+    let topInset: CGFloat
+    let trailingInset: CGFloat
+    let bottomInset: CGFloat
+    let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
+    let onToggleBookmarksBar: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if topInset > 0 {
+                dragRegion(
+                    width: max(windowSize.width - blockedLeadingWidth, 0),
+                    height: topInset
+                )
+                .offset(x: blockedLeadingWidth)
+            }
+
+            if bottomInset > 0 {
+                dragRegion(
+                    width: max(windowSize.width - blockedLeadingWidth, 0),
+                    height: bottomInset
+                )
+                .offset(x: blockedLeadingWidth, y: max(windowSize.height - bottomInset, 0))
+            }
+
+            if trailingInset > 0 {
+                dragRegion(width: trailingInset, height: windowSize.height)
+                    .offset(x: max(windowSize.width - trailingInset, 0))
+            }
+
+            if leadingInset > 0 {
+                dragRegion(width: leadingInset, height: windowSize.height)
+                    .offset(x: blockedLeadingWidth)
+            }
+        }
+        .frame(width: windowSize.width, height: windowSize.height, alignment: .topLeading)
+    }
+
+    // MARK: Private
+
+    private func dragRegion(width: CGFloat, height: CGFloat) -> some View {
+        BrowserWindowDragRegion()
+            .frame(width: width, height: height)
+            .contextMenu {
+                BrowserBookmarksBarVisibilityMenuContent(
+                    isBookmarksBarVisible: false,
+                    toggleBookmarksBarShortcut: toggleBookmarksBarShortcut,
+                    onToggleBookmarksBar: onToggleBookmarksBar
+                )
+            }
     }
 }
 

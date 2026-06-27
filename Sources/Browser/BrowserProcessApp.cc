@@ -9,12 +9,46 @@ namespace browser {
 
 namespace {
 
+constexpr bool kEnablePasskeysAndWebAuthentication = false;
+
+constexpr char kDisableBlinkFeaturesSwitch[] = "disable-blink-features";
 constexpr char kDisableFeaturesSwitch[] = "disable-features";
 constexpr char kImmersiveReadAnythingFeature[] = "ImmersiveReadAnything";
-constexpr char kWebAuthenticationFeature[] = "WebAuthentication";
-constexpr char kWebAuthenticationCableFeature[] = "WebAuthenticationCable";
-constexpr char kWebAuthenticationConditionalUIFeature[] =
-    "WebAuthenticationConditionalUI";
+constexpr const char* kPasskeyAndWebAuthenticationChromiumFeatures[] = {
+    "AuthenticatorPasswordsOnlyImmediateRequests",
+    "AutofillReintroduceHybridPasskeyDropdownItem",
+    "DelaysSuggestionsOnAutofocusWaitingForPasskeys",
+    "PasskeyUnlockManager",
+    "WebAuthentication",
+    "WebAuthenticationAmbientSignin",
+    "WebAuthenticationCable",
+    "WebAuthenticationCableExtensionAnywhere",
+    "WebAuthenticationConditionalUI",
+    "WebAuthenticationICloudKeychainForActiveWithDrive",
+    "WebAuthenticationICloudKeychainForActiveWithoutDrive",
+    "WebAuthenticationICloudKeychainForGoogle",
+    "WebAuthenticationICloudKeychainForInactiveWithDrive",
+    "WebAuthenticationICloudKeychainForInactiveWithoutDrive",
+    "WebAuthenticationImmediateGet",
+    "WebAuthenticationNewRefreshFlow",
+    "WebAuthenticationSignalApiHidePasskeys",
+    "WebAuthenticationUseInsecureSoftwareUnexportableKeys",
+    "WebAuthnDoNotAlwaysTerminateStateMachineDuringIdentityChange",
+    "WebAuthnEnableRefreshingStateOfGpmEnclaveController",
+    "WebAuthnHmacSecretMcExtension",
+    "WebAuthnImmediateRequestRateLimit",
+    "WebAuthnUsePasskeyFromAnotherDeviceInContextMenu",
+};
+constexpr const char* kPasskeyAndWebAuthenticationBlinkFeatures[] = {
+    "WebAuth",
+    "WebAuthAuthenticatorAttachment",
+    "WebAuthenticationAmbient",
+    "WebAuthenticationAttestationFormats",
+    "WebAuthenticationChallengeUrl",
+    "WebAuthenticationImmediateGet",
+    "WebAuthenticationRemoteDesktopSupport",
+    "WebAuthenticationSupplementalPubKeys",
+};
 
 bool FeatureListContains(const std::string& features,
                          const std::string& feature) {
@@ -34,24 +68,49 @@ bool FeatureListContains(const std::string& features,
   return false;
 }
 
-void DisableChromiumFeature(CefRefPtr<CefCommandLine> command_line,
-                            const std::string& feature) {
+void AppendCommaSeparatedSwitchValue(CefRefPtr<CefCommandLine> command_line,
+                                     const char* switch_name,
+                                     const std::string& feature) {
   if (!command_line) {
     return;
   }
 
-  std::string disabled_features =
-      command_line->GetSwitchValue(kDisableFeaturesSwitch);
-  if (FeatureListContains(disabled_features, feature)) {
+  std::string switch_value = command_line->GetSwitchValue(switch_name);
+  if (FeatureListContains(switch_value, feature)) {
     return;
   }
 
-  if (!disabled_features.empty()) {
-    disabled_features += ",";
+  if (!switch_value.empty()) {
+    switch_value += ",";
   }
-  disabled_features += feature;
-  command_line->AppendSwitchWithValue(kDisableFeaturesSwitch,
-                                      disabled_features);
+  switch_value += feature;
+  command_line->AppendSwitchWithValue(switch_name, switch_value);
+}
+
+void DisableChromiumFeature(CefRefPtr<CefCommandLine> command_line,
+                            const std::string& feature) {
+  AppendCommaSeparatedSwitchValue(command_line, kDisableFeaturesSwitch,
+                                  feature);
+}
+
+template <size_t feature_count>
+void AppendCommaSeparatedSwitchValues(
+    CefRefPtr<CefCommandLine> command_line,
+    const char* switch_name,
+    const char* const (&features)[feature_count]) {
+  for (const char* feature : features) {
+    AppendCommaSeparatedSwitchValue(command_line, switch_name, feature);
+  }
+}
+
+void DisablePasskeysAndWebAuthentication(
+    CefRefPtr<CefCommandLine> command_line) {
+  AppendCommaSeparatedSwitchValues(
+      command_line, kDisableFeaturesSwitch,
+      kPasskeyAndWebAuthenticationChromiumFeatures);
+  AppendCommaSeparatedSwitchValues(
+      command_line, kDisableBlinkFeaturesSwitch,
+      kPasskeyAndWebAuthenticationBlinkFeatures);
 }
 
 class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
@@ -64,11 +123,12 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
     // metrics, which crashes CEF-hosted pages before its null check can run.
     DisableChromiumFeature(command_line, kImmersiveReadAnythingFeature);
 
-    // Temporarily keep passkeys/WebAuthn out of the browser process until the
-    // app ships with the required Apple browser entitlement in its provisioning.
-    DisableChromiumFeature(command_line, kWebAuthenticationFeature);
-    DisableChromiumFeature(command_line, kWebAuthenticationCableFeature);
-    DisableChromiumFeature(command_line, kWebAuthenticationConditionalUIFeature);
+    if (!kEnablePasskeysAndWebAuthentication) {
+      // Temporarily keep passkeys/WebAuthn out of the browser process until the
+      // app ships with the required Apple browser entitlement in its
+      // provisioning and can safely present related privacy prompts.
+      DisablePasskeysAndWebAuthentication(command_line);
+    }
   }
 
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {

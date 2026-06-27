@@ -5,7 +5,6 @@ MODE="${1:-run}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="TheBrowser"
 HELPER_NAME="TheBrowser Helper"
-APP_BUNDLE_ID="com.levochkaa.TheBrowser"
 CONFIGURATION="${CONFIGURATION:-Debug}"
 DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode"
 APP_BUNDLE="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
@@ -21,18 +20,8 @@ case "$CONFIGURATION" in
 esac
 
 kill_app() {
-  /usr/bin/osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
-  pkill -TERM -x "$APP_NAME" >/dev/null 2>&1 || true
-  pkill -TERM -f "$HELPER_NAME" >/dev/null 2>&1 || true
-
-  for _ in {1..50}; do
-    if ! pgrep -x "$APP_NAME" >/dev/null 2>&1 && ! pgrep -f "$HELPER_NAME" >/dev/null 2>&1; then
-      return
-    fi
-
-    sleep 0.1
-  done
-
+  # Dev relaunches should not drive CEF's graceful shutdown path: DCHECK aborts
+  # there surface as crash reports when a new Run stops the old browser.
   pkill -KILL -x "$APP_NAME" >/dev/null 2>&1 || true
   pkill -KILL -f "$HELPER_NAME" >/dev/null 2>&1 || true
 

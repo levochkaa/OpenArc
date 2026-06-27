@@ -179,6 +179,7 @@ targets:
       - path: Sources/Browser/BrowserExtensions.swift
       - path: Sources/Browser/BrowserExtensionSidePanel.swift
       - path: Sources/Browser/BrowserFaviconCache.swift
+      - path: Sources/Browser/BrowserImageThumbnailer.swift
       - path: Sources/Browser/BrowserKeyboardShortcuts.swift
       - path: Sources/Browser/BrowserNavigationResolver.swift
       - path: Sources/Browser/BrowserProfiles.swift

@@ -113,7 +113,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching {
             return urlString
         }
 
-        return host
+        return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
     }
 
     private static func likePattern(for query: String) -> String {

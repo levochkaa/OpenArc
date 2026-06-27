@@ -54,6 +54,7 @@ enum BrowserWindowMode: Equatable {
         dateProvider: @escaping () -> Date = Date.init,
         spaceIDProvider: @escaping () -> String = { UUID().uuidString },
         tabSyncIDProvider: @escaping () -> String = { UUID().uuidString },
+        commandHandler: @escaping (BrowserCommandID) -> Void = { _ in },
         windowTitleHandler: @escaping (String) -> Void,
         allTabsClosedHandler: @escaping () -> Void
     ) {
@@ -84,6 +85,7 @@ enum BrowserWindowMode: Equatable {
         self.dateProvider = dateProvider
         self.spaceIDProvider = spaceIDProvider
         self.tabSyncIDProvider = tabSyncIDProvider
+        self.commandHandler = commandHandler
         self.windowTitleHandler = windowTitleHandler
         self.allTabsClosedHandler = allTabsClosedHandler
         self.hostView = tabDriver.hostView
@@ -190,6 +192,9 @@ enum BrowserWindowMode: Equatable {
         },
         openTabHandler: { [weak self] tabIDs in
             self?.openCommandBarTabSelection(tabIDs: tabIDs)
+        },
+        commandHandler: { [weak self] commandID in
+            self?.commandHandler(commandID)
         }
     )
     lazy var currentPageCommandBarModel = BrowserCommandBarModel(
@@ -209,6 +214,9 @@ enum BrowserWindowMode: Equatable {
         },
         openTabHandler: { [weak self] tabIDs in
             self?.openCommandBarTabSelection(tabIDs: tabIDs)
+        },
+        commandHandler: { [weak self] commandID in
+            self?.commandHandler(commandID)
         }
     )
 
@@ -1596,6 +1604,7 @@ enum BrowserWindowMode: Equatable {
     private let dateProvider: () -> Date
     private let spaceIDProvider: () -> String
     private let tabSyncIDProvider: () -> String
+    private let commandHandler: (BrowserCommandID) -> Void
 
     private var hasCreatedInitialTab = false
     private var closingTabIDs = Set<String>()
@@ -1975,11 +1984,21 @@ enum BrowserWindowMode: Equatable {
 
         var suggestions = [BrowserCommandSuggestion]()
         suggestions.append(
-            contentsOf: internalPageSuggestions(
+            contentsOf: commandActionSuggestions(
                 for: trimmedQuery,
                 maximumCount: maximumCount
             )
         )
+
+        let remainingAfterCommands = maximumCount - suggestions.count
+        if remainingAfterCommands > 0 {
+            suggestions.append(
+                contentsOf: internalPageSuggestions(
+                    for: trimmedQuery,
+                    maximumCount: remainingAfterCommands
+                )
+            )
+        }
 
         let remainingAfterInternalPages = maximumCount - suggestions.count
         if remainingAfterInternalPages > 0 {
@@ -2012,6 +2031,92 @@ enum BrowserWindowMode: Equatable {
         }
 
         return Array(suggestions.prefix(maximumCount))
+    }
+
+    private func commandActionSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+        guard maximumCount > 0 else {
+            return []
+        }
+
+        let normalizedQuery = normalizedCommandSearchText(query)
+        return BrowserCommandID.allCases
+            .filter(isCommandBarActionAvailable)
+            .filter { commandID in
+                commandSearchText(for: commandID).contains(normalizedQuery)
+            }
+            .prefix(maximumCount)
+            .map { commandID in
+                let descriptor = shortcutStore.descriptor(for: commandID)
+                return BrowserCommandSuggestion(
+                    kind: .command,
+                    displayText: commandDisplayText(for: commandID, descriptor: descriptor),
+                    commandID: commandID,
+                    shortcut: descriptor.shortcut
+                )
+            }
+    }
+
+    private func commandDisplayText(for commandID: BrowserCommandID, descriptor: BrowserCommandDescriptor) -> String {
+        switch commandID {
+        case .toggleBookmarksBar:
+            userPreferencesStore.bookmarksBarVisible
+                ? BrowserStrings.bookmarksHideBarAction
+                : BrowserStrings.settingsShowBookmarksBar
+        default:
+            descriptor.menuTitle
+        }
+    }
+
+    private func commandSearchText(for commandID: BrowserCommandID) -> String {
+        let descriptor = shortcutStore.descriptor(for: commandID)
+        return ([
+            descriptor.menuTitle,
+            descriptor.helpTitle,
+            commandID.rawValue,
+        ] + commandID.commandBarSearchAliases + descriptor.shortcut.commandBarSearchAliases)
+            .map(normalizedCommandSearchText)
+            .joined(separator: " ")
+    }
+
+    private func isCommandBarActionAvailable(_ commandID: BrowserCommandID) -> Bool {
+        switch commandID {
+        case .openSettings, .setAsDefaultBrowser:
+            true
+        case .newTab:
+            canCreateTab
+        case .newIncognitoWindow:
+            !isShuttingDown
+        case .openHistory:
+            canCreateTab && !isShuttingDown
+        case .toggleBookmark:
+            selectedTab?.urlString.isEmpty == false
+        case .archiveTab:
+            canArchiveSelectedTab
+        case .savePage:
+            canSavePage
+        case .printPage:
+            canPrintPage
+        case .copyLink:
+            canCopySelectedTabLink
+        case .findInPage:
+            canPresentFindInPage
+        case .findAndReplace, .jumpToSelection:
+            false
+        case .findNext, .findPrevious:
+            canStepThroughFindMatches
+        case .clearTemporaryTabs:
+            canClearTemporaryTabs
+        case .goBack:
+            canGoBack
+        case .goForward:
+            canGoForward
+        case .forceReload, .reload:
+            canReload
+        case .toggleSidebar:
+            true
+        case .toggleBookmarksBar:
+            true
+        }
     }
 
     private func internalPageSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
@@ -3504,6 +3609,175 @@ enum BrowserWindowMode: Equatable {
     }
 }
 
+// MARK: - Command Bar Actions
+
+extension BrowserCommandID {
+    var commandBarSearchAliases: [String] {
+        switch self {
+        case .openSettings:
+            ["settings", "preferences", "app settings", "native settings"]
+        case .setAsDefaultBrowser:
+            ["default browser", "set default browser", "make default browser"]
+        case .newTab:
+            ["new tab", "open tab", "create tab"]
+        case .newIncognitoWindow:
+            ["incognito", "private window", "new private window"]
+        case .openHistory:
+            ["history", "open history", "browser history"]
+        case .toggleBookmark:
+            ["bookmark", "add bookmark", "remove bookmark", "star"]
+        case .archiveTab:
+            ["archive tab", "close tab", "close current tab"]
+        case .savePage:
+            ["save page", "save as", "download page"]
+        case .printPage:
+            ["print page", "print current page"]
+        case .copyLink:
+            ["copy link", "copy url", "copy address", "copy current url"]
+        case .findInPage:
+            ["find", "find in page", "search page"]
+        case .findAndReplace:
+            ["find replace", "find and replace", "replace"]
+        case .findNext:
+            ["find next", "next match", "next result"]
+        case .findPrevious:
+            ["find previous", "previous match", "previous result"]
+        case .jumpToSelection:
+            ["jump selection", "jump to selection"]
+        case .clearTemporaryTabs:
+            ["clear temporary tabs", "clear temp tabs", "temporary tabs"]
+        case .goBack:
+            ["back", "go back", "previous page"]
+        case .goForward:
+            ["forward", "go forward", "next page"]
+        case .reload:
+            ["reload", "refresh", "soft refresh"]
+        case .forceReload:
+            ["force reload", "force refresh", "hard reload", "hard refresh", "reload ignoring cache", "ignore cache"]
+        case .toggleSidebar:
+            ["sidebar", "toggle sidebar", "show sidebar", "hide sidebar"]
+        case .toggleBookmarksBar:
+            ["bookmarks bar", "bookmark bar", "toggle bookmarks bar", "show bookmarks bar", "hide bookmarks bar"]
+        }
+    }
+
+    var commandBarSystemImageName: String {
+        switch self {
+        case .openSettings:
+            "gearshape"
+        case .setAsDefaultBrowser:
+            "globe"
+        case .newTab:
+            "plus"
+        case .newIncognitoWindow:
+            "eye.slash"
+        case .openHistory:
+            "clock.arrow.circlepath"
+        case .toggleBookmark:
+            "star"
+        case .archiveTab:
+            "archivebox"
+        case .savePage:
+            "square.and.arrow.down"
+        case .printPage:
+            "printer"
+        case .copyLink:
+            "link"
+        case .findInPage:
+            "doc.text.magnifyingglass"
+        case .findAndReplace:
+            "arrow.triangle.2.circlepath"
+        case .findNext:
+            "chevron.down"
+        case .findPrevious:
+            "chevron.up"
+        case .jumpToSelection:
+            "text.cursor"
+        case .clearTemporaryTabs:
+            "xmark.circle"
+        case .goBack:
+            "chevron.left"
+        case .goForward:
+            "chevron.right"
+        case .reload:
+            "arrow.clockwise"
+        case .forceReload:
+            "arrow.clockwise.circle"
+        case .toggleSidebar:
+            "sidebar.left"
+        case .toggleBookmarksBar:
+            "book"
+        }
+    }
+}
+
+extension BrowserKeyboardShortcut {
+    var commandBarSearchAliases: [String] {
+        let modifierPhrases = commandBarModifierSearchPhrases
+        let keyAliases = commandBarKeySearchAliases
+        var aliases = [
+            displayText,
+            keyCaps.joined(separator: " "),
+        ]
+
+        for keyAlias in keyAliases {
+            for modifierPhrase in modifierPhrases {
+                aliases.append("\(modifierPhrase) \(keyAlias)")
+                aliases.append("\(modifierPhrase)+\(keyAlias)")
+            }
+        }
+
+        return aliases
+    }
+
+    private var commandBarModifierSearchPhrases: [String] {
+        var phrases = [""]
+
+        if modifiers.contains(.control) {
+            phrases = phrases.appendingModifierSearchAliases(["control", "ctrl"])
+        }
+
+        if modifiers.contains(.option) {
+            phrases = phrases.appendingModifierSearchAliases(["option", "alt"])
+        }
+
+        if modifiers.contains(.shift) {
+            phrases = phrases.appendingModifierSearchAliases(["shift"])
+        }
+
+        if modifiers.contains(.command) {
+            phrases = phrases.appendingModifierSearchAliases(["command", "cmd"])
+        }
+
+        return phrases.filter { !$0.isEmpty }
+    }
+
+    private var commandBarKeySearchAliases: [String] {
+        switch keyEquivalent {
+        case ",":
+            [",", "comma"]
+        case "[":
+            ["[", "left bracket", "open bracket"]
+        case "]":
+            ["]", "right bracket", "close bracket"]
+        case "♡":
+            ["heart"]
+        default:
+            [keyEquivalent.lowercased()]
+        }
+    }
+}
+
+private extension [String] {
+    func appendingModifierSearchAliases(_ aliases: [String]) -> [String] {
+        flatMap { phrase in
+            aliases.map { alias in
+                phrase.isEmpty ? alias : "\(phrase) \(alias)"
+            }
+        }
+    }
+}
+
 // MARK: - BrowserTabPreviewCapture
 
 private enum BrowserTabPreviewCapture {
@@ -3517,7 +3791,9 @@ private enum BrowserTabPreviewCapture {
             return nil
         }
 
-        return viewSnapshot(for: view).flatMap(resizedPreviewImage)
+        return viewSnapshot(for: view).flatMap {
+            BrowserImageThumbnailer.resizedImage($0, maximumPixelWidth: maximumPreviewPixelWidth)
+        }
     }
 
     // MARK: Private
@@ -3535,31 +3811,5 @@ private enum BrowserTabPreviewCapture {
         let image = NSImage(size: view.bounds.size)
         image.addRepresentation(bitmap)
         return image
-    }
-
-    private static func resizedPreviewImage(_ image: NSImage) -> NSImage? {
-        guard image.size.width > 0, image.size.height > 0 else {
-            return nil
-        }
-
-        let scale = min(maximumPreviewPixelWidth / image.size.width, 1)
-        guard scale < 1 else {
-            return image
-        }
-
-        let targetSize = CGSize(
-            width: floor(image.size.width * scale),
-            height: floor(image.size.height * scale)
-        )
-        return NSImage(size: targetSize, flipped: false) { bounds in
-            NSGraphicsContext.current?.imageInterpolation = .high
-            image.draw(
-                in: bounds,
-                from: CGRect(origin: .zero, size: image.size),
-                operation: .copy,
-                fraction: 1
-            )
-            return true
-        }
     }
 }

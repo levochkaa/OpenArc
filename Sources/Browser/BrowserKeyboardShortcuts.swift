@@ -205,6 +205,12 @@ enum BrowserCommands {
         helpTitle: BrowserStrings.sidebarHide,
         shortcut: BrowserKeyboardShortcut("s")
     )
+
+    static let toggleBookmarksBar = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.settingsShowBookmarksBar,
+        helpTitle: BrowserStrings.settingsShowBookmarksBar,
+        shortcut: BrowserKeyboardShortcut("b", modifiers: [.command, .shift])
+    )
 }
 
 // MARK: - BrowserSpaceShortcuts
@@ -272,6 +278,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case reload
     case forceReload
     case toggleSidebar
+    case toggleBookmarksBar
 }
 
 // MARK: - BrowserKeyboardShortcutBridge

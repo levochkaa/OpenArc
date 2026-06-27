@@ -111,6 +111,7 @@ import Testing
     reloadedStore.setShortcut(customShortcut, for: .newTab)
     reloadedStore.resetAllShortcuts()
     #expect(reloadedStore.shortcut(for: .newTab) == BrowserCommands.newTab.shortcut)
+    #expect(reloadedStore.shortcut(for: .toggleBookmarksBar) == BrowserCommands.toggleBookmarksBar.shortcut)
 }
 
 @Test func layoutIndependentBridgeUsesShortcutOverrides() throws {
@@ -139,6 +140,16 @@ import Testing
     )
 
     #expect(command == .newIncognitoWindow)
+}
+
+@Test func layoutIndependentBridgeRoutesToggleBookmarksBarShortcut() {
+    let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 11,
+        modifierFlags: [.command, .shift],
+        charactersIgnoringModifiers: "и"
+    )
+
+    #expect(command == .toggleBookmarksBar)
 }
 
 @Test func settingsRoutesMatchChromiumButtonDestinations() {

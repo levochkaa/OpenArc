@@ -285,17 +285,20 @@ struct BrowserSidebarCurrentURLRow: View {
     let extensions: [BrowserExtension]
     let pinnedExtensionIDs: [String]
     let copyLinkShortcut: BrowserKeyboardShortcut
+    let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
     let isSearchPresented: Bool
     let isSidebarResizing: Bool
     let chromeBackgroundMode: BrowserChromeBackgroundMode
     let isSiteToolbarPresented: Bool
     let siteToolbarShowsFullURL: Bool
+    let isBookmarksBarVisible: Bool
     let onFrameChange: (CGRect?) -> Void
     let onOpenSearch: () -> Void
     let onCopyURL: () -> Bool
     let onCaptureFullPage: () -> Bool
     let onToggleSiteToolbar: () -> Void
     let onToggleSiteToolbarFullURL: () -> Void
+    let onToggleBookmarksBar: () -> Void
     let onRefreshExtensions: () -> Void
     let onOpenExtensionsManager: () -> Void
     let onOpenExtensionStore: () -> Void
@@ -375,7 +378,11 @@ struct BrowserSidebarCurrentURLRow: View {
     }
 
     var fullURLString: String {
-        tab?.urlString ?? BrowserStrings.newTabTitle
+        guard let tab else {
+            return BrowserStrings.newTabTitle
+        }
+
+        return BrowserURLDisplayFormatter.fullDisplayString(for: tab.urlString)
     }
 
     var currentHost: String? {
@@ -388,7 +395,7 @@ struct BrowserSidebarCurrentURLRow: View {
             return nil
         }
 
-        return host
+        return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
     }
 
     var actionButtonOverlayShape: some Shape {
@@ -428,8 +435,10 @@ struct BrowserSidebarCurrentURLRow: View {
             BrowserSiteURLContextMenuContent(
                 tab: tab,
                 copyLinkShortcut: copyLinkShortcut,
+                toggleBookmarksBarShortcut: toggleBookmarksBarShortcut,
                 isToolbarPresented: isSiteToolbarPresented,
                 showsFullURL: siteToolbarShowsFullURL,
+                isBookmarksBarVisible: isBookmarksBarVisible,
                 onCopyURL: {
                     _ = onCopyURL()
                 },
@@ -437,7 +446,8 @@ struct BrowserSidebarCurrentURLRow: View {
                     _ = onCaptureFullPage()
                 },
                 onToggleToolbar: onToggleSiteToolbar,
-                onToggleShowsFullURL: onToggleSiteToolbarFullURL
+                onToggleShowsFullURL: onToggleSiteToolbarFullURL,
+                onToggleBookmarksBar: onToggleBookmarksBar
             )
         }
         .onHover { hovering in
@@ -797,12 +807,15 @@ struct BrowserSiteURLContextMenuContent: View {
 
     let tab: BrowserChromeModel.Tab?
     let copyLinkShortcut: BrowserKeyboardShortcut
+    let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
     let isToolbarPresented: Bool
     let showsFullURL: Bool
+    let isBookmarksBarVisible: Bool
     let onCopyURL: () -> Void
     let onCaptureFullPage: () -> Void
     let onToggleToolbar: () -> Void
     let onToggleShowsFullURL: () -> Void
+    let onToggleBookmarksBar: () -> Void
 
     var body: some View {
         Button(BrowserStrings.tabCopyURLAction, action: onCopyURL)
@@ -831,6 +844,14 @@ struct BrowserSiteURLContextMenuContent: View {
             )
             .disabled(tab == nil)
         }
+
+        Divider()
+
+        BrowserBookmarksBarVisibilityMenuContent(
+            isBookmarksBarVisible: isBookmarksBarVisible,
+            toggleBookmarksBarShortcut: toggleBookmarksBarShortcut,
+            onToggleBookmarksBar: onToggleBookmarksBar
+        )
     }
 
     // MARK: Private
@@ -860,8 +881,13 @@ struct BrowserSiteToolbar: View {
     let canGoForward: Bool
     let canStopLoading: Bool
     let canReload: Bool
+    let goBackShortcut: BrowserKeyboardShortcut
+    let goForwardShortcut: BrowserKeyboardShortcut
+    let reloadShortcut: BrowserKeyboardShortcut
     let copyLinkShortcut: BrowserKeyboardShortcut
+    let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
     let showsFullURL: Bool
+    let isBookmarksBarVisible: Bool
     let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onURLButtonFrameChange: (CGRect?) -> Void
     let onOpenSearch: () -> Void
@@ -873,6 +899,7 @@ struct BrowserSiteToolbar: View {
     let onCaptureFullPage: () -> Bool
     let onToggleToolbar: () -> Void
     let onToggleShowsFullURL: () -> Void
+    let onToggleBookmarksBar: () -> Void
     let onRefreshExtensions: () -> Void
     let onOpenExtensionsManager: () -> Void
     let onOpenExtensionStore: () -> Void
@@ -909,8 +936,10 @@ struct BrowserSiteToolbar: View {
             BrowserSiteURLContextMenuContent(
                 tab: tab,
                 copyLinkShortcut: copyLinkShortcut,
+                toggleBookmarksBarShortcut: toggleBookmarksBarShortcut,
                 isToolbarPresented: true,
                 showsFullURL: showsFullURL,
+                isBookmarksBarVisible: isBookmarksBarVisible,
                 onCopyURL: {
                     _ = onCopyURL()
                 },
@@ -918,7 +947,8 @@ struct BrowserSiteToolbar: View {
                     _ = onCaptureFullPage()
                 },
                 onToggleToolbar: onToggleToolbar,
-                onToggleShowsFullURL: onToggleShowsFullURL
+                onToggleShowsFullURL: onToggleShowsFullURL,
+                onToggleBookmarksBar: onToggleBookmarksBar
             )
         }
         .onDisappear {
@@ -946,18 +976,10 @@ struct BrowserSiteToolbar: View {
         }
 
         if showsFullURL {
-            return tab.urlString
+            return BrowserURLDisplayFormatter.fullDisplayString(for: tab.urlString)
         }
 
-        guard
-            let url = URL(string: tab.urlString),
-            let host = url.host,
-            !host.isEmpty
-        else {
-            return BrowserURLDisplayFormatter.displayString(for: tab.urlString)
-        }
-
-        return host
+        return BrowserURLDisplayFormatter.displayString(for: tab.urlString)
     }
 
     private var currentHost: String? {
@@ -970,7 +992,7 @@ struct BrowserSiteToolbar: View {
             return nil
         }
 
-        return host
+        return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
     }
 
     private var pinnedExtensions: [BrowserExtension] {
@@ -989,7 +1011,7 @@ struct BrowserSiteToolbar: View {
             BrowserChromeControlButton(
                 systemImageName: "arrow.backward",
                 tooltipTitle: BrowserStrings.navigationBack,
-                tooltipShortcut: nil,
+                tooltipShortcut: goBackShortcut,
                 isEnabled: canGoBack,
                 pressEffect: .moveLeft,
                 action: onGoBack
@@ -998,7 +1020,7 @@ struct BrowserSiteToolbar: View {
             BrowserChromeControlButton(
                 systemImageName: "arrow.forward",
                 tooltipTitle: BrowserStrings.navigationForward,
-                tooltipShortcut: nil,
+                tooltipShortcut: goForwardShortcut,
                 isEnabled: canGoForward,
                 pressEffect: .moveRight,
                 action: onGoForward
@@ -1007,7 +1029,7 @@ struct BrowserSiteToolbar: View {
             BrowserChromeControlButton(
                 systemImageName: canStopLoading ? "xmark" : "arrow.clockwise",
                 tooltipTitle: canStopLoading ? BrowserStrings.navigationStopLoading : BrowserStrings.navigationRefresh,
-                tooltipShortcut: nil,
+                tooltipShortcut: canStopLoading ? nil : reloadShortcut,
                 isEnabled: canStopLoading || canReload,
                 pressEffect: canStopLoading ? .compress : .rotateClockwise,
                 action: canStopLoading ? onStopLoading : onReload
@@ -1070,8 +1092,10 @@ struct BrowserSiteToolbar: View {
             BrowserSiteURLContextMenuContent(
                 tab: tab,
                 copyLinkShortcut: copyLinkShortcut,
+                toggleBookmarksBarShortcut: toggleBookmarksBarShortcut,
                 isToolbarPresented: true,
                 showsFullURL: showsFullURL,
+                isBookmarksBarVisible: isBookmarksBarVisible,
                 onCopyURL: {
                     _ = onCopyURL()
                 },
@@ -1079,7 +1103,8 @@ struct BrowserSiteToolbar: View {
                     _ = onCaptureFullPage()
                 },
                 onToggleToolbar: onToggleToolbar,
-                onToggleShowsFullURL: onToggleShowsFullURL
+                onToggleShowsFullURL: onToggleShowsFullURL,
+                onToggleBookmarksBar: onToggleBookmarksBar
             )
         }
     }

@@ -618,8 +618,12 @@ private final class BrowserTrafficLightButton: NSButton {
             return nil
         }
 
-        image.isTemplate = false
-        imageCache[assetName] = image
-        return image
+        let resizedImage = BrowserImageThumbnailer.resizedImage(
+            image,
+            fitting: BrowserWindowControlsLayout.buttonSize
+        ) ?? image
+        resizedImage.isTemplate = false
+        imageCache[assetName] = resizedImage
+        return resizedImage
     }
 }

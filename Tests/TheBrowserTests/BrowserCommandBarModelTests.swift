@@ -364,6 +364,40 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 }
 
 @Test
+@MainActor func commandSuggestionRunsCommandHandlerInsteadOfSubmittingURL() async {
+    var performedCommandIDs = [BrowserCommandID]()
+    var submittedURLStrings = [String]()
+    var openedTabIDGroups = [[String]]()
+    let model = makeModel(
+        suggestionProvider: FakeSuggestionProvider(),
+        localSuggestionProvider: { _, _ in
+            [
+                BrowserCommandSuggestion(
+                    kind: .command,
+                    displayText: BrowserStrings.navigationRefresh,
+                    commandID: .reload,
+                    shortcut: BrowserKeyboardShortcut("r")
+                ),
+            ]
+        },
+        submitHandler: { submittedURLStrings.append($0) },
+        openTabHandler: { openedTabIDGroups.append($0) },
+        commandHandler: { performedCommandIDs.append($0) }
+    )
+
+    model.present()
+    model.query = "refresh"
+    await model.waitForPendingSuggestionLoad()
+    model.moveSelection(by: 2)
+    model.submitSelection()
+
+    #expect(performedCommandIDs == [.reload])
+    #expect(submittedURLStrings.isEmpty)
+    #expect(openedTabIDGroups.isEmpty)
+    #expect(!model.isPresented)
+}
+
+@Test
 @MainActor func arrowNavigationUpdatesSelectedSuggestionAndInlineSuffix() async {
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: ["привет": ["привет макет", "привет мир"]]
@@ -529,7 +563,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
     aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
     submitHandler: @escaping (String) -> Void = { _ in },
-    openTabHandler: @escaping ([String]) -> Void = { _ in }
+    openTabHandler: @escaping ([String]) -> Void = { _ in },
+    commandHandler: @escaping (BrowserCommandID) -> Void = { _ in }
 ) -> BrowserCommandBarModel {
     BrowserCommandBarModel(
         suggestionProvider: suggestionProvider,
@@ -538,7 +573,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
         remoteSuggestionsEnabledProvider: remoteSuggestionsEnabledProvider,
         aiSearchProviderProvider: aiSearchProviderProvider,
         submitHandler: submitHandler,
-        openTabHandler: openTabHandler
+        openTabHandler: openTabHandler,
+        commandHandler: commandHandler
     )
 }
 

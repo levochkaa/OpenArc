@@ -10,7 +10,9 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
         kind: Kind,
         displayText: String,
         detailText: String? = nil,
-        resolvedURLString: String,
+        resolvedURLString: String = "",
+        commandID: BrowserCommandID? = nil,
+        shortcut: BrowserKeyboardShortcut? = nil,
         tabID: String? = nil,
         tabIDs: [String] = []
     ) {
@@ -18,6 +20,8 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
         self.displayText = displayText
         self.detailText = detailText
         self.resolvedURLString = resolvedURLString
+        self.commandID = commandID
+        self.shortcut = shortcut
         self.tabIDs =
             if !tabIDs.isEmpty {
                 Self.normalizedTabIDs(tabIDs)
@@ -38,12 +42,15 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
         case search
         case googleSuggestion
         case aiSearch
+        case command
     }
 
     let kind: Kind
     let displayText: String
     var detailText: String?
     let resolvedURLString: String
+    let commandID: BrowserCommandID?
+    let shortcut: BrowserKeyboardShortcut?
     var tabIDs: [String]
 
     var tabID: String? {
@@ -51,7 +58,7 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     }
 
     var id: String {
-        "\(kind.rawValue)|\(displayText)|\(resolvedURLString)|\(tabIDs.joined(separator: ","))"
+        "\(kind.rawValue)|\(commandID?.rawValue ?? "")|\(displayText)|\(resolvedURLString)|\(tabIDs.joined(separator: ","))"
     }
 
     var systemImageName: String {
@@ -68,10 +75,16 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
             "magnifyingglass"
         case .aiSearch:
             "sparkles"
+        case .command:
+            commandID?.commandBarSystemImageName ?? "command"
         }
     }
 
     func inlineCompletionSuffix(relativeTo query: String) -> String? {
+        guard kind != .command else {
+            return nil
+        }
+
         guard
             !query.isEmpty,
             let matchedRange = displayText.range(
@@ -177,12 +190,14 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
         aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
         submitHandler: @escaping (String) -> Void,
-        openTabHandler: @escaping ([String]) -> Void = { _ in }
+        openTabHandler: @escaping ([String]) -> Void = { _ in },
+        commandHandler: @escaping (BrowserCommandID) -> Void = { _ in }
     ) {
         self.suggestionProvider = suggestionProvider
         self.navigationResolver = navigationResolver
         self.submitHandler = submitHandler
         self.openTabHandler = openTabHandler
+        self.commandHandler = commandHandler
         self.suggestionDebounceNanoseconds = suggestionDebounceNanoseconds
         self.localSuggestionProvider = localSuggestionProvider
         self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
@@ -229,7 +244,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             return nil
         }
 
-        guard selectedSuggestion.kind != .aiSearch else {
+        guard selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
             return nil
         }
 
@@ -250,7 +265,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             return false
         }
 
-        guard selectedSuggestion.kind != .aiSearch else {
+        guard selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
             return false
         }
 
@@ -306,12 +321,16 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             return
         }
 
-        if suggestion.kind == .openTab, !suggestion.tabIDs.isEmpty {
+        if suggestion.kind == .command, let commandID = suggestion.commandID {
+            dismiss()
+            commandHandler(commandID)
+        } else if suggestion.kind == .openTab, !suggestion.tabIDs.isEmpty {
             openTabHandler(suggestion.tabIDs)
+            dismiss()
         } else {
             submitHandler(suggestion.resolvedURLString)
+            dismiss()
         }
-        dismiss()
     }
 
     func submitSuggestion(id: String) {
@@ -329,6 +348,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     private let navigationResolver: BrowserNavigationResolver
     private let submitHandler: (String) -> Void
     private let openTabHandler: ([String]) -> Void
+    private let commandHandler: (BrowserCommandID) -> Void
     private let suggestionDebounceNanoseconds: UInt64
     private let localSuggestionProvider: (String, Int) -> [BrowserCommandSuggestion]
     private let remoteSuggestionsEnabledProvider: () -> Bool
@@ -530,6 +550,10 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     func duplicateKey(for suggestion: BrowserCommandSuggestion) -> String {
         if suggestion.kind == .openTab {
             return "open-tab|\(normalizedURLString(suggestion.resolvedURLString))"
+        }
+
+        if suggestion.kind == .command {
+            return "command|\(suggestion.commandID?.rawValue ?? suggestion.displayText.lowercased())"
         }
 
         return "url|\(normalizedURLString(suggestion.resolvedURLString))"

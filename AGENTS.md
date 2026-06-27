@@ -4,6 +4,7 @@
 - Prefer writing app UI and application code in `SwiftUI` whenever practical.
 - If `SwiftUI` is not a good fit, prefer plain `Swift`.
 - Use `Objective-C` / `Objective-C++` only where interaction with the browser engine, CEF, or low-level platform APIs requires it.
+- When resizing or thumbnailing raster images, use `BrowserImageThumbnailer` instead of ad hoc `NSImage.draw`/`NSImage(data:)` resizing. Prefer its ImageIO/`CGImageSource` data or URL thumbnail path for encoded images.
 - Always write tests with the new `Testing` framework, not `XCTest`, and migrate existing tests when modifying them.
 
 ## Build Verification

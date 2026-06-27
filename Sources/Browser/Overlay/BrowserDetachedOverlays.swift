@@ -145,6 +145,7 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
                 isCommandBarPresented: isCommandBarPresented,
                 isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
                 showsCurrentURLRow: showsCurrentURLRow,
+                sidebarWidth: sidebarWidth,
                 isOverlayPresentation: isOverlayPresentation,
                 showsOverlayBorder: showsOverlayBorder,
                 roundsWindowLeadingCorners: roundsWindowLeadingCorners,

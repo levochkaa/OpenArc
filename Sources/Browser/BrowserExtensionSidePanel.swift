@@ -9,6 +9,17 @@ struct BrowserExtensionSidePanel: Equatable {
     let title: String
     let urlString: String
     let iconData: Data?
+
+    var iconImage: NSImage? {
+        guard let iconData else {
+            return nil
+        }
+
+        return BrowserImageThumbnailer.image(
+            data: iconData,
+            maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize
+        )
+    }
 }
 
 // MARK: - BrowserExtensionSidePanelDriving

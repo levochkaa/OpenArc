@@ -2177,6 +2177,107 @@ import Testing
 }
 
 @Test
+@MainActor func commandBarSuggestsBrowserActionsWithCurrentShortcuts() async throws {
+    let driver = FakeBrowserTabDriver()
+    let shortcutStore = BrowserShortcutStore(userDefaults: isolatedUserDefaults())
+    let customReloadShortcut = BrowserKeyboardShortcut("r", modifiers: [.command, .option])
+    #expect(shortcutStore.setShortcut(customReloadShortcut, for: .reload))
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        suggestionProvider: FakeSuggestionProvider(),
+        shortcutStore: shortcutStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let selectedTabID = try #require(model.selectedTabID)
+    driver.emitNavigationStateChange(id: selectedTabID, canGoBack: true, canGoForward: true)
+
+    model.commandBarModel.present()
+    model.commandBarModel.query = "force refresh"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let forceRefreshSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .forceReload }
+    )
+    #expect(forceRefreshSuggestion.kind == .command)
+    #expect(forceRefreshSuggestion.displayText == BrowserStrings.menuForceRefresh)
+    #expect(forceRefreshSuggestion.shortcut == BrowserCommands.forceReload.shortcut)
+
+    model.commandBarModel.query = "alt cmd r"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let refreshShortcutSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .reload }
+    )
+    #expect(refreshShortcutSuggestion.displayText == BrowserStrings.navigationRefresh)
+    #expect(refreshShortcutSuggestion.shortcut == customReloadShortcut)
+
+    model.commandBarModel.query = "back"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let backSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .goBack }
+    )
+    #expect(backSuggestion.shortcut == BrowserCommands.goBack.shortcut)
+
+    model.commandBarModel.query = "forward"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let forwardSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .goForward }
+    )
+    #expect(forwardSuggestion.shortcut == BrowserCommands.goForward.shortcut)
+
+    model.commandBarModel.query = "bookmarks bar"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let bookmarksBarSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .toggleBookmarksBar }
+    )
+    #expect(bookmarksBarSuggestion.displayText == BrowserStrings.bookmarksHideBarAction)
+    #expect(bookmarksBarSuggestion.shortcut == BrowserCommands.toggleBookmarksBar.shortcut)
+
+    model.userPreferencesStore.bookmarksBarVisible = false
+    model.commandBarModel.query = "bookmarks bar"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let showBookmarksBarSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .toggleBookmarksBar }
+    )
+    #expect(showBookmarksBarSuggestion.displayText == BrowserStrings.settingsShowBookmarksBar)
+}
+
+@Test
+@MainActor func commandBarActionSelectionDispatchesCommandID() async throws {
+    let driver = FakeBrowserTabDriver()
+    var performedCommandIDs = [BrowserCommandID]()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        suggestionProvider: FakeSuggestionProvider(),
+        commandHandler: { performedCommandIDs.append($0) }
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.commandBarModel.present()
+    model.commandBarModel.query = "force refresh"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let forceRefreshSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .forceReload }
+    )
+    model.commandBarModel.submitSuggestion(id: forceRefreshSuggestion.id)
+
+    #expect(performedCommandIDs == [.forceReload])
+    #expect(!model.commandBarModel.isPresented)
+}
+
+@Test
 @MainActor func commandBarOpeningPinnedFolderTabSelectsExistingTab() async throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
@@ -2240,7 +2341,8 @@ import Testing
     extensionManager: (any BrowserExtensionManaging)? = nil,
     windowMode: BrowserWindowMode = .normal,
     dateProvider: @escaping () -> Date = Date.init,
-    spaceIDProvider: @escaping () -> String = { UUID().uuidString }
+    spaceIDProvider: @escaping () -> String = { UUID().uuidString },
+    commandHandler: @escaping (BrowserCommandID) -> Void = { _ in }
 ) -> BrowserChromeModel {
     let userDefaults = isolatedUserDefaults()
     return BrowserChromeModel(
@@ -2254,6 +2356,7 @@ import Testing
         windowMode: windowMode,
         dateProvider: dateProvider,
         spaceIDProvider: spaceIDProvider,
+        commandHandler: commandHandler,
         windowTitleHandler: { _ in },
         allTabsClosedHandler: {}
     )

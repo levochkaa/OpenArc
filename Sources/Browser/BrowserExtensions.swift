@@ -16,7 +16,10 @@ struct BrowserExtension: Identifiable, Equatable {
             return nil
         }
 
-        return NSImage(data: iconData)
+        return BrowserImageThumbnailer.image(
+            data: iconData,
+            maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize
+        )
     }
 }
 

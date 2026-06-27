@@ -51,6 +51,15 @@ void BrowserCloseAllBrowsers(void) {
   shared::ClientManager::GetInstance()->CloseAllBrowsers(false);
 }
 
+void BrowserPrepareApplicationForCefShutdown(void) {
+  if (gController == nil) {
+    return;
+  }
+
+  [gController prepareForCefShutdown];
+  gController = nil;
+}
+
 BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
                                      NSString** framework_path,
                                      NSString** main_bundle_path,

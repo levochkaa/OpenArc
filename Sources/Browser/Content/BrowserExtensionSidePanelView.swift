@@ -83,7 +83,7 @@ struct BrowserExtensionSidePanelView: View {
     }
 
     @ViewBuilder var icon: some View {
-        if let iconData = sidePanel.iconData, let image = NSImage(data: iconData) {
+        if let image = sidePanel.iconImage {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()

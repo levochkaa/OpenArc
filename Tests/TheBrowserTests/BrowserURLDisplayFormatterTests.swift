@@ -8,6 +8,52 @@ import Testing
     #expect(BrowserURLDisplayFormatter.displayString(for: "https://www.youtube.com/feed") == "youtube.com")
 }
 
+@Test func urlFullDisplayFormatterStripsLeadingWWWFromHostOnly() {
+    #expect(
+        BrowserURLDisplayFormatter.fullDisplayString(
+            for: "https://www.youtube.com/feed?list=latest#top"
+        ) == "https://youtube.com/feed?list=latest#top"
+    )
+}
+
+@Test func urlFullDisplayFormatterPreservesImportantSubdomains() {
+    #expect(
+        BrowserURLDisplayFormatter.fullDisplayString(
+            for: "https://www1.youtube.com/feed"
+        ) == "https://www1.youtube.com/feed"
+    )
+}
+
+@Test func urlHostDisplayFormatterStripsLeadingWWWOnly() {
+    #expect(BrowserURLDisplayFormatter.hostDisplayString(forHost: "www.youtube.com") == "youtube.com")
+    #expect(BrowserURLDisplayFormatter.hostDisplayString(forHost: "WWW.YouTube.com") == "YouTube.com")
+    #expect(BrowserURLDisplayFormatter.hostDisplayString(forHost: "www1.youtube.com") == "www1.youtube.com")
+}
+
+@Test func urlDisplayFormatterStripsLeadingWWWFromFallbackTabTitle() {
+    let tab = BrowserChromeModel.Tab(
+        id: "tab",
+        syncID: "sync",
+        spaceID: "space",
+        title: "",
+        urlString: "https://www.youtube.com/feed"
+    )
+
+    #expect(tab.pageTitle == "youtube.com")
+}
+
+@Test func urlDisplayFormatterStripsLeadingWWWFromFallbackBookmarkTitle() {
+    let item = BrowserBookmarkItem(
+        id: "bookmark",
+        kind: .bookmark,
+        title: "",
+        urlString: "https://www.youtube.com/feed",
+        children: []
+    )
+
+    #expect(item.displayTitle == "youtube.com")
+}
+
 @Test func urlDisplayFormatterKeepsNonDefaultHTTPSPort() {
     #expect(BrowserURLDisplayFormatter.displayString(for: "https://example.com:8443/path") == "example.com:8443")
 }

@@ -20,10 +20,7 @@ enum BrowserURLDisplayFormatter {
             return fallbackDisplayString(for: trimmedURLString)
         }
 
-        var displayHost = host
-        if displayHost.lowercased().hasPrefix("www.") {
-            displayHost.removeFirst(4)
-        }
+        let displayHost = hostDisplayString(forHost: host)
 
         if let port = components.port, shouldDisplayPort(port, for: scheme, host: displayHost) {
             let displayHostWithPort = displayHostForPort(displayHost)
@@ -33,10 +30,45 @@ enum BrowserURLDisplayFormatter {
         return displayHost
     }
 
+    static func fullDisplayString(for urlString: String) -> String {
+        let trimmedURLString = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURLString.isEmpty else {
+            return BrowserStrings.newTabTitle
+        }
+
+        guard
+            var components = URLComponents(string: trimmedURLString),
+            let host = components.host,
+            !host.isEmpty
+        else {
+            return fallbackDisplayString(for: trimmedURLString)
+        }
+
+        let displayHost = hostDisplayString(forHost: host)
+        guard displayHost != host else {
+            return trimmedURLString
+        }
+
+        components.host = displayHost
+        return components.url?.absoluteString ?? trimmedURLString
+    }
+
+    static func hostDisplayString(forHost host: String) -> String {
+        guard host.count > 4, host.lowercased().hasPrefix("www.") else {
+            return host
+        }
+
+        return String(host.dropFirst(4))
+    }
+
     // MARK: Private
 
     private static func fallbackDisplayString(for urlString: String) -> String {
-        urlString
+        guard urlString.count > 4, urlString.lowercased().hasPrefix("www.") else {
+            return urlString
+        }
+
+        return String(urlString.dropFirst(4))
     }
 
     private static func displayHostForPort(_ host: String) -> String {

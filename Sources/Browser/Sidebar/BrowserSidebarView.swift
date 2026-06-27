@@ -15,6 +15,7 @@ struct BrowserSidebarView: View {
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
     let showsCurrentURLRow: Bool
+    let sidebarWidth: CGFloat
     let isSidebarResizing: Bool
     let toggleSidebarTooltipTitle: String
     let chromeBackgroundMode: BrowserChromeBackgroundMode
@@ -76,7 +77,7 @@ struct BrowserSidebarView: View {
         let visibleSnapshot = displayedSnapshot
         let renderedSidebarSnapshot = renderedSnapshot(for: visibleSnapshot)
         let appTabs = renderedSidebarSnapshot.appTabs
-        let sidebarContentWidth = max(model.sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
+        let sidebarContentWidth = max(sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
 
         VStack(spacing: 0) {
             VStack(spacing: BrowserChromeLayout.sidebarSectionSpacing) {
@@ -214,11 +215,13 @@ struct BrowserSidebarView: View {
                     extensions: extensions,
                     pinnedExtensionIDs: model.pinnedExtensionIDs,
                     copyLinkShortcut: model.shortcutStore.shortcut(for: .copyLink),
+                    toggleBookmarksBarShortcut: model.shortcutStore.shortcut(for: .toggleBookmarksBar),
                     isSearchPresented: isCurrentPageCommandBarPresented,
                     isSidebarResizing: isSidebarResizing,
                     chromeBackgroundMode: chromeBackgroundMode,
                     isSiteToolbarPresented: model.userPreferencesStore.siteURLToolbarEnabled,
                     siteToolbarShowsFullURL: model.userPreferencesStore.siteToolbarShowsFullURL,
+                    isBookmarksBarVisible: model.userPreferencesStore.bookmarksBarVisible,
                     onFrameChange: onURLRowFrameChange,
                     onOpenSearch: model.presentCurrentPageCommandBar,
                     onCopyURL: {
@@ -232,6 +235,11 @@ struct BrowserSidebarView: View {
                     },
                     onToggleSiteToolbarFullURL: {
                         model.userPreferencesStore.siteToolbarShowsFullURL.toggle()
+                    },
+                    onToggleBookmarksBar: {
+                        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
+                            model.userPreferencesStore.bookmarksBarVisible.toggle()
+                        }
                     },
                     onRefreshExtensions: model.refreshBrowserExtensions,
                     onOpenExtensionsManager: model.openExtensionsManager,
@@ -453,96 +461,111 @@ struct BrowserSidebarView: View {
             }
 
             ZStack(alignment: .top) {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: BrowserChromeLayout.sidebarListSpacing) {
-                        if !isPinnedSectionCollapsed {
-                            if spacePinnedTabs.isEmpty {
-                                if draggedTabID != nil {
-                                    emptySectionDropZone(for: .spacePinned, spaceID: space.id, height: 0)
+                GeometryReader { scrollProxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        ZStack(alignment: .topLeading) {
+                            BrowserWindowDragRegion(isEnabled: !isDraggingSidebarItem)
+                                .frame(
+                                    width: max(scrollProxy.size.width, 0),
+                                    height: max(scrollProxy.size.height, 0)
+                                )
+                                .contextMenu {
+                                    spaceContextMenuContent(for: space, in: renderedSidebarSnapshot)
                                 }
-                            } else {
-                                ForEach(pinnedRows) { row in
-                                    switch row {
-                                    case .folder(let folderRow):
-                                        pinnedFolderRow(for: folderRow, spaceID: space.id)
-                                    case .tab(let tabRow):
-                                        sidebarRow(for: tabRow, in: .spacePinned, spaceID: space.id)
+
+                            LazyVStack(alignment: .leading, spacing: BrowserChromeLayout.sidebarListSpacing) {
+                                if !isPinnedSectionCollapsed {
+                                    if spacePinnedTabs.isEmpty {
+                                        if draggedTabID != nil {
+                                            emptySectionDropZone(for: .spacePinned, spaceID: space.id, height: 0)
+                                        }
+                                    } else {
+                                        ForEach(pinnedRows) { row in
+                                            switch row {
+                                            case .folder(let folderRow):
+                                                pinnedFolderRow(for: folderRow, spaceID: space.id)
+                                            case .tab(let tabRow):
+                                                sidebarRow(for: tabRow, in: .spacePinned, spaceID: space.id)
+                                            }
+                                        }
                                     }
+                                }
+
+                                if !spacePinnedTabs.isEmpty {
+                                    BrowserSidebarTemporaryTabsDivider(
+                                        clearTemporaryTabsDescriptor: model.shortcutStore
+                                            .descriptor(for: .clearTemporaryTabs),
+                                        chromeBackgroundMode: chromeBackgroundMode,
+                                        showsClearButton: isSidebarHovered
+                                            && !temporaryTabs.isEmpty
+                                            && renderedSidebarSnapshot.selectedSpaceID == space.id,
+                                        isClearButtonHovered: isClearButtonHovered,
+                                        onHoverClearButton: { hovering in
+                                            guard !isSidebarResizing else {
+                                                return
+                                            }
+
+                                            isClearButtonHovered = hovering
+                                        },
+                                        onClear: {
+                                            clearTabDragState()
+                                            dismissRenamingIfNeeded()
+                                            withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
+                                                model.clearTemporaryTabs()
+                                            }
+                                        }
+                                    )
+                                }
+
+                                if model.isIncognito {
+                                    BrowserSidebarIncognitoTabsLabel()
+                                }
+
+                                BrowserSidebarNewTabButton(
+                                    shortcutStore: model.shortcutStore,
+                                    isCommandBarPresented: isCommandBarPresented,
+                                    isSidebarResizing: isSidebarResizing,
+                                    onToggleCommandBar: toggleCommandBar
+                                )
+
+                                if temporaryTabs.isEmpty, draggedTabID != nil {
+                                    emptySectionDropZone(for: .temporary, spaceID: space.id, height: 0)
+                                }
+
+                                ForEach(Array(temporaryTabs.enumerated()), id: \.element.id) { index, tab in
+                                    sidebarRow(for: tab, in: .temporary, sectionIndex: index, spaceID: space.id)
                                 }
                             }
-                        }
-
-                        if !spacePinnedTabs.isEmpty {
-                            BrowserSidebarTemporaryTabsDivider(
-                                clearTemporaryTabsDescriptor: model.shortcutStore.descriptor(for: .clearTemporaryTabs),
-                                chromeBackgroundMode: chromeBackgroundMode,
-                                showsClearButton: isSidebarHovered
-                                    && !temporaryTabs.isEmpty
-                                    && renderedSidebarSnapshot.selectedSpaceID == space.id,
-                                isClearButtonHovered: isClearButtonHovered,
-                                onHoverClearButton: { hovering in
-                                    guard !isSidebarResizing else {
-                                        return
-                                    }
-
-                                    isClearButtonHovered = hovering
-                                },
-                                onClear: {
-                                    clearTabDragState()
-                                    dismissRenamingIfNeeded()
-                                    withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
-                                        model.clearTemporaryTabs()
-                                    }
-                                }
+                            .animation(
+                                BrowserChromeLayout.sidebarTabDropListAnimation,
+                                value: isPinnedSectionCollapsed
                             )
+                            .animation(
+                                BrowserChromeLayout.sidebarTabDropListAnimation,
+                                value: pinnedRows.map(\.id)
+                            )
+                            .animation(
+                                BrowserChromeLayout.sidebarTabDropListAnimation,
+                                value: temporaryTabs.map(\.id)
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 1)
                         }
-
-                        if model.isIncognito {
-                            BrowserSidebarIncognitoTabsLabel()
-                        }
-
-                        BrowserSidebarNewTabButton(
-                            shortcutStore: model.shortcutStore,
-                            isCommandBarPresented: isCommandBarPresented,
-                            isSidebarResizing: isSidebarResizing,
-                            onToggleCommandBar: toggleCommandBar
-                        )
-
-                        if temporaryTabs.isEmpty, draggedTabID != nil {
-                            emptySectionDropZone(for: .temporary, spaceID: space.id, height: 0)
-                        }
-
-                        ForEach(Array(temporaryTabs.enumerated()), id: \.element.id) { index, tab in
-                            sidebarRow(for: tab, in: .temporary, sectionIndex: index, spaceID: space.id)
-                        }
+                        .frame(minHeight: scrollProxy.size.height, alignment: .topLeading)
                     }
-                    .animation(
-                        BrowserChromeLayout.sidebarTabDropListAnimation,
-                        value: isPinnedSectionCollapsed
-                    )
-                    .animation(
-                        BrowserChromeLayout.sidebarTabDropListAnimation,
-                        value: pinnedRows.map(\.id)
-                    )
-                    .animation(
-                        BrowserChromeLayout.sidebarTabDropListAnimation,
-                        value: temporaryTabs.map(\.id)
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 1)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .scrollDisabled(isSpacePagerDragging)
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y > BrowserChromeLayout.sidebarTopChromeDividerScrollThreshold
-                } action: { _, shouldShow in
-                    updateTopChromeDividerVisibility(shouldShow, forSpaceID: space.id)
-                }
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.visibleRect.maxY < geometry.contentSize.height - BrowserChromeLayout
-                        .sidebarTopChromeDividerScrollThreshold
-                } action: { _, shouldShow in
-                    updateBottomChromeDividerVisibility(shouldShow, forSpaceID: space.id)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .scrollDisabled(isSpacePagerDragging)
+                    .onScrollGeometryChange(for: Bool.self) { geometry in
+                        geometry.contentOffset.y > BrowserChromeLayout.sidebarTopChromeDividerScrollThreshold
+                    } action: { _, shouldShow in
+                        updateTopChromeDividerVisibility(shouldShow, forSpaceID: space.id)
+                    }
+                    .onScrollGeometryChange(for: Bool.self) { geometry in
+                        geometry.visibleRect.maxY < geometry.contentSize.height - BrowserChromeLayout
+                            .sidebarTopChromeDividerScrollThreshold
+                    } action: { _, shouldShow in
+                        updateBottomChromeDividerVisibility(shouldShow, forSpaceID: space.id)
+                    }
                 }
 
                 BrowserSidebarTopChromeDivider(
@@ -553,24 +576,31 @@ struct BrowserSidebarView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contextMenu {
-            if model.supportsSpaces {
-                BrowserSpaceContextMenuContent(
-                    space: space,
-                    canDelete: renderedSidebarSnapshot.spaces.count > 1,
-                    onBeginRename: {
-                        clearPinnedTabSelection()
-                        beginRenamingSpace(id: space.id)
-                    },
-                    onChangeIcon: { systemImageName in
-                        model.setIcon(systemImageName, forSpaceID: space.id)
-                    },
-                    onDelete: {
-                        dismissRenamingIfNeeded()
-                        clearPinnedTabSelection()
-                        model.deleteSpace(id: space.id)
-                    }
-                )
-            }
+            spaceContextMenuContent(for: space, in: renderedSidebarSnapshot)
+        }
+    }
+
+    @ViewBuilder private func spaceContextMenuContent(
+        for space: BrowserChromeModel.Space,
+        in renderedSidebarSnapshot: BrowserSidebarSnapshot
+    ) -> some View {
+        if model.supportsSpaces {
+            BrowserSpaceContextMenuContent(
+                space: space,
+                canDelete: renderedSidebarSnapshot.spaces.count > 1,
+                onBeginRename: {
+                    clearPinnedTabSelection()
+                    beginRenamingSpace(id: space.id)
+                },
+                onChangeIcon: { systemImageName in
+                    model.setIcon(systemImageName, forSpaceID: space.id)
+                },
+                onDelete: {
+                    dismissRenamingIfNeeded()
+                    clearPinnedTabSelection()
+                    model.deleteSpace(id: space.id)
+                }
+            )
         }
     }
 
@@ -1620,7 +1650,7 @@ struct BrowserSidebarView: View {
             return frame
         }
 
-        let fallbackWidth = max(model.sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
+        let fallbackWidth = max(sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
         return CGRect(
             x: 0,
             y: startLocation.y - BrowserChromeLayout.sidebarRowHeight / 2,
@@ -1651,7 +1681,7 @@ struct BrowserSidebarView: View {
         }
 
         return CGSize(
-            width: max(model.sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0),
+            width: max(sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0),
             height: BrowserChromeLayout.sidebarRowHeight
         )
     }
@@ -1711,7 +1741,7 @@ struct BrowserSidebarView: View {
         )
         .frames(
             for: proposedFrameCount,
-            availableWidth: max(model.sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
+            availableWidth: max(sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
         )
         .dropFirst(min(max(target?.sectionIndex ?? 0, 0), max(proposedFrameCount - 1, 0)))
         .first?
@@ -2041,6 +2071,7 @@ extension BrowserSidebarView: @MainActor Equatable {
             && lhs.isCommandBarPresented == rhs.isCommandBarPresented
             && lhs.isCurrentPageCommandBarPresented == rhs.isCurrentPageCommandBarPresented
             && lhs.showsCurrentURLRow == rhs.showsCurrentURLRow
+            && lhs.sidebarWidth == rhs.sidebarWidth
             && lhs.isSidebarResizing == rhs.isSidebarResizing
             && lhs.chromeBackgroundMode == rhs.chromeBackgroundMode
     }

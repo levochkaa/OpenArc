@@ -9,6 +9,7 @@ void BrowserCreateApplication(void);
 void BrowserContextInitialized(void);
 int BrowserHasOpenBrowsers(void);
 void BrowserCloseAllBrowsers(void);
+void BrowserPrepareApplicationForCefShutdown(void);
 
 #ifdef __OBJC__
 

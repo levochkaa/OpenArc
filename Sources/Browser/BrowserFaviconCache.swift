@@ -86,7 +86,10 @@ import Foundation
 
         guard
             let data,
-            let image = NSImage(data: data)
+            let image = BrowserImageThumbnailer.image(
+                data: data,
+                maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize
+            )
         else {
             failedURLs.insert(url)
             return

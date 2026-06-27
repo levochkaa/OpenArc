@@ -10,6 +10,7 @@ struct BrowserBookmarksBar: View {
     let selectedTab: BrowserChromeModel.Tab?
     let isSelectedTabBookmarked: Bool
     let toggleBookmarkShortcut: BrowserKeyboardShortcut
+    let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
     let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onOpenBookmark: (String) -> Void
     let onOpenBookmarks: ([String]) -> Void
@@ -37,29 +38,42 @@ struct BrowserBookmarksBar: View {
 
     var body: some View {
         HStack(spacing: BrowserChromeLayout.bookmarksBarControlSpacing) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: BrowserChromeLayout.bookmarksBarItemSpacing) {
-                    ForEach(items) { item in
-                        BrowserBookmarksBarItem(
-                            item: item,
-                            folderDestinations: folderDestinations,
-                            isRootItem: rootItemIDs.contains(item.id),
-                            onOpenBookmark: onOpenBookmark,
-                            onOpenBookmarks: onOpenBookmarks,
-                            onRenameBookmark: onRenameBookmark,
-                            onEditBookmarkAddress: onEditBookmarkAddress,
-                            onMoveBookmark: onMoveBookmark,
-                            onCreateFolderAndMoveBookmark: onCreateFolderAndMoveBookmark,
-                            onDeleteBookmark: onDeleteBookmark,
-                            onManageBookmarks: onManageBookmarks
-                        )
+            GeometryReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    ZStack(alignment: .leading) {
+                        BrowserWindowDragRegion()
+                            .frame(
+                                width: max(proxy.size.width, 0),
+                                height: BrowserChromeLayout.bookmarksBarHeight
+                            )
+                            .contextMenu {
+                                barContextMenu
+                            }
+
+                        HStack(spacing: BrowserChromeLayout.bookmarksBarItemSpacing) {
+                            ForEach(items) { item in
+                                BrowserBookmarksBarItem(
+                                    item: item,
+                                    folderDestinations: folderDestinations,
+                                    isRootItem: rootItemIDs.contains(item.id),
+                                    onOpenBookmark: onOpenBookmark,
+                                    onOpenBookmarks: onOpenBookmarks,
+                                    onRenameBookmark: onRenameBookmark,
+                                    onEditBookmarkAddress: onEditBookmarkAddress,
+                                    onMoveBookmark: onMoveBookmark,
+                                    onCreateFolderAndMoveBookmark: onCreateFolderAndMoveBookmark,
+                                    onDeleteBookmark: onDeleteBookmark,
+                                    onManageBookmarks: onManageBookmarks
+                                )
+                            }
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, BrowserChromeLayout.bookmarksBarHorizontalPadding)
                     }
-                }
-                .padding(.horizontal, BrowserChromeLayout.bookmarksBarHorizontalPadding)
-                .background {
-                    BrowserWindowDragRegion()
+                    .frame(minWidth: proxy.size.width, alignment: .leading)
                 }
             }
+            .frame(height: BrowserChromeLayout.bookmarksBarHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
 
@@ -80,12 +94,7 @@ struct BrowserBookmarksBar: View {
         }
         .frame(height: BrowserChromeLayout.bookmarksBarHeight)
         .contextMenu {
-            Button(BrowserStrings.bookmarksNewFolderAction) {
-                promptAndCreateRootFolder()
-            }
-            Button(BrowserStrings.bookmarksManageAction, action: onManageBookmarks)
-            Divider()
-            Button(BrowserStrings.bookmarksHideBarAction, action: onHideBookmarksBar)
+            barContextMenu
         }
         .background {
             ZStack {
@@ -95,6 +104,7 @@ struct BrowserBookmarksBar: View {
             }
         }
         .clipShape(barShape)
+        .browserWindowDragGesture()
     }
 
     // MARK: Private
@@ -109,6 +119,16 @@ struct BrowserBookmarksBar: View {
 
     private var barShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: BrowserChromeLayout.bookmarksBarCornerRadius, style: .continuous)
+    }
+
+    @ViewBuilder private var barContextMenu: some View {
+        Button(BrowserStrings.bookmarksNewFolderAction) {
+            promptAndCreateRootFolder()
+        }
+        Button(BrowserStrings.bookmarksManageAction, action: onManageBookmarks)
+        Divider()
+        Button(BrowserStrings.bookmarksHideBarAction, action: onHideBookmarksBar)
+            .browserKeyboardShortcut(toggleBookmarksBarShortcut)
     }
 
     private func promptAndCreateRootFolder() {
@@ -194,6 +214,9 @@ private struct BrowserBookmarksBarItem: View {
         .onHover { hovering in
             isHovered = hovering
         }
+        .onDisappear {
+            isHovered = false
+        }
         .task(id: item.faviconURL) {
             await faviconCache.loadImageIfNeeded(from: item.faviconURL)
         }
@@ -208,13 +231,34 @@ private struct BrowserBookmarksBarItem: View {
                 BrowserBookmarksMenuItem(item: child, onOpenBookmark: onOpenBookmark)
             }
         } label: {
-            labelContent(systemImageName: "folder")
+            labelContent(
+                systemImageName: "folder",
+                showsHoverBackground: false,
+                appliesItemChrome: false
+            )
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .buttonStyle(BrowserSidebarPressButtonStyle())
+        .padding(.horizontal, BrowserChromeLayout.bookmarksBarItemHorizontalPadding)
+        .frame(
+            maxWidth: BrowserChromeLayout.bookmarksBarItemMaximumWidth,
+            minHeight: BrowserChromeLayout.bookmarksBarItemHeight,
+            maxHeight: BrowserChromeLayout.bookmarksBarItemHeight,
+            alignment: .leading
+        )
+        .background {
+            RoundedRectangle(cornerRadius: BrowserChromeLayout.bookmarksBarItemCornerRadius, style: .continuous)
+                .fill(isHovered ? BrowserChromePalette.rowHover : .clear)
+        }
+        .contentShape(
+            RoundedRectangle(cornerRadius: BrowserChromeLayout.bookmarksBarItemCornerRadius, style: .continuous)
+        )
         .onHover { hovering in
             isHovered = hovering
+        }
+        .onDisappear {
+            isHovered = false
         }
         .contextMenu {
             folderContextMenu
@@ -272,7 +316,11 @@ private struct BrowserBookmarksBarItem: View {
         }
     }
 
-    func labelContent(systemImageName: String) -> some View {
+    func labelContent(
+        systemImageName: String,
+        showsHoverBackground: Bool = true,
+        appliesItemChrome: Bool = true
+    ) -> some View {
         HStack(spacing: BrowserChromeLayout.bookmarksBarLabelSpacing) {
             if let cachedFavicon {
                 Image(nsImage: cachedFavicon)
@@ -298,16 +346,18 @@ private struct BrowserBookmarksBarItem: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .padding(.horizontal, BrowserChromeLayout.bookmarksBarItemHorizontalPadding)
+        .padding(.horizontal, appliesItemChrome ? BrowserChromeLayout.bookmarksBarItemHorizontalPadding : 0)
         .frame(
-            maxWidth: BrowserChromeLayout.bookmarksBarItemMaximumWidth,
-            minHeight: BrowserChromeLayout.bookmarksBarItemHeight,
-            maxHeight: BrowserChromeLayout.bookmarksBarItemHeight,
+            maxWidth: appliesItemChrome ? BrowserChromeLayout.bookmarksBarItemMaximumWidth : nil,
+            minHeight: appliesItemChrome ? BrowserChromeLayout.bookmarksBarItemHeight : nil,
+            maxHeight: appliesItemChrome ? BrowserChromeLayout.bookmarksBarItemHeight : nil,
             alignment: .leading
         )
         .background {
-            RoundedRectangle(cornerRadius: BrowserChromeLayout.bookmarksBarItemCornerRadius, style: .continuous)
-                .fill(isHovered ? BrowserChromePalette.rowHover : .clear)
+            if showsHoverBackground {
+                RoundedRectangle(cornerRadius: BrowserChromeLayout.bookmarksBarItemCornerRadius, style: .continuous)
+                    .fill(isHovered ? BrowserChromePalette.rowHover : .clear)
+            }
         }
         .contentShape(
             RoundedRectangle(cornerRadius: BrowserChromeLayout.bookmarksBarItemCornerRadius, style: .continuous)
@@ -461,6 +511,12 @@ private struct BrowserBookmarksMenuItem: View {
         faviconCache.image(for: item.faviconURL)
     }
 
+    var menuFavicon: NSImage? {
+        cachedFavicon.flatMap {
+            BrowserImageThumbnailer.resizedImage($0, fitting: BrowserChromeLayout.bookmarksFolderMenuSiteIconSize)
+        }
+    }
+
     var body: some View {
         menuContent
             .task(id: item.faviconURL) {
@@ -497,10 +553,8 @@ private struct BrowserBookmarksMenuItem: View {
                 Label {
                     Text(item.displayTitle)
                 } icon: {
-                    if let cachedFavicon {
-                        Image(nsImage: cachedFavicon)
-                            .resizable()
-                            .scaledToFit()
+                    if let menuFavicon {
+                        Image(nsImage: menuFavicon)
                             .frame(
                                 width: BrowserChromeLayout.bookmarksFolderMenuSiteIconSize,
                                 height: BrowserChromeLayout.bookmarksFolderMenuSiteIconSize

@@ -71,11 +71,20 @@ NSString *LocalizedBrowserString(NSString *key) {
   return [[NSBundle mainBundle] localizedStringForKey:key value:nil table:nil];
 }
 
+NSString *DisplayHostForHost(NSString *host) {
+  if (host.length > 4 &&
+      [[host substringToIndex:4] caseInsensitiveCompare:@"www."] ==
+          NSOrderedSame) {
+    return [host substringFromIndex:4];
+  }
+  return host;
+}
+
 NSString *DefaultTitleForURLString(NSString *urlString) {
   NSURL *url = [NSURL URLWithString:urlString];
   NSString *host = url.host;
   if (host.length > 0) {
-    return host;
+    return DisplayHostForHost(host);
   }
   return LocalizedBrowserString(@"browser.tab.new");
 }

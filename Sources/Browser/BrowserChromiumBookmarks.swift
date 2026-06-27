@@ -730,7 +730,14 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
             return trimmedTitle
         }
 
-        return URL(string: fallbackURLString)?.host ?? fallbackURLString
+        guard
+            let host = URL(string: fallbackURLString)?.host,
+            !host.isEmpty
+        else {
+            return fallbackURLString
+        }
+
+        return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
     }
 
     private func sanitizedFolderTitle(_ title: String) -> String {

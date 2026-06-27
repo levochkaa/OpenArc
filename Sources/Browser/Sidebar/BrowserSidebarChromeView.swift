@@ -12,6 +12,7 @@ struct BrowserSidebarChromeView: View {
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
     let showsCurrentURLRow: Bool
+    let sidebarWidth: CGFloat
     let isOverlayPresentation: Bool
     let showsOverlayBorder: Bool
     var roundsWindowLeadingCorners = false
@@ -84,6 +85,7 @@ struct BrowserSidebarChromeView: View {
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
             showsCurrentURLRow: showsCurrentURLRow,
+            sidebarWidth: sidebarWidth,
             isSidebarResizing: isSidebarResizing,
             toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
             chromeBackgroundMode: chromeBackgroundMode,
@@ -108,6 +110,7 @@ struct BrowserSidebarContainerView: View {
     let isCommandBarPresented: Bool
     let isCurrentPageCommandBarPresented: Bool
     let showsCurrentURLRow: Bool
+    let sidebarWidth: CGFloat
     let isSidebarResizing: Bool
     let toggleSidebarTooltipTitle: String
     let chromeBackgroundMode: BrowserChromeBackgroundMode
@@ -124,6 +127,7 @@ struct BrowserSidebarContainerView: View {
             isCommandBarPresented: isCommandBarPresented,
             isCurrentPageCommandBarPresented: isCurrentPageCommandBarPresented,
             showsCurrentURLRow: showsCurrentURLRow,
+            sidebarWidth: sidebarWidth,
             isSidebarResizing: isSidebarResizing,
             toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
             chromeBackgroundMode: chromeBackgroundMode,

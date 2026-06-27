@@ -74,7 +74,7 @@ struct BrowserBookmarkItem: Identifiable, Equatable {
             return BrowserStrings.newTabTitle
         }
 
-        return host
+        return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
     }
 
     var faviconURL: URL? {

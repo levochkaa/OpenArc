@@ -472,6 +472,10 @@ struct BrowserCommandSuggestionRow: View {
                 }
 
                 Spacer(minLength: 0)
+
+                if let shortcut = suggestion.shortcut {
+                    BrowserCommandSuggestionShortcutBadge(shortcut: shortcut)
+                }
             }
             .padding(.horizontal, BrowserChromeLayout.commandBarRowHorizontalPadding)
             .padding(.vertical, BrowserChromeLayout.commandBarRowVerticalPadding)
@@ -504,6 +508,27 @@ struct BrowserCommandSuggestionRow: View {
                 .font(.system(size: BrowserChromeLayout.commandBarSymbolSize, weight: .semibold))
                 .foregroundStyle(BrowserChromePalette.primaryText)
         }
+    }
+}
+
+// MARK: - BrowserCommandSuggestionShortcutBadge
+
+struct BrowserCommandSuggestionShortcutBadge: View {
+    let shortcut: BrowserKeyboardShortcut
+
+    var body: some View {
+        Text(shortcut.displayText)
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(BrowserChromePalette.secondaryText)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(badgeBackground)
+    }
+
+    var badgeBackground: some View {
+        Capsule(style: .continuous)
+            .fill(BrowserChromePalette.commandBarPanelBorder.opacity(0.55))
     }
 }
 
