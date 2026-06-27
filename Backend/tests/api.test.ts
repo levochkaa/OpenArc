@@ -11,6 +11,25 @@ process.env.JWT_AUDIENCE ??= "thebrowser-test-clients";
 process.env.THEBROWSER_PUBLIC_BASE_URL ??= "https://updates.thebrowser.test";
 
 const { buildApp } = await import("../src/app.js");
+const { UpdatesService } = await import("../src/updates.service.js");
+
+describe("updates service", () => {
+  const updates = new UpdatesService();
+
+  it("preserves normal filenames in content disposition", () => {
+    assert.equal(
+      updates.contentDispositionForAsset("TheBrowser-1.2.3.dmg"),
+      'attachment; filename="TheBrowser-1.2.3.dmg"'
+    );
+  });
+
+  it("removes header injection characters from content disposition filenames", () => {
+    const header = updates.contentDispositionForAsset('TheBrowser\r\nX-Injected: yes "Beta".dmg');
+
+    assert.equal(header, 'attachment; filename="TheBrowserX-Injected: yes Beta.dmg"');
+    assert.doesNotMatch(header, /[\r\n]/);
+  });
+});
 
 describe("sync API", () => {
   let app: INestApplication;

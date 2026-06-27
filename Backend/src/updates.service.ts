@@ -97,7 +97,7 @@ export class UpdatesService {
   }
 
   contentDispositionForAsset(assetName: string): string {
-    return `attachment; filename="${assetName.replaceAll('"', "")}"`;
+    return `attachment; filename="${assetName.replace(/["\r\n]/g, "")}"`;
   }
 
   private async downloadAsset(asset: GitHubReleaseAsset): Promise<DownloadResponse> {
