@@ -36,6 +36,7 @@ const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
   year: "numeric",
 });
+const ancillaryAssetNamePattern = /(^|[.\-_\s])(blockmap|checksum|checksums|debug|dsym|manifest|metadata|sha256|sha512|signature|symbols?)([.\-_\s]|$)/i;
 
 const focusCards = [
   {
@@ -124,7 +125,7 @@ function App() {
     () => releases.find((release) => release.isLatestStable) ?? releases.find((release) => release.channel === "stable"),
     [releases],
   );
-  const latestDownloadUrl = findMacOSInstallerAsset(latestStableRelease)?.downloadURL ?? fallbackDownloadUrl;
+  const latestDownloadUrl = getPrimaryMacOSAsset(latestStableRelease?.assets ?? [])?.downloadURL ?? fallbackDownloadUrl;
 
   return (
     <main>
@@ -374,26 +375,46 @@ function formatAssetSize(size: number | null) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function findMacOSInstallerAsset(release: BrowserRelease | undefined) {
-  if (!release) {
-    return undefined;
+function getPrimaryMacOSAsset(assets: ReleaseAsset[]) {
+  let primaryAsset: ReleaseAsset | undefined;
+  let primaryAssetScore = 0;
+
+  assets.forEach((asset) => {
+    const score = macOSAssetScore(asset);
+    if (score > primaryAssetScore) {
+      primaryAsset = asset;
+      primaryAssetScore = score;
+    }
+  });
+
+  return primaryAsset ?? assets[0];
+}
+
+function macOSAssetScore(asset: ReleaseAsset) {
+  const assetName = asset.name.toLowerCase();
+  const contentType = asset.contentType.toLowerCase();
+
+  if (ancillaryAssetNamePattern.test(assetName)) {
+    return 0;
   }
 
-  return release.assets.find(isDiskImageAsset) ?? release.assets.find(isZipAsset);
-}
+  if (assetName.endsWith(".dmg") || contentType === "application/x-apple-diskimage") {
+    return 40;
+  }
 
-function isDiskImageAsset(asset: ReleaseAsset) {
-  const name = asset.name.toLowerCase();
-  const contentType = asset.contentType.toLowerCase();
+  if (assetName.endsWith(".pkg") || assetName.endsWith(".mpkg")) {
+    return 30;
+  }
 
-  return name.endsWith(".dmg") || contentType === "application/x-apple-diskimage";
-}
+  if (assetName.endsWith(".zip") || contentType === "application/zip") {
+    return 20;
+  }
 
-function isZipAsset(asset: ReleaseAsset) {
-  const name = asset.name.toLowerCase();
-  const contentType = asset.contentType.toLowerCase();
+  if (/\.(tar\.gz|tar\.xz|tar\.bz2|tgz|txz|tbz2)$/.test(assetName)) {
+    return 10;
+  }
 
-  return name.endsWith(".zip") || contentType === "application/zip";
+  return 0;
 }
 
 export default App;

@@ -18,11 +18,11 @@ const releaseResponse = {
       assets: [
         {
           id: 200,
-          name: "appcast.xml",
-          contentType: "application/xml",
-          size: 2_048,
-          downloadCount: 7,
-          downloadURL: "https://updates.thebrowser.app/downloads/appcast.xml",
+          name: "TheBrowser-1.4.0.sha256",
+          contentType: "text/plain",
+          size: 96,
+          downloadCount: 4,
+          downloadURL: "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0.sha256",
         },
         {
           id: 201,
@@ -82,8 +82,9 @@ describe("App", () => {
     expect(screen.getByText("Loading release notes...")).toBeInTheDocument();
   });
 
-  it("loads release notes and points landing download actions at the latest stable installer", async () => {
+  it("loads release notes and points landing download actions at the latest stable installer asset", async () => {
     const fetchMock = mockFetchResponse(releaseResponse);
+    const installerDownloadURL = "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0.dmg";
 
     render(<App />);
 
@@ -98,18 +99,22 @@ describe("App", () => {
     expect(within(releaseCard!).getByText("Workspace polish and signed update fixes.")).toBeInTheDocument();
     expect(within(releaseCard!).getByRole("link", { name: /TheBrowser-1\.4\.0\.dmg\s*120\.0 MB/i })).toHaveAttribute(
       "href",
-      "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0.dmg",
+      installerDownloadURL,
     );
 
     await waitFor(() => {
       expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
         "href",
-        "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0.dmg",
+        installerDownloadURL,
       );
     });
+    expect(within(screen.getByRole("navigation", { name: /primary/i })).getByRole("link", { name: "Download" })).toHaveAttribute(
+      "href",
+      installerDownloadURL,
+    );
     expect(screen.getByRole("link", { name: /download latest/i })).toHaveAttribute(
       "href",
-      "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0.dmg",
+      installerDownloadURL,
     );
 
     const betaHeading = screen.getByRole("heading", { name: "TheBrowser 1.5 Beta 1" });
