@@ -106,6 +106,8 @@
 "browser.menu.save_page_as" = "Save Page As...";
 "browser.menu.print" = "Print...";
 "browser.menu.force_refresh" = "Force Refresh";
+"browser.menu.clear_cache_and_refresh" = "Clear Cache and Refresh";
+"browser.menu.clear_cookies_and_refresh" = "Clear Cookies and Refresh";
 "browser.menu.toggle_sidebar" = "Toggle Sidebar";
 "browser.menu.clear_temporary_tabs" = "Clear Temporary Tabs";
 "browser.menu.quit_shortcut_title" = "Quit";
@@ -213,6 +215,7 @@
 "browser.settings.shortcuts.reset" = "Reset";
 "browser.settings.shortcuts.reset_all" = "Reset All";
 "browser.settings.shortcuts.press_shortcut" = "Press shortcut";
+"browser.settings.shortcuts.not_set" = "Not Set";
 "browser.settings.shortcuts.extension_shortcuts" = "Extension Shortcuts";
 "browser.settings.shortcuts.conflict" = "Shortcut already used by %@.";
 "browser.settings.content" = "Content";

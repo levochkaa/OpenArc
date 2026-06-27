@@ -17,6 +17,7 @@
 #include "include/base/cef_callback.h"
 #include "include/cef_client.h"
 #include "include/cef_browser.h"
+#include "include/cef_cookie.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_download_handler.h"
 #include "include/cef_download_item.h"
@@ -1439,6 +1440,114 @@ void ReloadBrowserOnUI(CefRefPtr<CefBrowser> browser, bool ignore_cache) {
           base::BindOnce(&ReloadBrowser, browser, ignore_cache)));
 }
 
+class ReloadBrowserCompletionCallback : public CefCompletionCallback {
+ public:
+  explicit ReloadBrowserCompletionCallback(CefRefPtr<CefBrowser> browser)
+      : browser_(browser) {}
+
+  void OnComplete() override { ReloadBrowser(browser_, false); }
+
+ private:
+  CefRefPtr<CefBrowser> browser_;
+
+  IMPLEMENT_REFCOUNTING(ReloadBrowserCompletionCallback);
+};
+
+class ReloadBrowserDeleteCookiesCallback : public CefDeleteCookiesCallback {
+ public:
+  explicit ReloadBrowserDeleteCookiesCallback(CefRefPtr<CefBrowser> browser)
+      : browser_(browser) {}
+
+  void OnComplete(int num_deleted) override {
+    (void)num_deleted;
+    ReloadBrowser(browser_, false);
+  }
+
+ private:
+  CefRefPtr<CefBrowser> browser_;
+
+  IMPLEMENT_REFCOUNTING(ReloadBrowserDeleteCookiesCallback);
+};
+
+void ClearHttpCacheAndReloadBrowser(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefRequestContext> request_context) {
+  if (!browser) {
+    return;
+  }
+
+  if (!request_context) {
+    ReloadBrowser(browser, false);
+    return;
+  }
+
+#if CEF_API_ADDED(14400)
+  request_context->ClearHttpCache(new ReloadBrowserCompletionCallback(browser));
+#else
+  ReloadBrowser(browser, true);
+#endif
+}
+
+void ClearHttpCacheAndReloadBrowserOnUI(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefRequestContext> request_context) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    ClearHttpCacheAndReloadBrowser(browser, request_context);
+    return;
+  }
+
+  CefPostTask(
+      TID_UI,
+      CefCreateClosureTask(
+          base::BindOnce(
+              &ClearHttpCacheAndReloadBrowser, browser, request_context)));
+}
+
+void ClearCookiesAndReloadBrowser(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefRequestContext> request_context) {
+  if (!browser) {
+    return;
+  }
+
+  if (!request_context) {
+    ReloadBrowser(browser, false);
+    return;
+  }
+
+  CefRefPtr<CefCookieManager> cookie_manager =
+      request_context->GetCookieManager(nullptr);
+  if (!cookie_manager ||
+      !cookie_manager->DeleteCookies(
+          CefString(), CefString(),
+          new ReloadBrowserDeleteCookiesCallback(browser))) {
+    ReloadBrowser(browser, false);
+  }
+}
+
+void ClearCookiesAndReloadBrowserOnUI(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefRequestContext> request_context) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    ClearCookiesAndReloadBrowser(browser, request_context);
+    return;
+  }
+
+  CefPostTask(
+      TID_UI,
+      CefCreateClosureTask(
+          base::BindOnce(
+              &ClearCookiesAndReloadBrowser, browser, request_context)));
+}
+
 void NavigateBrowser(CefRefPtr<CefBrowser> browser, std::string url) {
   if (!browser || url.empty()) {
     return;
@@ -2307,6 +2416,34 @@ struct TabRecord {
   }
 
   ReloadBrowserOnUI(it->second.browser, true);
+}
+
+- (void)clearCacheAndReloadActiveTab {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  CefRefPtr<CefRequestContext> requestContext = _requestContext;
+  if (!requestContext) {
+    requestContext = CefRequestContext::GetGlobalContext();
+  }
+  ClearHttpCacheAndReloadBrowserOnUI(it->second.browser, requestContext);
+}
+
+- (void)clearCookiesAndReloadActiveTab {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  CefRefPtr<CefRequestContext> requestContext = _requestContext;
+  if (!requestContext) {
+    requestContext = CefRequestContext::GetGlobalContext();
+  }
+  ClearCookiesAndReloadBrowserOnUI(it->second.browser, requestContext);
 }
 
 - (void)stopLoadingActiveTab {

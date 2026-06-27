@@ -47,6 +47,8 @@ import Foundation
     private(set) var stopFindingClearSelectionRequests = [Bool]()
     private(set) var reloadCount = 0
     private(set) var forceReloadCount = 0
+    private(set) var clearCacheAndReloadCount = 0
+    private(set) var clearCookiesAndReloadCount = 0
     private(set) var stopLoadingCount = 0
     private(set) var printCount = 0
     private(set) var goBackCount = 0
@@ -96,6 +98,14 @@ import Foundation
 
     func reloadActiveTabIgnoringCache() {
         forceReloadCount += 1
+    }
+
+    func clearCacheAndReloadActiveTab() {
+        clearCacheAndReloadCount += 1
+    }
+
+    func clearCookiesAndReloadActiveTab() {
+        clearCookiesAndReloadCount += 1
     }
 
     func stopLoadingActiveTab() {

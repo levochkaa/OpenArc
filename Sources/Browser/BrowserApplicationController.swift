@@ -215,6 +215,14 @@ NSUserInterfaceValidations {
         activeChromeModel?.forceReloadCurrentTab()
     }
 
+    public func clearCacheAndRefreshCurrentTab(_: Any?) {
+        activeChromeModel?.clearCacheAndRefreshCurrentTab()
+    }
+
+    public func clearCookiesAndRefreshCurrentTab(_: Any?) {
+        activeChromeModel?.clearCookiesAndRefreshCurrentTab()
+    }
+
     public func saveCurrentPage(_: Any?) {
         activeChromeModel?.saveCurrentPage()
     }
@@ -271,7 +279,10 @@ NSUserInterfaceValidations {
             return activeChromeModel?.canGoBack ?? false
         case #selector(goForward(_:)):
             return activeChromeModel?.canGoForward ?? false
-        case #selector(forceReloadCurrentTab(_:)), #selector(reloadCurrentTab(_:)):
+        case #selector(clearCacheAndRefreshCurrentTab(_:)),
+             #selector(clearCookiesAndRefreshCurrentTab(_:)),
+             #selector(forceReloadCurrentTab(_:)),
+             #selector(reloadCurrentTab(_:)):
             return activeChromeModel?.canReload ?? false
         case #selector(saveCurrentPage(_:)):
             return activeChromeModel?.canSavePage ?? false
@@ -676,6 +687,18 @@ NSUserInterfaceValidations {
         )
         viewMenu.addItem(forceRefreshItem)
 
+        let clearCacheAndRefreshItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .clearCacheAndRefresh),
+            action: #selector(clearCacheAndRefreshCurrentTab(_:))
+        )
+        viewMenu.addItem(clearCacheAndRefreshItem)
+
+        let clearCookiesAndRefreshItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .clearCookiesAndRefresh),
+            action: #selector(clearCookiesAndRefreshCurrentTab(_:))
+        )
+        viewMenu.addItem(clearCookiesAndRefreshItem)
+
         viewMenu.addItem(.separator())
 
         let toggleSidebarItem = makeMenuItem(
@@ -914,6 +937,20 @@ NSUserInterfaceValidations {
             }
 
             forceReloadCurrentTab(nil)
+            return true
+        case .clearCacheAndRefresh:
+            guard activeChromeModel?.canReload ?? false else {
+                return false
+            }
+
+            clearCacheAndRefreshCurrentTab(nil)
+            return true
+        case .clearCookiesAndRefresh:
+            guard activeChromeModel?.canReload ?? false else {
+                return false
+            }
+
+            clearCookiesAndRefreshCurrentTab(nil)
             return true
         case .toggleSidebar:
             guard activeChromeModel != nil else {

@@ -63,6 +63,11 @@ import Foundation
             return nil
         }
 
+        BrowserNativeMessagingHostInstaller.installApplePasswordManagerHostIfAvailable(
+            in: rootCachePath,
+            fileManager: fileManager
+        )
+
         return BrowserRuntimeConfiguration(
             helperExecutablePath: helperExecutablePath.path,
             frameworkPath: frameworkPath.path,

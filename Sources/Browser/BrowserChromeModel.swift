@@ -1094,6 +1094,30 @@ enum BrowserWindowMode: Equatable {
         )
     }
 
+    func clearCacheAndRefreshCurrentTab() {
+        guard canReload else {
+            return
+        }
+
+        tabDriver.clearCacheAndReloadActiveTab()
+        BrowserTelemetry.captureUsage(
+            .tabReloaded,
+            properties: telemetryProperties.merging(["clear_cache": "true"]) { _, new in new }
+        )
+    }
+
+    func clearCookiesAndRefreshCurrentTab() {
+        guard canReload else {
+            return
+        }
+
+        tabDriver.clearCookiesAndReloadActiveTab()
+        BrowserTelemetry.captureUsage(
+            .tabReloaded,
+            properties: telemetryProperties.merging(["clear_cookies": "true"]) { _, new in new }
+        )
+    }
+
     func stopLoadingCurrentTab() {
         guard canStopLoading else {
             return
@@ -2051,7 +2075,7 @@ enum BrowserWindowMode: Equatable {
                     kind: .command,
                     displayText: commandDisplayText(for: commandID, descriptor: descriptor),
                     commandID: commandID,
-                    shortcut: descriptor.shortcut
+                    shortcut: descriptor.shortcut.isAssigned ? descriptor.shortcut : nil
                 )
             }
     }
@@ -2110,7 +2134,7 @@ enum BrowserWindowMode: Equatable {
             canGoBack
         case .goForward:
             canGoForward
-        case .forceReload, .reload:
+        case .clearCacheAndRefresh, .clearCookiesAndRefresh, .forceReload, .reload:
             canReload
         case .toggleSidebar:
             true
@@ -3654,6 +3678,16 @@ extension BrowserCommandID {
             ["reload", "refresh", "soft refresh"]
         case .forceReload:
             ["force reload", "force refresh", "hard reload", "hard refresh", "reload ignoring cache", "ignore cache"]
+        case .clearCacheAndRefresh:
+            ["clear cache", "clear cache refresh", "clear cache and refresh", "empty cache", "empty cache and refresh"]
+        case .clearCookiesAndRefresh:
+            [
+                "clear cookies",
+                "clear cookies refresh",
+                "clear cookies and refresh",
+                "delete cookies",
+                "delete cookies and refresh",
+            ]
         case .toggleSidebar:
             ["sidebar", "toggle sidebar", "show sidebar", "hide sidebar"]
         case .toggleBookmarksBar:
@@ -3703,6 +3737,10 @@ extension BrowserCommandID {
             "arrow.clockwise"
         case .forceReload:
             "arrow.clockwise.circle"
+        case .clearCacheAndRefresh:
+            "externaldrive"
+        case .clearCookiesAndRefresh:
+            "trash"
         case .toggleSidebar:
             "sidebar.left"
         case .toggleBookmarksBar:
@@ -3713,6 +3751,10 @@ extension BrowserCommandID {
 
 extension BrowserKeyboardShortcut {
     var commandBarSearchAliases: [String] {
+        guard isAssigned else {
+            return []
+        }
+
         let modifierPhrases = commandBarModifierSearchPhrases
         let keyAliases = commandBarKeySearchAliases
         var aliases = [

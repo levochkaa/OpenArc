@@ -152,7 +152,8 @@ struct BrowserSettingsView: View {
             let descriptor = shortcutStore.descriptor(for: commandID)
             return descriptor.menuTitle.localizedCaseInsensitiveContains(query)
                 || descriptor.helpTitle.localizedCaseInsensitiveContains(query)
-                || descriptor.shortcut.displayText.localizedCaseInsensitiveContains(query)
+                || (descriptor.shortcut.isAssigned
+                    && descriptor.shortcut.displayText.localizedCaseInsensitiveContains(query))
         }
     }
 
@@ -635,10 +636,14 @@ struct BrowserSettingsView: View {
             if isRecording {
                 shortcutCapture(for: commandID)
             } else {
-                Text(descriptor.shortcut.displayText)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .frame(width: BrowserSettingsLayout.shortcutCaptureWidth, alignment: .trailing)
+                Text(
+                    descriptor.shortcut.isAssigned
+                        ? descriptor.shortcut.displayText
+                        : BrowserStrings.settingsShortcutNotSet
+                )
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .frame(width: BrowserSettingsLayout.shortcutCaptureWidth, alignment: .trailing)
             }
 
             Button(isRecording ? BrowserStrings.settingsShortcutPressShortcut : BrowserStrings.settingsShortcutRecord) {

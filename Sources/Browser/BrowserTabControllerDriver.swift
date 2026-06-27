@@ -85,6 +85,14 @@ import Foundation
         controller.reloadActiveTabIgnoringCache()
     }
 
+    func clearCacheAndReloadActiveTab() {
+        controller.clearCacheAndReloadActiveTab()
+    }
+
+    func clearCookiesAndReloadActiveTab() {
+        controller.clearCookiesAndReloadActiveTab()
+    }
+
     func stopLoadingActiveTab() {
         controller.stopLoadingActiveTab()
     }

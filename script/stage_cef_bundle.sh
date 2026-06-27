@@ -21,6 +21,7 @@ if [[ "$APP_ENTITLEMENTS" != /* ]]; then
 fi
 CEF_FRAMEWORK_SOURCE="$CEF_ROOT/$CEF_CONFIGURATION/Chromium Embedded Framework.framework"
 CEF_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Chromium Embedded Framework.framework"
+SPARKLE_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Sparkle.framework"
 SENTRY_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Sentry.framework"
 HELPER_DEST="$APP_FRAMEWORKS_DIR/TheBrowser Helper.app"
 RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/TheBrowser Helper.app"
@@ -133,6 +134,9 @@ sign_app_bundle() {
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (GPU).app"
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Plugin).app"
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Renderer).app"
+  if [[ -d "$SPARKLE_FRAMEWORK_DEST" ]]; then
+    /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$SPARKLE_FRAMEWORK_DEST"
+  fi
   if [[ -d "$SENTRY_FRAMEWORK_DEST" ]]; then
     /usr/bin/codesign --force --sign "$identity" --timestamp=none "$SENTRY_FRAMEWORK_DEST"
   fi

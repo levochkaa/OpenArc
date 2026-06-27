@@ -1799,6 +1799,31 @@ import Testing
 }
 
 @Test
+@MainActor func clearBrowsingDataRefreshActionsUseActiveTabDriver() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.clearCacheAndRefreshCurrentTab()
+    model.clearCookiesAndRefreshCurrentTab()
+
+    #expect(driver.clearCacheAndReloadCount == 0)
+    #expect(driver.clearCookiesAndReloadCount == 0)
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    model.clearCacheAndRefreshCurrentTab()
+    model.clearCookiesAndRefreshCurrentTab()
+
+    #expect(driver.clearCacheAndReloadCount == 1)
+    #expect(driver.clearCookiesAndReloadCount == 1)
+}
+
+@Test
 @MainActor func printCurrentPageRequiresReadySelectedTab() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
@@ -2205,6 +2230,24 @@ import Testing
     #expect(forceRefreshSuggestion.kind == .command)
     #expect(forceRefreshSuggestion.displayText == BrowserStrings.menuForceRefresh)
     #expect(forceRefreshSuggestion.shortcut == BrowserCommands.forceReload.shortcut)
+
+    model.commandBarModel.query = "clear cache"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let clearCacheSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .clearCacheAndRefresh }
+    )
+    #expect(clearCacheSuggestion.displayText == BrowserStrings.menuClearCacheAndRefresh)
+    #expect(clearCacheSuggestion.shortcut == nil)
+
+    model.commandBarModel.query = "clear cookies"
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let clearCookiesSuggestion = try #require(
+        model.commandBarModel.suggestions.first { $0.commandID == .clearCookiesAndRefresh }
+    )
+    #expect(clearCookiesSuggestion.displayText == BrowserStrings.menuClearCookiesAndRefresh)
+    #expect(clearCookiesSuggestion.shortcut == nil)
 
     model.commandBarModel.query = "alt cmd r"
     await model.commandBarModel.waitForPendingSuggestionLoad()

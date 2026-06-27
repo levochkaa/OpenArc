@@ -956,6 +956,7 @@ struct BrowserSiteToolbar: View {
             copyFeedbackTask = nil
             extensionActionPopup?.close()
             extensionActionPopup = nil
+            isURLButtonHovered = false
             isSiteControlCenterPresented = false
             hoveredPinnedExtensionID = nil
             onURLButtonFrameChange(nil)
@@ -965,6 +966,7 @@ struct BrowserSiteToolbar: View {
     // MARK: Private
 
     @State private var didCopyURL = false
+    @State private var isURLButtonHovered = false
     @State private var isSiteControlCenterPresented = false
     @State private var hoveredPinnedExtensionID: String?
     @State private var extensionActionPopup: BrowserExtensionActionPopup?
@@ -1073,7 +1075,9 @@ struct BrowserSiteToolbar: View {
                         cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
                         style: .continuous
                     )
-                    .fill(BrowserChromePalette.currentURLRow)
+                    .fill(isURLButtonHovered
+                        ? BrowserChromePalette.currentURLRowHover
+                        : BrowserChromePalette.currentURLRow)
                 }
                 .contentShape(
                     RoundedRectangle(
@@ -1087,6 +1091,9 @@ struct BrowserSiteToolbar: View {
         .frame(maxWidth: BrowserChromeLayout.siteToolbarURLButtonMaximumWidth)
         .background {
             BrowserWindowFrameReader(onFrameChange: onURLButtonFrameChange)
+        }
+        .onHover { hovering in
+            isURLButtonHovered = hovering
         }
         .contextMenu {
             BrowserSiteURLContextMenuContent(

@@ -74,6 +74,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)goForwardActiveTab;
 - (void)reloadActiveTab;
 - (void)reloadActiveTabIgnoringCache;
+- (void)clearCacheAndReloadActiveTab;
+- (void)clearCookiesAndReloadActiveTab;
 - (void)stopLoadingActiveTab;
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
 - (void)captureFullPageActiveTabToPasteboard;

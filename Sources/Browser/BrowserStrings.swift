@@ -483,6 +483,16 @@ enum BrowserStrings {
         comment: "Force Refresh menu item title."
     )
 
+    static let menuClearCacheAndRefresh = NSLocalizedString(
+        "browser.menu.clear_cache_and_refresh",
+        comment: "Clear Cache and Refresh menu item title."
+    )
+
+    static let menuClearCookiesAndRefresh = NSLocalizedString(
+        "browser.menu.clear_cookies_and_refresh",
+        comment: "Clear Cookies and Refresh menu item title."
+    )
+
     static let menuToggleSidebar = NSLocalizedString(
         "browser.menu.toggle_sidebar",
         comment: "Toggle Sidebar menu item title."
@@ -996,6 +1006,11 @@ enum BrowserStrings {
     static let settingsShortcutPressShortcut = NSLocalizedString(
         "browser.settings.shortcuts.press_shortcut",
         comment: "Prompt shown while recording a shortcut."
+    )
+
+    static let settingsShortcutNotSet = NSLocalizedString(
+        "browser.settings.shortcuts.not_set",
+        comment: "Displayed when a command has no keyboard shortcut."
     )
 
     static let settingsExtensionShortcuts = NSLocalizedString(

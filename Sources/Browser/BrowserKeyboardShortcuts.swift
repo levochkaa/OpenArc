@@ -20,8 +20,14 @@ struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
 
     // MARK: Internal
 
+    static let unassigned = BrowserKeyboardShortcut("", modifiers: [])
+
     let keyEquivalent: String
     let modifiers: NSEvent.ModifierFlags
+
+    var isAssigned: Bool {
+        !keyEquivalent.isEmpty
+    }
 
     var keyCaps: [String] {
         var result = [String]()
@@ -200,6 +206,18 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("r", modifiers: [.command, .shift])
     )
 
+    static let clearCacheAndRefresh = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuClearCacheAndRefresh,
+        helpTitle: BrowserStrings.menuClearCacheAndRefresh,
+        shortcut: .unassigned
+    )
+
+    static let clearCookiesAndRefresh = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuClearCookiesAndRefresh,
+        helpTitle: BrowserStrings.menuClearCookiesAndRefresh,
+        shortcut: .unassigned
+    )
+
     static let toggleSidebar = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuToggleSidebar,
         helpTitle: BrowserStrings.sidebarHide,
@@ -277,6 +295,8 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case goForward
     case reload
     case forceReload
+    case clearCacheAndRefresh
+    case clearCookiesAndRefresh
     case toggleSidebar
     case toggleBookmarksBar
 }

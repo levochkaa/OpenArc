@@ -19,6 +19,8 @@ import Foundation
     func goForwardActiveTab()
     func reloadActiveTab()
     func reloadActiveTabIgnoringCache()
+    func clearCacheAndReloadActiveTab()
+    func clearCookiesAndReloadActiveTab()
     func stopLoadingActiveTab()
     func saveActiveTab(withSuggestedName suggestedName: String?)
     func captureFullPageActiveTabToPasteboard()

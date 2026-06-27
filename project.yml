@@ -2,7 +2,7 @@ name: TheBrowser
 options:
   bundleIdPrefix: com.levochkaa
   minimumXcodeGenVersion: 2.45.3
-  xcodeVersion: 26.5
+  xcodeVersion: 26.6
   projectFormat: xcode16_3
   indentWidth: 4
   tabWidth: 4
@@ -167,36 +167,21 @@ targets:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: Sources/Browser/BrowserChromeModel.swift
-      - path: Sources/Browser/BrowserChromeModelTypes.swift
-      - path: Sources/Browser/BrowserBatterySaverPolicy.swift
-      - path: Sources/Browser/BrowserBookmarks.swift
-      - path: Sources/Browser/BrowserChromiumBookmarks.swift
-      - path: Sources/Browser/BrowserChromiumHistory.swift
-      - path: Sources/Browser/BrowserCommandBarModel.swift
-      - path: Sources/Browser/BrowserDefaultBrowserService.swift
-      - path: Sources/Browser/Downloads/BrowserDownloads.swift
-      - path: Sources/Browser/BrowserExtensions.swift
-      - path: Sources/Browser/BrowserExtensionSidePanel.swift
-      - path: Sources/Browser/BrowserFaviconCache.swift
-      - path: Sources/Browser/BrowserImageThumbnailer.swift
-      - path: Sources/Browser/BrowserKeyboardShortcuts.swift
-      - path: Sources/Browser/BrowserNavigationResolver.swift
-      - path: Sources/Browser/BrowserProfiles.swift
-      - path: Sources/Browser/BrowserStrings.swift
-      - path: Sources/Browser/BrowserSidebarTabDrag.swift
-      - path: Sources/Browser/Sidebar/BrowserSidebarSnapshot.swift
-      - path: Sources/Browser/BrowserTabDriving.swift
-      - path: Sources/Browser/BrowserTabSessionPersistence.swift
-      - path: Sources/Browser/BrowserSQLiteSessionStore.swift
-      - path: Sources/Browser/BrowserSyncModels.swift
-      - path: Sources/Browser/BrowserRemoteSyncClient.swift
-      - path: Sources/Browser/BrowserTooltipCoordinator.swift
-      - path: Sources/Browser/BrowserURLDisplayFormatter.swift
-      - path: Sources/Browser/BrowserUserPreferences.swift
-      - path: Sources/Browser/BrowserTelemetry.swift
-      - path: Sources/Browser/BrowserProfileBackup.swift
-      - path: Sources/Browser/OpenAPI
+      - path: Sources/Browser
+        includes:
+          - Browser*.swift
+          - Downloads/*.swift
+          - Sidebar/BrowserSidebarSnapshot.swift
+          - OpenAPI/**
+        excludes:
+          - Browser*Controller.swift
+          - Browser*View.swift
+          - BrowserAppleSignInService.swift
+          - BrowserChromiumExtensionManager.swift
+          - BrowserRuntimeConfiguration.swift
+          - BrowserTabControllerDriver.swift
+          - BrowserWindowGeometry.swift
+          - BrowserWindowSessions.swift
       - path: Backend/openapi.yaml
         group: Sources/Browser/OpenAPI
       - path: Tests/TheBrowserTests

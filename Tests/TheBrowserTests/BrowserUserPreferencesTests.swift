@@ -114,6 +114,24 @@ import Testing
     #expect(reloadedStore.shortcut(for: .toggleBookmarksBar) == BrowserCommands.toggleBookmarksBar.shortcut)
 }
 
+@Test func unassignedCommandShortcutsDoNotConflict() throws {
+    let suiteName = "TheBrowserTests.\(UUID().uuidString)"
+    let userDefaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+    let store = BrowserShortcutStore(userDefaults: userDefaults)
+    let customShortcut = BrowserKeyboardShortcut("e", modifiers: [.command, .option])
+
+    #expect(store.shortcut(for: .clearCacheAndRefresh) == .unassigned)
+    #expect(store.shortcut(for: .clearCookiesAndRefresh) == .unassigned)
+    #expect(store.conflictDescription(for: .unassigned, excluding: .clearCacheAndRefresh) == nil)
+    #expect(store.setShortcut(customShortcut, for: .clearCacheAndRefresh))
+    #expect(!store.setShortcut(customShortcut, for: .clearCookiesAndRefresh))
+
+    store.resetShortcut(for: .clearCacheAndRefresh)
+    #expect(store.shortcut(for: .clearCacheAndRefresh) == .unassigned)
+}
+
 @Test func layoutIndependentBridgeUsesShortcutOverrides() throws {
     let suiteName = "TheBrowserTests.\(UUID().uuidString)"
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))

@@ -410,6 +410,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case goForward
     case reload
     case forceReload
+    case clearCacheAndRefresh
+    case clearCookiesAndRefresh
     case toggleSidebar
     case toggleBookmarksBar
 
@@ -461,6 +463,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.reload
         case .forceReload:
             BrowserCommands.forceReload
+        case .clearCacheAndRefresh:
+            BrowserCommands.clearCacheAndRefresh
+        case .clearCookiesAndRefresh:
+            BrowserCommands.clearCookiesAndRefresh
         case .toggleSidebar:
             BrowserCommands.toggleSidebar
         case .toggleBookmarksBar:
@@ -510,6 +516,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .reload
         case .forceReload:
             .forceReload
+        case .clearCacheAndRefresh:
+            .clearCacheAndRefresh
+        case .clearCookiesAndRefresh:
+            .clearCookiesAndRefresh
         case .toggleSidebar:
             .toggleSidebar
         case .toggleBookmarksBar:
@@ -585,6 +595,10 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
 
     func conflictDescription(for shortcut: BrowserKeyboardShortcut, excluding commandID: BrowserCommandID?) -> String? {
         let normalizedShortcut = shortcut.normalizedForMatching
+        guard normalizedShortcut.isAssigned else {
+            return nil
+        }
+
         if let conflictingCommand = commandIDs.first(where: {
             $0 != commandID && self.shortcut(for: $0).normalizedForMatching == normalizedShortcut
         }) {
