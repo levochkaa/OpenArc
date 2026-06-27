@@ -41,9 +41,22 @@ import Testing
     #expect(BrowserURLDisplayFormatter.displayString(for: "http://127.0.0.1:9222/json") == "127.0.0.1:9222")
 }
 
+@Test func urlDisplayFormatterBracketsIPv6AddressWithNonDefaultPort() {
+    #expect(BrowserURLDisplayFormatter.displayString(for: "http://[::1]:3000/path") == "[::1]:3000")
+}
+
 @Test func urlDisplayFormatterKeepsDefaultLocalhostAndIPAddressPorts() {
     #expect(BrowserURLDisplayFormatter.displayString(for: "http://localhost:80/path") == "localhost:80")
     #expect(BrowserURLDisplayFormatter.displayString(for: "https://127.0.0.1:443/json") == "127.0.0.1:443")
+}
+
+@Test func urlDisplayFormatterBracketsIPv6AddressWithDefaultPorts() {
+    #expect(BrowserURLDisplayFormatter.displayString(for: "http://[::1]:80/path") == "[::1]:80")
+    #expect(BrowserURLDisplayFormatter.displayString(for: "https://[::1]:443/json") == "[::1]:443")
+}
+
+@Test func urlDisplayFormatterKeepsIPv6AddressWithoutPort() {
+    #expect(BrowserURLDisplayFormatter.displayString(for: "http://[::1]/path") == "[::1]")
 }
 
 @Test func urlDisplayFormatterFallsBackForInternalURLs() {
