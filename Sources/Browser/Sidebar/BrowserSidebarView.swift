@@ -34,7 +34,7 @@ struct BrowserSidebarView: View {
     @State var suppressedTabSelectionAfterDragID: String?
     @State var selectedPinnedTabIDs = Set<String>()
     @State var pinnedTabSelectionAnchorID: String?
-    @State var revealedPinnedFolderTabIDByFolderID = [String: String]()
+    @State var revealedPinnedFolderTabIDsByFolderID = [String: Set<String>]()
     @State var tabRowInteractionResetID = 0
     @State var rawTabRowFrames = [String: BrowserSidebarTabRowFrame]()
     @State var tabRowFrames = [String: BrowserSidebarTabRowFrame]()
@@ -436,7 +436,7 @@ struct BrowserSidebarView: View {
         let spacePinnedTabs = renderedSidebarSnapshot.spacePinnedTabs(in: space.id)
         let pinnedRows = renderedSidebarSnapshot.visiblePinnedRows(
             in: space.id,
-            revealedTabIDByFolderID: revealedPinnedFolderTabIDByFolderID
+            revealedTabIDsByFolderID: revealedPinnedFolderTabIDsByFolderID
         )
         let temporaryTabs = renderedSidebarSnapshot.temporaryTabs(in: space.id)
         let isPinnedSectionCollapsed = model.supportsSpaces
@@ -1238,18 +1238,31 @@ struct BrowserSidebarView: View {
 
     private func updateRevealedPinnedFolderTabs(for snapshot: BrowserSidebarSnapshot) {
         if let selectedTab = snapshot.selectedTab, let folderID = selectedTab.pinnedFolderID {
-            revealedPinnedFolderTabIDByFolderID[folderID] = selectedTab.id
+            revealedPinnedFolderTabIDsByFolderID[folderID, default: []].insert(selectedTab.id)
         }
 
-        revealedPinnedFolderTabIDByFolderID = revealedPinnedFolderTabIDByFolderID.filter { folderID, tabID in
-            guard snapshot.pinnedTabFolder(withID: folderID) != nil,
-                  let tab = snapshot.tab(withID: tabID)
-            else {
-                return false
+        var updatedRevealedTabIDsByFolderID = [String: Set<String>]()
+        for (folderID, tabIDs) in revealedPinnedFolderTabIDsByFolderID {
+            guard let folder = snapshot.pinnedTabFolder(withID: folderID) else {
+                continue
             }
 
-            return tab.pinnedFolderID == folderID
+            guard !folder.isExpanded || snapshot.selectedTab?.pinnedFolderID == folderID else {
+                continue
+            }
+
+            let validTabIDs = tabIDs.filter { tabID in
+                guard let tab = snapshot.tab(withID: tabID) else {
+                    return false
+                }
+
+                return tab.pinnedFolderID == folderID
+            }
+            if !validTabIDs.isEmpty {
+                updatedRevealedTabIDsByFolderID[folderID] = validTabIDs
+            }
         }
+        revealedPinnedFolderTabIDsByFolderID = updatedRevealedTabIDsByFolderID
     }
 
     private func togglePinnedTabSelection(_ tabID: String) {
@@ -1750,7 +1763,7 @@ struct BrowserSidebarView: View {
                 ? []
                 : snapshot.visiblePinnedRows(
                     in: space.id,
-                    revealedTabIDByFolderID: revealedPinnedFolderTabIDByFolderID
+                    revealedTabIDsByFolderID: revealedPinnedFolderTabIDsByFolderID
                 )
             let pinnedTabRows = pinnedRows.compactMap { row -> BrowserSidebarPinnedTabRow? in
                 if case .tab(let tabRow) = row {

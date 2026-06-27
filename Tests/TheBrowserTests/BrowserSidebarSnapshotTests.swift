@@ -1,0 +1,146 @@
+import Foundation
+import Testing
+
+@Test func collapsedPinnedFolderShowsMultipleRevealedChildrenWhenSelectedInsideFolder() {
+    let space = BrowserChromeModel.Space(
+        id: "space",
+        title: "Space",
+        systemImageName: "square.grid.2x2",
+        isPinnedSectionCollapsed: false,
+        selectedTabID: "folder-tab-2"
+    )
+    let folder = BrowserChromeModel.PinnedTabFolder(
+        id: "folder",
+        spaceID: space.id,
+        parentFolderID: nil,
+        title: "Folder",
+        systemImageName: nil,
+        isExpanded: false
+    )
+    let firstFolderTab = browserSidebarSnapshotTestTab(
+        id: "folder-tab-1",
+        spaceID: space.id,
+        title: "First Folder Tab",
+        urlString: "https://first.example",
+        placement: .spacePinned,
+        pinnedFolderID: folder.id
+    )
+    let secondFolderTab = browserSidebarSnapshotTestTab(
+        id: "folder-tab-2",
+        spaceID: space.id,
+        title: "Second Folder Tab",
+        urlString: "https://second.example",
+        placement: .spacePinned,
+        pinnedFolderID: folder.id
+    )
+    let snapshot = BrowserSidebarSnapshot(
+        spaces: [space],
+        selectedSpaceID: space.id,
+        activeSpace: space,
+        isActiveSpacePinnedSectionCollapsed: false,
+        allTabs: [firstFolderTab, secondFolderTab],
+        pinnedTabFolders: [folder],
+        appTabs: [],
+        spacePinnedTabs: [firstFolderTab, secondFolderTab],
+        temporaryTabs: [],
+        selectedTabID: secondFolderTab.id,
+        archivableTabIDs: [],
+        canGoBack: false,
+        canGoForward: false,
+        canStopLoading: false,
+        canReload: false
+    )
+
+    let rows = snapshot.visiblePinnedRows(
+        in: space.id,
+        revealedTabIDsByFolderID: [folder.id: [firstFolderTab.id, secondFolderTab.id]]
+    )
+
+    #expect(rows.map(\.id) == [
+        "folder-\(folder.id)",
+        "tab-\(firstFolderTab.id)",
+        "tab-\(secondFolderTab.id)",
+    ])
+}
+
+@Test func collapsedPinnedFolderKeepsRevealedChildrenWhenSelectedTabIsOutsideFolder() {
+    let space = BrowserChromeModel.Space(
+        id: "space",
+        title: "Space",
+        systemImageName: "square.grid.2x2",
+        isPinnedSectionCollapsed: false,
+        selectedTabID: "active-tab"
+    )
+    let folder = BrowserChromeModel.PinnedTabFolder(
+        id: "folder",
+        spaceID: space.id,
+        parentFolderID: nil,
+        title: "Folder",
+        systemImageName: nil,
+        isExpanded: false
+    )
+    let folderTab = browserSidebarSnapshotTestTab(
+        id: "folder-tab",
+        spaceID: space.id,
+        title: "Folder Tab",
+        urlString: "https://folder.example",
+        placement: .spacePinned,
+        pinnedFolderID: folder.id
+    )
+    let activeTab = browserSidebarSnapshotTestTab(
+        id: "active-tab",
+        spaceID: space.id,
+        title: "Active Tab",
+        urlString: "https://active.example",
+        placement: .temporary
+    )
+    let snapshot = BrowserSidebarSnapshot(
+        spaces: [space],
+        selectedSpaceID: space.id,
+        activeSpace: space,
+        isActiveSpacePinnedSectionCollapsed: false,
+        allTabs: [folderTab, activeTab],
+        pinnedTabFolders: [folder],
+        appTabs: [],
+        spacePinnedTabs: [folderTab],
+        temporaryTabs: [activeTab],
+        selectedTabID: activeTab.id,
+        archivableTabIDs: [],
+        canGoBack: false,
+        canGoForward: false,
+        canStopLoading: false,
+        canReload: false
+    )
+
+    let rows = snapshot.visiblePinnedRows(
+        in: space.id,
+        revealedTabIDsByFolderID: [folder.id: [folderTab.id]]
+    )
+
+    #expect(rows.map(\.id) == [
+        "folder-\(folder.id)",
+        "tab-\(folderTab.id)",
+    ])
+}
+
+private func browserSidebarSnapshotTestTab(
+    id: String,
+    spaceID: String,
+    title: String,
+    urlString: String,
+    placement: BrowserTabPlacement,
+    pinnedFolderID: String? = nil
+) -> BrowserChromeModel.Tab {
+    BrowserChromeModel.Tab(
+        id: id,
+        syncID: id,
+        spaceID: spaceID,
+        title: title,
+        userTitleOverride: nil,
+        urlString: urlString,
+        faviconURLString: nil,
+        placement: placement,
+        pinnedFolderID: pinnedFolderID,
+        lastActivityAt: Date(timeIntervalSince1970: 0)
+    )
+}

@@ -61,7 +61,7 @@ struct BrowserSidebarSnapshot: Equatable {
 
     func visiblePinnedRows(
         in spaceID: String,
-        revealedTabIDByFolderID: [String: String] = [:]
+        revealedTabIDsByFolderID: [String: Set<String>] = [:]
     ) -> [BrowserSidebarPinnedRow] {
         let pinnedTabs = spacePinnedTabs(in: spaceID)
         let foldersByID = Dictionary(uniqueKeysWithValues: pinnedTabFolders(in: spaceID).map { ($0.id, $0) })
@@ -125,16 +125,18 @@ struct BrowserSidebarSnapshot: Equatable {
 
             if folder.isExpanded {
                 appendRows(parentFolderID: folder.id, depth: depth + 1)
-            } else if let visibleChildTab = collapsedVisibleChildTab(for: folder, childTabs: childTabs) {
-                let childSectionIndex = pinnedTabs.firstIndex { $0.id == visibleChildTab.id } ?? firstSectionIndex
-                let childIndex = childTabs.firstIndex { $0.id == visibleChildTab.id } ?? 0
-                appendTab(
-                    visibleChildTab,
-                    sectionIndex: childSectionIndex,
-                    folderID: folder.id,
-                    folderChildIndex: childIndex,
-                    depth: depth + 1
-                )
+            } else {
+                for visibleChildTab in collapsedVisibleChildTabs(for: folder, childTabs: childTabs) {
+                    let childSectionIndex = pinnedTabs.firstIndex { $0.id == visibleChildTab.id } ?? firstSectionIndex
+                    let childIndex = childTabs.firstIndex { $0.id == visibleChildTab.id } ?? 0
+                    appendTab(
+                        visibleChildTab,
+                        sectionIndex: childSectionIndex,
+                        folderID: folder.id,
+                        folderChildIndex: childIndex,
+                        depth: depth + 1
+                    )
+                }
             }
         }
 
@@ -158,19 +160,15 @@ struct BrowserSidebarSnapshot: Equatable {
             )
         }
 
-        func collapsedVisibleChildTab(
+        func collapsedVisibleChildTabs(
             for folder: BrowserChromeModel.PinnedTabFolder,
             childTabs: [BrowserChromeModel.Tab]
-        ) -> BrowserChromeModel.Tab? {
-            if selectedTab?.pinnedFolderID == folder.id {
-                return childTabs.first { $0.id == selectedTab?.id }
+        ) -> [BrowserChromeModel.Tab] {
+            var visibleTabIDs = revealedTabIDsByFolderID[folder.id] ?? []
+            if selectedTab?.pinnedFolderID == folder.id, let selectedTab {
+                visibleTabIDs.insert(selectedTab.id)
             }
-
-            if let revealedTabID = revealedTabIDByFolderID[folder.id] {
-                return childTabs.first { $0.id == revealedTabID }
-            }
-
-            return nil
+            return childTabs.filter { visibleTabIDs.contains($0.id) }
         }
 
         appendRows(parentFolderID: nil, depth: 0)

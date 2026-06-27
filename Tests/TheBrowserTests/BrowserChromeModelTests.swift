@@ -2177,6 +2177,44 @@ import Testing
 }
 
 @Test
+@MainActor func commandBarOpeningPinnedFolderTabSelectsExistingTab() async throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        suggestionProvider: FakeSuggestionProvider()
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    try model.openURLInNewTab(#require(URL(string: "https://docs.example")))
+    driver.flushPendingCreateEvents()
+    try model.openURLInNewTab(#require(URL(string: "https://mail.example")))
+    driver.flushPendingCreateEvents()
+
+    let docsTabID = model.tabs[1].id
+    let mailTabID = model.tabs[2].id
+    model.togglePinned(forTabID: docsTabID)
+    model.togglePinned(forTabID: mailTabID)
+    _ = try #require(model.createPinnedTabFolder(containingTabIDs: Set([docsTabID, mailTabID])))
+    let createdTabCount = driver.createdTabRequests.count
+
+    try await submitOpenTabSuggestion(matching: "docs", in: model)
+    driver.flushPendingCreateEvents()
+
+    #expect(model.selectedTabID == docsTabID)
+    #expect(driver.createdTabRequests.count == createdTabCount)
+
+    try await submitOpenTabSuggestion(matching: "mail", in: model)
+    driver.flushPendingCreateEvents()
+
+    #expect(model.selectedTabID == mailTabID)
+    #expect(driver.createdTabRequests.count == createdTabCount)
+    #expect(model.spacePinnedTabs.map(\.id) == [docsTabID, mailTabID])
+}
+
+@Test
 @MainActor func openBookmarksManagerCreatesCanonicalInternalTab() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
@@ -2235,6 +2273,18 @@ private func isolatedUserDefaults() -> UserDefaults {
     }
 
     return tabID
+}
+
+@MainActor private func submitOpenTabSuggestion(
+    matching query: String,
+    in model: BrowserChromeModel
+) async throws {
+    model.commandBarModel.present()
+    model.commandBarModel.query = query
+    await model.commandBarModel.waitForPendingSuggestionLoad()
+
+    let suggestion = try #require(model.commandBarModel.suggestions.first { $0.kind == .openTab })
+    model.commandBarModel.submitSuggestion(id: suggestion.id)
 }
 
 // MARK: - BrowserChromeModelTestError

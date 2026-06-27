@@ -11,13 +11,21 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
         displayText: String,
         detailText: String? = nil,
         resolvedURLString: String,
-        tabID: String? = nil
+        tabID: String? = nil,
+        tabIDs: [String] = []
     ) {
         self.kind = kind
         self.displayText = displayText
         self.detailText = detailText
         self.resolvedURLString = resolvedURLString
-        self.tabID = tabID
+        self.tabIDs =
+            if !tabIDs.isEmpty {
+                Self.normalizedTabIDs(tabIDs)
+            } else if let tabID {
+                Self.normalizedTabIDs([tabID])
+            } else {
+                []
+            }
     }
 
     // MARK: Internal
@@ -36,10 +44,14 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     let displayText: String
     var detailText: String?
     let resolvedURLString: String
-    var tabID: String?
+    var tabIDs: [String]
+
+    var tabID: String? {
+        tabIDs.first
+    }
 
     var id: String {
-        "\(kind.rawValue)|\(displayText)|\(resolvedURLString)|\(tabID ?? "")"
+        "\(kind.rawValue)|\(displayText)|\(resolvedURLString)|\(tabIDs.joined(separator: ","))"
     }
 
     var systemImageName: String {
@@ -74,6 +86,24 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
 
         let suffix = String(displayText[matchedRange.upperBound...])
         return suffix.isEmpty ? nil : suffix
+    }
+
+    mutating func appendTabIDs(_ ids: [String]) {
+        tabIDs = Self.normalizedTabIDs(tabIDs + ids)
+    }
+
+    // MARK: Private
+
+    private static func normalizedTabIDs(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { id in
+            guard !id.isEmpty, !seen.contains(id) else {
+                return false
+            }
+
+            seen.insert(id)
+            return true
+        }
     }
 }
 
@@ -147,12 +177,12 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
         aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
         submitHandler: @escaping (String) -> Void,
-        switchToTabHandler: @escaping (String) -> Void = { _ in }
+        openTabHandler: @escaping ([String]) -> Void = { _ in }
     ) {
         self.suggestionProvider = suggestionProvider
         self.navigationResolver = navigationResolver
         self.submitHandler = submitHandler
-        self.switchToTabHandler = switchToTabHandler
+        self.openTabHandler = openTabHandler
         self.suggestionDebounceNanoseconds = suggestionDebounceNanoseconds
         self.localSuggestionProvider = localSuggestionProvider
         self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
@@ -276,8 +306,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             return
         }
 
-        if suggestion.kind == .openTab, let tabID = suggestion.tabID {
-            switchToTabHandler(tabID)
+        if suggestion.kind == .openTab, !suggestion.tabIDs.isEmpty {
+            openTabHandler(suggestion.tabIDs)
         } else {
             submitHandler(suggestion.resolvedURLString)
         }
@@ -298,7 +328,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     private let suggestionProvider: BrowserSuggestionProviding
     private let navigationResolver: BrowserNavigationResolver
     private let submitHandler: (String) -> Void
-    private let switchToTabHandler: (String) -> Void
+    private let openTabHandler: ([String]) -> Void
     private let suggestionDebounceNanoseconds: UInt64
     private let localSuggestionProvider: (String, Int) -> [BrowserCommandSuggestion]
     private let remoteSuggestionsEnabledProvider: () -> Bool
@@ -401,8 +431,18 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         func appendSuggestion(_ suggestion: BrowserCommandSuggestion) {
             let displayKey = suggestion.displayText.lowercased()
             let suggestionKey = duplicateKey(for: suggestion)
+            if suggestion.kind == .openTab,
+               let existingIndex = assembledSuggestions.firstIndex(where: {
+                   $0.kind == .openTab && duplicateKey(for: $0) == suggestionKey
+               })
+            {
+                assembledSuggestions[existingIndex].appendTabIDs(suggestion.tabIDs)
+                return
+            }
+
+            let shouldDedupeDisplayText = suggestion.kind != .openTab
             guard
-                !seenDisplayTexts.contains(displayKey),
+                !shouldDedupeDisplayText || !seenDisplayTexts.contains(displayKey),
                 !seenSuggestionKeys.contains(suggestionKey),
                 assembledSuggestions.count < Self.maximumSuggestions
             else {
@@ -488,8 +528,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     }
 
     func duplicateKey(for suggestion: BrowserCommandSuggestion) -> String {
-        if suggestion.kind == .openTab, let tabID = suggestion.tabID {
-            return "tab|\(tabID)"
+        if suggestion.kind == .openTab {
+            return "open-tab|\(normalizedURLString(suggestion.resolvedURLString))"
         }
 
         return "url|\(normalizedURLString(suggestion.resolvedURLString))"

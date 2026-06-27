@@ -184,6 +184,7 @@ targets:
       - path: Sources/Browser/BrowserProfiles.swift
       - path: Sources/Browser/BrowserStrings.swift
       - path: Sources/Browser/BrowserSidebarTabDrag.swift
+      - path: Sources/Browser/Sidebar/BrowserSidebarSnapshot.swift
       - path: Sources/Browser/BrowserTabDriving.swift
       - path: Sources/Browser/BrowserTabSessionPersistence.swift
       - path: Sources/Browser/BrowserSQLiteSessionStore.swift

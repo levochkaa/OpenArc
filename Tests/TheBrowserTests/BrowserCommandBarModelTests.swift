@@ -333,8 +333,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 }
 
 @Test
-@MainActor func openTabSuggestionSwitchesTabInsteadOfSubmittingURL() async {
-    var switchedTabIDs = [String]()
+@MainActor func openTabSuggestionPassesTabIDsInsteadOfSubmittingURL() async {
+    var openedTabIDGroups = [[String]]()
     var submittedURLStrings = [String]()
     let model = makeModel(
         suggestionProvider: FakeSuggestionProvider(),
@@ -344,12 +344,12 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
                     kind: .openTab,
                     displayText: "Open Tab",
                     resolvedURLString: "https://open.example",
-                    tabID: "tab-1"
+                    tabIDs: ["tab-1", "tab-2"]
                 ),
             ]
         },
         submitHandler: { submittedURLStrings.append($0) },
-        switchToTabHandler: { switchedTabIDs.append($0) }
+        openTabHandler: { openedTabIDGroups.append($0) }
     )
 
     model.present()
@@ -358,7 +358,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     model.moveSelection(by: 2)
     model.submitSelection()
 
-    #expect(switchedTabIDs == ["tab-1"])
+    #expect(openedTabIDGroups == [["tab-1", "tab-2"]])
     #expect(submittedURLStrings.isEmpty)
     #expect(!model.isPresented)
 }
@@ -529,7 +529,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
     aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
     submitHandler: @escaping (String) -> Void = { _ in },
-    switchToTabHandler: @escaping (String) -> Void = { _ in }
+    openTabHandler: @escaping ([String]) -> Void = { _ in }
 ) -> BrowserCommandBarModel {
     BrowserCommandBarModel(
         suggestionProvider: suggestionProvider,
@@ -538,7 +538,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
         remoteSuggestionsEnabledProvider: remoteSuggestionsEnabledProvider,
         aiSearchProviderProvider: aiSearchProviderProvider,
         submitHandler: submitHandler,
-        switchToTabHandler: switchToTabHandler
+        openTabHandler: openTabHandler
     )
 }
 

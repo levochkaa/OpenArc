@@ -188,8 +188,8 @@ enum BrowserWindowMode: Equatable {
         submitHandler: { [weak self] resolvedURLString in
             self?.openResolvedSelectionInNewTab(resolvedURLString)
         },
-        switchToTabHandler: { [weak self] tabID in
-            self?.selectTab(id: tabID)
+        openTabHandler: { [weak self] tabIDs in
+            self?.openCommandBarTabSelection(tabIDs: tabIDs)
         }
     )
     lazy var currentPageCommandBarModel = BrowserCommandBarModel(
@@ -207,8 +207,8 @@ enum BrowserWindowMode: Equatable {
         submitHandler: { [weak self] resolvedURLString in
             self?.navigateSelectedTab(toURLString: resolvedURLString)
         },
-        switchToTabHandler: { [weak self] tabID in
-            self?.selectTab(id: tabID)
+        openTabHandler: { [weak self] tabIDs in
+            self?.openCommandBarTabSelection(tabIDs: tabIDs)
         }
     )
 
@@ -1931,6 +1931,21 @@ enum BrowserWindowMode: Equatable {
         createTab(withURLString: resolvedURLString)
     }
 
+    private func openCommandBarTabSelection(tabIDs: [String]) {
+        let candidateTabs = tabIDs.compactMap { tabID in
+            tabs.first { $0.id == tabID }
+        }
+        let tab = candidateTabs.first { candidate in
+            candidate.placement == .spacePinned && candidate.pinnedFolderID != nil
+        } ?? candidateTabs.first
+
+        guard let tab else {
+            return
+        }
+
+        selectTab(id: tab.id)
+    }
+
     private func navigateSelectedTabOrOpenNewTab(toURLString urlString: String) {
         guard canCreateTab else {
             return
@@ -2082,7 +2097,7 @@ enum BrowserWindowMode: Equatable {
                     displayText: tab.displayTitle,
                     detailText: BrowserURLDisplayFormatter.displayString(for: tab.urlString),
                     resolvedURLString: tab.urlString,
-                    tabID: tab.id
+                    tabIDs: [tab.id]
                 )
             }
     }
