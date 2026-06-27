@@ -23,6 +23,7 @@ CHROMIUM_FORK_MARKER=".thebrowser-chromium-fork"
 FALLBACK_CEF_CHECKOUT="0d9d52a65c74c729e568ebf8506141a1e754eaeb"
 FALLBACK_CHROMIUM_CHECKOUT="refs/tags/148.0.7778.180"
 DEFAULT_CEF_BRANCH="7778"
+DEFAULT_CHROMIUM_GN_DEFINES="is_component_build=false symbol_level=0 forbid_non_component_debug_builds=false"
 
 export_cef_commit_hash() {
   if [[ ! -f "$EXPORT_VERSION_HEADER" ]]; then
@@ -423,9 +424,35 @@ apply_chromium_src_overrides() {
   )
 }
 
+apply_cef_patch_overrides() {
+  require_source_checkout
+  local patch_overrides="$CHROMIUM_SRC_OVERRIDES/cef/patch"
+  if [[ ! -d "$patch_overrides" ]]; then
+    return
+  fi
+
+  local override
+  local relative_path
+  local destination
+  while IFS= read -r override; do
+    relative_path="${override#"$CHROMIUM_SRC_OVERRIDES"/}"
+    destination="$CHROMIUM_SRC/$relative_path"
+
+    mkdir -p "$(dirname "$destination")"
+    cp "$override" "$destination"
+    echo "Applied CEF patch override: $relative_path"
+  done < <(
+    find "$patch_overrides" \
+      -type f \
+      ! -name ".gitkeep" \
+      -print | sort
+  )
+}
+
 create_projects() {
   require_source_checkout
-  local gn_defines="${THEBROWSER_CHROMIUM_GN_DEFINES:-is_component_build=true symbol_level=1}"
+  local gn_defines="${THEBROWSER_CHROMIUM_GN_DEFINES:-$DEFAULT_CHROMIUM_GN_DEFINES}"
+  apply_cef_patch_overrides
 
   (
     cd "$CEF_SRC"
@@ -433,6 +460,13 @@ create_projects() {
     export GN_DEFINES="$gn_defines"
     ./cef_create_projects.sh
   )
+}
+
+is_component_build_enabled() {
+  local configuration="$1"
+  local args_file="$CHROMIUM_SRC/out/${configuration}_GN_${PROJECT_ARCH}/args.gn"
+
+  [[ -f "$args_file" ]] && grep -Eq '^[[:space:]]*is_component_build[[:space:]]*=[[:space:]]*true([[:space:]]|$)' "$args_file"
 }
 
 build_configuration() {
@@ -542,6 +576,11 @@ copy_component_libraries_to_export() {
       continue
     fi
 
+    if ! is_component_build_enabled "$configuration"; then
+      echo "Skipping $configuration component dylib copy because is_component_build is disabled." >&2
+      continue
+    fi
+
     local copied=0
     local dylib
     while IFS= read -r -d '' dylib; do
@@ -555,6 +594,40 @@ copy_component_libraries_to_export() {
   done
 }
 
+strip_cef_framework_binaries() {
+  local framework_dir="$1"
+  if [[ "${THEBROWSER_CEF_STRIP_LOCAL_SYMBOLS:-1}" != "1" ]]; then
+    return
+  fi
+
+  local stripped=0
+  local binary
+  while IFS= read -r -d '' binary; do
+    strip -x "$binary"
+    stripped=$((stripped + 1))
+  done < <(
+    find "$framework_dir" \
+      -type f \
+      \( -name "Chromium Embedded Framework" -o -name "*.dylib" \) \
+      -print0
+  )
+
+  if [[ "$stripped" -gt 0 ]]; then
+    echo "Stripped local symbols from $stripped CEF binaries in $framework_dir." >&2
+  fi
+}
+
+compact_export_frameworks() {
+  local export_root="$1"
+  local configuration
+  for configuration in Debug Release; do
+    local framework_dir="$export_root/$configuration/Chromium Embedded Framework.framework"
+    if [[ -d "$framework_dir" ]]; then
+      strip_cef_framework_binaries "$framework_dir"
+    fi
+  done
+}
+
 install_export() {
   local distribution_dir
   distribution_dir="$(latest_distribution_dir "$@")"
@@ -564,6 +637,7 @@ install_export() {
   mkdir -p "$tmp_export"
   rsync -a --delete "$distribution_dir/" "$tmp_export/"
   copy_component_libraries_to_export "$tmp_export"
+  compact_export_frameworks "$tmp_export"
   touch "$tmp_export/$CHROMIUM_FORK_MARKER"
 
   rm -rf "$EXPORT_ROOT"
@@ -626,6 +700,9 @@ case "$COMMAND" in
   export)
     install_export
     ;;
+  compact-export)
+    compact_export_frameworks "$EXPORT_ROOT"
+    ;;
   package)
     package_all "$@"
     ;;
@@ -644,6 +721,7 @@ Usage:
   ./script/chromium_source.sh build [Debug|Release ...]
   ./script/chromium_source.sh distrib [Debug]
   ./script/chromium_source.sh export
+  ./script/chromium_source.sh compact-export
   ./script/chromium_source.sh package [Debug|Release ...]
   ./script/chromium_source.sh root
 
@@ -654,6 +732,11 @@ Defaults:
   then falls back to refs/tags/148.0.7778.180.
   Existing Chromium out/ build directories are preserved by default. Set
   THEBROWSER_CEF_CLOBBER_OUT=1 only when an explicit full CEF rebuild is wanted.
+  Chromium GN defaults: is_component_build=false symbol_level=0
+  forbid_non_component_debug_builds=false. Set THEBROWSER_CHROMIUM_GN_DEFINES
+  only when intentionally overriding the compact arm64 runtime shape.
+  CEF exports strip local Mach-O symbols by default. Set
+  THEBROWSER_CEF_STRIP_LOCAL_SYMBOLS=0 only when intentionally keeping them.
   GCLIENT_JOBS=4
   Source checkout: ThirdParty/cef/source
   Chromium checkout mode: --no-chromium-history
