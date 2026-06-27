@@ -123,6 +123,47 @@ describe("App", () => {
     );
   });
 
+  it("points primary download actions at the DMG asset when a non-DMG asset is listed first", async () => {
+    mockFetchResponse({
+      releases: [
+        {
+          ...releaseResponse.releases[0],
+          assets: [
+            {
+              id: 202,
+              name: "TheBrowser-1.4.0-symbols.zip",
+              contentType: "application/zip",
+              size: 8_388_608,
+              downloadCount: 7,
+              downloadURL: "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0-symbols.zip",
+            },
+            {
+              id: 203,
+              name: "TheBrowser-1.4.0.dmg",
+              contentType: "application/x-apple-diskimage",
+              size: 125_829_120,
+              downloadCount: 42,
+              downloadURL: "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0.dmg",
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
+        "href",
+        "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0.dmg",
+      );
+    });
+    expect(screen.getByRole("link", { name: /download latest/i })).toHaveAttribute(
+      "href",
+      "https://updates.thebrowser.app/downloads/TheBrowser-1.4.0.dmg",
+    );
+  });
+
   it("shows the empty releases state", async () => {
     mockFetchResponse({ releases: [] });
 
