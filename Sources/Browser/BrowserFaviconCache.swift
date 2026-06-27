@@ -39,7 +39,8 @@ import Foundation
         }
 
         if let loadTask = loadTasks[url] {
-            _ = await loadTask.value
+            let data = await loadTask.value
+            storeLoadedImageData(data, for: url)
             return
         }
 
@@ -51,15 +52,7 @@ import Foundation
         let data = await loadTask.value
         loadTasks[url] = nil
 
-        guard
-            let data,
-            let image = NSImage(data: data)
-        else {
-            failedURLs.insert(url)
-            return
-        }
-
-        store(image, for: url)
+        storeLoadedImageData(data, for: url)
     }
 
     // MARK: Private
@@ -84,5 +77,21 @@ import Foundation
         } catch {
             return nil
         }
+    }
+
+    private func storeLoadedImageData(_ data: Data?, for url: URL) {
+        guard imagesByURL[url] == nil else {
+            return
+        }
+
+        guard
+            let data,
+            let image = NSImage(data: data)
+        else {
+            failedURLs.insert(url)
+            return
+        }
+
+        store(image, for: url)
     }
 }
