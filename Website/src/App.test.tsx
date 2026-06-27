@@ -17,6 +17,14 @@ const releaseResponse = {
       notes: "Workspace polish and signed update fixes.",
       assets: [
         {
+          id: 200,
+          name: "appcast.xml",
+          contentType: "application/xml",
+          size: 2_048,
+          downloadCount: 7,
+          downloadURL: "https://updates.thebrowser.app/downloads/appcast.xml",
+        },
+        {
           id: 201,
           name: "TheBrowser-1.4.0.dmg",
           contentType: "application/x-apple-diskimage",
@@ -74,7 +82,7 @@ describe("App", () => {
     expect(screen.getByText("Loading release notes...")).toBeInTheDocument();
   });
 
-  it("loads release notes and points landing download actions at the latest stable asset", async () => {
+  it("loads release notes and points landing download actions at the latest stable installer", async () => {
     const fetchMock = mockFetchResponse(releaseResponse);
 
     render(<App />);

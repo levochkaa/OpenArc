@@ -124,7 +124,7 @@ function App() {
     () => releases.find((release) => release.isLatestStable) ?? releases.find((release) => release.channel === "stable"),
     [releases],
   );
-  const latestDownloadUrl = latestStableRelease?.assets[0]?.downloadURL ?? fallbackDownloadUrl;
+  const latestDownloadUrl = findMacOSInstallerAsset(latestStableRelease)?.downloadURL ?? fallbackDownloadUrl;
 
   return (
     <main>
@@ -372,6 +372,28 @@ function formatAssetSize(size: number | null) {
   }
 
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function findMacOSInstallerAsset(release: BrowserRelease | undefined) {
+  if (!release) {
+    return undefined;
+  }
+
+  return release.assets.find(isDiskImageAsset) ?? release.assets.find(isZipAsset);
+}
+
+function isDiskImageAsset(asset: ReleaseAsset) {
+  const name = asset.name.toLowerCase();
+  const contentType = asset.contentType.toLowerCase();
+
+  return name.endsWith(".dmg") || contentType === "application/x-apple-diskimage";
+}
+
+function isZipAsset(asset: ReleaseAsset) {
+  const name = asset.name.toLowerCase();
+  const contentType = asset.contentType.toLowerCase();
+
+  return name.endsWith(".zip") || contentType === "application/zip";
 }
 
 export default App;
