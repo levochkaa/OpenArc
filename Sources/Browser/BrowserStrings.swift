@@ -533,6 +533,16 @@ enum BrowserStrings {
         comment: "Tooltip shown for archiving a tab."
     )
 
+    static let tabCloseAction = NSLocalizedString(
+        "browser.tab.close_action",
+        comment: "Context menu title for closing a tab."
+    )
+
+    static let appTabRemoveFavoriteAction = NSLocalizedString(
+        "browser.app_tab.remove_favorite_action",
+        comment: "Context menu title for removing an app tab from favorites."
+    )
+
     static let tabCopyLinkAction = NSLocalizedString(
         "browser.tab.copy_link_action",
         comment: "Menu item title for copying a tab link."
@@ -651,6 +661,11 @@ enum BrowserStrings {
     static let tabRenameAction = NSLocalizedString(
         "browser.tab.rename_action",
         comment: "Context menu title for renaming a tab."
+    )
+
+    static let tabRenamePromptTitle = NSLocalizedString(
+        "browser.tab.rename_prompt.title",
+        comment: "Prompt title for renaming an icon-only tab."
     )
 
     static let tabShareAction = NSLocalizedString(

@@ -141,6 +141,7 @@ enum BrowserChromeLayout {
     static let sidebarListSpacing: CGFloat = 5
     static let sidebarRowHeight: CGFloat = 36
     static let sidebarRowCornerRadius: CGFloat = 10
+    static let currentURLRowCornerRadius: CGFloat = 12
     static let sidebarRowHorizontalPadding: CGFloat = 11
     static let sidebarTabTrailingPadding: CGFloat = 7
     static let sidebarRowContentSpacing: CGFloat = 8

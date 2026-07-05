@@ -797,6 +797,7 @@ enum BrowserWindowMode: Equatable {
             let movedTab = tabs.first(where: { $0.id == tabID }),
             movedTab.placement != .app
         {
+            closedAppTabIDs.remove(tabID)
             if wasSelectedInSourceSpace {
                 clearSelectedTab(tabID, forSpaceID: movingTab.spaceID)
                 setSelectedTabID(tabID, forSpaceID: movedTab.spaceID)
@@ -1399,7 +1400,64 @@ enum BrowserWindowMode: Equatable {
             return false
         }
 
+        if tabs.first(where: { $0.id == selectedTabID })?.placement == .app {
+            return closeAppTabProcess(id: selectedTabID)
+        }
+
         return closeTab(id: selectedTabID)
+    }
+
+    @discardableResult func closeAppTabProcess(id: String, forceClose: Bool = false) -> Bool {
+        guard
+            let tab = tabs.first(where: { $0.id == id }),
+            tab.placement == .app,
+            !closedAppTabIDs.contains(id)
+        else {
+            return false
+        }
+
+        closedAppTabIDs.insert(id)
+        removeTabFromSwitcherTracking(id)
+        BrowserTelemetry.captureUsage(.tabClosed, properties: telemetryProperties(for: tab))
+
+        if selectedTabID == id {
+            clearSelectedTab(id, forSpaceID: tab.spaceID)
+            let fallbackTabID = fallbackTabID(afterClosingTab: tab) ?? sidebarTabsForSelectedSpace().first?.id
+            selectedTabID = fallbackTabID
+            findResultMatchCount = nil
+            if let fallbackTabID {
+                tabDriver.selectTab(withID: fallbackTabID)
+                setSelectedTabID(fallbackTabID, forSpaceID: tab.spaceID)
+                recordSelectedTab(fallbackTabID)
+                runFind(forward: true, findNext: false)
+            } else {
+                tabDriver.deselectActiveTab()
+            }
+        }
+
+        tabDriver.closeTab(withID: id, forceClose: forceClose)
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+        return true
+    }
+
+    func removeAppTabFavorite(id: String) {
+        if closedAppTabIDs.contains(id), let tab = tabs.first(where: { $0.id == id }) {
+            tabs.removeAll { $0.id == id }
+            closedAppTabIDs.remove(id)
+            removeTabFromSwitcherTracking(id)
+            clearSelectedTab(id, forSpaceID: tab.spaceID)
+            removeEmptyPinnedTabFolders()
+            updateWindowTitle()
+            persistCurrentSessionIfAllowed()
+            return
+        }
+
+        moveTab(
+            withID: id,
+            toPlacement: .temporary,
+            atSectionIndex: temporaryTabs.count
+        )
     }
 
     func hasTabsBelow(id: String) -> Bool {
@@ -1409,9 +1467,17 @@ enum BrowserWindowMode: Equatable {
     func selectTab(id: String) {
         guard
             let tab = tabs.first(where: { $0.id == id }),
-            selectedTabID != id,
             !closingTabIDs.contains(id)
         else {
+            return
+        }
+
+        if closedAppTabIDs.contains(id), tab.placement == .app {
+            reopenClosedAppTab(id: id)
+            return
+        }
+
+        guard selectedTabID != id else {
             return
         }
 
@@ -1500,6 +1566,8 @@ enum BrowserWindowMode: Equatable {
         BrowserTelemetry.captureUsage(.tabClosed, properties: telemetryProperties(for: closingTab))
 
         tabs.removeAll { $0.id == id }
+        closedAppTabIDs.remove(id)
+        pendingReopenedAppTabIDs = pendingReopenedAppTabIDs.filter { $0.value != id && $0.key != id }
         removeTabFromSwitcherTracking(id)
         tabCreationUndoReferences.removeValue(forKey: id)?.currentTabID = nil
         clearSelectedTab(id, forSpaceID: closingTab.spaceID)
@@ -1632,6 +1700,8 @@ enum BrowserWindowMode: Equatable {
 
     private var hasCreatedInitialTab = false
     private var closingTabIDs = Set<String>()
+    private var closedAppTabIDs = Set<String>()
+    private var pendingReopenedAppTabIDs = [String: String]()
     private var isPersistenceEnabled = true
     private var isRestoringSession = false
     private var isApplyingRemoteSync = false
@@ -2289,6 +2359,110 @@ enum BrowserWindowMode: Equatable {
         )
     }
 
+    private func reidentifiedAppTab(
+        from tab: Tab,
+        id: String,
+        title: String? = nil,
+        urlString: String? = nil,
+        lastActivityAt: Date? = nil
+    ) -> Tab {
+        Tab(
+            id: id,
+            syncID: tab.syncID,
+            spaceID: tab.spaceID,
+            title: title ?? tab.title,
+            userTitleOverride: tab.userTitleOverride,
+            urlString: urlString ?? tab.urlString,
+            faviconURLString: tab.faviconURLString,
+            placement: .app,
+            pinnedFolderID: nil,
+            lastActivityAt: lastActivityAt ?? tab.lastActivityAt
+        )
+    }
+
+    private func reopenClosedAppTab(id: String) {
+        guard
+            canCreateTab,
+            let index = tabs.firstIndex(where: { $0.id == id }),
+            tabs[index].placement == .app,
+            closedAppTabIDs.contains(id)
+        else {
+            return
+        }
+
+        let tab = tabs[index]
+        captureSelectedTabPreviewIfNeeded()
+        dismissCommandBar()
+
+        let newTabID = tabDriver.createTab(
+            withURLString: resolvedBrowserURLString(tab.urlString),
+            makeActive: true
+        )
+        pendingReopenedAppTabIDs[newTabID] = id
+        tabs[index] = reidentifiedAppTab(from: tab, id: newTabID, lastActivityAt: dateProvider())
+        closedAppTabIDs.remove(id)
+        replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
+
+        selectedSpaceID = tab.spaceID
+        selectedTabID = newTabID
+        findResultMatchCount = nil
+        setSelectedTabID(newTabID, forSpaceID: tab.spaceID)
+        recordSelectedTab(newTabID)
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+    }
+
+    private func handleReopenedAppTabCreated(
+        id: String,
+        previousID: String,
+        title: String,
+        urlString: String
+    ) -> Bool {
+        guard let index = tabs.firstIndex(where: { $0.id == id || $0.id == previousID }) else {
+            return false
+        }
+
+        let tab = tabs[index]
+        tabs[index] = reidentifiedAppTab(
+            from: tab,
+            id: id,
+            title: title,
+            urlString: urlString,
+            lastActivityAt: tab.lastActivityAt
+        )
+        closedAppTabIDs.remove(previousID)
+        closedAppTabIDs.remove(id)
+        replaceTabRuntimeReferences(oldID: previousID, newID: id, spaceID: tab.spaceID)
+
+        if selectedTabID == id {
+            recordSelectedTab(id)
+        }
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+        return true
+    }
+
+    private func replaceTabRuntimeReferences(oldID: String, newID: String, spaceID: String) {
+        if selectedTabID == oldID {
+            selectedTabID = newID
+        }
+
+        for index in spaces.indices where spaces[index].selectedTabID == oldID {
+            spaces[index].selectedTabID = newID
+        }
+        setSelectedTabID(newID, forSpaceID: spaceID)
+
+        recentlySelectedTabIDs = recentlySelectedTabIDs.map { $0 == oldID ? newID : $0 }
+        if let previewImage = tabPreviewImagesByID.removeValue(forKey: oldID) {
+            tabPreviewImagesByID[newID] = previewImage
+        }
+        if let creationUndoReference = tabCreationUndoReferences.removeValue(forKey: oldID) {
+            creationUndoReference.currentTabID = newID
+            tabCreationUndoReferences[newID] = creationUndoReference
+        }
+        clearTabSwitcherState()
+    }
+
     private func moveTab(id tabID: String, toGlobalIndex insertionIndex: Int) {
         guard let currentIndex = tabs.firstIndex(where: { $0.id == tabID }) else {
             return
@@ -2553,6 +2727,13 @@ enum BrowserWindowMode: Equatable {
     }
 
     func handleCreatedTab(id: String, title: String, urlString: String) {
+        if
+            let previousID = pendingReopenedAppTabIDs.removeValue(forKey: id),
+            handleReopenedAppTabCreated(id: id, previousID: previousID, title: title, urlString: urlString)
+        {
+            return
+        }
+
         let restoredTab = isRestoringSession && !pendingRestoredTabs.isEmpty ? pendingRestoredTabs.removeFirst() : nil
         let pendingContext = pendingCreatedTabContexts.removeValue(forKey: id)
         let undoSnapshot = pendingContext?.undoSnapshot
@@ -2692,9 +2873,16 @@ enum BrowserWindowMode: Equatable {
     func handleClosedTab(id: String) {
         closingTabIDs.remove(id)
         let closedTab = tabs.first { $0.id == id }
+        if closedAppTabIDs.contains(id), closedTab?.placement == .app {
+            updateWindowTitle()
+            persistCurrentSessionIfAllowed()
+            return
+        }
+
         if closedTab != nil {
             tabs.removeAll { $0.id == id }
         }
+        closedAppTabIDs.remove(id)
         removeTabFromSwitcherTracking(id)
         if let closedTab {
             clearSelectedTab(id, forSpaceID: closedTab.spaceID)
@@ -3270,7 +3458,8 @@ enum BrowserWindowMode: Equatable {
         guard
             let selectedTabID,
             tabs.contains(where: { $0.id == selectedTabID }),
-            !closingTabIDs.contains(selectedTabID)
+            !closingTabIDs.contains(selectedTabID),
+            !closedAppTabIDs.contains(selectedTabID)
         else {
             return []
         }
@@ -3279,7 +3468,11 @@ enum BrowserWindowMode: Equatable {
         var orderedTabIDs = [String]()
 
         func appendTabID(_ tabID: String) {
-            guard !closingTabIDs.contains(tabID), seenTabIDs.insert(tabID).inserted else {
+            guard
+                !closingTabIDs.contains(tabID),
+                !closedAppTabIDs.contains(tabID),
+                seenTabIDs.insert(tabID).inserted
+            else {
                 return
             }
 
@@ -3290,7 +3483,11 @@ enum BrowserWindowMode: Equatable {
         recentlySelectedTabIDs.forEach(appendTabID)
 
         let fallbackTabs = tabs
-            .filter { !seenTabIDs.contains($0.id) && !closingTabIDs.contains($0.id) }
+            .filter {
+                !seenTabIDs.contains($0.id)
+                    && !closingTabIDs.contains($0.id)
+                    && !closedAppTabIDs.contains($0.id)
+            }
             .sorted { lhs, rhs in
                 lhs.lastActivityAt > rhs.lastActivityAt
             }
@@ -3374,7 +3571,9 @@ enum BrowserWindowMode: Equatable {
     }
 
     func pruneTabSwitcherTracking() {
-        let openTabIDs = Set(tabs.map(\.id)).subtracting(closingTabIDs)
+        let openTabIDs = Set(tabs.map(\.id))
+            .subtracting(closingTabIDs)
+            .subtracting(closedAppTabIDs)
         recentlySelectedTabIDs.removeAll { !openTabIDs.contains($0) }
 
         for tabID in Array(tabPreviewImagesByID.keys) where !openTabIDs.contains(tabID) {
@@ -3386,6 +3585,7 @@ enum BrowserWindowMode: Equatable {
         guard
             let selectedTabID,
             !closingTabIDs.contains(selectedTabID),
+            !closedAppTabIDs.contains(selectedTabID),
             let previewImage = BrowserTabPreviewCapture.image(for: hostView)
         else {
             return

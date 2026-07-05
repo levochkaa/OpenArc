@@ -650,6 +650,9 @@ struct BrowserSidebarView: View {
         BrowserSidebarAppTabsGrid(
             tabs: appTabs,
             draggedTabID: draggedTabID,
+            selectedTabID: snapshot.selectedTabID,
+            copyLinkDescriptor: model.shortcutStore.descriptor(for: .copyLink),
+            archiveTabDescriptor: model.shortcutStore.descriptor(for: .archiveTab),
             isSidebarResizing: isSidebarResizing,
             sidebarContentWidth: sidebarContentWidth,
             onSelect: { tabID in
@@ -662,6 +665,28 @@ struct BrowserSidebarView: View {
                 }
                 clearPinnedTabSelection()
                 model.selectTab(id: tabID)
+            },
+            onCopyLink: { tabID in
+                _ = model.copyTabLink(forTabID: tabID)
+            },
+            onRename: { tabID, titleOverride in
+                model.setUserTitleOverride(titleOverride, forTabID: tabID)
+            },
+            onRemoveFavorite: { tabID in
+                withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
+                    model.removeAppTabFavorite(id: tabID)
+                }
+            },
+            onClose: { tabID in
+                if let renamingTabID, renamingTabID != tabID {
+                    dismissRenamingIfNeeded()
+                }
+                if renamingTabID == tabID {
+                    renamingTabID = nil
+                }
+                _ = withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
+                    model.closeAppTabProcess(id: tabID)
+                }
             },
             onDragChanged: updateTabDrag(for:value:),
             onDragEnded: finishTabDrag(for:value:)
@@ -681,6 +706,9 @@ struct BrowserSidebarView: View {
             onToggleExpanded: {
                 dismissRenamingIfNeeded()
                 withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
+                    if row.folder.isExpanded {
+                        revealedPinnedFolderTabIDsByFolderID[row.folder.id] = nil
+                    }
                     model.togglePinnedTabFolderExpanded(id: row.folder.id)
                 }
             },
@@ -705,7 +733,11 @@ struct BrowserSidebarView: View {
             childCount: row.childCount,
             spaceID: spaceID
         )
+        .background {
+            BrowserChromeBackgroundView(mode: chromeBackgroundMode)
+        }
         .transition(BrowserChromeLayout.sidebarTabVisibilityTransition)
+        .zIndex(1)
         .opacity(draggedPinnedFolderID == row.folder.id ? 0.35 : 1)
         .simultaneousGesture(pinnedFolderDragGesture(for: row.folder.id))
     }

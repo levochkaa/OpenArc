@@ -123,6 +123,64 @@ import Testing
     ])
 }
 
+@Test func collapsedPinnedFolderShowsSelectedChildWithoutRevealedState() {
+    let space = BrowserChromeModel.Space(
+        id: "space",
+        title: "Space",
+        systemImageName: "square.grid.2x2",
+        isPinnedSectionCollapsed: false,
+        selectedTabID: "folder-tab"
+    )
+    let folder = BrowserChromeModel.PinnedTabFolder(
+        id: "folder",
+        spaceID: space.id,
+        parentFolderID: nil,
+        title: "Folder",
+        systemImageName: nil,
+        isExpanded: false
+    )
+    let folderTab = browserSidebarSnapshotTestTab(
+        id: "folder-tab",
+        spaceID: space.id,
+        title: "Folder Tab",
+        urlString: "https://folder.example",
+        placement: .spacePinned,
+        pinnedFolderID: folder.id
+    )
+    let otherFolderTab = browserSidebarSnapshotTestTab(
+        id: "other-folder-tab",
+        spaceID: space.id,
+        title: "Other Folder Tab",
+        urlString: "https://other.example",
+        placement: .spacePinned,
+        pinnedFolderID: folder.id
+    )
+    let snapshot = BrowserSidebarSnapshot(
+        spaces: [space],
+        selectedSpaceID: space.id,
+        activeSpace: space,
+        isActiveSpacePinnedSectionCollapsed: false,
+        allTabs: [folderTab, otherFolderTab],
+        pinnedTabFolders: [folder],
+        appTabs: [],
+        spacePinnedTabs: [folderTab, otherFolderTab],
+        temporaryTabs: [],
+        selectedTabID: folderTab.id,
+        archivableTabIDs: [],
+        canGoBack: false,
+        canGoForward: false,
+        canStopLoading: false,
+        canReload: false
+    )
+
+    let rows = snapshot.visiblePinnedRows(in: space.id)
+
+    #expect(rows.map(\.id) == [
+        "folder-\(folder.id)",
+        "tab-\(folderTab.id)",
+    ])
+}
+
 private func browserSidebarSnapshotTestTab(
     id: String,
     spaceID: String,

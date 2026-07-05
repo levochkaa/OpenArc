@@ -9,9 +9,16 @@ struct BrowserSidebarAppTabsGrid: View {
 
     let tabs: [BrowserChromeModel.Tab]
     let draggedTabID: String?
+    let selectedTabID: String?
+    let copyLinkDescriptor: BrowserCommandDescriptor
+    let archiveTabDescriptor: BrowserCommandDescriptor
     let isSidebarResizing: Bool
     let sidebarContentWidth: CGFloat
     let onSelect: (String) -> Void
+    let onCopyLink: (String) -> Void
+    let onRename: (String, String) -> Void
+    let onRemoveFavorite: (String) -> Void
+    let onClose: (String) -> Void
     let onDragChanged: (String, DragGesture.Value) -> Void
     let onDragEnded: (String, DragGesture.Value) -> Void
 
@@ -53,9 +60,24 @@ struct BrowserSidebarAppTabsGrid: View {
     private func appTabTile(_ tab: BrowserChromeModel.Tab, sectionIndex: Int) -> some View {
         BrowserSidebarAppTabTile(
             tab: tab,
+            copyLinkDescriptor: copyLinkDescriptor,
+            archiveTabDescriptor: archiveTabDescriptor,
+            isSelected: selectedTabID == tab.id,
             isSidebarResizing: isSidebarResizing,
             onSelect: {
                 onSelect(tab.id)
+            },
+            onCopyLink: {
+                onCopyLink(tab.id)
+            },
+            onRename: { title in
+                onRename(tab.id, title)
+            },
+            onRemoveFavorite: {
+                onRemoveFavorite(tab.id)
+            },
+            onClose: {
+                onClose(tab.id)
             }
         )
         .browserSidebarAppTabFrame(tabID: tab.id, sectionIndex: sectionIndex)
@@ -81,8 +103,15 @@ struct BrowserSidebarAppTabsGrid: View {
 
 struct BrowserSidebarAppTabTile: View {
     let tab: BrowserChromeModel.Tab
+    let copyLinkDescriptor: BrowserCommandDescriptor
+    let archiveTabDescriptor: BrowserCommandDescriptor
+    let isSelected: Bool
     let isSidebarResizing: Bool
     let onSelect: () -> Void
+    let onCopyLink: () -> Void
+    let onRename: (String) -> Void
+    let onRemoveFavorite: () -> Void
+    let onClose: () -> Void
 
     @State var isHovered = false
     @State var isPressed = false
@@ -131,5 +160,54 @@ struct BrowserSidebarAppTabTile: View {
             shortcut: nil,
             isPresented: isHovered && !isSidebarResizing
         )
+        .contextMenu {
+            BrowserSidebarTabContextMenuContent(
+                tab: tab,
+                copyLinkDescriptor: copyLinkDescriptor,
+                archiveTabDescriptor: archiveTabDescriptor,
+                closeTitle: BrowserStrings.tabCloseAction,
+                isSelected: isSelected,
+                canCreateFolderFromSelection: false,
+                showsArchiveTabsBelow: false,
+                canArchiveTabsBelow: false,
+                onCopyLink: onCopyLink,
+                onRename: promptAndRename,
+                onCreateFolderFromSelection: {},
+                onRemoveFavorite: onRemoveFavorite,
+                onClose: onClose,
+                onArchiveTabsBelow: {}
+            )
+        }
     }
+
+    func promptAndRename() {
+        guard
+            let title = promptForAppTabTitle(
+                title: BrowserStrings.tabRenamePromptTitle,
+                defaultValue: tab.userTitleOverride ?? tab.displayTitle
+            )
+        else {
+            return
+        }
+
+        onRename(title)
+    }
+}
+
+@MainActor private func promptForAppTabTitle(title: String, defaultValue: String) -> String? {
+    let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+    textField.stringValue = defaultValue
+
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.accessoryView = textField
+    alert.addButton(withTitle: "OK")
+    alert.addButton(withTitle: "Cancel")
+
+    guard alert.runModal() == .alertFirstButtonReturn else {
+        return nil
+    }
+
+    let value = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
 }

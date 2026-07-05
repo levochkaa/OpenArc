@@ -113,9 +113,22 @@ struct BrowserSidebarRow: View {
                 resetTransientInteractionState()
             }
             .contextMenu {
-                let sharingItems = makeSharingItems()
-
-                tabContextMenuItems(sharingItems: sharingItems)
+                BrowserSidebarTabContextMenuContent(
+                    tab: tab,
+                    copyLinkDescriptor: copyLinkDescriptor,
+                    archiveTabDescriptor: archiveTabDescriptor,
+                    closeTitle: archiveTabDescriptor.menuTitle,
+                    isSelected: isSelected,
+                    canCreateFolderFromSelection: canCreateFolderFromSelection,
+                    showsArchiveTabsBelow: true,
+                    canArchiveTabsBelow: canArchiveTabsBelow,
+                    onCopyLink: onCopyLink,
+                    onRename: beginRename,
+                    onCreateFolderFromSelection: onCreateFolderFromSelection,
+                    onRemoveFavorite: nil,
+                    onClose: onClose,
+                    onArchiveTabsBelow: onArchiveTabsBelow
+                )
             }
     }
 
@@ -260,60 +273,10 @@ struct BrowserSidebarRow: View {
         }
     }
 
-    @ViewBuilder var copyLinkMenuItem: some View {
-        if isSelected {
-            Button(copyLinkDescriptor.menuTitle, action: onCopyLink)
-                .browserKeyboardShortcut(copyLinkDescriptor.shortcut)
-        } else {
-            Button(copyLinkDescriptor.menuTitle, action: onCopyLink)
-        }
-    }
-
-    @ViewBuilder var archiveTabMenuItem: some View {
-        if isSelected {
-            Button(archiveTabDescriptor.menuTitle, role: .destructive, action: onClose)
-                .browserKeyboardShortcut(archiveTabDescriptor.shortcut)
-        } else {
-            Button(archiveTabDescriptor.menuTitle, role: .destructive, action: onClose)
-        }
-    }
-
-    @ViewBuilder func tabContextMenuItems(sharingItems: [Any]) -> some View {
-        copyLinkMenuItem
-        shareMenuItem(sharingItems: sharingItems)
-        if canCreateFolderFromSelection {
-            Button(BrowserStrings.pinnedTabFolderNewAction, action: onCreateFolderFromSelection)
-        }
-        Button(BrowserStrings.tabRenameAction, action: beginRename)
-        Divider()
-        archiveTabMenuItem
-        Button(
-            BrowserStrings.tabArchiveTabsBelowAction,
-            role: .destructive,
-            action: onArchiveTabsBelow
-        )
-        .disabled(!canArchiveTabsBelow)
-    }
-
-    func shareMenuItem(sharingItems: [Any]) -> some View {
-        BrowserSharingServicesMenu(
-            sharingItems: sharingItems,
-            subject: tab.displayTitle
-        )
-    }
-
     // MARK: Private
 
     private var hasRenameChanged: Bool {
         normalizedRenameTitle(draftTitle) != normalizedRenameTitle(initialRenameTitle)
-    }
-
-    private func makeSharingItems() -> [Any] {
-        if let pageURL = tab.pageURL {
-            return [pageURL]
-        }
-
-        return [NSString(string: tab.urlString)]
     }
 
     private func handlePrimaryTap() {
@@ -381,6 +344,80 @@ struct BrowserSidebarRow: View {
 
     private func normalizedRenameTitle(_ title: String) -> String {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - BrowserSidebarTabContextMenuContent
+
+struct BrowserSidebarTabContextMenuContent: View {
+    // MARK: Internal
+
+    let tab: BrowserChromeModel.Tab
+    let copyLinkDescriptor: BrowserCommandDescriptor
+    let archiveTabDescriptor: BrowserCommandDescriptor
+    let closeTitle: String
+    let isSelected: Bool
+    let canCreateFolderFromSelection: Bool
+    let showsArchiveTabsBelow: Bool
+    let canArchiveTabsBelow: Bool
+    let onCopyLink: () -> Void
+    let onRename: () -> Void
+    let onCreateFolderFromSelection: () -> Void
+    let onRemoveFavorite: (() -> Void)?
+    let onClose: () -> Void
+    let onArchiveTabsBelow: () -> Void
+
+    var body: some View {
+        copyLinkMenuItem
+        BrowserSharingServicesMenu(
+            sharingItems: sharingItems,
+            subject: tab.displayTitle
+        )
+        if canCreateFolderFromSelection {
+            Button(BrowserStrings.pinnedTabFolderNewAction, action: onCreateFolderFromSelection)
+        }
+        Button(BrowserStrings.tabRenameAction, action: onRename)
+        Divider()
+        archiveTabMenuItem
+        if let onRemoveFavorite {
+            Button(BrowserStrings.appTabRemoveFavoriteAction, action: onRemoveFavorite)
+        }
+        if showsArchiveTabsBelow {
+            Button(
+                BrowserStrings.tabArchiveTabsBelowAction,
+                role: .destructive,
+                action: onArchiveTabsBelow
+            )
+            .disabled(!canArchiveTabsBelow)
+        }
+    }
+
+    @ViewBuilder var copyLinkMenuItem: some View {
+        if isSelected {
+            Button(copyLinkDescriptor.menuTitle, action: onCopyLink)
+                .browserKeyboardShortcut(copyLinkDescriptor.shortcut)
+        } else {
+            Button(copyLinkDescriptor.menuTitle, action: onCopyLink)
+        }
+    }
+
+    @ViewBuilder var archiveTabMenuItem: some View {
+        if isSelected {
+            Button(closeTitle, role: .destructive, action: onClose)
+                .browserKeyboardShortcut(archiveTabDescriptor.shortcut)
+        } else {
+            Button(closeTitle, role: .destructive, action: onClose)
+        }
+    }
+
+    // MARK: Private
+
+    private var sharingItems: [Any] {
+        if let pageURL = tab.pageURL {
+            return [pageURL]
+        }
+
+        return [NSString(string: tab.urlString)]
     }
 }
 

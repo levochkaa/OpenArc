@@ -11,6 +11,8 @@ namespace {
 
 constexpr bool kEnablePasskeysAndWebAuthentication = false;
 
+constexpr char kDisableBackgroundingOccludedWindowsSwitch[] =
+    "disable-backgrounding-occluded-windows";
 constexpr char kDisableBlinkFeaturesSwitch[] = "disable-blink-features";
 constexpr char kDisableFeaturesSwitch[] = "disable-features";
 constexpr char kImmersiveReadAnythingFeature[] = "ImmersiveReadAnything";
@@ -122,6 +124,11 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
     // Immersive Read Anything currently assumes they are during soft navigation
     // metrics, which crashes CEF-hosted pages before its null check can run.
     DisableChromiumFeature(command_line, kImmersiveReadAnythingFeature);
+
+    // Keep visible CEF WebContents composited when macOS reports the app window
+    // as occluded. Chromium otherwise evicts the surface and Mission Control can
+    // reveal a blank layer before the active tab paints again.
+    command_line->AppendSwitch(kDisableBackgroundingOccludedWindowsSwitch);
 
     if (!kEnablePasskeysAndWebAuthentication) {
       // Temporarily keep passkeys/WebAuthn out of the browser process until the

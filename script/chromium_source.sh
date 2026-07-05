@@ -488,6 +488,39 @@ build_configuration() {
   )
 }
 
+validate_configuration() {
+  local configuration="$1"
+  case "$configuration" in
+    Debug|Release)
+      ;;
+    *)
+      echo "error: unsupported configuration '$configuration' (expected Debug or Release)" >&2
+      exit 2
+      ;;
+  esac
+}
+
+require_export_skeleton() {
+  if [[ ! -d "$EXPORT_ROOT" ]]; then
+    echo "error: CEF export skeleton does not exist at $EXPORT_ROOT" >&2
+    echo "Run ./script/chromium_source.sh package once to create the full export skeleton." >&2
+    exit 1
+  fi
+
+  local required_path
+  for required_path in \
+    "CMakeLists.txt" \
+    "CREDITS.html" \
+    "include/cef_app.h" \
+    "libcef_dll/CMakeLists.txt"; do
+    if [[ ! -e "$EXPORT_ROOT/$required_path" ]]; then
+      echo "error: CEF export skeleton is missing $required_path: $EXPORT_ROOT" >&2
+      echo "Run ./script/chromium_source.sh package once to refresh the full export skeleton." >&2
+      exit 1
+    fi
+  done
+}
+
 make_distribution() {
   local args=(
     "--ninja-build"
@@ -566,31 +599,38 @@ latest_distribution_dir() {
   printf '%s\n' "$latest"
 }
 
+copy_component_libraries_for_configuration() {
+  local configuration="$1"
+  local framework_dir="$2"
+  local build_dir="$CHROMIUM_SRC/out/${configuration}_GN_${PROJECT_ARCH}"
+
+  if [[ ! -d "$framework_dir" || ! -d "$build_dir" ]]; then
+    return
+  fi
+
+  if ! is_component_build_enabled "$configuration"; then
+    echo "Skipping $configuration component dylib copy because is_component_build is disabled." >&2
+    return
+  fi
+
+  local copied=0
+  local dylib
+  while IFS= read -r -d '' dylib; do
+    cp -p "$dylib" "$framework_dir/"
+    copied=$((copied + 1))
+  done < <(find "$build_dir" -maxdepth 1 -type f -name "lib*.dylib" -print0)
+
+  if [[ "$copied" -gt 0 ]]; then
+    echo "Copied $copied component dylibs into $configuration CEF framework export." >&2
+  fi
+}
+
 copy_component_libraries_to_export() {
   local export_root="$1"
   local configuration
   for configuration in Debug Release; do
     local framework_dir="$export_root/$configuration/Chromium Embedded Framework.framework"
-    local build_dir="$CHROMIUM_SRC/out/${configuration}_GN_${PROJECT_ARCH}"
-    if [[ ! -d "$framework_dir" || ! -d "$build_dir" ]]; then
-      continue
-    fi
-
-    if ! is_component_build_enabled "$configuration"; then
-      echo "Skipping $configuration component dylib copy because is_component_build is disabled." >&2
-      continue
-    fi
-
-    local copied=0
-    local dylib
-    while IFS= read -r -d '' dylib; do
-      cp -p "$dylib" "$framework_dir/"
-      copied=$((copied + 1))
-    done < <(find "$build_dir" -maxdepth 1 -type f -name "lib*.dylib" -print0)
-
-    if [[ "$copied" -gt 0 ]]; then
-      echo "Copied $copied component dylibs into $configuration CEF framework export." >&2
-    fi
+    copy_component_libraries_for_configuration "$configuration" "$framework_dir"
   done
 }
 
@@ -626,6 +666,43 @@ compact_export_frameworks() {
       strip_cef_framework_binaries "$framework_dir"
     fi
   done
+}
+
+sync_built_cef_framework_to_export() {
+  local configuration="$1"
+  validate_configuration "$configuration"
+  require_source_checkout
+  require_export_skeleton
+
+  local source_framework="$CHROMIUM_SRC/out/${configuration}_GN_${PROJECT_ARCH}/Chromium Embedded Framework.framework"
+  local destination_dir="$EXPORT_ROOT/$configuration"
+  local destination_framework="$destination_dir/Chromium Embedded Framework.framework"
+  local temporary_framework="$destination_dir/.Chromium Embedded Framework.framework.tmp.$$"
+
+  if [[ ! -d "$source_framework" ]]; then
+    echo "error: built $configuration CEF framework not found at $source_framework" >&2
+    echo "Run ./script/chromium_source.sh build $configuration first." >&2
+    exit 1
+  fi
+
+  mkdir -p "$destination_dir"
+  rm -rf "$temporary_framework"
+  rsync -a --delete "$source_framework/" "$temporary_framework/"
+  copy_component_libraries_for_configuration "$configuration" "$temporary_framework"
+  strip_cef_framework_binaries "$temporary_framework"
+
+  rm -rf "$destination_framework"
+  mv "$temporary_framework" "$destination_framework"
+  touch "$EXPORT_ROOT/$CHROMIUM_FORK_MARKER"
+  "$ROOT_DIR/script/chromium.sh" root "$configuration" >/dev/null
+  echo "Synced built $configuration CEF framework to $destination_framework"
+}
+
+sync_built_cef_frameworks_to_export() {
+  local configuration
+  while IFS= read -r configuration; do
+    sync_built_cef_framework_to_export "$configuration"
+  done < <(configurations_from_args "$@")
 }
 
 install_export() {
@@ -664,7 +741,12 @@ package_all() {
   local configuration
   while IFS= read -r configuration; do
     build_configuration "$configuration"
+    sync_built_cef_framework_to_export "$configuration"
   done < <(configurations_from_args "$@")
+
+  if [[ $# -eq 1 ]]; then
+    return
+  fi
 
   make_distribution "$@"
   install_export "$@"
@@ -692,13 +774,21 @@ case "$COMMAND" in
   build)
     while IFS= read -r configuration; do
       build_configuration "$configuration"
+      sync_built_cef_framework_to_export "$configuration"
     done < <(configurations_from_args "$@")
     ;;
+  sync-built)
+    sync_built_cef_frameworks_to_export "$@"
+    ;;
   distrib)
-    make_distribution "$@"
+    if [[ $# -eq 1 ]]; then
+      sync_built_cef_framework_to_export "$1"
+    else
+      make_distribution "$@"
+    fi
     ;;
   export)
-    install_export
+    install_export "$@"
     ;;
   compact-export)
     compact_export_frameworks "$EXPORT_ROOT"
@@ -719,8 +809,9 @@ Usage:
   ./script/chromium_source.sh apply-overrides
   ./script/chromium_source.sh create-projects
   ./script/chromium_source.sh build [Debug|Release ...]
-  ./script/chromium_source.sh distrib [Debug]
-  ./script/chromium_source.sh export
+  ./script/chromium_source.sh sync-built [Debug|Release ...]
+  ./script/chromium_source.sh distrib [Debug|Release]
+  ./script/chromium_source.sh export [Debug]
   ./script/chromium_source.sh compact-export
   ./script/chromium_source.sh package [Debug|Release ...]
   ./script/chromium_source.sh root
@@ -735,6 +826,10 @@ Defaults:
   Chromium GN defaults: is_component_build=false symbol_level=0
   forbid_non_component_debug_builds=false. Set THEBROWSER_CHROMIUM_GN_DEFINES
   only when intentionally overriding the compact arm64 runtime shape.
+  build automatically syncs the built CEF framework into ThirdParty/cef/export.
+  Use sync-built to refresh export from an already-built out/ directory without
+  rebuilding. distrib Debug/Release uses the same sync path for single-config
+  refreshes because CEF's macOS make_distrib expects both sample-app layouts.
   CEF exports strip local Mach-O symbols by default. Set
   THEBROWSER_CEF_STRIP_LOCAL_SYMBOLS=0 only when intentionally keeping them.
   GCLIENT_JOBS=4

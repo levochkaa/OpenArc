@@ -1296,6 +1296,90 @@ import Testing
 }
 
 @Test
+@MainActor func archiveSelectedAppTabClosesProcessAndKeepsFavorite() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    let appTabID = model.tabs[0].id
+    model.moveTab(withID: appTabID, toPlacement: .app, atSectionIndex: 0)
+
+    #expect(model.archiveSelectedTab())
+    driver.emitClose(id: appTabID)
+
+    #expect(model.tabs.map(\.id) == [appTabID])
+    #expect(model.appTabs.map(\.id) == [appTabID])
+    #expect(model.selectedTabID == nil)
+    #expect(driver.closedTabRequests.last == FakeBrowserTabDriver.CloseTabRequest(id: appTabID, forceClose: false))
+    #expect(driver.createdTabRequests.count == 1)
+    #expect(snapshotStore.savedSnapshots.last?.tabs.map(\.id) == [model.tabs[0].syncID])
+}
+
+@Test
+@MainActor func selectingClosedAppTabReopensProcessWithoutDuplicatingFavorite() throws {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    let appTabID = model.tabs[0].id
+    let syncID = model.tabs[0].syncID
+    model.moveTab(withID: appTabID, toPlacement: .app, atSectionIndex: 0)
+    #expect(model.archiveSelectedTab())
+
+    model.selectTab(id: appTabID)
+    let reopenedTabID = try #require(driver.createdTabRequests.last?.id)
+    driver.flushPendingCreateEvents()
+
+    #expect(driver.createdTabRequests.count == 2)
+    #expect(model.tabs.map(\.id) == [reopenedTabID])
+    #expect(model.appTabs.map(\.id) == [reopenedTabID])
+    #expect(model.appTabs.first?.syncID == syncID)
+    #expect(model.selectedTabID == reopenedTabID)
+}
+
+@Test
+@MainActor func removeFavoriteDeletesDormantAppTabWithoutCreatingTemporaryTab() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: preferencesStore
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    let appTabID = model.tabs[0].id
+    model.moveTab(withID: appTabID, toPlacement: .app, atSectionIndex: 0)
+    #expect(model.archiveSelectedTab())
+
+    model.removeAppTabFavorite(id: appTabID)
+
+    #expect(model.tabs.isEmpty)
+    #expect(model.appTabs.isEmpty)
+    #expect(model.temporaryTabs.isEmpty)
+    #expect(driver.closedTabRequests == [FakeBrowserTabDriver.CloseTabRequest(id: appTabID, forceClose: false)])
+}
+
+@Test
 @MainActor func movingAcrossAppSpacePinnedAndTemporaryPreservesOrderAndSelection() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()

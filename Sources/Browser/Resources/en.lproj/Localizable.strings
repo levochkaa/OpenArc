@@ -116,6 +116,8 @@
 "browser.tab.archive_action" = "Archive Tab";
 "browser.tab.archive_tabs_below_action" = "Archive Tabs Below";
 "browser.tab.archive_tooltip" = "Archive this tab";
+"browser.tab.close_action" = "Close Tab";
+"browser.app_tab.remove_favorite_action" = "Remove Favorite";
 "browser.tab.copy_link_action" = "Copy Link";
 "browser.tab.copy_url_action" = "Copy URL";
 "browser.site_control_center.action" = "Site Control Center";
@@ -140,6 +142,7 @@
 "browser.extensions.view_web_permissions" = "View Web Permissions";
 "browser.extensions.inspect_popup" = "Inspect Popup";
 "browser.tab.rename_action" = "Rename...";
+"browser.tab.rename_prompt.title" = "Rename Tab";
 "browser.tab.share_action" = "Share";
 "browser.tab.rename_tooltip_caption" = "Double-click to rename";
 "browser.settings.window_title" = "Settings";

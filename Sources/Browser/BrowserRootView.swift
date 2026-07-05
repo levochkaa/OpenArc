@@ -366,7 +366,8 @@ struct BrowserRootView: View {
                         blockedLeadingInset: browserContentMinX,
                         style: .compact(
                             anchorFrame: currentURLRowWindowFrame,
-                            sidebarWidth: model.sidebarWidth
+                            sidebarWidth: model.sidebarWidth,
+                            matchesAnchorWidth: showsSiteToolbar
                         ),
                         faviconCandidate: currentPageCommandBarFaviconCandidate
                     )
@@ -460,6 +461,7 @@ struct BrowserRootView: View {
                             blockedLeadingInset: browserContentMinX,
                             anchorFrame: currentURLRowWindowFrame,
                             sidebarWidth: model.sidebarWidth,
+                            matchesAnchorWidth: showsSiteToolbar,
                             faviconCandidate: currentPageCommandBarFaviconCandidate
                         )
                         .environmentObject(tooltipCoordinator)

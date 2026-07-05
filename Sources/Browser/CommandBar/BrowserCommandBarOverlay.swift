@@ -6,7 +6,7 @@ import SwiftUI
 
 enum BrowserCommandBarOverlayStyle {
     case standard
-    case compact(anchorFrame: CGRect?, sidebarWidth: CGFloat)
+    case compact(anchorFrame: CGRect?, sidebarWidth: CGFloat, matchesAnchorWidth: Bool)
 
     // MARK: Internal
 
@@ -293,12 +293,16 @@ struct BrowserCommandBarOverlay: View {
         switch style {
         case .standard:
             return BrowserChromeLayout.commandBarWidth
-        case .compact(let anchorFrame, let sidebarWidth):
+        case .compact(let anchorFrame, let sidebarWidth, let matchesAnchorWidth):
             let originX = compactPanelOriginX(anchorFrame: anchorFrame)
             let viewportMaximum = max(
                 availableSize.width - originX - BrowserChromeLayout.compactCommandBarHorizontalViewportPadding,
                 0
             )
+            if matchesAnchorWidth, let anchorFrame {
+                return min(max(anchorFrame.width, 0), viewportMaximum)
+            }
+
             let maximumWidth = min(
                 max(availableSize.width * BrowserChromeLayout.compactCommandBarMaximumWindowFraction, 0),
                 viewportMaximum
@@ -327,7 +331,7 @@ struct BrowserCommandBarOverlay: View {
                 width: max((availableSize.width - BrowserChromeLayout.commandBarWidth) / 2, 0),
                 height: commandBarTopInset(for: availableSize.height)
             )
-        case .compact(let anchorFrame, _):
+        case .compact(let anchorFrame, _, _):
             CGSize(
                 width: compactPanelOriginX(anchorFrame: anchorFrame),
                 height: compactPanelOriginY(anchorFrame: anchorFrame, availableHeight: availableSize.height)

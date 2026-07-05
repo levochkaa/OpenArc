@@ -37,13 +37,18 @@ struct BrowserDetachedCurrentPageCommandBarOverlayContent: View {
     let blockedLeadingInset: CGFloat
     let anchorFrame: CGRect?
     let sidebarWidth: CGFloat
+    let matchesAnchorWidth: Bool
     let faviconCandidate: BrowserCommandBarFaviconCandidate?
 
     var body: some View {
         BrowserCommandBarOverlay(
             model: currentPageCommandBarModel,
             blockedLeadingInset: blockedLeadingInset,
-            style: .compact(anchorFrame: anchorFrame, sidebarWidth: sidebarWidth),
+            style: .compact(
+                anchorFrame: anchorFrame,
+                sidebarWidth: sidebarWidth,
+                matchesAnchorWidth: matchesAnchorWidth
+            ),
             faviconCandidate: faviconCandidate
         )
         .zIndex(10)

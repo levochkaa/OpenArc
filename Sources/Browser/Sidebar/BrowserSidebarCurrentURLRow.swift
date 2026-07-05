@@ -399,7 +399,7 @@ struct BrowserSidebarCurrentURLRow: View {
     }
 
     var actionButtonOverlayShape: some Shape {
-        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: BrowserChromeLayout.currentURLRowCornerRadius, style: .continuous)
     }
 
     var body: some View {
@@ -413,7 +413,12 @@ struct BrowserSidebarCurrentURLRow: View {
                     .padding(.horizontal, BrowserChromeLayout.sidebarRowHorizontalPadding)
                     .frame(height: BrowserChromeLayout.sidebarRowHeight)
                     .background(rowBackgroundShape)
-                    .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
+                    .contentShape(
+                        RoundedRectangle(
+                            cornerRadius: BrowserChromeLayout.currentURLRowCornerRadius,
+                            style: .continuous
+                        )
+                    )
             }
             .buttonStyle(BrowserSidebarPressButtonStyle())
             .disabled(tab == nil)
@@ -618,7 +623,7 @@ struct BrowserSidebarCurrentURLRow: View {
     }
 
     var rowBackgroundShape: some View {
-        RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: BrowserChromeLayout.currentURLRowCornerRadius, style: .continuous)
             .fill(rowBackgroundColor)
     }
 
@@ -1072,7 +1077,7 @@ struct BrowserSiteToolbar: View {
                 .frame(height: BrowserChromeLayout.chromeButtonSize)
                 .background {
                     RoundedRectangle(
-                        cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
+                        cornerRadius: BrowserChromeLayout.currentURLRowCornerRadius,
                         style: .continuous
                     )
                     .fill(isURLButtonHovered
@@ -1081,7 +1086,7 @@ struct BrowserSiteToolbar: View {
                 }
                 .contentShape(
                     RoundedRectangle(
-                        cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
+                        cornerRadius: BrowserChromeLayout.currentURLRowCornerRadius,
                         style: .continuous
                     )
                 )
