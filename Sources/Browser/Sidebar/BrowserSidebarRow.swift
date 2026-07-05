@@ -13,7 +13,7 @@ struct BrowserSidebarRow: View {
     let isMultiSelected: Bool
     let isRenaming: Bool
     let canArchiveTabsBelow: Bool
-    let canCreateFolderFromSelection: Bool
+    let showsCreateFolderAction: Bool
     let indentLevel: Int
     let isSidebarResizing: Bool
     let interactionResetID: Int
@@ -23,11 +23,15 @@ struct BrowserSidebarRow: View {
     let onCommitRename: (String) -> Void
     let onCancelRename: () -> Void
     let onCreateFolderFromSelection: () -> Void
+    let onBackToPinnedURL: (() -> Void)?
+    let onReplacePinnedURLWithCurrent: (() -> Void)?
+    let onEditPinnedURL: ((String) -> Void)?
     let onClose: () -> Void
     let onArchiveTabsBelow: () -> Void
 
     @State var isRowHovered = false
     @State var isCloseHovered = false
+    @State var isPinnedIconHovered = false
     @State var isRowPressed = false
     @State var draftTitle = ""
     @State var initialRenameTitle = ""
@@ -49,6 +53,30 @@ struct BrowserSidebarRow: View {
         return !trimmedUserTitleOverride.isEmpty
     }
 
+    var isPinnedURLRow: Bool {
+        tab.placement == .spacePinned && tab.pinnedURLString != nil
+    }
+
+    var showsPinnedURLSplitControls: Bool {
+        isPinnedURLRow && tab.canResetToPinnedURL && !isRenaming
+    }
+
+    var showsPinnedURLCaption: Bool {
+        showsPinnedURLSplitControls && isPinnedIconHovered
+    }
+
+    var showsPinnedRuntimeCloseButton: Bool {
+        isSelected && isPinnedURLRow
+    }
+
+    var editPinnedURLMenuAction: (() -> Void)? {
+        guard onEditPinnedURL != nil else {
+            return nil
+        }
+
+        return { promptAndEditPinnedURL() }
+    }
+
     var renameTooltipCaption: String? {
         BrowserURLDisplayFormatter.displayString(for: tab.urlString)
     }
@@ -62,11 +90,31 @@ struct BrowserSidebarRow: View {
             return BrowserChromePalette.rowSelected.opacity(0.82)
         }
 
+        if showsPinnedURLSplitControls, isPinnedIconHovered {
+            return .clear
+        }
+
         return isRowHovered ? BrowserChromePalette.rowHover : .clear
     }
 
     var rowBackgroundLeadingInset: CGFloat {
         CGFloat(max(indentLevel, 0)) * BrowserChromeLayout.sidebarPinnedFolderTabIndent
+    }
+
+    var rowBackgroundFillLeadingInset: CGFloat {
+        guard
+            showsPinnedURLSplitControls,
+            isRowHovered,
+            !isPinnedIconHovered,
+            !isSelected,
+            !isMultiSelected
+        else {
+            return rowBackgroundLeadingInset
+        }
+
+        return rowBackgroundLeadingInset
+            + BrowserChromeLayout.sidebarPinnedURLIconButtonSize
+            - BrowserChromeLayout.sidebarPinnedURLTextHoverOverlap
     }
 
     var body: some View {
@@ -80,6 +128,7 @@ struct BrowserSidebarRow: View {
                     isRowHovered = hovering
                     if !hovering {
                         isCloseHovered = false
+                        isPinnedIconHovered = false
                     }
                     return
                 }
@@ -87,6 +136,7 @@ struct BrowserSidebarRow: View {
                 isRowHovered = hovering
                 if !hovering {
                     isCloseHovered = false
+                    isPinnedIconHovered = false
                 }
             }
             .onAppear {
@@ -96,6 +146,7 @@ struct BrowserSidebarRow: View {
                 syncDraftTitleIfNeeded(isRenaming: isRenaming)
                 if isRenaming {
                     isCloseHovered = false
+                    isPinnedIconHovered = false
                     isRowPressed = false
                 }
             }
@@ -119,12 +170,14 @@ struct BrowserSidebarRow: View {
                     archiveTabDescriptor: archiveTabDescriptor,
                     closeTitle: archiveTabDescriptor.menuTitle,
                     isSelected: isSelected,
-                    canCreateFolderFromSelection: canCreateFolderFromSelection,
+                    showsCreateFolderAction: showsCreateFolderAction,
                     showsArchiveTabsBelow: true,
                     canArchiveTabsBelow: canArchiveTabsBelow,
                     onCopyLink: onCopyLink,
                     onRename: beginRename,
                     onCreateFolderFromSelection: onCreateFolderFromSelection,
+                    onReplacePinnedURLWithCurrent: onReplacePinnedURLWithCurrent,
+                    onEditPinnedURL: editPinnedURLMenuAction,
                     onRemoveFavorite: nil,
                     onClose: onClose,
                     onArchiveTabsBelow: onArchiveTabsBelow
@@ -136,8 +189,12 @@ struct BrowserSidebarRow: View {
         ZStack(alignment: .trailing) {
             rowSurface
 
-            rowSelectionButton
-                .allowsHitTesting(!isRenaming)
+            if showsPinnedURLSplitControls {
+                pinnedURLSplitButtons
+            } else {
+                rowSelectionButton
+                    .allowsHitTesting(!isRenaming)
+            }
 
             closeButtonOverlay
                 .padding(.trailing, BrowserChromeLayout.sidebarTabTrailingPadding)
@@ -169,30 +226,81 @@ struct BrowserSidebarRow: View {
         )
     }
 
+    var pinnedURLSplitButtons: some View {
+        HStack(spacing: 0) {
+            if rowBackgroundLeadingInset > 0 {
+                Color.clear
+                    .frame(width: rowBackgroundLeadingInset)
+            }
+
+            Button(action: handlePinnedIconTap) {
+                Color.clear
+                    .frame(
+                        width: BrowserChromeLayout.sidebarPinnedURLIconButtonSize,
+                        height: BrowserChromeLayout.sidebarRowHeight
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
+            }
+            .buttonStyle(
+                BrowserSidebarPressTrackingButtonStyle { isPressed in
+                    isRowPressed = isPressed
+                }
+            )
+            .onHover { hovering in
+                guard !isSidebarResizing else {
+                    return
+                }
+
+                isPinnedIconHovered = hovering
+                if hovering {
+                    isCloseHovered = false
+                }
+            }
+
+            Button(action: handlePrimaryTap) {
+                Color.clear
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: BrowserChromeLayout.sidebarRowHeight,
+                        maxHeight: BrowserChromeLayout.sidebarRowHeight
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(
+                BrowserSidebarPressTrackingButtonStyle { isPressed in
+                    isRowPressed = isPressed
+                }
+            )
+            .simultaneousGesture(
+                TapGesture(count: 2)
+                    .onEnded {
+                        handlePrimaryDoubleTap()
+                    }
+            )
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: BrowserChromeLayout.sidebarRowHeight,
+            maxHeight: BrowserChromeLayout.sidebarRowHeight,
+            alignment: .leading
+        )
+        .allowsHitTesting(!isRenaming)
+    }
+
     var rowSurface: some View {
-        let spacing = BrowserChromeLayout.sidebarRowContentSpacing
-
-        return HStack(spacing: 0) {
-            BrowserFaviconView(url: tab.faviconURL)
-            Spacer(minLength: 0)
-                .frame(width: spacing)
-
-            if isRenaming {
-                BrowserSidebarTitleTextField(
-                    text: $draftTitle,
-                    isFocused: isRenaming,
-                    onSubmit: submitRename,
-                    onCancel: cancelRename,
-                    onBlur: blurRename
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .offset(y: 1)
+        HStack(spacing: 0) {
+            if isPinnedURLRow {
+                BrowserFaviconView(url: tab.faviconURL, pageURLString: tab.urlString)
+                    .frame(
+                        width: BrowserChromeLayout.sidebarPinnedURLIconButtonSize,
+                        height: BrowserChromeLayout.sidebarRowHeight
+                    )
+                rowTitleContent
             } else {
-                Text(tab.displayTitle)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(BrowserChromePalette.primaryText)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                BrowserFaviconView(url: tab.faviconURL, pageURLString: tab.urlString)
+                Spacer(minLength: 0)
+                    .frame(width: BrowserChromeLayout.sidebarRowContentSpacing)
+                rowTitleContent
             }
         }
         .padding(.trailing, showsCloseButton ? closeButtonReservedWidth : 0)
@@ -203,10 +311,11 @@ struct BrowserSidebarRow: View {
             shortcut: nil,
             isPresented: isRowHovered
                 && !isCloseHovered
+                && !isPinnedIconHovered
                 && !isRenaming
                 && !isSidebarResizing
         )
-        .padding(.leading, BrowserChromeLayout.sidebarRowHorizontalPadding)
+        .padding(.leading, isPinnedURLRow ? 0 : BrowserChromeLayout.sidebarRowHorizontalPadding)
         .padding(.leading, rowBackgroundLeadingInset)
         .padding(.trailing, BrowserChromeLayout.sidebarTabTrailingPadding)
         .frame(
@@ -215,8 +324,45 @@ struct BrowserSidebarRow: View {
             maxHeight: BrowserChromeLayout.sidebarRowHeight,
             alignment: .leading
         )
-        .background(backgroundShape)
+        .background {
+            ZStack(alignment: .leading) {
+                backgroundShape
+                pinnedIconHoverBackground
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius))
+    }
+
+    @ViewBuilder var rowTitleContent: some View {
+        if isRenaming {
+            BrowserSidebarTitleTextField(
+                text: $draftTitle,
+                isFocused: isRenaming,
+                onSubmit: submitRename,
+                onCancel: cancelRename,
+                onBlur: blurRename
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .offset(y: 1)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(tab.displayTitle)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(BrowserChromePalette.primaryText)
+                    .lineLimit(1)
+
+                if showsPinnedURLCaption {
+                    Text(BrowserStrings.pinnedTabBackToPinnedURL)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(BrowserChromePalette.secondaryText)
+                        .lineLimit(1)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .animation(.easeOut(duration: 0.16), value: showsPinnedURLCaption)
+        }
     }
 
     var closeButtonOverlay: some View {
@@ -226,7 +372,7 @@ struct BrowserSidebarRow: View {
                     RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarCloseCornerRadius, style: .continuous)
                         .fill(closeButtonBackgroundColor)
 
-                    Image(systemName: "xmark")
+                    Image(systemName: showsPinnedRuntimeCloseButton ? "minus" : "xmark")
                         .font(.system(size: BrowserChromeLayout.sidebarCloseSymbolSize, weight: .bold))
                         .foregroundStyle(BrowserChromePalette.rowCloseForeground)
                 }
@@ -263,13 +409,48 @@ struct BrowserSidebarRow: View {
 
     var backgroundShape: some View {
         HStack(spacing: 0) {
-            if rowBackgroundLeadingInset > 0 {
+            if rowBackgroundFillLeadingInset > 0 {
                 Color.clear
-                    .frame(width: rowBackgroundLeadingInset)
+                    .frame(width: rowBackgroundFillLeadingInset)
             }
 
             RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
                 .fill(rowBackgroundColor)
+        }
+    }
+
+    @ViewBuilder var pinnedIconHoverBackground: some View {
+        if showsPinnedURLSplitControls, isPinnedIconHovered {
+            HStack(spacing: 0) {
+                if rowBackgroundLeadingInset > 0 {
+                    Color.clear
+                        .frame(width: rowBackgroundLeadingInset)
+                }
+
+                if isSelected {
+                    UnevenRoundedRectangle(
+                        cornerRadii: RectangleCornerRadii(
+                            topLeading: BrowserChromeLayout.sidebarRowCornerRadius,
+                            bottomLeading: BrowserChromeLayout.sidebarRowCornerRadius
+                        ),
+                        style: .continuous
+                    )
+                    .fill(BrowserChromePalette.rowHover)
+                    .frame(
+                        width: BrowserChromeLayout.sidebarPinnedURLIconButtonSize,
+                        height: BrowserChromeLayout.sidebarRowHeight
+                    )
+                } else {
+                    RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
+                        .fill(BrowserChromePalette.rowHover)
+                        .frame(
+                            width: BrowserChromeLayout.sidebarPinnedURLIconButtonSize,
+                            height: BrowserChromeLayout.sidebarRowHeight
+                        )
+                }
+
+                Spacer(minLength: 0)
+            }
         }
     }
 
@@ -296,11 +477,29 @@ struct BrowserSidebarRow: View {
         beginRename()
     }
 
+    private func handlePinnedIconTap() {
+        onBackToPinnedURL?()
+    }
+
     private func beginRename() {
         let title = tab.userTitleOverride ?? tab.displayTitle
         draftTitle = title
         initialRenameTitle = title
         onBeginRename()
+    }
+
+    private func promptAndEditPinnedURL() {
+        guard
+            let onEditPinnedURL,
+            let urlString = promptForPinnedTabURL(
+                title: BrowserStrings.pinnedTabEditURLPromptTitle,
+                defaultValue: tab.pinnedURLString ?? tab.urlString
+            )
+        else {
+            return
+        }
+
+        onEditPinnedURL(urlString)
     }
 
     private func submitRename() {
@@ -329,6 +528,7 @@ struct BrowserSidebarRow: View {
     private func resetTransientInteractionState() {
         isRowHovered = false
         isCloseHovered = false
+        isPinnedIconHovered = false
         isRowPressed = false
     }
 
@@ -357,12 +557,14 @@ struct BrowserSidebarTabContextMenuContent: View {
     let archiveTabDescriptor: BrowserCommandDescriptor
     let closeTitle: String
     let isSelected: Bool
-    let canCreateFolderFromSelection: Bool
+    let showsCreateFolderAction: Bool
     let showsArchiveTabsBelow: Bool
     let canArchiveTabsBelow: Bool
     let onCopyLink: () -> Void
     let onRename: () -> Void
     let onCreateFolderFromSelection: () -> Void
+    let onReplacePinnedURLWithCurrent: (() -> Void)?
+    let onEditPinnedURL: (() -> Void)?
     let onRemoveFavorite: (() -> Void)?
     let onClose: () -> Void
     let onArchiveTabsBelow: () -> Void
@@ -373,10 +575,16 @@ struct BrowserSidebarTabContextMenuContent: View {
             sharingItems: sharingItems,
             subject: tab.displayTitle
         )
-        if canCreateFolderFromSelection {
+        if showsCreateFolderAction {
             Button(BrowserStrings.pinnedTabFolderNewAction, action: onCreateFolderFromSelection)
         }
         Button(BrowserStrings.tabRenameAction, action: onRename)
+        if let onReplacePinnedURLWithCurrent {
+            Button(BrowserStrings.pinnedTabReplaceURLWithCurrentAction, action: onReplacePinnedURLWithCurrent)
+        }
+        if let onEditPinnedURL {
+            Button(BrowserStrings.pinnedTabEditURLAction, action: onEditPinnedURL)
+        }
         Divider()
         archiveTabMenuItem
         if let onRemoveFavorite {
@@ -436,6 +644,7 @@ struct BrowserSidebarPinnedFolderRowView: View {
     let onCommitRename: (String) -> Void
     let onCancelRename: () -> Void
     let onChangeIcon: (String?) -> Void
+    let isDropTargeted: Bool
 
     @State var isRowHovered = false
     @State var isRowPressed = false
@@ -444,6 +653,14 @@ struct BrowserSidebarPinnedFolderRowView: View {
 
     var rowBackgroundLeadingInset: CGFloat {
         CGFloat(max(indentLevel, 0)) * BrowserChromeLayout.sidebarPinnedFolderTabIndent
+    }
+
+    var rowBackgroundColor: Color {
+        if isDropTargeted {
+            return BrowserChromePalette.rowSelected
+        }
+
+        return isRowHovered ? BrowserChromePalette.rowHover : Color.clear
     }
 
     var body: some View {
@@ -558,7 +775,7 @@ struct BrowserSidebarPinnedFolderRowView: View {
             }
 
             RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
-                .fill(isRowHovered ? BrowserChromePalette.rowHover : Color.clear)
+                .fill(rowBackgroundColor)
         }
     }
 
@@ -667,6 +884,24 @@ struct BrowserPinnedTabFolderIcon: View {
             height: BrowserChromeLayout.sidebarPinnedFolderIconSize
         )
     }
+}
+
+@MainActor private func promptForPinnedTabURL(title: String, defaultValue: String) -> String? {
+    let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+    textField.stringValue = defaultValue
+
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.accessoryView = textField
+    alert.addButton(withTitle: "OK")
+    alert.addButton(withTitle: "Cancel")
+
+    guard alert.runModal() == .alertFirstButtonReturn else {
+        return nil
+    }
+
+    let value = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
 }
 
 // MARK: - BrowserSharingServicesMenu

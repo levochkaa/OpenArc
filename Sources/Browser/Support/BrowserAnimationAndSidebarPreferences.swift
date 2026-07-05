@@ -138,10 +138,14 @@ extension View {
         firstSectionIndex: Int,
         afterSectionIndex: Int,
         childCount: Int,
-        spaceID: String?
+        spaceID: String?,
+        childHorizontalInset: CGFloat
     ) -> some View {
         background {
             GeometryReader { proxy in
+                let frame = proxy.frame(
+                    in: .named(BrowserChromeLayout.sidebarTabDragCoordinateSpaceName)
+                )
                 Color.clear.preference(
                     key: BrowserSidebarPinnedFolderRowFramePreferenceKey.self,
                     value: [
@@ -150,6 +154,28 @@ extension View {
                             firstSectionIndex: firstSectionIndex,
                             afterSectionIndex: afterSectionIndex,
                             childCount: childCount,
+                            spaceID: spaceID,
+                            frame: frame,
+                            childPreviewFrame: CGRect(
+                                x: frame.minX + childHorizontalInset,
+                                y: frame.minY,
+                                width: max(frame.width - childHorizontalInset, 0),
+                                height: frame.height
+                            )
+                        ),
+                    ]
+                )
+            }
+        }
+    }
+
+    func browserSidebarSpaceHeaderFrame(spaceID: String) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: BrowserSidebarSpaceHeaderFramePreferenceKey.self,
+                    value: [
+                        BrowserSidebarSpaceHeaderFrame(
                             spaceID: spaceID,
                             frame: proxy.frame(
                                 in: .named(BrowserChromeLayout.sidebarTabDragCoordinateSpaceName)
@@ -229,6 +255,19 @@ struct BrowserSidebarPinnedFolderRowFramePreferenceKey: PreferenceKey {
     static func reduce(
         value: inout [BrowserSidebarPinnedFolderRowFrame],
         nextValue: () -> [BrowserSidebarPinnedFolderRowFrame]
+    ) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+// MARK: - BrowserSidebarSpaceHeaderFramePreferenceKey
+
+struct BrowserSidebarSpaceHeaderFramePreferenceKey: PreferenceKey {
+    static let defaultValue = [BrowserSidebarSpaceHeaderFrame]()
+
+    static func reduce(
+        value: inout [BrowserSidebarSpaceHeaderFrame],
+        nextValue: () -> [BrowserSidebarSpaceHeaderFrame]
     ) {
         value.append(contentsOf: nextValue())
     }

@@ -23,6 +23,7 @@ struct BrowserSidebarView: View {
     let onURLRowFrameChange: (CGRect?) -> Void
 
     @State var isClearButtonHovered = false
+    @State var activeTemporaryTabClearConfirmationTabID: String?
     @State var isSidebarHovered = false
     @State var renamingSpaceID: String?
     @State var renamingTabID: String?
@@ -30,7 +31,8 @@ struct BrowserSidebarView: View {
     @State var draggedTabID: String?
     @State var draggedTabIDs = Set<String>()
     @State var draggedPinnedFolderID: String?
-    @State var dropTarget: BrowserSidebarTabDropTarget?
+    @State var dropProposal: BrowserSidebarTabDropProposal?
+    @State var tabDragSession: BrowserSidebarTabDragSession?
     @StateObject var dragPreviewStore = BrowserSidebarTabDragPreviewStore()
     @State var suppressedTabSelectionAfterDragID: String?
     @State var selectedPinnedTabIDs = Set<String>()
@@ -41,6 +43,7 @@ struct BrowserSidebarView: View {
     @State var tabRowFrames = [String: BrowserSidebarTabRowFrame]()
     @State var tabDropRowFrameList = [BrowserSidebarTabRowFrame]()
     @State var pinnedFolderRowFrames = [BrowserSidebarPinnedFolderRowFrame]()
+    @State var spaceHeaderFrames = [BrowserSidebarSpaceHeaderFrame]()
     @State var rawAppTabFrames = [String: BrowserSidebarAppTabFrame]()
     @State var appTabFrames = [String: BrowserSidebarAppTabFrame]()
     @State var appTabDropFrameList = [BrowserSidebarAppTabFrame]()
@@ -63,14 +66,7 @@ struct BrowserSidebarView: View {
     }
 
     var dropIndicatorFrame: CGRect? {
-        BrowserSidebarTabDropIndicatorFrameResolver().frame(
-            for: dropTarget,
-            rowFrames: tabDropRowFrameList,
-            emptySectionFrames: emptySectionFrames,
-            pinnedFolderFrames: pinnedFolderRowFrames,
-            horizontalInset: 6,
-            thickness: BrowserChromeLayout.sidebarDropIndicatorThickness
-        )
+        dropProposal?.indicatorFrame
     }
 
     var body: some View {
@@ -91,7 +87,7 @@ struct BrowserSidebarView: View {
                 }
             }
             .zIndex(1)
-            .padding(.bottom, BrowserChromeLayout.sidebarSectionSpacing)
+            .padding(.bottom, BrowserChromeLayout.sidebarListSpacing)
 
             spacePages(
                 for: renderedSidebarSnapshot,
@@ -418,12 +414,23 @@ struct BrowserSidebarView: View {
             isSpacePagerDragging = false
             spacePagerRawDragTranslation = 0
             spacePagerDragTranslation = 0
+            activeTemporaryTabClearConfirmationTabID = nil
+        }
+        .onChange(of: renderedSidebarSnapshot.selectedTabID) { _, selectedTabID in
+            guard activeTemporaryTabClearConfirmationTabID != selectedTabID else {
+                return
+            }
+
+            activeTemporaryTabClearConfirmationTabID = nil
         }
         .onPreferenceChange(BrowserSidebarTabRowFramePreferenceKey.self) { frames in
             setTabRowFrames(frames, for: renderedSidebarSnapshot)
         }
         .onPreferenceChange(BrowserSidebarPinnedFolderRowFramePreferenceKey.self) { frames in
             pinnedFolderRowFrames = frames
+        }
+        .onPreferenceChange(BrowserSidebarSpaceHeaderFramePreferenceKey.self) { frames in
+            spaceHeaderFrames = frames
         }
         .onPreferenceChange(BrowserSidebarEmptySectionFramePreferenceKey.self) { frames in
             setEmptySectionFrames(frames, for: renderedSidebarSnapshot)
@@ -451,7 +458,7 @@ struct BrowserSidebarView: View {
             ? renderedSidebarSnapshot.isPinnedSectionCollapsed(in: space.id)
             : false
 
-        return VStack(spacing: BrowserChromeLayout.sidebarSectionSpacing) {
+        return VStack(spacing: BrowserChromeLayout.sidebarListSpacing) {
             if model.supportsSpaces {
                 spaceHeaderRow(for: space, in: renderedSidebarSnapshot)
                     .background {
@@ -492,6 +499,14 @@ struct BrowserSidebarView: View {
                                 }
 
                                 if !spacePinnedTabs.isEmpty {
+                                    let selectedTemporaryTabID = temporaryTabs.contains {
+                                        $0.id == renderedSidebarSnapshot.selectedTabID
+                                    } ? renderedSidebarSnapshot.selectedTabID : nil
+                                    let hasSingleTemporaryTab = temporaryTabs.count == 1
+                                    let isConfirmingClearActiveTemporaryTab = selectedTemporaryTabID != nil
+                                        && activeTemporaryTabClearConfirmationTabID == selectedTemporaryTabID
+                                    let shouldClearActiveTemporaryTab = hasSingleTemporaryTab
+                                        || isConfirmingClearActiveTemporaryTab
                                     BrowserSidebarTemporaryTabsDivider(
                                         clearTemporaryTabsDescriptor: model.shortcutStore
                                             .descriptor(for: .clearTemporaryTabs),
@@ -499,6 +514,7 @@ struct BrowserSidebarView: View {
                                         showsClearButton: isSidebarHovered
                                             && !temporaryTabs.isEmpty
                                             && renderedSidebarSnapshot.selectedSpaceID == space.id,
+                                        showsClearActiveTabIndicator: shouldClearActiveTemporaryTab,
                                         isClearButtonHovered: isClearButtonHovered,
                                         onHoverClearButton: { hovering in
                                             guard !isSidebarResizing else {
@@ -511,7 +527,11 @@ struct BrowserSidebarView: View {
                                             clearTabDragState()
                                             dismissRenamingIfNeeded()
                                             withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
-                                                model.clearTemporaryTabs()
+                                                model.clearTemporaryTabs(
+                                                    includingActiveTab: shouldClearActiveTemporaryTab
+                                                )
+                                                activeTemporaryTabClearConfirmationTabID =
+                                                    shouldClearActiveTemporaryTab ? nil : selectedTemporaryTabID
                                             }
                                         }
                                     )
@@ -613,6 +633,7 @@ struct BrowserSidebarView: View {
             isRenaming: renamingSpaceID == space.id,
             isCollapsed: renderedSidebarSnapshot.isPinnedSectionCollapsed(in: space.id),
             hasPinnedTabs: !renderedSidebarSnapshot.spacePinnedTabs(in: space.id).isEmpty,
+            isDropTargeted: isSpaceHeaderDropTarget(spaceID: space.id),
             isSidebarResizing: isSidebarResizing,
             interactionResetID: tabRowInteractionResetID,
             onToggleCollapsed: {
@@ -641,6 +662,7 @@ struct BrowserSidebarView: View {
                 model.deleteSpace(id: space.id)
             }
         )
+        .browserSidebarSpaceHeaderFrame(spaceID: space.id)
     }
 
     private func appTabsGrid(
@@ -724,14 +746,17 @@ struct BrowserSidebarView: View {
             },
             onChangeIcon: { systemImageName in
                 model.setIcon(systemImageName, forPinnedTabFolderID: row.folder.id)
-            }
+            },
+            isDropTargeted: isPinnedFolderDropTarget(folderID: row.folder.id)
         )
         .browserSidebarPinnedFolderRowFrame(
             folderID: row.folder.id,
             firstSectionIndex: row.firstSectionIndex,
             afterSectionIndex: row.afterSectionIndex,
             childCount: row.childCount,
-            spaceID: spaceID
+            spaceID: spaceID,
+            childHorizontalInset: CGFloat(max(row.depth + 1, 0))
+                * BrowserChromeLayout.sidebarPinnedFolderTabIndent
         )
         .background {
             BrowserChromeBackgroundView(mode: chromeBackgroundMode)
@@ -767,7 +792,9 @@ struct BrowserSidebarView: View {
         folderChildIndex: Int? = nil,
         indentLevel: Int = 0
     ) -> some View {
-        BrowserSidebarRow(
+        let folderCreationTabIDs = pinnedTabFolderCreationTabIDs(fromTabID: tab.id, in: section)
+
+        return BrowserSidebarRow(
             tab: tab,
             copyLinkDescriptor: model.shortcutStore.descriptor(for: .copyLink),
             archiveTabDescriptor: model.shortcutStore.descriptor(for: .archiveTab),
@@ -775,7 +802,7 @@ struct BrowserSidebarView: View {
             isMultiSelected: selectedPinnedTabIDs.contains(tab.id),
             isRenaming: renamingTabID == tab.id,
             canArchiveTabsBelow: snapshot.archivableTabIDs.contains(tab.id),
-            canCreateFolderFromSelection: canCreateFolderFromSelection(fromTabID: tab.id, in: section),
+            showsCreateFolderAction: !folderCreationTabIDs.isEmpty,
             indentLevel: indentLevel,
             isSidebarResizing: isSidebarResizing,
             interactionResetID: tabRowInteractionResetID,
@@ -803,8 +830,23 @@ struct BrowserSidebarView: View {
                 renamingTabID = nil
             },
             onCreateFolderFromSelection: {
-                createFolderFromSelectedPinnedTabs()
+                createPinnedTabFolder(containingTabIDs: folderCreationTabIDs)
             },
+            onBackToPinnedURL: tab.placement == .spacePinned
+                ? {
+                    _ = model.resetPinnedTabToPinnedURL(id: tab.id)
+                }
+                : nil,
+            onReplacePinnedURLWithCurrent: tab.placement == .spacePinned
+                ? {
+                    _ = model.replacePinnedURLWithCurrent(forTabID: tab.id)
+                }
+                : nil,
+            onEditPinnedURL: tab.placement == .spacePinned
+                ? { urlString in
+                    _ = model.setPinnedURLString(urlString, forTabID: tab.id)
+                }
+                : nil,
             onClose: {
                 if let renamingTabID, renamingTabID != tab.id {
                     dismissRenamingIfNeeded()
@@ -813,7 +855,11 @@ struct BrowserSidebarView: View {
                     renamingTabID = nil
                 }
                 _ = withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
-                    model.closeTab(id: tab.id)
+                    if tab.placement == .spacePinned, tab.pinnedURLString != nil, snapshot.selectedTabID == tab.id {
+                        model.closePinnedTabProcessOrReset(id: tab.id)
+                    } else {
+                        model.closeTab(id: tab.id)
+                    }
                 }
             },
             onArchiveTabsBelow: {
@@ -844,13 +890,40 @@ struct BrowserSidebarView: View {
     ) -> some View {
         BrowserSidebarEmptySectionDropZone(
             height: height,
-            showsDropIndicator: dropTarget == BrowserSidebarTabDropTarget(
+            showsDropIndicator: dropProposal?.target == BrowserSidebarTabDropTarget(
                 section: section,
                 sectionIndex: 0,
                 spaceID: spaceID
             )
         )
         .browserSidebarEmptySectionFrame(section: section, spaceID: spaceID)
+    }
+
+    private func isPinnedFolderDropTarget(folderID: String) -> Bool {
+        guard
+            let proposal = dropProposal,
+            proposal.indicatorFrame == nil,
+            proposal.target.section == .spacePinned
+        else {
+            return false
+        }
+
+        return proposal.target.pinnedFolderID == folderID
+    }
+
+    private func isSpaceHeaderDropTarget(spaceID: String) -> Bool {
+        guard
+            let proposal = dropProposal,
+            proposal.indicatorFrame == nil,
+            proposal.target.section == .spacePinned,
+            proposal.target.sectionIndex == 0,
+            proposal.target.spaceID == spaceID,
+            proposal.target.pinnedFolderID == nil
+        else {
+            return false
+        }
+
+        return true
     }
 
     private func selectedSpaceIndex(in snapshot: BrowserSidebarSnapshot) -> Int? {
@@ -1109,41 +1182,7 @@ struct BrowserSidebarView: View {
     }
 
     private func displayedSnapshot(for snapshot: BrowserSidebarSnapshot) -> BrowserSidebarSnapshot {
-        guard
-            let draggedTabID,
-            let dropTarget,
-            let reorderedTabs = reorderedTabsForActiveTabDrag(
-                tabID: draggedTabID,
-                dropTarget: dropTarget
-            )
-        else {
-            return snapshot
-        }
-
-        return snapshot.replacingTabs(reorderedTabs)
-    }
-
-    private func reorderedTabsForActiveTabDrag(
-        tabID: String,
-        dropTarget: BrowserSidebarTabDropTarget
-    ) -> [BrowserChromeModel.Tab]? {
-        if draggedTabIDs.count > 1 {
-            return model.reorderedTabs(
-                movingTabIDs: draggedTabIDs,
-                toPlacement: dropTarget.section.placement,
-                requestedSectionIndex: dropTarget.sectionIndex,
-                targetSpaceID: dropTarget.spaceID,
-                targetPinnedFolderID: dropTarget.pinnedFolderID
-            )
-        }
-
-        return model.reorderedTabs(
-            movingTabID: tabID,
-            toPlacement: dropTarget.section.placement,
-            requestedSectionIndex: dropTarget.sectionIndex,
-            targetSpaceID: dropTarget.spaceID,
-            targetPinnedFolderID: dropTarget.pinnedFolderID
-        )
+        snapshot
     }
 
     private func renderedSnapshot(for visibleSnapshot: BrowserSidebarSnapshot) -> BrowserSidebarSnapshot {
@@ -1159,7 +1198,7 @@ struct BrowserSidebarView: View {
             selectedSpaceID: visibleSnapshot.selectedSpaceID,
             activeSpace: visibleSnapshot.activeSpace,
             isActiveSpacePinnedSectionCollapsed: visibleSnapshot.isActiveSpacePinnedSectionCollapsed,
-            allTabs: renderedAllTabs(in: visibleSnapshot, draggedTab: draggedTab),
+            allTabs: visibleSnapshot.allTabs,
             pinnedTabFolders: visibleSnapshot.pinnedTabFolders,
             appTabs: renderedAppTabs(visibleSnapshot.appTabs, draggedTab: draggedTab),
             spacePinnedTabs: renderedRowTabs(
@@ -1181,45 +1220,21 @@ struct BrowserSidebarView: View {
         )
     }
 
-    private func renderedAllTabs(
-        in visibleSnapshot: BrowserSidebarSnapshot,
-        draggedTab: BrowserChromeModel.Tab
-    ) -> [BrowserChromeModel.Tab] {
-        guard
-            let dropTarget,
-            dropTarget.section.placement != .app,
-            let targetSpaceID = dropTarget.spaceID,
-            draggedTab.placement != dropTarget.section.placement || draggedTab.spaceID != targetSpaceID,
-            visibleSnapshot.allTabs.contains(where: { $0.id == draggedTab.id })
-        else {
-            return visibleSnapshot.allTabs
-        }
-
-        var renderedTabs = visibleSnapshot.allTabs.filter { $0.id != draggedTab.id }
-        var renderedTab = draggedTab
-        renderedTab.spaceID = targetSpaceID
-        renderedTab.placement = dropTarget.section.placement
-        renderedTab.pinnedFolderID = dropTarget.section == .spacePinned ? dropTarget.pinnedFolderID : nil
-
-        let targetTabs = renderedTabs.filter {
-            $0.spaceID == targetSpaceID && $0.placement == dropTarget.section.placement
-        }
-        let insertionReferenceIndex = targetTabs.dropFirst(
-            min(max(dropTarget.sectionIndex, 0), targetTabs.count)
-        )
-        .first
-        .flatMap { referenceTab in
-            renderedTabs.firstIndex { $0.id == referenceTab.id }
-        }
-
-        renderedTabs.insert(renderedTab, at: insertionReferenceIndex ?? renderedTabs.count)
-        return renderedTabs
-    }
-
     private func renderedAppTabs(
         _ visibleTabs: [BrowserChromeModel.Tab],
         draggedTab: BrowserChromeModel.Tab
     ) -> [BrowserChromeModel.Tab] {
+        if let dropTarget = dropProposal?.target,
+           dropTarget.section == .app,
+           let reorderedTabs = model.reorderedTabs(
+               movingTabID: draggedTab.id,
+               toPlacement: .app,
+               requestedSectionIndex: dropTarget.sectionIndex
+           )
+        {
+            return reorderedTabs.filter { $0.placement == .app }
+        }
+
         guard draggedTab.placement == .app, !visibleTabs.contains(where: { $0.id == draggedTab.id }) else {
             return visibleTabs
         }
@@ -1358,25 +1373,33 @@ struct BrowserSidebarView: View {
         pinnedTabSelectionAnchorID = nil
     }
 
-    private func canCreateFolderFromSelection(
+    private func pinnedTabFolderCreationTabIDs(
         fromTabID tabID: String,
         in section: BrowserSidebarTabSection
-    ) -> Bool {
-        section == .spacePinned
-            && selectedPinnedTabIDs.contains(tabID)
-            && selectedPinnedTabIDs.count >= 2
+    ) -> Set<String> {
+        guard section != .app else {
+            return []
+        }
+        let listTabIDs = Set((snapshot.spacePinnedTabs + snapshot.temporaryTabs).map(\.id))
+
+        return BrowserSidebarPinnedTabFolderCreationSelection(
+            clickedTabID: tabID,
+            activeTabID: snapshot.selectedTabID,
+            selectedTabIDs: selectedPinnedTabIDs,
+            listTabIDs: listTabIDs
+        )
+        .tabIDs
     }
 
-    private func createFolderFromSelectedPinnedTabs() {
-        let selectedTabIDs = selectedPinnedTabIDs
-        guard selectedTabIDs.count >= 2 else {
+    private func createPinnedTabFolder(containingTabIDs tabIDs: Set<String>) {
+        guard !tabIDs.isEmpty else {
             return
         }
 
         dismissRenamingIfNeeded()
         clearPinnedTabSelection()
         withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
-            _ = model.createPinnedTabFolder(containingTabIDs: selectedTabIDs)
+            _ = model.createPinnedTabFolder(containingTabIDs: tabIDs)
         }
     }
 
@@ -1538,8 +1561,8 @@ struct BrowserSidebarView: View {
         }
 
         beginPinnedFolderDragIfNeeded(for: folderID)
-        let target = resolvedTabDropTarget(at: value.location)
-        setDropTarget(target)
+        let proposal = resolvedTabDropProposal(at: value.location)
+        setDropProposal(proposal)
     }
 
     private func finishPinnedFolderDrag(for folderID: String, value: DragGesture.Value) {
@@ -1548,10 +1571,10 @@ struct BrowserSidebarView: View {
             return
         }
 
-        let target = resolvedTabDropTarget(at: value.location)
-        setDropTarget(target)
+        let proposal = resolvedTabDropProposal(at: value.location)
+        setDropProposal(proposal)
 
-        if let target {
+        if let target = proposal?.target {
             moveDraggedTab(to: target)
         } else {
             clearTabDragState()
@@ -1570,7 +1593,8 @@ struct BrowserSidebarView: View {
         draggedTabIDs = []
         dragPreviewStore.clear()
         suppressedTabSelectionAfterDragID = nil
-        setDropTarget(nil)
+        tabDragSession = makeTabDragSession()
+        setDropProposal(nil)
     }
 
     private func updateTabDrag(for tabID: String, value: DragGesture.Value) {
@@ -1585,9 +1609,9 @@ struct BrowserSidebarView: View {
         }
 
         beginTabDragIfNeeded(for: tabID, startLocation: value.startLocation, location: value.location)
-        let target = resolvedTabDropTarget(at: value.location)
-        setDropTarget(target)
-        updateDragPreviewLocation(value.location, target: target)
+        let proposal = resolvedTabDropProposal(at: value.location)
+        setDropProposal(proposal)
+        updateDragPreviewLocation(value.location, proposal: proposal)
     }
 
     private func updateActiveTabDrag(for tabID: String, location: CGPoint) {
@@ -1600,9 +1624,9 @@ struct BrowserSidebarView: View {
             return
         }
 
-        let target = resolvedTabDropTarget(at: location)
-        setDropTarget(target)
-        updateDragPreviewLocation(location, target: target)
+        let proposal = resolvedTabDropProposal(at: location)
+        setDropProposal(proposal)
+        updateDragPreviewLocation(location, proposal: proposal)
     }
 
     private func finishTabDrag(for tabID: String, value: DragGesture.Value) {
@@ -1613,11 +1637,11 @@ struct BrowserSidebarView: View {
 
         suppressSelectionAfterDrag(for: tabID)
 
-        let target = resolvedTabDropTarget(at: value.location)
-        setDropTarget(target)
-        updateDragPreviewLocation(value.location, target: target)
+        let proposal = resolvedTabDropProposal(at: value.location)
+        setDropProposal(proposal)
+        updateDragPreviewLocation(value.location, proposal: proposal)
 
-        if let target {
+        if let target = proposal?.target {
             moveDraggedTab(to: target)
         } else {
             clearTabDragState()
@@ -1631,11 +1655,11 @@ struct BrowserSidebarView: View {
 
         suppressSelectionAfterDrag(for: tabID)
 
-        let target = resolvedTabDropTarget(at: location)
-        setDropTarget(target)
-        updateDragPreviewLocation(location, target: target)
+        let proposal = resolvedTabDropProposal(at: location)
+        setDropProposal(proposal)
+        updateDragPreviewLocation(location, proposal: proposal)
 
-        if let target {
+        if let target = proposal?.target {
             moveDraggedTab(to: target)
         } else {
             clearTabDragState()
@@ -1666,14 +1690,23 @@ struct BrowserSidebarView: View {
             )
         }
         suppressedTabSelectionAfterDragID = nil
-        setDropTarget(nil)
+        tabDragSession = makeTabDragSession()
+        setDropProposal(nil)
     }
 
-    private func updateDragPreviewLocation(_ location: CGPoint, target: BrowserSidebarTabDropTarget?) {
-        dragPreviewStore.update(location: location, size: dragPreviewSize(for: target))
+    private func updateDragPreviewLocation(_ location: CGPoint, proposal: BrowserSidebarTabDropProposal?) {
+        dragPreviewStore.update(location: location, size: dragPreviewSize(for: proposal))
     }
 
     private func dragPreviewSourceFrame(for tabID: String, startLocation: CGPoint) -> CGRect {
+        if let frame = rawAppTabFrames[tabID]?.frame, !frame.isEmpty {
+            return frame
+        }
+
+        if let frame = rawTabRowFrames[tabID]?.frame, !frame.isEmpty {
+            return frame
+        }
+
         if let frame = appTabFrames[tabID]?.frame, !frame.isEmpty {
             return frame
         }
@@ -1691,21 +1724,21 @@ struct BrowserSidebarView: View {
         )
     }
 
-    private func dragPreviewSize(for target: BrowserSidebarTabDropTarget?) -> CGSize {
-        guard target?.section == .app else {
-            return dragPreviewRowSize(for: target)
+    private func dragPreviewSize(for proposal: BrowserSidebarTabDropProposal?) -> CGSize {
+        if proposal?.target.section == .app {
+            return dragPreviewAppTileSize(for: proposal?.target)
         }
 
-        return dragPreviewAppTileSize(for: target)
+        if let previewFrame = proposal?.previewFrame, !previewFrame.isEmpty {
+            return previewFrame.size
+        }
+
+        return dragPreviewRowSize()
     }
 
-    private func dragPreviewRowSize(for target: BrowserSidebarTabDropTarget?) -> CGSize {
-        if
-            let target,
-            target.section != .app,
-            let frame = dragPreviewRowFrame(for: target)
-        {
-            return CGSize(width: frame.width, height: BrowserChromeLayout.sidebarRowHeight)
+    private func dragPreviewRowSize() -> CGSize {
+        if let draggedTabID, let frame = rawTabRowFrames[draggedTabID]?.frame, !frame.isEmpty {
+            return frame.size
         }
 
         if let draggedTabID, let frame = tabRowFrames[draggedTabID]?.frame, !frame.isEmpty {
@@ -1718,93 +1751,84 @@ struct BrowserSidebarView: View {
         )
     }
 
-    private func dragPreviewRowFrame(for target: BrowserSidebarTabDropTarget) -> CGRect? {
-        let sectionFrames = tabDropRowFrameList.filter {
-            $0.section == target.section
-                && $0.spaceID == target.spaceID
-                && $0.pinnedFolderID == target.pinnedFolderID
-        }
-        if let targetFrame = sectionFrames.first(where: {
-            ($0.folderChildIndex ?? $0.sectionIndex) == target.sectionIndex
-        })?.frame {
-            return targetFrame
-        }
-
-        if let previousFrame = sectionFrames.first(where: {
-            ($0.folderChildIndex ?? $0.sectionIndex) == target.sectionIndex - 1
-        })?.frame {
-            return previousFrame
-        }
-
-        if let sectionFrame = sectionFrames.first?.frame {
-            return sectionFrame
-        }
-
-        if
-            let targetFolderID = target.pinnedFolderID,
-            let folderFrame = pinnedFolderRowFrames.first(where: {
-                $0.folderID == targetFolderID && $0.spaceID == target.spaceID
-            })?.frame
-        {
-            return folderFrame
-        }
-
-        return emptySectionFrames.first {
-            $0.section == target.section && $0.spaceID == target.spaceID
-        }?.frame
-    }
-
     private func dragPreviewAppTileSize(for target: BrowserSidebarTabDropTarget?) -> CGSize {
-        if
-            let draggedTabID,
-            let frame = appTabDropFrameList.first(where: { $0.tabID == draggedTabID })?.frame
-        {
-            return frame.size
-        }
-
-        let sectionIndex = min(max(target?.sectionIndex ?? 0, 0), max(appTabDropFrameList.count - 1, 0))
-        if appTabDropFrameList.indices.contains(sectionIndex) {
-            return appTabDropFrameList[sectionIndex].frame.size
-        }
-
-        let proposedFrameCount = proposedAppTabCountForDrag()
-        return BrowserSidebarAppTabGridLayout(
+        let proposedAppTabs = proposedAppTabs(for: target)
+        let proposedFrameCount = proposedAppTabs.count
+        let proposedFrames = BrowserSidebarAppTabGridLayout(
             spacing: BrowserChromeLayout.appTabGridSpacing
         )
         .frames(
             for: proposedFrameCount,
             availableWidth: max(sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
         )
-        .dropFirst(min(max(target?.sectionIndex ?? 0, 0), max(proposedFrameCount - 1, 0)))
-        .first?
-        .size ?? CGSize(width: BrowserChromeLayout.sidebarRowHeight, height: BrowserChromeLayout.sidebarRowHeight)
-    }
 
-    private func proposedAppTabCountForDrag() -> Int {
-        guard
+        if
             let draggedTabID,
-            let draggedTab = snapshot.tab(withID: draggedTabID)
-        else {
-            return max(snapshot.appTabs.count, 1)
+            let draggedIndex = proposedAppTabs.firstIndex(where: { $0.id == draggedTabID }),
+            proposedFrames.indices.contains(draggedIndex)
+        {
+            return proposedFrames[draggedIndex].size
         }
 
-        let proposedCount = snapshot.appTabs.count + (draggedTab.placement == .app ? 0 : 1)
-        return min(max(proposedCount, 1), BrowserSidebarAppTabGridLayout.capacity)
+        let sectionIndex = min(max(target?.sectionIndex ?? 0, 0), max(proposedFrameCount - 1, 0))
+        if proposedFrames.indices.contains(sectionIndex) {
+            return proposedFrames[sectionIndex].size
+        }
+
+        return CGSize(width: BrowserChromeLayout.sidebarRowHeight, height: BrowserChromeLayout.sidebarRowHeight)
     }
 
-    private func resolvedTabDropTarget(at location: CGPoint) -> BrowserSidebarTabDropTarget? {
-        BrowserSidebarTabDragTargetResolver(
-            verticalSnapDistance: BrowserChromeLayout.sidebarTabDropVerticalSnapDistance,
-            horizontalTolerance: BrowserChromeLayout.sidebarTabDropHorizontalTolerance
-        )
-        .target(
+    private func proposedAppTabs(for target: BrowserSidebarTabDropTarget?) -> [BrowserChromeModel.Tab] {
+        guard
+            let draggedTabID,
+            let target,
+            target.section == .app,
+            let reorderedTabs = model.reorderedTabs(
+                movingTabID: draggedTabID,
+                toPlacement: .app,
+                requestedSectionIndex: target.sectionIndex
+            )
+        else {
+            return snapshot.appTabs
+        }
+
+        return reorderedTabs.filter { $0.placement == .app }
+    }
+
+    private func resolvedTabDropProposal(at location: CGPoint) -> BrowserSidebarTabDropProposal? {
+        if tabDragSession == nil {
+            tabDragSession = makeTabDragSession()
+        }
+
+        guard var session = tabDragSession else {
+            return nil
+        }
+
+        let proposal = session.proposal(
             for: location,
-            rowFrames: tabDropRowFrameList,
-            emptySectionFrames: emptySectionFrames,
-            pinnedFolderFrames: pinnedFolderRowFrames,
-            appTabFrames: model.supportsAppTabs ? appTabDropFrameList : [],
-            appTabContainerFrame: model.supportsAppTabs ? appTabsContainerFrame : nil,
             canMoveToTarget: canMoveDraggedSidebarItem(to:)
+        )
+        tabDragSession = session
+        return proposal
+    }
+
+    private func makeTabDragSession() -> BrowserSidebarTabDragSession {
+        BrowserSidebarTabDragSession(
+            layout: BrowserSidebarTabDropLayout(
+                rowFrames: BrowserSidebarTabFrameSynchronizer.sortedRowFrameList(tabRowFrames),
+                emptySectionFrames: emptySectionFrames,
+                pinnedFolderFrames: pinnedFolderRowFrames,
+                spaceHeaderFrames: spaceHeaderFrames,
+                appTabFrames: model.supportsAppTabs
+                    ? BrowserSidebarAppTabFrameSynchronizer.sortedFrameList(appTabFrames)
+                    : [],
+                appTabContainerFrame: model.supportsAppTabs ? appTabsContainerFrame : nil,
+                horizontalInset: 6,
+                thickness: BrowserChromeLayout.sidebarDropIndicatorThickness,
+                verticalSnapDistance: BrowserChromeLayout.sidebarTabDropVerticalSnapDistance,
+                horizontalTolerance: BrowserChromeLayout.sidebarTabDropHorizontalTolerance
+            ),
+            hysteresisDistance: BrowserChromeLayout.sidebarTabDropHysteresisDistance
         )
     }
 
@@ -1947,16 +1971,17 @@ struct BrowserSidebarView: View {
         }
     }
 
-    private func setDropTarget(_ target: BrowserSidebarTabDropTarget?) {
-        guard dropTarget != target else {
+    private func setDropProposal(_ proposal: BrowserSidebarTabDropProposal?) {
+        guard dropProposal != proposal else {
             return
         }
 
+        let previousTarget = dropProposal?.target
         withAnimation(BrowserChromeLayout.sidebarTabDropListAnimation) {
-            dropTarget = target
+            dropProposal = proposal
         }
 
-        if target != nil {
+        if let target = proposal?.target, target != previousTarget {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
     }
@@ -2059,12 +2084,14 @@ struct BrowserSidebarView: View {
         let hadTabDragState = draggedTabID != nil
             || !draggedTabIDs.isEmpty
             || draggedPinnedFolderID != nil
-            || dropTarget != nil
+            || dropProposal != nil
+            || tabDragSession != nil
             || dragPreviewStore.preview != nil
         draggedTabID = nil
         draggedTabIDs = []
         draggedPinnedFolderID = nil
-        dropTarget = nil
+        dropProposal = nil
+        tabDragSession = nil
         dragPreviewStore.clear()
 
         if hadTabDragState {

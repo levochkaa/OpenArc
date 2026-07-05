@@ -2,7 +2,7 @@ import CoreGraphics
 
 // MARK: - BrowserSidebarTabSection
 
-enum BrowserSidebarTabSection: Equatable {
+enum BrowserSidebarTabSection: Hashable {
     case app
     case spacePinned
     case temporary
@@ -34,7 +34,7 @@ enum BrowserSidebarTabSection: Equatable {
 
 // MARK: - BrowserSidebarTabDropTarget
 
-struct BrowserSidebarTabDropTarget: Equatable {
+struct BrowserSidebarTabDropTarget: Hashable {
     // MARK: Lifecycle
 
     init(
@@ -94,11 +94,41 @@ struct BrowserSidebarTabRowFrame: Equatable {
 // MARK: - BrowserSidebarPinnedFolderRowFrame
 
 struct BrowserSidebarPinnedFolderRowFrame: Equatable {
+    // MARK: Lifecycle
+
+    init(
+        folderID: String,
+        firstSectionIndex: Int,
+        afterSectionIndex: Int,
+        childCount: Int,
+        spaceID: String?,
+        frame: CGRect,
+        childPreviewFrame: CGRect? = nil
+    ) {
+        self.folderID = folderID
+        self.firstSectionIndex = firstSectionIndex
+        self.afterSectionIndex = afterSectionIndex
+        self.childCount = childCount
+        self.spaceID = spaceID
+        self.frame = frame
+        self.childPreviewFrame = childPreviewFrame ?? frame
+    }
+
+    // MARK: Internal
+
     let folderID: String
     let firstSectionIndex: Int
     let afterSectionIndex: Int
     let childCount: Int
     let spaceID: String?
+    let frame: CGRect
+    let childPreviewFrame: CGRect
+}
+
+// MARK: - BrowserSidebarSpaceHeaderFrame
+
+struct BrowserSidebarSpaceHeaderFrame: Equatable {
+    let spaceID: String
     let frame: CGRect
 }
 
@@ -130,6 +160,14 @@ struct BrowserSidebarEmptySectionFrame: Equatable {
     var target: BrowserSidebarTabDropTarget {
         BrowserSidebarTabDropTarget(section: section, sectionIndex: 0, spaceID: spaceID)
     }
+}
+
+// MARK: - BrowserSidebarTabDropProposal
+
+struct BrowserSidebarTabDropProposal: Equatable {
+    let target: BrowserSidebarTabDropTarget
+    let indicatorFrame: CGRect?
+    let previewFrame: CGRect?
 }
 
 // MARK: - BrowserSidebarAppTabGridLayout
@@ -570,9 +608,9 @@ struct BrowserSidebarTabDragPreviewState: Equatable {
     init(tabID: String, sourceFrame: CGRect, location: CGPoint) {
         self.tabID = tabID
         self.size = sourceFrame.size
-        self.pointerOffsetFromCenterUnit = CGSize(
-            width: sourceFrame.width > 0 ? (location.x - sourceFrame.midX) / sourceFrame.width : 0,
-            height: sourceFrame.height > 0 ? (location.y - sourceFrame.midY) / sourceFrame.height : 0
+        self.pointerOffsetFromCenter = CGSize(
+            width: location.x - sourceFrame.midX,
+            height: location.y - sourceFrame.midY
         )
         self.location = location
     }
@@ -585,8 +623,8 @@ struct BrowserSidebarTabDragPreviewState: Equatable {
 
     var center: CGPoint {
         CGPoint(
-            x: location.x - pointerOffsetFromCenterUnit.width * size.width,
-            y: location.y - pointerOffsetFromCenterUnit.height * size.height
+            x: location.x - pointerOffsetFromCenter.width,
+            y: location.y - pointerOffsetFromCenter.height
         )
     }
 
@@ -597,14 +635,544 @@ struct BrowserSidebarTabDragPreviewState: Equatable {
 
     // MARK: Private
 
-    private let pointerOffsetFromCenterUnit: CGSize
+    private let pointerOffsetFromCenter: CGSize
+}
+
+// MARK: - BrowserSidebarTabDragSession
+
+struct BrowserSidebarTabDragSession: Equatable {
+    // MARK: Lifecycle
+
+    init(layout: BrowserSidebarTabDropLayout, hysteresisDistance: CGFloat) {
+        self.layout = layout
+        self.hysteresisDistance = hysteresisDistance
+    }
+
+    // MARK: Internal
+
+    let layout: BrowserSidebarTabDropLayout
+    let hysteresisDistance: CGFloat
+    private(set) var lastProposal: BrowserSidebarTabDropProposal?
+
+    mutating func proposal(
+        for location: CGPoint,
+        canMoveToTarget: (BrowserSidebarTabDropTarget) -> Bool
+    ) -> BrowserSidebarTabDropProposal? {
+        let proposal = layout.proposal(
+            for: location,
+            previousTarget: lastProposal?.target,
+            hysteresisDistance: hysteresisDistance,
+            canMoveToTarget: canMoveToTarget
+        )
+        lastProposal = proposal
+        return proposal
+    }
+}
+
+// MARK: - BrowserSidebarTabDropLayout
+
+struct BrowserSidebarTabDropLayout: Equatable {
+    // MARK: Lifecycle
+
+    init(
+        rowFrames: [BrowserSidebarTabRowFrame],
+        emptySectionFrames: [BrowserSidebarEmptySectionFrame],
+        pinnedFolderFrames: [BrowserSidebarPinnedFolderRowFrame] = [],
+        spaceHeaderFrames: [BrowserSidebarSpaceHeaderFrame] = [],
+        appTabFrames: [BrowserSidebarAppTabFrame] = [],
+        appTabContainerFrame: CGRect? = nil,
+        horizontalInset: CGFloat,
+        thickness: CGFloat,
+        verticalSnapDistance: CGFloat,
+        horizontalTolerance: CGFloat
+    ) {
+        self.verticalSnapDistance = verticalSnapDistance
+        self.horizontalTolerance = horizontalTolerance
+        self.slots = Self.makeSlots(
+            rowFrames: rowFrames,
+            emptySectionFrames: emptySectionFrames,
+            pinnedFolderFrames: pinnedFolderFrames,
+            spaceHeaderFrames: spaceHeaderFrames,
+            appTabFrames: appTabFrames,
+            appTabContainerFrame: appTabContainerFrame,
+            horizontalInset: horizontalInset,
+            thickness: thickness,
+            verticalSnapDistance: verticalSnapDistance
+        )
+    }
+
+    // MARK: Internal
+
+    let verticalSnapDistance: CGFloat
+    let horizontalTolerance: CGFloat
+    let slots: [BrowserSidebarTabDropSlot]
+
+    func proposal(
+        for location: CGPoint,
+        previousTarget: BrowserSidebarTabDropTarget? = nil,
+        hysteresisDistance: CGFloat = 0,
+        canMoveToTarget: (BrowserSidebarTabDropTarget) -> Bool
+    ) -> BrowserSidebarTabDropProposal? {
+        let eligibleSlots = slots.filter { canMoveToTarget($0.target) }
+        guard !eligibleSlots.isEmpty else {
+            return nil
+        }
+
+        if let previousTarget {
+            let previousSlots = eligibleSlots.filter { $0.target == previousTarget }
+            if let previousSlot = previousSlots.first(where: {
+                $0.contains(
+                    location,
+                    horizontalTolerance: horizontalTolerance,
+                    verticalExpansion: hysteresisDistance
+                )
+            }) {
+                return previousSlot.proposal
+            }
+        }
+
+        let candidates = eligibleSlots.compactMap { slot -> BrowserSidebarTabDropCandidate? in
+            if slot.contains(location, horizontalTolerance: horizontalTolerance, verticalExpansion: 0) {
+                return BrowserSidebarTabDropCandidate(
+                    slot: slot,
+                    distance: slot.focusDistance(from: location),
+                    containsLocation: true
+                )
+            }
+
+            let distance = slot.distance(from: location, horizontalTolerance: horizontalTolerance)
+            guard distance <= verticalSnapDistance else {
+                return nil
+            }
+
+            return BrowserSidebarTabDropCandidate(
+                slot: slot,
+                distance: distance + slot.focusDistance(from: location) * 0.001,
+                containsLocation: false
+            )
+        }
+
+        return candidates.min { lhs, rhs in
+            if lhs.containsLocation != rhs.containsLocation {
+                return lhs.containsLocation
+            }
+
+            if abs(lhs.distance - rhs.distance) > Self.distanceEpsilon {
+                return lhs.distance < rhs.distance
+            }
+
+            return lhs.slot.priority < rhs.slot.priority
+        }?.slot
+            .proposal
+    }
+
+    // MARK: Private
+
+    private static let distanceEpsilon: CGFloat = 0.5
+
+    private static func makeSlots(
+        rowFrames: [BrowserSidebarTabRowFrame],
+        emptySectionFrames: [BrowserSidebarEmptySectionFrame],
+        pinnedFolderFrames: [BrowserSidebarPinnedFolderRowFrame],
+        spaceHeaderFrames: [BrowserSidebarSpaceHeaderFrame],
+        appTabFrames: [BrowserSidebarAppTabFrame],
+        appTabContainerFrame: CGRect?,
+        horizontalInset: CGFloat,
+        thickness: CGFloat,
+        verticalSnapDistance: CGFloat
+    ) -> [BrowserSidebarTabDropSlot] {
+        var slots = [BrowserSidebarTabDropSlot]()
+        slots.append(contentsOf: makeAppTabSlots(
+            appTabFrames: appTabFrames,
+            appTabContainerFrame: appTabContainerFrame,
+            verticalSnapDistance: verticalSnapDistance
+        ))
+        slots.append(contentsOf: makeEmptySectionSlots(
+            emptySectionFrames: emptySectionFrames,
+            horizontalInset: horizontalInset,
+            thickness: thickness,
+            verticalSnapDistance: verticalSnapDistance
+        ))
+        slots.append(contentsOf: makeSpaceHeaderSlots(
+            spaceHeaderFrames: spaceHeaderFrames,
+            verticalSnapDistance: verticalSnapDistance
+        ))
+        slots.append(contentsOf: makePinnedFolderSlots(
+            pinnedFolderFrames: pinnedFolderFrames,
+            horizontalInset: horizontalInset,
+            thickness: thickness,
+            verticalSnapDistance: verticalSnapDistance
+        ))
+        slots.append(contentsOf: makeRowSlots(
+            rowFrames: rowFrames,
+            pinnedFolderFrames: pinnedFolderFrames,
+            horizontalInset: horizontalInset,
+            thickness: thickness,
+            verticalSnapDistance: verticalSnapDistance
+        ))
+        return slots
+    }
+
+    private static func makeAppTabSlots(
+        appTabFrames: [BrowserSidebarAppTabFrame],
+        appTabContainerFrame: CGRect?,
+        verticalSnapDistance: CGFloat
+    ) -> [BrowserSidebarTabDropSlot] {
+        let sortedFrames = appTabFrames.sorted { lhs, rhs in
+            lhs.sectionIndex < rhs.sectionIndex
+        }
+
+        guard !sortedFrames.isEmpty else {
+            guard let appTabContainerFrame, appTabContainerFrame.width > 0 else {
+                return []
+            }
+
+            return [
+                BrowserSidebarTabDropSlot(
+                    target: BrowserSidebarTabDropTarget(section: .app, sectionIndex: 0),
+                    hitFrame: appTabContainerFrame.insetBy(dx: 0, dy: -verticalSnapDistance),
+                    indicatorFrame: nil,
+                    previewFrame: appTabContainerFrame,
+                    focusPoint: CGPoint(x: appTabContainerFrame.midX, y: appTabContainerFrame.midY),
+                    priority: 0
+                ),
+            ]
+        }
+
+        return sortedFrames.flatMap { appTabFrame -> [BrowserSidebarTabDropSlot] in
+            let frame = appTabFrame.frame
+            guard frame.width > 0, frame.height > 0 else {
+                return []
+            }
+
+            let leftFrame = CGRect(
+                x: frame.minX,
+                y: frame.minY - verticalSnapDistance,
+                width: frame.width / 2,
+                height: frame.height + verticalSnapDistance * 2
+            )
+            let rightFrame = CGRect(
+                x: frame.midX,
+                y: frame.minY - verticalSnapDistance,
+                width: frame.width / 2,
+                height: frame.height + verticalSnapDistance * 2
+            )
+
+            return [
+                BrowserSidebarTabDropSlot(
+                    target: BrowserSidebarTabDropTarget(section: .app, sectionIndex: appTabFrame.sectionIndex),
+                    hitFrame: leftFrame,
+                    indicatorFrame: nil,
+                    previewFrame: frame,
+                    focusPoint: CGPoint(x: leftFrame.midX, y: frame.midY),
+                    priority: 0
+                ),
+                BrowserSidebarTabDropSlot(
+                    target: BrowserSidebarTabDropTarget(section: .app, sectionIndex: appTabFrame.sectionIndex + 1),
+                    hitFrame: rightFrame,
+                    indicatorFrame: nil,
+                    previewFrame: frame,
+                    focusPoint: CGPoint(x: rightFrame.midX, y: frame.midY),
+                    priority: 0
+                ),
+            ]
+        }
+    }
+
+    private static func makeEmptySectionSlots(
+        emptySectionFrames: [BrowserSidebarEmptySectionFrame],
+        horizontalInset: CGFloat,
+        thickness: CGFloat,
+        verticalSnapDistance: CGFloat
+    ) -> [BrowserSidebarTabDropSlot] {
+        emptySectionFrames.compactMap { emptySectionFrame in
+            let frame = emptySectionFrame.frame
+            guard frame.width > 0 else {
+                return nil
+            }
+
+            let indicatorFrame = emptySectionFrame.section == .app
+                ? nil
+                : Self.indicatorFrame(
+                    alignedTo: frame,
+                    yPosition: frame.midY,
+                    horizontalInset: horizontalInset,
+                    thickness: thickness
+                )
+
+            return BrowserSidebarTabDropSlot(
+                target: emptySectionFrame.target,
+                hitFrame: frame.insetBy(dx: 0, dy: -verticalSnapDistance),
+                indicatorFrame: indicatorFrame,
+                previewFrame: frame,
+                focusPoint: CGPoint(x: frame.midX, y: frame.midY),
+                priority: 3
+            )
+        }
+    }
+
+    private static func makeSpaceHeaderSlots(
+        spaceHeaderFrames: [BrowserSidebarSpaceHeaderFrame],
+        verticalSnapDistance: CGFloat
+    ) -> [BrowserSidebarTabDropSlot] {
+        spaceHeaderFrames.compactMap { spaceHeaderFrame in
+            let frame = spaceHeaderFrame.frame
+            guard frame.width > 0, frame.height > 0 else {
+                return nil
+            }
+
+            return BrowserSidebarTabDropSlot(
+                target: BrowserSidebarTabDropTarget(
+                    section: .spacePinned,
+                    sectionIndex: 0,
+                    spaceID: spaceHeaderFrame.spaceID
+                ),
+                hitFrame: frame.insetBy(dx: 0, dy: -verticalSnapDistance * 0.25),
+                indicatorFrame: nil,
+                previewFrame: frame,
+                focusPoint: CGPoint(x: frame.midX, y: frame.midY),
+                priority: 1
+            )
+        }
+    }
+
+    private static func makePinnedFolderSlots(
+        pinnedFolderFrames: [BrowserSidebarPinnedFolderRowFrame],
+        horizontalInset: CGFloat,
+        thickness: CGFloat,
+        verticalSnapDistance: CGFloat
+    ) -> [BrowserSidebarTabDropSlot] {
+        pinnedFolderFrames.flatMap { folderFrame -> [BrowserSidebarTabDropSlot] in
+            let frame = folderFrame.frame
+            guard frame.width > 0, frame.height > 0 else {
+                return []
+            }
+
+            let edgeHeight = max(frame.height * 0.3, 1)
+            let beforeTarget = BrowserSidebarTabDropTarget(
+                section: .spacePinned,
+                sectionIndex: folderFrame.firstSectionIndex,
+                spaceID: folderFrame.spaceID
+            )
+            let afterTarget = BrowserSidebarTabDropTarget(
+                section: .spacePinned,
+                sectionIndex: folderFrame.afterSectionIndex,
+                spaceID: folderFrame.spaceID
+            )
+            let folderTarget = BrowserSidebarTabDropTarget(
+                section: .spacePinned,
+                sectionIndex: 0,
+                spaceID: folderFrame.spaceID,
+                pinnedFolderID: folderFrame.folderID
+            )
+
+            return [
+                BrowserSidebarTabDropSlot(
+                    target: beforeTarget,
+                    hitFrame: CGRect(
+                        x: frame.minX,
+                        y: frame.minY - verticalSnapDistance,
+                        width: frame.width,
+                        height: edgeHeight + verticalSnapDistance
+                    ),
+                    indicatorFrame: Self.indicatorFrame(
+                        alignedTo: frame,
+                        yPosition: frame.minY,
+                        horizontalInset: horizontalInset,
+                        thickness: thickness
+                    ),
+                    previewFrame: frame,
+                    focusPoint: CGPoint(x: frame.midX, y: frame.minY),
+                    priority: 1
+                ),
+                BrowserSidebarTabDropSlot(
+                    target: folderTarget,
+                    hitFrame: CGRect(
+                        x: frame.minX,
+                        y: frame.minY + edgeHeight,
+                        width: frame.width,
+                        height: max(frame.height - edgeHeight, 1)
+                    ),
+                    indicatorFrame: nil,
+                    previewFrame: folderFrame.childPreviewFrame,
+                    focusPoint: CGPoint(x: frame.midX, y: frame.midY),
+                    priority: 0
+                ),
+                BrowserSidebarTabDropSlot(
+                    target: afterTarget,
+                    hitFrame: CGRect(
+                        x: frame.minX,
+                        y: frame.maxY,
+                        width: frame.width,
+                        height: verticalSnapDistance
+                    ),
+                    indicatorFrame: Self.indicatorFrame(
+                        alignedTo: frame,
+                        yPosition: frame.maxY,
+                        horizontalInset: horizontalInset,
+                        thickness: thickness
+                    ),
+                    previewFrame: frame,
+                    focusPoint: CGPoint(x: frame.midX, y: frame.maxY),
+                    priority: 1
+                ),
+            ]
+        }
+    }
+
+    private static func makeRowSlots(
+        rowFrames: [BrowserSidebarTabRowFrame],
+        pinnedFolderFrames: [BrowserSidebarPinnedFolderRowFrame],
+        horizontalInset: CGFloat,
+        thickness: CGFloat,
+        verticalSnapDistance: CGFloat
+    ) -> [BrowserSidebarTabDropSlot] {
+        let groupedRows = Dictionary(grouping: rowFrames.filter {
+            $0.frame.width > 0 && $0.frame.height > 0
+        }) { rowFrame in
+            BrowserSidebarTabDropSectionKey(
+                section: rowFrame.section,
+                spaceID: rowFrame.spaceID,
+                pinnedFolderID: rowFrame.pinnedFolderID
+            )
+        }
+
+        return groupedRows.values.flatMap { rows -> [BrowserSidebarTabDropSlot] in
+            let sortedRows = rows.sorted { lhs, rhs in
+                let lhsIndex = lhs.folderChildIndex ?? lhs.sectionIndex
+                let rhsIndex = rhs.folderChildIndex ?? rhs.sectionIndex
+                if lhsIndex == rhsIndex {
+                    return lhs.frame.minY < rhs.frame.minY
+                }
+
+                return lhsIndex < rhsIndex
+            }
+            guard let firstRow = sortedRows.first else {
+                return []
+            }
+            let parentFolderFrame = firstRow.pinnedFolderID.flatMap { pinnedFolderID in
+                pinnedFolderFrames.first {
+                    $0.folderID == pinnedFolderID && $0.spaceID == firstRow.spaceID
+                }?.frame
+            }
+            let parentFolderPreviewFrame = firstRow.pinnedFolderID.flatMap { pinnedFolderID in
+                pinnedFolderFrames.first {
+                    $0.folderID == pinnedFolderID && $0.spaceID == firstRow.spaceID
+                }?.childPreviewFrame
+            }
+
+            return (0...sortedRows.count).map { insertionOffset in
+                rowSlot(
+                    insertionOffset: insertionOffset,
+                    rows: sortedRows,
+                    fallbackRow: firstRow,
+                    parentFolderFrame: parentFolderFrame,
+                    parentFolderPreviewFrame: parentFolderPreviewFrame,
+                    horizontalInset: horizontalInset,
+                    thickness: thickness,
+                    verticalSnapDistance: verticalSnapDistance
+                )
+            }
+        }
+    }
+
+    private static func rowSlot(
+        insertionOffset: Int,
+        rows: [BrowserSidebarTabRowFrame],
+        fallbackRow: BrowserSidebarTabRowFrame,
+        parentFolderFrame: CGRect?,
+        parentFolderPreviewFrame: CGRect?,
+        horizontalInset: CGFloat,
+        thickness: CGFloat,
+        verticalSnapDistance: CGFloat
+    ) -> BrowserSidebarTabDropSlot {
+        let previousRow = insertionOffset > 0 ? rows[insertionOffset - 1] : nil
+        let nextRow = insertionOffset < rows.count ? rows[insertionOffset] : nil
+        let referenceRow = nextRow ?? previousRow ?? fallbackRow
+        let targetIndex =
+            if let nextRow {
+                nextRow.folderChildIndex ?? nextRow.sectionIndex
+            } else if let previousRow {
+                (previousRow.folderChildIndex ?? previousRow.sectionIndex) + 1
+            } else {
+                0
+            }
+        let lowerY =
+            if let previousRow {
+                previousRow.frame.midY
+            } else {
+                referenceRow.frame.minY - verticalSnapDistance
+            }
+        let upperY =
+            if let nextRow {
+                nextRow.frame.midY
+            } else {
+                referenceRow.frame.maxY + verticalSnapDistance
+            }
+        let yPosition =
+            if let previousRow {
+                previousRow.frame.maxY
+            } else {
+                referenceRow.frame.minY
+            }
+        let target = BrowserSidebarTabDropTarget(
+            section: referenceRow.section,
+            sectionIndex: targetIndex,
+            spaceID: referenceRow.spaceID,
+            pinnedFolderID: referenceRow.pinnedFolderID
+        )
+        let usesParentFolderHighlight = insertionOffset == 0
+            && referenceRow.pinnedFolderID != nil
+            && parentFolderFrame != nil
+        let focusPoint = CGPoint(
+            x: usesParentFolderHighlight
+                ? (parentFolderFrame?.midX ?? referenceRow.frame.midX)
+                : referenceRow.frame.midX,
+            y: yPosition
+        )
+
+        return BrowserSidebarTabDropSlot(
+            target: target,
+            hitFrame: CGRect(
+                x: referenceRow.frame.minX,
+                y: min(lowerY, upperY),
+                width: referenceRow.frame.width,
+                height: max(abs(upperY - lowerY), 1)
+            ),
+            indicatorFrame: usesParentFolderHighlight
+                ? nil
+                : Self.indicatorFrame(
+                    alignedTo: referenceRow.frame,
+                    yPosition: yPosition,
+                    horizontalInset: horizontalInset,
+                    thickness: thickness
+                ),
+            previewFrame: usesParentFolderHighlight
+                ? (parentFolderPreviewFrame ?? parentFolderFrame)
+                : Optional(referenceRow.frame),
+            focusPoint: focusPoint,
+            priority: 2
+        )
+    }
+
+    private static func indicatorFrame(
+        alignedTo frame: CGRect,
+        yPosition: CGFloat,
+        horizontalInset: CGFloat,
+        thickness: CGFloat
+    ) -> CGRect {
+        CGRect(
+            x: frame.minX + horizontalInset,
+            y: yPosition - thickness / 2,
+            width: max(frame.width - horizontalInset * 2, 0),
+            height: thickness
+        )
+    }
 }
 
 // MARK: - BrowserSidebarTabDragTargetResolver
 
 struct BrowserSidebarTabDragTargetResolver {
-    // MARK: Internal
-
     let verticalSnapDistance: CGFloat
     let horizontalTolerance: CGFloat
 
@@ -617,200 +1185,86 @@ struct BrowserSidebarTabDragTargetResolver {
         appTabContainerFrame: CGRect? = nil,
         canMoveToTarget: (BrowserSidebarTabDropTarget) -> Bool
     ) -> BrowserSidebarTabDropTarget? {
-        var bestCandidate: BrowserSidebarTabDropCandidate?
-
-        func consider(_ candidate: BrowserSidebarTabDropCandidate?) {
-            guard let candidate, canMoveToTarget(candidate.target) else {
-                return
-            }
-
-            if let currentBest = bestCandidate {
-                if candidate.isCloser(than: currentBest) {
-                    bestCandidate = candidate
-                }
-            } else {
-                bestCandidate = candidate
-            }
-        }
-
-        for appTabFrame in appTabFrames {
-            consider(makeAppTabCandidate(for: appTabFrame, location: location))
-        }
-
-        if let appTabContainerFrame, appTabFrames.isEmpty {
-            consider(
-                makeCandidate(
-                    target: BrowserSidebarTabDropTarget(section: .app, sectionIndex: 0),
-                    location: location,
-                    frame: appTabContainerFrame,
-                    yPosition: appTabContainerFrame.midY
-                )
-            )
-        }
-
-        for emptySectionFrame in emptySectionFrames {
-            consider(
-                makeCandidate(
-                    target: emptySectionFrame.target,
-                    location: location,
-                    frame: emptySectionFrame.frame,
-                    yPosition: emptySectionFrame.frame.midY
-                )
-            )
-        }
-
-        for folderFrame in pinnedFolderFrames {
-            consider(makePinnedFolderOpenCandidate(for: folderFrame, location: location))
-            consider(
-                makeCandidate(
-                    target: BrowserSidebarTabDropTarget(
-                        section: .spacePinned,
-                        sectionIndex: folderFrame.firstSectionIndex,
-                        spaceID: folderFrame.spaceID
-                    ),
-                    location: location,
-                    frame: folderFrame.frame,
-                    yPosition: folderFrame.frame.minY
-                )
-            )
-            consider(
-                makeCandidate(
-                    target: BrowserSidebarTabDropTarget(
-                        section: .spacePinned,
-                        sectionIndex: folderFrame.afterSectionIndex,
-                        spaceID: folderFrame.spaceID
-                    ),
-                    location: location,
-                    frame: folderFrame.frame,
-                    yPosition: folderFrame.frame.maxY
-                )
-            )
-        }
-
-        for rowFrame in rowFrames {
-            consider(
-                makeCandidate(
-                    target: BrowserSidebarTabDropTarget(
-                        section: rowFrame.section,
-                        sectionIndex: rowFrame.folderChildIndex ?? rowFrame.sectionIndex,
-                        spaceID: rowFrame.spaceID,
-                        pinnedFolderID: rowFrame.pinnedFolderID
-                    ),
-                    location: location,
-                    frame: rowFrame.frame,
-                    yPosition: rowFrame.frame.minY
-                )
-            )
-            consider(
-                makeCandidate(
-                    target: BrowserSidebarTabDropTarget(
-                        section: rowFrame.section,
-                        sectionIndex: (rowFrame.folderChildIndex ?? rowFrame.sectionIndex) + 1,
-                        spaceID: rowFrame.spaceID,
-                        pinnedFolderID: rowFrame.pinnedFolderID
-                    ),
-                    location: location,
-                    frame: rowFrame.frame,
-                    yPosition: rowFrame.frame.maxY
-                )
-            )
-        }
-
-        return bestCandidate?.target
-    }
-
-    // MARK: Private
-
-    private func makeAppTabCandidate(
-        for appTabFrame: BrowserSidebarAppTabFrame,
-        location: CGPoint
-    ) -> BrowserSidebarTabDropCandidate? {
-        let frame = appTabFrame.frame
-        guard isReachable(location, in: frame) else {
-            return nil
-        }
-
-        let sectionIndex = location.x < frame.midX ? appTabFrame.sectionIndex : appTabFrame.sectionIndex + 1
-        let distance = distanceFrom(location, to: frame)
-        return BrowserSidebarTabDropCandidate(
-            target: BrowserSidebarTabDropTarget(section: .app, sectionIndex: sectionIndex),
-            verticalDistance: distance,
-            sectionDistance: distance
+        BrowserSidebarTabDropLayout(
+            rowFrames: rowFrames,
+            emptySectionFrames: emptySectionFrames,
+            pinnedFolderFrames: pinnedFolderFrames,
+            appTabFrames: appTabFrames,
+            appTabContainerFrame: appTabContainerFrame,
+            horizontalInset: 0,
+            thickness: 0,
+            verticalSnapDistance: verticalSnapDistance,
+            horizontalTolerance: horizontalTolerance
         )
+        .proposal(for: location, canMoveToTarget: canMoveToTarget)?
+        .target
     }
+}
 
-    private func makeCandidate(
-        target: BrowserSidebarTabDropTarget,
-        location: CGPoint,
-        frame: CGRect,
-        yPosition: CGFloat
-    ) -> BrowserSidebarTabDropCandidate? {
-        guard isHorizontallyReachable(location.x, in: frame) else {
-            return nil
-        }
+// MARK: - BrowserSidebarTabDropSlot
 
-        let verticalDistance = abs(location.y - yPosition)
-        guard verticalDistance <= verticalSnapDistance else {
-            return nil
-        }
+struct BrowserSidebarTabDropSlot: Equatable {
+    let target: BrowserSidebarTabDropTarget
+    let hitFrame: CGRect
+    let indicatorFrame: CGRect?
+    let previewFrame: CGRect?
+    let focusPoint: CGPoint
+    let priority: Int
 
-        return BrowserSidebarTabDropCandidate(
+    var proposal: BrowserSidebarTabDropProposal {
+        BrowserSidebarTabDropProposal(
             target: target,
-            verticalDistance: verticalDistance,
-            sectionDistance: abs(location.y - frame.midY)
+            indicatorFrame: indicatorFrame,
+            previewFrame: previewFrame
         )
     }
 
-    private func makePinnedFolderOpenCandidate(
-        for folderFrame: BrowserSidebarPinnedFolderRowFrame,
-        location: CGPoint
-    ) -> BrowserSidebarTabDropCandidate? {
-        guard isReachable(location, in: folderFrame.frame) else {
-            return nil
-        }
-
-        let distance = distanceFrom(location, to: folderFrame.frame)
-        return BrowserSidebarTabDropCandidate(
-            target: BrowserSidebarTabDropTarget(
-                section: .spacePinned,
-                sectionIndex: folderFrame.childCount,
-                spaceID: folderFrame.spaceID,
-                pinnedFolderID: folderFrame.folderID
-            ),
-            verticalDistance: distance + 1,
-            sectionDistance: distance
-        )
+    func contains(
+        _ location: CGPoint,
+        horizontalTolerance: CGFloat,
+        verticalExpansion: CGFloat
+    ) -> Bool {
+        hitFrame
+            .insetBy(dx: -horizontalTolerance, dy: -verticalExpansion)
+            .contains(location)
     }
 
-    private func isHorizontallyReachable(_ xLocation: CGFloat, in frame: CGRect) -> Bool {
-        xLocation >= frame.minX - horizontalTolerance && xLocation <= frame.maxX + horizontalTolerance
-    }
-
-    private func isReachable(_ location: CGPoint, in frame: CGRect) -> Bool {
-        frame.insetBy(dx: -horizontalTolerance, dy: -verticalSnapDistance).contains(location)
-    }
-
-    private func distanceFrom(_ location: CGPoint, to frame: CGRect) -> CGFloat {
+    func distance(from location: CGPoint, horizontalTolerance: CGFloat) -> CGFloat {
+        let reachableFrame = hitFrame.insetBy(dx: -horizontalTolerance, dy: 0)
         let dx =
-            if location.x < frame.minX {
-                frame.minX - location.x
-            } else if location.x > frame.maxX {
-                location.x - frame.maxX
+            if location.x < reachableFrame.minX {
+                reachableFrame.minX - location.x
+            } else if location.x > reachableFrame.maxX {
+                location.x - reachableFrame.maxX
             } else {
                 CGFloat(0)
             }
-
         let dy =
-            if location.y < frame.minY {
-                frame.minY - location.y
-            } else if location.y > frame.maxY {
-                location.y - frame.maxY
+            if location.y < reachableFrame.minY {
+                reachableFrame.minY - location.y
+            } else if location.y > reachableFrame.maxY {
+                location.y - reachableFrame.maxY
             } else {
                 CGFloat(0)
             }
-
         return hypot(dx, dy)
     }
+
+    func focusDistance(from location: CGPoint) -> CGFloat {
+        guard target.section == .app else {
+            return abs(location.y - focusPoint.y)
+        }
+
+        return hypot(location.x - focusPoint.x, location.y - focusPoint.y)
+    }
+}
+
+// MARK: - BrowserSidebarTabDropSectionKey
+
+private struct BrowserSidebarTabDropSectionKey: Hashable {
+    let section: BrowserSidebarTabSection
+    let spaceID: String?
+    let pinnedFolderID: String?
 }
 
 // MARK: - BrowserSidebarTabDropIndicatorFrameResolver
@@ -838,6 +1292,10 @@ struct BrowserSidebarTabDropIndicatorFrameResolver {
             $0.section == target.section
                 && $0.spaceID == target.spaceID
                 && $0.pinnedFolderID == target.pinnedFolderID
+        }
+
+        if target.pinnedFolderID != nil, target.sectionIndex == 0 {
+            return nil
         }
 
         if target.pinnedFolderID == nil {
@@ -886,18 +1344,8 @@ struct BrowserSidebarTabDropIndicatorFrameResolver {
             )
         }
 
-        if
-            let targetFolderID = target.pinnedFolderID,
-            let folderFrame = pinnedFolderFrames.first(where: {
-                $0.folderID == targetFolderID && $0.spaceID == target.spaceID
-            })
-        {
-            return indicatorFrame(
-                alignedTo: folderFrame.frame,
-                yPosition: folderFrame.frame.maxY,
-                horizontalInset: horizontalInset,
-                thickness: thickness
-            )
+        if target.pinnedFolderID != nil {
+            return nil
         }
 
         if
@@ -937,15 +1385,7 @@ struct BrowserSidebarTabDropIndicatorFrameResolver {
 // MARK: - BrowserSidebarTabDropCandidate
 
 private struct BrowserSidebarTabDropCandidate {
-    let target: BrowserSidebarTabDropTarget
-    let verticalDistance: CGFloat
-    let sectionDistance: CGFloat
-
-    func isCloser(than other: BrowserSidebarTabDropCandidate) -> Bool {
-        if verticalDistance == other.verticalDistance {
-            return sectionDistance < other.sectionDistance
-        }
-
-        return verticalDistance < other.verticalDistance
-    }
+    let slot: BrowserSidebarTabDropSlot
+    let distance: CGFloat
+    let containsLocation: Bool
 }

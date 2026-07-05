@@ -5,12 +5,15 @@ import Foundation
 
 extension BrowserChromeModel {
     struct Tab: Identifiable, Equatable {
+        // MARK: Internal
+
         let id: String
         var syncID: String
         var spaceID: String
         var title: String
         var userTitleOverride: String?
         var urlString: String
+        var pinnedURLString: String?
         var faviconURLString: String?
         var placement = BrowserTabPlacement.temporary
         var pinnedFolderID: String?
@@ -46,6 +49,10 @@ extension BrowserChromeModel {
         }
 
         var faviconURL: URL? {
+            if faviconFallbackStyle == .chromiumWebUI {
+                return nil
+            }
+
             if
                 let faviconURLString,
                 let faviconURL = URL(string: faviconURLString)
@@ -63,8 +70,36 @@ extension BrowserChromeModel {
             return URL(string: "https://www.google.com/s2/favicons?sz=64&domain_url=\(encodedURL)")
         }
 
+        var faviconFallbackStyle: BrowserFaviconFallbackStyle {
+            BrowserFaviconFallbackStyle.style(forPageURLString: urlString)
+        }
+
         var pageURL: URL? {
             URL(string: urlString)
+        }
+
+        var canResetToPinnedURL: Bool {
+            guard placement == .spacePinned, let pinnedURLString else {
+                return false
+            }
+
+            return Self.comparablePinnedURLString(urlString) != Self.comparablePinnedURLString(pinnedURLString)
+        }
+
+        // MARK: Private
+
+        private static func comparablePinnedURLString(_ urlString: String) -> String {
+            let resolvedURLString = BrowserInternalURLNormalizer.canonicalURLString(for: urlString) ?? urlString
+            guard var components = URLComponents(string: resolvedURLString) else {
+                return resolvedURLString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }
+
+            components.scheme = components.scheme?.lowercased()
+            components.host = components.host?.lowercased()
+            if components.path == "/" {
+                components.path = ""
+            }
+            return components.url?.absoluteString ?? resolvedURLString.lowercased()
         }
     }
 

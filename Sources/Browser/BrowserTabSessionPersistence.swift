@@ -103,6 +103,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
     init(
         id: String? = nil,
         urlString: String,
+        pinnedURLString: String? = nil,
         userTitleOverride: String? = nil,
         placement: BrowserTabPlacement = .temporary,
         spaceID: String? = nil,
@@ -111,6 +112,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
     ) {
         self.id = id
         self.urlString = urlString
+        self.pinnedURLString = pinnedURLString
         self.userTitleOverride = userTitleOverride
         self.placement = placement
         self.spaceID = spaceID
@@ -122,6 +124,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decodeIfPresent(String.self, forKey: .id)
         self.urlString = try container.decode(String.self, forKey: .urlString)
+        self.pinnedURLString = try container.decodeIfPresent(String.self, forKey: .pinnedURLString)
         self.userTitleOverride = try container.decodeIfPresent(String.self, forKey: .userTitleOverride)
         if let placement = try container.decodeIfPresent(BrowserTabPlacement.self, forKey: .placement) {
             self.placement = placement
@@ -138,6 +141,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
 
     let id: String?
     let urlString: String
+    let pinnedURLString: String?
     let userTitleOverride: String?
     let placement: BrowserTabPlacement
     let spaceID: String?
@@ -148,6 +152,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(id, forKey: .id)
         try container.encode(urlString, forKey: .urlString)
+        try container.encodeIfPresent(pinnedURLString, forKey: .pinnedURLString)
         try container.encodeIfPresent(userTitleOverride, forKey: .userTitleOverride)
         try container.encode(placement, forKey: .placement)
         try container.encodeIfPresent(spaceID, forKey: .spaceID)
@@ -160,6 +165,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id
         case urlString
+        case pinnedURLString
         case userTitleOverride
         case placement
         case spaceID

@@ -75,6 +75,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
                         placement: tab.placement,
                         rank: Double(index),
                         urlString: tab.urlString,
+                        pinnedURLString: tab.pinnedURLString,
                         title: nil,
                         userTitleOverride: tab.userTitleOverride,
                         faviconURLString: nil,
@@ -513,6 +514,7 @@ enum BrowserSyncSnapshotMerger {
                 pinnedFolderID: tab.pinnedFolderID,
                 rank: Double(index),
                 urlString: tab.urlString,
+                pinnedURLString: tab.placement == .spacePinned ? tab.pinnedURLString : nil,
                 userTitleOverride: tab.userTitleOverride,
                 lastActivityTimestamp: tab.lastActivityTimestamp
             )
@@ -543,14 +545,20 @@ enum BrowserSyncSnapshotMerger {
                     continue
                 }
 
+                let placement = data.placement ?? existing?.placement ?? .temporary
+                let pinnedURLString = placement == .spacePinned
+                    ? data.pinnedURLString ?? existing?.pinnedURLString ?? urlString
+                    : nil
+
                 tabs[event.entityID] = TabRecord(
                     id: event.entityID,
                     spaceID: sanitizedRequiredString(data.spaceID) ?? existing?.spaceID ?? BrowserChromeModel
                         .defaultSpaceID,
-                    placement: data.placement ?? existing?.placement ?? .temporary,
+                    placement: placement,
                     pinnedFolderID: existing?.pinnedFolderID,
                     rank: data.rank ?? existing?.rank ?? Double(tabs.count),
                     urlString: urlString,
+                    pinnedURLString: pinnedURLString,
                     userTitleOverride: data.userTitleOverride ?? existing?.userTitleOverride,
                     lastActivityTimestamp: data.lastActivityAt.flatMap(lastActivityTimestamp)
                         ?? existing?.lastActivityTimestamp
@@ -584,6 +592,7 @@ enum BrowserSyncSnapshotMerger {
             BrowserTabSessionSnapshotTab(
                 id: tab.id,
                 urlString: tab.urlString,
+                pinnedURLString: tab.placement == .spacePinned ? tab.pinnedURLString : nil,
                 userTitleOverride: tab.userTitleOverride,
                 placement: tab.placement,
                 spaceID: knownSpaceIDs.contains(tab.spaceID) ? tab.spaceID : BrowserChromeModel.defaultSpaceID,
@@ -655,6 +664,7 @@ enum BrowserSyncSnapshotMerger {
         var pinnedFolderID: String?
         var rank: Double
         var urlString: String
+        var pinnedURLString: String?
         var userTitleOverride: String?
         var lastActivityTimestamp: TimeInterval?
     }

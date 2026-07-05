@@ -120,7 +120,8 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
         _: BrowserTabController,
         didCreateTabWithID _: String,
         title _: String,
-        urlString _: String
+        urlString _: String,
+        isActive _: Bool
     ) {}
 
     nonisolated func browserTabController(
@@ -180,7 +181,8 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
         _: BrowserTabController,
         didCreateTabWithID _: String,
         title _: String,
-        urlString _: String
+        urlString _: String,
+        isActive _: Bool
     ) {}
 
     nonisolated func browserTabController(

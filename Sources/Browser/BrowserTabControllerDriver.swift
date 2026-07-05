@@ -41,7 +41,7 @@ import Foundation
 
     // MARK: Internal
 
-    var onTabCreated: ((String, String, String) -> Void)?
+    var onTabCreated: ((String, String, String, Bool) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabClosed: ((String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
@@ -143,10 +143,11 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         _: BrowserTabController,
         didCreateTabWithID tabID: String,
         title: String,
-        urlString: String
+        urlString: String,
+        isActive: Bool
     ) {
         Task { @MainActor [weak self] in
-            self?.onTabCreated?(tabID, title, urlString)
+            self?.onTabCreated?(tabID, title, urlString, isActive)
         }
     }
 

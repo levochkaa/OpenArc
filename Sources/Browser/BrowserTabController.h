@@ -12,7 +12,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserTabController:(BrowserTabController *)controller
              didCreateTabWithID:(NSString *)tabID
                           title:(NSString *)title
-                      urlString:(NSString *)urlString;
+                      urlString:(NSString *)urlString
+                       isActive:(BOOL)isActive;
 
 - (void)browserTabController:(BrowserTabController *)controller
              didUpdateTabWithID:(NSString *)tabID

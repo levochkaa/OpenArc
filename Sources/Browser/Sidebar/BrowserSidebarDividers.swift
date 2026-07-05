@@ -40,6 +40,7 @@ struct BrowserSidebarTemporaryTabsDivider: View {
     let clearTemporaryTabsDescriptor: BrowserCommandDescriptor
     let chromeBackgroundMode: BrowserChromeBackgroundMode
     let showsClearButton: Bool
+    let showsClearActiveTabIndicator: Bool
     let isClearButtonHovered: Bool
     let onHoverClearButton: (Bool) -> Void
     let onClear: () -> Void
@@ -52,18 +53,24 @@ struct BrowserSidebarTemporaryTabsDivider: View {
 
             if showsClearButton {
                 Button(action: onClear) {
-                    Text(BrowserStrings.sidebarClearTemporaryTabs)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(
-                            isClearButtonHovered
-                                ? BrowserChromePalette.secondaryText
-                                : BrowserChromePalette.sidebarClearButtonForeground
-                        )
-                        .padding(.horizontal, BrowserChromeLayout.sidebarClearButtonHorizontalPadding)
-                        .padding(.vertical, BrowserChromeLayout.sidebarClearButtonVerticalPadding)
-                        .background {
-                            BrowserChromeBackgroundView(mode: chromeBackgroundMode)
+                    HStack(spacing: 3) {
+                        if showsClearActiveTabIndicator {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
                         }
+                        Text(BrowserStrings.sidebarClearTemporaryTabs)
+                    }
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(
+                        isClearButtonHovered
+                            ? BrowserChromePalette.secondaryText
+                            : BrowserChromePalette.sidebarClearButtonForeground
+                    )
+                    .padding(.horizontal, BrowserChromeLayout.sidebarClearButtonHorizontalPadding)
+                    .padding(.vertical, BrowserChromeLayout.sidebarClearButtonVerticalPadding)
+                    .background {
+                        BrowserChromeBackgroundView(mode: chromeBackgroundMode)
+                    }
                 }
                 .buttonStyle(.plain)
                 .animation(.easeInOut(duration: 0.12), value: isClearButtonHovered)

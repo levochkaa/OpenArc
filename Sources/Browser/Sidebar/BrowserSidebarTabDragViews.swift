@@ -192,7 +192,7 @@ struct BrowserSidebarTabDragPreview: View {
         switch style {
         case .row:
             HStack(spacing: 0) {
-                BrowserFaviconView(url: tab.faviconURL)
+                BrowserFaviconView(url: tab.faviconURL, pageURLString: tab.urlString)
                 Spacer(minLength: 0)
                     .frame(width: BrowserChromeLayout.sidebarRowContentSpacing)
 
@@ -211,8 +211,12 @@ struct BrowserSidebarTabDragPreview: View {
                 alignment: .leading
             )
         case .appTile:
-            BrowserFaviconView(url: tab.faviconURL, size: BrowserChromeLayout.appTabIconSize)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            BrowserFaviconView(
+                url: tab.faviconURL,
+                pageURLString: tab.urlString,
+                size: BrowserChromeLayout.appTabIconSize
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
     }
 }

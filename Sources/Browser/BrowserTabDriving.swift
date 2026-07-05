@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor protocol BrowserTabDriving: AnyObject {
     var hostView: NSView { get }
-    var onTabCreated: ((String, String, String) -> Void)? { get set }
+    var onTabCreated: ((String, String, String, Bool) -> Void)? { get set }
     var onTabUpdated: ((String, String?, String?, String?) -> Void)? { get set }
     var onTabClosed: ((String) -> Void)? { get set }
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)? { get set }

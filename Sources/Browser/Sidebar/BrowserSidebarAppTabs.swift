@@ -126,7 +126,11 @@ struct BrowserSidebarAppTabTile: View {
                 RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius, style: .continuous)
                     .fill(backgroundColor)
 
-                BrowserFaviconView(url: tab.faviconURL, size: BrowserChromeLayout.appTabIconSize)
+                BrowserFaviconView(
+                    url: tab.faviconURL,
+                    pageURLString: tab.urlString,
+                    size: BrowserChromeLayout.appTabIconSize
+                )
             }
             .contentShape(RoundedRectangle(
                 cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius,
@@ -167,12 +171,14 @@ struct BrowserSidebarAppTabTile: View {
                 archiveTabDescriptor: archiveTabDescriptor,
                 closeTitle: BrowserStrings.tabCloseAction,
                 isSelected: isSelected,
-                canCreateFolderFromSelection: false,
+                showsCreateFolderAction: false,
                 showsArchiveTabsBelow: false,
                 canArchiveTabsBelow: false,
                 onCopyLink: onCopyLink,
                 onRename: promptAndRename,
                 onCreateFolderFromSelection: {},
+                onReplacePinnedURLWithCurrent: nil,
+                onEditPinnedURL: nil,
                 onRemoveFavorite: onRemoveFavorite,
                 onClose: onClose,
                 onArchiveTabsBelow: {}

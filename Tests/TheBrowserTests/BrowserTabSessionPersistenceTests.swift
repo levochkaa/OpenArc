@@ -21,6 +21,7 @@ import Testing
         tabs: [
             BrowserTabSessionSnapshotTab(
                 urlString: "https://one.example",
+                pinnedURLString: "https://pinned.example",
                 userTitleOverride: "Pinned",
                 placement: .spacePinned,
                 spaceID: "space-1",

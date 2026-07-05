@@ -30,6 +30,7 @@ struct BrowserSidebarSpaceHeaderRow: View {
     let isRenaming: Bool
     let isCollapsed: Bool
     let hasPinnedTabs: Bool
+    let isDropTargeted: Bool
     let isSidebarResizing: Bool
     let interactionResetID: Int
     let onToggleCollapsed: () -> Void
@@ -67,6 +68,14 @@ struct BrowserSidebarSpaceHeaderRow: View {
 
     var showsMenuButton: Bool {
         isRowHovered && !isRenaming
+    }
+
+    var rowBackgroundColor: Color {
+        if isDropTargeted {
+            return BrowserChromePalette.rowSelected
+        }
+
+        return isRowHovered ? BrowserChromePalette.rowHover : Color.clear
     }
 
     var body: some View {
@@ -238,7 +247,7 @@ struct BrowserSidebarSpaceHeaderRow: View {
 
     var backgroundShape: some View {
         RoundedRectangle(cornerRadius: BrowserChromeLayout.sidebarRowCornerRadius)
-            .fill(isRowHovered ? BrowserChromePalette.rowHover : Color.clear)
+            .fill(rowBackgroundColor)
     }
 
     // MARK: Private

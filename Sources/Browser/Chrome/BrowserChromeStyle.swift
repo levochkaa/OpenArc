@@ -146,6 +146,8 @@ enum BrowserChromeLayout {
     static let sidebarTabTrailingPadding: CGFloat = 7
     static let sidebarRowContentSpacing: CGFloat = 8
     static let sidebarFaviconSize: CGFloat = 14
+    static let sidebarPinnedURLIconButtonSize: CGFloat = sidebarRowHeight
+    static let sidebarPinnedURLTextHoverOverlap: CGFloat = 4
     static let sidebarPinnedFolderTabIndent: CGFloat = 16
     static let sidebarPinnedFolderIconSize: CGFloat = 18
     static let sidebarPinnedFolderBadgeIconSize: CGFloat = 7.5
@@ -189,6 +191,7 @@ enum BrowserChromeLayout {
     static let sidebarTabDragMinimumDistance: CGFloat = 4
     static let sidebarTabDropVerticalSnapDistance: CGFloat = sidebarRowHeight * 0.62
     static let sidebarTabDropHorizontalTolerance: CGFloat = 48
+    static let sidebarTabDropHysteresisDistance: CGFloat = 3
     static let sidebarDragPreviewShadowRadius: CGFloat = 14
     static let sidebarDragPreviewShadowY: CGFloat = 8
     static let sidebarClearButtonHorizontalPadding: CGFloat = 8

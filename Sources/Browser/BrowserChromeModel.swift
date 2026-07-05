@@ -92,8 +92,8 @@ enum BrowserWindowMode: Equatable {
 
         super.init()
         undoManager.groupsByEvent = false
-        tabDriver.onTabCreated = { [weak self] tabID, title, urlString in
-            self?.handleCreatedTab(id: tabID, title: title, urlString: urlString)
+        tabDriver.onTabCreated = { [weak self] tabID, title, urlString, isActive in
+            self?.handleCreatedTab(id: tabID, title: title, urlString: urlString, isActive: isActive)
         }
         tabDriver.onTabUpdated = { [weak self] tabID, title, urlString, faviconURLString in
             self?.handleUpdatedTab(
@@ -631,8 +631,8 @@ enum BrowserWindowMode: Equatable {
         }
 
         let selectedTabIDs = Set(tabIDs)
-        let orderedTabs = spacePinnedTabs.filter { selectedTabIDs.contains($0.id) }
-        guard orderedTabs.count >= 2 else {
+        let orderedTabs = (spacePinnedTabs + temporaryTabs).filter { selectedTabIDs.contains($0.id) }
+        guard !orderedTabs.isEmpty else {
             return nil
         }
 
@@ -651,6 +651,9 @@ enum BrowserWindowMode: Equatable {
             .count
         let folderTabs = orderedTabs.map { tab in
             var updatedTab = tab
+            updatedTab.spaceID = selectedSpaceID
+            updatedTab.placement = .spacePinned
+            updatedTab.pinnedURLString = effectivePinnedURLString(forPinnedTab: updatedTab)
             updatedTab.pinnedFolderID = folderID
             return updatedTab
         }
@@ -666,6 +669,7 @@ enum BrowserWindowMode: Equatable {
             temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: selectedTabIDs),
             appTabs: appTabs
         )
+        removeEmptyPinnedTabFolders()
         persistCurrentSessionIfAllowed()
         return folderID
     }
@@ -717,6 +721,62 @@ enum BrowserWindowMode: Equatable {
         let targetPlacement: BrowserTabPlacement = tab.placement == .spacePinned ? .temporary : .spacePinned
         let targetSectionIndex = tabCount(for: targetPlacement)
         moveTab(withID: tabID, toPlacement: targetPlacement, atSectionIndex: targetSectionIndex)
+    }
+
+    @discardableResult func resetPinnedTabToPinnedURL(id tabID: String) -> Bool {
+        guard
+            let tab = tabs.first(where: { $0.id == tabID }),
+            tab.placement == .spacePinned,
+            let pinnedURLString = effectivePinnedURLString(forPinnedTab: tab)
+        else {
+            return false
+        }
+
+        if closedPinnedTabIDs.contains(tabID) {
+            selectTab(id: tabID)
+            return true
+        }
+
+        if selectedTabID != tabID {
+            selectTab(id: tabID)
+        }
+
+        guard selectedTabID == tabID else {
+            return false
+        }
+
+        guard !areEquivalentPinnedURLStrings(tab.urlString, pinnedURLString) else {
+            return true
+        }
+
+        tabDriver.navigateActiveTab(toURLString: resolvedBrowserURLString(pinnedURLString))
+        return true
+    }
+
+    @discardableResult func replacePinnedURLWithCurrent(forTabID tabID: String) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == tabID }) else {
+            return false
+        }
+
+        return setPinnedURLString(tab.urlString, forTabID: tabID)
+    }
+
+    @discardableResult func setPinnedURLString(_ urlString: String?, forTabID tabID: String) -> Bool {
+        guard
+            let index = tabs.firstIndex(where: { $0.id == tabID }),
+            tabs[index].placement == .spacePinned,
+            let normalizedURLString = normalizedPinnedURLString(from: urlString)
+        else {
+            return false
+        }
+
+        guard tabs[index].pinnedURLString != normalizedURLString else {
+            return false
+        }
+
+        tabs[index].pinnedURLString = normalizedURLString
+        persistCurrentSessionIfAllowed()
+        return true
     }
 
     func canMoveTab(
@@ -803,6 +863,12 @@ enum BrowserWindowMode: Equatable {
                 setSelectedTabID(tabID, forSpaceID: movedTab.spaceID)
             }
         }
+        if
+            let movedTab = tabs.first(where: { $0.id == tabID }),
+            movedTab.placement != .spacePinned
+        {
+            closedPinnedTabIDs.remove(tabID)
+        }
         if selectedTabID == tabID {
             selectActiveTabForSelectedSpace()
         }
@@ -847,6 +913,9 @@ enum BrowserWindowMode: Equatable {
             movedTab.placement != .app
         {
             setSelectedTabID(selectedMovedTabID, forSpaceID: movedTab.spaceID)
+        }
+        for tabID in movingTabIDs where tabs.first(where: { $0.id == tabID })?.placement != .spacePinned {
+            closedPinnedTabIDs.remove(tabID)
         }
 
         updateWindowTitle()
@@ -923,8 +992,13 @@ enum BrowserWindowMode: Equatable {
         persistCurrentSessionIfAllowed()
     }
 
-    func clearTemporaryTabs() {
-        let temporaryTabIDs = temporaryTabs.map(\.id)
+    func clearTemporaryTabs(includingActiveTab: Bool = true) {
+        let activeTemporaryTabID = includingActiveTab || selectedTab?.placement != .temporary
+            ? nil
+            : selectedTabID
+        let temporaryTabIDs = temporaryTabs
+            .map(\.id)
+            .filter { $0 != activeTemporaryTabID }
         for tabID in temporaryTabIDs {
             closeTab(id: tabID)
         }
@@ -1400,8 +1474,16 @@ enum BrowserWindowMode: Equatable {
             return false
         }
 
-        if tabs.first(where: { $0.id == selectedTabID })?.placement == .app {
+        guard let selectedTab = tabs.first(where: { $0.id == selectedTabID }) else {
+            return false
+        }
+
+        if selectedTab.placement == .app {
             return closeAppTabProcess(id: selectedTabID)
+        }
+
+        if selectedTab.placement == .spacePinned, effectivePinnedURLString(forPinnedTab: selectedTab) != nil {
+            return closePinnedTabProcessOrReset(id: selectedTabID)
         }
 
         return closeTab(id: selectedTabID)
@@ -1423,6 +1505,52 @@ enum BrowserWindowMode: Equatable {
         if selectedTabID == id {
             clearSelectedTab(id, forSpaceID: tab.spaceID)
             let fallbackTabID = fallbackTabID(afterClosingTab: tab) ?? sidebarTabsForSelectedSpace().first?.id
+            selectedTabID = fallbackTabID
+            findResultMatchCount = nil
+            if let fallbackTabID {
+                tabDriver.selectTab(withID: fallbackTabID)
+                setSelectedTabID(fallbackTabID, forSpaceID: tab.spaceID)
+                recordSelectedTab(fallbackTabID)
+                runFind(forward: true, findNext: false)
+            } else {
+                tabDriver.deselectActiveTab()
+            }
+        }
+
+        tabDriver.closeTab(withID: id, forceClose: forceClose)
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+        return true
+    }
+
+    @discardableResult func closePinnedTabProcessOrReset(id: String, forceClose: Bool = false) -> Bool {
+        guard
+            let tab = tabs.first(where: { $0.id == id }),
+            tab.placement == .spacePinned,
+            let pinnedURLString = effectivePinnedURLString(forPinnedTab: tab),
+            !closedPinnedTabIDs.contains(id)
+        else {
+            return false
+        }
+
+        if !areEquivalentPinnedURLStrings(tab.urlString, pinnedURLString),
+           let index = tabs.firstIndex(where: { $0.id == id })
+        {
+            tabs[index].title = ""
+            tabs[index].urlString = pinnedURLString
+            tabs[index].faviconURLString = nil
+            tabs[index].canGoBack = false
+            tabs[index].canGoForward = false
+            tabs[index].isLoading = false
+        }
+
+        closedPinnedTabIDs.insert(id)
+        removeTabFromSwitcherTracking(id)
+        BrowserTelemetry.captureUsage(.tabClosed, properties: telemetryProperties(for: tab))
+
+        if selectedTabID == id {
+            clearSelectedTab(id, forSpaceID: tab.spaceID)
+            let fallbackTabID = fallbackTabID(afterClosingDormantTab: tab, excluding: [id])
             selectedTabID = fallbackTabID
             findResultMatchCount = nil
             if let fallbackTabID {
@@ -1474,6 +1602,11 @@ enum BrowserWindowMode: Equatable {
 
         if closedAppTabIDs.contains(id), tab.placement == .app {
             reopenClosedAppTab(id: id)
+            return
+        }
+
+        if closedPinnedTabIDs.contains(id), tab.placement == .spacePinned {
+            reopenClosedPinnedTab(id: id)
             return
         }
 
@@ -1567,7 +1700,9 @@ enum BrowserWindowMode: Equatable {
 
         tabs.removeAll { $0.id == id }
         closedAppTabIDs.remove(id)
+        closedPinnedTabIDs.remove(id)
         pendingReopenedAppTabIDs = pendingReopenedAppTabIDs.filter { $0.value != id && $0.key != id }
+        pendingReopenedPinnedTabIDs = pendingReopenedPinnedTabIDs.filter { $0.value != id && $0.key != id }
         removeTabFromSwitcherTracking(id)
         tabCreationUndoReferences.removeValue(forKey: id)?.currentTabID = nil
         clearSelectedTab(id, forSpaceID: closingTab.spaceID)
@@ -1701,7 +1836,9 @@ enum BrowserWindowMode: Equatable {
     private var hasCreatedInitialTab = false
     private var closingTabIDs = Set<String>()
     private var closedAppTabIDs = Set<String>()
+    private var closedPinnedTabIDs = Set<String>()
     private var pendingReopenedAppTabIDs = [String: String]()
+    private var pendingReopenedPinnedTabIDs = [String: String]()
     private var isPersistenceEnabled = true
     private var isRestoringSession = false
     private var isApplyingRemoteSync = false
@@ -1962,6 +2099,7 @@ enum BrowserWindowMode: Equatable {
                 BrowserTabSessionSnapshotTab(
                     id: tab.syncID,
                     urlString: tab.urlString,
+                    pinnedURLString: tab.pinnedURLString,
                     userTitleOverride: tab.userTitleOverride,
                     placement: tab.placement,
                     spaceID: tab.spaceID,
@@ -2333,6 +2471,7 @@ enum BrowserWindowMode: Equatable {
         guard let undoSnapshot = context.undoSnapshot else {
             tabs[index].spaceID = context.spaceID
             tabs[index].placement = context.placement
+            tabs[index].pinnedURLString = pinnedURLString(for: tabs[index], movingTo: context.placement)
             return
         }
 
@@ -2352,6 +2491,7 @@ enum BrowserWindowMode: Equatable {
             title: undoSnapshot.tab.title,
             userTitleOverride: undoSnapshot.tab.userTitleOverride,
             urlString: undoSnapshot.tab.urlString,
+            pinnedURLString: undoSnapshot.tab.pinnedURLString,
             faviconURLString: undoSnapshot.tab.faviconURLString,
             placement: undoSnapshot.tab.placement,
             pinnedFolderID: undoSnapshot.tab.pinnedFolderID,
@@ -2373,9 +2513,32 @@ enum BrowserWindowMode: Equatable {
             title: title ?? tab.title,
             userTitleOverride: tab.userTitleOverride,
             urlString: urlString ?? tab.urlString,
+            pinnedURLString: nil,
             faviconURLString: tab.faviconURLString,
             placement: .app,
             pinnedFolderID: nil,
+            lastActivityAt: lastActivityAt ?? tab.lastActivityAt
+        )
+    }
+
+    private func reidentifiedPinnedTab(
+        from tab: Tab,
+        id: String,
+        title: String? = nil,
+        urlString: String? = nil,
+        lastActivityAt: Date? = nil
+    ) -> Tab {
+        Tab(
+            id: id,
+            syncID: tab.syncID,
+            spaceID: tab.spaceID,
+            title: title ?? tab.title,
+            userTitleOverride: tab.userTitleOverride,
+            urlString: urlString ?? tab.urlString,
+            pinnedURLString: effectivePinnedURLString(forPinnedTab: tab),
+            faviconURLString: tab.faviconURLString,
+            placement: .spacePinned,
+            pinnedFolderID: tab.pinnedFolderID,
             lastActivityAt: lastActivityAt ?? tab.lastActivityAt
         )
     }
@@ -2410,6 +2573,74 @@ enum BrowserWindowMode: Equatable {
         recordSelectedTab(newTabID)
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
+    }
+
+    private func reopenClosedPinnedTab(id: String) {
+        guard
+            canCreateTab,
+            let index = tabs.firstIndex(where: { $0.id == id }),
+            tabs[index].placement == .spacePinned,
+            closedPinnedTabIDs.contains(id),
+            let pinnedURLString = effectivePinnedURLString(forPinnedTab: tabs[index])
+        else {
+            return
+        }
+
+        let tab = tabs[index]
+        captureSelectedTabPreviewIfNeeded()
+        dismissCommandBar()
+
+        let newTabID = tabDriver.createTab(
+            withURLString: resolvedBrowserURLString(pinnedURLString),
+            makeActive: true
+        )
+        pendingReopenedPinnedTabIDs[newTabID] = id
+        tabs[index] = reidentifiedPinnedTab(
+            from: tab,
+            id: newTabID,
+            urlString: pinnedURLString,
+            lastActivityAt: dateProvider()
+        )
+        closedPinnedTabIDs.remove(id)
+        replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
+
+        selectedSpaceID = tab.spaceID
+        selectedTabID = newTabID
+        findResultMatchCount = nil
+        setSelectedTabID(newTabID, forSpaceID: tab.spaceID)
+        recordSelectedTab(newTabID)
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+    }
+
+    private func handleReopenedPinnedTabCreated(
+        id: String,
+        previousID: String,
+        title: String,
+        urlString: String
+    ) -> Bool {
+        guard let index = tabs.firstIndex(where: { $0.id == id || $0.id == previousID }) else {
+            return false
+        }
+
+        let tab = tabs[index]
+        tabs[index] = reidentifiedPinnedTab(
+            from: tab,
+            id: id,
+            title: title,
+            urlString: urlString,
+            lastActivityAt: tab.lastActivityAt
+        )
+        closedPinnedTabIDs.remove(previousID)
+        closedPinnedTabIDs.remove(id)
+        replaceTabRuntimeReferences(oldID: previousID, newID: id, spaceID: tab.spaceID)
+
+        if selectedTabID == id {
+            recordSelectedTab(id)
+        }
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+        return true
     }
 
     private func handleReopenedAppTabCreated(
@@ -2667,6 +2898,73 @@ enum BrowserWindowMode: Equatable {
         return trimmedTitleOverride.isEmpty ? nil : trimmedTitleOverride
     }
 
+    func normalizedPinnedURLString(from urlString: String?) -> String? {
+        guard let urlString else {
+            return nil
+        }
+
+        let trimmedURLString = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURLString.isEmpty else {
+            return nil
+        }
+
+        if let canonicalInternalURLString = BrowserInternalURLNormalizer.canonicalURLString(for: trimmedURLString) {
+            return canonicalInternalURLString
+        }
+
+        if
+            let components = URLComponents(string: trimmedURLString),
+            components.scheme?.isEmpty == false,
+            let url = components.url
+        {
+            return url.absoluteString
+        }
+
+        guard let resolution = navigationResolver.resolve(trimmedURLString), resolution.kind == .url else {
+            return nil
+        }
+
+        return resolution.resolvedURLString
+    }
+
+    func effectivePinnedURLString(forPinnedTab tab: Tab) -> String? {
+        guard tab.placement == .spacePinned else {
+            return nil
+        }
+
+        return normalizedPinnedURLString(from: tab.pinnedURLString ?? tab.urlString)
+    }
+
+    func pinnedURLString(for tab: Tab, movingTo placement: BrowserTabPlacement) -> String? {
+        guard placement == .spacePinned else {
+            return nil
+        }
+
+        if tab.placement == .spacePinned, let pinnedURLString = normalizedPinnedURLString(from: tab.pinnedURLString) {
+            return pinnedURLString
+        }
+
+        return normalizedPinnedURLString(from: tab.urlString)
+    }
+
+    func areEquivalentPinnedURLStrings(_ lhs: String, _ rhs: String) -> Bool {
+        comparablePinnedURLString(lhs) == comparablePinnedURLString(rhs)
+    }
+
+    func comparablePinnedURLString(_ urlString: String) -> String {
+        let resolvedURLString = resolvedBrowserURLString(urlString)
+        guard var components = URLComponents(string: resolvedURLString) else {
+            return resolvedURLString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        if components.path == "/" {
+            components.path = ""
+        }
+        return components.url?.absoluteString ?? resolvedURLString.lowercased()
+    }
+
     func fallbackTabID(afterClosingTab closingTab: Tab?) -> String? {
         guard let closingTab else {
             return sidebarTabsForSelectedSpace().first?.id
@@ -2677,6 +2975,26 @@ enum BrowserWindowMode: Equatable {
             forSpaceID: closingTab.spaceID,
             including: closingTab
         )
+        guard let closingIndex = previousSidebarOrder.firstIndex(where: { $0.id == closingTab.id }) else {
+            return visibleTabs.first?.id
+        }
+
+        if visibleTabs.indices.contains(closingIndex) {
+            return visibleTabs[closingIndex].id
+        }
+
+        let previousIndex = closingIndex - 1
+        if visibleTabs.indices.contains(previousIndex) {
+            return visibleTabs[previousIndex].id
+        }
+
+        return visibleTabs.first?.id
+    }
+
+    func fallbackTabID(afterClosingDormantTab closingTab: Tab, excluding excludedTabIDs: Set<String>) -> String? {
+        let visibleTabs = sidebarTabs(forSpaceID: closingTab.spaceID)
+            .filter { !excludedTabIDs.contains($0.id) && !closedPinnedTabIDs.contains($0.id) }
+        let previousSidebarOrder = sidebarTabs(forSpaceID: closingTab.spaceID, including: closingTab)
         guard let closingIndex = previousSidebarOrder.firstIndex(where: { $0.id == closingTab.id }) else {
             return visibleTabs.first?.id
         }
@@ -2726,7 +3044,14 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
-    func handleCreatedTab(id: String, title: String, urlString: String) {
+    func handleCreatedTab(id: String, title: String, urlString: String, isActive: Bool) {
+        if
+            let previousID = pendingReopenedPinnedTabIDs.removeValue(forKey: id),
+            handleReopenedPinnedTabCreated(id: id, previousID: previousID, title: title, urlString: urlString)
+        {
+            return
+        }
+
         if
             let previousID = pendingReopenedAppTabIDs.removeValue(forKey: id),
             handleReopenedAppTabCreated(id: id, previousID: previousID, title: title, urlString: urlString)
@@ -2743,6 +3068,12 @@ enum BrowserWindowMode: Equatable {
             spaces = [makeDefaultSpace()]
             selectedSpaceID = tabSpaceID
         }
+        let restoredPlacement = restoredTab?.placement ?? undoSnapshot?.tab.placement ?? pendingContext?
+            .placement ?? .temporary
+        let restoredPinnedURLString = restoredTab?.pinnedURLString ?? undoSnapshot?.tab.pinnedURLString
+        let tabPinnedURLString = restoredPlacement == .spacePinned
+            ? normalizedPinnedURLString(from: restoredPinnedURLString ?? urlString)
+            : nil
         tabs.append(
             Tab(
                 id: id,
@@ -2751,9 +3082,9 @@ enum BrowserWindowMode: Equatable {
                 title: undoSnapshot?.tab.title ?? title,
                 userTitleOverride: restoredTab?.userTitleOverride ?? undoSnapshot?.tab.userTitleOverride,
                 urlString: undoSnapshot?.tab.urlString ?? urlString,
+                pinnedURLString: tabPinnedURLString,
                 faviconURLString: undoSnapshot?.tab.faviconURLString,
-                placement: restoredTab?.placement ?? undoSnapshot?.tab.placement ?? pendingContext?
-                    .placement ?? .temporary,
+                placement: restoredPlacement,
                 pinnedFolderID: restoredTab?.pinnedFolderID ?? undoSnapshot?.tab.pinnedFolderID,
                 lastActivityAt: restoredTab.flatMap(lastActivityDate(from:)) ?? undoSnapshot?.tab
                     .lastActivityAt ?? dateProvider()
@@ -2763,8 +3094,9 @@ enum BrowserWindowMode: Equatable {
         if let pendingContext {
             applyCreatedTabContext(pendingContext, toTabID: id)
         } else {
-            if selectedTabID == nil {
+            if isActive || selectedTabID == nil {
                 selectedTabID = id
+                findResultMatchCount = nil
             }
             if selectedTabID == id {
                 setSelectedTabID(id, forSpaceID: tabSpaceID)
@@ -2879,10 +3211,17 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        if closedPinnedTabIDs.contains(id), closedTab?.placement == .spacePinned {
+            updateWindowTitle()
+            persistCurrentSessionIfAllowed()
+            return
+        }
+
         if closedTab != nil {
             tabs.removeAll { $0.id == id }
         }
         closedAppTabIDs.remove(id)
+        closedPinnedTabIDs.remove(id)
         removeTabFromSwitcherTracking(id)
         if let closedTab {
             clearSelectedTab(id, forSpaceID: closedTab.spaceID)
@@ -3245,6 +3584,7 @@ enum BrowserWindowMode: Equatable {
         if placement != .app {
             updatedTab.spaceID = resolvedTargetSpaceID
         }
+        updatedTab.pinnedURLString = pinnedURLString(for: movingTab, movingTo: placement)
         updatedTab.pinnedFolderID = placement == .spacePinned ? targetPinnedFolderID : nil
 
         switch placement {
@@ -3359,6 +3699,7 @@ enum BrowserWindowMode: Equatable {
             var updatedTab = tab
             updatedTab.spaceID = resolvedTargetSpaceID
             updatedTab.placement = placement
+            updatedTab.pinnedURLString = pinnedURLString(for: tab, movingTo: placement)
             updatedTab.pinnedFolderID = targetPinnedFolderID
             return updatedTab
         }
@@ -3459,7 +3800,8 @@ enum BrowserWindowMode: Equatable {
             let selectedTabID,
             tabs.contains(where: { $0.id == selectedTabID }),
             !closingTabIDs.contains(selectedTabID),
-            !closedAppTabIDs.contains(selectedTabID)
+            !closedAppTabIDs.contains(selectedTabID),
+            !closedPinnedTabIDs.contains(selectedTabID)
         else {
             return []
         }
@@ -3471,6 +3813,7 @@ enum BrowserWindowMode: Equatable {
             guard
                 !closingTabIDs.contains(tabID),
                 !closedAppTabIDs.contains(tabID),
+                !closedPinnedTabIDs.contains(tabID),
                 seenTabIDs.insert(tabID).inserted
             else {
                 return
@@ -3487,6 +3830,7 @@ enum BrowserWindowMode: Equatable {
                 !seenTabIDs.contains($0.id)
                     && !closingTabIDs.contains($0.id)
                     && !closedAppTabIDs.contains($0.id)
+                    && !closedPinnedTabIDs.contains($0.id)
             }
             .sorted { lhs, rhs in
                 lhs.lastActivityAt > rhs.lastActivityAt
@@ -3543,7 +3887,8 @@ enum BrowserWindowMode: Equatable {
         guard
             let tabID,
             tabs.contains(where: { $0.id == tabID }),
-            !closingTabIDs.contains(tabID)
+            !closingTabIDs.contains(tabID),
+            !closedPinnedTabIDs.contains(tabID)
         else {
             return
         }
@@ -3574,6 +3919,7 @@ enum BrowserWindowMode: Equatable {
         let openTabIDs = Set(tabs.map(\.id))
             .subtracting(closingTabIDs)
             .subtracting(closedAppTabIDs)
+            .subtracting(closedPinnedTabIDs)
         recentlySelectedTabIDs.removeAll { !openTabIDs.contains($0) }
 
         for tabID in Array(tabPreviewImagesByID.keys) where !openTabIDs.contains(tabID) {
@@ -3586,6 +3932,7 @@ enum BrowserWindowMode: Equatable {
             let selectedTabID,
             !closingTabIDs.contains(selectedTabID),
             !closedAppTabIDs.contains(selectedTabID),
+            !closedPinnedTabIDs.contains(selectedTabID),
             let previewImage = BrowserTabPreviewCapture.image(for: hostView)
         else {
             return
@@ -3779,6 +4126,13 @@ enum BrowserWindowMode: Equatable {
         }
 
         for index in tabs.indices {
+            tabs[index].pinnedURLString =
+                if tabs[index].placement == .spacePinned {
+                    effectivePinnedURLString(forPinnedTab: tabs[index])
+                } else {
+                    nil
+                }
+
             guard let folderID = tabs[index].pinnedFolderID else {
                 continue
             }

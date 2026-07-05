@@ -45,7 +45,7 @@ enum BrowserStrings {
 
     static let pinnedTabFolderNewAction = NSLocalizedString(
         "browser.pinned_tab_folder.new_action",
-        comment: "Context menu title for creating a pinned tab folder from selected tabs."
+        comment: "Context menu title for creating a pinned tab folder from a pinned tab or selected pinned tabs."
     )
 
     static let pinnedTabFolderRenameAction = NSLocalizedString(
@@ -61,6 +61,26 @@ enum BrowserStrings {
     static let pinnedTabFolderNoIconAction = NSLocalizedString(
         "browser.pinned_tab_folder.no_icon_action",
         comment: "Menu title for removing a pinned tab folder icon."
+    )
+
+    static let pinnedTabBackToPinnedURL = NSLocalizedString(
+        "browser.pinned_tab.back_to_pinned_url",
+        comment: "Secondary sidebar label shown while hovering the pinned-tab favicon reset button."
+    )
+
+    static let pinnedTabReplaceURLWithCurrentAction = NSLocalizedString(
+        "browser.pinned_tab.replace_url_with_current_action",
+        comment: "Context menu title for replacing a pinned tab URL with the current page URL."
+    )
+
+    static let pinnedTabEditURLAction = NSLocalizedString(
+        "browser.pinned_tab.edit_url_action",
+        comment: "Context menu title for editing a pinned tab URL."
+    )
+
+    static let pinnedTabEditURLPromptTitle = NSLocalizedString(
+        "browser.pinned_tab.edit_url_prompt.title",
+        comment: "Prompt title for editing a pinned tab URL."
     )
 
     static let sidebarHide = NSLocalizedString(

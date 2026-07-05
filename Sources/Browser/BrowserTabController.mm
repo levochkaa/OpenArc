@@ -2329,14 +2329,16 @@ struct TabRecord {
   record.client = client;
   _tabRecords[tabKey] = record;
 
-  if (makeActive || _activeTabID == nil) {
+  BOOL isActive = makeActive || _activeTabID == nil;
+  if (isActive) {
     _activeTabID = [tabID copy];
   }
 
   [self.delegate browserTabController:self
                       didCreateTabWithID:tabID
                                    title:DefaultTitleForURLString(resolvedURLString)
-                               urlString:resolvedURLString];
+                               urlString:resolvedURLString
+                                isActive:isActive];
 
   std::string resolvedURL = ToStdString(resolvedURLString);
   CefWindowInfo windowInfo;

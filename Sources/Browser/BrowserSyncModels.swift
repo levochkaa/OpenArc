@@ -76,6 +76,7 @@ struct BrowserSyncTabPayload: Codable, Equatable {
     let placement: BrowserTabPlacement
     let rank: Double
     let urlString: String
+    let pinnedURLString: String?
     let title: String?
     let userTitleOverride: String?
     let faviconURLString: String?
@@ -185,6 +186,7 @@ struct BrowserSyncEventTabData: Decodable, Equatable {
     let placement: BrowserTabPlacement?
     let rank: Double?
     let urlString: String?
+    let pinnedURLString: String?
     let title: String?
     let userTitleOverride: String?
     let faviconURLString: String?

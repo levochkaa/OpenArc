@@ -11,6 +11,10 @@
 "browser.pinned_tab_folder.rename_action" = "Rename Folder...";
 "browser.pinned_tab_folder.change_icon_action" = "Change Folder Icon";
 "browser.pinned_tab_folder.no_icon_action" = "No Icon";
+"browser.pinned_tab.back_to_pinned_url" = "Back to Pinned URL";
+"browser.pinned_tab.replace_url_with_current_action" = "Replace Pinned URL with Current";
+"browser.pinned_tab.edit_url_action" = "Edit Pinned URL...";
+"browser.pinned_tab.edit_url_prompt.title" = "Edit Pinned URL";
 "browser.sidebar.hide" = "Hide Sidebar";
 "browser.sidebar.show" = "Show Sidebar";
 "browser.navigation.back" = "Back";

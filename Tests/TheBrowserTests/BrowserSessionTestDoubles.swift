@@ -11,6 +11,7 @@ import Foundation
         let id: String
         let urlString: String
         let makeActive: Bool
+        let isActive: Bool
     }
 
     struct CloseTabRequest: Equatable {
@@ -27,7 +28,7 @@ import Foundation
 
     let hostView = NSView(frame: .zero)
 
-    var onTabCreated: ((String, String, String) -> Void)?
+    var onTabCreated: ((String, String, String, Bool) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabClosed: ((String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
@@ -57,7 +58,16 @@ import Foundation
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {
         nextTabNumber += 1
         let tabID = "tab-\(nextTabNumber)"
-        let request = CreatedTabRequest(id: tabID, urlString: urlString, makeActive: makeActive)
+        let isActive = makeActive || activeTabID == nil
+        if isActive {
+            activeTabID = tabID
+        }
+        let request = CreatedTabRequest(
+            id: tabID,
+            urlString: urlString,
+            makeActive: makeActive,
+            isActive: isActive
+        )
         createdTabRequests.append(request)
         pendingCreateRequests.append(request)
         return tabID
@@ -68,15 +78,17 @@ import Foundation
         pendingCreateRequests.removeAll()
 
         for request in pendingRequests {
-            onTabCreated?(request.id, defaultTitle(for: request.urlString), request.urlString)
+            onTabCreated?(request.id, defaultTitle(for: request.urlString), request.urlString, request.isActive)
         }
     }
 
     func selectTab(withID tabID: String) {
+        activeTabID = tabID
         selectedTabIDs.append(tabID)
     }
 
     func deselectActiveTab() {
+        activeTabID = nil
         deselectActiveTabCount += 1
     }
 
@@ -156,6 +168,18 @@ import Foundation
         onTabUpdated?(id, title, urlString, faviconURLString)
     }
 
+    func emitCreatedTab(
+        id: String,
+        title: String? = nil,
+        urlString: String,
+        isActive: Bool
+    ) {
+        if isActive {
+            activeTabID = id
+        }
+        onTabCreated?(id, title ?? defaultTitle(for: urlString), urlString, isActive)
+    }
+
     func emitClose(id: String) {
         onTabClosed?(id)
     }
@@ -180,6 +204,7 @@ import Foundation
 
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
+    private var activeTabID: String?
 
     private func defaultTitle(for urlString: String) -> String {
         guard

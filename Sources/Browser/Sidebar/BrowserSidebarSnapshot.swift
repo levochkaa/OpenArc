@@ -273,3 +273,24 @@ struct BrowserSidebarPinnedTabRow: Equatable {
     var folderChildIndex: Int?
     var depth = 0
 }
+
+// MARK: - BrowserSidebarPinnedTabFolderCreationSelection
+
+struct BrowserSidebarPinnedTabFolderCreationSelection: Equatable {
+    let clickedTabID: String
+    let activeTabID: String?
+    let selectedTabIDs: Set<String>
+    let listTabIDs: Set<String>
+
+    var tabIDs: Set<String> {
+        var tabIDs = selectedTabIDs.intersection(listTabIDs)
+        if let activeTabID, listTabIDs.contains(activeTabID) {
+            tabIDs.insert(activeTabID)
+        }
+        if listTabIDs.contains(clickedTabID) {
+            tabIDs.insert(clickedTabID)
+        }
+
+        return tabIDs
+    }
+}

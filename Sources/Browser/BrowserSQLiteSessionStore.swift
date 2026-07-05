@@ -27,7 +27,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 let tabs = try Row.fetchAll(
                     db,
                     sql: """
-                    SELECT id, url_string, user_title_override, placement, space_id, pinned_folder_id, last_activity_timestamp
+                    SELECT id, url_string, pinned_url_string, user_title_override, placement, space_id,
+                           pinned_folder_id, last_activity_timestamp
                     FROM browser_tabs
                     ORDER BY position ASC
                     """
@@ -80,6 +81,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                         BrowserTabSessionSnapshotTab(
                             id: row["id"],
                             urlString: row["url_string"],
+                            pinnedURLString: row["pinned_url_string"],
                             userTitleOverride: row["user_title_override"],
                             placement: BrowserTabPlacement(rawValue: row["placement"] as String) ?? .temporary,
                             spaceID: row["space_id"],
@@ -145,14 +147,15 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     try db.execute(
                         sql: """
                         INSERT INTO browser_tabs (
-                          id, url_string, user_title_override, placement, space_id, pinned_folder_id,
-                          last_activity_timestamp, position
+                          id, url_string, pinned_url_string, user_title_override, placement, space_id,
+                          pinned_folder_id, last_activity_timestamp, position
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         arguments: [
                             tab.id ?? UUID().uuidString,
                             tab.urlString,
+                            tab.pinnedURLString,
                             tab.userTitleOverride,
                             tab.placement.rawValue,
                             tab.spaceID,
@@ -287,6 +290,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
         migrator.registerMigration("addPinnedTabFolderParents") { db in
             try db.execute(sql: "ALTER TABLE browser_pinned_tab_folders ADD COLUMN parent_folder_id TEXT")
+        }
+        migrator.registerMigration("addPinnedURLString") { db in
+            try db.execute(sql: "ALTER TABLE browser_tabs ADD COLUMN pinned_url_string TEXT")
         }
         return migrator
     }

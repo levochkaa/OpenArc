@@ -30,6 +30,7 @@ import Testing
             BrowserTabSessionSnapshotTab(
                 id: "tab-sync-1",
                 urlString: "https://example.com",
+                pinnedURLString: "https://pinned.example",
                 userTitleOverride: "Example",
                 placement: .spacePinned,
                 spaceID: "space-1",
@@ -127,6 +128,7 @@ import Testing
                     placement: .spacePinned,
                     rank: 0,
                     urlString: "https://remote.example",
+                    pinnedURLString: "https://remote.example",
                     title: nil,
                     userTitleOverride: "Remote Tab",
                     faviconURLString: nil,
@@ -154,6 +156,7 @@ import Testing
     #expect(space.selectedTabIndex == 0)
     #expect(tab.id == "tab-new")
     #expect(tab.urlString == "https://remote.example")
+    #expect(tab.pinnedURLString == "https://remote.example")
     #expect(tab.userTitleOverride == "Remote Tab")
     #expect(tab.placement == .spacePinned)
 }
@@ -196,6 +199,7 @@ import Testing
                     placement: .spacePinned,
                     rank: 0,
                     urlString: "https://new.example",
+                    pinnedURLString: "https://old.example",
                     title: nil,
                     userTitleOverride: nil,
                     faviconURLString: nil,
@@ -211,6 +215,7 @@ import Testing
 
     #expect(merged.pinnedTabFolders == current.pinnedTabFolders)
     #expect(tab.urlString == "https://new.example")
+    #expect(tab.pinnedURLString == "https://old.example")
     #expect(tab.pinnedFolderID == "folder-1")
 }
 
