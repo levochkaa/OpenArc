@@ -2132,6 +2132,7 @@ extension BrowserSidebarView: @MainActor Equatable {
             && lhs.showsCurrentURLRow == rhs.showsCurrentURLRow
             && lhs.sidebarWidth == rhs.sidebarWidth
             && lhs.isSidebarResizing == rhs.isSidebarResizing
+            && lhs.toggleSidebarTooltipTitle == rhs.toggleSidebarTooltipTitle
             && lhs.chromeBackgroundMode == rhs.chromeBackgroundMode
     }
 }
