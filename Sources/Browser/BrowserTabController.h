@@ -92,6 +92,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;
 - (void)closeTabWithID:(NSString *)tabID;
 - (void)closeAllTabs;
+- (void)prepareForCefShutdown;
 - (void)hostViewDidLayout;
 
 @end

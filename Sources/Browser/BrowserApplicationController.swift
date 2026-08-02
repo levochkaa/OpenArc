@@ -111,7 +111,11 @@ NSUserInterfaceValidations {
     }
 
     public func prepareForCefShutdown() {
+        let chromeModels = allChromeModels
         handleApplicationWillTerminate()
+        for chromeModel in chromeModels {
+            chromeModel.prepareForCefShutdown()
+        }
         NSApp.delegate = nil
         removeLayoutIndependentKeyMonitor()
         tearDownWindow(settingsWindowController?.window)

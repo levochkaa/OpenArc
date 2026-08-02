@@ -2563,6 +2563,15 @@ struct TabRecord {
   }
 }
 
+- (void)prepareForCefShutdown {
+  self.delegate = nil;
+  _hostView.controller = nil;
+  _hostView = nil;
+  _activeTabID = nil;
+  _tabRecords.clear();
+  _requestContext = nullptr;
+}
+
 - (void)hostViewDidLayout {
   [self syncBrowserFrames];
 }

@@ -29,4 +29,5 @@ import Foundation
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)
     func stopFindingInActiveTab(clearSelection: Bool)
     func closeTab(withID tabID: String, forceClose: Bool)
+    func prepareForCefShutdown()
 }

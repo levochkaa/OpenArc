@@ -54,6 +54,7 @@ import Foundation
     private(set) var printCount = 0
     private(set) var goBackCount = 0
     private(set) var goForwardCount = 0
+    private(set) var prepareForCefShutdownCount = 0
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {
         nextTabNumber += 1
@@ -157,6 +158,10 @@ import Foundation
 
     func closeTab(withID tabID: String, forceClose: Bool) {
         closedTabRequests.append(CloseTabRequest(id: tabID, forceClose: forceClose))
+    }
+
+    func prepareForCefShutdown() {
+        prepareForCefShutdownCount += 1
     }
 
     func emitUpdate(

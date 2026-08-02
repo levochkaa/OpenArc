@@ -416,6 +416,11 @@ enum BrowserWindowMode: Equatable {
         isPersistenceEnabled = false
     }
 
+    func prepareForCefShutdown() {
+        prepareForTermination()
+        tabDriver.prepareForCefShutdown()
+    }
+
     func createNewTab() {
         createTab(withURLString: newTabURLString)
     }

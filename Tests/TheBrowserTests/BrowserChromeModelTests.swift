@@ -2041,6 +2041,21 @@ import Testing
 }
 
 @Test
+@MainActor func cefShutdownPreparationReleasesTabDriverResources() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    model.prepareForTermination()
+    model.prepareForCefShutdown()
+
+    #expect(driver.prepareForCefShutdownCount == 1)
+}
+
+@Test
 @MainActor func presentCommandBarDoesNotCreateTabUntilSubmit() async {
     let driver = FakeBrowserTabDriver()
     let suggestionProvider = FakeSuggestionProvider()

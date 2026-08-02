@@ -130,6 +130,17 @@ import Foundation
         controller.closeTab(withID: tabID, forceClose: forceClose)
     }
 
+    func prepareForCefShutdown() {
+        onTabCreated = nil
+        onTabUpdated = nil
+        onTabClosed = nil
+        onNavigationStateChanged = nil
+        onLoadingStateChanged = nil
+        onFindResultChanged = nil
+        onDownloadUpdated = nil
+        controller.prepareForCefShutdown()
+    }
+
     // MARK: Private
 
     private let browserHostView: BrowserTabHostView
