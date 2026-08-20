@@ -288,7 +288,6 @@ struct BrowserSidebarCurrentURLRow: View {
     let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
     let isSearchPresented: Bool
     let isSidebarResizing: Bool
-    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let isSiteToolbarPresented: Bool
     let siteToolbarShowsFullURL: Bool
     let isBookmarksBarVisible: Bool
@@ -321,12 +320,6 @@ struct BrowserSidebarCurrentURLRow: View {
         isRowHovered || isSearchPresented
             ? BrowserChromePalette.currentURLRowHover
             : BrowserChromePalette.currentURLRow
-    }
-
-    var rowBackgroundResolvedColor: Color {
-        isRowHovered || isSearchPresented
-            ? BrowserChromePalette.currentURLRowHoverResolved
-            : BrowserChromePalette.currentURLRowResolved
     }
 
     var showsActionButtons: Bool {
@@ -398,10 +391,6 @@ struct BrowserSidebarCurrentURLRow: View {
         return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
     }
 
-    var actionButtonOverlayShape: some Shape {
-        RoundedRectangle(cornerRadius: BrowserChromeLayout.currentURLRowCornerRadius, style: .continuous)
-    }
-
     var body: some View {
         ZStack(alignment: .trailing) {
             Button(action: onOpenSearch) {
@@ -412,6 +401,7 @@ struct BrowserSidebarCurrentURLRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, BrowserChromeLayout.sidebarRowHorizontalPadding)
                     .frame(height: BrowserChromeLayout.sidebarRowHeight)
+                    .mask(actionButtonTextMask)
                     .background(rowBackgroundShape)
                     .contentShape(
                         RoundedRectangle(
@@ -566,51 +556,16 @@ struct BrowserSidebarCurrentURLRow: View {
             height: BrowserChromeLayout.sidebarRowHeight,
             alignment: .trailing
         )
-        .background(actionButtonOverlayBackground)
     }
 
-    @ViewBuilder var actionButtonOverlayBackground: some View {
-        switch chromeBackgroundMode {
-        case .blurred:
-            actionButtonOverlayBlurredBackground
-        case .black:
-            actionButtonOverlaySolidBackground
-        }
-    }
-
-    var actionButtonOverlayBlurredBackground: some View {
-        ZStack {
-            BrowserChromeBackgroundView(mode: .blurred)
-            rowBackgroundColor
-        }
-        .mask(actionButtonOverlayMask)
-        .clipShape(actionButtonOverlayShape)
-    }
-
-    var actionButtonOverlaySolidBackground: some View {
+    var actionButtonTextMask: some View {
         HStack(spacing: 0) {
+            Color.black
+
             LinearGradient(
                 colors: [
-                    Color.clear,
-                    rowBackgroundResolvedColor,
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlayFadeWidth)
-
-            rowBackgroundResolvedColor
-                .frame(width: actionOverlaySolidWidth)
-        }
-        .clipShape(actionButtonOverlayShape)
-    }
-
-    var actionButtonOverlayMask: some View {
-        HStack(spacing: 0) {
-            LinearGradient(
-                colors: [
-                    Color.clear,
                     Color.black,
+                    Color.black.opacity(showsActionButtons ? 0 : 1),
                 ],
                 startPoint: .leading,
                 endPoint: .trailing
@@ -618,8 +573,10 @@ struct BrowserSidebarCurrentURLRow: View {
             .frame(width: BrowserChromeLayout.sidebarCurrentURLOverlayFadeWidth)
 
             Color.black
+                .opacity(showsActionButtons ? 0 : 1)
                 .frame(width: actionOverlaySolidWidth)
         }
+        .animation(.easeInOut(duration: 0.12), value: showsActionButtons)
     }
 
     var rowBackgroundShape: some View {
@@ -643,7 +600,7 @@ struct BrowserSidebarCurrentURLRow: View {
                     cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
                     style: .continuous
                 )
-                .fill(isHovered ? BrowserChromePalette.currentURLButtonHoverResolved : Color.clear)
+                .fill(isHovered ? BrowserChromePalette.currentURLButtonHover : Color.clear)
 
                 ForEach([systemImageName], id: \.self) { imageName in
                     Image(systemName: imageName)
@@ -692,7 +649,7 @@ struct BrowserSidebarCurrentURLRow: View {
                     cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
                     style: .continuous
                 )
-                .fill(isHovered ? BrowserChromePalette.currentURLButtonHoverResolved : Color.clear)
+                .fill(isHovered ? BrowserChromePalette.currentURLButtonHover : Color.clear)
 
                 if let iconImage = browserExtension.iconImage {
                     Image(nsImage: iconImage)
@@ -893,7 +850,6 @@ struct BrowserSiteToolbar: View {
     let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
     let showsFullURL: Bool
     let isBookmarksBarVisible: Bool
-    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onURLButtonFrameChange: (CGRect?) -> Void
     let onOpenSearch: () -> Void
     let onGoBack: () -> Void
@@ -932,10 +888,7 @@ struct BrowserSiteToolbar: View {
         }
         .frame(height: BrowserChromeLayout.siteToolbarHeight)
         .background {
-            ZStack {
-                BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-                BrowserWindowDragRegion()
-            }
+            BrowserWindowDragRegion()
         }
         .contextMenu {
             BrowserSiteURLContextMenuContent(

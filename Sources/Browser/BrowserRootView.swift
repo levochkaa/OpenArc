@@ -25,6 +25,10 @@ struct BrowserRootView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
+                BrowserChromeBackgroundView(mode: chromeBackgroundMode)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .allowsHitTesting(false)
+
                 BrowserScreenFrameReader { screenFrame in
                     rootViewScreenFrame = screenFrame
                 }
@@ -75,7 +79,6 @@ struct BrowserRootView: View {
                         toggleBookmarksBarShortcut: shortcutStore.shortcut(for: .toggleBookmarksBar),
                         showsFullURL: preferences.siteToolbarShowsFullURL,
                         isBookmarksBarVisible: preferences.bookmarksBarVisible,
-                        chromeBackgroundMode: chromeBackgroundMode,
                         onURLButtonFrameChange: { currentURLRowWindowFrame = $0 },
                         onOpenSearch: model.presentCurrentPageCommandBar,
                         onGoBack: model.goBack,
@@ -120,7 +123,6 @@ struct BrowserRootView: View {
                         isSelectedTabBookmarked: isSelectedTabBookmarked,
                         toggleBookmarkShortcut: shortcutStore.shortcut(for: .toggleBookmark),
                         toggleBookmarksBarShortcut: shortcutStore.shortcut(for: .toggleBookmarksBar),
-                        chromeBackgroundMode: chromeBackgroundMode,
                         onOpenBookmark: model.openBookmark,
                         onOpenBookmarks: model.openBookmarks,
                         onToggleSelectedTabBookmark: {
@@ -201,7 +203,7 @@ struct BrowserRootView: View {
                         isOverlayPresentation: isSidebarOverlayPresentation,
                         showsOverlayBorder: isSidebarHoverOverlayPresented,
                         toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
-                        chromeBackgroundMode: chromeBackgroundMode,
+                        ownedBackgroundMode: isSidebarOverlayPresentation ? chromeBackgroundMode : nil,
                         onToggleSidebar: toggleSidebarFromChrome,
                         onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
                     )
@@ -405,9 +407,6 @@ struct BrowserRootView: View {
                 .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
                 value: showsBookmarksBar
             )
-        }
-        .background {
-            BrowserChromeBackgroundView(mode: chromeBackgroundMode)
         }
         .background {
             BrowserWindowFullscreenReader { fullscreenState in

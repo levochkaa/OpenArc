@@ -17,7 +17,7 @@ struct BrowserSidebarChromeView: View {
     let showsOverlayBorder: Bool
     var roundsWindowLeadingCorners = false
     let toggleSidebarTooltipTitle: String
-    let chromeBackgroundMode: BrowserChromeBackgroundMode
+    let ownedBackgroundMode: BrowserChromeBackgroundMode?
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
 
@@ -62,17 +62,19 @@ struct BrowserSidebarChromeView: View {
         sidebarContent
             .clipShape(sidebarShape)
             .overlay {
-                sidebarShape
-                    .strokeBorder(
-                        BrowserChromePalette.sidebarOverlayBorder,
-                        lineWidth: BrowserChromeLayout.sidebarOverlayBorderWidth
-                    )
-                    .opacity(showsOverlayBorder ? 1 : 0)
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: showsOverlayBorder
-                    )
+                if showsOverlayBorder {
+                    sidebarShape
+                        .strokeBorder(
+                            BrowserChromePalette.sidebarOverlayBorder,
+                            lineWidth: BrowserChromeLayout.sidebarOverlayBorderWidth
+                        )
+                        .transition(.opacity)
+                }
             }
+            .animation(
+                .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                value: showsOverlayBorder
+            )
     }
 
     var sidebarContent: some View {
@@ -88,10 +90,14 @@ struct BrowserSidebarChromeView: View {
             sidebarWidth: sidebarWidth,
             isSidebarResizing: isSidebarResizing,
             toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
-            chromeBackgroundMode: chromeBackgroundMode,
             onToggleSidebar: onToggleSidebar,
             onURLRowFrameChange: onURLRowFrameChange
         )
+        .background {
+            if let ownedBackgroundMode {
+                BrowserChromeBackgroundView(mode: ownedBackgroundMode)
+            }
+        }
         .overlay(alignment: .trailing) {
             BrowserSidebarResizeHandle(model: model, isSidebarResizing: $isSidebarResizing)
                 .frame(width: BrowserChromeLayout.sidebarResizeHitWidth)
@@ -113,7 +119,6 @@ struct BrowserSidebarContainerView: View {
     let sidebarWidth: CGFloat
     let isSidebarResizing: Bool
     let toggleSidebarTooltipTitle: String
-    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
 
@@ -130,13 +135,9 @@ struct BrowserSidebarContainerView: View {
             sidebarWidth: sidebarWidth,
             isSidebarResizing: isSidebarResizing,
             toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
-            chromeBackgroundMode: chromeBackgroundMode,
             onToggleSidebar: onToggleSidebar,
             onURLRowFrameChange: onURLRowFrameChange
         )
-        .background {
-            BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-        }
     }
 }
 
@@ -175,13 +176,17 @@ struct BrowserSidebarResizeHandle: View {
     }
 
     var body: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.001))
+        Color.clear
             .overlay {
-                Rectangle()
-                    .fill(isResizeHovered ? BrowserChromePalette.resizeHandleHover : BrowserChromePalette.resizeHandle)
-                    .frame(width: 2)
-                    .opacity(shouldShowResizeHandle ? 1 : 0)
+                if shouldShowResizeHandle {
+                    Rectangle()
+                        .fill(
+                            isResizeHovered
+                                ? BrowserChromePalette.resizeHandleHover
+                                : BrowserChromePalette.resizeHandle
+                        )
+                        .frame(width: 2)
+                }
             }
             .padding(.vertical, BrowserChromeLayout.sidebarOuterPadding)
             .contentShape(Rectangle())

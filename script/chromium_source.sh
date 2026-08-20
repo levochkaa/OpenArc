@@ -7,6 +7,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/script/xcode_env.sh"
 THIRD_PARTY_DIR="$ROOT_DIR/ThirdParty/cef"
 SOURCE_ROOT="$THIRD_PARTY_DIR/source"
 DEPOT_TOOLS_DIR="$THIRD_PARTY_DIR/depot_tools"
@@ -17,13 +18,18 @@ EXPORT_VERSION_HEADER="$EXPORT_ROOT/include/cef_version.h"
 CHROMIUM_CHECKOUT_ROOT="$SOURCE_ROOT/chromium"
 CHROMIUM_SRC="$SOURCE_ROOT/chromium/src"
 CEF_SRC="$CHROMIUM_SRC/cef"
+GN_BIN="$CHROMIUM_SRC/buildtools/mac/gn"
 BINARY_DISTRIB_DIR="$CEF_SRC/binary_distrib"
 CHROMIUM_SRC_OVERRIDES="$ROOT_DIR/Chromium/chromium_src"
 CHROMIUM_FORK_MARKER=".thebrowser-chromium-fork"
 FALLBACK_CEF_CHECKOUT="0d9d52a65c74c729e568ebf8506141a1e754eaeb"
 FALLBACK_CHROMIUM_CHECKOUT="refs/tags/148.0.7778.180"
 DEFAULT_CEF_BRANCH="7778"
-DEFAULT_CHROMIUM_GN_DEFINES="is_component_build=false symbol_level=0 forbid_non_component_debug_builds=false"
+# Match a shipped browser runtime instead of Chromium's DCHECK-heavy local
+# Release default. Official mode enables PGO and ThinLTO for Release, while the
+# explicit diagnostics settings prevent future default changes from restoring
+# fatal or expensive DCHECK families in the user-facing framework.
+DEFAULT_CHROMIUM_GN_DEFINES="blink_symbol_level=0 dcheck_always_on=false enable_dsyms=false enable_expensive_dchecks=false forbid_non_component_debug_builds=false is_component_build=false is_official_build=true symbol_level=0 v8_symbol_level=0"
 
 export_cef_commit_hash() {
   if [[ ! -f "$EXPORT_VERSION_HEADER" ]]; then
@@ -122,6 +128,7 @@ checkout_source() {
     --no-chromium-history \
     --no-distrib \
     --no-build \
+    --with-pgo-profiles \
     "$CEF_ARCH_ARG"
   )
   if [[ -n "$CEF_CHECKOUT" ]]; then
@@ -242,7 +249,7 @@ write_chromium_gclient_config() {
 
   mkdir -p "$CHROMIUM_CHECKOUT_ROOT"
   cat > "$CHROMIUM_CHECKOUT_ROOT/.gclient" <<EOF
-solutions = [{'managed': False, 'name': 'src', 'url': 'https://chromium.googlesource.com/chromium/src.git@$chromium_version', 'custom_vars': {'checkout_pgo_profiles': False, 'source_tarball': False, 'siso_version': 'latest', }, 'custom_deps': {}, 'deps_file': 'DEPS', 'safesync_url': ''}]
+solutions = [{'managed': False, 'name': 'src', 'url': 'https://chromium.googlesource.com/chromium/src.git@$chromium_version', 'custom_vars': {'checkout_pgo_profiles': True, 'source_tarball': False, 'siso_version': 'latest', }, 'custom_deps': {}, 'deps_file': 'DEPS', 'safesync_url': ''}]
 EOF
   rm -f "$CHROMIUM_CHECKOUT_ROOT/.gclient_entries"
 }
@@ -449,6 +456,85 @@ apply_cef_patch_overrides() {
   )
 }
 
+require_resolved_gn_arg() {
+  local configuration="$1"
+  local key="$2"
+  local expected="$3"
+  local actual
+  actual="$(printf '%s\n' "$resolved_args" | sed -n "s/^${key} = //p")"
+
+  if [[ "$actual" != "$expected" ]]; then
+    if [[ -z "$actual" ]]; then
+      actual="<missing>"
+    fi
+    echo "error: $configuration Chromium GN arg '$key' resolved to '$actual' (expected '$expected')" >&2
+    exit 1
+  fi
+}
+
+validate_generated_configuration() {
+  local configuration="$1"
+  local out_dir="$CHROMIUM_SRC/out/${configuration}_GN_${PROJECT_ARCH}"
+
+  if [[ "${THEBROWSER_CHROMIUM_ALLOW_NON_PRODUCTION_GN:-0}" == "1" ]]; then
+    echo "warning: skipping $configuration Chromium production GN validation by explicit override" >&2
+    return
+  fi
+
+  if [[ ! -x "$GN_BIN" || ! -f "$out_dir/args.gn" ]]; then
+    echo "error: generated $configuration Chromium configuration not found at $out_dir" >&2
+    echo "Run ./script/chromium_source.sh create-projects first." >&2
+    exit 1
+  fi
+
+  local resolved_args
+  resolved_args="$(cd "$CHROMIUM_SRC" && "$GN_BIN" args "$out_dir" --list --short)"
+
+  require_resolved_gn_arg "$configuration" is_official_build true
+  require_resolved_gn_arg "$configuration" is_debug false
+  require_resolved_gn_arg "$configuration" is_component_build false
+  require_resolved_gn_arg "$configuration" symbol_level 0
+  require_resolved_gn_arg "$configuration" blink_symbol_level 0
+  require_resolved_gn_arg "$configuration" v8_symbol_level 0
+  require_resolved_gn_arg "$configuration" enable_dsyms false
+  require_resolved_gn_arg "$configuration" enable_expensive_dchecks false
+  require_resolved_gn_arg "$configuration" dcheck_is_configurable false
+  require_resolved_gn_arg "$configuration" use_thin_lto true
+  require_resolved_gn_arg "$configuration" thin_lto_enable_optimizations true
+  require_resolved_gn_arg "$configuration" optimize_webui true
+  require_resolved_gn_arg "$configuration" enable_profiling false
+  require_resolved_gn_arg "$configuration" enable_iterator_debugging false
+
+  if [[ "$configuration" == "Release" ]]; then
+    require_resolved_gn_arg "$configuration" dcheck_always_on false
+    require_resolved_gn_arg "$configuration" angle_assert_always_on false
+    require_resolved_gn_arg "$configuration" angle_debug_layers_enabled false
+    require_resolved_gn_arg "$configuration" cppgc_enable_api_checks false
+    require_resolved_gn_arg "$configuration" enable_check_raw_ptr_fields false
+    require_resolved_gn_arg "$configuration" enable_check_raw_ref_fields false
+    require_resolved_gn_arg "$configuration" enable_dangling_raw_ptr_checks false
+    require_resolved_gn_arg "$configuration" partition_alloc_dcheck_always_on false
+    require_resolved_gn_arg "$configuration" v8_dcheck_always_on false
+    require_resolved_gn_arg "$configuration" v8_enable_debugging_features false
+    require_resolved_gn_arg "$configuration" v8_enable_slow_dchecks false
+    require_resolved_gn_arg "$configuration" chrome_pgo_phase 2
+    require_resolved_gn_arg "$configuration" init_stack_vars_zero true
+    require_resolved_gn_arg "$configuration" enable_backup_ref_ptr_instance_tracer false
+  else
+    # CEF's official Debug configuration intentionally uses optimized code with
+    # DCHECKs, while Release below is the user-facing no-DCHECK runtime.
+    require_resolved_gn_arg "$configuration" dcheck_always_on true
+    require_resolved_gn_arg "$configuration" chrome_pgo_phase 0
+  fi
+
+  echo "Validated $configuration Chromium production GN configuration."
+}
+
+validate_generated_configurations() {
+  validate_generated_configuration Debug
+  validate_generated_configuration Release
+}
+
 create_projects() {
   require_source_checkout
   local gn_defines="${THEBROWSER_CHROMIUM_GN_DEFINES:-$DEFAULT_CHROMIUM_GN_DEFINES}"
@@ -460,6 +546,8 @@ create_projects() {
     export GN_DEFINES="$gn_defines"
     ./cef_create_projects.sh
   )
+
+  validate_generated_configurations
 }
 
 is_component_build_enabled() {
@@ -481,6 +569,7 @@ build_configuration() {
   esac
 
   require_source_checkout
+  validate_generated_configuration "$configuration"
   (
     cd "$CHROMIUM_SRC"
     export PATH="$DEPOT_TOOLS_DIR:$PATH"
@@ -768,6 +857,10 @@ case "$COMMAND" in
   create-projects)
     create_projects
     ;;
+  audit)
+    require_source_checkout
+    validate_generated_configurations
+    ;;
   apply-overrides)
     apply_chromium_src_overrides
     ;;
@@ -808,6 +901,7 @@ Usage:
   ./script/chromium_source.sh resume-checkout
   ./script/chromium_source.sh apply-overrides
   ./script/chromium_source.sh create-projects
+  ./script/chromium_source.sh audit
   ./script/chromium_source.sh build [Debug|Release ...]
   ./script/chromium_source.sh sync-built [Debug|Release ...]
   ./script/chromium_source.sh distrib [Debug|Release]
@@ -823,9 +917,12 @@ Defaults:
   then falls back to refs/tags/148.0.7778.180.
   Existing Chromium out/ build directories are preserved by default. Set
   THEBROWSER_CEF_CLOBBER_OUT=1 only when an explicit full CEF rebuild is wanted.
-  Chromium GN defaults: is_component_build=false symbol_level=0
-  forbid_non_component_debug_builds=false. Set THEBROWSER_CHROMIUM_GN_DEFINES
-  only when intentionally overriding the compact arm64 runtime shape.
+  Chromium GN defaults: official optimized build with PGO and ThinLTO,
+  is_component_build=false, dcheck_always_on=false for Release, symbol_level=0,
+  and no dSYMs. PGO profiles are downloaded during checkout/resume. Set
+  THEBROWSER_CHROMIUM_GN_DEFINES only when intentionally overriding this
+  production arm64 runtime shape. Non-production generated configs are rejected
+  before compilation unless THEBROWSER_CHROMIUM_ALLOW_NON_PRODUCTION_GN=1.
   build automatically syncs the built CEF framework into ThirdParty/cef/export.
   Use sync-built to refresh export from an already-built out/ directory without
   rebuilding. distrib Debug/Release uses the same sync path for single-config

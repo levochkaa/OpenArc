@@ -18,7 +18,6 @@ struct BrowserSidebarView: View {
     let sidebarWidth: CGFloat
     let isSidebarResizing: Bool
     let toggleSidebarTooltipTitle: String
-    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onToggleSidebar: () -> Void
     let onURLRowFrameChange: (CGRect?) -> Void
 
@@ -172,14 +171,10 @@ struct BrowserSidebarView: View {
             clearTabDragState()
         }
         .background {
-            ZStack {
-                BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-
-                BrowserWindowDragRegion(isEnabled: !isDraggingSidebarItem)
-                    .simultaneousGesture(TapGesture().onEnded {
-                        dismissRenamingIfNeeded()
-                    })
-            }
+            BrowserWindowDragRegion(isEnabled: !isDraggingSidebarItem)
+                .simultaneousGesture(TapGesture().onEnded {
+                    dismissRenamingIfNeeded()
+                })
         }
     }
 
@@ -214,7 +209,6 @@ struct BrowserSidebarView: View {
                     toggleBookmarksBarShortcut: model.shortcutStore.shortcut(for: .toggleBookmarksBar),
                     isSearchPresented: isCurrentPageCommandBarPresented,
                     isSidebarResizing: isSidebarResizing,
-                    chromeBackgroundMode: chromeBackgroundMode,
                     isSiteToolbarPresented: model.userPreferencesStore.siteURLToolbarEnabled,
                     siteToolbarShowsFullURL: model.userPreferencesStore.siteToolbarShowsFullURL,
                     isBookmarksBarVisible: model.userPreferencesStore.bookmarksBarVisible,
@@ -336,10 +330,7 @@ struct BrowserSidebarView: View {
             }
         }
         .background {
-            ZStack {
-                BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-                BrowserWindowDragRegion(isEnabled: !isDraggingSidebarItem)
-            }
+            BrowserWindowDragRegion(isEnabled: !isDraggingSidebarItem)
         }
         .zIndex(1)
     }
@@ -461,9 +452,6 @@ struct BrowserSidebarView: View {
         return VStack(spacing: BrowserChromeLayout.sidebarListSpacing) {
             if model.supportsSpaces {
                 spaceHeaderRow(for: space, in: renderedSidebarSnapshot)
-                    .background {
-                        BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-                    }
                     .zIndex(2)
             }
 
@@ -510,7 +498,6 @@ struct BrowserSidebarView: View {
                                     BrowserSidebarTemporaryTabsDivider(
                                         clearTemporaryTabsDescriptor: model.shortcutStore
                                             .descriptor(for: .clearTemporaryTabs),
-                                        chromeBackgroundMode: chromeBackgroundMode,
                                         showsClearButton: isSidebarHovered
                                             && !temporaryTabs.isEmpty
                                             && renderedSidebarSnapshot.selectedSpaceID == space.id,
@@ -758,9 +745,6 @@ struct BrowserSidebarView: View {
             childHorizontalInset: CGFloat(max(row.depth + 1, 0))
                 * BrowserChromeLayout.sidebarPinnedFolderTabIndent
         )
-        .background {
-            BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-        }
         .transition(BrowserChromeLayout.sidebarTabVisibilityTransition)
         .zIndex(1)
         .opacity(draggedPinnedFolderID == row.folder.id ? 0.35 : 1)
@@ -2133,6 +2117,5 @@ extension BrowserSidebarView: @MainActor Equatable {
             && lhs.sidebarWidth == rhs.sidebarWidth
             && lhs.isSidebarResizing == rhs.isSidebarResizing
             && lhs.toggleSidebarTooltipTitle == rhs.toggleSidebarTooltipTitle
-            && lhs.chromeBackgroundMode == rhs.chromeBackgroundMode
     }
 }

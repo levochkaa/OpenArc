@@ -155,7 +155,7 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
                 showsOverlayBorder: showsOverlayBorder,
                 roundsWindowLeadingCorners: roundsWindowLeadingCorners,
                 toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
-                chromeBackgroundMode: chromeBackgroundMode,
+                ownedBackgroundMode: isOverlayPresentation ? chromeBackgroundMode : nil,
                 onToggleSidebar: onToggleSidebar,
                 onURLRowFrameChange: onURLRowFrameChange
             )

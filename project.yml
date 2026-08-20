@@ -144,6 +144,9 @@ targets:
           CODE_SIGN_ENTITLEMENTS: Support/TheBrowser-Debug.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: Support/TheBrowser.entitlements
+          GCC_PREPROCESSOR_DEFINITIONS:
+            - $(inherited)
+            - NDEBUG
     postBuildScripts:
       - name: Stage Sparkle Framework
         shell: /bin/bash

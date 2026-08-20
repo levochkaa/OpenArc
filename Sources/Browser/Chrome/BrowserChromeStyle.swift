@@ -48,17 +48,12 @@ enum BrowserChromePalette {
     // MARK: Internal
 
     static let solidBackground = adaptive(light: rgb(246, 247, 249), dark: rgb(0, 0, 0))
-    static let shellBackground = solidBackground
-    static let sidebarBackground = solidBackground
     static let contentBackground = adaptive(light: rgb(255, 255, 255), dark: rgb(20, 20, 22))
     static let rowHover = adaptive(light: rgba(0, 0, 0, 0.06), dark: rgba(255, 255, 255, 0.08))
     static let rowSelected = adaptive(light: rgba(0, 0, 0, 0.11), dark: rgba(255, 255, 255, 0.14))
     static let currentURLRow = adaptive(light: rgba(0, 0, 0, 0.06), dark: rgba(255, 255, 255, 0.1))
     static let currentURLRowHover = adaptive(light: rgba(0, 0, 0, 0.08), dark: rgba(255, 255, 255, 0.12))
     static let currentURLButtonHover = adaptive(light: rgba(0, 0, 0, 0.1), dark: rgba(255, 255, 255, 0.16))
-    static let currentURLRowResolved = adaptive(light: rgb(233, 234, 236), dark: rgb(25, 25, 25))
-    static let currentURLRowHoverResolved = adaptive(light: rgb(226, 228, 231), dark: rgb(31, 31, 31))
-    static let currentURLButtonHoverResolved = adaptive(light: rgb(217, 220, 224), dark: rgb(41, 41, 41))
     static let rowCloseHover = adaptive(light: rgba(0, 0, 0, 0.08), dark: rgba(255, 255, 255, 0.12))
     static let rowCloseForeground = adaptive(light: rgba(0, 0, 0, 0.68), dark: rgba(255, 255, 255, 0.82))
     static let sidebarDivider = adaptive(light: rgba(0, 0, 0, 0.12), dark: rgba(255, 255, 255, 0.12))
@@ -89,8 +84,6 @@ enum BrowserChromePalette {
     static let commandBarPlaceholder = adaptive(light: rgba(0, 0, 0, 0.36), dark: rgba(255, 255, 255, 0.36))
     static let commandBarCompletion = adaptive(light: rgba(0, 0, 0, 0.48), dark: rgba(255, 255, 255, 0.5))
     static let commandBarSuggestionSelected = adaptive(light: rgba(0, 0, 0, 0.07), dark: rgba(255, 255, 255, 0.1))
-    static let bookmarksBarBackground = adaptive(light: rgba(246, 247, 249, 0.94), dark: rgba(0, 0, 0, 0.86))
-    static let bookmarksBarBorder = adaptive(light: rgba(0, 0, 0, 0.1), dark: rgba(255, 255, 255, 0.1))
     static let incognitoBannerBackground = Color.black
     static let incognitoBannerBorder = Color.white.opacity(0.12)
     static let incognitoBannerText = Color.white.opacity(0.86)

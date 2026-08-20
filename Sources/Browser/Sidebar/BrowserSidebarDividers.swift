@@ -38,7 +38,6 @@ struct BrowserSidebarTopChromeDivider: View {
 
 struct BrowserSidebarTemporaryTabsDivider: View {
     let clearTemporaryTabsDescriptor: BrowserCommandDescriptor
-    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let showsClearButton: Bool
     let showsClearActiveTabIndicator: Bool
     let isClearButtonHovered: Bool
@@ -46,7 +45,7 @@ struct BrowserSidebarTemporaryTabsDivider: View {
     let onClear: () -> Void
 
     var body: some View {
-        ZStack(alignment: .trailing) {
+        HStack(spacing: 0) {
             Rectangle()
                 .fill(BrowserChromePalette.sidebarDivider)
                 .frame(height: 1)
@@ -68,9 +67,6 @@ struct BrowserSidebarTemporaryTabsDivider: View {
                     )
                     .padding(.horizontal, BrowserChromeLayout.sidebarClearButtonHorizontalPadding)
                     .padding(.vertical, BrowserChromeLayout.sidebarClearButtonVerticalPadding)
-                    .background {
-                        BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-                    }
                 }
                 .buttonStyle(.plain)
                 .animation(.easeInOut(duration: 0.12), value: isClearButtonHovered)

@@ -11,7 +11,6 @@ struct BrowserBookmarksBar: View {
     let isSelectedTabBookmarked: Bool
     let toggleBookmarkShortcut: BrowserKeyboardShortcut
     let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
-    let chromeBackgroundMode: BrowserChromeBackgroundMode
     let onOpenBookmark: (String) -> Void
     let onOpenBookmarks: ([String]) -> Void
     let onToggleSelectedTabBookmark: () -> Void
@@ -97,11 +96,7 @@ struct BrowserBookmarksBar: View {
             barContextMenu
         }
         .background {
-            ZStack {
-                BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-                    .clipShape(barShape)
-                BrowserWindowDragRegion()
-            }
+            BrowserWindowDragRegion()
         }
         .clipShape(barShape)
         .browserWindowDragGesture()
