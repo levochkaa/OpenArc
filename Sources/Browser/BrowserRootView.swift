@@ -201,7 +201,7 @@ struct BrowserRootView: View {
                         showsCurrentURLRow: !preferences.siteURLToolbarEnabled,
                         sidebarWidth: model.sidebarWidth,
                         isOverlayPresentation: isSidebarOverlayPresentation,
-                        showsOverlayBorder: isSidebarHoverOverlayPresented,
+                        showsOverlayBorder: isSidebarOverlayPresentation,
                         toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
                         ownedBackgroundMode: isSidebarOverlayPresentation ? chromeBackgroundMode : nil,
                         onToggleSidebar: toggleSidebarFromChrome,
@@ -289,7 +289,7 @@ struct BrowserRootView: View {
                             isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
                             showsCurrentURLRow: !preferences.siteURLToolbarEnabled,
                             isOverlayPresentation: isSidebarOverlayPresentation,
-                            showsOverlayBorder: isSidebarHoverOverlayPresented,
+                            showsOverlayBorder: isSidebarOverlayPresentation,
                             roundsWindowLeadingCorners: usesWindowContentInsets,
                             toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
                             chromeBackgroundMode: chromeBackgroundMode,
@@ -639,10 +639,6 @@ struct BrowserRootView: View {
 
         if isSidebarHoverOverlayPresented {
             return BrowserChromeLayout.sidebarHoverOverlayEdgeInset
-        }
-
-        if isSidebarOverlayPresentation {
-            return -model.sidebarWidth + BrowserChromeLayout.sidebarHoverOverlayEdgeInset
         }
 
         return -model.sidebarWidth
