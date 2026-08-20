@@ -52,6 +52,10 @@ import Foundation
     private(set) var clearCookiesAndReloadCount = 0
     private(set) var stopLoadingCount = 0
     private(set) var printCount = 0
+    private(set) var castCount = 0
+    var webAppManifestPayloadJSON: String?
+    private(set) var webAppManifestRequestCount = 0
+    private(set) var zoomLevels = [Double]()
     private(set) var goBackCount = 0
     private(set) var goForwardCount = 0
     private(set) var prepareForCefShutdownCount = 0
@@ -139,6 +143,19 @@ import Foundation
 
     func printActiveTab() {
         printCount += 1
+    }
+
+    func castActiveTab() {
+        castCount += 1
+    }
+
+    func requestActiveTabWebAppManifest() -> String? {
+        webAppManifestRequestCount += 1
+        return webAppManifestPayloadJSON
+    }
+
+    func setActiveTabZoomLevel(_ zoomLevel: Double) {
+        zoomLevels.append(zoomLevel)
     }
 
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool) {

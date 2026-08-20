@@ -15,6 +15,7 @@ enum BrowserInternalPageRouting {
 enum BrowserWindowMode: Equatable {
     case normal
     case incognito
+    case webApp(BrowserWebAppConfiguration)
 
     // MARK: Internal
 
@@ -22,8 +23,27 @@ enum BrowserWindowMode: Equatable {
         self == .incognito
     }
 
+    var isWebApp: Bool {
+        guard case .webApp = self else {
+            return false
+        }
+
+        return true
+    }
+
     var persistsSession: Bool {
-        !isIncognito
+        !isIncognito && !isWebApp
+    }
+
+    var telemetryValue: String {
+        switch self {
+        case .normal:
+            "normal"
+        case .incognito:
+            "incognito"
+        case .webApp:
+            "web_app"
+        }
     }
 }
 
@@ -148,6 +168,25 @@ enum BrowserWindowMode: Equatable {
     nonisolated static let defaultSpaceIconName = "square.grid.2x2"
     nonisolated static let tabSwitcherMaximumEntries = 5
     nonisolated static let tabSwitcherPresentationDelayNanoseconds: UInt64 = 180_000_000
+    nonisolated static let zoomPercentages = [
+        25,
+        33,
+        50,
+        67,
+        75,
+        80,
+        90,
+        100,
+        110,
+        125,
+        150,
+        175,
+        200,
+        250,
+        300,
+        400,
+        500,
+    ]
 
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var spaces = [Space]()
@@ -165,8 +204,10 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var extensionSidePanel: BrowserExtensionSidePanel?
     @Published private(set) var extensionSidePanelWidth = BrowserChromeModel.defaultExtensionSidePanelWidth
     @Published private(set) var pinnedExtensionIDs = [String]()
+    @Published private(set) var selectedTabWebAppInstallMetadata: BrowserWebAppInstallMetadata?
     @Published private(set) var profileDisplayName: String
     @Published private(set) var availableProfileCount: Int
+    @Published private(set) var zoomPercent = 100
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
     let shortcutStore: BrowserShortcutStore
@@ -277,8 +318,26 @@ enum BrowserWindowMode: Equatable {
         canCreateTab && selectedTabID != nil
     }
 
+    var canCastPage: Bool {
+        canCreateTab && selectedTabID != nil
+    }
+
     var canCopySelectedTabLink: Bool {
         selectedTab != nil
+    }
+
+    var canInstallSelectedSiteAsApp: Bool {
+        guard
+            !windowMode.isIncognito,
+            !windowMode.isWebApp,
+            let pageURL = selectedTab?.pageURL,
+            let selectedTabWebAppInstallMetadata,
+            selectedTabWebAppInstallMetadata.manifestURL != nil
+        else {
+            return false
+        }
+
+        return selectedTabWebAppInstallMetadata.sourcePageURL == pageURL
     }
 
     var canLoadRemoteSearchSuggestions: Bool {
@@ -321,16 +380,24 @@ enum BrowserWindowMode: Equatable {
         windowMode.isIncognito
     }
 
+    var isWebApp: Bool {
+        windowMode.isWebApp
+    }
+
+    var currentTab: Tab? {
+        selectedTab
+    }
+
     var showsProfileIndicator: Bool {
-        !windowMode.isIncognito && availableProfileCount > 1
+        !windowMode.isIncognito && !windowMode.isWebApp && availableProfileCount > 1
     }
 
     var supportsSpaces: Bool {
-        !windowMode.isIncognito
+        !windowMode.isIncognito && !windowMode.isWebApp
     }
 
     var supportsAppTabs: Bool {
-        !windowMode.isIncognito
+        !windowMode.isIncognito && !windowMode.isWebApp
     }
 
     var appTabs: [Tab] {
@@ -377,6 +444,24 @@ enum BrowserWindowMode: Equatable {
         activeSpace?.isPinnedSectionCollapsed ?? false
     }
 
+    func webAppInstallMetadata(for tab: Tab) -> BrowserWebAppInstallMetadata? {
+        guard
+            tab.id == selectedTabID,
+            let pageURL = tab.pageURL,
+            let selectedTabWebAppInstallMetadata,
+            selectedTabWebAppInstallMetadata.sourcePageURL == pageURL,
+            selectedTabWebAppInstallMetadata.manifestURL != nil
+        else {
+            return nil
+        }
+
+        return selectedTabWebAppInstallMetadata
+    }
+
+    func waitForPendingWebAppManifestLoad() async {
+        await webAppManifestLoadTask?.value
+    }
+
     func handleContextReady() {
         guard !isContextReady else {
             return
@@ -406,6 +491,8 @@ enum BrowserWindowMode: Equatable {
 
         automaticArchivalTimer?.invalidate()
         automaticArchivalTimer = nil
+        webAppManifestLoadTask?.cancel()
+        webAppManifestLoadTask = nil
         undoManager.removeAllActions()
         extensionSidePanelDriver?.closeAllPanels()
         extensionActionPopupDriver?.closeAllPopups()
@@ -1412,6 +1499,44 @@ enum BrowserWindowMode: Equatable {
         tabDriver.goForwardActiveTab()
     }
 
+    func zoomIn() {
+        guard let nextPercent = Self.zoomPercentages.first(where: { $0 > zoomPercent }) else {
+            return
+        }
+
+        setZoomPercent(nextPercent)
+    }
+
+    func zoomOut() {
+        guard let previousPercent = Self.zoomPercentages.last(where: { $0 < zoomPercent }) else {
+            return
+        }
+
+        setZoomPercent(previousPercent)
+    }
+
+    func resetZoom() {
+        setZoomPercent(100)
+    }
+
+    func setZoomPercent(_ percent: Int) {
+        guard canCreateTab, selectedTabID != nil, Self.zoomPercentages.contains(percent) else {
+            return
+        }
+
+        zoomPercent = percent
+        let zoomLevel = log(Double(percent) / 100) / log(1.2)
+        tabDriver.setActiveTabZoomLevel(zoomLevel)
+    }
+
+    func castCurrentPage() {
+        guard canCastPage else {
+            return
+        }
+
+        tabDriver.castActiveTab()
+    }
+
     func closeAllTabs() {
         let openTabIDs = tabs.map(\.id)
         if isShuttingDown {
@@ -1629,6 +1754,7 @@ enum BrowserWindowMode: Equatable {
         setSelectedTabID(id, forSpaceID: tab.spaceID)
         findResultMatchCount = nil
         tabDriver.selectTab(withID: id)
+        scheduleSelectedTabWebAppManifestLoad()
         touchTab(id: id)
         recordSelectedTab(id)
         updateWindowTitle()
@@ -1858,6 +1984,7 @@ enum BrowserWindowMode: Equatable {
     private var tabPreviewImagesByID = [String: NSImage]()
     private var tabSwitcherPresentationTask: Task<Void, Never>?
     private var tabSwitcherSessionID = UUID()
+    private var webAppManifestLoadTask: Task<Void, Never>?
 
     private var selectedTab: Tab? {
         guard let selectedTabID else {
@@ -1886,7 +2013,7 @@ enum BrowserWindowMode: Equatable {
     private var telemetryProperties: [String: String] {
         [
             "profile": profile.isDefault ? "default" : "custom",
-            "window_mode": windowMode.isIncognito ? "incognito" : "normal",
+            "window_mode": windowMode.telemetryValue,
             "space_count": "\(spaces.count)",
             "tab_count": "\(tabs.count)",
         ]
@@ -3193,6 +3320,9 @@ enum BrowserWindowMode: Equatable {
             tabs[index].urlString = urlString
             tabs[index].lastActivityAt = dateProvider()
             didChangePersistentURL = true
+            if id == selectedTabID {
+                invalidateSelectedTabWebAppInstallMetadata()
+            }
         }
 
         if let faviconURLString {
@@ -3237,6 +3367,7 @@ enum BrowserWindowMode: Equatable {
             selectedTabID = fallbackTabID(afterClosingTab: closedTab) ?? sidebarTabsForSelectedSpace().first?.id
             if let selectedTabID {
                 tabDriver.selectTab(withID: selectedTabID)
+                scheduleSelectedTabWebAppManifestLoad()
                 setSelectedTabID(selectedTabID, forSpaceID: selectedSpaceID)
                 recordSelectedTab(selectedTabID)
             } else {
@@ -3271,6 +3402,65 @@ enum BrowserWindowMode: Equatable {
         }
 
         tabs[index].isLoading = isLoading
+        guard id == selectedTabID else {
+            return
+        }
+
+        if isLoading {
+            invalidateSelectedTabWebAppInstallMetadata()
+        } else {
+            scheduleSelectedTabWebAppManifestLoad()
+        }
+    }
+
+    private func invalidateSelectedTabWebAppInstallMetadata() {
+        webAppManifestLoadTask?.cancel()
+        webAppManifestLoadTask = nil
+        selectedTabWebAppInstallMetadata = nil
+    }
+
+    private func scheduleSelectedTabWebAppManifestLoad() {
+        invalidateSelectedTabWebAppInstallMetadata()
+        guard
+            isContextReady,
+            !windowMode.isIncognito,
+            !windowMode.isWebApp,
+            let tab = selectedTab,
+            !tab.isLoading,
+            let pageURL = tab.pageURL
+        else {
+            return
+        }
+
+        let tabID = tab.id
+        let fallbackTitle = tab.displayTitle
+        let fallbackIconURL = tab.faviconURL
+        webAppManifestLoadTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+
+            let payloadJSON = await tabDriver.requestActiveTabWebAppManifest()
+            guard !Task.isCancelled else {
+                return
+            }
+
+            let metadata = BrowserWebAppManifestParser.installMetadata(
+                payloadJSON: payloadJSON,
+                fallbackPageURL: pageURL,
+                fallbackTitle: fallbackTitle,
+                fallbackIconURL: fallbackIconURL
+            )
+            guard
+                metadata.manifestURL != nil,
+                selectedTabID == tabID,
+                selectedTab?.pageURL == pageURL
+            else {
+                return
+            }
+
+            selectedTabWebAppInstallMetadata = metadata
+        }
     }
 
     func touchTab(id: String) {

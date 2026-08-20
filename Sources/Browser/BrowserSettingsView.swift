@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - BrowserSettingsLayout
 
@@ -11,6 +12,21 @@ enum BrowserSettingsLayout {
     static let rowSpacing: CGFloat = 10
     static let pickerWidth: CGFloat = 190
     static let shortcutCaptureWidth: CGFloat = 132
+}
+
+// MARK: - BrowserSafariBookmarkImportPanel
+
+@MainActor private enum BrowserSafariBookmarkImportPanel {
+    static func chooseSourceURL() -> URL? {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.html, .zip]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.prompt = BrowserStrings.bookmarksImport
+        panel.title = BrowserStrings.bookmarksImportSafari
+        return panel.runModal() == .OK ? panel.url : nil
+    }
 }
 
 // MARK: - BrowserSettingsPane
@@ -496,7 +512,14 @@ struct BrowserSettingsView: View {
 
     private func bookmarkImportButton(for source: BrowserBookmarkImportSource) -> some View {
         Button {
-            _ = model.importBookmarks(from: source)
+            if source == .safari {
+                guard let sourceURL = BrowserSafariBookmarkImportPanel.chooseSourceURL() else {
+                    return
+                }
+                _ = model.bookmarksModel.importSafariBookmarks(from: sourceURL)
+            } else {
+                _ = model.importBookmarks(from: source)
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "square.and.arrow.down")

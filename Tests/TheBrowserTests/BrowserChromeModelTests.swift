@@ -2228,6 +2228,71 @@ import Testing
 }
 
 @Test
+@MainActor func installWebAppAvailabilityRequiresFetchedManifest() async throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let tabID = try tabID(from: model)
+
+    driver.webAppManifestPayloadJSON = #"""
+    {
+      "documentURL": "https://www.google.com",
+      "documentIcons": [],
+      "manifestURL": null,
+      "manifest": null
+    }
+    """#
+    driver.emitLoadingStateChange(id: tabID, isLoading: false)
+    await model.waitForPendingWebAppManifestLoad()
+
+    #expect(driver.webAppManifestRequestCount == 1)
+    #expect(model.selectedTabWebAppInstallMetadata == nil)
+    #expect(!model.canInstallSelectedSiteAsApp)
+}
+
+@Test
+@MainActor func installWebAppAvailabilityAppearsForManifestAndClearsOnNavigation() async throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let tabID = try tabID(from: model)
+
+    driver.webAppManifestPayloadJSON = #"""
+    {
+      "documentURL": "https://www.google.com",
+      "documentIcons": [],
+      "manifestURL": "https://www.google.com/manifest.json",
+      "manifest": {
+        "name": "Google",
+        "start_url": "/",
+        "scope": "/"
+      }
+    }
+    """#
+    driver.emitLoadingStateChange(id: tabID, isLoading: false)
+    await model.waitForPendingWebAppManifestLoad()
+
+    #expect(model.selectedTabWebAppInstallMetadata?.manifestURL?.absoluteString
+        == "https://www.google.com/manifest.json")
+    #expect(model.canInstallSelectedSiteAsApp)
+
+    driver.emitUpdate(id: tabID, urlString: "https://example.com")
+
+    #expect(model.selectedTabWebAppInstallMetadata == nil)
+    #expect(!model.canInstallSelectedSiteAsApp)
+}
+
+@Test
 @MainActor func clearBrowsingDataRefreshActionsUseActiveTabDriver() {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
@@ -2271,6 +2336,27 @@ import Testing
     #expect(model.canPrintPage)
     model.printCurrentPage()
     #expect(driver.printCount == 1)
+}
+
+@Test
+@MainActor func castCurrentPageRequiresReadySelectedTab() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+
+    #expect(!model.canCastPage)
+    model.castCurrentPage()
+    #expect(driver.castCount == 0)
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    #expect(model.canCastPage)
+    model.castCurrentPage()
+    #expect(driver.castCount == 1)
 }
 
 @Test
@@ -2801,6 +2887,35 @@ import Testing
     model.openBookmarksManager()
 
     #expect(driver.createdTabRequests.last?.urlString == "tb://bookmarks/")
+}
+
+@Test
+@MainActor func pageZoomUsesChromiumZoomLevelsAndSupportedSteps() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore()
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+
+    model.zoomIn()
+    #expect(model.zoomPercent == 110)
+    #expect(abs((driver.zoomLevels.last ?? 0) - log(1.1) / log(1.2)) < 0.000_001)
+
+    model.zoomOut()
+    #expect(model.zoomPercent == 100)
+
+    model.setZoomPercent(175)
+    #expect(model.zoomPercent == 175)
+    #expect(abs((driver.zoomLevels.last ?? 0) - log(1.75) / log(1.2)) < 0.000_001)
+
+    model.setZoomPercent(123)
+    #expect(model.zoomPercent == 175)
+
+    model.resetZoom()
+    #expect(model.zoomPercent == 100)
 }
 
 @MainActor private func makeModel(

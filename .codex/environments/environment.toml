@@ -6,6 +6,11 @@ name = "TheBrowser"
 script = ""
 
 [[actions]]
+name = "Run"
+icon = "run"
+command = "./script/run.sh"
+
+[[actions]]
 name = "Build"
 icon = "tool"
 command = "./script/build.sh"
@@ -14,8 +19,3 @@ command = "./script/build.sh"
 name = "Test"
 icon = "test"
 command = "./script/test.sh"
-
-[[actions]]
-name = "Run"
-icon = "run"
-command = "./script/run.sh"

@@ -17,6 +17,7 @@
 #include "include/base/cef_callback.h"
 #include "include/cef_client.h"
 #include "include/cef_browser.h"
+#include "include/cef_command_ids.h"
 #include "include/cef_cookie.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_download_handler.h"
@@ -50,6 +51,89 @@ constexpr char kSavePageSingleFileMethod[] = "Page.captureSnapshot";
 constexpr char kSavePageSerializeDocumentMethod[] = "Runtime.evaluate";
 constexpr char kPageLayoutMetricsMethod[] = "Page.getLayoutMetrics";
 constexpr char kPageCaptureScreenshotMethod[] = "Page.captureScreenshot";
+constexpr char kWebAppManifestMethod[] = "Runtime.evaluate";
+
+constexpr char kWebAppManifestExpression[] = R"JS(
+(async () => {
+  const links = Array.from(document.querySelectorAll('link[rel]'));
+  const documentIcons = links.map((link) => ({
+    href: link.href || null,
+    rel: link.rel || null,
+    sizes: link.sizes ? link.sizes.value : null,
+    type: link.type || null
+  }));
+  const manifestLink = links.find((link) =>
+    (link.rel || '').toLowerCase().split(/\s+/).includes('manifest'));
+  const manifestURL = manifestLink && manifestLink.href
+    ? manifestLink.href
+    : null;
+  let manifest = null;
+
+  if (manifestURL) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const usesCredentials =
+        (manifestLink.crossOrigin || '').toLowerCase() === 'use-credentials';
+      const response = await fetch(manifestURL, {
+        credentials: usesCredentials ? 'include' : 'same-origin',
+        signal: controller.signal
+      });
+      if (response.ok) {
+        const rawManifest = await response.json();
+        if (rawManifest && typeof rawManifest === 'object' && !Array.isArray(rawManifest)) {
+          manifest = {
+            id: typeof rawManifest.id === 'string' ? rawManifest.id : null,
+            name: typeof rawManifest.name === 'string' ? rawManifest.name : null,
+            short_name: typeof rawManifest.short_name === 'string'
+              ? rawManifest.short_name
+              : null,
+            description: typeof rawManifest.description === 'string'
+              ? rawManifest.description
+              : null,
+            start_url: typeof rawManifest.start_url === 'string'
+              ? rawManifest.start_url
+              : null,
+            scope: typeof rawManifest.scope === 'string' ? rawManifest.scope : null,
+            display: typeof rawManifest.display === 'string'
+              ? rawManifest.display
+              : null,
+            display_override: Array.isArray(rawManifest.display_override)
+              ? rawManifest.display_override.filter((value) => typeof value === 'string')
+              : null,
+            theme_color: typeof rawManifest.theme_color === 'string'
+              ? rawManifest.theme_color
+              : null,
+            background_color: typeof rawManifest.background_color === 'string'
+              ? rawManifest.background_color
+              : null,
+            icons: Array.isArray(rawManifest.icons)
+              ? rawManifest.icons.filter((icon) => icon && typeof icon === 'object')
+                  .map((icon) => ({
+                    src: typeof icon.src === 'string' ? icon.src : null,
+                    type: typeof icon.type === 'string' ? icon.type : null,
+                    sizes: typeof icon.sizes === 'string' ? icon.sizes : null,
+                    purpose: typeof icon.purpose === 'string' ? icon.purpose : null
+                  }))
+              : null
+          };
+        }
+      }
+    } catch (_) {
+      manifest = null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return JSON.stringify({
+    documentURL: document.URL,
+    documentIcons,
+    manifestURL,
+    manifest
+  });
+})()
+)JS";
 
 enum class SavePageFormat : NSInteger {
   Complete = 0,
@@ -1381,6 +1465,74 @@ class FullPageScreenshotObserver final : public CefDevToolsMessageObserver {
   IMPLEMENT_REFCOUNTING(FullPageScreenshotObserver);
 };
 
+class WebAppManifestObserver final : public CefDevToolsMessageObserver {
+ public:
+  explicit WebAppManifestObserver(void (^completion)(NSString *))
+      : completion_([completion copy]) {}
+
+  void Start(CefRefPtr<CefBrowserHost> host) {
+    if (!host) {
+      Finish(nil);
+      return;
+    }
+
+    registration_ = host->AddDevToolsMessageObserver(this);
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("expression", kWebAppManifestExpression);
+    params->SetBool("returnByValue", true);
+    params->SetBool("awaitPromise", true);
+
+    message_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(message_id_, kWebAppManifestMethod,
+                                    params) == 0) {
+      Finish(nil);
+    }
+  }
+
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser>,
+                              int message_id,
+                              bool success,
+                              const void *result,
+                              size_t result_size) override {
+    if (message_id != message_id_) {
+      return;
+    }
+
+    CefRefPtr<CefDictionaryValue> dictionary =
+        success ? ParseDevToolsResultDictionary(result, result_size) : nullptr;
+    CefRefPtr<CefDictionaryValue> resultDictionary =
+        dictionary ? dictionary->GetDictionary("result") : nullptr;
+    NSString *payload = resultDictionary
+                            ? ToNSString(resultDictionary->GetString("value").ToString())
+                            : nil;
+    Finish(payload.length > 0 ? payload : nil);
+  }
+
+  void OnDevToolsAgentDetached(CefRefPtr<CefBrowser>) override {
+    Finish(nil);
+  }
+
+ private:
+  void Finish(NSString *payload) {
+    if (completion_ == nil) {
+      return;
+    }
+
+    void (^completion)(NSString *) = [completion_ copy];
+    completion_ = nil;
+    registration_ = nullptr;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      completion(payload);
+    });
+  }
+
+  int message_id_ = 0;
+  CefRefPtr<CefRegistration> registration_;
+  void (^completion_)(NSString *);
+
+  IMPLEMENT_REFCOUNTING(WebAppManifestObserver);
+};
+
 void SyncBrowserViewFrame(BrowserTabHostView *hostView,
                           CefRefPtr<CefBrowser> browser) {
   if (hostView == nil || !browser) {
@@ -1438,6 +1590,34 @@ void ReloadBrowserOnUI(CefRefPtr<CefBrowser> browser, bool ignore_cache) {
       TID_UI,
       CefCreateClosureTask(
           base::BindOnce(&ReloadBrowser, browser, ignore_cache)));
+}
+
+void SetBrowserZoomLevel(CefRefPtr<CefBrowser> browser, double zoom_level) {
+  if (!browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (host) {
+    host->SetZoomLevel(zoom_level);
+  }
+}
+
+void SetBrowserZoomLevelOnUI(CefRefPtr<CefBrowser> browser,
+                             double zoom_level) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    SetBrowserZoomLevel(browser, zoom_level);
+    return;
+  }
+
+  CefPostTask(
+      TID_UI,
+      CefCreateClosureTask(
+          base::BindOnce(&SetBrowserZoomLevel, browser, zoom_level)));
 }
 
 class ReloadBrowserCompletionCallback : public CefCompletionCallback {
@@ -1776,6 +1956,30 @@ void PrintBrowserOnUI(CefRefPtr<CefBrowser> browser) {
   }
 
   CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&PrintBrowser, browser)));
+}
+
+void CastBrowser(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (host && host->CanExecuteChromeCommand(IDC_ROUTE_MEDIA)) {
+    host->ExecuteChromeCommand(IDC_ROUTE_MEDIA, CEF_WOD_CURRENT_TAB);
+  }
+}
+
+void CastBrowserOnUI(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    CastBrowser(browser);
+    return;
+  }
+
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&CastBrowser, browser)));
 }
 
 void PasteAndMatchStyleBrowser(CefRefPtr<CefBrowser> browser) {
@@ -2503,6 +2707,41 @@ struct TabRecord {
   }
 
   PrintBrowserOnUI(it->second.browser);
+}
+
+- (void)castActiveTab {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  CastBrowserOnUI(it->second.browser);
+}
+
+- (void)requestActiveTabWebAppManifestWithCompletion:
+    (void (^)(NSString *payloadJSON))completion {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end() || !it->second.browser) {
+    completion(nil);
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = it->second.browser->GetHost();
+  CefRefPtr<WebAppManifestObserver> observer =
+      new WebAppManifestObserver(completion);
+  observer->Start(host);
+}
+
+- (void)setActiveTabZoomLevel:(double)zoomLevel {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  SetBrowserZoomLevelOnUI(it->second.browser, zoomLevel);
 }
 
 - (void)findInActiveTabWithText:(NSString *)text

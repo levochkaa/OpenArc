@@ -523,6 +523,146 @@ enum BrowserStrings {
         comment: "Clear Temporary Tabs menu item title."
     )
 
+    static let webAppInstallAction = NSLocalizedString(
+        "browser.web_app.install_action",
+        comment: "Menu item for installing the current website as a standalone app."
+    )
+
+    static let webAppInfoAction = NSLocalizedString(
+        "browser.web_app.info_action",
+        comment: "Menu item for showing information about an installed web app."
+    )
+
+    static let webAppCopyURLAction = NSLocalizedString(
+        "browser.web_app.copy_url_action",
+        comment: "Menu item for copying the current URL from a web app."
+    )
+
+    static let webAppOpenInBrowserAction = NSLocalizedString(
+        "browser.web_app.open_in_browser_action",
+        comment: "Menu item for opening the current web app page in the main browser."
+    )
+
+    static let webAppCloseWindowAction = NSLocalizedString(
+        "browser.web_app.close_window_action",
+        comment: "File menu item for closing a web app window."
+    )
+
+    static let webAppZoomOutAction = NSLocalizedString(
+        "browser.web_app.zoom_out_action",
+        comment: "Menu item for decreasing web app page zoom."
+    )
+
+    static let webAppZoomResetAction = NSLocalizedString(
+        "browser.web_app.zoom_reset_action",
+        comment: "Menu item for resetting web app page zoom."
+    )
+
+    static let webAppZoomInAction = NSLocalizedString(
+        "browser.web_app.zoom_in_action",
+        comment: "Menu item for increasing web app page zoom."
+    )
+
+    static let webAppEditMenu = NSLocalizedString(
+        "browser.web_app.edit_menu",
+        comment: "Edit submenu title in a web app's More menu."
+    )
+
+    static let webAppCastAction = NSLocalizedString(
+        "browser.web_app.cast_action",
+        comment: "Cast menu item in a web app."
+    )
+
+    static let webAppMoreAction = NSLocalizedString(
+        "browser.web_app.more_action",
+        comment: "Tooltip for the web app More menu."
+    )
+
+    static let webAppAlwaysShowToolbarInFullscreen = NSLocalizedString(
+        "browser.web_app.always_show_toolbar_in_fullscreen",
+        comment: "View menu item controlling web app toolbar visibility in fullscreen."
+    )
+
+    static let webAppAlwaysShowFullURLs = NSLocalizedString(
+        "browser.web_app.always_show_full_urls",
+        comment: "View menu item controlling whether a web app displays full URLs."
+    )
+
+    static let webAppInstallPromptTitle = NSLocalizedString(
+        "browser.web_app.install_prompt.title",
+        comment: "Title of the web app installation prompt."
+    )
+
+    static let webAppInstallPromptMessage = NSLocalizedString(
+        "browser.web_app.install_prompt.message",
+        comment: "Message of the web app installation prompt."
+    )
+
+    static let webAppInstallButton = NSLocalizedString(
+        "browser.web_app.install_prompt.install",
+        comment: "Confirmation button in the web app installation prompt."
+    )
+
+    static let cancelAction = NSLocalizedString(
+        "browser.action.cancel",
+        comment: "Generic cancel button title."
+    )
+
+    static let webAppOperationFailedTitle = NSLocalizedString(
+        "browser.web_app.operation_failed.title",
+        comment: "Title of an alert shown when a web app operation fails."
+    )
+
+    static let webAppUninstallPromptTitle = NSLocalizedString(
+        "browser.web_app.uninstall_prompt.title",
+        comment: "Title of the web app uninstall confirmation alert."
+    )
+
+    static let webAppUninstallButton = NSLocalizedString(
+        "browser.web_app.uninstall_prompt.uninstall",
+        comment: "Confirmation button in the web app uninstall alert."
+    )
+
+    static let webAppInfoInstalledWith = NSLocalizedString(
+        "browser.web_app.info.installed_with",
+        comment: "Footer in web app information identifying TheBrowser."
+    )
+
+    static let webAppInfoDoneAction = NSLocalizedString(
+        "browser.web_app.info.done_action",
+        comment: "Button closing the web app information alert."
+    )
+
+    static let webAppErrorApplicationsDirectoryUnavailable = NSLocalizedString(
+        "browser.web_app.error.applications_directory_unavailable",
+        comment: "Error shown when the user's Applications directory is unavailable."
+    )
+
+    static let webAppErrorInvalidHostBundle = NSLocalizedString(
+        "browser.web_app.error.invalid_host_bundle",
+        comment: "Error shown when TheBrowser's host app bundle is invalid."
+    )
+
+    static let webAppErrorInvalidName = NSLocalizedString(
+        "browser.web_app.error.invalid_name",
+        comment: "Error shown when a web app name is invalid."
+    )
+
+    static let webAppErrorMissingHostExecutable = NSLocalizedString(
+        "browser.web_app.error.missing_host_executable",
+        comment: "Error shown when TheBrowser's executable is unavailable for a web app shim."
+    )
+
+    static let webAppErrorMissingLauncherExecutable = NSLocalizedString(
+        "browser.web_app.error.missing_launcher_executable",
+        comment: "Error shown when TheBrowser's dedicated web app launcher is unavailable."
+    )
+
+    static let webAppErrorUnsupportedURL = NSLocalizedString(
+        "browser.web_app.error.unsupported_url",
+        comment: "Error shown when a page cannot be installed as a web app."
+    )
+
     static let quitShortcutTitle = NSLocalizedString(
         "browser.menu.quit_shortcut_title",
         comment: "Conflict title for the system quit shortcut."
@@ -1153,6 +1293,14 @@ enum BrowserStrings {
         comment: "Don't Allow button title for notification permissions."
     )
 
+    static func webAppErrorBundleSigningFailed(_ details: String) -> String {
+        let format = NSLocalizedString(
+            "browser.web_app.error.bundle_signing_failed",
+            comment: "Error shown when the generated web app bundle cannot be signed."
+        )
+        return String(format: format, details)
+    }
+
     static func bookmarksOpenAllAction(count: Int) -> String {
         String(
             format: NSLocalizedString(
@@ -1306,6 +1454,36 @@ enum BrowserStrings {
             format: NSLocalizedString(
                 "browser.menu.about",
                 comment: "About menu item title with the app name placeholder."
+            ),
+            appName
+        )
+    }
+
+    static func webAppUninstallAction(_ appName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.web_app.uninstall_action",
+                comment: "Menu item for uninstalling a web app, with its name as the placeholder."
+            ),
+            appName
+        )
+    }
+
+    static func webAppZoomMenu(_ percent: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.web_app.zoom_menu",
+                comment: "Web app zoom submenu title with the current percentage."
+            ),
+            percent
+        )
+    }
+
+    static func webAppUninstallPromptMessage(_ appName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.web_app.uninstall_prompt.message",
+                comment: "Uninstall confirmation message with the web app name."
             ),
             appName
         )

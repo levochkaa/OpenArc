@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreServices
 import Settings
 import SwiftUI
 
@@ -7,8 +8,13 @@ import SwiftUI
 
 @objcMembers
 @MainActor public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate,
-NSUserInterfaceValidations {
+NSMenuDelegate, NSUserInterfaceValidations {
     // MARK: Lifecycle
+
+    override public init() {
+        self.webAppConfiguration = BrowserWebAppConfiguration.current()
+        super.init()
+    }
 
     isolated deinit {
         guard let layoutIndependentKeyMonitor else {
@@ -24,14 +30,20 @@ NSUserInterfaceValidations {
         BrowserTelemetry.startIfConfigured()
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        configureUpdateControllerIfNeeded()
+        if webAppConfiguration == nil {
+            configureUpdateControllerIfNeeded()
+        }
         installMainMenu(for: app)
         observeShortcutStore()
         observeAppearancePreference()
         installLayoutIndependentKeyMonitor()
         startBatterySaverController()
         app.delegate = self
-        createMainWindow()
+        if let webAppConfiguration {
+            createWebAppWindow(configuration: webAppConfiguration)
+        } else {
+            createMainWindow()
+        }
         app.finishLaunching()
         updateController?.start()
         BrowserTelemetry.captureUsage(.appBecameActive)
@@ -47,12 +59,24 @@ NSUserInterfaceValidations {
         true
     }
 
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let installWebAppItem = menu.items.first(where: {
+            $0.identifier == Self.installWebAppMenuItemIdentifier
+        }) else {
+            return
+        }
+
+        updateInstallWebAppMenuItem(installWebAppItem)
+    }
+
     public func applicationDidBecomeActive(_: Notification) {
         for chromeModel in allChromeModels {
             chromeModel.handleApplicationDidBecomeActive()
         }
         BrowserTelemetry.captureUsage(.appBecameActive)
-        refreshSetAsDefaultBrowserMenuItem()
+        if webAppConfiguration == nil {
+            refreshSetAsDefaultBrowserMenuItem()
+        }
     }
 
     public func application(_: NSApplication, open urls: [URL]) {
@@ -77,6 +101,12 @@ NSUserInterfaceValidations {
 
         if closedWindow === aboutWindow {
             aboutWindow = nil
+            return
+        }
+
+        if closedWindow === webAppWindowSession?.window {
+            webAppWindowSession?.chromeModel.prepareForTermination()
+            webAppWindowSession = nil
             return
         }
 
@@ -172,6 +202,10 @@ NSUserInterfaceValidations {
     }
 
     public func toggleSidebar(_: Any?) {
+        guard activeChromeModel?.isWebApp != true else {
+            return
+        }
+
         withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
             activeChromeModel?.toggleSidebar()
         }
@@ -184,6 +218,10 @@ NSUserInterfaceValidations {
     }
 
     public func createNewTab(_: Any?) {
+        guard activeChromeModel?.isWebApp != true else {
+            return
+        }
+
         activeChromeModel?.toggleCommandBar()
     }
 
@@ -265,6 +303,40 @@ NSUserInterfaceValidations {
         activeChromeModel?.clearTemporaryTabs()
     }
 
+    public func installCurrentSiteAsApp(_: Any?) {
+        presentWebAppInstallationPrompt()
+    }
+
+    public func showCurrentWebAppInfo(_: Any?) {
+        presentCurrentWebAppInfo()
+    }
+
+    public func openCurrentWebAppInBrowser(_: Any?) {
+        openCurrentWebAppPageInBrowser()
+    }
+
+    public func uninstallCurrentWebApp(_: Any?) {
+        presentCurrentWebAppUninstallPrompt()
+    }
+
+    public func toggleWebAppToolbarInFullscreen(_: Any?) {
+        guard let preferences = webAppWindowSession?.preferences else {
+            return
+        }
+
+        preferences.alwaysShowsToolbarInFullscreen.toggle()
+        installMainMenu(for: NSApp)
+    }
+
+    public func toggleWebAppAlwaysShowsFullURLs(_: Any?) {
+        guard let preferences = webAppWindowSession?.preferences else {
+            return
+        }
+
+        preferences.alwaysShowsFullURLs.toggle()
+        installMainMenu(for: NSApp)
+    }
+
     public func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         guard let action = item.action else {
             return true
@@ -272,7 +344,7 @@ NSUserInterfaceValidations {
 
         switch action {
         case #selector(createNewTab(_:)):
-            return activeChromeModel?.canCreateTab ?? false
+            return activeChromeModel?.canCreateTab == true && activeChromeModel?.isWebApp != true
         case #selector(createNewIncognitoWindow(_:)):
             return !isTerminationRequested
         case #selector(openHistory(_:)):
@@ -304,6 +376,17 @@ NSUserInterfaceValidations {
             return false
         case #selector(clearTemporaryTabs(_:)):
             return activeChromeModel?.canClearTemporaryTabs ?? false
+        case #selector(installCurrentSiteAsApp(_:)):
+            if let menuItem = item as? NSMenuItem {
+                updateInstallWebAppMenuItem(menuItem)
+            }
+            return activeChromeModel?.canInstallSelectedSiteAsApp ?? false
+        case #selector(openCurrentWebAppInBrowser(_:)),
+             #selector(showCurrentWebAppInfo(_:)),
+             #selector(toggleWebAppAlwaysShowsFullURLs(_:)),
+             #selector(toggleWebAppToolbarInFullscreen(_:)),
+             #selector(uninstallCurrentWebApp(_:)):
+            return webAppWindowSession != nil && !isTerminationRequested
         case #selector(toggleBookmarksBar(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
@@ -320,8 +403,13 @@ NSUserInterfaceValidations {
 
     // MARK: Private
 
+    private static let installWebAppMenuItemIdentifier = NSUserInterfaceItemIdentifier(
+        "browser.install-web-app"
+    )
+
     private var aboutWindow: NSWindow?
     private var settingsWindowController: SettingsWindowController?
+    private var webAppWindowSession: BrowserWebAppWindowSession?
     private var incognitoWindowSessions = [BrowserIncognitoWindowSession]()
     private var profileWindowSessions = [BrowserProfileWindowSession]()
     private var profileStore: BrowserProfileStore?
@@ -340,9 +428,10 @@ NSUserInterfaceValidations {
     private var shortcutStoreCancellable: AnyCancellable?
     private var appearancePreferenceCancellable: AnyCancellable?
     private var profileStoreCancellable: AnyCancellable?
+    private let webAppConfiguration: BrowserWebAppConfiguration?
 
     private var shouldPresentQuitWarning: Bool {
-        guard !didConfirmTerminationWarning, !isQuitWarningPresented else {
+        guard webAppConfiguration == nil, !didConfirmTerminationWarning, !isQuitWarningPresented else {
             return false
         }
 
@@ -353,10 +442,15 @@ NSUserInterfaceValidations {
     }
 
     private var allChromeModels: [BrowserChromeModel] {
-        profileWindowSessions.map(\.chromeModel) + incognitoWindowSessions.map(\.chromeModel)
+        let webAppModels = webAppWindowSession.map { [$0.chromeModel] } ?? []
+        return webAppModels + profileWindowSessions.map(\.chromeModel) + incognitoWindowSessions.map(\.chromeModel)
     }
 
     private var activeChromeModel: BrowserChromeModel? {
+        if let webAppWindowSession {
+            return webAppWindowSession.chromeModel
+        }
+
         if let session = activeIncognitoWindowSession {
             return session.chromeModel
         }
@@ -365,6 +459,10 @@ NSUserInterfaceValidations {
     }
 
     private var activeBrowserWindow: NSWindow? {
+        if let webAppWindowSession {
+            return webAppWindowSession.window
+        }
+
         if let session = activeIncognitoWindowSession {
             return session.window
         }
@@ -415,6 +513,7 @@ NSUserInterfaceValidations {
         for session in incognitoWindowSessions {
             session.window.orderOut(nil)
         }
+        webAppWindowSession?.window.orderOut(nil)
         DispatchQueue.main.async {
             if BrowserHasOpenBrowsers() != 0 {
                 BrowserCloseAllBrowsers()
@@ -426,7 +525,10 @@ NSUserInterfaceValidations {
     }
 
     private func tearDownBrowserWindowSessions() {
-        let windows = profileWindowSessions.map(\.window) + incognitoWindowSessions.map(\.window)
+        let windows = (webAppWindowSession.map { [$0.window] } ?? [])
+            + profileWindowSessions.map(\.window)
+            + incognitoWindowSessions.map(\.window)
+        webAppWindowSession = nil
         profileWindowSessions.removeAll()
         incognitoWindowSessions.removeAll()
 
@@ -456,6 +558,11 @@ NSUserInterfaceValidations {
     }
 
     private func installMainMenu(for app: NSApplication) {
+        if let webAppWindowSession {
+            installWebAppMainMenu(for: app, session: webAppWindowSession)
+            return
+        }
+
         let menubar = NSMenu()
         let appMenuItem = NSMenuItem()
         let fileMenuItem = NSMenuItem()
@@ -513,6 +620,7 @@ NSUserInterfaceValidations {
         appMenuItem.submenu = appMenu
 
         let fileMenu = NSMenu(title: BrowserStrings.menuFile)
+        fileMenu.delegate = self
         let newTabItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newTab),
             action: #selector(createNewTab(_:))
@@ -543,6 +651,16 @@ NSUserInterfaceValidations {
             action: #selector(saveCurrentPage(_:))
         )
         fileMenu.addItem(savePageItem)
+
+        let installWebAppItem = NSMenuItem(
+            title: BrowserStrings.webAppInstallAction,
+            action: #selector(installCurrentSiteAsApp(_:)),
+            keyEquivalent: ""
+        )
+        installWebAppItem.identifier = Self.installWebAppMenuItemIdentifier
+        installWebAppItem.target = self
+        updateInstallWebAppMenuItem(installWebAppItem)
+        fileMenu.addItem(installWebAppItem)
 
         let printItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .printPage),
@@ -727,6 +845,188 @@ NSUserInterfaceValidations {
         viewMenuItem.submenu = viewMenu
     }
 
+    private func installWebAppMainMenu(for app: NSApplication, session: BrowserWebAppWindowSession) {
+        let menubar = NSMenu()
+        let appMenuItem = NSMenuItem()
+        let fileMenuItem = NSMenuItem()
+        let editMenuItem = NSMenuItem()
+        let viewMenuItem = NSMenuItem()
+        let historyMenuItem = NSMenuItem()
+        fileMenuItem.title = BrowserStrings.menuFile
+        editMenuItem.title = BrowserStrings.menuEdit
+        viewMenuItem.title = BrowserStrings.menuView
+        historyMenuItem.title = BrowserStrings.menuHistory
+        menubar.addItem(appMenuItem)
+        menubar.addItem(fileMenuItem)
+        menubar.addItem(editMenuItem)
+        menubar.addItem(viewMenuItem)
+        menubar.addItem(historyMenuItem)
+        app.mainMenu = menubar
+
+        let appMenu = NSMenu()
+        let appInfoItem = NSMenuItem(
+            title: BrowserStrings.webAppInfoAction,
+            action: #selector(showCurrentWebAppInfo(_:)),
+            keyEquivalent: ""
+        )
+        appInfoItem.target = self
+        appMenu.addItem(appInfoItem)
+        appMenu.addItem(.separator())
+        let quitItem = NSMenuItem(
+            title: BrowserStrings.quitMenuItem(appName: session.configuration.name),
+            action: #selector(quitApplication(_:)),
+            keyEquivalent: "q"
+        )
+        quitItem.target = self
+        appMenu.addItem(quitItem)
+        appMenuItem.submenu = appMenu
+
+        let fileMenu = NSMenu(title: BrowserStrings.menuFile)
+        let openInBrowserItem = NSMenuItem(
+            title: BrowserStrings.webAppOpenInBrowserAction,
+            action: #selector(openCurrentWebAppInBrowser(_:)),
+            keyEquivalent: ""
+        )
+        openInBrowserItem.target = self
+        fileMenu.addItem(openInBrowserItem)
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .printPage),
+                action: #selector(printCurrentPage(_:))
+            )
+        )
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.webAppCloseWindowAction,
+                action: #selector(NSWindow.performClose(_:)),
+                keyEquivalent: "w"
+            )
+        )
+        fileMenuItem.submenu = fileMenu
+
+        let editMenu = NSMenu(title: BrowserStrings.menuEdit)
+        editMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.menuUndo,
+                action: #selector(UndoManager.undo),
+                keyEquivalent: "z"
+            )
+        )
+        editMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.menuRedo,
+                action: #selector(UndoManager.redo),
+                keyEquivalent: "z",
+                modifiers: [.command, .shift]
+            )
+        )
+        editMenu.addItem(.separator())
+        editMenu.addItem(
+            makeStandardMenuItem(title: BrowserStrings.menuCut, action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        )
+        editMenu.addItem(
+            makeStandardMenuItem(title: BrowserStrings.menuCopy, action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        )
+        editMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.menuPaste,
+                action: #selector(NSText.paste(_:)),
+                keyEquivalent: "v"
+            )
+        )
+        editMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.menuPasteAndMatchStyle,
+                action: #selector(pasteAndMatchStyle(_:)),
+                keyEquivalent: "v",
+                modifiers: [.command, .shift],
+                target: self
+            )
+        )
+        editMenu.addItem(.separator())
+        editMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.menuSelectAll,
+                action: #selector(NSText.selectAll(_:)),
+                keyEquivalent: "a"
+            )
+        )
+        editMenu.addItem(.separator())
+        let findMenuItem = NSMenuItem()
+        findMenuItem.title = BrowserStrings.menuFindTitle
+        let findMenu = NSMenu(title: BrowserStrings.menuFindTitle)
+        findMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .findInPage),
+                action: #selector(findInPage(_:))
+            )
+        )
+        findMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .findNext),
+                action: #selector(findNextInPage(_:))
+            )
+        )
+        findMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .findPrevious),
+                action: #selector(findPreviousInPage(_:))
+            )
+        )
+        findMenuItem.submenu = findMenu
+        editMenu.addItem(findMenuItem)
+        editMenuItem.submenu = editMenu
+
+        let viewMenu = NSMenu(title: BrowserStrings.menuView)
+        viewMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .reload),
+                action: #selector(reloadCurrentTab(_:))
+            )
+        )
+        viewMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .forceReload),
+                action: #selector(forceReloadCurrentTab(_:))
+            )
+        )
+        viewMenu.addItem(.separator())
+        let toolbarItem = NSMenuItem(
+            title: BrowserStrings.webAppAlwaysShowToolbarInFullscreen,
+            action: #selector(toggleWebAppToolbarInFullscreen(_:)),
+            keyEquivalent: ""
+        )
+        toolbarItem.target = self
+        toolbarItem.state = session.preferences.alwaysShowsToolbarInFullscreen ? .on : .off
+        viewMenu.addItem(toolbarItem)
+        let fullURLItem = NSMenuItem(
+            title: BrowserStrings.webAppAlwaysShowFullURLs,
+            action: #selector(toggleWebAppAlwaysShowsFullURLs(_:)),
+            keyEquivalent: ""
+        )
+        fullURLItem.target = self
+        fullURLItem.state = session.preferences.alwaysShowsFullURLs ? .on : .off
+        viewMenu.addItem(fullURLItem)
+        viewMenuItem.submenu = viewMenu
+
+        let historyMenu = NSMenu(title: BrowserStrings.menuHistory)
+        historyMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .goBack),
+                action: #selector(goBack(_:))
+            )
+        )
+        historyMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .goForward),
+                action: #selector(goForward(_:))
+            )
+        )
+        historyMenuItem.submenu = historyMenu
+    }
+
     private func makeMenuItem(descriptor: BrowserCommandDescriptor, action: Selector) -> NSMenuItem {
         let item = NSMenuItem(
             title: descriptor.menuTitle,
@@ -736,6 +1036,12 @@ NSUserInterfaceValidations {
         item.keyEquivalentModifierMask = descriptor.shortcut.modifiers
         item.target = self
         return item
+    }
+
+    private func updateInstallWebAppMenuItem(_ menuItem: NSMenuItem) {
+        let canInstallSelectedSiteAsApp = activeChromeModel?.canInstallSelectedSiteAsApp ?? false
+        menuItem.isHidden = !canInstallSelectedSiteAsApp
+        menuItem.isEnabled = canInstallSelectedSiteAsApp
     }
 
     private func makeStandardMenuItem(
@@ -828,27 +1134,35 @@ NSUserInterfaceValidations {
             quitApplication(nil)
             return true
         case .openSettings:
+            guard webAppWindowSession == nil else {
+                return false
+            }
+
             openSettings(nil)
             return true
         case .setAsDefaultBrowser:
-            guard !defaultBrowserService.isDefaultBrowser else {
+            guard webAppWindowSession == nil, !defaultBrowserService.isDefaultBrowser else {
                 return false
             }
 
             setAsDefaultBrowser(nil)
             return true
         case .newTab:
-            guard activeChromeModel?.canCreateTab ?? false else {
+            guard activeChromeModel?.isWebApp != true, activeChromeModel?.canCreateTab ?? false else {
                 return false
             }
 
             createNewTab(nil)
             return true
         case .newIncognitoWindow:
+            guard webAppWindowSession == nil else {
+                return false
+            }
+
             createNewIncognitoWindow(nil)
             return true
         case .openHistory:
-            guard activeChromeModel != nil, !isTerminationRequested else {
+            guard webAppWindowSession == nil, activeChromeModel != nil, !isTerminationRequested else {
                 return false
             }
 
@@ -862,6 +1176,11 @@ NSUserInterfaceValidations {
             toggleCurrentPageBookmark(nil)
             return true
         case .archiveTab:
+            if let webAppWindowSession {
+                webAppWindowSession.window.performClose(nil)
+                return true
+            }
+
             return activeChromeModel?.archiveSelectedTab() ?? false
         case .savePage:
             guard activeChromeModel?.canSavePage ?? false else {
@@ -1142,6 +1461,120 @@ NSUserInterfaceValidations {
             runtimeConfiguration: runtimeConfiguration,
             copyingFullscreenFrom: nil
         )
+    }
+
+    private func createWebAppWindow(configuration: BrowserWebAppConfiguration) {
+        guard let runtimeConfiguration = BrowserRuntimeConfiguration.currentConfiguration() else {
+            return
+        }
+
+        let rootCacheURL = URL(fileURLWithPath: runtimeConfiguration.rootCachePath, isDirectory: true)
+        let profile = configuration.profile
+        let profileDirectoryURL = rootCacheURL.appendingPathComponent(profile.directoryName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: profileDirectoryURL, withIntermediateDirectories: true)
+
+        let profileDirectoryCandidates = BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
+            profileDirectoryURL: profileDirectoryURL
+        )
+        let bookmarksModel = BrowserBookmarksModel(
+            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates)
+        )
+        let historyStore = BrowserChromiumHistoryStore(profileDirectoryCandidates: profileDirectoryCandidates)
+        let ephemeralSessionStore = BrowserEphemeralSessionStore()
+        weak var windowReference: NSWindow?
+        let chromeModel = BrowserChromeModel(
+            tabDriver: BrowserTabControllerDriver(profileCachePath: profileDirectoryURL.path),
+            sessionSnapshotStore: ephemeralSessionStore,
+            sessionPreferencesStore: ephemeralSessionStore,
+            newTabURLString: configuration.startURL.absoluteString,
+            userPreferencesStore: userPreferencesStore,
+            shortcutStore: shortcutStore,
+            bookmarksModel: bookmarksModel,
+            historyStore: historyStore,
+            extensionManager: BrowserChromiumExtensionManager(profileDirectoryURL: profileDirectoryURL),
+            extensionSidePanelDriver: BrowserExtensionSidePanelController(profileCachePath: profileDirectoryURL.path),
+            extensionActionPopupDriver: BrowserExtensionActionPopupController(profileCachePath: profileDirectoryURL
+                .path),
+            windowMode: .webApp(configuration),
+            profile: profile,
+            commandHandler: { [weak self] commandID in
+                _ = self?.performLayoutIndependentShortcutCommand(commandID.layoutIndependentCommand)
+            },
+            windowTitleHandler: { title in
+                windowReference?.title = title
+            },
+            allTabsClosedHandler: {
+                windowReference?.performClose(nil)
+            }
+        )
+        let preferences = BrowserWebAppPreferences(identifier: configuration.identifier)
+        let actions = BrowserWebAppViewActions(
+            showAppInfo: { [weak self] in
+                self?.presentCurrentWebAppInfo()
+            },
+            openInBrowser: { [weak self] in
+                self?.openCurrentWebAppPageInBrowser()
+            },
+            uninstall: { [weak self] in
+                self?.presentCurrentWebAppUninstallPrompt()
+            }
+        )
+        let rootView = BrowserWebAppRootView(
+            model: chromeModel,
+            configuration: configuration,
+            preferences: preferences,
+            actions: actions
+        )
+        .ignoresSafeArea(.container, edges: .top)
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.safeAreaRegions = []
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        let window = BrowserMainWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
+            styleMask: BrowserWebAppLayout.windowStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+        windowReference = window
+        window.title = configuration.name
+        window.delegate = self
+        window.browserUndoManager = chromeModel.undoManager
+        window.minSize = NSSize(width: 720, height: 480)
+        window.isReleasedWhenClosed = false
+        window.isMovableByWindowBackground = false
+        window.configureBrowserChrome()
+        window.center()
+
+        let contentView = BrowserWindowContentContainerView(frame: window.contentRect(forFrameRect: window.frame))
+        contentView.addSubview(hostingView)
+        NSLayoutConstraint.activate([
+            hostingView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            hostingView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
+
+        let session = BrowserWebAppWindowSession(
+            window: window,
+            chromeModel: chromeModel,
+            configuration: configuration,
+            preferences: preferences
+        )
+        webAppWindowSession = session
+        installMainMenu(for: NSApp)
+        window.contentView = contentView
+        let bundleIcon = NSWorkspace.shared.icon(forFile: configuration.bundleURL.path)
+        bundleIcon.size = NSSize(
+            width: BrowserImageThumbnailer.macOSApplicationIconCanvasSize,
+            height: BrowserImageThumbnailer.macOSApplicationIconCanvasSize
+        )
+        NSApp.applicationIconImage = bundleIcon
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        if hasReceivedBrowserContext {
+            chromeModel.handleContextReady()
+        }
     }
 
     private func openProfile(_ profile: BrowserProfile) {
@@ -1455,6 +1888,200 @@ NSUserInterfaceValidations {
                 window.toggleFullScreen(nil)
             }
         }
+    }
+
+    private func presentWebAppInstallationPrompt() {
+        guard
+            let chromeModel = activeChromeModel,
+            chromeModel.canInstallSelectedSiteAsApp,
+            let tab = chromeModel.currentTab,
+            tab.pageURL != nil,
+            let metadata = chromeModel.webAppInstallMetadata(for: tab),
+            let window = activeBrowserWindow
+        else {
+            return
+        }
+
+        presentWebAppInstallationPrompt(
+            tab: tab,
+            metadata: metadata,
+            window: window
+        )
+    }
+
+    private func presentWebAppInstallationPrompt(
+        tab: BrowserChromeModel.Tab,
+        metadata: BrowserWebAppInstallMetadata,
+        window: NSWindow
+    ) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = BrowserStrings.webAppInstallPromptTitle
+        alert.informativeText = BrowserStrings.webAppInstallPromptMessage
+        alert.addButton(withTitle: BrowserStrings.webAppInstallButton)
+        alert.addButton(withTitle: BrowserStrings.cancelAction)
+
+        let nameField = NSTextField(string: metadata.preferredName(fallbackTitle: tab.displayTitle))
+        nameField.placeholderString = tab.displayTitle
+        nameField.selectText(nil)
+        nameField.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+        alert.accessoryView = nameField
+
+        alert.beginSheetModal(for: window) { [weak self, weak nameField] response in
+            guard response == .alertFirstButtonReturn, let self, let nameField else {
+                return
+            }
+
+            installWebApp(tab: tab, metadata: metadata, name: nameField.stringValue)
+        }
+    }
+
+    private func installWebApp(
+        tab: BrowserChromeModel.Tab,
+        metadata: BrowserWebAppInstallMetadata,
+        name: String
+    ) {
+        guard
+            let profileSession = activeProfileWindowSession ?? profileWindowSessions.first,
+            let applicationsDirectoryURL = BrowserWebAppBundleInstaller.defaultApplicationsDirectoryURL()
+        else {
+            presentWebAppOperationError(BrowserWebAppInstallationError.applicationsDirectoryUnavailable)
+            return
+        }
+
+        let hostBundleURL = Bundle.main.bundleURL
+        let profile = profileSession.profile
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+
+            let manifestIconData = await BrowserWebAppIconLoader.loadBundleIconData(from: metadata.iconURL)
+            await BrowserFaviconCache.shared.loadImageIfNeeded(from: tab.faviconURL)
+            let fallbackIconData = BrowserFaviconCache.shared
+                .image(for: tab.faviconURL)
+                .flatMap(BrowserWebAppBundleIconEncoder.icnsData(from:))
+            let request = BrowserWebAppInstallRequest(
+                name: name,
+                metadata: metadata,
+                profile: profile,
+                bundleIconData: manifestIconData ?? fallbackIconData
+            )
+
+            do {
+                let installedApp = try BrowserWebAppBundleInstaller(
+                    hostBundleURL: hostBundleURL,
+                    applicationsDirectoryURL: applicationsDirectoryURL
+                ).install(request)
+                _ = NSWorkspace.shared.setIcon(nil, forFile: installedApp.bundleURL.path)
+                _ = LSRegisterURL(installedApp.bundleURL as CFURL, true)
+
+                let openConfiguration = NSWorkspace.OpenConfiguration()
+                openConfiguration.activates = true
+                openConfiguration.createsNewApplicationInstance = true
+                NSWorkspace.shared.openApplication(
+                    at: installedApp.bundleURL,
+                    configuration: openConfiguration
+                ) { [weak self] _, error in
+                    guard let error else {
+                        return
+                    }
+
+                    DispatchQueue.main.async {
+                        self?.presentWebAppOperationError(error)
+                    }
+                }
+            } catch {
+                presentWebAppOperationError(error)
+            }
+        }
+    }
+
+    private func presentCurrentWebAppInfo() {
+        guard let session = webAppWindowSession else {
+            return
+        }
+
+        let currentURL = session.chromeModel.currentTab?.pageURL ?? session.configuration.startURL
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = session.configuration.name
+        alert.informativeText = [
+            currentURL.absoluteString,
+            session.configuration.scopeURL.absoluteString,
+            BrowserStrings.webAppInfoInstalledWith,
+        ].joined(separator: "\n\n")
+        alert.addButton(withTitle: BrowserStrings.webAppInfoDoneAction)
+        alert.beginSheetModal(for: session.window)
+    }
+
+    private func openCurrentWebAppPageInBrowser() {
+        guard let session = webAppWindowSession else {
+            return
+        }
+
+        let pageURL = session.chromeModel.currentTab?.pageURL ?? session.configuration.startURL
+        let openConfiguration = NSWorkspace.OpenConfiguration()
+        openConfiguration.activates = true
+        NSWorkspace.shared.open(
+            [pageURL],
+            withApplicationAt: session.configuration.hostBundleURL,
+            configuration: openConfiguration
+        ) { [weak self] _, error in
+            guard let error else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                self?.presentWebAppOperationError(error)
+            }
+        }
+    }
+
+    private func presentCurrentWebAppUninstallPrompt() {
+        guard let session = webAppWindowSession else {
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = BrowserStrings.webAppUninstallPromptTitle
+        alert.informativeText = BrowserStrings.webAppUninstallPromptMessage(session.configuration.name)
+        alert.addButton(withTitle: BrowserStrings.webAppUninstallButton)
+        alert.addButton(withTitle: BrowserStrings.cancelAction)
+        alert.beginSheetModal(for: session.window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else {
+                return
+            }
+
+            recycleCurrentWebApp(session)
+        }
+    }
+
+    private func recycleCurrentWebApp(_ session: BrowserWebAppWindowSession) {
+        NSWorkspace.shared.recycle([session.configuration.bundleURL]) { [weak self] _, error in
+            DispatchQueue.main.async {
+                if let error {
+                    self?.presentWebAppOperationError(error)
+                    return
+                }
+
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func presentWebAppOperationError(_ error: Error) {
+        let alert = NSAlert(error: error)
+        alert.alertStyle = .warning
+        alert.messageText = BrowserStrings.webAppOperationFailedTitle
+        if let window = activeBrowserWindow, window.isVisible {
+            alert.beginSheetModal(for: window)
+            return
+        }
+
+        alert.runModal()
     }
 
     private func presentAboutWindow() {

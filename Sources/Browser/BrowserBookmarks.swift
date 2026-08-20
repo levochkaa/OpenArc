@@ -127,6 +127,13 @@ protocol BrowserBookmarkStoring {
     func moveBookmark(id: String, toFolderID: String?) -> Bool
     func createFolder(title: String) -> String?
     func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult
+    func importSafariBookmarks(from sourceURL: URL) -> BrowserBookmarkImportResult
+}
+
+extension BrowserBookmarkStoring {
+    func importSafariBookmarks(from _: URL) -> BrowserBookmarkImportResult {
+        BrowserBookmarkImportResult(source: .safari, importedCount: 0, sourceWasAvailable: false)
+    }
 }
 
 // MARK: - BrowserEmptyBookmarkStore
@@ -285,6 +292,12 @@ struct BrowserEmptyBookmarkStore: BrowserBookmarkStoring {
 
     @discardableResult func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult {
         let result = store.importBookmarks(from: source)
+        reload()
+        return result
+    }
+
+    @discardableResult func importSafariBookmarks(from sourceURL: URL) -> BrowserBookmarkImportResult {
+        let result = store.importSafariBookmarks(from: sourceURL)
         reload()
         return result
     }

@@ -107,6 +107,31 @@ final class BrowserIncognitoWindowSession {
     let chromeModel: BrowserChromeModel
 }
 
+// MARK: - BrowserWebAppWindowSession
+
+final class BrowserWebAppWindowSession {
+    // MARK: Lifecycle
+
+    init(
+        window: NSWindow,
+        chromeModel: BrowserChromeModel,
+        configuration: BrowserWebAppConfiguration,
+        preferences: BrowserWebAppPreferences
+    ) {
+        self.window = window
+        self.chromeModel = chromeModel
+        self.configuration = configuration
+        self.preferences = preferences
+    }
+
+    // MARK: Internal
+
+    let window: NSWindow
+    let chromeModel: BrowserChromeModel
+    let configuration: BrowserWebAppConfiguration
+    let preferences: BrowserWebAppPreferences
+}
+
 // MARK: - BrowserProfileWindowSession
 
 final class BrowserProfileWindowSession {

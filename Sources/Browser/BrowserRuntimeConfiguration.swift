@@ -31,7 +31,8 @@ import Foundation
 
     @objc(currentConfiguration) public static func currentConfiguration() -> BrowserRuntimeConfiguration? {
         let fileManager = FileManager.default
-        let bundlePath = Bundle.main.bundlePath
+        let webAppConfiguration = BrowserWebAppConfiguration.current()
+        let bundlePath = webAppConfiguration?.hostBundleURL.path ?? Bundle.main.bundlePath
         let frameworksPath = URL(fileURLWithPath: bundlePath, isDirectory: true)
             .appendingPathComponent("Contents/Frameworks", isDirectory: true)
         let helperExecutablePath = frameworksPath
@@ -49,7 +50,7 @@ import Foundation
             .appendingPathComponent("TheBrowser", isDirectory: true)
         let sessionStoragePath = browserSupportPath
             .appendingPathComponent("Session", isDirectory: true)
-        let rootCacheDirectory = runtimeSuffix()
+        let rootCacheDirectory = (webAppConfiguration?.isolatedRuntimeSuffix ?? runtimeSuffix())
             .map { "CEF-\($0)" } ?? "CEF"
         let rootCachePath = browserSupportPath
             .appendingPathComponent(rootCacheDirectory, isDirectory: true)

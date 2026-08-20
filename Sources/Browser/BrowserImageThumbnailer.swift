@@ -5,6 +5,7 @@ enum BrowserImageThumbnailer {
     // MARK: Internal
 
     static let chromeIconMaximumPixelSize: CGFloat = 64
+    static let macOSApplicationIconCanvasSize: CGFloat = 512
 
     static func image(data: Data, maximumPixelSize: CGFloat) -> NSImage? {
         guard maximumPixelSize > 0 else {
@@ -40,6 +41,42 @@ enum BrowserImageThumbnailer {
         }
 
         return resizedImage(image, maximumPixelDimension: maximumPixelSize)
+    }
+
+    static func macOSApplicationIcon(from image: NSImage) -> NSImage? {
+        guard
+            image.size.width > 0,
+            image.size.height > 0,
+            let sourceImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+            let bitmap = macOSApplicationIconBitmap(from: sourceImage)
+        else {
+            return nil
+        }
+
+        let icon = NSImage(size: bitmap.size)
+        icon.addRepresentation(bitmap)
+        return icon
+    }
+
+    static func macOSApplicationIconPNGData(from image: NSImage) -> Data? {
+        guard
+            let sourceImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+            let bitmap = macOSApplicationIconBitmap(from: sourceImage)
+        else {
+            return nil
+        }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
+    static func macOSApplicationIconPNGData(fromEncodedImageData data: Data) -> Data? {
+        guard
+            let imageSource = CGImageSourceCreateWithData(data as CFData, imageSourceOptions()),
+            let sourceImage = applicationIconSourceImage(from: imageSource),
+            let bitmap = macOSApplicationIconBitmap(from: sourceImage)
+        else {
+            return nil
+        }
+        return bitmap.representation(using: .png, properties: [:])
     }
 
     static func resizedImage(_ image: NSImage, maximumPixelWidth: CGFloat) -> NSImage? {
@@ -99,6 +136,84 @@ enum BrowserImageThumbnailer {
 
     // MARK: Private
 
+    private static func macOSApplicationIconBitmap(from sourceImage: CGImage) -> NSBitmapImageRep? {
+        let canvasSize = macOSApplicationIconCanvasSize
+        guard
+            let bitmap = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(canvasSize),
+                pixelsHigh: Int(canvasSize),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ),
+            let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap)
+        else {
+            return nil
+        }
+
+        bitmap.size = CGSize(width: canvasSize, height: canvasSize)
+        let canvasRect = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
+        let maskRect = canvasRect.insetBy(dx: 50, dy: 50)
+        let maskPath = NSBezierPath(roundedRect: maskRect, xRadius: 92, yRadius: 92)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        graphicsContext.shouldAntialias = true
+        graphicsContext.imageInterpolation = NSImageInterpolation.high
+        NSColor.clear.setFill()
+        canvasRect.fill(using: .copy)
+
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(77 / 255)
+        shadow.shadowBlurRadius = 5
+        shadow.shadowOffset = NSSize(width: 0, height: -5)
+        shadow.set()
+        NSColor.black.setFill()
+        maskPath.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        NSGraphicsContext.saveGraphicsState()
+        maskPath.addClip()
+        NSColor.white.setFill()
+        canvasRect.fill()
+        graphicsContext.cgContext.interpolationQuality = sourceImage.width == Int(canvasSize)
+            && sourceImage.height == Int(canvasSize)
+            ? .none
+            : .high
+        graphicsContext.cgContext.draw(sourceImage, in: canvasRect)
+        NSGraphicsContext.restoreGraphicsState()
+        NSGraphicsContext.restoreGraphicsState()
+
+        return bitmap
+    }
+
+    private static func applicationIconSourceImage(from imageSource: CGImageSource) -> CGImage? {
+        guard
+            let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+            let pixelWidth = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+            let pixelHeight = properties[kCGImagePropertyPixelHeight] as? NSNumber
+        else {
+            return nil
+        }
+
+        let maximumSourceDimension = max(pixelWidth.intValue, pixelHeight.intValue)
+        if maximumSourceDimension <= Int(macOSApplicationIconCanvasSize) {
+            return CGImageSourceCreateImageAtIndex(
+                imageSource,
+                0,
+                [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+            )
+        }
+
+        return thumbnailCGImage(from: imageSource, maximumPixelSize: macOSApplicationIconCanvasSize)
+    }
+
     private static func imageSourceOptions() -> CFDictionary {
         [
             kCGImageSourceShouldCache: false,
@@ -106,14 +221,7 @@ enum BrowserImageThumbnailer {
     }
 
     private static func thumbnailImage(from imageSource: CGImageSource, maximumPixelSize: CGFloat) -> NSImage? {
-        let thumbnailOptions = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(1, Int(ceil(maximumPixelSize))),
-        ] as CFDictionary
-
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, thumbnailOptions) else {
+        guard let cgImage = thumbnailCGImage(from: imageSource, maximumPixelSize: maximumPixelSize) else {
             return nil
         }
 
@@ -121,6 +229,17 @@ enum BrowserImageThumbnailer {
             cgImage: cgImage,
             size: CGSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
         )
+    }
+
+    private static func thumbnailCGImage(from imageSource: CGImageSource, maximumPixelSize: CGFloat) -> CGImage? {
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(1, Int(ceil(maximumPixelSize))),
+        ] as CFDictionary
+
+        return CGImageSourceCreateThumbnailAtIndex(imageSource, 0, thumbnailOptions)
     }
 
     private static func renderedImage(_ image: NSImage, canvasSize: CGSize, drawRect: CGRect) -> NSImage {

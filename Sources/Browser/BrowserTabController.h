@@ -82,6 +82,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)captureFullPageActiveTabToPasteboard;
 - (void)pasteAndMatchStyleActiveTab;
 - (void)printActiveTab;
+- (void)castActiveTab;
+- (void)requestActiveTabWebAppManifestWithCompletion:
+    (void (^)(NSString * _Nullable payloadJSON))completion
+    NS_SWIFT_NAME(requestActiveTabWebAppManifest(completion:));
+- (void)setActiveTabZoomLevel:(double)zoomLevel;
 - (void)findInActiveTabWithText:(NSString *)text
                         forward:(BOOL)forward
                       matchCase:(BOOL)matchCase

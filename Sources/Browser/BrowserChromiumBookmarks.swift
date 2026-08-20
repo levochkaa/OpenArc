@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ZIPFoundation
 
 // MARK: - BrowserChromiumBookmarkStore
 
@@ -175,33 +176,11 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
     }
 
     @discardableResult func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult {
-        let importItems = loadImportItems(from: source)
-        guard importItems.sourceWasAvailable else {
-            return BrowserBookmarkImportResult(source: source, importedCount: 0, sourceWasAvailable: false)
-        }
+        importBookmarkItems(loadImportItems(from: source), from: source)
+    }
 
-        var document = loadDocumentOrDefault()
-        var existingURLs = allBookmarkURLStrings(in: document)
-        var importedCount = 0
-        var nextID = nextBookmarkID(in: document)
-        let importedNodes = nodes(
-            from: importItems.items,
-            existingURLs: &existingURLs,
-            nextID: &nextID,
-            importedCount: &importedCount
-        )
-        guard importedCount > 0, !importedNodes.isEmpty else {
-            return BrowserBookmarkImportResult(source: source, importedCount: 0, sourceWasAvailable: true)
-        }
-
-        let folder = makeFolderNode(
-            title: source.importedFolderTitle,
-            children: importedNodes,
-            id: nextAvailableID(&nextID)
-        )
-        appendNodes([folder], toBookmarkBarIn: &document)
-        _ = writeDocument(document)
-        return BrowserBookmarkImportResult(source: source, importedCount: importedCount, sourceWasAvailable: true)
+    @discardableResult func importSafariBookmarks(from sourceURL: URL) -> BrowserBookmarkImportResult {
+        importBookmarkItems(loadSafariExportImportItems(from: sourceURL), from: .safari)
     }
 
     // MARK: Private
@@ -236,6 +215,8 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         let sourceWasAvailable: Bool
         let items: [BrowserBookmarkImportItem]
     }
+
+    private static let maximumSafariBookmarksFileSize = 50 * 1024 * 1024
 
     private let profileDirectoryCandidates: [URL]
     private let fileManager: FileManager
@@ -313,6 +294,38 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
 
     private static func sha256Hex(for data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func importBookmarkItems(
+        _ importItems: ImportItems,
+        from source: BrowserBookmarkImportSource
+    ) -> BrowserBookmarkImportResult {
+        guard importItems.sourceWasAvailable else {
+            return BrowserBookmarkImportResult(source: source, importedCount: 0, sourceWasAvailable: false)
+        }
+
+        var document = loadDocumentOrDefault()
+        var existingURLs = allBookmarkURLStrings(in: document)
+        var importedCount = 0
+        var nextID = nextBookmarkID(in: document)
+        let importedNodes = nodes(
+            from: importItems.items,
+            existingURLs: &existingURLs,
+            nextID: &nextID,
+            importedCount: &importedCount
+        )
+        guard importedCount > 0, !importedNodes.isEmpty else {
+            return BrowserBookmarkImportResult(source: source, importedCount: 0, sourceWasAvailable: true)
+        }
+
+        let folder = makeFolderNode(
+            title: source.importedFolderTitle,
+            children: importedNodes,
+            id: nextAvailableID(&nextID)
+        )
+        appendNodes([folder], toBookmarkBarIn: &document)
+        _ = writeDocument(document)
+        return BrowserBookmarkImportResult(source: source, importedCount: importedCount, sourceWasAvailable: true)
     }
 
     private func loadDocumentIfPresent() -> BookmarkDocument? {
@@ -790,7 +803,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         case .arc, .chrome, .dia:
             loadChromiumImportItems(from: source)
         case .safari:
-            loadSafariImportItems()
+            ImportItems(sourceWasAvailable: false, items: [])
         }
     }
 
@@ -903,62 +916,151 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         return BrowserBookmarkImportItem(title: title, urlString: nil, children: children)
     }
 
-    private func loadSafariImportItems() -> ImportItems {
-        guard let safariURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("Safari", isDirectory: true)
-            .appendingPathComponent("Bookmarks.plist", isDirectory: false)
-        else {
-            return ImportItems(sourceWasAvailable: false, items: [])
+    private func loadSafariExportImportItems(from sourceURL: URL) -> ImportItems {
+        let didStartAccessing = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                sourceURL.stopAccessingSecurityScopedResource()
+            }
         }
 
-        guard fileManager.fileExists(atPath: safariURL.path) else {
+        switch sourceURL.pathExtension.lowercased() {
+        case "htm", "html":
+            guard let data = safariBookmarksHTMLData(from: sourceURL) else {
+                return ImportItems(sourceWasAvailable: true, items: [])
+            }
+            return ImportItems(sourceWasAvailable: true, items: safariImportItems(fromHTMLData: data))
+        case "zip":
+            return loadSafariArchiveImportItems(from: sourceURL)
+        default:
             return ImportItems(sourceWasAvailable: false, items: [])
         }
+    }
 
-        guard
-            let data = try? Data(contentsOf: safariURL),
-            let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-            let root = plist as? [String: Any]
-        else {
+    private func loadSafariArchiveImportItems(from archiveURL: URL) -> ImportItems {
+        guard let archive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: nil) else {
             return ImportItems(sourceWasAvailable: true, items: [])
         }
 
-        let children = root[Key.children.capitalized] as? [[String: Any]]
-            ?? root["Children"] as? [[String: Any]]
-            ?? []
-        let items = children.compactMap(importItem(fromSafariNode:))
-        return ImportItems(sourceWasAvailable: true, items: items)
+        for entry in archive where entry.type == .file {
+            guard URL(fileURLWithPath: entry.path).pathExtension.caseInsensitiveCompare("html") == .orderedSame,
+                  UInt64(entry.uncompressedSize) <= UInt64(Self.maximumSafariBookmarksFileSize)
+            else {
+                continue
+            }
+
+            var data = Data()
+            data.reserveCapacity(Int(entry.uncompressedSize))
+            guard (try? archive.extract(entry) { data.append($0) }) != nil else {
+                continue
+            }
+
+            let items = safariImportItems(fromHTMLData: data)
+            if !items.isEmpty {
+                return ImportItems(sourceWasAvailable: true, items: items)
+            }
+        }
+
+        return ImportItems(sourceWasAvailable: true, items: [])
     }
 
-    private func importItem(fromSafariNode node: [String: Any]) -> BrowserBookmarkImportItem? {
-        let type = node["WebBookmarkType"] as? String
-        if type == "WebBookmarkTypeLeaf" {
-            guard let urlString = node["URLString"] as? String else {
+    private func safariBookmarksHTMLData(from sourceURL: URL) -> Data? {
+        if
+            let fileSize = try? sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+            fileSize > Self.maximumSafariBookmarksFileSize
+        {
+            return nil
+        }
+
+        return try? Data(contentsOf: sourceURL, options: .mappedIfSafe)
+    }
+
+    private func safariImportItems(fromHTMLData data: Data) -> [BrowserBookmarkImportItem] {
+        guard data.count <= Self.maximumSafariBookmarksFileSize,
+              let document = try? XMLDocument(
+                  data: data,
+                  options: [.documentTidyHTML, .nodeLoadExternalEntitiesNever]
+              ),
+              let rootElement = document.rootElement(),
+              let rootList = firstSafariElement(named: "dl", in: rootElement)
+        else {
+            return []
+        }
+
+        return safariImportItems(in: rootList)
+    }
+
+    private func safariImportItems(in listElement: XMLElement) -> [BrowserBookmarkImportItem] {
+        (listElement.children ?? []).compactMap { node in
+            guard let element = node as? XMLElement else {
                 return nil
             }
 
-            let uriDictionary = node["URIDictionary"] as? [String: Any]
-            let title = uriDictionary?["title"] as? String
-                ?? node["Title"] as? String
-                ?? urlString
-            return BrowserBookmarkImportItem(title: title, urlString: urlString, children: [])
+            if let linkElement = directSafariChild(named: "a", in: element),
+               let urlString = linkElement.attribute(forName: "href")?.stringValue,
+               !urlString.isEmpty
+            {
+                let title = linkElement.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let displayTitle = title.flatMap { $0.isEmpty ? nil : $0 } ?? urlString
+                return BrowserBookmarkImportItem(
+                    title: displayTitle,
+                    urlString: urlString,
+                    children: []
+                )
+            }
+
+            guard
+                let headingElement = directSafariChild(named: "h3", in: element),
+                let childListElement = directSafariChild(named: "dl", in: element)
+            else {
+                return nil
+            }
+
+            let children = safariImportItems(in: childListElement)
+            guard !children.isEmpty else {
+                return nil
+            }
+
+            let title = safariFolderTitle(from: headingElement)
+            return BrowserBookmarkImportItem(title: title, urlString: nil, children: children)
+        }
+    }
+
+    private func safariFolderTitle(from headingElement: XMLElement) -> String {
+        let title = headingElement.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !title.isEmpty {
+            return title
         }
 
-        guard type == "WebBookmarkTypeList" || node["Children"] != nil else {
-            return nil
+        if headingElement.attribute(forName: "id")?.stringValue == "com.apple.ReadingList" {
+            return "Reading List"
         }
 
-        let children = (node["Children"] as? [[String: Any]])?
-            .compactMap(importItem(fromSafariNode:)) ?? []
-        guard !children.isEmpty else {
-            return nil
+        return BrowserStrings.bookmarksUntitledFolder
+    }
+
+    private func firstSafariElement(named name: String, in node: XMLNode) -> XMLElement? {
+        if let element = node as? XMLElement, safariElementName(element) == name {
+            return element
         }
 
-        let title = node["Title"] as? String
-            ?? node["WebBookmarkUUID"] as? String
-            ?? BrowserStrings.bookmarksUntitledFolder
-        return BrowserBookmarkImportItem(title: title, urlString: nil, children: children)
+        for child in node.children ?? [] {
+            if let match = firstSafariElement(named: name, in: child) {
+                return match
+            }
+        }
+
+        return nil
+    }
+
+    private func directSafariChild(named name: String, in element: XMLElement) -> XMLElement? {
+        (element.children ?? []).compactMap { $0 as? XMLElement }.first {
+            safariElementName($0) == name
+        }
+    }
+
+    private func safariElementName(_ element: XMLElement) -> String {
+        (element.localName ?? element.name ?? "").lowercased()
     }
 
     private func updateChecksums(in document: inout BookmarkDocument) {

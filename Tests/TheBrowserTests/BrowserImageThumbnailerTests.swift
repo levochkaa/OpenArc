@@ -23,6 +23,74 @@ import Testing
     #expect(resizedImage.isTemplate)
 }
 
+@Test
+@MainActor func imageThumbnailerNormalizesWebArtworkForMacOSDock() throws {
+    let sourceImage = makeTestImage(width: 512, height: 512)
+    let icon = try #require(BrowserImageThumbnailer.macOSApplicationIcon(from: sourceImage))
+    let cgImage = try #require(icon.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    let bitmap = NSBitmapImageRep(cgImage: cgImage)
+    let center = bitmap.pixelsWide / 2
+    let transparentSample = Int(Double(bitmap.pixelsWide) * 0.05)
+    let artworkSample = Int(Double(bitmap.pixelsWide) * 0.12)
+
+    #expect(icon.size == CGSize(
+        width: BrowserImageThumbnailer.macOSApplicationIconCanvasSize,
+        height: BrowserImageThumbnailer.macOSApplicationIconCanvasSize
+    ))
+    #expect(bitmap.colorAt(x: transparentSample, y: center)?.alphaComponent == 0)
+    #expect((bitmap.colorAt(x: artworkSample, y: center)?.alphaComponent ?? 0) > 0)
+    #expect((bitmap.colorAt(x: artworkSample, y: artworkSample)?.alphaComponent ?? 0) < 0.35)
+    #expect((bitmap.colorAt(x: center, y: center)?.alphaComponent ?? 0) > 0)
+}
+
+@Test
+@MainActor func webAppBundleIconEncoderProducesReadableICNS() throws {
+    let fileManager = FileManager.default
+    let iconURL = fileManager.temporaryDirectory
+        .appendingPathComponent("BrowserWebAppIcon-\(UUID().uuidString).icns", isDirectory: false)
+    defer { try? fileManager.removeItem(at: iconURL) }
+
+    let sourceImage = makeTestImage(width: 512, height: 512)
+    let icnsData = try #require(BrowserWebAppBundleIconEncoder.icnsData(from: sourceImage))
+    try icnsData.write(to: iconURL, options: .atomic)
+
+    #expect(String(decoding: icnsData.prefix(4), as: UTF8.self) == "icns")
+    #expect(icnsData.count > 32)
+    let decodedIcon = try #require(NSImage(contentsOf: iconURL))
+    let decodedCGImage = try #require(decodedIcon.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    #expect(decodedCGImage.width == 512)
+    #expect(decodedCGImage.height == 512)
+}
+
+@Test
+@MainActor func webAppBundleIconEncoderPreservesNativeManifestIconScale() throws {
+    let sourceData = try #require(makeSharpTestImageData())
+    let sourceIcon = try #require(NSImage(data: sourceData))
+    let sourceCGImage = try #require(sourceIcon.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    let sourceBitmap = NSBitmapImageRep(cgImage: sourceCGImage)
+    let icnsData = try #require(BrowserWebAppBundleIconEncoder.icnsData(fromEncodedImageData: sourceData))
+    let decodedIcon = try #require(NSImage(data: icnsData))
+    let decodedCGImage = try #require(decodedIcon.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    let bitmap = NSBitmapImageRep(cgImage: decodedCGImage)
+    let markerY = try #require((0..<sourceBitmap.pixelsHigh).first { y in
+        guard let color = sourceBitmap.colorAt(x: 300, y: y)?.usingColorSpace(.deviceRGB) else {
+            return false
+        }
+        return color.greenComponent > 0.95 && color.redComponent < 0.05 && color.blueComponent < 0.05
+    })
+    let stripeColor = try #require(bitmap.colorAt(x: 380, y: 256)?.usingColorSpace(.deviceRGB))
+    let neighborColor = try #require(bitmap.colorAt(x: 379, y: 256)?.usingColorSpace(.deviceRGB))
+    let markerColor = try #require(bitmap.colorAt(x: 300, y: markerY)?.usingColorSpace(.deviceRGB))
+
+    #expect(stripeColor.redComponent > 0.95)
+    #expect(stripeColor.blueComponent < 0.05)
+    #expect(neighborColor.redComponent < 0.05)
+    #expect(neighborColor.blueComponent > 0.95)
+    #expect(markerColor.greenComponent > 0.95)
+    #expect(markerColor.redComponent < 0.05)
+    #expect(markerColor.blueComponent < 0.05)
+}
+
 @MainActor private func makeTestImage(width: CGFloat, height: CGFloat) -> NSImage {
     let image = NSImage(size: NSSize(width: width, height: height))
     image.lockFocus()
@@ -30,4 +98,38 @@ import Testing
     NSRect(x: 0, y: 0, width: width, height: height).fill()
     image.unlockFocus()
     return image
+}
+
+@MainActor private func makeSharpTestImageData() -> Data? {
+    let size = Int(BrowserImageThumbnailer.macOSApplicationIconCanvasSize)
+    guard
+        let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: size,
+            pixelsHigh: size,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ),
+        let context = NSGraphicsContext(bitmapImageRep: bitmap)
+    else {
+        return nil
+    }
+
+    bitmap.size = CGSize(width: size, height: size)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    context.shouldAntialias = false
+    NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: size, height: size).fill()
+    NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+    NSRect(x: 380, y: 0, width: 1, height: size).fill()
+    NSColor(deviceRed: 0, green: 1, blue: 0, alpha: 1).setFill()
+    NSRect(x: 260, y: 400, width: 80, height: 20).fill()
+    NSGraphicsContext.restoreGraphicsState()
+    return bitmap.representation(using: .png, properties: [:])
 }

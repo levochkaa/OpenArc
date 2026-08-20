@@ -113,6 +113,22 @@ import Foundation
         controller.printActiveTab()
     }
 
+    func castActiveTab() {
+        controller.castActiveTab()
+    }
+
+    func requestActiveTabWebAppManifest() async -> String? {
+        await withCheckedContinuation { continuation in
+            controller.requestActiveTabWebAppManifest { payloadJSON in
+                continuation.resume(returning: payloadJSON)
+            }
+        }
+    }
+
+    func setActiveTabZoomLevel(_ zoomLevel: Double) {
+        controller.setActiveTabZoomLevel(zoomLevel)
+    }
+
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool) {
         controller.findInActiveTab(
             withText: text,
