@@ -9,8 +9,8 @@
 
 ## Build Verification
 
-- Keep a separate Codex action named `Build` that runs `./script/build.sh`.
-- Keep a separate Codex action named `Test` that runs `./script/test.sh`.
+- Keep a separate Codex action named `Build` that runs `./build.sh build`.
+- Keep a separate Codex action named `Test` that runs `./build.sh test`.
 - Use Xcode 26.6 for build and test verification. The repo scripts export `DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer` by default.
 - Before running the `Build` action, run SwiftFormat on every `.swift` file changed in the current task, using the repository `.swiftformat` configuration.
 - When changing CEF, Chromium, or `Chromium/chromium_src` override files, rebuild and export both `Debug` and `Release` CEF artifacts before running the `Build` action. The app build may stage `Release` CEF even for a `Debug` app build.
@@ -18,7 +18,7 @@
 - Do not clobber Chromium `out/` build directories during CEF checkout/resume/package flows unless the user explicitly asks for a clean rebuild. Preserve existing CEF build cache by default; use `THEBROWSER_CEF_CLOBBER_OUT=1` only for intentional full rebuilds.
 - Before finishing any task, run the `Build` action to verify the project compiles successfully in the console only. Do not launch `TheBrowser` or `TheBrowser Helper`, and do not check whether their processes started.
 - If the `Build` action emits warnings, fix those warnings before treating the task as complete.
-- After a successful `Build` action and before finishing any task, run the `Test` action to verify the test suite passes in the console. Run tests through `./script/test.sh`, the same script used by the Codex `Test` action, and not by calling `xcodebuild test` directly.
+- After a successful `Build` action and before finishing any task, run the `Test` action to verify the test suite passes in the console. Run tests through `./build.sh test`, the same root script used by the Codex `Test` action, and not by calling `xcodebuild test` directly.
 
 ## Open Source Credits
 

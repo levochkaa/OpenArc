@@ -48,10 +48,14 @@ import Foundation
 
         let browserSupportPath = applicationSupportPath
             .appendingPathComponent("TheBrowser", isDirectory: true)
+        let runtimeSuffix = webAppConfiguration?.isolatedRuntimeSuffix
+            ?? BrowserRuntimeIdentity.suffix(arguments: ProcessInfo.processInfo.arguments)
         let sessionStoragePath = browserSupportPath
-            .appendingPathComponent("Session", isDirectory: true)
-        let rootCacheDirectory = (webAppConfiguration?.isolatedRuntimeSuffix ?? runtimeSuffix())
-            .map { "CEF-\($0)" } ?? "CEF"
+            .appendingPathComponent(
+                BrowserRuntimeIdentity.sessionDirectoryName(suffix: runtimeSuffix),
+                isDirectory: true
+            )
+        let rootCacheDirectory = BrowserRuntimeIdentity.rootCacheDirectoryName(suffix: runtimeSuffix)
         let rootCachePath = browserSupportPath
             .appendingPathComponent(rootCacheDirectory, isDirectory: true)
         let cachePath = rootCachePath
@@ -77,53 +81,5 @@ import Foundation
             cachePath: cachePath.path,
             sessionStoragePath: sessionStoragePath.path
         )
-    }
-
-    // MARK: Private
-
-    private static let runtimeSuffixArgumentPrefix = "--runtime-suffix="
-
-    private static func runtimeSuffix() -> String? {
-        for argument in ProcessInfo.processInfo.arguments {
-            guard argument.hasPrefix(runtimeSuffixArgumentPrefix) else {
-                continue
-            }
-
-            let rawSuffix = String(argument.dropFirst(runtimeSuffixArgumentPrefix.count))
-            return sanitizeRuntimeSuffix(rawSuffix)
-        }
-
-        return nil
-    }
-
-    private static func sanitizeRuntimeSuffix(_ rawSuffix: String) -> String? {
-        let allowedCharacters =
-            CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
-        let trimmedRawSuffix = rawSuffix.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedRawSuffix.isEmpty else {
-            return nil
-        }
-
-        var sanitizedSuffix = ""
-        sanitizedSuffix.reserveCapacity(trimmedRawSuffix.count)
-        var lastCharacterWasSeparator = false
-
-        for scalar in trimmedRawSuffix.unicodeScalars {
-            if allowedCharacters.contains(scalar) {
-                sanitizedSuffix.append(Character(scalar))
-                lastCharacterWasSeparator = false
-                continue
-            }
-
-            guard !lastCharacterWasSeparator else {
-                continue
-            }
-
-            sanitizedSuffix.append("-")
-            lastCharacterWasSeparator = true
-        }
-
-        sanitizedSuffix = sanitizedSuffix.trimmingCharacters(in: CharacterSet(charactersIn: "-."))
-        return sanitizedSuffix.isEmpty ? nil : sanitizedSuffix
     }
 }

@@ -3,19 +3,24 @@ version = 1
 name = "TheBrowser"
 
 [setup]
-script = ""
+script = "./build.sh prepare-worktree"
+
+[[actions]]
+name = "Run (Skip Build)"
+icon = "run"
+command = "./build.sh run --skip-build"
 
 [[actions]]
 name = "Run"
 icon = "run"
-command = "./script/run.sh"
+command = "./build.sh run"
 
 [[actions]]
 name = "Build"
 icon = "tool"
-command = "./script/build.sh"
+command = "./build.sh build"
 
 [[actions]]
 name = "Test"
 icon = "test"
-command = "./script/test.sh"
+command = "./build.sh test"

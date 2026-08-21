@@ -70,7 +70,7 @@ fi
 ensure_sparkle_tools
 
 if [[ "$build_app" == true ]]; then
-  CONFIGURATION=Release "$ROOT_DIR/script/build.sh"
+  CONFIGURATION=Release "$ROOT_DIR/build.sh" build
 fi
 
 if [[ -z "$app_bundle" ]]; then
