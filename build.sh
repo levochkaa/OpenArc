@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$ROOT_DIR/script/sparkle_tools.sh"
 PROJECT_NAME="TheBrowser"
 SCHEME="TheBrowser"
 APP_NAME="TheBrowser"
@@ -38,7 +39,7 @@ Actions:
   logs, run-logs        Run this worktree and stream its main-process logs.
   telemetry             Run this worktree and stream its main-process telemetry.
   verify                Run this worktree and verify that its process starts.
-  prepare-worktree      Link Chromium source/out and CEF exports from the main checkout.
+  prepare-worktree      Link reusable Chromium, CEF, and Sparkle artifacts from the main checkout.
   status                Show this worktree's build, runtime, and Chromium artifact state.
 
 Options:
@@ -55,9 +56,9 @@ Options:
   -h, --help            Show this help.
 
 Worktree behavior:
-  Build and test automatically run prepare-worktree when Chromium artifacts are missing.
+  Build and test automatically prepare reusable worktree artifacts when needed.
   Codex worktree setup also runs prepare-worktree. Linked worktrees reuse the primary
-  checkout's Chromium source/out and CEF export while keeping all app build output local.
+  checkout's Chromium source/out, CEF export, and Sparkle tools while keeping app output local.
   Each worktree uses its own .build directory, runtime cache, session storage, and scoped
   process shutdown, so running one checkout does not stop another checkout's browser.
 
@@ -269,29 +270,38 @@ prepare_worktree() {
 
   if [[ "$refresh_chromium_artifacts" != "1" ]] && chromium_artifacts_ready "$ROOT_DIR"; then
     echo "Chromium/CEF artifacts are ready in $ROOT_DIR"
-    return
+  else
+    if [[ "$source_root" == "$ROOT_DIR" ]]; then
+      echo "error: Chromium/CEF artifacts are incomplete in the primary checkout: $ROOT_DIR" >&2
+      echo "Build and export both configurations with ./script/chromium_source.sh package Debug Release." >&2
+      exit 1
+    fi
+
+    if ! chromium_artifacts_ready "$source_root"; then
+      echo "error: Chromium/CEF artifact source is incomplete: $source_root" >&2
+      exit 1
+    fi
+
+    link_chromium_directory "$source_root" "ThirdParty/cef/source"
+    link_chromium_directory "$source_root" "ThirdParty/cef/export"
+
+    if ! chromium_artifacts_ready "$ROOT_DIR"; then
+      echo "error: linked Chromium/CEF artifacts failed validation" >&2
+      exit 1
+    fi
+
+    echo "Chromium/CEF worktree links prepared successfully"
   fi
 
-  if [[ "$source_root" == "$ROOT_DIR" ]]; then
-    echo "error: Chromium/CEF artifacts are incomplete in the primary checkout: $ROOT_DIR" >&2
-    echo "Build and export both configurations with ./script/chromium_source.sh package Debug Release." >&2
-    exit 1
+  if sparkle_tools_ready && [[ "$refresh_chromium_artifacts" != "1" ]]; then
+    echo "Sparkle tools are ready in $SPARKLE_TOOLS_DIR"
+  elif prepare_sparkle_tools_from_primary "$refresh_chromium_artifacts"; then
+    :
+  elif sparkle_tools_ready; then
+    echo "Sparkle tools are ready in $SPARKLE_TOOLS_DIR"
+  else
+    echo "Sparkle tools are not cached in the primary checkout; Build will download them"
   fi
-
-  if ! chromium_artifacts_ready "$source_root"; then
-    echo "error: Chromium/CEF artifact source is incomplete: $source_root" >&2
-    exit 1
-  fi
-
-  link_chromium_directory "$source_root" "ThirdParty/cef/source"
-  link_chromium_directory "$source_root" "ThirdParty/cef/export"
-
-  if ! chromium_artifacts_ready "$ROOT_DIR"; then
-    echo "error: linked Chromium/CEF artifacts failed validation" >&2
-    exit 1
-  fi
-
-  echo "Chromium/CEF worktree links prepared successfully"
 }
 
 default_runtime_suffix() {
@@ -352,7 +362,6 @@ resolve_swift_packages() {
 prepare_build_environment() {
   prepare_worktree
   source "$ROOT_DIR/script/xcode_env.sh"
-  source "$ROOT_DIR/script/sparkle_tools.sh"
   run_with_xcode_output ensure_sparkle_tools
   run_with_xcode_output "$ROOT_DIR/script/generate_xcodeproj.sh"
   resolve_swift_packages
@@ -555,6 +564,15 @@ show_status() {
     echo "Chromium/CEF artifacts: ready"
   else
     echo "Chromium/CEF artifacts: missing or incomplete"
+  fi
+  if sparkle_tools_ready; then
+    if [[ -L "$SPARKLE_TOOLS_DIR" ]]; then
+      echo "Sparkle tools: ready (shared from $(readlink "$SPARKLE_TOOLS_DIR"))"
+    else
+      echo "Sparkle tools: ready (local)"
+    fi
+  else
+    echo "Sparkle tools: missing or incomplete"
   fi
   echo "Configuration: $CONFIGURATION"
   echo "DerivedData: $DERIVED_DATA_PATH"

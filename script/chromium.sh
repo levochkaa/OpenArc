@@ -4,6 +4,7 @@ set -euo pipefail
 COMMAND="${1:-help}"
 CONFIGURATION="${2:-Debug}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/script/xcode_env.sh"
 THIRD_PARTY_DIR="$ROOT_DIR/ThirdParty/cef"
 WRAPPER_BUILD_DIR="$ROOT_DIR/.build/cef-wrapper"
 LOCAL_CHROMIUM_FORK_CEF_ROOT="$THIRD_PARTY_DIR/export"
@@ -123,7 +124,8 @@ build_wrapper_library() {
   cmake \
     --build "$WRAPPER_BUILD_DIR" \
     --config "$CONFIGURATION" \
-    --target libcef_dll_wrapper
+    --target libcef_dll_wrapper \
+    -- -quiet OTHER_LIBTOOLFLAGS=-no_warning_for_no_symbols
 
   printf '%s\n' "$WRAPPER_LIB"
 }
