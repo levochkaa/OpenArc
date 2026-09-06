@@ -1,8 +1,8 @@
 ## Code Preferences
 
 - Target `Swift 6` using the Xcode 26.6 Swift 6.3 toolchain for Swift code and project settings unless a dependency or platform constraint in this repo explicitly requires otherwise.
-- Write new macOS UI in `AppKit` and iOS/iPadOS UI in `UIKit`, using Swift. Migrate existing SwiftUI surfaces incrementally while preserving behavior.
-- Keep business state in models/controllers and reuse the shared chrome design tokens; SwiftUI adapters are temporary migration boundaries.
+- Write macOS UI in `AppKit` and iOS/iPadOS UI in `UIKit`, using Swift.
+- Keep business state in models/controllers. Reuse `BrowserChromeColors`, `BrowserChromeLayout`, and the shared AppKit controls in `NativeUI`; see `docs/appkit-ui.md` for the UI architecture and verification workflow.
 - Use `Objective-C` / `Objective-C++` only where interaction with the browser engine, CEF, or low-level platform APIs requires it.
 - When resizing or thumbnailing raster images, use `BrowserImageThumbnailer` instead of ad hoc `NSImage.draw`/`NSImage(data:)` resizing. Prefer its ImageIO/`CGImageSource` data or URL thumbnail path for encoded images.
 - Always write tests with the new `Testing` framework, not `XCTest`, and migrate existing tests when modifying them.

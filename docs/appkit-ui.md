@@ -1,0 +1,51 @@
+# AppKit UI
+
+The macOS application UI uses AppKit and Swift. `BrowserRootView` owns the normal and incognito window hierarchy; `BrowserWebAppRootView` owns installed web-app windows. Neither root uses SwiftUI or `NSHostingView`.
+
+## State and layout
+
+- `BrowserChromeModel` and its existing services remain the source of browser state and actions. Views observe model changes on the main run loop and retain native controls across updates.
+- `BrowserWindowChromeLayout` calculates window geometry. A pinned sidebar reserves viewport width; a hover sidebar overlays the page. Toolbars reserve height, while extension side panels reserve only page width.
+- `BrowserSidebarChromeView` owns the sidebar header, list, footer, and resize handle. `BrowserNativeSidebarState` owns selection, rename, drag/drop, paging, and the two-step Clear interaction. The existing drag/drop proposal types still determine moves.
+- `BrowserContentNSView` and `BrowserViewportClipView` embed the existing CEF host. The engine, navigation, persistence, and content lifecycle remain outside the UI layer.
+- The root preserves the hover sidebar during fullscreen transitions and resumes pointer dismissal after actual pointer movement. Geometry animations ignore unrelated model notifications.
+
+## Shared appearance and controls
+
+Use `BrowserChromeColors` for adaptive colors and `BrowserChromeLayout` for dimensions. Reuse the native controls in `Sources/Browser/NativeUI`:
+
+- `BrowserNativeSurface`, `BrowserNativeMaterialPanel`, and `BrowserChromeBackgroundNSView` provide fills, borders, clipping, and blur.
+- `BrowserNativeChromeButton` and `BrowserNativePressableView` provide press, hover, keyboard/accessibility, and tooltip behavior.
+- `BrowserNativeTooltipPresenter` shares the delayed tooltip coordinator and placement policy across controls.
+- `BrowserNativeResizeHandle` shares delayed hover, cursor cleanup, haptics, and default-width snapping.
+- `BrowserFaviconNSView` uses the existing favicon cache. Raster resizing continues through `BrowserImageThumbnailer`.
+
+Native settings remain separate from Chromium's `tb://settings` page. The Settings package hosts AppKit pane controllers. About, downloads, extension popovers, find, command input, bookmarks, and the tab switcher are native views/controllers.
+
+## Verification
+
+The Codex **Build** and **Test** actions remain separate, console-only actions:
+
+```sh
+./build.sh build
+./build.sh test
+```
+
+Both scripts select Xcode 26.6. Format changed Swift files with the repository `.swiftformat` before Build. Unit tests use Swift Testing and cover models, native text editing, IME protection, selection, drag proposals, menus, clipping, and window geometry.
+
+Live checks are explicit, opt-in actions requiring Accessibility permission. Launch an isolated browsing runtime before running them:
+
+```sh
+./build.sh run --skip-build --runtime-suffix appkit-ui-verification
+export DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer
+xcrun swift -swift-version 6 script/verify_appkit_sidebar_ui.swift .build/xcode/Build/Products/Debug/TheBrowser.app
+xcrun swift -swift-version 6 script/verify_appkit_site_ui.swift .build/xcode/Build/Products/Debug/TheBrowser.app
+xcrun swift -swift-version 6 script/verify_appkit_bookmarks_ui.swift .build/xcode/Build/Products/Debug/TheBrowser.app
+xcrun swift -swift-version 6 script/verify_appkit_window_ui.swift .build/xcode/Build/Products/Debug/TheBrowser.app
+xcrun swift -swift-version 6 script/verify_appkit_ui.swift .build/xcode/Build/Products/Debug/TheBrowser.app
+xcrun swift -swift-version 6 script/verify_appkit_webapp_ui.swift .build/xcode/Build/Products/Debug/TheBrowser.app
+```
+
+Start window checks with a visible pinned sidebar and a normal, non-fullscreen window. The scripts use local fixtures and generated test titles. The runtime suffix isolates browser data; application preferences are shared, so the checks restore the preferences they toggle. The general UI script ends in Settings. The web-app check creates its own temporary bundle configuration, loopback HTTP server, and application instance and stops that instance afterward.
+
+These checks exercise actual AX controls and mouse/keyboard events: command suggestions, find, settings, rename commit/cancel/blur, reorder/pin/folders, Clear, spaces, downloads, site controls, bookmarks, CEF input, resize, hover reveal, fullscreen, incognito, and web-app toolbar behavior. They do not claim coverage of every third-party extension, authentication provider, network failure, or OS configuration.

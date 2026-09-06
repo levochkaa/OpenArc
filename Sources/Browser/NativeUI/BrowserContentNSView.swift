@@ -56,6 +56,8 @@ final class BrowserContentNSView: NSView {
             content.centerXAnchor.constraint(equalTo: loading.centerXAnchor),
             content.centerYAnchor.constraint(equalTo: loading.centerYAnchor),
         ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
         setAccessibilityIdentifier("browser.content")
     }
 

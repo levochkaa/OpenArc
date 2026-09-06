@@ -1,6 +1,5 @@
 import AppKit
 import QuartzCore
-import SwiftUI
 
 // MARK: - BrowserSidebarLocalMonitorCleanup
 
@@ -27,92 +26,6 @@ private final class BrowserSidebarLocalMonitorCleanup: @unchecked Sendable {
 
         NSEvent.removeMonitor(monitor)
         self.monitor = nil
-    }
-}
-
-// MARK: - BrowserContentEdgeDragRegions
-
-struct BrowserContentEdgeDragRegions: View {
-    let windowSize: CGSize
-    let blockedLeadingWidth: CGFloat
-    let leadingInset: CGFloat
-    let topInset: CGFloat
-    let trailingInset: CGFloat
-    let bottomInset: CGFloat
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            if topInset > 0 {
-                BrowserWindowDragRegion()
-                    .frame(width: max(windowSize.width - blockedLeadingWidth, 0), height: topInset)
-                    .offset(x: blockedLeadingWidth)
-            }
-
-            if bottomInset > 0 {
-                BrowserWindowDragRegion()
-                    .frame(width: max(windowSize.width - blockedLeadingWidth, 0), height: bottomInset)
-                    .offset(x: blockedLeadingWidth, y: max(windowSize.height - bottomInset, 0))
-            }
-
-            if trailingInset > 0 {
-                BrowserWindowDragRegion()
-                    .frame(width: trailingInset, height: windowSize.height)
-                    .offset(x: max(windowSize.width - trailingInset, 0))
-            }
-
-            if leadingInset > 0 {
-                BrowserWindowDragRegion()
-                    .frame(width: leadingInset, height: windowSize.height)
-                    .offset(x: blockedLeadingWidth)
-            }
-        }
-        .frame(width: windowSize.width, height: windowSize.height, alignment: .topLeading)
-    }
-}
-
-// MARK: - BrowserSidebarHoverRevealEdge
-
-struct BrowserSidebarHoverRevealEdge: View {
-    let onHoverChange: (Bool) -> Void
-
-    var body: some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .onHover(perform: onHoverChange)
-            .gesture(WindowDragGesture())
-            .allowsWindowActivationEvents(true)
-    }
-}
-
-// MARK: - BrowserSidebarHoverOverlayDismissReader
-
-struct BrowserSidebarHoverOverlayDismissReader: NSViewRepresentable {
-    let isPresented: Bool
-    let sidebarFrame: CGRect
-    let allowsPointerSyncDismissal: Bool
-    let onPointerMovement: () -> Void
-    let onDismiss: () -> Void
-
-    func makeNSView(context _: Context) -> BrowserSidebarHoverOverlayDismissNSView {
-        let view = BrowserSidebarHoverOverlayDismissNSView()
-        view.update(
-            isPresented: isPresented,
-            sidebarFrame: sidebarFrame,
-            allowsPointerSyncDismissal: allowsPointerSyncDismissal,
-            onPointerMovement: onPointerMovement,
-            onDismiss: onDismiss
-        )
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserSidebarHoverOverlayDismissNSView, context _: Context) {
-        nsView.update(
-            isPresented: isPresented,
-            sidebarFrame: sidebarFrame,
-            allowsPointerSyncDismissal: allowsPointerSyncDismissal,
-            onPointerMovement: onPointerMovement,
-            onDismiss: onDismiss
-        )
     }
 }
 
@@ -316,19 +229,5 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
 
     private func removeLocalMonitor() {
         localMonitorCleanup.remove()
-    }
-}
-
-// MARK: - BrowserWindowDragRegion
-
-struct BrowserWindowDragRegion: View {
-    var isEnabled = true
-
-    var body: some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .gesture(WindowDragGesture())
-            .allowsWindowActivationEvents(true)
-            .allowsHitTesting(isEnabled)
     }
 }

@@ -2,7 +2,6 @@ import AppKit
 import Combine
 import CoreServices
 import Settings
-import SwiftUI
 
 // MARK: - BrowserApplicationController
 
@@ -206,15 +205,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return
         }
 
-        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
-            activeChromeModel?.toggleSidebar()
-        }
+        activeChromeModel?.toggleSidebar()
     }
 
     public func toggleBookmarksBar(_: Any?) {
-        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
-            userPreferencesStore.bookmarksBarVisible.toggle()
-        }
+        userPreferencesStore.bookmarksBarVisible.toggle()
     }
 
     public func createNewTab(_: Any?) {
@@ -1527,9 +1522,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             preferences: preferences,
             actions: actions
         )
-        .ignoresSafeArea(.container, edges: .top)
-        let hostingView = NSHostingView(rootView: rootView)
-        hostingView.safeAreaRegions = []
+        let hostingView = rootView
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         let window = BrowserMainWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
@@ -1671,9 +1664,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         syncCoordinator?.setSnapshotApplier(chromeModel)
 
         let rootView = BrowserRootView(model: chromeModel, updateController: updateController)
-            .ignoresSafeArea(.container, edges: .top)
-        let hostingView = NSHostingView(rootView: rootView)
-        hostingView.safeAreaRegions = []
+        let hostingView = rootView
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let window = BrowserMainWindow(
@@ -1836,9 +1827,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
 
         let rootView = BrowserRootView(model: chromeModel, updateController: updateController)
-            .ignoresSafeArea(.container, edges: .top)
-        let hostingView = NSHostingView(rootView: rootView)
-        hostingView.safeAreaRegions = []
+        let hostingView = rootView
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let window = BrowserMainWindow(

@@ -1,21 +1,4 @@
 import AppKit
-import SwiftUI
-
-// MARK: - BrowserWindowControlsView
-
-struct BrowserWindowControlsView: NSViewRepresentable {
-    var showsInSidebar: Bool
-
-    func makeNSView(context _: Context) -> BrowserWindowControlsHostView {
-        let view = BrowserWindowControlsHostView()
-        view.showsInSidebar = showsInSidebar
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserWindowControlsHostView, context _: Context) {
-        nsView.showsInSidebar = showsInSidebar
-    }
-}
 
 // MARK: - BrowserWindowControlsHostView
 
@@ -296,6 +279,12 @@ final class BrowserWindowControlsHostView: NSView {
             let button = BrowserTrafficLightButton(buttonType: buttonType)
             button.target = self
             button.action = action(for: buttonType)
+            button.setAccessibilityElement(true)
+            button.setAccessibilityRole(.button)
+            button.setAccessibilityIdentifier("browser.window.control.\(buttonType.rawValue)")
+            if buttonType == .closeButton {
+                button.setAccessibilityLabel(BrowserStrings.webAppCloseWindowAction)
+            }
             addSubview(button)
             customButtons[buttonType] = button
         }

@@ -1,521 +1,247 @@
 import AppKit
+import Combine
 import QuartzCore
-import SwiftUI
 
-// MARK: - BrowserRootView
-
-struct BrowserRootView: View {
+final class BrowserRootView: NSView {
     // MARK: Lifecycle
 
     init(model: BrowserChromeModel, updateController: BrowserUpdateController) {
         self.model = model
-        _commandBarModel = ObservedObject(wrappedValue: model.commandBarModel)
-        _currentPageCommandBarModel = ObservedObject(wrappedValue: model.currentPageCommandBarModel)
-        _shortcutStore = ObservedObject(wrappedValue: model.shortcutStore)
-        _preferences = ObservedObject(wrappedValue: model.userPreferencesStore)
-        _bookmarksModel = ObservedObject(wrappedValue: model.bookmarksModel)
-        _updateController = ObservedObject(wrappedValue: updateController)
-        _showsSidebarWindowControls = State(initialValue: model.isSidebarVisible)
+        self.updateController = updateController
+        self.showsSidebarWindowControls = model.isSidebarVisible
+        self.content = BrowserContentNSView(hostView: model.hostView)
+        self.sidebar = BrowserSidebarChromeView(model: model, updateController: updateController)
+        self.toolbar = BrowserSiteControlsNSView(model: model, mode: .toolbar)
+        self.bookmarks = BrowserBookmarksBarNSView(model: model)
+        self.command = BrowserCommandBarNSView(model: model.commandBarModel)
+        self.currentPageCommand = BrowserCommandBarNSView(model: model.currentPageCommandBarModel)
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityIdentifier("browser.window.chrome")
+        for view in [
+            background,
+            content,
+            margins,
+            toolbar,
+            bookmarks,
+            sidebar,
+            extensionResize,
+            revealEdge,
+            find,
+            sidebarDismiss,
+            sidebarInteraction,
+            command,
+            currentPageCommand,
+            tabEvents,
+            tabSwitcher,
+            fullscreenReader,
+        ] {
+            addSubview(view)
+        }
+        find.bind(to: model)
+        sidebar.onToggleSidebar = { [weak model] in model?.toggleSidebar() }
+        sidebar.onURLFrameChange = { [weak self] frame in self?.updateURLFrame(frame) }
+        toolbar.onURLFrameChange = { [weak self] frame in self?.updateURLFrame(frame) }
+        revealEdge.onHoverChange = { [weak self] in self?.handleSidebarRevealEdgeHoverChange($0) }
+        fullscreenReader.onFullscreenStateChange = { [weak self] in self?.handleWindowFullscreenStateChange($0) }
+        margins.menuProvider = { [weak self] in
+            guard let self,!preferences.bookmarksBarVisible else { return nil }
+            let menu = BrowserNativeMenus.menu()
+            BrowserNativeMenus.add(
+                BrowserStrings.settingsShowBookmarksBar,
+                to: menu,
+                shortcut: shortcutStore.shortcut(for: .toggleBookmarksBar)
+            ) { [weak model] in model?
+                .userPreferencesStore
+                .bookmarksBarVisible
+                .toggle()
+            }
+            return menu
+        }
+        sidebarInteraction.eventMask = [.leftMouseUp, .rightMouseUp, .otherMouseUp]
+        sidebarInteraction.onInteraction = { [weak self] _, _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, sidebarLayoutWidth > 0, commandBarModel.isPresented,
+                      !currentPageCommandBarModel.isPresented else { return }
+                commandBarModel.dismiss()
+            }
+        }
+        tabEvents.onTab = { [weak model] reverse in model?.advanceTabSwitcher(reverse: reverse) ?? false }
+        tabEvents.onCommit = { [weak model] in model?.commitTabSwitcher() ?? false }
+        tabEvents.onCancel = { [weak model] in model?.cancelTabSwitcher() ?? false }
+        extensionResize
+            .getWidth = { [weak model] in
+                model?.extensionSidePanelWidth ?? BrowserChromeModel.defaultExtensionSidePanelWidth
+            }
+        extensionResize.setWidth = { [weak model] in model?.setExtensionSidePanelWidth($0) }
+        extensionResize.defaultWidth = BrowserChromeModel.defaultExtensionSidePanelWidth
+        extensionResize.direction = -1
+        extensionResize.setAccessibilityIdentifier("browser.extensions.resize")
+        for publisher in [
+            model.objectWillChange.eraseToAnyPublisher(),
+            commandBarModel.objectWillChange.eraseToAnyPublisher(),
+            currentPageCommandBarModel.objectWillChange.eraseToAnyPublisher(),
+            preferences.objectWillChange.eraseToAnyPublisher(),
+            shortcutStore.objectWillChange.eraseToAnyPublisher(),
+            model.bookmarksModel.objectWillChange.eraseToAnyPublisher(),
+            updateController.objectWillChange.eraseToAnyPublisher(),
+        ] {
+            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
+        }
+        refresh()
     }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
+    isolated deinit { revealTask?.cancel() }
 
     // MARK: Internal
 
-    @ObservedObject var model: BrowserChromeModel
+    override var isFlipped: Bool { true }
 
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
-                BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .allowsHitTesting(false)
-
-                BrowserScreenFrameReader { screenFrame in
-                    rootViewScreenFrame = screenFrame
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .allowsHitTesting(false)
-                .zIndex(-1)
-
-                BrowserContentView(
-                    hostView: model.hostView,
-                    isContextReady: model.isContextReady,
-                    hasSelectedTab: model.selectedTabID != nil,
-                    isSidebarVisible: model.isSidebarVisible,
-                    usesWindowContentInsets: usesWindowContentInsets
-                )
-                .equatable()
-                .frame(
-                    width: browserContentWidth(in: proxy.size),
-                    height: browserContentHeight(in: proxy.size),
-                    alignment: .leading
-                )
-                .offset(x: browserContentMinX, y: browserContentMinY)
-                .animation(
-                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                    value: model.isSidebarVisible
-                )
-                .animation(
-                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                    value: model.extensionSidePanel
-                )
-                .animation(
-                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                    value: showsBookmarksBar
-                )
-
-                if showsSiteToolbar {
-                    BrowserSiteToolbar(model: model, onURLButtonFrameChange: { currentURLRowWindowFrame = $0 })
-                        .frame(
-                            width: bookmarksBarWidth(in: proxy.size),
-                            height: BrowserChromeLayout.siteToolbarHeight,
-                            alignment: .leading
-                        )
-                        .offset(x: browserContentMinX, y: siteToolbarMinY)
-                        .zIndex(5)
-                }
-
-                if showsBookmarksBar {
-                    BrowserBookmarksBar(model: model)
-                        .frame(
-                            width: bookmarksBarWidth(in: proxy.size),
-                            height: BrowserChromeLayout.bookmarksBarHeight,
-                            alignment: .leading
-                        )
-                        .offset(x: browserContentMinX, y: bookmarksBarMinY)
-                        .zIndex(5)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .animation(
-                            .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                            value: model.isSidebarVisible
-                        )
-                        .animation(
-                            .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                            value: model.extensionSidePanel
-                        )
-                }
-
-                if let extensionSidePanel = model.extensionSidePanel,
-                   let extensionSidePanelHostView = model.extensionSidePanelHostView
-                {
-                    BrowserExtensionSidePanelView(
-                        sidePanel: extensionSidePanel,
-                        hostView: extensionSidePanelHostView,
-                        isContextReady: model.isContextReady,
-                        usesWindowContentInsets: usesWindowContentInsets,
-                        onClose: model.closeExtensionSidePanel
-                    )
-                    .frame(
-                        width: model.extensionSidePanelWidth,
-                        height: browserContentHeight(in: proxy.size),
-                        alignment: .leading
-                    )
-                    .offset(x: extensionSidePanelMinX(in: proxy.size), y: browserContentMinY)
-                    .zIndex(7)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: model.extensionSidePanel
-                    )
-
-                    BrowserExtensionSidePanelResizeHandle(model: model)
-                        .frame(
-                            width: extensionSidePanelResizeHandleWidth,
-                            height: browserContentHeight(in: proxy.size)
-                        )
-                        .offset(
-                            x: extensionSidePanelMinX(in: proxy.size) - extensionSidePanelResizeHandleWidth,
-                            y: browserContentMinY
-                        )
-                        .zIndex(8)
-                }
-
-                if usesInlineSidebarChrome {
-                    BrowserSidebarChromeView(
-                        model: model,
-                        updateController: updateController,
-                        snapshot: sidebarSnapshot,
-                        showsWindowControlsInSidebar: showsWindowControlsInSidebarChrome,
-                        isCommandBarPresented: commandBarModel.isPresented,
-                        isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
-                        showsCurrentURLRow: !preferences.siteURLToolbarEnabled,
-                        sidebarWidth: model.sidebarWidth,
-                        isOverlayPresentation: isSidebarOverlayPresentation,
-                        showsOverlayBorder: isSidebarOverlayPresentation,
-                        toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
-                        ownedBackgroundMode: isSidebarOverlayPresentation ? chromeBackgroundMode : nil,
-                        onToggleSidebar: toggleSidebarFromChrome,
-                        onURLRowFrameChange: { currentURLRowWindowFrame = $0 }
-                    )
-                    .frame(
-                        width: model.sidebarWidth,
-                        height: sidebarHeight(in: proxy.size),
-                        alignment: .leading
-                    )
-                    .clipped()
-                    .animation(nil, value: model.sidebarWidth)
-                    .offset(x: sidebarOffset, y: sidebarOffsetY)
-                    .allowsHitTesting(isSidebarPresented)
-                    .zIndex(6)
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: model.isSidebarVisible
-                    )
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: isSidebarHoverOverlayPresented
-                    )
-                }
-
-                BrowserContentEdgeDragRegions(
-                    windowSize: proxy.size,
-                    blockedLeadingWidth: contentEdgeDragBlockedLeadingWidth,
-                    leadingInset: browserContentLeadingInset,
-                    topInset: browserContentTopInset,
-                    trailingInset: browserContentTrailingInset,
-                    bottomInset: browserContentBottomInset
-                )
-                .animation(
-                    .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                    value: model.isSidebarVisible
-                )
-
-                if !preferences.bookmarksBarVisible {
-                    BrowserBookmarksBarChromeBackgroundContextMenuRegions(
-                        windowSize: proxy.size,
-                        blockedLeadingWidth: contentEdgeDragBlockedLeadingWidth,
-                        leadingInset: browserContentLeadingInset,
-                        topInset: browserContentTopInset,
-                        trailingInset: browserContentTrailingInset,
-                        bottomInset: browserContentBottomInset,
-                        toggleBookmarksBarShortcut: shortcutStore.shortcut(for: .toggleBookmarksBar),
-                        onToggleBookmarksBar: toggleBookmarksBarVisibility
-                    )
-                    .zIndex(4)
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: model.isSidebarVisible
-                    )
-                }
-
-                if !model.isSidebarVisible, !usesDetachedBrowserOverlays {
-                    BrowserSidebarHoverRevealEdge(onHoverChange: handleSidebarRevealEdgeHoverChange)
-                        .frame(width: BrowserChromeLayout.sidebarHoverRevealWidth, height: proxy.size.height)
-                        .allowsHitTesting(!isSidebarPresented)
-                        .zIndex(7)
-                }
-
-                if usesDetachedBrowserOverlays {
-                    BrowserDetachedOverlayWindowRepresentable(
-                        isVisible: isDetachedSidebarHoverRevealEdgeVisible,
-                        isInteractive: true,
-                        contentFrameLeadingInset: 0,
-                        content: BrowserSidebarHoverRevealEdge(onHoverChange: handleSidebarRevealEdgeHoverChange)
-                    )
-                    .frame(width: BrowserChromeLayout.sidebarHoverRevealWidth, height: proxy.size.height)
-                    .allowsHitTesting(false)
-                    .zIndex(11)
-
-                    BrowserDetachedOverlayWindowRepresentable(
-                        isVisible: true,
-                        isInteractive: isDetachedSidebarChromeInteractive,
-                        contentFrameLeadingInset: 0,
-                        content: BrowserDetachedSidebarHoverOverlayContent(
-                            model: model,
-                            updateController: updateController,
-                            snapshot: sidebarSnapshot,
-                            showsWindowControlsInSidebar: showsWindowControlsInSidebarChrome,
-                            isCommandBarPresented: commandBarModel.isPresented,
-                            isCurrentPageCommandBarPresented: currentPageCommandBarModel.isPresented,
-                            showsCurrentURLRow: !preferences.siteURLToolbarEnabled,
-                            isOverlayPresentation: isSidebarOverlayPresentation,
-                            showsOverlayBorder: isSidebarOverlayPresentation,
-                            roundsWindowLeadingCorners: usesWindowContentInsets,
-                            toggleSidebarTooltipTitle: toggleSidebarTooltipTitle,
-                            chromeBackgroundMode: chromeBackgroundMode,
-                            sidebarWidth: model.sidebarWidth,
-                            sidebarHeight: sidebarHeight(in: proxy.size),
-                            containerWidth: detachedSidebarChromeWidth,
-                            containerHeight: proxy.size.height,
-                            isPresented: isDetachedSidebarChromePresented,
-                            onToggleSidebar: toggleSidebarFromChrome,
-                            onURLRowFrameChange: { _ in }
-                        )
-                        .environmentObject(faviconCache)
-                    )
-                    .frame(
-                        width: detachedSidebarChromeWidth,
-                        height: proxy.size.height,
-                        alignment: .leading
-                    )
-                    .allowsHitTesting(false)
-                    .zIndex(12)
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: model.isSidebarVisible
-                    )
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: isSidebarHoverOverlayPresented
-                    )
-                }
-
-                BrowserSidebarHoverOverlayDismissReader(
-                    isPresented: isSidebarHoverOverlayActive,
-                    sidebarFrame: sidebarFrame(in: proxy.size),
-                    allowsPointerSyncDismissal: allowsSidebarHoverOverlayPointerSyncDismissal,
-                    onPointerMovement: handleSidebarHoverOverlayPointerMovement,
-                    onDismiss: dismissSidebarHoverOverlay
-                )
-                .frame(width: proxy.size.width, height: proxy.size.height)
-
-                if commandBarModel.isPresented, !currentPageCommandBarModel.isPresented, sidebarLayoutWidth > 0 {
-                    BrowserPassthroughInteractionObserver(
-                        eventMask: [.leftMouseUp, .rightMouseUp, .otherMouseUp]
-                    ) {
-                        DispatchQueue.main.async {
-                            guard commandBarModel.isPresented, !currentPageCommandBarModel.isPresented else {
-                                return
-                            }
-
-                            commandBarModel.dismiss()
-                        }
-                    }
-                    .frame(width: sidebarLayoutWidth, height: proxy.size.height)
-                    .zIndex(9)
-                }
-
-                if !usesDetachedBrowserOverlays {
-                    BrowserFindBarOverlay(
-                        model: model,
-                        blockedLeadingInset: browserContentMinX
-                    )
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .zIndex(8)
-
-                    BrowserCommandBarOverlay(
-                        model: commandBarModel,
-                        blockedLeadingInset: browserContentMinX,
-                        style: .standard,
-                        faviconCandidate: nil
-                    )
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .zIndex(10)
-
-                    BrowserCommandBarOverlay(
-                        model: currentPageCommandBarModel,
-                        blockedLeadingInset: browserContentMinX,
-                        style: .compact(
-                            anchorFrame: currentURLRowWindowFrame,
-                            sidebarWidth: model.sidebarWidth,
-                            matchesAnchorWidth: showsSiteToolbar
-                        ),
-                        faviconCandidate: currentPageCommandBarFaviconCandidate
-                    )
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .zIndex(10)
-                }
-
-                BrowserTabSwitcherEventObserver(
-                    isEnabled: model.selectedTabID != nil,
-                    onTab: { reverse in
-                        model.advanceTabSwitcher(reverse: reverse)
-                    },
-                    onCommit: {
-                        model.commitTabSwitcher()
-                    },
-                    onCancel: {
-                        model.cancelTabSwitcher()
-                    }
-                )
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .allowsHitTesting(false)
-                .zIndex(18)
-
-                if let tabSwitcherState = model.tabSwitcherState, tabSwitcherState.isVisible {
-                    BrowserTabSwitcherOverlay(state: tabSwitcherState)
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .allowsHitTesting(false)
-                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                        .animation(.easeOut(duration: 0.12), value: tabSwitcherState.isVisible)
-                        .zIndex(19)
-                }
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-            .animation(
-                .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                value: showsBookmarksBar
-            )
+    override func layout() {
+        super.layout()
+        let animate = animateNextLayout && window != nil && !isWindowFullscreenTransitioning
+        animateNextLayout = false
+        background.frame = bounds
+        margins.frame = bounds
+        margins.configure(
+            blockedLeadingWidth: contentEdgeDragBlockedLeadingWidth,
+            leading: browserContentLeadingInset,
+            top: browserContentTopInset,
+            trailing: browserContentTrailingInset,
+            bottom: browserContentBottomInset
+        )
+        for overlay in [find, command, currentPageCommand, tabEvents, tabSwitcher, sidebarDismiss] {
+            overlay.frame = bounds
         }
-        .background {
-            BrowserWindowFullscreenReader { fullscreenState in
-                handleWindowFullscreenStateChange(fullscreenState)
-            }
-            .allowsHitTesting(false)
+        sidebarInteraction.frame = NSRect(x: 0, y: 0, width: sidebarLayoutWidth, height: bounds.height)
+        revealEdge.frame = NSRect(x: 0, y: 0, width: BrowserChromeLayout.sidebarHoverRevealWidth, height: bounds.height)
+        sidebarDismiss.update(
+            isPresented: isSidebarHoverOverlayActive,
+            sidebarFrame: sidebarFrame(in: bounds.size),
+            allowsPointerSyncDismissal: allowsSidebarHoverOverlayPointerSyncDismissal,
+            onPointerMovement: { [weak self] in self?.handleSidebarHoverOverlayPointerMovement() },
+            onDismiss: { [weak self] in self?.dismissSidebarHoverOverlay() }
+        )
+        let geometry = windowGeometry
+        var targets: [(NSView, CGRect)] = [
+            (content, geometry.contentFrame), (sidebar, geometry.sidebarFrame),
+            (toolbar, geometry.toolbarFrame), (bookmarks, geometry.bookmarksFrame),
+            (extensionResize, geometry.extensionResizeFrame),
+        ]
+        if let extensionPanel {
+            targets.append((extensionPanel, geometry.extensionFrame))
         }
-        .clipped()
-        .environmentObject(faviconCache)
-        .overlay {
-            GeometryReader { proxy in
-                if usesDetachedBrowserOverlays {
-                    BrowserDetachedOverlayWindowRepresentable(
-                        isVisible: model.isFindBarPresented
-                            || commandBarModel.isPresented,
-                        isInteractive: true,
-                        contentFrameLeadingInset: browserContentMinX,
-                        content: BrowserDetachedControlsOverlayContent(
-                            model: model,
-                            commandBarModel: commandBarModel,
-                            blockedLeadingInset: 0
-                        )
-                        .environmentObject(faviconCache)
-                    )
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .allowsHitTesting(false)
-
-                    BrowserDetachedOverlayWindowRepresentable(
-                        isVisible: currentPageCommandBarModel.isPresented,
-                        isInteractive: true,
-                        contentFrameLeadingInset: 0,
-                        content: BrowserDetachedCurrentPageCommandBarOverlayContent(
-                            currentPageCommandBarModel: currentPageCommandBarModel,
-                            blockedLeadingInset: browserContentMinX,
-                            anchorFrame: currentURLRowWindowFrame,
-                            sidebarWidth: model.sidebarWidth,
-                            matchesAnchorWidth: showsSiteToolbar,
-                            faviconCandidate: currentPageCommandBarFaviconCandidate
-                        )
-                        .environmentObject(faviconCache)
-                    )
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .allowsHitTesting(false)
+        let targetFrames = Dictionary(uniqueKeysWithValues: targets.map { (ObjectIdentifier($0.0), $0.1) })
+        // Model notifications unrelated to geometry must not interrupt an in-flight transition.
+        if isAnimatingFrames, targetFrames == lastFrameTargets {
+            return
+        }
+        lastFrameTargets = targetFrames
+        animationGeneration += 1
+        let generation = animationGeneration
+        isAnimatingFrames = animate
+        func frames(_ animated: Bool) {
+            for (view, rect) in targets {
+                if animated {
+                    view.animator().frame = rect
+                } else {
+                    view.frame = rect
                 }
             }
         }
-        .onChange(of: model.isSidebarVisible) { _, isSidebarVisible in
-            if isSidebarVisible {
-                finishSidebarHoverOverlayPromotionIfNeeded()
+        if animate {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = BrowserChromeLayout.sidebarAnimationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                frames(true)
+            } completionHandler: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, generation == animationGeneration else { return }
+                    finishPresentationAnimation()
+                }
             }
-        }
-        .onAnimationCompleted(for: sidebarVisibilityAnimationValue) { completedValue in
-            if completedValue == 0 {
-                isSidebarHoverOverlayChromeVisible = false
-            }
-            showsSidebarWindowControls = model.isSidebarVisible || completedValue > 0
-        }
-        .task(id: sidebarRevealHoverTaskID) {
-            await presentSidebarHoverOverlayAfterDelayIfNeeded()
+        } else {
+            frames(false)
+            finishPresentationAnimation()
         }
     }
 
     // MARK: Private
 
-    @ObservedObject private var commandBarModel: BrowserCommandBarModel
-    @ObservedObject private var currentPageCommandBarModel: BrowserCommandBarModel
-    @ObservedObject private var shortcutStore: BrowserShortcutStore
-    @ObservedObject private var preferences: BrowserUserPreferencesStore
-    @ObservedObject private var bookmarksModel: BrowserBookmarksModel
-    @ObservedObject private var updateController: BrowserUpdateController
-    @ObservedObject private var faviconCache = BrowserFaviconCache.shared
-    @State private var showsSidebarWindowControls: Bool
-    @State private var isWindowFullscreen = false
-    @State private var isWindowFullscreenTransitioning = false
-    @State private var isSidebarHoverOverlayPresented = false
-    @State private var isSidebarHoverOverlayChromeVisible = false
-    @State private var preservesSidebarHoverOverlayDuringFullscreenTransition = false
-    @State private var isSidebarHoverOverlayPointerSyncSuspended = false
-    @State private var isSidebarRevealEdgeHovered = false
-    @State private var sidebarRevealHoverTaskID = 0
-    @State private var currentURLRowWindowFrame: CGRect?
-    @State private var rootViewScreenFrame: CGRect?
+    private let model: BrowserChromeModel
+    private let updateController: BrowserUpdateController
+    private let background = BrowserChromeBackgroundNSView()
+    private let content: BrowserContentNSView
+    private let sidebar: BrowserSidebarChromeView
+    private let toolbar: BrowserSiteControlsNSView
+    private let bookmarks: BrowserBookmarksBarNSView
+    private let margins = BrowserNativeWindowMargins()
+    private let revealEdge = BrowserNativeSidebarRevealEdge()
+    private let find = BrowserFindBarNSView()
+    private let command: BrowserCommandBarNSView
+    private let currentPageCommand: BrowserCommandBarNSView
+    private let sidebarDismiss = BrowserSidebarHoverOverlayDismissNSView()
+    private let sidebarInteraction = BrowserPassthroughInteractionNSView()
+    private let tabEvents = BrowserTabSwitcherEventNSView()
+    private let tabSwitcher = BrowserTabSwitcherNSView()
+    private let fullscreenReader = BrowserWindowFullscreenReaderNSView()
+    private let extensionResize = BrowserNativeResizeHandle()
+    private var extensionPanel: BrowserExtensionSidePanelNSView?
+    private var observations = Set<AnyCancellable>()
+    private var revealTask: Task<Void, Never>?
+    private var previousLayoutState: [Bool]?
+    private var animateNextLayout = false
+    private var animationGeneration = 0
+    private var isAnimatingFrames = false
+    private var lastFrameTargets = [ObjectIdentifier: CGRect]()
+    private var showsSidebarWindowControls: Bool
+    private var isWindowFullscreen = false
+    private var isWindowFullscreenTransitioning = false
+    private var isSidebarHoverOverlayPresented = false
+    private var isSidebarHoverOverlayChromeVisible = false
+    private var preservesSidebarHoverOverlayDuringFullscreenTransition = false
+    private var isSidebarHoverOverlayPointerSyncSuspended = false
+    private var isSidebarRevealEdgeHovered = false
+    private var currentURLRowWindowFrame: CGRect?
 
-    private var sidebarLayoutWidth: CGFloat {
-        model.isSidebarVisible ? model.sidebarWidth : 0
+    private var preferences: BrowserUserPreferencesStore { model.userPreferencesStore }
+    private var shortcutStore: BrowserShortcutStore { model.shortcutStore }
+    private var commandBarModel: BrowserCommandBarModel { model.commandBarModel }
+    private var currentPageCommandBarModel: BrowserCommandBarModel { model.currentPageCommandBarModel }
+    private var sidebarSnapshot: BrowserSidebarSnapshot { model.sidebarSnapshot }
+    private var windowGeometry: BrowserWindowChromeLayout {
+        .init(
+            windowSize: bounds.size,
+            sidebarWidth: model.sidebarWidth,
+            isSidebarVisible: model.isSidebarVisible,
+            isHoverSidebarPresented: isSidebarHoverOverlayPresented,
+            isOverlayChromeVisible: isSidebarHoverOverlayChromeVisible,
+            isFullscreen: isWindowFullscreen,
+            showsSiteToolbar: showsSiteToolbar,
+            showsBookmarksBar: showsBookmarksBar,
+            extensionSidePanelWidth: isExtensionSidePanelPresented ? model.extensionSidePanelWidth : nil
+        )
     }
 
-    private var extensionSidePanelLayoutWidth: CGFloat {
-        isExtensionSidePanelPresented ? model.extensionSidePanelWidth + extensionSidePanelContentGap : 0
-    }
-
-    private var extensionSidePanelResizeHandleWidth: CGFloat {
-        BrowserChromeLayout.sidebarResizeHitWidth
-    }
-
-    private var extensionSidePanelContentGap: CGFloat {
-        isExtensionSidePanelPresented ? BrowserChromeLayout.sidebarOuterPadding : 0
-    }
-
-    private var showsBookmarksBar: Bool {
-        model.isContextReady && preferences.bookmarksBarVisible
-    }
-
-    private var showsSiteToolbar: Bool {
-        model.isContextReady && preferences.siteURLToolbarEnabled
-    }
-
-    private var siteToolbarReservedHeight: CGFloat {
-        showsSiteToolbar
-            ? BrowserChromeLayout.siteToolbarHeight + BrowserChromeLayout.bookmarksBarContentGap
-            : 0
-    }
-
-    private var bookmarksBarReservedHeight: CGFloat {
-        showsBookmarksBar
-            ? BrowserChromeLayout.bookmarksBarHeight + BrowserChromeLayout.bookmarksBarContentGap
-            : 0
-    }
-
-    private var siteToolbarMinY: CGFloat {
-        browserChromeTopInset
-    }
-
-    private var bookmarksBarMinY: CGFloat {
-        browserChromeTopInset + siteToolbarReservedHeight
-    }
-
+    private var sidebarLayoutWidth: CGFloat { windowGeometry.sidebarReservedWidth }
+    private var showsBookmarksBar: Bool { model.isContextReady && preferences.bookmarksBarVisible }
+    private var showsSiteToolbar: Bool { model.isContextReady && preferences.siteURLToolbarEnabled }
     private var isExtensionSidePanelPresented: Bool {
         model.extensionSidePanel != nil && model.extensionSidePanelHostView != nil
     }
 
-    private var chromeBackgroundMode: BrowserChromeBackgroundMode {
-        preferences.blurredChromeBackgroundEnabled ? .blurred : .black
+    private var chromeBackgroundMode: BrowserChromeBackgroundMode { preferences.blurredChromeBackgroundEnabled
+        ? .blurred
+        : .black
     }
 
-    private var isSidebarPresented: Bool {
-        model.isSidebarVisible || isSidebarHoverOverlayPresented
-    }
-
-    private var isSidebarHoverOverlayActive: Bool {
-        !model.isSidebarVisible && isSidebarHoverOverlayPresented
-    }
-
-    private var usesInlineSidebarChrome: Bool {
-        !usesDetachedBrowserOverlays
-    }
-
-    private var isDetachedSidebarHoverRevealEdgeVisible: Bool {
-        usesDetachedBrowserOverlays && !model.isSidebarVisible && !isSidebarPresented
-    }
-
-    private var isDetachedSidebarChromeInteractive: Bool {
-        model.isSidebarVisible || isSidebarHoverOverlayPresented
-    }
-
-    private var isDetachedSidebarChromePresented: Bool {
-        model.isSidebarVisible || isSidebarHoverOverlayPresented
-    }
-
-    private var isSidebarOverlayPresentation: Bool {
-        !model.isSidebarVisible && isSidebarHoverOverlayChromeVisible
-    }
-
-    private var detachedSidebarChromeWidth: CGFloat {
-        if isSidebarOverlayPresentation {
-            return model.sidebarWidth + BrowserChromeLayout.sidebarHoverOverlayEdgeInset * 2
-        }
-
-        return model.sidebarWidth
-    }
-
+    private var isSidebarPresented: Bool { model.isSidebarVisible || isSidebarHoverOverlayPresented }
+    private var isSidebarHoverOverlayActive: Bool { !model.isSidebarVisible && isSidebarHoverOverlayPresented }
+    private var isSidebarOverlayPresentation: Bool { !model.isSidebarVisible && isSidebarHoverOverlayChromeVisible }
     private var showsWindowControlsInSidebarChrome: Bool {
         showsSidebarWindowControls || isSidebarHoverOverlayChromeVisible
     }
@@ -524,396 +250,209 @@ struct BrowserRootView: View {
         !isWindowFullscreenTransitioning && !isSidebarHoverOverlayPointerSyncSuspended
     }
 
-    private var contentEdgeDragBlockedLeadingWidth: CGFloat {
-        sidebarLayoutWidth
-    }
-
-    private var sidebarOffset: CGFloat {
-        if model.isSidebarVisible {
-            return 0
-        }
-
-        if isSidebarHoverOverlayPresented {
-            return BrowserChromeLayout.sidebarHoverOverlayEdgeInset
-        }
-
-        return -model.sidebarWidth
-    }
-
-    private var sidebarOffsetY: CGFloat {
-        isSidebarOverlayPresentation ? BrowserChromeLayout.sidebarHoverOverlayEdgeInset : 0
-    }
-
-    private var sidebarVisibilityAnimationValue: CGFloat {
-        isSidebarPresented ? 1 : 0
-    }
-
+    private var contentEdgeDragBlockedLeadingWidth: CGFloat { sidebarLayoutWidth }
     private var currentPageCommandBarFaviconCandidate: BrowserCommandBarFaviconCandidate? {
-        guard let selectedTab = sidebarSnapshot.selectedTab else {
-            return nil
-        }
-
-        return BrowserCommandBarFaviconCandidate(tab: selectedTab)
+        model.currentTab.map(BrowserCommandBarFaviconCandidate.init(tab:))
     }
 
-    private var toggleSidebarTooltipTitle: String {
-        model.isSidebarVisible ? BrowserStrings.sidebarHide : BrowserStrings.sidebarShow
+    private var usesWindowContentInsets: Bool { !isWindowFullscreen }
+    private var browserContentLeadingInset: CGFloat { windowGeometry.leadingInset }
+    private var browserContentTopInset: CGFloat { windowGeometry.edgeInset }
+    private var browserContentTrailingInset: CGFloat { windowGeometry.edgeInset }
+    private var browserContentBottomInset: CGFloat { windowGeometry.edgeInset }
+    private var browserContentMinX: CGFloat { windowGeometry.contentMinX }
+
+    private func sidebarFrame(in _: CGSize) -> CGRect { windowGeometry.sidebarFrame }
+
+    private func updateURLFrame(_ frame: CGRect?) {
+        guard frame != currentURLRowWindowFrame else { return }
+        currentURLRowWindowFrame = frame
+        configureCommandBars()
     }
 
-    private var usesWindowContentInsets: Bool {
-        !isWindowFullscreen
-    }
-
-    private var browserContentEdgeInset: CGFloat {
-        usesWindowContentInsets ? BrowserChromeLayout.browserContentEdgeInset : 0
-    }
-
-    private var browserContentLeadingInset: CGFloat {
-        model.isSidebarVisible ? 0 : browserContentEdgeInset
-    }
-
-    private var browserContentTopInset: CGFloat {
-        browserContentEdgeInset
-    }
-
-    private var browserChromeTopInset: CGFloat {
-        showsSiteToolbar || showsBookmarksBar
-            ? max(browserContentTopInset, BrowserChromeLayout.sidebarOuterPadding)
-            : browserContentTopInset
-    }
-
-    private var browserContentTrailingInset: CGFloat {
-        browserContentEdgeInset
-    }
-
-    private var browserContentBottomInset: CGFloat {
-        browserContentEdgeInset
-    }
-
-    private var browserContentMinX: CGFloat {
-        sidebarLayoutWidth + browserContentLeadingInset
-    }
-
-    private var browserContentMinY: CGFloat {
-        browserChromeTopInset
-            + siteToolbarReservedHeight
-            + bookmarksBarReservedHeight
-    }
-
-    private var usesDetachedBrowserOverlays: Bool {
-        false
-    }
-
-    private var sidebarSnapshot: BrowserSidebarSnapshot {
-        BrowserSidebarSnapshot(
-            spaces: model.spaces,
-            selectedSpaceID: model.selectedSpaceID,
-            activeSpace: model.activeSpace,
-            isActiveSpacePinnedSectionCollapsed: model.isActiveSpacePinnedSectionCollapsed,
-            allTabs: model.tabs,
-            pinnedTabFolders: model.pinnedTabFolders,
-            appTabs: model.appTabs,
-            spacePinnedTabs: model.spacePinnedTabs,
-            temporaryTabs: model.temporaryTabs,
-            selectedTabID: model.selectedTabID,
-            archivableTabIDs: Set((model.spacePinnedTabs + model.temporaryTabs).dropLast().map(\.id)),
-            canGoBack: model.canGoBack,
-            canGoForward: model.canGoForward,
-            canStopLoading: model.canStopLoading,
-            canReload: model.canReload
+    private func configureCommandBars() {
+        command.configure(blockedLeadingInset: browserContentMinX, style: .standard, faviconCandidate: nil)
+        currentPageCommand.configure(
+            blockedLeadingInset: browserContentMinX,
+            style: .compact(
+                anchorFrame: currentURLRowWindowFrame,
+                sidebarWidth: model.sidebarWidth,
+                matchesAnchorWidth: showsSiteToolbar
+            ),
+            faviconCandidate: currentPageCommandBarFaviconCandidate
         )
     }
 
-    private func browserContentWidth(in windowSize: CGSize) -> CGFloat {
-        max(windowSize.width - browserContentMinX - browserContentTrailingInset - extensionSidePanelLayoutWidth, 0)
-    }
-
-    private func bookmarksBarWidth(in windowSize: CGSize) -> CGFloat {
-        max(windowSize.width - browserContentMinX - browserContentTrailingInset, 0)
-    }
-
-    private func browserContentHeight(in windowSize: CGSize) -> CGFloat {
-        max(windowSize.height - browserContentMinY - browserContentBottomInset, 0)
-    }
-
-    private func sidebarHeight(in windowSize: CGSize) -> CGFloat {
-        guard isSidebarOverlayPresentation else {
-            return windowSize.height
+    private func refresh() {
+        let state = [
+            model.isSidebarVisible,
+            isSidebarHoverOverlayPresented,
+            showsBookmarksBar,
+            showsSiteToolbar,
+            isExtensionSidePanelPresented,
+        ]
+        if let previousLayoutState, previousLayoutState != state {
+            animateNextLayout = true
+            if model.isSidebarVisible,!previousLayoutState[0] {
+                finishSidebarHoverOverlayPromotionIfNeeded()
+            }
         }
-
-        return max(windowSize.height - BrowserChromeLayout.sidebarHoverOverlayEdgeInset * 2, 0)
-    }
-
-    private func sidebarFrame(in windowSize: CGSize) -> CGRect {
-        CGRect(
-            x: sidebarOffset,
-            y: sidebarOffsetY,
-            width: model.sidebarWidth,
-            height: sidebarHeight(in: windowSize)
+        previousLayoutState = [
+            model.isSidebarVisible,
+            isSidebarHoverOverlayPresented,
+            showsBookmarksBar,
+            showsSiteToolbar,
+            isExtensionSidePanelPresented,
+        ]
+        background.mode = chromeBackgroundMode
+        content.update(
+            hostView: model.hostView,
+            isContextReady: model.isContextReady,
+            hasSelectedTab: model.selectedTabID != nil,
+            isSidebarVisible: model.isSidebarVisible,
+            usesWindowContentInsets: usesWindowContentInsets
         )
+        sidebar.showsWindowControls = showsWindowControlsInSidebarChrome
+        sidebar.isOverlayPresentation = isSidebarOverlayPresentation
+        sidebar.refresh()
+        toolbar.isHidden = !showsSiteToolbar
+        toolbar.refresh()
+        bookmarks.isHidden = !showsBookmarksBar
+        bookmarks.refresh()
+        if let panel = model.extensionSidePanel, let host = model.extensionSidePanelHostView {
+            let view = extensionPanel ?? BrowserExtensionSidePanelNSView(hostView: host)
+            if extensionPanel == nil {
+                extensionPanel = view
+                addSubview(view, positioned: .above, relativeTo: sidebar)
+            }
+            view.onClose = { [weak model] in model?.closeExtensionSidePanel() }
+            view.update(
+                sidePanel: panel,
+                hostView: host,
+                isContextReady: model.isContextReady,
+                usesWindowContentInsets: usesWindowContentInsets
+            )
+        } else {
+            extensionPanel?.removeFromSuperview()
+            extensionPanel = nil
+        }
+        extensionResize.isHidden = !isExtensionSidePanelPresented
+        extensionResize.hapticsEnabled = preferences.hapticFeedbackEnabled
+        revealEdge.isHidden = model.isSidebarVisible || isSidebarPresented
+        tabEvents.isEnabled = model.selectedTabID != nil
+        tabSwitcher.isHidden = model.tabSwitcherState?.isVisible != true
+        if let state = model.tabSwitcherState {
+            tabSwitcher.update(state: state)
+        }
+        find.refresh(from: model, blockedLeadingInset: browserContentMinX)
+        configureCommandBars()
+        needsLayout = true
     }
 
-    private func extensionSidePanelMinX(in windowSize: CGSize) -> CGFloat {
-        max(windowSize.width - browserContentTrailingInset - model.extensionSidePanelWidth, 0)
+    private func finishPresentationAnimation() {
+        isAnimatingFrames = false
+        if !isSidebarPresented {
+            isSidebarHoverOverlayChromeVisible = false
+        }
+        showsSidebarWindowControls = model.isSidebarVisible || isSidebarPresented
+        sidebar.showsWindowControls = showsWindowControlsInSidebarChrome
+        sidebar.isOverlayPresentation = isSidebarOverlayPresentation
+        sidebar.refresh()
     }
 
     private func handleSidebarRevealEdgeHoverChange(_ hovering: Bool) {
-        guard !model.isSidebarVisible, isSidebarRevealEdgeHovered != hovering else {
-            return
-        }
-
+        guard !model.isSidebarVisible, isSidebarRevealEdgeHovered != hovering else { return }
         isSidebarRevealEdgeHovered = hovering
-        sidebarRevealHoverTaskID += 1
+        revealTask?.cancel()
+        guard hovering,!isSidebarPresented else { return }
+        revealTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: BrowserChromeLayout.sidebarHoverRevealDelayNanoseconds) } catch {
+                return
+            }
+            guard let self, isSidebarRevealEdgeHovered,!isSidebarPresented else { return }
+            presentSidebarHoverOverlay()
+        }
     }
 
-    private func handleWindowFullscreenStateChange(_ fullscreenState: BrowserWindowFullscreenState) {
-        isWindowFullscreen = fullscreenState.isFullscreen
-        isWindowFullscreenTransitioning = fullscreenState.isTransitioning
-
-        if fullscreenState.isTransitioning {
+    private func handleWindowFullscreenStateChange(_ state: BrowserWindowFullscreenState) {
+        isWindowFullscreen = state.isFullscreen
+        isWindowFullscreenTransitioning = state.isTransitioning
+        if state.isTransitioning {
             preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded()
-            return
+        } else {
+            restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded()
         }
-
-        restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded()
-    }
-
-    private func toggleSidebarFromChrome() {
-        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
-            model.toggleSidebar()
-        }
-    }
-
-    private func toggleBookmarksBarVisibility() {
-        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
-            preferences.bookmarksBarVisible.toggle()
-        }
+        refresh()
     }
 
     private func finishSidebarHoverOverlayPromotionIfNeeded() {
-        let updates = {
-            isSidebarHoverOverlayPresented = false
-            isSidebarHoverOverlayChromeVisible = false
-            preservesSidebarHoverOverlayDuringFullscreenTransition = false
-            isSidebarHoverOverlayPointerSyncSuspended = false
-            isSidebarRevealEdgeHovered = false
-            sidebarRevealHoverTaskID += 1
-            showsSidebarWindowControls = true
-        }
-
-        guard isSidebarHoverOverlayPresented || isSidebarHoverOverlayChromeVisible else {
-            updates()
-            return
-        }
-
-        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration), updates)
-    }
-
-    private func presentSidebarHoverOverlayAfterDelayIfNeeded() async {
-        guard isSidebarRevealEdgeHovered, !isSidebarPresented else {
-            return
-        }
-
-        do {
-            try await Task.sleep(nanoseconds: BrowserChromeLayout.sidebarHoverRevealDelayNanoseconds)
-        } catch {
-            return
-        }
-
-        guard isSidebarRevealEdgeHovered, !isSidebarPresented else {
-            return
-        }
-
-        presentSidebarHoverOverlay()
+        isSidebarHoverOverlayPresented = false
+        isSidebarHoverOverlayChromeVisible = false
+        preservesSidebarHoverOverlayDuringFullscreenTransition = false
+        isSidebarHoverOverlayPointerSyncSuspended = false
+        isSidebarRevealEdgeHovered = false
+        revealTask?.cancel()
+        showsSidebarWindowControls = true
     }
 
     private func presentSidebarHoverOverlay() {
-        guard !model.isSidebarVisible, !isSidebarHoverOverlayPresented else {
-            return
+        guard !model.isSidebarVisible,!isSidebarHoverOverlayPresented else { return }
+        isSidebarRevealEdgeHovered = false
+        isSidebarHoverOverlayPointerSyncSuspended = false
+        isSidebarHoverOverlayChromeVisible = true
+        // Prepare the owned background before moving the sidebar into the window.
+        sidebar.isOverlayPresentation = true
+        sidebar.showsWindowControls = true
+        sidebar.refresh()
+        DispatchQueue.main.async { [weak self] in
+            guard let self,!model.isSidebarVisible, isSidebarHoverOverlayChromeVisible,
+                  !isSidebarHoverOverlayPresented else { return }
+            isSidebarHoverOverlayPresented = true
+            refresh()
         }
-
-        withoutSidebarPresentationAnimation {
-            isSidebarRevealEdgeHovered = false
-            sidebarRevealHoverTaskID += 1
-            isSidebarHoverOverlayPointerSyncSuspended = false
-            isSidebarHoverOverlayChromeVisible = true
-        }
-
-        DispatchQueue.main.async {
-            guard !model.isSidebarVisible,
-                  isSidebarHoverOverlayChromeVisible,
-                  !isSidebarHoverOverlayPresented
-            else {
-                return
-            }
-
-            withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
-                isSidebarHoverOverlayPresented = true
-            }
-        }
-    }
-
-    private func withoutSidebarPresentationAnimation(_ updates: () -> Void) {
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction, updates)
     }
 
     private func dismissSidebarHoverOverlay() {
-        guard isSidebarHoverOverlayPresented else {
+        guard isSidebarHoverOverlayPresented else { return }
+        guard !isWindowFullscreenTransitioning else { preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded()
             return
         }
-
-        guard !isWindowFullscreenTransitioning else {
-            preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded()
-            return
-        }
-
-        guard !isSidebarHoverOverlayPointerSyncSuspended else {
-            return
-        }
-
-        withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
-            isSidebarRevealEdgeHovered = false
-            sidebarRevealHoverTaskID += 1
-            isSidebarHoverOverlayPointerSyncSuspended = false
-            isSidebarHoverOverlayPresented = false
-        }
+        guard !isSidebarHoverOverlayPointerSyncSuspended else { return }
+        isSidebarRevealEdgeHovered = false
+        revealTask?.cancel()
+        isSidebarHoverOverlayPointerSyncSuspended = false
+        isSidebarHoverOverlayPresented = false
+        refresh()
     }
 
     private func preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded() {
-        guard isSidebarHoverOverlayActive || isSidebarOverlayPresentation else {
-            return
-        }
-
+        guard isSidebarHoverOverlayActive || isSidebarOverlayPresentation else { return }
         preservesSidebarHoverOverlayDuringFullscreenTransition = true
         isSidebarHoverOverlayPointerSyncSuspended = true
         isSidebarRevealEdgeHovered = false
-        sidebarRevealHoverTaskID += 1
+        revealTask?.cancel()
         isSidebarHoverOverlayChromeVisible = true
         isSidebarHoverOverlayPresented = true
     }
 
     private func restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded() {
-        guard preservesSidebarHoverOverlayDuringFullscreenTransition else {
-            return
-        }
-
+        guard preservesSidebarHoverOverlayDuringFullscreenTransition else { return }
         preservesSidebarHoverOverlayDuringFullscreenTransition = false
-
         guard !model.isSidebarVisible else {
             isSidebarHoverOverlayPointerSyncSuspended = false
             isSidebarHoverOverlayPresented = false
             isSidebarHoverOverlayChromeVisible = false
             return
         }
-
         isSidebarRevealEdgeHovered = false
-        sidebarRevealHoverTaskID += 1
+        revealTask?.cancel()
         isSidebarHoverOverlayChromeVisible = true
         isSidebarHoverOverlayPresented = true
     }
 
     private func handleSidebarHoverOverlayPointerMovement() {
-        guard !isWindowFullscreenTransitioning, isSidebarHoverOverlayPointerSyncSuspended else {
-            return
-        }
-
+        guard !isWindowFullscreenTransitioning, isSidebarHoverOverlayPointerSyncSuspended else { return }
         isSidebarHoverOverlayPointerSyncSuspended = false
-    }
-}
-
-// MARK: - BrowserBookmarksBarVisibilityMenuContent
-
-struct BrowserBookmarksBarVisibilityMenuContent: View {
-    let isBookmarksBarVisible: Bool
-    let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
-    let onToggleBookmarksBar: () -> Void
-
-    var body: some View {
-        Button(
-            isBookmarksBarVisible ? BrowserStrings.bookmarksHideBarAction : BrowserStrings.settingsShowBookmarksBar,
-            action: onToggleBookmarksBar
-        )
-        .browserKeyboardShortcut(toggleBookmarksBarShortcut)
-    }
-}
-
-// MARK: - BrowserBookmarksBarChromeBackgroundContextMenuRegions
-
-private struct BrowserBookmarksBarChromeBackgroundContextMenuRegions: View {
-    // MARK: Internal
-
-    let windowSize: CGSize
-    let blockedLeadingWidth: CGFloat
-    let leadingInset: CGFloat
-    let topInset: CGFloat
-    let trailingInset: CGFloat
-    let bottomInset: CGFloat
-    let toggleBookmarksBarShortcut: BrowserKeyboardShortcut
-    let onToggleBookmarksBar: () -> Void
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            if topInset > 0 {
-                dragRegion(
-                    width: max(windowSize.width - blockedLeadingWidth, 0),
-                    height: topInset
-                )
-                .offset(x: blockedLeadingWidth)
-            }
-
-            if bottomInset > 0 {
-                dragRegion(
-                    width: max(windowSize.width - blockedLeadingWidth, 0),
-                    height: bottomInset
-                )
-                .offset(x: blockedLeadingWidth, y: max(windowSize.height - bottomInset, 0))
-            }
-
-            if trailingInset > 0 {
-                dragRegion(width: trailingInset, height: windowSize.height)
-                    .offset(x: max(windowSize.width - trailingInset, 0))
-            }
-
-            if leadingInset > 0 {
-                dragRegion(width: leadingInset, height: windowSize.height)
-                    .offset(x: blockedLeadingWidth)
-            }
-        }
-        .frame(width: windowSize.width, height: windowSize.height, alignment: .topLeading)
-    }
-
-    // MARK: Private
-
-    private func dragRegion(width: CGFloat, height: CGFloat) -> some View {
-        BrowserWindowDragRegion()
-            .frame(width: width, height: height)
-            .contextMenu {
-                BrowserBookmarksBarVisibilityMenuContent(
-                    isBookmarksBarVisible: false,
-                    toggleBookmarksBarShortcut: toggleBookmarksBarShortcut,
-                    onToggleBookmarksBar: onToggleBookmarksBar
-                )
-            }
-    }
-}
-
-private extension NSScreen {
-    static func browserBestMatchingScreen(for frame: CGRect) -> NSScreen? {
-        screens.max { lhs, rhs in
-            lhs.frame.intersectionArea(with: frame) < rhs.frame.intersectionArea(with: frame)
-        } ?? main
-    }
-}
-
-private extension CGRect {
-    func intersectionArea(with frame: CGRect) -> CGFloat {
-        let intersection = intersection(frame)
-        guard !intersection.isNull else {
-            return 0
-        }
-
-        return max(intersection.width, 0) * max(intersection.height, 0)
+        refresh()
     }
 }

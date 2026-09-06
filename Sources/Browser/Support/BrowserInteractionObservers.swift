@@ -1,6 +1,5 @@
 import AppKit
 import QuartzCore
-import SwiftUI
 
 // MARK: - BrowserLocalMonitorCleanup
 
@@ -55,28 +54,6 @@ private final class BrowserNotificationObserverCleanup: @unchecked Sendable {
     // MARK: Private
 
     private var observers = [NSObjectProtocol]()
-}
-
-// MARK: - BrowserSpaceSwipeObserver
-
-struct BrowserSpaceSwipeObserver: NSViewRepresentable {
-    let canSwitchSpaces: Bool
-    let onSwipeLeft: () -> Void
-    let onSwipeRight: () -> Void
-
-    func makeNSView(context _: Context) -> BrowserSpaceSwipeNSView {
-        let view = BrowserSpaceSwipeNSView()
-        view.canSwitchSpaces = canSwitchSpaces
-        view.onSwipeLeft = onSwipeLeft
-        view.onSwipeRight = onSwipeRight
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserSpaceSwipeNSView, context _: Context) {
-        nsView.canSwitchSpaces = canSwitchSpaces
-        nsView.onSwipeLeft = onSwipeLeft
-        nsView.onSwipeRight = onSwipeRight
-    }
 }
 
 // MARK: - BrowserSpaceSwipeNSView
@@ -145,31 +122,6 @@ final class BrowserSpaceSwipeNSView: NSView {
 
     private func removeLocalMonitor() {
         localMonitorCleanup.remove()
-    }
-}
-
-// MARK: - BrowserSpacePagerScrollObserver
-
-struct BrowserSpacePagerScrollObserver: NSViewRepresentable {
-    let isEnabled: Bool
-    let onScrollDelta: (CGFloat) -> Void
-    let onScrollReleased: () -> Void
-    let onScrollEnded: () -> Void
-
-    func makeNSView(context _: Context) -> BrowserSpacePagerScrollNSView {
-        let view = BrowserSpacePagerScrollNSView()
-        view.isEnabled = isEnabled
-        view.onScrollDelta = onScrollDelta
-        view.onScrollReleased = onScrollReleased
-        view.onScrollEnded = onScrollEnded
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserSpacePagerScrollNSView, context _: Context) {
-        nsView.isEnabled = isEnabled
-        nsView.onScrollDelta = onScrollDelta
-        nsView.onScrollReleased = onScrollReleased
-        nsView.onScrollEnded = onScrollEnded
     }
 }
 
@@ -319,47 +271,6 @@ final class BrowserSpacePagerScrollNSView: NSView {
     }
 }
 
-// MARK: - BrowserPassthroughInteractionObserver
-
-struct BrowserPassthroughInteractionObserver: NSViewRepresentable {
-    // MARK: Lifecycle
-
-    init(
-        eventMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown],
-        onInteraction: @escaping () -> Void
-    ) {
-        self.eventMask = eventMask
-        self.onInteraction = { _, _ in
-            onInteraction()
-        }
-    }
-
-    init(
-        eventMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown],
-        onInteraction: @escaping (NSEvent, NSView) -> Void
-    ) {
-        self.eventMask = eventMask
-        self.onInteraction = onInteraction
-    }
-
-    // MARK: Internal
-
-    let eventMask: NSEvent.EventTypeMask
-    let onInteraction: (NSEvent, NSView) -> Void
-
-    func makeNSView(context _: Context) -> BrowserPassthroughInteractionNSView {
-        let view = BrowserPassthroughInteractionNSView()
-        view.eventMask = eventMask
-        view.onInteraction = onInteraction
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserPassthroughInteractionNSView, context _: Context) {
-        nsView.eventMask = eventMask
-        nsView.onInteraction = onInteraction
-    }
-}
-
 // MARK: - BrowserPassthroughInteractionNSView
 
 final class BrowserPassthroughInteractionNSView: NSView {
@@ -445,23 +356,6 @@ final class BrowserPassthroughInteractionNSView: NSView {
     }
 }
 
-// MARK: - BrowserWindowFrameReader
-
-struct BrowserWindowFrameReader: NSViewRepresentable {
-    let onFrameChange: (CGRect?) -> Void
-
-    func makeNSView(context _: Context) -> BrowserWindowFrameReaderNSView {
-        let view = BrowserWindowFrameReaderNSView()
-        view.onFrameChange = onFrameChange
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserWindowFrameReaderNSView, context _: Context) {
-        nsView.onFrameChange = onFrameChange
-        nsView.scheduleFrameUpdate()
-    }
-}
-
 // MARK: - BrowserWindowFrameReaderNSView
 
 final class BrowserWindowFrameReaderNSView: NSView {
@@ -518,23 +412,6 @@ final class BrowserWindowFrameReaderNSView: NSView {
 
         lastFrameInWindow = frameInWindow
         onFrameChange(frameInWindow)
-    }
-}
-
-// MARK: - BrowserScreenFrameReader
-
-struct BrowserScreenFrameReader: NSViewRepresentable {
-    let onFrameChange: (CGRect?) -> Void
-
-    func makeNSView(context _: Context) -> BrowserScreenFrameReaderNSView {
-        let view = BrowserScreenFrameReaderNSView()
-        view.onFrameChange = onFrameChange
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserScreenFrameReaderNSView, context _: Context) {
-        nsView.onFrameChange = onFrameChange
-        nsView.scheduleFrameUpdate()
     }
 }
 
@@ -633,23 +510,6 @@ final class BrowserScreenFrameReaderNSView: NSView {
 struct BrowserWindowFullscreenState: Equatable {
     let isFullscreen: Bool
     let isTransitioning: Bool
-}
-
-// MARK: - BrowserWindowFullscreenReader
-
-struct BrowserWindowFullscreenReader: NSViewRepresentable {
-    let onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void
-
-    func makeNSView(context _: Context) -> BrowserWindowFullscreenReaderNSView {
-        let view = BrowserWindowFullscreenReaderNSView()
-        view.onFullscreenStateChange = onFullscreenStateChange
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserWindowFullscreenReaderNSView, context _: Context) {
-        nsView.onFullscreenStateChange = onFullscreenStateChange
-        nsView.sendFullscreenStateIfNeeded()
-    }
 }
 
 // MARK: - BrowserWindowFullscreenReaderNSView

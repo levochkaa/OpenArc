@@ -1,5 +1,6 @@
 import AppKit
-import SwiftUI
+import Combine
+import QuartzCore
 
 // MARK: - BrowserWebAppViewActions
 
@@ -11,7 +12,7 @@ struct BrowserWebAppViewActions {
 
 // MARK: - BrowserWebAppRootView
 
-struct BrowserWebAppRootView: View {
+final class BrowserWebAppRootView: NSView {
     // MARK: Lifecycle
 
     init(
@@ -21,141 +22,104 @@ struct BrowserWebAppRootView: View {
         actions: BrowserWebAppViewActions
     ) {
         self.model = model
-        self.configuration = configuration
         self.preferences = preferences
-        self.actions = actions
-        _shortcutStore = ObservedObject(wrappedValue: model.shortcutStore)
-        _userPreferences = ObservedObject(wrappedValue: model.userPreferencesStore)
-    }
-
-    // MARK: Internal
-
-    @ObservedObject var model: BrowserChromeModel
-    @ObservedObject var preferences: BrowserWebAppPreferences
-
-    var body: some View {
-        GeometryReader { proxy in
-            let windowLayout = BrowserWebAppWindowLayout(
-                isFullscreen: isWindowFullscreen,
-                showsToolbar: showsToolbar
-            )
-
-            ZStack(alignment: .topLeading) {
-                BrowserChromeBackgroundView(mode: chromeBackgroundMode)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .allowsHitTesting(false)
-
-                BrowserContentView(
-                    hostView: model.hostView,
-                    isContextReady: model.isContextReady,
-                    hasSelectedTab: model.selectedTabID != nil,
-                    isSidebarVisible: false,
-                    usesWindowContentInsets: windowLayout.usesWindowContentInsets
-                )
-                .equatable()
-                .frame(
-                    width: max(proxy.size.width - windowLayout.contentHorizontalInset * 2, 0),
-                    height: max(proxy.size.height - windowLayout.contentMinY - windowLayout.contentBottomInset, 0)
-                )
-                .offset(x: windowLayout.contentHorizontalInset, y: windowLayout.contentMinY)
-
-                if showsToolbar {
-                    BrowserWebAppToolbar(
-                        model: model,
-                        preferences: preferences,
-                        configuration: configuration,
-                        actions: actions,
-                        shortcutStore: shortcutStore,
-                        windowControlsWidth: windowLayout.windowControlsWidth
-                    )
-                    .frame(
-                        width: max(proxy.size.width - windowLayout.toolbarHorizontalInset * 2, 0),
-                        height: BrowserWebAppLayout.toolbarHeight
-                    )
-                    .offset(x: windowLayout.toolbarHorizontalInset, y: windowLayout.toolbarTopInset)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(5)
-                }
-
-                BrowserContentEdgeDragRegions(
-                    windowSize: proxy.size,
-                    blockedLeadingWidth: 0,
-                    leadingInset: windowLayout.edgeDragInset,
-                    topInset: windowLayout.edgeDragInset,
-                    trailingInset: windowLayout.edgeDragInset,
-                    bottomInset: windowLayout.edgeDragInset
-                )
-                .zIndex(6)
-
-                BrowserFindBarOverlay(model: model, blockedLeadingInset: 0)
-                    .frame(
-                        width: max(proxy.size.width - windowLayout.contentHorizontalInset * 2, 0),
-                        height: max(proxy.size.height - windowLayout.contentMinY - windowLayout.contentBottomInset, 0)
-                    )
-                    .offset(x: windowLayout.contentHorizontalInset, y: windowLayout.contentMinY)
-                    .zIndex(8)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-        }
-        .background {
-            BrowserWindowFullscreenReader { state in
-                isWindowFullscreen = state.isFullscreen
-            }
-            .allowsHitTesting(false)
-        }
-        .clipped()
-        .environmentObject(faviconCache)
-        .animation(
-            .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-            value: showsToolbar
-        )
-    }
-
-    // MARK: Private
-
-    @ObservedObject private var shortcutStore: BrowserShortcutStore
-    @ObservedObject private var userPreferences: BrowserUserPreferencesStore
-    @ObservedObject private var faviconCache = BrowserFaviconCache.shared
-    @State private var isWindowFullscreen = false
-
-    private let configuration: BrowserWebAppConfiguration
-    private let actions: BrowserWebAppViewActions
-
-    private var chromeBackgroundMode: BrowserChromeBackgroundMode {
-        userPreferences.blurredChromeBackgroundEnabled ? .blurred : .black
-    }
-
-    private var showsToolbar: Bool {
-        !isWindowFullscreen || preferences.alwaysShowsToolbarInFullscreen
-    }
-}
-
-// MARK: - BrowserWebAppToolbar
-
-struct BrowserWebAppToolbar: NSViewRepresentable {
-    let model: BrowserChromeModel
-    let preferences: BrowserWebAppPreferences
-    let configuration: BrowserWebAppConfiguration
-    let actions: BrowserWebAppViewActions
-    let shortcutStore: BrowserShortcutStore
-    let windowControlsWidth: CGFloat
-
-    static func dismantleNSView(_ view: BrowserWebAppToolbarNSView, coordinator _: ()) { view.closePopovers() }
-
-    func makeNSView(context: Context) -> BrowserWebAppToolbarNSView {
-        let view = BrowserWebAppToolbarNSView(
+        self.content = BrowserContentNSView(hostView: model.hostView)
+        self.toolbar = BrowserWebAppToolbarNSView(
             model: model,
             preferences: preferences,
             configuration: configuration,
             actions: actions
         )
-        updateNSView(view, context: context)
-        return view
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityIdentifier("browser.webapp.window")
+        for view in [background, content, toolbar, margins, find, fullscreen] {
+            addSubview(view)
+        }
+        find.bind(to: model)
+        fullscreen.onFullscreenStateChange = { [weak self] state in self?.isFullscreen = state.isFullscreen
+            self?.refresh()
+        }
+        for publisher in [
+            model.objectWillChange.eraseToAnyPublisher(),
+            preferences.objectWillChange.eraseToAnyPublisher(),
+            model.userPreferencesStore.objectWillChange.eraseToAnyPublisher(),
+            model.shortcutStore.objectWillChange.eraseToAnyPublisher(),
+        ] {
+            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
+        }
+        refresh()
     }
 
-    func updateNSView(_ view: BrowserWebAppToolbarNSView, context _: Context) {
-        view.actions = actions
-        view.windowControlsWidth = windowControlsWidth
-        view.refresh()
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
+
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        let geometry = windowLayout
+        background.frame = bounds
+        content.frame = NSRect(
+            x: geometry.contentHorizontalInset,
+            y: geometry.contentMinY,
+            width: max(bounds.width - geometry.contentHorizontalInset * 2, 0),
+            height: max(
+                bounds.height - geometry.contentMinY - geometry.contentBottomInset,
+                0
+            )
+        )
+        toolbar.frame = NSRect(
+            x: geometry.toolbarHorizontalInset,
+            y: geometry.toolbarTopInset,
+            width: max(bounds.width - geometry.toolbarHorizontalInset * 2, 0),
+            height: BrowserWebAppLayout.toolbarHeight
+        )
+        find.frame = content.frame
+        margins.frame = bounds
+        margins.configure(
+            blockedLeadingWidth: 0,
+            leading: geometry.edgeDragInset,
+            top: geometry.edgeDragInset,
+            trailing: geometry.edgeDragInset,
+            bottom: geometry.edgeDragInset
+        )
+    }
+
+    // MARK: Private
+
+    private let model: BrowserChromeModel
+    private let preferences: BrowserWebAppPreferences
+    private let background = BrowserChromeBackgroundNSView()
+    private let content: BrowserContentNSView
+    private let toolbar: BrowserWebAppToolbarNSView
+    private let margins = BrowserNativeWindowMargins()
+    private let find = BrowserFindBarNSView()
+    private let fullscreen = BrowserWindowFullscreenReaderNSView()
+    private var isFullscreen = false
+    private var observations = Set<AnyCancellable>()
+
+    private var showsToolbar: Bool { !isFullscreen || preferences.alwaysShowsToolbarInFullscreen }
+    private var windowLayout: BrowserWebAppWindowLayout { .init(isFullscreen: isFullscreen, showsToolbar: showsToolbar)
+    }
+
+    private func refresh() {
+        background.mode = model.userPreferencesStore.blurredChromeBackgroundEnabled ? .blurred : .black
+        content.update(
+            hostView: model.hostView,
+            isContextReady: model.isContextReady,
+            hasSelectedTab: model.selectedTabID != nil,
+            isSidebarVisible: false,
+            usesWindowContentInsets: windowLayout.usesWindowContentInsets
+        )
+        toolbar.isHidden = !showsToolbar
+        toolbar.windowControlsWidth = windowLayout.windowControlsWidth
+        toolbar.refresh()
+        find.refresh(from: model, blockedLeadingInset: 0)
+        needsLayout = true
     }
 }

@@ -355,36 +355,3 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         show()
     }
 }
-
-// MARK: - BrowserNativeTooltipAnchor
-
-/// A noninteractive anchor for the temporary SwiftUI mounting adapter.
-final class BrowserNativeTooltipAnchor: NSView {
-    let tooltipID = UUID()
-    var title = ""
-    var caption: String?
-    var shortcut: BrowserKeyboardShortcut?
-    var placement = BrowserTooltipPlacement.belowLeading
-    var isPresented = false
-
-    override func hitTest(_: NSPoint) -> NSView? { nil }
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        refresh()
-    }
-
-    func refresh() {
-        if isPresented, window != nil {
-            BrowserNativeTooltipPresenter.shared.begin(
-                id: tooltipID,
-                anchor: self,
-                title: title,
-                caption: caption,
-                shortcut: shortcut,
-                placement: placement
-            )
-        } else {
-            BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: window == nil)
-        }
-    }
-}

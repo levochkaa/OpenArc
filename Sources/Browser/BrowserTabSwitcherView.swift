@@ -1,30 +1,4 @@
 import AppKit
-import SwiftUI
-
-// MARK: - BrowserTabSwitcherEventObserver
-
-struct BrowserTabSwitcherEventObserver: NSViewRepresentable {
-    let isEnabled: Bool
-    let onTab: (Bool) -> Bool
-    let onCommit: () -> Bool
-    let onCancel: () -> Bool
-
-    func makeNSView(context _: Context) -> BrowserTabSwitcherEventNSView {
-        let view = BrowserTabSwitcherEventNSView()
-        view.isEnabled = isEnabled
-        view.onTab = onTab
-        view.onCommit = onCommit
-        view.onCancel = onCancel
-        return view
-    }
-
-    func updateNSView(_ nsView: BrowserTabSwitcherEventNSView, context _: Context) {
-        nsView.isEnabled = isEnabled
-        nsView.onTab = onTab
-        nsView.onCommit = onCommit
-        nsView.onCancel = onCancel
-    }
-}
 
 // MARK: - BrowserTabSwitcherEventNSView
 
@@ -143,22 +117,5 @@ private final class BrowserTabSwitcherMonitorCleanup: @unchecked Sendable {
 
         NSEvent.removeMonitor(monitor)
         self.monitor = nil
-    }
-}
-
-// MARK: - BrowserTabSwitcherOverlay
-
-/// Temporary mounting adapter; rendering and layout belong to AppKit.
-struct BrowserTabSwitcherOverlay: NSViewRepresentable {
-    let state: BrowserChromeModel.TabSwitcherState
-
-    func makeNSView(context _: Context) -> BrowserTabSwitcherNSView {
-        let view = BrowserTabSwitcherNSView()
-        view.update(state: state)
-        return view
-    }
-
-    func updateNSView(_ view: BrowserTabSwitcherNSView, context _: Context) {
-        view.update(state: state)
     }
 }

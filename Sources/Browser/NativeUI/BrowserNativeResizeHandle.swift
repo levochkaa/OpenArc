@@ -16,6 +16,18 @@ final class BrowserNativeResizeHandle: NSView {
 
     // MARK: Internal
 
+    override var isHidden: Bool {
+        didSet {
+            if isHidden {
+                hoverTask?.cancel()
+                hovering = false
+                highlighted = false
+                finishResize()
+                popCursor()
+            }
+        }
+    }
+
     var getWidth: () -> CGFloat = { 0 }
     var setWidth: (CGFloat) -> Void = { _ in }
     var defaultWidth: CGFloat = 0

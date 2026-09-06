@@ -20,6 +20,10 @@ final class BrowserWebAppToolbarNSView: NSView {
             addSubview(subview)
         }
         heading.setAccessibilityIdentifier("browser.webapp.title")
+        back.setAccessibilityIdentifier("browser.webapp.back")
+        reload.setAccessibilityIdentifier("browser.webapp.reload")
+        extensions.setAccessibilityIdentifier("browser.webapp.extensions")
+        more.setAccessibilityIdentifier("browser.webapp.more")
         back.onAction = { [weak model] in model?.goBack() }
         reload.onAction = { [weak model] in
             if model?.canStopLoading == true {
