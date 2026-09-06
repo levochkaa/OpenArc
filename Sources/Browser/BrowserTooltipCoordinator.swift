@@ -1,5 +1,5 @@
+import Combine
 import Foundation
-import SwiftUI
 
 // MARK: - BrowserTooltipPlacement
 
@@ -207,9 +207,8 @@ enum BrowserTooltipMeasuredSizeResolver {
     }
 
     private func endHover(for tooltipID: UUID) {
-        if hoveredTooltipID == tooltipID {
-            hoveredTooltipID = nil
-        }
+        guard hoveredTooltipID == tooltipID else { return }
+        hoveredTooltipID = nil
 
         activationTask?.cancel()
         activationTask = nil

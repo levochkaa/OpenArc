@@ -1,12 +1,10 @@
 import AppKit
-import QuartzCore
 import SwiftUI
 
 // MARK: - BrowserChromeControlButton
 
-struct BrowserChromeControlButton: View {
-    // MARK: Internal
-
+/// Temporary mounting adapter; chrome rendering and interactions live in AppKit.
+struct BrowserChromeControlButton: NSViewRepresentable {
     let systemImageName: String
     let tooltipTitle: String
     let tooltipShortcut: BrowserKeyboardShortcut?
@@ -16,178 +14,44 @@ struct BrowserChromeControlButton: View {
     var pressEffect = BrowserChromeControlPressEffect.none
     let action: () -> Void
 
-    var effectiveIsPressed: Bool {
-        isEnabled && isPressed
+    func makeNSView(context: Context) -> BrowserNativeChromeButton {
+        let button = BrowserNativeChromeButton(symbol: systemImageName, title: tooltipTitle, action: action)
+        updateNSView(button, context: context)
+        return button
     }
 
-    var backgroundColor: Color {
-        guard isEnabled else {
-            return .clear
-        }
-
-        if isHovered {
-            return BrowserChromePalette.rowHover
-        }
-
-        return .clear
+    func updateNSView(_ button: BrowserNativeChromeButton, context _: Context) {
+        button.configureSymbol(systemImageName, title: tooltipTitle)
+        button.tooltipShortcut = tooltipShortcut
+        button.tooltipPlacement = tooltipPlacement
+        button.isEnabled = isEnabled
+        button.isSelected = isSelected
+        button.pressEffect = pressEffect.native
+        button.onAction = action
     }
 
-    var backgroundScale: CGFloat {
-        effectiveIsPressed ? backgroundPressScale : 1
+    func sizeThatFits(_: ProposedViewSize, nsView: BrowserNativeChromeButton, context _: Context) -> CGSize? {
+        nsView.intrinsicContentSize
     }
-
-    var foregroundColor: Color {
-        guard isEnabled else {
-            return BrowserChromePalette.buttonDisabledForeground
-        }
-
-        if effectiveIsPressed {
-            return BrowserChromePalette.chromeButtonPressedForeground
-        }
-
-        if isSelected {
-            return BrowserChromePalette.primaryText
-        }
-
-        return BrowserChromePalette.secondaryText
-    }
-
-    var horizontalOffset: CGFloat {
-        guard effectiveIsPressed else {
-            return 0
-        }
-
-        switch pressEffect {
-        case .moveLeft:
-            return -2
-        case .moveRight:
-            return 2
-        case .compress, .moveDown, .moveUp, .none, .rotateClockwise:
-            return 0
-        }
-    }
-
-    var verticalOffset: CGFloat {
-        guard effectiveIsPressed else {
-            return 0
-        }
-
-        switch pressEffect {
-        case .moveUp:
-            return -2
-        case .moveDown:
-            return 2
-        case .compress, .moveLeft, .moveRight, .none, .rotateClockwise:
-            return 0
-        }
-    }
-
-    var rotationAngle: Double {
-        guard effectiveIsPressed else {
-            return 0
-        }
-
-        switch pressEffect {
-        case .rotateClockwise:
-            return 90
-        case .compress, .moveDown, .moveLeft, .moveRight, .moveUp, .none:
-            return 0
-        }
-    }
-
-    var scale: CGFloat {
-        guard effectiveIsPressed else {
-            return 1
-        }
-
-        switch pressEffect {
-        case .compress:
-            return compressIconPressScale
-        case .moveDown, .moveLeft, .moveRight, .moveUp, .none, .rotateClockwise:
-            return 1
-        }
-    }
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImageName)
-                .symbolRenderingMode(.monochrome)
-                .font(.system(size: BrowserChromeLayout.chromeButtonSymbolSize, weight: .semibold))
-                .foregroundStyle(foregroundColor)
-                .offset(x: horizontalOffset, y: verticalOffset)
-                .rotationEffect(.degrees(rotationAngle))
-                .scaleEffect(scale)
-                .frame(
-                    width: BrowserChromeLayout.chromeButtonSize,
-                    height: BrowserChromeLayout.chromeButtonSize
-                )
-                .background(
-                    RoundedRectangle(
-                        cornerRadius: BrowserChromeLayout.chromeButtonCornerRadius,
-                        style: .continuous
-                    )
-                    .fill(backgroundColor)
-                    .scaleEffect(backgroundScale)
-                )
-        }
-        .buttonStyle(BrowserChromeControlPressTrackingButtonStyle { isPressed in
-            self.isPressed = isEnabled && isPressed
-        })
-        .disabled(!isEnabled)
-        .contentShape(RoundedRectangle(cornerRadius: BrowserChromeLayout.chromeButtonCornerRadius))
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .onChange(of: isEnabled) { _, isEnabled in
-            if !isEnabled {
-                isPressed = false
-            }
-        }
-        .onDisappear {
-            isPressed = false
-            isHovered = false
-        }
-        .browserTooltip(
-            title: tooltipTitle,
-            shortcut: tooltipShortcut,
-            placement: tooltipPlacement,
-            isPresented: isHovered
-        )
-        .animation(.easeOut(duration: 0.14), value: isHovered)
-        .animation(.spring(response: 0.18, dampingFraction: 0.72), value: isPressed)
-    }
-
-    // MARK: Private
-
-    @State private var isHovered = false
-    @State private var isPressed = false
-
-    private let backgroundPressScale: CGFloat = 0.95
-    private let compressIconPressScale: CGFloat = 0.9
 }
 
 // MARK: - BrowserChromeControlPressEffect
 
 enum BrowserChromeControlPressEffect {
-    case none
-    case compress
-    case moveLeft
-    case moveRight
-    case moveUp
-    case moveDown
-    case rotateClockwise
-}
+    case none, compress, moveLeft, moveRight, moveUp, moveDown, rotateClockwise
 
-// MARK: - BrowserChromeControlPressTrackingButtonStyle
+    // MARK: Internal
 
-private struct BrowserChromeControlPressTrackingButtonStyle: ButtonStyle {
-    let onPressChanged: (Bool) -> Void
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .onChange(of: configuration.isPressed) { _, isPressed in
-                onPressChanged(isPressed)
-            }
+    var native: BrowserNativeChromeButton.PressEffect {
+        switch self {
+        case .none: .none
+        case .compress: .compress
+        case .moveLeft: .left
+        case .moveRight: .right
+        case .moveUp: .up
+        case .moveDown: .down
+        case .rotateClockwise: .rotateClockwise
+        }
     }
 }
 

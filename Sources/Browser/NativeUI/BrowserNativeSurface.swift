@@ -11,6 +11,7 @@ class BrowserNativeSurface: NSView {
     var fillColor = NSColor.clear { didSet { needsDisplay = true } }
     var strokeColor = NSColor.clear { didSet { needsDisplay = true } }
     var cornerRadius: CGFloat = 0 { didSet { needsDisplay = true } }
+    var roundsTopLeadingCorner = true { didSet { needsDisplay = true } }
     var strokeWidth: CGFloat = 1 { didSet { needsDisplay = true } }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -21,7 +22,31 @@ class BrowserNativeSurface: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         let rect = bounds.insetBy(dx: strokeWidth / 2, dy: strokeWidth / 2)
-        let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
+        let path: NSBezierPath
+        if roundsTopLeadingCorner || cornerRadius <= 0 {
+            path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
+        } else {
+            let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
+            path = NSBezierPath()
+            path.move(to: NSPoint(x: rect.minX, y: rect.minY))
+            path.line(to: NSPoint(x: rect.maxX - radius, y: rect.minY))
+            path.appendArc(
+                from: NSPoint(x: rect.maxX, y: rect.minY),
+                to: NSPoint(x: rect.maxX, y: rect.maxY),
+                radius: radius
+            )
+            path.appendArc(
+                from: NSPoint(x: rect.maxX, y: rect.maxY),
+                to: NSPoint(x: rect.minX, y: rect.maxY),
+                radius: radius
+            )
+            path.appendArc(
+                from: NSPoint(x: rect.minX, y: rect.maxY),
+                to: NSPoint(x: rect.minX, y: rect.minY),
+                radius: radius
+            )
+            path.close()
+        }
         fillColor.setFill()
         path.fill()
         strokeColor.setStroke()
@@ -89,7 +114,7 @@ final class BrowserNativeChromeButton: NSButton {
         imagePosition = .imageOnly
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
             .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: style.symbolWeight))
-        toolTip = title
+        self.tooltipTitle = title
         setAccessibilityLabel(title)
         target = self
         self.action = #selector(activate)
@@ -109,8 +134,20 @@ final class BrowserNativeChromeButton: NSButton {
     override var isHighlighted: Bool { didSet { needsDisplay = true } }
 
     var onAction: () -> Void
+    var pressEffect: PressEffect
+    var tooltipTitle: String?
+    var tooltipShortcut: BrowserKeyboardShortcut?
+    var tooltipPlacement = BrowserTooltipPlacement.belowLeading
 
     var isSelected = false { didSet { needsDisplay = true } }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            hovered = false
+            BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
+        }
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -127,10 +164,20 @@ final class BrowserNativeChromeButton: NSButton {
     }
 
     override func mouseEntered(with _: NSEvent) { hovered = true
+        if let tooltipTitle {
+            BrowserNativeTooltipPresenter.shared.begin(
+                id: tooltipID,
+                anchor: self,
+                title: tooltipTitle,
+                shortcut: tooltipShortcut,
+                placement: tooltipPlacement
+            )
+        }
         needsDisplay = true
     }
 
     override func mouseExited(with _: NSEvent) { hovered = false
+        BrowserNativeTooltipPresenter.shared.end(id: tooltipID)
         needsDisplay = true
     }
 
@@ -178,15 +225,25 @@ final class BrowserNativeChromeButton: NSButton {
         }
     }
 
+    func configureSymbol(_ name: String, title: String) {
+        self.title = title
+        image = NSImage(systemSymbolName: name, accessibilityDescription: title)?
+            .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: style.symbolWeight))
+        imagePosition = .imageOnly
+        setAccessibilityLabel(title)
+        tooltipTitle = title
+    }
+
     // MARK: Private
 
     private let style: BrowserNativeChromeButtonStyle
-    private let pressEffect: PressEffect
+    private let tooltipID = UUID()
     private var hovered = false
     private var hoverTrackingArea: NSTrackingArea?
 
     @objc private func activate() {
         if isEnabled {
+            BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
             onAction()
         }
     }

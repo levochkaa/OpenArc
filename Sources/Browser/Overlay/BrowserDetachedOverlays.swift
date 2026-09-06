@@ -60,7 +60,6 @@ struct BrowserDetachedCurrentPageCommandBarOverlayContent: View {
 struct BrowserDetachedSidebarHoverOverlayContent: View {
     @ObservedObject var model: BrowserChromeModel
     @ObservedObject var updateController: BrowserUpdateController
-    @EnvironmentObject var tooltipCoordinator: BrowserTooltipCoordinator
     @EnvironmentObject var faviconCache: BrowserFaviconCache
 
     let snapshot: BrowserSidebarSnapshot
@@ -160,7 +159,6 @@ struct BrowserDetachedSidebarHoverOverlayContent: View {
                 onURLRowFrameChange: onURLRowFrameChange
             )
             .frame(width: sidebarWidth, height: sidebarHeight, alignment: .leading)
-            .environmentObject(tooltipCoordinator)
             .environmentObject(faviconCache),
             contentSize: sidebarContentSize,
             contentOffset: sidebarContentOffset,

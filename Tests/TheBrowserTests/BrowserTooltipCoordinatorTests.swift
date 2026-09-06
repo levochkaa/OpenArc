@@ -153,3 +153,17 @@ import Testing
 
     #expect(coordinator.activeTooltipID == expectedTooltipID)
 }
+
+@Test
+@MainActor func staleExitDoesNotCancelAnotherTargetsActivation() async {
+    let coordinator = BrowserTooltipCoordinator(
+        activationDelayNanoseconds: 20_000_000,
+        cooldownDelayNanoseconds: 10_000_000
+    )
+    let first = UUID()
+    let second = UUID()
+    coordinator.setHovering(true, for: first)
+    coordinator.setHovering(true, for: second)
+    coordinator.setHovering(false, for: first)
+    await expectActiveTooltip(second, in: coordinator)
+}

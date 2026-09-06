@@ -104,7 +104,6 @@ struct BrowserWebAppRootView: View {
             .allowsHitTesting(false)
         }
         .clipped()
-        .environmentObject(tooltipCoordinator)
         .environmentObject(faviconCache)
         .animation(
             .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
@@ -118,7 +117,6 @@ struct BrowserWebAppRootView: View {
     @ObservedObject private var userPreferences: BrowserUserPreferencesStore
     @ObservedObject private var faviconCache = BrowserFaviconCache.shared
     @State private var isWindowFullscreen = false
-    @StateObject private var tooltipCoordinator = BrowserTooltipCoordinator()
 
     private let configuration: BrowserWebAppConfiguration
     private let actions: BrowserWebAppViewActions

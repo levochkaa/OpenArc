@@ -301,7 +301,6 @@ struct BrowserRootView: View {
                             onToggleSidebar: toggleSidebarFromChrome,
                             onURLRowFrameChange: { _ in }
                         )
-                        .environmentObject(tooltipCoordinator)
                         .environmentObject(faviconCache)
                     )
                     .frame(
@@ -415,25 +414,9 @@ struct BrowserRootView: View {
             .allowsHitTesting(false)
         }
         .clipped()
-        .environmentObject(tooltipCoordinator)
         .environmentObject(faviconCache)
-        .overlayPreferenceValue(BrowserTooltipPreferenceKey.self) { values in
+        .overlay {
             GeometryReader { proxy in
-                let tooltipViewport = tooltipOverlayViewport(in: proxy.size)
-                let tooltipEntries = values.map { entry in
-                    BrowserResolvedTooltipEntry(
-                        id: entry.id,
-                        sourceFrame: proxy[entry.bounds].offsetBy(
-                            dx: tooltipViewport.sourceFrameOffset.x,
-                            dy: tooltipViewport.sourceFrameOffset.y
-                        ),
-                        title: entry.title,
-                        caption: entry.caption,
-                        shortcut: entry.shortcut,
-                        placement: entry.placement
-                    )
-                }
-
                 if usesDetachedBrowserOverlays {
                     BrowserDetachedOverlayWindowRepresentable(
                         isVisible: model.isFindBarPresented
@@ -445,7 +428,6 @@ struct BrowserRootView: View {
                             commandBarModel: commandBarModel,
                             blockedLeadingInset: 0
                         )
-                        .environmentObject(tooltipCoordinator)
                         .environmentObject(faviconCache)
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
@@ -463,27 +445,11 @@ struct BrowserRootView: View {
                             matchesAnchorWidth: showsSiteToolbar,
                             faviconCandidate: currentPageCommandBarFaviconCandidate
                         )
-                        .environmentObject(tooltipCoordinator)
                         .environmentObject(faviconCache)
                     )
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .allowsHitTesting(false)
                 }
-
-                BrowserDetachedOverlayWindowRepresentable(
-                    isVisible: !tooltipEntries.isEmpty,
-                    isInteractive: false,
-                    contentFrameLeadingInset: 0,
-                    framePolicy: tooltipOverlayFramePolicy,
-                    content: BrowserTooltipOverlay(entries: tooltipEntries)
-                        .frame(
-                            width: tooltipViewport.size.width,
-                            height: tooltipViewport.size.height,
-                            alignment: .topLeading
-                        )
-                )
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .allowsHitTesting(false)
             }
         }
         .onChange(of: model.isSidebarVisible) { _, isSidebarVisible in
@@ -522,7 +488,6 @@ struct BrowserRootView: View {
     @State private var sidebarRevealHoverTaskID = 0
     @State private var currentURLRowWindowFrame: CGRect?
     @State private var rootViewScreenFrame: CGRect?
-    @StateObject private var tooltipCoordinator = BrowserTooltipCoordinator()
 
     private var sidebarLayoutWidth: CGFloat {
         model.isSidebarVisible ? model.sidebarWidth : 0
@@ -660,14 +625,6 @@ struct BrowserRootView: View {
         return BrowserCommandBarFaviconCandidate(tab: selectedTab)
     }
 
-    private var tooltipOverlayFramePolicy: BrowserDetachedOverlayFramePolicy {
-        guard rootViewScreenFrame != nil else {
-            return .windowBounds
-        }
-
-        return isWindowFullscreen ? .windowBounds : .screenVisibleBounds
-    }
-
     private var toggleSidebarTooltipTitle: String {
         model.isSidebarVisible ? BrowserStrings.sidebarHide : BrowserStrings.sidebarShow
     }
@@ -767,23 +724,6 @@ struct BrowserRootView: View {
 
     private func extensionSidePanelMinX(in windowSize: CGSize) -> CGFloat {
         max(windowSize.width - browserContentTrailingInset - model.extensionSidePanelWidth, 0)
-    }
-
-    private func tooltipOverlayViewport(in windowSize: CGSize) -> BrowserTooltipOverlayViewport {
-        BrowserTooltipOverlayViewportResolver.viewport(
-            windowSize: windowSize,
-            windowScreenFrame: rootViewScreenFrame,
-            screenVisibleFrame: tooltipScreenVisibleFrame(),
-            isWindowFullscreen: isWindowFullscreen
-        )
-    }
-
-    private func tooltipScreenVisibleFrame() -> CGRect? {
-        guard let rootViewScreenFrame else {
-            return nil
-        }
-
-        return NSScreen.browserBestMatchingScreen(for: rootViewScreenFrame)?.visibleFrame
     }
 
     private func handleSidebarRevealEdgeHoverChange(_ hovering: Bool) {
