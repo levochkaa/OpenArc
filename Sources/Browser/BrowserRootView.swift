@@ -75,42 +75,23 @@ struct BrowserRootView: View {
                 }
 
                 if showsBookmarksBar {
-                    BrowserBookmarksBar(
-                        items: bookmarksModel.bookmarkBarItems,
-                        selectedTab: sidebarSnapshot.selectedTab,
-                        isSelectedTabBookmarked: isSelectedTabBookmarked,
-                        toggleBookmarkShortcut: shortcutStore.shortcut(for: .toggleBookmark),
-                        toggleBookmarksBarShortcut: shortcutStore.shortcut(for: .toggleBookmarksBar),
-                        onOpenBookmark: model.openBookmark,
-                        onOpenBookmarks: model.openBookmarks,
-                        onToggleSelectedTabBookmark: {
-                            _ = model.toggleSelectedTabBookmark()
-                        },
-                        onRenameBookmark: model.renameBookmark,
-                        onEditBookmarkAddress: model.updateBookmarkAddress,
-                        onMoveBookmark: model.moveBookmark,
-                        onCreateFolder: model.createBookmarkFolder,
-                        onCreateFolderAndMoveBookmark: model.createBookmarkFolderAndMoveBookmark,
-                        onDeleteBookmark: model.deleteBookmark,
-                        onManageBookmarks: model.openBookmarksManager,
-                        onHideBookmarksBar: hideBookmarksBar
-                    )
-                    .frame(
-                        width: bookmarksBarWidth(in: proxy.size),
-                        height: BrowserChromeLayout.bookmarksBarHeight,
-                        alignment: .leading
-                    )
-                    .offset(x: browserContentMinX, y: bookmarksBarMinY)
-                    .zIndex(5)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: model.isSidebarVisible
-                    )
-                    .animation(
-                        .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
-                        value: model.extensionSidePanel
-                    )
+                    BrowserBookmarksBar(model: model)
+                        .frame(
+                            width: bookmarksBarWidth(in: proxy.size),
+                            height: BrowserChromeLayout.bookmarksBarHeight,
+                            alignment: .leading
+                        )
+                        .offset(x: browserContentMinX, y: bookmarksBarMinY)
+                        .zIndex(5)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .animation(
+                            .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                            value: model.isSidebarVisible
+                        )
+                        .animation(
+                            .easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration),
+                            value: model.extensionSidePanel
+                        )
                 }
 
                 if let extensionSidePanel = model.extensionSidePanel,
@@ -491,14 +472,6 @@ struct BrowserRootView: View {
         browserChromeTopInset + siteToolbarReservedHeight
     }
 
-    private var isSelectedTabBookmarked: Bool {
-        guard let selectedTab = sidebarSnapshot.selectedTab else {
-            return false
-        }
-
-        return model.isBookmarked(urlString: selectedTab.urlString)
-    }
-
     private var isExtensionSidePanelPresented: Bool {
         model.extensionSidePanel != nil && model.extensionSidePanelHostView != nil
     }
@@ -715,14 +688,6 @@ struct BrowserRootView: View {
         withAnimation(.easeInOut(duration: BrowserChromeLayout.sidebarAnimationDuration)) {
             preferences.bookmarksBarVisible.toggle()
         }
-    }
-
-    private func hideBookmarksBar() {
-        guard preferences.bookmarksBarVisible else {
-            return
-        }
-
-        toggleBookmarksBarVisibility()
     }
 
     private func finishSidebarHoverOverlayPromotionIfNeeded() {

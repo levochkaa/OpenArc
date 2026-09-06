@@ -66,6 +66,14 @@ struct BrowserNativeChromeButtonStyle {
         foreground: BrowserChromeColors.secondaryText,
         hoverBackground: BrowserChromeColors.rowHover
     )
+    static let bookmark = BrowserNativeChromeButtonStyle(
+        size: BrowserChromeLayout.bookmarksBarControlSize,
+        cornerRadius: BrowserChromeLayout.bookmarksBarItemCornerRadius,
+        symbolSize: BrowserChromeLayout.bookmarksBarIconSize,
+        symbolWeight: .semibold,
+        foreground: BrowserChromeColors.secondaryText,
+        hoverBackground: BrowserChromeColors.rowHover
+    )
     static let currentURL = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarCurrentURLButtonSize,
         cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
