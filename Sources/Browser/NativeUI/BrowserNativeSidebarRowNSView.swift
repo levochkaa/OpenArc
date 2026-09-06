@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 /// One reusable native row for tabs, favorites, folders, space headers and New Tab.
 final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFieldDelegate {
@@ -13,6 +14,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             image.imageScaling = .scaleProportionallyUpOrDown
             image.setAccessibilityElement(false)
         }
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.maximumNumberOfLines = 1
+        titleLabel.cell?.wraps = false
+        titleLabel.cell?.isScrollable = false
         renameField.delegate = self
         renameField.isHidden = true
         renameField.focusPermission = { [weak self] in self?.isRenaming == true }
@@ -70,6 +75,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     let renameField = BrowserSidebarRenameNSTextField()
     let closeButton = BrowserNativeChromeButton(symbol: "xmark", title: "", style: .sidebarClose, action: {})
 
+    var dragOpacity: CGFloat = 1 { didSet { alphaValue = dragOpacity * appearanceProgress } }
+
     override func pointerMoved(_ event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         pinnedIconHovered = isHovered && !isRenaming && splitPinnedControls
@@ -106,11 +113,16 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             ? BrowserChromeLayout.sidebarPinnedFolderIconSize
             : kind == .space
                 ? BrowserChromeLayout.sidebarRowContentSpacing + 10
-                : BrowserChromeLayout.sidebarFaviconSize
+                : kind == .newTab
+                    ? (symbol.image?.size.width ?? BrowserChromeLayout.sidebarNewTabSymbolSize)
+                    : BrowserChromeLayout.sidebarFaviconSize
         let iconX = indent + (pinnedURLRow
             ? (BrowserChromeLayout.sidebarPinnedURLIconButtonSize - iconWidth) / 2
             : BrowserChromeLayout.sidebarRowHorizontalPadding)
-        let iconFrame = NSRect(x: iconX, y: (height - iconWidth) / 2, width: iconWidth, height: iconWidth)
+        let iconHeight = kind == .newTab
+            ? (symbol.image?.size.height ?? BrowserChromeLayout.sidebarNewTabSymbolSize)
+            : iconWidth
+        let iconFrame = NSRect(x: iconX, y: (height - iconHeight) / 2, width: iconWidth, height: iconHeight)
         favicon.frame = iconFrame
         symbol.frame = iconFrame
         let badgeSize = BrowserChromeLayout.sidebarPinnedFolderBadgeIconSize
@@ -122,19 +134,26 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         )
         let titleX = pinnedURLRow
             ? indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize
-            : iconFrame.maxX + BrowserChromeLayout.sidebarRowContentSpacing
+            : iconFrame.maxX + BrowserChromeLayout.sidebarRowContentSpacing - (kind == .newTab ? 2 : 0)
         let trailing = closeButton.isHidden
             ? bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
             : closeButton.frame.minX - BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
         let titleWidth = max(trailing - titleX, 0)
-        let captionVisible = !captionLabel.isHidden
+        // NSTextField's cell adds text padding; compensate for the original centered HStack.
+        let titleY = (height - 17) / 2 - 6.5 * captionProgress + (kind == .newTab ? 1 : 0)
         titleLabel.frame = NSRect(
             x: titleX,
-            y: captionVisible ? (height - 30) / 2 : (height - 17) / 2,
+            y: titleY,
             width: titleWidth,
             height: 17
         )
-        captionLabel.frame = NSRect(x: titleX, y: titleLabel.frame.maxY, width: titleWidth, height: 13)
+        captionLabel.frame = NSRect(
+            x: titleX,
+            y: titleLabel.frame.maxY + 13 * (1 - captionProgress),
+            width: titleWidth,
+            height: 13
+        )
+        updateDisclosureTransform()
         renameField.frame = NSRect(x: titleX, y: (height - 17) / 2 + 1, width: titleWidth, height: 17)
     }
 
@@ -196,6 +215,31 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             }
             path.fill()
         }
+    }
+
+    func animateInsertion() {
+        guard window != nil else { return }
+        appearanceProgress = 0
+        alphaValue = 0
+        opacityAnimation.start(.list) { [weak self] progress in
+            guard let self else { return }
+            appearanceProgress = min(max(progress, 0), 1)
+            alphaValue = dragOpacity * appearanceProgress
+        }
+    }
+
+    func removeAnimated() {
+        guard window != nil else { removeFromSuperview()
+            return
+        }
+        isInteractionEnabled = false
+        closeButton.isEnabled = false
+        let from = appearanceProgress
+        opacityAnimation.start(.list) { [weak self] progress in
+            guard let self else { return }
+            appearanceProgress = from * min(max(1 - progress, 0), 1)
+            alphaValue = dragOpacity * appearanceProgress
+        } completion: { [weak self] in self?.removeFromSuperview() }
     }
 
     func update(
@@ -347,13 +391,32 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private var pinnedIconHovered = false
     private var accessoryHovered = false
     private var hasPinnedTabs = false
-    private var collapsed = false
+    private let opacityAnimation = BrowserNativeAnimation()
+    private var appearanceProgress: CGFloat = 1
+    private let captionAnimation = BrowserNativeAnimation()
+    private let disclosureAnimation = BrowserNativeAnimation()
+    private var captionProgress = 0.0
+    private var captionTarget = false
+    private var disclosureProgress = 1.0
+
     private var baseSymbol = ""
     private var title = ""
     private var initialRenameTitle = ""
     private var suppressNextBlur = false
     private var resetID = 0
     private var isResizing = false
+
+    private var collapsed = false {
+        didSet {
+            guard oldValue != collapsed else { return }
+            let from = disclosureProgress
+            let to = collapsed ? 0.0 : 1.0
+            disclosureAnimation.start(.easeInOut(0.14)) { [weak self] progress in
+                self?.disclosureProgress = from + (to - from) * progress
+                self?.updateDisclosureTransform()
+            }
+        }
+    }
 
     private var hasRenameChanged: Bool {
         renameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -365,6 +428,17 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             pointSize: size,
             weight: weight
         ))
+    }
+
+    private func updateDisclosureTransform() {
+        let angle = kind == .space && hasPinnedTabs && isHovered && !isRenaming ? .pi / 2 * disclosureProgress : 0
+        symbol.wantsLayer = true
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        symbol.layer?.setAffineTransform(CGAffineTransform(translationX: symbol.bounds.midX, y: symbol.bounds.midY)
+            .rotated(by: angle)
+            .translatedBy(x: -symbol.bounds.midX, y: -symbol.bounds.midY))
+        CATransaction.commit()
     }
 
     private func primaryClick(_ event: NSEvent?) {
@@ -426,16 +500,37 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         favicon.isHidden = kind != .tab && kind != .appTab
         symbol.isHidden = kind == .tab || kind == .appTab
         badge.isHidden = kind != .folder || badge.image == nil
-        captionLabel.isHidden = kind != .tab || !pinnedIconHovered || isRenaming
+        let showCaption = kind == .tab && pinnedIconHovered && !isRenaming
+        if showCaption != captionTarget {
+            captionTarget = showCaption
+            let from = captionProgress
+            let to = showCaption ? 1.0 : 0.0
+            if showCaption {
+                captionLabel.isHidden = false
+            }
+            if window == nil {
+                captionProgress = to
+                captionLabel.isHidden = !showCaption
+                captionLabel.alphaValue = to
+            } else {
+                captionAnimation.start(.easeOut(0.16)) { [weak self] progress in
+                    guard let self else { return }
+                    captionProgress = from + (to - from) * progress
+                    captionLabel.alphaValue = captionProgress
+                    needsLayout = true
+                } completion: { [weak self] in self?.captionLabel.isHidden = !showCaption }
+            }
+        }
         captionLabel.stringValue = BrowserStrings.pinnedTabBackToPinnedURL
         closeButton.isHidden = !(kind == .space || kind == .tab) || !isHovered || isRenaming || isResizing
         if kind == .space {
             let disclosure = hasPinnedTabs && isHovered && !isRenaming
             symbol.image = Self.symbol(
-                disclosure ? (collapsed ? "chevron.right" : "chevron.down") : baseSymbol,
+                disclosure ? "chevron.right" : baseSymbol,
                 size: BrowserChromeLayout.sidebarNewTabSymbolSize
             )
             symbol.contentTintColor = disclosure ? BrowserChromeColors.secondaryText : BrowserChromeColors.primaryText
+            updateDisclosureTransform()
         }
         permitsTooltip = !isRenaming && !isResizing && !pinnedIconHovered && !accessoryHovered &&
             !(kind == .newTab && selected)

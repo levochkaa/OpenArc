@@ -238,6 +238,7 @@ final class BrowserSiteControlsNSView: NSView {
             .subtracting(pinned.map(\.id))
         {
             extensionButtons.removeValue(forKey: id)?.removeFromSuperview()
+            extensionVisibilities.removeValue(forKey: id)
         }
         for browserExtension in pinned {
             let button = extensionButtons[browserExtension.id] ?? BrowserNativeExtensionButton(
@@ -361,9 +362,14 @@ final class BrowserSiteControlsNSView: NSView {
     )
     private let extensionPopovers: BrowserNativeExtensionPopoverPresenter
     private var extensionButtons = [String: BrowserNativeExtensionButton]()
+    private var extensionVisibilities = [String: BrowserNativeVisibilityAnimation]()
     private var pinned = [BrowserExtension]()
     private var observations = Set<AnyCancellable>()
     private var copyTask: Task<Void, Never>?
+    private let copyVisibility = BrowserNativeVisibilityAnimation()
+    private let siteVisibility = BrowserNativeVisibilityAnimation()
+    private let actionAnimation = BrowserNativeAnimation()
+    private var actionWidthTarget: CGFloat = 0
     private var didCopy = false
     private var hovered = false
     private var tracking: NSTrackingArea?
@@ -385,12 +391,14 @@ final class BrowserSiteControlsNSView: NSView {
     private func refreshHover() {
         let sidebar = mode == .sidebar
         let show = !sidebar || showsSidebarActions
-        copyButton.isHidden = !show
-        siteButton.isHidden = !show
+        copyVisibility.setVisible(show, view: copyButton, curve: .easeInOut(0.12))
+        siteVisibility.setVisible(show, view: siteButton, curve: .easeInOut(0.12))
         copyButton.isEnabled = model.currentTab != nil && !isSidebarResizing
         siteButton.isEnabled = model.currentTab != nil && !isSidebarResizing
-        for button in extensionButtons.values {
-            button.isHidden = !show
+        for (id, button) in extensionButtons {
+            let visibility = extensionVisibilities[id] ?? BrowserNativeVisibilityAnimation()
+            extensionVisibilities[id] = visibility
+            visibility.setVisible(show, view: button, curve: .easeInOut(0.12))
             button.isInteractionEnabled = !isSidebarResizing
         }
         urlButton.isSearchPresented = sidebar && model.currentPageCommandBarModel.isPresented
@@ -403,7 +411,19 @@ final class BrowserSiteControlsNSView: NSView {
         }
         urlButton.permitsTooltip = !actionHovered && !isSidebarResizing
         urlButton.refreshTooltip()
-        urlButton.maskedTrailingWidth = sidebar && show ? sidebarActionWidth : 0
+        let targetWidth = sidebar && show ? sidebarActionWidth : 0
+        if actionWidthTarget != targetWidth {
+            actionWidthTarget = targetWidth
+            let from = urlButton.maskedTrailingWidth
+            if window == nil || isSidebarResizing {
+                actionAnimation.cancel()
+                urlButton.maskedTrailingWidth = targetWidth
+            } else {
+                actionAnimation.start(.easeInOut(0.12)) { [weak self] progress in
+                    self?.urlButton.maskedTrailingWidth = from + (targetWidth - from) * progress
+                }
+            }
+        }
         urlButton.interactionChanged()
         needsLayout = true
     }

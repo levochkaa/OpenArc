@@ -142,6 +142,17 @@ import Testing
         #expect(try #require(darkColor).redComponent > 0.9)
     }
 
+    @Test func menuActionStartsWithReleasedButton() {
+        let button = BrowserNativeChromeButton(symbol: "ellipsis", title: "Space menu", action: {})
+        var highlightedInsideAction: Bool?
+        button.onAction = { highlightedInsideAction = button.isHighlighted }
+        button.highlight(true)
+        button.performClick(nil)
+        #expect(highlightedInsideAction == false)
+        #expect(!button.isHighlighted)
+        button.onAction = {}
+    }
+
     // MARK: Private
 
     private func entry(_ id: String) -> BrowserChromeModel.TabSwitcherEntry {

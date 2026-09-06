@@ -64,7 +64,7 @@ final class BrowserWebAppRootView: NSView {
         super.layout()
         let geometry = windowLayout
         background.frame = bounds
-        content.frame = NSRect(
+        let contentFrame = NSRect(
             x: geometry.contentHorizontalInset,
             y: geometry.contentMinY,
             width: max(bounds.width - geometry.contentHorizontalInset * 2, 0),
@@ -73,13 +73,16 @@ final class BrowserWebAppRootView: NSView {
                 0
             )
         )
-        toolbar.frame = NSRect(
+        let toolbarFrame = NSRect(
             x: geometry.toolbarHorizontalInset,
             y: geometry.toolbarTopInset,
             width: max(bounds.width - geometry.toolbarHorizontalInset * 2, 0),
             height: BrowserWebAppLayout.toolbarHeight
         )
-        find.frame = content.frame
+        frameTransitions.setFrame(contentFrame, of: content, animated: animateNextLayout, curve: .sidebar)
+        frameTransitions.setFrame(toolbarFrame, of: toolbar, animated: animateNextLayout, curve: .sidebar)
+        frameTransitions.setFrame(contentFrame, of: find, animated: animateNextLayout, curve: .sidebar)
+        animateNextLayout = false
         margins.frame = bounds
         margins.configure(
             blockedLeadingWidth: 0,
@@ -101,6 +104,10 @@ final class BrowserWebAppRootView: NSView {
     private let find = BrowserFindBarNSView()
     private let fullscreen = BrowserWindowFullscreenReaderNSView()
     private var isFullscreen = false
+    private var previousShowsToolbar: Bool?
+    private var animateNextLayout = false
+    private let frameTransitions = BrowserNativeFrameTransitions()
+    private let toolbarVisibility = BrowserNativeVisibilityAnimation()
     private var observations = Set<AnyCancellable>()
 
     private var showsToolbar: Bool { !isFullscreen || preferences.alwaysShowsToolbarInFullscreen }
@@ -116,7 +123,11 @@ final class BrowserWebAppRootView: NSView {
             isSidebarVisible: false,
             usesWindowContentInsets: windowLayout.usesWindowContentInsets
         )
-        toolbar.isHidden = !showsToolbar
+        if let previousShowsToolbar, previousShowsToolbar != showsToolbar {
+            animateNextLayout = true
+        }
+        previousShowsToolbar = showsToolbar
+        toolbarVisibility.setVisible(showsToolbar, view: toolbar, curve: .sidebar)
         toolbar.windowControlsWidth = windowLayout.windowControlsWidth
         toolbar.refresh()
         find.refresh(from: model, blockedLeadingInset: 0)

@@ -22,6 +22,8 @@ Use `BrowserChromeColors` for adaptive colors and `BrowserChromeLayout` for dime
 
 Native settings remain separate from Chromium's `tb://settings` page. The Settings package hosts AppKit pane controllers. About, downloads, extension popovers, find, command input, bookmarks, and the tab switcher are native views/controllers.
 
+Animation timing and state triggers are documented in [appkit-animations.md](appkit-animations.md).
+
 ## Verification
 
 The Codex **Build** and **Test** actions remain separate, console-only actions:
@@ -33,7 +35,9 @@ The Codex **Build** and **Test** actions remain separate, console-only actions:
 
 Both scripts select Xcode 26.6. Format changed Swift files with the repository `.swiftformat` before Build. Unit tests use Swift Testing and cover models, native text editing, IME protection, selection, drag proposals, menus, clipping, and window geometry.
 
-Live checks are explicit, opt-in actions requiring Accessibility permission. Launch an isolated browsing runtime before running them:
+Build, Test, and offscreen control-rendering tests do not move the system pointer, inject keyboard events, or activate browser windows. Prefer them while the user works on the same desktop.
+
+Live checks are explicit, opt-in actions requiring Accessibility permission. They move the real pointer and type into the foreground app; run them only when the user has made the desktop available. Launch an isolated browsing runtime before running them:
 
 ```sh
 ./build.sh run --skip-build --runtime-suffix appkit-ui-verification

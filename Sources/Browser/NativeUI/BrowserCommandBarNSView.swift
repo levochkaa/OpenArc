@@ -216,6 +216,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     private var blockedLeadingInset: CGFloat = 0
     private var faviconCandidate: BrowserCommandBarFaviconCandidate?
     private var scrolledSelectionID: String?
+    private let scrollAnimation = BrowserNativeAnimation()
 
     private func refresh() {
         let changed = displayedSuggestions != model.suggestions
@@ -234,6 +235,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             selectAllOnFocus: style.selectsTextOnFocus
         )
         if changed {
+            scrollAnimation.cancel()
             table.reloadData()
             scrolledSelectionID = nil
         }
@@ -283,11 +285,31 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     private func scrollSelectionIntoViewIfNeeded() {
         guard let id = model.selectedSuggestionID, id != scrolledSelectionID,
               let row = displayedSuggestions.firstIndex(where: { $0.id == id }) else { return }
+        scrollAnimation.cancel()
         let rect = table.rect(ofRow: row)
-        let height = scrollView.contentView.bounds.height
-        let y = max(rect.midY - height / 2, -BrowserChromeLayout.commandBarSuggestionVerticalInset)
-        scrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
-        scrollView.reflectScrolledClipView(scrollView.contentView)
+        let clip = scrollView.contentView
+        let visible = clip.bounds
+        let inset = BrowserChromeLayout.commandBarSuggestionVerticalInset
+        var y = visible.minY
+        if rect.minY < visible.minY + inset {
+            y = rect.minY - inset
+        }
+        if rect.maxY > visible.maxY - inset {
+            y = rect.maxY - visible.height + inset
+        }
+        y = min(max(y, -inset), max(table.bounds.height - visible.height + inset, -inset))
+        let from = visible.minY
+        let target = y
+        if window == nil {
+            clip.scroll(to: NSPoint(x: 0, y: target))
+            scrollView.reflectScrolledClipView(clip)
+        } else if abs(target - from) > 0.5 {
+            scrollAnimation.start(.easeOut(0.12)) { [weak self] progress in
+                guard let self else { return }
+                clip.scroll(to: NSPoint(x: 0, y: from + (target - from) * progress))
+                scrollView.reflectScrolledClipView(clip)
+            }
+        }
         scrolledSelectionID = id
     }
 }

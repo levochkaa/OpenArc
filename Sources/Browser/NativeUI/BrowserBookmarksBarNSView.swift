@@ -294,6 +294,7 @@ final class BrowserNativeBookmarkButton: BrowserNativePressableView {
         self.favicon = BrowserFaviconNSView(cache: cache)
         super.init(frame: .zero)
         cornerRadius = BrowserChromeLayout.bookmarksBarItemCornerRadius
+        pressedScale = 1
         for view in [favicon, folder, label] {
             addSubview(view)
         }
@@ -320,7 +321,13 @@ final class BrowserNativeBookmarkButton: BrowserNativePressableView {
     }
 
     override func interactionChanged() { super.interactionChanged()
-        fillColor = isHovered ? BrowserChromeColors.rowHover : .clear
+        guard lastHover != isHovered else { return }
+        lastHover = isHovered
+        let from = fillColor
+        let to = isHovered ? BrowserChromeColors.rowHover : .clear
+        hoverAnimation.start(.hover) { [weak self] progress in
+            self?.fillColor = from.blended(withFraction: min(max(progress, 0), 1), of: to) ?? to
+        }
     }
 
     override func layout() {
@@ -354,6 +361,8 @@ final class BrowserNativeBookmarkButton: BrowserNativePressableView {
 
     // MARK: Private
 
+    private let hoverAnimation = BrowserNativeAnimation()
+    private var lastHover = false
     private let favicon: BrowserFaviconNSView
     private let folder = NSImageView()
     private let label = BrowserNativeControls.label(

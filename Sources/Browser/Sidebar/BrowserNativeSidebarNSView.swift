@@ -158,27 +158,20 @@ final class BrowserNativeSidebarNSView: NSView {
         for id in Set(appTiles.keys)
             .subtracting(appTabs.map(\.id))
         {
-            appTiles.removeValue(forKey: id)?.removeFromSuperview()
+            appTiles.removeValue(forKey: id)?.removeAnimated()
         }
         for tab in appTabs {
             let tile = appTiles[tab.id] ?? BrowserNativeSidebarRowNSView()
             if appTiles[tab.id] == nil {
                 appTiles[tab.id] = tile
                 appGrid.addSubview(tile)
+                tile.animateInsertion()
             }
             configure(row: tile, tab: tab, section: .app, indent: 0)
         }
         scrollObserver.isEnabled = snapshot.spaces.count > 1 && !state.isSidebarResizing && !state.isDraggingSidebarItem
         bottomDivider.alphaValue = state.isBottomChromeDividerVisible(in: snapshot) ? 1 : 0
-        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = BrowserChromeLayout.sidebarAnimationDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                layoutContent(animated: true)
-            }
-        } else {
-            layoutContent(animated: false)
-        }
+        layoutContent(animated: animated)
         synchronizeGeometry()
         updateDragPreview()
     }
@@ -192,12 +185,16 @@ final class BrowserNativeSidebarNSView: NSView {
     private let bottomDivider = BrowserNativeSurface()
     private let dragIndicator = BrowserNativeNoninteractiveSurface()
     private let dragPreview = BrowserNativeSidebarDragPreview()
+    private let dragPreviewAnimation = BrowserNativeAnimation()
+    private var dragPreviewCenter = CGPoint.zero
+    private var dragPreviewTargetSize: CGSize?
     private let scrollObserver = BrowserSpacePagerScrollNSView()
     private var pages = [String: BrowserNativeSidebarPage]()
     private var appTiles = [String: BrowserNativeSidebarRowNSView]()
     private var tracking: NSTrackingArea?
     private var clickMonitor: Any?
     private var isLayingOut = false
+    private let frameTransitions = BrowserNativeFrameTransitions()
 
     private var renderedSnapshot: BrowserSidebarSnapshot { state.renderedSnapshot(for: state.snapshot) }
 
@@ -272,11 +269,12 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     private func setFrame(_ rect: NSRect, of view: NSView, animated: Bool) {
-        if animated {
-            view.animator().frame = rect
-        } else {
-            view.frame = rect
-        }
+        frameTransitions.setFrame(
+            rect,
+            of: view,
+            animated: animated,
+            curve: view === pagesContainer ? .sidebar : .list
+        )
     }
 
     private func configure(
@@ -364,7 +362,7 @@ final class BrowserNativeSidebarNSView: NSView {
         page.entries = entries
         let ids = Set(entries.map(\.id))
         for id in Set(page.rows.keys).subtracting(ids) {
-            page.rows.removeValue(forKey: id)?.removeFromSuperview()
+            page.rows.removeValue(forKey: id)?.removeAnimated()
         }
         for entry in entries {
             switch entry {
@@ -382,7 +380,7 @@ final class BrowserNativeSidebarNSView: NSView {
                     isResizing: state.isSidebarResizing,
                     resetID: state.tabRowInteractionResetID
                 )
-                row.alphaValue = state.draggedPinnedFolderID == folder.id ? 0.35 : 1
+                row.dragOpacity = state.draggedPinnedFolderID == folder.id ? 0.35 : 1
                 row.onToggle = { [weak state] in
                     guard let state else { return }
                     state.dismissRenamingIfNeeded()
@@ -470,7 +468,7 @@ final class BrowserNativeSidebarNSView: NSView {
             resetID: state.tabRowInteractionResetID,
             closeDescriptor: model.shortcutStore.descriptor(for: .archiveTab)
         )
-        row.alphaValue = state.draggedTabIDs.contains(tab.id) ? 0 : 1
+        row.dragOpacity = state.draggedTabIDs.contains(tab.id) ? 0 : 1
         row.onSelect = { [weak state] in
             guard let state, state.suppressedTabSelectionAfterDragID != tab.id else { return }
             if state.renamingTabID != tab.id {
@@ -701,16 +699,40 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         if let preview = state.dragPreviewStore.preview, let tab = state.snapshot.tab(withID: preview.tabID) {
             dragPreview.update(tab: tab, size: preview.size)
-            dragPreview.frame = NSRect(
-                x: preview.center.x - preview.size.width / 2,
-                y: preview.center.y - preview.size.height / 2,
-                width: preview.size.width,
-                height: preview.size.height
-            )
+            dragPreviewCenter = preview.center
+            if dragPreviewTargetSize != preview.size {
+                dragPreviewTargetSize = preview.size
+                if dragPreview.isHidden {
+                    layoutDragPreview(size: preview.size)
+                } else {
+                    let from = dragPreview.frame.size
+                    let to = preview.size
+                    dragPreviewAnimation.start(.dragPreview) { [weak self] progress in
+                        self?.layoutDragPreview(size: CGSize(
+                            width: from.width + (to.width - from.width) * progress,
+                            height: from
+                                .height + (to.height - from.height) * progress
+                        ))
+                    }
+                }
+            }
+            layoutDragPreview(size: dragPreview.frame.size)
             dragPreview.isHidden = false
         } else {
+            dragPreviewAnimation.cancel()
+            dragPreviewTargetSize = nil
             dragPreview.isHidden = true
         }
+    }
+
+    private func layoutDragPreview(size: CGSize) {
+        dragPreview.frame = CGRect(
+            x: dragPreviewCenter.x - size.width / 2,
+            y: dragPreviewCenter.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        dragPreview.layoutSubtreeIfNeeded()
     }
 }
 
@@ -840,10 +862,14 @@ private final class BrowserNativeSidebarPage: NSView {
         let row = BrowserNativeSidebarRowNSView()
         rows[id] = row
         document.addSubview(row)
+        if hasLaidOutRows {
+            row.animateInsertion()
+        }
         return row
     }
 
     func layoutRows(animated: Bool) {
+        hasLaidOutRows = true
         let headerHeight = header.isHidden
             ? 0
             : BrowserChromeLayout.sidebarRowHeight + BrowserChromeLayout.sidebarListSpacing
@@ -872,11 +898,7 @@ private final class BrowserNativeSidebarPage: NSView {
                     } else {
                         frame
                     }
-                if animated {
-                    view.animator().frame = rect
-                } else {
-                    view.frame = rect
-                }
+                frameTransitions.setFrame(rect, of: view, animated: animated)
             }
             y += entry.height + BrowserChromeLayout.sidebarListSpacing
         }
@@ -890,6 +912,9 @@ private final class BrowserNativeSidebarPage: NSView {
     }
 
     // MARK: Private
+
+    private let frameTransitions = BrowserNativeFrameTransitions()
+    private var hasLaidOutRows = false
 
     @objc private func scrolled() { onScroll() }
 }
@@ -921,9 +946,13 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             ))
         indicator.contentTintColor = BrowserChromeColors.secondaryText
         button.onClick = { [weak self] _ in self?.onClear() }
-        button.onHoverChanged = { [weak self] hovered in self?.title.textColor = hovered
-            ? BrowserChromeColors.secondaryText
-            : BrowserChromeColors.sidebarClearButtonForeground
+        button.onHoverChanged = { [weak self] hovered in
+            guard let self else { return }
+            let from = title.textColor ?? .clear
+            let to = hovered ? BrowserChromeColors.secondaryText : BrowserChromeColors.sidebarClearButtonForeground
+            hoverAnimation.start(.easeInOut(0.12)) { [weak self] progress in
+                self?.title.textColor = from.blended(withFraction: progress, of: to) ?? to
+            }
         }
         button.setAccessibilityLabel(BrowserStrings.sidebarClearTemporaryTabs)
         button.setAccessibilityIdentifier("browser.sidebar.clear-temporary")
@@ -939,11 +968,11 @@ private final class BrowserNativeSidebarClearDivider: NSView {
 
     override func layout() {
         super.layout()
-        let textWidth = ceil(title.intrinsicContentSize.width)
+        let textWidth = ceil((title.stringValue as NSString)
+            .size(withAttributes: [.font: title.font ?? NSFont.systemFont(ofSize: 11)])
+            .width) + 4
         let indicatorWidth: CGFloat = includesActive ? 11 : 0
-        let width = button.isHidden
-            ? 0
-            : textWidth + indicatorWidth + BrowserChromeLayout.sidebarClearButtonHorizontalPadding * 2
+        let width = textWidth + indicatorWidth + BrowserChromeLayout.sidebarClearButtonHorizontalPadding * 2
         button.frame = NSRect(x: bounds.width - width, y: 0, width: width, height: bounds.height)
         title.frame = NSRect(
             x: BrowserChromeLayout.sidebarClearButtonHorizontalPadding + indicatorWidth,
@@ -957,11 +986,29 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             width: 8,
             height: 8
         )
-        line.frame = NSRect(x: 0, y: (bounds.height - 1) / 2, width: max(bounds.width - width, 0), height: 1)
+        line.frame = NSRect(
+            x: 0,
+            y: (bounds.height - 1) / 2,
+            width: max(bounds.width - width * clearProgress, 0),
+            height: 1
+        )
     }
 
     func update(showsClear: Bool, includesActive: Bool, descriptor: BrowserCommandDescriptor) {
-        button.isHidden = !showsClear
+        visibility.setVisible(showsClear, view: button, curve: .sidebar)
+        if clearTarget != showsClear {
+            clearTarget = showsClear
+            let from = clearProgress
+            let to = showsClear ? 1.0 : 0.0
+            if window == nil {
+                clearProgress = to
+            } else {
+                clearAnimation.start(.sidebar) { [weak self] progress in
+                    self?.clearProgress = from + (to - from) * progress
+                    self?.needsLayout = true
+                }
+            }
+        }
         button.tooltipTitle = descriptor.helpTitle
         button.tooltipShortcut = descriptor.shortcut
         self.includesActive = includesActive
@@ -979,6 +1026,11 @@ private final class BrowserNativeSidebarClearDivider: NSView {
     private let title = NSTextField(labelWithString: BrowserStrings.sidebarClearTemporaryTabs)
     private let indicator = NSImageView()
     private var includesActive = false
+    private let visibility = BrowserNativeVisibilityAnimation()
+    private let clearAnimation = BrowserNativeAnimation()
+    private let hoverAnimation = BrowserNativeAnimation()
+    private var clearProgress = 0.0
+    private var clearTarget = false
 }
 
 // MARK: - BrowserNativeSidebarDragPreview

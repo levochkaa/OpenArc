@@ -257,6 +257,35 @@ import Testing
         #expect(view.queryField.focusSelectionRequestID == model.focusRequestID)
     }
 
+    @Test func keyboardSelectionRevealsRowsWithoutCenteringOrLeavingABottomGap() async throws {
+        let suggestions = (0..<9).map { "browser suggestion \($0)" }
+        let model = BrowserCommandBarModel(
+            suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["browser": suggestions]),
+            suggestionDebounceNanoseconds: 0, submitHandler: { _ in }
+        )
+        let view = BrowserCommandBarNSView(model: model, faviconCache: BrowserFaviconCache(dataLoader: { _ in nil }))
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        model.present(initialQuery: "browser")
+        await model.waitForPendingSuggestionLoad()
+        try await waitUntil { view.displayedSuggestions == model.suggestions }
+        view.layoutSubtreeIfNeeded()
+        func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+        let scroll = try #require(descendants(view).compactMap { $0 as? NSScrollView }.first)
+        let table = try #require(scroll.documentView as? NSTableView)
+        let initialOrigin = scroll.contentView.bounds.minY
+        model.moveSelection(by: 2)
+        try await waitUntil { table.selectedRow == model.selectedSuggestionIndex }
+        view.layoutSubtreeIfNeeded()
+        #expect(scroll.contentView.bounds.minY == initialOrigin)
+        model.moveSelection(by: 100)
+        try await waitUntil { table.selectedRow == model.selectedSuggestionIndex }
+        view.layoutSubtreeIfNeeded()
+        let last = table.rect(ofRow: table.numberOfRows - 1)
+        let viewport = scroll.contentView.bounds
+        #expect(viewport.contains(last.insetBy(dx: 1, dy: 1)))
+        #expect(viewport.maxY - last.maxY <= BrowserChromeLayout.commandBarSuggestionVerticalInset + 1)
+    }
+
     // MARK: Private
 
     private func waitUntil(_ predicate: () -> Bool) async throws {

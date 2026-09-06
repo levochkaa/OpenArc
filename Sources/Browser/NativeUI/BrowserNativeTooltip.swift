@@ -268,6 +268,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
     private let coordinator = BrowserTooltipCoordinator()
     private var observation: AnyCancellable?
     private var panel: NSPanel?
+    private let visibilityAnimation = BrowserNativeAnimation()
 
     private func show() {
         guard let descriptor, let anchor, let window = anchor.window, window.isVisible,
@@ -333,11 +334,22 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
             panel.parent?.removeChildWindow(panel)
             window.addChildWindow(panel, ordered: .above)
         }
+        let from = panel.isVisible ? panel.alphaValue : 0
+        panel.alphaValue = from
         panel.orderFront(nil)
+        visibilityAnimation.start(.hover) { [weak panel] progress in
+            panel?.alphaValue = from + (1 - from) * progress
+        }
     }
 
-    private func hide() { panel?.orderOut(nil)
-        if let panel {
+    private func hide() {
+        guard let panel else { return }
+        let from = panel.alphaValue
+        visibilityAnimation.start(.hover) { [weak panel] progress in
+            panel?.alphaValue = from * (1 - progress)
+        } completion: { [weak panel] in
+            guard let panel else { return }
+            panel.orderOut(nil)
             panel.parent?.removeChildWindow(panel)
         }
     }

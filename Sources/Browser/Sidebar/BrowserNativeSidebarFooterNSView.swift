@@ -59,7 +59,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
 
     override func layout() {
         super.layout()
-        let toastHeight = toast.isHidden ? 0 : toast.height(for: max(bounds.width - 4, 0))
+        let toastHeight = toast.height(for: max(bounds.width - 4, 0)) * toastProgress
         toast.frame = NSRect(x: 2, y: 0, width: max(bounds.width - 4, 0), height: toastHeight)
         let y = toastHeight + BrowserChromeLayout.sidebarSectionSpacing
         let size = BrowserChromeLayout.chromeButtonSize
@@ -154,7 +154,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     }
 
     func height(for width: CGFloat) -> CGFloat {
-        let toastHeight = toast.isHidden ? 0 : toast.height(for: max(width - 4, 0))
+        let toastHeight = toast.height(for: max(width - 4, 0)) * toastProgress
         return toastHeight + BrowserChromeLayout.sidebarSectionSpacing + (state.model.supportsSpaces
             ? BrowserChromeLayout.chromeButtonSize
             : 0)
@@ -167,6 +167,10 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private let state: BrowserNativeSidebarState
     private let updateController: BrowserUpdateController
     private let toast = BrowserNativeUpdateToastView()
+    private let toastVisibility = BrowserNativeVisibilityAnimation()
+    private let toastAnimation = BrowserNativeAnimation()
+    private var toastTarget = false
+    private var toastProgress = 0.0
     private let scroll = NSScrollView()
     private let spacesContainer = BrowserNativeSurface()
     private let downloadsButton = BrowserNativeChromeButton(
@@ -190,11 +194,25 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private var isResizing = false
 
     private func refreshToast() {
+        let visible = updateController.toast != nil
         if let content = updateController.toast {
             toast.update(content)
-            toast.isHidden = false
-        } else {
-            toast.isHidden = true
+        }
+        toastVisibility.setVisible(visible, view: toast, curve: .sidebar)
+        if toastTarget != visible {
+            toastTarget = visible
+            let from = toastProgress
+            let to = visible ? 1.0 : 0.0
+            if window == nil {
+                toastProgress = to
+            } else {
+                toastAnimation.start(.sidebar) { [weak self] progress in
+                    guard let self else { return }
+                    toastProgress = from + (to - from) * progress
+                    needsLayout = true
+                    onSizeChanged()
+                }
+            }
         }
         needsLayout = true
         onSizeChanged()

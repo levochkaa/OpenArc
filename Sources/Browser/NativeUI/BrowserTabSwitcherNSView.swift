@@ -86,7 +86,7 @@ final class BrowserTabSwitcherNSView: NSView {
 
     func update(state: BrowserChromeModel.TabSwitcherState) {
         selectedTabID = state.selectedTabID
-        panel.isHidden = state.entries.isEmpty || !state.isVisible
+        panel.isHidden = state.entries.isEmpty
         let existing = Dictionary(uniqueKeysWithValues: cards.map { ($0.tabID, $0) })
         let nextCards = state.entries.map { entry in
             let card = existing[entry.id] ?? BrowserTabSwitcherCardNSView(entry: entry)
@@ -152,13 +152,25 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
     }
 
     func update(entry: BrowserChromeModel.TabSwitcherEntry, selected: Bool) {
+        let changed = isSelected != selected
         isSelected = selected
         title.stringValue = entry.tab.displayTitle
         url.stringValue = BrowserURLDisplayFormatter.displayString(for: entry.tab.urlString)
         preview.image = entry.previewImage
         preview.title = entry.tab.displayTitle
-        fillColor = selected ? BrowserChromeColors.rowSelected : BrowserChromeColors.commandBarFieldTint
-        strokeColor = selected ? BrowserChromeColors.primaryText.withAlphaComponent(0.38) : .clear
+        let fill = selected ? BrowserChromeColors.rowSelected : BrowserChromeColors.commandBarFieldTint
+        let stroke = selected ? BrowserChromeColors.primaryText.withAlphaComponent(0.38) : .clear
+        if changed, window != nil {
+            let oldFill = fillColor
+            let oldStroke = strokeColor
+            selectionAnimation.start(.easeOut(0.12)) { [weak self] progress in
+                self?.fillColor = oldFill.blended(withFraction: progress, of: fill) ?? fill
+                self?.strokeColor = oldStroke.blended(withFraction: progress, of: stroke) ?? stroke
+            }
+        } else if !selectionAnimation.isRunning {
+            fillColor = fill
+            strokeColor = stroke
+        }
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(entry.tab.displayTitle)
@@ -168,6 +180,7 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
 
     // MARK: Private
 
+    private let selectionAnimation = BrowserNativeAnimation()
     private let title = NSTextField(labelWithString: "")
     private let url = NSTextField(labelWithString: "")
     private let preview = BrowserTabPreviewNSView()

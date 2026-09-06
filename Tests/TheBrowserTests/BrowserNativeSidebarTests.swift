@@ -182,6 +182,81 @@ import Testing
         #expect(!state.isSpacePagerDragging)
     }
 
+    @Test func hoveredCloseButtonReservesSpaceAndTruncatesLongTitle() throws {
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 180, height: 36))
+        row.update(tab: tab(), selected: true, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        row.titleLabel.stringValue = String(repeating: "A long tab title ", count: 8)
+        row.layoutSubtreeIfNeeded()
+        let oldWidth = row.titleLabel.frame.width
+        let event = try #require(NSEvent.mouseEvent(
+            with: .mouseMoved,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 1,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 0,
+            pressure: 0
+        ))
+        row.mouseEntered(with: event)
+        row.layoutSubtreeIfNeeded()
+        #expect(!row.closeButton.isHidden)
+        #expect(row.titleLabel.frame.width < oldWidth)
+        #expect(row.titleLabel.frame.maxX < row.closeButton.frame.minX)
+        #expect(row.titleLabel.lineBreakMode == .byTruncatingTail)
+        #expect(row.titleLabel.cell?.isScrollable == false)
+        #expect(row.titleLabel.cell?.wraps == false)
+    }
+
+    @Test func newTabGlyphsMatchTheOriginalCenteredRowWithoutShowingAWindow() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 240, height: 36),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let surface = BrowserNativeSurface(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
+        surface.appearance = NSAppearance(named: .aqua)
+        surface.fillColor = .white
+        surface.strokeWidth = 0
+        window.contentView = surface
+        let row = BrowserNativeSidebarRowNSView(frame: surface.bounds)
+        surface.addSubview(row)
+        row.updateNewTab(isPresented: false, isResizing: false, descriptor: BrowserCommands.newTab)
+        row.titleLabel.stringValue = "New Tab"
+        surface.layoutSubtreeIfNeeded()
+        let bitmap = try #require(surface.bitmapImageRepForCachingDisplay(in: surface.bounds))
+        surface.cacheDisplay(in: surface.bounds, to: bitmap)
+        let scale = CGFloat(bitmap.pixelsWide) / surface.bounds.width
+        func inkBounds(_ range: Range<Int>) throws -> CGRect {
+            var points = [CGPoint]()
+            for x in range {
+                for y in 0..<bitmap.pixelsHigh {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                    if max(color.redComponent, color.greenComponent, color.blueComponent) < 0.85 {
+                        points.append(CGPoint(x: x, y: y))
+                    }
+                }
+            }
+            return try CGRect(
+                x: #require(points.map(\.x).min()),
+                y: #require(points.map(\.y).min()),
+                width: #require(points.map(\.x).max()) - #require(points.map(\.x).min()),
+                height: #require(points.map(\.y).max()) - #require(points.map(\.y).min())
+            )
+        }
+        let symbol = try inkBounds(0..<Int(30 * scale))
+        let text = try inkBounds(Int(30 * scale)..<Int(115 * scale))
+        #expect(abs(symbol.midY - text.midY) <= scale * 0.75)
+        #expect((text.minX - symbol.maxX) / scale <= 12)
+        #expect(!window.isVisible)
+        let data = try #require(bitmap.representation(using: .png, properties: [:]))
+        try data.write(to: URL(fileURLWithPath: "/tmp/thebrowser-new-tab-native.png"))
+    }
+
     // MARK: Private
 
     private func tab() -> BrowserChromeModel.Tab {

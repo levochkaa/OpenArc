@@ -147,6 +147,25 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try runAppleScript("key code 0", pid: pid)
     try waitFor("page receives keyboard") { titleIs(typed) }
     print("PASS window: native chrome passes mouse and keyboard into CEF")
+    try runAppleScript("key code 3 using command down", pid: pid)
+    try waitFor("find within page") { frame("browser.find.query") != nil }
+    for _ in 0..<2 {
+        guard let page = frame("browser.content"), let query = frame("browser.find.query") else {
+            throw UIError.failed("Missing page or find field")
+        }
+        try require(page.contains(query), "Find field must stay inside the Chromium viewport")
+        let offset = query.minY - page.minY
+        try runAppleScript("key code 11 using {command down, shift down}", pid: pid)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        guard let nextPage = frame("browser.content"), let nextQuery = frame("browser.find.query") else {
+            throw UIError.failed("Find disappeared while toggling bookmarks")
+        }
+        try require(abs(nextPage.minY - page.minY) > 20, "Bookmarks toggle did not change page geometry")
+        try require(abs(nextQuery.minY - nextPage.minY - offset) < 1, "Find did not follow page below bookmarks")
+    }
+    try runAppleScript("key code 53", pid: pid)
+    print("PASS find: stays in Chromium viewport and follows bookmarks bar")
+
     guard let handle = frame("browser.sidebar.resize") else { throw UIError.failed("Missing resize handle") }
     drag(CGPoint(x: handle.midX, y: handle.midY), CGPoint(x: handle.midX + 48, y: handle.midY))
     try waitFor("sidebar resized") { (frame("browser.sidebar")?.width ?? 0) > initialSidebar.width + 30 }
@@ -157,8 +176,28 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         CGPoint(x: updatedHandle.midX - (enlarged.width - initialSidebar.width), y: updatedHandle.midY)
     )
     try waitFor("sidebar width restored") { abs((frame("browser.sidebar")?.width ?? 0) - initialSidebar.width) < 1 }
-    try press(element("browser.sidebar.toggle")!)
-    try waitFor("sidebar collapsed") { (frame("browser.content")?.minX ?? 9999) < initialContent.minX - 100 }
+    guard let sidebarElement = element("browser.sidebar"), let pageElement = element("browser.content"),
+          let toggleFrame = frame("browser.sidebar.toggle") else { throw UIError.failed("Missing animation controls") }
+    click(CGPoint(x: toggleFrame.midX, y: toggleFrame.midY))
+    var intermediateFrames = 0
+    let animationDeadline = Date().addingTimeInterval(0.3)
+    repeat {
+        if let sidebar = elementFrame(sidebarElement), let page = elementFrame(pageElement),
+           page.minX < initialContent.minX - 35, page.minX > initialContent.minX - initialSidebar.width + 18
+        {
+            intermediateFrames += 1
+            try require(sidebar.minX < initialSidebar.minX - 2, "Page moved before sidebar")
+            try require(abs(sidebar.width - initialSidebar.width) < 1, "Hiding sidebar compressed its contents")
+            // AX requests cross process boundaries; allow one display frame between reads.
+            try require(abs(page.minX - sidebar.maxX) < 32, "Sidebar and page are on different animation frames")
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.006))
+    } while Date() < animationDeadline
+    try require(intermediateFrames > 0, "No intermediate geometry frames were observed")
+    print("PASS sidebar: synchronized intermediate frames and constant content width")
+    try waitFor("sidebar collapsed") {
+        (frame("browser.content")?.minX ?? 9999) < initialContent.minX - 100
+    }
     RunLoop.current.run(until: Date().addingTimeInterval(0.3))
     guard let hiddenContent = frame("browser.content"),
           let root = frame("browser.window.chrome") else { throw UIError.failed("Missing collapsed geometry") }

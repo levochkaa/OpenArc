@@ -63,8 +63,11 @@ final class BrowserRootView: NSView {
         }
         sidebarInteraction.eventMask = [.leftMouseUp, .rightMouseUp, .otherMouseUp]
         sidebarInteraction.onInteraction = { [weak self] _, _ in
+            guard let self, commandBarModel.isPresented else { return }
+            let requestID = commandBarModel.focusRequestID
             DispatchQueue.main.async { [weak self] in
-                guard let self, sidebarLayoutWidth > 0, commandBarModel.isPresented,
+                guard let self, commandBarModel.focusRequestID == requestID,
+                      sidebarLayoutWidth > 0, commandBarModel.isPresented,
                       !currentPageCommandBarModel.isPresented else { return }
                 commandBarModel.dismiss()
             }
@@ -114,7 +117,7 @@ final class BrowserRootView: NSView {
             trailing: browserContentTrailingInset,
             bottom: browserContentBottomInset
         )
-        for overlay in [find, command, currentPageCommand, tabEvents, tabSwitcher, sidebarDismiss] {
+        for overlay in [command, currentPageCommand, tabEvents, tabSwitcher, sidebarDismiss] {
             overlay.frame = bounds
         }
         sidebarInteraction.frame = NSRect(x: 0, y: 0, width: sidebarLayoutWidth, height: bounds.height)
@@ -128,12 +131,31 @@ final class BrowserRootView: NSView {
         )
         let geometry = windowGeometry
         var targets: [(NSView, CGRect)] = [
-            (content, geometry.contentFrame), (sidebar, geometry.sidebarFrame),
-            (toolbar, geometry.toolbarFrame), (bookmarks, geometry.bookmarksFrame),
+            (content, geometry.contentFrame), (find, geometry.contentFrame), (sidebar, geometry.sidebarFrame),
+            (
+                toolbar,
+                showsSiteToolbar
+                    ? geometry.toolbarFrame
+                    : geometry.toolbarFrame.offsetBy(dx: 0, dy: -geometry.toolbarFrame.height)
+            ),
+            (
+                bookmarks,
+                showsBookmarksBar
+                    ? geometry.bookmarksFrame
+                    : geometry.bookmarksFrame.offsetBy(dx: 0, dy: -geometry.bookmarksFrame.height)
+            ),
             (extensionResize, geometry.extensionResizeFrame),
         ]
         if let extensionPanel {
-            targets.append((extensionPanel, geometry.extensionFrame))
+            let frame = isExtensionSidePanelPresented
+                ? geometry.extensionFrame
+                : CGRect(
+                    x: bounds.width,
+                    y: extensionPanel.frame.minY,
+                    width: extensionPanel.frame.width,
+                    height: extensionPanel.frame.height
+                )
+            targets.append((extensionPanel, frame))
         }
         let targetFrames = Dictionary(uniqueKeysWithValues: targets.map { (ObjectIdentifier($0.0), $0.1) })
         // Model notifications unrelated to geometry must not interrupt an in-flight transition.
@@ -141,31 +163,26 @@ final class BrowserRootView: NSView {
             return
         }
         lastFrameTargets = targetFrames
-        animationGeneration += 1
-        let generation = animationGeneration
+        frameAnimation.cancel()
         isAnimatingFrames = animate
-        func frames(_ animated: Bool) {
-            for (view, rect) in targets {
-                if animated {
-                    view.animator().frame = rect
-                } else {
-                    view.frame = rect
-                }
+        let starts = targets.map(\.0.frame)
+        let updates: @MainActor (Double) -> Void = { [weak self] progress in
+            guard let self else { return }
+            for (index, target) in targets.enumerated() {
+                target.0.frame = BrowserNativeAnimation.interpolate(starts[index], target.1, progress)
             }
+            for (view, _) in targets {
+                view.layoutSubtreeIfNeeded()
+            }
+            // Keep hit regions and anchored panels on the same geometry as the page.
+            sidebarInteraction.frame.size.width = max(content.frame.minX, 0)
         }
         if animate {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = BrowserChromeLayout.sidebarAnimationDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                frames(true)
-            } completionHandler: { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self, generation == animationGeneration else { return }
-                    finishPresentationAnimation()
-                }
+            frameAnimation.start(.sidebar, updates: updates) { [weak self] in
+                self?.finishPresentationAnimation()
             }
         } else {
-            frames(false)
+            updates(1)
             finishPresentationAnimation()
         }
     }
@@ -188,14 +205,18 @@ final class BrowserRootView: NSView {
     private let sidebarInteraction = BrowserPassthroughInteractionNSView()
     private let tabEvents = BrowserTabSwitcherEventNSView()
     private let tabSwitcher = BrowserTabSwitcherNSView()
+    private let tabSwitcherVisibility = BrowserNativeVisibilityAnimation()
     private let fullscreenReader = BrowserWindowFullscreenReaderNSView()
     private let extensionResize = BrowserNativeResizeHandle()
     private var extensionPanel: BrowserExtensionSidePanelNSView?
+    private let toolbarVisibility = BrowserNativeVisibilityAnimation()
+    private let bookmarksVisibility = BrowserNativeVisibilityAnimation()
+    private let extensionVisibility = BrowserNativeVisibilityAnimation()
     private var observations = Set<AnyCancellable>()
     private var revealTask: Task<Void, Never>?
     private var previousLayoutState: [Bool]?
     private var animateNextLayout = false
-    private var animationGeneration = 0
+    private let frameAnimation = BrowserNativeAnimation()
     private var isAnimatingFrames = false
     private var lastFrameTargets = [ObjectIdentifier: CGRect]()
     private var showsSidebarWindowControls: Bool
@@ -315,16 +336,19 @@ final class BrowserRootView: NSView {
         sidebar.showsWindowControls = showsWindowControlsInSidebarChrome
         sidebar.isOverlayPresentation = isSidebarOverlayPresentation
         sidebar.refresh()
-        toolbar.isHidden = !showsSiteToolbar
+        toolbarVisibility.setVisible(showsSiteToolbar, view: toolbar, curve: .sidebar)
         toolbar.refresh()
-        bookmarks.isHidden = !showsBookmarksBar
+        bookmarksVisibility.setVisible(showsBookmarksBar, view: bookmarks, curve: .sidebar)
         bookmarks.refresh()
         if let panel = model.extensionSidePanel, let host = model.extensionSidePanelHostView {
             let view = extensionPanel ?? BrowserExtensionSidePanelNSView(hostView: host)
             if extensionPanel == nil {
                 extensionPanel = view
                 addSubview(view, positioned: .above, relativeTo: sidebar)
+                view.frame = windowGeometry.extensionFrame.offsetBy(dx: windowGeometry.extensionFrame.width, dy: 0)
+                extensionVisibility.setVisible(false, view: view, curve: .sidebar)
             }
+            extensionVisibility.setVisible(true, view: view, curve: .sidebar)
             view.onClose = { [weak model] in model?.closeExtensionSidePanel() }
             view.update(
                 sidePanel: panel,
@@ -332,25 +356,32 @@ final class BrowserRootView: NSView {
                 isContextReady: model.isContextReady,
                 usesWindowContentInsets: usesWindowContentInsets
             )
-        } else {
-            extensionPanel?.removeFromSuperview()
-            extensionPanel = nil
+        } else if let extensionPanel {
+            extensionVisibility.setVisible(false, view: extensionPanel, curve: .sidebar)
         }
         extensionResize.isHidden = !isExtensionSidePanelPresented
         extensionResize.hapticsEnabled = preferences.hapticFeedbackEnabled
         revealEdge.isHidden = model.isSidebarVisible || isSidebarPresented
         tabEvents.isEnabled = model.selectedTabID != nil
-        tabSwitcher.isHidden = model.tabSwitcherState?.isVisible != true
+        tabSwitcherVisibility.setVisible(
+            model.tabSwitcherState?.isVisible == true,
+            view: tabSwitcher,
+            curve: .easeOut(0.12)
+        )
         if let state = model.tabSwitcherState {
             tabSwitcher.update(state: state)
         }
-        find.refresh(from: model, blockedLeadingInset: browserContentMinX)
+        find.refresh(from: model, blockedLeadingInset: 0)
         configureCommandBars()
         needsLayout = true
     }
 
     private func finishPresentationAnimation() {
         isAnimatingFrames = false
+        if !isExtensionSidePanelPresented {
+            extensionPanel?.removeFromSuperview()
+            extensionPanel = nil
+        }
         if !isSidebarPresented {
             isSidebarHoverOverlayChromeVisible = false
         }
@@ -404,12 +435,12 @@ final class BrowserRootView: NSView {
         sidebar.isOverlayPresentation = true
         sidebar.showsWindowControls = true
         sidebar.refresh()
-        DispatchQueue.main.async { [weak self] in
-            guard let self,!model.isSidebarVisible, isSidebarHoverOverlayChromeVisible,
-                  !isSidebarHoverOverlayPresented else { return }
-            isSidebarHoverOverlayPresented = true
-            refresh()
-        }
+        frameAnimation.cancel()
+        isAnimatingFrames = false
+        sidebar.frame = windowGeometry.sidebarFrame
+        sidebar.layoutSubtreeIfNeeded()
+        isSidebarHoverOverlayPresented = true
+        refresh()
     }
 
     private func dismissSidebarHoverOverlay() {

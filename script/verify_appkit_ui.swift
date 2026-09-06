@@ -119,6 +119,22 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         )
         try waitFor("find field appears") { field() != nil }
     }
+    app.activate()
+    if let newTab = element("browser.sidebar.new-tab"), let frame = elementFrame(newTab) {
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        for type: CGEventType in [.mouseMoved, .leftMouseDown, .leftMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        try waitFor("New Tab stays presented after mouse-up") { element("browser.command.query") != nil }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        try require(element("browser.command.query") != nil, "New Tab closed on its opening mouse-up")
+        try runAppleScript("key code 53", pid: pid)
+        print("PASS command bar: real New Tab mouse click stays open")
+    } else {
+        throw UIError.failed("A visible sidebar is required for New Tab mouse verification")
+    }
     let fixture = FileManager.default
         .temporaryDirectory
         .appendingPathComponent("thebrowser-native-ui-verification.html")
@@ -165,6 +181,21 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
               let scroll = element("browser.command.suggestion-scroll"),
               let viewport = elementFrame(scroll) else { return false }
         return viewport.contains(rowFrame.insetBy(dx: 1, dy: 1))
+    }
+    guard let suggestionTable = element("browser.command.suggestions"),
+          let rows = attribute(suggestionTable, kAXRowsAttribute) as? [AXUIElement]
+    else {
+        throw UIError.failed("Missing suggestion rows")
+    }
+    for _ in rows {
+        try runAppleScript("key code 125", pid: pid)
+    }
+    try waitFor("last suggestion rests at viewport bottom without blank rows") {
+        guard let selected = (attribute(suggestionTable, kAXSelectedRowsAttribute) as? [AXUIElement])?.first,
+              let row = elementFrame(selected), let scroll = element("browser.command.suggestion-scroll"),
+              let viewport = elementFrame(scroll) else { return false }
+        let gap = viewport.maxY - row.maxY
+        return gap >= -1 && gap < 12
     }
     try runAppleScript("key code 53", pid: pid)
     try waitFor("Escape closes command bar") { element("browser.command.query") == nil }

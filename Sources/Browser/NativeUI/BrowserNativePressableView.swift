@@ -53,6 +53,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
     var tooltipShortcut: BrowserKeyboardShortcut?
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
     var permitsTooltip = true
+    var pressedScale = BrowserChromeLayout.sidebarButtonPressedScale
 
     var isInteractionEnabled = true {
         didSet {
@@ -195,6 +196,8 @@ class BrowserNativePressableView: BrowserNativeSurface {
 
     private let tooltipID = UUID()
     private var tracking: NSTrackingArea?
+    private let pressAnimation = BrowserNativeAnimation()
+    private var displayedScale: CGFloat = 1
     private var downEvent: NSEvent?
     private var previousDragSample: (point: CGPoint, time: TimeInterval)?
     private var velocity = CGSize.zero
@@ -240,15 +243,19 @@ class BrowserNativePressableView: BrowserNativeSurface {
     private func setPressed(_ value: Bool) {
         guard isPressed != value else { return }
         isPressed = value
-        let scale = value ? BrowserChromeLayout.sidebarButtonPressedScale : 1
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18)
-        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-        layer?.setAffineTransform(CGAffineTransform(
-            translationX: bounds.width * (1 - scale) / 2,
-            y: bounds.height * (1 - scale) / 2
-        ).scaledBy(x: scale, y: scale))
-        CATransaction.commit()
+        let scale = value ? pressedScale : 1
+        let from = displayedScale
+        pressAnimation.start(.press) { [weak self] progress in
+            guard let self else { return }
+            displayedScale = from + (scale - from) * progress
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.setAffineTransform(CGAffineTransform(
+                translationX: bounds.width * (1 - displayedScale) / 2,
+                y: bounds.height * (1 - displayedScale) / 2
+            ).scaledBy(x: displayedScale, y: displayedScale))
+            CATransaction.commit()
+        }
         interactionChanged()
     }
 }

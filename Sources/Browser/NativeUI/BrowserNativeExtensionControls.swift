@@ -54,6 +54,7 @@ final class BrowserNativeExtensionButton: BrowserNativePressableView {
         self.tile = tile
         self.sidebar = sidebar
         super.init(frame: .zero)
+        pressedScale = tile ? 1 : BrowserChromeLayout.sidebarCloseButtonPressedScale
         addSubview(icon)
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.setAccessibilityElement(false)
