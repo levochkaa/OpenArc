@@ -148,6 +148,10 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             ? "browser.command.current-page-query"
             : "browser.command.query")
         if inputStyleChanged {
+            if model.isPresented {
+                queryField.clearFocusSelectionRequest()
+                queryField.lastFocusRequestID = -1
+            }
             refresh()
         } else {
             refreshIcons()
