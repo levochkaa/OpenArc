@@ -4,79 +4,28 @@ import SwiftUI
 
 // MARK: - BrowserContentView
 
-struct BrowserContentView: View {
+/// Temporary mounting adapter for the browser window shell.
+struct BrowserContentView: NSViewRepresentable {
     let hostView: NSView
     let isContextReady: Bool
     let hasSelectedTab: Bool
     let isSidebarVisible: Bool
     let usesWindowContentInsets: Bool
 
-    var contentCornerRadius: CGFloat {
-        shouldRoundLeadingCorners || shouldRoundTrailingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0
+    func makeNSView(context: Context) -> BrowserContentNSView {
+        let view = BrowserContentNSView(hostView: hostView)
+        updateNSView(view, context: context)
+        return view
     }
 
-    var shouldRoundLeadingCorners: Bool {
-        isSidebarVisible || usesWindowContentInsets
-    }
-
-    var shouldRoundTrailingCorners: Bool {
-        usesWindowContentInsets
-    }
-
-    var maskedContentCorners: CACornerMask {
-        var corners: CACornerMask = []
-
-        if shouldRoundLeadingCorners {
-            corners.insert(.layerMinXMinYCorner)
-            corners.insert(.layerMinXMaxYCorner)
-        }
-
-        if shouldRoundTrailingCorners {
-            corners.insert(.layerMaxXMinYCorner)
-            corners.insert(.layerMaxXMaxYCorner)
-        }
-
-        return corners
-    }
-
-    var contentShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            cornerRadii: RectangleCornerRadii(
-                topLeading: shouldRoundLeadingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0,
-                bottomLeading: shouldRoundLeadingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0,
-                bottomTrailing: shouldRoundTrailingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0,
-                topTrailing: shouldRoundTrailingCorners ? BrowserChromeLayout.leadingContentCornerRadius : 0
-            ),
-            style: .continuous
-        )
-    }
-
-    var body: some View {
-        BrowserViewportHostRepresentable(
+    func updateNSView(_ view: BrowserContentNSView, context _: Context) {
+        view.update(
             hostView: hostView,
-            cornerRadius: contentCornerRadius,
-            maskedCorners: maskedContentCorners
+            isContextReady: isContextReady,
+            hasSelectedTab: hasSelectedTab,
+            isSidebarVisible: isSidebarVisible,
+            usesWindowContentInsets: usesWindowContentInsets
         )
-        .opacity(hasSelectedTab ? 1 : 0)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay {
-            if !isContextReady {
-                ZStack {
-                    Rectangle()
-                        .fill(BrowserChromePalette.contentBackground)
-
-                    VStack(spacing: 10) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(BrowserChromePalette.primaryText)
-                        Text(BrowserStrings.loadingLaunchingBrowser)
-                            .font(.system(size: 12))
-                            .foregroundStyle(BrowserChromePalette.secondaryText)
-                    }
-                }
-                .clipShape(contentShape)
-            }
-        }
     }
 }
 
@@ -108,79 +57,5 @@ struct BrowserViewportHostRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: BrowserViewportClipView, context _: Context) {
         nsView.update(hostView: hostView)
         nsView.updateClipping(cornerRadius: cornerRadius, maskedCorners: maskedCorners)
-    }
-}
-
-// MARK: - BrowserViewportClipView
-
-final class BrowserViewportClipView: NSView {
-    // MARK: Lifecycle
-
-    init(hostView: NSView) {
-        self.hostedView = hostView
-        super.init(frame: .zero)
-
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-
-        attachHostedViewIfNeeded()
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    // MARK: Internal
-
-    override var mouseDownCanMoveWindow: Bool {
-        false
-    }
-
-    var hostedView: NSView
-
-    override func layout() {
-        super.layout()
-        if hostedView.frame != bounds {
-            hostedView.frame = bounds
-        }
-    }
-
-    func update(hostView: NSView) {
-        guard hostedView !== hostView else {
-            attachHostedViewIfNeeded()
-            return
-        }
-
-        hostedView = hostView
-        attachHostedViewIfNeeded()
-        needsLayout = true
-    }
-
-    func updateClipping(cornerRadius: CGFloat, maskedCorners: CACornerMask) {
-        guard let layer else {
-            return
-        }
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        layer.cornerRadius = max(cornerRadius, 0)
-        layer.maskedCorners = maskedCorners
-        CATransaction.commit()
-    }
-
-    // MARK: Private
-
-    private func attachHostedViewIfNeeded() {
-        if hostedView.superview !== self {
-            hostedView.removeFromSuperview()
-            addSubview(hostedView)
-        }
-
-        hostedView.autoresizingMask = [.width, .height]
-        if hostedView.frame != bounds {
-            hostedView.frame = bounds
-        }
     }
 }

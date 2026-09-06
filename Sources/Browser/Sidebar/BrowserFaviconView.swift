@@ -1,66 +1,25 @@
 import AppKit
-import QuartzCore
 import SwiftUI
 
-struct BrowserFaviconView: View {
-    // MARK: Lifecycle
-
-    init(
-        url: URL?,
-        pageURLString: String? = nil,
-        size: CGFloat = BrowserChromeLayout.sidebarFaviconSize
-    ) {
-        self.url = url
-        self.pageURLString = pageURLString
-        self.size = size
-    }
-
-    // MARK: Internal
-
+/// Temporary adapter. Loading and rendering belong to the native favicon view.
+struct BrowserFaviconView: NSViewRepresentable {
     @EnvironmentObject var faviconCache: BrowserFaviconCache
 
     let url: URL?
-    let pageURLString: String?
-    let size: CGFloat
+    var pageURLString: String?
+    var size: CGFloat = BrowserChromeLayout.sidebarFaviconSize
 
-    var fallbackStyle: BrowserFaviconFallbackStyle {
-        BrowserFaviconFallbackStyle.style(forPageURLString: pageURLString)
+    func makeNSView(context _: Context) -> BrowserFaviconNSView {
+        let view = BrowserFaviconNSView(cache: faviconCache)
+        view.update(url: url, pageURLString: pageURLString)
+        return view
     }
 
-    var body: some View {
-        Group {
-            if fallbackStyle == .chromiumWebUI {
-                chromiumWebUIPlaceholder
-            } else if let image = faviconCache.image(for: url) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                placeholder
-            }
-        }
-        .frame(width: size, height: size)
-        .task(id: url) {
-            guard fallbackStyle != .chromiumWebUI else {
-                return
-            }
-
-            await faviconCache.loadImageIfNeeded(from: url)
-        }
+    func updateNSView(_ view: BrowserFaviconNSView, context _: Context) {
+        view.update(url: url, pageURLString: pageURLString)
     }
 
-    var chromiumWebUIPlaceholder: some View {
-        Image("ChromiumWebUIFavicon")
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-    }
-
-    var placeholder: some View {
-        Image(systemName: "globe")
-            .resizable()
-            .scaledToFit()
-            .foregroundStyle(BrowserChromePalette.secondaryText)
-            .padding(1)
+    func sizeThatFits(_: ProposedViewSize, nsView _: BrowserFaviconNSView, context _: Context) -> CGSize? {
+        CGSize(width: size, height: size)
     }
 }
