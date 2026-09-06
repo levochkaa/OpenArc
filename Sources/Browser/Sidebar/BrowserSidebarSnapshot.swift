@@ -1,6 +1,5 @@
 import AppKit
 import QuartzCore
-import SwiftUI
 
 // MARK: - BrowserSidebarSnapshot
 

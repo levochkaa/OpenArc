@@ -130,6 +130,15 @@ final class BrowserNativeChromeButton: NSButton {
         NSSize(width: style.size, height: style.size)
     }
 
+    override var isHidden: Bool {
+        didSet {
+            if isHidden {
+                hovered = false
+                BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
+            }
+        }
+    }
+
     override var isEnabled: Bool { didSet { needsDisplay = true } }
     override var isHighlighted: Bool { didSet { needsDisplay = true } }
 

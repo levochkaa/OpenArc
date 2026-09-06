@@ -1,0 +1,254 @@
+import AppKit
+import QuartzCore
+
+// MARK: - BrowserNativeDragValue
+
+struct BrowserNativeDragValue {
+    let startLocation: CGPoint
+    let location: CGPoint
+    let translation: CGSize
+    let predictedEndTranslation: CGSize
+}
+
+// MARK: - BrowserNativePressableView
+
+/// Pointer tracking is shared by sidebar rows, tiles and small native controls.
+// swiftformat:disable:next preferFinalClasses
+class BrowserNativePressableView: BrowserNativeSurface {
+    // MARK: Lifecycle
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        strokeWidth = 0
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // MARK: Internal
+
+    override var isHidden: Bool {
+        didSet {
+            if isHidden {
+                resetInteraction()
+                BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
+            }
+        }
+    }
+
+    private(set) var isHovered = false
+    private(set) var isPressed = false
+    private(set) var isDragging = false
+    var onClick: (NSEvent?) -> Void = { _ in }
+    var onDoubleClick: ((NSEvent?) -> Void)?
+    var onHoverChanged: (Bool) -> Void = { _ in }
+    var onDragChanged: ((BrowserNativeDragValue) -> Void)?
+    var onDragEnded: ((BrowserNativeDragValue) -> Void)?
+    var menuProvider: (() -> NSMenu)?
+    weak var dragCoordinateView: NSView?
+    var tooltipTitle: String?
+    var tooltipCaption: String?
+    var tooltipShortcut: BrowserKeyboardShortcut?
+    var tooltipPlacement = BrowserTooltipPlacement.belowLeading
+    var permitsTooltip = true
+
+    var isInteractionEnabled = true {
+        didSet {
+            if !isInteractionEnabled {
+                resetInteraction()
+            }
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        var candidate: NSView? = hit
+        while let view = candidate, view !== self {
+            if view is NSButton || (view as? NSTextField)?.isEditable == true {
+                return view
+            }
+            candidate = view.superview
+        }
+        return self
+    }
+
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+    override func accessibilityPerformPress() -> Bool {
+        guard isInteractionEnabled else { return false }
+        onClick(nil)
+        return true
+    }
+
+    override func menu(for _: NSEvent) -> NSMenu? {
+        BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
+        return menuProvider?()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking {
+            removeTrackingArea(tracking)
+        }
+        tracking = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(tracking!)
+    }
+
+    override func mouseEntered(with event: NSEvent) { setHovered(true)
+        pointerMoved(event)
+    }
+
+    override func mouseMoved(with event: NSEvent) { pointerMoved(event) }
+    override func mouseExited(with event: NSEvent) { setHovered(false)
+        pointerMoved(event)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            resetInteraction()
+            BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isInteractionEnabled else { return }
+        downEvent = event
+        previousDragSample = nil
+        velocity = .zero
+        isDragging = false
+        setPressed(true)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isInteractionEnabled, let downEvent else { return }
+        let distance = hypot(
+            event.locationInWindow.x - downEvent.locationInWindow.x,
+            event.locationInWindow.y - downEvent.locationInWindow.y
+        )
+        if onDragChanged != nil, distance >= BrowserChromeLayout.sidebarTabDragMinimumDistance {
+            isDragging = true
+            setPressed(false)
+            BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
+            onDragChanged?(dragValue(event))
+        } else if !isDragging {
+            setPressed(bounds.contains(convert(event.locationInWindow, from: nil)))
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard downEvent != nil else { return }
+        let didDrag = isDragging
+        let value = dragValue(event)
+        downEvent = nil
+        isDragging = false
+        setPressed(false)
+        if didDrag {
+            onDragEnded?(value)
+        } else if isInteractionEnabled, bounds.contains(convert(event.locationInWindow, from: nil)) {
+            BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
+            if event.clickCount >= 2, let onDoubleClick {
+                onDoubleClick(event)
+            } else {
+                onClick(event)
+            }
+        }
+    }
+
+    func pointerMoved(_: NSEvent) {}
+    func interactionChanged() { needsDisplay = true }
+    func resetInteraction() {
+        downEvent = nil
+        isDragging = false
+        setPressed(false)
+        setHovered(false)
+    }
+
+    func synchronizeHoverWithPointer() {
+        guard let window, !isHiddenOrHasHiddenAncestor else { setHovered(false)
+            return
+        }
+        setHovered(visibleRect.contains(convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)))
+    }
+
+    func refreshTooltip() {
+        if isHovered, permitsTooltip, isInteractionEnabled, !isDragging, let tooltipTitle, window != nil {
+            BrowserNativeTooltipPresenter.shared.begin(
+                id: tooltipID,
+                anchor: self,
+                title: tooltipTitle,
+                caption: tooltipCaption,
+                shortcut: tooltipShortcut,
+                placement: tooltipPlacement
+            )
+        } else {
+            BrowserNativeTooltipPresenter.shared.end(id: tooltipID)
+        }
+    }
+
+    // MARK: Private
+
+    private let tooltipID = UUID()
+    private var tracking: NSTrackingArea?
+    private var downEvent: NSEvent?
+    private var previousDragSample: (point: CGPoint, time: TimeInterval)?
+    private var velocity = CGSize.zero
+
+    private func dragValue(_ event: NSEvent) -> BrowserNativeDragValue {
+        let coordinateView = dragCoordinateView ?? superview ?? self
+        let start = coordinateView.convert(downEvent?.locationInWindow ?? event.locationInWindow, from: nil)
+        let location = coordinateView.convert(event.locationInWindow, from: nil)
+        let translation = CGSize(width: location.x - start.x, height: location.y - start.y)
+        if let previousDragSample {
+            let elapsed = event.timestamp - previousDragSample.time
+            if elapsed > 0, elapsed < 0.15 {
+                velocity = CGSize(
+                    width: (location.x - previousDragSample.point.x) / elapsed,
+                    height: (location.y - previousDragSample.point.y) / elapsed
+                )
+            } else if elapsed >= 0.15 {
+                velocity = .zero
+            }
+        }
+        previousDragSample = (location, event.timestamp)
+        return BrowserNativeDragValue(
+            startLocation: start,
+            location: location,
+            translation: translation,
+            predictedEndTranslation: CGSize(
+                width: translation.width + velocity.width * 0.15,
+                height: translation.height + velocity
+                    .height * 0.15
+            )
+        )
+    }
+
+    private func setHovered(_ value: Bool) {
+        let value = value && isInteractionEnabled
+        guard isHovered != value else { return }
+        isHovered = value
+        onHoverChanged(value)
+        interactionChanged()
+        refreshTooltip()
+    }
+
+    private func setPressed(_ value: Bool) {
+        guard isPressed != value else { return }
+        isPressed = value
+        let scale = value ? BrowserChromeLayout.sidebarButtonPressedScale : 1
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        layer?.setAffineTransform(CGAffineTransform(
+            translationX: bounds.width * (1 - scale) / 2,
+            y: bounds.height * (1 - scale) / 2
+        ).scaledBy(x: scale, y: scale))
+        CATransaction.commit()
+        interactionChanged()
+    }
+}

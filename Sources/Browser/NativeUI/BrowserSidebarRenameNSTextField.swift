@@ -1,109 +1,4 @@
 import AppKit
-import QuartzCore
-import SwiftUI
-
-// MARK: - BrowserSidebarTitleTextField
-
-struct BrowserSidebarTitleTextField: NSViewRepresentable {
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        // MARK: Lifecycle
-
-        init(
-            text: Binding<String>,
-            onSubmit: @escaping () -> Void,
-            onCancel: @escaping () -> Void,
-            onBlur: @escaping () -> Void
-        ) {
-            self.text = text
-            self.onSubmit = onSubmit
-            self.onCancel = onCancel
-            self.onBlur = onBlur
-        }
-
-        // MARK: Internal
-
-        var text: Binding<String>
-        var onSubmit: () -> Void
-        var onCancel: () -> Void
-        var onBlur: () -> Void
-        var suppressesNextBlur = false
-
-        func update(
-            text: Binding<String>,
-            onSubmit: @escaping () -> Void,
-            onCancel: @escaping () -> Void,
-            onBlur: @escaping () -> Void
-        ) {
-            self.text = text
-            self.onSubmit = onSubmit
-            self.onCancel = onCancel
-            self.onBlur = onBlur
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let textField = notification.object as? NSTextField else {
-                return
-            }
-
-            if text.wrappedValue != textField.stringValue {
-                text.wrappedValue = textField.stringValue
-            }
-        }
-
-        func controlTextDidEndEditing(_: Notification) {
-            if suppressesNextBlur {
-                suppressesNextBlur = false
-                return
-            }
-
-            onBlur()
-        }
-
-        func control(_: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            switch commandSelector {
-            case #selector(NSResponder.insertNewline(_:)),
-                 #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
-                suppressesNextBlur = true
-                onSubmit()
-                return true
-            case #selector(NSResponder.cancelOperation(_:)):
-                suppressesNextBlur = true
-                onCancel()
-                return true
-            default:
-                return false
-            }
-        }
-    }
-
-    @Binding var text: String
-
-    let isFocused: Bool
-    let onSubmit: () -> Void
-    let onCancel: () -> Void
-    let onBlur: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onSubmit: onSubmit, onCancel: onCancel, onBlur: onBlur)
-    }
-
-    func makeNSView(context: Context) -> BrowserSidebarRenameNSTextField {
-        let textField = BrowserSidebarRenameNSTextField()
-        textField.delegate = context.coordinator
-        textField.stringValue = text
-        return textField
-    }
-
-    func updateNSView(_ nsView: BrowserSidebarRenameNSTextField, context: Context) {
-        context.coordinator.update(text: $text, onSubmit: onSubmit, onCancel: onCancel, onBlur: onBlur)
-
-        if nsView.stringValue != text {
-            nsView.stringValue = text
-        }
-
-        nsView.syncFocus(isFocused)
-    }
-}
 
 // MARK: - BrowserSidebarRenameNSTextField
 
@@ -137,6 +32,7 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
         NSSize(width: NSView.noIntrinsicMetric, height: 17)
     }
 
+    var focusPermission: () -> Bool = { true }
     var pendingFocus = false
     var pendingSelectAll = false
 
@@ -177,7 +73,7 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
             }
 
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.window != nil, pendingFocus else {
+                guard let self, self.window != nil, pendingFocus, focusPermission() else {
                     return
                 }
 
