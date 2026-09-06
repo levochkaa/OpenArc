@@ -51,6 +51,11 @@ final class BrowserWindowControlsHostView: NSView {
         }
     }
 
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        superview?.needsLayout = true
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateWindowObservation()

@@ -64,56 +64,14 @@ struct BrowserRootView: View {
                 )
 
                 if showsSiteToolbar {
-                    BrowserSiteToolbar(
-                        tab: sidebarSnapshot.selectedTab,
-                        extensions: model.browserExtensions,
-                        pinnedExtensionIDs: model.pinnedExtensionIDs,
-                        canGoBack: sidebarSnapshot.canGoBack,
-                        canGoForward: sidebarSnapshot.canGoForward,
-                        canStopLoading: sidebarSnapshot.canStopLoading,
-                        canReload: sidebarSnapshot.canReload,
-                        goBackShortcut: shortcutStore.shortcut(for: .goBack),
-                        goForwardShortcut: shortcutStore.shortcut(for: .goForward),
-                        reloadShortcut: shortcutStore.shortcut(for: .reload),
-                        copyLinkShortcut: shortcutStore.shortcut(for: .copyLink),
-                        toggleBookmarksBarShortcut: shortcutStore.shortcut(for: .toggleBookmarksBar),
-                        showsFullURL: preferences.siteToolbarShowsFullURL,
-                        isBookmarksBarVisible: preferences.bookmarksBarVisible,
-                        onURLButtonFrameChange: { currentURLRowWindowFrame = $0 },
-                        onOpenSearch: model.presentCurrentPageCommandBar,
-                        onGoBack: model.goBack,
-                        onGoForward: model.goForward,
-                        onStopLoading: model.stopLoadingCurrentTab,
-                        onReload: model.reloadCurrentTab,
-                        onCopyURL: model.copySelectedTabLink,
-                        onCaptureFullPage: model.captureFullPageSelectedTabToPasteboard,
-                        onToggleToolbar: {
-                            preferences.siteURLToolbarEnabled.toggle()
-                        },
-                        onToggleShowsFullURL: {
-                            preferences.siteToolbarShowsFullURL.toggle()
-                        },
-                        onToggleBookmarksBar: toggleBookmarksBarVisibility,
-                        onRefreshExtensions: model.refreshBrowserExtensions,
-                        onOpenExtensionsManager: model.openExtensionsManager,
-                        onOpenExtensionStore: model.openExtensionStore,
-                        onOpenExtensionStorePage: model.openExtensionStore,
-                        onOpenExtensionDetails: model.openExtensionDetails,
-                        onRemoveExtension: { extensionID in
-                            model.removeExtension(id: extensionID)
-                        },
-                        onToggleExtensionPinned: { extensionID in
-                            model.toggleExtensionPinned(id: extensionID)
-                        },
-                        onOpenExtension: model.openExtension
-                    )
-                    .frame(
-                        width: bookmarksBarWidth(in: proxy.size),
-                        height: BrowserChromeLayout.siteToolbarHeight,
-                        alignment: .leading
-                    )
-                    .offset(x: browserContentMinX, y: siteToolbarMinY)
-                    .zIndex(5)
+                    BrowserSiteToolbar(model: model, onURLButtonFrameChange: { currentURLRowWindowFrame = $0 })
+                        .frame(
+                            width: bookmarksBarWidth(in: proxy.size),
+                            height: BrowserChromeLayout.siteToolbarHeight,
+                            alignment: .leading
+                        )
+                        .offset(x: browserContentMinX, y: siteToolbarMinY)
+                        .zIndex(5)
                 }
 
                 if showsBookmarksBar {

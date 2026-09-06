@@ -66,6 +66,14 @@ struct BrowserNativeChromeButtonStyle {
         foreground: BrowserChromeColors.secondaryText,
         hoverBackground: BrowserChromeColors.rowHover
     )
+    static let currentURL = BrowserNativeChromeButtonStyle(
+        size: BrowserChromeLayout.sidebarCurrentURLButtonSize,
+        cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
+        symbolSize: BrowserChromeLayout.sidebarCurrentURLButtonSymbolSize,
+        symbolWeight: .bold,
+        foreground: BrowserChromeColors.currentURLText,
+        hoverBackground: BrowserChromeColors.currentURLButtonHover
+    )
     static let sidebarClose = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarCloseButtonSize,
         cornerRadius: BrowserChromeLayout.sidebarCloseCornerRadius,

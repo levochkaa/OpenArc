@@ -5,7 +5,7 @@ import QuartzCore
 // MARK: - BrowserNativeSidebarNSView
 
 /// AppKit owns sidebar layout, row identity, scrolling, selection, rename editors and drag/drop.
-/// Header and footer are injected while the remaining toolbar/popover adapters are migrated.
+/// Header and footer share native chrome controls with the main toolbar.
 final class BrowserNativeSidebarNSView: NSView {
     // MARK: Lifecycle
 
@@ -213,6 +213,9 @@ final class BrowserNativeSidebarNSView: NSView {
             height: max(bounds.height - inset * 2, 0)
         )
         let width = max(content.bounds.width, 0)
+        if let header = header as? BrowserNativeSidebarHeaderNSView {
+            headerHeight = header.preferredHeight
+        }
         if let footer = footer as? BrowserNativeSidebarFooterNSView {
             footerHeight = footer.height(for: width)
         }
