@@ -146,7 +146,60 @@ func descendants(_ element: AXUIElement, depth: Int = 0) -> [AXUIElement] {
     try waitFor("native About credits") { element("browser.about.credits") != nil }
     try require(value(element("browser.about.credits"))?.contains("Chromium") == true, "About credits are missing")
     try runAppleScript("key code 13 using command down", pid: pid)
+    try waitFor("About closes without archiving the browser tab") { element("browser.about.credits") == nil }
     print("PASS about: native window, selectable credits, close")
+
+    try runAppleScript(
+        "click menu item \"Settings…\" of menu 1 of menu bar item \"TheBrowser\" of menu bar 1",
+        pid: pid
+    )
+    try waitFor("accounts page") { element("browser.settings.default-browser") != nil }
+    for (title, sentinel) in [
+        ("General", "battery-saver"),
+        ("Profiles", "new-profile"),
+        ("Shortcuts", "shortcut-search"),
+        ("Content", "haptic-feedback"),
+        ("Accounts", "default-browser"),
+    ] {
+        try runAppleScript("click button \"\(title)\" of toolbar 1 of window 1", pid: pid)
+        try waitFor("settings \(title)") { element("browser.settings.\(sentinel)") != nil }
+    }
+    print("PASS settings: all five native pages")
+    try runAppleScript("click button \"Content\" of toolbar 1 of window 1", pid: pid)
+    try waitFor("content checkbox") { element("browser.settings.haptic-feedback") != nil }
+    func checkboxValue() -> Int? {
+        element("browser.settings.haptic-feedback").flatMap { attribute($0, kAXValueAttribute) as? Int }
+    }
+    guard let originalCheckbox = checkboxValue() else { throw UIError.failed("Cannot read checkbox state") }
+    defer {
+        if originalCheckbox != checkboxValue() {
+            try? press("browser.settings.haptic-feedback")
+        }
+    }
+    try press("browser.settings.haptic-feedback")
+    try waitFor("checkbox change") { checkboxValue() != originalCheckbox }
+    try press("browser.settings.haptic-feedback")
+    try waitFor("checkbox restored") { checkboxValue() == originalCheckbox }
+    try runAppleScript("click button \"Shortcuts\" of toolbar 1 of window 1", pid: pid)
+    try waitFor("shortcut search") { element("browser.settings.shortcut-search") != nil }
+    if let search = element("browser.settings.shortcut-search") {
+        try require(
+            AXUIElementSetAttributeValue(search, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success,
+            "Could not focus shortcut search"
+        )
+    }
+    try runAppleScript("keystroke \"Find\"", pid: pid)
+    try waitFor("shortcut filter") { value(element("browser.settings.shortcut-search")) == "Find" }
+    let windows = attribute(axApp, kAXWindowsAttribute) as? [AXUIElement] ?? []
+    let recordID = windows.flatMap { descendants($0) }
+        .compactMap { attribute($0, kAXIdentifierAttribute) as? String }
+        .first { $0.hasPrefix("browser.settings.shortcut.record.") }
+    guard let recordID else { throw UIError.failed("Shortcut filtering removed matching commands") }
+    try press(recordID)
+    try waitFor("shortcut recorder focus") { element("browser.settings.shortcut-capture") != nil }
+    try runAppleScript("key code 53", pid: pid)
+    try waitFor("cancel shortcut recording") { element("browser.settings.shortcut-capture") == nil }
+    print("PASS settings: checkbox round trip, shortcut filtering, recorder cancellation")
 }
 
 do { try MainActor.assumeIsolated { try verify() } } catch { fputs("UI verification failed: \(error)\n", stderr)

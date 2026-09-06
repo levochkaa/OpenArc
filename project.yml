@@ -205,7 +205,6 @@ targets:
         excludes:
           - Browser*Controller.swift
           - Browser*View.swift
-          - BrowserAppleSignInService.swift
           - BrowserChromiumExtensionManager.swift
           - BrowserRuntimeConfiguration.swift
           - BrowserTabControllerDriver.swift

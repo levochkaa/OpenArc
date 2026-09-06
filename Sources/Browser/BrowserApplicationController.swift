@@ -238,6 +238,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func archiveCurrentTab(_: Any?) {
+        guard !closeActiveAuxiliaryWindow() else { return }
         activeChromeModel?.archiveSelectedTab()
     }
 
@@ -1080,6 +1081,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private func handleLayoutIndependentKeyEvent(_ event: NSEvent) -> Bool {
+        if BrowserShortcutCaptureNSView.handleRecordingEvent(event) {
+            return true
+        }
+
         if let spaceIndex = BrowserSpaceShortcuts.spaceIndex(
             forPhysicalKeyCode: event.keyCode,
             modifierFlags: event.modifierFlags
@@ -1109,6 +1114,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
 
         chromeModel.selectSpace(id: chromeModel.spaces[index].id)
+        return true
+    }
+
+    private func closeActiveAuxiliaryWindow() -> Bool {
+        guard let keyWindow = NSApp.keyWindow,
+              keyWindow === aboutWindow || keyWindow === settingsWindowController?.window else { return false }
+        keyWindow.performClose(nil)
         return true
     }
 
@@ -1176,6 +1188,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             toggleCurrentPageBookmark(nil)
             return true
         case .archiveTab:
+            if closeActiveAuxiliaryWindow() {
+                return true
+            }
             if let webAppWindowSession {
                 webAppWindowSession.window.performClose(nil)
                 return true
@@ -1404,30 +1419,17 @@ NSMenuDelegate, NSUserInterfaceValidations {
         profileStore: BrowserProfileStore,
         currentProfileID: String,
         accountStore: BrowserAccountStore?
-    ) -> [SettingsPaneConvertible] {
+    ) -> [SettingsPane] {
         BrowserSettingsPane.allCases.map { pane in
-            Settings.Pane(
-                identifier: Settings.PaneIdentifier(pane.rawValue),
-                title: pane.title,
-                toolbarIcon: NSImage(
-                    systemSymbolName: pane.systemImageName,
-                    accessibilityDescription: pane.title
-                ) ?? NSImage()
-            ) {
-                BrowserSettingsView(
-                    model: model,
-                    profileStore: profileStore,
-                    currentProfileID: currentProfileID,
-                    accountStore: accountStore,
-                    pane: pane,
-                    openProfile: { [weak self] profile in
-                        self?.openProfile(profile)
-                    },
-                    openURL: { [weak self] url in
-                        self?.openBrowserInternalPage(url)
-                    }
-                )
-            }
+            BrowserSettingsViewController(
+                model: model,
+                profileStore: profileStore,
+                currentProfileID: currentProfileID,
+                accountStore: accountStore,
+                pane: pane,
+                openProfile: { [weak self] profile in self?.openProfile(profile) },
+                openURL: { [weak self] url in self?.openBrowserInternalPage(url) }
+            )
         }
     }
 
