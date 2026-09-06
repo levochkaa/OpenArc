@@ -256,6 +256,47 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try waitFor("second Clear removes active temporary tab") { row(d) == nil }
     try require(row(a) != nil && row(renamedC) != nil, "Clear must retain pinned folder tabs")
     print("PASS sidebar Clear: inactive first, active second, pinned tabs retained")
+
+    guard let downloads = element("browser.sidebar.downloads") else { throw UIError.failed("Missing downloads button") }
+    try press(downloads)
+    try waitFor("native downloads popover") { element("browser.downloads.popover") != nil }
+    try require(
+        element("browser.downloads.clear-finished").flatMap { attribute($0, kAXEnabledAttribute) as? Bool } == false,
+        "Empty downloads must disable Clear Finished"
+    )
+    try runAppleScript("key code 53", pid: pid)
+    try waitFor("Escape closes downloads") { element("browser.downloads.popover") == nil }
+    print("PASS downloads: native empty state, disabled Clear, Escape")
+
+    func spaceButtons() -> [AXUIElement] { elements().filter { id($0).hasPrefix("browser.sidebar.select-space.") } }
+    let existingSpaceIDs = Set(spaceButtons().map(id))
+    guard let createSpace = element("browser.sidebar.create-space")
+    else { throw UIError.failed("Missing Create Space") }
+    try press(createSpace)
+    try waitFor("new space appears") { spaceButtons().count == existingSpaceIDs.count + 1 }
+    guard let newSpaceButton = spaceButtons().first(where: { !existingSpaceIDs.contains(id($0)) })
+    else { throw UIError.failed("Missing new space") }
+    let newSpaceID = id(newSpaceButton).replacingOccurrences(of: "browser.sidebar.select-space.", with: "")
+    let newHeaderID = "browser.sidebar.space-header." + newSpaceID
+    try press(element(newHeaderID)!)
+    let renameSpaceID = "browser.sidebar.rename-space." + newSpaceID
+    try waitFor("space rename field") { element(renameSpaceID) != nil }
+    try type("Sidebar Space-" + suffix, endingWith: 36)
+    try waitFor("space rename updates footer") { element(id(newSpaceButton)).map(label) == "Sidebar Space-" + suffix }
+    let newHeaderFrame = try requireFrame(element(newHeaderID)!)
+    try drag(element(newHeaderID)!, to: CGPoint(x: newHeaderFrame.midX + 120, y: newHeaderFrame.midY))
+    try waitFor("mouse swipe returns to first space") {
+        guard let tabFrame = row(a).flatMap(elementFrame),
+              let sidebarFrame = element("browser.sidebar").flatMap(elementFrame) else { return false }
+        return tabFrame.minX >= sidebarFrame.minX && tabFrame.maxX <= sidebarFrame.maxX
+    }
+    let newButtonFrame = try requireFrame(element(id(newSpaceButton))!)
+    clickAt(CGPoint(x: newButtonFrame.midX, y: newButtonFrame.midY), button: .right)
+    try waitFor("Delete Space menu") { menuItem("Delete Space") != nil }
+    try press(menuItem("Delete Space")!)
+    try waitFor("test space removed") { spaceButtons().count == existingSpaceIDs.count }
+    try require(row(a) != nil && row(renamedC) != nil, "Deleting the test space must preserve the original space")
+    print("PASS spaces: create, rename, mouse swipe, context-menu delete")
 }
 
 do { try MainActor.assumeIsolated { try verifySidebar() } }

@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - BrowserSidebarView
 
-/// Temporary header/footer adapters surround the native sidebar; list layout and interaction are AppKit-owned.
+/// Temporary header adapter surrounds the native sidebar; list layout and interaction are AppKit-owned.
 struct BrowserSidebarView: NSViewRepresentable {
     // MARK: Internal
 
@@ -92,48 +92,6 @@ struct BrowserSidebarView: NSViewRepresentable {
         }
     }
 
-    func bottomChrome(state: BrowserNativeSidebarState) -> some View {
-        VStack(spacing: 0) {
-            BrowserUpdateToastView(updateController: updateController)
-                .padding(.horizontal, 2)
-                .padding(.bottom, BrowserChromeLayout.sidebarSectionSpacing)
-            if model.supportsSpaces {
-                spacesBar(state: state)
-            }
-        }
-    }
-
-    func spacesBar(state: BrowserNativeSidebarState) -> some View {
-        BrowserSidebarSpacesBar(
-            spaces: snapshot.spaces,
-            selectedSpaceID: snapshot.selectedSpaceID,
-            downloadsModel: model.downloadsModel,
-            isSidebarResizing: isSidebarResizing,
-            onSelectSpace: { spaceID in
-                state.dismissRenamingIfNeeded()
-                state.clearPinnedTabSelection()
-                model.selectSpace(id: spaceID)
-            },
-            onCreateSpace: {
-                state.dismissRenamingIfNeeded()
-                state.clearPinnedTabSelection()
-                model.createNewSpace()
-            },
-            onBeginRenameSpace: { spaceID in
-                state.clearPinnedTabSelection()
-                state.beginRenamingSpace(id: spaceID)
-            },
-            onChangeSpaceIcon: { systemImageName, spaceID in
-                model.setIcon(systemImageName, forSpaceID: spaceID)
-            },
-            onDeleteSpace: { spaceID in
-                state.dismissRenamingIfNeeded()
-                state.clearPinnedTabSelection()
-                model.deleteSpace(id: spaceID)
-            }
-        )
-    }
-
     static func dismantleNSView(_ view: BrowserNativeSidebarNSView, coordinator _: ()) {
         view.state.clearTabDragState()
     }
@@ -143,9 +101,8 @@ struct BrowserSidebarView: NSViewRepresentable {
         let header =
             NSHostingView(rootView: AnyView(topChrome.frame(width: contentWidth)
                     .environmentObject(BrowserFaviconCache.shared)))
-        let footer = NSHostingView(rootView: AnyView(bottomChrome(state: state).frame(width: contentWidth)))
+        let footer = BrowserNativeSidebarFooterNSView(state: state, updateController: updateController)
         header.sizingOptions = [.intrinsicContentSize]
-        footer.sizingOptions = [.intrinsicContentSize]
         let view = BrowserNativeSidebarNSView(state: state, header: header, footer: footer)
         updateNSView(view, context: context)
         return view
@@ -157,9 +114,9 @@ struct BrowserSidebarView: NSViewRepresentable {
                 .rootView = AnyView(topChrome.frame(width: contentWidth).environmentObject(BrowserFaviconCache.shared))
             view.headerHeight = header.fittingSize.height
         }
-        if let footer = view.footer as? NSHostingView<AnyView> {
-            footer.rootView = AnyView(bottomChrome(state: view.state).frame(width: contentWidth))
-            view.footerHeight = footer.fittingSize.height
+        if let footer = view.footer as? BrowserNativeSidebarFooterNSView {
+            footer.update(snapshot: snapshot, isResizing: isSidebarResizing)
+            view.footerHeight = footer.height(for: contentWidth)
         }
         let previous = view.state.snapshot
         view.state.update(snapshot: snapshot, sidebarWidth: sidebarWidth, isResizing: isSidebarResizing)

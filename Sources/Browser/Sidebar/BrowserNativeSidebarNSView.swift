@@ -15,6 +15,8 @@ final class BrowserNativeSidebarNSView: NSView {
         self.footer = footer
         super.init(frame: .zero)
         setAccessibilityIdentifier("browser.sidebar")
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
         addSubview(content)
         for view in [header, appGrid, pagerClip, footer, bottomDivider, dragIndicator, dragPreview, scrollObserver] {
             content.addSubview(view)
@@ -34,6 +36,10 @@ final class BrowserNativeSidebarNSView: NSView {
         appGrid.onEmptyClick = content.onEmptyClick
         appGrid.permitsWindowDrag = content.permitsWindowDrag
         state.onChange = { [weak self] animated in self?.refresh(animated: animated) }
+        if let footer = footer as? BrowserNativeSidebarFooterNSView {
+            footer.onSizeChanged = { [weak self] in self?.refresh(animated: true) }
+        }
+
         scrollObserver.onScrollDelta = { [weak self] delta in
             guard let self else { return }
             state.updateSpacePagerScroll(by: delta, in: state.snapshot, pageWidth: pagerClip.bounds.width)
@@ -207,6 +213,10 @@ final class BrowserNativeSidebarNSView: NSView {
             height: max(bounds.height - inset * 2, 0)
         )
         let width = max(content.bounds.width, 0)
+        if let footer = footer as? BrowserNativeSidebarFooterNSView {
+            footerHeight = footer.height(for: width)
+        }
+
         header.frame = NSRect(x: 0, y: 0, width: width, height: headerHeight)
         let appTabs = renderedSnapshot.appTabs
         let showsApps = state.model.supportsAppTabs && (!appTabs.isEmpty || state.draggedTabID != nil)

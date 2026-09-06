@@ -3,15 +3,6 @@ import Foundation
 import Network
 import Sparkle
 
-// MARK: - BrowserUpdateToast
-
-struct BrowserUpdateToast: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let message: String
-    let actionTitle: String
-}
-
 // MARK: - BrowserUpdateController
 
 @MainActor final class BrowserUpdateController: NSObject, ObservableObject {
