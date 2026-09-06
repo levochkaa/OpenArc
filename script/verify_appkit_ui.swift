@@ -34,6 +34,19 @@ func descendants(_ element: AXUIElement, depth: Int = 0) -> [AXUIElement] {
     return [element] + children.flatMap { descendants($0, depth: depth + 1) }
 }
 
+func elementFrame(_ element: AXUIElement) -> CGRect? {
+    guard let position = attribute(element, kAXPositionAttribute), CFGetTypeID(position) == AXValueGetTypeID(),
+          let size = attribute(element, kAXSizeAttribute), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
+    var point = CGPoint.zero
+    var dimensions = CGSize.zero
+    guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(
+        size as! AXValue,
+        .cgSize,
+        &dimensions
+    ) else { return nil }
+    return CGRect(origin: point, size: dimensions)
+}
+
 @MainActor func waitFor(_ description: String, _ predicate: () -> Bool) throws {
     let deadline = Date().addingTimeInterval(8)
     repeat {
@@ -117,10 +130,45 @@ func descendants(_ element: AXUIElement, depth: Int = 0) -> [AXUIElement] {
         )
     try require(app.activate(options: []), "Could not activate browser")
     try runAppleScript("click menu item \"New Tab\" of menu 1 of menu bar item \"File\" of menu bar 1", pid: pid)
-    RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+    try waitFor("native command field") {
+        element("browser.command.query").flatMap { attribute($0, kAXFocusedAttribute) as? Bool } == true
+    }
     try runAppleScript("keystroke \"\(fixture.absoluteString)\"\nkey code 36", pid: pid)
-    // Opening Find also waits for the CEF context/navigation to be ready.
     RunLoop.current.run(until: Date().addingTimeInterval(1))
+    try runAppleScript("click menu item \"New Tab\" of menu 1 of menu bar item \"File\" of menu bar 1", pid: pid)
+    try waitFor("command field for pointer submission") { element("browser.command.query") != nil }
+    try runAppleScript("keystroke \"\(fixture.absoluteString)\"", pid: pid)
+    func primaryURLSuggestionID() -> String? {
+        let windows = attribute(axApp, kAXWindowsAttribute) as? [AXUIElement] ?? []
+        return windows.flatMap { descendants($0) }
+            .compactMap { attribute($0, kAXIdentifierAttribute) as? String }
+            .first { $0.hasPrefix("browser.command.suggestion.url|") }
+    }
+    try waitFor("URL suggestion button") { primaryURLSuggestionID() != nil }
+    try press(primaryURLSuggestionID()!)
+    try waitFor("pointer submission closes command bar") { element("browser.command.query") == nil }
+    try runAppleScript("click menu item \"New Tab\" of menu 1 of menu bar item \"File\" of menu bar 1", pid: pid)
+    try waitFor("command field for keyboard scrolling") { element("browser.command.query") != nil }
+    try runAppleScript("keystroke \"refresh\"", pid: pid)
+    try waitFor("scrollable command suggestions") {
+        element("browser.command.suggestions")
+            .flatMap { attribute($0, kAXRowsAttribute) as? [AXUIElement] }?
+            .count ?? 0 >= 6
+    }
+    for _ in 0..<5 {
+        try runAppleScript("key code 125", pid: pid)
+    }
+    try waitFor("selected suggestion scrolls fully into view") {
+        guard let table = element("browser.command.suggestions"),
+              let selected = (attribute(table, kAXSelectedRowsAttribute) as? [AXUIElement])?.first,
+              let rowFrame = elementFrame(selected),
+              let scroll = element("browser.command.suggestion-scroll"),
+              let viewport = elementFrame(scroll) else { return false }
+        return viewport.contains(rowFrame.insetBy(dx: 1, dy: 1))
+    }
+    try runAppleScript("key code 53", pid: pid)
+    try waitFor("Escape closes command bar") { element("browser.command.query") == nil }
+    print("PASS command bar: Return, suggestion click, keyboard scrolling, Escape")
     try openFind()
     try waitFor("find field focus") { field().flatMap { attribute($0, kAXFocusedAttribute) as? Bool } == true }
     try runAppleScript("keystroke \"needle\"", pid: pid)

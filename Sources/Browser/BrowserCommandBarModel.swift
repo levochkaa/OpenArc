@@ -207,7 +207,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     // MARK: Internal
 
     static let maximumSuggestions = 10
-    static let maximumVisibleSuggestions = 5
+    nonisolated static let maximumVisibleSuggestions = 5
 
     @Published private(set) var isPresented = false
     @Published private(set) var focusRequestID = 0

@@ -32,6 +32,7 @@ final class BrowserFindNSTextField: NSTextField {
         NSSize(width: NSView.noIntrinsicMetric, height: 18)
     }
 
+    var focusPermission: () -> Bool = { true }
     var pendingFocus = false
     var pendingSelectAll = false
     var lastFocusRequestID = 0
@@ -95,7 +96,7 @@ final class BrowserFindNSTextField: NSTextField {
             }
 
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.window != nil, pendingFocus else {
+                guard let self, self.window != nil, pendingFocus, focusPermission() else {
                     return
                 }
 

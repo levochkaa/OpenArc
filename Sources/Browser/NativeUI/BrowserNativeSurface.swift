@@ -83,6 +83,7 @@ final class BrowserNativeChromeButton: NSButton {
         self.pressEffect = pressEffect
         self.onAction = action
         super.init(frame: .zero)
+        self.title = title
         setButtonType(.momentaryChange)
         isBordered = false
         imagePosition = .imageOnly

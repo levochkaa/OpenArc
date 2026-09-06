@@ -24,6 +24,7 @@ struct BrowserFindBarOverlay: NSViewRepresentable {
     }
 
     func updateNSView(_ view: BrowserFindBarNSView, context _: Context) {
+        view.queryField.focusPermission = { [weak model] in model?.isFindBarPresented == true }
         view.onQueryChanged = { [weak model] in model?.findQuery = $0 }
         view.onNext = { [weak model] in model?.findNextInPage() }
         view.onPrevious = { [weak model] in model?.findPreviousInPage() }
