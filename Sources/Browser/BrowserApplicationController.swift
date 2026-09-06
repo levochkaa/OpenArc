@@ -2095,7 +2095,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let rootView = BrowserAboutView(info: info) { [weak self] url in
             self?.openAboutLink(url)
         }
-        let hostingView = NSHostingView(rootView: rootView)
 
         let contentSize = NSSize(
             width: BrowserAboutLayout.windowWidth,
@@ -2114,7 +2113,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         aboutWindow.isMovableByWindowBackground = true
         aboutWindow.setContentSize(contentSize)
         aboutWindow.center()
-        aboutWindow.contentView = hostingView
+        aboutWindow.contentView = rootView
         aboutWindow.delegate = self
 
         self.aboutWindow = aboutWindow

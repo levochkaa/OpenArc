@@ -196,6 +196,10 @@ targets:
         includes:
           - Browser*.swift
           - Downloads/*.swift
+          - NativeUI/*.swift
+          - Chrome/BrowserChromeColors.swift
+          - Chrome/BrowserChromeLayout.swift
+          - BrowserWindowGeometry.swift
           - Sidebar/BrowserSidebarSnapshot.swift
           - OpenAPI/**
         excludes:
@@ -205,7 +209,6 @@ targets:
           - BrowserChromiumExtensionManager.swift
           - BrowserRuntimeConfiguration.swift
           - BrowserTabControllerDriver.swift
-          - BrowserWindowGeometry.swift
           - BrowserWindowSessions.swift
       - path: Backend/openapi.yaml
         group: Sources/Browser/OpenAPI
