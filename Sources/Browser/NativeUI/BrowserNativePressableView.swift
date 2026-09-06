@@ -8,6 +8,7 @@ struct BrowserNativeDragValue {
     let location: CGPoint
     let translation: CGSize
     let predictedEndTranslation: CGSize
+    var grabAnchor: CGPoint?
 }
 
 // MARK: - BrowserNativePressableView
@@ -44,6 +45,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
     var onClick: (NSEvent?) -> Void = { _ in }
     var onDoubleClick: ((NSEvent?) -> Void)?
     var onHoverChanged: (Bool) -> Void = { _ in }
+    var onBeginDragSession: ((BrowserNativeDragValue) -> Bool)?
     var onDragChanged: ((BrowserNativeDragValue) -> Void)?
     var onDragEnded: ((BrowserNativeDragValue) -> Void)?
     var menuProvider: (() -> NSMenu)?
@@ -62,6 +64,8 @@ class BrowserNativePressableView: BrowserNativeSurface {
             }
         }
     }
+
+    var dragContentBounds: CGRect { bounds }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
@@ -120,6 +124,13 @@ class BrowserNativePressableView: BrowserNativeSurface {
     override func mouseDown(with event: NSEvent) {
         guard isInteractionEnabled else { return }
         downEvent = event
+        let localPoint = convert(event.locationInWindow, from: nil)
+        let area = dragContentBounds
+        dragGrabAnchor = CGPoint(
+            x: min(max((localPoint.x - area.minX) / max(area.width, 1), 0), 1),
+            y: min(max((localPoint.y - area.minY) / max(area.height, 1), 0), 1)
+        )
+        hasExternalDragSession = false
         previousDragSample = nil
         velocity = .zero
         isDragging = false
@@ -127,16 +138,26 @@ class BrowserNativePressableView: BrowserNativeSurface {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard isInteractionEnabled, let downEvent else { return }
+        guard isInteractionEnabled, let downEvent, !hasExternalDragSession else { return }
         let distance = hypot(
             event.locationInWindow.x - downEvent.locationInWindow.x,
             event.locationInWindow.y - downEvent.locationInWindow.y
         )
-        if onDragChanged != nil, distance >= BrowserChromeLayout.sidebarTabDragMinimumDistance {
+        if onDragChanged != nil || onBeginDragSession != nil,
+           distance >= BrowserChromeLayout.sidebarTabDragMinimumDistance
+        {
             isDragging = true
             setPressed(false)
             BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
-            onDragChanged?(dragValue(event))
+            let value = dragValue(event)
+            if let onBeginDragSession, onBeginDragSession(value) {
+                hasExternalDragSession = true
+                isDragging = true
+                setPressed(false)
+                refreshTooltip()
+            } else {
+                onDragChanged?(value)
+            }
         } else if !isDragging {
             setPressed(bounds.contains(convert(event.locationInWindow, from: nil)))
         }
@@ -144,9 +165,14 @@ class BrowserNativePressableView: BrowserNativeSurface {
 
     override func mouseUp(with event: NSEvent) {
         guard downEvent != nil else { return }
+        if hasExternalDragSession {
+            resetInteraction()
+            return
+        }
         let didDrag = isDragging
         let value = dragValue(event)
         downEvent = nil
+        dragGrabAnchor = nil
         isDragging = false
         setPressed(false)
         if didDrag {
@@ -164,7 +190,9 @@ class BrowserNativePressableView: BrowserNativeSurface {
     func pointerMoved(_: NSEvent) {}
     func interactionChanged() { needsDisplay = true }
     func resetInteraction() {
+        hasExternalDragSession = false
         downEvent = nil
+        dragGrabAnchor = nil
         isDragging = false
         setPressed(false)
         setHovered(false)
@@ -199,6 +227,8 @@ class BrowserNativePressableView: BrowserNativeSurface {
     private let pressAnimation = BrowserNativeAnimation()
     private var displayedScale: CGFloat = 1
     private var downEvent: NSEvent?
+    private var dragGrabAnchor: CGPoint?
+    private var hasExternalDragSession = false
     private var previousDragSample: (point: CGPoint, time: TimeInterval)?
     private var velocity = CGSize.zero
 
@@ -227,7 +257,8 @@ class BrowserNativePressableView: BrowserNativeSurface {
                 width: translation.width + velocity.width * 0.15,
                 height: translation.height + velocity
                     .height * 0.15
-            )
+            ),
+            grabAnchor: dragGrabAnchor
         )
     }
 

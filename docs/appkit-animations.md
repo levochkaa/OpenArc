@@ -12,7 +12,8 @@ The reference is the last SwiftUI implementation at `03d6aee`, before the AppKit
 | Chrome and bookmark hover | ease-out, 0.14 s | Hover background |
 | App-tab reorder, pinned/temporary tab identities, pinned section/folder expansion | spring response 0.28 s, damping 0.82 | Row positions and insertion/removal opacity |
 | Space pager selection / settling | ease-in-out, 0.18 s | Horizontal page offset; direct pointer/trackpad movement remains immediate |
-| Drag-preview size | spring response 0.20 s, damping 0.86 | Tile/row dimensions; pointer position remains immediate |
+| Drag-preview size | spring response 0.20 s, damping 0.86 | Tile/row dimensions around the mouse-down grab point; pointer position remains immediate |
+| Drop landing / cancellation | spring response 0.28 s, damping 0.82 | Preview travels to the final row/cell or merges into a collapsed container before the real rows are revealed |
 | Current-URL action visibility | ease-in-out, 0.12 s | Action opacity and trailing URL mask |
 | Copy feedback icon | spring response 0.22 s, damping 0.68 | Link/checkmark replacement, opacity and scale from/to 0.58; reset still occurs after 1 s |
 | Pinned URL caption | ease-out, 0.16 s | Title displacement, caption movement from below and opacity |

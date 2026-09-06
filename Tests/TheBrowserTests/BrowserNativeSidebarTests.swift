@@ -36,12 +36,17 @@ import Testing
         let tab = try #require(model.temporaryTabs.first)
         let state = BrowserNativeSidebarState(model: model, snapshot: snapshot(model), sidebarWidth: 240)
         state.isSidebarHovered = true
-        state.beginTabDragIfNeeded(for: tab.id, startLocation: .zero, location: CGPoint(x: 10, y: 20))
+        state.drag.begin(
+            payload: .init(primary: .tab(tab.id), tabIDs: [tab.id]),
+            sourceFrame: CGRect(x: 0, y: 0, width: 240, height: 36),
+            start: .zero,
+            pointer: CGPoint(x: 10, y: 20)
+        )
         #expect(state.isDraggingSidebarItem)
-        #expect(state.dragPreviewStore.preview?.tabID == tab.id)
+        #expect(state.drag.payload?.primary == .tab(tab.id))
         state.update(snapshot: snapshot(model), sidebarWidth: 280, isResizing: true)
         #expect(!state.isDraggingSidebarItem)
-        #expect(state.dragPreviewStore.preview == nil)
+        #expect(state.drag.payload == nil)
         #expect(!state.isSidebarHovered)
         #expect(state.tabRowInteractionResetID == 1)
     }

@@ -18,27 +18,55 @@ final class BrowserNativeSidebarNSView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         addSubview(content)
-        for view in [header, appGrid, pagerClip, footer, bottomDivider, dragIndicator, dragPreview, scrollObserver] {
+        content.clipsToBounds = false
+        for view in [
+            header,
+            appGrid,
+            emptyAppGuide,
+            pagerClip,
+            footer,
+            bottomDivider,
+            dragPreview,
+            dragIndicator,
+            scrollObserver,
+        ] {
             content.addSubview(view)
         }
+        emptyAppGuide.cornerRadius = 2
+        emptyAppGuide.fillColor = BrowserChromeColors.rowHover
+        emptyAppGuide.strokeColor = BrowserChromeColors.sidebarOverlayBorder
+        emptyAppGuide.isHidden = true
+        appGrid.addSubview(appDropGuide)
+        appDropGuide.cornerRadius = BrowserChromeLayout.sidebarRowCornerRadius
+        appDropGuide.strokeColor = BrowserChromeColors.sidebarOverlayBorder
+        appDropGuide.fillColor = BrowserChromeColors.rowHover
+        appDropGuide.isHidden = true
+        frameTransitions.onFrameChange = { [weak self] in self?.needsLayout = true }
         pagerClip.addSubview(pagesContainer)
         pagerClip.wantsLayer = true
         pagerClip.layer?.masksToBounds = true
         bottomDivider.strokeWidth = 0
         bottomDivider.fillColor = BrowserChromeColors.sidebarTopChromeDivider
-        dragIndicator.strokeWidth = 0
-        dragIndicator.fillColor = BrowserChromeColors.sidebarDropIndicator
-        dragIndicator.cornerRadius = BrowserChromeLayout.sidebarDropIndicatorThickness / 2
         dragIndicator.isHidden = true
+        dragIndicator.setAccessibilityIdentifier("browser.sidebar.drop-indicator")
+        dragPreview.setAccessibilityIdentifier("browser.sidebar.drag-preview")
+        dragPreview.setAccessibilityElement(false)
         dragPreview.isHidden = true
         content.onEmptyClick = { [weak state] in state?.dismissRenamingIfNeeded() }
         content.permitsWindowDrag = { [weak state] in state?.isDraggingSidebarItem == false }
         appGrid.onEmptyClick = content.onEmptyClick
         appGrid.permitsWindowDrag = content.permitsWindowDrag
         state.onChange = { [weak self] animated in self?.refresh(animated: animated) }
-        if let footer = footer as? BrowserNativeSidebarFooterNSView {
-            footer.onSizeChanged = { [weak self] in self?.refresh(animated: true) }
+        state.drag.onPresentationChange = { [weak self] in self?.updateDragPresentation() }
+        state.drag.onLayoutChange = { [weak self] in self?.handleDragLayoutChange() }
+        state.drag.onTargetChange = { [weak state] in
+            guard state?.model.userPreferencesStore.hapticFeedbackEnabled == true else { return }
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
+        dragEvents.onMove = { [weak self] point in self?.updateDrag(atWindowPoint: point) }
+        dragEvents.onRelease = { [weak self] point in self?.finishDragging(atWindowPoint: point) }
+        dragEvents.onCancel = { [weak self] in self?.cancelDragging() }
+        dragEvents.onTick = { [weak self] elapsed in self?.autoscrollDrag(elapsed: elapsed) }
 
         scrollObserver.onScrollDelta = { [weak self] delta in
             guard let self else { return }
@@ -68,6 +96,9 @@ final class BrowserNativeSidebarNSView: NSView {
     var headerHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
     var footerHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
     var isCommandBarPresented = false
+    var onDragInteractionChange: (Bool) -> Void = { _ in }
+    var headerHeightProvider: (() -> CGFloat)?
+    var footerHeightProvider: ((CGFloat) -> CGFloat)?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -76,6 +107,9 @@ final class BrowserNativeSidebarNSView: NSView {
             self.clickMonitor = nil
         }
         if window == nil {
+            dragEvents.stop()
+            landingAnimation.cancel()
+            dragPreviewAnimation.cancel()
             state.clearTabDragState()
             return
         }
@@ -165,32 +199,254 @@ final class BrowserNativeSidebarNSView: NSView {
             if appTiles[tab.id] == nil {
                 appTiles[tab.id] = tile
                 appGrid.addSubview(tile)
-                tile.animateInsertion()
+                if hasRenderedAppTiles {
+                    tile.animateInsertion()
+                }
             }
             configure(row: tile, tab: tab, section: .app, indent: 0)
         }
+        hasRenderedAppTiles = true
         scrollObserver.isEnabled = snapshot.spaces.count > 1 && !state.isSidebarResizing && !state.isDraggingSidebarItem
         bottomDivider.alphaValue = state.isBottomChromeDividerVisible(in: snapshot) ? 1 : 0
         layoutContent(animated: animated)
         synchronizeGeometry()
-        updateDragPreview()
+        updateDragPresentation()
+    }
+
+    func makeDragGeometry() -> BrowserSidebarDragGeometry? {
+        guard let payload = state.drag.payload, let id = state.snapshot.selectedSpaceID,
+              let page = pages[id] else { return nil }
+        let tree = BrowserSidebarTabTree(snapshot: state.snapshot)
+        var rows = [BrowserSidebarDragRowGeometry]()
+        for entry in page.entries {
+            guard let frame = page.frames[entry.id] else { continue }
+            let item: BrowserSidebarItemID
+            let depth: Int
+            switch entry {
+            case .tab(let tab, _, _, _, _, let indent): item = .tab(tab.id)
+                depth = indent
+            case .folder(let folder): item = .folder(folder.folder.id)
+                depth = folder.depth
+            default: continue
+            }
+            guard let container = tree.container(of: item) else { continue }
+            var rect = page.document.convert(frame, to: content)
+            let indent = CGFloat(depth) * BrowserChromeLayout.sidebarPinnedFolderTabIndent
+            rect.origin.x += indent
+            rect.size.width = max(rect.width - indent, 0)
+            rows.append(.init(item: item, container: container, frame: rect))
+        }
+        let viewport = page.scroll
+            .contentView
+            .convert(page.scroll.contentView.bounds, to: content)
+            .intersection(content.bounds)
+        var geometry = BrowserSidebarDragGeometry(
+            tree: tree,
+            payload: payload,
+            rows: rows,
+            listViewport: viewport,
+            spaceHeader: page.header.isHidden
+                ? nil
+                : (id, page.header.convert(page.header.bounds, to: content)),
+            appFrame: state.model.supportsAppTabs && !appGrid.isHidden
+                ? appGrid.frame
+                : nil,
+            rowWidth: content.bounds.width,
+            appEntryFrame: emptyAppEntryFrame
+        )
+        if let newTab = page.frames["new-tab"] {
+            let frame = page.document.convert(newTab, to: content)
+            let spacing = BrowserChromeLayout.sidebarListSpacing
+            if state.snapshot.spacePinnedTabs(in: id).isEmpty {
+                geometry.addEmptySection(
+                    .pinned(id),
+                    frame: CGRect(x: frame.minX, y: frame.minY - spacing, width: frame.width, height: spacing)
+                )
+            }
+            if state.snapshot.temporaryTabs(in: id).isEmpty {
+                geometry.addEmptySection(
+                    .temporary(id),
+                    frame: CGRect(x: frame.minX, y: frame.maxY, width: frame.width, height: spacing)
+                )
+            }
+        }
+        return geometry
+    }
+
+    @discardableResult func beginDragging(
+        item: BrowserSidebarItemID,
+        from row: NSView,
+        value: BrowserNativeDragValue
+    ) -> Bool {
+        guard !state.isSidebarResizing else { return false }
+        var source = row.convert(row.bounds, to: content)
+        if let row = row as? BrowserNativeSidebarRowNSView {
+            source.origin.x += row.contentIndent
+            source.size.width -= row.contentIndent
+        }
+        return beginDragging(item: item, sourceFrame: source, value: value)
+    }
+
+    @discardableResult func beginDragging(
+        item: BrowserSidebarItemID,
+        sourceFrame: CGRect,
+        value: BrowserNativeDragValue
+    ) -> Bool {
+        landingAnimation.cancel()
+        dragPreviewAnimation.cancel()
+        dragEvents.stop()
+        state.clearTabDragState()
+        state.update(snapshot: state.model.sidebarSnapshot, sidebarWidth: state.sidebarWidth, isResizing: false)
+        let tree = BrowserSidebarTabTree(snapshot: state.snapshot)
+        let ids: Set<String>
+        switch item {
+        case .tab(let id):
+            guard state.snapshot.containsTab(withID: id) else { return false }
+            if state.selectedPinnedTabIDs.contains(id) {
+                ids = state.selectedPinnedTabIDs
+            } else {
+                state.clearPinnedTabSelection()
+                ids = [id]
+            }
+        case .folder(let id):
+            guard let folder = tree.folders[id] else { return false }
+            ids = Set(tree.tabIDs(in: .pinned(folder.spaceID, folderID: id)))
+            state.clearPinnedTabSelection()
+        }
+        state.dismissRenamingIfNeeded(in: window)
+        state.drag.begin(
+            payload: .init(primary: item, tabIDs: ids),
+            sourceFrame: sourceFrame,
+            start: value.startLocation,
+            pointer: value.location,
+            grabAnchor: value.grabAnchor
+        )
+        frameTransitions.finishAll()
+        for page in pages.values {
+            page.finishRowAnimations()
+        }
+        dragPreviewTargetSize = nil
+        reservedAppHeight = 0
+        isProjectingAppGrid = false
+        refresh()
+        lastWindowDragPoint = content.convert(value.location, to: nil)
+        dragEvents.start(in: window)
+        dragPreview.dragCoordinateView = content
+        return true
+    }
+
+    func updateDrag(atWindowPoint point: CGPoint) {
+        guard state.drag.isDragging else { return }
+        lastWindowDragPoint = point
+        state.drag.updatePointer(content.convert(point, from: nil))
+    }
+
+    func finishDragging(atWindowPoint point: CGPoint) {
+        guard state.drag.isDragging else { return }
+        endDragging(at: content.convert(point, from: nil), cancelled: false)
+    }
+
+    func cancelDragging() {
+        guard state.drag.phase != .idle else { return }
+        if state.drag.phase == .settling {
+            completeDragPresentation()
+            return
+        }
+        endDragging(at: state.drag.pointer, cancelled: true)
+    }
+
+    func restingFrame(for item: BrowserSidebarItemID) -> CGRect? {
+        if case .tab(let id) = item, let index = state.snapshot.appTabs.firstIndex(where: { $0.id == id }) {
+            let frames = BrowserSidebarAppTabGridLayout(spacing: BrowserChromeLayout.appTabGridSpacing)
+                .frames(for: state.snapshot.appTabs.count, availableWidth: content.bounds.width)
+            if frames.indices.contains(index) {
+                return frames[index].offsetBy(
+                    dx: appGrid.frame.minX,
+                    dy: appGrid.frame.minY
+                )
+            }
+        }
+        guard let spaceID = state.snapshot.selectedSpaceID, let page = pages[spaceID] else { return nil }
+        let key = itemKey(item)
+        if let frame = page.frames[key], let row = page.rows[key] {
+            var result = page.document.convert(frame, to: content)
+            let targetPager = frameTransitions.targetFrame(of: pagerClip)
+            let targetPages = frameTransitions.targetFrame(of: pagesContainer)
+            result.origin.x += targetPager.minX - pagerClip.frame.minX + targetPages.minX - pagesContainer.frame.minX
+            result.origin.y += targetPager.minY - pagerClip.frame.minY
+            result.origin.x += row.contentIndent
+            result.size.width -= row.contentIndent
+            var viewport = page.scroll.contentView.convert(page.scroll.contentView.bounds, to: content)
+            viewport.origin.y += targetPager.minY - pagerClip.frame.minY
+            viewport.size.height += targetPager.height - pagerClip.frame.height
+            return viewport.intersects(result) ? result : nil
+        }
+        if case .tab(let id) = item, let tab = state.snapshot.tab(withID: id), let folderID = tab.pinnedFolderID {
+            return restingFrame(for: .folder(folderID))
+        }
+        if case .folder(let id) = item, let parent = state.snapshot.pinnedTabFolder(withID: id)?.parentFolderID {
+            return restingFrame(for: .folder(parent))
+        }
+        if state.snapshot.isPinnedSectionCollapsed(in: spaceID) {
+            return page.header.convert(page.header.bounds, to: content)
+        }
+        return nil
+    }
+
+    func autoscrollDrag(elapsed: TimeInterval) {
+        guard state.drag.isDragging, let id = state.snapshot.selectedSpaceID, let page = pages[id] else { return }
+        let point = content.convert(lastWindowDragPoint, from: nil)
+        if point != state.drag.pointer {
+            state.drag.updatePointer(point)
+        }
+        let viewport = page.scroll.contentView.convert(page.scroll.contentView.bounds, to: content)
+        guard point.x >= viewport.minX, point.x <= viewport.maxX,
+              point.y >= viewport.minY - 8, point.y <= viewport.maxY + 8 else { return }
+        let edge = min(32.0, viewport.height / 4)
+        let speed: CGFloat
+        if point.y < viewport.minY + edge {
+            speed = -min((viewport.minY + edge - point.y) / edge, 1) * 480
+        } else if point.y > viewport.maxY - edge {
+            speed = min((point.y - viewport.maxY + edge) / edge, 1) * 480
+        } else {
+            return
+        }
+        let clip = page.scroll.contentView
+        let y = min(
+            max(clip.bounds.minY + speed * elapsed, 0),
+            max(page.document.bounds.height - clip.bounds.height, 0)
+        )
+        guard y != clip.bounds.minY else { return }
+        clip.scroll(to: CGPoint(x: 0, y: y))
+        page.scroll.reflectScrolledClipView(clip)
+        synchronizeGeometry()
     }
 
     // MARK: Private
 
     private let content = BrowserNativeSidebarBackground()
     private let appGrid = BrowserNativeSidebarBackground()
+    private let appDropGuide = BrowserNativeNoninteractiveSurface()
+    private let emptyAppGuide = BrowserNativeNoninteractiveSurface()
+    private var emptyAppEntryFrame: CGRect?
+    private var reservedAppHeight: CGFloat = 0
+    private var isProjectingAppGrid = false
     private let pagerClip = BrowserNativeSurface()
     private let pagesContainer = BrowserNativeSurface()
     private let bottomDivider = BrowserNativeSurface()
-    private let dragIndicator = BrowserNativeNoninteractiveSurface()
+    private let dragIndicator = BrowserSidebarInsertionIndicator()
     private let dragPreview = BrowserNativeSidebarDragPreview()
+    private let dragEvents = BrowserSidebarDragEventSession()
+    private let landingAnimation = BrowserNativeAnimation()
     private let dragPreviewAnimation = BrowserNativeAnimation()
-    private var dragPreviewCenter = CGPoint.zero
     private var dragPreviewTargetSize: CGSize?
+    private var lastWindowDragPoint = CGPoint.zero
+    private var reportedDragging = false
+    private var highlightedDropRow: BrowserNativeSidebarRowNSView?
     private let scrollObserver = BrowserSpacePagerScrollNSView()
     private var pages = [String: BrowserNativeSidebarPage]()
     private var appTiles = [String: BrowserNativeSidebarRowNSView]()
+    private var hasRenderedAppTiles = false
     private var tracking: NSTrackingArea?
     private var clickMonitor: Any?
     private var isLayingOut = false
@@ -210,37 +466,59 @@ final class BrowserNativeSidebarNSView: NSView {
             height: max(bounds.height - inset * 2, 0)
         )
         let width = max(content.bounds.width, 0)
-        if let header = header as? BrowserNativeSidebarHeaderNSView {
-            headerHeight = header.preferredHeight
+        if let headerHeightProvider {
+            headerHeight = headerHeightProvider()
         }
-        if let footer = footer as? BrowserNativeSidebarFooterNSView {
-            footerHeight = footer.height(for: width)
+        if let footerHeightProvider {
+            footerHeight = footerHeightProvider(width)
         }
 
         header.frame = NSRect(x: 0, y: 0, width: width, height: headerHeight)
         let appTabs = renderedSnapshot.appTabs
-        let showsApps = state.model.supportsAppTabs && (!appTabs.isEmpty || state.draggedTabID != nil)
+        let showsApps = state.model
+            .supportsAppTabs && (!appTabs.isEmpty || (state.drag.isDragging && reservedAppHeight > 0))
+        let offersEmptyAppDrop = state.model.supportsAppTabs && state.model.appTabs.isEmpty && state.drag.isDragging
+            && state.draggedTabID != nil && state.draggedTabIDs.count == 1
+        emptyAppGuide.frame = CGRect(
+            x: 0,
+            y: header.frame.maxY,
+            width: width,
+            height: BrowserChromeLayout.sidebarListSpacing
+        )
+        emptyAppEntryFrame = offersEmptyAppDrop ? emptyAppGuide.frame.insetBy(dx: 0, dy: -4) : nil
+        emptyAppGuide.isHidden = !offersEmptyAppDrop || showsApps
         let appLayout = BrowserSidebarAppTabGridLayout(spacing: BrowserChromeLayout.appTabGridSpacing)
-        let appHeight = showsApps
+        let actualAppHeight = appLayout.height(for: appTabs.count, availableWidth: width)
+        var appHeight = showsApps
             ? max(
                 appLayout.height(for: appTabs.count, availableWidth: width),
                 BrowserChromeLayout.sidebarEmptySectionDropZoneHeight
             )
             : 0
+        if state.drag.isDragging {
+            reservedAppHeight = max(reservedAppHeight, appHeight)
+            appHeight = reservedAppHeight
+        } else {
+            reservedAppHeight = 0
+        }
         appGrid.isHidden = !showsApps
-        appGrid.frame = NSRect(
+        let appFrame = NSRect(
             x: 0,
             y: header.frame.maxY + BrowserChromeLayout.sidebarSectionSpacing,
             width: width,
             height: appHeight
         )
+        setFrame(appFrame, of: appGrid, animated: animated)
+        let guideY = actualAppHeight > 0 ? actualAppHeight + BrowserChromeLayout.appTabGridSpacing : 0
+        appDropGuide.frame = CGRect(x: 0, y: guideY, width: width, height: max(appHeight - guideY, 0))
+        appDropGuide.isHidden = !state.drag.isDragging || appDropGuide.frame.height < 1
         let appFrames = appLayout.frames(for: appTabs.count, availableWidth: width)
         for (index, tab) in appTabs.enumerated() where appFrames.indices.contains(index) {
             if let tile = appTiles[tab.id] {
                 setFrame(appFrames[index], of: tile, animated: animated)
             }
         }
-        let top = (showsApps ? appGrid.frame.maxY : header.frame.maxY) + BrowserChromeLayout.sidebarListSpacing
+        let top = (showsApps ? appFrame.maxY : header.frame.maxY) + BrowserChromeLayout.sidebarListSpacing
         footer.frame = NSRect(
             x: 0,
             y: max(content.bounds.height - footerHeight, top),
@@ -253,7 +531,11 @@ final class BrowserNativeSidebarNSView: NSView {
             width: width,
             height: 1
         )
-        pagerClip.frame = NSRect(x: 0, y: top, width: width, height: max(bottomDivider.frame.minY - top, 0))
+        setFrame(
+            NSRect(x: 0, y: top, width: width, height: max(bottomDivider.frame.minY - top, 0)),
+            of: pagerClip,
+            animated: animated
+        )
         scrollObserver.frame = pagerClip.frame
         let index = state.selectedSpaceIndex(in: state.snapshot) ?? 0
         let x = state.spacePagerOffset(selectedIndex: index, pageWidth: width)
@@ -323,9 +605,6 @@ final class BrowserNativeSidebarNSView: NSView {
         var entries = [BrowserNativeSidebarPage.Entry]()
         let collapsed = model.supportsSpaces && snapshot.isPinnedSectionCollapsed(in: space.id)
         if !collapsed {
-            if pinned.isEmpty, state.draggedTabID != nil {
-                entries.append(.empty(.spacePinned))
-            }
             for row in pinnedRows where !pinned.isEmpty {
                 switch row {
                 case .tab(let tabRow):
@@ -348,9 +627,6 @@ final class BrowserNativeSidebarNSView: NSView {
             entries.append(.incognito)
         }
         entries.append(.newTab)
-        if temporary.isEmpty, state.draggedTabID != nil {
-            entries.append(.empty(.temporary))
-        }
         entries += temporary.enumerated().map { .tab(
             $0.element,
             section: .temporary,
@@ -380,7 +656,7 @@ final class BrowserNativeSidebarNSView: NSView {
                     isResizing: state.isSidebarResizing,
                     resetID: state.tabRowInteractionResetID
                 )
-                row.dragOpacity = state.draggedPinnedFolderID == folder.id ? 0.35 : 1
+                row.dragOpacity = state.drag.hiddenFolderIDs.contains(folder.id) ? 0 : 1
                 row.onToggle = { [weak state] in
                     guard let state else { return }
                     state.dismissRenamingIfNeeded()
@@ -402,11 +678,10 @@ final class BrowserNativeSidebarNSView: NSView {
                     onChangeIcon: { model.setIcon($0, forPinnedTabFolderID: folder.id) }
                 ) }
                 row.dragCoordinateView = content
-                row
-                    .onDragChanged = { [weak state] value in
-                        state?.updatePinnedFolderDrag(for: folder.id, value: value)
-                    }
-                row.onDragEnded = { [weak state] value in state?.finishPinnedFolderDrag(for: folder.id, value: value) }
+                row.onBeginDragSession = { [weak self, weak row] value in
+                    guard let self, let row else { return false }
+                    return beginDragging(item: .folder(folder.id), from: row, value: value)
+                }
             case .newTab:
                 let row = page.row(for: entry.id)
                 row.updateNewTab(
@@ -434,7 +709,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 )
                 page.divider.onClear = { [weak state] in state?.clearTemporaryTabs(in: space.id) }
                 page.divider.isHidden = false
-            case .empty, .incognito: break
+            case .incognito: break
             }
         }
         page.divider.isHidden = !entries.contains {
@@ -470,7 +745,7 @@ final class BrowserNativeSidebarNSView: NSView {
         )
         row.dragOpacity = state.draggedTabIDs.contains(tab.id) ? 0 : 1
         row.onSelect = { [weak state] in
-            guard let state, state.suppressedTabSelectionAfterDragID != tab.id else { return }
+            guard let state else { return }
             if state.renamingTabID != tab.id {
                 state.dismissRenamingIfNeeded()
             }
@@ -519,8 +794,10 @@ final class BrowserNativeSidebarNSView: NSView {
             return tabMenu(tab, section: section, row: row)
         }
         row.dragCoordinateView = content
-        row.onDragChanged = { [weak state] value in state?.updateTabDrag(for: tab.id, value: value) }
-        row.onDragEnded = { [weak state] value in state?.finishTabDrag(for: tab.id, value: value) }
+        row.onBeginDragSession = { [weak self, weak row] value in
+            guard let self, let row else { return false }
+            return beginDragging(item: .tab(tab.id), from: row, value: value)
+        }
     }
 
     private func tabMenu(
@@ -612,53 +889,7 @@ final class BrowserNativeSidebarNSView: NSView {
 
     private func synchronizeGeometry() {
         guard !isLayingOut else { return }
-        let snapshot = renderedSnapshot
-        var rows = [String: BrowserSidebarTabRowFrame]()
-        var folders = [BrowserSidebarPinnedFolderRowFrame]()
-        var headers = [BrowserSidebarSpaceHeaderFrame]()
-        var empty = [BrowserSidebarEmptySectionFrame]()
         for page in pages.values {
-            if !page.header.isHidden {
-                headers.append(.init(
-                    spaceID: page.spaceID,
-                    frame: page.header.convert(page.header.bounds, to: content)
-                ))
-            }
-            for entry in page.entries {
-                guard let frame = page.frames[entry.id] else { continue }
-                let converted = page.document.convert(frame, to: content)
-                switch entry {
-                case .tab(let tab, let section, let index, let folderID, let childIndex, _):
-                    rows[tab.id] = .init(
-                        tabID: tab.id,
-                        section: section,
-                        sectionIndex: index,
-                        spaceID: page.spaceID,
-                        pinnedFolderID: folderID,
-                        folderChildIndex: childIndex,
-                        frame: converted
-                    )
-                case .folder(let folder):
-                    let childInset = CGFloat(max(folder.depth + 1, 0)) * BrowserChromeLayout
-                        .sidebarPinnedFolderTabIndent
-                    folders.append(.init(
-                        folderID: folder.folder.id,
-                        firstSectionIndex: folder.firstSectionIndex,
-                        afterSectionIndex: folder.afterSectionIndex,
-                        childCount: folder.childCount,
-                        spaceID: page.spaceID,
-                        frame: converted,
-                        childPreviewFrame: CGRect(
-                            x: converted.minX + childInset,
-                            y: converted.minY,
-                            width: max(converted.width - childInset, 0),
-                            height: converted.height
-                        )
-                    ))
-                case .empty(let section): empty.append(.init(section: section, spaceID: page.spaceID, frame: converted))
-                default: break
-                }
-            }
             let visible = page.scroll.documentVisibleRect
             let threshold = BrowserChromeLayout.sidebarTopChromeDividerScrollThreshold
             let top = visible.minY > threshold
@@ -677,62 +908,163 @@ final class BrowserNativeSidebarNSView: NSView {
             }
             page.topDivider.alphaValue = top ? 1 : 0
         }
-        state.pinnedFolderRowFrames = folders
-        state.spaceHeaderFrames = headers
-        state.setTabRowFrames(rows, for: snapshot)
-        state.setEmptySectionFrames(empty, for: snapshot)
-        let appFrames = Dictionary(uniqueKeysWithValues: snapshot.appTabs.enumerated().compactMap { index, tab -> (
-            String,
-            BrowserSidebarAppTabFrame
-        )? in
-            guard let tile = appTiles[tab.id] else { return nil }
-            return (tab.id, .init(tabID: tab.id, sectionIndex: index, frame: tile.convert(tile.bounds, to: content)))
-        })
-        state.setAppTabFrames(appFrames, for: snapshot)
-        state.setAppTabsContainerFrame(appGrid.isHidden ? nil : appGrid.frame, for: snapshot)
+        if state.drag.isDragging, let geometry = makeDragGeometry() {
+            state.drag.updateGeometry(geometry)
+        }
     }
 
-    private func updateDragPreview() {
-        dragIndicator.isHidden = state.dropProposal?.indicatorFrame == nil
-        if let frame = state.dropProposal?.indicatorFrame {
-            dragIndicator.frame = frame
+    private func endDragging(at point: CGPoint, cancelled: Bool) {
+        dragEvents.stop()
+        dragPreviewAnimation.cancel()
+        guard let payload = state.drag.payload else { return }
+        let from = dragPreview.frame
+        state.drag.release(at: point, cancel: cancelled)
+        state.update(
+            snapshot: state.model.sidebarSnapshot,
+            sidebarWidth: state.sidebarWidth,
+            isResizing: state.isSidebarResizing
+        )
+        refresh(animated: true)
+        dragPreview.update(
+            payload: payload,
+            snapshot: state.snapshot,
+            appTile: state.snapshot.appTabs.contains { .tab($0.id) == payload.primary }
+        )
+        ensureDestinationVisible(payload.primary)
+        let target = restingFrame(for: payload.primary)
+        let exact = isItemRendered(payload.primary)
+        let to = target ?? from
+        dragPreview.onBeginDragSession = { [weak self] value in
+            guard let self else { return false }
+            return beginDragging(item: payload.primary, sourceFrame: dragPreview.frame, value: value)
         }
-        if let preview = state.dragPreviewStore.preview, let tab = state.snapshot.tab(withID: preview.tabID) {
-            dragPreview.update(tab: tab, size: preview.size)
-            dragPreviewCenter = preview.center
-            if dragPreviewTargetSize != preview.size {
-                dragPreviewTargetSize = preview.size
-                if dragPreview.isHidden {
-                    layoutDragPreview(size: preview.size)
-                } else {
-                    let from = dragPreview.frame.size
-                    let to = preview.size
-                    dragPreviewAnimation.start(.dragPreview) { [weak self] progress in
-                        self?.layoutDragPreview(size: CGSize(
-                            width: from.width + (to.width - from.width) * progress,
-                            height: from
-                                .height + (to.height - from.height) * progress
-                        ))
-                    }
-                }
+        landingAnimation.start(.list) { [weak self] progress in
+            guard let self else { return }
+            dragPreview.frame = BrowserNativeAnimation.interpolate(from, to, progress)
+            dragPreview.alphaValue = target == nil || !exact ? max(1 - progress, 0) : 1
+            dragPreview.layoutSubtreeIfNeeded()
+        } completion: { [weak self] in self?.completeDragPresentation() }
+    }
+
+    private func isItemRendered(_ item: BrowserSidebarItemID) -> Bool {
+        if case .tab(let id) = item, state.snapshot.appTabs.contains(where: { $0.id == id }) {
+            return true
+        }
+        return state.snapshot.selectedSpaceID.flatMap { pages[$0]?.frames[itemKey(item)] } != nil
+    }
+
+    private func ensureDestinationVisible(_ item: BrowserSidebarItemID) {
+        guard let id = state.snapshot.selectedSpaceID, let page = pages[id],
+              let rect = page.frames[itemKey(item)] else { return }
+        let clip = page.scroll.contentView
+        let height = max(frameTransitions.targetFrame(of: pagerClip).height - page.scroll.frame.minY, 0)
+        var y = clip.bounds.minY
+        if rect.minY < y {
+            y = rect.minY
+        }
+        if rect.maxY > y + height {
+            y = rect.maxY - height
+        }
+        y = min(max(y, 0), max(page.document.bounds.height - height, 0))
+        clip.scroll(to: CGPoint(x: 0, y: y))
+        page.scroll.reflectScrolledClipView(clip)
+    }
+
+    private func completeDragPresentation() {
+        landingAnimation.cancel()
+        dragPreviewAnimation.cancel()
+        dragEvents.stop()
+        state.clearTabDragState()
+        refresh()
+    }
+
+    private func itemKey(_ item: BrowserSidebarItemID) -> String {
+        switch item { case .tab(let id): "tab:\(id)"
+        case .folder(let id): "folder:\(id)" }
+    }
+
+    private func handleDragLayoutChange() {
+        let projecting = state.drag.projectedPlan != nil
+        let leavingGrid = isProjectingAppGrid && !projecting && state.drag.isDragging
+        isProjectingAppGrid = projecting
+        if leavingGrid {
+            // Freeze the actual expanded space immediately. Even a fast exit
+            // during the spring must not move the rows away from the pointer.
+            frameTransitions.freezeFrame(of: appGrid)
+            frameTransitions.freezeFrame(of: pagerClip)
+            reservedAppHeight = max(
+                pagerClip.frame.minY - header.frame.maxY
+                    - BrowserChromeLayout.sidebarSectionSpacing - BrowserChromeLayout.sidebarListSpacing,
+                0
+            )
+        }
+        state.invalidate(animated: !leavingGrid)
+    }
+
+    private func updateDragPresentation() {
+        if reportedDragging != state.drag.isDragging {
+            reportedDragging = state.drag.isDragging
+            onDragInteractionChange(reportedDragging)
+        }
+        highlightedDropRow?.setDropHighlighted(false)
+        highlightedDropRow = nil
+        dragIndicator.update(line: nil, occluding: nil)
+        if let proposal = state.drag.proposal {
+            switch proposal.feedback {
+            case .line: break
+            case .folder(let id): highlightedDropRow = pages.values.compactMap { $0.rows["folder:\(id)"] }.first
+            case .space(let id): highlightedDropRow = pages[id]?.header
+            case .app: break
             }
-            layoutDragPreview(size: dragPreview.frame.size)
-            dragPreview.isHidden = false
-        } else {
-            dragPreviewAnimation.cancel()
-            dragPreviewTargetSize = nil
-            dragPreview.isHidden = true
         }
+        highlightedDropRow?.setDropHighlighted(true)
+        guard let payload = state.drag.payload else {
+            dragEvents.stop()
+            landingAnimation.cancel()
+            dragPreviewAnimation.cancel()
+            dragPreview.isHidden = true
+            return
+        }
+        guard state.drag.phase == .dragging else { return }
+        dragPreview.onBeginDragSession = nil
+        dragPreview.alphaValue = 1
+        dragPreview.update(
+            payload: payload,
+            snapshot: state.snapshot,
+            appTile: state.drag.isAppPreview
+        )
+        let size = state.drag.previewSize
+        if dragPreview.isHidden || dragPreviewTargetSize == nil {
+            dragPreview.frame.size = size
+        } else if dragPreviewTargetSize != size {
+            let from = dragPreview.frame.size
+            dragPreviewAnimation.start(.dragPreview) { [weak self] progress in
+                guard let self else { return }
+                layoutDragPreview(size: CGSize(
+                    width: from.width + (size.width - from.width) * progress,
+                    height: from.height + (size.height - from.height) * progress
+                ))
+            }
+        }
+        dragPreviewTargetSize = size
+        dragPreview.isHidden = false
+        layoutDragPreview(size: dragPreview.frame.size)
     }
 
     private func layoutDragPreview(size: CGSize) {
+        let drag = state.drag
         dragPreview.frame = CGRect(
-            x: dragPreviewCenter.x - size.width / 2,
-            y: dragPreviewCenter.y - size.height / 2,
+            x: drag.pointer.x - size.width * drag.anchor.x,
+            y: drag.pointer.y - size.height * drag.anchor.y,
             width: size.width,
             height: size.height
         )
         dragPreview.layoutSubtreeIfNeeded()
+        if case .line(let line) = state.drag.proposal?.feedback {
+            dragIndicator.update(line: line, occluding: dragPreview.frame)
+        } else {
+            dragIndicator.update(line: nil, occluding: nil)
+        }
     }
 }
 
@@ -815,7 +1147,6 @@ private final class BrowserNativeSidebarPage: NSView {
         case newTab
         case divider
         case incognito
-        case empty(BrowserSidebarTabSection)
 
         // MARK: Internal
 
@@ -826,7 +1157,6 @@ private final class BrowserNativeSidebarPage: NSView {
             case .newTab: "new-tab"
             case .divider: "divider"
             case .incognito: "incognito"
-            case .empty(let section): "empty:\(section)"
             }
         }
 
@@ -834,7 +1164,6 @@ private final class BrowserNativeSidebarPage: NSView {
             switch self {
             case .divider: BrowserChromeLayout.sidebarDividerHeight
             case .incognito: 18
-            case .empty: 0
             default: BrowserChromeLayout.sidebarRowHeight
             }
         }
@@ -854,6 +1183,8 @@ private final class BrowserNativeSidebarPage: NSView {
     let divider = BrowserNativeSidebarClearDivider()
     let incognito = NSTextField(labelWithString: BrowserStrings.incognitoTabsTitle)
     var onScroll: () -> Void = {}
+
+    func finishRowAnimations() { frameTransitions.finishAll() }
 
     func row(for id: String) -> BrowserNativeSidebarRowNSView {
         if let existing = rows[id] {
@@ -876,7 +1207,9 @@ private final class BrowserNativeSidebarPage: NSView {
         header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: BrowserChromeLayout.sidebarRowHeight)
         scroll.frame = NSRect(x: 0, y: headerHeight, width: bounds.width, height: max(bounds.height - headerHeight, 0))
         topDivider.frame = NSRect(x: 0, y: headerHeight, width: bounds.width, height: 1)
-        var y: CGFloat = 1
+        let endInset = BrowserChromeLayout.sidebarListSpacing / 2 + BrowserChromeLayout
+            .sidebarDropIndicatorThickness / 2
+        var y: CGFloat = endInset
         frames = [:]
         for entry in entries {
             let frame = NSRect(x: 0, y: y, width: bounds.width, height: entry.height)
@@ -885,7 +1218,6 @@ private final class BrowserNativeSidebarPage: NSView {
                 switch entry {
                 case .divider: divider
                 case .incognito: incognito
-                case .empty: nil
                 default: rows[entry.id]
                 }
             if let view {
@@ -902,7 +1234,7 @@ private final class BrowserNativeSidebarPage: NSView {
             }
             y += entry.height + BrowserChromeLayout.sidebarListSpacing
         }
-        let height = max(y - BrowserChromeLayout.sidebarListSpacing + 1, scroll.contentSize.height)
+        let height = max(y - BrowserChromeLayout.sidebarListSpacing + endInset, scroll.contentSize.height)
         document.frame = NSRect(x: 0, y: 0, width: bounds.width, height: height)
         let origin = scroll.contentView.bounds.origin
         if origin.y > max(height - scroll.contentSize.height, 0) {
@@ -1035,56 +1367,78 @@ private final class BrowserNativeSidebarClearDivider: NSView {
 
 // MARK: - BrowserNativeSidebarDragPreview
 
-private final class BrowserNativeSidebarDragPreview: BrowserNativeSurface {
+private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView {
     // MARK: Lifecycle
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         cornerRadius = BrowserChromeLayout.sidebarRowCornerRadius
-        fillColor = BrowserChromeColors.rowSelected
+        strokeWidth = 1
+        fillColor = BrowserChromeColors.solidBackground
         strokeColor = BrowserChromeColors.sidebarDropIndicator.withAlphaComponent(0.28)
-        wantsLayer = true
         shadow = NSShadow()
         shadow?.shadowColor = NSColor.black.withAlphaComponent(0.32)
         shadow?.shadowBlurRadius = BrowserChromeLayout.sidebarDragPreviewShadowRadius
         shadow?.shadowOffset = NSSize(width: 0, height: -BrowserChromeLayout.sidebarDragPreviewShadowY)
-        addSubview(favicon)
-        addSubview(title)
+        addSubview(row)
+        row.isInteractionEnabled = false
+        permitsTooltip = false
     }
 
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
 
     // MARK: Internal
 
-    override func hitTest(_: NSPoint) -> NSView? { nil }
-    override func layout() {
-        super.layout()
-        let size = isTile ? BrowserChromeLayout.appTabIconSize : BrowserChromeLayout.sidebarFaviconSize
-        let x = isTile ? (bounds.width - size) / 2 : BrowserChromeLayout.sidebarRowHorizontalPadding
-        favicon.frame = NSRect(x: x, y: (bounds.height - size) / 2, width: size, height: size)
-        title.frame = NSRect(
-            x: favicon.frame.maxX + BrowserChromeLayout.sidebarRowContentSpacing,
-            y: (bounds.height - 17) / 2,
-            width: max(
-                bounds.width - favicon.frame.maxX - BrowserChromeLayout.sidebarRowContentSpacing - BrowserChromeLayout
-                    .sidebarTabTrailingPadding,
-                0
-            ),
-            height: 17
-        )
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        onBeginDragSession == nil ? nil : super.hitTest(point)
     }
 
-    func update(tab: BrowserChromeModel.Tab, size: NSSize) {
-        title.stringValue = tab.displayTitle
-        favicon.update(url: tab.faviconURL, pageURLString: tab.urlString)
-        isTile = abs(size.height - BrowserChromeLayout.sidebarRowHeight) > 0.5
-        title.isHidden = isTile
+    override func layout() { super.layout()
+        row.frame = bounds
+    }
+
+    func update(payload: BrowserSidebarDragPayload, snapshot: BrowserSidebarSnapshot, appTile: Bool) {
+        switch payload.primary {
+        case .tab(let id):
+            if let tab = snapshot.tab(withID: id) {
+                guard renderedTab != tab || renderedAsApp != appTile else { return }
+                renderedTab = tab
+                renderedFolder = nil
+                renderedAsApp = appTile
+                row.update(
+                    tab: tab,
+                    appTile: appTile,
+                    selected: true,
+                    isResizing: false,
+                    closeDescriptor: BrowserCommands.archiveTab
+                )
+            }
+        case .folder(let id):
+            if let folder = snapshot.pinnedTabFolder(withID: id) {
+                guard renderedFolder != folder else { return }
+                renderedFolder = folder
+                renderedTab = nil
+                row.update(
+                    folder: folder,
+                    renaming: false,
+                    indentLevel: 0,
+                    dropTargeted: true,
+                    isResizing: false,
+                    resetID: 0
+                )
+            }
+        }
+        row.isInteractionEnabled = false
+        row.setAccessibilityElement(false)
+        row.setAccessibilityIdentifier(nil)
+        row.tooltipTitle = nil
         needsLayout = true
     }
 
     // MARK: Private
 
-    private let favicon = BrowserFaviconNSView()
-    private let title = BrowserNativeControls.label("", size: 12.5, weight: .medium)
-    private var isTile = false
+    private let row = BrowserNativeSidebarRowNSView()
+    private var renderedTab: BrowserChromeModel.Tab?
+    private var renderedFolder: BrowserChromeModel.PinnedTabFolder?
+    private var renderedAsApp = false
 }

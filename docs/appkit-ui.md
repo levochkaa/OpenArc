@@ -6,7 +6,7 @@ The macOS application UI uses AppKit and Swift. `BrowserRootView` owns the norma
 
 - `BrowserChromeModel` and its existing services remain the source of browser state and actions. Views observe model changes on the main run loop and retain native controls across updates.
 - `BrowserWindowChromeLayout` calculates window geometry. A pinned sidebar reserves viewport width; a hover sidebar overlays the page. Toolbars reserve height, while extension side panels reserve only page width.
-- `BrowserSidebarChromeView` owns the sidebar header, list, footer, and resize handle. `BrowserNativeSidebarState` owns selection, rename, drag/drop, paging, and the two-step Clear interaction. The existing drag/drop proposal types still determine moves.
+- `BrowserSidebarChromeView` owns the sidebar header, list, footer, and resize handle. `BrowserNativeSidebarState` owns selection, rename, paging, and the two-step Clear interaction. Tab drag/drop has one gesture owner and uses the same semantic tree for rendering, proposals and commits; see [sidebar-drag-and-drop.md](sidebar-drag-and-drop.md).
 - `BrowserContentNSView` and `BrowserViewportClipView` embed the existing CEF host. The engine, navigation, persistence, and content lifecycle remain outside the UI layer.
 - The root preserves the hover sidebar during fullscreen transitions and resumes pointer dismissal after actual pointer movement. Geometry animations ignore unrelated model notifications.
 

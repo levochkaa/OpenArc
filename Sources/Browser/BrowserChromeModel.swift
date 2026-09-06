@@ -871,6 +871,75 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    func sidebarMovePlan(
+        payload: BrowserSidebarDragPayload,
+        destination: BrowserSidebarDropDestination
+    ) -> BrowserSidebarMovePlan? {
+        guard supportsAppTabs || destination.container.section != .app else { return nil }
+        return BrowserSidebarMovePlan
+            .make(snapshot: sidebarSnapshot, payload: payload, destination: destination) { tab, target in
+                guard self.canMoveTab(tab, to: target.section.placement) else { return nil }
+                var moved = tab
+                moved.placement = target.section.placement
+                if let spaceID = target.spaceID {
+                    moved.spaceID = spaceID
+                }
+                moved.pinnedFolderID = target.folderID
+                moved.pinnedURLString = self.pinnedURLString(for: tab, movingTo: target.section.placement)
+                return moved
+            }
+    }
+
+    /// Revalidate by stable IDs at release, then publish one final order.
+    @discardableResult func commitSidebarDrop(
+        payload: BrowserSidebarDragPayload,
+        destination: BrowserSidebarDropDestination
+    ) -> Bool {
+        guard let plan = sidebarMovePlan(payload: payload, destination: destination) else { return false }
+        let oldTabs = tabs
+        let activeMovedID = selectedTabID.flatMap { payload.tabIDs.contains($0) ? $0 : nil }
+        let now = dateProvider()
+        let updatesActivity =
+            if case .tab = payload.primary {
+                true
+            } else {
+                false
+            }
+        tabs = plan.tabs.map { tab in
+            var tab = tab
+            if updatesActivity, payload.tabIDs.contains(tab.id) {
+                tab.lastActivityAt = now
+            }
+            return tab
+        }
+        pinnedTabFolders = plan.folders
+        removeEmptyPinnedTabFolders()
+        for id in payload.tabIDs {
+            guard let moved = tabs.first(where: { $0.id == id }) else { continue }
+            if moved.placement != .app {
+                closedAppTabIDs.remove(id)
+            }
+            if moved.placement != .spacePinned {
+                closedPinnedTabIDs.remove(id)
+            }
+            if moved.placement != .app, let old = oldTabs.first(where: { $0.id == id }) {
+                let wasSourceSelection = spaces.first(where: { $0.id == old.spaceID })?.selectedTabID == id
+                if old.spaceID != moved.spaceID, wasSourceSelection {
+                    clearSelectedTab(id, forSpaceID: old.spaceID)
+                }
+                if activeMovedID == id || (wasSourceSelection && moved.spaceID != selectedSpaceID) {
+                    setSelectedTabID(id, forSpaceID: moved.spaceID)
+                }
+            }
+        }
+        if activeMovedID != nil {
+            selectActiveTabForSelectedSpace()
+        }
+        updateWindowTitle()
+        persistCurrentSessionIfAllowed()
+        return true
+    }
+
     func canMoveTab(
         withID tabID: String,
         toPlacement placement: BrowserTabPlacement,

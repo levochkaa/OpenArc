@@ -62,116 +62,78 @@ struct BrowserSidebarSnapshot: Equatable {
         in spaceID: String,
         revealedTabIDsByFolderID: [String: Set<String>] = [:]
     ) -> [BrowserSidebarPinnedRow] {
-        let pinnedTabs = spacePinnedTabs(in: spaceID)
-        let foldersByID = Dictionary(uniqueKeysWithValues: pinnedTabFolders(in: spaceID).map { ($0.id, $0) })
-        let selectedTab = selectedTab
-        var seenFolderIDs = Set<String>()
-        var rows = [BrowserSidebarPinnedRow]()
-
-        func appendRows(parentFolderID: String?, depth: Int) {
-            for (sectionIndex, tab) in pinnedTabs.enumerated() {
-                if let tabFolderID = tab.pinnedFolderID {
-                    guard let folder = foldersByID[tabFolderID],
-                          folder.parentFolderID == parentFolderID
-                    else {
-                        if tabFolderID == parentFolderID {
-                            appendTab(tab, sectionIndex: sectionIndex, folderID: parentFolderID, depth: depth)
-                        }
-                        continue
-                    }
-
-                    appendFolder(
-                        folder,
-                        firstSectionIndex: sectionIndex,
-                        depth: depth
-                    )
-                    continue
-                }
-
-                if parentFolderID == nil {
-                    appendTab(tab, sectionIndex: sectionIndex, folderID: nil, depth: depth)
+        let tree = BrowserSidebarTabTree(snapshot: self)
+        let pinned = spacePinnedTabs(in: spaceID)
+        let indices = Dictionary(uniqueKeysWithValues: pinned.enumerated().map { ($0.element.id, $0.offset) })
+        let tabsByID = Dictionary(uniqueKeysWithValues: pinned.map { ($0.id, $0) })
+        var result = [BrowserSidebarPinnedRow]()
+        var visited = Set<String>()
+        func append(_ container: BrowserSidebarDropContainer, depth: Int) {
+            let items = tree.items(in: container)
+            let directTabs = items.compactMap {
+                item -> String? in if case .tab(let id) = item {
+                    id
+                } else {
+                    nil
                 }
             }
-        }
-
-        func appendFolder(
-            _ folder: BrowserChromeModel.PinnedTabFolder,
-            firstSectionIndex: Int,
-            depth: Int
-        ) {
-            guard !seenFolderIDs.contains(folder.id) else {
-                return
-            }
-
-            seenFolderIDs.insert(folder.id)
-            let childTabs = pinnedTabs.filter { $0.pinnedFolderID == folder.id }
-            let descendantTabCount = descendantTabCount(
-                forFolderID: folder.id,
-                in: pinnedTabs,
-                foldersByID: foldersByID
-            )
-            rows.append(
-                .folder(
-                    BrowserSidebarPinnedFolderRow(
-                        folder: folder,
-                        childCount: childTabs.count,
-                        firstSectionIndex: firstSectionIndex,
-                        afterSectionIndex: firstSectionIndex + descendantTabCount,
-                        depth: depth
-                    )
-                )
-            )
-
-            if folder.isExpanded {
-                appendRows(parentFolderID: folder.id, depth: depth + 1)
-            } else {
-                for visibleChildTab in collapsedVisibleChildTabs(for: folder, childTabs: childTabs) {
-                    let childSectionIndex = pinnedTabs.firstIndex { $0.id == visibleChildTab.id } ?? firstSectionIndex
-                    let childIndex = childTabs.firstIndex { $0.id == visibleChildTab.id } ?? 0
-                    appendTab(
-                        visibleChildTab,
-                        sectionIndex: childSectionIndex,
-                        folderID: folder.id,
-                        folderChildIndex: childIndex,
-                        depth: depth + 1
-                    )
-                }
-            }
-        }
-
-        func appendTab(
-            _ tab: BrowserChromeModel.Tab,
-            sectionIndex: Int,
-            folderID: String?,
-            folderChildIndex: Int? = nil,
-            depth: Int
-        ) {
-            rows.append(
-                .tab(
-                    BrowserSidebarPinnedTabRow(
+            for item in items {
+                switch item {
+                case .tab(let id):
+                    guard let tab = tabsByID[id], let index = indices[id] else { continue }
+                    result.append(.tab(.init(
                         tab: tab,
-                        sectionIndex: sectionIndex,
-                        pinnedFolderID: folderID,
-                        folderChildIndex: folderChildIndex,
+                        sectionIndex: index,
+                        pinnedFolderID: container.folderID,
+                        folderChildIndex: container.folderID == nil
+                            ? nil
+                            : directTabs.firstIndex(of: id),
                         depth: depth
-                    )
-                )
-            )
-        }
-
-        func collapsedVisibleChildTabs(
-            for folder: BrowserChromeModel.PinnedTabFolder,
-            childTabs: [BrowserChromeModel.Tab]
-        ) -> [BrowserChromeModel.Tab] {
-            var visibleTabIDs = revealedTabIDsByFolderID[folder.id] ?? []
-            if selectedTab?.pinnedFolderID == folder.id, let selectedTab {
-                visibleTabIDs.insert(selectedTab.id)
+                    )))
+                case .folder(let id):
+                    guard visited.insert(id).inserted, let folder = tree.folders[id] else { continue }
+                    let childContainer = BrowserSidebarDropContainer.pinned(spaceID, folderID: id)
+                    let allChildren = tree.tabIDs(in: childContainer)
+                    let childIndices = allChildren.compactMap { indices[$0] }
+                    let first = childIndices.min() ?? 0
+                    let after = (childIndices.max() ?? (first - 1)) + 1
+                    let directChildren = tree.items(in: childContainer).compactMap { item -> String? in
+                        if case .tab(let id) = item {
+                            id
+                        } else {
+                            nil
+                        }
+                    }
+                    result.append(.folder(.init(
+                        folder: folder,
+                        childCount: directChildren.count,
+                        firstSectionIndex: first,
+                        afterSectionIndex: after,
+                        depth: depth
+                    )))
+                    if folder.isExpanded {
+                        append(childContainer, depth: depth + 1)
+                    } else {
+                        var revealed = revealedTabIDsByFolderID[id] ?? []
+                        if let selected = selectedTab, selected.pinnedFolderID == id {
+                            revealed.insert(selected.id)
+                        }
+                        for (childIndex, childID) in directChildren.enumerated() where revealed.contains(childID) {
+                            guard let tab = tabsByID[childID], let index = indices[childID] else { continue }
+                            result.append(.tab(.init(
+                                tab: tab,
+                                sectionIndex: index,
+                                pinnedFolderID: id,
+                                folderChildIndex: childIndex,
+                                depth: depth + 1
+                            )))
+                        }
+                    }
+                }
             }
-            return childTabs.filter { visibleTabIDs.contains($0.id) }
         }
-
-        appendRows(parentFolderID: nil, depth: 0)
-        return rows
+        append(.pinned(spaceID), depth: 0)
+        return result
     }
 
     func replacingTabs(_ tabs: [BrowserChromeModel.Tab]) -> BrowserSidebarSnapshot {

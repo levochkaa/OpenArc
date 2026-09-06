@@ -165,6 +165,26 @@ import QuartzCore
 @MainActor final class BrowserNativeFrameTransitions {
     // MARK: Internal
 
+    var onFrameChange: () -> Void = {}
+
+    func targetFrame(of view: NSView) -> CGRect { transitions[ObjectIdentifier(view)]?.target ?? view.frame }
+
+    func freezeFrame(of view: NSView) {
+        let id = ObjectIdentifier(view)
+        guard var transition = transitions[id] else { return }
+        transition.animation.cancel()
+        transition.target = view.frame
+        transitions[id] = transition
+    }
+
+    func finishAll() {
+        for transition in transitions.values {
+            transition.animation.cancel()
+            transition.view?.frame = transition.target
+            transition.view?.layoutSubtreeIfNeeded()
+        }
+    }
+
     func setFrame(
         _ frame: CGRect,
         of view: NSView,
@@ -184,9 +204,11 @@ import QuartzCore
             return
         }
         let from = view.frame
+        let onFrameChange = onFrameChange
         animation.start(curve) { [weak view] progress in
             view?.frame = BrowserNativeAnimation.interpolate(from, frame, progress)
             view?.layoutSubtreeIfNeeded()
+            onFrameChange()
         }
     }
 

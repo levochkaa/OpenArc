@@ -56,6 +56,13 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     enum Kind { case tab, appTab, folder, space, newTab }
 
+    override var dragContentBounds: CGRect { CGRect(
+        x: indent,
+        y: 0,
+        width: max(bounds.width - indent, 1),
+        height: bounds.height
+    ) }
+
     private(set) var kind = Kind.tab
     private(set) var isRenaming = false
     var onSelect: () -> Void = {}
@@ -74,6 +81,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     )
     let renameField = BrowserSidebarRenameNSTextField()
     let closeButton = BrowserNativeChromeButton(symbol: "xmark", title: "", style: .sidebarClose, action: {})
+
+    var contentIndent: CGFloat { indent }
 
     var dragOpacity: CGFloat = 1 { didSet { alphaValue = dragOpacity * appearanceProgress } }
 
@@ -215,6 +224,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             }
             path.fill()
         }
+    }
+
+    func setDropHighlighted(_ value: Bool) {
+        guard dropTargeted != value else { return }
+        dropTargeted = value
+        needsDisplay = true
     }
 
     func animateInsertion() {

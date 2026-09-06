@@ -43,6 +43,9 @@ final class BrowserRootView: NSView {
         }
         find.bind(to: model)
         sidebar.onToggleSidebar = { [weak model] in model?.toggleSidebar() }
+        sidebar.onDragInteractionChange = { [weak self] in
+            DispatchQueue.main.async { [weak self] in self?.refresh() }
+        }
         sidebar.onURLFrameChange = { [weak self] frame in self?.updateURLFrame(frame) }
         toolbar.onURLFrameChange = { [weak self] frame in self?.updateURLFrame(frame) }
         revealEdge.onHoverChange = { [weak self] in self?.handleSidebarRevealEdgeHoverChange($0) }
@@ -444,7 +447,7 @@ final class BrowserRootView: NSView {
     }
 
     private func dismissSidebarHoverOverlay() {
-        guard isSidebarHoverOverlayPresented else { return }
+        guard isSidebarHoverOverlayPresented, !sidebar.sidebar.state.isDraggingSidebarItem else { return }
         guard !isWindowFullscreenTransitioning else { preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded()
             return
         }

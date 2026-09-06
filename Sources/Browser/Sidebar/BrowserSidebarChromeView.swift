@@ -19,6 +19,10 @@ final class BrowserSidebarChromeView: NSView {
         addSubview(background)
         addSubview(sidebar)
         addSubview(resize)
+        sidebar.headerHeightProvider = { [weak header] in header?.preferredHeight ?? 0 }
+        sidebar.footerHeightProvider = { [weak footer] width in footer?.height(for: width) ?? 0 }
+        footer.onSizeChanged = { [weak sidebar] in sidebar?.refresh(animated: true) }
+        sidebar.onDragInteractionChange = { [weak self] _ in self?.onDragInteractionChange() }
         resize.setAccessibilityIdentifier("browser.sidebar.resize")
         resize.defaultWidth = BrowserChromeModel.defaultSidebarWidth
         resize.getWidth = { [weak model] in model?.sidebarWidth ?? BrowserChromeModel.defaultSidebarWidth }
@@ -48,6 +52,7 @@ final class BrowserSidebarChromeView: NSView {
     var showsWindowControls = false
     var isOverlayPresentation = false
     var onToggleSidebar: () -> Void = {}
+    var onDragInteractionChange: () -> Void = {}
     var onURLFrameChange: (CGRect?) -> Void = { _ in }
 
     override func layout() {
