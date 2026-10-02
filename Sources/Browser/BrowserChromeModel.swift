@@ -473,6 +473,11 @@ enum BrowserWindowMode: Equatable {
         refreshBrowserExtensions()
         startAutomaticArchivalTimerIfNeeded()
 
+        if drainDeferredRemoteSyncSnapshot() {
+            syncCoordinator?.schedulePull()
+            return
+        }
+
         if restoreSessionIfAvailable() {
             syncCoordinator?.schedulePull()
             return
@@ -1622,18 +1627,45 @@ enum BrowserWindowMode: Equatable {
     }
 
     func applyRemoteSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
-        guard isContextReady, !isRestoringSession, !isApplyingRemoteSync else {
+        guard !isShuttingDown else { return }
+        guard isContextReady, !isRestoringSession else {
+            deferredRemoteSyncSnapshot = snapshot
             return
         }
 
         isApplyingRemoteSync = true
-        dismissCommandBar()
-        dismissFindBar()
-
-        for tabID in tabs.map(\.id) {
-            closeTab(id: tabID, forceClose: true, registersUndo: false)
+        isReconcilingRemoteProjection = true
+        remoteProjectionGeneration += 1
+        remoteProjectionSnapshot = snapshot
+        hasCreatedInitialTab = true
+        let previousSpaceSelections = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0.selectedTabID) })
+        var seenSyncIDs = Set<String>()
+        let remoteTabs = snapshot.tabs.filter { tab in
+            guard let id = tab.id, !id.isEmpty else { return false }
+            return seenSyncIDs.insert(id).inserted
         }
-        tabCreationUndoReferences.removeAll()
+        let remoteTabsByID = Dictionary(uniqueKeysWithValues: remoteTabs.compactMap { tab in
+            tab.id.map { ($0, tab) }
+        })
+
+        for (engineID, binding) in pendingRemoteTabCreations {
+            guard let replacement = remoteTabsByID[binding.snapshot.id ?? ""] else {
+                pendingRemoteTabCreations.removeValue(forKey: engineID)
+                discardedRemoteTabCreationIDs.insert(engineID)
+                tabDriver.closeTab(withID: engineID, forceClose: true)
+                continue
+            }
+            pendingRemoteTabCreations[engineID] = RemoteTabCreation(
+                snapshot: replacement, generation: remoteProjectionGeneration
+            )
+        }
+
+        for tab in tabs where !seenSyncIDs.contains(tab.syncID)
+            || ((closedAppTabIDs.contains(tab.id) || closedPinnedTabIDs.contains(tab.id))
+                && remoteTabsByID[tab.syncID]?.placement != tab.placement)
+        {
+            closeTab(id: tab.id, forceClose: true, registersUndo: false)
+        }
 
         let restoredSpaces = restoredSpaces(from: snapshot)
         spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
@@ -1642,24 +1674,29 @@ enum BrowserWindowMode: Equatable {
             spaces.contains(where: { $0.id == selectedSpaceID }) ? selectedSpaceID : nil
         } ?? spaces.first?.id
 
-        isRestoringSession = true
-        hasCreatedInitialTab = true
-        pendingRestoredSelectedTabIndex = remoteSelectedTabIndex(in: snapshot)
-        pendingRestoredSpaces = snapshot.spaces ?? []
-        pendingRestoredTabs = snapshot.tabs
-        remainingRestoredTabCreations = snapshot.tabs.count
-
-        guard !snapshot.tabs.isEmpty else {
-            finishSessionRestoreIfNeeded()
-            return
+        for index in tabs.indices {
+            guard let remoteTab = remoteTabsByID[tabs[index].syncID] else { continue }
+            var tab = tabs[index]
+            applyRemoteTabMetadata(remoteTab, to: &tab)
+            tabs[index] = tab
+        }
+        for index in spaces.indices {
+            spaces[index].selectedTabID = previousSpaceSelections[spaces[index].id] ?? nil
         }
 
-        for (index, tabSnapshot) in snapshot.tabs.enumerated() {
-            _ = tabDriver.createTab(
-                withURLString: tabSnapshot.urlString,
-                makeActive: index == pendingRestoredSelectedTabIndex
+        let existingSyncIDs = Set(tabs.map(\.syncID))
+        let pendingSyncIDs = Set(pendingRemoteTabCreations.values.compactMap(\.snapshot.id))
+        for remoteTab in remoteTabs {
+            guard let syncID = remoteTab.id,
+                  !existingSyncIDs.contains(syncID), !pendingSyncIDs.contains(syncID)
+            else { continue }
+            let engineID = tabDriver.createTab(withURLString: remoteTab.urlString, makeActive: false)
+            pendingRemoteTabCreations[engineID] = RemoteTabCreation(
+                snapshot: remoteTab, generation: remoteProjectionGeneration
             )
         }
+        isReconcilingRemoteProjection = false
+        finishRemoteSyncProjectionIfReady()
     }
 
     func closeTabsBelow(id: String) {
@@ -2015,6 +2052,11 @@ enum BrowserWindowMode: Equatable {
         let afterSectionIndex: Int
     }
 
+    private struct RemoteTabCreation {
+        let snapshot: BrowserTabSessionSnapshotTab
+        let generation: Int
+    }
+
     private let tabDriver: BrowserTabDriving
     private let sessionSnapshotStore: BrowserTabSessionSnapshotStoring
     private let sessionPreferencesStore: BrowserSessionPreferencesStoring
@@ -2042,6 +2084,13 @@ enum BrowserWindowMode: Equatable {
     private var isPersistenceEnabled = true
     private var isRestoringSession = false
     private var isApplyingRemoteSync = false
+    private var deferredRemoteSyncSnapshot: BrowserTabSessionSnapshot?
+    private var remoteProjectionSnapshot: BrowserTabSessionSnapshot?
+    private var remoteProjectionGeneration = 0
+    private var isReconcilingRemoteProjection = false
+    private var hasLocalChangesDuringRemoteProjection = false
+    private var pendingRemoteTabCreations = [String: RemoteTabCreation]()
+    private var discardedRemoteTabCreationIDs = Set<String>()
     private var pendingRestoredSelectedTabIndex: Int?
     private var pendingRestoredTabs = [BrowserTabSessionSnapshotTab]()
     private var pendingRestoredSpaces = [BrowserSpaceSessionSnapshot]()
@@ -2090,6 +2139,95 @@ enum BrowserWindowMode: Equatable {
 
     private var canRegisterTabUndo: Bool {
         isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
+    }
+
+    private func applyRemoteTabMetadata(_ snapshot: BrowserTabSessionSnapshotTab, to tab: inout Tab) {
+        tab.spaceID = snapshot.spaceID.flatMap { id in spaces.contains { $0.id == id } ? id : nil }
+            ?? spaces.first?.id ?? Self.defaultSpaceID
+        tab.placement = snapshot.placement
+        tab.userTitleOverride = sanitizedUserTitleOverride(from: snapshot.userTitleOverride)
+        tab.pinnedURLString = snapshot.placement == .spacePinned
+            ? normalizedPinnedURLString(from: snapshot.pinnedURLString ?? snapshot.urlString)
+            : nil
+        tab.pinnedFolderID = snapshot.placement == .spacePinned ? snapshot.pinnedFolderID : nil
+        // Existing engines keep their live URL, title, navigation stack and loading
+        // state. A remote URL initializes a new identity; it does not navigate a live page.
+    }
+
+    private func finishRemoteSyncProjectionIfReady() {
+        guard isApplyingRemoteSync, !isReconcilingRemoteProjection,
+              let snapshot = remoteProjectionSnapshot
+        else { return }
+
+        var remoteOrder = [String: Int]()
+        for (index, tab) in snapshot.tabs.enumerated() {
+            if let id = tab.id, remoteOrder[id] == nil {
+                remoteOrder[id] = index
+            }
+        }
+        tabs = tabs.enumerated()
+            .sorted { lhs, rhs in
+                let left = remoteOrder[lhs.element.syncID] ?? snapshot.tabs.count + lhs.offset
+                let right = remoteOrder[rhs.element.syncID] ?? snapshot.tabs.count + rhs.offset
+                return left < right
+            }
+            .map(\.element)
+        guard pendingRemoteTabCreations.isEmpty else { return }
+        removeInvalidPinnedTabFolderAssignments()
+
+        for index in spaces.indices {
+            let visibleTabs = sidebarTabs(forSpaceID: spaces[index].id)
+            if let selectedID = spaces[index].selectedTabID, visibleTabs.contains(where: { $0.id == selectedID }) {
+                continue
+            }
+            let remoteIndex = snapshot.spaces?.first { $0.id == spaces[index].id }?.selectedTabIndex
+            spaces[index].selectedTabID = remoteIndex.flatMap {
+                visibleTabs.indices.contains($0) ? visibleTabs[$0].id : nil
+            } ?? visibleTabs.first?.id
+        }
+        if let selectedTab = tabs.first(where: { $0.id == selectedTabID }) {
+            selectedSpaceID = selectedTab.spaceID
+            setSelectedTabID(selectedTab.id, forSpaceID: selectedTab.spaceID)
+        } else {
+            selectActiveTabForSelectedSpace()
+        }
+        updateWindowTitle()
+        sessionSnapshotStore.saveSnapshot(currentSessionSnapshot())
+        sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
+        sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
+        remoteProjectionSnapshot = nil
+        isApplyingRemoteSync = false
+        if hasLocalChangesDuringRemoteProjection {
+            hasLocalChangesDuringRemoteProjection = false
+            syncCoordinator?.schedulePush(snapshot: currentSessionSnapshot())
+        }
+    }
+
+    @discardableResult private func drainDeferredRemoteSyncSnapshot() -> Bool {
+        guard isContextReady, !isRestoringSession, let snapshot = deferredRemoteSyncSnapshot else { return false }
+        deferredRemoteSyncSnapshot = nil
+        applyRemoteSyncSnapshot(snapshot)
+        return true
+    }
+
+    private func handleRemoteCreatedTab(id: String, title: String, urlString: String) -> Bool {
+        if discardedRemoteTabCreationIDs.remove(id) != nil {
+            tabDriver.closeTab(withID: id, forceClose: true)
+            return true
+        }
+        guard let binding = pendingRemoteTabCreations.removeValue(forKey: id) else { return false }
+        guard binding.generation == remoteProjectionGeneration, let syncID = binding.snapshot.id else {
+            tabDriver.closeTab(withID: id, forceClose: true)
+            return true
+        }
+        var tab = Tab(
+            id: id, syncID: syncID, spaceID: Self.defaultSpaceID, title: title,
+            urlString: urlString, lastActivityAt: lastActivityDate(from: binding.snapshot) ?? dateProvider()
+        )
+        applyRemoteTabMetadata(binding.snapshot, to: &tab)
+        tabs.append(tab)
+        finishRemoteSyncProjectionIfReady()
+        return true
     }
 
     private func telemetryProperties(for tab: Tab) -> [String: String] {
@@ -2252,27 +2390,68 @@ enum BrowserWindowMode: Equatable {
         isRestoringSession = false
         updateWindowTitle()
 
-        if isApplyingRemoteSync {
-            sessionSnapshotStore.saveSnapshot(currentSessionSnapshot())
-            sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
-            sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
-            isApplyingRemoteSync = false
-        } else {
-            persistCurrentSessionIfAllowed()
-            archiveExpiredTemporaryTabs()
-        }
+        guard !drainDeferredRemoteSyncSnapshot() else { return }
+        persistCurrentSessionIfAllowed()
+        archiveExpiredTemporaryTabs()
     }
 
     private func persistCurrentSessionIfAllowed() {
-        guard isContextReady, isPersistenceEnabled, !isRestoringSession, !isApplyingRemoteSync else {
+        guard isContextReady, isPersistenceEnabled, !isRestoringSession, !isReconcilingRemoteProjection else {
             return
         }
 
-        let snapshot = currentSessionSnapshot()
+        let snapshot: BrowserTabSessionSnapshot
+        if isApplyingRemoteSync {
+            snapshot = snapshotPreservingPendingRemoteCreations()
+            remoteProjectionSnapshot = snapshot
+            hasLocalChangesDuringRemoteProjection = true
+        } else {
+            snapshot = currentSessionSnapshot()
+        }
         sessionSnapshotStore.saveSnapshot(snapshot)
         sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
-        sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
-        syncCoordinator?.schedulePush(snapshot: snapshot)
+        let selectedSyncID = selectedTab?.syncID
+        sessionPreferencesStore.saveSelectedTabIndex(snapshot.tabs.firstIndex { $0.id == selectedSyncID })
+        if !isApplyingRemoteSync {
+            syncCoordinator?.schedulePush(snapshot: snapshot)
+        }
+    }
+
+    private func snapshotPreservingPendingRemoteCreations() -> BrowserTabSessionSnapshot {
+        let current = currentSessionSnapshot()
+        guard let remoteProjectionSnapshot else { return current }
+        var mergedTabs = current.tabs
+        let pendingIDs = Set(pendingRemoteTabCreations.values.compactMap(\.snapshot.id))
+        // Place pending creations before their next surviving remote sibling.
+        // Existing tabs keep the user's current relative order, including moves
+        // and deletions performed while the engine creates remote tabs.
+        for (index, tab) in remoteProjectionSnapshot.tabs.enumerated().reversed() {
+            guard let id = tab.id, pendingIDs.contains(id) else { continue }
+            let followingIDs = remoteProjectionSnapshot.tabs.dropFirst(index + 1).compactMap(\.id)
+            let insertion = followingIDs.lazy
+                .compactMap { nextID in
+                    mergedTabs.firstIndex { $0.id == nextID }
+                }
+                .first ?? mergedTabs.count
+            mergedTabs.insert(tab, at: insertion)
+        }
+        let spaceSnapshots = current.spaces?.map { space in
+            let selectedID = spaces.first { $0.id == space.id }?.selectedTabID
+            let selectedSyncID = tabs.first { $0.id == selectedID }?.syncID
+            let inSpace = mergedTabs.filter { $0.spaceID == space.id }
+            let visible = inSpace.filter { $0.placement == .spacePinned }
+                + inSpace.filter { $0.placement == .temporary }
+            return BrowserSpaceSessionSnapshot(
+                id: space.id, title: space.title, systemImageName: space.systemImageName,
+                isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
+                selectedTabIndex: visible.firstIndex { $0.id == selectedSyncID }
+            )
+        }
+        return BrowserTabSessionSnapshot(
+            spaces: spaceSnapshots,
+            pinnedTabFolders: current.pinnedTabFolders,
+            tabs: mergedTabs
+        )
     }
 
     private func currentSessionSnapshot() -> BrowserTabSessionSnapshot {
@@ -2314,25 +2493,6 @@ enum BrowserWindowMode: Equatable {
     private func updateWindowTitle() {
         let title = tabs.first(where: { $0.id == selectedTabID })?.displayTitle ?? BrowserStrings.applicationName
         windowTitleHandler(title)
-    }
-
-    private func remoteSelectedTabIndex(in snapshot: BrowserTabSessionSnapshot) -> Int? {
-        guard
-            let selectedSpaceID,
-            let spaceSnapshot = snapshot.spaces?.first(where: { $0.id == selectedSpaceID }),
-            let selectedTabIndex = spaceSnapshot.selectedTabIndex
-        else {
-            return nil
-        }
-
-        let visibleTabs = snapshot.tabs.enumerated().filter { _, tab in
-            (tab.spaceID ?? Self.defaultSpaceID) == selectedSpaceID
-        }
-        guard visibleTabs.indices.contains(selectedTabIndex) else {
-            return nil
-        }
-
-        return visibleTabs[selectedTabIndex].offset
     }
 
     private func createTab(
@@ -3248,6 +3408,9 @@ enum BrowserWindowMode: Equatable {
     }
 
     func handleCreatedTab(id: String, title: String, urlString: String, isActive: Bool) {
+        if handleRemoteCreatedTab(id: id, title: title, urlString: urlString) {
+            return
+        }
         if
             let previousID = pendingReopenedPinnedTabIDs.removeValue(forKey: id),
             handleReopenedPinnedTabCreated(id: id, previousID: previousID, title: title, urlString: urlString)
@@ -3262,6 +3425,7 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        guard !tabs.contains(where: { $0.id == id }) else { return }
         let restoredTab = isRestoringSession && !pendingRestoredTabs.isEmpty ? pendingRestoredTabs.removeFirst() : nil
         let pendingContext = pendingCreatedTabContexts.removeValue(forKey: id)
         let undoSnapshot = pendingContext?.undoSnapshot
@@ -3313,6 +3477,7 @@ enum BrowserWindowMode: Equatable {
         if isRestoringSession {
             remainingRestoredTabCreations = max(remainingRestoredTabCreations - 1, 0)
             finishSessionRestoreIfNeeded()
+            return
         } else if let tab = tabs.first(where: { $0.id == id }) {
             BrowserTelemetry.captureUsage(.tabCreated, properties: telemetryProperties(for: tab))
         }
@@ -3409,8 +3574,16 @@ enum BrowserWindowMode: Equatable {
     }
 
     func handleClosedTab(id: String) {
-        closingTabIDs.remove(id)
+        if discardedRemoteTabCreationIDs.contains(id) {
+            return
+        }
+        let wasAlreadyRemoved = closingTabIDs.remove(id) != nil
         let closedTab = tabs.first { $0.id == id }
+        // closeTab already changed/persisted the model. A delayed engine receipt
+        // must not enqueue a new local write after a remote projection finishes.
+        if wasAlreadyRemoved, closedTab == nil {
+            return
+        }
         if closedAppTabIDs.contains(id), closedTab?.placement == .app {
             updateWindowTitle()
             persistCurrentSessionIfAllowed()
