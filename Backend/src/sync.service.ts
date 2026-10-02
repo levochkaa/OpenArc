@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type pg from "pg";
 import { AuthService } from "./auth.service.js";
 import { DatabaseService } from "./database.service.js";
+import { SyncOperationExecutor, type OperationOutcome } from "./sync-operations.js";
 import type {
   AuthAppleRequest,
   RegisterDeviceRequest,
@@ -33,8 +34,10 @@ type QueryFunction = (text: string, params?: unknown[]) => Promise<Pick<pg.Query
 type SyncResponse = {
   cursor: number;
   events: SerializedSyncEvent[];
-  protocolVersion?: 2;
+  protocolVersion?: 2 | 3;
   mutationID?: string;
+  supportedPushVersions?: number[];
+  outcomes?: OperationOutcome[];
 };
 
 function canonicalValue(value: unknown): unknown {
@@ -134,8 +137,11 @@ export class SyncService {
 
       // Parsed payloads have defaults applied and unknown fields stripped. Sort
       // object keys, preserve change order, and exclude the replaceable device ID.
+      const payload = body.protocolVersion === 3
+        ? { protocolVersion: 3, operations: body.operations }
+        : { protocolVersion: body.protocolVersion, changes: body.changes };
       const digest = body.mutationID ? createHash("sha256")
-        .update(JSON.stringify(canonicalValue({ protocolVersion: body.protocolVersion, changes: body.changes })))
+        .update(JSON.stringify(canonicalValue(payload)))
         .digest("hex") : undefined;
       if (body.mutationID) {
         const receipt = await client.query(
@@ -152,15 +158,32 @@ export class SyncService {
       }
 
       const events: SerializedSyncEvent[] = [];
-      // Snapshot diffs list deleted spaces before surviving tabs. Apply moves
-      // first so deleting the old space does not also delete a moved-out tab.
-      // Explicit deletes still dominate every upsert of the same ID in a batch.
-      const orderedChanges = [
-        ...body.changes.filter((change) => change.op === "upsert"),
-        ...body.changes.filter((change) => change.op === "delete")
-      ];
-      for (const change of orderedChanges) {
-        events.push(...await this.applyChange(client, userID, body.deviceID, change));
+      const outcomes: OperationOutcome[] = [];
+      if (body.protocolVersion === 3) {
+        const executor = new SyncOperationExecutor(client, userID, {
+          apply: (change) => this.applyChange(client, userID, body.deviceID, change),
+          tombstone: (type, id) => this.tombstoneEvent(client, userID, type, id),
+          currentEvent: async (type, id) => {
+            const result = await client.query(
+              `SELECT server_seq, device_id, entity_type, entity_id, op, payload, created_at
+               FROM sync_events WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+               ORDER BY server_seq DESC LIMIT 1`, [userID, type, id]
+            );
+            return result.rows[0] ? this.serializeSyncEvent(result.rows[0]) : undefined;
+          }
+        });
+        for (const [index, operation] of body.operations.entries()) {
+          const result = await executor.apply(operation, index);
+          events.push(...result.events);
+          outcomes.push(result.outcome);
+        }
+      } else {
+        // Legacy snapshot diffs put deleted spaces before surviving moved tabs.
+        const orderedChanges = [
+          ...body.changes.filter((change) => change.op === "upsert"),
+          ...body.changes.filter((change) => change.op === "delete")
+        ];
+        for (const change of orderedChanges) events.push(...await this.applyChange(client, userID, body.deviceID, change));
       }
 
       await client.query("UPDATE devices SET last_seen_at = now() WHERE id = $1", [body.deviceID]);
@@ -171,8 +194,10 @@ export class SyncService {
       // deletes. Clients must advance their pull cursor only after reading pull.
       const response: SyncResponse = {
         cursor: Number(cursorResult.rows[0].cursor),
-        events: events.sort((a, b) => a.serverSeq - b.serverSeq),
-        ...(body.mutationID ? { protocolVersion: 2 as const, mutationID: body.mutationID } : {})
+        events: (body.protocolVersion === 3 ? [...new Map(events.map((event) => [event.serverSeq, event])).values()] : events)
+          .sort((a, b) => a.serverSeq - b.serverSeq),
+        ...(body.mutationID ? { protocolVersion: body.protocolVersion, mutationID: body.mutationID } : {}),
+        ...(body.protocolVersion === 3 ? { outcomes } : {})
       };
       if (body.mutationID) {
         await client.query(
@@ -208,7 +233,7 @@ export class SyncService {
     const cursor = events.length > 0 ? events[events.length - 1].serverSeq : body.cursor;
     await this.database.query("UPDATE devices SET last_seen_at = now() WHERE id = $1", [body.deviceID]);
 
-    return { protocolVersion: 2, cursor, events };
+    return { protocolVersion: 2, supportedPushVersions: [2, 3], cursor, events };
   }
 
   private async assertDeviceBelongsToUser(query: QueryFunction, userID: string, deviceID: string): Promise<void> {
@@ -282,7 +307,7 @@ export class SyncService {
       // A tab moved out before the space deletion survives. A stale snapshot
       // must neither move it back into the deleted space nor delete it there.
       const survivor = await client.query(
-        "SELECT 1 FROM tabs WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL AND space_id <> $3",
+        "SELECT 1 FROM tabs WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL AND (space_id <> $3 OR placement = 'app')",
         [userID, change.entityID, change.data.spaceID]
       );
       if (survivor.rowCount) {

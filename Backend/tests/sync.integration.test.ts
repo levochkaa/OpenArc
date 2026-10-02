@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { after, before, describe, it } from "node:test";
 import type { INestApplication } from "@nestjs/common";
 import type pg from "pg";
-import type { SyncChange } from "../src/schemas.js";
+import type { SyncChange, SyncOperation } from "../src/schemas.js";
 
 type SyncEvent = {
   serverSeq: number;
@@ -19,9 +19,17 @@ type SyncEvent = {
   op: "upsert" | "delete";
   data: Record<string, unknown>;
 };
-type SyncResponse = { cursor: number; events: SyncEvent[]; protocolVersion?: 2; mutationID?: string };
+type SyncResponse = {
+  cursor: number; events: SyncEvent[]; protocolVersion?: 2 | 3; mutationID?: string;
+  supportedPushVersions?: number[];
+  outcomes?: { operationIndex: number; status: "applied" | "deleted" | "rejected"; reason?: string }[];
+};
 type Device = { id: string; token: string };
 type Account = { id: string; devices: [Device, Device] };
+type StoredTab = {
+  id: string; spaceID: string; placement: "temporary" | "spacePinned" | "app"; rank: number;
+  urlString: string; pinnedURLString: string | null; userTitleOverride: string | null;
+};
 
 const testDatabaseURL = process.env.THEBROWSER_SYNC_TEST_DATABASE_URL;
 
@@ -119,6 +127,24 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
   const pushV2 = (device: Device, mutationID: string, changes: SyncChange[]) => post<SyncResponse>("/v1/sync/push", device.token, {
     deviceID: device.id, protocolVersion: 2, mutationID, changes
   });
+  const pushV3 = (device: Device, operations: SyncOperation[], mutationID = randomUUID()) => post<SyncResponse>("/v1/sync/push", device.token, {
+    deviceID: device.id, protocolVersion: 3, mutationID, operations
+  });
+
+  async function storedTabs(userID: string): Promise<StoredTab[]> {
+    const result = await pool.query<StoredTab>(`
+      SELECT id, space_id AS "spaceID", placement, rank, url_string AS "urlString",
+        pinned_url_string AS "pinnedURLString", user_title_override AS "userTitleOverride"
+      FROM tabs WHERE user_id = $1 AND deleted_at IS NULL ORDER BY rank, id
+    `, [userID]);
+    return result.rows;
+  }
+
+  async function assertSamePull(a: Device, b: Device) {
+    const events = await allEvents(a, 0, 500);
+    assert.deepEqual(await allEvents(b, 0, 500), events, "Both devices see the same committed canonical log");
+    return events;
+  }
 
   async function allEvents(device: Device, cursor = 0, limit = 2): Promise<SyncEvent[]> {
     const events: SyncEvent[] = [];
@@ -158,7 +184,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     await post("/v1/sync/push", a.token, {
       deviceID: a.id, changes: [space(randomUUID()), { entityType: "tab", entityID: randomUUID(), op: "upsert" }]
     }, 400);
-    assert.deepEqual(await pull(a), { protocolVersion: 2, cursor: 0, events: [] });
+    assert.deepEqual(await pull(a), { protocolVersion: 2, supportedPushVersions: [2, 3], cursor: 0, events: [] });
   });
 
   it("keeps a batch deleted when an offline client replays stale titles, ranks and placement", async () => {
@@ -372,13 +398,14 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
       await pool.query("DROP TRIGGER IF EXISTS sync_test_hold_event ON sync_events; DROP FUNCTION IF EXISTS sync_test_hold_event()");
     }
     assert.equal(secondFinishedWhileHeld, false, "Later account events must wait until earlier events commit");
-    assert.deepEqual(heldResponse, { protocolVersion: 2, cursor: 0, events: [] }, "Pull must not advance over an uncommitted event");
+    assert.deepEqual(heldResponse, { protocolVersion: 2, supportedPushVersions: [2, 3], cursor: 0, events: [] }, "Pull must not advance over an uncommitted event");
     assert.deepEqual((await allEvents(b, 0, 1)).map((event) => event.entityID), [firstID, secondID]);
   });
 
-  it("advertises v2 on pull and rejects incomplete or unsupported mutation envelopes", async () => {
+  it("advertises supported push versions without changing the v2 pull envelope", async () => {
     const { devices: [a] } = await account();
     assert.equal((await pull(a)).protocolVersion, 2);
+    assert.deepEqual((await pull(a)).supportedPushVersions, [2, 3]);
     for (const envelope of [
       { protocolVersion: 2 }, { mutationID: randomUUID() },
       { protocolVersion: 1, mutationID: randomUUID() }, { protocolVersion: 3, mutationID: randomUUID() },
@@ -553,6 +580,309 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     await assertDeleted(id, "tab", [favoriteID]);
     assert.deepEqual(liveEntityIDs(await allEvents(b), "tab"), []);
   });
+
+  it("commutes v3 title patches and cross-space moves in either commit order, including explicit clear", async () => {
+    for (const moveFirst of [false, true]) {
+      for (const title of ["Renamed independently", null]) {
+        const { id, devices: [a, b] } = await account();
+        const source = randomUUID(), target = randomUUID(), moving = randomUUID(), anchor = randomUUID(), sentinel = randomUUID();
+        await pushV3(a, [createSpace(source), createSpace(target),
+          createTab(moving, source, { userTitleOverride: "Original", urlString: "https://example.test/preserve" }),
+          createTab(sentinel, source), createTab(anchor, target)]);
+        const rename: SyncOperation = { kind: "patch", entityType: "tab", entityID: moving, fields: { userTitleOverride: title } };
+        const move = moveTabs([moving], target, "temporary", { beforeID: anchor });
+        if (moveFirst) { await pushV3(b, [move]); await pushV3(a, [rename]); }
+        else { await pushV3(a, [rename]); await pushV3(b, [move]); }
+        const rows = await storedTabs(id);
+        assert.deepEqual(listOrder(rows, source), [sentinel]);
+        assert.deepEqual(listOrder(rows, target), [moving, anchor]);
+        assert.equal(rows.find((row) => row.id === moving)?.userTitleOverride, title);
+        assert.equal(rows.find((row) => row.id === moving)?.urlString, "https://example.test/preserve");
+        await assertSamePull(a, b);
+      }
+    }
+  });
+
+  it("patches only named space fields while a concurrent space move preserves order and collapsed state", async () => {
+    for (const moveFirst of [false, true]) {
+      const { id, devices: [a, b] } = await account();
+      const first = randomUUID(), second = randomUUID(), third = randomUUID();
+      await pushV3(a, [createSpace(first), createSpace(second, { isPinnedSectionCollapsed: true }), createSpace(third)]);
+      const rename: SyncOperation = { kind: "patch", entityType: "space", entityID: second, fields: { title: "Renamed space" } };
+      const move: SyncOperation = { kind: "move", entityType: "space", entityIDs: [second], beforeID: first };
+      if (moveFirst) { await pushV3(b, [move]); await pushV3(a, [rename]); }
+      else { await pushV3(a, [rename]); await pushV3(b, [move]); }
+      await pushV3(b, [{ kind: "patch", entityType: "space", entityID: second, fields: { systemImageName: "star" } }]);
+      const rows = await pool.query("SELECT id, title, system_image_name, is_pinned_section_collapsed FROM spaces WHERE user_id = $1 AND deleted_at IS NULL ORDER BY rank, id", [id]);
+      assert.deepEqual(rows.rows.map((row) => row.id), [second, first, third]);
+      assert.equal(rows.rows[0].title, "Renamed space");
+      assert.equal(rows.rows[0].system_image_name, "star");
+      assert.equal(rows.rows[0].is_pinned_section_collapsed, true, "An omitted patch field must not receive a create default");
+      await assertSamePull(a, b);
+    }
+  });
+
+  it("resolves concurrent moves of the same tab by server commit order and replays the older receipt unchanged", async () => {
+    const { id, devices: [a, b] } = await account();
+    const source = randomUUID(), left = randomUUID(), right = randomUUID(), moving = randomUUID();
+    const leftAnchor = randomUUID(), rightAnchor = randomUUID();
+    await pushV3(a, [createSpace(source), createSpace(left), createSpace(right),
+      createTab(moving, source, { userTitleOverride: "Keep metadata" }), createTab(leftAnchor, left), createTab(rightAnchor, right)]);
+    const ids = [randomUUID(), randomUUID()];
+    const moves = [moveTabs([moving], left, "temporary", { beforeID: leftAnchor }), moveTabs([moving], right, "temporary", { beforeID: rightAnchor })];
+    const responses = await Promise.all([pushV3(a, [moves[0]], ids[0]), pushV3(b, [moves[1]], ids[1])]);
+    assert.notEqual(responses[0].cursor, responses[1].cursor);
+    const winner = responses[0].cursor > responses[1].cursor ? 0 : 1;
+    const earlier = 1 - winner;
+    const rows = await storedTabs(id);
+    const destination = winner === 0 ? left : right;
+    assert.equal(rows.find((row) => row.id === moving)?.spaceID, destination);
+    assert.equal(rows.find((row) => row.id === moving)?.userTitleOverride, "Keep metadata");
+    assert.deepEqual(listOrder(rows, destination), [moving, winner === 0 ? leftAnchor : rightAnchor]);
+    const before = await assertSamePull(a, b);
+    assert.deepEqual(await pushV3(b, [moves[earlier]], ids[earlier]), responses[earlier]);
+    assert.deepEqual(await allEvents(a, 0, 500), before);
+    assert.deepEqual(await storedTabs(id), rows);
+  });
+
+  it("falls back from deleted or moved anchors within the requested list and preserves ordered move blocks", async () => {
+    for (const missingBefore of ["deleted", "moved"]) {
+      const { id, devices: [a, b] } = await account();
+      const source = randomUUID(), target = randomUUID(), other = randomUUID();
+      const x = randomUUID(), y = randomUUID(), before = randomUUID(), after = randomUUID(), tail = randomUUID();
+      await pushV3(a, [createSpace(source), createSpace(target), createSpace(other),
+        createTab(x, source), createTab(y, source), createTab(after, target), createTab(before, target), createTab(tail, target)]);
+      if (missingBefore === "deleted") await pushV3(b, [{ kind: "delete", entityType: "tab", entityID: before }]);
+      else await pushV3(b, [moveTabs([before], other)]);
+      await pushV3(a, [moveTabs([y, x], target, "temporary", { beforeID: before, afterID: after })]);
+      let rows = await storedTabs(id);
+      assert.deepEqual(listOrder(rows, target), [after, y, x, tail]);
+      assert.deepEqual(listOrder(rows, source), []);
+      assert.deepEqual(listOrder(rows, other), missingBefore === "moved" ? [before] : []);
+      // Both anchors are invalid in the target now. Append without following a moved anchor.
+      await pushV3(a, [moveTabs([y, x], target, "temporary", { beforeID: before, afterID: randomUUID() })]);
+      rows = await storedTabs(id);
+      assert.deepEqual(listOrder(rows, target), [after, tail, y, x]);
+      const log = await allEvents(a, 0, 500);
+      await post("/v1/sync/push", a.token, {
+        deviceID: a.id, protocolVersion: 3, mutationID: randomUUID(),
+        operations: [moveTabs([y, x], target, "temporary", { beforeID: x })]
+      }, 400);
+      assert.deepEqual(await allEvents(a, 0, 500), log, "A moving member cannot also be its own anchor");
+      await assertSamePull(a, b);
+    }
+  });
+
+  it("keeps both concurrent inserts into the same gap and rejects a duplicate create without overwriting metadata", async () => {
+    const { id, devices: [a, b] } = await account();
+    const spaceID = randomUUID(), left = randomUUID(), right = randomUUID(), x = randomUUID(), y = randomUUID();
+    await pushV3(a, [createSpace(spaceID), createTab(left, spaceID), createTab(right, spaceID)]);
+    const results = await Promise.all([
+      pushV3(a, [createTab(x, spaceID, { userTitleOverride: "X" }, right)]),
+      pushV3(b, [createTab(y, spaceID, { userTitleOverride: "Y" }, right)])
+    ]);
+    const inserted = results[0].cursor < results[1].cursor ? [x, y] : [y, x];
+    const rows = await storedTabs(id);
+    assert.deepEqual(listOrder(rows, spaceID), [left, ...inserted, right]);
+    assert.equal(new Set(rows.map((row) => row.id)).size, 4);
+    const duplicate = await pushV3(b, [createTab(x, spaceID, { userTitleOverride: "Must not overwrite" }, left)]);
+    assert.deepEqual(duplicate.outcomes, [{ operationIndex: 0, status: "rejected", reason: "entity_exists" }]);
+    assert.ok(duplicate.events.some((event) => event.entityID === x && event.data.userTitleOverride === "X"));
+    assert.deepEqual(await storedTabs(id), rows);
+    await assertSamePull(a, b);
+  });
+
+  it("rejects a vanished destination without deleting live sources and keeps later metadata patches", async () => {
+    for (const destinationExisted of [false, true]) {
+      const { id, devices: [a, b] } = await account();
+      const source = randomUUID(), destination = randomUUID(), x = randomUUID(), y = randomUUID();
+      await pushV3(a, [createSpace(source), ...(destinationExisted ? [createSpace(destination)] : []),
+        createTab(x, source, { userTitleOverride: "Live source" }), createTab(y, source)]);
+      if (destinationExisted) await pushV3(b, [{ kind: "delete", entityType: "space", entityID: destination }]);
+      const move = moveTabs([x, y], destination);
+      const mutationID = randomUUID();
+      const rejected = await pushV3(a, [move], mutationID);
+      assert.equal(rejected.outcomes?.[0]?.status, "rejected");
+      assert.ok(rejected.outcomes?.[0]?.reason);
+      assert.ok(rejected.events.some((event) => event.entityID === x && event.op === "upsert" && event.data.spaceID === source));
+      await pushV3(b, [{ kind: "patch", entityType: "tab", entityID: x, fields: { userTitleOverride: "Later rename" } }]);
+      const rows = await storedTabs(id);
+      assert.deepEqual(listOrder(rows, source), [x, y]);
+      assert.equal(rows.find((row) => row.id === x)?.userTitleOverride, "Later rename");
+      assert.equal((await pool.query("SELECT count(*) FROM sync_tombstones WHERE user_id = $1 AND entity_type = 'tab'", [id])).rows[0].count, "0");
+      assert.deepEqual(await pushV3(a, [move], mutationID), rejected);
+      assert.deepEqual(await storedTabs(id), rows);
+      await assertSamePull(a, b);
+    }
+  });
+
+  it("skips deleted members of a move block while moving live members, and deletes a tab if its accepted destination is later removed", async () => {
+    const { id, devices: [a, b] } = await account();
+    const source = randomUUID(), target = randomUUID(), x = randomUUID(), y = randomUUID(), anchor = randomUUID();
+    await pushV3(a, [createSpace(source), createSpace(target), createTab(x, source), createTab(y, source), createTab(anchor, target)]);
+    const deleted = await pushV3(b, [{ kind: "delete", entityType: "tab", entityID: x }]);
+    const moved = await pushV3(a, [moveTabs([x, y], target, "temporary", { beforeID: anchor })]);
+    assert.equal(moved.outcomes?.[0]?.status, "applied");
+    assert.ok(moved.events.some((event) => event.entityID === x && event.op === "delete" && event.serverSeq === deleted.events[0].serverSeq));
+    assert.deepEqual(listOrder(await storedTabs(id), target), [y, anchor]);
+    await pushV3(b, [{ kind: "delete", entityType: "space", entityID: target }]);
+    const stale = await pushV3(a, [
+      { kind: "patch", entityType: "tab", entityID: y, fields: { userTitleOverride: "Cannot revive" } },
+      createTab(y, source), moveTabs([y], source)
+    ]);
+    assert.ok(stale.outcomes?.every((outcome) => outcome.status === "deleted"));
+    await assertDeleted(id, "tab", [x, y, anchor]);
+    assert.deepEqual(liveEntityIDs(await assertSamePull(a, b), "tab"), []);
+  });
+
+  it("keeps Favorites global and scopes ordinary moves to exactly one Space and placement", async () => {
+    const { id, devices: [a, b] } = await account();
+    const first = randomUUID(), second = randomUUID(), historical = randomUUID();
+    const a1 = randomUUID(), a2 = randomUUID(), pinned = randomUUID(), temporary = randomUUID(), other = randomUUID();
+    await pushV3(a, [createSpace(first), createSpace(second), createSpace(historical),
+      createTab(a1, first, { placement: "app" }), createTab(a2, historical, { placement: "app" }),
+      createTab(pinned, first, { placement: "spacePinned" }), createTab(temporary, first), createTab(other, second)]);
+    await pushV3(b, [{ kind: "delete", entityType: "space", entityID: historical }]);
+    await pushV3(a, [moveTabs([a2], historical, "app", { beforeID: a1 })]);
+    let rows = await storedTabs(id);
+    assert.deepEqual(listOrder(rows, historical, "app"), [a2, a1]);
+    assert.deepEqual(listOrder(rows, first, "spacePinned"), [pinned]);
+    assert.deepEqual(listOrder(rows, first), [temporary]);
+    assert.deepEqual(listOrder(rows, second), [other]);
+    await pushV3(b, [moveTabs([temporary], second, "temporary", { beforeID: other })]);
+    rows = await storedTabs(id);
+    assert.deepEqual(listOrder(rows, second), [temporary, other]);
+    assert.deepEqual(listOrder(rows, first, "spacePinned"), [pinned]);
+    assert.deepEqual(listOrder(rows, first, "app"), [a2, a1]);
+    await assertSamePull(a, b);
+  });
+
+  it("protects a promoted Favorite from a stale v2 ordinary snapshot pointing to its deleted historical Space", async () => {
+    const { id, devices: [a, b] } = await account();
+    const spaceID = randomUUID(), tabID = randomUUID();
+    await pushV2(a, randomUUID(), [space(spaceID), tab(tabID, spaceID)]);
+    await pushV3(b, [moveTabs([tabID], spaceID, "app"),
+      { kind: "patch", entityType: "tab", entityID: tabID, fields: { userTitleOverride: "Promoted Favorite" } }]);
+    await pushV3(b, [{ kind: "delete", entityType: "space", entityID: spaceID }]);
+    const before = await storedTabs(id);
+    const stale = await pushV2(a, randomUUID(), [tab(tabID, spaceID, { placement: "temporary", userTitleOverride: "stale" })]);
+    assert.ok(stale.events.some((event) => event.entityID === tabID && event.op === "upsert" && event.data.placement === "app"));
+    assert.deepEqual(await storedTabs(id), before);
+    assert.equal(before[0].userTitleOverride, "Promoted Favorite");
+    assert.equal((await pool.query("SELECT count(*) FROM sync_tombstones WHERE user_id = $1 AND entity_type = 'tab'", [id])).rows[0].count, "0");
+    await assertSamePull(a, b);
+  });
+
+  it("uses canonical current URLs for pin transitions, preserves existing home URLs, and clears them when unpinning", async () => {
+    const { id, devices: [a, b] } = await account();
+    const source = randomUUID(), target = randomUUID(), tabID = randomUUID();
+    await pushV3(a, [createSpace(source), createSpace(target), createTab(tabID, source)]);
+    await pushV3(b, [{ kind: "patch", entityType: "tab", entityID: tabID, fields: { urlString: "https://example.test/current" } }]);
+    await pushV3(a, [moveTabs([tabID], source, "spacePinned")]);
+    assert.equal((await storedTabs(id))[0].pinnedURLString, "https://example.test/current");
+    await pushV3(b, [{ kind: "patch", entityType: "tab", entityID: tabID,
+      fields: { urlString: "https://example.test/live", pinnedURLString: "https://example.test/home" } }]);
+    await pushV3(a, [moveTabs([tabID], target, "spacePinned")]);
+    assert.equal((await storedTabs(id))[0].pinnedURLString, "https://example.test/home");
+    await pushV3(a, [moveTabs([tabID], target, "temporary")]);
+    assert.equal((await storedTabs(id))[0].pinnedURLString, null);
+    await assertSamePull(a, b);
+  });
+
+  it("replays v3 receipts after newer changes and device rotation, while rejecting cross-version mutation ID reuse", async () => {
+    const { id, devices: [a, b] } = await account();
+    const spaceID = randomUUID(), x = randomUUID(), y = randomUUID();
+    const oldID = randomUUID();
+    const oldChanges = [space(spaceID), tab(x, spaceID, { rank: 0 }), tab(y, spaceID, { rank: 1 })];
+    const v2 = await pushV2(a, oldID, oldChanges);
+    const mutationID = randomUUID(), operation = moveTabs([y], spaceID, "temporary", { beforeID: x });
+    const original = await pushV3(a, [operation], mutationID);
+    assert.equal(original.protocolVersion, 3);
+    assert.equal(original.mutationID, mutationID);
+    await pushV3(b, [{ kind: "patch", entityType: "tab", entityID: y, fields: { userTitleOverride: "Newer" } },
+      moveTabs([x], spaceID, "temporary", { beforeID: y })]);
+    const rows = await storedTabs(id), log = await allEvents(b, 0, 500);
+    const rotated = await register(id, "v3 rotated device");
+    assert.deepEqual(await pushV3(rotated, [operation], mutationID), original);
+    assert.deepEqual(await pushV2(rotated, oldID, oldChanges), v2, "Persisted v2 retries remain byte-compatible after v3 writes");
+    await post("/v1/sync/push", a.token, { deviceID: a.id, protocolVersion: 3, mutationID: oldID, operations: [operation] }, 409);
+    await post("/v1/sync/push", a.token, { deviceID: a.id, protocolVersion: 2, mutationID, changes: oldChanges }, 409);
+    assert.deepEqual(await storedTabs(id), rows);
+    assert.deepEqual(await allEvents(a, 0, 500), log);
+  });
+
+  it("rejects structural metadata patches and invalid move groups before creating events or receipts", async () => {
+    const { id, devices: [a] } = await account();
+    const spaceID = randomUUID(), tabID = randomUUID();
+    await pushV3(a, [createSpace(spaceID), createTab(tabID, spaceID)]);
+    const before = await allEvents(a, 0, 500);
+    const invalid = [
+      { kind: "patch", entityType: "tab", entityID: tabID, fields: { rank: 99 } },
+      { kind: "patch", entityType: "tab", entityID: tabID, fields: { spaceID: randomUUID() } },
+      { kind: "patch", entityType: "tab", entityID: tabID, fields: { placement: "app" } },
+      { kind: "patch", entityType: "tab", entityID: tabID, fields: {} },
+      moveTabs([tabID, tabID], spaceID), moveTabs([tabID], spaceID, "temporary", { afterID: tabID })
+    ];
+    for (const operation of invalid) {
+      const mutationID = randomUUID();
+      await post("/v1/sync/push", a.token, { deviceID: a.id, protocolVersion: 3, mutationID, operations: [operation] }, 400);
+      assert.equal((await pool.query("SELECT count(*) FROM sync_mutation_receipts WHERE user_id = $1 AND mutation_id = $2", [id, mutationID])).rows[0].count, "0");
+    }
+    assert.deepEqual(await allEvents(a, 0, 500), before);
+  });
+
+  it("reorders more than 1000 peers through one semantic move and exposes the complete canonical order across pull pages", async () => {
+    const { id, devices: [a, b] } = await account();
+    const target = randomUUID(), other = randomUUID(), sentinel = randomUUID(), pinned = randomUUID(), favorite = randomUUID();
+    const ids: string[] = Array.from({ length: 1505 }, () => randomUUID());
+    const changes = [space(target), space(other),
+      tab(sentinel, other, { rank: 0, userTitleOverride: "Other space" }),
+      tab(pinned, target, { placement: "spacePinned", rank: 0, userTitleOverride: "Pinned sentinel" }),
+      tab(favorite, target, { placement: "app", rank: 0, userTitleOverride: "Favorite sentinel" }),
+      ...ids.map((tabID, rank) => tab(tabID, target, { rank, userTitleOverride: `Metadata ${rank}` }))];
+    let cursor = 0;
+    for (let offset = 0; offset < changes.length; offset += 1000) {
+      cursor = (await pushV2(a, randomUUID(), changes.slice(offset, offset + 1000))).cursor;
+    }
+    const before = await storedTabs(id);
+    const last = ids.at(-1)!;
+    const moved = await pushV3(a, [moveTabs([last], target, "temporary", { beforeID: ids[0] })]);
+    const expected = [last, ...ids.slice(0, -1)];
+    const rows = await storedTabs(id);
+    assert.deepEqual(listOrder(rows, target), expected);
+    assert.equal(new Set(rows.map((row) => row.id)).size, ids.length + 3);
+    const sentinelIDs = new Set<string>([sentinel, pinned, favorite]);
+    assert.deepEqual(rows.filter((row) => sentinelIDs.has(row.id)), before.filter((row) => sentinelIDs.has(row.id)));
+    for (let index = 0; index < ids.length; index++) {
+      assert.equal(rows.find((row) => row.id === ids[index])?.userTitleOverride, `Metadata ${index}`);
+    }
+    const pages = await allEvents(b, cursor, 500);
+    assert.ok(pages.length > 1000, "Changed peer state must not be truncated to the request operation limit");
+    assert.ok(pages.every((event) => event.entityType === "tab" && ids.includes(event.entityID)));
+    const latest = new Map(pages.map((event) => [event.entityID, event]));
+    assert.deepEqual([...latest.values()].sort((a, b) => Number(a.data.rank) - Number(b.data.rank)).map((event) => event.entityID), expected);
+    assert.deepEqual(moved.events, pages, "Receipt and paged pull contain the same committed rank changes");
+    await assertSamePull(a, b);
+  });
+
+  it("does not resolve another account's destination, anchor, or device in v3 operations", async () => {
+    const first = await account(), second = await account();
+    const source = randomUUID(), foreignSpace = randomUUID(), localTab = randomUUID(), foreignTab = randomUUID(), anchor = randomUUID();
+    await pushV3(first.devices[0], [createSpace(source), createTab(localTab, source), createTab(anchor, source)]);
+    await pushV3(second.devices[0], [createSpace(foreignSpace), createTab(foreignTab, foreignSpace)]);
+    const foreignBefore = await storedTabs(second.id);
+    const rejected = await pushV3(first.devices[0], [moveTabs([localTab], foreignSpace),
+      { kind: "patch", entityType: "tab", entityID: foreignTab, fields: { userTitleOverride: "Forbidden" } }]);
+    assert.ok(rejected.outcomes?.every((outcome) => outcome.status === "rejected"));
+    assert.equal(rejected.events.some((event) => event.entityID === foreignTab || event.entityID === foreignSpace), false);
+    await pushV3(first.devices[1], [moveTabs([localTab], source, "temporary", { beforeID: foreignTab })]);
+    assert.deepEqual(listOrder(await storedTabs(first.id), source), [anchor, localTab]);
+    assert.deepEqual(await storedTabs(second.id), foreignBefore);
+    await post("/v1/sync/push", first.devices[0].token, {
+      protocolVersion: 3, mutationID: randomUUID(), deviceID: second.devices[0].id, operations: []
+    }, 403);
+    await assertSamePull(first.devices[0], first.devices[1]);
+  });
 });
 
 function space(entityID: string): SyncChange {
@@ -571,6 +901,30 @@ function tab(entityID: string, spaceID: string, overrides: Record<string, unknow
 
 function deletion(entityType: "space" | "tab", entityID: string): SyncChange {
   return { entityType, entityID, op: "delete" };
+}
+
+function createSpace(entityID: string, overrides: Record<string, unknown> = {}): SyncOperation {
+  return {
+    kind: "create", entityType: "space", entityID,
+    data: { title: "Semantic space", systemImageName: "globe", isPinnedSectionCollapsed: false, ...overrides }
+  };
+}
+
+function createTab(entityID: string, spaceID: string, overrides: Record<string, unknown> = {}, beforeID?: string): SyncOperation {
+  return {
+    kind: "create", entityType: "tab", entityID, ...(beforeID ? { beforeID } : {}),
+    data: { spaceID, placement: "temporary", urlString: "https://example.test/semantic", ...overrides }
+  };
+}
+
+function moveTabs(entityIDs: string[], spaceID: string, placement: StoredTab["placement"] = "temporary", anchors: {
+  beforeID?: string | null; afterID?: string | null;
+} = {}): SyncOperation {
+  return { kind: "move", entityType: "tab", entityIDs, destination: { spaceID, placement }, ...anchors };
+}
+
+function listOrder(tabs: StoredTab[], spaceID: string, placement: StoredTab["placement"] = "temporary"): string[] {
+  return tabs.filter((tab) => tab.placement === placement && (placement === "app" || tab.spaceID === spaceID)).map((tab) => tab.id);
 }
 
 function liveEntityIDs(events: SyncEvent[], entityType: "space" | "tab"): string[] {

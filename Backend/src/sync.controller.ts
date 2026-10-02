@@ -20,15 +20,25 @@ export class SyncController {
   @ApiOperation({ summary: "Push local sync changes" })
   @ApiBody({
     schema: {
-      type: "object",
-      required: ["deviceID", "changes"],
-      additionalProperties: false,
-      properties: {
-        deviceID: { type: "string", format: "uuid" },
-        protocolVersion: { type: "integer", enum: [2], description: "Supply together with mutationID for durable idempotent uploads." },
-        mutationID: { type: "string", format: "uuid", description: "Immutable mutation identity within an account." },
-        changes: { type: "array", maxItems: 1000, items: { type: "object" } }
-      }
+      oneOf: [{
+        type: "object",
+        required: ["deviceID", "changes"],
+        additionalProperties: false,
+        properties: {
+          deviceID: { type: "string", format: "uuid" },
+          protocolVersion: { type: "integer", enum: [2], description: "Supply together with mutationID for durable idempotent uploads." },
+          mutationID: { type: "string", format: "uuid" },
+          changes: { type: "array", maxItems: 1000, items: { type: "object" } }
+        }
+      }, {
+        type: "object", required: ["deviceID", "protocolVersion", "mutationID", "operations"], additionalProperties: false,
+        properties: {
+          deviceID: { type: "string", format: "uuid" }, protocolVersion: { type: "integer", enum: [3] },
+          mutationID: { type: "string", format: "uuid" },
+          operations: { type: "array", maxItems: 1000, items: { type: "object" },
+            description: "Strict create/patch/move/delete intents. See /openapi.yaml for typed operation schemas." }
+        }
+      }]
     }
   })
   @ApiOkResponse({ description: "Sync cursor and accepted remote events." })

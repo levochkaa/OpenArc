@@ -340,19 +340,25 @@ components:
             data:
               $ref: "#/components/schemas/TabPayload"
     SyncPushRequest:
+      oneOf:
+      - $ref: '#/components/schemas/LegacySyncPushRequest'
+      - $ref: '#/components/schemas/SemanticSyncPushRequest'
+    LegacySyncPushRequest:
       type: object
-      description: >-
-        Omit protocolVersion and mutationID for legacy v1. Supply both for v2.
-        Retries with the same account, mutationID, and parsed payload return the
-        original receipt; a different payload returns 409. Device rotation is allowed.
-      required: [deviceID, changes]
+      description: Omit protocolVersion and mutationID for legacy v1. Supply both for v2. Retries with
+        the same account, mutationID, and parsed payload return the original receipt; a different payload
+        returns 409. Device rotation is allowed.
+      required:
+      - deviceID
+      - changes
       additionalProperties: false
       properties:
         deviceID:
           type: string
         protocolVersion:
           type: integer
-          enum: [2]
+          enum:
+          - 2
         mutationID:
           type: string
           format: uuid
@@ -360,7 +366,381 @@ components:
           type: array
           maxItems: 1000
           items:
-            $ref: "#/components/schemas/SyncChange"
+            $ref: '#/components/schemas/SyncChange'
+    SemanticSyncPushRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceID:
+          type: string
+          format: uuid
+        protocolVersion:
+          type: integer
+          enum:
+          - 3
+        mutationID:
+          type: string
+          format: uuid
+        operations:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/SyncOperation'
+      required:
+      - deviceID
+      - protocolVersion
+      - mutationID
+      - operations
+      description: Operations execute in request order in one account transaction. Semantic rejections
+        are recorded and later operations continue; storage errors roll back the whole transaction. Mutation
+        IDs share the v2 account namespace. Reusing an ID with different content or another protocol
+        version returns 409. Retries return the original durable receipt, excluding deviceID from content
+        identity. Maximum inflated JSON request size is 8 MiB.
+    SpaceCreateData:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        systemImageName:
+          type: string
+          minLength: 1
+        isPinnedSectionCollapsed:
+          type: boolean
+        selectedTabID:
+          type: string
+          nullable: true
+      required:
+      - title
+      - systemImageName
+    TabCreateData:
+      type: object
+      additionalProperties: false
+      properties:
+        spaceID:
+          type: string
+          minLength: 1
+        placement:
+          type: string
+          enum:
+          - temporary
+          - spacePinned
+          - app
+          description: app Favorites are global and survive deletion of their historical spaceID. Explicit
+            deletion of the tab remains permanent.
+        urlString:
+          type: string
+          minLength: 1
+        pinnedURLString:
+          type: string
+          nullable: true
+          minLength: 1
+          description: Pinned home URL independent of the current URL. For spacePinned, omission preserves
+            the stored home (or defaults to urlString for a new tab); explicit null clears it. Other
+            placements always clear it.
+        title:
+          type: string
+          nullable: true
+        userTitleOverride:
+          type: string
+          nullable: true
+        faviconURLString:
+          type: string
+          nullable: true
+        lastActivityAt:
+          type: string
+          nullable: true
+          format: date-time
+      required:
+      - spaceID
+      - placement
+      - urlString
+    SpacePatchFields:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        systemImageName:
+          type: string
+          minLength: 1
+        isPinnedSectionCollapsed:
+          type: boolean
+        selectedTabID:
+          type: string
+          nullable: true
+      minProperties: 1
+      description: Absent fields remain unchanged. Explicit null clears selectedTabID. Rank is assigned
+        by the server.
+    TabPatchFields:
+      type: object
+      additionalProperties: false
+      properties:
+        urlString:
+          type: string
+          minLength: 1
+        pinnedURLString:
+          type: string
+          nullable: true
+          minLength: 1
+          description: Pinned home URL independent of the current URL. For spacePinned, omission preserves
+            the stored home (or defaults to urlString for a new tab); explicit null clears it. Other
+            placements always clear it.
+        title:
+          type: string
+          nullable: true
+        userTitleOverride:
+          type: string
+          nullable: true
+        faviconURLString:
+          type: string
+          nullable: true
+        lastActivityAt:
+          type: string
+          nullable: true
+          format: date-time
+      minProperties: 1
+      description: Absent fields remain unchanged; explicit null clears nullable metadata. Moving uses
+        a separate operation; spaceID, placement and rank are forbidden here.
+    TabMoveDestination:
+      type: object
+      additionalProperties: false
+      properties:
+        spaceID:
+          type: string
+          minLength: 1
+        placement:
+          type: string
+          enum:
+          - temporary
+          - spacePinned
+          - app
+      required:
+      - spaceID
+      - placement
+    SyncOperation:
+      description: 'Create and move accept optional nullable anchors: after removing movers, use a live
+        beforeID in the target list, otherwise a live afterID, otherwise append. A move anchor among
+        entityIDs is invalid. Survivors move as one block in request order; missing IDs stay absent and
+        deleted IDs stay tombstoned. Non-app destinations require a live Space; an invalid destination
+        rejects the whole move and preserves all source entities. App Favorites form one global list
+        independent of their historical spaceID. Moving into spacePinned derives home from the current
+        URL, retains home when already pinned, and clears home when leaving pinned placement. Server
+        ranks are canonical within each list; changed peers emit full current upserts. Legacy v2 clients
+        still submit full snapshots and can overwrite metadata or ranks.'
+      oneOf:
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            type: string
+            enum:
+            - create
+          entityType:
+            type: string
+            enum:
+            - space
+          entityID:
+            type: string
+            minLength: 1
+          data:
+            $ref: '#/components/schemas/SpaceCreateData'
+          beforeID:
+            type: string
+            minLength: 1
+            nullable: true
+          afterID:
+            type: string
+            minLength: 1
+            nullable: true
+        required:
+        - kind
+        - entityType
+        - entityID
+        - data
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            type: string
+            enum:
+            - create
+          entityType:
+            type: string
+            enum:
+            - tab
+          entityID:
+            type: string
+            minLength: 1
+          data:
+            $ref: '#/components/schemas/TabCreateData'
+          beforeID:
+            type: string
+            minLength: 1
+            nullable: true
+          afterID:
+            type: string
+            minLength: 1
+            nullable: true
+        required:
+        - kind
+        - entityType
+        - entityID
+        - data
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            type: string
+            enum:
+            - patch
+          entityType:
+            type: string
+            enum:
+            - space
+          entityID:
+            type: string
+            minLength: 1
+          fields:
+            $ref: '#/components/schemas/SpacePatchFields'
+        required:
+        - kind
+        - entityType
+        - entityID
+        - fields
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            type: string
+            enum:
+            - patch
+          entityType:
+            type: string
+            enum:
+            - tab
+          entityID:
+            type: string
+            minLength: 1
+          fields:
+            $ref: '#/components/schemas/TabPatchFields'
+        required:
+        - kind
+        - entityType
+        - entityID
+        - fields
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            type: string
+            enum:
+            - move
+          entityType:
+            type: string
+            enum:
+            - space
+          entityIDs:
+            type: array
+            minItems: 1
+            maxItems: 1000
+            uniqueItems: true
+            items:
+              type: string
+              minLength: 1
+          beforeID:
+            type: string
+            minLength: 1
+            nullable: true
+          afterID:
+            type: string
+            minLength: 1
+            nullable: true
+        required:
+        - kind
+        - entityType
+        - entityIDs
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            type: string
+            enum:
+            - move
+          entityType:
+            type: string
+            enum:
+            - tab
+          entityIDs:
+            type: array
+            minItems: 1
+            maxItems: 1000
+            uniqueItems: true
+            items:
+              type: string
+              minLength: 1
+          beforeID:
+            type: string
+            minLength: 1
+            nullable: true
+          afterID:
+            type: string
+            minLength: 1
+            nullable: true
+          destination:
+            $ref: '#/components/schemas/TabMoveDestination'
+        required:
+        - kind
+        - entityType
+        - entityIDs
+        - destination
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            type: string
+            enum:
+            - delete
+          entityType:
+            type: string
+            enum:
+            - space
+            - tab
+          entityID:
+            type: string
+            minLength: 1
+        required:
+        - kind
+        - entityType
+        - entityID
+    SyncOperationOutcome:
+      type: object
+      additionalProperties: false
+      properties:
+        operationIndex:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum:
+          - applied
+          - deleted
+          - rejected
+        reason:
+          type: string
+          enum:
+          - missing
+          - entity_exists
+          - target_missing
+          - target_deleted
+      required:
+      - operationIndex
+      - status
+      description: One outcome per operation, in request order. Applied moves may also return deletion
+        events for tombstoned group members. Already deleted identities report deleted. Create on a live
+        identity reports entity_exists and echoes its canonical state.
     SyncPullRequest:
       type: object
       required: [deviceID, cursor, limit]
@@ -404,17 +784,21 @@ components:
           format: date-time
     SyncResponse:
       type: object
-      description: >-
-        Pull always advertises protocolVersion 2. A v2 push receipt echoes
-        protocolVersion and mutationID and is durably retained without expiry.
-        Clients must observe v2 capability before uploading v2 mutations, and
-        must never use the push cursor as their pull cursor.
-      required: [cursor, events]
+      description: Pull retains protocolVersion 2 and advertises supportedPushVersions [2, 3]. A v2 or
+        v3 push receipt echoes its protocolVersion and mutationID and is durably retained without expiry.
+        Clients must observe supportedPushVersions before uploading v3 operations. V3 receipts also include
+        per-operation outcomes and authoritative events, deduplicated by serverSeq. Push cursors must
+        never advance a pull cursor.
+      required:
+      - cursor
+      - events
       additionalProperties: false
       properties:
         protocolVersion:
           type: integer
-          enum: [2]
+          enum:
+          - 2
+          - 3
         mutationID:
           type: string
           format: uuid
@@ -424,7 +808,22 @@ components:
         events:
           type: array
           items:
-            $ref: "#/components/schemas/SyncEvent"
+            $ref: '#/components/schemas/SyncEvent'
+        supportedPushVersions:
+          type: array
+          description: Present on pull responses. Exactly [2, 3] for this server.
+          items:
+            type: integer
+            enum:
+            - 2
+            - 3
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+        outcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOperationOutcome'
     ReleaseAsset:
       type: object
       required: [id, name, contentType, size, downloadCount, downloadURL]

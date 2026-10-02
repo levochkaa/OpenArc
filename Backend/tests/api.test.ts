@@ -142,6 +142,45 @@ describe("sync API", () => {
     assert.deepEqual(response.json(), { error: "unauthorized" });
   });
 
+  it("parses a declared 1000-operation batch beyond 100 KiB before auth", async () => {
+    const payload = Buffer.from(JSON.stringify({
+      protocolVersion: 3,
+      mutationID: "00000000-0000-4000-8000-000000000002",
+      deviceID: "00000000-0000-4000-8000-000000000001",
+      operations: Array.from({ length: 1000 }, (_, index) => ({
+        kind: "patch", entityType: "tab", entityID: `tab-${index}`,
+        fields: { userTitleOverride: "large legitimate batch ".repeat(10) }
+      }))
+    }));
+    assert.ok(payload.length > 100 * 1024);
+    for (const compressed of [false, true]) {
+      const response = await request(baseURL, {
+        method: "POST", path: "/v1/sync/push",
+        headers: { "content-type": "application/json", ...(compressed ? { "content-encoding": "gzip" } : {}) },
+        payload: compressed ? gzipSync(payload) : payload
+      });
+      assert.equal(response.statusCode, 401, response.body);
+      assert.deepEqual(response.json(), { error: "unauthorized" });
+    }
+  });
+
+  it("bounds inflated JSON at 8 MiB for plain and gzip requests", async () => {
+    const payload = Buffer.from(JSON.stringify({
+      protocolVersion: 3,
+      mutationID: "00000000-0000-4000-8000-000000000002",
+      deviceID: "00000000-0000-4000-8000-000000000001",
+      operations: [{ kind: "patch", entityType: "tab", entityID: "tab", fields: { userTitleOverride: "x".repeat(9 * 1024 * 1024) } }]
+    }));
+    for (const compressed of [false, true]) {
+      const response = await request(baseURL, {
+        method: "POST", path: "/v1/sync/push",
+        headers: { "content-type": "application/json", ...(compressed ? { "content-encoding": "gzip" } : {}) },
+        payload: compressed ? gzipSync(payload) : payload
+      });
+      assert.equal(response.statusCode, 413, response.body);
+    }
+  });
+
   it("rejects mismatched release asset filenames before fetching the asset body", async () => {
     const originalFetch = globalThis.fetch;
     const repository = process.env.GITHUB_RELEASE_REPOSITORY ?? "thebrowser/app";
