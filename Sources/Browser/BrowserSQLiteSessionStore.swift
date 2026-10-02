@@ -15,6 +15,11 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         )
         self.dbQueue = try DatabaseQueue(path: databaseURL.path)
         try Self.migrator.migrate(dbQueue)
+        try dbQueue.write { db in
+            if try storedSyncOwner(db) != nil {
+                try initializeSyncOutbox(in: db)
+            }
+        }
     }
 
     // MARK: Internal
@@ -24,72 +29,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func loadSnapshot() -> BrowserTabSessionSnapshot? {
         do {
             return try dbQueue.read { db in
-                let tabs = try Row.fetchAll(
-                    db,
-                    sql: """
-                    SELECT id, url_string, pinned_url_string, user_title_override, placement, space_id,
-                           pinned_folder_id, last_activity_timestamp
-                    FROM browser_tabs
-                    ORDER BY position ASC
-                    """
-                )
-                let hasSpaces = try hasStoredSpaces(db)
-                guard !tabs.isEmpty || hasSpaces else {
-                    return nil
-                }
-
-                let spaces = try Row.fetchAll(
-                    db,
-                    sql: """
-                    SELECT id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index
-                    FROM browser_spaces
-                    ORDER BY position ASC
-                    """
-                )
-                .map { row in
-                    BrowserSpaceSessionSnapshot(
-                        id: row["id"],
-                        title: row["title"],
-                        systemImageName: row["system_image_name"],
-                        isPinnedSectionCollapsed: row["is_pinned_section_collapsed"],
-                        selectedTabIndex: row["selected_tab_index"]
-                    )
-                }
-                let pinnedTabFolders = try Row.fetchAll(
-                    db,
-                    sql: """
-                    SELECT id, space_id, parent_folder_id, title, system_image_name, is_expanded
-                    FROM browser_pinned_tab_folders
-                    ORDER BY position ASC
-                    """
-                )
-                .map { row in
-                    BrowserPinnedTabFolderSessionSnapshot(
-                        id: row["id"],
-                        spaceID: row["space_id"],
-                        parentFolderID: row["parent_folder_id"],
-                        title: row["title"],
-                        systemImageName: row["system_image_name"],
-                        isExpanded: row["is_expanded"]
-                    )
-                }
-
-                return BrowserTabSessionSnapshot(
-                    spaces: spaces.isEmpty ? nil : spaces,
-                    pinnedTabFolders: pinnedTabFolders.isEmpty ? nil : pinnedTabFolders,
-                    tabs: tabs.map { row in
-                        BrowserTabSessionSnapshotTab(
-                            id: row["id"],
-                            urlString: row["url_string"],
-                            pinnedURLString: row["pinned_url_string"],
-                            userTitleOverride: row["user_title_override"],
-                            placement: BrowserTabPlacement(rawValue: row["placement"] as String) ?? .temporary,
-                            spaceID: row["space_id"],
-                            pinnedFolderID: row["pinned_folder_id"],
-                            lastActivityTimestamp: row["last_activity_timestamp"]
-                        )
-                    }
-                )
+                try readSnapshot(db)
             }
         } catch {
             Self.logger.error("Failed to load SQLite session snapshot: \(error.localizedDescription, privacy: .public)")
@@ -100,10 +40,76 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
         do {
             try dbQueue.write { db in
-                try writeSnapshot(snapshot, to: db)
+                let previous = try readSnapshot(db)
+                guard try storedSyncOwner(db) != nil else {
+                    try writeSnapshot(snapshot, to: db)
+                    return
+                }
+                var baseline = try readSyncBaseline(db)
+                let filtered = BrowserSyncOutboxProjection.removingDeletedEntities(from: snapshot, baseline: baseline)
+                try writeSnapshot(filtered, to: db)
+                // Read back generated legacy tab IDs before making the immutable payload.
+                let normalized = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
+                let changes = try BrowserSyncOutboxProjection.changes(
+                    from: previous, to: normalized, baseline: baseline, pending: readSyncMutations(db)
+                )
+                baseline.recordLocalDeletes(changes)
+                try appendSyncMutations(changes, to: db)
+                try writeSyncBaseline(baseline, to: db)
             }
         } catch {
             Self.logger.error("Failed to save SQLite session snapshot: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func saveRemoteProjectionSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
+        do {
+            try dbQueue.write { db in try writeSnapshot(snapshot, to: db) }
+        } catch {
+            Self.logger.error("Failed to save remote projection: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func loadSnapshotForSync(for owner: BrowserSyncOwner) throws -> BrowserTabSessionSnapshot? {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try readSnapshot(db)
+        }
+    }
+
+    func pendingSyncMutations(for owner: BrowserSyncOwner, limit: Int = 100) throws -> [BrowserSyncMutation] {
+        guard limit > 0 else { throw BrowserSyncOutboxError.invalidLimit }
+        return try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try readSyncMutations(db, limit: limit)
+        }
+    }
+
+    func acknowledgeSyncMutation(
+        id: String, events: [BrowserSyncEvent], for owner: BrowserSyncOwner
+    ) throws -> BrowserTabSessionSnapshot {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            var baseline = try readSyncBaseline(db)
+            try baseline.apply(events)
+            try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id])
+            return try writeSyncProjection(baseline, in: db)
+        }
+    }
+
+    func applyRemoteSyncEvents(
+        _ events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner
+    ) throws -> BrowserTabSessionSnapshot {
+        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
+        return try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            var baseline = try readSyncBaseline(db)
+            try baseline.apply(events)
+            let snapshot = try writeSyncProjection(baseline, in: db)
+            try db.execute(
+                sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1", arguments: [cursor]
+            )
+            return snapshot
         }
     }
 
@@ -209,6 +215,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try dbQueue.write { db in
             if let existingOwner = try storedSyncOwner(db) {
                 guard existingOwner == owner else { throw BrowserSyncStoreError.ownerMismatch }
+                try initializeSyncOutbox(in: db)
                 return
             }
             try db.execute(
@@ -220,6 +227,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
                 arguments: [Key.syncCursor]
             )
+            try initializeSyncOutbox(in: db)
         }
     }
 
@@ -332,10 +340,149 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             )
             """)
         }
+        migrator.registerMigration("addDurableSyncOutbox") { db in
+            try db.execute(sql: """
+            CREATE TABLE browser_sync_baseline (
+                id INTEGER PRIMARY KEY CHECK (id = 1), payload BLOB NOT NULL
+            )
+            """)
+            try db.execute(sql: """
+            CREATE TABLE browser_sync_outbox (
+                position INTEGER PRIMARY KEY AUTOINCREMENT,
+                mutation_id TEXT NOT NULL UNIQUE,
+                payload BLOB NOT NULL
+            )
+            """)
+        }
         return migrator
     }
 
     private let dbQueue: DatabaseQueue
+
+    private func readSnapshot(_ db: Database) throws -> BrowserTabSessionSnapshot? {
+        let tabs = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, url_string, pinned_url_string, user_title_override, placement, space_id,
+                   pinned_folder_id, last_activity_timestamp
+            FROM browser_tabs
+            ORDER BY position ASC
+            """
+        )
+        let hasSpaces = try hasStoredSpaces(db)
+        guard !tabs.isEmpty || hasSpaces else {
+            return nil
+        }
+
+        let spaces = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index
+            FROM browser_spaces
+            ORDER BY position ASC
+            """
+        )
+        .map { row in
+            BrowserSpaceSessionSnapshot(
+                id: row["id"],
+                title: row["title"],
+                systemImageName: row["system_image_name"],
+                isPinnedSectionCollapsed: row["is_pinned_section_collapsed"],
+                selectedTabIndex: row["selected_tab_index"]
+            )
+        }
+        let pinnedTabFolders = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, space_id, parent_folder_id, title, system_image_name, is_expanded
+            FROM browser_pinned_tab_folders
+            ORDER BY position ASC
+            """
+        )
+        .map { row in
+            BrowserPinnedTabFolderSessionSnapshot(
+                id: row["id"],
+                spaceID: row["space_id"],
+                parentFolderID: row["parent_folder_id"],
+                title: row["title"],
+                systemImageName: row["system_image_name"],
+                isExpanded: row["is_expanded"]
+            )
+        }
+
+        return BrowserTabSessionSnapshot(
+            spaces: spaces.isEmpty ? nil : spaces,
+            pinnedTabFolders: pinnedTabFolders.isEmpty ? nil : pinnedTabFolders,
+            tabs: tabs.map { row in
+                BrowserTabSessionSnapshotTab(
+                    id: row["id"],
+                    urlString: row["url_string"],
+                    pinnedURLString: row["pinned_url_string"],
+                    userTitleOverride: row["user_title_override"],
+                    placement: BrowserTabPlacement(rawValue: row["placement"] as String) ?? .temporary,
+                    spaceID: row["space_id"],
+                    pinnedFolderID: row["pinned_folder_id"],
+                    lastActivityTimestamp: row["last_activity_timestamp"]
+                )
+            }
+        )
+    }
+
+    private func initializeSyncOutbox(in db: Database) throws {
+        guard try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM browser_sync_baseline") == 0 else { return }
+        // Old owner-bound profiles have no trustworthy remote baseline. Seed current
+        // records once and replay from zero; earlier offline deletions cannot be recovered.
+        let snapshot = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
+        try appendSyncMutations(BrowserSyncOutboxProjection.changes(from: nil, to: snapshot), to: db)
+        try writeSyncBaseline(BrowserSyncOutboxBaseline(), to: db)
+        try db.execute(sql: "UPDATE browser_sync_state SET cursor = 0 WHERE id = 1")
+    }
+
+    private func readSyncBaseline(_ db: Database) throws -> BrowserSyncOutboxBaseline {
+        guard let payload = try Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1") else {
+            throw BrowserSyncStoreError.ownerNotBound
+        }
+        return try JSONDecoder().decode(BrowserSyncOutboxBaseline.self, from: payload)
+    }
+
+    private func writeSyncBaseline(_ baseline: BrowserSyncOutboxBaseline, to db: Database) throws {
+        try db.execute(
+            sql: "INSERT INTO browser_sync_baseline (id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
+            arguments: [JSONEncoder().encode(baseline)]
+        )
+    }
+
+    private func appendSyncMutations(_ changes: [BrowserSyncChange], to db: Database) throws {
+        for offset in stride(from: 0, to: changes.count, by: 1000) {
+            let mutation = BrowserSyncMutation(
+                id: UUID().uuidString,
+                changes: Array(changes[offset..<min(offset + 1000, changes.count)])
+            )
+            try db.execute(
+                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload) VALUES (?, ?)",
+                arguments: [mutation.id, JSONEncoder().encode(mutation)]
+            )
+        }
+    }
+
+    private func readSyncMutations(_ db: Database, limit: Int? = nil) throws -> [BrowserSyncMutation] {
+        let rows = try Row.fetchAll(
+            db, sql: "SELECT payload FROM browser_sync_outbox ORDER BY position ASC LIMIT ?", arguments: [limit ?? -1]
+        )
+        return try rows.map { row in try JSONDecoder().decode(BrowserSyncMutation.self, from: row["payload"] as Data) }
+    }
+
+    private func writeSyncProjection(
+        _ baseline: BrowserSyncOutboxBaseline,
+        in db: Database
+    ) throws -> BrowserTabSessionSnapshot {
+        let snapshot = try BrowserSyncOutboxProjection.snapshot(
+            baseline: baseline, pending: readSyncMutations(db), local: readSnapshot(db)
+        )
+        try writeSyncBaseline(baseline, to: db)
+        try writeSnapshot(snapshot, to: db)
+        return snapshot
+    }
 
     private func storedSyncOwner(_ db: Database) throws -> BrowserSyncOwner? {
         guard let row = try Row.fetchOne(db, sql: "SELECT base_url, user_id FROM browser_sync_state WHERE id = 1")

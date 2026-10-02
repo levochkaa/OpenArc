@@ -25,81 +25,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         from previousSnapshot: BrowserTabSessionSnapshot?,
         to snapshot: BrowserTabSessionSnapshot
     ) -> [BrowserSyncChange] {
-        var changes = [BrowserSyncChange]()
-        let previousSpaceIDs = Set(previousSnapshot?.spaces?.map(\.id) ?? [])
-        let currentSpaceIDs = Set(snapshot.spaces?.map(\.id) ?? [])
-        let previousTabIDs = Set(previousSnapshot?.tabs.compactMap(\.id) ?? [])
-        let currentTabIDs = Set(snapshot.tabs.compactMap(\.id))
-
-        for (index, space) in (snapshot.spaces ?? []).enumerated() {
-            changes.append(
-                BrowserSyncChange(
-                    entityType: .space,
-                    entityID: space.id,
-                    op: .upsert,
-                    spaceData: BrowserSyncSpacePayload(
-                        title: space.title,
-                        systemImageName: space.systemImageName,
-                        rank: Double(index),
-                        isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                        selectedTabID: nil
-                    ),
-                    tabData: nil
-                )
-            )
-        }
-
-        for deletedSpaceID in previousSpaceIDs.subtracting(currentSpaceIDs) {
-            changes.append(
-                BrowserSyncChange(
-                    entityType: .space,
-                    entityID: deletedSpaceID,
-                    op: .delete,
-                    spaceData: nil,
-                    tabData: nil
-                )
-            )
-        }
-
-        for (index, tab) in snapshot.tabs.enumerated() {
-            guard let tabID = tab.id else {
-                continue
-            }
-
-            changes.append(
-                BrowserSyncChange(
-                    entityType: .tab,
-                    entityID: tabID,
-                    op: .upsert,
-                    spaceData: nil,
-                    tabData: BrowserSyncTabPayload(
-                        spaceID: tab.spaceID ?? BrowserChromeModel.defaultSpaceID,
-                        placement: tab.placement,
-                        rank: Double(index),
-                        urlString: tab.urlString,
-                        pinnedURLString: tab.pinnedURLString,
-                        title: nil,
-                        userTitleOverride: tab.userTitleOverride,
-                        faviconURLString: nil,
-                        lastActivityAt: tab.lastActivityTimestamp.map { Self.iso8601String(from: $0) }
-                    )
-                )
-            )
-        }
-
-        for deletedTabID in previousTabIDs.subtracting(currentTabIDs) {
-            changes.append(
-                BrowserSyncChange(
-                    entityType: .tab,
-                    entityID: deletedTabID,
-                    op: .delete,
-                    spaceData: nil,
-                    tabData: nil
-                )
-            )
-        }
-
-        return changes
+        BrowserSyncOutboxProjection.changes(from: previousSnapshot, to: snapshot)
     }
 
     func authenticateWithApple(
@@ -135,14 +61,14 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
     }
 
     func push(
-        snapshot: BrowserTabSessionSnapshot,
-        previousSnapshot: BrowserTabSessionSnapshot?,
+        mutation: BrowserSyncMutation,
         authSession: BrowserAuthSession
     ) async throws -> BrowserSyncPushResponse {
         guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
         let request = BrowserSyncPushRequest(
+            mutationID: mutation.id,
             deviceID: authSession.deviceID,
-            changes: Self.changes(from: previousSnapshot, to: snapshot)
+            changes: mutation.changes
         )
         return try await send(
             path: "/v1/sync/push",
@@ -258,6 +184,8 @@ enum BrowserRemoteSyncError: Error {
     case unexpectedResponse(Data)
     case unexpectedOpenAPIResponse
     case invalidPullCursor
+    case unsupportedSyncProtocol
+    case invalidMutationReceipt
 }
 
 // MARK: - BrowserOpenAPIRequestMiddleware
@@ -386,8 +314,7 @@ enum BrowserAuthSessionStoreError: Error {
 @MainActor protocol BrowserSyncRemoteServing: AnyObject {
     var baseURL: URL { get }
     func push(
-        snapshot: BrowserTabSessionSnapshot,
-        previousSnapshot: BrowserTabSessionSnapshot?,
+        mutation: BrowserSyncMutation,
         authSession: BrowserAuthSession
     ) async throws -> BrowserSyncPushResponse
 
@@ -460,12 +387,23 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         localStore: BrowserSQLiteSessionStore,
         remoteClient: any BrowserSyncRemoteServing,
         authSessionStore: any BrowserSyncAuthSessionReading,
-        pushDebounce: Duration = .milliseconds(750)
+        pushDebounce: Duration = .milliseconds(750),
+        pollInterval: Duration? = .seconds(15),
+        retryDelay: Duration? = .seconds(2)
     ) {
         self.localStore = localStore
         self.remoteClient = remoteClient
         self.authSessionStore = authSessionStore
         self.pushDebounce = pushDebounce
+        self.pollInterval = pollInterval
+        self.retryDelay = retryDelay
+    }
+
+    deinit {
+        pendingPushTask?.cancel()
+        processingTask?.cancel()
+        pollTask?.cancel()
+        retryTask?.cancel()
     }
 
     // MARK: Internal
@@ -505,35 +443,39 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         pendingPushTask?.cancel()
         pendingPushTask = nil
         processingTask?.cancel()
-        pendingPush = nil
+        pollTask?.cancel()
+        pollTask = nil
+        retryTask?.cancel()
+        retryTask = nil
+        retryAttempt = 0
+        pendingPushContext = nil
         pendingPullContext = nil
-        previousPushedSnapshot = nil
-        previousPushedSession = nil
-        needsInitialPush = session != nil
+        supportsDurableMutations = false
         if session != nil {
             schedulePull()
+            startPolling()
         }
     }
 
-    func schedulePush(snapshot: BrowserTabSessionSnapshot) {
-        guard !needsInitialPush else {
+    /// Local persistence has already committed the snapshot and immutable outbox
+    /// in one transaction. Debounce only wakes the sender; it owns no user data.
+    func schedulePush(snapshot _: BrowserTabSessionSnapshot) {
+        guard supportsDurableMutations else {
             schedulePull()
             return
         }
         pendingPushTask?.cancel()
         pendingPushTask = nil
-        pendingPush = nil
         guard let context = currentContext() else { return }
         let debounce = pushDebounce
         pendingPushTask = Task { [weak self] in
-            do {
-                try await Task.sleep(for: debounce)
+            do { try await Task.sleep(for: debounce)
                 try Task.checkCancellation()
             } catch { return }
             guard let self else { return }
             pendingPushTask = nil
             guard isCurrent(context) else { return }
-            pendingPush = PendingPush(snapshot: snapshot, context: context)
+            pendingPushContext = context
             startProcessing()
         }
     }
@@ -548,6 +490,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         self.snapshotApplier = snapshotApplier
     }
 
+    /// Future polling/backoff timers are deliberately excluded from this drain.
     func waitForPendingOperations() async {
         while pendingPushTask != nil || processingTask != nil {
             await pendingPushTask?.value
@@ -563,29 +506,31 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         let generation: UInt64
     }
 
-    private struct PendingPush {
-        let snapshot: BrowserTabSessionSnapshot
-        let context: RequestContext
+    private struct EntityKey: Hashable {
+        let type: String
+        let id: String
     }
 
     private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
-        category: "Sync"
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "Sync"
     )
 
     private let localStore: BrowserSQLiteSessionStore
     private let remoteClient: any BrowserSyncRemoteServing
     private let authSessionStore: any BrowserSyncAuthSessionReading
     private let pushDebounce: Duration
+    private let pollInterval: Duration?
+    private let retryDelay: Duration?
     private var activeSession: BrowserAuthSession?
     private var generation: UInt64 = 0
-    private var previousPushedSnapshot: BrowserTabSessionSnapshot?
-    private var previousPushedSession: BrowserAuthSession?
+    private var supportsDurableMutations = false
     private var pendingPushTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
-    private var pendingPush: PendingPush?
+    private var pollTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
+    private var retryAttempt = 0
+    private var pendingPushContext: RequestContext?
     private var pendingPullContext: RequestContext?
-    private var needsInitialPush = false
     private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
 
     private func owner(for session: BrowserAuthSession) -> BrowserSyncOwner {
@@ -605,8 +550,43 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
 
     private func isCurrent(_ context: RequestContext) -> Bool {
         guard let current = currentContext() else { return false }
-        return context.generation == current.generation && context.session == current.session
-            && context.owner == current.owner
+        return context.generation == current.generation && context.session == current.session && context
+            .owner == current.owner
+    }
+
+    private func startPolling() {
+        guard pollTask == nil, let interval = pollInterval, let context = currentContext() else { return }
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: interval)
+                    try Task.checkCancellation()
+                } catch { return }
+                guard let self, isCurrent(context) else { return }
+                guard retryTask == nil else { continue }
+                schedulePull()
+            }
+        }
+    }
+
+    private func scheduleRetry(context: RequestContext) {
+        guard retryTask == nil, let retryDelay, isCurrent(context) else { return }
+        let delay = retryDelay * (1 << min(retryAttempt, 5))
+        retryAttempt = min(retryAttempt + 1, 5)
+        retryTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay)
+                try Task.checkCancellation()
+            } catch { return }
+            guard let self else { return }
+            retryTask = nil
+            guard isCurrent(context) else { return }
+            schedulePull()
+        }
+    }
+
+    private func clearRetry() {
+        retryTask?.cancel()
+        retryTask = nil
+        retryAttempt = 0
     }
 
     private func startProcessing() {
@@ -615,49 +595,62 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         processingTask = Task { [weak self] in
             guard let self else { return }
             while workerGeneration == generation, !Task.isCancelled {
-                if let push = pendingPush {
-                    pendingPush = nil
-                    await self.push(snapshot: push.snapshot, context: push.context)
-                } else if let context = pendingPullContext {
+                if let context = pendingPullContext {
                     pendingPullContext = nil
                     await pull(context: context)
+                } else if let context = pendingPushContext {
+                    pendingPushContext = nil
+                    await pushPending(context: context)
                 } else {
                     break
                 }
             }
             processingTask = nil
-            if pendingPush != nil || pendingPullContext != nil {
+            if pendingPushContext != nil || pendingPullContext != nil {
                 startProcessing()
             }
         }
     }
 
-    private func push(snapshot: BrowserTabSessionSnapshot, context: RequestContext) async {
-        guard isCurrent(context) else { return }
+    private func pushPending(context: RequestContext) async {
+        guard isCurrent(context), supportsDurableMutations else { return }
         do {
-            let response = try await remoteClient.push(
-                snapshot: snapshot,
-                previousSnapshot: previousPushedSession == context.session ? previousPushedSnapshot : nil,
-                authSession: context.session
-            )
-            guard isCurrent(context) else { return }
-            // Push receipts do not cover the unread pull stream. Permanent deletes
-            // correct stale upserts even when their event predates the pull cursor.
-            let deletes = response.events.filter { $0.op == "delete" }
-            if !deletes.isEmpty, let latestSnapshot = localStore.loadSnapshot() {
-                let correctedSnapshot = BrowserSyncSnapshotMerger.snapshot(removing: deletes, from: latestSnapshot)
-                if correctedSnapshot != latestSnapshot {
-                    try localStore.saveSyncSnapshot(correctedSnapshot, cursor: nil, for: context.owner)
-                    snapshotApplier?.applyRemoteSyncSnapshot(correctedSnapshot)
+            var acknowledgedAny = false
+            while isCurrent(context), !Task.isCancelled,
+                  let mutation = try localStore.pendingSyncMutations(for: context.owner, limit: 1).first
+            {
+                let response = try await remoteClient.push(mutation: mutation, authSession: context.session)
+                guard isCurrent(context) else { return }
+                guard response.protocolVersion == 2, response.mutationID == mutation.id else {
+                    throw BrowserRemoteSyncError.invalidMutationReceipt
+                }
+                let previous = try localStore.loadSnapshotForSync(for: context.owner)
+                let projected = try localStore.acknowledgeSyncMutation(
+                    id: mutation.id,
+                    events: response.events,
+                    for: context.owner
+                )
+                if previous != projected {
+                    snapshotApplier?.applyRemoteSyncSnapshot(projected)
+                }
+                acknowledgedAny = true
+                if pendingPullContext != nil {
+                    pendingPushContext = context
+                    break
                 }
             }
-            // Echoed upserts must not overwrite edits made during this request.
-            previousPushedSnapshot = BrowserSyncSnapshotMerger.snapshot(removing: deletes, from: snapshot)
-            previousPushedSession = context.session
+            clearRetry()
+            if acknowledgedAny {
+                pendingPullContext = context
+            }
         } catch {
             guard isCurrent(context), !Task.isCancelled else { return }
+            // The failed row and its exact payload remain on disk. Avoid an
+            // immediate loop when local writes queued another wake during I/O.
+            pendingPushContext = nil
             Self.logger.error("Sync push failed: \(error.localizedDescription, privacy: .public)")
             BrowserTelemetry.captureError(error, event: .syncPushFailed)
+            scheduleRetry(context: context)
         }
     }
 
@@ -665,54 +658,49 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         guard isCurrent(context) else { return }
         do {
             var cursor = try localStore.syncCursor(for: context.owner)
-            let startingSnapshot = localStore.loadSnapshot()
-            var snapshot = startingSnapshot
-            var hasChanges = false
+            var latestEvents = [EntityKey: BrowserSyncEvent]()
             while true {
                 let response = try await remoteClient.pull(cursor: cursor, authSession: context.session)
                 guard isCurrent(context) else { return }
+                guard response.protocolVersion == 2 else {
+                    supportsDurableMutations = false
+                    throw BrowserRemoteSyncError.unsupportedSyncProtocol
+                }
                 guard response.cursor >= cursor,
                       response.events.isEmpty || response.cursor > cursor
                 else { throw BrowserRemoteSyncError.invalidPullCursor }
-                if !response.events.isEmpty {
-                    snapshot = BrowserSyncSnapshotMerger.snapshot(applying: response.events, to: snapshot)
-                    hasChanges = true
+                // Only the newest authoritative state per identity is needed;
+                // memory follows entity count rather than the entire event log.
+                for event in response.events {
+                    let key = EntityKey(type: event.entityType, id: event.entityID)
+                    if event.serverSeq > (latestEvents[key]?.serverSeq ?? -1) {
+                        latestEvents[key] = event
+                    }
                 }
                 cursor = response.cursor
                 if response.events.count < 500 {
                     break
                 }
             }
-            // A page can contain a historical URL whose replacement is on the
-            // next page. Publish one complete projection, and commit its cursor
-            // with the data so a failed write never skips those events on retry.
-            if hasChanges, let snapshot {
-                // Local persistence can run during any network await. Retry from
-                // that new state instead of overwriting it with an older base.
-                // A durable per-operation overlay is the next protocol slice.
-                guard localStore.loadSnapshot() == startingSnapshot else {
-                    pendingPullContext = context
-                    return
-                }
-                try localStore.saveSyncSnapshot(snapshot, cursor: cursor, for: context.owner)
-                previousPushedSnapshot = snapshot
-                previousPushedSession = context.session
-                snapshotApplier?.applyRemoteSyncSnapshot(snapshot)
-            } else {
-                try localStore.saveSyncCursor(cursor, for: context.owner)
+            let previous = try localStore.loadSnapshotForSync(for: context.owner)
+            let projected = try localStore.applyRemoteSyncEvents(
+                latestEvents.values.sorted { $0.serverSeq < $1.serverSeq }, cursor: cursor, for: context.owner
+            )
+            if previous != projected {
+                snapshotApplier?.applyRemoteSyncSnapshot(projected)
             }
-            // Adoption/relogin first combines the remote state with this profile,
-            // then uploads that current projection, never a pre-pull snapshot.
-            if needsInitialPush {
-                needsInitialPush = false
-                if let snapshot = localStore.loadSnapshot() {
-                    schedulePush(snapshot: snapshot)
-                }
+            supportsDurableMutations = true
+            if try !localStore.pendingSyncMutations(for: context.owner, limit: 1).isEmpty {
+                pendingPushContext = context
+            } else {
+                clearRetry()
             }
         } catch {
             guard isCurrent(context), !Task.isCancelled else { return }
+            pendingPushContext = nil
             Self.logger.error("Sync pull failed: \(error.localizedDescription, privacy: .public)")
             BrowserTelemetry.captureError(error, event: .syncPullFailed)
+            scheduleRetry(context: context)
         }
     }
 }

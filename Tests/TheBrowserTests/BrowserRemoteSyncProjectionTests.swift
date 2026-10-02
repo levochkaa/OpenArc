@@ -254,6 +254,49 @@ import Testing
     #expect(harness.sync.pushedSnapshots.isEmpty)
 }
 
+@Test
+@MainActor func remoteDeletionOfEverySpaceJournalsFreshParentBeforeNewTabs() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("RemoteFallback-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Browser.sqlite"))
+    let owner = try BrowserSyncOwner(baseURL: #require(URL(string: "https://sync.example")), userID: "owner")
+    let initial = BrowserTabSessionSnapshot(
+        spaces: [BrowserSpaceSessionSnapshot(
+            id: BrowserChromeModel.defaultSpaceID,
+            title: "Old",
+            systemImageName: "star"
+        )],
+        tabs: []
+    )
+    store.saveSnapshot(initial)
+    try store.bindSyncOwner(owner)
+    let harness = RemoteProjectionHarness(snapshot: initial)
+    defer { harness.cleanup() }
+    let model = BrowserChromeModel(
+        tabDriver: harness.driver, sessionSnapshotStore: store,
+        sessionPreferencesStore: InMemorySessionPreferencesStore(),
+        commandBarSuggestionProvider: FakeSuggestionProvider(),
+        userPreferencesStore: BrowserUserPreferencesStore(userDefaults: harness.defaults),
+        shortcutStore: BrowserShortcutStore(userDefaults: harness.defaults),
+        extensionManager: FakeBrowserExtensionManager(), syncCoordinator: harness.sync,
+        windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+    )
+    model.handleContextReady()
+    let remote = try store.applyRemoteSyncEvents([BrowserSyncEvent(
+        serverSeq: 100, deviceID: "other", entityType: "space", entityID: BrowserChromeModel.defaultSpaceID,
+        op: "delete", data: .deleted(id: BrowserChromeModel.defaultSpaceID), createdAt: "2026-10-03T00:00:00Z"
+    )], cursor: 100, for: owner)
+    model.applyRemoteSyncSnapshot(remote)
+    let newSpaceID = try #require(model.spaces.first?.id)
+    #expect(newSpaceID != BrowserChromeModel.defaultSpaceID)
+    model.createNewTab()
+    harness.driver.flushPendingCreateEvents()
+    let changes = try store.pendingSyncMutations(for: owner).flatMap(\.changes)
+    #expect(changes.contains { $0.entityType == .space && $0.entityID == newSpaceID && $0.op == .upsert })
+    #expect(changes.contains { $0.entityType == .tab && $0.tabData?.spaceID == newSpaceID })
+    #expect(harness.sync.pushedSnapshots.last?.spaces?.first?.id == newSpaceID)
+}
+
 // MARK: - RemoteProjectionHarness
 
 @MainActor private struct RemoteProjectionHarness {

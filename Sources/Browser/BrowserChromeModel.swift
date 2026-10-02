@@ -1667,8 +1667,16 @@ enum BrowserWindowMode: Equatable {
             closeTab(id: tab.id, forceClose: true, registersUndo: false)
         }
 
-        let restoredSpaces = restoredSpaces(from: snapshot)
-        spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
+        let restoredSpaces = snapshot.spaces?.isEmpty != false ? [] : restoredSpaces(from: snapshot)
+        needsRemoteFallbackPublication = restoredSpaces.isEmpty
+        if needsRemoteFallbackPublication {
+            // Concurrent deletion can remove every space. The old default ID
+            // may be tombstoned; this is a new local parent that must be queued.
+            spaces = [makeDefaultSpace(id: UUID().uuidString)]
+            hasLocalChangesDuringRemoteProjection = true
+        } else {
+            spaces = restoredSpaces
+        }
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
         selectedSpaceID = selectedSpaceID.flatMap { selectedSpaceID in
             spaces.contains(where: { $0.id == selectedSpaceID }) ? selectedSpaceID : nil
@@ -2089,6 +2097,7 @@ enum BrowserWindowMode: Equatable {
     private var remoteProjectionGeneration = 0
     private var isReconcilingRemoteProjection = false
     private var hasLocalChangesDuringRemoteProjection = false
+    private var needsRemoteFallbackPublication = false
     private var pendingRemoteTabCreations = [String: RemoteTabCreation]()
     private var discardedRemoteTabCreationIDs = Set<String>()
     private var pendingRestoredSelectedTabIndex: Int?
@@ -2192,7 +2201,12 @@ enum BrowserWindowMode: Equatable {
             selectActiveTabForSelectedSpace()
         }
         updateWindowTitle()
-        sessionSnapshotStore.saveSnapshot(currentSessionSnapshot())
+        if needsRemoteFallbackPublication {
+            sessionSnapshotStore.saveSnapshot(currentSessionSnapshot())
+            needsRemoteFallbackPublication = false
+        } else {
+            sessionSnapshotStore.saveRemoteProjectionSnapshot(currentSessionSnapshot())
+        }
         sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
         sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
         remoteProjectionSnapshot = nil
@@ -3728,9 +3742,9 @@ enum BrowserWindowMode: Equatable {
         selectedSpaceID = defaultSpace.id
     }
 
-    func makeDefaultSpace() -> Space {
+    func makeDefaultSpace(id: String = BrowserChromeModel.defaultSpaceID) -> Space {
         Space(
-            id: Self.defaultSpaceID,
+            id: id,
             title: defaultSpaceTitle(forDisplayIndex: 1),
             systemImageName: Self.defaultSpaceIconName,
             isPinnedSectionCollapsed: false,

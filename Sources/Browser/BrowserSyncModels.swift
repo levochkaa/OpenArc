@@ -120,13 +120,46 @@ struct BrowserSyncTabPayload: Codable, Equatable {
 
 // MARK: - BrowserSyncChange
 
-struct BrowserSyncChange: Encodable, Equatable {
-    enum EntityType: String, Encodable {
+struct BrowserSyncChange: Codable, Equatable {
+    // MARK: Lifecycle
+
+    init(
+        entityType: EntityType,
+        entityID: String,
+        op: Operation,
+        spaceData: BrowserSyncSpacePayload?,
+        tabData: BrowserSyncTabPayload?
+    ) {
+        self.entityType = entityType
+        self.entityID = entityID
+        self.op = op
+        self.spaceData = spaceData
+        self.tabData = tabData
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.entityType = try values.decode(EntityType.self, forKey: .entityType)
+        self.entityID = try values.decode(String.self, forKey: .entityID)
+        self.op = try values.decode(Operation.self, forKey: .op)
+        switch entityType {
+        case .space:
+            self.spaceData = try values.decodeIfPresent(BrowserSyncSpacePayload.self, forKey: .data)
+            self.tabData = nil
+        case .tab:
+            self.tabData = try values.decodeIfPresent(BrowserSyncTabPayload.self, forKey: .data)
+            self.spaceData = nil
+        }
+    }
+
+    // MARK: Internal
+
+    enum EntityType: String, Codable {
         case space
         case tab
     }
 
-    enum Operation: String, Encodable {
+    enum Operation: String, Codable {
         case upsert
         case delete
     }
@@ -157,6 +190,13 @@ struct BrowserSyncChange: Encodable, Equatable {
             try container.encodeIfPresent(tabData, forKey: .data)
         }
     }
+}
+
+// MARK: - BrowserSyncMutation
+
+struct BrowserSyncMutation: Codable, Equatable {
+    let id: String
+    let changes: [BrowserSyncChange]
 }
 
 // MARK: - BrowserSyncEvent
@@ -237,6 +277,8 @@ private struct BrowserSyncDeletedData: Decodable {
 // MARK: - BrowserSyncPushRequest
 
 struct BrowserSyncPushRequest: Encodable {
+    let protocolVersion = 2
+    let mutationID: String
     let deviceID: String
     let changes: [BrowserSyncChange]
 }
@@ -244,6 +286,19 @@ struct BrowserSyncPushRequest: Encodable {
 // MARK: - BrowserSyncPushResponse
 
 struct BrowserSyncPushResponse: Decodable {
+    // MARK: Lifecycle
+
+    init(cursor: Int, events: [BrowserSyncEvent], protocolVersion: Int? = 2, mutationID: String? = nil) {
+        self.cursor = cursor
+        self.events = events
+        self.protocolVersion = protocolVersion
+        self.mutationID = mutationID
+    }
+
+    // MARK: Internal
+
+    let protocolVersion: Int?
+    let mutationID: String?
     let cursor: Int
     let events: [BrowserSyncEvent]
 }
@@ -259,6 +314,17 @@ struct BrowserSyncPullRequest: Encodable {
 // MARK: - BrowserSyncPullResponse
 
 struct BrowserSyncPullResponse: Decodable {
+    // MARK: Lifecycle
+
+    init(cursor: Int, events: [BrowserSyncEvent], protocolVersion: Int? = 2) {
+        self.cursor = cursor
+        self.events = events
+        self.protocolVersion = protocolVersion
+    }
+
+    // MARK: Internal
+
+    let protocolVersion: Int?
     let cursor: Int
     let events: [BrowserSyncEvent]
 }

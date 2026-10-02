@@ -255,6 +255,13 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
 protocol BrowserTabSessionSnapshotStoring {
     func loadSnapshot() -> BrowserTabSessionSnapshot?
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot)
+    func saveRemoteProjectionSnapshot(_ snapshot: BrowserTabSessionSnapshot)
+}
+
+extension BrowserTabSessionSnapshotStoring {
+    func saveRemoteProjectionSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
+        saveSnapshot(snapshot)
+    }
 }
 
 // MARK: - BrowserSessionPreferencesStoring
