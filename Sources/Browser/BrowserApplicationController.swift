@@ -1638,7 +1638,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
         let accountStore = BrowserAccountStore(
             syncClient: syncClient,
-            authSessionStore: authSessionStore
+            authSessionStore: authSessionStore,
+            syncCoordinator: syncCoordinator
         )
         let chromeModel = BrowserChromeModel(
             tabDriver: BrowserTabControllerDriver(profileCachePath: profileDirectoryURL.path),

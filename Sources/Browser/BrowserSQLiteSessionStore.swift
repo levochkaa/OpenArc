@@ -100,74 +100,26 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
         do {
             try dbQueue.write { db in
-                try db.execute(sql: "DELETE FROM browser_spaces")
-                try db.execute(sql: "DELETE FROM browser_pinned_tab_folders")
-                try db.execute(sql: "DELETE FROM browser_tabs")
-
-                for (index, space) in (snapshot.spaces ?? []).enumerated() {
-                    try db.execute(
-                        sql: """
-                        INSERT INTO browser_spaces (
-                          id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index, position
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        arguments: [
-                            space.id,
-                            space.title,
-                            space.systemImageName,
-                            space.isPinnedSectionCollapsed,
-                            space.selectedTabIndex,
-                            index,
-                        ]
-                    )
-                }
-
-                for (index, folder) in (snapshot.pinnedTabFolders ?? []).enumerated() {
-                    try db.execute(
-                        sql: """
-                        INSERT INTO browser_pinned_tab_folders (
-                          id, space_id, parent_folder_id, title, system_image_name, is_expanded, position
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        arguments: [
-                            folder.id,
-                            folder.spaceID,
-                            folder.parentFolderID,
-                            folder.title,
-                            folder.systemImageName,
-                            folder.isExpanded,
-                            index,
-                        ]
-                    )
-                }
-
-                for (index, tab) in snapshot.tabs.enumerated() {
-                    try db.execute(
-                        sql: """
-                        INSERT INTO browser_tabs (
-                          id, url_string, pinned_url_string, user_title_override, placement, space_id,
-                          pinned_folder_id, last_activity_timestamp, position
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        arguments: [
-                            tab.id ?? UUID().uuidString,
-                            tab.urlString,
-                            tab.pinnedURLString,
-                            tab.userTitleOverride,
-                            tab.placement.rawValue,
-                            tab.spaceID,
-                            tab.pinnedFolderID,
-                            tab.lastActivityTimestamp,
-                            index,
-                        ]
-                    )
-                }
+                try writeSnapshot(snapshot, to: db)
             }
         } catch {
             Self.logger.error("Failed to save SQLite session snapshot: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func saveSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot, cursor: Int?, for owner: BrowserSyncOwner) throws {
+        if let cursor, cursor < 0 {
+            throw BrowserSyncStoreError.invalidCursor
+        }
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try writeSnapshot(snapshot, to: db)
+            if let cursor {
+                try db.execute(
+                    sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1",
+                    arguments: [cursor]
+                )
+            }
         }
     }
 
@@ -231,7 +183,82 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     func saveSyncCursor(_ cursor: Int) {
-        setPreference(String(cursor), for: Key.syncCursor)
+        do {
+            try dbQueue.write { db in
+                // Compatibility for pre-owner callers only. Once bound, every cursor
+                // mutation must prove which account the response belongs to.
+                guard try storedSyncOwner(db) == nil else { return }
+                try db.execute(
+                    sql: """
+                    INSERT INTO browser_preferences (key, value) VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """,
+                    arguments: [Key.syncCursor, String(cursor)]
+                )
+            }
+        } catch {
+            Self.logger.error("Failed to save legacy sync cursor: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func syncOwner() throws -> BrowserSyncOwner? {
+        try dbQueue.read { db in try storedSyncOwner(db) }
+    }
+
+    func bindSyncOwner(_ owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            if let existingOwner = try storedSyncOwner(db) {
+                guard existingOwner == owner else { throw BrowserSyncStoreError.ownerMismatch }
+                return
+            }
+            try db.execute(
+                sql: "INSERT INTO browser_sync_state (id, base_url, user_id, cursor, paused) VALUES (1, ?, ?, 0, 0)",
+                arguments: [owner.baseURL.absoluteString, owner.userID]
+            )
+            // A v1 cursor has no proven server/account. Never assign it to a new owner.
+            try db.execute(
+                sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
+                arguments: [Key.syncCursor]
+            )
+        }
+    }
+
+    func syncCursor(for owner: BrowserSyncOwner) throws -> Int {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Int.fetchOne(db, sql: "SELECT cursor FROM browser_sync_state WHERE id = 1") ?? 0
+        }
+    }
+
+    func saveSyncCursor(_ cursor: Int, for owner: BrowserSyncOwner) throws {
+        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try db.execute(
+                sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1",
+                arguments: [cursor]
+            )
+        }
+    }
+
+    func pauseSync() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE browser_sync_state SET paused = 1 WHERE id = 1")
+        }
+    }
+
+    func isSyncPaused(for owner: BrowserSyncOwner) throws -> Bool {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Bool.fetchOne(db, sql: "SELECT paused FROM browser_sync_state WHERE id = 1") ?? false
+        }
+    }
+
+    func resumeSync(for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try db.execute(sql: "UPDATE browser_sync_state SET paused = 0 WHERE id = 1")
+        }
     }
 
     // MARK: Private
@@ -294,10 +321,105 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         migrator.registerMigration("addPinnedURLString") { db in
             try db.execute(sql: "ALTER TABLE browser_tabs ADD COLUMN pinned_url_string TEXT")
         }
+        migrator.registerMigration("bindProfileSyncOwner") { db in
+            try db.execute(sql: """
+            CREATE TABLE browser_sync_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                base_url TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                cursor INTEGER NOT NULL DEFAULT 0 CHECK (cursor >= 0),
+                paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1))
+            )
+            """)
+        }
         return migrator
     }
 
     private let dbQueue: DatabaseQueue
+
+    private func storedSyncOwner(_ db: Database) throws -> BrowserSyncOwner? {
+        guard let row = try Row.fetchOne(db, sql: "SELECT base_url, user_id FROM browser_sync_state WHERE id = 1")
+        else {
+            return nil
+        }
+        guard let url = URL(string: row["base_url"] as String) else {
+            throw BrowserSyncStoreError.invalidStoredOwner
+        }
+        return BrowserSyncOwner(baseURL: url, userID: row["user_id"])
+    }
+
+    private func requireSyncOwner(_ owner: BrowserSyncOwner, in db: Database) throws {
+        guard let stored = try storedSyncOwner(db) else { throw BrowserSyncStoreError.ownerNotBound }
+        guard stored == owner else { throw BrowserSyncStoreError.ownerMismatch }
+    }
+
+    private func writeSnapshot(_ snapshot: BrowserTabSessionSnapshot, to db: Database) throws {
+        try db.execute(sql: "DELETE FROM browser_spaces")
+        try db.execute(sql: "DELETE FROM browser_pinned_tab_folders")
+        try db.execute(sql: "DELETE FROM browser_tabs")
+
+        for (index, space) in (snapshot.spaces ?? []).enumerated() {
+            try db.execute(
+                sql: """
+                INSERT INTO browser_spaces (
+                  id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index, position
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    space.id,
+                    space.title,
+                    space.systemImageName,
+                    space.isPinnedSectionCollapsed,
+                    space.selectedTabIndex,
+                    index,
+                ]
+            )
+        }
+
+        for (index, folder) in (snapshot.pinnedTabFolders ?? []).enumerated() {
+            try db.execute(
+                sql: """
+                INSERT INTO browser_pinned_tab_folders (
+                  id, space_id, parent_folder_id, title, system_image_name, is_expanded, position
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    folder.id,
+                    folder.spaceID,
+                    folder.parentFolderID,
+                    folder.title,
+                    folder.systemImageName,
+                    folder.isExpanded,
+                    index,
+                ]
+            )
+        }
+
+        for (index, tab) in snapshot.tabs.enumerated() {
+            try db.execute(
+                sql: """
+                INSERT INTO browser_tabs (
+                  id, url_string, pinned_url_string, user_title_override, placement, space_id,
+                  pinned_folder_id, last_activity_timestamp, position
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    tab.id ?? UUID().uuidString,
+                    tab.urlString,
+                    tab.pinnedURLString,
+                    tab.userTitleOverride,
+                    tab.placement.rawValue,
+                    tab.spaceID,
+                    tab.pinnedFolderID,
+                    tab.lastActivityTimestamp,
+                    index,
+                ]
+            )
+        }
+    }
 
     private func hasStoredSpaces(_ db: Database) throws -> Bool {
         try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM browser_spaces") ?? 0 > 0

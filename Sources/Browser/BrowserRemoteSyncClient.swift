@@ -19,6 +19,8 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
 
     // MARK: Internal
 
+    var baseURL: URL { configuration.baseURL }
+
     static func changes(
         from previousSnapshot: BrowserTabSessionSnapshot?,
         to snapshot: BrowserTabSessionSnapshot
@@ -127,7 +129,8 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
             accessToken: response.accessToken,
             userID: response.user.id,
             userEmail: response.user.email,
-            deviceID: response.device.id
+            deviceID: response.device.id,
+            serverURL: configuration.baseURL
         )
     }
 
@@ -136,6 +139,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         previousSnapshot: BrowserTabSessionSnapshot?,
         authSession: BrowserAuthSession
     ) async throws -> BrowserSyncPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
         let request = BrowserSyncPushRequest(
             deviceID: authSession.deviceID,
             changes: Self.changes(from: previousSnapshot, to: snapshot)
@@ -149,7 +153,8 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
     }
 
     func pull(cursor: Int, authSession: BrowserAuthSession) async throws -> BrowserSyncPullResponse {
-        try await send(
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        return try await send(
             path: "/v1/sync/pull",
             method: "POST",
             body: BrowserSyncPullRequest(deviceID: authSession.deviceID, cursor: cursor, limit: 500),
@@ -252,6 +257,7 @@ enum BrowserRemoteSyncError: Error {
     case invalidURL
     case unexpectedResponse(Data)
     case unexpectedOpenAPIResponse
+    case invalidPullCursor
 }
 
 // MARK: - BrowserOpenAPIRequestMiddleware
@@ -314,8 +320,11 @@ final class BrowserAuthSessionStore {
         try setKeychainData(data, account: sessionAccount)
     }
 
-    func clearSession() {
-        deleteKeychainData(account: sessionAccount)
+    func clearSession() throws {
+        let status = SecItemDelete(keychainQuery(account: sessionAccount) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw BrowserAuthSessionStoreError.keychain(status)
+        }
     }
 
     // MARK: Private
@@ -357,10 +366,6 @@ final class BrowserAuthSessionStore {
         }
     }
 
-    private func deleteKeychainData(account: String) {
-        SecItemDelete(keychainQuery(account: account) as CFDictionary)
-    }
-
     private func keychainQuery(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
@@ -379,6 +384,7 @@ enum BrowserAuthSessionStoreError: Error {
 // MARK: - BrowserSyncRemoteServing
 
 @MainActor protocol BrowserSyncRemoteServing: AnyObject {
+    var baseURL: URL { get }
     func push(
         snapshot: BrowserTabSessionSnapshot,
         previousSnapshot: BrowserTabSessionSnapshot?,
@@ -402,9 +408,52 @@ extension BrowserRemoteSyncClient: BrowserSyncRemoteServing {}
 
 extension BrowserAuthSessionStore: BrowserSyncAuthSessionReading {}
 
+// MARK: - BrowserSyncAuthSessionStoring
+
+@MainActor protocol BrowserSyncAuthSessionStoring: BrowserSyncAuthSessionReading {
+    func saveSession(_ session: BrowserAuthSession) throws
+    func clearSession() throws
+}
+
+// MARK: - BrowserAuthSessionStore + BrowserSyncAuthSessionStoring
+
+extension BrowserAuthSessionStore: BrowserSyncAuthSessionStoring {}
+
+// MARK: - BrowserSyncBindingState
+
+enum BrowserSyncBindingState: Equatable {
+    case needsConsent, enabled, paused, differentAccount
+}
+
+// MARK: - BrowserSyncAccountError
+
+enum BrowserSyncAccountError: LocalizedError, Equatable {
+    case serverChanged, differentAccount, unavailable
+
+    // MARK: Internal
+
+    var errorDescription: String? {
+        switch self {
+        case .serverChanged: BrowserStrings.syncAccountSignInAgain
+        case .differentAccount: BrowserStrings.syncAccountDifferentOwner
+        case .unavailable: BrowserStrings.syncAccountUnavailable
+        }
+    }
+}
+
+// MARK: - BrowserAccountSyncControlling
+
+@MainActor protocol BrowserAccountSyncControlling: AnyObject {
+    func bindingState(for session: BrowserAuthSession) throws -> BrowserSyncBindingState
+    func enableSync(for session: BrowserAuthSession) throws
+    func resumeSync(for session: BrowserAuthSession) throws
+    func suspendSync() throws
+    func accountSessionDidChange(_ session: BrowserAuthSession?)
+}
+
 // MARK: - BrowserSyncService
 
-@MainActor final class BrowserSyncService: BrowserSyncCoordinating {
+@MainActor final class BrowserSyncService: BrowserSyncCoordinating, BrowserAccountSyncControlling {
     // MARK: Lifecycle
 
     init(
@@ -421,34 +470,77 @@ extension BrowserAuthSessionStore: BrowserSyncAuthSessionReading {}
 
     // MARK: Internal
 
-    func schedulePush(snapshot: BrowserTabSessionSnapshot) {
+    func bindingState(for session: BrowserAuthSession) throws -> BrowserSyncBindingState {
+        guard session.belongs(to: remoteClient.baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        let owner = owner(for: session)
+        guard let storedOwner = try localStore.syncOwner() else { return .needsConsent }
+        guard owner == storedOwner else { return .differentAccount }
+        return try localStore.isSyncPaused(for: owner) ? .paused : .enabled
+    }
+
+    func enableSync(for session: BrowserAuthSession) throws {
+        guard authSessionStore.loadSession() == session else { throw BrowserSyncAccountError.unavailable }
+        guard try bindingState(for: session) != .differentAccount else {
+            throw BrowserSyncAccountError.differentAccount
+        }
+        try localStore.bindSyncOwner(owner(for: session))
+        try localStore.resumeSync(for: owner(for: session))
+    }
+
+    func resumeSync(for session: BrowserAuthSession) throws {
+        guard session.belongs(to: remoteClient.baseURL), authSessionStore.loadSession() == session else {
+            throw BrowserSyncAccountError.serverChanged
+        }
+        try localStore.resumeSync(for: owner(for: session))
+    }
+
+    func suspendSync() throws {
+        accountSessionDidChange(nil)
+        try localStore.pauseSync()
+    }
+
+    func accountSessionDidChange(_ session: BrowserAuthSession?) {
+        generation &+= 1
+        activeSession = session
         pendingPushTask?.cancel()
+        pendingPushTask = nil
+        processingTask?.cancel()
         pendingPush = nil
-        guard let authSession = authSessionStore.loadSession() else {
-            pendingPushTask = nil
+        pendingPullContext = nil
+        previousPushedSnapshot = nil
+        previousPushedSession = nil
+        needsInitialPush = session != nil
+        if session != nil {
+            schedulePull()
+        }
+    }
+
+    func schedulePush(snapshot: BrowserTabSessionSnapshot) {
+        guard !needsInitialPush else {
+            schedulePull()
             return
         }
-
+        pendingPushTask?.cancel()
+        pendingPushTask = nil
+        pendingPush = nil
+        guard let context = currentContext() else { return }
         let debounce = pushDebounce
         pendingPushTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: debounce)
                 try Task.checkCancellation()
-            } catch {
-                return
-            }
-
+            } catch { return }
             guard let self else { return }
             pendingPushTask = nil
-            guard authSessionStore.loadSession() == authSession else { return }
-            pendingPush = PendingPush(snapshot: snapshot, authSession: authSession)
+            guard isCurrent(context) else { return }
+            pendingPush = PendingPush(snapshot: snapshot, context: context)
             startProcessing()
         }
     }
 
     func schedulePull() {
-        guard let authSession = authSessionStore.loadSession() else { return }
-        pendingPullSession = authSession
+        guard let context = currentContext() else { return }
+        pendingPullContext = context
         startProcessing()
     }
 
@@ -465,9 +557,15 @@ extension BrowserAuthSessionStore: BrowserSyncAuthSessionReading {}
 
     // MARK: Private
 
+    private struct RequestContext {
+        let session: BrowserAuthSession
+        let owner: BrowserSyncOwner
+        let generation: UInt64
+    }
+
     private struct PendingPush {
         let snapshot: BrowserTabSessionSnapshot
-        let authSession: BrowserAuthSession
+        let context: RequestContext
     }
 
     private static let logger = Logger(
@@ -479,81 +577,140 @@ extension BrowserAuthSessionStore: BrowserSyncAuthSessionReading {}
     private let remoteClient: any BrowserSyncRemoteServing
     private let authSessionStore: any BrowserSyncAuthSessionReading
     private let pushDebounce: Duration
+    private var activeSession: BrowserAuthSession?
+    private var generation: UInt64 = 0
     private var previousPushedSnapshot: BrowserTabSessionSnapshot?
     private var previousPushedSession: BrowserAuthSession?
     private var pendingPushTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
     private var pendingPush: PendingPush?
-    private var pendingPullSession: BrowserAuthSession?
-
+    private var pendingPullContext: RequestContext?
+    private var needsInitialPush = false
     private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
 
-    private func startProcessing() {
-        guard processingTask == nil else { return }
-        processingTask = Task { [weak self] in
-            guard let self else { return }
-            while pendingPush != nil || pendingPullSession != nil {
-                if let push = pendingPush {
-                    pendingPush = nil
-                    await self.push(snapshot: push.snapshot, authSession: push.authSession)
-                } else if let authSession = pendingPullSession {
-                    pendingPullSession = nil
-                    await pull(authSession: authSession)
-                }
-            }
-            processingTask = nil
+    private func owner(for session: BrowserAuthSession) -> BrowserSyncOwner {
+        BrowserSyncOwner(baseURL: remoteClient.baseURL, userID: session.userID)
+    }
+
+    private func currentContext() -> RequestContext? {
+        guard let session = activeSession, session == authSessionStore.loadSession() else { return nil }
+        do {
+            guard try bindingState(for: session) == .enabled else { return nil }
+            return RequestContext(session: session, owner: owner(for: session), generation: generation)
+        } catch {
+            Self.logger.error("Sync authorization failed: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 
-    private func push(snapshot: BrowserTabSessionSnapshot, authSession: BrowserAuthSession) async {
-        guard authSessionStore.loadSession() == authSession else { return }
+    private func isCurrent(_ context: RequestContext) -> Bool {
+        guard let current = currentContext() else { return false }
+        return context.generation == current.generation && context.session == current.session
+            && context.owner == current.owner
+    }
 
+    private func startProcessing() {
+        guard processingTask == nil else { return }
+        let workerGeneration = generation
+        processingTask = Task { [weak self] in
+            guard let self else { return }
+            while workerGeneration == generation, !Task.isCancelled {
+                if let push = pendingPush {
+                    pendingPush = nil
+                    await self.push(snapshot: push.snapshot, context: push.context)
+                } else if let context = pendingPullContext {
+                    pendingPullContext = nil
+                    await pull(context: context)
+                } else {
+                    break
+                }
+            }
+            processingTask = nil
+            if pendingPush != nil || pendingPullContext != nil {
+                startProcessing()
+            }
+        }
+    }
+
+    private func push(snapshot: BrowserTabSessionSnapshot, context: RequestContext) async {
+        guard isCurrent(context) else { return }
         do {
             let response = try await remoteClient.push(
                 snapshot: snapshot,
-                previousSnapshot: previousPushedSession == authSession ? previousPushedSnapshot : nil,
-                authSession: authSession
+                previousSnapshot: previousPushedSession == context.session ? previousPushedSnapshot : nil,
+                authSession: context.session
             )
-            guard authSessionStore.loadSession() == authSession else { return }
-            // A push receipt covers only this client's writes, not the unread pull stream.
-            // Permanent identity tombstones also correct stale upserts, even when
-            // their original delete event is older than the saved pull cursor.
+            guard isCurrent(context) else { return }
+            // Push receipts do not cover the unread pull stream. Permanent deletes
+            // correct stale upserts even when their event predates the pull cursor.
             let deletes = response.events.filter { $0.op == "delete" }
             if !deletes.isEmpty, let latestSnapshot = localStore.loadSnapshot() {
                 let correctedSnapshot = BrowserSyncSnapshotMerger.snapshot(removing: deletes, from: latestSnapshot)
                 if correctedSnapshot != latestSnapshot {
-                    localStore.saveSnapshot(correctedSnapshot)
+                    try localStore.saveSyncSnapshot(correctedSnapshot, cursor: nil, for: context.owner)
                     snapshotApplier?.applyRemoteSyncSnapshot(correctedSnapshot)
                 }
             }
-            // Echoed upserts describe the sent snapshot and must not overwrite
-            // local edits made while this request was in flight.
+            // Echoed upserts must not overwrite edits made during this request.
             previousPushedSnapshot = BrowserSyncSnapshotMerger.snapshot(removing: deletes, from: snapshot)
-            previousPushedSession = authSession
+            previousPushedSession = context.session
         } catch {
+            guard isCurrent(context), !Task.isCancelled else { return }
             Self.logger.error("Sync push failed: \(error.localizedDescription, privacy: .public)")
             BrowserTelemetry.captureError(error, event: .syncPushFailed)
         }
     }
 
-    private func pull(authSession: BrowserAuthSession) async {
-        guard authSessionStore.loadSession() == authSession else { return }
-
+    private func pull(context: RequestContext) async {
+        guard isCurrent(context) else { return }
         do {
-            let response = try await remoteClient.pull(cursor: localStore.syncCursor(), authSession: authSession)
-            guard authSessionStore.loadSession() == authSession else { return }
-            if !response.events.isEmpty {
-                let snapshot = BrowserSyncSnapshotMerger.snapshot(
-                    applying: response.events,
-                    to: localStore.loadSnapshot()
-                )
-                localStore.saveSnapshot(snapshot)
-                previousPushedSnapshot = snapshot
-                previousPushedSession = authSession
-                snapshotApplier?.applyRemoteSyncSnapshot(snapshot)
+            var cursor = try localStore.syncCursor(for: context.owner)
+            let startingSnapshot = localStore.loadSnapshot()
+            var snapshot = startingSnapshot
+            var hasChanges = false
+            while true {
+                let response = try await remoteClient.pull(cursor: cursor, authSession: context.session)
+                guard isCurrent(context) else { return }
+                guard response.cursor >= cursor,
+                      response.events.isEmpty || response.cursor > cursor
+                else { throw BrowserRemoteSyncError.invalidPullCursor }
+                if !response.events.isEmpty {
+                    snapshot = BrowserSyncSnapshotMerger.snapshot(applying: response.events, to: snapshot)
+                    hasChanges = true
+                }
+                cursor = response.cursor
+                if response.events.count < 500 {
+                    break
+                }
             }
-            localStore.saveSyncCursor(max(localStore.syncCursor(), response.cursor))
+            // A page can contain a historical URL whose replacement is on the
+            // next page. Publish one complete projection, and commit its cursor
+            // with the data so a failed write never skips those events on retry.
+            if hasChanges, let snapshot {
+                // Local persistence can run during any network await. Retry from
+                // that new state instead of overwriting it with an older base.
+                // A durable per-operation overlay is the next protocol slice.
+                guard localStore.loadSnapshot() == startingSnapshot else {
+                    pendingPullContext = context
+                    return
+                }
+                try localStore.saveSyncSnapshot(snapshot, cursor: cursor, for: context.owner)
+                previousPushedSnapshot = snapshot
+                previousPushedSession = context.session
+                snapshotApplier?.applyRemoteSyncSnapshot(snapshot)
+            } else {
+                try localStore.saveSyncCursor(cursor, for: context.owner)
+            }
+            // Adoption/relogin first combines the remote state with this profile,
+            // then uploads that current projection, never a pre-pull snapshot.
+            if needsInitialPush {
+                needsInitialPush = false
+                if let snapshot = localStore.loadSnapshot() {
+                    schedulePush(snapshot: snapshot)
+                }
+            }
         } catch {
+            guard isCurrent(context), !Task.isCancelled else { return }
             Self.logger.error("Sync pull failed: \(error.localizedDescription, privacy: .public)")
             BrowserTelemetry.captureError(error, event: .syncPullFailed)
         }

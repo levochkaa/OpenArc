@@ -3,6 +3,21 @@ import Foundation
 // MARK: - BrowserSyncConfiguration
 
 struct BrowserSyncConfiguration {
+    // MARK: Lifecycle
+
+    init?(baseURL: URL) {
+        guard let components = URLComponents(url: baseURL, resolvingAgainstBaseURL: true),
+              let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = components.host, !host.isEmpty,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil,
+              components.path.isEmpty || components.path == "/"
+        else { return nil }
+        self.baseURL = BrowserSyncOwner(baseURL: baseURL, userID: "").baseURL
+    }
+
+    // MARK: Internal
+
     let baseURL: URL
 
     static func current(environment: [String: String] = ProcessInfo.processInfo
@@ -22,10 +37,30 @@ struct BrowserSyncConfiguration {
 // MARK: - BrowserAuthSession
 
 struct BrowserAuthSession: Codable, Equatable {
+    // MARK: Lifecycle
+
+    init(accessToken: String, userID: String, userEmail: String?, deviceID: String, serverURL: URL? = nil) {
+        self.accessToken = accessToken
+        self.userID = userID
+        self.userEmail = userEmail
+        self.deviceID = deviceID
+        self.serverURL = serverURL
+    }
+
+    // MARK: Internal
+
     let accessToken: String
     let userID: String
     let userEmail: String?
     let deviceID: String
+    /// Legacy credentials have no issuer provenance and require a fresh sign-in.
+    let serverURL: URL?
+
+    func belongs(to baseURL: URL) -> Bool {
+        guard let serverURL else { return false }
+        return BrowserSyncOwner(baseURL: serverURL, userID: userID)
+            == BrowserSyncOwner(baseURL: baseURL, userID: userID)
+    }
 }
 
 // MARK: - BrowserSyncDevice

@@ -411,12 +411,28 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     session.userEmail ?? BrowserStrings.syncAccountSignedIn,
                     detail: BrowserStrings.syncAccountDevice(session.deviceID)
                 ))
+                switch accountStore.bindingState {
+                case .needsConsent:
+                    rows.append(BrowserNativeControls.label(
+                        BrowserStrings.syncAccountEnableDetail, color: .secondaryLabelColor, wraps: true
+                    ))
+                    rows.append(BrowserActionButton(BrowserStrings.syncAccountEnable) { accountStore.enableSync() })
+                case .differentAccount:
+                    rows.append(BrowserNativeControls.label(
+                        BrowserStrings.syncAccountDifferentOwner, color: .secondaryLabelColor, wraps: true
+                    ))
+                case .enabled:
+                    rows.append(BrowserNativeControls.label(
+                        BrowserStrings.syncAccountEnabled, color: .secondaryLabelColor, wraps: true
+                    ))
+                case nil, .paused: break
+                }
                 rows.append(BrowserActionButton(BrowserStrings.syncAccountSignOut) { accountStore.signOut() })
             } else {
                 rows.append(BrowserNativeControls.label(
                     accountStore.isConfigured
                         ? BrowserStrings.settingsAccountsEmpty
-                        : BrowserStrings.syncAccountServerNotConfigured,
+                        : accountStore.unavailableMessage,
                     color: .secondaryLabelColor,
                     wraps: true
                 ))

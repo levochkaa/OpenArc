@@ -888,6 +888,28 @@ enum BrowserStrings {
         comment: "Message shown when sync is disabled because no server URL is configured."
     )
 
+    static let syncAccountEnable = NSLocalizedString(
+        "browser.sync.account.enable",
+        comment: "Enable profile sync button."
+    )
+    static let syncAccountEnableDetail = NSLocalizedString(
+        "browser.sync.account.enable_detail",
+        comment: "Consent to sync this profile."
+    )
+    static let syncAccountEnabled = NSLocalizedString("browser.sync.account.enabled", comment: "Sync enabled status.")
+    static let syncAccountDifferentOwner = NSLocalizedString(
+        "browser.sync.account.different_owner",
+        comment: "Sync profile belongs to another account."
+    )
+    static let syncAccountSignInAgain = NSLocalizedString(
+        "browser.sync.account.sign_in_again",
+        comment: "Credentials need fresh sign-in."
+    )
+    static let syncAccountUnavailable = NSLocalizedString(
+        "browser.sync.account.unavailable",
+        comment: "Durable sync store unavailable."
+    )
+
     static let settingsAutomaticUpdates = NSLocalizedString(
         "browser.settings.general.automatic_updates",
         comment: "Automatic updates setting title."
