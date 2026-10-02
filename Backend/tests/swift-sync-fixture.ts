@@ -37,7 +37,7 @@ const auth = app.get(AuthService);
 const controlToken = randomUUID();
 
 type Mode = "drop" | "hold";
-type Attempt = { deviceID: string; mutationID: string; digest: string; compressed: boolean; status: number };
+type Attempt = { deviceID: string; mutationID: string; protocolVersion: number; digest: string; compressed: boolean; status: number };
 type HeldResponse = { response: ServerResponse; status: number; headers: IncomingMessage["headers"]; data: Buffer };
 const modes = new Map<string, Mode>();
 const held = new Map<string, HeldResponse>();
@@ -70,7 +70,7 @@ const proxy = createServer((incoming, outgoing) => {
     const compressed = incoming.headers["content-encoding"] === "gzip";
     const push = incoming.url === "/v1/sync/push"
       ? JSON.parse((compressed ? gunzipSync(bytes) : bytes).toString()) as {
-        deviceID: string; mutationID: string; changes: unknown[];
+        deviceID: string; mutationID: string; protocolVersion?: number; changes?: unknown[]; operations?: unknown[];
       } : undefined;
     const headers = { ...incoming.headers, host: new URL(upstream).host };
     const forwarded = request(new URL(incoming.url ?? "/", upstream), {
@@ -85,7 +85,10 @@ const proxy = createServer((incoming, outgoing) => {
     if (push) {
       attempts.push({
         deviceID: push.deviceID, mutationID: push.mutationID,
-        digest: createHash("sha256").update(JSON.stringify(canonical(push.changes))).digest("hex"),
+        protocolVersion: push.protocolVersion ?? 1,
+        digest: createHash("sha256").update(JSON.stringify(canonical({
+          protocolVersion: push.protocolVersion, changes: push.changes, operations: push.operations
+        }))).digest("hex"),
         compressed, status
       });
     }
@@ -113,7 +116,7 @@ const baseURL = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
 type Device = { deviceID: string; userID: string; accessToken: string };
 type Account = { scenario: string; userID: string; devices: Device[] };
 const accounts: Account[] = [];
-for (const scenario of ["offline-delete", "lost-ack", "edit-during-ack", "global-favorite"]) {
+for (const scenario of ["offline-delete", "lost-ack", "edit-during-ack", "global-favorite", "semantic-move-first", "semantic-patch-first"]) {
   const result = await pool.query("INSERT INTO app_users (apple_subject) VALUES ($1) RETURNING id", [`swift-${randomUUID()}`]);
   const userID = result.rows[0].id as string;
   const accessToken = await auth.issueAccessToken(userID);
@@ -136,7 +139,8 @@ async function inspect(userID: string) {
     pool.query("SELECT count(*)::int AS count FROM sync_events WHERE user_id = $1", [userID]),
     pool.query("SELECT count(*)::int AS count FROM sync_mutation_receipts WHERE user_id = $1", [userID]),
     pool.query(`
-      SELECT t.id, t.rank, t.user_title_override AS title, t.deleted_at IS NOT NULL AS deleted,
+      SELECT t.id, t.rank, t.space_id AS "spaceID", t.placement,
+        t.user_title_override AS title, t.deleted_at IS NOT NULL AS deleted,
         EXISTS (SELECT 1 FROM sync_tombstones s
           WHERE s.user_id = t.user_id AND s.entity_type = 'tab' AND s.entity_id = t.id) AS tombstoned
       FROM tabs t WHERE t.user_id = $1 ORDER BY t.rank, t.id

@@ -88,7 +88,7 @@ node --input-type=module - "$report_path" <<'JS'
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const report = JSON.parse(readFileSync(process.argv[2], "utf8"));
-assert.deepEqual(report.completed, ["edit-during-ack", "global-favorite", "lost-ack", "offline-delete"]);
+assert.deepEqual(report.completed, ["edit-during-ack", "global-favorite", "lost-ack", "offline-delete", "semantic-move-first", "semantic-patch-first"]);
 assert.ok(report.attempts > 0);
-console.log("Swift production HTTP sync: all 4 scenarios completed");
+console.log("Swift production HTTP sync: all 6 scenarios completed");
 JS

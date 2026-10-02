@@ -8,6 +8,106 @@ import Testing
     .enabled(if: SyncHTTPFixture.environmentPath != nil, "Run ./script/test_swift_sync.sh for localhost integration")
 )
 @MainActor struct BrowserSyncHTTPIntegrationTests {
+    @Test(arguments: [false, true])
+    func semanticRenameAndMoveCommuteAndReplayPreservesLaterState(patchFirst: Bool) async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let scenario = patchFirst ? "semantic-patch-first" : "semantic-move-first"
+        let account = try fixture.account(scenario)
+        let configuration = try #require(BrowserSyncConfiguration(baseURL: fixture.baseURL))
+        let firstSession = URLSession(configuration: .ephemeral)
+        let secondSession = URLSession(configuration: .ephemeral)
+        defer {
+            firstSession.invalidateAndCancel()
+            secondSession.invalidateAndCancel()
+        }
+        let first = BrowserRemoteSyncClient(configuration: configuration, session: firstSession)
+        let second = BrowserRemoteSyncClient(configuration: configuration, session: secondSession)
+        func credentials(_ device: SyncHTTPFixture.Device) -> BrowserAuthSession {
+            BrowserAuthSession(
+                accessToken: device.accessToken, userID: device.userID, userEmail: nil,
+                deviceID: device.deviceID, serverURL: fixture.baseURL
+            )
+        }
+        let firstAuth = credentials(account.devices[0])
+        let secondAuth = credentials(account.devices[1])
+        let capabilities = try await first.pull(cursor: 0, authSession: firstAuth)
+        #expect(capabilities.protocolVersion == 2)
+        #expect(capabilities.supportedPushVersions?.contains(3) == true)
+        let seed = BrowserSyncSemanticMutation(id: UUID().uuidString, operations: [
+            .createSpace(id: "source", data: .init(title: "Source", systemImageName: "globe")),
+            .createSpace(id: "target", data: .init(title: "Target", systemImageName: "star")),
+            .createTab(
+                id: "moving",
+                data: .init(spaceID: "source", placement: .temporary, urlString: "https://moving.example")
+            ),
+            .createTab(
+                id: "source-sentinel",
+                data: .init(spaceID: "source", placement: .temporary, urlString: "https://source.example")
+            ),
+            .createTab(
+                id: "anchor",
+                data: .init(spaceID: "target", placement: .temporary, urlString: "https://anchor.example")
+            ),
+        ])
+        let seeded = try await first.push(mutation: seed, authSession: firstAuth)
+        #expect(seeded.protocolVersion == 3 && seeded.mutationID == seed.id)
+        // Both devices prepare independent intent from the same starting state.
+        // Exercise both delivery orders through the real typed transport.
+        let title = String(repeating: "semantic-title-", count: 160)
+        let patch = BrowserSyncSemanticMutation(id: UUID().uuidString, operations: [
+            .patchTab(id: "moving", fields: .init(userTitleOverride: .set(title))),
+        ])
+        let move = BrowserSyncSemanticMutation(id: UUID().uuidString, operations: [
+            .moveTabs(
+                ids: ["moving"],
+                destination: .init(spaceID: "target", placement: .temporary),
+                beforeID: "anchor",
+                afterID: nil
+            ),
+        ])
+        let moveReceipt: BrowserSyncSemanticPushResponse
+        if patchFirst {
+            _ = try await first.push(mutation: patch, authSession: firstAuth)
+            moveReceipt = try await second.push(mutation: move, authSession: secondAuth)
+        } else {
+            moveReceipt = try await second.push(mutation: move, authSession: secondAuth)
+            _ = try await first.push(mutation: patch, authSession: firstAuth)
+        }
+        let combined = try await fixture.inspect(account)
+        let moving = try #require(combined.tabs.first { $0.id == "moving" })
+        #expect(moving.title == title && moving.spaceID == "target" && !moving.deleted)
+        #expect(combined.tabs.filter { !$0.deleted && $0.spaceID == "target" }.map(\.id) == ["moving", "anchor"])
+        #expect(combined.tabs.filter { !$0.deleted && $0.spaceID == "source" }.map(\.id) == ["source-sentinel"])
+        #expect(combined.attempts.contains { $0.mutationID == patch.id && $0.compressed && $0.protocolVersion == 3 })
+
+        let later = BrowserSyncSemanticMutation(id: UUID().uuidString, operations: [
+            .patchTab(id: "moving", fields: .init(userTitleOverride: .clear)),
+            .moveTabs(
+                ids: ["moving"],
+                destination: .init(spaceID: "source", placement: .temporary),
+                beforeID: "source-sentinel",
+                afterID: nil
+            ),
+        ])
+        _ = try await first.push(mutation: later, authSession: firstAuth)
+        let beforeReplay = try await fixture.inspect(account)
+        let replay = try await second.push(mutation: move, authSession: secondAuth)
+        let afterReplay = try await fixture.inspect(account)
+        #expect(replay.mutationID == move.id && replay.events == moveReceipt.events)
+        #expect(afterReplay.eventCount == beforeReplay.eventCount)
+        #expect(afterReplay.receiptCount == beforeReplay.receiptCount)
+        let finalMoving = try #require(afterReplay.tabs.first { $0.id == "moving" })
+        #expect(finalMoving.title == nil && finalMoving.spaceID == "source")
+        #expect(afterReplay.tabs.filter { !$0.deleted && $0.spaceID == "source" }.map(\.id) == [
+            "moving",
+            "source-sentinel",
+        ])
+        let firstPull = try await first.pull(cursor: 0, authSession: firstAuth)
+        let secondPull = try await second.pull(cursor: 0, authSession: secondAuth)
+        #expect(firstPull.events == secondPull.events && firstPull.cursor == secondPull.cursor)
+        try await fixture.complete(account)
+    }
+
     @Test func offlineDeletionSurvivesSQLiteReopenAndRemoteEdits() async throws {
         let fixture = try SyncHTTPFixture.load()
         let account = try fixture.account("offline-delete")
@@ -258,6 +358,8 @@ private struct SyncHTTPFixture: Decodable {
         struct Tab: Decodable {
             let id: String
             let rank: Double
+            let spaceID: String
+            let placement: String
             let title: String?
             let deleted: Bool
             let tombstoned: Bool
@@ -266,6 +368,7 @@ private struct SyncHTTPFixture: Decodable {
         struct Attempt: Decodable {
             let deviceID: String
             let mutationID: String
+            let protocolVersion: Int
             let digest: String
             let compressed: Bool
             let status: Int
