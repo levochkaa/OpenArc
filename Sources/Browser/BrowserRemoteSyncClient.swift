@@ -376,6 +376,32 @@ enum BrowserAuthSessionStoreError: Error {
     case keychain(OSStatus)
 }
 
+// MARK: - BrowserSyncRemoteServing
+
+@MainActor protocol BrowserSyncRemoteServing: AnyObject {
+    func push(
+        snapshot: BrowserTabSessionSnapshot,
+        previousSnapshot: BrowserTabSessionSnapshot?,
+        authSession: BrowserAuthSession
+    ) async throws -> BrowserSyncPushResponse
+
+    func pull(cursor: Int, authSession: BrowserAuthSession) async throws -> BrowserSyncPullResponse
+}
+
+// MARK: - BrowserRemoteSyncClient + BrowserSyncRemoteServing
+
+extension BrowserRemoteSyncClient: BrowserSyncRemoteServing {}
+
+// MARK: - BrowserSyncAuthSessionReading
+
+@MainActor protocol BrowserSyncAuthSessionReading: AnyObject {
+    func loadSession() -> BrowserAuthSession?
+}
+
+// MARK: - BrowserAuthSessionStore + BrowserSyncAuthSessionReading
+
+extension BrowserAuthSessionStore: BrowserSyncAuthSessionReading {}
+
 // MARK: - BrowserSyncService
 
 @MainActor final class BrowserSyncService: BrowserSyncCoordinating {
@@ -383,35 +409,66 @@ enum BrowserAuthSessionStoreError: Error {
 
     init(
         localStore: BrowserSQLiteSessionStore,
-        remoteClient: BrowserRemoteSyncClient,
-        authSessionStore: BrowserAuthSessionStore
+        remoteClient: any BrowserSyncRemoteServing,
+        authSessionStore: any BrowserSyncAuthSessionReading,
+        pushDebounce: Duration = .milliseconds(750)
     ) {
         self.localStore = localStore
         self.remoteClient = remoteClient
         self.authSessionStore = authSessionStore
+        self.pushDebounce = pushDebounce
     }
 
     // MARK: Internal
 
     func schedulePush(snapshot: BrowserTabSessionSnapshot) {
         pendingPushTask?.cancel()
+        pendingPush = nil
+        guard let authSession = authSessionStore.loadSession() else {
+            pendingPushTask = nil
+            return
+        }
+
+        let debounce = pushDebounce
         pendingPushTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 750_000_000)
-            await self?.push(snapshot: snapshot)
+            do {
+                try await Task.sleep(for: debounce)
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
+
+            guard let self else { return }
+            pendingPushTask = nil
+            guard authSessionStore.loadSession() == authSession else { return }
+            pendingPush = PendingPush(snapshot: snapshot, authSession: authSession)
+            startProcessing()
         }
     }
 
     func schedulePull() {
-        Task { [weak self] in
-            await self?.pull()
-        }
+        guard let authSession = authSessionStore.loadSession() else { return }
+        pendingPullSession = authSession
+        startProcessing()
     }
 
     func setSnapshotApplier(_ snapshotApplier: (any BrowserSyncSnapshotApplying)?) {
         self.snapshotApplier = snapshotApplier
     }
 
+    func waitForPendingOperations() async {
+        while pendingPushTask != nil || processingTask != nil {
+            await pendingPushTask?.value
+            await processingTask?.value
+        }
+    }
+
     // MARK: Private
+
+    private struct PendingPush {
+        let snapshot: BrowserTabSessionSnapshot
+        let authSession: BrowserAuthSession
+    }
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
@@ -419,40 +476,72 @@ enum BrowserAuthSessionStoreError: Error {
     )
 
     private let localStore: BrowserSQLiteSessionStore
-    private let remoteClient: BrowserRemoteSyncClient
-    private let authSessionStore: BrowserAuthSessionStore
+    private let remoteClient: any BrowserSyncRemoteServing
+    private let authSessionStore: any BrowserSyncAuthSessionReading
+    private let pushDebounce: Duration
     private var previousPushedSnapshot: BrowserTabSessionSnapshot?
+    private var previousPushedSession: BrowserAuthSession?
     private var pendingPushTask: Task<Void, Never>?
+    private var processingTask: Task<Void, Never>?
+    private var pendingPush: PendingPush?
+    private var pendingPullSession: BrowserAuthSession?
 
     private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
 
-    private func push(snapshot: BrowserTabSessionSnapshot) async {
-        guard let authSession = authSessionStore.loadSession() else {
-            previousPushedSnapshot = snapshot
-            return
+    private func startProcessing() {
+        guard processingTask == nil else { return }
+        processingTask = Task { [weak self] in
+            guard let self else { return }
+            while pendingPush != nil || pendingPullSession != nil {
+                if let push = pendingPush {
+                    pendingPush = nil
+                    await self.push(snapshot: push.snapshot, authSession: push.authSession)
+                } else if let authSession = pendingPullSession {
+                    pendingPullSession = nil
+                    await pull(authSession: authSession)
+                }
+            }
+            processingTask = nil
         }
+    }
+
+    private func push(snapshot: BrowserTabSessionSnapshot, authSession: BrowserAuthSession) async {
+        guard authSessionStore.loadSession() == authSession else { return }
 
         do {
             let response = try await remoteClient.push(
                 snapshot: snapshot,
-                previousSnapshot: previousPushedSnapshot,
+                previousSnapshot: previousPushedSession == authSession ? previousPushedSnapshot : nil,
                 authSession: authSession
             )
-            localStore.saveSyncCursor(response.cursor)
-            previousPushedSnapshot = snapshot
+            guard authSessionStore.loadSession() == authSession else { return }
+            // A push receipt covers only this client's writes, not the unread pull stream.
+            // Permanent identity tombstones also correct stale upserts, even when
+            // their original delete event is older than the saved pull cursor.
+            let deletes = response.events.filter { $0.op == "delete" }
+            if !deletes.isEmpty, let latestSnapshot = localStore.loadSnapshot() {
+                let correctedSnapshot = BrowserSyncSnapshotMerger.snapshot(removing: deletes, from: latestSnapshot)
+                if correctedSnapshot != latestSnapshot {
+                    localStore.saveSnapshot(correctedSnapshot)
+                    snapshotApplier?.applyRemoteSyncSnapshot(correctedSnapshot)
+                }
+            }
+            // Echoed upserts describe the sent snapshot and must not overwrite
+            // local edits made while this request was in flight.
+            previousPushedSnapshot = BrowserSyncSnapshotMerger.snapshot(removing: deletes, from: snapshot)
+            previousPushedSession = authSession
         } catch {
             Self.logger.error("Sync push failed: \(error.localizedDescription, privacy: .public)")
             BrowserTelemetry.captureError(error, event: .syncPushFailed)
         }
     }
 
-    private func pull() async {
-        guard let authSession = authSessionStore.loadSession() else {
-            return
-        }
+    private func pull(authSession: BrowserAuthSession) async {
+        guard authSessionStore.loadSession() == authSession else { return }
 
         do {
             let response = try await remoteClient.pull(cursor: localStore.syncCursor(), authSession: authSession)
+            guard authSessionStore.loadSession() == authSession else { return }
             if !response.events.isEmpty {
                 let snapshot = BrowserSyncSnapshotMerger.snapshot(
                     applying: response.events,
@@ -460,9 +549,10 @@ enum BrowserAuthSessionStoreError: Error {
                 )
                 localStore.saveSnapshot(snapshot)
                 previousPushedSnapshot = snapshot
+                previousPushedSession = authSession
                 snapshotApplier?.applyRemoteSyncSnapshot(snapshot)
             }
-            localStore.saveSyncCursor(response.cursor)
+            localStore.saveSyncCursor(max(localStore.syncCursor(), response.cursor))
         } catch {
             Self.logger.error("Sync pull failed: \(error.localizedDescription, privacy: .public)")
             BrowserTelemetry.captureError(error, event: .syncPullFailed)
@@ -474,6 +564,42 @@ enum BrowserAuthSessionStoreError: Error {
 
 enum BrowserSyncSnapshotMerger {
     // MARK: Internal
+
+    static func snapshot(
+        removing events: [BrowserSyncEvent],
+        from snapshot: BrowserTabSessionSnapshot
+    ) -> BrowserTabSessionSnapshot {
+        let deletedSpaceIDs = Set(events.filter { $0.entityType == "space" && $0.op == "delete" }.map(\.entityID))
+        let deletedTabIDs = Set(events.filter { $0.entityType == "tab" && $0.op == "delete" }.map(\.entityID))
+        guard !deletedSpaceIDs.isEmpty || !deletedTabIDs.isEmpty else { return snapshot }
+
+        let tabs = snapshot.tabs.filter { tab in
+            !deletedSpaceIDs.contains(tab.spaceID ?? BrowserChromeModel.defaultSpaceID)
+                && !(tab.id.map(deletedTabIDs.contains) ?? false)
+        }
+        let spaces = snapshot.spaces?.filter { !deletedSpaceIDs.contains($0.id) }.map { space in
+            let previousTabs = snapshot.tabs.filter { ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == space.id }
+            let currentTabs = tabs.filter { ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == space.id }
+            guard currentTabs != previousTabs else { return space }
+            let selectedTabID = space.selectedTabIndex.flatMap { index in
+                previousTabs.indices.contains(index) ? previousTabs[index].id : nil
+            }
+            return BrowserSpaceSessionSnapshot(
+                id: space.id,
+                title: space.title,
+                systemImageName: space.systemImageName,
+                isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
+                selectedTabIndex: selectedTabID.flatMap { selectedID in
+                    currentTabs.firstIndex { $0.id == selectedID }
+                }
+            )
+        }
+        return BrowserTabSessionSnapshot(
+            spaces: spaces,
+            pinnedTabFolders: snapshot.pinnedTabFolders?.filter { !deletedSpaceIDs.contains($0.spaceID) },
+            tabs: tabs
+        )
+    }
 
     static func snapshot(
         applying events: [BrowserSyncEvent],
