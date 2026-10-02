@@ -276,7 +276,9 @@ export class SyncService {
       throw new Error("Tab upsert requires data");
     }
 
-    if (await this.tombstoneEvent(client, userID, "space", change.data.spaceID)) {
+    // Favorites are global. Their historical space ID is metadata, not a
+    // lifetime owner; an explicit tab tombstone was already checked above.
+    if (change.data.placement !== "app" && await this.tombstoneEvent(client, userID, "space", change.data.spaceID)) {
       // A tab moved out before the space deletion survives. A stale snapshot
       // must neither move it back into the deleted space nor delete it there.
       const survivor = await client.query(
@@ -374,7 +376,7 @@ export class SyncService {
       // Include children in the event stream, even for clients that already
       // consumed the parent deletion before reconnecting with an old snapshot.
       const children = await client.query(
-        "SELECT id FROM tabs WHERE user_id = $1 AND space_id = $2 AND deleted_at IS NULL ORDER BY id",
+        "SELECT id FROM tabs WHERE user_id = $1 AND space_id = $2 AND placement <> 'app' AND deleted_at IS NULL ORDER BY id",
         [userID, entityID]
       );
       for (const child of children.rows) {

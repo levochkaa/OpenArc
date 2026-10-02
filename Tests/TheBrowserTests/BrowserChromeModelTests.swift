@@ -416,6 +416,48 @@ import Testing
     #expect(driver.closedTabRequests.isEmpty)
 }
 
+@Test(arguments: [false, true])
+@MainActor func deleteHistoricalSpacePreservesLiveAndDormantFavorites(isDormant: Bool) throws {
+    let driver = FakeBrowserTabDriver()
+    let store = InMemorySessionSnapshotStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: store,
+        preferencesStore: InMemorySessionPreferencesStore(),
+        spaceIDProvider: { "surviving-space" }
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let favoriteID = try #require(model.tabs.first?.id)
+    model.moveTab(withID: favoriteID, toPlacement: .app, atSectionIndex: 0)
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let childID = try #require(model.temporaryTabs.first?.id)
+    model.createNewSpace()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let survivorID = try #require(model.temporaryTabs.first?.id)
+    model.selectTab(id: favoriteID)
+    if isDormant {
+        #expect(model.closeAppTabProcess(id: favoriteID))
+        driver.emitClose(id: favoriteID)
+    }
+    let previousCloseCount = driver.closedTabRequests.count
+    let previousCreateCount = driver.createdTabRequests.count
+
+    #expect(model.deleteSpace(id: BrowserChromeModel.defaultSpaceID))
+
+    #expect(model.appTabs.map(\.id) == [favoriteID])
+    #expect(model.appTabs.first?.spaceID == "surviving-space")
+    #expect(model.tabs.map(\.id) == [favoriteID, survivorID])
+    #expect(model.selectedSpaceID == "surviving-space")
+    #expect(model.selectedTabID == (isDormant ? survivorID : favoriteID))
+    #expect(driver.closedTabRequests.dropFirst(previousCloseCount).map(\.id) == [childID])
+    #expect(driver.createdTabRequests.count == previousCreateCount)
+    #expect(store.savedSnapshots.last?.tabs.first?.placement == .app)
+    #expect(store.savedSnapshots.last?.tabs.first?.id == model.appTabs.first?.syncID)
+}
+
 @Test
 @MainActor func movingTabToAnotherSpaceUpdatesOnlyTheTargetSpace() {
     let driver = FakeBrowserTabDriver()

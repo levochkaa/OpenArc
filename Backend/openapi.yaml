@@ -274,6 +274,9 @@ components:
         placement:
           type: string
           enum: [temporary, spacePinned, app]
+          description: >-
+            app Favorites are global and survive deletion of their historical
+            spaceID. Explicit deletion of the tab remains permanent.
         rank:
           type: number
         urlString:

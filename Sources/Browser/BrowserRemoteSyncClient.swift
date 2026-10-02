@@ -719,7 +719,7 @@ enum BrowserSyncSnapshotMerger {
         guard !deletedSpaceIDs.isEmpty || !deletedTabIDs.isEmpty else { return snapshot }
 
         let tabs = snapshot.tabs.filter { tab in
-            !deletedSpaceIDs.contains(tab.spaceID ?? BrowserChromeModel.defaultSpaceID)
+            (tab.placement == .app || !deletedSpaceIDs.contains(tab.spaceID ?? BrowserChromeModel.defaultSpaceID))
                 && !(tab.id.map(deletedTabIDs.contains) ?? false)
         }
         let spaces = snapshot.spaces?.filter { !deletedSpaceIDs.contains($0.id) }.map { space in
@@ -795,7 +795,7 @@ enum BrowserSyncSnapshotMerger {
             switch (event.entityType, event.op, event.data) {
             case ("space", "delete", _):
                 spaces.removeValue(forKey: event.entityID)
-                tabs = tabs.filter { $0.value.spaceID != event.entityID }
+                tabs = tabs.filter { $0.value.placement == .app || $0.value.spaceID != event.entityID }
             case ("space", "upsert", .space(let data)):
                 let existing = spaces[event.entityID]
                 spaces[event.entityID] = SpaceRecord(
@@ -839,7 +839,7 @@ enum BrowserSyncSnapshotMerger {
             }
         }
 
-        if spaces.isEmpty, !tabs.isEmpty {
+        if spaces.isEmpty, tabs.values.contains(where: { $0.placement != .app }) {
             spaces[BrowserChromeModel.defaultSpaceID] = SpaceRecord(
                 id: BrowserChromeModel.defaultSpaceID,
                 title: "Space",
@@ -866,7 +866,9 @@ enum BrowserSyncSnapshotMerger {
                 pinnedURLString: tab.placement == .spacePinned ? tab.pinnedURLString : nil,
                 userTitleOverride: tab.userTitleOverride,
                 placement: tab.placement,
-                spaceID: knownSpaceIDs.contains(tab.spaceID) ? tab.spaceID : BrowserChromeModel.defaultSpaceID,
+                spaceID: tab.placement == .app || knownSpaceIDs.contains(tab.spaceID)
+                    ? tab.spaceID
+                    : BrowserChromeModel.defaultSpaceID,
                 pinnedFolderID: tab.pinnedFolderID,
                 lastActivityTimestamp: tab.lastActivityTimestamp
             )

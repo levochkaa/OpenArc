@@ -448,6 +448,132 @@ import Testing
     #expect(projection.tabs.map(\.id) == ["z", "new", "a", "m"])
 }
 
+@Test func syncOutboxSpaceDeletePreservesQueuedGlobalAppMetadataAndStaleParent() throws {
+    let harness = try SyncOutboxHarness()
+    defer { harness.cleanup() }
+    let store = try harness.store()
+    let original = BrowserTabSessionSnapshot(
+        spaces: [BrowserSpaceSessionSnapshot(id: "space", title: "Work", systemImageName: "briefcase")],
+        tabs: [
+            BrowserTabSessionSnapshotTab(
+                id: "app",
+                urlString: "https://app.example",
+                placement: .app,
+                spaceID: "space"
+            ),
+            BrowserTabSessionSnapshotTab(id: "ordinary", urlString: "https://ordinary.example", spaceID: "space"),
+        ]
+    )
+    store.saveSnapshot(original)
+    try store.bindSyncOwner(harness.owner)
+    try outboxAcknowledgeAll(store, owner: harness.owner)
+    store.saveSnapshot(outboxRenaming(original, tabID: "app", title: "Offline rename"))
+    let queued = try #require(store.pendingSyncMutations(for: harness.owner).first)
+    let deleteSpace = BrowserSyncEvent(
+        serverSeq: 10, deviceID: "remote", entityType: "space", entityID: "space", op: "delete",
+        data: .deleted(id: "space"), createdAt: "2026-10-03T00:00:00Z"
+    )
+    let projection = try store.applyRemoteSyncEvents([deleteSpace], cursor: 10, for: harness.owner)
+    #expect(projection.spaces == nil)
+    #expect(projection.tabs.map(\.id) == ["app"])
+    #expect(projection.tabs[0].spaceID == "space")
+    #expect(projection.tabs[0].userTitleOverride == "Offline rename")
+    #expect(try store.pendingSyncMutations(for: harness.owner) == [queued])
+
+    // A later local edit with the historical parent must survive the local-save filter.
+    store.saveSnapshot(outboxRenaming(projection, tabID: "app", title: "Second rename"))
+    let pending = try store.pendingSyncMutations(for: harness.owner)
+    #expect(pending.count == 2)
+    #expect(pending.allSatisfy { $0.changes.allSatisfy { $0.entityType == .tab && $0.op == .upsert } })
+    _ = try store.acknowledgeSyncMutation(
+        id: queued.id,
+        events: outboxEvents(queued.changes, startingAt: 11),
+        for: harness.owner
+    )
+    #expect(store.loadSnapshot()?.tabs.first?.userTitleOverride == "Second rename")
+    let reopened = try harness.store()
+    #expect(reopened.loadSnapshot()?.tabs.map(\.id) == ["app"])
+    #expect(try reopened.pendingSyncMutations(for: harness.owner) == [pending[1]])
+}
+
+@Test func syncOutboxGlobalAppDoesNotRequireOrCreateImplicitParent() throws {
+    let harness = try SyncOutboxHarness()
+    defer { harness.cleanup() }
+    let store = try harness.store()
+    let app = BrowserTabSessionSnapshotTab(id: "app", urlString: "https://app.example", placement: .app)
+    store.saveSnapshot(BrowserTabSessionSnapshot(tabs: [app]))
+    try store.bindSyncOwner(harness.owner)
+    let mutation = try #require(store.pendingSyncMutations(for: harness.owner).first)
+    #expect(mutation.changes.map(\.entityID) == ["app"])
+    let projection = try store.acknowledgeSyncMutation(
+        id: mutation.id,
+        events: outboxEvents(mutation.changes, startingAt: 1),
+        for: harness.owner
+    )
+    #expect(projection.spaces == nil)
+    #expect(projection.tabs.map(\.id) == ["app"])
+
+    let mixed = BrowserTabSessionSnapshot(tabs: [
+        app,
+        BrowserTabSessionSnapshotTab(id: "ordinary", urlString: "https://ordinary.example"),
+    ])
+    let changes = BrowserSyncOutboxProjection.changes(from: nil, to: mixed)
+    #expect(changes.first?.entityID == BrowserChromeModel.defaultSpaceID)
+    #expect(changes.filter { $0.entityType == .space }.count == 1)
+}
+
+@Test func syncOutboxExplicitLocalAppDeleteDominatesOldQueuedRenameWithoutParent() throws {
+    let harness = try SyncOutboxHarness()
+    defer { harness.cleanup() }
+    let store = try harness.store()
+    let original = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
+        id: "app", urlString: "https://app.example", placement: .app, spaceID: "absent-parent"
+    )])
+    store.saveSnapshot(original)
+    try store.bindSyncOwner(harness.owner)
+    let seed = try #require(store.pendingSyncMutations(for: harness.owner).first)
+    store.saveSnapshot(outboxRenaming(original, tabID: "app", title: "Queued rename"))
+    store.saveSnapshot(BrowserTabSessionSnapshot(tabs: []))
+    let projection = try store.acknowledgeSyncMutation(
+        id: seed.id,
+        events: outboxEvents(seed.changes, startingAt: 1),
+        for: harness.owner
+    )
+    #expect(projection.tabs.isEmpty)
+    #expect(try store.pendingSyncMutations(for: harness.owner)
+        .last?
+        .changes
+        .contains { $0.entityID == "app" && $0.op == .delete } == true)
+    store.saveSnapshot(original)
+    #expect(store.loadSnapshot() == nil)
+}
+
+@Test func syncOutboxExplicitRemoteAppDeleteDominatesQueuedMetadataWithoutParent() throws {
+    let harness = try SyncOutboxHarness()
+    defer { harness.cleanup() }
+    let store = try harness.store()
+    let original = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
+        id: "app", urlString: "https://app.example", placement: .app, spaceID: "absent-parent"
+    )])
+    store.saveSnapshot(original)
+    try store.bindSyncOwner(harness.owner)
+    let seed = try #require(store.pendingSyncMutations(for: harness.owner).first)
+    let projection = try store.applyRemoteSyncEvents(
+        [outboxDelete(id: "app", sequence: 10)],
+        cursor: 10,
+        for: harness.owner
+    )
+    #expect(projection.tabs.isEmpty)
+    _ = try store.acknowledgeSyncMutation(
+        id: seed.id,
+        events: outboxEvents(seed.changes, startingAt: 1),
+        for: harness.owner
+    )
+    store.saveSnapshot(outboxRenaming(original, tabID: "app", title: "Stale rename"))
+    #expect(store.loadSnapshot() == nil)
+    #expect(try store.pendingSyncMutations(for: harness.owner).isEmpty)
+}
+
 private func outboxSparseEvents() -> [BrowserSyncEvent] {
     let space = BrowserSyncChange(
         entityType: .space, entityID: "space", op: .upsert,

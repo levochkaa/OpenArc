@@ -219,6 +219,84 @@ import Testing
     #expect(tab.pinnedFolderID == "folder-1")
 }
 
+@Test(arguments: [false, true], [false, true])
+func syncSnapshotMergerKeepsGlobalFavoritesAfterSpaceDeletion(applying: Bool, hasRemainingSpace: Bool) {
+    let favorite = BrowserTabSessionSnapshotTab(
+        id: "favorite", urlString: "https://favorite.example", userTitleOverride: "Favorite",
+        placement: .app, spaceID: "deleted-space", lastActivityTimestamp: 123
+    )
+    let remainingTabs = hasRemainingSpace
+        ? [BrowserTabSessionSnapshotTab(
+            id: "unrelated",
+            urlString: "https://other.example",
+            spaceID: "remaining-space"
+        )]
+        : []
+    let remainingSpaces = hasRemainingSpace
+        ? [BrowserSpaceSessionSnapshot(id: "remaining-space", title: "Remaining", systemImageName: "globe")]
+        : []
+    let current = BrowserTabSessionSnapshot(
+        spaces: [BrowserSpaceSessionSnapshot(id: "deleted-space", title: "Deleted", systemImageName: "clock")]
+            + remainingSpaces,
+        pinnedTabFolders: [BrowserPinnedTabFolderSessionSnapshot(
+            id: "folder",
+            spaceID: "deleted-space",
+            title: "Folder"
+        )],
+        tabs: [
+            favorite,
+            BrowserTabSessionSnapshotTab(
+                id: "deleted-favorite", urlString: "https://deleted-favorite.example", placement: .app,
+                spaceID: "deleted-space"
+            ),
+            BrowserTabSessionSnapshotTab(
+                id: "pinned", urlString: "https://pinned.example", placement: .spacePinned,
+                spaceID: "deleted-space", pinnedFolderID: "folder"
+            ),
+            BrowserTabSessionSnapshotTab(
+                id: "temporary",
+                urlString: "https://temporary.example",
+                spaceID: "deleted-space"
+            ),
+        ] + remainingTabs
+    )
+    let events = [
+        BrowserSyncEvent(
+            serverSeq: 1, deviceID: "remote", entityType: "space", entityID: "deleted-space", op: "delete",
+            data: .deleted(id: "deleted-space"), createdAt: "2026-10-03T00:00:00Z"
+        ),
+        BrowserSyncEvent(
+            serverSeq: 2, deviceID: "remote", entityType: "tab", entityID: "deleted-favorite", op: "delete",
+            data: .deleted(id: "deleted-favorite"), createdAt: "2026-10-03T00:00:01Z"
+        ),
+    ]
+
+    let merged = applying
+        ? BrowserSyncSnapshotMerger.snapshot(applying: events, to: current)
+        : BrowserSyncSnapshotMerger.snapshot(removing: events, from: current)
+
+    #expect(merged.tabs == [favorite] + remainingTabs)
+    #expect(merged.spaces ?? [] == remainingSpaces)
+    #expect(merged.pinnedTabFolders?.isEmpty != false)
+}
+
+@Test func syncSnapshotMergerAcceptsRemoteFavoriteWithoutParentSpace() {
+    let event = BrowserSyncEvent(
+        serverSeq: 1, deviceID: "remote", entityType: "tab", entityID: "favorite", op: "upsert",
+        data: .tab(BrowserSyncEventTabData(
+            id: "favorite", spaceID: "historical-space", placement: .app, rank: 0,
+            urlString: "https://favorite.example", pinnedURLString: nil, title: nil,
+            userTitleOverride: "Favorite", faviconURLString: nil, lastActivityAt: nil
+        )), createdAt: "2026-10-03T00:00:00Z"
+    )
+    let merged = BrowserSyncSnapshotMerger.snapshot(applying: [event], to: nil)
+
+    #expect(merged.tabs.first?.id == "favorite")
+    #expect(merged.tabs.first?.placement == .app)
+    #expect(merged.tabs.first?.spaceID == "historical-space")
+    #expect(merged.spaces == nil)
+}
+
 // MARK: - SQLiteSessionHarness
 
 private struct SQLiteSessionHarness {

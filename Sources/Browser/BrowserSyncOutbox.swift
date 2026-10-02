@@ -146,7 +146,8 @@ enum BrowserSyncOutboxProjection {
             pinnedTabFolders: snapshot.pinnedTabFolders?
                 .filter { !deleted.contains(key(type: .space, id: $0.spaceID)) },
             tabs: snapshot.tabs.filter { tab in
-                !deleted.contains(key(type: .space, id: tab.spaceID ?? BrowserChromeModel.defaultSpaceID))
+                (tab.placement == .app
+                    || !deleted.contains(key(type: .space, id: tab.spaceID ?? BrowserChromeModel.defaultSpaceID)))
                     && tab.id.map { !deleted.contains(key(type: .tab, id: $0)) } != false
             }
         )
@@ -167,7 +168,7 @@ enum BrowserSyncOutboxProjection {
             tab.id.map { ($0, tab) }
         })
         let projectedTabs = live.filter {
-            $0.entityType == .tab && $0.tabData.map { spaceIDs.contains($0.spaceID) } == true
+            $0.entityType == .tab && $0.tabData.map { $0.placement == .app || spaceIDs.contains($0.spaceID) } == true
         }
         .sorted {
             let left = $0.tabData!.rank, right = $1.tabData!.rank
@@ -276,10 +277,12 @@ enum BrowserSyncOutboxProjection {
     private static func canonicalChanges(_ snapshot: BrowserTabSessionSnapshot) -> [BrowserSyncChange] {
         var result = [BrowserSyncChange]()
         var spaces = snapshot.spaces ?? []
-        // Legacy snapshots can predate spaces; emit their implicit parent before tabs.
+        // Ordinary legacy tabs need an implicit parent; global app favorites do not.
         if !spaces.contains(where: { $0.id == BrowserChromeModel.defaultSpaceID }),
            snapshot.tabs
-               .contains(where: { ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == BrowserChromeModel.defaultSpaceID
+               .contains(where: {
+                   $0.placement != .app && ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == BrowserChromeModel
+                       .defaultSpaceID
                })
         {
             spaces.append(BrowserSpaceSessionSnapshot(

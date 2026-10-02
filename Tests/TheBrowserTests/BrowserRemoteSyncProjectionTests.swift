@@ -299,6 +299,41 @@ import Testing
 
 // MARK: - RemoteProjectionHarness
 
+@Test(arguments: [false, true])
+@MainActor func remoteSpaceDeletionKeepsFavoriteEngineAndSelection(deleteEverySpace: Bool) throws {
+    let firstSpace = BrowserSpaceSessionSnapshot(id: "work", title: "Work", systemImageName: "briefcase")
+    let otherSpace = BrowserSpaceSessionSnapshot(id: "other", title: "Other", systemImageName: "star")
+    let favorite = BrowserTabSessionSnapshotTab(
+        id: "favorite", urlString: "https://favorite.example", placement: .app, spaceID: "work"
+    )
+    let child = BrowserTabSessionSnapshotTab(id: "child", urlString: "https://child.example", spaceID: "work")
+    let survivor = BrowserTabSessionSnapshotTab(id: "survivor", urlString: "https://survivor.example", spaceID: "other")
+    let harness = RemoteProjectionHarness(snapshot: BrowserTabSessionSnapshot(
+        spaces: [firstSpace, otherSpace], tabs: [favorite, child, survivor]
+    ))
+    defer { harness.cleanup() }
+    harness.model.handleContextReady()
+    harness.driver.flushPendingCreateEvents()
+    let favoriteEngineID = try #require(harness.model.appTabs.first?.id)
+    harness.model.selectTab(id: favoriteEngineID)
+    let previousCreates = harness.driver.createdTabRequests.count
+
+    harness.model.applyRemoteSyncSnapshot(BrowserTabSessionSnapshot(
+        spaces: deleteEverySpace ? nil : [otherSpace],
+        tabs: deleteEverySpace ? [favorite] : [favorite, survivor]
+    ))
+
+    #expect(harness.model.appTabs.map(\.id) == [favoriteEngineID])
+    #expect(harness.model.selectedTabID == favoriteEngineID)
+    #expect(harness.model.spaces.contains { $0.id == harness.model.selectedSpaceID })
+    #expect(harness.model.appTabs.first?.spaceID == harness.model.selectedSpaceID)
+    #expect(!harness.driver.closedTabRequests.contains { $0.id == favoriteEngineID })
+    #expect(harness.driver.createdTabRequests.count == previousCreates)
+    #expect(harness.store.savedSnapshots.last?.tabs.contains { $0.id == "favorite" } == true)
+}
+
+// MARK: - RemoteProjectionHarness
+
 @MainActor private struct RemoteProjectionHarness {
     // MARK: Lifecycle
 

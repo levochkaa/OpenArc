@@ -617,21 +617,33 @@ enum BrowserWindowMode: Equatable {
         let fallbackSpaceID = fallbackSpaceID(afterDeletingSpaceAt: spaceIndex)
         if selectedSpaceID == spaceID {
             selectedSpaceID = fallbackSpaceID
-            selectActiveTabForSelectedSpace()
+            if selectedTab?.placement != .app {
+                selectActiveTabForSelectedSpace()
+            }
         }
 
         let wasPersistenceEnabled = isPersistenceEnabled
         isPersistenceEnabled = false
-        for tabID in tabs.filter({ $0.spaceID == spaceID }).map(\.id) {
+        for tabID in tabs.filter({ $0.spaceID == spaceID && $0.placement != .app }).map(\.id) {
             closeTab(id: tabID, registersUndo: false)
         }
         isPersistenceEnabled = wasPersistenceEnabled
 
+        if let fallbackSpaceID {
+            for index in tabs.indices where tabs[index].placement == .app && tabs[index].spaceID == spaceID {
+                // Favorites are global. Their remembered Space only provides a
+                // valid selection/restore context; it does not own their lifetime.
+                tabs[index].spaceID = fallbackSpaceID
+            }
+        }
         spaces.removeAll { $0.id == spaceID }
         pinnedTabFolders.removeAll { $0.spaceID == spaceID }
         if selectedSpaceID == spaceID || selectedSpaceID == nil {
             selectedSpaceID = spaces.first?.id
             selectActiveTabForSelectedSpace()
+        }
+        if let selectedTab, selectedTab.placement == .app {
+            setSelectedTabID(selectedTab.id, forSpaceID: selectedSpaceID)
         }
 
         updateWindowTitle()

@@ -160,6 +160,81 @@ import Testing
         await second.disconnect()
         try await fixture.complete(account)
     }
+
+    @Test func globalFavoriteSurvivesHistoricalSpaceDeletionUntilExplicitTabDeletion() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("global-favorite")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        let historicalSpace = BrowserSpaceSessionSnapshot(
+            id: UUID().uuidString,
+            title: "Historical",
+            systemImageName: "clock"
+        )
+        let remainingSpace = BrowserSpaceSessionSnapshot(
+            id: UUID().uuidString,
+            title: "Remaining",
+            systemImageName: "globe"
+        )
+        let favorite = BrowserTabSessionSnapshotTab(
+            id: UUID().uuidString, urlString: "https://favorite.example", userTitleOverride: "Favorite",
+            placement: .app, spaceID: historicalSpace.id
+        )
+        let ordinaryChild = BrowserTabSessionSnapshotTab(
+            id: UUID().uuidString, urlString: "https://ordinary.example", spaceID: historicalSpace.id
+        )
+        let survivor = BrowserTabSessionSnapshotTab(
+            id: UUID().uuidString, urlString: "https://survivor.example", spaceID: remainingSpace.id
+        )
+        let initial = BrowserTabSessionSnapshot(
+            spaces: [historicalSpace, remainingSpace], tabs: [favorite, ordinaryChild, survivor]
+        )
+        first.store.saveSnapshot(initial)
+        await first.activate()
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        #expect(second.store.loadSnapshot()?.tabs == initial.tabs)
+
+        let afterSpaceDeletion = BrowserTabSessionSnapshot(spaces: [remainingSpace], tabs: [favorite, survivor])
+        await first.saveAndSend(afterSpaceDeletion)
+        await second.pull()
+        #expect(first.store.loadSnapshot()?.tabs == afterSpaceDeletion.tabs)
+        #expect(second.store.loadSnapshot()?.tabs == afterSpaceDeletion.tabs)
+        #expect(second.store.loadSnapshot()?.spaces?.map(\.id) == [remainingSpace.id])
+        let stateAfterSpaceDeletion = try await fixture.inspect(account)
+        let favoriteRow = try #require(stateAfterSpaceDeletion.tabs.first { $0.id == favorite.id })
+        #expect(!favoriteRow.deleted && !favoriteRow.tombstoned)
+        #expect(stateAfterSpaceDeletion.tabs.first { $0.id == ordinaryChild.id }?.tombstoned == true)
+
+        let remoteFavorite = try #require(second.store.loadSnapshot()?.tabs.first { $0.id == favorite.id })
+        try #require(remoteFavorite.spaceID == historicalSpace.id)
+        let renamedFavorite = BrowserTabSessionSnapshotTab(
+            id: remoteFavorite.id, urlString: remoteFavorite.urlString, userTitleOverride: "Renamed global Favorite",
+            placement: .app, spaceID: remoteFavorite.spaceID
+        )
+        let renamed = BrowserTabSessionSnapshot(spaces: [remainingSpace], tabs: [renamedFavorite, survivor])
+        await second.saveAndSend(renamed)
+        await first.pull()
+        #expect(first.store.loadSnapshot()?.tabs == renamed.tabs)
+        #expect(second.store.loadSnapshot()?.tabs == renamed.tabs)
+        let stateAfterRename = try await fixture.inspect(account)
+        #expect(stateAfterRename.tabs.first { $0.id == favorite.id }?.title == "Renamed global Favorite")
+        #expect(stateAfterRename.tabs.filter { !$0.deleted }.map(\.id) == renamed.tabs.compactMap(\.id))
+
+        let afterExplicitDeletion = BrowserTabSessionSnapshot(spaces: [remainingSpace], tabs: [survivor])
+        await first.saveAndSend(afterExplicitDeletion)
+        await second.pull()
+        #expect(first.store.loadSnapshot()?.tabs == [survivor])
+        #expect(second.store.loadSnapshot()?.tabs == [survivor])
+        let finalState = try await fixture.inspect(account)
+        let deletedFavorite = try #require(finalState.tabs.first { $0.id == favorite.id })
+        #expect(deletedFavorite.deleted && deletedFavorite.tombstoned)
+        #expect(finalState.tabs.filter { !$0.deleted }.map(\.id) == [survivor.id].compactMap { $0 })
+        await first.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
 }
 
 // MARK: - SyncHTTPFixture
@@ -185,6 +260,7 @@ private struct SyncHTTPFixture: Decodable {
             let rank: Double
             let title: String?
             let deleted: Bool
+            let tombstoned: Bool
         }
 
         struct Attempt: Decodable {

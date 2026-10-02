@@ -113,7 +113,7 @@ const baseURL = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
 type Device = { deviceID: string; userID: string; accessToken: string };
 type Account = { scenario: string; userID: string; devices: Device[] };
 const accounts: Account[] = [];
-for (const scenario of ["offline-delete", "lost-ack", "edit-during-ack"]) {
+for (const scenario of ["offline-delete", "lost-ack", "edit-during-ack", "global-favorite"]) {
   const result = await pool.query("INSERT INTO app_users (apple_subject) VALUES ($1) RETURNING id", [`swift-${randomUUID()}`]);
   const userID = result.rows[0].id as string;
   const accessToken = await auth.issueAccessToken(userID);
@@ -135,7 +135,12 @@ async function inspect(userID: string) {
   const [events, receipts, tabs] = await Promise.all([
     pool.query("SELECT count(*)::int AS count FROM sync_events WHERE user_id = $1", [userID]),
     pool.query("SELECT count(*)::int AS count FROM sync_mutation_receipts WHERE user_id = $1", [userID]),
-    pool.query("SELECT id, rank, user_title_override AS title, deleted_at IS NOT NULL AS deleted FROM tabs WHERE user_id = $1 ORDER BY rank, id", [userID])
+    pool.query(`
+      SELECT t.id, t.rank, t.user_title_override AS title, t.deleted_at IS NOT NULL AS deleted,
+        EXISTS (SELECT 1 FROM sync_tombstones s
+          WHERE s.user_id = t.user_id AND s.entity_type = 'tab' AND s.entity_id = t.id) AS tombstoned
+      FROM tabs t WHERE t.user_id = $1 ORDER BY t.rank, t.id
+    `, [userID])
   ]);
   const deviceIDs = new Set(accounts.find((account) => account.userID === userID)!.devices.map((device) => device.deviceID));
   return {

@@ -521,6 +521,38 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     assert.equal(unpinned.events[0].data.pinnedURLString, null);
     assert.equal((await pool.query("SELECT pinned_url_string FROM tabs WHERE user_id = $1 AND id = $2", [id, tabID])).rows[0].pinned_url_string, null);
   });
+
+  it("keeps global Favorites after deleting their historical space while explicit tab deletion remains terminal", async () => {
+    const { id, devices: [a, b] } = await account();
+    const spaceID = randomUUID();
+    const favoriteID = randomUUID();
+    const childID = randomUUID();
+    await pushV2(a, randomUUID(), [space(spaceID), tab(favoriteID, spaceID, { placement: "app" }), tab(childID, spaceID)]);
+    const deletedSpace = await pushV2(a, randomUUID(), [deletion("space", spaceID)]);
+    assert.ok(deletedSpace.events.some((event) => event.entityID === childID && event.op === "delete"));
+    assert.equal(deletedSpace.events.some((event) => event.entityID === favoriteID), false);
+    await assertDeleted(id, "space", [spaceID]);
+    await assertDeleted(id, "tab", [childID]);
+    assert.deepEqual(liveEntityIDs(await allEvents(b), "tab"), [favoriteID]);
+
+    const retryID = randomUUID();
+    const staleFavorite = [tab(favoriteID, spaceID, { placement: "app", title: "Favorite after space deletion" })];
+    const updated = await pushV2(b, retryID, staleFavorite);
+    assert.equal(updated.events[0].op, "upsert");
+    assert.equal(updated.events[0].data.placement, "app");
+    assert.deepEqual(await pushV2(b, retryID, staleFavorite), updated);
+    await push(a, [deletion("space", spaceID)]);
+    assert.deepEqual(liveEntityIDs(await allEvents(b), "tab"), [favoriteID]);
+    const storedFavorite = await pool.query("SELECT title, deleted_at FROM tabs WHERE user_id = $1 AND id = $2", [id, favoriteID]);
+    assert.equal(storedFavorite.rows[0].title, "Favorite after space deletion");
+    assert.equal(storedFavorite.rows[0].deleted_at, null);
+
+    const explicitDelete = await pushV2(a, randomUUID(), [deletion("tab", favoriteID)]);
+    const staleAfterDelete = await pushV2(b, randomUUID(), staleFavorite);
+    assert.deepEqual(staleAfterDelete.events, explicitDelete.events);
+    await assertDeleted(id, "tab", [favoriteID]);
+    assert.deepEqual(liveEntityIDs(await allEvents(b), "tab"), []);
+  });
 });
 
 function space(entityID: string): SyncChange {
