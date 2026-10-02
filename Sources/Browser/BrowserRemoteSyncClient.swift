@@ -88,6 +88,26 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         )
     }
 
+    /// Transport foundation only. The durable coordinator continues to send its
+    /// immutable v2 queue until semantic capture and mixed-version overlay exist.
+    func push(
+        mutation: BrowserSyncSemanticMutation,
+        authSession: BrowserAuthSession
+    ) async throws -> BrowserSyncSemanticPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        let response: BrowserSyncSemanticPushResponse = try await send(
+            path: "/v1/sync/push", method: "POST",
+            body: BrowserSyncSemanticPushRequest(
+                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations
+            ), accessToken: authSession.accessToken
+        )
+        guard response.protocolVersion == 3, response.mutationID == mutation.id,
+              response.cursor >= 0, response.outcomes.count == mutation.operations.count,
+              Set(response.outcomes.map(\.operationIndex)) == Set(mutation.operations.indices)
+        else { throw BrowserRemoteSyncError.invalidMutationReceipt }
+        return response
+    }
+
     // MARK: Private
 
     private static let encoder = JSONEncoder()

@@ -316,15 +316,17 @@ struct BrowserSyncPullRequest: Encodable {
 struct BrowserSyncPullResponse: Decodable {
     // MARK: Lifecycle
 
-    init(cursor: Int, events: [BrowserSyncEvent], protocolVersion: Int? = 2) {
+    init(cursor: Int, events: [BrowserSyncEvent], protocolVersion: Int? = 2, supportedPushVersions: [Int]? = nil) {
         self.cursor = cursor
         self.events = events
         self.protocolVersion = protocolVersion
+        self.supportedPushVersions = supportedPushVersions
     }
 
     // MARK: Internal
 
     let protocolVersion: Int?
+    let supportedPushVersions: [Int]?
     let cursor: Int
     let events: [BrowserSyncEvent]
 }
