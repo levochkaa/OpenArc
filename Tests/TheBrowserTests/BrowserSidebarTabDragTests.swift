@@ -86,8 +86,78 @@ import Testing
         ))
         #expect(f.pinnedNames() == ["one", "b", "a", "two"])
         #expect(f.model.tabs.first { $0.id == f.id("one") }?.pinnedFolderID == nil)
-        #expect(f.model
-            .sidebarMovePlan(payload: f.payload("one", "b"), destination: .init(container: .temporary("s"))) == nil)
+        #expect(f.model.commitSidebarDrop(
+            payload: f.payload("b", "one"),
+            destination: .init(container: .temporary("s"), beforeItem: f.item("y"))
+        ))
+        #expect(f.names(f.model.temporaryTabs) == ["x", "one", "b", "y"])
+        #expect(f.pinnedNames() == ["a", "two"])
+    }
+
+    @Test func multiSelectionMovesMixedRowsAcrossSpacesWithoutReplacingDestinationSelection() throws {
+        let f = SidebarDragFixture(
+            pinned: [("one", "folder"), ("two", "folder"), ("root", nil)],
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+        )
+        f.model.selectTab(id: f.id("one"))
+        let payload = f.payload("x", "two", "one")
+        f.model.selectSpace(id: "t")
+        f.model.createNewTab()
+        f.driver.flushPendingCreateEvents()
+        let activeID = try #require(f.model.selectedTabID)
+        let saves = f.store.savedSnapshots.count
+        #expect(f.model.commitSidebarDrop(
+            payload: payload,
+            destination: .init(container: .temporary("t"), beforeItem: .tab(activeID))
+        ))
+        #expect(f.model.temporaryTabs.map(\.id) == [f.id("one"), f.id("two"), f.id("x"), activeID])
+        #expect(f.model.selectedTabID == activeID)
+        #expect(f.model.pinnedTabFolders.isEmpty)
+        #expect(f.model.tabs.filter { payload.tabIDs.contains($0.id) }.allSatisfy {
+            $0.spaceID == "t" && $0.placement == .temporary && $0.pinnedFolderID == nil && $0.pinnedURLString == nil
+        })
+        #expect(f.model.spaces.first { $0.id == "s" }?.selectedTabID != f.id("one"))
+        #expect(f.store.savedSnapshots.count == saves + 1)
+    }
+
+    @Test func groupDropPreservesIncomingTabsAndRejectsMissingMembers() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        let payload = f.payload("y", "x")
+        let target = BrowserSidebarDropDestination(container: .temporary("s"))
+        #expect(f.model.sidebarMovePlan(payload: payload, destination: target) != nil)
+        f.model.createNewTab()
+        f.driver.flushPendingCreateEvents()
+        let incoming = try #require(f.model.selectedTabID)
+        #expect(f.model.commitSidebarDrop(payload: payload, destination: target))
+        #expect(f.model.temporaryTabs.map(\.id) == [f.id("z"), incoming, f.id("x"), f.id("y")])
+        #expect(f.model.sidebarMovePlan(payload: payload, destination: .init(container: .app)) == nil)
+        f.model.closeTab(id: f.id("x"))
+        let before = f.model.sidebarSnapshot
+        #expect(!f.model.commitSidebarDrop(payload: payload, destination: .init(container: .pinned("s"))))
+        #expect(f.model.sidebarSnapshot == before)
+    }
+
+    @Test func everyTemporaryGapAndPayloadProducesTheReferenceOrder() throws {
+        let f = SidebarDragFixture(pinned: [], temporary: ["a", "b", "c", "d"])
+        let names = ["a", "b", "c", "d"]
+        for mask in 1..<16 {
+            let moving = names.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element)
+            let payload = try BrowserSidebarDragPayload(
+                primary: f.item(#require(moving.last)),
+                tabIDs: Set(moving.map(f.id))
+            )
+            for insertion in 0...names.count {
+                let destination = BrowserSidebarDropDestination(
+                    container: .temporary("s"),
+                    beforeItem: insertion < names.count ? f.item(names[insertion]) : nil
+                )
+                var expected = names.filter { !moving.contains($0) }
+                let beforeCount = names.prefix(insertion).filter { !moving.contains($0) }.count
+                expected.insert(contentsOf: moving, at: beforeCount)
+                let plan = f.model.sidebarMovePlan(payload: payload, destination: destination)
+                #expect(plan.map { f.names($0.tabs) } == (expected == names ? nil : expected))
+            }
+        }
     }
 
     @Test func appCapacityAndNoOpDoNotAdvertiseAnotherDestination() {

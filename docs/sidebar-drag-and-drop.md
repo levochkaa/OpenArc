@@ -4,7 +4,7 @@ The drag implementation uses AppKit events and a shared tab tree. A drop destina
 
 ## Interaction contract
 
-- Dragging between temporary, pinned and app tabs changes placement using the existing model rules. App capacity and the current restrictions on multi-selection remain enforced.
+- Dragging between temporary, pinned and app tabs changes placement using the existing model rules. App capacity remains enforced; app-grid drops accept one tab. Command-click toggles selection across pinned and temporary rows, and Shift-click selects a range in visible tree order. Hidden collapsed children are not added by a range selection. Groups preserve their relative order when moving between pinned folders, temporary sections and spaces.
 - The pointer chooses the destination. A list shows one insertion cue in the real gap; list items do not reorder during hover.
 - Dropping on a space header inserts at the start of its pinned section. Dropping on a folder body inserts at the start of that folder. Both use a stronger row highlight, not an insertion line.
 - Expanded folder children support insertion between siblings. An outside insertion follows the entire visible subtree, not the folder header. A collapsed folder's visible gap has one destination even when hidden children lie between the visible siblings.
@@ -56,7 +56,7 @@ Run the normal **Build** and **Test** actions:
 ./build.sh test
 ```
 
-The Swift Testing suite covers semantic model moves, every root insertion gap for all nonempty subsets of four tabs, nested and collapsed folders, missing anchors, capacity/no-op rejection, cross-space selection and activity preservation. It also checks that repeated motion inside one destination does not trigger replanning, layout changes or repeated haptics.
+The Swift Testing suite covers semantic model moves, every pinned/temporary root insertion gap for all nonempty subsets of four tabs, mixed group moves across spaces, incoming/missing tabs, native modifier selection, nested and collapsed folders, missing anchors, capacity/no-op rejection, cross-space selection and activity preservation. It also checks that repeated motion inside one destination does not trigger replanning, layout changes or repeated haptics.
 
 `BrowserNativeSidebarDragTests` instantiates the actual sidebar in an offscreen window that is never ordered or activated. It calls the same native drag methods/responders and checks geometry, model commits, scrolling, cancellation, landing and immediate re-grabs. Its native render captures are written to `/tmp/thebrowser-drag-gap.png`, `/tmp/thebrowser-drag-grid.png`, `/tmp/thebrowser-drag-scroll.png` and `/tmp/thebrowser-drag-folder.png`.
 

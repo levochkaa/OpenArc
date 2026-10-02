@@ -302,16 +302,16 @@ final class BrowserNativeSidebarNSView: NSView {
         switch item {
         case .tab(let id):
             guard state.snapshot.containsTab(withID: id) else { return false }
-            if state.selectedPinnedTabIDs.contains(id) {
-                ids = state.selectedPinnedTabIDs
+            if state.selectedSidebarTabIDs.contains(id) {
+                ids = state.selectedSidebarTabIDs
             } else {
-                state.clearPinnedTabSelection()
+                state.clearSidebarTabSelection()
                 ids = [id]
             }
         case .folder(let id):
             guard let folder = tree.folders[id] else { return false }
             ids = Set(tree.tabIDs(in: .pinned(folder.spaceID, folderID: id)))
-            state.clearPinnedTabSelection()
+            state.clearSidebarTabSelection()
         }
         state.dismissRenamingIfNeeded(in: window)
         state.drag.begin(
@@ -736,7 +736,7 @@ final class BrowserNativeSidebarNSView: NSView {
             tab: tab,
             appTile: isApp,
             selected: selected,
-            multiSelected: state.selectedPinnedTabIDs.contains(tab.id),
+            multiSelected: state.selectedSidebarTabIDs.contains(tab.id),
             renaming: state.renamingTabID == tab.id,
             indentLevel: indent,
             isResizing: state.isSidebarResizing,
@@ -750,6 +750,11 @@ final class BrowserNativeSidebarNSView: NSView {
                 state.dismissRenamingIfNeeded()
             }
             state.handleSidebarTabSelection(tab, in: section)
+        }
+        row.onModifiedSelect = { [weak state] modifiers in
+            guard let state else { return }
+            state.dismissRenamingIfNeeded()
+            state.handleSidebarTabSelection(tab, in: section, modifiers: modifiers)
         }
         row.onBeginRename = { [weak state] in
             if isApp {
@@ -876,12 +881,12 @@ final class BrowserNativeSidebarNSView: NSView {
         return BrowserNativeMenus.space(
             space,
             canDelete: state.snapshot.spaces.count > 1,
-            onRename: { [weak state] in state?.clearPinnedTabSelection()
+            onRename: { [weak state] in state?.clearSidebarTabSelection()
                 state?.beginRenamingSpace(id: space.id)
             },
             onChangeIcon: { model.setIcon($0, forSpaceID: space.id) },
             onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
-                state?.clearPinnedTabSelection()
+                state?.clearSidebarTabSelection()
                 model.deleteSpace(id: space.id)
             }
         )

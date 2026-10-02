@@ -20,8 +20,8 @@ import AppKit
     var isSidebarResizing = false
     var onChange: (Bool) -> Void = { _ in }
     let drag: BrowserSidebarDragState
-    var selectedPinnedTabIDs = Set<String>() { didSet { invalidate() } }
-    var pinnedTabSelectionAnchorID: String?
+    var selectedSidebarTabIDs = Set<String>() { didSet { invalidate() } }
+    var sidebarTabSelectionAnchorID: String?
     var spacePagerRawDragTranslation: CGFloat = 0
     var renameDismissSuppressedUntil = Date.distantPast
 
@@ -98,7 +98,11 @@ import AppKit
         snapshot = newSnapshot
         updateRevealedPinnedFolderTabs(for: snapshot)
         drag.modelDidChange()
-        selectedPinnedTabIDs.formIntersection(Set(snapshot.spacePinnedTabs.map(\.id)))
+        let listTabIDs = Set((snapshot.spacePinnedTabs + snapshot.temporaryTabs).map(\.id))
+        selectedSidebarTabIDs.formIntersection(listTabIDs)
+        if let anchor = sidebarTabSelectionAnchorID, !listTabIDs.contains(anchor) {
+            sidebarTabSelectionAnchorID = nil
+        }
         if let draggedTabID, !snapshot.containsTab(withID: draggedTabID) {
             clearTabDragState()
         }
@@ -387,32 +391,33 @@ import AppKit
 
     func toggleCommandBar() {
         dismissRenamingIfNeeded()
-        clearPinnedTabSelection()
+        clearSidebarTabSelection()
         model.toggleCommandBar()
     }
 
     func handleSidebarTabSelection(
         _ tab: BrowserChromeModel.Tab,
-        in section: BrowserSidebarTabSection
+        in section: BrowserSidebarTabSection,
+        modifiers: NSEvent.ModifierFlags = []
     ) {
-        guard section == .spacePinned else {
-            clearPinnedTabSelection()
+        guard section != .app else {
+            clearSidebarTabSelection()
             model.selectTab(id: tab.id)
             return
         }
 
-        let modifiers = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
         if modifiers.contains(.shift) {
-            selectPinnedTabRange(endingAt: tab.id)
+            selectSidebarTabRange(endingAt: tab.id)
             return
         }
 
         if modifiers.contains(.command) {
-            togglePinnedTabSelection(tab.id)
+            toggleSidebarTabSelection(tab.id)
             return
         }
 
-        clearPinnedTabSelection()
+        clearSidebarTabSelection()
+        sidebarTabSelectionAnchorID = tab.id
         model.selectTab(id: tab.id)
     }
 
@@ -445,35 +450,36 @@ import AppKit
         revealedPinnedFolderTabIDsByFolderID = updatedRevealedTabIDsByFolderID
     }
 
-    func togglePinnedTabSelection(_ tabID: String) {
-        if selectedPinnedTabIDs.contains(tabID) {
-            selectedPinnedTabIDs.remove(tabID)
+    func toggleSidebarTabSelection(_ tabID: String) {
+        guard visibleSidebarTabIDs.contains(tabID) else { return }
+        if selectedSidebarTabIDs.contains(tabID) {
+            selectedSidebarTabIDs.remove(tabID)
         } else {
-            selectedPinnedTabIDs.insert(tabID)
-            pinnedTabSelectionAnchorID = pinnedTabSelectionAnchorID ?? tabID
+            selectedSidebarTabIDs.insert(tabID)
+            sidebarTabSelectionAnchorID = sidebarTabSelectionAnchorID ?? tabID
         }
 
-        if selectedPinnedTabIDs.isEmpty {
-            pinnedTabSelectionAnchorID = nil
+        if selectedSidebarTabIDs.isEmpty {
+            sidebarTabSelectionAnchorID = nil
         }
     }
 
-    func selectPinnedTabRange(endingAt tabID: String) {
-        let pinnedTabIDs = snapshot.spacePinnedTabs.map(\.id)
-        guard let endIndex = pinnedTabIDs.firstIndex(of: tabID) else {
+    func selectSidebarTabRange(endingAt tabID: String) {
+        let listTabIDs = visibleSidebarTabIDs
+        guard let endIndex = listTabIDs.firstIndex(of: tabID) else {
             return
         }
 
-        let anchorID = pinnedTabSelectionAnchorID ?? tabID
-        let startIndex = pinnedTabIDs.firstIndex(of: anchorID) ?? endIndex
+        let anchorID = sidebarTabSelectionAnchorID ?? snapshot.selectedTabID ?? tabID
+        let startIndex = listTabIDs.firstIndex(of: anchorID) ?? endIndex
         let range = min(startIndex, endIndex)...max(startIndex, endIndex)
-        selectedPinnedTabIDs.formUnion(pinnedTabIDs[range])
-        pinnedTabSelectionAnchorID = anchorID
+        selectedSidebarTabIDs.formUnion(listTabIDs[range])
+        sidebarTabSelectionAnchorID = anchorID
     }
 
-    func clearPinnedTabSelection() {
-        selectedPinnedTabIDs.removeAll()
-        pinnedTabSelectionAnchorID = nil
+    func clearSidebarTabSelection() {
+        selectedSidebarTabIDs.removeAll()
+        sidebarTabSelectionAnchorID = nil
     }
 
     func pinnedTabFolderCreationTabIDs(
@@ -488,7 +494,7 @@ import AppKit
         return BrowserSidebarPinnedTabFolderCreationSelection(
             clickedTabID: tabID,
             activeTabID: snapshot.selectedTabID,
-            selectedTabIDs: selectedPinnedTabIDs,
+            selectedTabIDs: selectedSidebarTabIDs,
             listTabIDs: listTabIDs
         )
         .tabIDs
@@ -500,7 +506,7 @@ import AppKit
         }
 
         dismissRenamingIfNeeded()
-        clearPinnedTabSelection()
+        clearSidebarTabSelection()
         withSidebarAnimation {
             _ = model.createPinnedTabFolder(containingTabIDs: tabIDs)
         }
@@ -685,4 +691,22 @@ import AppKit
 
     private var updateScheduled = false
     private var shouldAnimate = false
+
+    private var visibleSidebarTabIDs: [String] {
+        guard let spaceID = snapshot.selectedSpaceID else { return [] }
+        let collapsed = model.supportsSpaces && snapshot.isPinnedSectionCollapsed(in: spaceID)
+        let pinnedIDs: [String] = collapsed
+            ? []
+            : snapshot.visiblePinnedRows(
+                in: spaceID,
+                revealedTabIDsByFolderID: revealedPinnedFolderTabIDsByFolderID
+            )
+            .compactMap { row in
+                if case .tab(let value) = row {
+                    return value.tab.id
+                }
+                return nil
+            }
+        return pinnedIDs + snapshot.temporaryTabs.map(\.id)
+    }
 }

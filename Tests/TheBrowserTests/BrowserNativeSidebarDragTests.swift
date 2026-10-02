@@ -274,6 +274,27 @@ import Testing
         #expect(h.rows.filter(\.isInteractionEnabled).allSatisfy { $0.dragOpacity == 1 })
     }
 
+    @Test func temporaryMultiSelectionDragsAndLandsAsAStableGroup() async throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        h.state.toggleSidebarTabSelection(f.id("y"))
+        h.state.toggleSidebarTabSelection(f.id("x"))
+        try h.begin("y")
+        #expect(h.state.drag.payload?.tabIDs == Set([f.id("x"), f.id("y")]))
+        let geometry = try #require(h.state.drag.geometry)
+        let target = try #require(geometry.slots.first {
+            $0.proposal.destination == .init(container: .temporary("s"))
+        })
+        h.move(target.hitFrame.center)
+        #expect(h.state.drag.proposal?.destination == target.proposal.destination)
+        h.release(target.hitFrame.center)
+        #expect(f.names(f.model.temporaryTabs) == ["z", "x", "y"])
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(h.state.drag.phase == .idle)
+        #expect(h.rows.allSatisfy { $0.dragOpacity == 1 && !$0.isDragging })
+    }
+
     @Test func windowDeactivationCancelsOnlyTheOwnedSession() {
         let window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

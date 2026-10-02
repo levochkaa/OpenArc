@@ -37,6 +37,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         onClick = { [weak self] event in self?.primaryClick(event) }
         onDoubleClick = { [weak self] event in
             guard let self else { return }
+            if kind == .tab, let event, !event.modifierFlags.intersection([.command, .shift]).isEmpty {
+                primaryClick(event)
+                return
+            }
             if kind == .folder {
                 onBeginRename()
             } else if kind == .tab {
@@ -66,6 +70,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private(set) var kind = Kind.tab
     private(set) var isRenaming = false
     var onSelect: () -> Void = {}
+    var onModifiedSelect: (NSEvent.ModifierFlags) -> Void = { _ in }
     var onBeginRename: () -> Void = {}
     var onCommitRename: (String) -> Void = { _ in }
     var onCancelRename: () -> Void = {}
@@ -460,6 +465,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         guard !isRenaming else { return }
         switch kind {
         case .tab:
+            if let event, !event.modifierFlags.intersection([.command, .shift]).isEmpty {
+                onModifiedSelect(event.modifierFlags.intersection(.deviceIndependentFlagsMask))
+                return
+            }
             if splitPinnedControls, let event {
                 let point = convert(event.locationInWindow, from: nil)
                 if point.x >= indent, point.x < indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize {

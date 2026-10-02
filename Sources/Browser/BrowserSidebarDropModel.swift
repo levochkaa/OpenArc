@@ -173,7 +173,7 @@ struct BrowserSidebarTabTree {
         switch payload.primary {
         case .tab(let primary):
             guard payload.tabIDs.contains(primary), !payload.tabIDs.isEmpty,
-                  payload.tabIDs.count == 1 || target.section == .spacePinned else { return nil }
+                  payload.tabIDs.count == 1 || target.section != .app else { return nil }
             movingItems = tree.orderedTabIDs().filter { payload.tabIDs.contains($0) }.map { .tab($0) }
             guard movingItems.count == payload.tabIDs.count else { return nil }
             for id in payload.tabIDs {

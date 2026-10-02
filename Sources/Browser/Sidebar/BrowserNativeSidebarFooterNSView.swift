@@ -26,7 +26,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         createButton.tooltipPlacement = .aboveCapsule
         createButton.onAction = { [weak state] in
             state?.dismissRenamingIfNeeded()
-            state?.clearPinnedTabSelection()
+            state?.clearSidebarTabSelection()
             state?.model.createNewSpace()
         }
         toast.onInstall = { [weak updateController] in updateController?.installDownloadedUpdateNow() }
@@ -127,18 +127,18 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             button.setAccessibilityIdentifier("browser.sidebar.select-space.\(space.id)")
             button.onAction = { [weak state] in
                 state?.dismissRenamingIfNeeded()
-                state?.clearPinnedTabSelection()
+                state?.clearSidebarTabSelection()
                 model.selectSpace(id: space.id)
             }
             button.menu = BrowserNativeMenus.space(
                 space,
                 canDelete: spaces.count > 1,
-                onRename: { [weak state] in state?.clearPinnedTabSelection()
+                onRename: { [weak state] in state?.clearSidebarTabSelection()
                     state?.beginRenamingSpace(id: space.id)
                 },
                 onChangeIcon: { model.setIcon($0, forSpaceID: space.id) },
                 onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
-                    state?.clearPinnedTabSelection()
+                    state?.clearSidebarTabSelection()
                     model.deleteSpace(id: space.id)
                 }
             )

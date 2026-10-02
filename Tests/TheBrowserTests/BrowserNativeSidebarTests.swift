@@ -56,12 +56,80 @@ import Testing
         let state = BrowserNativeSidebarState(model: model, snapshot: snapshot(model), sidebarWidth: 240)
         let pinned = try #require(model.spacePinnedTabs.first)
         let clicked = try #require(model.temporaryTabs.first)
-        state.selectedPinnedTabIDs = [pinned.id]
+        state.selectedSidebarTabIDs = [pinned.id]
         let ids = state.pinnedTabFolderCreationTabIDs(fromTabID: clicked.id, in: .temporary)
         #expect(ids.contains(clicked.id))
         #expect(ids.contains(pinned.id))
         #expect(try ids.contains(#require(model.selectedTabID)))
         #expect(state.pinnedTabFolderCreationTabIDs(fromTabID: clicked.id, in: .app).isEmpty)
+    }
+
+    @Test func modifierSelectionIncludesTemporaryRowsAndSurvivesIncomingTabs() throws {
+        let f = SidebarDragFixture(apps: ["app"])
+        let state = BrowserNativeSidebarState(model: f.model, snapshot: f.model.sidebarSnapshot, sidebarWidth: 240)
+        let a = try #require(f.model.tabs.first { $0.id == f.id("a") })
+        let x = try #require(f.model.tabs.first { $0.id == f.id("x") })
+        let y = try #require(f.model.tabs.first { $0.id == f.id("y") })
+        state.handleSidebarTabSelection(a, in: .spacePinned, modifiers: .command)
+        state.handleSidebarTabSelection(x, in: .temporary, modifiers: .command)
+        #expect(state.selectedSidebarTabIDs == [a.id, x.id])
+        f.model.createNewTab()
+        f.driver.flushPendingCreateEvents()
+        state.update(snapshot: f.model.sidebarSnapshot, sidebarWidth: 240, isResizing: false)
+        #expect(state.selectedSidebarTabIDs == [a.id, x.id])
+        state.handleSidebarTabSelection(y, in: .temporary, modifiers: .shift)
+        #expect(state.selectedSidebarTabIDs == [a.id, f.id("b"), x.id, y.id])
+        state.toggleSidebarTabSelection(f.id("app"))
+        #expect(!state.selectedSidebarTabIDs.contains(f.id("app")))
+        f.model.selectSpace(id: "t")
+        state.update(snapshot: f.model.sidebarSnapshot, sidebarWidth: 240, isResizing: false)
+        #expect(state.selectedSidebarTabIDs.isEmpty)
+        #expect(state.sidebarTabSelectionAnchorID == nil)
+    }
+
+    @Test func shiftSelectionStartsAtActiveTabAndSkipsCollapsedFolderChildren() throws {
+        let f = SidebarDragFixture(
+            pinned: [("a", nil), ("hidden", "folder"), ("b", nil)],
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)]
+        )
+        f.model.selectTab(id: f.id("a"))
+        let state = BrowserNativeSidebarState(model: f.model, snapshot: f.model.sidebarSnapshot, sidebarWidth: 240)
+        let y = try #require(f.model.tabs.first { $0.id == f.id("y") })
+        state.handleSidebarTabSelection(y, in: .temporary, modifiers: .shift)
+        #expect(state.selectedSidebarTabIDs == Set(["a", "b", "x", "y"].map(f.id)))
+        #expect(!state.selectedSidebarTabIDs.contains(f.id("hidden")))
+    }
+
+    @Test func activeRowModifierClicksSelectInsteadOfRenamingOrResettingPinnedURL() throws {
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
+        var value = tab()
+        value.placement = .spacePinned
+        value.pinnedURLString = "https://pinned.example"
+        row.update(tab: value, selected: true, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        var modifiers = [NSEvent.ModifierFlags]()
+        var renames = 0
+        var resets = 0
+        row.onModifiedSelect = { modifiers.append($0) }
+        row.onBeginRename = { renames += 1 }
+        row.onBackToPinnedURL = { resets += 1 }
+        for flag in [NSEvent.ModifierFlags.command, .shift] {
+            let event = try #require(NSEvent.mouseEvent(
+                with: .leftMouseUp,
+                location: CGPoint(x: 10, y: 18),
+                modifierFlags: flag,
+                timestamp: 1,
+                windowNumber: 0,
+                context: nil,
+                eventNumber: 1,
+                clickCount: 1,
+                pressure: 0
+            ))
+            row.onClick(event)
+            row.onDoubleClick?(event)
+        }
+        #expect(modifiers == [.command, .command, .shift, .shift])
+        #expect(renames == 0)
+        #expect(resets == 0)
     }
 
     @Test func activeRowRenamesAndOtherRowsSelect() {
