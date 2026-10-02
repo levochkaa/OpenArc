@@ -1,4 +1,5 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import type pg from "pg";
 import { AuthService } from "./auth.service.js";
 import { DatabaseService } from "./database.service.js";
@@ -29,6 +30,22 @@ type SerializedSyncEvent = {
 };
 
 type QueryFunction = (text: string, params?: unknown[]) => Promise<Pick<pg.QueryResult, "rowCount">>;
+type SyncResponse = {
+  cursor: number;
+  events: SerializedSyncEvent[];
+  protocolVersion?: 2;
+  mutationID?: string;
+};
+
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).filter(([, value]) => value !== undefined)
+      .sort(([first], [second]) => first < second ? -1 : first > second ? 1 : 0)
+      .map(([key, value]) => [key, canonicalValue(value)]));
+  }
+  return value;
+}
 
 @Injectable()
 export class SyncService {
@@ -104,7 +121,7 @@ export class SyncService {
     return { device: this.serializeDevice(result.rows[0]) };
   }
 
-  async push(userID: string, body: SyncPushRequest): Promise<{ cursor: number; events: SerializedSyncEvent[] }> {
+  async push(userID: string, body: SyncPushRequest): Promise<SyncResponse> {
     const client = await this.database.connect();
 
     try {
@@ -114,6 +131,25 @@ export class SyncService {
       // this lock a later transaction can commit first and a pull skips the
       // earlier uncommitted events forever. It also serializes tombstone checks.
       await client.query("SELECT id FROM app_users WHERE id = $1 FOR UPDATE", [userID]);
+
+      // Parsed payloads have defaults applied and unknown fields stripped. Sort
+      // object keys, preserve change order, and exclude the replaceable device ID.
+      const digest = body.mutationID ? createHash("sha256")
+        .update(JSON.stringify(canonicalValue({ protocolVersion: body.protocolVersion, changes: body.changes })))
+        .digest("hex") : undefined;
+      if (body.mutationID) {
+        const receipt = await client.query(
+          "SELECT payload_digest, response FROM sync_mutation_receipts WHERE user_id = $1 AND mutation_id = $2",
+          [userID, body.mutationID]
+        );
+        if (receipt.rowCount) {
+          if (receipt.rows[0].payload_digest !== digest) {
+            throw new ConflictException("Mutation ID was already used for different content");
+          }
+          await client.query("COMMIT");
+          return receipt.rows[0].response as SyncResponse;
+        }
+      }
 
       const events: SerializedSyncEvent[] = [];
       // Snapshot diffs list deleted spaces before surviving tabs. Apply moves
@@ -131,14 +167,21 @@ export class SyncService {
       const cursorResult = await client.query(
         "SELECT COALESCE(MAX(server_seq), 0) AS cursor FROM sync_events WHERE user_id = $1", [userID]
       );
-      await client.query("COMMIT");
-
       // An acknowledgement is not a pull: events may include old authoritative
       // deletes. Clients must advance their pull cursor only after reading pull.
-      return {
+      const response: SyncResponse = {
         cursor: Number(cursorResult.rows[0].cursor),
-        events: events.sort((a, b) => a.serverSeq - b.serverSeq)
+        events: events.sort((a, b) => a.serverSeq - b.serverSeq),
+        ...(body.mutationID ? { protocolVersion: 2 as const, mutationID: body.mutationID } : {})
       };
+      if (body.mutationID) {
+        await client.query(
+          "INSERT INTO sync_mutation_receipts (user_id, mutation_id, payload_digest, response) VALUES ($1, $2, $3, $4)",
+          [userID, body.mutationID, digest, JSON.stringify(response)]
+        );
+      }
+      await client.query("COMMIT");
+      return response;
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -147,7 +190,7 @@ export class SyncService {
     }
   }
 
-  async pull(userID: string, body: SyncPullRequest): Promise<{ cursor: number; events: SerializedSyncEvent[] }> {
+  async pull(userID: string, body: SyncPullRequest): Promise<SyncResponse> {
     await this.assertDeviceBelongsToUser((text, params) => this.database.query(text, params), userID, body.deviceID);
 
     const result = await this.database.query(
@@ -165,7 +208,7 @@ export class SyncService {
     const cursor = events.length > 0 ? events[events.length - 1].serverSeq : body.cursor;
     await this.database.query("UPDATE devices SET last_seen_at = now() WHERE id = $1", [body.deviceID]);
 
-    return { cursor, events };
+    return { protocolVersion: 2, cursor, events };
   }
 
   private async assertDeviceBelongsToUser(query: QueryFunction, userID: string, deviceID: string): Promise<void> {
@@ -251,19 +294,33 @@ export class SyncService {
       return this.deleteEntity(client, userID, deviceID, "tab", change.entityID);
     }
 
+    let pinnedURLString: string | null = null;
+    if (change.data.placement === "spacePinned") {
+      if (change.data.pinnedURLString !== undefined) {
+        pinnedURLString = change.data.pinnedURLString;
+      } else {
+        const existing = await client.query(
+          "SELECT pinned_url_string FROM tabs WHERE user_id = $1 AND id = $2",
+          [userID, change.entityID]
+        );
+        pinnedURLString = existing.rows.length ? existing.rows[0].pinned_url_string as string | null : change.data.urlString;
+      }
+    }
+
     await client.query(
       `
         INSERT INTO tabs (
           id, user_id, space_id, placement, rank, url_string, title, user_title_override,
-          favicon_url_string, last_activity_at, deleted_at, updated_at, revision, updated_by_device_id
+          favicon_url_string, last_activity_at, deleted_at, updated_at, revision, updated_by_device_id, pinned_url_string
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, now(), 1, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, now(), 1, $11, $12)
         ON CONFLICT (user_id, id)
         DO UPDATE SET
           space_id = EXCLUDED.space_id,
           placement = EXCLUDED.placement,
           rank = EXCLUDED.rank,
           url_string = EXCLUDED.url_string,
+          pinned_url_string = EXCLUDED.pinned_url_string,
           title = EXCLUDED.title,
           user_title_override = EXCLUDED.user_title_override,
           favicon_url_string = EXCLUDED.favicon_url_string,
@@ -284,13 +341,15 @@ export class SyncService {
         change.data.userTitleOverride ?? null,
         change.data.faviconURLString ?? null,
         change.data.lastActivityAt ?? null,
-        deviceID
+        deviceID,
+        pinnedURLString
       ]
     );
 
     return [await this.insertSyncEvent(client, userID, deviceID, "tab", change.entityID, "upsert", {
       id: change.entityID,
-      ...change.data
+      ...change.data,
+      pinnedURLString
     })];
   }
 

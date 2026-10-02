@@ -25,6 +25,8 @@ export class SyncController {
       additionalProperties: false,
       properties: {
         deviceID: { type: "string", format: "uuid" },
+        protocolVersion: { type: "integer", enum: [2], description: "Supply together with mutationID for durable idempotent uploads." },
+        mutationID: { type: "string", format: "uuid", description: "Immutable mutation identity within an account." },
         changes: { type: "array", maxItems: 1000, items: { type: "object" } }
       }
     }

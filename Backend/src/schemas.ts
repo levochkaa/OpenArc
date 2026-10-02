@@ -25,6 +25,7 @@ export const TabPayload = z.object({
   placement: z.enum(["temporary", "spacePinned", "app"]),
   rank: z.number().finite(),
   urlString: z.string().min(1),
+  pinnedURLString: z.string().min(1).nullable().optional(),
   title: z.string().nullable().optional(),
   userTitleOverride: z.string().nullable().optional(),
   faviconURLString: z.string().nullable().optional(),
@@ -52,7 +53,13 @@ export const SyncChange = z.discriminatedUnion("entityType", [
 
 export const SyncPushRequest = z.object({
   deviceID: z.string().uuid(),
-  changes: z.array(SyncChange).max(1000)
+  changes: z.array(SyncChange).max(1000),
+  protocolVersion: z.literal(2).optional(),
+  mutationID: z.string().uuid().optional()
+}).superRefine((request, context) => {
+  if ((request.protocolVersion === undefined) !== (request.mutationID === undefined)) {
+    context.addIssue({ code: "custom", message: "protocolVersion 2 and mutationID must be supplied together" });
+  }
 });
 
 export const SyncPullRequest = z.object({

@@ -19,7 +19,7 @@ type SyncEvent = {
   op: "upsert" | "delete";
   data: Record<string, unknown>;
 };
-type SyncResponse = { cursor: number; events: SyncEvent[] };
+type SyncResponse = { cursor: number; events: SyncEvent[]; protocolVersion?: 2; mutationID?: string };
 type Device = { id: string; token: string };
 type Account = { id: string; devices: [Device, Device] };
 
@@ -116,6 +116,9 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
 
   const push = (device: Device, changes: SyncChange[]) => post<SyncResponse>("/v1/sync/push", device.token, { deviceID: device.id, changes });
   const pull = (device: Device, cursor = 0, limit = 500) => post<SyncResponse>("/v1/sync/pull", device.token, { deviceID: device.id, cursor, limit });
+  const pushV2 = (device: Device, mutationID: string, changes: SyncChange[]) => post<SyncResponse>("/v1/sync/push", device.token, {
+    deviceID: device.id, protocolVersion: 2, mutationID, changes
+  });
 
   async function allEvents(device: Device, cursor = 0, limit = 2): Promise<SyncEvent[]> {
     const events: SyncEvent[] = [];
@@ -155,7 +158,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     await post("/v1/sync/push", a.token, {
       deviceID: a.id, changes: [space(randomUUID()), { entityType: "tab", entityID: randomUUID(), op: "upsert" }]
     }, 400);
-    assert.deepEqual(await pull(a), { cursor: 0, events: [] });
+    assert.deepEqual(await pull(a), { protocolVersion: 2, cursor: 0, events: [] });
   });
 
   it("keeps a batch deleted when an offline client replays stale titles, ranks and placement", async () => {
@@ -369,8 +372,154 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
       await pool.query("DROP TRIGGER IF EXISTS sync_test_hold_event ON sync_events; DROP FUNCTION IF EXISTS sync_test_hold_event()");
     }
     assert.equal(secondFinishedWhileHeld, false, "Later account events must wait until earlier events commit");
-    assert.deepEqual(heldResponse, { cursor: 0, events: [] }, "Pull must not advance over an uncommitted event");
+    assert.deepEqual(heldResponse, { protocolVersion: 2, cursor: 0, events: [] }, "Pull must not advance over an uncommitted event");
     assert.deepEqual((await allEvents(b, 0, 1)).map((event) => event.entityID), [firstID, secondID]);
+  });
+
+  it("advertises v2 on pull and rejects incomplete or unsupported mutation envelopes", async () => {
+    const { devices: [a] } = await account();
+    assert.equal((await pull(a)).protocolVersion, 2);
+    for (const envelope of [
+      { protocolVersion: 2 }, { mutationID: randomUUID() },
+      { protocolVersion: 1, mutationID: randomUUID() }, { protocolVersion: 3, mutationID: randomUUID() },
+      { protocolVersion: 2, mutationID: "invalid" }
+    ]) {
+      await post("/v1/sync/push", a.token, { deviceID: a.id, changes: [space(randomUUID())], ...envelope }, 400);
+    }
+    assert.deepEqual((await pull(a)).events, []);
+  });
+
+  it("replays a lost v2 acknowledgement after a newer write without overwriting it", async () => {
+    const { id, devices: [a, b] } = await account();
+    const entityID = randomUUID();
+    const mutationID = randomUUID();
+    const original = await pushV2(a, mutationID, [space(entityID)]);
+    assert.equal(original.protocolVersion, 2);
+    assert.equal(original.mutationID, mutationID);
+    const newerChange = space(entityID);
+    newerChange.data!.title = "Newer remote title";
+    const newer = await push(b, [newerChange]);
+    const before = await allEvents(b);
+    const lastSeen = await pool.query("SELECT last_seen_at FROM devices WHERE id = $1", [a.id]);
+    const retry = await pushV2(a, mutationID, [space(entityID)]);
+    assert.deepEqual(retry, original);
+    assert.ok(retry.cursor < newer.cursor, "A receipt must preserve its original cursor");
+    assert.deepEqual(await allEvents(b), before);
+    assert.deepEqual((await pool.query("SELECT last_seen_at FROM devices WHERE id = $1", [a.id])).rows, lastSeen.rows);
+    assert.equal((await pool.query("SELECT title FROM spaces WHERE user_id = $1 AND id = $2", [id, entityID])).rows[0].title, "Newer remote title");
+  });
+
+  it("serializes concurrent duplicate v2 deliveries to one mutation and one receipt", async () => {
+    const { id, devices: [a, b] } = await account();
+    const mutationID = randomUUID();
+    const changes = [space(randomUUID())];
+    const results = await Promise.all([pushV2(a, mutationID, changes), pushV2(b, mutationID, changes), pushV2(a, mutationID, changes)]);
+    assert.deepEqual(results[0], results[1]);
+    assert.deepEqual(results[1], results[2]);
+    assert.equal((await allEvents(a)).length, 1);
+    assert.equal((await pool.query("SELECT count(*) FROM sync_mutation_receipts WHERE user_id = $1", [id])).rows[0].count, "1");
+  });
+
+  it("rejects mutation ID reuse with different parsed content and performs no writes", async () => {
+    const { id, devices: [a] } = await account();
+    const mutationID = randomUUID();
+    const changes = [space(randomUUID()), space(randomUUID())];
+    const original = await pushV2(a, mutationID, changes);
+    await post("/v1/sync/push", a.token, {
+      deviceID: a.id, protocolVersion: 2, mutationID, changes: [space(randomUUID())]
+    }, 409);
+    await post("/v1/sync/push", a.token, {
+      deviceID: a.id, protocolVersion: 2, mutationID, changes: [...changes].reverse()
+    }, 409);
+    assert.deepEqual((await allEvents(a)).map((event) => event.serverSeq), original.events.map((event) => event.serverSeq));
+    assert.equal((await pool.query("SELECT count(*) FROM sync_mutation_receipts WHERE user_id = $1", [id])).rows[0].count, "1");
+  });
+
+  it("binds receipts to the account, allows device rotation, and canonicalizes parsed key order/defaults", async () => {
+    const first = await account();
+    const second = await account();
+    const mutationID = randomUUID();
+    const entityID = randomUUID();
+    const original = await pushV2(first.devices[0], mutationID, [space(entityID)]);
+    const rotated = await register(first.id, "replacement after relogin");
+    const retry = await post<SyncResponse>("/v1/sync/push", rotated.token, {
+      changes: [{ op: "upsert", data: { rank: 0, systemImageName: "globe", title: "Integration space" }, entityID, entityType: "space" }],
+      mutationID, protocolVersion: 2, deviceID: rotated.id
+    });
+    assert.deepEqual(retry, original, "Default false and JSON key order do not change parsed mutation identity");
+    const other = await pushV2(second.devices[0], mutationID, [space(randomUUID())]);
+    assert.notDeepEqual(other.events, original.events);
+    assert.equal((await allEvents(first.devices[1])).length, 1);
+    assert.equal((await allEvents(second.devices[1])).length, 1);
+  });
+
+  it("rolls back entity changes, event log and receipt together when receipt storage fails", async () => {
+    const { id, devices: [a] } = await account();
+    const mutationID = randomUUID();
+    const entityID = randomUUID();
+    await pool.query(`
+      CREATE FUNCTION sync_test_reject_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'injected receipt failure'; END $$;
+      CREATE TRIGGER sync_test_reject_receipt BEFORE INSERT ON sync_mutation_receipts
+      FOR EACH ROW EXECUTE FUNCTION sync_test_reject_receipt();
+    `);
+    try {
+      await post("/v1/sync/push", a.token, { deviceID: a.id, protocolVersion: 2, mutationID, changes: [space(entityID)] }, 500);
+    } finally {
+      await pool.query("DROP TRIGGER sync_test_reject_receipt ON sync_mutation_receipts; DROP FUNCTION sync_test_reject_receipt()");
+    }
+    assert.deepEqual((await pull(a)).events, []);
+    assert.equal((await pool.query("SELECT count(*) FROM spaces WHERE user_id = $1", [id])).rows[0].count, "0");
+    assert.equal((await pool.query("SELECT count(*) FROM sync_mutation_receipts WHERE user_id = $1", [id])).rows[0].count, "0");
+    assert.equal((await pushV2(a, mutationID, [space(entityID)])).events.length, 1);
+  });
+
+  it("retains exact v2 receipt across a backend process restart after later deletion", async () => {
+    const { devices: [a, b] } = await account();
+    const mutationID = randomUUID();
+    const entityID = randomUUID();
+    const body = { deviceID: a.id, protocolVersion: 2, mutationID, changes: [space(entityID)] };
+    let server = await startServerProcess();
+    let original: SyncResponse;
+    try {
+      original = await post<SyncResponse>("/v1/sync/push", a.token, body, 201, server.url);
+    } finally { await server.stop(); }
+    await push(b, [deletion("space", entityID)]);
+    const before = await allEvents(b);
+    server = await startServerProcess();
+    try {
+      const retry = await post<SyncResponse>("/v1/sync/push", a.token, body, 201, server.url);
+      assert.deepEqual(retry, original);
+    } finally { await server.stop(); }
+    assert.deepEqual(await allEvents(b), before);
+    assert.deepEqual(liveEntityIDs(before, "space"), []);
+  });
+
+  it("persists pinned home URLs through pull and receipts while preserving legacy omission and explicit clearing", async () => {
+    const { id, devices: [a, b] } = await account();
+    const spaceID = randomUUID();
+    const tabID = randomUUID();
+    const mutationID = randomUUID();
+    const changes = [space(spaceID), tab(tabID, spaceID, {
+      placement: "spacePinned", urlString: "https://example.test/live", pinnedURLString: "https://example.test/home"
+    })];
+    const first = await pushV2(a, mutationID, changes);
+    assert.equal(first.events.at(-1)?.data.pinnedURLString, "https://example.test/home");
+    assert.equal((await allEvents(b)).at(-1)?.data.pinnedURLString, "https://example.test/home");
+    const legacyUpdate = await push(b, [tab(tabID, spaceID, { placement: "spacePinned", urlString: "https://example.test/next" })]);
+    assert.equal(legacyUpdate.events[0].data.pinnedURLString, "https://example.test/home");
+    assert.deepEqual(await pushV2(a, mutationID, changes), first);
+    assert.equal((await pool.query("SELECT url_string, pinned_url_string FROM tabs WHERE user_id = $1 AND id = $2", [id, tabID])).rows[0].url_string, "https://example.test/next");
+    const cleared = await pushV2(a, randomUUID(), [tab(tabID, spaceID, { placement: "spacePinned", pinnedURLString: null })]);
+    assert.equal(cleared.events[0].data.pinnedURLString, null);
+    const omittedAfterClear = await push(b, [tab(tabID, spaceID, { placement: "spacePinned" })]);
+    assert.equal(omittedAfterClear.events[0].data.pinnedURLString, null);
+    const newLegacyTab = await push(b, [tab(randomUUID(), spaceID, { placement: "spacePinned", urlString: "https://example.test/initial" })]);
+    assert.equal(newLegacyTab.events[0].data.pinnedURLString, "https://example.test/initial");
+    await pushV2(a, randomUUID(), [tab(tabID, spaceID, { placement: "spacePinned", pinnedURLString: "https://example.test/home" })]);
+    const unpinned = await pushV2(a, randomUUID(), [tab(tabID, spaceID, { placement: "temporary", pinnedURLString: "https://ignored.example" })]);
+    assert.equal(unpinned.events[0].data.pinnedURLString, null);
+    assert.equal((await pool.query("SELECT pinned_url_string FROM tabs WHERE user_id = $1 AND id = $2", [id, tabID])).rows[0].pinned_url_string, null);
   });
 });
 
