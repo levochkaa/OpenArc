@@ -293,6 +293,10 @@ components:
           nullable: true
           format: date-time
     SyncChange:
+      description: >-
+        Deleted entity IDs remain tombstoned. An ordinary upsert cannot restore
+        them and returns the authoritative delete event. Explicit user restore
+        creates a new entity ID. Push acknowledgements are not a pull cursor.
       oneOf:
         - type: object
           required: [entityType, entityID, op]

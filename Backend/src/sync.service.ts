@@ -110,17 +110,35 @@ export class SyncService {
     try {
       await client.query("BEGIN");
       await this.assertDeviceBelongsToUser((text, params) => client.query(text, params), userID, body.deviceID);
+      // Sequence allocation must follow commit order within an account. Without
+      // this lock a later transaction can commit first and a pull skips the
+      // earlier uncommitted events forever. It also serializes tombstone checks.
+      await client.query("SELECT id FROM app_users WHERE id = $1 FOR UPDATE", [userID]);
 
       const events: SerializedSyncEvent[] = [];
-      for (const change of body.changes) {
-        events.push(await this.applyChange(client, userID, body.deviceID, change));
+      // Snapshot diffs list deleted spaces before surviving tabs. Apply moves
+      // first so deleting the old space does not also delete a moved-out tab.
+      // Explicit deletes still dominate every upsert of the same ID in a batch.
+      const orderedChanges = [
+        ...body.changes.filter((change) => change.op === "upsert"),
+        ...body.changes.filter((change) => change.op === "delete")
+      ];
+      for (const change of orderedChanges) {
+        events.push(...await this.applyChange(client, userID, body.deviceID, change));
       }
 
       await client.query("UPDATE devices SET last_seen_at = now() WHERE id = $1", [body.deviceID]);
+      const cursorResult = await client.query(
+        "SELECT COALESCE(MAX(server_seq), 0) AS cursor FROM sync_events WHERE user_id = $1", [userID]
+      );
       await client.query("COMMIT");
 
-      const cursor = events.length > 0 ? events[events.length - 1].serverSeq : await this.currentCursor(userID);
-      return { cursor, events };
+      // An acknowledgement is not a pull: events may include old authoritative
+      // deletes. Clients must advance their pull cursor only after reading pull.
+      return {
+        cursor: Number(cursorResult.rows[0].cursor),
+        events: events.sort((a, b) => a.serverSeq - b.serverSeq)
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -162,32 +180,13 @@ export class SyncService {
     userID: string,
     deviceID: string,
     change: SyncChange
-  ): Promise<SerializedSyncEvent> {
+  ): Promise<SerializedSyncEvent[]> {
     if (change.op === "delete") {
-      if (change.entityType === "space") {
-        await client.query(
-          `
-            UPDATE spaces
-            SET deleted_at = now(), updated_at = now(), revision = revision + 1, updated_by_device_id = $3
-            WHERE user_id = $1 AND id = $2
-          `,
-          [userID, change.entityID, deviceID]
-        );
-      } else {
-        await client.query(
-          `
-            UPDATE tabs
-            SET deleted_at = now(), updated_at = now(), revision = revision + 1, updated_by_device_id = $3
-            WHERE user_id = $1 AND id = $2
-          `,
-          [userID, change.entityID, deviceID]
-        );
-      }
-
-      return this.insertSyncEvent(client, userID, deviceID, change.entityType, change.entityID, "delete", {
-        id: change.entityID
-      });
+      return this.deleteEntity(client, userID, deviceID, change.entityType, change.entityID);
     }
+
+    const deleted = await this.tombstoneEvent(client, userID, change.entityType, change.entityID);
+    if (deleted) return [deleted];
 
     if (change.entityType === "space") {
       if (!change.data) {
@@ -224,14 +223,32 @@ export class SyncService {
           deviceID
         ]
       );
-      return this.insertSyncEvent(client, userID, deviceID, "space", change.entityID, "upsert", {
+      return [await this.insertSyncEvent(client, userID, deviceID, "space", change.entityID, "upsert", {
         id: change.entityID,
         ...change.data
-      });
+      })];
     }
 
     if (!change.data) {
       throw new Error("Tab upsert requires data");
+    }
+
+    if (await this.tombstoneEvent(client, userID, "space", change.data.spaceID)) {
+      // A tab moved out before the space deletion survives. A stale snapshot
+      // must neither move it back into the deleted space nor delete it there.
+      const survivor = await client.query(
+        "SELECT 1 FROM tabs WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL AND space_id <> $3",
+        [userID, change.entityID, change.data.spaceID]
+      );
+      if (survivor.rowCount) {
+        const latest = await client.query(
+          `SELECT server_seq, device_id, entity_type, entity_id, op, payload, created_at
+           FROM sync_events WHERE user_id = $1 AND entity_type = 'tab' AND entity_id = $2
+           ORDER BY server_seq DESC LIMIT 1`, [userID, change.entityID]
+        );
+        return latest.rows.map((row) => this.serializeSyncEvent(row));
+      }
+      return this.deleteEntity(client, userID, deviceID, "tab", change.entityID);
     }
 
     await client.query(
@@ -271,10 +288,56 @@ export class SyncService {
       ]
     );
 
-    return this.insertSyncEvent(client, userID, deviceID, "tab", change.entityID, "upsert", {
+    return [await this.insertSyncEvent(client, userID, deviceID, "tab", change.entityID, "upsert", {
       id: change.entityID,
       ...change.data
-    });
+    })];
+  }
+
+  private async tombstoneEvent(
+    client: pg.PoolClient, userID: string, entityType: "space" | "tab", entityID: string
+  ): Promise<SerializedSyncEvent | undefined> {
+    const result = await client.query(
+      `SELECT e.server_seq, e.device_id, e.entity_type, e.entity_id, e.op, e.payload, e.created_at
+       FROM sync_tombstones t JOIN sync_events e ON e.server_seq = t.server_seq
+       WHERE t.user_id = $1 AND t.entity_type = $2 AND t.entity_id = $3`,
+      [userID, entityType, entityID]
+    );
+    return result.rows[0] ? this.serializeSyncEvent(result.rows[0]) : undefined;
+  }
+
+  private async deleteEntity(
+    client: pg.PoolClient, userID: string, deviceID: string,
+    entityType: "space" | "tab", entityID: string
+  ): Promise<SerializedSyncEvent[]> {
+    const events: SerializedSyncEvent[] = [];
+    if (entityType === "space") {
+      // Include children in the event stream, even for clients that already
+      // consumed the parent deletion before reconnecting with an old snapshot.
+      const children = await client.query(
+        "SELECT id FROM tabs WHERE user_id = $1 AND space_id = $2 AND deleted_at IS NULL ORDER BY id",
+        [userID, entityID]
+      );
+      for (const child of children.rows) {
+        events.push(...await this.deleteEntity(client, userID, deviceID, "tab", child.id as string));
+      }
+    }
+    const previous = await this.tombstoneEvent(client, userID, entityType, entityID);
+    if (previous) return [...events, previous];
+
+    // Table name is chosen from the validated entity type, never user SQL.
+    const table = entityType === "space" ? "spaces" : "tabs";
+    await client.query(
+      `UPDATE ${table} SET deleted_at = now(), updated_at = now(),
+       revision = revision + 1, updated_by_device_id = $3 WHERE user_id = $1 AND id = $2`,
+      [userID, entityID, deviceID]
+    );
+    const event = await this.insertSyncEvent(client, userID, deviceID, entityType, entityID, "delete", { id: entityID });
+    await client.query(
+      "INSERT INTO sync_tombstones (user_id, entity_type, entity_id, server_seq) VALUES ($1, $2, $3, $4)",
+      [userID, entityType, entityID, event.serverSeq]
+    );
+    return [...events, event];
   }
 
   private async insertSyncEvent(
@@ -296,14 +359,6 @@ export class SyncService {
     );
 
     return this.serializeSyncEvent(result.rows[0]);
-  }
-
-  private async currentCursor(userID: string): Promise<number> {
-    const result = await this.database.query(
-      "SELECT COALESCE(MAX(server_seq), 0) AS cursor FROM sync_events WHERE user_id = $1",
-      [userID]
-    );
-    return Number(result.rows[0].cursor);
   }
 
   private serializeDevice(row: pg.QueryResultRow): SerializedDevice {

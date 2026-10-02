@@ -44,7 +44,11 @@ export const SyncChange = z.discriminatedUnion("entityType", [
     op: z.enum(["upsert", "delete"]),
     data: TabPayload.optional()
   })
-]);
+]).superRefine((change, context) => {
+  if (change.op === "upsert" && !change.data) {
+    context.addIssue({ code: "custom", path: ["data"], message: "Upsert requires entity data" });
+  }
+});
 
 export const SyncPushRequest = z.object({
   deviceID: z.string().uuid(),

@@ -1861,9 +1861,10 @@ import Testing
 @Test
 @MainActor func undoArchivedTabRestoresTabStateAndRedoArchivesRestoredTab() throws {
     let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
     let model = makeModel(
         driver: driver,
-        snapshotStore: InMemorySessionSnapshotStore(),
+        snapshotStore: snapshotStore,
         preferencesStore: InMemorySessionPreferencesStore()
     )
 
@@ -1875,6 +1876,7 @@ import Testing
     driver.flushPendingCreateEvents()
 
     let secondTabID = model.tabs[1].id
+    let deletedSyncID = model.tabs[1].syncID
     let expectedURLStrings = model.tabs.map(\.urlString)
     model.setUserTitleOverride("Docs", forTabID: secondTabID)
     model.selectTab(id: secondTabID)
@@ -1888,6 +1890,20 @@ import Testing
     let restoredTab = model.tabs[1]
     #expect(model.tabs.map(\.urlString) == expectedURLStrings)
     #expect(restoredTab.id != secondTabID)
+    #expect(restoredTab.syncID != deletedSyncID)
+    let restoredSnapshot = try #require(snapshotStore.savedSnapshots.last)
+    let staleDelete = BrowserSyncEvent(
+        serverSeq: 1,
+        deviceID: "offline-device",
+        entityType: "tab",
+        entityID: deletedSyncID,
+        op: "delete",
+        data: .deleted(id: deletedSyncID),
+        createdAt: "2026-10-03T00:00:00Z"
+    )
+    let merged = BrowserSyncSnapshotMerger.snapshot(applying: [staleDelete], to: restoredSnapshot)
+    #expect(merged.tabs.contains { $0.id == restoredTab.syncID })
+    #expect(!merged.tabs.contains { $0.id == deletedSyncID })
     #expect(restoredTab.userTitleOverride == "Docs")
     #expect(model.selectedTabID == restoredTab.id)
 

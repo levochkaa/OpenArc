@@ -2687,7 +2687,9 @@ enum BrowserWindowMode: Equatable {
     private func restoredTab(from undoSnapshot: TabUndoSnapshot, id: String) -> Tab {
         Tab(
             id: id,
-            syncID: undoSnapshot.tab.syncID,
+            // Explicit undo creates a new incarnation. Reusing the deleted
+            // identity would let stale offline changes undo a server tombstone.
+            syncID: tabSyncIDProvider(),
             spaceID: undoSnapshot.tab.spaceID,
             title: undoSnapshot.tab.title,
             userTitleOverride: undoSnapshot.tab.userTitleOverride,
