@@ -38,15 +38,27 @@ const controlToken = randomUUID();
 
 type Mode = "drop" | "hold";
 type Attempt = { deviceID: string; mutationID: string; protocolVersion: number; digest: string; compressed: boolean; status: number };
+type ObservedPull = {
+  deviceID: string; protocolVersion: number; cursor: number; status: number;
+  eventCount?: number; responseCursor?: number;
+};
 type HeldResponse = { response: ServerResponse; status: number; headers: IncomingMessage["headers"]; data: Buffer };
 const modes = new Map<string, Mode>();
 const held = new Map<string, HeldResponse>();
+const pullModes = new Map<string, number>();
+const heldPulls = new Map<string, HeldResponse>();
 const attempts: Attempt[] = [];
+const observedPulls: ObservedPull[] = [];
 const completed = new Set<string>();
 const legacyScenarios = new Set(["offline-delete", "lost-ack", "edit-during-ack", "global-favorite"]);
 const legacyAuthorizations = new Set<string>();
 const semanticAuthorizations = new Set<string>();
-const folderScenarios = new Set(["folder-roundtrip", "folder-race", "folder-lost-ack"]);
+const capabilityOverrides = new Map<string, number[]>();
+const adoptionScenario = "folder-adoption-paged";
+const folderScenarios = new Set([
+  "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
+  "folder-device-rotation", "folder-pending-delete"
+]);
 const scenarios = [
   ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
@@ -78,18 +90,23 @@ const proxy = createServer((incoming, outgoing) => {
   void (async () => {
     const bytes = await body(incoming);
     const compressed = incoming.headers["content-encoding"] === "gzip";
-    const push = incoming.url === "/v1/sync/push"
+    const path = new URL(incoming.url ?? "/", upstream).pathname;
+    const authorization = incoming.headers.authorization ?? "";
+    const push = path === "/v1/sync/push"
       ? JSON.parse((compressed ? gunzipSync(bytes) : bytes).toString()) as {
         deviceID: string; mutationID: string; protocolVersion?: number; changes?: unknown[]; operations?: unknown[];
       } : undefined;
-    const legacyPull = new URL(incoming.url ?? "/", upstream).pathname === "/v1/sync/pull"
-      && legacyAuthorizations.has(incoming.headers.authorization ?? "");
-    const semanticPull = new URL(incoming.url ?? "/", upstream).pathname === "/v1/sync/pull"
-      && semanticAuthorizations.has(incoming.headers.authorization ?? "");
+    const pull = path === "/v1/sync/pull"
+      ? JSON.parse((compressed ? gunzipSync(bytes) : bytes).toString()) as {
+        deviceID: string; protocolVersion?: number; cursor: number;
+      } : undefined;
+    const legacyPull = !!pull && legacyAuthorizations.has(authorization);
+    const semanticPull = !!pull && semanticAuthorizations.has(authorization);
+    const capabilityOverride = pull ? capabilityOverrides.get(authorization) : undefined;
     const headers = { ...incoming.headers, host: new URL(upstream).host };
     // Only the capability shim needs plaintext; other accounts retain real
     // production response compression negotiated by URLSession.
-    if (legacyPull || semanticPull) headers["accept-encoding"] = "identity";
+    if (legacyPull || semanticPull || capabilityOverride) headers["accept-encoding"] = "identity";
     const forwarded = request(new URL(incoming.url ?? "/", upstream), {
       method: incoming.method, headers, timeout: 15_000
     });
@@ -100,15 +117,29 @@ const proxy = createServer((incoming, outgoing) => {
     let data = await body(received);
     const responseHeaders = { ...received.headers };
     const status = received.statusCode ?? 502;
-    if ((legacyPull || semanticPull) && status >= 200 && status < 300) {
+    if ((legacyPull || semanticPull || capabilityOverride) && status >= 200 && status < 300) {
       // Keep the original v2 durability cases exercising an older server's
       // capability response. All writes still reach the unchanged production API.
       const result = JSON.parse(data.toString()) as { supportedPushVersions?: number[] };
-      if (legacyPull) delete result.supportedPushVersions;
+      if (capabilityOverride) result.supportedPushVersions = capabilityOverride;
+      else if (legacyPull) delete result.supportedPushVersions;
       else result.supportedPushVersions = [2, 3];
       data = Buffer.from(JSON.stringify(result));
       delete responseHeaders["transfer-encoding"];
       responseHeaders["content-length"] = String(data.length);
+    }
+    if (pull) {
+      const observation: ObservedPull = {
+        deviceID: pull.deviceID, protocolVersion: pull.protocolVersion ?? 2, cursor: pull.cursor, status
+      };
+      if (status >= 200 && status < 300) {
+        const decoded = JSON.parse((responseHeaders["content-encoding"] === "gzip" ? gunzipSync(data) : data).toString()) as {
+          events: unknown[]; cursor: number;
+        };
+        observation.eventCount = decoded.events.length;
+        observation.responseCursor = decoded.cursor;
+      }
+      observedPulls.push(observation);
     }
     if (push) {
       attempts.push({
@@ -128,6 +159,13 @@ const proxy = createServer((incoming, outgoing) => {
       modes.delete(push.deviceID);
       assert.ok(!held.has(push.deviceID), "Only one ACK may be held per device");
       held.set(push.deviceID, { response: outgoing, status, headers: responseHeaders, data });
+    } else if (pull?.protocolVersion === 4 && status >= 200 && status < 300
+      && pullModes.get(pull.deviceID) === pull.cursor) {
+      // Hold after the real response completes, including the device bootstrap
+      // transaction. The client has not received or persisted this page yet.
+      pullModes.delete(pull.deviceID);
+      assert.ok(!heldPulls.has(pull.deviceID), "Only one pull may be held per device");
+      heldPulls.set(pull.deviceID, { response: outgoing, status, headers: responseHeaders, data });
     } else {
       outgoing.writeHead(status, responseHeaders);
       outgoing.end(data);
@@ -144,21 +182,27 @@ const baseURL = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
 type Device = { deviceID: string; userID: string; accessToken: string };
 type Account = { scenario: string; userID: string; devices: Device[] };
 const accounts: Account[] = [];
+
+async function registerDevice(userID: string, accessToken: string, name: string): Promise<Device> {
+  const response = await fetch(new URL("/v1/devices", baseURL), {
+    method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ name, platform: "Swift HTTP integration" }), signal: AbortSignal.timeout(10_000)
+  });
+  assert.equal(response.status, 201);
+  const device = await response.json() as { device: { id: string } };
+  return { deviceID: device.device.id, userID, accessToken };
+}
+
 for (const scenario of scenarios) {
   const result = await pool.query("INSERT INTO app_users (apple_subject) VALUES ($1) RETURNING id", [`swift-${randomUUID()}`]);
   const userID = result.rows[0].id as string;
   const accessToken = await auth.issueAccessToken(userID);
   if (legacyScenarios.has(scenario)) legacyAuthorizations.add(`Bearer ${accessToken}`);
   else if (!folderScenarios.has(scenario)) semanticAuthorizations.add(`Bearer ${accessToken}`);
+  if (scenario === adoptionScenario) capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3]);
   const devices: Device[] = [];
   for (const name of ["Swift A", "Swift B"]) {
-    const response = await fetch(new URL("/v1/devices", baseURL), {
-      method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ name, platform: "Swift HTTP integration" }), signal: AbortSignal.timeout(10_000)
-    });
-    assert.equal(response.status, 201);
-    const device = await response.json() as { device: { id: string } };
-    devices.push({ deviceID: device.device.id, userID, accessToken });
+    devices.push(await registerDevice(userID, accessToken, name));
   }
   accounts.push({ scenario, userID, devices });
 }
@@ -183,7 +227,9 @@ async function inspect(userID: string) {
   return {
     eventCount: events.rows[0].count, receiptCount: receipts.rows[0].count, tabs: tabs.rows, folders: folders.rows,
     attempts: attempts.filter((attempt) => deviceIDs.has(attempt.deviceID)),
-    heldDeviceIDs: [...held.keys()]
+    heldDeviceIDs: [...held.keys()],
+    observedPulls: observedPulls.filter((pull) => deviceIDs.has(pull.deviceID)),
+    heldPullDeviceIDs: [...heldPulls.keys()].filter((deviceID) => deviceIDs.has(deviceID))
   };
 }
 
@@ -194,6 +240,7 @@ const control = createServer((incoming, outgoing) => {
     assert.equal(incoming.headers.authorization, `Bearer ${controlToken}`);
     const command = JSON.parse((await body(incoming)).toString()) as {
       action: string; deviceID?: string; userID?: string; scenario?: string;
+      cursor?: number; versions?: number[];
     };
     let result: unknown = {};
     if (command.action === "drop" || command.action === "hold") {
@@ -205,6 +252,30 @@ const control = createServer((incoming, outgoing) => {
       const response = held.get(command.deviceID);
       held.delete(command.deviceID);
       if (response) sendHeld(response);
+    } else if (command.action === "holdpull") {
+      assert.ok(command.deviceID && accounts.some((account) => account.devices.some((device) => device.deviceID === command.deviceID)));
+      assert.ok(Number.isSafeInteger(command.cursor) && command.cursor! >= 0);
+      assert.ok(!heldPulls.has(command.deviceID) && !pullModes.has(command.deviceID), "A pull is already armed or held");
+      pullModes.set(command.deviceID, command.cursor!);
+    } else if (command.action === "releasepull") {
+      assert.ok(command.deviceID);
+      pullModes.delete(command.deviceID);
+      const response = heldPulls.get(command.deviceID);
+      heldPulls.delete(command.deviceID);
+      if (response) sendHeld(response);
+    } else if (command.action === "setcapabilities") {
+      const account = accounts.find((account) => account.userID === command.userID);
+      assert.ok(account?.scenario === adoptionScenario, "Capability transitions belong to the adoption scenario");
+      assert.ok(JSON.stringify(command.versions) === "[2,3]" || JSON.stringify(command.versions) === "[2,3,4]");
+      for (const device of account.devices) {
+        capabilityOverrides.set(`Bearer ${device.accessToken}`, command.versions!);
+      }
+    } else if (command.action === "rotate") {
+      const account = accounts.find((account) => account.userID === command.userID);
+      assert.ok(account?.scenario === "folder-device-rotation", "Device rotation belongs to its isolated scenario");
+      const device = await registerDevice(account.userID, account.devices[0].accessToken, "Swift rotated device");
+      account.devices.push(device);
+      result = device;
     } else if (command.action === "inspect") {
       assert.ok(command.userID);
       result = await inspect(command.userID);
@@ -214,9 +285,15 @@ const control = createServer((incoming, outgoing) => {
       const deviceIDs = new Set(account.devices.map((device) => device.deviceID));
       const scenarioAttempts = attempts.filter((attempt) => deviceIDs.has(attempt.deviceID));
       assert.ok(scenarioAttempts.length > 0, "Completed scenario must send production sync mutations");
-      const expectedVersion = legacyScenarios.has(account.scenario) ? 2 : folderScenarios.has(account.scenario) ? 4 : 3;
-      assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === expectedVersion),
-        `Scenario ${account.scenario} must exercise protocol v${expectedVersion}`);
+      if (account.scenario === adoptionScenario) {
+        assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4].includes(attempt.protocolVersion)));
+        assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 3 && attempt.status === 201), "Adoption must begin with v3 writes");
+        assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 4 && attempt.status === 201), "Adoption must finish with v4 writes");
+      } else {
+        const expectedVersion = legacyScenarios.has(account.scenario) ? 2 : folderScenarios.has(account.scenario) ? 4 : 3;
+        assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === expectedVersion),
+          `Scenario ${account.scenario} must exercise protocol v${expectedVersion}`);
+      }
       completed.add(command.scenario);
       await writeFile(reportPath, JSON.stringify({ completed: [...completed].sort(), attempts: attempts.length }), { mode: 0o600 });
     } else {
@@ -240,6 +317,7 @@ async function close(): Promise<void> {
   if (closing) return;
   closing = true;
   for (const value of held.values()) value.response.destroy();
+  for (const value of heldPulls.values()) value.response.destroy();
   proxy.closeAllConnections();
   control.closeAllConnections();
   await Promise.all([new Promise<void>((resolve) => proxy.close(() => resolve())), new Promise<void>((resolve) => control.close(() => resolve()))]);

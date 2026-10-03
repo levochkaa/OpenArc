@@ -1189,12 +1189,23 @@ private struct SyncHTTPFixture: Decodable {
             let deleted: Bool
         }
 
+        struct Pull: Decodable {
+            let deviceID: String
+            let protocolVersion: Int
+            let cursor: Int
+            let status: Int
+            let eventCount: Int?
+            let responseCursor: Int?
+        }
+
         let eventCount: Int
         let receiptCount: Int
         let tabs: [Tab]
         let folders: [Folder]
         let attempts: [Attempt]
         let heldDeviceIDs: [String]
+        let observedPulls: [Pull]
+        let heldPullDeviceIDs: [String]
     }
 
     static var environmentPath: String? {
@@ -1232,6 +1243,36 @@ private struct SyncHTTPFixture: Decodable {
         _ = try await send(["action": "complete", "scenario": account.scenario])
     }
 
+    func holdPull(deviceID: String, cursor: Int) async throws {
+        struct Command: Encodable { let action = "holdpull"
+            let deviceID: String
+            let cursor: Int
+        }
+        _ = try await send(Command(deviceID: deviceID, cursor: cursor))
+    }
+
+    func setCapabilities(_ versions: [Int], account: Account) async throws {
+        struct Command: Encodable { let action = "setcapabilities"
+            let userID: String
+            let versions: [Int]
+        }
+        _ = try await send(Command(userID: account.userID, versions: versions))
+    }
+
+    func rotateDevice(_ account: Account) async throws -> Device {
+        try await JSONDecoder().decode(Device.self, from: send(["action": "rotate", "userID": account.userID]))
+    }
+
+    func waitForHeldPull(_ account: Account, deviceID: String) async throws {
+        for _ in 0..<100 {
+            if try await inspect(account).heldPullDeviceIDs.contains(deviceID) {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw SyncHTTPError.pullWasNotHeld
+    }
+
     func waitForHeldAcknowledgement(_ account: Account, deviceID: String) async throws {
         for _ in 0..<100 {
             if try await inspect(account).heldDeviceIDs.contains(deviceID) {
@@ -1244,7 +1285,7 @@ private struct SyncHTTPFixture: Decodable {
 
     // MARK: Private
 
-    private func send(_ command: [String: String]) async throws -> Data {
+    private func send(_ command: some Encodable) async throws -> Data {
         var request = URLRequest(url: controlURL, timeoutInterval: 10)
         request.httpMethod = "POST"
         request.setValue("Bearer \(controlToken)", forHTTPHeaderField: "Authorization")
@@ -1261,9 +1302,9 @@ private struct SyncHTTPFixture: Decodable {
 @MainActor private final class SyncHTTPProfile {
     // MARK: Lifecycle
 
-    init(fixture: SyncHTTPFixture, device: SyncHTTPFixture.Device, directory: URL) throws {
+    init(fixture: SyncHTTPFixture, device: SyncHTTPFixture.Device, directory: URL, databaseID: String? = nil) throws {
         let store = try BrowserSQLiteSessionStore(
-            databaseURL: directory.appendingPathComponent("\(device.deviceID).sqlite")
+            databaseURL: directory.appendingPathComponent("\(databaseID ?? device.deviceID).sqlite")
         )
         let configuration = try #require(BrowserSyncConfiguration(baseURL: fixture.baseURL))
         let urlConfiguration = URLSessionConfiguration.ephemeral
@@ -1355,6 +1396,7 @@ private struct SyncHTTPFixture: Decodable {
 private enum SyncHTTPError: Error {
     case acknowledgementWasNotHeld
     case expectedSemanticMutation
+    case pullWasNotHeld
 }
 
 private func syncHTTPSnapshot(
@@ -1699,4 +1741,285 @@ private func syncHTTPFolderRecords(_ snapshot: BrowserTabSessionSnapshot) -> [Br
     BrowserSyncFolderProjection.canonicalChanges(snapshot)
         .filter { $0.entityType != .space }
         .sorted { BrowserSyncOutboxProjection.key($0) < BrowserSyncOutboxProjection.key($1) }
+}
+
+extension BrowserSyncHTTPIntegrationTests {
+    @Test func folderAdoptionReplaysAllPagesAndRetainsEditsMadeDuringBootstrap() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("folder-adoption-paged")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        await first.activate()
+        #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 2)
+        await first.saveAndSend(syncHTTPFolderSeed(folder: true))
+        let beforeUpgrade = try await fixture.inspect(account)
+        #expect(beforeUpgrade.folders.isEmpty)
+        #expect(first.store.loadSnapshot()?.pinnedTabFolders?.first?.id == "root")
+        let configuration = try #require(BrowserSyncConfiguration(baseURL: fixture.baseURL))
+        let client = BrowserRemoteSyncClient(configuration: configuration)
+        let device = account.devices[0]
+        let session = BrowserAuthSession(
+            accessToken: device.accessToken,
+            userID: device.userID,
+            userEmail: nil,
+            deviceID: device.deviceID,
+            serverURL: fixture.baseURL
+        )
+        // A long genuine history, rather than fabricated pages, forces the
+        // production server and coordinator across their 500-event boundary.
+        let history = BrowserSyncSemanticMutation(id: UUID().uuidString, operations: (0..<520).map {
+            .patchTab(id: "a", fields: .init(title: .set("Historical page \($0)")))
+        })
+        _ = try await client.push(mutation: history, authSession: session)
+        await first.pull()
+        let historicalPage = try await client.pull(cursor: 0, authSession: session)
+        try #require(historicalPage.events.count == 500)
+        let pageBoundary = historicalPage.cursor
+        let cursorBefore = try first.store.syncCursor(for: first.owner)
+        #expect(cursorBefore > pageBoundary)
+        let model = try SyncHTTPModelHarness(profile: first)
+        defer { model.close() }
+        let applier = SyncHTTPProjectionRecorder()
+        first.service.setSnapshotApplier(applier)
+        try await fixture.setCapabilities([2, 3, 4], account: account)
+        try await fixture.holdPull(deviceID: device.deviceID, cursor: pageBoundary)
+        first.service.schedulePull()
+        do {
+            try await fixture.waitForHeldPull(account, deviceID: device.deviceID)
+            #expect(try first.store.syncCursor(for: first.owner) == cursorBefore)
+            #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 2)
+            #expect(applier.snapshots.isEmpty, "A partial v4 bootstrap must never reach the model")
+            model.model.setTitle("Edited during bootstrap", forPinnedTabFolderID: "root")
+            let a = try #require(model.model.tabs.first { $0.syncID == "a" }?.id)
+            model.model.setUserTitleOverride("Local edit wins", forTabID: a)
+            let frozen = try first.store.pendingSyncQueue(for: first.owner)
+            try #require(!frozen.isEmpty && frozen.allSatisfy { $0.protocolVersion == 3 })
+            #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 2)
+            #expect(applier.snapshots.isEmpty)
+            try await fixture.command("releasepull", deviceID: device.deviceID)
+            await first.service.waitForPendingOperations()
+            // The edit schedules another pull. That wake may already drain the
+            // immutable legacy row and retry adoption after the aborted write.
+            await first.pull()
+            #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 4)
+            #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+            let inspection = try await fixture.inspect(account)
+            #expect(frozen.allSatisfy { row in
+                inspection.attempts.contains { $0.mutationID == row.id && $0.protocolVersion == 3 }
+            })
+        } catch {
+            try? await fixture.command("releasepull", deviceID: device.deviceID)
+            throw error
+        }
+        first.service.setSnapshotApplier(nil)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        let final = try await fixture.inspect(account)
+        #expect(final.folders.count == 1 && final.folders[0].id == "root")
+        #expect(final.folders[0].title == "Edited during bootstrap")
+        #expect(final.tabs.first { $0.id == "a" }?.title == "Local edit wins")
+        #expect(Set(final.tabs.filter { $0.pinnedFolderID == "root" && !$0.deleted }.map(\.id)) == ["b", "c"])
+        #expect(final.observedPulls
+            .contains {
+                $0.deviceID == device.deviceID && $0.protocolVersion == 4 && $0.cursor == 0 && $0
+                    .eventCount == 500 && $0
+                    .responseCursor == pageBoundary
+            })
+        #expect(final.observedPulls
+            .contains {
+                $0.deviceID == device.deviceID && $0.protocolVersion == 4 && $0.cursor == pageBoundary && $0
+                    .status == 201
+            })
+        #expect(try syncHTTPFolderRecords(#require(first.store.loadSnapshot())) ==
+            syncHTTPFolderRecords(#require(second.store.loadSnapshot())))
+        try model.model.applyRemoteSyncSnapshot(#require(first.store.loadSnapshot()))
+        model.driver.flushPendingCreateEvents()
+        model.close()
+        await first.disconnect()
+        let reopened = try SyncHTTPProfile(fixture: fixture, device: device, directory: directory)
+        await reopened.activate()
+        let afterRestart = try await fixture.inspect(account)
+        #expect(afterRestart.receiptCount == final.receiptCount && afterRestart.eventCount == final.eventCount)
+        #expect(try reopened.store.pendingSyncQueue(for: reopened.owner).isEmpty)
+        await reopened.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
+    @Test func folderDeviceRotationReplaysFromZeroAndRetriesOriginalReceipt() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("folder-device-rotation")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        await first.activate()
+        await first.saveAndSend(syncHTTPFolderSeed(folder: true))
+        await first.suspend()
+        try syncHTTPWithModel(first) { $0.setTitle("Receipt belongs to account", forPinnedTabFolderID: "root") }
+        let frozen = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(frozen.count == 1 && frozen[0].protocolVersion == 4)
+        let oldCursor = try first.store.syncCursor(for: first.owner)
+        try await fixture.command("drop", deviceID: account.devices[0].deviceID)
+        await first.activate()
+        #expect(try first.store.pendingSyncQueue(for: first.owner) == frozen)
+        let committed = try await fixture.inspect(account)
+        await first.disconnect()
+        try await fixture.command("release", deviceID: account.devices[0].deviceID)
+        let rotated = try await fixture.rotateDevice(account)
+        #expect(rotated.deviceID != account.devices[0].deviceID && rotated.userID == account.userID)
+        let reopened = try SyncHTTPProfile(
+            fixture: fixture,
+            device: rotated,
+            directory: directory,
+            databaseID: account.devices[0].deviceID
+        )
+        #expect(try reopened.store.syncPullProtocolVersion(for: reopened.owner) == 4)
+        #expect(try reopened.store.pendingSyncQueue(for: reopened.owner) == frozen)
+        await reopened.activate()
+        let final = try await fixture.inspect(account)
+        let pulls = final.observedPulls.filter { $0.deviceID == rotated.deviceID }
+        #expect(pulls.first?.cursor == oldCursor && pulls.first?.status == 409)
+        #expect(pulls.dropFirst().first?.cursor == 0 && pulls.dropFirst().first?.protocolVersion == 4)
+        #expect(final.eventCount == committed.eventCount && final.receiptCount == committed.receiptCount)
+        let attempts = final.attempts.filter { $0.mutationID == frozen[0].id }
+        #expect(attempts.contains { $0.deviceID == rotated.deviceID && $0.status == 201 })
+        #expect(Set(attempts.map(\.digest)).count == 1)
+        #expect(reopened.store.loadSnapshot()?.pinnedTabFolders?.first?.title == "Receipt belongs to account")
+        #expect(try reopened.store.pendingSyncQueue(for: reopened.owner).isEmpty)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        #expect(try syncHTTPFolderRecords(#require(reopened.store.loadSnapshot())) ==
+            syncHTTPFolderRecords(#require(second.store.loadSnapshot())))
+        await reopened.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
+    @Test func deletingFolderBeforeRemoteCreationCallbacksCannotResurrectChildren() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("folder-pending-delete")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        await first.activate()
+        let seed = syncHTTPFolderSeed(folder: true)
+        let a = try #require(seed.tabs.first { $0.id == "a" })
+        await first.saveAndSend(.init(spaces: seed.spaces, tabs: [a]))
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        let model = try SyncHTTPModelHarness(profile: second)
+        defer { model.close() }
+        second.service.setSnapshotApplier(model.model)
+        await first.saveAndSend(seed)
+        await second.pull()
+        let childRequests = model.driver
+            .createdTabRequests
+            .filter { ["https://b.example", "https://c.example"].contains($0.urlString) }
+        try #require(childRequests.count == 2)
+        #expect(!model.model.tabs.contains { ["b", "c"].contains($0.syncID) })
+        #expect(model.model.pinnedTabFolders.contains { $0.id == "root" })
+        await second.suspend()
+        model.model.movePinnedTabFolder(withID: "root", toRootSectionIndex: 0, targetSpaceID: "target")
+        let movedQueue = try second.store.pendingSyncQueue(for: second.owner)
+        try #require(movedQueue.count == 1)
+        let moved = try syncHTTPFolderMutation(movedQueue[0])
+        #expect(moved.operations == [.move(
+            items: [.init(entityType: .folder, entityID: "root")],
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+        )])
+        let movedSnapshot = try #require(second.store.loadSnapshot())
+        #expect(movedSnapshot.tabs
+            .filter { ["b", "c"].contains($0.id ?? "") }
+            .allSatisfy { $0.spaceID == "target" && $0.pinnedFolderID == "root" })
+        #expect(movedSnapshot.tabs.filter { ["b", "c"].contains($0.id ?? "") }.count == 2)
+        #expect(model.model.deletePinnedTabFolder(id: "root"))
+        let frozen = try second.store.pendingSyncQueue(for: second.owner)
+        try #require(frozen.count == 2)
+        #expect(frozen[0] == movedQueue[0])
+        #expect(try syncHTTPFolderMutation(frozen[1]).operations == [.deleteFolder(id: "root")])
+        #expect(childRequests.allSatisfy { request in
+            model.driver.closedTabRequests.contains { $0.id == request.id && $0.forceClose }
+        })
+        let afterDeletion = try #require(second.store.loadSnapshot())
+        #expect(!afterDeletion.tabs.contains { ["b", "c"].contains($0.id ?? "") })
+        model.driver.flushPendingCreateEvents()
+        #expect(!model.model.tabs.contains { ["b", "c"].contains($0.syncID) })
+        #expect(model.model.tabs.contains { $0.syncID == "favorite" })
+        #expect(try second.store.pendingSyncQueue(for: second.owner) == frozen)
+        #expect(childRequests.allSatisfy { request in
+            model.driver.closedTabRequests.filter { $0.id == request.id && $0.forceClose }.count >= 2
+        })
+        await second.activate()
+        await first.pull()
+        let final = try await fixture.inspect(account)
+        #expect(final.folders.first { $0.id == "root" }?.deleted == true)
+        #expect(final.tabs.filter { ["b", "c"].contains($0.id) }.allSatisfy { $0.deleted && $0.tombstoned })
+        #expect(final.tabs.first { $0.id == "favorite" }?.deleted == false)
+        #expect(try syncHTTPFolderRecords(#require(first.store.loadSnapshot())) ==
+            syncHTTPFolderRecords(#require(second.store.loadSnapshot())))
+        model.close()
+        second.service.setSnapshotApplier(nil)
+        await second.disconnect()
+        let reopened = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        let restored = try SyncHTTPModelHarness(profile: reopened)
+        defer { restored.close() }
+        #expect(Set(restored.model.tabs.map(\.syncID)) == ["a", "d", "favorite"])
+        #expect(restored.model.pinnedTabFolders.isEmpty)
+        #expect(try reopened.store.pendingSyncQueue(for: reopened.owner).isEmpty)
+        await reopened.activate()
+        let afterRestart = try await fixture.inspect(account)
+        #expect(afterRestart.eventCount == final.eventCount && afterRestart.receiptCount == final.receiptCount)
+        await reopened.disconnect()
+        await first.disconnect()
+        try await fixture.complete(account)
+    }
+}
+
+// MARK: - SyncHTTPModelHarness
+
+@MainActor private final class SyncHTTPModelHarness {
+    // MARK: Lifecycle
+
+    init(profile: SyncHTTPProfile) throws {
+        self.defaults = try #require(UserDefaults(suiteName: suite))
+        self.model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: profile.store, sessionPreferencesStore: profile.store,
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(),
+            syncCoordinator: profile.service, dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in },
+            allTabsClosedHandler: {}
+        )
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        model.selectSpace(id: "source")
+    }
+
+    // MARK: Internal
+
+    let driver = FakeBrowserTabDriver()
+    let model: BrowserChromeModel
+
+    func close() {
+        guard !closed else { return }
+        closed = true
+        model.prepareForTermination()
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    // MARK: Private
+
+    private let defaults: UserDefaults
+    private let suite = "BrowserSyncHTTPModelHarness.\(UUID())"
+    private var closed = false
+}
+
+// MARK: - SyncHTTPProjectionRecorder
+
+@MainActor private final class SyncHTTPProjectionRecorder: BrowserSyncSnapshotApplying {
+    var snapshots = [BrowserTabSessionSnapshot]()
+
+    func applyRemoteSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot) { snapshots.append(snapshot) }
 }

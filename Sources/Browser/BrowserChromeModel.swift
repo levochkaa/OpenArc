@@ -802,7 +802,7 @@ enum BrowserWindowMode: Equatable {
         guard !orderedTabs.isEmpty else {
             return nil
         }
-        let originalTree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        let originalTree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
         let rootContainer = BrowserSidebarDropContainer.pinned(selectedSpaceID)
         let originalRoots = originalTree.items(in: rootContainer)
         let insertion = originalRoots.firstIndex { item in
@@ -848,7 +848,7 @@ enum BrowserWindowMode: Equatable {
             temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: selectedTabIDs),
             appTabs: appTabs
         )
-        var tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
         let moving = Set(selectedTabIDs.map(BrowserSidebarItemID.tab))
         var roots = originalRoots.filter { !moving.contains($0) }
         let rootIndex = originalRoots.prefix(insertion).filter { !moving.contains($0) }.count
@@ -997,8 +997,22 @@ enum BrowserWindowMode: Equatable {
         destination: BrowserSidebarDropDestination
     ) -> BrowserSidebarMovePlan? {
         guard supportsAppTabs || destination.container.section != .app else { return nil }
+        let snapshot = sidebarPlanningSnapshot()
+        var payload = payload
+        if case .folder(let id) = payload.primary {
+            let visibleTree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+            let logicalTree = BrowserSidebarTabTree(snapshot: snapshot)
+            guard let folder = logicalTree.folders[id] else { return nil }
+            let container = BrowserSidebarDropContainer.pinned(folder.spaceID, folderID: id)
+            let visibleIDs = Set(visibleTree.tabIDs(in: container))
+            let logicalIDs = Set(logicalTree.tabIDs(in: container))
+            // Native drags name visible descendants. Direct move plans can
+            // already contain the pending identities from this same tree.
+            guard payload.tabIDs == visibleIDs || payload.tabIDs == logicalIDs else { return nil }
+            payload = .init(primary: payload.primary, tabIDs: logicalIDs)
+        }
         return BrowserSidebarMovePlan
-            .make(snapshot: sidebarSnapshot, payload: payload, destination: destination) { tab, target in
+            .make(snapshot: snapshot, payload: payload, destination: destination) { tab, target in
                 guard self.canMoveTab(tab, to: target.section.placement) else { return nil }
                 var moved = tab
                 moved.placement = target.section.placement
@@ -1026,13 +1040,14 @@ enum BrowserWindowMode: Equatable {
             } else {
                 false
             }
-        tabs = plan.tabs.map { tab in
+        let plannedTabs = plan.tabs.map { tab in
             var tab = tab
             if updatesActivity, payload.tabIDs.contains(tab.id) {
                 tab.lastActivityAt = now
             }
             return tab
         }
+        publishPlannedTabs(plannedTabs)
         pinnedTabFolders = plan.folders
         for id in payload.tabIDs {
             guard let moved = tabs.first(where: { $0.id == id }) else { continue }
@@ -2242,10 +2257,66 @@ enum BrowserWindowMode: Equatable {
 
     private func applyPinnedTree(_ value: BrowserSidebarTabTree) {
         var tree = value
-        tree.assignPinnedRanks(to: &tabs)
+        var logicalTabs = sidebarPlanningSnapshot().allTabs
+        tree.assignPinnedRanks(to: &logicalTabs)
         pinnedTabFolders = pinnedTabFolders.compactMap { tree.folders[$0.id] }
-        let byID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
-        tabs = tree.orderedTabIDs().compactMap { byID[$0] }
+        let byID = Dictionary(uniqueKeysWithValues: logicalTabs.map { ($0.id, $0) })
+        publishPlannedTabs(tree.orderedTabIDs().compactMap { byID[$0] })
+    }
+
+    /// Pending remote identities occupy real sibling slots before their logical
+    /// engine callback. They participate in planning without appearing as tabs.
+    private func sidebarPlanningSnapshot() -> BrowserSidebarSnapshot {
+        guard !pendingRemoteTabCreations.isEmpty else { return sidebarSnapshot }
+        let hydrated = Dictionary(uniqueKeysWithValues: tabs.map { ($0.syncID, $0) })
+        let pending = Dictionary(uniqueKeysWithValues: pendingRemoteTabCreations.compactMap { engineID, binding in
+            binding.snapshot.id.map { ($0, engineID) }
+        })
+        let logicalTabs = snapshotPreservingPendingRemoteCreations().tabs.compactMap { snapshot -> Tab? in
+            guard let syncID = snapshot.id else { return nil }
+            if let tab = hydrated[syncID] {
+                return tab
+            }
+            guard let engineID = pending[syncID] else { return nil }
+            return Tab(
+                id: engineID, syncID: syncID, spaceID: snapshot.spaceID ?? Self.defaultSpaceID,
+                title: "", userTitleOverride: snapshot.userTitleOverride, urlString: snapshot.urlString,
+                pinnedURLString: snapshot.pinnedURLString, placement: snapshot.placement,
+                pinnedFolderID: snapshot.pinnedFolderID, pinnedSiblingRank: snapshot.pinnedSiblingRank,
+                lastActivityAt: lastActivityDate(from: snapshot) ?? dateProvider()
+            )
+        }
+        return sidebarSnapshot.replacingTabs(logicalTabs)
+    }
+
+    private func publishPlannedTabs(_ logicalTabs: [Tab]) {
+        let pendingIDs = Set(pendingRemoteTabCreations.keys)
+        tabs = logicalTabs.filter { !pendingIDs.contains($0.id) }
+        let snapshots = logicalTabs.map { tab in
+            if let original = pendingRemoteTabCreations[tab.id]?.snapshot {
+                return BrowserTabSessionSnapshotTab(
+                    id: original.id, urlString: original.urlString, pinnedURLString: original.pinnedURLString,
+                    userTitleOverride: original.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
+                    pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: original.lastActivityTimestamp,
+                    pinnedSiblingRank: tab.pinnedSiblingRank
+                )
+            }
+            return BrowserTabSessionSnapshotTab(
+                id: tab.syncID, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
+                userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
+                pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
+                pinnedSiblingRank: tab.pinnedSiblingRank
+            )
+        }
+        for (tab, snapshot) in zip(logicalTabs, snapshots) {
+            guard let binding = pendingRemoteTabCreations[tab.id] else { continue }
+            pendingRemoteTabCreations[tab.id] = RemoteTabCreation(snapshot: snapshot, generation: binding.generation)
+        }
+        if let projection = remoteProjectionSnapshot {
+            remoteProjectionSnapshot = BrowserTabSessionSnapshot(
+                spaces: projection.spaces, pinnedTabFolders: projection.pinnedTabFolders, tabs: snapshots
+            )
+        }
     }
 
     private func applyRemoteTabMetadata(_ snapshot: BrowserTabSessionSnapshotTab, to tab: inout Tab) {
@@ -2620,19 +2691,21 @@ enum BrowserWindowMode: Equatable {
         let current = currentSessionSnapshot()
         guard let remoteProjectionSnapshot else { return current }
         var mergedTabs = current.tabs
-        let pendingIDs = Set(pendingRemoteTabCreations.values.compactMap(\.snapshot.id))
+        let pendingByID = Dictionary(uniqueKeysWithValues: pendingRemoteTabCreations.values.compactMap { binding in
+            binding.snapshot.id.map { ($0, binding.snapshot) }
+        })
         // Place pending creations before their next surviving remote sibling.
         // Existing tabs keep the user's current relative order, including moves
         // and deletions performed while the engine creates remote tabs.
         for (index, tab) in remoteProjectionSnapshot.tabs.enumerated().reversed() {
-            guard let id = tab.id, pendingIDs.contains(id) else { continue }
+            guard let id = tab.id, let pending = pendingByID[id] else { continue }
             let followingIDs = remoteProjectionSnapshot.tabs.dropFirst(index + 1).compactMap(\.id)
             let insertion = followingIDs.lazy
                 .compactMap { nextID in
                     mergedTabs.firstIndex { $0.id == nextID }
                 }
                 .first ?? mergedTabs.count
-            mergedTabs.insert(tab, at: insertion)
+            mergedTabs.insert(pending, at: insertion)
         }
         let spaceSnapshots = current.spaces?.map { space in
             let selectedID = spaces.first { $0.id == space.id }?.selectedTabID

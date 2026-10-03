@@ -92,9 +92,10 @@ assert.deepEqual(report.completed, [
   "coordinator-delete-pending", "coordinator-lost-ack", "coordinator-move-first", "coordinator-patch-first",
   "coordinator-space-delete-move",
   "edit-during-ack", "explicit-group-replay", "explicit-local-first", "explicit-remote-first",
-  "folder-lost-ack", "folder-race", "folder-roundtrip", "global-favorite", "lost-ack", "offline-delete", "pending-navigation", "pending-parent-delete", "persistence-retry",
+  "folder-adoption-paged", "folder-device-rotation", "folder-lost-ack", "folder-pending-delete", "folder-race", "folder-roundtrip",
+  "global-favorite", "lost-ack", "offline-delete", "pending-navigation", "pending-parent-delete", "persistence-retry",
   "semantic-move-first", "semantic-patch-first"
 ]);
 assert.ok(report.attempts > 0);
-console.log("Swift production HTTP sync: all 20 scenarios completed");
+console.log("Swift production HTTP sync: all 23 scenarios completed");
 JS
