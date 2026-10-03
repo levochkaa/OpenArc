@@ -1,0 +1,427 @@
+import Foundation
+import UIKit
+import WebKit
+
+// MARK: - BrowserWebKitEngine
+
+/// Each scene owns its engine and views; persistent tab IDs belong to the model.
+@MainActor final class BrowserWebKitEngine: NSObject, BrowserMobileEngine {
+    // MARK: Lifecycle
+
+    init(dataStore: WKWebsiteDataStore = .default()) {
+        self.dataStore = dataStore
+        super.init()
+    }
+
+    // MARK: Internal
+
+    let hostView = UIView(frame: .zero)
+    var onEvent: ((BrowserMobileEngineEvent) -> Void)?
+    var onPopupCreated: ((String, URL?) -> Void)?
+
+    func createTab(id: String, url: URL) {
+        guard !isShutDown, records[id] == nil else { return }
+        // Restoring a workspace must not launch a WebKit page for every saved
+        // tab. A selected tab or an explicit navigation creates its view.
+        let record = Record(id: id, url: url)
+        records[id] = record
+        emit(record)
+    }
+
+    func selectTab(id: String?) {
+        guard !isShutDown else { return }
+        let record = id.flatMap { records[$0] }
+        let startsInitialLoad = record?.webView == nil
+        let next = record.map { ensureWebView($0) }
+        guard mountedWebView !== next else { return }
+        mountedWebView?.removeFromSuperview()
+        mountedWebView = next
+        guard let next else { return }
+        next.translatesAutoresizingMaskIntoConstraints = false
+        hostView.addSubview(next)
+        NSLayoutConstraint.activate([
+            next.leadingAnchor.constraint(equalTo: hostView.leadingAnchor),
+            next.trailingAnchor.constraint(equalTo: hostView.trailingAnchor),
+            next.topAnchor.constraint(equalTo: hostView.topAnchor),
+            next.bottomAnchor.constraint(equalTo: hostView.bottomAnchor),
+        ])
+        if startsInitialLoad, let record, let url = record.state.url {
+            navigate(record: record, url: url)
+        }
+    }
+
+    func navigate(id: String, url: URL) {
+        guard let record = records[id] else { return }
+        navigate(record: record, url: url)
+    }
+
+    func goBack(id: String) {
+        guard let record = records[id], let webView = record.webView,
+              let item = webView.backForwardList.backItem else { return }
+        begin(record, url: item.url) { webView.goBack() }
+    }
+
+    func goForward(id: String) {
+        guard let record = records[id], let webView = record.webView,
+              let item = webView.backForwardList.forwardItem else { return }
+        begin(record, url: item.url) { webView.goForward() }
+    }
+
+    func reload(id: String) {
+        guard let record = records[id] else { return }
+        if record.state.error != nil {
+            switch record.retryLoad {
+            case .url(let url): navigate(record: record, url: url)
+            case .html(let html, let baseURL): loadHTMLString(html, baseURL: baseURL, id: id)
+            }
+        } else {
+            if let webView = record.webView {
+                begin(record, url: record.state.url) { webView.reload() }
+            } else if let url = record.state.url {
+                navigate(record: record, url: url)
+            }
+        }
+    }
+
+    func stop(id: String) {
+        guard let record = records[id] else { return }
+        record.generation += 1
+        record.allowsPageMetadata = false
+        record.hasStartedCurrentNavigation = false
+        record.webView?.stopLoading()
+        record.state.isLoading = false
+        emit(record)
+    }
+
+    func closeTab(id: String) {
+        guard let record = records.removeValue(forKey: id) else { return }
+        if let webView = record.webView {
+            idsByWebView.removeValue(forKey: ObjectIdentifier(webView))
+        }
+        record.observations.forEach { $0.invalidate() }
+        record.observations.removeAll()
+        record.webView?.navigationDelegate = nil
+        record.webView?.uiDelegate = nil
+        record.webView?.stopLoading()
+        record.webView?.removeFromSuperview()
+        if mountedWebView === record.webView {
+            mountedWebView = nil
+        }
+        onEvent?(.closed(id: id))
+    }
+
+    func shutdown() {
+        guard !isShutDown else { return }
+        isShutDown = true
+        onEvent = nil
+        onPopupCreated = nil
+        for id in Array(records.keys) {
+            closeTab(id: id)
+        }
+    }
+
+    /// Local-document seam for integration tests; production addresses use navigate.
+    @discardableResult func loadHTMLString(_ html: String, baseURL: URL?, id: String) -> WKNavigation? {
+        guard let record = records[id] else { return nil }
+        let webView = ensureWebView(record)
+        record.retryLoad = .html(html, baseURL)
+        return begin(record, url: baseURL ?? URL(string: "about:blank")) {
+            webView.loadHTMLString(html, baseURL: baseURL)
+        }
+    }
+
+    func webView(for id: String) -> WKWebView? { records[id]?.webView }
+
+    /// Shared by WKUIDelegate and tests. WebKit performs the popup load itself.
+    func adoptPopup(configuration: WKWebViewConfiguration, url: URL?) -> WKWebView? {
+        guard !isShutDown, let onPopupCreated, url.map(Self.isAllowed) ?? true else { return nil }
+        let id = UUID().uuidString
+        let record = Record(id: id, url: url)
+        records[id] = record
+        let webView = ensureWebView(record, configuration: configuration)
+        onPopupCreated(id, url)
+        // Adoption can synchronously close the popup or shut down this scene.
+        guard records[id] === record else { return nil }
+        return webView
+    }
+
+    // MARK: Private
+
+    private enum RetryLoad {
+        case url(URL)
+        case html(String, URL?)
+    }
+
+    private final class Record {
+        // MARK: Lifecycle
+
+        init(id: String, url: URL?) {
+            self.id = id
+            self.state = BrowserMobilePageState(url: url)
+            self.retryLoad = .url(url ?? URL(string: "about:blank")!)
+        }
+
+        // MARK: Internal
+
+        let id: String
+        var webView: WKWebView?
+        var state: BrowserMobilePageState
+        var lastEmitted: BrowserMobilePageState?
+        var observations = [NSKeyValueObservation]()
+        var retryLoad: RetryLoad
+        var generation = 0
+        var currentNavigation: WKNavigation?
+        // Weak keys retain generation information while WebKit can deliver that
+        // navigation, without an ever-growing set of canceled navigation IDs.
+        let navigationGenerations = NSMapTable<WKNavigation, NSNumber>.weakToStrongObjects()
+        var allowsPageMetadata = false
+        var hasStartedCurrentNavigation = false
+    }
+
+    private let dataStore: WKWebsiteDataStore
+    private var records = [String: Record]()
+    private var idsByWebView = [ObjectIdentifier: String]()
+    private weak var mountedWebView: WKWebView?
+    private var isShutDown = false
+
+    private static func isAllowed(_ url: URL) -> Bool {
+        switch url.scheme?.lowercased() {
+        case "http", "https": url.host?.isEmpty == false
+        case "about": url.absoluteString.lowercased().split(separator: "#").first == "about:blank"
+        default: false
+        }
+    }
+
+    private func ensureWebView(
+        _ record: Record,
+        configuration suppliedConfiguration: WKWebViewConfiguration? = nil
+    ) -> WKWebView {
+        if let webView = record.webView {
+            return webView
+        }
+        let configuration: WKWebViewConfiguration
+        if let suppliedConfiguration {
+            configuration = suppliedConfiguration
+        } else {
+            configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = dataStore
+            configuration.allowsInlineMediaPlayback = true
+        }
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        record.webView = webView
+        let id = record.id
+        idsByWebView[ObjectIdentifier(webView)] = id
+        webView.allowsBackForwardNavigationGestures = true
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        record.observations = [
+            observe(\.title, webView: webView, id: id),
+            observe(\.url, webView: webView, id: id),
+            observe(\.isLoading, webView: webView, id: id),
+            observe(\.estimatedProgress, webView: webView, id: id),
+            observe(\.canGoBack, webView: webView, id: id),
+            observe(\.canGoForward, webView: webView, id: id),
+        ]
+        return webView
+    }
+
+    private func observe(
+        _ keyPath: KeyPath<WKWebView, some Any>, webView: WKWebView, id: String
+    ) -> NSKeyValueObservation {
+        webView.observe(keyPath, options: [.new]) { [weak self, weak webView] _, _ in
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, let record = records[id], record.webView === webView else { return }
+                // Read current properties, never a value captured by an older KVO delivery.
+                refresh(record)
+            }
+        }
+    }
+
+    private func navigate(record: Record, url: URL) {
+        guard Self.isAllowed(url) else {
+            record.state.error = NSLocalizedString(
+                "This address is not supported. Enter an http or https address.", comment: "Unsupported mobile URL."
+            )
+            emit(record)
+            return
+        }
+        record.retryLoad = .url(url)
+        let webView = ensureWebView(record)
+        begin(record, url: url) { webView.load(URLRequest(url: url)) }
+    }
+
+    @discardableResult private func begin(_ record: Record, url: URL?, load: () -> WKNavigation?) -> WKNavigation? {
+        record.generation += 1
+        record.allowsPageMetadata = false
+        record.hasStartedCurrentNavigation = false
+        record.state.url = url
+        record.state.title = ""
+        record.state.error = nil
+        record.state.isLoading = true
+        record.state.progress = 0
+        let navigation = load()
+        record.currentNavigation = navigation
+        if let navigation {
+            record.navigationGenerations.setObject(NSNumber(value: record.generation), forKey: navigation)
+        } else {
+            record.state.isLoading = false
+        }
+        emit(record)
+        return navigation
+    }
+
+    private func record(for webView: WKWebView) -> Record? {
+        guard let id = idsByWebView[ObjectIdentifier(webView)],
+              let record = records[id], record.webView === webView
+        else { return nil }
+        return record
+    }
+
+    private func currentRecord(for webView: WKWebView, navigation: WKNavigation?) -> Record? {
+        guard let record = record(for: webView), let navigation,
+              record.navigationGenerations.object(forKey: navigation)?.intValue == record.generation
+        else { return nil }
+        return record
+    }
+
+    private func refresh(_ record: Record) {
+        guard let webView = record.webView else { return }
+        if record.allowsPageMetadata {
+            record.state.url = webView.url ?? record.state.url
+            record.state.title = webView.title ?? ""
+        }
+        if record.state.isLoading, record.hasStartedCurrentNavigation {
+            record.state.progress = max(record.state.progress, webView.estimatedProgress)
+        }
+        record.state.canGoBack = webView.canGoBack
+        record.state.canGoForward = webView.canGoForward
+        emit(record)
+    }
+
+    private func emit(_ record: Record) {
+        guard records[record.id] === record, record.lastEmitted != record.state else { return }
+        record.lastEmitted = record.state
+        onEvent?(.state(id: record.id, record.state))
+    }
+
+    private func fail(_ error: Error, webView: WKWebView, navigation: WKNavigation?) {
+        guard let record = currentRecord(for: webView, navigation: navigation) else { return }
+        record.state.isLoading = false
+        let nsError = error as NSError
+        if !(nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled) {
+            record.state.error = nsError.localizedDescription
+            if let failedURL = nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL,
+               Self.isAllowed(failedURL)
+            {
+                record.state.url = failedURL
+                record.retryLoad = .url(failedURL)
+            }
+        }
+        refresh(record)
+    }
+}
+
+// MARK: WKNavigationDelegate
+
+extension BrowserWebKitEngine: WKNavigationDelegate {
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+    ) {
+        guard record(for: webView) != nil,
+              let url = navigationAction.request.url, Self.isAllowed(url)
+        else {
+            if let record = record(for: webView), navigationAction.targetFrame?.isMainFrame != false {
+                record.state.error = NSLocalizedString(
+                    "This link requires an unsupported app or browser page. Open another web address.",
+                    comment: "Unsupported mobile navigation."
+                )
+                emit(record)
+            }
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation?) {
+        guard let record = record(for: webView), let navigation else { return }
+        if let generation = record.navigationGenerations.object(forKey: navigation) {
+            guard generation.intValue == record.generation else { return }
+        } else {
+            // Links/forms and WebKit-created popups have no load() return value.
+            record.generation += 1
+            record.navigationGenerations.setObject(NSNumber(value: record.generation), forKey: navigation)
+            record.currentNavigation = navigation
+        }
+        record.allowsPageMetadata = false
+        record.hasStartedCurrentNavigation = true
+        record.state.isLoading = true
+        record.state.error = nil
+        record.state.progress = 0
+        refresh(record)
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation?) {
+        guard let record = currentRecord(for: webView, navigation: navigation) else { return }
+        // Preserve the requested URL until this navigation commits.
+        refresh(record)
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation?) {
+        guard let record = currentRecord(for: webView, navigation: navigation) else { return }
+        record.allowsPageMetadata = true
+        if case .url = record.retryLoad, let url = webView.url {
+            record.retryLoad = .url(url)
+        }
+        refresh(record)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+        guard let record = currentRecord(for: webView, navigation: navigation) else { return }
+        record.allowsPageMetadata = true
+        record.state.isLoading = false
+        record.state.progress = 1
+        refresh(record)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {
+        fail(error, webView: webView, navigation: navigation)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation?, withError error: Error) {
+        fail(error, webView: webView, navigation: navigation)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard let record = record(for: webView) else { return }
+        record.generation += 1
+        record.allowsPageMetadata = false
+        record.hasStartedCurrentNavigation = false
+        record.state.isLoading = false
+        record.state.error = NSLocalizedString(
+            "The page stopped responding. Tap Reload to try again.", comment: "WebKit process recovery."
+        )
+        emit(record)
+    }
+}
+
+// MARK: WKUIDelegate
+
+extension BrowserWebKitEngine: WKUIDelegate {
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures _: WKWindowFeatures
+    ) -> WKWebView? {
+        guard record(for: webView) != nil, navigationAction.targetFrame == nil else { return nil }
+        return adoptPopup(configuration: configuration, url: navigationAction.request.url)
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        guard let record = record(for: webView) else { return }
+        closeTab(id: record.id)
+    }
+}

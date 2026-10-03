@@ -8,6 +8,7 @@ options:
   tabWidth: 4
   deploymentTarget:
     macOS: 26.0
+    iOS: 26.0
   groupSortPosition: top
   generateEmptyDirectories: true
   defaultSourceDirectoryType: syncedFolder
@@ -23,8 +24,6 @@ settings:
     LM_FILTER_WARNINGS: YES
     LM_ENABLE_LINK_GENERATION: NO
     SWIFT_EMIT_CONST_VALUE_PROTOCOLS: ""
-    CLANG_CXX_LANGUAGE_STANDARD: gnu++20
-    CLANG_WARN_COMMA: NO
     SWIFT_VERSION: "6.0"
     THEBROWSER_SENTRY_DSN: ""
     THEBROWSER_SENTRY_ENVIRONMENT: development
@@ -33,34 +32,40 @@ settings:
     THEBROWSER_SENTRY_USAGE_ANALYTICS_ENABLED: YES
     THEBROWSER_SPARKLE_FEED_URL: https://updates.thebrowser.app/appcast.xml
     THEBROWSER_SPARKLE_PUBLIC_KEY: K2RmhxJLUxN8YeRS4I7Tz7cYrzkbcZB1axGePxRHflM=
-    GCC_ENABLE_CPP_EXCEPTIONS: NO
-    GCC_ENABLE_CPP_RTTI: NO
-    GCC_PREPROCESSOR_DEFINITIONS:
-      - $(inherited)
-      - __STDC_CONSTANT_MACROS
-      - __STDC_FORMAT_MACROS
-    HEADER_SEARCH_PATHS:
-      - $(inherited)
-      - $(SRCROOT)/Sources
-      - $(SRCROOT)/ThirdParty/cef/current
-      - $(SRCROOT)/ThirdParty/cef/source/chromium/src
-      - $(SRCROOT)/ThirdParty/cef/source/chromium/src/base/allocator/partition_allocator/src
-      - $(SRCROOT)/ThirdParty/cef/source/chromium/src/out/$(CONFIGURATION)_GN_arm64/gen
-      - $(SRCROOT)/ThirdParty/cef/source/chromium/src/out/$(CONFIGURATION)_GN_arm64/gen/base/allocator/partition_allocator/src
-    OTHER_LDFLAGS:
-      - $(inherited)
-      - $(SRCROOT)/.build/cef-wrapper/libcef_dll_wrapper/$(CONFIGURATION)/libcef_dll_wrapper.a
-      - -lpthread
-      - -framework
-      - AppKit
-      - -framework
-      - Cocoa
-      - -framework
-      - IOKit
-      - -framework
-      - IOSurface
-      - -framework
-      - UserNotifications
+targetTemplates:
+  ChromiumTarget:
+    settings:
+      base:
+        CLANG_CXX_LANGUAGE_STANDARD: gnu++20
+        CLANG_WARN_COMMA: NO
+        GCC_ENABLE_CPP_EXCEPTIONS: NO
+        GCC_ENABLE_CPP_RTTI: NO
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - __STDC_CONSTANT_MACROS
+          - __STDC_FORMAT_MACROS
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Sources
+          - $(SRCROOT)/ThirdParty/cef/current
+          - $(SRCROOT)/ThirdParty/cef/source/chromium/src
+          - $(SRCROOT)/ThirdParty/cef/source/chromium/src/base/allocator/partition_allocator/src
+          - $(SRCROOT)/ThirdParty/cef/source/chromium/src/out/$(CONFIGURATION)_GN_arm64/gen
+          - $(SRCROOT)/ThirdParty/cef/source/chromium/src/out/$(CONFIGURATION)_GN_arm64/gen/base/allocator/partition_allocator/src
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - $(SRCROOT)/.build/cef-wrapper/libcef_dll_wrapper/$(CONFIGURATION)/libcef_dll_wrapper.a
+          - -lpthread
+          - -framework
+          - AppKit
+          - -framework
+          - Cocoa
+          - -framework
+          - IOKit
+          - -framework
+          - IOSurface
+          - -framework
+          - UserNotifications
 packages:
   DomainParser:
     url: https://github.com/Dashlane/SwiftDomainParser.git
@@ -104,6 +109,8 @@ targets:
           - -framework
           - Foundation
   TheBrowserHelper:
+    templates:
+      - ChromiumTarget
     type: application
     platform: macOS
     productName: "TheBrowser Helper"
@@ -117,6 +124,8 @@ targets:
         INFOPLIST_FILE: Support/TheBrowserHelper-Info.plist
         SWIFT_EMIT_LOC_STRINGS: NO
   TheBrowser:
+    templates:
+      - ChromiumTarget
     type: application
     platform: macOS
     sources:
@@ -160,6 +169,8 @@ targets:
           CODE_SIGN_ENTITLEMENTS: Support/TheBrowser.entitlements
           GCC_PREPROCESSOR_DEFINITIONS:
             - $(inherited)
+            - __STDC_CONSTANT_MACROS
+            - __STDC_FORMAT_MACROS
             - NDEBUG
     postBuildScripts:
       - name: Stage Web App Launcher
@@ -189,6 +200,8 @@ targets:
       testTargets:
         - TheBrowserTests
   TheBrowserTests:
+    templates:
+      - ChromiumTarget
     type: bundle.unit-test
     platform: macOS
     sources:
@@ -230,3 +243,69 @@ targets:
       - package: OpenAPIRuntime
       - package: OpenAPIURLSession
       - package: ZIPFoundation
+  TheBrowseriOS:
+    type: application
+    platform: iOS
+    productName: TheBrowser
+    sources:
+      - path: Sources/BrowseriOS
+      - path: Sources/Browser/BrowserNavigationResolver.swift
+      - path: Sources/Browser/BrowserSearchEngine.swift
+      - path: Sources/Browser/BrowserStrings.swift
+      - path: Sources/Browser/Resources/en.lproj/Localizable.strings
+      - path: Sources/Browser/Resources/Credits.html
+    dependencies:
+      - package: DomainParser
+    settings:
+      base:
+        PRODUCT_NAME: TheBrowser
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser.ios
+        INFOPLIST_FILE: Support/TheBrowseriOS-Info.plist
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_EMIT_LOC_STRINGS: NO
+    scheme:
+      gatherCoverageData: false
+      testTargets:
+        - TheBrowseriOSTests
+  BrowserMobileTestHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: Tests/BrowserMobileTestHost
+    settings:
+      base:
+        PRODUCT_NAME: BrowserMobileTestHost
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser.ios-test-host
+        INFOPLIST_FILE: Support/BrowserMobileTestHost-Info.plist
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_EMIT_LOC_STRINGS: NO
+  TheBrowseriOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Sources/BrowseriOS
+        excludes:
+          - AppDelegate.swift
+          - SceneDelegate.swift
+      - path: Sources/Browser/BrowserNavigationResolver.swift
+      - path: Sources/Browser/BrowserSearchEngine.swift
+      - path: Sources/Browser/BrowserStrings.swift
+      - path: Sources/Browser/Resources/en.lproj/Localizable.strings
+      - path: Tests/TheBrowseriOSTests
+    dependencies:
+      - package: DomainParser
+      - target: BrowserMobileTestHost
+        link: false
+    settings:
+      base:
+        BUNDLE_LOADER: $(TEST_HOST)
+        INFOPLIST_FILE: Support/TheBrowseriOSTests-Info.plist
+        PRODUCT_NAME: TheBrowseriOSTests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/BrowserMobileTestHost.app/BrowserMobileTestHost
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_STRICT_CONCURRENCY: complete

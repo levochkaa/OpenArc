@@ -1,0 +1,43 @@
+import Foundation
+import UIKit
+
+// MARK: - BrowserMobilePageState
+
+struct BrowserMobilePageState: Equatable, Sendable {
+    var url: URL?
+    var title = ""
+    var isLoading = false
+    var progress = 0.0
+    var canGoBack = false
+    var canGoForward = false
+    var error: String?
+}
+
+// MARK: - BrowserMobileEngineEvent
+
+enum BrowserMobileEngineEvent: Sendable {
+    case state(id: String, BrowserMobilePageState)
+    case closed(id: String)
+}
+
+// MARK: - BrowserMobileEngine
+
+/// Runtime IDs belong to one scene's engine. The workspace owns stable tab IDs.
+/// Creation and navigation may synchronously emit events; callers register the
+/// logical identity first. A closed runtime ID cannot be reused.
+@MainActor protocol BrowserMobileEngine: AnyObject {
+    var hostView: UIView { get }
+    var onEvent: ((BrowserMobileEngineEvent) -> Void)? { get set }
+    /// The engine has registered a popup using WebKit's supplied configuration.
+    /// Adopt its runtime ID before further delegate events are delivered.
+    var onPopupCreated: ((String, URL?) -> Void)? { get set }
+    func createTab(id: String, url: URL)
+    func selectTab(id: String?)
+    func navigate(id: String, url: URL)
+    func goBack(id: String)
+    func goForward(id: String)
+    func reload(id: String)
+    func stop(id: String)
+    func closeTab(id: String)
+    func shutdown()
+}

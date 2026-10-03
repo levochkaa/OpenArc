@@ -9,6 +9,9 @@ APP_NAME="TheBrowser"
 HELPER_NAME="TheBrowser Helper"
 CONFIGURATION="${CONFIGURATION:-Debug}"
 DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode"
+IOS_SCHEME="TheBrowseriOS"
+IOS_DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode-ios"
+ios_destination="${THEBROWSER_IOS_DESTINATION:-}"
 APP_BUNDLE="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 CODE_SIGNING_ALLOWED="${CODE_SIGNING_ALLOWED:-YES}"
@@ -34,6 +37,8 @@ Usage: ./build.sh [action] [options] [-- extra-xcodebuild-args...]
 Actions:
   build                 Build TheBrowser. This is the default action.
   test                  Build and run the test suite.
+  ios-build             Build the UIKit app for iOS Simulator without launching it.
+  ios-test              Run iOS tests in a dedicated UIKit test host on the specified simulator.
   run                   Stop, build, and launch this worktree's app instance.
   debug                 Stop, build, and launch this worktree under LLDB.
   logs, run-logs        Run this worktree and stream its main-process logs.
@@ -49,6 +54,9 @@ Options:
   --full-output         Print complete xcodebuild output instead of warnings/errors only.
   --skip-build          For run/debug/logs/telemetry/verify, launch the existing app bundle.
   --runtime-suffix ID   Override the stable per-worktree CEF/session identity.
+  --ios-destination DEST
+                        Simulator destination, e.g. 'platform=iOS Simulator,id=UUID'.
+                        Required for ios-test; ios-build defaults to a generic simulator.
   --chromium-artifact-source PATH
                         Link Chromium/CEF artifacts from PATH instead of the main checkout.
   --refresh             For prepare-worktree, replace existing local artifacts or links.
@@ -65,6 +73,8 @@ Worktree behavior:
 Examples:
   ./build.sh
   ./build.sh test
+  ./build.sh ios-build
+  ./build.sh ios-test --ios-destination 'platform=iOS Simulator,id=SIMULATOR-UUID'
   ./build.sh run
   ./build.sh run --skip-build
   ./build.sh build --release
@@ -75,7 +85,7 @@ EOF
 }
 
 case "${1:-build}" in
-  build|test|run|debug|logs|run-logs|telemetry|verify|prepare-worktree|status)
+  build|test|ios-build|ios-test|run|debug|logs|run-logs|telemetry|verify|prepare-worktree|status)
     action="$1"
     shift
     ;;
@@ -123,6 +133,11 @@ while [[ $# -gt 0 ]]; do
     --runtime-suffix)
       [[ $# -ge 2 ]] || { echo "error: --runtime-suffix requires a value" >&2; exit 2; }
       runtime_suffix="$2"
+      shift 2
+      ;;
+    --ios-destination)
+      [[ $# -ge 2 ]] || { echo "error: --ios-destination requires a value" >&2; exit 2; }
+      ios_destination="$2"
       shift 2
       ;;
     --chromium-artifact-source)
@@ -434,6 +449,62 @@ test_app() {
   echo "$APP_NAME $CONFIGURATION tests succeeded"
 }
 
+prepare_ios_build_environment() {
+  source "$ROOT_DIR/script/xcode_env.sh"
+  run_with_xcode_output "$ROOT_DIR/script/generate_xcodeproj.sh"
+  run_with_xcode_output xcodebuild \
+    -resolvePackageDependencies \
+    -project "$ROOT_DIR/$PROJECT_NAME.xcodeproj" \
+    -scheme "$IOS_SCHEME" \
+    -derivedDataPath "$IOS_DERIVED_DATA_PATH" \
+    -packageAuthorizationProvider netrc \
+    -scmProvider system \
+    -skipPackagePluginValidation \
+    -skipMacroValidation
+}
+
+ios_xcodebuild_arguments() {
+  IOS_XCODEBUILD_ARGS=(
+    -project "$ROOT_DIR/$PROJECT_NAME.xcodeproj"
+    -scheme "$IOS_SCHEME"
+    -configuration "$CONFIGURATION"
+    -derivedDataPath "$IOS_DERIVED_DATA_PATH"
+    -destination "$ios_destination"
+    -packageAuthorizationProvider netrc
+    -scmProvider system
+    -skipPackagePluginValidation
+    -skipMacroValidation
+    CODE_SIGNING_ALLOWED=NO
+    CODE_SIGNING_REQUIRED=NO
+  )
+  if [[ "$passthrough_arg_count" -gt 0 ]]; then
+    IOS_XCODEBUILD_ARGS+=("${passthrough_args[@]}")
+  fi
+}
+
+run_ios_action() {
+  local build_action="$1"
+  if [[ -z "$ios_destination" ]]; then
+    if [[ "$build_action" == "test" ]]; then
+      echo "error: ios-test requires --ios-destination 'platform=iOS Simulator,id=UUID'" >&2
+      exit 2
+    fi
+    ios_destination="generic/platform=iOS Simulator"
+  fi
+  if [[ "$ios_destination" != "platform=iOS Simulator,"* &&
+        !( "$build_action" == "build" && "$ios_destination" == "generic/platform=iOS Simulator" ) ]]; then
+    echo "error: iOS actions require an iOS Simulator destination" >&2
+    exit 2
+  fi
+  prepare_ios_build_environment
+  ios_xcodebuild_arguments
+  if [[ "$build_action" == "test" ]]; then
+    IOS_XCODEBUILD_ARGS+=(-parallel-testing-enabled NO)
+  fi
+  run_with_xcode_output xcodebuild "${IOS_XCODEBUILD_ARGS[@]}" "$build_action"
+  echo "$APP_NAME iOS $CONFIGURATION $build_action succeeded ($ios_destination)"
+}
+
 bundle_process_ids() {
   local process_snapshot
   process_snapshot="$(/bin/ps -axo pid=,command= 2>/dev/null)" || return 1
@@ -593,6 +664,12 @@ case "$action" in
     ;;
   test)
     test_app
+    ;;
+  ios-build)
+    run_ios_action build
+    ;;
+  ios-test)
+    run_ios_action test
     ;;
   run)
     prepare_run
