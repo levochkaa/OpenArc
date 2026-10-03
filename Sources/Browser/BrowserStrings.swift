@@ -1612,6 +1612,7 @@ enum BrowserStrings {
         )
     }
 
+    #if os(macOS)
     static func title(for lifetime: BrowserTemporaryTabLifetime) -> String {
         switch lifetime {
         case .twelveHours:
@@ -1624,4 +1625,5 @@ enum BrowserStrings {
             settingsLifetimeThirtyDays
         }
     }
+    #endif
 }
