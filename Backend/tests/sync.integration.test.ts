@@ -12,6 +12,7 @@ import type { INestApplication } from "@nestjs/common";
 import type pg from "pg";
 import type { SyncChange, SyncOperation } from "../src/schemas.js";
 import { registerFolderSyncTests } from "./sync-folders.js";
+import { registerActivitySyncTests } from "./sync-activity.js";
 
 type SyncEvent = {
   serverSeq: number;
@@ -135,6 +136,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
   });
 
   registerFolderSyncTests({ pool: () => pool, account, register, post, startServerProcess });
+  registerActivitySyncTests({ pool: () => pool, account, post, startServerProcess });
 
   async function storedTabs(userID: string): Promise<StoredTab[]> {
     const result = await pool.query<StoredTab>(`

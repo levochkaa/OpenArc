@@ -100,10 +100,8 @@ import Testing
         ("seconds", "1970-01-01T00:00:10Z", 99, 10),
         ("offset", "1970-01-01T01:30:15+01:30", 99, 15),
         ("epoch", "1970-01-01T00:00:00Z", 99, 0),
-        // The existing InternetDateTime parser does not enable fractional seconds.
-        // Formatter reuse must retain that fallback policy in this perf-only slice.
-        ("fractional", "1970-01-01T00:00:20.125Z", 43.75, 43.75),
-        ("fractional-no-local", "1970-01-01T00:00:20.125Z", nil, nil),
+        ("fractional", "1970-01-01T00:00:20.125Z", 43.75, 20.125),
+        ("fractional-no-local", "1970-01-01T00:00:20.125Z", nil, 20.125),
         ("invalid-no-local", "invalid", nil, nil),
         ("absent-no-local", nil, nil, nil),
     ]

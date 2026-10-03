@@ -448,30 +448,7 @@ import Foundation
         }
         values = values.filter { $0.value.op == .upsert && !deleted.contains($0.key) }
         guard values != previousValues else { return false }
-        let projected = BrowserSyncFolderProjection.snapshot(values: values, local: snapshot)
-        let previousTabs = Dictionary(uniqueKeysWithValues: snapshot.tabs.compactMap { tab in
-            tab.id.map { ($0, tab) }
-        })
-        // The wire uses whole seconds. An unrelated local change must not round
-        // a more precise stored activity timestamp backwards.
-        let tabs = projected.tabs.map { tab in
-            guard let id = tab.id, let previous = previousTabs[id],
-                  previous.lastActivityTimestamp != tab.lastActivityTimestamp
-            else { return tab }
-            let key = BrowserSyncOutboxProjection.key(type: .tab, id: id)
-            guard values[key]?.tabData?.lastActivityAt == previousValues[key]?.tabData?.lastActivityAt
-            else { return tab }
-            return BrowserTabSessionSnapshotTab(
-                id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
-                userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
-                pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: previous.lastActivityTimestamp,
-                pinnedSiblingRank: tab.pinnedSiblingRank
-            )
-        }
-        let next = BrowserTabSessionSnapshot(
-            version: projected.version, spaces: projected.spaces, pinnedTabFolders: projected.pinnedTabFolders,
-            tabs: tabs
-        )
+        let next = BrowserSyncFolderProjection.snapshot(values: values, local: snapshot)
         guard next != snapshot, (try? Self.validate(next)) != nil else { return false }
         return commit(next, moveIntent: moveIntent, archiveAction: archiveAction)
     }

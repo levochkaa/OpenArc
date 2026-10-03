@@ -7,6 +7,43 @@ enum BrowserSyncOutboxError: Error, Equatable {
     case invalidEvent
 }
 
+// MARK: - BrowserSyncActivityDates
+
+/// Pending activity never decreases a known canonical value. Keep this policy
+/// in projections: canonical events and immutable queued requests retain their bytes.
+struct BrowserSyncActivityDates {
+    // MARK: Internal
+
+    func latest(_ current: String?, _ incoming: String?) -> String? {
+        guard let candidate = timestamp(incoming) else {
+            return timestamp(current) == nil ? nil : current
+        }
+        guard let previous = timestamp(current) else { return incoming }
+        return candidate > previous ? incoming : current
+    }
+
+    func projectedTimestamp(_ incoming: String?, local: TimeInterval?) -> TimeInterval? {
+        let previous = local.flatMap { $0.isFinite ? $0 : nil }
+        guard let candidate = timestamp(incoming) else { return previous }
+        // The wire normally uses seconds. Preserve an existing local fraction of
+        // that same value, but never override a different authoritative date.
+        if let previous, floor(previous) == candidate {
+            return previous
+        }
+        return candidate
+    }
+
+    // MARK: Private
+
+    private let seconds = Date.ISO8601FormatStyle()
+    private let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+
+    private func timestamp(_ value: String?) -> TimeInterval? {
+        guard let value else { return nil }
+        return ((try? fractional.parse(value)) ?? (try? seconds.parse(value)))?.timeIntervalSince1970
+    }
+}
+
 // MARK: - BrowserSyncOutboxBaseline
 
 struct BrowserSyncOutboxBaseline: Codable {
@@ -240,7 +277,7 @@ enum BrowserSyncOutboxProjection {
         let localTabs = Dictionary(uniqueKeysWithValues: (local?.tabs ?? []).compactMap { tab in
             tab.id.map { ($0, tab) }
         })
-        let dateFormatter = ISO8601DateFormatter()
+        let activityDates = BrowserSyncActivityDates()
         let projectedTabs = live.filter {
             $0.entityType == .tab && $0.tabData.map { $0.placement == .app || spaceIDs.contains($0.spaceID) } == true
         }
@@ -272,9 +309,9 @@ enum BrowserSyncOutboxProjection {
                 pinnedFolderID: data.placement == .spacePinned && previous?.spaceID == data.spaceID
                     ? previous?.pinnedFolderID
                     : nil,
-                lastActivityTimestamp: data.lastActivityAt
-                    .flatMap { dateFormatter.date(from: $0)?.timeIntervalSince1970 }
-                    ?? previous?.lastActivityTimestamp,
+                lastActivityTimestamp: activityDates.projectedTimestamp(
+                    data.lastActivityAt, local: previous?.lastActivityTimestamp
+                ),
                 pinnedSiblingRank: data.placement == .spacePinned && previous?.spaceID == data.spaceID
                     ? previous?.pinnedSiblingRank
                     : nil
@@ -308,6 +345,7 @@ enum BrowserSyncOutboxProjection {
         baseline: BrowserSyncOutboxBaseline, pending: [BrowserSyncQueuedMutation]
     ) -> [String: BrowserSyncChange] {
         var values = baseline.entities.mapValues(\.change)
+        let activityDates = BrowserSyncActivityDates()
         // Local tombstones are recorded before debounce, including deletes later in
         // this FIFO. Replay their preceding creates/move-outs first. Authoritative
         // server tombstones remain effective from the start.
@@ -352,7 +390,9 @@ enum BrowserSyncOutboxProjection {
                         deleted.insert(key(change))
                         continue
                     }
-                    values[key(change)] = change
+                    values[key(change)] = preservingActivity(
+                        of: change, from: values[key(change)], dates: activityDates
+                    )
                 }
                 // The v2 server applies upserts first, then deletions, without
                 // semantic rank normalization. Its parent cascade is permanent.
@@ -447,6 +487,23 @@ enum BrowserSyncOutboxProjection {
     }
 
     // MARK: Private
+
+    private static func preservingActivity(
+        of change: BrowserSyncChange, from previous: BrowserSyncChange?, dates: BrowserSyncActivityDates
+    ) -> BrowserSyncChange {
+        guard let data = change.tabData else { return change }
+        let activity = dates.latest(previous?.tabData?.lastActivityAt, data.lastActivityAt)
+        guard activity != data.lastActivityAt else { return change }
+        return BrowserSyncChange(
+            entityType: change.entityType, entityID: change.entityID, op: change.op, spaceData: nil,
+            tabData: BrowserSyncTabPayload(
+                spaceID: data.spaceID, placement: data.placement, rank: data.rank, urlString: data.urlString,
+                pinnedURLString: data.pinnedURLString, title: data.title, userTitleOverride: data.userTitleOverride,
+                faviconURLString: data.faviconURLString, lastActivityAt: activity,
+                pinnedFolderID: data.pinnedFolderID
+            )
+        )
+    }
 
     private static func delta(before: [BrowserSyncChange], after: [BrowserSyncChange]) -> [BrowserSyncChange] {
         let beforeByKey = Dictionary(uniqueKeysWithValues: before.map { (key($0), $0) })

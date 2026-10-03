@@ -147,6 +147,7 @@ enum BrowserSyncSemanticProjection {
         to values: inout [String: BrowserSyncChange],
         deleted: inout Set<String>
     ) {
+        let activityDates = BrowserSyncActivityDates()
         for operation in operations {
             switch operation {
             case .createSpace(let id, let data, let beforeID, let afterID):
@@ -211,7 +212,9 @@ enum BrowserSyncSemanticProjection {
                         title: applying(fields.title, to: data.title),
                         userTitleOverride: applying(fields.userTitleOverride, to: data.userTitleOverride),
                         faviconURLString: applying(fields.faviconURLString, to: data.faviconURLString),
-                        lastActivityAt: applying(fields.lastActivityAt, to: data.lastActivityAt)
+                        lastActivityAt: activityDates.latest(
+                            data.lastActivityAt, applying(fields.lastActivityAt, to: data.lastActivityAt)
+                        )
                     )
                 )
             case .moveSpaces(let ids, let beforeID, let afterID):

@@ -46,7 +46,9 @@ Before opening the new `MobileProfile/TheBrowser.sqlite`, the registry reads and
 
 Scene selection is stored separately under its persistent scene ID. Disconnect/reconnect retains the workspace; discarding a scene releases its runtimes without deleting the registry's document or pending writes. Concurrent first connections await one registry open operation. Initial creation of a fresh local profile creates Personal and one blank tab only once; later empty state never triggers implicit synchronized replacements.
 
-User selection and foreground transitions now record activity through the shared document's normal v4 write path. Selection itself stays local. Attached windows keep independent in-memory selection protection until disconnect/discard/shutdown, including while backgrounded; retained disconnected workspaces do not keep protection. The [activity contract](mobile-foundation.md#tab-activity-and-attached-windows) distinguishes local monotonic capture from the unchanged server-sequence merge, which can still accept a delayed older timestamp. Auto-archive is not enabled.
+User selection and foreground transitions record activity through the shared document's normal v4 write path. Selection itself stays local. Attached windows keep independent in-memory selection protection until disconnect/discard/shutdown, including while backgrounded; retained disconnected workspaces do not keep protection. The [activity contract](mobile-foundation.md#tab-activity-and-attached-windows) defines local capture and leases. The updated server and shared pending reducers preserve the maximum known activity date across v2/v3/v4 writes, including fractional dates; null/omitted activity never erases a known value. Queued bytes, UUIDs, receipts and canonical server-sequence guards remain intact. See [Monotonic tab activity](sync-protocol.md#monotonic-tab-activity).
+
+Snapshot materialization preserves local fractional precision only for the same incoming whole-second value; a different valid canonical date wins. Older servers and client binaries do not provide all these guarantees, historical events/receipts are unchanged, and this change does not repair previously regressed activity values. Completely offline activity remains unknown to other devices. Auto-archive stays disabled until offline-device protection and conditional expiry are defined and enforced.
 
 ## Localhost integration fixture
 
@@ -60,7 +62,7 @@ Simulator tests receive only the control URL/token through `TEST_RUNNER_` enviro
 
 ## Remaining work
 
-Verify real Apple authentication and account identity across provisioned clients, then separately verify any authorized production deployment. Extend mobile-specific HTTP coverage for paged adoption, device rotation and concurrent subtree/scene lifecycle races; the desktop fixture already exercises broader protocol behavior. Add auto-archive after settling cross-device activity semantics, recovery export/import and remaining browser capabilities; retain native reorder physical-input verification separately. Profile synchronous document/SQLite/reducer work before moving it off MainActor, preserving action ordering and transaction boundaries.
+Verify real Apple authentication and account identity across provisioned clients, then separately verify any authorized production deployment. Extend mobile-specific HTTP coverage for paged adoption, device rotation and concurrent subtree/scene lifecycle races; the desktop fixture already exercises broader protocol behavior. Add auto-archive after defining offline-device protection and conditional expiry. Recovery export/import and remaining browser capabilities are separate work; retain native reorder physical-input verification separately. Profile synchronous document/SQLite/reducer work before moving it off MainActor, preserving action ordering and transaction boundaries.
 
 ## Verification
 

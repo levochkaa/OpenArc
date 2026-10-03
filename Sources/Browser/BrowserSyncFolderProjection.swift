@@ -240,6 +240,7 @@ enum BrowserSyncFolderProjection {
         _ operations: [BrowserSyncFolderOperation], to values: inout [String: BrowserSyncChange],
         deleted: inout Set<String>
     ) {
+        let activityDates = BrowserSyncActivityDates()
         for operation in operations {
             switch operation {
             case .createSpace(let id, let data, let before, let after):
@@ -313,7 +314,9 @@ enum BrowserSyncFolderProjection {
                         data.userTitleOverride
                     ),
                     faviconURLString: applying(fields.faviconURLString, data.faviconURLString),
-                    lastActivityAt: applying(fields.lastActivityAt, data.lastActivityAt),
+                    lastActivityAt: activityDates.latest(
+                        data.lastActivityAt, applying(fields.lastActivityAt, data.lastActivityAt)
+                    ),
                     pinnedFolderID: data.pinnedFolderID
                 ))
             case .move(let items, let destination, let before, let after):
@@ -346,8 +349,7 @@ enum BrowserSyncFolderProjection {
             uniquingKeysWith: { first, _ in first }
         )
         let oldSpaces = Dictionary((local?.spaces ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let dates = ISO8601DateFormatter(), fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let activityDates = BrowserSyncActivityDates()
         let tabs = ordered.compactMap { change -> BrowserTabSessionSnapshotTab? in
             guard let data = change.tabData else { return nil }
             return .init(
@@ -358,9 +360,9 @@ enum BrowserSyncFolderProjection {
                 placement: data.placement,
                 spaceID: data.spaceID,
                 pinnedFolderID: data.pinnedFolderID,
-                lastActivityTimestamp: data.lastActivityAt.flatMap {
-                    (fractional.date(from: $0) ?? dates.date(from: $0))?.timeIntervalSince1970
-                } ?? oldTabs[change.entityID]?.lastActivityTimestamp,
+                lastActivityTimestamp: activityDates.projectedTimestamp(
+                    data.lastActivityAt, local: oldTabs[change.entityID]?.lastActivityTimestamp
+                ),
                 pinnedSiblingRank: data.placement == .spacePinned ? data.rank : nil
             )
         }

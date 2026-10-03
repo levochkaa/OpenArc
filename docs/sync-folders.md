@@ -1,6 +1,6 @@
 # Folder synchronization protocol
 
-Protocol v4 adds account-scoped folder identities, nesting, pinned-tab membership and mixed folder/tab ordering to the existing authenticated sync endpoints. The macOS client captures folder actions, persists versioned operations in SQLite and projects the canonical tree into the AppKit model. Mobile synchronization and live desktop drag verification remain open.
+Protocol v4 adds account-scoped folder identities, nesting, pinned-tab membership and mixed folder/tab ordering to the existing authenticated sync endpoints. The macOS client captures folder actions, persists versioned operations in SQLite and projects the canonical tree into the AppKit model. The [mobile client](mobile-shared-sync.md) shares this protocol. Live desktop drag verification remains open.
 
 The reference is the user's explicit requirement for reliable bidirectional workspace sync and reorder. These conflict rules are TheBrowser's contract.
 
@@ -60,7 +60,7 @@ Legacy pull filters folder events **before** applying the page limit and strips 
 
 ## Older writers
 
-The v2/v3 request parsers, mutation digests and existing stored receipts retain their old semantics and contents. Legacy ACKs never contain folder events or new membership fields. A legacy Space delete still writes folder tombstones for v4 readers.
+The v2/v3 request parsers, mutation digests and existing stored receipts retain their formats and contents. New live-tab writes use the common [activity maximum](sync-protocol.md#monotonic-tab-activity), including legacy full records and patches. Legacy ACKs never contain folder events or new membership fields. A legacy Space delete still writes folder tombstones for v4 readers.
 
 Old writers cannot express the mixed tree:
 
@@ -90,7 +90,7 @@ Adoption preserves stable local IDs, title/icon and the typed mixed order for mi
 
 `./script/test_swift_sync.sh` runs the production Swift transport, coordinator and SQLite store against that server. The folder scenarios invoke the actual model with a fake browser engine, create/nest/rename folders, reorder an empty folder among tabs, reopen a second profile, preserve an escaped child during an offline folder move/delete, and retry an identical lost-ACK mutation after client restart. Historical v2/v3 cases retain explicit capability shims so adding v4 does not silently remove their coverage. Unit/integration tests separately cover migration BLOB preservation, transaction rollback, adoption, cursor/capability fences, stale snapshots, partial engine hydration and invalid receipts.
 
-These checks do not establish live CEF behavior or native drag geometry, selection/scroll stability and animation quality. They do not implement mobile folder synchronization. Current executor work scales with affected sibling lists and folder subtrees. Per-entity SQL, full-history upgrade replay and synchronous client snapshot/overlay work still need measured performance work; no latency or queue-compaction claim is made.
+These checks do not establish live CEF behavior or native drag geometry, selection/scroll stability and animation quality. Mobile folder and HTTP verification is recorded separately in [mobile shared sync](mobile-shared-sync.md). Current executor work scales with affected sibling lists and folder subtrees. Per-entity SQL, full-history upgrade replay and synchronous client snapshot/overlay work still need measured performance work; no latency or queue-compaction claim is made.
 
 ## Pending engine creation and local moves
 

@@ -1,6 +1,6 @@
 # Sync protocol
 
-V2 and v3 share bearer authentication, account/device checks, permanent deletion tombstones, the event stream and durable mutation receipts. The server serializes account writes in one PostgreSQL transaction. No client timestamp determines conflict order.
+V2 and v3 share bearer authentication, account/device checks, permanent deletion tombstones, the event stream and durable mutation receipts. The server serializes account writes in one PostgreSQL transaction. Client timestamps do not determine structural or metadata conflict order; live-tab activity has the value-merge exception below. [V4](sync-folders.md) extends these foundations with folders and typed mixed ordering.
 
 ## V3 operations
 
@@ -9,7 +9,7 @@ V2 and v3 share bearer authentication, account/device checks, permanent deletion
 | Kind | Identity and content | Effect |
 | --- | --- | --- |
 | `create` | `entityType`, `entityID`, `data`, optional `beforeID`/`afterID` | Create a fresh Space or tab. Data has no client rank. A live identity cannot be overwritten by create. |
-| `patch` | `entityType`, `entityID`, `fields` | Change only named metadata. Missing fields stay unchanged; nullable fields accept explicit `null`. Rank, placement and Space membership are not patch fields. |
+| `patch` | `entityType`, `entityID`, `fields` | Change only named metadata. Missing fields stay unchanged; nullable fields accept explicit `null`, except that null activity cannot erase a known time. Rank, placement and Space membership are not patch fields. |
 | `move` | `entityType`, ordered `entityIDs`, optional anchors; tabs also supply `destination: { spaceID, placement }` | Move surviving identities as a block, preserving their request order and current metadata. |
 | `delete` | `entityType`, `entityID` | Permanently delete this identity. A Space cascades to its ordinary children; global Favorites survive. |
 
@@ -19,7 +19,21 @@ The server removes the moving IDs before resolving anchors. A live `beforeID` in
 
 Missing or deleted ordinary destinations reject the move and preserve live source tabs. Deleted source IDs stay deleted; surviving members can move. Promotion to pinned initializes its home URL from the current canonical URL, movement of an already pinned tab retains its home URL, and leaving pinned clears it. Explicit home-URL edits use a patch.
 
-Two patches to different fields commute. A patch and a move preserve each other's independent changes. Two changes to the same field or two moves of the same identity follow server commit order. This provides convergence to a valid server history; it does not promise identical order for conflicting moves delivered in different orders.
+Two patches to different fields commute. A patch and a move preserve each other's independent changes. Two changes to the same field or two moves of the same identity follow server commit order, except for the activity maximum below. This provides convergence to a valid server history; it does not promise identical order for conflicting moves delivered in different orders.
+
+## Monotonic tab activity
+
+For each live tab, the common v1/v2/v3/v4 SQL upsert stores the maximum of the known and incoming `lastActivityAt` instants. Older, equal, omitted or explicit-null activity cannot lower or erase a known value. A new tab with no known activity remains null. This is a deliberate exception to nullable metadata clearing. Other fields retain their existing conflict rules; an old activity value does not reject the whole operation or its independent title, URL or placement changes. Moves, peer-rank normalization and folder-subtree updates preserve the maximum too.
+
+Newly written tab-upsert events publish the actual PostgreSQL result as UTC with six fractional digits. ACK and pull carry those events, but can also echo historical events in their unchanged format, including for a new rejected or no-op operation. Formatting occurs in SQL, avoiding JavaScript Date's loss of submillisecond precision. Request schemas remain UTC-only and accept their existing ISO 8601 precision; this change does not enable offset-form inputs. No-op activity writes may still create events and receipts under the existing mutation rules.
+
+Tombstones dominate every activity value, including future timestamps. A late patch/upsert cannot resurrect a deleted identity; explicit restore uses a fresh ID. Existing request bytes, digests, historical events and stored receipts are never rewritten. Exact retry returns its original historical receipt even after newer activity or deletion, without another write. Previously regressed database values cannot be recovered from this rule alone; no historical repair or migration is claimed.
+
+Updated Swift clients merge pending v2 full-record and v3/v4 patch activity by parsed instant. Thus a frozen older request cannot hide newer pulled activity while awaiting its ACK. Queue UUIDs, payload bytes and FIFO positions remain unchanged. The canonical baseline still accepts events by server sequence; it does not substitute a local maximum or reject an entire newer event because its activity is older. This preserves compatibility with historical events and older servers. The canonical guarantee requires the updated server; old installed client binaries are not repaired by a protocol-compatible server update.
+
+Snapshot materialization reads fractional canonical times without millisecond truncation. When a whole-second value represents the same second as a more precise local value, it preserves that local fraction. A different canonical instant remains authoritative; arbitrary future local values do not permanently override the baseline. Null/invalid materialization retains the existing finite local fallback. Newly captured mobile activity still uses whole seconds.
+
+Future timestamps are not capped and therefore conservatively delay expiry. Even this maximum cannot reveal activity a completely offline device has never reported. Mobile auto-archive remains disabled until its offline policy and conditional expiry path are defined. Local attached-window protection and activity capture are documented in [mobile foundation](mobile-foundation.md#tab-activity-and-attached-windows). These merge rules are TheBrowser policy.
 
 ## Receipts and pulls
 

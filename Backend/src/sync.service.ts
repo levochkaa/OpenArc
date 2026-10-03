@@ -477,7 +477,7 @@ export class SyncService {
       }
     }
 
-    await client.query(
+    const saved = await client.query<{ last_activity_at: string | null }>(
       `
         INSERT INTO tabs (
           id, user_id, space_id, placement, rank, url_string, title, user_title_override,
@@ -495,11 +495,12 @@ export class SyncService {
           title = EXCLUDED.title,
           user_title_override = EXCLUDED.user_title_override,
           favicon_url_string = EXCLUDED.favicon_url_string,
-          last_activity_at = EXCLUDED.last_activity_at,
+          last_activity_at = GREATEST(tabs.last_activity_at, EXCLUDED.last_activity_at),
           deleted_at = NULL,
           updated_at = now(),
           revision = tabs.revision + 1,
           updated_by_device_id = EXCLUDED.updated_by_device_id
+        RETURNING to_char(last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS last_activity_at
       `,
       [
         change.entityID,
@@ -521,6 +522,9 @@ export class SyncService {
     return [await this.insertSyncEvent(client, userID, deviceID, "tab", change.entityID, "upsert", {
       id: change.entityID,
       ...data,
+      // Encode the committed maximum without passing through JavaScript Date,
+      // whose millisecond precision would discard PostgreSQL microseconds.
+      lastActivityAt: saved.rows[0].last_activity_at,
       pinnedURLString,
       pinnedFolderID
     })];

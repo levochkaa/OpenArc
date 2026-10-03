@@ -1166,6 +1166,7 @@ private struct SyncHTTPFixture: Decodable {
             let urlString: String
             let title: String?
             let pinnedFolderID: String?
+            let lastActivityAt: String?
             let deleted: Bool
             let tombstoned: Bool
         }
@@ -1744,6 +1745,128 @@ private func syncHTTPFolderRecords(_ snapshot: BrowserTabSessionSnapshot) -> [Br
 }
 
 extension BrowserSyncHTTPIntegrationTests {
+    @Test func olderQueuedActivityKeepsCanonicalMaximumThroughLostACKReopenAndDeletion() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("folder-activity-replay")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        let firstDatabase = try DatabaseQueue(path: directory
+            .appendingPathComponent(account.devices[0].deviceID + ".sqlite")
+            .path)
+        func queueBytes() throws -> [Data] {
+            try firstDatabase.read { try Data.fetchAll(
+                $0,
+                sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"
+            ) }
+        }
+        let initialTime: TimeInterval = 1_800_000_000
+        let oldTime = initialTime + 100, remoteTime = initialTime + 200, newestTime = initialTime + 300
+        await first.activate()
+        await first.saveAndSend(syncHTTPActivitySnapshot(activity: initialTime))
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        await first.suspend()
+        first.store.saveSnapshot(syncHTTPActivitySnapshot(activity: oldTime))
+        let frozen = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(frozen.count == 1)
+        let oldMutation = try syncHTTPFolderMutation(frozen[0])
+        #expect(oldMutation.operations == [.patchTab(
+            id: "moving", fields: .init(lastActivityAt: .set(
+                ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: oldTime))
+            ))
+        )])
+        let frozenBytes = try queueBytes()
+        try #require(frozenBytes.count == 1)
+        let remote = syncHTTPActivitySnapshot(activity: remoteTime, title: "Remote rename", moved: true)
+        await second.saveAndSend(remote)
+
+        // The coordinator pulls the newer canonical row before retrying its
+        // older immutable operation. Losing the ACK leaves that operation in
+        // the pending overlay, so a passing assertion cannot rely on dequeuing it.
+        try await fixture.command("drop", deviceID: account.devices[0].deviceID)
+        await first.activate()
+        #expect(try first.store.pendingSyncQueue(for: first.owner) == frozen)
+        #expect(try queueBytes() == frozenBytes)
+        #expect(first.store.loadSnapshot()?.tabs.first { $0.id == "moving" }?.lastActivityTimestamp == remoteTime)
+        #expect(first.store.loadSnapshot()?.tabs.first { $0.id == "moving" }?.userTitleOverride == "Remote rename")
+        #expect(first.store.loadSnapshot()?.tabs.first { $0.id == "moving" }?.spaceID == "target")
+        let committed = try await fixture.inspect(account)
+        let originalAttempt = try #require(committed.attempts.last { $0.mutationID == oldMutation.id })
+        #expect(originalAttempt.protocolVersion == 4 && originalAttempt.status == 201)
+        #expect(committed.tabs.first { $0.id == "moving" }?.lastActivityAt == syncHTTPActivityDate(remoteTime))
+        #expect(committed.tabs.first { $0.id == "moving" }?.title == "Remote rename")
+        #expect(committed.tabs.first { $0.id == "moving" }?.spaceID == "target")
+        await first.disconnect()
+
+        await second.pull()
+        #expect(
+            second.store.loadSnapshot()?.tabs.first { $0.id == "moving" }?.lastActivityTimestamp == remoteTime,
+            "The event for the older committed patch must publish the SQL maximum, not its input"
+        )
+        let newest = syncHTTPActivitySnapshot(activity: newestTime, title: "After lost ACK", moved: false)
+        await second.saveAndSend(newest)
+        let beforeRetry = try await fixture.inspect(account)
+        try await fixture.command("release", deviceID: account.devices[0].deviceID)
+        let reopened = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        #expect(try reopened.store.pendingSyncQueue(for: reopened.owner) == frozen)
+        #expect(try queueBytes() == frozenBytes)
+        #expect(reopened.store.loadSnapshot()?.tabs.first { $0.id == "moving" }?.lastActivityTimestamp == remoteTime)
+        await reopened.activate()
+        await second.pull()
+        let afterRetry = try await fixture.inspect(account)
+        let attempts = afterRetry.attempts.filter { $0.mutationID == oldMutation.id }
+        #expect(attempts.count > beforeRetry.attempts.filter { $0.mutationID == oldMutation.id }.count)
+        #expect(Set(attempts.map(\.digest)) == [originalAttempt.digest])
+        #expect(attempts.allSatisfy { $0.protocolVersion == 4 && $0.status == 201 })
+        #expect(afterRetry.eventCount == beforeRetry.eventCount && afterRetry.receiptCount == beforeRetry.receiptCount)
+        #expect(afterRetry.tabs.first { $0.id == "moving" }?.lastActivityAt == syncHTTPActivityDate(newestTime))
+        #expect(afterRetry.tabs.first { $0.id == "moving" }?.title == "After lost ACK")
+        #expect(afterRetry.tabs.first { $0.id == "moving" }?.spaceID == "source")
+        for profile in [reopened, second] {
+            #expect(profile.store.loadSnapshot()?.tabs.first { $0.id == "moving" }?.lastActivityTimestamp == newestTime)
+            #expect(profile.store
+                .loadSnapshot()?
+                .tabs
+                .first { $0.id == "moving" }?
+                .userTitleOverride == "After lost ACK")
+            #expect(profile.store.loadSnapshot()?.tabs.first { $0.id == "moving" }?.spaceID == "source")
+            #expect(try profile.store.pendingSyncQueue(for: profile.owner).isEmpty)
+        }
+        #expect(try syncHTTPFolderRecords(#require(reopened.store.loadSnapshot())) ==
+            syncHTTPFolderRecords(#require(second.store.loadSnapshot())))
+
+        // Even a later activity plus metadata patch cannot defeat a permanent
+        // server deletion. It must drain as a terminal receipt, never recreate.
+        await reopened.suspend()
+        reopened.store.saveSnapshot(syncHTTPActivitySnapshot(activity: newestTime + 100, title: "Stale after delete"))
+        let afterDeletePending = try reopened.store.pendingSyncQueue(for: reopened.owner)
+        try #require(afterDeletePending.count == 1)
+        let afterDeleteMutation = try syncHTTPFolderMutation(afterDeletePending[0])
+        #expect(afterDeleteMutation.operations.contains { operation in
+            if case .patchTab(let id, let fields) = operation {
+                return id == "moving" && fields.lastActivityAt != .unchanged
+            }
+            return false
+        })
+        await second.saveAndSend(syncHTTPActivitySnapshot(activity: newestTime, deleted: true))
+        let deleted = try await fixture.inspect(account)
+        #expect(deleted.tabs.first { $0.id == "moving" }?.tombstoned == true)
+        await reopened.activate()
+        await second.pull()
+        let final = try await fixture.inspect(account)
+        #expect(final.tabs.first { $0.id == "moving" }?.tombstoned == true)
+        #expect(final.eventCount == deleted.eventCount)
+        #expect(final.attempts.contains { $0.mutationID == afterDeleteMutation.id && $0.status == 201 })
+        for profile in [reopened, second] {
+            #expect(profile.store.loadSnapshot()?.tabs.contains { $0.id == "moving" } == false)
+            #expect(try profile.store.pendingSyncQueue(for: profile.owner).isEmpty)
+        }
+        await reopened.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
     @Test func folderAdoptionReplaysAllPagesAndRetainsEditsMadeDuringBootstrap() async throws {
         let fixture = try SyncHTTPFixture.load()
         let account = try fixture.account("folder-adoption-paged")
@@ -1974,6 +2097,25 @@ extension BrowserSyncHTTPIntegrationTests {
         await first.disconnect()
         try await fixture.complete(account)
     }
+}
+
+private func syncHTTPActivitySnapshot(
+    activity: TimeInterval, title: String? = nil, moved: Bool = false, deleted: Bool = false
+) -> BrowserTabSessionSnapshot {
+    let snapshot = syncHTTPSemanticSnapshot(title: title, moved: moved, deleted: deleted)
+    return BrowserTabSessionSnapshot(spaces: snapshot.spaces, tabs: snapshot.tabs.map { tab in
+        guard tab.id == "moving" else { return tab }
+        return BrowserTabSessionSnapshotTab(
+            id: tab.id, urlString: tab.urlString, userTitleOverride: tab.userTitleOverride,
+            placement: tab.placement, spaceID: tab.spaceID, lastActivityTimestamp: activity
+        )
+    })
+}
+
+private func syncHTTPActivityDate(_ timestamp: TimeInterval) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: Date(timeIntervalSince1970: timestamp))
 }
 
 // MARK: - SyncHTTPModelHarness

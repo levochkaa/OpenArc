@@ -59,7 +59,7 @@ const capabilityOverrides = new Map<string, number[]>();
 const adoptionScenario = "folder-adoption-paged";
 const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
-  "folder-device-rotation", "folder-pending-delete"
+  "folder-device-rotation", "folder-pending-delete", "folder-activity-replay"
 ]);
 const mobileScenarios = new Set([
   "mobile-v4-roundtrip", "mobile-v4-recovery", "mobile-v4-group-replay", "mobile-v4-cross-space"
@@ -228,7 +228,8 @@ async function inspect(userID: string) {
     pool.query("SELECT count(*)::int AS count FROM sync_mutation_receipts WHERE user_id = $1", [userID]),
     pool.query(`
       SELECT t.id, t.rank, t.space_id AS "spaceID", t.placement, t.url_string AS "urlString",
-        t.user_title_override AS title, t.pinned_folder_id AS "pinnedFolderID", t.deleted_at IS NOT NULL AS deleted,
+        t.user_title_override AS title, t.pinned_folder_id AS "pinnedFolderID",
+        t.last_activity_at AS "lastActivityAt", t.deleted_at IS NOT NULL AS deleted,
         EXISTS (SELECT 1 FROM sync_tombstones s
           WHERE s.user_id = t.user_id AND s.entity_type = 'tab' AND s.entity_id = t.id) AS tombstoned
       FROM tabs t WHERE t.user_id = $1 ORDER BY t.rank, t.id

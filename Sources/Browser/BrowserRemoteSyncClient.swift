@@ -974,6 +974,7 @@ enum BrowserSyncSnapshotMerger {
     ) -> BrowserTabSessionSnapshot {
         var spaces = [String: SpaceRecord]()
         var tabs = [String: TabRecord]()
+        let activityDates = BrowserSyncActivityDates()
 
         let currentTabs = snapshot?.tabs ?? []
         let tabsBySpaceID = Dictionary(grouping: currentTabs) { tab in
@@ -1053,8 +1054,9 @@ enum BrowserSyncSnapshotMerger {
                     urlString: urlString,
                     pinnedURLString: pinnedURLString,
                     userTitleOverride: data.userTitleOverride ?? existing?.userTitleOverride,
-                    lastActivityTimestamp: data.lastActivityAt.flatMap(lastActivityTimestamp)
-                        ?? existing?.lastActivityTimestamp
+                    lastActivityTimestamp: activityDates.projectedTimestamp(
+                        data.lastActivityAt, local: existing?.lastActivityTimestamp
+                    )
                 )
             default:
                 continue
@@ -1171,9 +1173,5 @@ enum BrowserSyncSnapshotMerger {
 
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func lastActivityTimestamp(from value: String) -> TimeInterval? {
-        ISO8601DateFormatter().date(from: value)?.timeIntervalSince1970
     }
 }

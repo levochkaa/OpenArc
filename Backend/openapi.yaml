@@ -321,6 +321,12 @@ components:
           type: string
           nullable: true
           format: date-time
+          description: >-
+            UTC activity timestamp. Existing live tabs retain the maximum of stored and incoming values;
+            null or omission cannot erase known activity. A new tab with null or omitted activity remains null.
+            Newly written tab-upsert events encode non-null activity in UTC with six fractional digits.
+            ACK and pull may also echo historical events in their unchanged format. Stored mutation receipts
+            remain unchanged. Activity cannot restore a tombstoned tab.
     SyncChange:
       description: >-
         Deleted entity IDs remain tombstoned. An ordinary upsert cannot restore
@@ -475,6 +481,12 @@ components:
           type: string
           nullable: true
           format: date-time
+          description: >-
+            UTC activity timestamp. Existing live tabs retain the maximum of stored and incoming values;
+            null or omission cannot erase known activity. A new tab with null or omitted activity remains null.
+            Newly written tab-upsert events encode non-null activity in UTC with six fractional digits.
+            ACK and pull may also echo historical events in their unchanged format. Stored mutation receipts
+            remain unchanged. Activity cannot restore a tombstoned tab.
       required:
       - spaceID
       - placement
@@ -524,9 +536,17 @@ components:
           type: string
           nullable: true
           format: date-time
+          description: >-
+            UTC activity timestamp. Existing live tabs retain the maximum of stored and incoming values;
+            null or omission cannot erase known activity. A new tab with null or omitted activity remains null.
+            Newly written tab-upsert events encode non-null activity in UTC with six fractional digits.
+            ACK and pull may also echo historical events in their unchanged format. Stored mutation receipts
+            remain unchanged. Activity cannot restore a tombstoned tab.
       minProperties: 1
-      description: Absent fields remain unchanged; explicit null clears nullable metadata. Moving uses
-        a separate operation; spaceID, placement and rank are forbidden here.
+      description: >-
+        Absent fields remain unchanged; explicit null clears nullable metadata except lastActivityAt,
+        which retains known activity and only advances to a later timestamp. Moving uses a separate
+        operation; spaceID, placement and rank are forbidden here.
     TabMoveDestination:
       type: object
       additionalProperties: false
@@ -972,6 +992,12 @@ components:
           type: string
           nullable: true
           format: date-time
+          description: >-
+            UTC activity timestamp. Existing live tabs retain the maximum of stored and incoming values;
+            null or omission cannot erase known activity. A new tab with null or omitted activity remains null.
+            Newly written tab-upsert events encode non-null activity in UTC with six fractional digits.
+            ACK and pull may also echo historical events in their unchanged format. Stored mutation receipts
+            remain unchanged. Activity cannot restore a tombstoned tab.
         pinnedFolderID:
           type: string
           minLength: 1
@@ -1018,6 +1044,12 @@ components:
           type: string
           nullable: true
           format: date-time
+          description: >-
+            UTC activity timestamp. Existing live tabs retain the maximum of stored and incoming values;
+            null or omission cannot erase known activity. A new tab with null or omitted activity remains null.
+            Newly written tab-upsert events encode non-null activity in UTC with six fractional digits.
+            ACK and pull may also echo historical events in their unchanged format. Stored mutation receipts
+            remain unchanged. Activity cannot restore a tombstoned tab.
         pinnedFolderID:
           type: string
           minLength: 1
