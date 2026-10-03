@@ -70,7 +70,19 @@ import WebKit
             parentFolderID: folder,
             title: "Nested"
         ))
-        try #require(first.document.setPlacement(tabID: "browsing", placement: .spacePinned, pinnedFolderID: nested))
+        let dragSource = try #require(BrowserMobileSidebarDrop.source(
+            item: .init(entityType: .tab, entityID: "browsing"), in: first.document.snapshot
+        ))
+        let dropTarget = try #require(BrowserMobileSidebarDrop.target(
+            relativeTo: .init(entityType: .folder, entityID: nested), position: .inside,
+            in: first.document.snapshot
+        ))
+        let drop = try #require(BrowserMobileSidebarDrop.plan(
+            source: dragSource, target: dropTarget, in: first.document.snapshot
+        ))
+        try #require(first.document.move(
+            items: drop.items, destination: drop.destination, before: drop.before, after: drop.after
+        ))
         try #require(first.document.createFolder(spaceID: "source", title: "Empty") != nil)
         try #require(try first.store.pendingSyncQueue(for: first.owner).allSatisfy { $0.protocolVersion == 4 })
         try await first.drain()

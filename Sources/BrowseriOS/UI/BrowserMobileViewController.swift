@@ -87,7 +87,7 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
 // MARK: - BrowserMobileTabsViewController
 
-final class BrowserMobileTabsViewController: UITableViewController {
+final class BrowserMobileTabsViewController: UITableViewController, UITableViewDragDelegate, UITableViewDropDelegate {
     // MARK: Lifecycle
 
     init(workspace: BrowserMobileWorkspace) {
@@ -100,6 +100,18 @@ final class BrowserMobileTabsViewController: UITableViewController {
 
     // MARK: Internal
 
+    override var canBecomeFirstResponder: Bool { true }
+    override var keyCommands: [UIKeyCommand]? {
+        guard isHoldingRows else { return super.keyCommands }
+        let escape = UIKeyCommand(
+            input: UIKeyCommand.inputEscape,
+            modifierFlags: [],
+            action: #selector(cancelSidebarDrag)
+        )
+        escape.wantsPriorityOverSystemBehavior = true
+        return (super.keyCommands ?? []) + [escape]
+    }
+
     let workspace: BrowserMobileWorkspace
     var didSelectTab: (() -> Void)?
 
@@ -107,6 +119,10 @@ final class BrowserMobileTabsViewController: UITableViewController {
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Tab")
         tableView.accessibilityIdentifier = "browser.tabs"
+        tableView.dragDelegate = self
+        tableView.dropDelegate = self
+        tableView.dragInteractionEnabled = true
+        tableView.estimatedRowHeight = 60
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: String(localized: "New Tab", table: "Mobile"), image: UIImage(systemName: "plus"),
             primaryAction: UIAction { [weak self] _ in
@@ -129,6 +145,22 @@ final class BrowserMobileTabsViewController: UITableViewController {
     }
 
     override func numberOfSections(in _: UITableView) -> Int { rows.count }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        terminalRefreshTask?.cancel()
+        terminalRefreshTask = nil
+        cancelSidebarDrag()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        render()
+    }
+
+    override func tableView(_: UITableView, heightForHeaderInSection _: Int) -> CGFloat {
+        workspace.profileDocument == nil ? UITableView.automaticDimension : 44
+    }
+
     override func tableView(_: UITableView, numberOfRowsInSection section: Int) -> Int {
         rows.indices.contains(section) ? rows[section].count : 0
     }
@@ -145,41 +177,7 @@ final class BrowserMobileTabsViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Tab", for: indexPath)
-        cell.accessoryType = .none
-        cell.accessibilityTraits = [.button]
-        cell.accessibilityIdentifier = nil
-        cell.accessibilityValue = nil
-        cell.indentationWidth = 16
-        cell.indentationLevel = 0
-        cell.contentConfiguration = nil
-        var content = cell.defaultContentConfiguration()
-        switch row(at: indexPath) {
-        case .tab(let id, let depth):
-            guard let tab = workspace.tabs.first(where: { $0.id == id }) else { return cell }
-            content.text = displayTitle(tab)
-            content.secondaryText = tab.urlString == "about:blank" ? nil : tab.urlString
-            content.secondaryTextProperties.numberOfLines = 1
-            content.secondaryTextProperties.lineBreakMode = .byTruncatingMiddle
-            content.image = UIImage(systemName: tab.state.error == nil ? "globe" : "exclamationmark.circle")
-            cell.indentationLevel = depth
-            cell.accessoryType = workspace.selectedTabID == id ? .checkmark : .none
-            cell.accessibilityIdentifier = "browser.tab." + id
-            cell.accessibilityTraits = workspace.selectedTabID == id ? [.button, .selected] : [.button]
-        case .folder(let id, let depth):
-            guard let folder = workspace.profileDocument?.snapshot.pinnedTabFolders?.first(where: { $0.id == id })
-            else { return cell }
-            content.text = folder.title
-            content
-                .image = UIImage(systemName: folder.systemImageName ?? (folder.isExpanded ? "folder.fill" : "folder"))
-            cell.indentationLevel = depth
-            cell.accessoryType = folder.isExpanded ? .none : .disclosureIndicator
-            cell.accessibilityIdentifier = "browser.folder." + id
-            cell.accessibilityValue = folder.isExpanded
-                ? String(localized: "Expanded", table: "Mobile")
-                : String(localized: "Collapsed", table: "Mobile")
-        case nil: break
-        }
-        cell.contentConfiguration = content
+        configure(cell, at: indexPath)
         return cell
     }
 
@@ -229,6 +227,16 @@ final class BrowserMobileTabsViewController: UITableViewController {
 
     func render() {
         guard isViewLoaded else { return }
+        if isHoldingRows || tableView.hasUncommittedUpdates {
+            needsStructuralRefresh = true
+            if renderedSpaceID != workspace.selectedSpaceID || renderedDocument !== workspace.profileDocument {
+                cancelSidebarDrag()
+            }
+            if !isHoldingRows {
+                scheduleTerminalRefresh()
+            }
+            return
+        }
         let canEdit = workspace.isReady && (workspace.profileDocument?.canEdit ?? true)
         navigationItem.leftBarButtonItem?.isEnabled = canEdit
         navigationItem.leftBarButtonItems?.last?.isEnabled = workspace.syncSession != nil
@@ -244,12 +252,164 @@ final class BrowserMobileTabsViewController: UITableViewController {
             spaceButton.isEnabled = workspace.isReady
             spaceButton.menu = spaceMenu(document)
             navigationItem.titleView = spaceButton
-            rows = sharedRows(document.snapshot)
+            applyRows(sharedRows(document.snapshot), snapshot: document.snapshot)
         } else {
             navigationItem.titleView = nil
-            rows = [workspace.tabs.map { .tab($0.id, depth: 0) }]
+            applyRows([workspace.tabs.map { .tab($0.id, depth: 0) }], snapshot: nil)
         }
-        tableView.reloadData()
+    }
+
+    func tableView(
+        _: UITableView,
+        itemsForBeginning session: any UIDragSession,
+        at indexPath: IndexPath
+    ) -> [UIDragItem] {
+        guard !isHoldingRows, workspace.isReady, let document = workspace.profileDocument, document.canEdit,
+              let row = row(at: indexPath),
+              let source = BrowserMobileSidebarDrop.source(item: row.reference, in: document.snapshot)
+        else { return [] }
+        let payload = SidebarDragPayload(
+            owner: self,
+            document: document,
+            spaceID: workspace.selectedSpaceID,
+            source: source
+        )
+        let label: String =
+            switch row {
+            case .tab(let id, _): renderedTabs[id].map(displayTitle) ?? String(localized: "Tabs", table: "Mobile")
+            case .folder(let id, _): renderedSnapshot?.pinnedTabFolders?.first(where: { $0.id == id })?.title ?? String(
+                    localized: "Tabs",
+                    table: "Mobile"
+                )
+            }
+        let item = UIDragItem(itemProvider: NSItemProvider(object: label as NSString))
+        item.localObject = payload
+        session.localContext = payload
+        activeSource = payload
+        sourceSessionID = ObjectIdentifier(session)
+        becomeFirstResponder()
+        return [item]
+    }
+
+    func tableView(
+        _: UITableView,
+        itemsForAddingTo _: any UIDragSession,
+        at _: IndexPath,
+        point _: CGPoint
+    ) -> [UIDragItem] { [] }
+    func tableView(_: UITableView, dragSessionAllowsMoveOperation _: any UIDragSession) -> Bool { true }
+    func tableView(_: UITableView, dragSessionIsRestrictedToDraggingApplication _: any UIDragSession) -> Bool { true }
+
+    func tableView(_: UITableView, dragSessionDidEnd session: any UIDragSession) {
+        guard sourceSessionID == ObjectIdentifier(session) else { return }
+        sourceSessionID = nil
+        activeSource = nil
+        finishInteractionIfPossible()
+    }
+
+    func tableView(_: UITableView, canHandle session: any UIDropSession) -> Bool { payload(for: session) != nil }
+
+    func tableView(_: UITableView, dropSessionDidEnter session: any UIDropSession) {
+        guard payload(for: session) != nil else { return }
+        dropSessionID = ObjectIdentifier(session)
+    }
+
+    func tableView(_: UITableView, dropSessionDidExit session: any UIDropSession) {
+        guard dropSessionID == ObjectIdentifier(session) else { return }
+        dropSessionID = nil
+        hover = nil
+        clearDropFeedback()
+        finishInteractionIfPossible()
+    }
+
+    func tableView(_: UITableView, dropSessionDidEnd session: any UIDropSession) {
+        guard dropSessionID == ObjectIdentifier(session) else { return }
+        dropSessionID = nil
+        hover = nil
+        clearDropFeedback()
+        finishInteractionIfPossible()
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        dropSessionDidUpdate session: any UIDropSession,
+        withDestinationIndexPath _: IndexPath?
+    ) -> UITableViewDropProposal {
+        clearDropFeedback()
+        guard let payload = payload(for: session), let document = workspace.profileDocument,
+              let target = dropTarget(at: session.location(in: tableView)),
+              validatedPlan(source: payload.source, target: target.target, snapshot: document.snapshot) != nil
+        else {
+            hover = nil
+            return .init(operation: .forbidden)
+        }
+        dropSessionID = ObjectIdentifier(session)
+        hover = target
+        if let index = target.insideFolder, let cell = tableView.cellForRow(at: index) {
+            var background = UIBackgroundConfiguration.listCell()
+            background.backgroundColor = view.tintColor.withAlphaComponent(0.16)
+            cell.backgroundConfiguration = background
+            highlightedFolder = index
+        } else {
+            insertionLine.backgroundColor = view.tintColor
+            insertionLine.isUserInteractionEnabled = false
+            insertionLine.accessibilityIdentifier = "browser.dropBoundary"
+            insertionLine.frame = CGRect(
+                x: tableView.layoutMargins.left + target.indentation,
+                y: target.point.y - 1,
+                width: max(
+                    0,
+                    tableView.bounds.width - tableView.layoutMargins.left - tableView.layoutMargins.right - target
+                        .indentation
+                ),
+                height: 2
+            )
+            if insertionLine.superview == nil {
+                tableView.addSubview(insertionLine)
+            }
+            tableView.bringSubviewToFront(insertionLine)
+            insertionLine.isHidden = false
+        }
+        // Flattened folder rows do not share UIKit's insertion index semantics.
+        // Draw the exact sibling boundary, including the whole visible subtree.
+        return .init(
+            operation: .move,
+            intent: target.insideFolder == nil
+                ? .unspecified
+                : .insertIntoDestinationIndexPath
+        )
+    }
+
+    func tableView(_ tableView: UITableView, performDropWith coordinator: any UITableViewDropCoordinator) {
+        guard coordinator.items.count == 1, coordinator.proposal.operation == .move,
+              let payload = payload(for: coordinator.session), let document = workspace.profileDocument,
+              dropSessionID == ObjectIdentifier(coordinator.session), let hover,
+              let finalTarget = dropTarget(at: coordinator.session.location(in: tableView)),
+              finalTarget.target == hover.target,
+              coordinator.proposal
+                  .intent == (hover.insideFolder == nil ? .unspecified : .insertIntoDestinationIndexPath),
+                  let plan = validatedPlan(source: payload.source, target: hover.target, snapshot: document.snapshot)
+        else { return }
+        // Keep the data source frozen through synchronous document observers and
+        // UIKit's drop animation. The terminal refresh reads the latest tree.
+        isCommittingDrop = true
+        let moved = document.move(
+            items: plan.items,
+            destination: plan.destination,
+            before: plan.before,
+            after: plan.after
+        )
+        isCommittingDrop = false
+        guard moved else { return }
+        payload.isCancelled = true
+        needsStructuralRefresh = true
+        isAnimatingDrop = true
+        let target = UIDragPreviewTarget(container: tableView, center: hover.point)
+        coordinator.drop(coordinator.items[0].dragItem, to: target).addCompletion { [weak self] _ in
+            guard let self else { return }
+            isAnimatingDrop = false
+            finishInteractionIfPossible()
+        }
     }
 
     func tabMenu(id: String) -> UIMenu? {
@@ -356,13 +516,342 @@ final class BrowserMobileTabsViewController: UITableViewController {
 
     // MARK: Private
 
-    private enum Row {
+    private enum Row: Equatable {
         case tab(String, depth: Int)
         case folder(String, depth: Int)
+
+        // MARK: Internal
+
+        var reference: BrowserSyncEntityReference {
+            switch self {
+            case .tab(let id, _): .init(entityType: .tab, entityID: id)
+            case .folder(let id, _): .init(entityType: .folder, entityID: id)
+            }
+        }
+
+        var depth: Int {
+            switch self { case .tab(_, let depth), .folder(_, let depth): depth }
+        }
+    }
+
+    private final class SidebarDragPayload {
+        // MARK: Lifecycle
+
+        init(
+            owner: BrowserMobileTabsViewController,
+            document: BrowserMobileProfileDocument,
+            spaceID: String?,
+            source: BrowserMobileSidebarDrop.Source
+        ) {
+            self.owner = owner
+            self.document = document
+            self.spaceID = spaceID
+            self.source = source
+        }
+
+        // MARK: Internal
+
+        weak var owner: BrowserMobileTabsViewController?
+        weak var document: BrowserMobileProfileDocument?
+        let spaceID: String?
+        let source: BrowserMobileSidebarDrop.Source
+        var isCancelled = false
+    }
+
+    private struct DropHover {
+        let target: BrowserMobileSidebarDrop.Target
+        let point: CGPoint
+        var insideFolder: IndexPath?
+        var indentation: CGFloat = 0
+    }
+
+    private struct TargetKey: Hashable {
+        let item: BrowserSyncEntityReference
+        let position: Int
+    }
+
+    private struct PlanCache {
+        let source: BrowserMobileSidebarDrop.Source
+        let target: BrowserMobileSidebarDrop.Target
+        let snapshot: BrowserTabSessionSnapshot
+        let plan: BrowserMobileSidebarDrop.Plan?
     }
 
     private let spaceButton = UIButton(type: .system)
     private var rows = [[Row]]()
+    private var renderedSnapshot: BrowserTabSessionSnapshot?
+    private var renderedTabs = [String: BrowserMobileTab]()
+    private weak var renderedDocument: BrowserMobileProfileDocument?
+    private var renderedSpaceID: String?
+    private var activeSource: SidebarDragPayload?
+    private var sourceSessionID: ObjectIdentifier?
+    private var dropSessionID: ObjectIdentifier?
+    private var hover: DropHover?
+    private var highlightedFolder: IndexPath?
+    private var needsStructuralRefresh = false
+    private var isCommittingDrop = false
+    private var isAnimatingDrop = false
+    private let insertionLine = UIView()
+    private var capturedTargets = [TargetKey: BrowserMobileSidebarDrop.Target]()
+    private var planCache: PlanCache?
+    private var terminalRefreshTask: Task<Void, Never>?
+
+    private var isHoldingRows: Bool {
+        sourceSessionID != nil || dropSessionID != nil || isCommittingDrop || isAnimatingDrop
+    }
+
+    private func configure(_ cell: UITableViewCell, at indexPath: IndexPath) {
+        cell.accessoryType = .none
+        cell.accessibilityTraits = [.button]
+        cell.accessibilityIdentifier = nil
+        cell.accessibilityValue = nil
+        cell.indentationWidth = 16
+        cell.indentationLevel = 0
+        cell.contentConfiguration = nil
+        cell.backgroundConfiguration = .listCell()
+        var content = cell.defaultContentConfiguration()
+        switch row(at: indexPath) {
+        case .tab(let id, let depth):
+            guard let tab = renderedTabs[id] else { return }
+            content.text = displayTitle(tab)
+            content.secondaryText = tab.urlString == "about:blank" ? nil : tab.urlString
+            content.secondaryTextProperties.numberOfLines = 1
+            content.secondaryTextProperties.lineBreakMode = .byTruncatingMiddle
+            content.image = UIImage(systemName: tab.state.error == nil ? "globe" : "exclamationmark.circle")
+            cell.indentationLevel = depth
+            cell.accessoryType = workspace.selectedTabID == id ? .checkmark : .none
+            cell.accessibilityIdentifier = "browser.tab." + id
+            cell.accessibilityTraits = workspace.selectedTabID == id ? [.button, .selected] : [.button]
+        case .folder(let id, let depth):
+            guard let folder = renderedSnapshot?.pinnedTabFolders?.first(where: { $0.id == id })
+            else { return }
+            content.text = folder.title
+            content
+                .image = UIImage(systemName: folder.systemImageName ?? (folder.isExpanded ? "folder.fill" : "folder"))
+            cell.indentationLevel = depth
+            cell.accessoryType = folder.isExpanded ? .none : .disclosureIndicator
+            cell.accessibilityIdentifier = "browser.folder." + id
+            cell.accessibilityValue = folder.isExpanded
+                ? String(localized: "Expanded", table: "Mobile")
+                : String(localized: "Collapsed", table: "Mobile")
+        case nil: break
+        }
+        cell.contentConfiguration = content
+    }
+
+    private func payload(for session: any UIDropSession) -> SidebarDragPayload? {
+        guard workspace.isReady, let document = workspace.profileDocument, document.canEdit,
+              session.allowsMoveOperation, session.items.count == 1,
+              let local = session.localDragSession, local.items.count == 1,
+              let payload = session.items[0].localObject as? SidebarDragPayload,
+              local.localContext as? SidebarDragPayload === payload,
+              payload.owner === self, payload.document === document, !payload.isCancelled,
+              payload.spaceID == workspace.selectedSpaceID
+        else { return nil }
+        return payload
+    }
+
+    private func dropTarget(at point: CGPoint) -> DropHover? {
+        guard tableView.bounds.contains(point), let snapshot = renderedSnapshot else { return nil }
+        if let index = tableView.indexPathForRow(at: point), let row = row(at: index) {
+            let rect = tableView.rectForRow(at: index)
+            let position: BrowserMobileSidebarDrop.Position
+            let inside: Bool
+            if case .folder = row, point.y >= rect.minY + rect.height * 0.25,
+               point.y <= rect.maxY - rect.height * 0.25
+            {
+                position = .inside
+                inside = true
+            } else {
+                position = point.y < rect.midY ? .before : .after
+                inside = false
+            }
+            guard let target = capturedTarget(relativeTo: row.reference, position: position, snapshot: snapshot)
+            else { return nil }
+            var boundary = position == .before ? rect.minY : rect.maxY
+            if case .folder = row, position == .after {
+                var last = index.row
+                while rows[index.section].indices.contains(last + 1),
+                      rows[index.section][last + 1].depth > row.depth
+                {
+                    last += 1
+                }
+                boundary = tableView.rectForRow(at: .init(row: last, section: index.section)).maxY
+            }
+            return .init(
+                target: target,
+                point: CGPoint(x: rect.midX + CGFloat(row.depth) * 8, y: inside ? rect.midY : boundary),
+                insideFolder: inside
+                    ? index
+                    : nil,
+                indentation: CGFloat(row.depth) * 16
+            )
+        }
+        for section in rows.indices {
+            let rect = tableView.rect(forSection: section)
+            guard rect.contains(point) || (section == rows.count - 1 && point.y >= rect.maxY) else { continue }
+            if let first = rows[section].first,
+               point.y < tableView.rectForRow(at: .init(row: 0, section: section)).minY,
+               let target = capturedTarget(relativeTo: first.reference, position: .before, snapshot: snapshot)
+            {
+                return .init(
+                    target: target,
+                    point: CGPoint(x: rect.midX, y: tableView.rectForRow(at: .init(row: 0, section: section)).minY)
+                )
+            }
+            let placement: BrowserTabPlacement
+            switch section {
+            case 0: placement = .app
+            case 1: placement = .spacePinned
+            case 2: placement = .temporary
+            default: return nil
+            }
+            let spaceID = renderedSpaceID ?? (placement == .app
+                ? snapshot.tabs.first(where: { $0.placement == .app })?.spaceID
+                : nil)
+            guard let spaceID else { return nil }
+            let boundaryY = rows[section].isEmpty
+                ? tableView.rectForHeader(inSection: section).maxY
+                : tableView.rectForRow(at: .init(row: rows[section].count - 1, section: section)).maxY
+            return .init(
+                target: BrowserMobileSidebarDrop.rootTarget(spaceID: spaceID, placement: placement),
+                point: CGPoint(x: rect.midX, y: boundaryY)
+            )
+        }
+        return nil
+    }
+
+    @objc private func cancelSidebarDrag() {
+        guard isHoldingRows else { return }
+        activeSource?.isCancelled = true
+        hover = nil
+        clearDropFeedback()
+        needsStructuralRefresh = true
+        finishInteractionIfPossible()
+    }
+
+    private func clearDropFeedback() {
+        insertionLine.isHidden = true
+        if let index = highlightedFolder, let cell = tableView.cellForRow(at: index) {
+            cell.backgroundConfiguration = .listCell()
+        }
+        highlightedFolder = nil
+    }
+
+    private func capturedTarget(
+        relativeTo item: BrowserSyncEntityReference,
+        position: BrowserMobileSidebarDrop.Position,
+        snapshot: BrowserTabSessionSnapshot
+    ) -> BrowserMobileSidebarDrop.Target? {
+        let positionID =
+            switch position { case .before: 0
+            case .after: 1
+            case .inside: 2 }
+        let key = TargetKey(item: item, position: positionID)
+        if let target = capturedTargets[key] {
+            return target
+        }
+        guard let target = BrowserMobileSidebarDrop.target(relativeTo: item, position: position, in: snapshot)
+        else { return nil }
+        if capturedTargets.count >= 256 {
+            capturedTargets.removeAll(keepingCapacity: true)
+        }
+        capturedTargets[key] = target
+        return target
+    }
+
+    private func validatedPlan(
+        source: BrowserMobileSidebarDrop.Source,
+        target: BrowserMobileSidebarDrop.Target,
+        snapshot: BrowserTabSessionSnapshot
+    ) -> BrowserMobileSidebarDrop.Plan? {
+        if let cache = planCache, cache.source == source, cache.target == target,
+           cache.snapshot == snapshot
+        {
+            return cache.plan
+        }
+        let plan = BrowserMobileSidebarDrop.plan(source: source, target: target, in: snapshot)
+        planCache = .init(source: source, target: target, snapshot: snapshot, plan: plan)
+        return plan
+    }
+
+    private func finishInteractionIfPossible() {
+        guard !isHoldingRows else { return }
+        guard !tableView.hasUncommittedUpdates else {
+            needsStructuralRefresh = true
+            scheduleTerminalRefresh()
+            return
+        }
+        planCache = nil
+        clearDropFeedback()
+        if needsStructuralRefresh {
+            needsStructuralRefresh = false
+            render()
+        }
+    }
+
+    private func scheduleTerminalRefresh() {
+        guard terminalRefreshTask == nil, viewIfLoaded?.window != nil else { return }
+        terminalRefreshTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            guard let self else { return }
+            terminalRefreshTask = nil
+            finishInteractionIfPossible()
+        }
+    }
+
+    private func applyRows(_ newRows: [[Row]], snapshot: BrowserTabSessionSnapshot?) {
+        let anchor = tableView.indexPathsForVisibleRows?.sorted().first.flatMap { index -> (
+            BrowserSyncEntityReference,
+            CGFloat
+        )? in
+            guard let row = row(at: index) else { return nil }
+            return (row.reference, tableView.rectForRow(at: index).minY - tableView.contentOffset.y)
+        }
+        let structuralChange = rows != newRows
+        if renderedSnapshot != snapshot {
+            capturedTargets.removeAll(keepingCapacity: true)
+        }
+        rows = newRows
+        renderedSnapshot = snapshot
+        renderedDocument = workspace.profileDocument
+        renderedSpaceID = workspace.selectedSpaceID
+        renderedTabs = Dictionary(workspace.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        if structuralChange {
+            tableView.reloadData()
+            tableView.layoutIfNeeded()
+            if let anchor, let index = indexPath(for: anchor.0) {
+                let y = tableView.rectForRow(at: index).minY - anchor.1
+                let minY = -tableView.adjustedContentInset.top
+                let maxY = max(
+                    minY,
+                    tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom
+                )
+                tableView.setContentOffset(
+                    CGPoint(x: tableView.contentOffset.x, y: min(maxY, max(minY, y))),
+                    animated: false
+                )
+            }
+        } else {
+            for index in tableView.indexPathsForVisibleRows ?? [] {
+                if let cell = tableView.cellForRow(at: index) {
+                    configure(cell, at: index)
+                }
+            }
+        }
+    }
+
+    private func indexPath(for item: BrowserSyncEntityReference) -> IndexPath? {
+        for section in rows.indices {
+            if let row = rows[section].firstIndex(where: { $0.reference == item }) {
+                return .init(
+                    row: row,
+                    section: section
+                )
+            }
+        }
+        return nil
+    }
 
     private func showAccount() {
         guard presentedViewController == nil, let session = workspace.syncSession else { return }
