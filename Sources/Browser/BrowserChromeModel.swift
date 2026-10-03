@@ -670,6 +670,13 @@ enum BrowserWindowMode: Equatable {
         for tabID in tabs.filter({ $0.spaceID == spaceID && $0.placement != .app }).map(\.id) {
             closeTab(id: tabID, registersUndo: false)
         }
+        for (engineID, binding) in pendingRemoteTabCreations
+            where binding.snapshot.spaceID == spaceID && binding.snapshot.placement != .app
+        {
+            pendingRemoteTabCreations.removeValue(forKey: engineID)
+            discardedRemoteTabCreationIDs.insert(engineID)
+            tabDriver.closeTab(withID: engineID, forceClose: true)
+        }
         isPersistenceEnabled = wasPersistenceEnabled
 
         if let fallbackSpaceID {
@@ -691,6 +698,7 @@ enum BrowserWindowMode: Equatable {
 
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
+        finishRemoteSyncProjectionIfReady()
         return true
     }
 
@@ -2169,11 +2177,10 @@ enum BrowserWindowMode: Equatable {
     private var pendingRemoteTabCreations = [String: RemoteTabCreation]()
     private var discardedRemoteTabCreationIDs = Set<String>()
     private var pendingRestoredSelectedTabIndex: Int?
-    private var pendingRestoredTabs = [BrowserTabSessionSnapshotTab]()
+    private var restoredTabCreationIDs = Set<String>()
     private var pendingRestoredSpaces = [BrowserSpaceSessionSnapshot]()
     private var pendingCreatedTabContexts = [String: PendingCreatedTabContext]()
     private var tabCreationUndoReferences = [String: TabCreationUndoReference]()
-    private var remainingRestoredTabCreations = 0
     private var automaticArchivalTimer: Timer?
     private var recentlySelectedTabIDs = [String]()
     private var tabPreviewImagesByID = [String: NSImage]()
@@ -2422,21 +2429,32 @@ enum BrowserWindowMode: Equatable {
             tabCount: snapshot.tabs.count
         )
         pendingRestoredSpaces = snapshot.spaces ?? []
-        pendingRestoredTabs = snapshot.tabs
-        remainingRestoredTabCreations = snapshot.tabs.count
-
-        guard !snapshot.tabs.isEmpty else {
-            finishSessionRestoreIfNeeded()
-            return true
-        }
-
         for (index, tabSnapshot) in snapshot.tabs.enumerated() {
-            _ = tabDriver.createTab(
+            let engineID = tabDriver.createTab(
                 withURLString: tabSnapshot.urlString,
                 makeActive: index == pendingRestoredSelectedTabIndex
             )
+            restoredTabCreationIDs.insert(engineID)
+            let placement = tabSnapshot.placement
+            tabs.append(Tab(
+                id: engineID,
+                syncID: tabSnapshot.id ?? tabSyncIDProvider(),
+                spaceID: tabSnapshot.spaceID ?? selectedSpaceID ?? Self.defaultSpaceID,
+                title: "",
+                userTitleOverride: tabSnapshot.userTitleOverride,
+                urlString: tabSnapshot.urlString,
+                pinnedURLString: placement == .spacePinned
+                    ? normalizedPinnedURLString(from: tabSnapshot.pinnedURLString ?? tabSnapshot.urlString)
+                    : nil,
+                placement: placement,
+                pinnedFolderID: tabSnapshot.pinnedFolderID,
+                lastActivityAt: lastActivityDate(from: tabSnapshot) ?? dateProvider()
+            ))
         }
-
+        // The driver returns the logical identity immediately. Its later created
+        // callback is a placeholder notification, not CEF readiness. Restored
+        // state must be complete before user actions or remote snapshots arrive.
+        finishSessionRestoreIfNeeded()
         return true
     }
 
@@ -2456,7 +2474,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func finishSessionRestoreIfNeeded() {
-        guard isRestoringSession, remainingRestoredTabCreations == 0 else {
+        guard isRestoringSession else {
             return
         }
 
@@ -2466,7 +2484,6 @@ enum BrowserWindowMode: Equatable {
         selectActiveTabForSelectedSpace()
 
         pendingRestoredSelectedTabIndex = nil
-        pendingRestoredTabs.removeAll()
         pendingRestoredSpaces.removeAll()
         isRestoringSession = false
         updateWindowTitle()
@@ -3552,6 +3569,20 @@ enum BrowserWindowMode: Equatable {
         if handleRemoteCreatedTab(id: id, title: title, urlString: urlString) {
             return
         }
+        if restoredTabCreationIDs.contains(id) {
+            guard let index = tabs.firstIndex(where: { $0.id == id }) else {
+                // Keep the identity until model teardown so even duplicate late
+                // callbacks cannot recreate a tab deleted during startup. The
+                // placeholder callback does not create an engine; its earlier
+                // close already canceled the controller's pending record.
+                return
+            }
+            if tabs[index].title.isEmpty, tabs[index].urlString == urlString {
+                tabs[index].title = title
+                updateWindowTitle()
+            }
+            return
+        }
         if
             let previousID = pendingReopenedPinnedTabIDs.removeValue(forKey: id),
             handleReopenedPinnedTabCreated(id: id, previousID: previousID, title: title, urlString: urlString)
@@ -3567,35 +3598,33 @@ enum BrowserWindowMode: Equatable {
         }
 
         guard !tabs.contains(where: { $0.id == id }) else { return }
-        let restoredTab = isRestoringSession && !pendingRestoredTabs.isEmpty ? pendingRestoredTabs.removeFirst() : nil
         let pendingContext = pendingCreatedTabContexts.removeValue(forKey: id)
         let undoSnapshot = pendingContext?.undoSnapshot
         let fallbackSpaceID = selectedSpaceID ?? spaces.first?.id ?? Self.defaultSpaceID
-        let tabSpaceID = restoredTab?.spaceID ?? undoSnapshot?.tab.spaceID ?? pendingContext?.spaceID ?? fallbackSpaceID
+        let tabSpaceID = undoSnapshot?.tab.spaceID ?? pendingContext?.spaceID ?? fallbackSpaceID
         if spaces.isEmpty {
             spaces = [makeDefaultSpace()]
             selectedSpaceID = tabSpaceID
         }
-        let restoredPlacement = restoredTab?.placement ?? undoSnapshot?.tab.placement ?? pendingContext?
+        let restoredPlacement = undoSnapshot?.tab.placement ?? pendingContext?
             .placement ?? .temporary
-        let restoredPinnedURLString = restoredTab?.pinnedURLString ?? undoSnapshot?.tab.pinnedURLString
+        let restoredPinnedURLString = undoSnapshot?.tab.pinnedURLString
         let tabPinnedURLString = restoredPlacement == .spacePinned
             ? normalizedPinnedURLString(from: restoredPinnedURLString ?? urlString)
             : nil
         tabs.append(
             Tab(
                 id: id,
-                syncID: restoredTab?.id ?? undoSnapshot?.tab.syncID ?? tabSyncIDProvider(),
+                syncID: undoSnapshot?.tab.syncID ?? tabSyncIDProvider(),
                 spaceID: tabSpaceID,
                 title: undoSnapshot?.tab.title ?? title,
-                userTitleOverride: restoredTab?.userTitleOverride ?? undoSnapshot?.tab.userTitleOverride,
+                userTitleOverride: undoSnapshot?.tab.userTitleOverride,
                 urlString: undoSnapshot?.tab.urlString ?? urlString,
                 pinnedURLString: tabPinnedURLString,
                 faviconURLString: undoSnapshot?.tab.faviconURLString,
                 placement: restoredPlacement,
-                pinnedFolderID: restoredTab?.pinnedFolderID ?? undoSnapshot?.tab.pinnedFolderID,
-                lastActivityAt: restoredTab.flatMap(lastActivityDate(from:)) ?? undoSnapshot?.tab
-                    .lastActivityAt ?? dateProvider()
+                pinnedFolderID: undoSnapshot?.tab.pinnedFolderID,
+                lastActivityAt: undoSnapshot?.tab.lastActivityAt ?? dateProvider()
             )
         )
 
@@ -3615,11 +3644,7 @@ enum BrowserWindowMode: Equatable {
             recordSelectedTab(id)
         }
 
-        if isRestoringSession {
-            remainingRestoredTabCreations = max(remainingRestoredTabCreations - 1, 0)
-            finishSessionRestoreIfNeeded()
-            return
-        } else if let tab = tabs.first(where: { $0.id == id }) {
+        if let tab = tabs.first(where: { $0.id == id }) {
             BrowserTelemetry.captureUsage(.tabCreated, properties: telemetryProperties(for: tab))
         }
 
@@ -3718,11 +3743,11 @@ enum BrowserWindowMode: Equatable {
         if discardedRemoteTabCreationIDs.contains(id) {
             return
         }
-        let wasAlreadyRemoved = closingTabIDs.remove(id) != nil
+        closingTabIDs.remove(id)
         let closedTab = tabs.first { $0.id == id }
-        // closeTab already changed/persisted the model. A delayed engine receipt
-        // must not enqueue a new local write after a remote projection finishes.
-        if wasAlreadyRemoved, closedTab == nil {
+        // An already-removed or unknown identity has no model change to save.
+        // Duplicate close receipts must not echo a finished remote projection.
+        if closedTab == nil {
             return
         }
         if closedAppTabIDs.contains(id), closedTab?.placement == .app {

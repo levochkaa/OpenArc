@@ -132,32 +132,33 @@ import Testing
 }
 
 @Test
-@MainActor func remoteSyncDuringStartupRestoreDrainsBeforeOldStatePersists() throws {
+@MainActor func remoteSyncBeforeStartupCallbacksReconcilesHydratedIdentitiesWithoutEcho() throws {
     let harness = RemoteProjectionHarness(snapshot: projectionSnapshot(["a", "b"]))
     defer { harness.cleanup() }
     harness.model.handleContextReady()
+    // Restore now hydrates logical tabs and saves once synchronously. Delayed
+    // placeholder callbacks cannot defer remote application or replay old state.
+    let savedBefore = harness.store.savedSnapshots.count
+    let pushesBefore = harness.sync.pushedSnapshots.count
     let originalB = try #require(harness.driver.createdTabRequests.last?.id)
     harness.model.applyRemoteSyncSnapshot(projectionSnapshot(["b", "obsolete"]))
     harness.model.applyRemoteSyncSnapshot(projectionSnapshot(["b", "c"]))
 
     harness.driver.flushPendingCreateEvents()
 
-    #expect(harness.store.savedSnapshots.isEmpty)
-    #expect(harness.sync.pushedSnapshots.isEmpty)
     #expect(harness.driver.createdTabRequests.map(\.urlString) == [
-        "https://a.example", "https://b.example", "https://c.example",
+        "https://a.example", "https://b.example", "https://obsolete.example", "https://c.example",
     ])
-    harness.driver.flushPendingCreateEvents()
 
     #expect(harness.model.tabs.map(\.syncID) == ["b", "c"])
     #expect(harness.model.tabs.first?.id == originalB)
-    #expect(harness.store.savedSnapshots.count == 1)
+    #expect(harness.store.savedSnapshots.count == savedBefore + 1)
     #expect(harness.store.savedSnapshots.last?.tabs.map(\.id) == ["b", "c"])
-    #expect(harness.sync.pushedSnapshots.isEmpty)
+    #expect(harness.sync.pushedSnapshots.count == pushesBefore)
     for request in harness.driver.closedTabRequests {
         harness.driver.emitClose(id: request.id)
     }
-    #expect(harness.sync.pushedSnapshots.isEmpty)
+    #expect(harness.sync.pushedSnapshots.count == pushesBefore)
 }
 
 @Test
