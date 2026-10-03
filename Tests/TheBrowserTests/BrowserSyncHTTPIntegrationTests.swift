@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 
 // MARK: - BrowserSyncHTTPIntegrationTests
@@ -333,6 +334,168 @@ import Testing
         #expect(finalState.attempts.contains {
             $0.mutationID == pending[0].id && $0.protocolVersion == 3 && $0.status == 201
         })
+        await first.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
+    @Test func failedModelMoveBuffersLaterEditsAndRetriesExactIntentBeforeConverging() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("persistence-retry")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        await first.activate()
+        let initial = syncHTTPExplicitSnapshot(source: ["a", "b", "c"], target: ["anchor"])
+        await first.saveAndSend(initial)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        await second.suspend()
+
+        let suite = "BrowserSyncHTTPPersistence.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let driver = FakeBrowserTabDriver()
+        let model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: first.store, sessionPreferencesStore: first.store,
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(), syncCoordinator: first.service,
+            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        )
+        defer {
+            first.service.setSnapshotApplier(nil)
+            model.discardUnsavedSessionForClosure()
+            model.prepareForTermination()
+        }
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        first.service.setSnapshotApplier(model)
+        await first.service.waitForPendingOperations()
+        let durableBefore = try #require(first.store.loadSnapshot())
+        let cursorBefore = try first.store.syncCursor(for: first.owner)
+        let serverBefore = try await fixture.inspect(account)
+        try #require(first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        let databaseURL = directory.appendingPathComponent("\(account.devices[0].deviceID).sqlite")
+        let database = try DatabaseQueue(path: databaseURL.path)
+        func payloads() throws -> [Data] {
+            try database.read { db in
+                try Data.fetchAll(db, sql: "SELECT payload FROM browser_sync_outbox ORDER BY position")
+            }
+        }
+        try await database.write { db in
+            try db.execute(sql: """
+            CREATE TRIGGER fail_http_session_write BEFORE INSERT ON browser_spaces
+            BEGIN SELECT RAISE(ABORT, 'injected HTTP profile write failure'); END
+            """)
+        }
+        let a = try #require(model.tabs.first { $0.syncID == "a" })
+        let c = try #require(model.tabs.first { $0.syncID == "c" })
+        let selectedBefore = model.selectedTabID
+        #expect(model.commitSidebarDrop(
+            payload: BrowserSidebarDragPayload(primary: .tab(a.id), tabIDs: [a.id]),
+            destination: BrowserSidebarDropDestination(container: .temporary("source"), beforeItem: .tab(c.id))
+        ))
+        #expect(model.sessionPersistenceFailure?.isRetryable == true)
+        model.setUserTitleOverride("renamed while blocked", forTabID: a.id)
+        #expect(model.closeTab(id: c.id, registersUndo: false))
+        #expect(model.hasUncommittedSessionWrites && model.sessionPersistenceFailure?.isRetryable == true)
+        #expect(model.selectedTabID == selectedBefore)
+        #expect(model.tabs.map(\.syncID) == ["b", "a", "anchor"])
+        // Explicit wakeups cannot bypass the failed-write guard or advance the
+        // durable baseline while the model owns unsaved local actions.
+        await first.pull()
+        try await first.sendSavedChanges()
+        let blocked = try await fixture.inspect(account)
+        #expect(blocked.eventCount == serverBefore.eventCount)
+        #expect(blocked.receiptCount == serverBefore.receiptCount)
+        #expect(blocked.attempts.count == serverBefore.attempts.count)
+        // Inspector ordering is global (rank, id); ranks are only meaningful
+        // within each Space/placement list, so compare those lists separately.
+        #expect(Set(blocked.tabs.filter { !$0.deleted }.map(\.id)) == Set(initial.tabs.compactMap(\.id)))
+        #expect(blocked.tabs
+            .filter {
+                !$0.deleted && $0.spaceID == "source" && $0.placement == "temporary"
+            }
+            .map(\.id) == ["a", "b", "c"])
+        #expect(blocked.tabs
+            .filter {
+                !$0.deleted && $0.spaceID == "target" && $0.placement == "temporary"
+            }
+            .map(\.id) == ["anchor"])
+        #expect(first.store.loadSnapshot() == durableBefore)
+        #expect(try first.store.syncCursor(for: first.owner) == cursorBefore)
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+
+        // The offline peer edits the soon-to-be-deleted identity. Its later
+        // replay must receive the tombstone instead of bringing that tab back.
+        second.store.saveSnapshot(syncHTTPExplicitSnapshot(
+            source: ["a", "b", "c"], target: ["anchor"], titles: ["c": "stale offline rename"]
+        ))
+        let staleQueue = try second.store.pendingSyncQueue(for: second.owner)
+        try #require(staleQueue.count == 1)
+        try await fixture.command("drop", deviceID: account.devices[0].deviceID)
+        try await database.write { db in try db.execute(sql: "DROP TRIGGER fail_http_session_write") }
+        #expect(model.retrySessionPersistence())
+        #expect(!model.hasUncommittedSessionWrites && model.sessionPersistenceFailure == nil)
+        // No await separates retry from this inspection: all three actions
+        // have committed atomically, before the production sender can run.
+        let queue = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(queue.count == 3)
+        let moves = try syncHTTPSemanticMutation(queue[0])
+        let rename = try syncHTTPSemanticMutation(queue[1])
+        let deletion = try syncHTTPSemanticMutation(queue[2])
+        #expect(moves.operations == [.moveTabs(
+            ids: ["a"], destination: .init(spaceID: "source", placement: .temporary), beforeID: "c", afterID: "b"
+        )])
+        #expect(rename.operations == [.patchTab(
+            id: "a",
+            fields: .init(userTitleOverride: .set("renamed while blocked"))
+        )])
+        #expect(deletion.operations == [.deleteTab(id: "c")])
+        let frozenPayloads = try payloads()
+        await first.service.waitForPendingOperations()
+        let afterDrop = try await fixture.inspect(account)
+        let committedMove = try #require(afterDrop.attempts.last { $0.mutationID == moves.id })
+        #expect(committedMove.protocolVersion == 3 && committedMove.status == 201)
+        #expect(try first.store.pendingSyncQueue(for: first.owner) == queue)
+        #expect(try payloads() == frozenPayloads)
+        let reopened = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+        #expect(try reopened.pendingSyncQueue(for: first.owner) == queue)
+
+        try await fixture.command("release", deviceID: account.devices[0].deviceID)
+        try await first.sendSavedChanges()
+        await second.activate()
+        await first.pull()
+        await second.pull()
+        driver.flushPendingCreateEvents()
+        let expected = syncHTTPExplicitSnapshot(
+            source: ["b", "a"], target: ["anchor"], titles: ["a": "renamed while blocked"]
+        )
+        #expect(first.store.loadSnapshot()?.tabs == expected.tabs)
+        #expect(second.store.loadSnapshot()?.tabs == expected.tabs)
+        #expect(model.tabs.map(\.syncID) == expected.tabs.compactMap(\.id))
+        #expect(model.tabs.first { $0.syncID == "a" }?.userTitleOverride == "renamed while blocked")
+        #expect(!model.hasUncommittedSessionWrites)
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        #expect(try second.store.pendingSyncQueue(for: second.owner).isEmpty)
+        let final = try await fixture.inspect(account)
+        let retriedMove = final.attempts.filter { $0.mutationID == moves.id }
+        #expect(retriedMove.count >= 2 && Set(retriedMove.map(\.digest)) == [committedMove.digest])
+        #expect(Set(final.tabs.filter { !$0.deleted }.map(\.id)) == Set(expected.tabs.compactMap(\.id)))
+        #expect(final.tabs
+            .filter {
+                !$0.deleted && $0.spaceID == "source" && $0.placement == "temporary"
+            }
+            .map(\.id) == ["b", "a"])
+        #expect(final.tabs
+            .filter {
+                !$0.deleted && $0.spaceID == "target" && $0.placement == "temporary"
+            }
+            .map(\.id) == ["anchor"])
+        #expect(final.tabs.first { $0.id == "c" }?.tombstoned == true)
+        #expect(final.attempts.contains { $0.mutationID == staleQueue[0].id && $0.status == 201 })
         await first.disconnect()
         await second.disconnect()
         try await fixture.complete(account)
