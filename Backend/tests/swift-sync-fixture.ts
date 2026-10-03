@@ -72,8 +72,10 @@ const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
   "folder-device-rotation", "folder-pending-delete", "folder-activity-replay"
 ]);
+const mobileAutomaticScenario = "mobile-v5-automatic-archive";
 const mobileScenarios = new Set([
-  "mobile-v4-roundtrip", "mobile-v4-recovery", "mobile-v4-group-replay", "mobile-v4-cross-space"
+  "mobile-v4-roundtrip", "mobile-v4-recovery", "mobile-v4-group-replay", "mobile-v4-cross-space",
+  mobileAutomaticScenario
 ]);
 const desktopScenarios = [
   ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
@@ -239,7 +241,7 @@ for (const scenario of scenarios) {
     semanticAuthorizations.add(`Bearer ${accessToken}`);
   }
   if (scenario === adoptionScenario) capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3]);
-  else if (folderScenarios.has(scenario) || mobileScenarios.has(scenario)) {
+  else if (folderScenarios.has(scenario) || (mobileScenarios.has(scenario) && scenario !== mobileAutomaticScenario)) {
     // These existing cases deliberately retain their v4 coverage. Only the
     // isolated recovery scenario enables the new recovery bootstrap reader.
     capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3, 4]);
@@ -374,7 +376,20 @@ const control = createServer((incoming, outgoing) => {
       const deviceIDs = new Set(account.devices.map((device) => device.deviceID));
       const scenarioAttempts = attempts.filter((attempt) => deviceIDs.has(attempt.deviceID));
       assert.ok(scenarioAttempts.length > 0, "Completed scenario must send production sync mutations");
-      if (mobileScenarios.has(account.scenario)) {
+      if (account.scenario === mobileAutomaticScenario) {
+        assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4, 5].includes(attempt.protocolVersion)));
+        assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 5 && attempt.status === 201
+          && attempt.outcomeStatuses?.includes("applied") && attempt.hasAutoArchive),
+        "The mobile scheduler must commit actual v5 expiry with recovery");
+        for (const device of account.devices) {
+          assert.ok(scenarioAttempts.some((attempt) => attempt.deviceID === device.deviceID
+            && attempt.protocolVersion === 4 && attempt.status === 201),
+          "Both mobile scheduler devices must commit ordinary v4 changes");
+          assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
+            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+          "Both mobile scheduler devices must bootstrap recovery through production v5 pulls");
+        }
+      } else if (mobileScenarios.has(account.scenario)) {
         assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4].includes(attempt.protocolVersion)),
           "Mobile scenarios allow initial v2/v3 bootstrap before v4 adoption");
         for (const device of account.devices) {

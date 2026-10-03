@@ -1339,6 +1339,7 @@ struct SyncHTTPFixture: Decodable {
 
     func activate() async {
         service.accountSessionDidChange(auth.session)
+        service.setRuntimeActive(true)
         await service.waitForPendingOperations()
     }
 

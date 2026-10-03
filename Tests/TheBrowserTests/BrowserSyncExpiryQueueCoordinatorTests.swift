@@ -162,17 +162,19 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
 
 // MARK: - ExpiryQueueFixture
 
-@MainActor private final class ExpiryQueueFixture {
+@MainActor final class ExpiryQueueFixture {
     // MARK: Lifecycle
 
-    init() throws {
+    init(seed: [BrowserSyncEvent]? = nil) throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("ExpiryQueue-\(UUID())")
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
         self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         self.owner = .init(baseURL: remote.baseURL, userID: auth.session.userID)
+        remote.seedOverride = seed
         try store.bindSyncOwner(owner)
-        _ = try store.completeFolderSyncBootstrap(events: remote.seed, cursor: 2, for: owner)
-        _ = try store.completeExpirySyncBootstrap(events: remote.seed, cursor: 2, for: owner)
+        let cursor = remote.seed.map(\.serverSeq).max() ?? 0
+        _ = try store.completeFolderSyncBootstrap(events: remote.seed, cursor: cursor, for: owner)
+        _ = try store.completeExpirySyncBootstrap(events: remote.seed, cursor: cursor, for: owner)
     }
 
     // MARK: Internal
@@ -197,18 +199,20 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
 
     func service(
         store: BrowserSQLiteSessionStore? = nil,
+        dateProvider: @escaping @MainActor () -> Date = Date.init,
         errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in }
     ) -> BrowserSyncService {
         .init(
             localStore: store ?? self.store, remoteClient: remote, authSessionStore: auth,
-            pushDebounce: .zero, pollInterval: nil, retryDelay: nil, errorReporter: errorReporter
+            pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
+            dateProvider: dateProvider, errorReporter: errorReporter
         )
     }
 }
 
 // MARK: - ExpiryQueueRemote
 
-@MainActor private final class ExpiryQueueRemote: BrowserSyncRemoteServing {
+@MainActor final class ExpiryQueueRemote: BrowserSyncRemoteServing {
     let baseURL = URL(string: "https://expiry-queue.example")!
     var capabilities = [2, 3, 4, 5]
     var calls = [String]()
@@ -219,9 +223,10 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
     var requiresBootstrap = false
     var failBootstrapOnce = false
     var invalidReceipt: ExpiryQueueInvalidReceipt?
+    var seedOverride: [BrowserSyncEvent]?
 
     var seed: [BrowserSyncEvent] {
-        [
+        seedOverride ?? [
             .init(
                 serverSeq: 1, deviceID: "remote", entityType: "space", entityID: "work", op: "upsert",
                 data: .space(.init(
@@ -305,7 +310,7 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
 
 // MARK: - ExpiryQueueAuth
 
-@MainActor private final class ExpiryQueueAuth: BrowserSyncAuthSessionReading {
+@MainActor final class ExpiryQueueAuth: BrowserSyncAuthSessionReading {
     var session = BrowserAuthSession(
         accessToken: "fixture-only", userID: "owner", userEmail: nil,
         deviceID: "device", serverURL: URL(string: "https://expiry-queue.example")!

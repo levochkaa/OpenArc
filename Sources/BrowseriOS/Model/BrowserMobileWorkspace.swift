@@ -75,12 +75,28 @@ struct BrowserMobileTab: Identifiable, Equatable {
     var isArchiveOperationInFlight: Bool { profileDocument?.isArchiveOperationInFlight == true }
     var archiveError: String? { profileDocument?.archiveError }
     var archiveRevision: Int { profileDocument?.archiveRevision ?? 0 }
+    var automaticTabArchivalEnabled: Bool { profileDocument?.automaticTabArchivalEnabled ?? false }
+    var temporaryTabLifetime: BrowserTemporaryTabLifetime { profileDocument?.temporaryTabLifetime ?? .defaultValue }
+    var automaticTabArchivalError: String? { profileDocument?.automaticTabArchivalError }
+    var canConfigureAutomaticTabArchival: Bool {
+        canEdit && profileDocument?.supportsAutomaticTabArchival == true && profileDocument?.canManageArchive == true
+    }
 
     var canFindInPage: Bool {
         guard isReady, !isClosed, !isRestoring, javaScriptDialog == nil,
               let tab = selectedTab, tab.state.error == nil, tab.urlString != "about:blank"
         else { return false }
         return engine.canFindInPage(id: tab.runtimeID)
+    }
+
+    @discardableResult func setAutomaticTabArchival(lifetime: BrowserTemporaryTabLifetime?) -> Bool {
+        guard canConfigureAutomaticTabArchival else { return false }
+        return profileDocument?.setAutomaticTabArchival(lifetime: lifetime) ?? false
+    }
+
+    func reloadAutomaticTabArchivalSettings() {
+        profileDocument?.reloadAutomaticTabArchivalSettings()
+        notify()
     }
 
     func archivePage(before: BrowserTabArchiveCursor? = nil, limit: Int = 50) throws -> BrowserTabArchivePage {
@@ -335,6 +351,11 @@ struct BrowserMobileTab: Identifiable, Equatable {
         updateSelectionLease()
     }
 
+    func setExpiryHydrationCheck(_ check: @escaping @MainActor () -> Bool) {
+        expiryHydrationCheck = check
+        updateSelectionLease()
+    }
+
     func setActivityActive(_ active: Bool) {
         let next = active && isSceneAttached && !isClosed
         guard isActivityActive != next else { return }
@@ -347,6 +368,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
         if next {
             recordSelectionActivity()
         }
+        updateSelectionLease()
     }
 
     func setJavaScriptDialogPresentationActive(_ active: Bool) {
@@ -437,6 +459,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private var isSceneAttached = false
     private var isActivityActive = false
     private let selectionLeaseOwner = UUID()
+    private var expiryHydrationCheck: (@MainActor () -> Bool)?
     private var profileLoader: (@MainActor () async throws -> BrowserMobileProfileDocument)?
     private var sceneID = ""
     private var scenePreferences: UserDefaults?
@@ -584,6 +607,13 @@ struct BrowserMobileTab: Identifiable, Equatable {
         guard let profileDocument else { return }
         if isSceneAttached {
             profileDocument.updateSelectionLease(owner: selectionLeaseOwner, selectedTabID: selectedTabID)
+            profileDocument.updateExpiryLease(
+                owner: selectionLeaseOwner, isActive: isActivityActive, isHydrated: isReady && !isRestoring,
+                hydrationCheck: { [weak self] in
+                    guard let self, isReady, !isRestoring, !isClosed else { return false }
+                    return expiryHydrationCheck?() ?? true
+                }
+            )
         } else {
             profileDocument.removeSelectionLease(owner: selectionLeaseOwner)
         }

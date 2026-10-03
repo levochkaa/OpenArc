@@ -4,7 +4,7 @@ import Foundation
 
 /// One logical profile shared by scene adapters. Scenes submit stable-ID actions;
 /// their independently selected tabs and WebKit runtimes never replace this tree.
-@MainActor final class BrowserMobileProfileDocument: BrowserSyncSnapshotApplying {
+@MainActor final class BrowserMobileProfileDocument: BrowserSyncSnapshotApplying, BrowserSyncExpiryScheduling {
     // MARK: Lifecycle
 
     init(
@@ -13,6 +13,7 @@ import Foundation
         syncCoordinator: (any BrowserSyncCoordinating)? = nil,
         idProvider: @escaping () -> String = { UUID().uuidString },
         dateProvider: @escaping () -> Date = Date.init,
+        automaticArchivalCheckInterval: Duration? = .seconds(60),
         maximumBufferedWrites: Int = 32,
         maximumBufferedBytes: Int = 32 * 1024 * 1024
     ) throws {
@@ -23,7 +24,9 @@ import Foundation
         self.syncCoordinator = syncCoordinator
         self.idProvider = idProvider
         self.dateProvider = dateProvider
+        self.automaticArchivalCheckInterval = automaticArchivalCheckInterval
         self.writeBuffer = .init(maximumCount: maximumBufferedWrites, maximumBytes: maximumBufferedBytes)
+        reloadAutomaticTabArchivalSettings()
     }
 
     convenience init(
@@ -42,6 +45,9 @@ import Foundation
     private(set) var archiveError: String?
     private(set) var archiveRevision = 0
     private(set) var isArchiveOperationInFlight = false
+    private(set) var automaticTabArchivalEnabled = false
+    private(set) var temporaryTabLifetime = BrowserTemporaryTabLifetime.defaultValue
+    private(set) var automaticTabArchivalError: String?
     weak var syncSession: BrowserMobileSyncSession?
 
     var persistenceFailure: BrowserSessionPersistenceFailure? { writeBuffer.failure }
@@ -53,11 +59,52 @@ import Foundation
     }
 
     var canRestoreArchivedTab: Bool { canManageArchive }
+    var supportsAutomaticTabArchival: Bool { store is BrowserSQLiteSessionStore }
 
     /// Protection is local to attached windows, never a claim about another
     /// device. A stale lease cannot recreate or protect a deleted identity.
     var protectedTabIDs: Set<String> {
         Set(selectionLeases.values).intersection(snapshot.tabs.compactMap(\.id))
+    }
+
+    @discardableResult func setAutomaticTabArchival(lifetime: BrowserTemporaryTabLifetime?) -> Bool {
+        guard canManageArchive, let sqlite = store as? BrowserSQLiteSessionStore else { return false }
+        let chosen = lifetime ?? temporaryTabLifetime
+        do {
+            try sqlite.saveAutomaticTabArchival(enabled: lifetime != nil, lifetime: chosen)
+            automaticTabArchivalEnabled = lifetime != nil
+            temporaryTabLifetime = chosen
+            automaticTabArchivalError = nil
+            automaticArchivalSettingsLoaded = true
+            notify()
+            requestAutomaticArchivalCheck()
+            return true
+        } catch {
+            automaticTabArchivalError = String(
+                localized: "Auto-Archive settings could not be saved. Try again.",
+                table: "Mobile"
+            )
+            notify()
+            return false
+        }
+    }
+
+    func reloadAutomaticTabArchivalSettings() {
+        guard let sqlite = store as? BrowserSQLiteSessionStore else { return }
+        do {
+            let settings = try sqlite.loadAutomaticTabArchivalSettings()
+            automaticTabArchivalEnabled = settings.enabled
+            temporaryTabLifetime = settings.lifetime
+            automaticArchivalSettingsLoaded = true
+            automaticTabArchivalError = nil
+        } catch {
+            automaticArchivalSettingsLoaded = false
+            automaticTabArchivalError = String(
+                localized: "Auto-Archive settings could not be loaded. Try again.",
+                table: "Mobile"
+            )
+        }
+        notify()
     }
 
     func updateSelectionLease(owner: UUID, selectedTabID: String?) {
@@ -66,6 +113,79 @@ import Foundation
 
     func removeSelectionLease(owner: UUID) {
         selectionLeases.removeValue(forKey: owner)
+        expiryLeases.removeValue(forKey: owner)
+        updateLocalArchivalTimer()
+    }
+
+    /// The check belongs to the scene registry and includes windows whose
+    /// asynchronous profile load has not yet produced a selection lease.
+    func updateExpiryLease(
+        owner: UUID, isActive: Bool, isHydrated: Bool,
+        hydrationCheck: @escaping @MainActor () -> Bool
+    ) {
+        let previous = expiryLeases[owner]
+        expiryLeases[owner] = .init(isActive: isActive, isHydrated: isHydrated, hydrationCheck: hydrationCheck)
+        updateLocalArchivalTimer()
+        if previous?.isActive != isActive || previous?.isHydrated != isHydrated {
+            (syncCoordinator as? BrowserSyncService)?.requestExpirySweep()
+        }
+    }
+
+    func expirySchedulingState() -> BrowserSyncExpirySchedulingState? {
+        guard canManageArchive, automaticArchivalSettingsLoaded, !expiryLeases.isEmpty,
+              expiryLeases.values.contains(where: \.isActive),
+              expiryLeases.values.allSatisfy({ $0.isHydrated && $0.hydrationCheck() })
+        else { return nil }
+        return .init(
+            inactiveForSeconds: automaticTabArchivalEnabled ? Int(temporaryTabLifetime.timeInterval) : nil,
+            protectedTabIDs: protectedTabIDs
+        )
+    }
+
+    func refreshExpiryActivity() -> Bool {
+        guard expirySchedulingState() != nil else { return false }
+        let selected = Set(expiryLeases.compactMap { owner, lease in lease.isActive ? selectionLeases[owner] : nil })
+        _ = recordActivity(tabIDs: selected)
+        return !hasUncommittedWrites && expirySchedulingState() != nil
+    }
+
+    /// Never use local deletion for a profile that has adopted sync, including
+    /// Pause/logout/offline. The shared service owns conditional server expiry.
+    func performAutomaticTabArchivalCheck() {
+        guard let state = expirySchedulingState(), let sqlite = store as? BrowserSQLiteSessionStore else { return }
+        do {
+            guard try sqlite.syncOwner() == nil else { return }
+            let now = dateProvider().timeIntervalSince1970
+            guard now.isFinite else { return }
+            if lastLocalActivityRefresh.map({ now < $0 || now - $0 >= 300 }) ?? true {
+                guard refreshExpiryActivity() else { return }
+                lastLocalActivityRefresh = now
+            }
+            guard let interval = state.inactiveForSeconds else { return }
+            let cutoff = now - Double(interval)
+            let candidates = snapshot.tabs
+                .filter { tab in
+                    guard tab.placement == .temporary, let id = tab.id, !state.protectedTabIDs.contains(id),
+                          let activity = tab.lastActivityTimestamp, activity.isFinite, activity <= now
+                    else { return false }
+                    return activity <= cutoff
+                }
+                .prefix(100)
+                .compactMap(\.id)
+            for id in candidates {
+                guard expirySchedulingState()?.inactiveForSeconds == interval, !protectedTabIDs.contains(id),
+                      let tab = snapshot.tabs.first(where: { $0.id == id }), tab.placement == .temporary,
+                      let activity = tab.lastActivityTimestamp, activity.isFinite, activity <= cutoff,
+                      try sqlite.syncOwner() == nil else { return }
+                guard archiveTab(id: id), !hasUncommittedWrites else { return }
+            }
+        } catch {
+            automaticTabArchivalError = String(
+                localized: "Auto-Archive could not check this profile. Try again.",
+                table: "Mobile"
+            )
+            notify()
+        }
     }
 
     @discardableResult func recordActivity(tabIDs: Set<String>) -> Bool {
@@ -175,11 +295,13 @@ import Foundation
 
     func attachSyncService(_ service: BrowserSyncService) {
         if let previous = syncCoordinator as? BrowserSyncService, previous !== service {
+            previous.setExpiryScheduler(nil)
             previous.setSnapshotApplier(nil)
             previous.setLocalPersistenceBlocked(true)
         }
         syncCoordinator = service
         service.setSnapshotApplier(self)
+        service.setExpiryScheduler(self)
         service.setLocalPersistenceBlocked(hasUncommittedWrites)
     }
 
@@ -326,6 +448,12 @@ import Foundation
         case clear(BrowserTabArchiveBoundary)
     }
 
+    private struct ExpiryLease {
+        let isActive: Bool
+        let isHydrated: Bool
+        let hydrationCheck: @MainActor () -> Bool
+    }
+
     private let store: any BrowserTabSessionSnapshotStoring
     private var syncCoordinator: (any BrowserSyncCoordinating)?
     private let idProvider: () -> String
@@ -333,6 +461,11 @@ import Foundation
     private var writeBuffer: BrowserSessionWriteBuffer
     private var observers = [ObserverToken: (BrowserTabSessionSnapshot) -> Void]()
     private var selectionLeases = [UUID: String]()
+    private var expiryLeases = [UUID: ExpiryLease]()
+    private var automaticArchivalSettingsLoaded = false
+    private let automaticArchivalCheckInterval: Duration?
+    private var localArchivalTask: Task<Void, Never>?
+    private var lastLocalActivityRefresh: TimeInterval?
     private var isNotifying = false
     private var needsNotification = false
 
@@ -398,6 +531,30 @@ import Foundation
                   tab.pinnedFolderID.map({ tab.placement == .spacePinned && byID[$0]?.spaceID == tab.spaceID }) ?? true
             else {
                 throw BrowserMobileProfileDocumentError.invalidSnapshot
+            }
+        }
+    }
+
+    private func requestAutomaticArchivalCheck() {
+        (syncCoordinator as? BrowserSyncService)?.requestExpirySweep()
+        updateLocalArchivalTimer()
+        if automaticArchivalCheckInterval != nil {
+            Task { @MainActor [weak self] in self?.performAutomaticTabArchivalCheck() }
+        }
+    }
+
+    private func updateLocalArchivalTimer() {
+        guard expiryLeases.values.contains(where: \.isActive), let interval = automaticArchivalCheckInterval else {
+            localArchivalTask?.cancel()
+            localArchivalTask = nil
+            return
+        }
+        guard localArchivalTask == nil else { return }
+        localArchivalTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard self != nil else { return }
+                self?.performAutomaticTabArchivalCheck()
+                do { try await Task.sleep(for: interval) } catch { return }
             }
         }
     }

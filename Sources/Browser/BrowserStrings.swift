@@ -1350,6 +1350,16 @@ enum BrowserStrings {
         comment: "Option title for archiving temporary tabs after 12 hours."
     )
 
+    static let settingsTemporaryTabsSyncUnavailable = NSLocalizedString(
+        "browser.settings.temporary_tabs.sync_unavailable",
+        comment: "Explains why automatic archiving is disabled for synchronized desktop profiles."
+    )
+
+    static let settingsTemporaryTabsSaveFailed = NSLocalizedString(
+        "browser.settings.temporary_tabs.save_failed",
+        comment: "Archive timing preference could not be saved."
+    )
+
     static let settingsLifetimeTwentyFourHours = NSLocalizedString(
         "browser.settings.temporary_tabs.lifetime.24h",
         comment: "Option title for archiving temporary tabs after 24 hours."
@@ -1358,6 +1368,11 @@ enum BrowserStrings {
     static let settingsLifetimeSevenDays = NSLocalizedString(
         "browser.settings.temporary_tabs.lifetime.7d",
         comment: "Option title for archiving temporary tabs after 7 days."
+    )
+
+    static let settingsLifetimeThreeDays = NSLocalizedString(
+        "browser.settings.temporary_tabs.lifetime.3d",
+        comment: "Option title for archiving temporary tabs after 3 days."
     )
 
     static let settingsLifetimeThirtyDays = NSLocalizedString(
@@ -1624,6 +1639,8 @@ enum BrowserStrings {
             settingsLifetimeTwelveHours
         case .twentyFourHours:
             settingsLifetimeTwentyFourHours
+        case .threeDays:
+            settingsLifetimeThreeDays
         case .sevenDays:
             settingsLifetimeSevenDays
         case .thirtyDays:

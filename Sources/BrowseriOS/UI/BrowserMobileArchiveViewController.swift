@@ -40,6 +40,12 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         let done = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
         done.accessibilityIdentifier = "browser.archive.done"
         navigationItem.rightBarButtonItem = done
+        timingButton = UIBarButtonItem(
+            title: String(localized: "Auto-Archive", table: "Mobile"),
+            menu: UIMenu(children: [])
+        )
+        timingButton.accessibilityIdentifier = "browser.archive.timing"
+        navigationItem.leftBarButtonItem = timingButton
         newerButton = UIBarButtonItem(
             title: String(localized: "Newer", table: "Mobile"), style: .plain,
             target: self, action: #selector(showNewer)
@@ -191,6 +197,16 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         picker.dismiss(animated: true)
     }
 
+    /// Used by the native menu. Publish the checkmark only after the profile's
+    /// atomic preference write succeeds; Retry retains the exact chosen value.
+    func chooseAutomaticArchival(_ lifetime: BrowserTemporaryTabLifetime?) {
+        guard workspace.canConfigureAutomaticTabArchival, !isChangingArchive, !isCapturingBoundary,
+              !isRetrying, !isClosing else { return }
+        let succeeded = workspace.setAutomaticTabArchival(lifetime: lifetime)
+        failedAutomaticArchival = succeeded ? nil : lifetime.map(ArchivalChoice.interval) ?? .off
+        render()
+    }
+
     func render() {
         guard isViewLoaded else { return }
         if !workspace.spaces.isEmpty {
@@ -217,6 +233,20 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         case clear(BrowserTabArchiveBoundary)
     }
 
+    private enum ArchivalChoice {
+        case off
+        case interval(BrowserTemporaryTabLifetime)
+
+        // MARK: Internal
+
+        var lifetime: BrowserTemporaryTabLifetime? {
+            switch self {
+            case .off: nil
+            case .interval(let value): value
+            }
+        }
+    }
+
     private let searchLoader: @MainActor (String, BrowserTabArchiveCursor?, Int) async throws -> BrowserTabArchivePage
     private let searchController = UISearchController(searchResultsController: nil)
     private var searchTask: Task<Void, Never>?
@@ -240,6 +270,8 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
     private var newerButton = UIBarButtonItem()
     private var olderButton = UIBarButtonItem()
     private var clearButton = UIBarButtonItem()
+    private var timingButton = UIBarButtonItem()
+    private var failedAutomaticArchival: ArchivalChoice?
     private let errorLabel = UILabel()
     private let retryButton = UIButton(type: .system)
     private let statusStack = UIStackView()
@@ -374,13 +406,14 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
     }
 
     private func updatePresentation() {
+        updateTimingMenu()
         newerButton.isEnabled = cursors.count > 1 && !isLoading && !isChangingArchive && !isRetrying
         olderButton.isEnabled = nextCursor != nil && !isLoading && !isChangingArchive && !isRetrying
         clearButton.isEnabled = mayManage && failedRemoval == nil
         errorLabel.text = workspace.sessionError ?? actionError ?? loadError ?? interactionError ?? workspace
-            .archiveError
+            .automaticTabArchivalError ?? workspace.archiveError
         retryButton.isHidden = workspace.sessionError == nil && (loadError == nil || isQueryInvalid)
-            && failedRemoval == nil && !boundaryLoadFailed
+            && failedRemoval == nil && !boundaryLoadFailed && workspace.automaticTabArchivalError == nil
         retryButton.isEnabled = !isRetrying && !isChangingArchive && !isCapturingBoundary
         tableView.tableHeaderView = errorLabel.text == nil ? nil : statusStack
         sizeStatusHeader()
@@ -402,6 +435,33 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
             cell.contentView.alpha = mayRestore ? 1 : 0.5
             cell.selectionStyle = mayRestore ? .default : .none
         }
+    }
+
+    private func updateTimingMenu() {
+        timingButton.isEnabled = workspace.canConfigureAutomaticTabArchival && mayManage
+        let enabled = workspace.automaticTabArchivalEnabled
+        var actions = [UIAction(
+            title: String(localized: "Off", table: "Mobile"), identifier: .init("browser.archive.timing.off"),
+            state: enabled ? .off : .on
+        ) { [weak self] _ in self?.chooseAutomaticArchival(nil) }]
+        for lifetime in BrowserTemporaryTabLifetime.allCases {
+            let title =
+                switch lifetime {
+                case .twelveHours: String(localized: "After 12 Hours", table: "Mobile")
+                case .twentyFourHours: String(localized: "After 1 Day", table: "Mobile")
+                case .threeDays: String(localized: "After 3 Days", table: "Mobile")
+                case .sevenDays: String(localized: "After 7 Days", table: "Mobile")
+                case .thirtyDays: String(localized: "After 30 Days", table: "Mobile")
+                }
+            actions.append(UIAction(
+                title: title, identifier: .init("browser.archive.timing." + lifetime.rawValue),
+                state: enabled && workspace.temporaryTabLifetime == lifetime ? .on : .off
+            ) { [weak self] _ in self?.chooseAutomaticArchival(lifetime) })
+        }
+        timingButton.menu = UIMenu(
+            title: String(localized: "Auto-Archive Today Tabs", table: "Mobile"),
+            children: actions
+        )
     }
 
     private func sizeStatusHeader() {
@@ -516,6 +576,15 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
 
     @objc private func retry() {
         guard !isRetrying, !isChangingArchive, !isCapturingBoundary else { return }
+        if let failedAutomaticArchival, workspace.sessionError == nil {
+            chooseAutomaticArchival(failedAutomaticArchival.lifetime)
+            return
+        }
+        if workspace.automaticTabArchivalError != nil, workspace.sessionError == nil {
+            workspace.reloadAutomaticTabArchivalSettings()
+            render()
+            return
+        }
         if boundaryLoadFailed, workspace.sessionError == nil {
             requestClear()
             return

@@ -154,6 +154,7 @@ enum BrowserWindowMode: Equatable {
         extensionSidePanelDriver?.onPanelClosed = { [weak self] panelID in
             self?.handleExtensionSidePanelClosed(panelID: panelID)
         }
+        syncCoordinator?.setExpiryScheduler(self)
         updateWindowTitle()
     }
 
@@ -196,11 +197,11 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var spaces = [Space]()
     @Published private(set) var pinnedTabFolders = [PinnedTabFolder]()
     @Published private(set) var selectedSpaceID: String?
-    @Published private(set) var selectedTabID: String?
     @Published private(set) var tabSwitcherState: TabSwitcherState?
     @Published var isSidebarVisible = true
     @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
     @Published private(set) var temporaryTabLifetime: BrowserTemporaryTabLifetime
+    @Published private(set) var automaticArchivalSettingsError: String?
     @Published private(set) var isFindBarPresented = false
     @Published private(set) var findBarFocusRequest = 0
     @Published private(set) var findResultMatchCount: Int?
@@ -268,6 +269,16 @@ enum BrowserWindowMode: Equatable {
 
     private(set) var isContextReady = false
     var isShuttingDown = false
+
+    @Published private(set) var selectedTabID: String? {
+        willSet {
+            guard selectedTabID != newValue, canRecordViewingActivity else { return }
+            for id in [selectedTabID, newValue].compactMap({ $0 }) {
+                guard tabs.first(where: { $0.id == id })?.creationState == .ready else { continue }
+                touchTab(id: id)
+            }
+        }
+    }
 
     var hasUncommittedSessionWrites: Bool {
         !hasDiscardedSessionForClosure && (!sessionWriteBuffer.writes.isEmpty || sessionPersistenceFailure != nil)
@@ -457,6 +468,11 @@ enum BrowserWindowMode: Equatable {
         activeSpace?.isPinnedSectionCollapsed ?? false
     }
 
+    var isAutomaticArchivalUnavailableForSync: Bool {
+        guard let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading else { return false }
+        do { return try ownership.syncOwner() != nil } catch { return true }
+    }
+
     @discardableResult func retrySessionPersistence() -> Bool {
         guard !hasDiscardedSessionForClosure, !sessionWriteBuffer.isTerminal else { return false }
         guard !sessionWriteBuffer.writes.isEmpty else { return sessionPersistenceFailure == nil }
@@ -474,6 +490,7 @@ enum BrowserWindowMode: Equatable {
     @discardableResult func prepareSessionForClosure() -> Bool {
         guard !hasDiscardedSessionForClosure, isPersistenceEnabled else { return true }
         guard !sessionWriteBuffer.isTerminal else { return false }
+        recordCurrentViewingActivity()
         persistCurrentSessionIfAllowed()
         isSessionClosurePrepared = !hasUncommittedSessionWrites
         return isSessionClosurePrepared
@@ -543,6 +560,7 @@ enum BrowserWindowMode: Equatable {
         // Close/quit already performed a reversible preflight. Do not introduce
         // an unguarded second write after the controller approved destruction.
         if !isSessionClosurePrepared, !hasDiscardedSessionForClosure {
+            recordCurrentViewingActivity()
             persistCurrentSessionIfAllowed()
         }
         guard !hasUncommittedSessionWrites else { return }
@@ -557,6 +575,8 @@ enum BrowserWindowMode: Equatable {
         persistSidebarWidthPreferenceIfAllowed()
         isShuttingDown = true
         isPersistenceEnabled = false
+        syncCoordinator?.setRuntimeActive(false)
+        syncCoordinator?.setExpiryScheduler(nil)
     }
 
     func prepareForCefShutdown() {
@@ -724,8 +744,10 @@ enum BrowserWindowMode: Equatable {
 
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
+        recordExplicitViewingActivity(ids: [selectedTabID])
         selectedSpaceID = spaceID
         selectActiveTabForSelectedSpace()
+        recordExplicitViewingActivity(ids: [selectedTabID])
         BrowserTelemetry.captureUsage(.spaceSelected, properties: telemetryProperties)
         persistCurrentSessionIfAllowed()
     }
@@ -1034,7 +1056,6 @@ enum BrowserWindowMode: Equatable {
         guard let plan = sidebarMovePlan(payload: payload, destination: destination) else { return false }
         let oldTabs = tabs
         let activeMovedID = selectedTabID.flatMap { payload.tabIDs.contains($0) ? $0 : nil }
-        let now = dateProvider()
         let updatesActivity =
             if case .tab = payload.primary {
                 true
@@ -1044,7 +1065,7 @@ enum BrowserWindowMode: Equatable {
         let plannedTabs = plan.tabs.map { tab in
             var tab = tab
             if updatesActivity, payload.tabIDs.contains(tab.id) {
-                tab.lastActivityAt = now
+                tab.lastActivityAt = advancedActivityDate(after: tab.lastActivityAt)
             }
             return tab
         }
@@ -1176,16 +1197,40 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        if let sqlite = sessionPreferencesStore as? BrowserSQLiteSessionStore {
+            do {
+                try sqlite.saveTemporaryTabLifetimeStrict(lifetime)
+            } catch {
+                automaticArchivalSettingsError = BrowserStrings.settingsTemporaryTabsSaveFailed
+                return
+            }
+        } else {
+            sessionPreferencesStore.saveTemporaryTabLifetime(lifetime)
+        }
+        automaticArchivalSettingsError = nil
         temporaryTabLifetime = lifetime
-        sessionPreferencesStore.saveTemporaryTabLifetime(lifetime)
         archiveExpiredTemporaryTabs()
     }
 
     func handleApplicationDidBecomeActive() {
+        guard !isShuttingDown else { return }
+        let becameActive = !isViewingActivityActive
+        isViewingActivityActive = true
+        syncCoordinator?.setRuntimeActive(true)
+        if becameActive {
+            persistCurrentViewingActivity()
+        }
         archiveExpiredTemporaryTabs()
         bookmarksModel.reload()
         refreshBrowserExtensions()
         syncCoordinator?.schedulePull()
+    }
+
+    func handleApplicationWillResignActive() {
+        guard isViewingActivityActive, !isShuttingDown else { return }
+        persistCurrentViewingActivity()
+        isViewingActivityActive = false
+        syncCoordinator?.setRuntimeActive(false)
     }
 
     func updateProfilePresentation(profile: BrowserProfile, availableProfileCount: Int) {
@@ -1204,7 +1249,10 @@ enum BrowserWindowMode: Equatable {
         // the local timer from queuing unconditional deletes.
         if let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading {
             do {
-                guard try ownership.syncOwner() == nil else { return }
+                guard try ownership.syncOwner() == nil else {
+                    syncCoordinator?.requestExpirySweep()
+                    return
+                }
             } catch {
                 Self.automaticArchivalLogger.error(
                     "Skipping automatic archival because sync ownership could not be read: \(error.localizedDescription, privacy: .public)"
@@ -1895,6 +1943,8 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        let didRecordActivity = recordExplicitViewingActivity(ids: [selectedTabID, id])
+
         if closedAppTabIDs.contains(id), tab.placement == .app {
             reopenClosedAppTab(id: id)
             return
@@ -1906,6 +1956,9 @@ enum BrowserWindowMode: Equatable {
         }
 
         guard selectedTabID != id else {
+            if didRecordActivity {
+                persistCurrentSessionIfAllowed()
+            }
             return
         }
 
@@ -1920,7 +1973,6 @@ enum BrowserWindowMode: Equatable {
         findResultMatchCount = nil
         tabDriver.selectTab(withID: id)
         scheduleSelectedTabWebAppManifestLoad()
-        touchTab(id: id)
         recordSelectedTab(id)
         updateWindowTitle()
         BrowserTelemetry.captureUsage(.tabSelected, properties: telemetryProperties(for: tab))
@@ -2159,6 +2211,7 @@ enum BrowserWindowMode: Equatable {
     private var pendingHydratedTabCreationIDs = Set<String>()
     private var tabCreationUndoReferences = [String: TabCreationUndoReference]()
     private var automaticArchivalTimer: Timer?
+    private var isViewingActivityActive = true
     private var recentlySelectedTabIDs = [String]()
     private var tabPreviewImagesByID = [String: NSImage]()
     private var tabSwitcherPresentationTask: Task<Void, Never>?
@@ -2349,6 +2402,11 @@ enum BrowserWindowMode: Equatable {
             : nil
         tab.pinnedFolderID = snapshot.placement == .spacePinned ? snapshot.pinnedFolderID : nil
         tab.pinnedSiblingRank = snapshot.placement == .spacePinned ? snapshot.pinnedSiblingRank : nil
+        if let activity = lastActivityDate(from: snapshot), activity.timeIntervalSince1970.isFinite {
+            // The shared projection already reconciled canonical and pending
+            // activity. Keep it when publishing the live-engine projection.
+            tab.lastActivityAt = activity
+        }
         if tab.creationState != .ready, !tab.hasPendingLocalNavigation,
            tab.urlString != snapshot.urlString
         {
@@ -2877,7 +2935,7 @@ enum BrowserWindowMode: Equatable {
             tabs[index].urlString = resolvedURL
             tabs[index].title = ""
             tabs[index].faviconURLString = nil
-            tabs[index].lastActivityAt = dateProvider()
+            tabs[index].lastActivityAt = advancedActivityDate(after: tabs[index].lastActivityAt)
             invalidateSelectedTabWebAppInstallMetadata()
             updateWindowTitle()
             persistCurrentSessionIfAllowed()
@@ -3246,7 +3304,11 @@ enum BrowserWindowMode: Equatable {
             makeActive: true
         )
         pendingReopenedAppTabIDs[newTabID] = id
-        tabs[index] = reidentifiedAppTab(from: tab, id: newTabID, lastActivityAt: dateProvider())
+        tabs[index] = reidentifiedAppTab(
+            from: tab,
+            id: newTabID,
+            lastActivityAt: advancedActivityDate(after: tab.lastActivityAt)
+        )
         closedAppTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
 
@@ -3283,7 +3345,7 @@ enum BrowserWindowMode: Equatable {
             from: tab,
             id: newTabID,
             urlString: pinnedURLString,
-            lastActivityAt: dateProvider()
+            lastActivityAt: advancedActivityDate(after: tab.lastActivityAt)
         )
         closedPinnedTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
@@ -3567,7 +3629,75 @@ enum BrowserWindowMode: Equatable {
     }
 }
 
+// MARK: BrowserSyncExpiryScheduling
+
+extension BrowserChromeModel: BrowserSyncExpiryScheduling {
+    func expirySchedulingState() -> BrowserSyncExpirySchedulingState? {
+        guard isViewingActivityActive, isContextReady, isPersistenceEnabled, !isShuttingDown,
+              !isRestoringSession, !isApplyingRemoteSync, !isReconcilingRemoteProjection,
+              deferredRemoteSyncSnapshot == nil, pendingRemoteTabCreations.isEmpty,
+              pendingCreatedTabContexts.isEmpty, pendingHydratedTabCreationIDs.isEmpty,
+              pendingReopenedAppTabIDs.isEmpty, pendingReopenedPinnedTabIDs.isEmpty,
+              !hasUncommittedSessionWrites,
+              tabs
+                  .allSatisfy({
+                      $0.creationState == .ready || closedAppTabIDs.contains($0.id) || closedPinnedTabIDs
+                          .contains($0.id) })
+        else { return nil }
+        let protectedIDs = Set(tabs.filter { $0.id == selectedTabID }.map(\.syncID))
+        // Desktop recovery is durable, but its native Archive surface is not
+        // available yet. Never enable conditional expiry from a shared setting.
+        return .init(inactiveForSeconds: nil, protectedTabIDs: protectedIDs)
+    }
+
+    func refreshExpiryActivity() -> Bool {
+        guard expirySchedulingState() != nil else { return false }
+        persistCurrentViewingActivity()
+        return !hasUncommittedSessionWrites
+    }
+}
+
 @MainActor private extension BrowserChromeModel {
+    var canRecordViewingActivity: Bool {
+        canRecordExplicitViewingActivity && !isApplyingRemoteSync
+    }
+
+    var canRecordExplicitViewingActivity: Bool {
+        isViewingActivityActive && isContextReady && isPersistenceEnabled && !isShuttingDown &&
+            !isRestoringSession && !isReconcilingRemoteProjection
+    }
+
+    @discardableResult func recordExplicitViewingActivity(ids: [String?]) -> Bool {
+        guard canRecordExplicitViewingActivity else { return false }
+        var changed = false
+        for id in Set(ids.compactMap { $0 }) {
+            if touchTab(id: id) {
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    func advancedActivityDate(after previous: Date) -> Date {
+        let now = dateProvider().timeIntervalSince1970.rounded(.down)
+        guard now.isFinite else { return previous }
+        let old = previous.timeIntervalSince1970
+        return !old.isFinite || now > old ? Date(timeIntervalSince1970: now) : previous
+    }
+
+    @discardableResult func recordCurrentViewingActivity() -> Bool {
+        guard canRecordExplicitViewingActivity, let selectedTabID,
+              selectedTab?.creationState == .ready
+        else { return false }
+        return touchTab(id: selectedTabID)
+    }
+
+    func persistCurrentViewingActivity() {
+        if recordCurrentViewingActivity() {
+            persistCurrentSessionIfAllowed()
+        }
+    }
+
     func startAutomaticArchivalTimerIfNeeded() {
         guard automaticArchivalTimer == nil else {
             return
@@ -3903,7 +4033,7 @@ enum BrowserWindowMode: Equatable {
 
         if let urlString, tabs[index].urlString != urlString {
             tabs[index].urlString = urlString
-            tabs[index].lastActivityAt = dateProvider()
+            tabs[index].lastActivityAt = advancedActivityDate(after: tabs[index].lastActivityAt)
             didChangePersistentURL = true
             if id == selectedTabID {
                 invalidateSelectedTabWebAppInstallMetadata()
@@ -4088,12 +4218,14 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
-    func touchTab(id: String) {
+    @discardableResult func touchTab(id: String) -> Bool {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else {
-            return
+            return false
         }
-
-        tabs[index].lastActivityAt = dateProvider()
+        let updated = advancedActivityDate(after: tabs[index].lastActivityAt)
+        guard updated != tabs[index].lastActivityAt else { return false }
+        tabs[index].lastActivityAt = updated
+        return true
     }
 
     func ensureDefaultSpace() {

@@ -622,7 +622,7 @@ import WebKit
 
 // MARK: - MobileHTTPFixture
 
-private struct MobileHTTPFixture: Decodable {
+struct MobileHTTPFixture: Decodable {
     // MARK: Internal
 
     struct Device: Decodable { let deviceID: String
@@ -735,7 +735,7 @@ private struct MobileHTTPFixture: Decodable {
 
 // MARK: - MobileHTTPProfile
 
-@MainActor private final class MobileHTTPProfile {
+@MainActor final class MobileHTTPProfile {
     // MARK: Lifecycle
 
     init(
@@ -743,7 +743,11 @@ private struct MobileHTTPFixture: Decodable {
         device: MobileHTTPFixture.Device,
         directory: URL,
         initial: BrowserTabSessionSnapshot? = nil,
-        dateProvider: @escaping () -> Date = Date.init
+        dateProvider: @escaping @MainActor () -> Date = Date.init,
+        pollInterval: Duration? = nil,
+        expirySweepInterval: TimeInterval = 60,
+        expiryActivityRefreshInterval: TimeInterval = 300,
+        automaticArchivalCheckInterval: Duration? = .seconds(60)
     ) throws {
         self.databaseURL = directory.appendingPathComponent(device.deviceID + ".sqlite")
         let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
@@ -752,7 +756,8 @@ private struct MobileHTTPFixture: Decodable {
             try store.writeSessionBatch([.init(snapshot: initial, origin: .local(syncMove: nil))])
         }
         let document = try BrowserMobileProfileDocument(
-            store: store, initialSnapshot: store.loadSnapshotStrict(), dateProvider: dateProvider
+            store: store, initialSnapshot: store.loadSnapshotStrict(), dateProvider: dateProvider,
+            automaticArchivalCheckInterval: automaticArchivalCheckInterval
         )
         self.document = document
         self.owner = BrowserSyncOwner(baseURL: fixture.baseURL, userID: device.userID)
@@ -777,7 +782,9 @@ private struct MobileHTTPFixture: Decodable {
                     credentials: credentials
                 )
             },
-            pushDebounce: .zero, pollInterval: nil, retryDelay: nil
+            pushDebounce: .zero, pollInterval: pollInterval, retryDelay: nil,
+            expirySweepInterval: expirySweepInterval, expiryActivityRefreshInterval: expiryActivityRefreshInterval,
+            dateProvider: dateProvider
         )
         self.workspace = BrowserMobileWorkspace(
             engine: engine,
@@ -799,7 +806,7 @@ private struct MobileHTTPFixture: Decodable {
 
     var service: BrowserSyncService { runtime.syncService! }
 
-    func start() async throws {
+    func start(expectedPullProtocolVersion: Int = 4) async throws {
         await workspace.restore()
         try #require(workspace.isReady)
         workspace.setSyncActive(true)
@@ -809,7 +816,7 @@ private struct MobileHTTPFixture: Decodable {
             runtime.enableSync()
         }
         try await drain()
-        try #require(try store.syncPullProtocolVersion(for: owner) == 4)
+        try #require(try store.syncPullProtocolVersion(for: owner) == expectedPullProtocolVersion)
     }
 
     func drain() async throws {
@@ -921,6 +928,13 @@ private struct MobileHTTPFixture: Decodable {
     ) async throws -> BrowserSyncFolderPushResponse {
         try await client.push(mutation: mutation, authSession: authSession)
     }
+
+    func push(
+        mutation: BrowserSyncExpiryMutation,
+        authSession: BrowserAuthSession
+    ) async throws -> BrowserSyncExpiryPushResponse {
+        try await client.push(mutation: mutation, authSession: authSession)
+    }
 }
 
 private func mobileHTTPGroupSeed() -> BrowserTabSessionSnapshot {
@@ -998,7 +1012,7 @@ private func mobileHTTPSeed(includeUnsupportedURL: Bool = false) -> BrowserTabSe
     ], tabs: tabs)
 }
 
-@MainActor private func mobileHTTPEventually(timeout: Duration = .seconds(10), _ condition: () -> Bool) async -> Bool {
+@MainActor func mobileHTTPEventually(timeout: Duration = .seconds(10), _ condition: () -> Bool) async -> Bool {
     let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: timeout)
     while clock.now < deadline {
         if condition() {

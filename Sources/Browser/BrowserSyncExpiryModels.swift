@@ -3,7 +3,7 @@ import Foundation
 // MARK: - BrowserSyncExpiryOperation
 
 /// Conditional intent only. It never carries a client cutoff or archive content.
-struct BrowserSyncExpiryOperation: Codable, Equatable {
+struct BrowserSyncExpiryOperation: Codable, Equatable, Sendable {
     // MARK: Lifecycle
 
     init(id: String, expectedServerSeq: Int, inactiveForSeconds: Int) {
@@ -73,6 +73,36 @@ struct BrowserSyncExpiryMutation: Codable, Equatable {
 
 enum BrowserSyncExpiryError: Error, Equatable {
     case invalidOperation
+    case candidatesChanged
+}
+
+// MARK: - BrowserSyncExpirySchedulingState
+
+struct BrowserSyncExpirySchedulingState: Equatable, Sendable {
+    let inactiveForSeconds: Int?
+    let protectedTabIDs: Set<String>
+}
+
+// MARK: - BrowserSyncExpiryScheduling
+
+@MainActor protocol BrowserSyncExpiryScheduling: AnyObject {
+    func expirySchedulingState() -> BrowserSyncExpirySchedulingState?
+    /// True includes a successful no-op. False blocks this pass on failed storage
+    /// or incomplete hydration; any emitted activity must be ACKed before expiry.
+    func refreshExpiryActivity() -> Bool
+}
+
+// MARK: - BrowserSyncExpiryCandidateBatch
+
+struct BrowserSyncExpiryCandidateBatch: Sendable {
+    let baseline: Data
+    let operations: [BrowserSyncExpiryOperation]
+}
+
+// MARK: - BrowserAutomaticArchivalSettingsError
+
+enum BrowserAutomaticArchivalSettingsError: Error {
+    case invalidValue
 }
 
 // MARK: - BrowserSyncExpiryPushRequest

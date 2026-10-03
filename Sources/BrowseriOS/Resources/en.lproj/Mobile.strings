@@ -100,3 +100,14 @@
 "Use a shorter search." = "Use a shorter search.";
 "The archive could not be changed. Try again." = "The archive could not be changed. Try again.";
 "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept." = "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept.";
+"Auto-Archive" = "Auto-Archive";
+"Auto-Archive Today Tabs" = "Auto-Archive Today Tabs";
+"Off" = "Off";
+"After 12 Hours" = "After 12 Hours";
+"After 1 Day" = "After 1 Day";
+"After 3 Days" = "After 3 Days";
+"After 7 Days" = "After 7 Days";
+"After 30 Days" = "After 30 Days";
+"Auto-Archive settings could not be saved. Try again." = "Auto-Archive settings could not be saved. Try again.";
+"Auto-Archive settings could not be loaded. Try again." = "Auto-Archive settings could not be loaded. Try again.";
+"Auto-Archive could not check this profile. Try again." = "Auto-Archive could not check this profile. Try again.";

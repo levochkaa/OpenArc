@@ -78,6 +78,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
+    public func applicationWillResignActive(_: Notification) {
+        for chromeModel in allChromeModels {
+            chromeModel.handleApplicationWillResignActive()
+        }
+    }
+
     public func application(_: NSApplication, open urls: [URL]) {
         for url in urls {
             openAboutLink(url)
@@ -1674,6 +1680,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                     localStore: sqliteSessionStore,
                     remoteClient: syncClient,
                     authSessionStore: authSessionStore,
+                    runtimeActive: false,
                     errorReporter: { error, phase in
                         BrowserTelemetry.captureError(error, event: phase == .push ? .syncPushFailed : .syncPullFailed)
                     }
@@ -1710,6 +1717,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             allTabsClosedHandler: {}
         )
         syncCoordinator?.setSnapshotApplier(chromeModel)
+        if NSApp.isActive {
+            chromeModel.handleApplicationDidBecomeActive()
+        } else {
+            chromeModel.handleApplicationWillResignActive()
+        }
 
         let rootView = BrowserRootView(model: chromeModel, updateController: updateController)
         let hostingView = rootView

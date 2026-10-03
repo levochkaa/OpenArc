@@ -21,7 +21,9 @@ import UIKit
             BrowserRemoteSyncClient(configuration: $0)
         },
         pushDebounce: Duration = .milliseconds(750), pollInterval: Duration? = .seconds(15),
-        retryDelay: Duration? = .seconds(2)
+        retryDelay: Duration? = .seconds(2),
+        expirySweepInterval: TimeInterval = 60, expiryActivityRefreshInterval: TimeInterval = 300,
+        dateProvider: @escaping @MainActor () -> Date = Date.init
     ) {
         self.store = store
         self.document = document
@@ -32,6 +34,9 @@ import UIKit
         self.pushDebounce = pushDebounce
         self.pollInterval = pollInterval
         self.retryDelay = retryDelay
+        self.expirySweepInterval = expirySweepInterval
+        self.expiryActivityRefreshInterval = expiryActivityRefreshInterval
+        self.dateProvider = dateProvider
         self.account = BrowserAccountStore(
             syncClient: nil, authSessionStore: authSessionStore, syncCoordinator: nil,
             appleSignInService: identityProvider, deviceIdentity: Self.deviceIdentity
@@ -91,6 +96,8 @@ import UIKit
             localStore: store, remoteClient: client, authSessionStore: authSessionStore,
             pushDebounce: pushDebounce, pollInterval: pollInterval, retryDelay: retryDelay,
             runtimeActive: false,
+            expirySweepInterval: expirySweepInterval, expiryActivityRefreshInterval: expiryActivityRefreshInterval,
+            dateProvider: dateProvider,
             errorReporter: { [weak self] error, phase in
                 guard let self, generation == currentGeneration else { return }
                 lastErrorPhase = phase
@@ -195,6 +202,9 @@ import UIKit
     private let pushDebounce: Duration
     private let pollInterval: Duration?
     private let retryDelay: Duration?
+    private let expirySweepInterval: TimeInterval
+    private let expiryActivityRefreshInterval: TimeInterval
+    private let dateProvider: @MainActor () -> Date
     private var activeScenes = Set<String>()
     private var generation: UInt64 = 0
     private var signInAttempt: UUID?

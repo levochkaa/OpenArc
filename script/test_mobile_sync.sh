@@ -124,15 +124,16 @@ if (result.error) throw result.error;
 process.exit(result.status ?? 1);
 JS
 
-# Completion is written only after real v4 commits from both devices. A missing,
-# filtered or skipped test must fail this explicit integration invocation.
+# Completion requires both devices' ordinary commits and, in the scheduler
+# scenario, a real accepted v5 expiry. Missing or skipped tests cannot pass.
 node --input-type=module - "$report_path" <<'JS'
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const report = JSON.parse(readFileSync(process.argv[2], "utf8"));
 assert.deepEqual(report.completed, [
-  "mobile-v4-cross-space", "mobile-v4-group-replay", "mobile-v4-recovery", "mobile-v4-roundtrip"
+  "mobile-v4-cross-space", "mobile-v4-group-replay", "mobile-v4-recovery", "mobile-v4-roundtrip",
+  "mobile-v5-automatic-archive"
 ]);
 assert.ok(report.attempts >= 8);
-console.log("Mobile production HTTP sync: all four scenarios completed");
+console.log("Mobile production HTTP sync: all five scenarios completed");
 JS

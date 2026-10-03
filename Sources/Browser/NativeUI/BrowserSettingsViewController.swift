@@ -226,6 +226,18 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private func configureGeneral() {
         let preferences = preferences
         let model = model
+        let archivalDescription = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
+        let archivalError = BrowserNativeControls.label("", size: 12, color: .systemRed, wraps: true)
+        archivalDescription.setAccessibilityIdentifier("browser.settings.temporary-tab-availability")
+        archivalError.setAccessibilityIdentifier("browser.settings.temporary-tab-error")
+        updateBindings.append { [weak model, weak archivalDescription, weak archivalError] in
+            guard let model else { return }
+            archivalDescription?.stringValue = model.isAutomaticArchivalUnavailableForSync
+                ? BrowserStrings.settingsTemporaryTabsSyncUnavailable
+                : BrowserStrings.settingsTemporaryTabsDescription
+            archivalError?.stringValue = model.automaticArchivalSettingsError ?? ""
+            archivalError?.isHidden = model.automaticArchivalSettingsError == nil
+        }
         scrollView.setViews([
             section(BrowserStrings.settingsGeneralTab, rows: [
                 toggle(
@@ -305,8 +317,11 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     options: BrowserTemporaryTabLifetime.allCases,
                     title: BrowserStrings.title,
                     get: { model.temporaryTabLifetime },
-                    set: { model.setTemporaryTabLifetime($0) }
+                    set: { model.setTemporaryTabLifetime($0) },
+                    enabled: { !model.isAutomaticArchivalUnavailableForSync }
                 ),
+                archivalDescription,
+                archivalError,
             ]),
         ])
     }
@@ -693,7 +708,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         options: [Value],
         title optionTitle: (Value) -> String,
         get: @escaping () -> Value,
-        set: @escaping (Value) -> Void
+        set: @escaping (Value) -> Void,
+        enabled: @escaping () -> Bool = { true }
     ) -> NSView {
         let control = BrowserActionPopUpButton(titles: options.map(optionTitle))
         control.setAccessibilityLabel(title)
@@ -714,7 +730,10 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 set(options[index])
             }
         }
-        updateBindings.append { [weak control] in control?.selectItem(at: options.firstIndex(of: get()) ?? -1) }
+        updateBindings.append { [weak control] in
+            control?.selectItem(at: options.firstIndex(of: get()) ?? -1)
+            control?.isEnabled = enabled()
+        }
         return row(title, detail: detail, control: container)
     }
 

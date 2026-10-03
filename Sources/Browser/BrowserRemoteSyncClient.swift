@@ -524,6 +524,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         pollInterval: Duration? = .seconds(15),
         retryDelay: Duration? = .seconds(2),
         runtimeActive: Bool = true,
+        expirySweepInterval: TimeInterval = 60,
+        expiryActivityRefreshInterval: TimeInterval = 300,
+        dateProvider: @escaping @MainActor () -> Date = Date.init,
         errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in },
         operationDidSucceed: @escaping @MainActor (BrowserSyncFailurePhase) -> Void = { _ in }
     ) {
@@ -534,6 +537,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         self.pollInterval = pollInterval
         self.retryDelay = retryDelay
         self.isRuntimeActive = runtimeActive
+        self.expirySweepInterval = max(0, expirySweepInterval)
+        self.expiryActivityRefreshInterval = max(0, expiryActivityRefreshInterval)
+        self.dateProvider = dateProvider
         self.errorReporter = errorReporter
         self.operationDidSucceed = operationDidSucceed
     }
@@ -673,6 +679,21 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         return mutation.id
     }
 
+    func setExpiryScheduler(_ scheduler: (any BrowserSyncExpiryScheduling)?) {
+        expiryScheduler = scheduler
+        lastExpirySweep = nil
+        lastExpiryActivityRefresh = nil
+        expiryCandidateCursor = nil
+        expiryResponseLimits.removeAll()
+    }
+
+    /// Explicit settings or lifecycle wake. Periodic polling does not reset the
+    /// cadence, so a terminal rejection cannot cause an immediate expiry loop.
+    func requestExpirySweep() {
+        lastExpirySweep = nil
+        schedulePull()
+    }
+
     func setSnapshotApplier(_ snapshotApplier: (any BrowserSyncSnapshotApplying)?) {
         self.snapshotApplier = snapshotApplier
     }
@@ -698,6 +719,14 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         let id: String
     }
 
+    private struct ExpiryResponseLimit {
+        let failures: Int
+        var recordedAt: Date
+        var retryAt: Date
+
+        var delay: TimeInterval { min(3600, 60 * pow(2, Double(failures - 1))) }
+    }
+
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "Sync"
     )
@@ -708,6 +737,14 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     private let pushDebounce: Duration
     private let pollInterval: Duration?
     private let retryDelay: Duration?
+    private let expirySweepInterval: TimeInterval
+    private let expiryActivityRefreshInterval: TimeInterval
+    private let dateProvider: @MainActor () -> Date
+    private weak var expiryScheduler: (any BrowserSyncExpiryScheduling)?
+    private var lastExpirySweep: Date?
+    private var lastExpiryActivityRefresh: Date?
+    private var expiryCandidateCursor: BrowserSyncExpiryCandidateCursor?
+    private var expiryResponseLimits = [BrowserSyncExpiryCandidateCursor: ExpiryResponseLimit]()
     private var activeSession: BrowserAuthSession?
     private var isRuntimeActive: Bool
     private var isLocalPersistenceBlocked = false
@@ -737,6 +774,10 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         pendingPushContext = nil
         pendingPullContext = nil
         supportedPushVersions = []
+        lastExpirySweep = nil
+        lastExpiryActivityRefresh = nil
+        expiryCandidateCursor = nil
+        expiryResponseLimits.removeAll()
     }
 
     private func owner(for session: BrowserAuthSession) -> BrowserSyncOwner {
@@ -833,6 +874,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
                 let events: [BrowserSyncEvent]
+                var expiryResponse: BrowserSyncExpiryPushResponse?
                 switch mutation {
                 case .legacy(let payload):
                     let response = try await remoteClient.push(mutation: payload, authSession: context.session)
@@ -858,6 +900,34 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     else { throw BrowserRemoteSyncError.invalidMutationReceipt }
                     events = response.events
                 case .expiry(let payload):
+                    if try localStore.automaticExpiryNeedsValidation(id: payload.id, for: context.owner) {
+                        var baseline: Data?
+                        if let state = expiryScheduler?.expirySchedulingState(), state.inactiveForSeconds != nil {
+                            let candidates = try await localStore.syncExpiryCandidates(
+                                for: context.owner, state: state, now: dateProvider(), ignoringMutationID: payload.id,
+                                validatingEntityIDs: Set(payload.operations.map(\.entityID))
+                            )
+                            guard isCurrent(context), !Task.isCancelled else { return }
+                            if let current = expiryScheduler?.expirySchedulingState(),
+                               current.inactiveForSeconds == state.inactiveForSeconds,
+                               payload.operations.allSatisfy({
+                                   candidates.operations.contains($0) && !current.protectedTabIDs.contains($0.entityID)
+                               })
+                            {
+                                baseline = candidates.baseline
+                            }
+                        }
+                        guard isCurrent(context), !Task.isCancelled else { return }
+                        if try !localStore.prepareAutomaticExpiry(
+                            id: payload.id,
+                            baseline: baseline,
+                            for: context.owner
+                        ) {
+                            // No network attempt occurred. Its inert overlay needs
+                            // no projection; later ordinary rows may now drain.
+                            continue
+                        }
+                    }
                     guard try localStore.syncPullProtocolVersion(for: context.owner) == 5 else {
                         throw BrowserRemoteSyncError.unsupportedSyncProtocol
                     }
@@ -865,6 +935,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     guard isCurrent(context), !Task.isCancelled else { return }
                     try response.validate(for: payload)
                     events = response.events
+                    expiryResponse = response
                 }
                 guard isCurrent(context), !Task.isCancelled else { return }
                 let previous = try localStore.loadSnapshotForSync(for: context.owner)
@@ -875,6 +946,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     events: events,
                     for: context.owner
                 )
+                if case .expiry(let payload) = mutation, let expiryResponse {
+                    recordExpiryResponseLimits(expiryResponse, mutation: payload)
+                }
                 if previous != projected {
                     snapshotApplier?.applyRemoteSyncSnapshot(projected)
                 }
@@ -907,6 +981,109 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             errorReporter(error, .push)
             scheduleRetry(context: context)
         }
+    }
+
+    private func scheduleAutomaticExpiry(context: RequestContext) async throws {
+        guard isCurrent(context), !Task.isCancelled, supportedPushVersions.isSuperset(of: [4, 5]),
+              try localStore.syncPullProtocolVersion(for: context.owner) == 5,
+              let scheduler = expiryScheduler, scheduler.expirySchedulingState() != nil else { return }
+        let now = dateProvider()
+        guard now.timeIntervalSince1970.isFinite else { return }
+        // Refresh active pages even when this device's automatic archival is Off:
+        // another device may use a shorter timing. Persist before expiry capture.
+        if lastExpiryActivityRefresh
+            .map({ now.timeIntervalSince($0) >= expiryActivityRefreshInterval || now < $0 }) ?? true
+        {
+            guard scheduler.refreshExpiryActivity() else { return }
+            guard isCurrent(context), !Task.isCancelled else { return }
+            lastExpiryActivityRefresh = now
+        }
+        guard try localStore.pendingSyncQueue(for: context.owner, limit: 1).isEmpty else {
+            pendingPushContext = context
+            return
+        }
+        guard let state = scheduler.expirySchedulingState(), state.inactiveForSeconds != nil,
+              lastExpirySweep.map({ now.timeIntervalSince($0) >= expirySweepInterval || now < $0 }) ?? true
+        else { return }
+        lastExpirySweep = now
+        let excluded = excludedExpiryCandidates(at: now)
+        let batch = try await localStore.syncExpiryCandidates(
+            for: context.owner, state: state, now: now, after: expiryCandidateCursor, excluding: excluded
+        )
+        guard isCurrent(context), !Task.isCancelled,
+              let current = scheduler.expirySchedulingState(), current.inactiveForSeconds == state.inactiveForSeconds
+        else { return }
+        let operations = batch.operations.filter { !current.protectedTabIDs.contains($0.entityID) }
+        guard !operations.isEmpty else { return }
+        do {
+            try localStore.enqueueSyncExpiry(
+                .init(id: UUID().uuidString, operations: operations), for: context.owner,
+                automaticBaseline: batch.baseline
+            )
+            if let last = operations.last {
+                expiryCandidateCursor = .init(serverSeq: last.expectedServerSeq, entityID: last.entityID)
+            }
+            pendingPushContext = context
+        } catch BrowserSyncExpiryError.candidatesChanged {
+            // Local edits arrived during the background scan. Their scheduled
+            // sender/poll will establish a new canonical baseline first.
+        }
+    }
+
+    private func recordExpiryResponseLimits(
+        _ response: BrowserSyncExpiryPushResponse, mutation: BrowserSyncExpiryMutation
+    ) {
+        let now = dateProvider()
+        guard now.timeIntervalSince1970.isFinite else { return }
+        for outcome in response.outcomes {
+            let operation = mutation.operations[outcome.operationIndex]
+            let key = BrowserSyncExpiryCandidateCursor(
+                serverSeq: operation.expectedServerSeq,
+                entityID: operation.entityID
+            )
+            guard outcome.reason == .responseLimit else {
+                expiryResponseLimits.removeValue(forKey: key)
+                continue
+            }
+            let failures = min(7, (expiryResponseLimits[key]?.failures ?? 0) + 1)
+            var entry = ExpiryResponseLimit(failures: failures, recordedAt: now, retryAt: now)
+            entry.retryAt = now.addingTimeInterval(entry.delay)
+            expiryResponseLimits[key] = entry
+        }
+        // This is a runtime optimization, not durable suppression. Account or
+        // generation changes clear it, and changed server sequences remain eligible.
+        if expiryResponseLimits.count > 1000 {
+            let oldest = expiryResponseLimits.sorted {
+                if $0.value.recordedAt != $1.value.recordedAt {
+                    return $0.value.recordedAt < $1.value.recordedAt
+                }
+                if $0.key.serverSeq != $1.key.serverSeq {
+                    return $0.key.serverSeq < $1.key.serverSeq
+                }
+                return $0.key.entityID < $1.key.entityID
+            }
+            .prefix(expiryResponseLimits.count - 1000)
+            for (key, _) in oldest {
+                expiryResponseLimits.removeValue(forKey: key)
+            }
+        }
+    }
+
+    private func excludedExpiryCandidates(at now: Date) -> Set<BrowserSyncExpiryCandidateCursor> {
+        var excluded = Set<BrowserSyncExpiryCandidateCursor>()
+        for (key, var entry) in expiryResponseLimits {
+            if now < entry.recordedAt {
+                // A clock rollback cannot trigger a retry storm or postpone a
+                // candidate until an arbitrarily distant former wall clock.
+                entry.recordedAt = now
+                entry.retryAt = now.addingTimeInterval(entry.delay)
+                expiryResponseLimits[key] = entry
+            }
+            if now < entry.retryAt {
+                excluded.insert(key)
+            }
+        }
+        return excluded
     }
 
     private func pull(context: RequestContext) async {
@@ -1016,6 +1193,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 clearRetry()
             }
             operationDidSucceed(.pull)
+            guard isCurrent(context), !Task.isCancelled else { return }
+            try await scheduleAutomaticExpiry(context: context)
         } catch {
             guard isCurrent(context), !Task.isCancelled else { return }
             pendingPushContext = nil

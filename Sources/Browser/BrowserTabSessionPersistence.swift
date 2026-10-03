@@ -7,6 +7,7 @@ import OSLog
 enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hashable {
     case twelveHours = "12h"
     case twentyFourHours = "24h"
+    case threeDays = "3d"
     case sevenDays = "7d"
     case thirtyDays = "30d"
 
@@ -20,6 +21,8 @@ enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hash
             12 * 60 * 60
         case .twentyFourHours:
             24 * 60 * 60
+        case .threeDays:
+            3 * 24 * 60 * 60
         case .sevenDays:
             7 * 24 * 60 * 60
         case .thirtyDays:

@@ -486,10 +486,16 @@ struct BrowserSyncPullResponse: Decodable {
     func schedulePush(snapshot: BrowserTabSessionSnapshot)
     func schedulePull()
     func setLocalPersistenceBlocked(_ blocked: Bool)
+    func setRuntimeActive(_ active: Bool)
+    func requestExpirySweep()
+    func setExpiryScheduler(_ scheduler: (any BrowserSyncExpiryScheduling)?)
 }
 
 extension BrowserSyncCoordinating {
     func setLocalPersistenceBlocked(_: Bool) {}
+    func setRuntimeActive(_: Bool) {}
+    func requestExpirySweep() {}
+    func setExpiryScheduler(_: (any BrowserSyncExpiryScheduling)?) {}
 }
 
 // MARK: - BrowserSyncOwnershipReading

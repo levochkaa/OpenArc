@@ -49,6 +49,12 @@ import WebKit
                 entry.restoreTask = nil
             }
         }
+        entry.components.workspace.setExpiryHydrationCheck { [weak self] in
+            guard let self else { return false }
+            return entries.values.filter { $0.attachmentID != nil }.allSatisfy {
+                $0.restoreTask == nil && $0.components.workspace.isReady
+            }
+        }
         entry.components.workspace.setActivityActive(false)
         entry.components.workspace.setSceneAttached(true)
         entry.components.workspace.setJavaScriptDialogPresentationActive(false)

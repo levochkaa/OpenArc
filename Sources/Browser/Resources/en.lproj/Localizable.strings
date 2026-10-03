@@ -284,8 +284,11 @@
 "browser.settings.temporary_tabs.lifetime_label" = "Archive tabs after";
 "browser.settings.temporary_tabs.lifetime.12h" = "12 Hours";
 "browser.settings.temporary_tabs.lifetime.24h" = "24 Hours";
+"browser.settings.temporary_tabs.lifetime.3d" = "3 Days";
 "browser.settings.temporary_tabs.lifetime.7d" = "7 Days";
 "browser.settings.temporary_tabs.lifetime.30d" = "30 Days (Default)";
+"browser.settings.temporary_tabs.sync_unavailable" = "Automatic archiving is off for synced profiles on this Mac until Archive restoration is available.";
+"browser.settings.temporary_tabs.save_failed" = "Couldn’t save the archive timing. Try again.";
 "browser.permissions.notifications.title" = "Allow notifications for this site?";
 "browser.permissions.notifications.message" = "%@ wants to send notifications.";
 "browser.permissions.allow" = "Allow";
