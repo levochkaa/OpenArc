@@ -5,7 +5,9 @@ import OSLog
 
 // MARK: - BrowserSQLiteSessionStore
 
-final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, BrowserSessionPreferencesStoring {
+final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, BrowserSessionPreferencesStoring,
+    BrowserTabArchiveStoring
+{
     // MARK: Lifecycle
 
     init(databaseURL: URL) throws {
@@ -97,11 +99,75 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
         try dbQueue.write { db in
             for write in writes {
+                if let archiveAction = write.archiveAction,
+                   try !applyArchiveAction(archiveAction, snapshot: write.snapshot, in: db)
+                {
+                    // A receipt retry must not replay an old full snapshot over
+                    // edits committed after the original archive operation.
+                    continue
+                }
                 switch write.origin {
                 case .local(let syncMove): try saveLocalSnapshot(write.snapshot, syncMove: syncMove, in: db)
                 case .remoteProjection: try writeSnapshot(write.snapshot, to: db)
                 }
+                if let archiveAction = write.archiveAction, case .restore(_, let tabID) = archiveAction {
+                    // Permanent remote parent tombstones may filter a proposed
+                    // destination. Never consume an entry without its new tab.
+                    guard try readSnapshot(db)?.tabs.contains(where: { $0.id == tabID }) == true else {
+                        throw BrowserTabArchiveError.invalidTransition
+                    }
+                }
             }
+        }
+    }
+
+    func loadArchiveEntry(id: String) throws -> BrowserTabArchiveEntry? {
+        try dbQueue.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ? AND restored_tab_id IS NULL",
+                arguments: [id]
+            ) else { return nil }
+            return try decodeArchiveEntry(row)
+        }
+    }
+
+    func loadArchivePage(
+        before cursor: BrowserTabArchiveCursor? = nil, limit: Int = 50
+    ) throws -> BrowserTabArchivePage {
+        guard (1...100).contains(limit) else { throw BrowserTabArchiveError.invalidLimit }
+        if let cursor, !cursor.archivedAt.isFinite || cursor.id.isEmpty {
+            throw BrowserTabArchiveError.invalidCursor
+        }
+        return try dbQueue.read { db in
+            let rows: [Row] =
+                if let cursor {
+                    try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT id, payload, archived_at FROM browser_tab_archive
+                        WHERE restored_tab_id IS NULL AND (archived_at < ? OR (archived_at = ? AND id < ?))
+                        ORDER BY archived_at DESC, id DESC LIMIT ?
+                        """,
+                        arguments: [cursor.archivedAt, cursor.archivedAt, cursor.id, limit + 1]
+                    )
+                } else {
+                    try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT id, payload, archived_at FROM browser_tab_archive
+                        WHERE restored_tab_id IS NULL ORDER BY archived_at DESC, id DESC LIMIT ?
+                        """,
+                        arguments: [limit + 1]
+                    )
+                }
+            let entries = try rows.prefix(limit).map(decodeArchiveEntry)
+            let nextCursor = rows.count > limit
+                ? entries.last.map {
+                    BrowserTabArchiveCursor(archivedAt: $0.archivedAt, id: $0.id)
+                }
+                : nil
+            return BrowserTabArchivePage(entries: entries, nextCursor: nextCursor)
         }
     }
 
@@ -556,10 +622,87 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 arguments: [Key.syncRequiresSignIn]
             )
         }
+        migrator.registerMigration("addLocalTabArchive") { db in
+            // Consumed entries retain the chosen fresh tab ID as an idempotency
+            // receipt. They are excluded from archive reads, never synced.
+            try db.execute(sql: """
+            CREATE TABLE browser_tab_archive (
+                id TEXT PRIMARY KEY NOT NULL,
+                payload BLOB NOT NULL,
+                archived_at DOUBLE NOT NULL,
+                restored_tab_id TEXT
+            );
+            CREATE INDEX browser_tab_archive_active_order
+                ON browser_tab_archive (archived_at DESC, id DESC) WHERE restored_tab_id IS NULL;
+            """)
+        }
         return migrator
     }
 
     private let dbQueue: DatabaseQueue
+
+    private func decodeArchiveEntry(_ row: Row) throws -> BrowserTabArchiveEntry {
+        let entry = try JSONDecoder().decode(BrowserTabArchiveEntry.self, from: row["payload"] as Data)
+        try entry.validate()
+        guard entry.id == row["id"] as String, entry.archivedAt == row["archived_at"] as Double else {
+            throw BrowserTabArchiveError.invalidEntry
+        }
+        return entry
+    }
+
+    /// Returns false only for an exact operation already committed. All effects
+    /// and the following snapshot/outbox write share the surrounding transaction.
+    private func applyArchiveAction(
+        _ action: BrowserTabArchiveAction, snapshot: BrowserTabSessionSnapshot, in db: Database
+    ) throws -> Bool {
+        switch action {
+        case .insert(let entry):
+            if let existing = try Row.fetchOne(
+                db, sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ?", arguments: [entry.id]
+            ) {
+                guard try decodeArchiveEntry(existing) == entry else { throw BrowserTabArchiveError.archiveIDConflict }
+                return false
+            }
+            guard let previous = try readSnapshot(db),
+                  previous.tabs.first(where: { $0.id == entry.tab.id }) == entry.tab,
+                  !snapshot.tabs.contains(where: { $0.id == entry.tab.id })
+            else { throw BrowserTabArchiveError.invalidTransition }
+            try db.execute(
+                sql: "INSERT INTO browser_tab_archive (id, payload, archived_at) VALUES (?, ?, ?)",
+                arguments: [entry.id, JSONEncoder().encode(entry), entry.archivedAt]
+            )
+            return true
+        case .restore(let archiveID, let tabID):
+            guard let row = try Row.fetchOne(
+                db, sql: "SELECT id, payload, archived_at, restored_tab_id FROM browser_tab_archive WHERE id = ?",
+                arguments: [archiveID]
+            ) else { throw BrowserTabArchiveError.entryMissing }
+            let entry = try decodeArchiveEntry(row)
+            if let restoredID: String = row["restored_tab_id"] {
+                guard restoredID == tabID else { throw BrowserTabArchiveError.archiveAlreadyRestored }
+                return false
+            }
+            guard tabID != entry.tab.id,
+                  try readSnapshot(db)?.tabs.contains(where: { $0.id == tabID }) != true
+            else { throw BrowserTabArchiveError.restoredTabIDNotFresh }
+            if try storedSyncOwner(db) != nil,
+               try readSyncBaseline(db).deletedKeys.contains(BrowserSyncOutboxProjection.key(type: .tab, id: tabID))
+            {
+                throw BrowserTabArchiveError.restoredTabIDNotFresh
+            }
+            guard let restored = snapshot.tabs.first(where: { $0.id == tabID }),
+                  let spaceID = restored.spaceID, snapshot.spaces?.contains(where: { $0.id == spaceID }) == true,
+                  restored.placement == .temporary, restored.pinnedFolderID == nil,
+                  restored.urlString == entry.tab.urlString,
+                  restored.userTitleOverride == entry.tab.userTitleOverride
+            else { throw BrowserTabArchiveError.invalidTransition }
+            try db.execute(
+                sql: "UPDATE browser_tab_archive SET restored_tab_id = ? WHERE id = ? AND restored_tab_id IS NULL",
+                arguments: [tabID, archiveID]
+            )
+            return true
+        }
+    }
 
     private func requiresSyncSignIn(in db: Database) throws -> Bool {
         let value = try String.fetchOne(

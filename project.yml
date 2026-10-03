@@ -48,6 +48,7 @@ targetTemplates:
       - path: Sources/Browser/BrowserSyncOwner.swift
       - path: Sources/Browser/BrowserSyncMoveIntent.swift
       - path: Sources/Browser/BrowserTabSessionPersistence.swift
+      - path: Sources/Browser/BrowserTabArchive.swift
       - path: Sources/Browser/BrowserSessionWrite.swift
       - path: Sources/Browser/BrowserSessionWriteBuffer.swift
       - path: Sources/Browser/BrowserSQLiteSessionStore.swift

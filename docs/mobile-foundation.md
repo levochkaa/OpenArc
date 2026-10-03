@@ -44,4 +44,21 @@ The toolbar's Find in Page action and Cmd+F enter through the current page. Addr
 
 Hosted verification uses actual WK HTML and the public native interaction/session after invoking the real action. It distinguishes presenting the panel, finding matches, selecting next/previous results and zero results. Bounded waits are required because presentation and matching have no completion callback. Keyboard action dispatch and layout checks are separate from physical hardware-key/touch verification.
 
-Remaining mobile work includes archive; browser split; full scene/external-link routing; private browsing; auth/permission presentation, uploads/downloads and site settings; background/memory recovery; and observed gesture/visual polish. Find implementation and verification status belong in the ledger. No placeholder controls claim these features exist.
+Remaining mobile work includes archive search/clear/auto-archive; browser split; full scene/external-link routing; private browsing; auth/permission presentation, uploads/downloads and site settings; background/memory recovery; and observed gesture/visual polish. Find implementation and verification status belong in the ledger. No placeholder controls claim these features exist.
+
+
+## Durable local Archive
+
+Explicit Close on a Today tab, including the sidebar swipe/context action, stores a profile-local recovery entry. The Archive button in the tab sheet/sidebar opens a native UIKit list. Pinned/Favorite close still unloads that window's runtime. Engine close, incoming remote deletes and folder/Space cascades do not implicitly archive anything. Closing the last Today tab leaves an empty Space without creating a blank tab.
+
+The shared document reads the latest logical row; a runtime page title is accepted only when its URL matches that row. SQLite commits the archive entry, active deletion and sync outbox together. Restore consumes that entry and creates a fresh temporary-tab identity in one transaction. It preserves the saved URL and title override, sets activity to now and keeps the original identity's tombstone. The original Space is used when available; otherwise the user must select an existing Space. A Space is never recreated implicitly. Restore reloads the URL; it does not restore WebKit back-forward history.
+
+Archive entries are local to the profile and shared by its windows. Only active deletion/new-tab creation enter sync; archive payloads and receipts are not sent to the server. An exact repeated archive/restore receipt skips its old full snapshot, so it cannot overwrite later edits. A second restore with a different ID fails. Consumed receipts remain durable and hidden from the list. Parent deletion that filters the proposed restored tab rolls back consumption too. Legacy JSON/ephemeral stores reject archive effects; their existing close behavior remains and their Archive button is hidden.
+
+A failed SQL transaction retains the fixed archive/action IDs in the existing bounded FIFO and blocks sync. The visible tree may reflect the admitted action, but the Archive sheet stays open with an error and Retry after failed restore. Further archive/restore actions wait for pending writes; ordinary edits can join the ordered retry tail. Successful Retry updates the list and other windows. This queue remains in memory: process termination before recovery can lose unsaved actions, while the last durable state remains intact. This slice does not solve crash-durable failed-write recovery.
+
+SQLite reads use a timestamp/ID keyset and a maximum of 100 entries; UIKit displays 50-entry pages with Older/Newer controls. Committed archive changes reset open lists to the first page. Selection and action callbacks revalidate current IDs. Missing-Space choice waits for its native picker dismissal before restoring and dismissing the Archive sheet. Errors, empty state, Dynamic Type and native iPad popover anchoring are present.
+
+The choices above are TheBrowser policies.
+
+Search, clear/delete, retention, automatic archiving and desktop durable archive remain separate work. Current consumed receipts and archive records have no automatic expiry. Before adding auto-archive, define activity updates on selection, active-window exclusions and restart timing. Native callback execution does not establish physical gesture quality or OS scene behavior.

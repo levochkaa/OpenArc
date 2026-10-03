@@ -69,11 +69,29 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     var selectedTab: BrowserMobileTab? { tabs.first { $0.id == selectedTabID } }
 
+    var supportsArchive: Bool { profileDocument?.supportsArchive == true }
+    var canRestoreArchivedTab: Bool { canEdit && profileDocument?.canRestoreArchivedTab == true }
+    var archiveError: String? { profileDocument?.archiveError }
+    var archiveRevision: Int { profileDocument?.archiveRevision ?? 0 }
+
     var canFindInPage: Bool {
         guard isReady, !isClosed, !isRestoring, javaScriptDialog == nil,
               let tab = selectedTab, tab.state.error == nil, tab.urlString != "about:blank"
         else { return false }
         return engine.canFindInPage(id: tab.runtimeID)
+    }
+
+    func archivePage(before: BrowserTabArchiveCursor? = nil, limit: Int = 50) throws -> BrowserTabArchivePage {
+        guard let profileDocument else { throw BrowserTabArchiveError.unsupportedStore }
+        return try profileDocument.archivePage(before: before, limit: limit)
+    }
+
+    @discardableResult func restoreArchivedTab(id: String, toSpaceID: String? = nil) -> String? {
+        guard canRestoreArchivedTab,
+              let restoredID = profileDocument?.restoreArchivedTab(id: id, toSpaceID: toSpaceID)
+        else { return nil }
+        selectTab(id: restoredID)
+        return restoredID
     }
 
     @discardableResult func presentFindInPage() -> Bool {
@@ -222,7 +240,17 @@ struct BrowserMobileTab: Identifiable, Equatable {
         guard canEdit, let tab = tabs.first(where: { $0.id == id }) else { return }
         if let profileDocument {
             if tab.placement == .temporary {
-                profileDocument.removeTab(id: id)
+                if profileDocument.supportsArchive {
+                    let current = profileDocument.snapshot.tabs.first { $0.id == id }
+                    let title = current?.urlString == tab.urlString ? tab.title : nil
+                    if !profileDocument.archiveTab(id: id, displayTitle: title) {
+                        navigationError = profileDocument.archiveError
+                        updateProfileError()
+                        notify()
+                    }
+                } else {
+                    profileDocument.removeTab(id: id)
+                }
             } else {
                 unloadPersistentTab(tab)
             }

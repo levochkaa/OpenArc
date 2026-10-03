@@ -39,11 +39,73 @@ import Foundation
     typealias ObserverToken = UUID
 
     private(set) var snapshot: BrowserTabSessionSnapshot
+    private(set) var archiveError: String?
+    private(set) var archiveRevision = 0
     weak var syncSession: BrowserMobileSyncSession?
 
     var persistenceFailure: BrowserSessionPersistenceFailure? { writeBuffer.failure }
     var hasUncommittedWrites: Bool { !writeBuffer.writes.isEmpty || writeBuffer.isTerminal }
     var canEdit: Bool { !writeBuffer.isTerminal }
+    var supportsArchive: Bool { store is any BrowserTabArchiveStoring }
+    var canRestoreArchivedTab: Bool { supportsArchive && canEdit && !hasUncommittedWrites }
+
+    func archivePage(before: BrowserTabArchiveCursor? = nil, limit: Int = 50) throws -> BrowserTabArchivePage {
+        guard let archive = store as? any BrowserTabArchiveStoring
+        else { throw BrowserTabArchiveError.unsupportedStore }
+        return try archive.loadArchivePage(before: before, limit: limit)
+    }
+
+    /// Only an explicit Today close creates an archive entry. The entry uses the
+    /// current shared row, never a stale sidebar or another scene's URL.
+    @discardableResult func archiveTab(id: String, displayTitle: String? = nil) -> Bool {
+        guard canRestoreArchivedTab,
+              let tab = snapshot.tabs.first(where: { $0.id == id }), tab.placement == .temporary
+        else { return false }
+        let archiveID = idProvider()
+        guard !archiveID.isEmpty else { return false }
+        let entry = BrowserTabArchiveEntry(
+            id: archiveID, tab: tab, archivedAt: dateProvider().timeIntervalSince1970,
+            title: Self.nonempty(displayTitle)
+        )
+        archiveError = nil
+        return apply([.deleteTab(id: id)], archiveAction: .insert(entry))
+    }
+
+    /// Restoring is a new logical tab. A deleted Space is never implicitly
+    /// recreated, and the consumed archive identity cannot be restored twice.
+    @discardableResult func restoreArchivedTab(id: String, toSpaceID: String? = nil) -> String? {
+        guard canRestoreArchivedTab, let archive = store as? any BrowserTabArchiveStoring else { return nil }
+        do {
+            guard let entry = try archive.loadArchiveEntry(id: id) else {
+                throw BrowserTabArchiveError.entryMissing
+            }
+            guard let destination = toSpaceID ?? entry.tab.spaceID,
+                  snapshot.spaces?.contains(where: { $0.id == destination }) == true
+            else {
+                archiveError = String(localized: "Choose an existing Space to restore this tab.", table: "Mobile")
+                notify()
+                return nil
+            }
+            guard let tabID = newID(type: .tab), tabID != entry.tab.id else {
+                throw BrowserTabArchiveError.restoredTabIDNotFresh
+            }
+            let restored = BrowserTabSessionSnapshotTab(
+                id: tabID, urlString: entry.tab.urlString, userTitleOverride: entry.tab.userTitleOverride,
+                placement: .temporary, spaceID: destination, lastActivityTimestamp: dateProvider().timeIntervalSince1970
+            )
+            let next = BrowserTabSessionSnapshot(
+                spaces: snapshot.spaces, pinnedTabFolders: snapshot.pinnedTabFolders,
+                tabs: snapshot.tabs + [restored]
+            )
+            try Self.validate(next)
+            archiveError = nil
+            return commit(next, moveIntent: nil, archiveAction: .restore(archiveID: id, tabID: tabID)) ? tabID : nil
+        } catch {
+            archiveError = Self.archiveErrorMessage(error)
+            notify()
+            return nil
+        }
+    }
 
     func observe(_ observer: @escaping (BrowserTabSessionSnapshot) -> Void) -> ObserverToken {
         let token = UUID()
@@ -208,6 +270,20 @@ import Foundation
         return text
     }
 
+    private static func archiveErrorMessage(_ error: Error) -> String {
+        guard let error = error as? BrowserTabArchiveError else { return error.localizedDescription }
+        switch error {
+        case .archiveAlreadyRestored, .entryMissing:
+            return String(localized: "This archived tab is no longer available.", table: "Mobile")
+        case .unsupportedStore:
+            return String(localized: "Archive is unavailable for this profile.", table: "Mobile")
+        case .invalidCursor, .invalidLimit:
+            return String(localized: "The archive could not be loaded. Try again.", table: "Mobile")
+        case .archiveIDConflict, .invalidEntry, .invalidTransition, .requiresLocalWrite, .restoredTabIDNotFresh:
+            return String(localized: "This archive action could not be completed. Try again.", table: "Mobile")
+        }
+    }
+
     private static func validate(_ snapshot: BrowserTabSessionSnapshot) throws {
         guard (1...BrowserTabSessionSnapshot.currentVersion).contains(snapshot.version) else {
             throw BrowserMobileProfileDocumentError.invalidSnapshot
@@ -241,7 +317,10 @@ import Foundation
         }
     }
 
-    private func apply(_ operations: [BrowserSyncFolderOperation], moveIntent: BrowserSyncMoveIntent? = nil) -> Bool {
+    private func apply(
+        _ operations: [BrowserSyncFolderOperation], moveIntent: BrowserSyncMoveIntent? = nil,
+        archiveAction: BrowserTabArchiveAction? = nil
+    ) -> Bool {
         guard canEdit else { return false }
         var values = Dictionary(uniqueKeysWithValues: BrowserSyncFolderProjection.canonicalChanges(snapshot).map {
             (BrowserSyncOutboxProjection.key($0), $0)
@@ -253,14 +332,21 @@ import Foundation
         guard values != previousValues else { return false }
         let next = BrowserSyncFolderProjection.snapshot(values: values, local: snapshot)
         guard next != snapshot, (try? Self.validate(next)) != nil else { return false }
-        return commit(next, moveIntent: moveIntent)
+        return commit(next, moveIntent: moveIntent, archiveAction: archiveAction)
     }
 
     /// Returns whether the user action was admitted, including a bounded failed
     /// write retained for Retry. A rejected tail never replaces the visible tree.
-    private func commit(_ next: BrowserTabSessionSnapshot, moveIntent: BrowserSyncMoveIntent?) -> Bool {
+    private func commit(
+        _ next: BrowserTabSessionSnapshot, moveIntent: BrowserSyncMoveIntent?,
+        archiveAction: BrowserTabArchiveAction? = nil
+    ) -> Bool {
         guard canEdit else { return false }
-        let write = BrowserSessionWrite(snapshot: next, origin: .local(syncMove: moveIntent))
+        let write = BrowserSessionWrite(
+            snapshot: next,
+            origin: .local(syncMove: moveIntent),
+            archiveAction: archiveAction
+        )
         if hasUncommittedWrites {
             guard writeBuffer.append(write) else { blockAndNotify()
                 return false
@@ -271,8 +357,16 @@ import Foundation
             do {
                 try store.writeSessionBatch([write])
                 snapshot = next
+                if archiveAction != nil {
+                    archiveRevision &+= 1
+                }
                 syncCoordinator?.schedulePush(snapshot: next)
             } catch {
+                if archiveAction != nil, error is BrowserTabArchiveError {
+                    archiveError = Self.archiveErrorMessage(error)
+                    notify()
+                    return false
+                }
                 guard writeBuffer.append(write) else { blockAndNotify()
                     return false
                 }
@@ -288,7 +382,11 @@ import Foundation
     private func flush(_ writes: [BrowserSessionWrite]) -> Bool {
         do {
             try store.writeSessionBatch(writes)
+            if writes.contains(where: { $0.archiveAction != nil }) {
+                archiveRevision &+= 1
+            }
             writeBuffer.clearAfterSuccess()
+            archiveError = nil
             syncCoordinator?.setLocalPersistenceBlocked(false)
             syncCoordinator?.schedulePull()
             syncCoordinator?.schedulePush(snapshot: snapshot)

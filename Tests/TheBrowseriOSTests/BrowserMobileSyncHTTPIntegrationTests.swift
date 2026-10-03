@@ -161,6 +161,39 @@ import WebKit
         let afterDeletion = try await fixture.inspect(account)
         #expect(afterDeletion.tabs.first { $0.id == "browsing" }?.tombstoned == true)
         #expect(afterDeletion.tabs.first { $0.id == "unsupported" }?.deleted == false)
+        // Archive remains profile-local. Only the old-identity delete and fresh
+        // restored create cross the existing v4 wire; neither device resurrects
+        // the permanent tombstone or receives the other profile's archive row.
+        try #require(first.document.updateURL(tabID: "retained", urlString: secondURL.absoluteString))
+        try #require(first.document.renameTab(id: "retained", title: "Archived over HTTP"))
+        try await first.drain()
+        try await second.pull()
+        first.workspace.closeTab(id: "retained")
+        let archived = try #require(try first.store.loadArchivePage().entries.first)
+        #expect(archived.tab.id == "retained" && archived.tab.urlString == secondURL.absoluteString)
+        try await first.drain()
+        try await second.pull()
+        let afterArchive = try await fixture.inspect(account)
+        #expect(afterArchive.tabs.first { $0.id == "retained" }?.tombstoned == true)
+        #expect(!second.workspace.tabs.contains { $0.id == "retained" })
+        #expect(try second.store.loadArchivePage().entries.isEmpty)
+        let restoredID = try #require(first.workspace.restoreArchivedTab(id: archived.id))
+        #expect(restoredID != "retained")
+        try #require(await mobileHTTPEventually {
+            first.workspace.selectedTabID == restoredID && first.workspace.selectedTab?.title == "Mobile sync second" &&
+                first.workspace.selectedTab?.state.isLoading == false
+        })
+        try await first.drain()
+        try await second.pull()
+        #expect(second.document.snapshot.tabs.first { $0.id == restoredID }?.urlString == secondURL.absoluteString)
+        #expect(second.document.snapshot.tabs.first { $0.id == restoredID }?.userTitleOverride == "Archived over HTTP")
+        #expect(!second.document.snapshot.tabs.contains { $0.id == "retained" })
+        let afterRestore = try await fixture.inspect(account)
+        #expect(afterRestore.tabs.first { $0.id == "retained" }?.tombstoned == true)
+        #expect(afterRestore.tabs.first { $0.id == restoredID }?.deleted == false)
+        #expect(try first.store.loadArchivePage().entries.isEmpty && second.store.loadArchivePage().entries.isEmpty)
+        #expect(first.workspace.restoreArchivedTab(id: archived.id) == nil)
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
         let saved = first.document.snapshot
         try #require(await otherScene.shutdown())
         try await first.stop()
@@ -170,6 +203,8 @@ import WebKit
         try await reopened.start()
         #expect(reopened.workspace.tabs.map(\.id) == saved.tabs.compactMap(\.id))
         #expect(reopened.document.snapshot.pinnedTabFolders == saved.pinnedTabFolders)
+        #expect(reopened.document.snapshot.tabs.contains { $0.id == restoredID })
+        #expect(try reopened.store.loadArchivePage().entries.isEmpty)
         try await reopened.stop()
         try await second.stop()
         try await fixture.complete(account)

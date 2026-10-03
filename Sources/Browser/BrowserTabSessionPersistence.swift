@@ -316,7 +316,9 @@ final class BrowserEphemeralSessionStore: BrowserTabSessionSnapshotStoring, Brow
     func saveSnapshot(_: BrowserTabSessionSnapshot) {}
 
     /// Private browsing deliberately has no durable session or sync outbox.
-    func writeSessionBatch(_: [BrowserSessionWrite]) {}
+    func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws {
+        guard writes.allSatisfy({ $0.archiveAction == nil }) else { throw BrowserTabArchiveError.unsupportedStore }
+    }
 
     func loadSelectedTabIndex(tabCount _: Int) -> Int? {
         nil
@@ -411,6 +413,7 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
         // invalid intermediate snapshot followed by an otherwise valid last one.
         for write in writes {
             try write.validate()
+            guard write.archiveAction == nil else { throw BrowserTabArchiveError.unsupportedStore }
             finalData = try encoder.encode(write.snapshot)
         }
         guard let finalData else { return }

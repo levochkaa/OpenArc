@@ -178,7 +178,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             primaryAction: UIAction { [weak self] _ in self?.showAccount() }
         )
         accountButton.accessibilityIdentifier = "browser.account"
-        navigationItem.leftBarButtonItems = [navigationItem.leftBarButtonItem!, accountButton]
+        archiveButton = UIBarButtonItem(
+            image: UIImage(systemName: "archivebox"), style: .plain,
+            target: self, action: #selector(showArchive)
+        )
+        archiveButton.title = String(localized: "Archive", table: "Mobile")
+        archiveButton.accessibilityIdentifier = "browser.archive"
+        navigationItem.leftBarButtonItems = [navigationItem.leftBarButtonItem!, archiveButton, accountButton]
         spaceButton.showsMenuAsPrimaryAction = true
         spaceButton.isSpringLoaded = false
         spaceButton.addTarget(self, action: #selector(showSpaceDropTargets), for: .primaryActionTriggered)
@@ -332,6 +338,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     func render() {
         guard isViewLoaded else { return }
+        presentedArchive?.render()
+        archiveButton.isHidden = !workspace.supportsArchive
+        archiveButton.isEnabled = workspace.isReady && !isSelectingRows && !sidebarDragHasNativeHold
         if renderedSpaceID != workspace.selectedSpaceID || renderedDocument !== workspace.profileDocument {
             selectedItems.removeAll()
         }
@@ -843,6 +852,18 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
     }
 
+    @objc func showArchive() {
+        guard workspace.supportsArchive, presentedViewController == nil,
+              !isSelectingRows, !sidebarDragHasNativeHold else { return }
+        workspace.dismissFindInPage()
+        let controller = BrowserMobileArchiveViewController(workspace: workspace)
+        controller.didRestore = { [weak self] in self?.didSelectTab?() }
+        presentedArchive = controller
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.modalPresentationStyle = .formSheet
+        present(navigation, animated: true)
+    }
+
     // MARK: Private
 
     private enum Row: Equatable {
@@ -965,6 +986,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var capturedTargets = [TargetKey: BrowserMobileSidebarDrop.Target]()
     private var planCache: PlanCache?
     private var terminalRefreshTask: Task<Void, Never>?
+
+    private var archiveButton = UIBarButtonItem()
+    private weak var presentedArchive: BrowserMobileArchiveViewController?
 
     private var pendingDropAnimations: Set<ObjectIdentifier> { activeSource?.pendingDropAnimations ?? [] }
     private var animationBatchID: UUID? { activeSource?.animationBatchID }
@@ -1690,6 +1714,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     @discardableResult private func removeTab(id: String) -> Bool {
         guard workspace.tabs.contains(where: { $0.id == id }) else { return false }
         if let document = workspace.profileDocument {
+            if document.snapshot.tabs.first(where: { $0.id == id })?.placement == .temporary {
+                workspace.closeTab(id: id)
+                return !workspace.tabs.contains(where: { $0.id == id })
+            }
             return document.removeTab(id: id)
         }
         workspace.closeTab(id: id)
