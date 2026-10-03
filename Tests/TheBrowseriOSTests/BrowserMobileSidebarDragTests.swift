@@ -4,6 +4,479 @@ import Testing
 import UIKit
 
 extension BrowserMobileUITests {
+    @Test func interwindowGroupMoveUsesCurrentSubtreeAndHoldsBothTablesThroughEveryAnimation() async throws {
+        let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        let destination = try SidebarDragFixture(sharing: source)
+        defer { destination.cleanup()
+            source.cleanup()
+        }
+        await source.start()
+        await destination.start(spaceID: "other")
+        // Both native windows use the host's one real scene. These delegated
+        // calls prove cross-window ownership, not a physical Stage Manager drag.
+        #expect(source.window !== destination.window && source.workspace !== destination.workspace)
+        #expect(source.document === destination.document && source.store === destination.store)
+        source.workspace.selectTab(id: "b")
+        destination.workspace.selectTab(id: "destination-page")
+        let sourceRuntime = source.engine.selectedID
+        let destinationRuntime = destination.engine.selectedID
+        let sourceRuntimes = source.workspace.tabs.map(\.runtimeID)
+        let destinationRuntimes = destination.workspace.tabs.map(\.runtimeID)
+        #expect(Set(sourceRuntimes).isDisjoint(with: destinationRuntimes))
+        try source.toggleSelection()
+        source.select(row: 0, section: 1)
+        source.select(row: 0, section: 2)
+        let sourceRows = source.rowIDs(section: 1)
+        let destinationRows = destination.rowIDs(section: 1)
+        let drag = try source.begin(row: 0, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 1, fraction: 0.5))
+        #expect(destination.sidebar.tableView(destination.table, canHandle: drop))
+        destination.sidebar.tableView(destination.table, dropSessionDidEnter: drop)
+        let proposal = destination.hover(drop)
+        #expect(proposal.operation == .move && proposal.intent == .insertIntoDestinationIndexPath)
+        #expect(source.document.setPlacement(tabID: "child", placement: .spacePinned, spaceID: "source"))
+        #expect(source.document.setPlacement(
+            tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+        ))
+        #expect(source.document.renameTab(id: "a", title: "Renamed while dragging"))
+        let previous = try source.mutations()
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+        let mutations = try source.mutations()
+        #expect(mutations.count == previous.count + 1)
+        #expect(Array(mutations.prefix(previous.count)) == previous)
+        #expect(mutations.last?.operations == [.move(
+            items: [.init(entityType: .folder, entityID: "folder"), .init(entityType: .tab, entityID: "a")],
+            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: "destination-folder"),
+            after: .init(entityType: .tab, entityID: "destination-pin")
+        )])
+        let snapshot = source.document.snapshot
+        #expect(snapshot.tabs.first { $0.id == "child" }?.spaceID == "source")
+        #expect(snapshot.tabs.first { $0.id == "c" }?.spaceID == "other")
+        #expect(snapshot.tabs.first { $0.id == "deep" }?.spaceID == "other")
+        #expect(snapshot.tabs.first { $0.id == "a" }?.userTitleOverride == "Renamed while dragging")
+        #expect(snapshot.pinnedTabFolders?.first { $0.id == "folder" }?.parentFolderID == "destination-folder")
+        #expect(snapshot.pinnedTabFolders?.first { $0.id == "nested" }?.spaceID == "other")
+        #expect(source.workspace.selectedSpaceID == "source" && source.workspace.selectedTabID == "b")
+        #expect(destination.workspace.selectedSpaceID == "other" && destination.workspace
+            .selectedTabID == "destination-page")
+        #expect(source.engine.selectedID == sourceRuntime && destination.engine.selectedID == destinationRuntime)
+        #expect(Set(source.workspace.tabs.map(\.runtimeID)) == Set(sourceRuntimes))
+        #expect(Set(destination.workspace.tabs.map(\.runtimeID)) == Set(destinationRuntimes))
+        #expect(source.engine.closed.isEmpty && destination.engine.closed.isEmpty)
+        try #require(coordinator.animations.count == 2)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+        #expect(source.rowIDs(section: 1) == sourceRows)
+        #expect(destination.rowIDs(section: 1) == destinationRows)
+        coordinator.animations[1].finish()
+        #expect(source.rowIDs(section: 1) == sourceRows)
+        #expect(destination.rowIDs(section: 1) == destinationRows)
+        coordinator.animations[0].finish()
+        #expect(source.rowIDs(section: 1) == ["browser.folder.empty", "browser.tab.child"])
+        #expect(destination.rowIDs(section: 1) == [
+            "browser.folder.destination-folder", "browser.tab.destination-pin", "browser.folder.folder",
+            "browser.folder.nested", "browser.tab.deep", "browser.tab.c", "browser.tab.a",
+        ])
+        // Duplicate terminal/animation/commit callbacks cannot enqueue again.
+        coordinator.animations.forEach { $0.finish() }
+        destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+        #expect(try source.mutations() == mutations)
+        #expect(await source.workspace.shutdown())
+        #expect(await destination.workspace.shutdown())
+    }
+
+    @Test func interwindowInlineAnimationsPreserveIndependentSelectionsUntilBothTerminals() async throws {
+        let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        let destination = try SidebarDragFixture(sharing: source)
+        defer { destination.cleanup()
+            source.cleanup()
+        }
+        await source.start()
+        await destination.start(spaceID: "other")
+        source.workspace.selectTab(id: "a")
+        destination.workspace.selectTab(id: "destination-page")
+        let movedRuntime = try #require(source.workspace.selectedTab?.runtimeID)
+        let destinationRuntime = destination.engine.selectedID
+        try source.toggleSelection()
+        source.select(row: 0, section: 2)
+        source.select(row: 2, section: 2)
+        let drag = try source.begin(row: 2, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 2, fraction: 0.9))
+        destination.sidebar.tableView(destination.table, dropSessionDidEnter: drop)
+        let proposal = destination.hover(drop)
+        #expect(proposal.operation == .move)
+        let beforeSourceRows = source.rowIDs(section: 2)
+        let beforeDestinationRows = destination.rowIDs(section: 2)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal, completesInline: true)
+        destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+        #expect(try source.mutations().first?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "a"), .init(entityType: .tab, entityID: "c")],
+            destination: .tabs(spaceID: "other", placement: .temporary, pinnedFolderID: nil),
+            after: .init(entityType: .tab, entityID: "destination-page")
+        )])
+        #expect(coordinator.animations.map(\.completionCount) == [1, 1])
+        #expect(source.workspace.selectedSpaceID == "source" && source.workspace.selectedTabID == "b")
+        #expect(destination.workspace.selectedSpaceID == "other" && destination.workspace
+            .selectedTabID == "destination-page")
+        #expect(source.workspace.tabs.first { $0.id == "a" }?.runtimeID == movedRuntime)
+        #expect(destination.engine.selectedID == destinationRuntime)
+        #expect(source.rowIDs(section: 2) == beforeSourceRows)
+        #expect(destination.rowIDs(section: 2) == beforeDestinationRows)
+        destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+        #expect(source.rowIDs(section: 2) == beforeSourceRows)
+        #expect(destination.rowIDs(section: 2) == beforeDestinationRows)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        #expect(source.rowIDs(section: 2) == ["browser.tab.b"])
+        #expect(destination.rowIDs(section: 2) == ["browser.tab.destination-page", "browser.tab.a", "browser.tab.c"])
+        #expect(source.engine.closed.isEmpty && destination.engine.closed.isEmpty)
+        #expect(await source.workspace.shutdown())
+        #expect(await destination.workspace.shutdown())
+    }
+
+    @Test func interwindowExitReenterAndAnotherDestinationCannotCommitTheSameSessionTwice() async throws {
+        let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        let first = try SidebarDragFixture(sharing: source)
+        let second = try SidebarDragFixture(sharing: source)
+        defer { second.cleanup()
+            first.cleanup()
+            source.cleanup()
+        }
+        await source.start()
+        await first.start(spaceID: "other")
+        await second.start(spaceID: "other")
+        let drag = try source.begin(row: 0, section: 2)
+        let drop = SidebarDropSession(drag: drag, point: first.point(row: 0, section: 2, fraction: 0.9))
+        first.sidebar.tableView(first.table, dropSessionDidEnter: drop)
+        let firstProposal = first.hover(drop)
+        #expect(firstProposal.operation == .move)
+        first.sidebar.tableView(first.table, dropSessionDidExit: drop)
+        let firstCoordinator = SidebarDropCoordinator(session: drop, proposal: firstProposal)
+        first.sidebar.tableView(first.table, performDropWith: firstCoordinator)
+        #expect(try source.mutations().isEmpty)
+        #expect(source.document.renameTab(id: "destination-page", title: "Changed between endpoints"))
+        first.sidebar.tableView(first.table, dropSessionDidEnter: drop)
+        #expect(first.hover(drop).operation == .move)
+        first.sidebar.tableView(first.table, dropSessionDidExit: drop)
+        drop.point = second.point(row: 0, section: 2, fraction: 0.1)
+        second.sidebar.tableView(second.table, dropSessionDidEnter: drop)
+        let proposal = second.hover(drop)
+        #expect(proposal.operation == .move)
+        let before = try source.mutations()
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        second.sidebar.tableView(second.table, performDropWith: coordinator)
+        let committed = try source.mutations()
+        #expect(committed.count == before.count + 1)
+        #expect(committed.last?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "a")],
+            destination: .tabs(spaceID: "other", placement: .temporary, pinnedFolderID: nil),
+            before: .init(entityType: .tab, entityID: "destination-page")
+        )])
+        #expect(first.hover(drop).operation == .forbidden)
+        first.sidebar.tableView(first.table, performDropWith: firstCoordinator)
+        #expect(try source.mutations() == committed)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        second.sidebar.tableView(second.table, dropSessionDidEnd: drop)
+        first.sidebar.tableView(first.table, dropSessionDidEnd: drop)
+        coordinator.animations.forEach { $0.finish() }
+        #expect(first.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.destination-page"])
+        #expect(second.rowIDs(section: 2) == first.rowIDs(section: 2))
+        #expect(await source.workspace.shutdown())
+        #expect(await first.workspace.shutdown())
+        #expect(await second.workspace.shutdown())
+    }
+
+    @Test func interwindowStaleRootsTargetsAndDestinationSpaceRejectTheWholeGroup() async throws {
+        for mutation in ["delete-root", "reparent-root", "delete-target", "reparent-target", "delete-space"] {
+            let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+            let destination = try SidebarDragFixture(sharing: source)
+            defer { destination.cleanup()
+                source.cleanup()
+            }
+            await source.start()
+            await destination.start(spaceID: "other")
+            try source.toggleSelection()
+            source.select(row: 0, section: 2)
+            source.select(row: 2, section: 2)
+            let drag = try source.begin(row: 0, section: 2, expectedItems: 2)
+            let drop = SidebarDropSession(drag: drag, point: destination.point(row: 1, section: 1, fraction: 0.1))
+            destination.sidebar.tableView(destination.table, dropSessionDidEnter: drop)
+            let proposal = destination.hover(drop)
+            #expect(proposal.operation == .move)
+            switch mutation {
+            case "delete-root": #expect(source.document.removeTab(id: "c"))
+            case "reparent-root": #expect(source.document.setPlacement(
+                    tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                ))
+            case "delete-target": #expect(source.document.removeTab(id: "destination-pin"))
+            case "reparent-target": #expect(source.document.setPlacement(
+                    tabID: "destination-pin", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                ))
+            default: #expect(source.document.delete(entity: .init(entityType: .space, entityID: "other")))
+            }
+            let changed = try source.durableState()
+            let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+            destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+            #expect(try source.durableState() == changed)
+            #expect(coordinator.droppedItems.isEmpty)
+            source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+            destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+            #expect(await source.workspace.shutdown())
+            #expect(await destination.workspace.shutdown())
+        }
+    }
+
+    @Test func interwindowAdmissionRequiresExactDocumentAndUnmodifiedNativeItems() async throws {
+        let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        let destination = try SidebarDragFixture(sharing: source)
+        let foreign = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        defer { foreign.cleanup()
+            destination.cleanup()
+            source.cleanup()
+        }
+        await source.start()
+        await destination.start(spaceID: "other")
+        await foreign.start(spaceID: "other")
+        #expect(source.owner == foreign.owner && source.document !== foreign.document)
+        try source.toggleSelection()
+        source.select(row: 0, section: 2)
+        source.select(row: 2, section: 2)
+        let drag = try source.begin(row: 0, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 2, fraction: 0.9))
+        #expect(destination.sidebar.tableView(destination.table, canHandle: drop))
+        #expect(!foreign.sidebar.tableView(foreign.table, canHandle: drop))
+        let clone = UIDragItem(itemProvider: drag.items[1].itemProvider)
+        clone.localObject = drag.items[1].localObject
+        drop.items = [drag.items[0], clone]
+        #expect(!destination.sidebar.tableView(destination.table, canHandle: drop))
+        drop.items = [drag.items[0]]
+        #expect(!destination.sidebar.tableView(destination.table, canHandle: drop))
+        drop.items = [drag.items[0], drag.items[0]]
+        #expect(!destination.sidebar.tableView(destination.table, canHandle: drop))
+        drop.items = drag.items
+        drop.localDragSession = nil
+        #expect(!destination.sidebar.tableView(destination.table, canHandle: drop))
+        drop.localDragSession = drag
+        #expect(destination.sidebar.tableView(destination.table, canHandle: drop))
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        #expect(!destination.sidebar.tableView(destination.table, canHandle: drop))
+        #expect(try source.mutations().isEmpty && foreign.mutations().isEmpty)
+        #expect(await source.workspace.shutdown())
+        #expect(await destination.workspace.shutdown())
+        #expect(await foreign.workspace.shutdown())
+    }
+
+    @Test func interwindowAdmissionIsReadOnlyAndRejectsAnEndpointWithAnotherDrag() async throws {
+        let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        let destination = try SidebarDragFixture(sharing: source)
+        defer { destination.cleanup()
+            source.cleanup()
+        }
+        await source.start()
+        await destination.start(spaceID: "other")
+        let drag = try source.begin(row: 0, section: 2)
+        let unrelated = try destination.begin(row: 0, section: 2)
+        let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 2, fraction: 0.9))
+        #expect(!destination.sidebar.tableView(destination.table, canHandle: drop))
+        destination.end(unrelated, SidebarDropSession(drag: unrelated, point: .zero))
+        #expect(destination.sidebar.tableView(destination.table, canHandle: drop))
+        let newID = try #require(source.document.createTab(spaceID: "other"))
+        // A canHandle query must not acquire a destination hold. No enter or
+        // hover callback has occurred, so the live table must show this tab.
+        #expect(destination.rowIDs(section: 2) == ["browser.tab.destination-page", "browser.tab." + newID])
+        #expect(try source.mutations().count == 1)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        #expect(await source.workspace.shutdown())
+        #expect(await destination.workspace.shutdown())
+    }
+
+    @Test func interwindowEscapeAndDisappearanceCancelAdmissionWithoutDroppingTerminalHolds() async throws {
+        for endpoint in ["source-escape", "destination-escape", "source-disappears", "destination-disappears"] {
+            let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+            let destination = try SidebarDragFixture(sharing: source)
+            defer { destination.cleanup()
+                source.cleanup()
+            }
+            await source.start()
+            await destination.start(spaceID: "other")
+            let drag = try source.begin(row: 0, section: 2)
+            let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 2, fraction: 0.9))
+            destination.sidebar.tableView(destination.table, dropSessionDidEnter: drop)
+            let proposal = destination.hover(drop)
+            #expect(proposal.operation == .move)
+            let target = endpoint.hasPrefix("source") ? source : destination
+            if endpoint.hasSuffix("escape") {
+                let command = try #require(target.sidebar.keyCommands?.first { $0.input == UIKeyCommand.inputEscape })
+                let action = try #require(command.action)
+                #expect(UIApplication.shared.sendAction(action, to: target.sidebar, from: command, for: nil))
+            } else {
+                target.sidebar.beginAppearanceTransition(false, animated: false)
+                target.sidebar.endAppearanceTransition()
+            }
+            let before = try source.durableState()
+            let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+            destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+            #expect(coordinator.droppedItems.isEmpty)
+            #expect(try source.durableState() == before)
+            #expect(destination.hover(drop).operation == .forbidden)
+            source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+            destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+            #expect(await source.workspace.shutdown())
+            #expect(await destination.workspace.shutdown())
+        }
+    }
+
+    @Test func interwindowForegroundInactiveSuspendsOnlyReceiverAndSameTokenResumes() async throws {
+        let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        let destination = try SidebarDragFixture(sharing: source)
+        defer { destination.cleanup()
+            source.cleanup()
+        }
+        await source.start()
+        await destination.start(spaceID: "other")
+        let drag = try source.begin(row: 0, section: 2)
+        let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 2, fraction: 0.9))
+        destination.sidebar.tableView(destination.table, dropSessionDidEnter: drop)
+        let proposal = destination.hover(drop)
+        #expect(proposal.operation == .move)
+        // Drive the production scene-state handler per controller. The host
+        // shares one scene; this is not an observed OS activation transition.
+        source.sidebar.updateSidebarDragSceneState(.foregroundInactive)
+        #expect(destination.sidebar.tableView(destination.table, canHandle: drop))
+        destination.sidebar.updateSidebarDragSceneState(.foregroundInactive)
+        #expect(!destination.sidebar.tableView(destination.table, canHandle: drop))
+        let staleCoordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        destination.sidebar.tableView(destination.table, performDropWith: staleCoordinator)
+        #expect(try source.mutations().isEmpty)
+        #expect(staleCoordinator.droppedItems.isEmpty)
+        destination.sidebar.updateSidebarDragSceneState(.foregroundActive)
+        #expect(destination.sidebar.tableView(destination.table, canHandle: drop))
+        let resumed = destination.hover(drop)
+        #expect(resumed.operation == .move)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: resumed)
+        destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+        #expect(try source.mutations().count == 1)
+        #expect(source.document.snapshot.tabs.first { $0.id == "a" }?.spaceID == "other")
+        source.sidebar.updateSidebarDragSceneState(.foregroundActive)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+        coordinator.animations.forEach { $0.finish() }
+        #expect(await source.workspace.shutdown())
+        #expect(await destination.workspace.shutdown())
+    }
+
+    @Test func interwindowBackgroundAndDisconnectInvalidateTokenDespiteReactivationAndLateCallbacks() async throws {
+        for endpoint in ["source", "destination"] {
+            for state in [UIScene.ActivationState.background, .unattached] {
+                let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+                let destination = try SidebarDragFixture(sharing: source)
+                defer { destination.cleanup()
+                    source.cleanup()
+                }
+                await source.start()
+                await destination.start(spaceID: "other")
+                let drag = try source.begin(row: 0, section: 2)
+                let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 2, fraction: 0.9))
+                destination.sidebar.tableView(destination.table, dropSessionDidEnter: drop)
+                let proposal = destination.hover(drop)
+                #expect(proposal.operation == .move)
+                let changed = endpoint == "source" ? source : destination
+                changed.sidebar.updateSidebarDragSceneState(state)
+                changed.sidebar.updateSidebarDragSceneState(.foregroundActive)
+                #expect(!destination.sidebar.tableView(destination.table, canHandle: drop))
+                let before = try source.durableState()
+                let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+                destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+                #expect(try source.durableState() == before)
+                #expect(coordinator.droppedItems.isEmpty)
+                source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+                destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+                // A canceled old token must not poison a later native session.
+                let next = try source.begin(row: 0, section: 2)
+                let nextDrop = SidebarDropSession(drag: next, point: drop.point)
+                #expect(destination.sidebar.tableView(destination.table, canHandle: nextDrop))
+                destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+                #expect(try source.durableState() == before)
+                source.sidebar.tableView(source.table, dragSessionDidEnd: next)
+                #expect(await source.workspace.shutdown())
+                #expect(await destination.workspace.shutdown())
+            }
+        }
+    }
+
+    @Test func interwindowDisconnectAfterCommitRetainsPreviewRowsUntilLastCompletion() async throws {
+        let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        let destination = try SidebarDragFixture(sharing: source)
+        defer { destination.cleanup()
+            source.cleanup()
+        }
+        await source.start()
+        await destination.start(spaceID: "other")
+        try source.toggleSelection()
+        source.select(row: 0, section: 2)
+        source.select(row: 2, section: 2)
+        let sourceRows = source.rowIDs(section: 2)
+        let destinationRows = destination.rowIDs(section: 2)
+        let drag = try source.begin(row: 0, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 2, fraction: 0.9))
+        destination.sidebar.tableView(destination.table, dropSessionDidEnter: drop)
+        let proposal = destination.hover(drop)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+        try #require(coordinator.animations.count == 2)
+        let committed = try source.durableState()
+        source.sidebar.updateSidebarDragSceneState(.unattached)
+        destination.sidebar.updateSidebarDragSceneState(.background)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+        coordinator.animations[0].finish()
+        #expect(source.rowIDs(section: 2) == sourceRows)
+        #expect(destination.rowIDs(section: 2) == destinationRows)
+        coordinator.animations[1].finish()
+        #expect(source.rowIDs(section: 2) == ["browser.tab.b"])
+        #expect(destination.rowIDs(section: 2) == ["browser.tab.destination-page", "browser.tab.a", "browser.tab.c"])
+        #expect(try source.durableState() == committed)
+        source.sidebar.updateSidebarDragSceneState(.foregroundActive)
+        destination.sidebar.updateSidebarDragSceneState(.foregroundActive)
+        destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+        coordinator.animations.forEach { $0.finish() }
+        #expect(try source.durableState() == committed)
+        #expect(await source.workspace.shutdown())
+        #expect(await destination.workspace.shutdown())
+    }
+
+    @Test func interwindowReleasedDestinationCannotStrandSourcePreviewBarrier() async throws {
+        let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
+        defer { source.cleanup() }
+        await source.start()
+        try source.toggleSelection()
+        source.select(row: 0, section: 2)
+        source.select(row: 2, section: 2)
+        let rows = source.rowIDs(section: 2)
+        let drag = try source.begin(row: 0, section: 2, expectedItems: 2)
+        // Return only the animator completions from a finished async frame.
+        // Keeping the fake coordinator would also keep its diagnostic preview
+        // target and UIKit table hierarchy; neither is needed for this proof.
+        let (animations, releasedController) = try await retiredSidebarDestination(source: source, drag: drag)
+        try #require(animations.count == 2)
+        let committed = try source.durableState()
+        // UIKit may defer view-controller teardown until the main run loop
+        // drains its autorelease pool. Yielding one Swift task is insufficient.
+        let releaseDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while releasedController.value != nil, ContinuousClock.now < releaseDeadline {
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        #expect(releasedController.value == nil)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        #expect(source.rowIDs(section: 2) == rows)
+        animations[1].finish()
+        #expect(source.rowIDs(section: 2) == rows)
+        animations[0].finish()
+        #expect(source.rowIDs(section: 2) == ["browser.tab.b"])
+        #expect(try source.durableState() == committed)
+        #expect(await source.workspace.shutdown())
+    }
+
     @Test func spaceButtonOpensDropTargetsWithoutSwitchingSpaceAndMovesCurrentGroupSubtree() async throws {
         let f = try SidebarDragFixture()
         defer { f.cleanup() }
@@ -661,27 +1134,39 @@ extension BrowserMobileUITests {
 @MainActor private final class SidebarDragFixture {
     // MARK: Lifecycle
 
-    init() throws {
-        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
-        try store.bindSyncOwner(owner)
-        let changes = BrowserSyncFolderProjection.canonicalChanges(sidebarDragSnapshot())
-        let events = try changes.enumerated().map { offset, change in
-            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(change)) as! [String: Any]
-            var payload = object["data"] as? [String: Any] ?? [:]
-            payload["id"] = change.entityID
-            let wire: [String: Any] = [
-                "serverSeq": offset + 1, "deviceID": NSNull(), "entityType": change.entityType.rawValue,
-                "entityID": change.entityID, "op": change.op.rawValue, "data": payload,
-                "createdAt": "2026-10-03T00:00:00Z",
-            ]
-            return try JSONDecoder().decode(BrowserSyncEvent.self, from: JSONSerialization.data(withJSONObject: wire))
+    init(
+        sharing shared: SidebarDragFixture? = nil,
+        snapshot: BrowserTabSessionSnapshot = sidebarDragSnapshot()
+    ) throws {
+        let document: BrowserMobileProfileDocument
+        if let shared {
+            self.store = shared.store
+            document = shared.document
+        } else {
+            self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
+            try store.bindSyncOwner(owner)
+            let changes = BrowserSyncFolderProjection.canonicalChanges(snapshot)
+            let events = try changes.enumerated().map { offset, change in
+                let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(change)) as! [String: Any]
+                var payload = object["data"] as? [String: Any] ?? [:]
+                payload["id"] = change.entityID
+                let wire: [String: Any] = [
+                    "serverSeq": offset + 1, "deviceID": NSNull(), "entityType": change.entityType.rawValue,
+                    "entityID": change.entityID, "op": change.op.rawValue, "data": payload,
+                    "createdAt": "2026-10-03T00:00:00Z",
+                ]
+                return try JSONDecoder().decode(
+                    BrowserSyncEvent.self,
+                    from: JSONSerialization.data(withJSONObject: wire)
+                )
+            }
+            _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
+            document = try BrowserMobileProfileDocument(store: store, initialSnapshot: store.loadSnapshotStrict())
         }
-        _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
-        let document = try BrowserMobileProfileDocument(store: store, initialSnapshot: store.loadSnapshotStrict())
         self.document = document
         self.preferences = try #require(UserDefaults(suiteName: preferencesName))
         self.workspace = BrowserMobileWorkspace(
-            engine: engine, sceneID: "drag", profileLoader: { document }, preferences: preferences
+            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences
         )
         self.sidebar = BrowserMobileTabsViewController(workspace: workspace)
         self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
@@ -708,9 +1193,9 @@ extension BrowserMobileUITests {
         document.snapshot.tabs.filter { $0.placement == .temporary && $0.spaceID == "source" }.compactMap(\.id)
     }
 
-    func start(showNavigation: Bool = false) async {
+    func start(showNavigation: Bool = false, spaceID: String = "source") async {
         await workspace.restore()
-        workspace.selectSpace(id: "source")
+        workspace.selectSpace(id: spaceID)
         let root: UIViewController = showNavigation ? UINavigationController(rootViewController: sidebar) : sidebar
         window.rootViewController = root
         window.frame = CGRect(x: 0, y: 0, width: 600, height: 1100)
@@ -834,6 +1319,37 @@ extension BrowserMobileUITests {
         let snapshot: BrowserTabSessionSnapshot?
         let queue: [BrowserSyncFolderMutation]
     }
+}
+
+// MARK: - SidebarWeakController
+
+@MainActor private final class SidebarWeakController {
+    weak var value: BrowserMobileTabsViewController?
+}
+
+@MainActor private func retiredSidebarDestination(
+    source: SidebarDragFixture, drag: SidebarDragSession
+) async throws -> ([SidebarDragAnimation], SidebarWeakController) {
+    let destination = try SidebarDragFixture(sharing: source)
+    await destination.start(spaceID: "other")
+    let released = SidebarWeakController()
+    released.value = destination.sidebar
+    let animations = autoreleasepool {
+        let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 2, fraction: 0.9))
+        destination.sidebar.tableView(destination.table, dropSessionDidEnter: drop)
+        let proposal = destination.hover(drop)
+        #expect(proposal.operation == .move)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+        coordinator.previewTarget = nil
+        return coordinator.animations
+    }
+    destination.sidebar.updateSidebarDragSceneState(.unattached)
+    #expect(await destination.workspace.shutdown())
+    autoreleasepool {
+        destination.cleanup()
+    }
+    return (animations, released)
 }
 
 // MARK: - SidebarSpaceDropHarness
@@ -1096,4 +1612,25 @@ private func sidebarDragSnapshot() -> BrowserTabSessionSnapshot {
         .init(id: "b", urlString: "about:blank", spaceID: "source"),
         .init(id: "c", urlString: "about:blank", spaceID: "source"),
     ])
+}
+
+private func sidebarInterwindowSnapshot() -> BrowserTabSessionSnapshot {
+    let base = sidebarDragSnapshot()
+    return .init(
+        spaces: base.spaces,
+        pinnedTabFolders: (base.pinnedTabFolders ?? []) + [
+            .init(id: "destination-folder", spaceID: "other", title: "Destination", pinnedSiblingRank: 1),
+        ],
+        tabs: base.tabs + [
+            .init(
+                id: "destination-pin",
+                urlString: "about:blank",
+                placement: .spacePinned,
+                spaceID: "other",
+                pinnedFolderID: "destination-folder",
+                pinnedSiblingRank: 1
+            ),
+            .init(id: "destination-page", urlString: "about:blank", spaceID: "other"),
+        ]
+    )
 }

@@ -14,7 +14,7 @@ The originating tabs controller owns the source payload and commits the move. Ad
 
 The palette proposes a stable `BrowserMobileSidebarDrop.rootTarget`. Hover and commit validate it against the current document, including the captured source containers. A deleted destination Space or deleted/reparented root rejects the entire local drop. One `document.move` records the ordered root intent in the existing v4 FIFO; folder descendants are resolved from the current tree.
 
-The source rows and palette targets remain stable during the interaction. Source-table and palette endpoint holds are separate: leaving the table cannot release a palette drop. Preview containers remain attached through all animations and session terminals. Escape, disappearance or the owning scene's deactivation prevents a later commit; another scene's notification must not cancel this drag.
+The source rows and palette targets remain stable during the interaction. Source-table and palette endpoint holds are separate: leaving the table cannot release a palette drop. Preview containers remain attached through all animations and session terminals. Escape, disappearance, background or disconnect prevents a later commit. Temporary scene deactivation suspends that controller's admission, retaining the source token for another active window; another scene's notification must not cancel this drag. See the [shared interwindow lifetime contract](mobile-interwindow-drag.md).
 
 ## Verification boundary
 

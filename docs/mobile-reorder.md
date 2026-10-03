@@ -2,11 +2,11 @@
 
 ## Scope and contract
 
-Native UIKit drag/drop operates within the current mobile Space and through a [cross-Space destination palette](mobile-cross-space-drag.md). The source is a tab, folder root or selected group. Tabs can move between Favorites, Pinned and Today; a group containing folders stays in Pinned. A folder move carries its current subtree through the existing v4 operation. The existing Move To menus continue to support explicit moves.
+Native UIKit drag/drop operates within the current mobile Space, through a [cross-Space destination palette](mobile-cross-space-drag.md), and between [open windows sharing one document](mobile-interwindow-drag.md). The source is a tab, folder root or selected group. Tabs can move between Favorites, Pinned and Today; a group containing folders stays in Pinned. A folder move carries its current subtree through the existing v4 operation. The existing Move To menus continue to support explicit moves.
 
 Select/Done enters native multiple selection without changing the active page or expanding folders. Group order follows the rendered sidebar, independent of selection order or callback order. Selecting both a folder and its descendants contributes only that folder root. Dragging an unselected row replaces the selection with that row. A single move accepts at most 1000 normalized roots, matching the v4 operation limit.
 
-Interwindow drag, adding items during an active drag and hover expansion remain required follow-up work. Unsupported sessions are rejected without copying records or synthesizing IDs. Native auto-scroll and physical touch/pointer smoothness require separate runtime observation; delegate tests alone do not prove them.
+Adding items during an active drag and hover expansion remain required follow-up work. Unsupported sessions are rejected without copying records or synthesizing IDs. Native auto-scroll and physical touch/pointer smoothness require separate runtime observation; delegate tests alone do not prove them.
 
 ## Stable identity and conflict rules
 
@@ -22,7 +22,7 @@ The planner returns the existing typed `BrowserSyncFolderDestination` and before
 
 Native drag/drop delegates use the table's geometry to choose a semantic target. UIKit index paths are not stored as durable destinations. Empty section headers and section ends need explicit root targets. The controller does not implement `tableView(_:moveRowAt:to:)`; this avoids UIKit's single-local-move shortcut bypassing the guarded drop coordinator path.
 
-UIKit requests initial drag items once for each selected row. One session shares a captured source/payload; each normalized root provides its own native item, and duplicate/descendant callbacks add no duplicate. Admission requires the exact full set from that session/document/controller. See Apple's [initial drag callback](https://developer.apple.com/documentation/uikit/uitableviewdragdelegate/tableview(_:itemsforbeginning:at:)) and [multiple selection](https://developer.apple.com/documentation/uikit/uitableview/allowsmultipleselectionduringediting) contracts, checked 2026-10-03.
+UIKit requests initial drag items once for each selected row. One session shares a captured source/payload; each normalized root provides its own native item, and duplicate/descendant callbacks add no duplicate. Admission requires the exact full set from that session and source controller; destinations must share its document. See Apple's [initial drag callback](https://developer.apple.com/documentation/uikit/uitableviewdragdelegate/tableview(_:itemsforbeginning:at:)) and [multiple selection](https://developer.apple.com/documentation/uikit/uitableview/allowsmultipleselectionduringediting) contracts, checked 2026-10-03.
 
 The displayed structural rows and their snapshot remain frozen during a drag. Incoming profile changes continue to update the document and page runtimes. Hover and commit validate against the latest snapshot; a Space change or hidden controller cancels admission. Synchronous document notifications during drop cannot reload the table inside UIKit's animation. Every preview completion and both session terminals must finish before refresh, including inline or reverse-order completion. Terminal refresh applies the latest rows, prunes deleted selections and restores scroll using a surviving typed row identity and offset where possible.
 

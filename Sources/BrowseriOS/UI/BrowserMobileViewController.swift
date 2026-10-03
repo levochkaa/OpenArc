@@ -117,6 +117,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     let workspace: BrowserMobileWorkspace
     var didSelectTab: (() -> Void)?
 
+    var sidebarDragHasNativeHold: Bool {
+        sourceSessionID != nil || dropSessionID != nil || spaceDropSessionID != nil || isCommittingDrop
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Tab")
@@ -152,9 +156,14 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         ) { [weak spaceButton] _, _ in
             spaceButton?.sendActions(for: .primaryActionTriggered)
         })
-        for name in [UIScene.willDeactivateNotification, UIScene.didDisconnectNotification] {
+        for name in [
+            UIScene.willDeactivateNotification,
+            UIScene.didActivateNotification,
+            UIScene.didEnterBackgroundNotification,
+            UIScene.didDisconnectNotification,
+        ] {
             NotificationCenter.default.addObserver(
-                self, selector: #selector(dragSceneBecameInactive(_:)), name: name, object: nil
+                self, selector: #selector(sidebarDragSceneChanged(_:)), name: name, object: nil
             )
         }
         spaceButton.accessibilityIdentifier = "browser.spaces"
@@ -173,13 +182,15 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     override func numberOfSections(in _: UITableView) -> Int { rows.count }
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        dragAdmissionSuspended = true
         terminalRefreshTask?.cancel()
         terminalRefreshTask = nil
-        cancelSidebarDrag()
+        endSidebarDragForSceneLoss()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        dragAdmissionSuspended = view.window?.windowScene?.activationState != .foregroundActive
         render()
     }
 
@@ -323,11 +334,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     ) -> [UIDragItem] {
         let sessionID = ObjectIdentifier(session)
         if sourceSessionID == sessionID, let payload = activeSource {
-            guard !payload.isCancelled, payload.document === workspace.profileDocument,
+            guard !payload.isCancelled, !payload.isCommitted, payload.document === workspace.profileDocument,
                   payload.spaceID == workspace.selectedSpaceID, let row = row(at: indexPath) else { return [] }
             return initialDragItem(for: row.reference)
         }
-        guard !isHoldingRows, workspace.isReady, let document = workspace.profileDocument, document.canEdit,
+        guard !isHoldingRows, acceptsSidebarDrops, workspace.isReady, let document = workspace.profileDocument,
+              document.canEdit,
               let row = row(at: indexPath) else { return [] }
         let requestedItems = isSelectingRows && selectedItems.contains(row.reference)
             ? rows.flatMap { $0 }.map(\.reference).filter { selectedItems.contains($0) }
@@ -341,7 +353,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             selectedItems = [row.reference]
             restoreRowSelection()
         }
-        let payload = SidebarDragPayload(
+        let payload = BrowserMobileSidebarDragSession(
             owner: self,
             document: document,
             spaceID: workspace.selectedSpaceID,
@@ -379,16 +391,16 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         guard sourceSessionID == ObjectIdentifier(session) else { return }
         sourceSessionID = nil
         spaceDropClosing = true
-        activeSource = nil
         initialDragItems.removeAll(keepingCapacity: true)
         suppliedInitialItems.removeAll(keepingCapacity: true)
+        activeSource?.notifyParticipants()
         finishInteractionIfPossible()
     }
 
     func tableView(_: UITableView, canHandle session: any UIDropSession) -> Bool { payload(for: session) != nil }
 
     func tableView(_: UITableView, dropSessionDidEnter session: any UIDropSession) {
-        guard payload(for: session) != nil else { return }
+        guard let payload = payload(for: session), joinSidebarDrag(payload) else { return }
         dropSessionID = ObjectIdentifier(session)
     }
 
@@ -397,6 +409,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         dropSessionID = nil
         hover = nil
         clearDropFeedback()
+        activeSource?.notifyParticipants()
         finishInteractionIfPossible()
     }
 
@@ -405,6 +418,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         dropSessionID = nil
         hover = nil
         clearDropFeedback()
+        activeSource?.notifyParticipants()
         finishInteractionIfPossible()
     }
 
@@ -414,7 +428,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         withDestinationIndexPath _: IndexPath?
     ) -> UITableViewDropProposal {
         clearDropFeedback()
-        guard let payload = payload(for: session), let document = workspace.profileDocument,
+        guard let payload = payload(for: session), joinSidebarDrag(payload), let document = workspace.profileDocument,
               let target = dropTarget(at: session.location(in: tableView)),
               validatedPlan(source: payload.source, target: target.target, snapshot: document.snapshot) != nil
         else {
@@ -474,14 +488,15 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         isCommittingDrop = true
         defer {
             isCommittingDrop = false
+            activeSource?.notifyParticipants()
             finishInteractionIfPossible()
         }
         guard let batchID = commit(plan, document: document, payload: payload) else { return }
         let target = UIDragPreviewTarget(container: tableView, center: hover.point)
         for item in coordinator.items {
             let itemID = ObjectIdentifier(item.dragItem)
-            coordinator.drop(item.dragItem, to: target).addCompletion { [weak self] _ in
-                self?.finishDropAnimation(itemID: itemID, batchID: batchID)
+            coordinator.drop(item.dragItem, to: target).addCompletion { [payload] _ in
+                payload.finishAnimation(itemID: itemID, batchID: batchID)
             }
         }
     }
@@ -491,7 +506,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnter session: any UIDropSession) {
-        guard dropInteraction(interaction, canHandle: session) else { return }
+        guard dropInteraction(interaction, canHandle: session), let payload = payload(for: session),
+              joinSidebarDrag(payload) else { return }
         spaceDropSessionID = ObjectIdentifier(session)
     }
 
@@ -500,7 +516,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         sessionDidUpdate session: any UIDropSession
     ) -> UIDropProposal {
         guard dropInteraction(interaction, canHandle: session), let palette = spaceDropController,
-              let payload = payload(for: session), let document = workspace.profileDocument,
+              let payload = payload(for: session), joinSidebarDrag(payload), let document = workspace.profileDocument,
               let target = palette.target(at: session.location(in: palette.view)), target.isEnabled,
               validatedPlan(source: payload.source, target: target.plannerTarget, snapshot: document.snapshot) != nil
         else {
@@ -538,6 +554,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         isCommittingDrop = true
         defer {
             isCommittingDrop = false
+            activeSource?.notifyParticipants()
             finishInteractionIfPossible()
         }
         guard let batchID = commit(plan, document: document, payload: payload) else { return }
@@ -561,11 +578,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         _ interaction: UIDropInteraction, item: UIDragItem, willAnimateDropWith animator: any UIDragAnimating
     ) {
         let itemID = ObjectIdentifier(item)
-        guard isSpaceDropInteraction(interaction), let batchID = spaceDropBatchID, batchID == animationBatchID,
+        guard isSpaceDropInteraction(interaction), let token = activeSource,
+              let batchID = spaceDropBatchID, batchID == animationBatchID,
               pendingDropAnimations.contains(itemID),
               registeredSpaceDropAnimations.insert(itemID).inserted else { return }
-        animator.addCompletion { [weak self] _ in
-            self?.finishDropAnimation(itemID: itemID, batchID: batchID)
+        animator.addCompletion { [token] _ in
+            token.finishAnimation(itemID: itemID, batchID: batchID)
         }
     }
 
@@ -573,9 +591,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         // UIKit calls this after every drop animation, including non-visible items.
         guard isSpaceDropInteraction(interaction), spaceDropBatchSessionID == ObjectIdentifier(session),
               let batchID = spaceDropBatchID, batchID == animationBatchID else { return }
-        pendingDropAnimations.removeAll()
-        animationBatchID = nil
-        finishInteractionIfPossible()
+        activeSource?.concludeAnimations(batchID: batchID)
     }
 
     func tabMenu(id: String) -> UIMenu? {
@@ -681,6 +697,42 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         ])
     }
 
+    func sidebarDragSessionDidChange(_ session: BrowserMobileSidebarDragSession) {
+        guard activeSource === session else { return }
+        if session.isCancelled {
+            spaceDropClosing = true
+            spaceDropHover = nil
+            hover = nil
+            clearDropFeedback()
+            spaceDropController?.highlight(nil)
+            if pendingDropAnimations.isEmpty {
+                spaceDropController?.view.isHidden = true
+            }
+        }
+        if session.isCommitted {
+            needsStructuralRefresh = true
+        }
+        finishInteractionIfPossible()
+    }
+
+    func updateSidebarDragSceneState(_ state: UIScene.ActivationState) {
+        switch state {
+        case .foregroundActive: dragAdmissionSuspended = false
+        case .foregroundInactive:
+            dragAdmissionSuspended = true
+            hover = nil
+            spaceDropHover = nil
+            clearDropFeedback()
+            spaceDropController?.highlight(nil)
+        case .background, .unattached:
+            dragAdmissionSuspended = true
+            endSidebarDragForSceneLoss()
+        @unknown default:
+            dragAdmissionSuspended = true
+            endSidebarDragForSceneLoss()
+        }
+    }
+
     // MARK: Private
 
     private enum Row: Equatable {
@@ -699,34 +751,6 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         var depth: Int {
             switch self { case .tab(_, let depth), .folder(_, let depth): depth }
         }
-    }
-
-    private final class SidebarDragPayload {
-        // MARK: Lifecycle
-
-        init(
-            owner: BrowserMobileTabsViewController,
-            document: BrowserMobileProfileDocument,
-            spaceID: String?,
-            source: BrowserMobileSidebarDrop.Source,
-            sourceSessionID: ObjectIdentifier
-        ) {
-            self.owner = owner
-            self.document = document
-            self.spaceID = spaceID
-            self.source = source
-            self.sourceSessionID = sourceSessionID
-        }
-
-        // MARK: Internal
-
-        weak var owner: BrowserMobileTabsViewController?
-        weak var document: BrowserMobileProfileDocument?
-        let spaceID: String?
-        let source: BrowserMobileSidebarDrop.Source
-        let sourceSessionID: ObjectIdentifier
-        var dragItemIDs = Set<ObjectIdentifier>()
-        var isCancelled = false
     }
 
     private final class SpaceSpringBehavior: NSObject, UISpringLoadedInteractionBehavior {
@@ -777,7 +801,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var renderedTabs = [String: BrowserMobileTab]()
     private weak var renderedDocument: BrowserMobileProfileDocument?
     private var renderedSpaceID: String?
-    private var activeSource: SidebarDragPayload?
+    private var activeSource: BrowserMobileSidebarDragSession?
     private var initialDragItems = [BrowserSyncEntityReference: UIDragItem]()
     private var suppliedInitialItems = Set<BrowserSyncEntityReference>()
     private var sourceSessionID: ObjectIdentifier?
@@ -797,27 +821,32 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var highlightedFolder: IndexPath?
     private var needsStructuralRefresh = false
     private var isCommittingDrop = false
-    private var pendingDropAnimations = Set<ObjectIdentifier>()
-    private var animationBatchID: UUID?
+    private var dragAdmissionSuspended = false
     private let insertionLine = UIView()
     private var capturedTargets = [TargetKey: BrowserMobileSidebarDrop.Target]()
     private var planCache: PlanCache?
     private var terminalRefreshTask: Task<Void, Never>?
 
+    private var pendingDropAnimations: Set<ObjectIdentifier> { activeSource?.pendingDropAnimations ?? [] }
+    private var animationBatchID: UUID? { activeSource?.animationBatchID }
+
     private var isHoldingRows: Bool {
-        sourceSessionID != nil || dropSessionID != nil || spaceDropSessionID != nil
-            || isCommittingDrop || !pendingDropAnimations.isEmpty
+        sidebarDragHasNativeHold || activeSource?.isHoldingRows == true
     }
 
     private var canOpenSpaceDropTargets: Bool {
         guard workspace.isReady, let document = workspace.profileDocument, document.canEdit,
-              let payload = activeSource, !payload.isCancelled, payload.document === document,
+              let payload = activeSource, !payload.isCancelled, !payload.isCommitted, payload.document === document,
               payload.owner === self, sourceSessionID == payload.sourceSessionID,
               payload.spaceID == workspace.selectedSpaceID,
-              dragScene?.activationState == .foregroundActive,
+              acceptsSidebarDrops,
               view.window?.windowScene === dragScene,
               (document.snapshot.spaces ?? []).contains(where: { $0.id != payload.spaceID }) else { return false }
         return BrowserMobileSidebarDrop.source(items: payload.source.items, in: document.snapshot) == payload.source
+    }
+
+    private var acceptsSidebarDrops: Bool {
+        !dragAdmissionSuspended && viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive
     }
 
     @objc private func toggleSidebarSelection() {
@@ -931,24 +960,39 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         cell.contentConfiguration = content
     }
 
-    private func payload(for session: any UIDropSession) -> SidebarDragPayload? {
-        guard workspace.isReady, let document = workspace.profileDocument, document.canEdit,
+    private func ownsSidebarDrag(_ payload: BrowserMobileSidebarDragSession) -> Bool {
+        payload.owner === self && activeSource === payload && sourceSessionID == payload.sourceSessionID
+            && payload.document === workspace.profileDocument && payload.spaceID == workspace.selectedSpaceID
+            && viewIfLoaded?.window?.windowScene === dragScene
+            && dragScene
+            .map { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive } == true
+    }
+
+    private func payload(for session: any UIDropSession) -> BrowserMobileSidebarDragSession? {
+        guard acceptsSidebarDrops, workspace.isReady, let document = workspace.profileDocument, document.canEdit,
               session.allowsMoveOperation, let local = session.localDragSession,
-              let payload = local.localContext as? SidebarDragPayload,
-              payload.owner === self, payload.document === document, !payload.isCancelled,
-              activeSource === payload, sourceSessionID == payload.sourceSessionID,
+              let payload = local.localContext as? BrowserMobileSidebarDragSession,
+              payload.document === document, !payload.isCancelled, !payload.isCommitted,
+              activeSource == nil || activeSource === payload,
+              payload.owner?.ownsSidebarDrag(payload) == true,
               ObjectIdentifier(local) == payload.sourceSessionID,
-              payload.spaceID == workspace.selectedSpaceID,
+              renderedDocument === document, renderedSpaceID == workspace.selectedSpaceID,
               matches(session.items, payload: payload), matches(local.items, payload: payload)
         else { return nil }
         return payload
     }
 
-    private func matches(_ items: [UIDragItem], payload: SidebarDragPayload) -> Bool {
-        items.count == payload.source.items.count && !items.isEmpty
-            && Set(items.map(ObjectIdentifier.init)) == payload.dragItemIDs
-            && payload.dragItemIDs.count == items.count
-            && items.allSatisfy { $0.localObject as? SidebarDragPayload === payload }
+    private func joinSidebarDrag(_ payload: BrowserMobileSidebarDragSession) -> Bool {
+        guard activeSource == nil || activeSource === payload else { return false }
+        activeSource = payload
+        dragScene = view.window?.windowScene
+        payload.register(self)
+        updateSelectionButton()
+        return true
+    }
+
+    private func matches(_ items: [UIDragItem], payload: BrowserMobileSidebarDragSession) -> Bool {
+        payload.matches(items)
     }
 
     private func dropTarget(at point: CGPoint) -> DropHover? {
@@ -1067,6 +1111,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         spaceDropSessionID = nil
         spaceDropHover = nil
         spaceDropController?.highlight(nil)
+        activeSource?.notifyParticipants()
         finishInteractionIfPossible()
     }
 
@@ -1088,35 +1133,46 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         spaceDropBottomConstraint = nil
     }
 
-    @objc private func dragSceneBecameInactive(_ notification: Notification) {
-        guard let scene = notification.object as? UIWindowScene, scene === dragScene else { return }
-        cancelSidebarDrag()
+    @objc private func sidebarDragSceneChanged(_ notification: Notification) {
+        guard let scene = notification.object as? UIWindowScene,
+              scene === (dragScene ?? viewIfLoaded?.window?.windowScene) else { return }
+        switch notification.name {
+        case UIScene.willDeactivateNotification: updateSidebarDragSceneState(.foregroundInactive)
+        case UIScene.didActivateNotification: updateSidebarDragSceneState(.foregroundActive)
+        case UIScene.didEnterBackgroundNotification: updateSidebarDragSceneState(.background)
+        case UIScene.didDisconnectNotification: updateSidebarDragSceneState(.unattached)
+        default: break
+        }
+    }
+
+    private func endSidebarDragForSceneLoss() {
+        guard let token = activeSource else { return }
+        // An already-exited destination must not cancel a drag elsewhere.
+        if token.owner === self || sidebarDragHasNativeHold || spaceDropBatchID != nil {
+            token.invalidate()
+        }
+        sourceSessionID = nil
+        dropSessionID = nil
+        spaceDropSessionID = nil
+        spaceDropClosing = true
+        initialDragItems.removeAll(keepingCapacity: true)
+        suppliedInitialItems.removeAll(keepingCapacity: true)
+        token.notifyParticipants()
+        finishInteractionIfPossible()
     }
 
     private func commit(
-        _ plan: BrowserMobileSidebarDrop.Plan, document: BrowserMobileProfileDocument, payload: SidebarDragPayload
+        _ plan: BrowserMobileSidebarDrop.Plan, document: BrowserMobileProfileDocument,
+        payload: BrowserMobileSidebarDragSession
     ) -> UUID? {
-        guard document.move(items: plan.items, destination: plan.destination, before: plan.before, after: plan.after)
-        else { return nil }
-        payload.isCancelled = true
-        needsStructuralRefresh = true
-        let batchID = UUID()
-        animationBatchID = batchID
-        pendingDropAnimations = payload.dragItemIDs
-        return batchID
-    }
-
-    private func finishDropAnimation(itemID: ObjectIdentifier, batchID: UUID) {
-        guard animationBatchID == batchID, pendingDropAnimations.remove(itemID) != nil else { return }
-        if pendingDropAnimations.isEmpty {
-            animationBatchID = nil
+        payload.commit {
+            document.move(items: plan.items, destination: plan.destination, before: plan.before, after: plan.after)
         }
-        finishInteractionIfPossible()
     }
 
     @objc private func cancelSidebarDrag() {
         guard isHoldingRows else { return }
-        activeSource?.isCancelled = true
+        activeSource?.invalidate()
         spaceDropClosing = true
         spaceDropHover = nil
         spaceDropController?.highlight(nil)
@@ -1177,6 +1233,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private func finishInteractionIfPossible() {
         dismissSpaceDropTargetsIfPossible()
         guard !isHoldingRows else { return }
+        activeSource = nil
         dragScene = nil
         guard !tableView.hasUncommittedUpdates else {
             needsStructuralRefresh = true
