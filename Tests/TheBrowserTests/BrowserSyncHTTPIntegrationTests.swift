@@ -108,6 +108,236 @@ import Testing
         try await fixture.complete(account)
     }
 
+    @Test(arguments: [false, true])
+    func coordinatorsMergeIndependentSemanticRenameAndCrossSpaceMove(patchFirst: Bool) async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account(patchFirst ? "coordinator-patch-first" : "coordinator-move-first")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        // Discover v3 before local capture; both profiles then prepare intent from
+        // the same committed baseline without seeing the other profile's edits.
+        await first.activate()
+        let initial = syncHTTPSemanticSnapshot()
+        await first.saveAndSend(initial)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        #expect(second.store.loadSnapshot()?.tabs == initial.tabs)
+        let title = "independently renamed"
+        first.store.saveSnapshot(syncHTTPSemanticSnapshot(title: title))
+        second.store.saveSnapshot(syncHTTPSemanticSnapshot(moved: true))
+        let firstQueue = try first.store.pendingSyncQueue(for: first.owner)
+        let secondQueue = try second.store.pendingSyncQueue(for: second.owner)
+        try #require(firstQueue.count == 1 && secondQueue.count == 1)
+        let patch = try #require(firstQueue.first)
+        let move = try #require(secondQueue.first)
+        #expect(patch.protocolVersion == 3 && move.protocolVersion == 3)
+        if case .semantic(let mutation) = patch {
+            #expect(mutation.operations == [.patchTab(id: "moving", fields: .init(userTitleOverride: .set(title)))])
+        } else {
+            Issue.record("A negotiated profile must capture a semantic patch")
+        }
+        if case .semantic(let mutation) = move {
+            #expect(mutation.operations.contains { operation in
+                if case .moveTabs(let ids, let destination, _, _) = operation {
+                    return ids == ["moving"] && destination.spaceID == "target" && destination.placement == .temporary
+                }
+                return false
+            })
+            #expect(!mutation.operations.contains { operation in
+                if case .patchTab = operation {
+                    return true
+                }
+                return false
+            })
+        } else {
+            Issue.record("A negotiated profile must capture a semantic move")
+        }
+
+        if patchFirst {
+            try await first.sendSavedChanges()
+            try await second.sendSavedChanges()
+        } else {
+            try await second.sendSavedChanges()
+            try await first.sendSavedChanges()
+        }
+        await first.pull()
+        await second.pull()
+        let expected = syncHTTPSemanticSnapshot(title: title, moved: true)
+        #expect(first.store.loadSnapshot()?.tabs == expected.tabs)
+        #expect(second.store.loadSnapshot()?.tabs == expected.tabs)
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        #expect(try second.store.pendingSyncQueue(for: second.owner).isEmpty)
+        let state = try await fixture.inspect(account)
+        #expect(state.tabs.first { $0.id == "moving" }?.title == title)
+        #expect(state.tabs.filter { !$0.deleted && $0.spaceID == "target" }.map(\.id) == ["moving", "anchor"])
+        #expect(state.tabs.filter { !$0.deleted && $0.spaceID == "source" }.map(\.id) == ["source-sentinel"])
+        let delivered = state.attempts.filter { $0.mutationID == patch.id || $0.mutationID == move.id }
+        #expect(delivered.map(\.mutationID) == (patchFirst ? [patch.id, move.id] : [move.id, patch.id]))
+        #expect(delivered.allSatisfy { $0.protocolVersion == 3 && $0.status == 201 })
+        await first.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
+    @Test func semanticCoordinatorReopensLostAcknowledgementWithoutRollingBackLaterRemoteState() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("coordinator-lost-ack")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var first: SyncHTTPProfile? = try SyncHTTPProfile(
+            fixture: fixture, device: account.devices[0], directory: directory
+        )
+        let owner = try #require(first?.owner)
+        await first?.activate()
+        await first?.saveAndSend(syncHTTPSemanticSnapshot())
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        let oldEdit = syncHTTPSemanticSnapshot(title: String(repeating: "semantic-lost-ack-", count: 160))
+        first?.store.saveSnapshot(oldEdit)
+        let pending = try #require(try first?.store.pendingSyncQueue(for: owner))
+        try #require(pending.count == 1 && pending[0].protocolVersion == 3)
+        try await fixture.command("drop", deviceID: account.devices[0].deviceID)
+        try await first?.sendSavedChanges()
+        let afterDrop = try await fixture.inspect(account)
+        let committed = try #require(afterDrop.attempts.last { $0.mutationID == pending[0].id })
+        #expect(committed.protocolVersion == 3 && committed.status == 201 && committed.compressed)
+        #expect(try first?.store.pendingSyncQueue(for: owner) == pending)
+        await first?.disconnect()
+        first = nil
+
+        await second.pull()
+        let newer = syncHTTPSemanticSnapshot(title: "newer title after lost semantic ACK", moved: true)
+        await second.saveAndSend(newer)
+        let beforeRetry = try await fixture.inspect(account)
+        try await fixture.command("release", deviceID: account.devices[0].deviceID)
+        first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        #expect(try first?.store.pendingSyncQueue(for: owner) == pending, "Reopen must retain the exact v3 row")
+        #expect(first?.store.loadSnapshot()?.tabs == oldEdit.tabs)
+        await first?.activate()
+        await first?.pull()
+        await second.pull()
+        let afterRetry = try await fixture.inspect(account)
+        let retries = afterRetry.attempts.filter { $0.mutationID == committed.mutationID }
+        let earlierAttempts = beforeRetry.attempts.filter { $0.mutationID == committed.mutationID }.count
+        #expect(retries.count > earlierAttempts, "Reopened coordinator must send the persisted mutation again")
+        #expect(Set(retries.map(\.digest)) == [committed.digest])
+        #expect(retries.allSatisfy { $0.protocolVersion == 3 && $0.status == 201 })
+        #expect(afterRetry.eventCount == beforeRetry.eventCount)
+        #expect(afterRetry.receiptCount == beforeRetry.receiptCount)
+        #expect(first?.store.loadSnapshot()?.tabs == newer.tabs)
+        #expect(second.store.loadSnapshot()?.tabs == newer.tabs)
+        #expect(try first?.store.pendingSyncQueue(for: owner).isEmpty == true)
+        #expect(try second.store.pendingSyncQueue(for: second.owner).isEmpty)
+        #expect(afterRetry.tabs.first { $0.id == "moving" }?.title == "newer title after lost semantic ACK")
+        #expect(afterRetry.tabs.filter { !$0.deleted && $0.spaceID == "target" }.map(\.id) == ["moving", "anchor"])
+        await first?.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
+    @Test func semanticCoordinatorDrainsOfflinePatchAndMoveAfterRemoteDeletion() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("coordinator-delete-pending")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        await first.activate()
+        await first.saveAndSend(syncHTTPSemanticSnapshot())
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        await second.suspend()
+        second.store.saveSnapshot(syncHTTPSemanticSnapshot(title: "offline patch"))
+        let optimistic = syncHTTPSemanticSnapshot(title: "offline patch", moved: true)
+        second.store.saveSnapshot(optimistic)
+        let pending = try second.store.pendingSyncQueue(for: second.owner)
+        try #require(pending.count == 2 && pending.allSatisfy { $0.protocolVersion == 3 })
+        #expect(second.store.loadSnapshot()?.tabs == optimistic.tabs)
+        let expected = syncHTTPSemanticSnapshot(deleted: true)
+        await first.saveAndSend(expected)
+        let beforeReconnect = try await fixture.inspect(account)
+        #expect(beforeReconnect.tabs.first { $0.id == "moving" }?.tombstoned == true)
+
+        await second.activate()
+        await first.pull()
+        #expect(first.store.loadSnapshot()?.tabs == expected.tabs)
+        #expect(second.store.loadSnapshot()?.tabs == expected.tabs)
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        #expect(try second.store.pendingSyncQueue(for: second.owner).isEmpty)
+        let finalState = try await fixture.inspect(account)
+        let deleted = try #require(finalState.tabs.first { $0.id == "moving" })
+        #expect(deleted.deleted && deleted.tombstoned)
+        #expect(
+            finalState.eventCount == beforeReconnect.eventCount,
+            "Stale patch and move must only echo the tombstone"
+        )
+        for mutation in pending {
+            #expect(finalState.attempts.contains {
+                $0.mutationID == mutation.id && $0.protocolVersion == 3 && $0.status == 201
+            })
+        }
+        #expect(finalState.tabs.filter { !$0.deleted && $0.spaceID == "source" }.map(\.id) == ["source-sentinel"])
+        #expect(finalState.tabs.filter { !$0.deleted && $0.spaceID == "target" }.map(\.id) == ["anchor"])
+        await first.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
+    @Test func semanticSpaceDeletionPreservesTabMovedAwayBeforeDeleteCommits() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("coordinator-space-delete-move")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        await first.activate()
+        let initial = syncHTTPSemanticSnapshot()
+        await first.saveAndSend(initial)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        await first.suspend()
+        // The offline UI removes the Space and both children. Only the Space
+        // deletion is user intent; its cascade must inspect canonical membership.
+        let locallyDeleted = BrowserTabSessionSnapshot(
+            spaces: initial.spaces?.filter { $0.id != "source" },
+            tabs: initial.tabs.filter { $0.spaceID != "source" }
+        )
+        first.store.saveSnapshot(locallyDeleted)
+        let pending = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(pending.count == 1 && pending[0].protocolVersion == 3)
+        if case .semantic(let mutation) = pending[0] {
+            #expect(mutation.operations == [.deleteSpace(id: "source")])
+        } else {
+            Issue.record("Space deletion must be captured as semantic intent")
+        }
+        await second.saveAndSend(syncHTTPSemanticSnapshot(moved: true))
+        let beforeReconnect = try await fixture.inspect(account)
+        let moved = try #require(beforeReconnect.tabs.first { $0.id == "moving" })
+        #expect(moved.spaceID == "target" && !moved.deleted && !moved.tombstoned)
+        #expect(!beforeReconnect.attempts.contains { $0.mutationID == pending[0].id })
+
+        await first.activate()
+        await second.pull()
+        let expected = syncHTTPSemanticSnapshot(moved: true).tabs.filter { $0.spaceID == "target" }
+        #expect(first.store.loadSnapshot()?.tabs == expected)
+        #expect(second.store.loadSnapshot()?.tabs == expected)
+        #expect(first.store.loadSnapshot()?.spaces?.map(\.id) == ["target"])
+        #expect(second.store.loadSnapshot()?.spaces?.map(\.id) == ["target"])
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        #expect(try second.store.pendingSyncQueue(for: second.owner).isEmpty)
+        let finalState = try await fixture.inspect(account)
+        let survivor = try #require(finalState.tabs.first { $0.id == "moving" })
+        let deletedChild = try #require(finalState.tabs.first { $0.id == "source-sentinel" })
+        #expect(survivor.spaceID == "target" && !survivor.deleted && !survivor.tombstoned)
+        #expect(deletedChild.deleted && deletedChild.tombstoned)
+        #expect(finalState.tabs.filter { !$0.deleted }.map(\.id) == ["moving", "anchor"])
+        #expect(finalState.attempts.contains {
+            $0.mutationID == pending[0].id && $0.protocolVersion == 3 && $0.status == 201
+        })
+        await first.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
     @Test func offlineDeletionSurvivesSQLiteReopenAndRemoteEdits() async throws {
         let fixture = try SyncHTTPFixture.load()
         let account = try fixture.account("offline-delete")
@@ -458,7 +688,9 @@ private struct SyncHTTPFixture: Decodable {
             accessToken: device.accessToken, userID: device.userID, userEmail: nil,
             deviceID: device.deviceID, serverURL: fixture.baseURL
         ))
-        try store.bindSyncOwner(BrowserSyncOwner(baseURL: fixture.baseURL, userID: device.userID))
+        let owner = BrowserSyncOwner(baseURL: fixture.baseURL, userID: device.userID)
+        try store.bindSyncOwner(owner)
+        self.owner = owner
         self.store = store
         self.urlSession = urlSession
         self.auth = auth
@@ -472,6 +704,7 @@ private struct SyncHTTPFixture: Decodable {
 
     let store: BrowserSQLiteSessionStore
     let service: BrowserSyncService
+    let owner: BrowserSyncOwner
 
     static func directory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -496,9 +729,18 @@ private struct SyncHTTPFixture: Decodable {
         await service.waitForPendingOperations()
     }
 
-    func disconnect() async {
+    func sendSavedChanges() async throws {
+        try service.schedulePush(snapshot: #require(store.loadSnapshot()))
+        await service.waitForPendingOperations()
+    }
+
+    func suspend() async {
         service.accountSessionDidChange(nil)
         await service.waitForPendingOperations()
+    }
+
+    func disconnect() async {
+        await suspend()
         urlSession.invalidateAndCancel()
     }
 
@@ -551,4 +793,26 @@ private func syncHTTPSnapshot(
 
 private func syncHTTPTab(copying tab: BrowserTabSessionSnapshotTab, title: String) -> BrowserTabSessionSnapshotTab {
     BrowserTabSessionSnapshotTab(id: tab.id, urlString: tab.urlString, userTitleOverride: title, spaceID: tab.spaceID)
+}
+
+private func syncHTTPSemanticSnapshot(
+    title: String? = nil,
+    moved: Bool = false,
+    deleted: Bool = false
+) -> BrowserTabSessionSnapshot {
+    let moving = BrowserTabSessionSnapshotTab(
+        id: "moving", urlString: "https://moving.example", userTitleOverride: title,
+        spaceID: moved ? "target" : "source"
+    )
+    let sentinel = BrowserTabSessionSnapshotTab(
+        id: "source-sentinel", urlString: "https://source.example", spaceID: "source"
+    )
+    let anchor = BrowserTabSessionSnapshotTab(id: "anchor", urlString: "https://anchor.example", spaceID: "target")
+    return BrowserTabSessionSnapshot(
+        spaces: [
+            BrowserSpaceSessionSnapshot(id: "source", title: "Source", systemImageName: "globe"),
+            BrowserSpaceSessionSnapshot(id: "target", title: "Target", systemImageName: "star"),
+        ],
+        tabs: deleted ? [sentinel, anchor] : (moved ? [sentinel, moving, anchor] : [moving, sentinel, anchor])
+    )
 }

@@ -43,6 +43,13 @@ const modes = new Map<string, Mode>();
 const held = new Map<string, HeldResponse>();
 const attempts: Attempt[] = [];
 const completed = new Set<string>();
+const legacyScenarios = new Set(["offline-delete", "lost-ack", "edit-during-ack", "global-favorite"]);
+const legacyAuthorizations = new Set<string>();
+const scenarios = [
+  ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
+  "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
+  "coordinator-space-delete-move"
+];
 
 async function body(message: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -72,7 +79,12 @@ const proxy = createServer((incoming, outgoing) => {
       ? JSON.parse((compressed ? gunzipSync(bytes) : bytes).toString()) as {
         deviceID: string; mutationID: string; protocolVersion?: number; changes?: unknown[]; operations?: unknown[];
       } : undefined;
+    const legacyPull = new URL(incoming.url ?? "/", upstream).pathname === "/v1/sync/pull"
+      && legacyAuthorizations.has(incoming.headers.authorization ?? "");
     const headers = { ...incoming.headers, host: new URL(upstream).host };
+    // Only the capability shim needs plaintext; other accounts retain real
+    // production response compression negotiated by URLSession.
+    if (legacyPull) headers["accept-encoding"] = "identity";
     const forwarded = request(new URL(incoming.url ?? "/", upstream), {
       method: incoming.method, headers, timeout: 15_000
     });
@@ -80,8 +92,18 @@ const proxy = createServer((incoming, outgoing) => {
     forwarded.on("error", (error) => outgoing.destroy(error));
     forwarded.end(bytes);
     const [received] = await once(forwarded, "response") as [IncomingMessage];
-    const data = await body(received);
+    let data = await body(received);
+    const responseHeaders = { ...received.headers };
     const status = received.statusCode ?? 502;
+    if (legacyPull && status >= 200 && status < 300) {
+      // Keep the original v2 durability cases exercising an older server's
+      // capability response. All writes still reach the unchanged production API.
+      const result = JSON.parse(data.toString()) as { supportedPushVersions?: number[] };
+      delete result.supportedPushVersions;
+      data = Buffer.from(JSON.stringify(result));
+      delete responseHeaders["transfer-encoding"];
+      responseHeaders["content-length"] = String(data.length);
+    }
     if (push) {
       attempts.push({
         deviceID: push.deviceID, mutationID: push.mutationID,
@@ -99,9 +121,9 @@ const proxy = createServer((incoming, outgoing) => {
     } else if (push && status >= 200 && status < 300 && mode === "hold") {
       modes.delete(push.deviceID);
       assert.ok(!held.has(push.deviceID), "Only one ACK may be held per device");
-      held.set(push.deviceID, { response: outgoing, status, headers: received.headers, data });
+      held.set(push.deviceID, { response: outgoing, status, headers: responseHeaders, data });
     } else {
-      outgoing.writeHead(status, received.headers);
+      outgoing.writeHead(status, responseHeaders);
       outgoing.end(data);
     }
   })().catch((error: unknown) => {
@@ -116,10 +138,11 @@ const baseURL = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
 type Device = { deviceID: string; userID: string; accessToken: string };
 type Account = { scenario: string; userID: string; devices: Device[] };
 const accounts: Account[] = [];
-for (const scenario of ["offline-delete", "lost-ack", "edit-during-ack", "global-favorite", "semantic-move-first", "semantic-patch-first"]) {
+for (const scenario of scenarios) {
   const result = await pool.query("INSERT INTO app_users (apple_subject) VALUES ($1) RETURNING id", [`swift-${randomUUID()}`]);
   const userID = result.rows[0].id as string;
   const accessToken = await auth.issueAccessToken(userID);
+  if (legacyScenarios.has(scenario)) legacyAuthorizations.add(`Bearer ${accessToken}`);
   const devices: Device[] = [];
   for (const name of ["Swift A", "Swift B"]) {
     const response = await fetch(new URL("/v1/devices", baseURL), {
@@ -177,6 +200,13 @@ const control = createServer((incoming, outgoing) => {
       result = await inspect(command.userID);
     } else if (command.action === "complete") {
       assert.ok(command.scenario && accounts.some((account) => account.scenario === command.scenario));
+      const account = accounts.find((account) => account.scenario === command.scenario)!;
+      const deviceIDs = new Set(account.devices.map((device) => device.deviceID));
+      const scenarioAttempts = attempts.filter((attempt) => deviceIDs.has(attempt.deviceID));
+      assert.ok(scenarioAttempts.length > 0, "Completed scenario must send production sync mutations");
+      const expectedVersion = legacyScenarios.has(account.scenario) ? 2 : 3;
+      assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === expectedVersion),
+        `Scenario ${account.scenario} must exercise protocol v${expectedVersion}`);
       completed.add(command.scenario);
       await writeFile(reportPath, JSON.stringify({ completed: [...completed].sort(), attempts: attempts.length }), { mode: 0o600 });
     } else {
