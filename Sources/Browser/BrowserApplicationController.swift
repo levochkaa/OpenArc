@@ -1662,7 +1662,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates)
         )
         let historyStore = BrowserChromiumHistoryStore(profileDirectoryCandidates: profileDirectoryCandidates)
-        let authSessionStore = BrowserAuthSessionStore(profileID: profile.isDefault ? nil : profile.id)
+        let authSessionStore = BrowserAuthSessionStore(namespace: profile.isDefault
+            ? .defaultProfile
+            : .profile(profile.id))
         let syncClient = BrowserSyncConfiguration.current().map { configuration in
             BrowserRemoteSyncClient(configuration: configuration)
         }
@@ -1671,7 +1673,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 BrowserSyncService(
                     localStore: sqliteSessionStore,
                     remoteClient: syncClient,
-                    authSessionStore: authSessionStore
+                    authSessionStore: authSessionStore,
+                    errorReporter: { error, phase in
+                        BrowserTelemetry.captureError(error, event: phase == .push ? .syncPushFailed : .syncPullFailed)
+                    }
                 )
             } else {
                 nil
@@ -1679,7 +1684,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let accountStore = BrowserAccountStore(
             syncClient: syncClient,
             authSessionStore: authSessionStore,
-            syncCoordinator: syncCoordinator
+            syncCoordinator: syncCoordinator,
+            appleSignInService: BrowserAppleSignInService(),
+            deviceIdentity: .init(name: Host.current().localizedName ?? "Mac", platform: "macOS")
         )
         let chromeModel = BrowserChromeModel(
             tabDriver: BrowserTabControllerDriver(profileCachePath: profileDirectoryURL.path),

@@ -1,6 +1,28 @@
 import Foundation
 import Testing
 
+@Test @MainActor func syncServiceReportsFailurePhaseThroughInjectedReporter() async throws {
+    var phases = [BrowserSyncFailurePhase]()
+    var errorCodes = [Int]()
+    let h = try await SyncServiceHarness(errorReporter: { error, phase in
+        phases.append(phase)
+        errorCodes.append((error as NSError).code)
+    })
+    defer { h.cleanup() }
+    h.remote.pullError = URLError(.notConnectedToInternet)
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(phases == [.pull])
+    #expect(errorCodes == [URLError.notConnectedToInternet.rawValue])
+    h.remote.pullError = nil
+    h.remote.failPushesAfterCommit = 1
+    h.persist(syncServiceSnapshot(tabID: "retained"))
+    await h.service.waitForPendingOperations()
+    #expect(phases == [.pull, .push])
+    #expect(errorCodes == [URLError.notConnectedToInternet.rawValue, URLError.networkConnectionLost.rawValue])
+    #expect(try h.store.pendingSyncQueue(for: h.owner).count == 1)
+}
+
 @Test @MainActor func syncServiceDebounceOnlyCoalescesWakesNotDurableEdits() async throws {
     let h = try await SyncServiceHarness()
     defer { h.cleanup() }
@@ -543,7 +565,8 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
 @MainActor private final class SyncServiceHarness {
     // MARK: Lifecycle
 
-    init(bindOwner: Bool = true) async throws {
+    init(bindOwner: Bool = true, errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in }) async throws {
+        self.errorReporter = errorReporter
         self.directoryURL = FileManager.default
             .temporaryDirectory
             .appendingPathComponent("SyncService-\(UUID().uuidString)")
@@ -569,6 +592,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
     let auth = SyncServiceAuthStore()
     let applier = SyncServiceSnapshotApplier()
     var service: BrowserSyncService!
+    let errorReporter: BrowserSyncErrorReporter
 
     var databaseURL: URL { directoryURL.appendingPathComponent("Browser.sqlite") }
 
@@ -579,7 +603,8 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
             authSessionStore: auth,
             pushDebounce: .zero,
             pollInterval: nil,
-            retryDelay: retryDelay
+            retryDelay: retryDelay,
+            errorReporter: errorReporter
         )
     }
 

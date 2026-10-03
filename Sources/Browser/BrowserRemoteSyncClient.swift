@@ -30,8 +30,8 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
 
     func authenticateWithApple(
         identityToken: String,
-        deviceName: String = Host.current().localizedName ?? "Mac",
-        devicePlatform: String = "macOS"
+        deviceName: String,
+        devicePlatform: String
     ) async throws -> BrowserAuthSession {
         let request = BrowserAppleAuthRequest(
             identityToken: identityToken,
@@ -273,18 +273,10 @@ final class BrowserAuthSessionStore {
 
     init(
         service: String = Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
-        profileID: String? = nil
+        namespace: BrowserAuthSessionNamespace = .defaultProfile
     ) {
         self.service = "\(service).sync"
-        self.sessionAccount =
-            if
-                let profileID,
-                profileID != BrowserProfile.defaultDirectoryName
-            {
-                "\(Key.session).\(profileID)"
-            } else {
-                Key.session
-            }
+        self.sessionAccount = namespace.keychainAccount
     }
 
     // MARK: Internal
@@ -313,10 +305,6 @@ final class BrowserAuthSessionStore {
     }
 
     // MARK: Private
-
-    private enum Key {
-        static let session = "auth-session"
-    }
 
     private let service: String
     private let sessionAccount: String
@@ -482,7 +470,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         authSessionStore: any BrowserSyncAuthSessionReading,
         pushDebounce: Duration = .milliseconds(750),
         pollInterval: Duration? = .seconds(15),
-        retryDelay: Duration? = .seconds(2)
+        retryDelay: Duration? = .seconds(2),
+        errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in }
     ) {
         self.localStore = localStore
         self.remoteClient = remoteClient
@@ -490,6 +479,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         self.pushDebounce = pushDebounce
         self.pollInterval = pollInterval
         self.retryDelay = retryDelay
+        self.errorReporter = errorReporter
     }
 
     deinit {
@@ -618,6 +608,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     private var activeSession: BrowserAuthSession?
     private var isLocalPersistenceBlocked = false
     private var generation: UInt64 = 0
+    private let errorReporter: BrowserSyncErrorReporter
     private var supportedPushVersions = Set<Int>()
     private var pendingPushTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
@@ -791,7 +782,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             // immediate loop when local writes queued another wake during I/O.
             pendingPushContext = nil
             Self.logger.error("Sync push failed: \(error.localizedDescription, privacy: .public)")
-            BrowserTelemetry.captureError(error, event: .syncPushFailed)
+            errorReporter(error, .push)
             scheduleRetry(context: context)
         }
     }
@@ -883,7 +874,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             guard isCurrent(context), !Task.isCancelled else { return }
             pendingPushContext = nil
             Self.logger.error("Sync pull failed: \(error.localizedDescription, privacy: .public)")
-            BrowserTelemetry.captureError(error, event: .syncPullFailed)
+            errorReporter(error, .pull)
             scheduleRetry(context: context)
         }
     }
@@ -903,12 +894,13 @@ enum BrowserSyncSnapshotMerger {
         guard !deletedSpaceIDs.isEmpty || !deletedTabIDs.isEmpty else { return snapshot }
 
         let tabs = snapshot.tabs.filter { tab in
-            (tab.placement == .app || !deletedSpaceIDs.contains(tab.spaceID ?? BrowserChromeModel.defaultSpaceID))
+            (tab.placement == .app || !deletedSpaceIDs.contains(tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID))
                 && !(tab.id.map(deletedTabIDs.contains) ?? false)
         }
         let spaces = snapshot.spaces?.filter { !deletedSpaceIDs.contains($0.id) }.map { space in
-            let previousTabs = snapshot.tabs.filter { ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == space.id }
-            let currentTabs = tabs.filter { ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == space.id }
+            let previousTabs = snapshot.tabs
+                .filter { ($0.spaceID ?? BrowserSessionDefaults.defaultSpaceID) == space.id }
+            let currentTabs = tabs.filter { ($0.spaceID ?? BrowserSessionDefaults.defaultSpaceID) == space.id }
             guard currentTabs != previousTabs else { return space }
             let selectedTabID = space.selectedTabIndex.flatMap { index in
                 previousTabs.indices.contains(index) ? previousTabs[index].id : nil
@@ -939,7 +931,7 @@ enum BrowserSyncSnapshotMerger {
 
         let currentTabs = snapshot?.tabs ?? []
         let tabsBySpaceID = Dictionary(grouping: currentTabs) { tab in
-            tab.spaceID ?? BrowserChromeModel.defaultSpaceID
+            tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID
         }
 
         for (index, space) in (snapshot?.spaces ?? []).enumerated() {
@@ -964,7 +956,7 @@ enum BrowserSyncSnapshotMerger {
 
             tabs[id] = TabRecord(
                 id: id,
-                spaceID: tab.spaceID ?? BrowserChromeModel.defaultSpaceID,
+                spaceID: tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID,
                 placement: tab.placement,
                 pinnedFolderID: tab.pinnedFolderID,
                 rank: Double(index),
@@ -986,7 +978,7 @@ enum BrowserSyncSnapshotMerger {
                     id: event.entityID,
                     title: sanitizedRequiredString(data.title) ?? existing?.title ?? "Space",
                     systemImageName: sanitizedRequiredString(data.systemImageName) ?? existing?
-                        .systemImageName ?? BrowserChromeModel.defaultSpaceIconName,
+                        .systemImageName ?? BrowserSessionDefaults.defaultSpaceIconName,
                     rank: data.rank ?? existing?.rank ?? Double(spaces.count),
                     isPinnedSectionCollapsed: data.isPinnedSectionCollapsed ?? existing?
                         .isPinnedSectionCollapsed ?? false,
@@ -1007,7 +999,7 @@ enum BrowserSyncSnapshotMerger {
 
                 tabs[event.entityID] = TabRecord(
                     id: event.entityID,
-                    spaceID: sanitizedRequiredString(data.spaceID) ?? existing?.spaceID ?? BrowserChromeModel
+                    spaceID: sanitizedRequiredString(data.spaceID) ?? existing?.spaceID ?? BrowserSessionDefaults
                         .defaultSpaceID,
                     placement: placement,
                     pinnedFolderID: existing?.pinnedFolderID,
@@ -1024,10 +1016,10 @@ enum BrowserSyncSnapshotMerger {
         }
 
         if spaces.isEmpty, tabs.values.contains(where: { $0.placement != .app }) {
-            spaces[BrowserChromeModel.defaultSpaceID] = SpaceRecord(
-                id: BrowserChromeModel.defaultSpaceID,
+            spaces[BrowserSessionDefaults.defaultSpaceID] = SpaceRecord(
+                id: BrowserSessionDefaults.defaultSpaceID,
                 title: "Space",
-                systemImageName: BrowserChromeModel.defaultSpaceIconName,
+                systemImageName: BrowserSessionDefaults.defaultSpaceIconName,
                 rank: 0,
                 isPinnedSectionCollapsed: false,
                 selectedTabID: nil
@@ -1052,7 +1044,7 @@ enum BrowserSyncSnapshotMerger {
                 placement: tab.placement,
                 spaceID: tab.placement == .app || knownSpaceIDs.contains(tab.spaceID)
                     ? tab.spaceID
-                    : BrowserChromeModel.defaultSpaceID,
+                    : BrowserSessionDefaults.defaultSpaceID,
                 pinnedFolderID: tab.pinnedFolderID,
                 lastActivityTimestamp: tab.lastActivityTimestamp
             )
@@ -1062,7 +1054,7 @@ enum BrowserSyncSnapshotMerger {
                 return nil
             }
 
-            return (pinnedFolderID, tab.spaceID ?? BrowserChromeModel.defaultSpaceID)
+            return (pinnedFolderID, tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID)
         }) { item in
             item.0
         }
@@ -1072,7 +1064,7 @@ enum BrowserSyncSnapshotMerger {
         }
 
         let tabsByResolvedSpaceID = Dictionary(grouping: tabSnapshots) { tab in
-            tab.spaceID ?? BrowserChromeModel.defaultSpaceID
+            tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID
         }
         let spaceSnapshots = spaces.values
             .sorted {

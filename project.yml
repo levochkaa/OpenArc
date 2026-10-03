@@ -33,6 +33,37 @@ settings:
     THEBROWSER_SPARKLE_FEED_URL: https://updates.thebrowser.app/appcast.xml
     THEBROWSER_SPARKLE_PUBLIC_KEY: K2RmhxJLUxN8YeRS4I7Tz7cYrzkbcZB1axGePxRHflM=
 targetTemplates:
+  BrowserSyncCore:
+    sources:
+      - path: Sources/Browser/BrowserSessionDefaults.swift
+      - path: Sources/Browser/BrowserSyncPlatformConfiguration.swift
+      - path: Sources/Browser/BrowserAccountStore.swift
+      - path: Sources/Browser/BrowserSyncModels.swift
+      - path: Sources/Browser/BrowserSyncSemanticModels.swift
+      - path: Sources/Browser/BrowserSyncFolderModels.swift
+      - path: Sources/Browser/BrowserSyncSemanticProjection.swift
+      - path: Sources/Browser/BrowserSyncFolderProjection.swift
+      - path: Sources/Browser/BrowserSyncOutbox.swift
+      - path: Sources/Browser/BrowserSyncQueuedMutation.swift
+      - path: Sources/Browser/BrowserSyncOwner.swift
+      - path: Sources/Browser/BrowserSyncMoveIntent.swift
+      - path: Sources/Browser/BrowserTabSessionPersistence.swift
+      - path: Sources/Browser/BrowserSessionWrite.swift
+      - path: Sources/Browser/BrowserSessionWriteBuffer.swift
+      - path: Sources/Browser/BrowserSQLiteSessionStore.swift
+      - path: Sources/Browser/BrowserRemoteSyncClient.swift
+      - path: Sources/Browser/OpenAPI
+      - path: Backend/openapi.yaml
+        group: Sources/Browser/OpenAPI
+    dependencies:
+      - package: Gzip
+      - package: GRDB
+      - package: HTTPTypes
+      - package: OpenAPIRuntime
+      - package: OpenAPIURLSession
+    buildToolPlugins:
+      - plugin: OpenAPIGenerator
+        package: SwiftOpenAPIGenerator
   ChromiumTarget:
     settings:
       base:
@@ -76,6 +107,9 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift.git
     exactVersion: 7.10.0
+  HTTPTypes:
+    url: https://github.com/apple/swift-http-types
+    exactVersion: 1.5.1
   Sentry:
     url: https://github.com/getsentry/sentry-cocoa.git
     exactVersion: 9.15.0
@@ -244,6 +278,8 @@ targets:
       - package: OpenAPIURLSession
       - package: ZIPFoundation
   TheBrowseriOS:
+    templates:
+      - BrowserSyncCore
     type: application
     platform: iOS
     productName: TheBrowser
@@ -284,6 +320,8 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         SWIFT_EMIT_LOC_STRINGS: NO
   TheBrowseriOSTests:
+    templates:
+      - BrowserSyncCore
     type: bundle.unit-test
     platform: iOS
     sources:

@@ -943,7 +943,7 @@ enum BrowserSyncFolderProjection {
         for placement in [BrowserTabPlacement.spacePinned, .temporary] {
             for tab in tabs where tab.placement == placement {
                 result[
-                    tab.spaceID ?? BrowserChromeModel.defaultSpaceID,
+                    tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID,
                     default: []
                 ].append(tab.id)
             }

@@ -5,6 +5,25 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserAccountStoreTests {
+    @Test func authenticationUsesTheInjectedPlatformIdentity() async {
+        for identity in [
+            BrowserSyncDeviceIdentity(name: "Personal Mac", platform: "macOS"),
+            BrowserSyncDeviceIdentity(name: "Travel iPad", platform: "iPadOS"),
+        ] {
+            let f = AccountStoreFixture(deviceIdentity: identity)
+            await f.store.signInWithApple()
+            #expect(f.remote.deviceIdentities == [identity])
+        }
+    }
+
+    @Test func explicitKeychainNamespacesKeepDesktopAccountNames() {
+        #expect(BrowserAuthSessionNamespace.defaultProfile.keychainAccount == "auth-session")
+        #expect(BrowserAuthSessionNamespace.profile("Profile 2").keychainAccount == "auth-session.Profile 2")
+        #expect(BrowserAuthSessionNamespace.profile("mobile-main").keychainAccount == "auth-session.mobile-main")
+        #expect(BrowserChromeModel.defaultSpaceID == BrowserSessionDefaults.defaultSpaceID)
+        #expect(BrowserChromeModel.defaultSpaceIconName == BrowserSessionDefaults.defaultSpaceIconName)
+    }
+
     @Test func firstSignInRequiresExplicitAdoptionBeforeEnablingSync() async {
         let f = AccountStoreFixture()
         await f.store.signInWithApple()
@@ -144,7 +163,8 @@ import Testing
             syncClient: remote,
             authSessionStore: AccountTestAuthStorage(),
             syncCoordinator: nil,
-            appleSignInService: identity
+            appleSignInService: identity,
+            deviceIdentity: .init(name: "Test Mac", platform: "macOS")
         )
 
         #expect(!store.isConfigured)
@@ -184,14 +204,19 @@ import Testing
 @MainActor private final class AccountStoreFixture {
     // MARK: Lifecycle
 
-    init(binding: BrowserSyncBindingState = .needsConsent, cachedSession: BrowserAuthSession? = nil) {
+    init(
+        binding: BrowserSyncBindingState = .needsConsent,
+        cachedSession: BrowserAuthSession? = nil,
+        deviceIdentity: BrowserSyncDeviceIdentity = .init(name: "Test Mac", platform: "macOS")
+    ) {
         auth.session = cachedSession
         sync.state = binding
         self.store = BrowserAccountStore(
             syncClient: remote,
             authSessionStore: auth,
             syncCoordinator: sync,
-            appleSignInService: identity
+            appleSignInService: identity,
+            deviceIdentity: deviceIdentity
         )
     }
 
@@ -225,15 +250,17 @@ import Testing
     let baseURL = URL(string: "https://sync.example")!
     var response = accountSession()
     var tokens = [String]()
+    var deviceIdentities = [BrowserSyncDeviceIdentity]()
     let started = AccountTestGate()
     var release: AccountTestGate?
 
     func authenticateWithApple(
         identityToken: String,
-        deviceName _: String,
-        devicePlatform _: String
+        deviceName: String,
+        devicePlatform: String
     ) async -> BrowserAuthSession {
         tokens.append(identityToken)
+        deviceIdentities.append(.init(name: deviceName, platform: devicePlatform))
         started.open()
         await release?.wait()
         return response

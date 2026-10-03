@@ -201,7 +201,7 @@ enum BrowserSyncOutboxProjection {
                 .filter { !deletedFolderIDs.contains($0.id) },
             tabs: snapshot.tabs.filter { tab in
                 (tab.placement == .app
-                    || !deleted.contains(key(type: .space, id: tab.spaceID ?? BrowserChromeModel.defaultSpaceID)))
+                    || !deleted.contains(key(type: .space, id: tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID)))
                     && tab.id.map { !deleted.contains(key(type: .tab, id: $0)) } != false
                     &&
                     (tab.placement != .spacePinned || tab.pinnedFolderID
@@ -404,16 +404,18 @@ enum BrowserSyncOutboxProjection {
         let dateFormatter = ISO8601DateFormatter()
         var spaces = snapshot.spaces ?? []
         // Ordinary legacy tabs need an implicit parent; global app favorites do not.
-        if !spaces.contains(where: { $0.id == BrowserChromeModel.defaultSpaceID }),
+        if !spaces.contains(where: { $0.id == BrowserSessionDefaults.defaultSpaceID }),
            snapshot.tabs
                .contains(where: {
-                   $0.placement != .app && ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == BrowserChromeModel
+                   $0
+                       .placement != .app && ($0.spaceID ?? BrowserSessionDefaults.defaultSpaceID) ==
+                       BrowserSessionDefaults
                        .defaultSpaceID
                })
         {
             spaces.append(BrowserSpaceSessionSnapshot(
-                id: BrowserChromeModel.defaultSpaceID, title: BrowserStrings.defaultSpaceTitle(index: 1),
-                systemImageName: BrowserChromeModel.defaultSpaceIconName
+                id: BrowserSessionDefaults.defaultSpaceID, title: BrowserStrings.defaultSpaceTitle(index: 1),
+                systemImageName: BrowserSessionDefaults.defaultSpaceIconName
             ))
         }
         for (index, space) in spaces.enumerated() {
@@ -433,7 +435,7 @@ enum BrowserSyncOutboxProjection {
             result.append(BrowserSyncChange(
                 entityType: .tab, entityID: id, op: .upsert, spaceData: nil,
                 tabData: BrowserSyncTabPayload(
-                    spaceID: tab.spaceID ?? BrowserChromeModel.defaultSpaceID, placement: tab.placement,
+                    spaceID: tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID, placement: tab.placement,
                     rank: Double(index), urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                     title: nil, userTitleOverride: tab.userTitleOverride, faviconURLString: nil,
                     lastActivityAt: tab.lastActivityTimestamp
@@ -468,7 +470,7 @@ enum BrowserSyncOutboxProjection {
         // Favorites are global and do not use a Space's selectedTabIndex.
         for placement in [BrowserTabPlacement.spacePinned, .temporary] {
             for tab in tabs where tab.placement == placement {
-                result[tab.spaceID ?? BrowserChromeModel.defaultSpaceID, default: []].append(tab.id)
+                result[tab.spaceID ?? BrowserSessionDefaults.defaultSpaceID, default: []].append(tab.id)
             }
         }
         return result

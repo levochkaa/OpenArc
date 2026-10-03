@@ -167,8 +167,8 @@ enum BrowserWindowMode: Equatable {
     nonisolated static let defaultNewTabURLString = "https://www.google.com"
     nonisolated static let automaticArchivalCheckInterval: TimeInterval = 60 * 60
     nonisolated static let appTabCapacity = 8
-    nonisolated static let defaultSpaceID = "default-space"
-    nonisolated static let defaultSpaceIconName = "square.grid.2x2"
+    nonisolated static let defaultSpaceID = BrowserSessionDefaults.defaultSpaceID
+    nonisolated static let defaultSpaceIconName = BrowserSessionDefaults.defaultSpaceIconName
     nonisolated static let tabSwitcherMaximumEntries = 5
     nonisolated static let tabSwitcherPresentationDelayNanoseconds: UInt64 = 180_000_000
     nonisolated static let zoomPercentages = [
