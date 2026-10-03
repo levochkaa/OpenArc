@@ -52,9 +52,9 @@ import Testing
 
     // Drop the model without finish/closure saves, as a process interruption
     // would. No subsequent remote pull or event replay supplies the missing tabs.
-    weak var interruptedModel = model
+    let interruptedModel = { [weak model] in model }
     model = nil
-    #expect(interruptedModel == nil)
+    #expect(interruptedModel() == nil)
     let reopened = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
     #expect(reopened.loadSnapshot() == projected)
     #expect(try reopened.syncCursor(for: owner) == committedCursor)
