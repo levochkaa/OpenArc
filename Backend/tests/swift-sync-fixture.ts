@@ -73,6 +73,7 @@ const desktopAutomaticScenario = "desktop-auto-archive";
 const desktopConfirmedCloseScenario = "desktop-confirmed-close";
 const desktopLocalAutomaticScenario = "desktop-local-auto-archive";
 const desktopPersistentCloseScenario = "desktop-persistent-close";
+const desktopPersistentRemovalScenario = "desktop-persistent-removal";
 const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
   "folder-device-rotation", "folder-pending-delete", "folder-activity-replay"
@@ -88,7 +89,8 @@ const desktopScenarios = [
   "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay",
   "persistence-retry", "pending-parent-delete", "pending-navigation", ...folderScenarios,
   expiryScenario, expiryQueueScenario, expiryLimitScenario, desktopArchiveScenario, desktopAutomaticScenario,
-  desktopConfirmedCloseScenario, desktopLocalAutomaticScenario, desktopPersistentCloseScenario
+  desktopConfirmedCloseScenario, desktopLocalAutomaticScenario, desktopPersistentCloseScenario,
+  desktopPersistentRemovalScenario
 ];
 const scenarios = suite === "mobile" ? [...mobileScenarios] : desktopScenarios;
 
@@ -176,7 +178,8 @@ const proxy = createServer((incoming, outgoing) => {
       observedPulls.push(observation);
     }
     if (push) {
-      const result = push.protocolVersion === 5 && status >= 200 && status < 300
+      // Include v4 tombstone replays in the recorded outcome evidence.
+      const result = (push.protocolVersion === 4 || push.protocolVersion === 5) && status >= 200 && status < 300
         ? JSON.parse((responseHeaders["content-encoding"] === "gzip" ? gunzipSync(data) : data).toString()) as {
           outcomes: { status: string; reason?: string }[]; events: { data?: { autoArchive?: unknown } }[];
         } : undefined;
@@ -246,7 +249,7 @@ for (const scenario of scenarios) {
     && scenario !== expiryScenario && scenario !== expiryQueueScenario && scenario !== expiryLimitScenario
     && scenario !== desktopArchiveScenario && scenario !== desktopAutomaticScenario
     && scenario !== desktopConfirmedCloseScenario && scenario !== desktopLocalAutomaticScenario
-    && scenario !== desktopPersistentCloseScenario) {
+    && scenario !== desktopPersistentCloseScenario && scenario !== desktopPersistentRemovalScenario) {
     semanticAuthorizations.add(`Bearer ${accessToken}`);
   }
   if (scenario === adoptionScenario) capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3]);
@@ -422,6 +425,26 @@ const control = createServer((incoming, outgoing) => {
         assert.deepEqual(state.tabs.map((tab) => tab.id).sort(), ["active", "pinned"],
           "The locally archived identity must never be adopted or remotely tombstoned");
         assert.ok(state.tabs.every((tab) => !tab.deleted && !tab.tombstoned));
+      } else if (account.scenario === desktopPersistentRemovalScenario) {
+        assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === 4));
+        const writes = scenarioAttempts.filter((attempt) => attempt.status === 201);
+        assert.ok(new Set(writes.map((attempt) => attempt.mutationID)).size >= 6,
+          "Persistent removal requires seed, Close, Undo, Redo, second Undo and stale replay");
+        assert.ok(writes.some((receipt) => writes.filter((attempt) => attempt.mutationID === receipt.mutationID
+          && attempt.digest === receipt.digest).length >= 2),
+        "Persistent deletion must replay its exact immutable mutation after a lost ACK");
+        assert.ok(writes.some((attempt) => attempt.outcomeStatuses?.length === 2
+          && attempt.outcomeStatuses.every((status) => status === "deleted")),
+        "Stale creations for both retired identities must receive terminal tombstones");
+        for (const device of account.devices) {
+          assert.ok(observedPulls.filter((pull) => pull.deviceID === device.deviceID
+            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201).length >= 2,
+          "Both clients must repeat recovery-capable bootstrap from fresh SQLite profiles");
+        }
+        const state = await inspect(account.userID);
+        assert.equal(state.tabs.filter((tab) => tab.deleted && tab.tombstoned).length, 2);
+        assert.equal(state.tabs.filter((tab) => !tab.deleted && !tab.tombstoned).length, 4);
+        assert.ok(state.tabs.some((tab) => tab.id === "pinned" && tab.deleted && tab.tombstoned));
       } else if (account.scenario === desktopPersistentCloseScenario) {
         assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === 4),
           "Persistent unload may only submit ordinary metadata changes");

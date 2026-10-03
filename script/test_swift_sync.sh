@@ -91,12 +91,12 @@ const report = JSON.parse(readFileSync(process.argv[2], "utf8"));
 assert.deepEqual(report.completed, [
   "coordinator-delete-pending", "coordinator-lost-ack", "coordinator-move-first", "coordinator-patch-first",
   "coordinator-space-delete-move",
-  "desktop-archive-restore", "desktop-auto-archive", "desktop-confirmed-close", "desktop-local-auto-archive", "desktop-persistent-close",
+  "desktop-archive-restore", "desktop-auto-archive", "desktop-confirmed-close", "desktop-local-auto-archive", "desktop-persistent-close", "desktop-persistent-removal",
   "edit-during-ack", "expiry-queue", "expiry-recovery", "expiry-response-limit", "explicit-group-replay", "explicit-local-first", "explicit-remote-first",
   "folder-activity-replay", "folder-adoption-paged", "folder-device-rotation", "folder-lost-ack", "folder-pending-delete", "folder-race", "folder-roundtrip",
   "global-favorite", "lost-ack", "offline-delete", "pending-navigation", "pending-parent-delete", "persistence-retry",
   "semantic-move-first", "semantic-patch-first"
 ]);
 assert.ok(report.attempts > 0);
-console.log("Swift production HTTP sync: all 32 scenarios completed");
+console.log("Swift production HTTP sync: all 33 scenarios completed");
 JS

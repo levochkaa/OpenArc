@@ -4,7 +4,7 @@ Manual Close for a Today tab waits for the engine outcome. `BrowserChromeModel` 
 
 The CEF bridge handles a manual close's `beforeunload` dialog with a native confirmation. Return and sheet-scoped Escape keep the tab. Missing presentation context or an existing sheet cancels safely. Browser identity and request nonce reject stale replies. Accepting the dialog is not completion: only `OnBeforeClose` reports `.closed`. `DoClose` tears down the embedded view and is not the model's deletion boundary.
 
-Cancellation clears the request without deleting the tab or registering a close action. Independent URL, metadata, readiness and selection changes remain current. Navigation accepted before the request resumes after cancellation. Pin/Favorite promotion during a pending manual Close retains the persistent identity and makes its closed engine dormant. Remote or structural removal supersedes local confirmation without a second local action.
+Cancellation clears the request without deleting the tab or registering a close action. Independent URL, metadata, readiness and selection changes remain current. Navigation accepted before the request resumes after cancellation. Pin/Favorite promotion during a pending Today Close retains the persistent identity and makes its closed engine dormant. Remote or structural removal supersedes local confirmation without a second local action.
 
 ## Atomic recovery and persistence
 
@@ -38,7 +38,17 @@ If the tab became Today while confirmation was pending, unloading must not turn 
 
 Reopen publishes the new runtime and selection synchronously. Its later allocation callback can update the title for the matching current URL only while that title still equals the value captured at reopen. Newer title changes remain intact. It cannot restore an old placement, override a newer selection, clear a subsequent dormant state or persist a stale snapshot. Retired allocation IDs remain suppressed, and obsolete pending-reopen maps are cleared, including another unload before allocation or an unpin followed by replacement. Completing a pending reopen notifies derived Archive controls even when newer metadata makes its allocation callback obsolete. A failed replacement uses normal creation Retry.
 
-The sidebar's existing distinction is retained: a selected pin unloads/resets; removing an unselected pin follows the separate logical-removal path. Explicit force/already-closed paths bypass confirmation. This slice does not extend the confirmation policy to every persistent-tab removal or to window/quit.
+The sidebar's existing distinction is retained: a selected pin unloads/resets; removing an unselected pin follows the logical-removal path below. Explicit force/already-closed paths bypass confirmation. Window/quit and structural removal have separate policies.
+
+## Persistent logical removal
+
+Manual `closeTab` on a Favorite or pinned identity captures a logical-removal intent before requesting engine confirmation. The unselected pinned sidebar row uses this path. Admission/refusal/Cancel do not remove the row, write a session or register Undo. A known dormant tab can be removed directly because no native engine remains to confirm.
+
+Once confirmed, removal follows that same stable identity even if its Space, folder or placement changed while the request was pending. The current metadata and selection become the Undo snapshot. The session deletion and ordinary sync mutation use the existing ordered persistence path; no Archive entry is created, including after a late move to Today. Duplicate callbacks cannot repeat the action. Remote/structural removal and shutdown supersede the pending local action through their existing policies.
+
+When a selected tab is logically removed, fallback selection skips dormant pinned engines. It selects a live sidebar neighbor or clears selection if none remains. The shared confirmed-close finalizer applies this rule to Today Archive as well; choosing an awaiting manual-close tab is still blocked by the existing interaction guard.
+
+History explicitly distinguishes creation, Archive and logical removal. Undo logical removal commits a fresh identity before publishing a runtime, retaining applicable placement, home URL, folder, rank and selection. Redo keeps the removal intent across later placement changes and waits for confirmation again; Cancel keeps its branch. Both directions use the existing FIFO and commit hooks, and a failed Undo retains its chosen fresh ID across Retry. Neither direction inserts or consumes Archive. A nil Archive ID cannot identify this history kind: ordinary Archive with a legacy store also has no durable entry.
 
 ## Local automatic archival
 
@@ -52,7 +62,7 @@ Confirmed eligible closure uses the same atomic Archive/session transaction and 
 
 ## Scope and evidence
 
-Persistent-tab logical removal, structural deletion, remote force-close and window/quit approval retain separate policies. This does not implement beforeunload approval for every close source. Synchronized automatic expiry continues to use the existing conditional server protocol and waits for outstanding close requests. Legacy non-Archive stores can retain confirmed local deletion behavior without durable recovery; production normal profiles use SQLite.
+Structural deletion, remote force-close and window/quit approval retain separate policies. This does not implement beforeunload approval for every close source. Synchronized automatic expiry continues to use the existing conditional server protocol and waits for outstanding close requests. Legacy non-Archive stores can retain confirmed local deletion behavior without durable recovery; production normal profiles use SQLite.
 
 Model tests use real SQLite with controlled engine outcomes. They cover atomic Archive/deletion, rollback/FIFO Retry, fresh-ID consumption, multiple Undo/Redo, cancellation, new actions during pending transitions, original creation references, missing entries, dormant engines, closure Retry, cross-Space folders and live-URL projection with pending creation. Store tests cover exact Archive replay after later edits. The HTTP scenario uses two production sync clients and PostgreSQL for SQL failure, immutable lost-ACK replay, restoration, Redo, reopen and tombstone dominance.
 

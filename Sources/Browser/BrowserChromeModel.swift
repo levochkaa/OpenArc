@@ -2167,10 +2167,14 @@ enum BrowserWindowMode: Equatable {
             }
         }
         guard !closingTabIDs.contains(id) else { return false }
-        if reason == .manual, !forceClose, !isShuttingDown, tabs[closingIndex].placement == .temporary {
+        if reason == .manual, !forceClose, !isShuttingDown {
+            // Capture the user's action once. Removing a persistent row remains
+            // a logical removal even if its placement changes during approval.
+            let archives = tabs[closingIndex].placement == .temporary
             return requestConfirmedTabClose(
                 id: id, registersUndo: registersUndo, actionName: undoActionName,
-                createsArchive: true, preservesPersistentTab: true
+                createsArchive: archives, preservesPersistentTab: archives,
+                historyKind: archives ? .archive : .logicalRemoval
             )
         }
         return finishTabClose(
@@ -2239,6 +2243,7 @@ enum BrowserWindowMode: Equatable {
         let createsArchive: Bool
         let preservesPersistentTab: Bool
         let unloadsPersistentTab: Bool
+        let historyKind: TabHistoryKind
         let localAutomaticCandidate: LocalAutomaticArchiveCandidate?
         var invalidatedAutomaticClose = false
         let completion: ((HistoryCloseResult) -> Void)?
@@ -2250,6 +2255,12 @@ enum BrowserWindowMode: Equatable {
         case removed
     }
 
+    private enum TabHistoryKind: Equatable {
+        case creation
+        case archive
+        case logicalRemoval
+    }
+
     private struct PendingSessionCompletion {
         let write: BrowserSessionWrite
         let completion: () -> Void
@@ -2259,7 +2270,7 @@ enum BrowserWindowMode: Equatable {
         let archiveID: String?
         let syncID: String
         let snapshot: TabUndoSnapshot
-        let isCreation: Bool
+        let kind: TabHistoryKind
         let actionName: String
         let completion: (BrowserTabUndoManager.Outcome) -> Void
     }
@@ -2469,13 +2480,14 @@ enum BrowserWindowMode: Equatable {
     @discardableResult private func requestConfirmedTabClose(
         id: String, registersUndo: Bool, actionName: String, createsArchive: Bool,
         preservesPersistentTab: Bool, unloadsPersistentTab: Bool = false,
+        historyKind: TabHistoryKind = .archive,
         localAutomaticCandidate: LocalAutomaticArchiveCandidate? = nil,
         completion: ((HistoryCloseResult) -> Void)? = nil
     ) -> Bool {
         guard let tab = tabs.first(where: { $0.id == id }), !closingTabIDs.contains(id) else { return false }
         if closedAppTabIDs.contains(id) || closedPinnedTabIDs.contains(id) {
             // The logical persistent tab outlives its unloaded native record.
-            // Undo Create removes that identity without asking a missing engine.
+            // Logical removal and Undo Create need no missing-engine request.
             if preservesPersistentTab, tab.placement != .temporary {
                 completion?(.removed)
                 return true
@@ -2483,7 +2495,7 @@ enum BrowserWindowMode: Equatable {
             return finishTabClose(
                 id: id, forceClose: false, requestsEngineClose: false,
                 registersUndo: registersUndo, undoActionName: actionName,
-                createsArchive: createsArchive, completion: completion
+                createsArchive: createsArchive, historyKind: historyKind, completion: completion
             )
         }
         let requestID = UUID().uuidString
@@ -2491,6 +2503,7 @@ enum BrowserWindowMode: Equatable {
             requestID: requestID, syncID: tab.syncID, registersUndo: registersUndo,
             undoActionName: actionName, createsArchive: createsArchive,
             preservesPersistentTab: preservesPersistentTab, unloadsPersistentTab: unloadsPersistentTab,
+            historyKind: historyKind,
             localAutomaticCandidate: localAutomaticCandidate,
             completion: completion
         )
@@ -2508,6 +2521,7 @@ enum BrowserWindowMode: Equatable {
     @discardableResult private func finishTabClose(
         id: String, forceClose: Bool, requestsEngineClose: Bool,
         registersUndo: Bool, undoActionName: String, createsArchive: Bool = false,
+        historyKind: TabHistoryKind = .archive,
         completion: ((HistoryCloseResult) -> Void)? = nil
     ) -> Bool {
         guard let closingIndex = tabs.firstIndex(where: { $0.id == id }) else { return false }
@@ -2541,7 +2555,7 @@ enum BrowserWindowMode: Equatable {
         clearSelectedTab(id, forSpaceID: closingTab.spaceID)
 
         if closingTabWasSelected {
-            let fallbackTabID = fallbackTabID(afterClosingTab: closingTab)
+            let fallbackTabID = fallbackTabID(afterClosingDormantTab: closingTab, excluding: [id])
             let fallbackUsesWindowedBrowser = fallbackTabID.map { tabUsesWindowedBrowser(id: $0) } ?? false
             if fallbackUsesWindowedBrowser {
                 dismissFindBar()
@@ -2572,7 +2586,9 @@ enum BrowserWindowMode: Equatable {
         // Failed persistence gates execution, not registration: a later New Tab
         // must stay above this Close even if its write also retries this batch.
         if registersUndo, let undoSnapshot {
-            registerTabArchiveUndo(undoSnapshot, archiveID: archiveEntry?.id, actionName: undoActionName)
+            registerTabCloseUndo(
+                undoSnapshot, archiveID: archiveEntry?.id, kind: historyKind, actionName: undoActionName
+            )
         }
         let didCommit: () -> Void = { [weak self] in
             guard let self, let undoSnapshot else { return }
@@ -3829,10 +3845,12 @@ enum BrowserWindowMode: Equatable {
         undoManager.registerTabAction(creationUndoAction(reference, actionName: actionName))
     }
 
-    private func registerTabArchiveUndo(_ snapshot: TabUndoSnapshot, archiveID: String?, actionName: String) {
+    private func registerTabCloseUndo(
+        _ snapshot: TabUndoSnapshot, archiveID: String?, kind: TabHistoryKind, actionName: String
+    ) {
         guard canRegisterTabUndo else { return }
         undoManager.registerTabAction(historyRestoreAction(
-            snapshot, archiveID: archiveID, isCreation: false, actionName: actionName
+            snapshot, archiveID: archiveID, kind: kind, actionName: actionName
         ))
     }
 
@@ -3849,7 +3867,7 @@ enum BrowserWindowMode: Equatable {
             }
             let admitted = requestConfirmedTabClose(
                 id: id, registersUndo: false, actionName: actionName,
-                createsArchive: false, preservesPersistentTab: false
+                createsArchive: false, preservesPersistentTab: false, historyKind: .creation
             ) { [weak self] result in
                 guard let self else { completion(.cancelled)
                     return
@@ -3859,7 +3877,7 @@ enum BrowserWindowMode: Equatable {
                 case .removed: completion(.committed(inverse: nil))
                 case .closed(let snapshot, _):
                     completion(.committed(inverse: historyRestoreAction(
-                        snapshot, archiveID: nil, isCreation: true, actionName: actionName
+                        snapshot, archiveID: nil, kind: .creation, actionName: actionName
                     )))
                 }
             }
@@ -3870,17 +3888,30 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func archiveRedoAction(syncID: String, actionName: String) -> BrowserTabUndoManager.Action {
+        closeRedoAction(syncID: syncID, kind: .archive, actionName: actionName)
+    }
+
+    private func logicalRemovalRedoAction(syncID: String, actionName: String) -> BrowserTabUndoManager.Action {
+        closeRedoAction(syncID: syncID, kind: .logicalRemoval, actionName: actionName)
+    }
+
+    private func closeRedoAction(
+        syncID: String, kind: TabHistoryKind, actionName: String
+    ) -> BrowserTabUndoManager.Action {
         .init(name: actionName) { [weak self] completion in
             guard let self else { completion(.cancelled)
                 return
             }
-            guard let tab = tabs.first(where: { $0.syncID == syncID }), tab.placement == .temporary else {
+            guard let tab = tabs.first(where: { $0.syncID == syncID }),
+                  kind == .logicalRemoval || tab.placement == .temporary
+            else {
                 completion(.committed(inverse: nil))
                 return
             }
             let admitted = requestConfirmedTabClose(
                 id: tab.id, registersUndo: false, actionName: actionName,
-                createsArchive: true, preservesPersistentTab: true
+                createsArchive: kind == .archive, preservesPersistentTab: kind == .archive,
+                historyKind: kind
             ) { [weak self] result in
                 guard let self else { completion(.cancelled)
                     return
@@ -3890,7 +3921,7 @@ enum BrowserWindowMode: Equatable {
                 case .removed: completion(.committed(inverse: nil))
                 case .closed(let snapshot, let archiveID):
                     completion(.committed(inverse: historyRestoreAction(
-                        snapshot, archiveID: archiveID, isCreation: false, actionName: actionName
+                        snapshot, archiveID: archiveID, kind: kind, actionName: actionName
                     )))
                 }
             }
@@ -3901,7 +3932,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func historyRestoreAction(
-        _ snapshot: TabUndoSnapshot, archiveID: String?, isCreation: Bool, actionName: String
+        _ snapshot: TabUndoSnapshot, archiveID: String?, kind: TabHistoryKind, actionName: String
     ) -> BrowserTabUndoManager.Action {
         .init(name: actionName) { [weak self] completion in
             guard let self, pendingHistoryRestore == nil, canCreateTab,
@@ -3911,7 +3942,7 @@ enum BrowserWindowMode: Equatable {
             }
             pendingHistoryRestore = PendingHistoryRestore(
                 archiveID: archiveID, syncID: tabSyncIDProvider(), snapshot: snapshot,
-                isCreation: isCreation, actionName: actionName, completion: completion
+                kind: kind, actionName: actionName, completion: completion
             )
             _ = retryHistoryRestore()
         }
@@ -4024,9 +4055,12 @@ enum BrowserWindowMode: Equatable {
             sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
             sessionPreferencesStore.saveSelectedTabIndex(next.tabs.firstIndex { $0.id == selectedTab?.syncID })
             syncCoordinator?.schedulePush(snapshot: next)
-            let inverse = request.isCreation
-                ? creationUndoAction(reference, actionName: request.actionName)
-                : archiveRedoAction(syncID: request.syncID, actionName: request.actionName)
+            let inverse: BrowserTabUndoManager.Action =
+                switch request.kind {
+                case .creation: creationUndoAction(reference, actionName: request.actionName)
+                case .archive: archiveRedoAction(syncID: request.syncID, actionName: request.actionName)
+                case .logicalRemoval: logicalRemovalRedoAction(syncID: request.syncID, actionName: request.actionName)
+                }
             finishHistoryRestore(request, outcome: .committed(inverse: inverse))
             return true
         } catch {
@@ -4781,7 +4815,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             finishTabClose(
                 id: id, forceClose: false, requestsEngineClose: false,
                 registersUndo: request.registersUndo, undoActionName: request.undoActionName,
-                createsArchive: request.createsArchive, completion: request.completion
+                createsArchive: request.createsArchive, historyKind: request.historyKind,
+                completion: request.completion
             )
         } else {
             // Pin/Favorite may have arrived while the page's dialog was open.
