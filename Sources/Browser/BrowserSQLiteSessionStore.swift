@@ -38,54 +38,11 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
-        do {
-            try dbQueue.write { db in
-                let previous = try readSnapshot(db)
-                guard try storedSyncOwner(db) != nil else {
-                    try writeSnapshot(snapshot, to: db)
-                    return
-                }
-                var baseline = try readSyncBaseline(db)
-                let filtered = BrowserSyncOutboxProjection.removingDeletedEntities(from: snapshot, baseline: baseline)
-                try writeSnapshot(filtered, to: db)
-                // Read back generated legacy tab IDs before making the immutable payload.
-                let normalized = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
-                let version = try Int.fetchOne(
-                    db,
-                    sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id = 1"
-                ) ?? 2
-                switch version {
-                case 2:
-                    let changes = try BrowserSyncOutboxProjection.changes(
-                        from: previous, to: normalized, baseline: baseline, pending: readSyncQueue(db)
-                    )
-                    baseline.recordLocalDeletes(changes)
-                    try appendSyncMutations(changes, to: db)
-                case 3:
-                    let operations = BrowserSyncSemanticProjection.operations(
-                        from: previous ?? BrowserTabSessionSnapshot(tabs: []), to: normalized
-                    )
-                    for operation in operations {
-                        switch operation {
-                        case .deleteSpace(let id): baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
-                                type: .space,
-                                id: id
-                            ))
-                        case .deleteTab(let id): baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
-                                type: .tab,
-                                id: id
-                            ))
-                        default: break
-                        }
-                    }
-                    try appendSemanticSyncMutations(operations, to: db)
-                default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
-                }
-                try writeSyncBaseline(baseline, to: db)
-            }
-        } catch {
-            Self.logger.error("Failed to save SQLite session snapshot: \(error.localizedDescription, privacy: .public)")
-        }
+        save(snapshot, syncMove: nil)
+    }
+
+    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent) {
+        save(snapshot, syncMove: syncMove)
     }
 
     func saveRemoteProjectionSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
@@ -321,6 +278,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     // MARK: Private
 
+    private enum MoveIntentError: Error {
+        case duplicateIDs
+    }
+
     private enum Key {
         static let selectedTabIndex = "browser.session.selectedTabIndex"
         static let selectedSpaceIndex = "browser.session.selectedSpaceIndex"
@@ -419,6 +380,60 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     private let dbQueue: DatabaseQueue
+
+    private func save(_ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent?) {
+        do {
+            if let syncMove, Set(syncMove.tabIDs).count != syncMove.tabIDs.count {
+                throw MoveIntentError.duplicateIDs
+            }
+            try dbQueue.write { db in
+                let previous = try readSnapshot(db)
+                guard try storedSyncOwner(db) != nil else {
+                    try writeSnapshot(snapshot, to: db)
+                    return
+                }
+                var baseline = try readSyncBaseline(db)
+                let filtered = BrowserSyncOutboxProjection.removingDeletedEntities(from: snapshot, baseline: baseline)
+                try writeSnapshot(filtered, to: db)
+                // Read back generated legacy tab IDs before making the immutable payload.
+                let normalized = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
+                let version = try Int.fetchOne(
+                    db,
+                    sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id = 1"
+                ) ?? 2
+                switch version {
+                case 2:
+                    let changes = try BrowserSyncOutboxProjection.changes(
+                        from: previous, to: normalized, baseline: baseline, pending: readSyncQueue(db)
+                    )
+                    baseline.recordLocalDeletes(changes)
+                    try appendSyncMutations(changes, to: db)
+                case 3:
+                    let operations = BrowserSyncSemanticProjection.operations(
+                        from: previous ?? BrowserTabSessionSnapshot(tabs: []), to: normalized, syncMove: syncMove
+                    )
+                    for operation in operations {
+                        switch operation {
+                        case .deleteSpace(let id): baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
+                                type: .space,
+                                id: id
+                            ))
+                        case .deleteTab(let id): baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
+                                type: .tab,
+                                id: id
+                            ))
+                        default: break
+                        }
+                    }
+                    try appendSemanticSyncMutations(operations, to: db)
+                default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
+                }
+                try writeSyncBaseline(baseline, to: db)
+            }
+        } catch {
+            Self.logger.error("Failed to save SQLite session snapshot: \(error.localizedDescription, privacy: .public)")
+        }
+    }
 
     private func readSnapshot(_ db: Database) throws -> BrowserTabSessionSnapshot? {
         let tabs = try Row.fetchAll(

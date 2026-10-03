@@ -3,6 +3,153 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserSidebarDropTests {
+    @Test func moveIntentDistinguishesActedTabFromComplementaryReorder() {
+        let movingA = SidebarDragFixture(pinned: [], temporary: ["a", "b"])
+        #expect(movingA.model.commitSidebarDrop(
+            payload: movingA.payload("a"), destination: .init(container: .temporary("s"))
+        ))
+        let movingB = SidebarDragFixture(pinned: [], temporary: ["a", "b"])
+        #expect(movingB.model.commitSidebarDrop(
+            payload: movingB.payload("b"), destination: .init(container: .temporary("s"), beforeItem: movingB.item("a"))
+        ))
+        #expect(movingA.names(movingA.model.temporaryTabs) == ["b", "a"])
+        #expect(movingB.names(movingB.model.temporaryTabs) == ["b", "a"])
+        #expect(movingA.store.savedSyncMoves == [.init(tabIDs: ["a"])])
+        #expect(movingB.store.savedSyncMoves == [.init(tabIDs: ["b"])])
+        #expect(movingA.id("a") != "a")
+        #expect(movingB.id("b") != "b")
+    }
+
+    @Test func moveIntentOrdersMixedGroupByFinalSidebarAcrossSpaces() {
+        let f = SidebarDragFixture(
+            pinned: [("root", nil), ("one", "folder"), ("two", "folder")],
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+        )
+        let count = f.store.savedSnapshots.count
+        #expect(f.model.commitSidebarDrop(
+            payload: f.payload("x", "two", "one"), destination: .init(container: .temporary("t"))
+        ))
+        #expect(f.store.savedSyncMoves == [.init(tabIDs: ["one", "two", "x"])])
+        #expect(f.store.savedSnapshots.count == count + 1)
+        #expect(f.store
+            .savedSnapshots
+            .last?
+            .tabs
+            .filter { ["one", "two", "x"].contains($0.id) }
+            .allSatisfy { $0.spaceID == "t" && $0.placement == .temporary } == true)
+        #expect(f.model.selectedSpaceID == "s")
+    }
+
+    @Test func moveIntentCapturesNestedFolderDescendantsForDropAndDirectMove() {
+        let folders: [BrowserPinnedTabFolderSessionSnapshot] = [
+            .init(id: "parent", spaceID: "s", title: "Parent"),
+            .init(id: "child", spaceID: "s", parentFolderID: "parent", title: "Child"),
+        ]
+        let f = SidebarDragFixture(pinned: [("one", "child"), ("two", "child"), ("root", nil)], folders: folders)
+        #expect(f.model.commitSidebarDrop(
+            payload: f.folderPayload("parent"), destination: .init(container: .pinned("s"))
+        ))
+        #expect(f.store.savedSyncMoves == [.init(tabIDs: ["one", "two"])])
+        f.model.movePinnedTabFolder(withID: "parent", toRootSectionIndex: 0, targetSpaceID: "t")
+        #expect(f.store.savedSyncMoves == [.init(tabIDs: ["one", "two"]), .init(tabIDs: ["one", "two"])])
+        #expect(f.store
+            .savedSnapshots
+            .last?
+            .tabs
+            .filter { ["one", "two"].contains($0.id) }
+            .allSatisfy { $0.spaceID == "t" } == true)
+    }
+
+    @Test func moveIntentCoversDirectSingleGroupPinAndFavoriteMoves() {
+        let f = SidebarDragFixture()
+        f.model.moveTab(withID: f.id("x"), toPlacement: .app, atSectionIndex: 0)
+        #expect(f.store.savedSyncMoves.last == .init(tabIDs: ["x"]))
+        #expect(f.model.appTabs.first?.syncID == "x")
+        f.model.moveTab(withID: f.id("x"), toPlacement: .temporary, atSectionIndex: 0, targetSpaceID: "t")
+        #expect(f.store.savedSyncMoves.count == 2)
+        #expect(f.store.savedSnapshots.last?.tabs.first { $0.id == "x" }?.spaceID == "t")
+        f.model.moveTabs(withIDs: [f.id("b"), f.id("y")], toPlacement: .spacePinned, atSectionIndex: 0)
+        #expect(f.store.savedSyncMoves.last == .init(tabIDs: ["b", "y"]))
+        #expect(f.pinnedNames() == ["b", "y", "a"])
+        f.model.togglePinned(forTabID: f.id("a"))
+        #expect(f.store.savedSyncMoves.last == .init(tabIDs: ["a"]))
+        #expect(f.model.temporaryTabs.contains { $0.syncID == "a" })
+    }
+
+    @Test func creatingFolderCapturesExactlyItsOrderedMemberTabs() throws {
+        let f = SidebarDragFixture()
+        let folderID = try #require(f.model.createPinnedTabFolder(containingTabIDs: [f.id("y"), f.id("a")]))
+        #expect(f.store.savedSyncMoves == [.init(tabIDs: ["a", "y"])])
+        #expect(f.store.savedSnapshots.last?.tabs.filter { $0.pinnedFolderID == folderID }.map(\.id) == ["a", "y"])
+    }
+
+    @Test func previewCanceledInvalidAndNoOpMovesNeverPersistMoveIntent() {
+        let f = SidebarDragFixture()
+        let before = f.store.savedSnapshots.count
+        #expect(f.model.sidebarMovePlan(payload: f.payload("x"), destination: .init(container: .pinned("s"))) != nil)
+        let drag = BrowserSidebarDragState(model: f.model)
+        drag.begin(
+            payload: f.payload("x"),
+            sourceFrame: CGRect(x: 0, y: 200, width: 220, height: 36),
+            start: CGPoint(x: 20, y: 210),
+            pointer: CGPoint(x: 20, y: 100)
+        )
+        #expect(!drag.release(at: CGPoint(x: 20, y: 100), cancel: true))
+        #expect(f.store.savedSyncMoves.isEmpty)
+        #expect(!f.model.commitSidebarDrop(
+            payload: f.payload("a"), destination: .init(container: .pinned("s"), beforeItem: f.item("b"))
+        ))
+        #expect(!f.model.commitSidebarDrop(
+            payload: f.payload("x"),
+            destination: .init(container: .temporary("missing"))
+        ))
+        f.model.moveTab(withID: f.id("a"), toPlacement: .spacePinned, atSectionIndex: 0)
+        f.model.moveTabs(withIDs: [f.id("a")], toPlacement: .spacePinned, atSectionIndex: 0)
+        #expect(f.model.createPinnedTabFolder(containingTabIDs: []) == nil)
+        #expect(f.store.savedSyncMoves.isEmpty)
+        #expect(f.store.savedSnapshots.count == before)
+    }
+
+    @Test func moveIntentKeepsStableIdentityAfterDormantTabReopens() {
+        let f = SidebarDragFixture()
+        let oldEngineID = f.id("a")
+        #expect(f.model.closePinnedTabProcessOrReset(id: oldEngineID))
+        f.driver.emitClose(id: oldEngineID)
+        f.model.selectTab(id: oldEngineID)
+        f.driver.flushPendingCreateEvents()
+        let newEngineID = f.id("a")
+        #expect(newEngineID != oldEngineID)
+        f.model.moveTab(withID: newEngineID, toPlacement: .spacePinned, atSectionIndex: 2)
+        #expect(f.store.savedSyncMoves == [.init(tabIDs: ["a"])])
+        #expect(f.pinnedNames() == ["b", "a"])
+    }
+
+    @Test func restoredModelDoesNotReplayMoveIntentAndNextDragUsesSavedSyncID() throws {
+        let f = SidebarDragFixture(pinned: [], temporary: ["a", "b"])
+        #expect(f.model.commitSidebarDrop(payload: f.payload("a"), destination: .init(container: .temporary("s"))))
+        let snapshot = try #require(f.store.savedSnapshots.last)
+        let store = InMemorySessionSnapshotStore(loadedSnapshot: snapshot)
+        let driver = FakeBrowserTabDriver()
+        let model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: store,
+            sessionPreferencesStore: InMemorySessionPreferencesStore(),
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        )
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        #expect(store.savedSyncMoves.isEmpty)
+        #expect(model.tabs.map(\.syncID) == ["b", "a"])
+        let restoredA = try #require(model.tabs.first { $0.syncID == "a" })
+        let restoredB = try #require(model.tabs.first { $0.syncID == "b" })
+        #expect(restoredA.id != f.id("a"))
+        #expect(model.commitSidebarDrop(
+            payload: .init(primary: .tab(restoredA.id), tabIDs: [restoredA.id]),
+            destination: .init(container: .temporary("s"), beforeItem: .tab(restoredB.id))
+        ))
+        #expect(store.savedSyncMoves == [.init(tabIDs: ["a"])])
+    }
+
     @Test func childInsertionUsesSiblingIdentityInsteadOfGlobalPinnedIndex() {
         let f = SidebarDragFixture(
             pinned: [("root", nil), ("one", "folder"), ("two", "folder"), ("three", "folder")],

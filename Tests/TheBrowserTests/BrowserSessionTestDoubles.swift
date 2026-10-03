@@ -254,6 +254,7 @@ final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
 
     var loadedSnapshot: BrowserTabSessionSnapshot?
     private(set) var savedSnapshots = [BrowserTabSessionSnapshot]()
+    private(set) var savedSyncMoves = [BrowserSyncMoveIntent]()
 
     func loadSnapshot() -> BrowserTabSessionSnapshot? {
         loadedSnapshot
@@ -261,6 +262,11 @@ final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
 
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
         savedSnapshots.append(snapshot)
+    }
+
+    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent) {
+        savedSyncMoves.append(syncMove)
+        saveSnapshot(snapshot)
     }
 }
 

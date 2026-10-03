@@ -1,20 +1,26 @@
 import Foundation
 
-/// Snapshot capture infers a minimal move set from relative order. It cannot recover
-/// whether a drag moved one item or its complementary group; direct action capture
-/// can supply that intent later without changing the durable wire representation.
+/// Direct moves retain the identities the user moved. Snapshot-only callers infer
+/// a minimal move set from relative order for compatibility.
 enum BrowserSyncSemanticProjection {
     // MARK: Internal
 
     static func operations(
         from previous: BrowserTabSessionSnapshot?,
-        to snapshot: BrowserTabSessionSnapshot
+        to snapshot: BrowserTabSessionSnapshot,
+        syncMove: BrowserSyncMoveIntent? = nil
     ) -> [BrowserSyncSemanticOperation] {
         let before = BrowserSyncOutboxProjection.canonicalChanges(previous ?? .init(tabs: []))
         let after = BrowserSyncOutboxProjection.canonicalChanges(snapshot)
         let previousByKey = Dictionary(uniqueKeysWithValues: before.map { (key($0), $0) })
         let nextByKey = Dictionary(uniqueKeysWithValues: after.map { (key($0), $0) })
-        let plans = orderPlans(before: before, after: after)
+        // The store rejects duplicate IDs. Deduplicate defensively for pure callers
+        // too, so no generated move can violate the wire's unique-ID constraint.
+        var seen = Set<String>()
+        let explicitOrder = syncMove.map { move in
+            previous == snapshot ? [] : move.tabIDs.filter { seen.insert($0).inserted }
+        }
+        let plans = orderPlans(before: before, after: after, explicitTabIDs: explicitOrder.map(Set.init))
         var result = [BrowserSyncSemanticOperation]()
         var homePatches = [BrowserSyncSemanticOperation]()
 
@@ -84,6 +90,10 @@ enum BrowserSyncSemanticProjection {
         }
 
         for plan in plans {
+            if let explicitOrder, plan.container != .spaces {
+                result += explicitTabMoves(plan, orderedIDs: explicitOrder, nextByKey: nextByKey)
+                continue
+            }
             let anchors = plan.kept.union(plan.created)
             let nextAnchors = followingAnchors(ids: plan.ids, anchors: anchors)
             var index = 0
@@ -264,7 +274,9 @@ enum BrowserSyncSemanticProjection {
         return .tab(spaceID: data.spaceID, placement: data.placement)
     }
 
-    private static func orderPlans(before: [BrowserSyncChange], after: [BrowserSyncChange]) -> [OrderPlan] {
+    private static func orderPlans(
+        before: [BrowserSyncChange], after: [BrowserSyncChange], explicitTabIDs: Set<String>? = nil
+    ) -> [OrderPlan] {
         let oldKeys = Set(before.map(key))
         let oldGroups = Dictionary(grouping: before, by: container)
         let newGroups = Dictionary(grouping: after, by: container)
@@ -278,13 +290,63 @@ enum BrowserSyncSemanticProjection {
                 $0
             ) })
             let candidates = ids.compactMap { id in oldIndices[id].map { (id, $0) } }
+            let kept: Set<String> =
+                if let explicitTabIDs, list != .spaces {
+                    Set(ids.filter { !explicitTabIDs.contains($0) && oldKeys.contains(list.key($0)) })
+                } else {
+                    longestIncreasingSubsequence(candidates)
+                }
             return OrderPlan(
                 container: list,
                 ids: ids,
-                kept: longestIncreasingSubsequence(candidates),
+                kept: kept,
                 created: Set(ids.filter { !oldKeys.contains(list.key($0)) })
             )
         }
+    }
+
+    private static func explicitTabMoves(
+        _ plan: OrderPlan, orderedIDs: [String], nextByKey: [String: BrowserSyncChange]
+    ) -> [BrowserSyncSemanticOperation] {
+        let anchors = plan.kept.union(plan.created)
+        let nextAnchors = followingAnchors(ids: plan.ids, anchors: anchors)
+        let intentPositions = Dictionary(uniqueKeysWithValues: orderedIDs.enumerated().map { ($1, $0) })
+        var operations = [BrowserSyncSemanticOperation]()
+        var index = 0
+        while index < plan.ids.count {
+            guard !anchors.contains(plan.ids[index]) else { index += 1
+                continue
+            }
+            let start = index
+            while index < plan.ids.count, !anchors.contains(plan.ids[index]) {
+                index += 1
+            }
+            // A new hinted identity is a create/anchor, not a redundant move.
+            // Missing hinted IDs never occur in the final normalized plan.
+            let group = plan.ids[start..<index].sorted {
+                intentPositions[$0, default: Int.max] < intentPositions[$1, default: Int.max]
+            }
+            let beforeID = nextAnchors[index - 1]
+            var afterID = start > 0 ? plan.ids[start - 1] : nil
+            var offset = 0
+            while offset < group.count {
+                guard let first = nextByKey[plan.container.key(group[offset])]?.tabData else { break }
+                let destination = BrowserSyncSemanticTabDestination(spaceID: first.spaceID, placement: first.placement)
+                let chunkStart = offset
+                // Global Favorites share rank order but may retain different
+                // historical Space IDs; avoid rewriting those IDs during reorder.
+                while offset < group.count, offset - chunkStart < 1000,
+                      let data = nextByKey[plan.container.key(group[offset])]?.tabData,
+                      data.spaceID == destination.spaceID, data.placement == destination.placement
+                {
+                    offset += 1
+                }
+                let chunk = Array(group[chunkStart..<offset])
+                operations.append(.moveTabs(ids: chunk, destination: destination, beforeID: beforeID, afterID: afterID))
+                afterID = chunk.last
+            }
+        }
+        return operations
     }
 
     /// Unique identities reduce LCS to O(n log n) LIS with linear storage.

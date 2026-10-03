@@ -779,7 +779,7 @@ enum BrowserWindowMode: Equatable {
             appTabs: appTabs
         )
         removeEmptyPinnedTabFolders()
-        persistCurrentSessionIfAllowed()
+        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: Set(orderedTabs.map(\.id))))
         return folderID
     }
 
@@ -953,7 +953,7 @@ enum BrowserWindowMode: Equatable {
             selectActiveTabForSelectedSpace()
         }
         updateWindowTitle()
-        persistCurrentSessionIfAllowed()
+        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: payload.tabIDs))
         return true
     }
 
@@ -1051,7 +1051,7 @@ enum BrowserWindowMode: Equatable {
             selectActiveTabForSelectedSpace()
         }
         updateWindowTitle()
-        persistCurrentSessionIfAllowed()
+        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: [tabID]))
     }
 
     func moveTabs(
@@ -1097,7 +1097,7 @@ enum BrowserWindowMode: Equatable {
         }
 
         updateWindowTitle()
-        persistCurrentSessionIfAllowed()
+        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: movingTabIDs))
     }
 
     func canMovePinnedTabFolder(
@@ -1167,7 +1167,11 @@ enum BrowserWindowMode: Equatable {
             pinnedTabFolders[folderIndex].isExpanded = true
         }
         tabs = reorderedTabs
-        persistCurrentSessionIfAllowed()
+        let movedTabIDs = Set(tabs.filter {
+            $0.placement == .spacePinned && $0.pinnedFolderID.map { movedFolderIDs.contains($0) } == true
+        }
+        .map(\.id))
+        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: movedTabIDs))
     }
 
     func clearTemporaryTabs(includingActiveTab: Bool = true) {
@@ -2421,7 +2425,16 @@ enum BrowserWindowMode: Equatable {
         archiveExpiredTemporaryTabs()
     }
 
-    private func persistCurrentSessionIfAllowed() {
+    private func syncMoveIntent(forTabIDs tabIDs: Set<String>) -> BrowserSyncMoveIntent? {
+        let syncIDs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0.syncID) })
+        let orderedIDs = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+            .orderedTabIDs()
+            .filter { tabIDs.contains($0) }
+            .compactMap { syncIDs[$0] }
+        return orderedIDs.isEmpty ? nil : BrowserSyncMoveIntent(tabIDs: orderedIDs)
+    }
+
+    private func persistCurrentSessionIfAllowed(syncMove: BrowserSyncMoveIntent? = nil) {
         guard isContextReady, isPersistenceEnabled, !isRestoringSession, !isReconcilingRemoteProjection else {
             return
         }
@@ -2434,7 +2447,11 @@ enum BrowserWindowMode: Equatable {
         } else {
             snapshot = currentSessionSnapshot()
         }
-        sessionSnapshotStore.saveSnapshot(snapshot)
+        if let syncMove {
+            sessionSnapshotStore.saveSnapshot(snapshot, syncMove: syncMove)
+        } else {
+            sessionSnapshotStore.saveSnapshot(snapshot)
+        }
         sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
         let selectedSyncID = selectedTab?.syncID
         sessionPreferencesStore.saveSelectedTabIndex(snapshot.tabs.firstIndex { $0.id == selectedSyncID })
