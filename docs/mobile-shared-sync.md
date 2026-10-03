@@ -60,7 +60,7 @@ Simulator tests receive only the control URL/token through `TEST_RUNNER_` enviro
 
 ## Remaining work
 
-Verify real Apple authentication and account identity across provisioned clients, then separately verify any authorized production deployment. Extend mobile-specific HTTP coverage for paged adoption, device rotation and concurrent subtree/scene lifecycle races; the desktop fixture already exercises broader protocol behavior. Extend archive search/clear/auto-archive, recovery export/import and remaining browser capabilities; retain native reorder physical-input verification separately. Profile synchronous document/SQLite/reducer work before moving it off MainActor, preserving action ordering and transaction boundaries.
+Verify real Apple authentication and account identity across provisioned clients, then separately verify any authorized production deployment. Extend mobile-specific HTTP coverage for paged adoption, device rotation and concurrent subtree/scene lifecycle races; the desktop fixture already exercises broader protocol behavior. Add auto-archive after settling cross-device activity semantics, recovery export/import and remaining browser capabilities; retain native reorder physical-input verification separately. Profile synchronous document/SQLite/reducer work before moving it off MainActor, preserving action ordering and transaction boundaries.
 
 ## Verification
 
