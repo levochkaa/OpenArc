@@ -33,9 +33,19 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
     // MARK: Internal
 
+    override var keyCommands: [UIKeyCommand]? {
+        let find = UIKeyCommand(
+            title: String(localized: "Find in Page", table: "Mobile"),
+            action: #selector(findInPage), input: "f", modifierFlags: .command
+        )
+        find.wantsPriorityOverSystemBehavior = true
+        return (super.keyCommands ?? []) + [find]
+    }
+
     let workspace: BrowserMobileWorkspace
     let pageController: BrowserMobilePageViewController
     let tabsController: BrowserMobileTabsViewController
+
     lazy var javaScriptDialogPresenter =
         BrowserMobileJavaScriptDialogPresenter(host: self) { [weak self] id, response in
             self?.workspace.resolveJavaScriptDialog(id: id, response: response)
@@ -62,7 +72,10 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
     private weak var presentedTabs: BrowserMobileTabsViewController?
 
+    @objc private func findInPage() { pageController.findInPage() }
+
     private func showTabList() {
+        workspace.dismissFindInPage()
         if !isCollapsed {
             if displayMode == .secondaryOnly {
                 show(.primary)
@@ -169,6 +182,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         spaceButton.showsMenuAsPrimaryAction = true
         spaceButton.isSpringLoaded = false
         spaceButton.addTarget(self, action: #selector(showSpaceDropTargets), for: .primaryActionTriggered)
+        spaceButton.addAction(UIAction { [weak self] _ in
+            self?.workspace.dismissFindInPage()
+        }, for: .menuActionTriggered)
         let behavior = SpaceSpringBehavior { [weak self] in self?.canOpenSpaceDropTargets == true }
         spaceButton.addInteraction(UISpringLoadedInteraction(
             interactionBehavior: behavior, interactionEffect: nil
@@ -305,6 +321,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         -> UIContextMenuConfiguration?
     {
         guard !isSelectingRows, let row = row(at: indexPath) else { return nil }
+        workspace.dismissFindInPage()
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in self?.menu(for: row) })
     }
 
@@ -1608,6 +1625,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func showAccount() {
         guard presentedViewController == nil, let session = workspace.syncSession else { return }
+        workspace.dismissFindInPage()
         let controller = BrowserMobileAccountViewController(session: session)
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .formSheet
@@ -1804,6 +1822,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func prompt(title: String, value: String, allowsEmpty: Bool = false, apply: @escaping (String) -> Void) {
         guard presentedViewController == nil else { return }
+        workspace.dismissFindInPage()
         let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
         alert.addTextField { field in field.text = value
             field.autocapitalizationType = .sentences
@@ -1823,6 +1842,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func confirmFolderRemoval(title: String, apply: @escaping () -> Void) {
         guard presentedViewController == nil else { return }
+        workspace.dismissFindInPage()
         let alert = UIAlertController(
             title: String(localized: "Delete Folder and Contents", table: "Mobile"),
             message: title,

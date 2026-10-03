@@ -21,6 +21,7 @@ import WebKit
     var onEvent: ((BrowserMobileEngineEvent) -> Void)? {
         didSet {
             if onEvent == nil {
+                dismissFindInPage()
                 cancelJavaScriptDialog()
             }
         }
@@ -39,6 +40,7 @@ import WebKit
         guard !isShutDown else { return }
         let record = id.flatMap { records[$0] }
         if selectedRuntimeID != record?.id {
+            dismissFindInPage()
             selectedRuntimeID = record?.id
             cancelJavaScriptDialog()
         }
@@ -109,6 +111,7 @@ import WebKit
     func closeTab(id: String) {
         guard let record = records.removeValue(forKey: id) else { return }
         if selectedRuntimeID == id {
+            dismissFindInPage()
             selectedRuntimeID = nil
         }
         cancelJavaScriptDialog(runtimeID: id)
@@ -129,6 +132,7 @@ import WebKit
 
     func shutdown() {
         guard !isShutDown else { return }
+        dismissFindInPage()
         isShutDown = true
         isDialogPresentationActive = false
         selectedRuntimeID = nil
@@ -143,8 +147,37 @@ import WebKit
     func setJavaScriptDialogPresentationActive(_ active: Bool) {
         isDialogPresentationActive = active && !isShutDown
         if !isDialogPresentationActive {
+            dismissFindInPage()
             cancelJavaScriptDialog()
         }
+    }
+
+    func canFindInPage(id: String) -> Bool {
+        guard !isShutDown, isDialogPresentationActive, selectedRuntimeID == id, let record = records[id],
+              record.hasCommittedDialogDocument, !record.isReplacingDialogDocument,
+              !record.state.isLoading, record.state.error == nil, pendingDialog == nil,
+              let webView = record.webView, mountedWebView === webView,
+              webView.superview === hostView, let window = webView.window,
+              !window.isHidden, window.windowScene?.activationState == .foregroundActive
+        else { return false }
+        return true
+    }
+
+    @discardableResult func presentFindInPage(id: String) -> Bool {
+        guard canFindInPage(id: id), let webView = records[id]?.webView else { return false }
+        webView.isFindInteractionEnabled = true
+        guard let interaction = webView.findInteraction else { return false }
+        guard !interaction.isFindNavigatorVisible else { return true }
+        interaction.presentFindNavigator(showingReplace: false)
+        return true
+    }
+
+    func dismissFindInPage() {
+        guard let webView = mountedWebView else { return }
+        webView.findInteraction?.dismissFindNavigator()
+        // Disabled outside an admitted context so WebKit's own Cmd-F cannot
+        // reopen a hidden, failed or competing page behind a modal.
+        webView.isFindInteractionEnabled = false
     }
 
     func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse) {
@@ -173,6 +206,7 @@ import WebKit
         let request = BrowserMobileJavaScriptDialog(
             id: UUID(), runtimeID: record.id, origin: origin, message: message, kind: kind
         )
+        dismissFindInPage()
         pendingDialog = PendingDialog(request: request, generation: record.generation, completion: completion)
         onEvent?(.javaScriptDialogRequested(request))
     }
@@ -336,6 +370,7 @@ import WebKit
             configuration.allowsInlineMediaPlayback = true
         }
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.isFindInteractionEnabled = false
         record.webView = webView
         let id = record.id
         idsByWebView[ObjectIdentifier(webView)] = id
@@ -382,6 +417,9 @@ import WebKit
         // A canceled modal can resume the old document while its replacement
         // is still provisional. Only commit admits the new document's scripts.
         record.isReplacingDialogDocument = !Self.isFragmentNavigation(from: record.dialogDocumentURL, to: url)
+        if record.isReplacingDialogDocument, selectedRuntimeID == record.id {
+            dismissFindInPage()
+        }
         record.generation += 1
         cancelJavaScriptDialog(runtimeID: record.id)
         record.allowsPageMetadata = false
@@ -431,6 +469,9 @@ import WebKit
     }
 
     private func emit(_ record: Record) {
+        if record.state.error != nil, selectedRuntimeID == record.id {
+            dismissFindInPage()
+        }
         guard records[record.id] === record, record.lastEmitted != record.state else { return }
         record.lastEmitted = record.state
         onEvent?(.state(id: record.id, record.state))
@@ -481,6 +522,9 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             record.isReplacingDialogDocument = !Self.isFragmentNavigation(
                 from: record.dialogDocumentURL, to: navigationAction.request.url
             )
+            if record.isReplacingDialogDocument, selectedRuntimeID == record.id {
+                dismissFindInPage()
+            }
             if !record.isReplacingDialogDocument {
                 record.dialogDocumentURL = navigationAction.request.url
             }

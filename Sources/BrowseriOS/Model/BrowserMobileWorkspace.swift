@@ -69,6 +69,20 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     var selectedTab: BrowserMobileTab? { tabs.first { $0.id == selectedTabID } }
 
+    var canFindInPage: Bool {
+        guard isReady, !isClosed, !isRestoring, javaScriptDialog == nil,
+              let tab = selectedTab, tab.state.error == nil, tab.urlString != "about:blank"
+        else { return false }
+        return engine.canFindInPage(id: tab.runtimeID)
+    }
+
+    @discardableResult func presentFindInPage() -> Bool {
+        guard canFindInPage, let tab = selectedTab else { return false }
+        return engine.presentFindInPage(id: tab.runtimeID)
+    }
+
+    func dismissFindInPage() { engine.dismissFindInPage() }
+
     func restore() async {
         guard !isClosed, !hasRestored, !isRestoring else { return }
         if profileLoader != nil {
@@ -248,11 +262,16 @@ struct BrowserMobileTab: Identifiable, Equatable {
     }
 
     func setJavaScriptDialogPresentationActive(_ active: Bool) {
-        isJavaScriptDialogPresentationActive = active && !isClosed
+        let next = active && !isClosed
+        let changed = isJavaScriptDialogPresentationActive != next
+        isJavaScriptDialogPresentationActive = next
         if !isJavaScriptDialogPresentationActive {
             cancelJavaScriptDialog()
         }
         engine.setJavaScriptDialogPresentationActive(isJavaScriptDialogPresentationActive)
+        if changed {
+            notify()
+        }
     }
 
     func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse) {

@@ -41,7 +41,16 @@ enum BrowserMobileEngineEvent: Sendable {
     func reload(id: String)
     func stop(id: String)
     func closeTab(id: String)
+    func canFindInPage(id: String) -> Bool
+    @discardableResult func presentFindInPage(id: String) -> Bool
+    func dismissFindInPage()
     func setJavaScriptDialogPresentationActive(_ active: Bool)
     func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse)
     func shutdown()
+}
+
+extension BrowserMobileEngine {
+    func canFindInPage(id _: String) -> Bool { false }
+    @discardableResult func presentFindInPage(id _: String) -> Bool { false }
+    func dismissFindInPage() {}
 }

@@ -16,7 +16,13 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     override var canBecomeFirstResponder: Bool { true }
 
     override var keyCommands: [UIKeyCommand]? {
-        [
+        let find = UIKeyCommand(
+            title: String(localized: "Find in Page", table: "Mobile"),
+            action: #selector(findInPage), input: "f", modifierFlags: .command
+        )
+        find.wantsPriorityOverSystemBehavior = true
+        return [
+            find,
             UIKeyCommand(
                 title: String(localized: "Open Location", table: "Mobile"),
                 action: #selector(focusAddress),
@@ -83,7 +89,22 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             (self: BrowserMobilePageViewController, _: UITraitCollection) in self.arrangeChrome()
         }
         arrangeChrome()
+        for name in [UIScene.willDeactivateNotification, UIScene.didDisconnectNotification] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(sceneBecameInactive(_:)), name: name, object: nil
+            )
+        }
         render()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        render()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        workspace.dismissFindInPage()
     }
 
     func render() {
@@ -142,13 +163,22 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             emptyAction.isHidden = false
             emptyAction.setTitle(String(localized: "Search or Enter Address", table: "Mobile"), for: .normal)
         }
+        findButton.isEnabled = canPresentFind
     }
 
     @objc func focusAddress() {
         guard workspace.isReady else { return }
+        workspace.dismissFindInPage()
         loadViewIfNeeded()
         addressField.becomeFirstResponder()
         addressField.selectAll(nil)
+    }
+
+    @objc func findInPage() {
+        guard canPresentFind else { return }
+        // Resigning cancels the address draft; Return is the only submit path.
+        addressField.resignFirstResponder()
+        workspace.presentFindInPage()
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -161,6 +191,8 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     }
 
     func textFieldDidEndEditing(_: UITextField) { render() }
+
+    func textFieldDidBeginEditing(_: UITextField) { workspace.dismissFindInPage() }
 
     // MARK: Private
 
@@ -184,11 +216,33 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     private var tabsButton = UIButton(type: .system)
     private var newButton = UIButton(type: .system)
     private var shareButton = UIButton(type: .system)
+    private var findButton = UIButton(type: .system)
+
+    private var canPresentFind: Bool {
+        guard workspace.canFindInPage, let window = viewIfLoaded?.window,
+              !window.isHidden, window.windowScene?.activationState == .foregroundActive,
+              !isBeingDismissed, !engineView.isHidden else { return false }
+        var root: UIViewController = self
+        while let parent = root.parent {
+            root = parent
+        }
+        return !Self.hasPresentedController(root)
+    }
 
     private var shareURL: URL? {
         guard let url = workspace.selectedTab.flatMap({ URL(string: $0.urlString) }),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
         return url
+    }
+
+    private static func hasPresentedController(_ controller: UIViewController) -> Bool {
+        controller.presentedViewController != nil || controller.children.contains(where: hasPresentedController)
+    }
+
+    @objc private func sceneBecameInactive(_ notification: Notification) {
+        guard let scene = notification.object as? UIWindowScene,
+              scene === viewIfLoaded?.window?.windowScene else { return }
+        workspace.dismissFindInPage()
     }
 
     @objc private func createTab() { workspace.newTab()
@@ -201,7 +255,8 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     }
 
     @objc private func reload() { workspace.reload() }
-    @objc private func cancelAddress() { addressField.resignFirstResponder()
+    @objc private func cancelAddress() { workspace.dismissFindInPage()
+        addressField.resignFirstResponder()
         render()
     }
 
@@ -263,13 +318,20 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         forwardButton = button("chevron.forward", "Forward", "browser.forward") { [weak self] in
             self?.workspace.goForward()
         }
-        tabsButton = button("sidebar.leading", "Show Tabs", "browser.showTabs") { [weak self] in self?.showTabs?() }
+        tabsButton = button("sidebar.leading", "Show Tabs", "browser.showTabs") { [weak self] in
+            self?.workspace.dismissFindInPage()
+            self?.showTabs?()
+        }
         newButton = button("plus", "New Tab", "browser.newTab") { [weak self] in self?.createTab() }
         shareButton = button("square.and.arrow.up", "Share", "browser.share") { [weak self] in self?.sharePage() }
+        findButton = button("doc.text.magnifyingglass", "Find in Page", "browser.findInPage") { [weak self] in
+            self?.findInPage()
+        }
         let toolbar = UIStackView(arrangedSubviews: [
             backButton,
             forwardButton,
             UIView(),
+            findButton,
             shareButton,
             tabsButton,
             newButton,
@@ -347,6 +409,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
 
     private func sharePage() {
         guard let url = shareURL else { return }
+        workspace.dismissFindInPage()
         let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         controller.popoverPresentationController?.sourceView = shareButton
         controller.popoverPresentationController?.sourceRect = shareButton.bounds
