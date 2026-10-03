@@ -46,7 +46,7 @@ func archiveInsertAndSyncDeleteRollbackTogether(failingTable: String) throws {
         let before = try f.evidence()
         try f
             .sql(
-                "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END"
             )
         #expect(throws: DatabaseError.self) { try f.store.writeSessionBatch([restore]) }
         #expect(try f.evidence() == before)
@@ -228,6 +228,232 @@ func archiveRestoreCannotConsumeEntryWithChangedRecoveryMetadata(changesURL: Boo
     }
 }
 
+@Test func archiveSearchMatchesUnicodeAndLiteralPunctuationAcrossIndependentFieldsWithPaging() async throws {
+    try await withAsyncArchiveStore { f in
+        let original = try #require(try f.store.loadSnapshotStrict())
+        let tabs: [BrowserTabSessionSnapshotTab] = [
+            .init(
+                id: "a",
+                urlString: "https://example.com/CafÉ?discount=100%_literal",
+                userTitleOverride: "СОХРАНЁННОЕ Café",
+                spaceID: "source"
+            ),
+            .init(id: "b", urlString: "https://example.com/plain", userTitleOverride: "Other", spaceID: "source"),
+            .init(id: "c", urlString: "https://example.com/100Xliteral", spaceID: "source"),
+            .init(id: "d", urlString: "https://example.com/other", userTitleOverride: "CAFÉ final", spaceID: "source"),
+        ]
+        try f.store.writeSessionBatch([.init(
+            snapshot: replacingArchiveTabs(original, tabs),
+            origin: .local(syncMove: nil)
+        )])
+        for (id, title) in [("a", "First loaded"), ("b", "Résumé Loaded"), ("c", "Café sibling"), ("d", "Unrelated")] {
+            let current = try #require(try f.store.loadSnapshotStrict())
+            let tab = try #require(current.tabs.first { $0.id == id })
+            let entry = BrowserTabArchiveEntry(id: "archive-" + id, tab: tab, archivedAt: 100, title: title)
+            try f.store.writeSessionBatch([.init(
+                snapshot: replacingArchiveTabs(current, current.tabs.filter { $0.id != id }),
+                origin: .local(syncMove: nil), archiveAction: .insert(entry)
+            )])
+        }
+        let before = try f.evidence()
+        for (query, ids) in [
+            ("cafe", ["archive-d", "archive-c", "archive-a"]),
+            ("RESUME", ["archive-b"]), ("сохраненное", ["archive-a"]),
+            ("DISCOUNT", ["archive-a"]), ("%_", ["archive-a"]), ("_", ["archive-a"]),
+            ("literal First", []), ("missing", []),
+        ] {
+            let page = try await f.store.searchArchivePage(query: query, before: nil, limit: 50)
+            #expect(page.entries.map(\.id) == ids, "Query: \(query)")
+        }
+        let first = try await f.store.searchArchivePage(query: "CAFE", before: nil, limit: 2)
+        #expect(first.entries.map(\.id) == ["archive-d", "archive-c"])
+        let cursor = try #require(first.nextCursor)
+        let second = try await f.store.searchArchivePage(query: "café", before: cursor, limit: 2)
+        #expect(second.entries.map(\.id) == ["archive-a"] && second.nextCursor == nil)
+        await #expect(throws: BrowserTabArchiveError.invalidQuery) {
+            try await f.store.searchArchivePage(query: String(repeating: "a", count: 257), before: nil, limit: 2)
+        }
+        let oversizedSingleGraphemes = String(repeating: "a" + String(repeating: "\u{0301}", count: 20), count: 256)
+        #expect(oversizedSingleGraphemes.count == 256 && oversizedSingleGraphemes.utf8.count > 4096)
+        await #expect(throws: BrowserTabArchiveError.invalidQuery) {
+            try await f.store.searchArchivePage(query: oversizedSingleGraphemes, before: nil, limit: 2)
+        }
+        #expect(try f.evidence() == before)
+    }
+}
+
+@Test(arguments: [false, true])
+func archiveRemovalKeepsCompactReceiptsSoExactActionReplayCannotRestoreOldSnapshots(clear: Bool) async throws {
+    try await withAsyncArchiveStore { f in
+        let entry = try f.archive(tabID: "a", archiveID: "removed")
+        let afterArchive = try #require(try f.store.loadSnapshotStrict())
+        let consumed = try f.archive(tabID: "b", archiveID: "consumed")
+        let afterSecond = try #require(try f.store.loadSnapshotStrict())
+        let restored = BrowserTabSessionSnapshotTab(
+            id: "fresh-b",
+            urlString: consumed.tab.urlString,
+            userTitleOverride: consumed.tab.userTitleOverride,
+            spaceID: "target"
+        )
+        let restoreWrite = BrowserSessionWrite(
+            snapshot: replacingArchiveTabs(afterSecond, afterSecond.tabs + [restored]), origin: .local(syncMove: nil),
+            archiveAction: .restore(archiveID: consumed.id, tabID: "fresh-b")
+        )
+        try f.store.writeSessionBatch([restoreWrite])
+        let newer = replacingArchiveTabs(restoreWrite.snapshot, restoreWrite.snapshot.tabs.map {
+            $0.id == "c" ? .init(id: "c", urlString: "https://later.example", spaceID: "source") : $0
+        })
+        try f.store.writeSessionBatch([.init(snapshot: newer, origin: .local(syncMove: nil))])
+        if clear {
+            let boundary = try await f.store.archiveClearBoundary()
+            let removed = try await f.store.clearArchive(through: boundary)
+            #expect(removed == 1)
+        } else {
+            let removed = try await f.store.removeArchiveEntry(id: entry.id)
+            #expect(removed)
+        }
+        let afterRemoval = try f.evidence()
+        #expect(afterRemoval.archive.isEmpty && afterRemoval.receipts.count == 2)
+        try f.store.writeSessionBatch([
+            .init(snapshot: afterArchive, origin: .local(syncMove: nil), archiveAction: .insert(entry)),
+            .init(snapshot: afterSecond, origin: .local(syncMove: nil), archiveAction: .insert(consumed)),
+            restoreWrite,
+        ])
+        #expect(try f.evidence() == afterRemoval)
+        let reopened = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
+        #expect(try reopened.loadArchiveEntry(id: entry.id) == nil)
+        #expect(try reopened.loadSnapshotStrict() == newer)
+        #expect(throws: BrowserTabArchiveError.entryMissing) {
+            try reopened.writeSessionBatch([.init(
+                snapshot: replacingArchiveTabs(newer, newer.tabs + [
+                    .init(
+                        id: "fresh-a",
+                        urlString: entry.tab.urlString,
+                        userTitleOverride: entry.tab.userTitleOverride,
+                        spaceID: "source"
+                    ),
+                ]), origin: .local(syncMove: nil), archiveAction: .restore(archiveID: entry.id, tabID: "fresh-a")
+            )])
+        }
+        #expect(try f.evidence() == afterRemoval)
+    }
+}
+
+@Test(arguments: [false, true])
+func archiveDeleteOrCapturedClearRollsBackAndNeverTouchesSyncState(clear: Bool) async throws {
+    try await withAsyncArchiveStore { f in
+        let first = try f.archive(tabID: "a", archiveID: "first", archivedAt: 100)
+        _ = try f.archive(tabID: "b", archiveID: "second", archivedAt: 200)
+        let boundary = try await f.store.archiveClearBoundary()
+        let later = try f.archive(tabID: "c", archiveID: "later-backdated", archivedAt: -100)
+        let before = try f.evidence()
+        try f
+            .sql(
+                "CREATE TRIGGER fail_archive_remove BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+            )
+        if clear {
+            await #expect(throws: DatabaseError.self) { try await f.store.clearArchive(through: boundary) }
+        } else {
+            await #expect(throws: DatabaseError.self) { try await f.store.removeArchiveEntry(id: first.id) }
+        }
+        #expect(try f.evidence() == before)
+        try f.sql("DROP TRIGGER fail_archive_remove")
+        if clear {
+            let count = try await f.store.clearArchive(through: boundary)
+            #expect(count == 2)
+            let repeated = try await f.store.clearArchive(through: boundary)
+            #expect(repeated == 0)
+            #expect(try f.store.loadArchivePage().entries == [later])
+        } else {
+            let removed = try await f.store.removeArchiveEntry(id: first.id)
+            #expect(removed)
+            let repeated = try await f.store.removeArchiveEntry(id: first.id)
+            #expect(!repeated)
+        }
+        let after = try f.evidence()
+        #expect(after.snapshot == before.snapshot && after.queue == before.queue && after.baseline == before.baseline)
+        #expect(after.receipts == before.receipts && after.cursor == before.cursor)
+        #expect(try f.store.loadArchiveEntry(id: later.id) == later)
+        let highWater = try await f.store.archiveClearBoundary()
+        #expect(highWater.insertionSequence > boundary.insertionSequence)
+        _ = try await f.store.clearArchive(through: highWater)
+        let emptyBoundary = try await f.store.archiveClearBoundary()
+        #expect(emptyBoundary == highWater)
+        let newest = try f.archive(tabID: "d", archiveID: "after-empty-clear", archivedAt: -200)
+        let oldClear = try await f.store.clearArchive(through: highWater)
+        #expect(try oldClear == 0 && f.store.loadArchiveEntry(id: newest.id) == newest)
+    }
+}
+
+@Test func archiveMigrationSeparatesActiveContentAndConsumedReceiptsWithoutChangingSyncState() async throws {
+    try await withAsyncArchiveStore { f in
+        let active = try f.entry(tabID: "a", archiveID: "legacy-active")
+        let consumed = try f.entry(tabID: "b", archiveID: "legacy-consumed")
+        let original = try #require(try f.store.loadSnapshotStrict())
+        let restoredTab = BrowserTabSessionSnapshotTab(
+            id: "legacy-fresh",
+            urlString: consumed.tab.urlString,
+            userTitleOverride: consumed.tab.userTitleOverride,
+            spaceID: "target"
+        )
+        let durable = replacingArchiveTabs(
+            original,
+            original.tabs.filter { $0.id != "a" && $0.id != "b" } + [restoredTab]
+        )
+        try f.store.writeSessionBatch([.init(snapshot: durable, origin: .local(syncMove: nil))])
+        let before = try f.evidence()
+        try await DatabaseQueue(path: f.databaseURL.path).write { db in
+            try db.execute(sql: """
+            DROP TABLE browser_tab_archive;
+            DROP TABLE browser_tab_archive_receipts;
+            CREATE TABLE browser_tab_archive (id TEXT PRIMARY KEY NOT NULL, payload BLOB NOT NULL,
+                archived_at DOUBLE NOT NULL, restored_tab_id TEXT);
+            CREATE INDEX browser_tab_archive_active_order ON browser_tab_archive (archived_at DESC, id DESC)
+                WHERE restored_tab_id IS NULL;
+            DELETE FROM grdb_migrations WHERE identifier = 'separateArchiveContentFromReceipts';
+            """)
+            try db.execute(
+                sql: "INSERT INTO browser_tab_archive(rowid,id,payload,archived_at,restored_tab_id) VALUES (3,?,?,?,NULL)",
+                arguments: [active.id, JSONEncoder().encode(active), active.archivedAt]
+            )
+            try db.execute(
+                sql: "INSERT INTO browser_tab_archive(rowid,id,payload,archived_at,restored_tab_id) VALUES (9,?,?,?,'legacy-fresh')",
+                arguments: [consumed.id, JSONEncoder().encode(consumed), consumed.archivedAt]
+            )
+        }
+        let migrated = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
+        #expect(try migrated.loadArchivePage().entries == [active])
+        #expect(try migrated.loadArchiveEntry(id: consumed.id) == nil)
+        let boundary = try await migrated.archiveClearBoundary()
+        #expect(boundary.insertionSequence == 9)
+        let rows = try await DatabaseQueue(path: f.databaseURL.path).read { db in
+            try (
+                String.fetchAll(
+                    db,
+                    sql: "SELECT name FROM pragma_table_info('browser_tab_archive_receipts') ORDER BY cid"
+                ),
+                Int.fetchAll(db, sql: "SELECT length(entry_digest) FROM browser_tab_archive_receipts ORDER BY id"),
+                String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE name = 'browser_tab_archive_legacy'")
+            )
+        }
+        #expect(rows.0 == ["id", "entry_digest", "restored_tab_id"] && rows.1 == [32, 32] && rows.2.isEmpty)
+        let after = try f.evidence()
+        #expect(after.snapshot == before.snapshot && after.queue == before.queue && after.baseline == before.baseline)
+        #expect(after.cursor == before.cursor && after.archive.count == 1 && after.receipts.count == 2)
+        let search = try await migrated.searchArchivePage(query: "NAME A", before: nil, limit: 50)
+        #expect(search.entries == [active])
+        try migrated.writeSessionBatch([
+            .init(snapshot: durable, origin: .local(syncMove: nil), archiveAction: .insert(consumed)),
+            .init(
+                snapshot: durable,
+                origin: .local(syncMove: nil),
+                archiveAction: .restore(archiveID: consumed.id, tabID: "legacy-fresh")
+            ),
+        ])
+        #expect(try f.evidence() == after)
+    }
+}
+
 // MARK: - ArchiveStoreEvidence
 
 private struct ArchiveStoreEvidence: Equatable {
@@ -314,7 +540,7 @@ private struct ArchiveStoreFixture {
                 Data.fetchAll(db, sql: "SELECT payload FROM browser_tab_archive ORDER BY id"),
                 String.fetchAll(
                     db,
-                    sql: "SELECT id || ':' || COALESCE(restored_tab_id, '') FROM browser_tab_archive ORDER BY id"
+                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id, '') FROM browser_tab_archive_receipts ORDER BY id"
                 )
             )
         }
@@ -357,4 +583,14 @@ private func withArchiveStore(_ body: (ArchiveStoreFixture) throws -> Void) thro
 
 private func runArchiveStore(directory: URL, _ body: (ArchiveStoreFixture) throws -> Void) throws {
     try body(ArchiveStoreFixture(directory: directory))
+}
+
+private func withAsyncArchiveStore(_ body: (ArchiveStoreFixture) async throws -> Void) async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ArchiveStore-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try await runAsyncArchiveStore(directory: directory, body)
+}
+
+private func runAsyncArchiveStore(directory: URL, _ body: (ArchiveStoreFixture) async throws -> Void) async throws {
+    try await body(ArchiveStoreFixture(directory: directory))
 }

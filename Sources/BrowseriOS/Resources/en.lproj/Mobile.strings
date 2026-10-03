@@ -92,3 +92,11 @@
 "Archive is unavailable for this profile." = "Archive is unavailable for this profile.";
 "The archive could not be loaded. Try again." = "The archive could not be loaded. Try again.";
 "This archive action could not be completed. Try again." = "This archive action could not be completed. Try again.";
+"Clear Archive" = "Clear Archive";
+"Clear Archive?" = "Clear Archive?";
+"Search Archive" = "Search Archive";
+"Loading Archive…" = "Loading Archive…";
+"No Matching Tabs" = "No Matching Tabs";
+"Use a shorter search." = "Use a shorter search.";
+"The archive could not be changed. Try again." = "The archive could not be changed. Try again.";
+"Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept." = "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept.";

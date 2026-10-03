@@ -71,6 +71,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     var supportsArchive: Bool { profileDocument?.supportsArchive == true }
     var canRestoreArchivedTab: Bool { canEdit && profileDocument?.canRestoreArchivedTab == true }
+    var canManageArchive: Bool { canEdit && profileDocument?.canManageArchive == true }
+    var isArchiveOperationInFlight: Bool { profileDocument?.isArchiveOperationInFlight == true }
     var archiveError: String? { profileDocument?.archiveError }
     var archiveRevision: Int { profileDocument?.archiveRevision ?? 0 }
 
@@ -84,6 +86,28 @@ struct BrowserMobileTab: Identifiable, Equatable {
     func archivePage(before: BrowserTabArchiveCursor? = nil, limit: Int = 50) throws -> BrowserTabArchivePage {
         guard let profileDocument else { throw BrowserTabArchiveError.unsupportedStore }
         return try profileDocument.archivePage(before: before, limit: limit)
+    }
+
+    func searchArchivePage(
+        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50
+    ) async throws -> BrowserTabArchivePage {
+        guard let profileDocument else { throw BrowserTabArchiveError.unsupportedStore }
+        return try await profileDocument.searchArchivePage(query: query, before: before, limit: limit)
+    }
+
+    func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary {
+        guard let profileDocument else { throw BrowserTabArchiveError.unsupportedStore }
+        return try await profileDocument.archiveClearBoundary()
+    }
+
+    @discardableResult func deleteArchivedTab(id: String) async -> Bool {
+        guard canManageArchive, let profileDocument else { return false }
+        return await profileDocument.deleteArchivedTab(id: id)
+    }
+
+    @discardableResult func clearArchive(through boundary: BrowserTabArchiveBoundary) async -> Bool {
+        guard canManageArchive, let profileDocument else { return false }
+        return await profileDocument.clearArchive(through: boundary)
     }
 
     @discardableResult func restoreArchivedTab(id: String, toSpaceID: String? = nil) -> String? {

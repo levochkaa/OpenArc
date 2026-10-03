@@ -2,11 +2,19 @@ import UIKit
 
 /// Bounded pages of profile-local recovery records. The document owns restore
 /// identity, persistence, and publication to all windows.
-final class BrowserMobileArchiveViewController: UITableViewController {
+final class BrowserMobileArchiveViewController: UITableViewController, UISearchResultsUpdating,
+    UISearchBarDelegate, UISearchControllerDelegate
+{
     // MARK: Lifecycle
 
-    init(workspace: BrowserMobileWorkspace) {
+    init(
+        workspace: BrowserMobileWorkspace,
+        searchLoader: (@MainActor (String, BrowserTabArchiveCursor?, Int) async throws -> BrowserTabArchivePage)? = nil
+    ) {
         self.workspace = workspace
+        self.searchLoader = searchLoader ?? { query, cursor, limit in
+            try await workspace.searchArchivePage(query: query, before: cursor, limit: limit)
+        }
         super.init(style: .insetGrouped)
     }
 
@@ -15,11 +23,12 @@ final class BrowserMobileArchiveViewController: UITableViewController {
     // MARK: Internal
 
     override var keyCommands: [UIKeyCommand]? {
-        [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(close))]
+        [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancelOrClose))]
     }
 
     let workspace: BrowserMobileWorkspace
     var didRestore: (() -> Void)?
+    private(set) var pendingClearBoundary: BrowserTabArchiveBoundary?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -41,7 +50,30 @@ final class BrowserMobileArchiveViewController: UITableViewController {
         )
         newerButton.accessibilityIdentifier = "browser.archive.newer"
         olderButton.accessibilityIdentifier = "browser.archive.older"
-        toolbarItems = [newerButton, UIBarButtonItem(systemItem: .flexibleSpace), olderButton]
+        clearButton = UIBarButtonItem(
+            image: UIImage(systemName: "trash"), style: .plain,
+            target: self, action: #selector(requestClear)
+        )
+        clearButton.title = String(localized: "Clear Archive", table: "Mobile")
+        clearButton.tintColor = .systemRed
+        clearButton.accessibilityIdentifier = "browser.archive.clear"
+        toolbarItems = [
+            newerButton,
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            clearButton,
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            olderButton,
+        ]
+        searchController.searchResultsUpdater = self
+        searchController.delegate = self
+        searchController.searchBar.delegate = self
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.hidesNavigationBarDuringPresentation = false
+        searchController.searchBar.placeholder = String(localized: "Search Archive", table: "Mobile")
+        searchController.searchBar.searchTextField.accessibilityIdentifier = "browser.archive.search"
+        navigationItem.searchController = searchController
+        navigationItem.hidesSearchBarWhenScrolling = false
+        definesPresentationContext = true
         errorLabel.font = .preferredFont(forTextStyle: .subheadline)
         errorLabel.adjustsFontForContentSizeCategory = true
         errorLabel.numberOfLines = 0
@@ -70,6 +102,15 @@ final class BrowserMobileArchiveViewController: UITableViewController {
         sizeStatusHeader()
     }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || navigationController?.isBeingDismissed == true {
+            isClosing = true
+            searchTask?.cancel()
+            loadGeneration &+= 1
+        }
+    }
+
     override func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { entries.count }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -92,32 +133,62 @@ final class BrowserMobileArchiveViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard mayRestore, entries.indices.contains(indexPath.row), presentedViewController == nil else { return }
+        guard mayRestore, entries.indices.contains(indexPath.row) else { return }
         let entry = entries[indexPath.row]
-        if let original = entry.tab.spaceID, workspace.spaces.contains(where: { $0.id == original }) {
-            restore(entry, to: original)
-            return
+        finishSearchThen { [weak self] in self?.selectEntry(entry) }
+    }
+
+    override func tableView(
+        _: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        guard mayRestore, entries.indices.contains(indexPath.row) else { return nil }
+        let id = entries[indexPath.row].id
+        let action = UIContextualAction(
+            style: .destructive, title: String(localized: "Delete", table: "Mobile")
+        ) { [weak self] _, _, completion in
+            guard let self, mayRestore else { completion(false)
+                return
+            }
+            remove(.entry(id), completion: completion)
         }
-        guard !workspace.spaces.isEmpty else {
-            interactionError = String(localized: "Create a Space before restoring tabs.", table: "Mobile")
-            updatePresentation()
-            return
+        let configuration = UISwipeActionsConfiguration(actions: [action])
+        configuration.performsFirstActionWithFullSwipe = false
+        return configuration
+    }
+
+    func updateSearchResults(for searchController: UISearchController) {
+        guard searchController.searchBar.searchTextField.markedTextRange == nil else { return }
+        let text = String((searchController.searchBar.text ?? "").prefix(256))
+        if searchController.searchBar.text != text {
+            searchController.searchBar.text = text
         }
-        let picker = UIAlertController(
-            title: String(localized: "Restore to Space", table: "Mobile"),
-            message: String(localized: "The original Space is no longer available.", table: "Mobile"),
-            preferredStyle: .actionSheet
-        )
-        for space in workspace.spaces {
-            picker.addAction(UIAlertAction(title: space.title, style: .default) { [weak self, weak picker] _ in
-                guard let picker else { return }
-                self?.chooseDestination(space.id, for: entry, dismissing: picker)
-            })
+        setQuery(text.trimmingCharacters(in: .whitespacesAndNewlines), debounce: true)
+    }
+
+    func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
+        guard searchBar.searchTextField.markedTextRange == nil else { return }
+        updateSearchResults(for: searchController)
+    }
+
+    func didDismissSearchController(_: UISearchController) {
+        searchController.searchBar.text = ""
+        setQuery("", debounce: false)
+        let action = pendingSearchAction
+        pendingSearchAction = nil
+        if !isClosing {
+            action?()
         }
-        picker.addAction(UIAlertAction(title: String(localized: "Cancel", table: "Mobile"), style: .cancel))
-        picker.popoverPresentationController?.sourceView = tableView
-        picker.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
-        present(picker, animated: true)
+    }
+
+    func chooseClearBoundary(_ boundary: BrowserTabArchiveBoundary, dismissing picker: UIAlertController) {
+        guard pendingClearBoundary == boundary else { return }
+        pendingClearBoundary = nil
+        picker.dismiss(animated: true) { [weak self] in self?.remove(.clear(boundary)) }
+    }
+
+    func cancelClear(dismissing picker: UIAlertController) {
+        pendingClearBoundary = nil
+        picker.dismiss(animated: true)
     }
 
     func render() {
@@ -141,6 +212,25 @@ final class BrowserMobileArchiveViewController: UITableViewController {
 
     // MARK: Private
 
+    private enum Removal {
+        case entry(String)
+        case clear(BrowserTabArchiveBoundary)
+    }
+
+    private let searchLoader: @MainActor (String, BrowserTabArchiveCursor?, Int) async throws -> BrowserTabArchivePage
+    private let searchController = UISearchController(searchResultsController: nil)
+    private var searchTask: Task<Void, Never>?
+    private var loadGeneration = 0
+    private var query = ""
+    private var pendingSearchAction: (() -> Void)?
+    private var isClosing = false
+    private var isLoading = false
+    private var isChangingArchive = false
+    private var isCapturingBoundary = false
+    private var boundaryLoadFailed = false
+    private var isQueryInvalid = false
+    private var failedRemoval: Removal?
+    private var actionError: String?
     private var entries = [BrowserTabArchiveEntry]()
     private var cursors: [BrowserTabArchiveCursor?] = [nil]
     private var nextCursor: BrowserTabArchiveCursor?
@@ -149,38 +239,161 @@ final class BrowserMobileArchiveViewController: UITableViewController {
     private var interactionError: String?
     private var newerButton = UIBarButtonItem()
     private var olderButton = UIBarButtonItem()
+    private var clearButton = UIBarButtonItem()
     private let errorLabel = UILabel()
     private let retryButton = UIButton(type: .system)
     private let statusStack = UIStackView()
     private var isRetrying = false
 
-    private var mayRestore: Bool { workspace.canRestoreArchivedTab && loadError == nil && !isRetrying }
+    private var mayManage: Bool {
+        workspace.canManageArchive && !isChangingArchive && !isCapturingBoundary && !isRetrying && !isClosing
+    }
 
-    private func loadPage() {
-        do {
-            let page = try workspace.archivePage(before: cursors.last ?? nil, limit: 50)
-            entries = page.entries
-            nextCursor = page.nextCursor
-            loadError = nil
-        } catch {
-            loadError = String(localized: "The archive could not be loaded. Try again.", table: "Mobile")
-            nextCursor = nil
-        }
+    private var mayRestore: Bool { mayManage && !isLoading && loadError == nil && failedRemoval == nil }
+
+    private func setQuery(_ value: String, debounce: Bool) {
+        guard query != value, !isClosing else { return }
+        query = value
+        cursors = [nil]
+        loadPage(debounce: debounce)
+    }
+
+    private func loadPage(debounce: Bool = false) {
+        guard !isClosing else { return }
+        loadGeneration &+= 1
+        let generation = loadGeneration
+        searchTask?.cancel()
+        let query = query, cursor = cursors.last ?? nil, loader = searchLoader
+        isLoading = true
+        loadError = nil
+        isQueryInvalid = false
+        entries = []
+        nextCursor = nil
         tableView.reloadData()
+        updatePresentation()
+        searchTask = Task { @MainActor [weak self] in
+            do {
+                if debounce {
+                    try await Task.sleep(for: .milliseconds(200))
+                }
+                try Task.checkCancellation()
+                let page = try await loader(query, cursor, 50)
+                guard let self, !Task.isCancelled, !isClosing, loadGeneration == generation else { return }
+                entries = page.entries
+                nextCursor = page.nextCursor
+                isLoading = false
+                tableView.reloadData()
+                updatePresentation()
+            } catch {
+                guard let self, !Task.isCancelled, !isClosing, loadGeneration == generation else { return }
+                isLoading = false
+                isQueryInvalid = error as? BrowserTabArchiveError == .invalidQuery
+                loadError = isQueryInvalid
+                    ? String(localized: "Use a shorter search.", table: "Mobile")
+                    : String(localized: "The archive could not be loaded. Try again.", table: "Mobile")
+                updatePresentation()
+            }
+        }
+    }
+
+    private func finishSearchThen(_ action: @escaping () -> Void) {
+        guard !isClosing else { return }
+        if searchController.isActive {
+            pendingSearchAction = action
+            searchController.isActive = false
+        } else {
+            guard presentedViewController == nil else { return }
+            view.endEditing(true)
+            action()
+        }
+    }
+
+    private func selectEntry(_ entry: BrowserTabArchiveEntry) {
+        // Search dismissal may reload the list. The captured identity is checked
+        // against the document again, independently of the new rendered rows.
+        guard mayManage, presentedViewController == nil else { return }
+        if let original = entry.tab.spaceID, workspace.spaces.contains(where: { $0.id == original }) {
+            restore(entry, to: original)
+            return
+        }
+        guard !workspace.spaces.isEmpty else {
+            interactionError = String(localized: "Create a Space before restoring tabs.", table: "Mobile")
+            updatePresentation()
+            return
+        }
+        let picker = UIAlertController(
+            title: String(localized: "Restore to Space", table: "Mobile"),
+            message: String(localized: "The original Space is no longer available.", table: "Mobile"),
+            preferredStyle: .actionSheet
+        )
+        for space in workspace.spaces {
+            picker.addAction(UIAlertAction(title: space.title, style: .default) { [weak self, weak picker] _ in
+                guard let picker else { return }
+                self?.chooseDestination(space.id, for: entry, dismissing: picker)
+            })
+        }
+        picker.addAction(UIAlertAction(title: String(localized: "Cancel", table: "Mobile"), style: .cancel))
+        picker.popoverPresentationController?.sourceView = tableView
+        picker.popoverPresentationController?.sourceRect = CGRect(
+            x: tableView.bounds.midX, y: tableView.bounds.midY, width: 1, height: 1
+        )
+        present(picker, animated: true)
+    }
+
+    private func remove(_ action: Removal, completion: ((Bool) -> Void)? = nil) {
+        guard mayManage else { completion?(false)
+            return
+        }
+        isChangingArchive = true
+        failedRemoval = nil
+        actionError = nil
+        searchTask?.cancel()
+        loadGeneration &+= 1
+        isLoading = false
+        updatePresentation()
+        let workspace = workspace
+        Task { @MainActor [weak self] in
+            let succeeded: Bool =
+                switch action {
+                case .entry(let id): await workspace.deleteArchivedTab(id: id)
+                case .clear(let boundary): await workspace.clearArchive(through: boundary)
+                }
+            completion?(succeeded)
+            guard let self else { return }
+            isChangingArchive = false
+            if !succeeded {
+                failedRemoval = action
+                actionError = workspace.archiveError ?? String(
+                    localized: "The archive could not be changed. Try again.", table: "Mobile"
+                )
+            }
+            lastRevision = workspace.archiveRevision
+            cursors = [nil]
+            loadPage()
+        }
     }
 
     private func updatePresentation() {
-        newerButton.isEnabled = cursors.count > 1 && !isRetrying
-        olderButton.isEnabled = nextCursor != nil && !isRetrying
-        errorLabel.text = workspace.sessionError ?? loadError ?? interactionError ?? workspace.archiveError
-        retryButton.isHidden = workspace.sessionError == nil && loadError == nil
-        retryButton.isEnabled = !isRetrying
+        newerButton.isEnabled = cursors.count > 1 && !isLoading && !isChangingArchive && !isRetrying
+        olderButton.isEnabled = nextCursor != nil && !isLoading && !isChangingArchive && !isRetrying
+        clearButton.isEnabled = mayManage && failedRemoval == nil
+        errorLabel.text = workspace.sessionError ?? actionError ?? loadError ?? interactionError ?? workspace
+            .archiveError
+        retryButton.isHidden = workspace.sessionError == nil && (loadError == nil || isQueryInvalid)
+            && failedRemoval == nil && !boundaryLoadFailed
+        retryButton.isEnabled = !isRetrying && !isChangingArchive && !isCapturingBoundary
         tableView.tableHeaderView = errorLabel.text == nil ? nil : statusStack
         sizeStatusHeader()
         if entries.isEmpty, errorLabel.text == nil {
             var empty = UIContentUnavailableConfiguration.empty()
-            empty.text = String(localized: "No Archived Tabs", table: "Mobile")
-            empty.secondaryText = String(localized: "Tabs you close appear here.", table: "Mobile")
+            if isLoading || isCapturingBoundary {
+                empty.text = String(localized: "Loading Archive…", table: "Mobile")
+            } else if !query.isEmpty {
+                empty.text = String(localized: "No Matching Tabs", table: "Mobile")
+            } else {
+                empty.text = String(localized: "No Archived Tabs", table: "Mobile")
+                empty.secondaryText = String(localized: "Tabs you close appear here.", table: "Mobile")
+            }
             contentUnavailableConfiguration = empty
         } else {
             contentUnavailableConfiguration = nil
@@ -204,7 +417,7 @@ final class BrowserMobileArchiveViewController: UITableViewController {
     }
 
     private func restore(_ entry: BrowserTabArchiveEntry, to spaceID: String) {
-        guard mayRestore else { return }
+        guard mayManage, failedRemoval == nil else { return }
         if workspace.restoreArchivedTab(id: entry.id, toSpaceID: spaceID) != nil,
            workspace.sessionError == nil, workspace.canRestoreArchivedTab
         {
@@ -215,10 +428,78 @@ final class BrowserMobileArchiveViewController: UITableViewController {
         }
     }
 
-    @objc private func close() { dismiss(animated: true) }
+    @objc private func cancelOrClose() {
+        if searchController.isActive {
+            pendingSearchAction = nil
+            searchController.isActive = false
+            return
+        }
+        close()
+    }
+
+    @objc private func close() {
+        isClosing = true
+        searchTask?.cancel()
+        loadGeneration &+= 1
+        let presenter = navigationController?.presentingViewController ?? presentingViewController
+        presenter?.dismiss(animated: true)
+    }
+
+    @objc private func requestClear() {
+        guard mayManage, failedRemoval == nil else { return }
+        finishSearchThen { [weak self] in self?.captureClearBoundary() }
+    }
+
+    private func captureClearBoundary() {
+        guard mayManage, presentedViewController == nil else { return }
+        isCapturingBoundary = true
+        boundaryLoadFailed = false
+        actionError = nil
+        updatePresentation()
+        let workspace = workspace
+        Task { @MainActor [weak self] in
+            do {
+                let boundary = try await workspace.archiveClearBoundary()
+                guard let self, !isClosing else { return }
+                isCapturingBoundary = false
+                guard presentedViewController == nil else { updatePresentation()
+                    return
+                }
+                pendingClearBoundary = boundary
+                let picker = UIAlertController(
+                    title: String(localized: "Clear Archive?", table: "Mobile"),
+                    message: String(
+                        localized: "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept.",
+                        table: "Mobile"
+                    ), preferredStyle: .actionSheet
+                )
+                picker.addAction(UIAlertAction(
+                    title: String(localized: "Clear Archive", table: "Mobile"), style: .destructive
+                ) { [weak self, weak picker] _ in
+                    guard let picker else { return }
+                    self?.chooseClearBoundary(boundary, dismissing: picker)
+                })
+                picker.addAction(UIAlertAction(
+                    title: String(localized: "Cancel", table: "Mobile"), style: .cancel
+                ) { [weak self, weak picker] _ in
+                    guard let picker else { return }
+                    self?.cancelClear(dismissing: picker)
+                })
+                picker.popoverPresentationController?.barButtonItem = clearButton
+                present(picker, animated: true)
+                updatePresentation()
+            } catch {
+                guard let self, !isClosing else { return }
+                isCapturingBoundary = false
+                boundaryLoadFailed = true
+                actionError = String(localized: "The archive could not be loaded. Try again.", table: "Mobile")
+                updatePresentation()
+            }
+        }
+    }
 
     @objc private func showOlder() {
-        guard let nextCursor, !isRetrying else { return }
+        guard let nextCursor, !isLoading, !isChangingArchive, !isRetrying else { return }
         cursors.append(nextCursor)
         loadPage()
         updatePresentation()
@@ -226,7 +507,7 @@ final class BrowserMobileArchiveViewController: UITableViewController {
     }
 
     @objc private func showNewer() {
-        guard cursors.count > 1, !isRetrying else { return }
+        guard cursors.count > 1, !isLoading, !isChangingArchive, !isRetrying else { return }
         cursors.removeLast()
         loadPage()
         updatePresentation()
@@ -234,7 +515,15 @@ final class BrowserMobileArchiveViewController: UITableViewController {
     }
 
     @objc private func retry() {
-        guard !isRetrying else { return }
+        guard !isRetrying, !isChangingArchive, !isCapturingBoundary else { return }
+        if boundaryLoadFailed, workspace.sessionError == nil {
+            requestClear()
+            return
+        }
+        if let failedRemoval, workspace.sessionError == nil {
+            remove(failedRemoval)
+            return
+        }
         isRetrying = true
         updatePresentation()
         Task { @MainActor [weak self] in

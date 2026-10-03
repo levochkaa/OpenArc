@@ -120,7 +120,7 @@ extension BrowserMobileUITests {
 
             try f
                 .sql(
-                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END"
                 )
             let freshID = try #require(first.restoreArchivedTab(id: entry.id))
             #expect(freshID != "a" && first.selectedTabID == freshID)
@@ -208,7 +208,7 @@ extension BrowserMobileUITests {
             let oldIDs = Set(workspace.tabs.map(\.id))
             try f
                 .sql(
-                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END"
                 )
             archive.tableView(archive.tableView, didSelectRowAt: .init(row: 0, section: 0))
             let freshID = try #require(workspace.tabs.first { !oldIDs.contains($0.id) }?.id)
@@ -281,6 +281,263 @@ extension BrowserMobileUITests {
             #expect(try f.store.loadArchiveEntry(id: entry.id) == nil)
             #expect(try f.queue().count == before.count + 1)
             #expect(mobileArchiveController(in: host.root) == nil)
+        }
+    }
+
+    @Test func archiveMutationGuardIsSharedAndCompletionCannotEraseLaterUnsavedTabEdit() async throws {
+        try await withMobileArchiveFixture { f in
+            #expect(f.document.archiveTab(id: "a"))
+            let entry = try #require(try f.store.loadArchivePage().entries.first)
+            let gate = MobileArchiveOperationGate(store: f.store)
+            let document = try BrowserMobileProfileDocument(store: gate, initialSnapshot: f.store.loadSnapshotStrict())
+            let first = await f.workspace(engine: MobileArchiveEngine(), scene: "guard-first", document: document)
+            let second = await f.workspace(engine: MobileArchiveEngine(), scene: "guard-second", document: document)
+            let revision = first.archiveRevision
+            let removal = Task { await first.deleteArchivedTab(id: entry.id) }
+            defer { gate.release() }
+            try #require(await mobileArchiveEventually { gate.isWaiting })
+            #expect(first.isArchiveOperationInFlight && second.isArchiveOperationInFlight)
+            #expect(document.canEdit && !first.canManageArchive && !second.canRestoreArchivedTab)
+            #expect(!document.archiveTab(id: "b"))
+            #expect(second.restoreArchivedTab(id: entry.id) == nil)
+            let refused = await second.deleteArchivedTab(id: entry.id)
+            #expect(!refused)
+            try f
+                .sql(
+                    "CREATE TRIGGER fail_during_archive BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                )
+            #expect(document.renameTab(id: "b", title: "Unsaved while Archive awaits"))
+            #expect(document.hasUncommittedWrites && first.sessionError != nil)
+            gate.release()
+            let succeeded = await removal.value
+            #expect(succeeded)
+            #expect(first.archiveRevision == revision + 1 && second.archiveRevision == revision + 1)
+            #expect(!first.isArchiveOperationInFlight && !second.isArchiveOperationInFlight)
+            #expect(document.hasUncommittedWrites && document.persistenceFailure?.isRetryable == true)
+            #expect(try f.store.loadArchiveEntry(id: entry.id) == nil)
+            #expect(document.snapshot.tabs.first { $0.id == "b" }?.userTitleOverride == "Unsaved while Archive awaits")
+            #expect(try f.store.loadSnapshotStrict()?.tabs.first { $0.id == "b" }?.userTitleOverride == nil)
+            try f.sql("DROP TRIGGER fail_during_archive")
+            #expect(document.retryPersistence())
+            #expect(first.canManageArchive && second.canManageArchive && !document.hasUncommittedWrites)
+            #expect(try f.store.loadSnapshotStrict() == document.snapshot)
+            #expect(try f.store.loadArchivePage().entries.isEmpty)
+            #expect(try f.lastOperations() == [.patchTab(
+                id: "b",
+                fields: .init(userTitleOverride: .set("Unsaved while Archive awaits"))
+            )])
+        }
+    }
+
+    @Test func nativeArchiveSearchRejectsStaleRepliesAndDoneClosesActiveSearchSheet() async throws {
+        try await withMobileArchiveFixture { f in
+            let engine = MobileArchiveEngine()
+            let workspace = await f.workspace(engine: engine, scene: "held-search")
+            workspace.closeTab(id: "a")
+            workspace.closeTab(id: "b")
+            let entries = try f.store.loadArchivePage().entries
+            let a = try #require(entries.first { $0.tab.id == "a" })
+            let b = try #require(entries.first { $0.tab.id == "b" })
+            let before = try f.queue()
+            let loader = MobileArchiveHeldSearch()
+            defer { loader.finishAll() }
+            let host = try MobileArchivePresentation(workspace: workspace, contentView: engine.hostView)
+            defer { host.close() }
+            let archive = BrowserMobileArchiveViewController(
+                workspace: workspace,
+                searchLoader: { query, cursor, limit in
+                    try await loader.load(query: query, cursor: cursor, limit: limit)
+                }
+            )
+            try await host.present(archive)
+            try #require(await mobileArchiveEventually { loader.requests.count == 1 })
+            #expect(loader.requests[0].query.isEmpty && loader.requests[0].cursor == nil && loader.requests[0]
+                .limit == 50)
+            loader.resolve(0, entries: entries)
+            try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) == 2 })
+            let search = try #require(archive.navigationItem.searchController)
+            #expect(search.searchBar.searchTextField.accessibilityIdentifier == "browser.archive.search")
+            search.isActive = true
+            search.searchBar.text = "older"
+            archive.updateSearchResults(for: search)
+            try #require(await mobileArchiveEventually { loader.requests.count == 2 })
+            search.searchBar.text = "newer"
+            archive.updateSearchResults(for: search)
+            // Native debounce must clear the previous rows before permitting restore.
+            #expect(archive.tableView.numberOfRows(inSection: 0) == 0)
+            try #require(await mobileArchiveEventually { loader.requests.count == 3 })
+            loader.resolve(2, entries: [b])
+            try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) == 1 })
+            archive.tableView.layoutIfNeeded()
+            #expect(archive.tableView
+                .cellForRow(at: .init(row: 0, section: 0))?
+                .accessibilityIdentifier == "browser.archive.entry." + b.id)
+            loader.resolve(1, entries: [a])
+            try #require(await mobileArchiveEventually { loader.finished.contains(1) })
+            await Task.yield()
+            #expect(archive.tableView
+                .cellForRow(at: .init(row: 0, section: 0))?
+                .accessibilityIdentifier == "browser.archive.entry." + b.id)
+
+            search.searchBar.text = "cancelled"
+            archive.updateSearchResults(for: search)
+            try #require(await mobileArchiveEventually { loader.requests.count == 4 })
+            search.isActive = false
+            try #require(await mobileArchiveEventually { loader.requests.count == 5 })
+            #expect(loader.requests[4].query.isEmpty)
+            loader.resolve(4, entries: entries)
+            try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) == 2 })
+            loader.resolve(3, entries: [])
+            try #require(await mobileArchiveEventually { loader.finished.contains(3) })
+            await Task.yield()
+            #expect(archive.tableView.numberOfRows(inSection: 0) == 2)
+
+            search.isActive = true
+            search.searchBar.text = "after-close"
+            archive.updateSearchResults(for: search)
+            try #require(await mobileArchiveEventually { loader.requests.count == 6 })
+            let navigation = try #require(archive.navigationController)
+            try sendMobileArchiveBar(archive.navigationItem.rightBarButtonItem)
+            try #require(await mobileArchiveEventually { navigation.presentingViewController == nil })
+            loader.resolve(5, entries: [a])
+            try #require(await mobileArchiveEventually { loader.finished.contains(5) })
+            await Task.yield()
+            #expect(mobileArchiveController(in: host.root) == nil)
+            #expect(try f.queue() == before && f.store.loadArchivePage().entries == entries)
+        }
+    }
+
+    @Test func nativeArchiveSearchSwipeDeleteFailureAndRetryUseStableEntryAndRefreshOtherScene() async throws {
+        try await withMobileArchiveFixture { f in
+            let engine = MobileArchiveEngine()
+            let workspace = await f.workspace(engine: engine, scene: "search-delete")
+            let second = await f.workspace(engine: MobileArchiveEngine(), scene: "search-other")
+            #expect(f.document.renameTab(id: "a", title: "Café one"))
+            #expect(f.document.renameTab(id: "b", title: "Résumé two"))
+            workspace.closeTab(id: "a")
+            workspace.closeTab(id: "b")
+            let entries = try f.store.loadArchivePage().entries
+            let entry = try #require(entries.first { $0.tab.id == "b" })
+            let before = try f.queue()
+            let revision = workspace.archiveRevision
+            let host = try MobileArchivePresentation(workspace: workspace, contentView: engine.hostView)
+            defer { host.close() }
+            let archive = try await host.open()
+            let search = try #require(archive.navigationItem.searchController)
+            search.searchBar.text = "RESUME"
+            archive.updateSearchResults(for: search)
+            try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) == 1 })
+            archive.tableView.layoutIfNeeded()
+            let path = IndexPath(row: 0, section: 0)
+            let cell = try #require(archive.tableView.cellForRow(at: path))
+            #expect(cell.accessibilityIdentifier == "browser.archive.entry." + entry.id)
+            let action = try #require(archive.tableView(
+                archive.tableView,
+                trailingSwipeActionsConfigurationForRowAt: path
+            )?.actions
+                .first)
+            #expect(action.title == "Delete")
+            try f
+                .sql(
+                    "CREATE TRIGGER fail_archive_delete BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                )
+            var result: Bool?
+            action.handler(action, cell) { result = $0 }
+            try #require(await mobileArchiveEventually { result != nil })
+            #expect(result == false && workspace.archiveRevision == revision && second.archiveRevision == revision)
+            #expect(try f.store.loadArchiveEntry(id: entry.id) == entry && f.queue() == before)
+            let retry = try #require(mobileArchiveView("browser.archive.retry", in: archive.view) as? UIButton)
+            try #require(await mobileArchiveEventually { !retry.isHidden && retry.isEnabled })
+            try f.sql("DROP TRIGGER fail_archive_delete")
+            retry.sendActions(for: .touchUpInside)
+            try #require(await mobileArchiveEventually { workspace.archiveRevision == revision + 1 })
+            #expect(second.archiveRevision == revision + 1)
+            try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) == 0 })
+            #expect(try f.store.loadArchiveEntry(id: entry.id) == nil)
+            #expect(try f.queue() == before)
+            search.searchBar.text = "CAFE"
+            archive.updateSearchResults(for: search)
+            try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) == 1 })
+            archive.tableView.layoutIfNeeded()
+            let remaining = try #require(entries.first { $0.tab.id == "a" })
+            #expect(archive.tableView
+                .cellForRow(at: path)?
+                .accessibilityIdentifier == "browser.archive.entry." + remaining.id)
+            try sendMobileArchiveBar(archive.navigationItem.rightBarButtonItem)
+        }
+    }
+
+    @Test func nativeArchiveClearUsesCapturedConfirmationAndRetryKeepsLaterArchive() async throws {
+        try await withMobileArchiveFixture { f in
+            let engine = MobileArchiveEngine()
+            let workspace = await f.workspace(engine: engine, scene: "clear")
+            let second = await f.workspace(engine: MobileArchiveEngine(), scene: "clear-other")
+            workspace.closeTab(id: "a")
+            workspace.closeTab(id: "b")
+            let entries = try f.store.loadArchivePage().entries
+            let host = try MobileArchivePresentation(workspace: workspace, contentView: engine.hostView)
+            defer { host.close() }
+            let archive = try await host.open()
+            let clear = try #require(archive.toolbarItems?
+                .first { $0.accessibilityIdentifier == "browser.archive.clear" })
+            let search = try #require(archive.navigationItem.searchController)
+            search.isActive = true
+            search.searchBar.text = "no-archive-entry-matches-this"
+            archive.updateSearchResults(for: search)
+            try #require(await mobileArchiveEventually {
+                search.isActive && !search.isBeingPresented && archive.tableView.numberOfRows(inSection: 0) == 0 &&
+                    (archive.contentUnavailableConfiguration as? UIContentUnavailableConfiguration)?.text == "No Matching Tabs"
+            })
+            #expect(clear.isEnabled)
+            try sendMobileArchiveBar(clear)
+            try #require(await mobileArchiveEventually {
+                archive.pendingClearBoundary != nil && archive.presentedViewController is UIAlertController
+            })
+            #expect(!search.isActive)
+            let cancelledPicker = try #require(archive.presentedViewController as? UIAlertController)
+            try #require(await mobileArchiveEventually { !cancelledPicker.isBeingPresented })
+            #expect(cancelledPicker.actions.contains { $0.style == .cancel })
+            archive.cancelClear(dismissing: cancelledPicker)
+            try #require(await mobileArchiveEventually { archive.presentedViewController == nil })
+            #expect(archive.pendingClearBoundary == nil)
+            #expect(try f.store.loadArchivePage().entries == entries)
+
+            try sendMobileArchiveBar(clear)
+            try #require(await mobileArchiveEventually {
+                archive.pendingClearBoundary != nil && archive.presentedViewController is UIAlertController
+            })
+            let boundary = try #require(archive.pendingClearBoundary)
+            let picker = try #require(archive.presentedViewController as? UIAlertController)
+            try #require(await mobileArchiveEventually { !picker.isBeingPresented })
+            #expect(picker.actions.contains { $0.style == .destructive })
+            #expect(picker.popoverPresentationController?.barButtonItem === clear)
+            second.closeTab(id: "remote")
+            let later = try #require(try f.store.loadArchivePage().entries.first { $0.tab.id == "remote" })
+            let before = try f.queue()
+            let revision = workspace.archiveRevision
+            try f
+                .sql(
+                    "CREATE TRIGGER fail_clear BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                )
+            archive.chooseClearBoundary(boundary, dismissing: picker)
+            try #require(await mobileArchiveEventually {
+                guard let retry = mobileArchiveView("browser.archive.retry", in: archive.view) as? UIButton
+                else { return false }
+                return !retry.isHidden && retry.isEnabled && workspace.archiveError != nil
+            })
+            let retry = try #require(mobileArchiveView("browser.archive.retry", in: archive.view) as? UIButton)
+            #expect(workspace.archiveRevision == revision && second.archiveRevision == revision)
+            #expect(try f.store.loadArchivePage().entries.count == 3 && f.queue() == before)
+            try f.sql("DROP TRIGGER fail_clear")
+            retry.sendActions(for: .touchUpInside)
+            try #require(await mobileArchiveEventually { workspace.archiveRevision == revision + 1 })
+            #expect(second.archiveRevision == revision + 1)
+            try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) == 1 })
+            #expect(try f.store.loadArchivePage().entries == [later] && f.queue() == before)
+            let repeated = await second.clearArchive(through: boundary)
+            #expect(repeated && workspace.archiveRevision == revision + 2)
+            #expect(try f.store.loadArchivePage().entries == [later] && f.queue() == before)
+            try sendMobileArchiveBar(archive.navigationItem.rightBarButtonItem)
         }
     }
 
@@ -416,6 +673,14 @@ extension BrowserMobileUITests {
     try #require(await mobileArchiveEventually { mobileArchiveController(in: root) != nil })
     let archive = try #require(mobileArchiveController(in: root))
     try #require(await mobileArchiveEventually { archive.view.window === window && !archive.isBeingPresented })
+    try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) == 1 })
+    let search = try #require(archive.navigationItem.searchController)
+    search.isActive = true
+    search.searchBar.text = "SAVED CUSTOM"
+    archive.updateSearchResults(for: search)
+    try #require(await mobileArchiveEventually {
+        search.isActive && !search.isBeingPresented && archive.tableView.numberOfRows(inSection: 0) == 1
+    })
     archive.view.layoutIfNeeded()
     #expect(archive.tableView.accessibilityIdentifier == "browser.archive.list")
     try #require(archive.tableView.numberOfRows(inSection: 0) == 1)
@@ -459,8 +724,19 @@ extension BrowserMobileUITests {
         try #require(await mobileArchiveEventually { mobileArchiveController(in: root) != nil })
         let archive = try #require(mobileArchiveController(in: root))
         try #require(await mobileArchiveEventually { archive.view.window === self.window && !archive.isBeingPresented })
+        try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) > 0 })
         archive.view.layoutIfNeeded()
         return archive
+    }
+
+    func present(_ archive: BrowserMobileArchiveViewController) async throws {
+        let navigation = UINavigationController(rootViewController: archive)
+        navigation.modalPresentationStyle = .formSheet
+        root.tabsController.present(navigation, animated: true)
+        try #require(await mobileArchiveEventually {
+            archive.view.window === self.window && !navigation.isBeingPresented
+        })
+        archive.view.layoutIfNeeded()
     }
 
     func close() {
@@ -522,8 +798,10 @@ extension BrowserMobileUITests {
     let preferences: UserDefaults
     var workspaces = [BrowserMobileWorkspace]()
 
-    func workspace(engine: any BrowserMobileEngine, scene: String) async -> BrowserMobileWorkspace {
-        let document = document
+    func workspace(
+        engine: any BrowserMobileEngine, scene: String, document suppliedDocument: BrowserMobileProfileDocument? = nil
+    ) async -> BrowserMobileWorkspace {
+        let document = suppliedDocument ?? document
         let workspace = BrowserMobileWorkspace(
             engine: engine,
             sceneID: scene,
@@ -643,6 +921,101 @@ private func mobileArchiveEvents(_ changes: [BrowserSyncChange], startingAt: Int
         return view
     }
     return view.subviews.lazy.compactMap { mobileArchiveView(id, in: $0) }.first
+}
+
+// MARK: - MobileArchiveHeldSearch
+
+@MainActor private final class MobileArchiveHeldSearch {
+    // MARK: Internal
+
+    struct Request { let query: String
+        let cursor: BrowserTabArchiveCursor?
+        let limit: Int
+    }
+
+    var requests = [Request]()
+    var finished = Set<Int>()
+
+    func load(query: String, cursor: BrowserTabArchiveCursor?, limit: Int) async throws -> BrowserTabArchivePage {
+        let id = requests.count
+        requests.append(.init(query: query, cursor: cursor, limit: limit))
+        defer { finished.insert(id) }
+        // Deliberately ignore cancellation, like a response already in flight.
+        return try await withCheckedThrowingContinuation { replies[id] = $0 }
+    }
+
+    func resolve(_ id: Int, entries: [BrowserTabArchiveEntry]) {
+        replies.removeValue(forKey: id)?.resume(returning: .init(entries: entries, nextCursor: nil))
+    }
+
+    func finishAll() {
+        for reply in replies.values {
+            reply.resume(throwing: CancellationError())
+        }
+        replies.removeAll()
+    }
+
+    // MARK: Private
+
+    private var replies = [Int: CheckedContinuation<BrowserTabArchivePage, any Error>]()
+}
+
+// MARK: - MobileArchiveOperationGate
+
+private final class MobileArchiveOperationGate: BrowserTabSessionSnapshotStoring, BrowserTabArchiveStoring {
+    // MARK: Lifecycle
+
+    init(store: BrowserSQLiteSessionStore) { self.store = store }
+
+    // MARK: Internal
+
+    let store: BrowserSQLiteSessionStore
+
+    var isWaiting: Bool { continuation != nil }
+
+    func release() { let saved = continuation
+        continuation = nil
+        saved?.resume()
+    }
+
+    func loadSnapshot() -> BrowserTabSessionSnapshot? { store.loadSnapshot() }
+    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) { store.saveSnapshot(snapshot) }
+    func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws { try store.writeSessionBatch(writes) }
+    func loadArchiveEntry(id: String) throws -> BrowserTabArchiveEntry? { try store.loadArchiveEntry(id: id) }
+    func loadArchivePage(before: BrowserTabArchiveCursor?, limit: Int) throws -> BrowserTabArchivePage {
+        try store.loadArchivePage(before: before, limit: limit)
+    }
+
+    nonisolated(nonsending) func searchArchivePage(
+        query: String,
+        before: BrowserTabArchiveCursor?,
+        limit: Int
+    ) async throws -> BrowserTabArchivePage {
+        try await store.searchArchivePage(query: query, before: before, limit: limit)
+    }
+
+    nonisolated(nonsending) func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary {
+        try await store.archiveClearBoundary()
+    }
+
+    nonisolated(nonsending) func removeArchiveEntry(id: String) async throws -> Bool {
+        await withCheckedContinuation { continuation = $0 }
+        return try await store.removeArchiveEntry(id: id)
+    }
+
+    nonisolated(nonsending) func clearArchive(through boundary: BrowserTabArchiveBoundary) async throws -> Int {
+        try await store.clearArchive(through: boundary)
+    }
+
+    // MARK: Private
+
+    private var continuation: CheckedContinuation<Void, Never>?
+}
+
+@MainActor private func sendMobileArchiveBar(_ item: UIBarButtonItem?) throws {
+    let item = try #require(item)
+    let action = try #require(item.action)
+    #expect(UIApplication.shared.sendAction(action, to: item.target, from: item, for: nil))
 }
 
 // MARK: - MobileArchiveHTTPFixture

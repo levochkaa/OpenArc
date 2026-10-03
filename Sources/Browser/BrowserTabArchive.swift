@@ -4,7 +4,7 @@ import Foundation
 
 /// A profile-local recovery record. Restoring creates a new tab identity; the
 /// original identity can remain permanently deleted in the sync protocol.
-struct BrowserTabArchiveEntry: Codable, Equatable {
+struct BrowserTabArchiveEntry: Codable, Equatable, Sendable {
     // MARK: Lifecycle
 
     init(id: String, tab: BrowserTabSessionSnapshotTab, archivedAt: TimeInterval, title: String? = nil) {
@@ -31,16 +31,24 @@ struct BrowserTabArchiveEntry: Codable, Equatable {
 
 // MARK: - BrowserTabArchiveCursor
 
-struct BrowserTabArchiveCursor: Equatable {
+struct BrowserTabArchiveCursor: Equatable, Sendable {
     let archivedAt: TimeInterval
     let id: String
 }
 
 // MARK: - BrowserTabArchivePage
 
-struct BrowserTabArchivePage: Equatable {
+struct BrowserTabArchivePage: Equatable, Sendable {
     let entries: [BrowserTabArchiveEntry]
     let nextCursor: BrowserTabArchiveCursor?
+}
+
+// MARK: - BrowserTabArchiveBoundary
+
+/// The durable insertion high-water mark, captured before Clear confirmation.
+/// Wall-clock adjustments and later insertions cannot widen this scope.
+struct BrowserTabArchiveBoundary: Equatable, Sendable {
+    let insertionSequence: Int64
 }
 
 // MARK: - BrowserTabArchiveAction
@@ -55,6 +63,12 @@ enum BrowserTabArchiveAction: Codable, Equatable {
 protocol BrowserTabArchiveStoring {
     func loadArchiveEntry(id: String) throws -> BrowserTabArchiveEntry?
     func loadArchivePage(before: BrowserTabArchiveCursor?, limit: Int) throws -> BrowserTabArchivePage
+    nonisolated(nonsending) func searchArchivePage(
+        query: String, before: BrowserTabArchiveCursor?, limit: Int
+    ) async throws -> BrowserTabArchivePage
+    nonisolated(nonsending) func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary
+    nonisolated(nonsending) func removeArchiveEntry(id: String) async throws -> Bool
+    nonisolated(nonsending) func clearArchive(through boundary: BrowserTabArchiveBoundary) async throws -> Int
 }
 
 extension BrowserTabArchiveStoring {
@@ -73,6 +87,8 @@ enum BrowserTabArchiveError: Error, Equatable {
     case invalidTransition
     case invalidCursor
     case invalidLimit
+    case invalidQuery
+    case invalidBoundary
     case restoredTabIDNotFresh
     case unsupportedStore
     case requiresLocalWrite

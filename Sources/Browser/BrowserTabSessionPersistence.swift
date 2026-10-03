@@ -30,7 +30,7 @@ enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hash
 
 // MARK: - BrowserTabPlacement
 
-enum BrowserTabPlacement: String, Codable, Equatable, Hashable {
+enum BrowserTabPlacement: String, Codable, Equatable, Hashable, Sendable {
     case temporary
     case spacePinned
     case app
@@ -100,7 +100,7 @@ struct BrowserPinnedTabFolderSessionSnapshot: Codable, Equatable {
 
 // MARK: - BrowserTabSessionSnapshotTab
 
-struct BrowserTabSessionSnapshotTab: Codable, Equatable {
+struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
     // MARK: Lifecycle
 
     init(

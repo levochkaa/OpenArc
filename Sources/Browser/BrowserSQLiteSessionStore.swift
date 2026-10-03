@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import GRDB
 import OSLog
@@ -125,49 +126,53 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try dbQueue.read { db in
             guard let row = try Row.fetchOne(
                 db,
-                sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ? AND restored_tab_id IS NULL",
+                sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ?",
                 arguments: [id]
             ) else { return nil }
-            return try decodeArchiveEntry(row)
+            return try Self.decodeArchiveEntry(row)
         }
     }
 
     func loadArchivePage(
         before cursor: BrowserTabArchiveCursor? = nil, limit: Int = 50
     ) throws -> BrowserTabArchivePage {
-        guard (1...100).contains(limit) else { throw BrowserTabArchiveError.invalidLimit }
-        if let cursor, !cursor.archivedAt.isFinite || cursor.id.isEmpty {
-            throw BrowserTabArchiveError.invalidCursor
+        try dbQueue.read { db in
+            try Self.readArchivePage(query: "", before: cursor, limit: limit, in: db)
         }
-        return try dbQueue.read { db in
-            let rows: [Row] =
-                if let cursor {
-                    try Row.fetchAll(
-                        db,
-                        sql: """
-                        SELECT id, payload, archived_at FROM browser_tab_archive
-                        WHERE restored_tab_id IS NULL AND (archived_at < ? OR (archived_at = ? AND id < ?))
-                        ORDER BY archived_at DESC, id DESC LIMIT ?
-                        """,
-                        arguments: [cursor.archivedAt, cursor.archivedAt, cursor.id, limit + 1]
-                    )
-                } else {
-                    try Row.fetchAll(
-                        db,
-                        sql: """
-                        SELECT id, payload, archived_at FROM browser_tab_archive
-                        WHERE restored_tab_id IS NULL ORDER BY archived_at DESC, id DESC LIMIT ?
-                        """,
-                        arguments: [limit + 1]
-                    )
-                }
-            let entries = try rows.prefix(limit).map(decodeArchiveEntry)
-            let nextCursor = rows.count > limit
-                ? entries.last.map {
-                    BrowserTabArchiveCursor(archivedAt: $0.archivedAt, id: $0.id)
-                }
-                : nil
-            return BrowserTabArchivePage(entries: entries, nextCursor: nextCursor)
+    }
+
+    nonisolated(nonsending) func searchArchivePage(
+        query: String, before cursor: BrowserTabArchiveCursor? = nil, limit: Int = 50
+    ) async throws -> BrowserTabArchivePage {
+        try await dbQueue.read { db in
+            try Self.readArchivePage(query: query, before: cursor, limit: limit, in: db)
+        }
+    }
+
+    nonisolated(nonsending) func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary {
+        try await dbQueue.read { db in
+            try .init(insertionSequence: Int64.fetchOne(
+                db, sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_tab_archive'"
+            ) ?? 0)
+        }
+    }
+
+    nonisolated(nonsending) func removeArchiveEntry(id: String) async throws -> Bool {
+        guard !id.isEmpty else { throw BrowserTabArchiveError.invalidEntry }
+        return try await dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM browser_tab_archive WHERE id = ?", arguments: [id])
+            return db.changesCount > 0
+        }
+    }
+
+    nonisolated(nonsending) func clearArchive(through boundary: BrowserTabArchiveBoundary) async throws -> Int {
+        guard boundary.insertionSequence >= 0 else { throw BrowserTabArchiveError.invalidBoundary }
+        return try await dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM browser_tab_archive WHERE insertion_sequence <= ?",
+                arguments: [boundary.insertionSequence]
+            )
+            return db.changesCount
         }
     }
 
@@ -636,18 +641,131 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 ON browser_tab_archive (archived_at DESC, id DESC) WHERE restored_tab_id IS NULL;
             """)
         }
+        migrator.registerMigration("separateArchiveContentFromReceipts") { db in
+            try Self.migrateArchiveContent(in: db)
+        }
         return migrator
     }
 
     private let dbQueue: DatabaseQueue
 
-    private func decodeArchiveEntry(_ row: Row) throws -> BrowserTabArchiveEntry {
+    private static func decodeArchiveEntry(_ row: Row) throws -> BrowserTabArchiveEntry {
         let entry = try JSONDecoder().decode(BrowserTabArchiveEntry.self, from: row["payload"] as Data)
         try entry.validate()
         guard entry.id == row["id"] as String, entry.archivedAt == row["archived_at"] as Double else {
             throw BrowserTabArchiveError.invalidEntry
         }
         return entry
+    }
+
+    private static func foldArchiveSearch(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+
+    private static func archiveFingerprint(_ entry: BrowserTabArchiveEntry) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try Data(SHA256.hash(data: encoder.encode(entry)))
+    }
+
+    private static func readArchivePage(
+        query: String, before cursor: BrowserTabArchiveCursor?, limit: Int, in db: Database
+    ) throws -> BrowserTabArchivePage {
+        guard (1...100).contains(limit) else { throw BrowserTabArchiveError.invalidLimit }
+        guard query.utf8.count <= 4096, query.count <= 256 else { throw BrowserTabArchiveError.invalidQuery }
+        if let cursor, !cursor.archivedAt.isFinite || cursor.id.isEmpty {
+            throw BrowserTabArchiveError.invalidCursor
+        }
+        var predicates = [String]()
+        var arguments = StatementArguments()
+        if !query.isEmpty {
+            let folded = foldArchiveSearch(query)
+            predicates
+                .append("(instr(search_url, ?) > 0 OR instr(search_user_title, ?) > 0 OR instr(search_title, ?) > 0)")
+            arguments += [folded, folded, folded]
+        }
+        if let cursor {
+            predicates.append("(archived_at < ? OR (archived_at = ? AND id < ?))")
+            arguments += [cursor.archivedAt, cursor.archivedAt, cursor.id]
+        }
+        let filter = predicates.isEmpty ? "" : " WHERE " + predicates.joined(separator: " AND ")
+        arguments += [limit + 1]
+        let rows = try Row.fetchAll(
+            db,
+            sql: "SELECT id, payload, archived_at FROM browser_tab_archive" + filter +
+                " ORDER BY archived_at DESC, id DESC LIMIT ?",
+            arguments: arguments
+        )
+        let entries = try rows.prefix(limit).map(decodeArchiveEntry)
+        let nextCursor = rows.count > limit
+            ? entries.last.map {
+                BrowserTabArchiveCursor(archivedAt: $0.archivedAt, id: $0.id)
+            }
+            : nil
+        return BrowserTabArchivePage(entries: entries, nextCursor: nextCursor)
+    }
+
+    private static func insertArchiveContent(
+        _ entry: BrowserTabArchiveEntry, sequence: Int64? = nil, in db: Database
+    ) throws {
+        try db.execute(
+            sql: """
+            INSERT INTO browser_tab_archive
+                (insertion_sequence, id, payload, archived_at, search_url, search_user_title, search_title)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            arguments: [
+                sequence, entry.id, JSONEncoder().encode(entry), entry.archivedAt,
+                foldArchiveSearch(entry.tab.urlString), foldArchiveSearch(entry.tab.userTitleOverride ?? ""),
+                foldArchiveSearch(entry.title ?? ""),
+            ]
+        )
+    }
+
+    private static func migrateArchiveContent(in db: Database) throws {
+        try db.execute(sql: """
+        ALTER TABLE browser_tab_archive RENAME TO browser_tab_archive_legacy;
+        DROP INDEX browser_tab_archive_active_order;
+        CREATE TABLE browser_tab_archive_receipts (
+            id TEXT PRIMARY KEY NOT NULL,
+            entry_digest BLOB NOT NULL CHECK (length(entry_digest) = 32),
+            restored_tab_id TEXT CHECK (restored_tab_id IS NULL OR length(restored_tab_id) > 0)
+        );
+        CREATE TABLE browser_tab_archive (
+            insertion_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL UNIQUE REFERENCES browser_tab_archive_receipts(id),
+            payload BLOB NOT NULL,
+            archived_at DOUBLE NOT NULL,
+            search_url TEXT NOT NULL,
+            search_user_title TEXT NOT NULL,
+            search_title TEXT NOT NULL
+        );
+        CREATE INDEX browser_tab_archive_active_order ON browser_tab_archive (archived_at DESC, id DESC);
+        """)
+        let highWater = try Int64.fetchOne(db, sql: "SELECT MAX(rowid) FROM browser_tab_archive_legacy") ?? 0
+        do {
+            let rows = try Row.fetchCursor(
+                db,
+                sql: "SELECT rowid, id, payload, archived_at, restored_tab_id FROM browser_tab_archive_legacy ORDER BY rowid"
+            )
+            while let row = try rows.next() {
+                let entry = try decodeArchiveEntry(row)
+                let restoredID: String? = row["restored_tab_id"]
+                try db.execute(
+                    sql: "INSERT INTO browser_tab_archive_receipts (id, entry_digest, restored_tab_id) VALUES (?, ?, ?)",
+                    arguments: [entry.id, archiveFingerprint(entry), restoredID]
+                )
+                if restoredID == nil {
+                    try insertArchiveContent(entry, sequence: row["rowid"], in: db)
+                }
+            }
+        }
+        // Preserve the high-water mark even if the last legacy rows were consumed.
+        try db.execute(sql: "DELETE FROM sqlite_sequence WHERE name = 'browser_tab_archive'")
+        try db.execute(
+            sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_tab_archive', ?)", arguments: [highWater]
+        )
+        try db.execute(sql: "DROP TABLE browser_tab_archive_legacy")
     }
 
     /// Returns false only for an exact operation already committed. All effects
@@ -657,10 +775,11 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     ) throws -> Bool {
         switch action {
         case .insert(let entry):
-            if let existing = try Row.fetchOne(
-                db, sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ?", arguments: [entry.id]
+            let fingerprint = try Self.archiveFingerprint(entry)
+            if let existing = try Data.fetchOne(
+                db, sql: "SELECT entry_digest FROM browser_tab_archive_receipts WHERE id = ?", arguments: [entry.id]
             ) {
-                guard try decodeArchiveEntry(existing) == entry else { throw BrowserTabArchiveError.archiveIDConflict }
+                guard existing == fingerprint else { throw BrowserTabArchiveError.archiveIDConflict }
                 return false
             }
             guard let previous = try readSnapshot(db),
@@ -668,20 +787,25 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                   !snapshot.tabs.contains(where: { $0.id == entry.tab.id })
             else { throw BrowserTabArchiveError.invalidTransition }
             try db.execute(
-                sql: "INSERT INTO browser_tab_archive (id, payload, archived_at) VALUES (?, ?, ?)",
-                arguments: [entry.id, JSONEncoder().encode(entry), entry.archivedAt]
+                sql: "INSERT INTO browser_tab_archive_receipts (id, entry_digest) VALUES (?, ?)",
+                arguments: [entry.id, fingerprint]
             )
+            try Self.insertArchiveContent(entry, in: db)
             return true
         case .restore(let archiveID, let tabID):
-            guard let row = try Row.fetchOne(
-                db, sql: "SELECT id, payload, archived_at, restored_tab_id FROM browser_tab_archive WHERE id = ?",
+            guard let receipt = try Row.fetchOne(
+                db, sql: "SELECT restored_tab_id FROM browser_tab_archive_receipts WHERE id = ?",
                 arguments: [archiveID]
             ) else { throw BrowserTabArchiveError.entryMissing }
-            let entry = try decodeArchiveEntry(row)
-            if let restoredID: String = row["restored_tab_id"] {
+            if let restoredID: String = receipt["restored_tab_id"] {
                 guard restoredID == tabID else { throw BrowserTabArchiveError.archiveAlreadyRestored }
                 return false
             }
+            guard let row = try Row.fetchOne(
+                db, sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ?",
+                arguments: [archiveID]
+            ) else { throw BrowserTabArchiveError.entryMissing }
+            let entry = try Self.decodeArchiveEntry(row)
             guard tabID != entry.tab.id,
                   try readSnapshot(db)?.tabs.contains(where: { $0.id == tabID }) != true
             else { throw BrowserTabArchiveError.restoredTabIDNotFresh }
@@ -697,9 +821,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                   restored.userTitleOverride == entry.tab.userTitleOverride
             else { throw BrowserTabArchiveError.invalidTransition }
             try db.execute(
-                sql: "UPDATE browser_tab_archive SET restored_tab_id = ? WHERE id = ? AND restored_tab_id IS NULL",
+                sql: "UPDATE browser_tab_archive_receipts SET restored_tab_id = ? WHERE id = ? AND restored_tab_id IS NULL",
                 arguments: [tabID, archiveID]
             )
+            try db.execute(sql: "DELETE FROM browser_tab_archive WHERE id = ?", arguments: [archiveID])
             return true
         }
     }

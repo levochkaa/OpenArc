@@ -41,18 +41,47 @@ import Foundation
     private(set) var snapshot: BrowserTabSessionSnapshot
     private(set) var archiveError: String?
     private(set) var archiveRevision = 0
+    private(set) var isArchiveOperationInFlight = false
     weak var syncSession: BrowserMobileSyncSession?
 
     var persistenceFailure: BrowserSessionPersistenceFailure? { writeBuffer.failure }
     var hasUncommittedWrites: Bool { !writeBuffer.writes.isEmpty || writeBuffer.isTerminal }
     var canEdit: Bool { !writeBuffer.isTerminal }
     var supportsArchive: Bool { store is any BrowserTabArchiveStoring }
-    var canRestoreArchivedTab: Bool { supportsArchive && canEdit && !hasUncommittedWrites }
+    var canManageArchive: Bool {
+        supportsArchive && canEdit && !hasUncommittedWrites && !isArchiveOperationInFlight
+    }
+
+    var canRestoreArchivedTab: Bool { canManageArchive }
 
     func archivePage(before: BrowserTabArchiveCursor? = nil, limit: Int = 50) throws -> BrowserTabArchivePage {
         guard let archive = store as? any BrowserTabArchiveStoring
         else { throw BrowserTabArchiveError.unsupportedStore }
         return try archive.loadArchivePage(before: before, limit: limit)
+    }
+
+    func searchArchivePage(
+        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50
+    ) async throws -> BrowserTabArchivePage {
+        guard let archive = store as? any BrowserTabArchiveStoring
+        else { throw BrowserTabArchiveError.unsupportedStore }
+        return try await archive.searchArchivePage(query: query, before: before, limit: limit)
+    }
+
+    /// Capture before showing confirmation. Later closes must survive a clear
+    /// even when their archive dates precede this boundary's entries.
+    func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary {
+        guard let archive = store as? any BrowserTabArchiveStoring
+        else { throw BrowserTabArchiveError.unsupportedStore }
+        return try await archive.archiveClearBoundary()
+    }
+
+    @discardableResult func deleteArchivedTab(id: String) async -> Bool {
+        await performArchiveMutation(.remove(id))
+    }
+
+    @discardableResult func clearArchive(through boundary: BrowserTabArchiveBoundary) async -> Bool {
+        await performArchiveMutation(.clear(boundary))
     }
 
     /// Only an explicit Today close creates an archive entry. The entry uses the
@@ -256,6 +285,11 @@ import Foundation
 
     // MARK: Private
 
+    private enum ArchiveMutation {
+        case remove(String)
+        case clear(BrowserTabArchiveBoundary)
+    }
+
     private let store: any BrowserTabSessionSnapshotStoring
     private var syncCoordinator: (any BrowserSyncCoordinating)?
     private let idProvider: () -> String
@@ -279,7 +313,10 @@ import Foundation
             return String(localized: "Archive is unavailable for this profile.", table: "Mobile")
         case .invalidCursor, .invalidLimit:
             return String(localized: "The archive could not be loaded. Try again.", table: "Mobile")
-        case .archiveIDConflict, .invalidEntry, .invalidTransition, .requiresLocalWrite, .restoredTabIDNotFresh:
+        case .invalidQuery:
+            return String(localized: "Use a shorter search.", table: "Mobile")
+        case .archiveIDConflict, .invalidBoundary, .invalidEntry, .invalidTransition, .requiresLocalWrite,
+             .restoredTabIDNotFresh:
             return String(localized: "This archive action could not be completed. Try again.", table: "Mobile")
         }
     }
@@ -314,6 +351,32 @@ import Foundation
             else {
                 throw BrowserMobileProfileDocumentError.invalidSnapshot
             }
+        }
+    }
+
+    private func performArchiveMutation(_ mutation: ArchiveMutation) async -> Bool {
+        guard canManageArchive, let archive = store as? any BrowserTabArchiveStoring else { return false }
+        isArchiveOperationInFlight = true
+        archiveError = nil
+        notify()
+        defer {
+            isArchiveOperationInFlight = false
+            notify()
+        }
+        do {
+            switch mutation {
+            case .remove(let id): let _: Bool = try await archive.removeArchiveEntry(id: id)
+            case .clear(let boundary): let _: Int = try await archive.clearArchive(through: boundary)
+            }
+            // Missing/previously removed entries are successful idempotent
+            // actions. Refresh other windows that may still display them.
+            archiveRevision &+= 1
+            return true
+        } catch {
+            archiveError = error is BrowserTabArchiveError
+                ? Self.archiveErrorMessage(error)
+                : String(localized: "This archive action could not be completed. Try again.", table: "Mobile")
+            return false
         }
     }
 
@@ -384,9 +447,9 @@ import Foundation
             try store.writeSessionBatch(writes)
             if writes.contains(where: { $0.archiveAction != nil }) {
                 archiveRevision &+= 1
+                archiveError = nil
             }
             writeBuffer.clearAfterSuccess()
-            archiveError = nil
             syncCoordinator?.setLocalPersistenceBlocked(false)
             syncCoordinator?.schedulePull()
             syncCoordinator?.schedulePush(snapshot: snapshot)
