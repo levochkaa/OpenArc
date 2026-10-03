@@ -33,7 +33,7 @@ Updated Swift clients merge pending v2 full-record and v3/v4 patch activity by p
 
 Snapshot materialization reads fractional canonical times without millisecond truncation. When a whole-second value represents the same second as a more precise local value, it preserves that local fraction. A different canonical instant remains authoritative; arbitrary future local values do not permanently override the baseline. Null/invalid materialization retains the existing finite local fallback. Newly captured mobile activity still uses whole seconds.
 
-Future timestamps are not capped and therefore conservatively delay expiry. Even this maximum cannot reveal activity a completely offline device has never reported. Mobile auto-archive remains disabled until its offline policy and conditional expiry path are defined. Local attached-window protection and activity capture are documented in [mobile foundation](mobile-foundation.md#tab-activity-and-attached-windows). These merge rules are TheBrowser policy.
+Future timestamps are not capped and therefore conservatively delay expiry. Even this maximum cannot reveal activity a completely offline device has never reported. The [conditional expiry foundation](sync-expiry.md) defines the reported-activity policy and server checks. Mobile auto-archive remains disabled until its client recovery and scheduling paths are implemented. Local attached-window protection and activity capture are documented in [mobile foundation](mobile-foundation.md#tab-activity-and-attached-windows). These merge rules are TheBrowser policy.
 
 ## Receipts and pulls
 

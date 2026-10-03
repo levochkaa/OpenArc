@@ -1,8 +1,8 @@
-TheBrowser sync backend runs NestJS on Node.js 26 with PostgreSQL 17. The checked-in [OpenAPI contract](openapi.yaml) is served at `/openapi.yaml`; runtime Swagger documentation is available at `/docs`. Apply migrations before starting the server. Migration `005_sync_folders.sql` adds folders, tab membership and per-device v4 bootstrap state.
+TheBrowser sync backend runs NestJS on Node.js 26 with PostgreSQL 17. The checked-in [OpenAPI contract](openapi.yaml) is served at `/openapi.yaml`; runtime Swagger documentation is available at `/docs`. Apply migrations before starting the server. Migration `005_sync_folders.sql` adds folders, tab membership and per-device v4 bootstrap state; `006_sync_expiry.sql` adds the recovery-aware v5 pull marker.
 
 For local development, install dependencies with `npm ci` in `Backend`, copy `.env.example` to `.env`, and configure an isolated database plus a local JWT secret. Run `npm run migrate`, then `npm run dev`. The default API port is 8080. The repository's `script/test_local_sync.sh` starts and removes its own disposable PostgreSQL container and runs authenticated HTTP integration tests; it does not use the development database.
 
-The shared desktop/mobile Swift coordinator negotiates v4 after draining immutable v2/v3 work and completing a cursor-zero folder bootstrap. Legacy clients can keep using v2/v3 within the compatibility rules below.
+The shared desktop/mobile Swift coordinator negotiates v4 after draining immutable v2/v3 work and completing a cursor-zero folder bootstrap. Legacy clients can keep using v2/v3 within the compatibility rules below. The backend also exposes conditional v5 expiry; current Swift clients do not schedule it or import its recovery extension yet.
 
 Apple identity verification accepts the configured `APPLE_CLIENT_ID`, or an explicit comma-separated `APPLE_CLIENT_IDS` allowlist. The list replaces the fallback and must contain the exact provisioned desktop/mobile client IDs; no mobile audience is added automatically. Entries are trimmed and deduplicated. Empty entries, wildcards, URLs and malformed identifiers fail startup. Apple issuer, signature and audience validation remain required. Cross-app Apple account grouping and device provisioning must be verified separately.
 
@@ -14,8 +14,9 @@ Apple identity verification accepts the configured `APPLE_CLIENT_ID`, or an expl
 | v2 | `protocolVersion: 2`, `mutationID`, `deviceID`, `changes` | Same legacy pull |
 | v3 | `protocolVersion: 3`, `mutationID`, `deviceID`, `operations` | Same legacy pull |
 | v4 | `protocolVersion: 4`, `mutationID`, `deviceID`, `operations` | Explicit `protocolVersion: 4`; includes folders and tab membership |
+| v5 | Same envelope with `protocolVersion: 5`; expiry operations only | Explicit `protocolVersion: 5`; cursor-zero recovery bootstrap after registration or older pull |
 
-Every pull advertises `supportedPushVersions: [2, 3, 4]`. Legacy pull responses retain `protocolVersion: 2`; negotiated v4 responses use `4`. Requests allow at most 1,000 changes/operations, moves allow at most 1,000 unique items, and the inflated JSON body is limited to 8 MiB, including gzip requests.
+Every pull advertises `supportedPushVersions: [2, 3, 4, 5]`. Legacy pull responses retain `protocolVersion: 2`; negotiated v4/v5 responses echo their read version. V1–v4 requests allow at most 1,000 changes/operations; v5 permits at most 100 expiry operations. Moves allow at most 1,000 unique items. Inflated JSON requests are limited to 8 MiB, including gzip; v5 ACKs are additionally bounded to 4 MiB.
 
 V4 operations use these forms:
 
@@ -69,7 +70,7 @@ All operations in a request run in order under the account transaction lock. Eac
 
 Tab activity is nondecreasing across legacy/v2/v3/v4 writes: existing live tabs retain the maximum timestamp, and null or omission cannot erase a known value. New tabs with no activity remain null. Newly written tab-upsert events encode non-null activity in UTC with six fractional digits. ACK and pull may also echo historical events in their unchanged format. Stored receipts remain unchanged, and tombstones always dominate activity. See [monotonic tab activity](../docs/sync-protocol.md#monotonic-tab-activity).
 
-Mutation receipts are permanent and shared across v2/v3/v4 by `(userID, mutationID)`. Identical parsed content returns the original receipt after retries, restart, later writes or device rotation. Content identity includes the protocol and ordered operations/changes, with canonical object keys; it excludes `deviceID`. Reusing the ID for different content or another protocol returns HTTP 409 with no writes. Push ACKs include `cursor`, `events`, protocol/mutation identity and, for v3/v4, outcomes. A push cursor is a server high-water mark, **never a replacement for the pull cursor**.
+Mutation receipts are permanent and shared across v2/v3/v4/v5 by `(userID, mutationID)`. Identical parsed content returns the original receipt after retries, restart, later writes or device rotation. Content identity includes the protocol and ordered operations/changes, with canonical object keys; it excludes `deviceID`. Reusing the ID for different content or another protocol returns HTTP 409 with no writes. Push ACKs include `cursor`, `events`, protocol/mutation identity and, for v3/v4/v5, outcomes. A push cursor is a server high-water mark, **never a replacement for the pull cursor**.
 
 The first v4 pull for a registered device must start at cursor 0. An attempt to start above zero returns HTTP 409 with message `Protocol 4 bootstrap requires cursor 0`. Any legacy pull resets that device's bootstrap marker, so a later upgrade must replay from zero again. Bootstrap state changes and the pull run under the same device transaction lock. Future clients must rebuild a v4 baseline through every page and preserve pending local intent separately; a legacy cursor has skipped folder history. Historical tab upserts without membership return `pinnedFolderID: null` in v4.
 
@@ -80,3 +81,11 @@ Compatibility guards preserve the folder tree:
 - V3 patches and deletes retain membership and mixed sibling ranks. Creating or moving into a pinned Space with live folders returns `rejected` / `upgrade_required`. Explicit moves out to another placement or a folder-free Space remain allowed and clear incompatible membership.
 - V2 snapshots cannot express structural intent. Existing tabs whose pinned source or target Space contains folders keep their current Space, placement, rank, folder membership and pinned home while accepting page metadata. New v2 pinned tabs append at the root with a server-assigned rank. Explicit deletes still apply.
 - Previously stored receipts replay unchanged. These guards do not provide field-level conflict resolution for unrelated legacy full-snapshot metadata writes.
+
+## Conditional expiry (v5)
+
+`{kind:"expire", entityType:"tab", entityID, expectedServerSeq, inactiveForSeconds}` uses the exact latest canonical tab event and one of 43,200 / 86,400 / 259,200 / 604,800 / 2,592,000 seconds. Under the account lock the tab must still be temporary, its activity finite/known and old enough according to server time. Stale metadata, activity or placement rejects expiry and echoes the canonical state. A permanent tombstone remains terminal. Rejected UUIDs stay rejected on retry, even after time passes.
+
+Accepted expiry writes `data.autoArchive` into the immutable delete event: server `archivedAt`, `sourceServerSeq` and the complete prior canonical tab payload. Deletion, recovery data, tombstone and receipt commit together; manual deletions do not gain recovery. If a full event cannot fit the bounded ACK, `response_limit` leaves that operation unapplied and omits the oversized echo. Preimages are never truncated. Rank gaps are retained so one expiry does not invalidate other captured candidates by renumbering peers.
+
+V5 pull requires cursor 0 after registration or a legacy/v4 read on this server. It replays recovery that older clients may have discarded. It does not prove durable client application or absence of offline use. Current Swift clients still negotiate v4, ignore recovery fields and never send v5 expiry. Before enabling automatic scheduling, updated clients must atomically import recovery, preserve divergent offline content and retain deduplication receipts after Restore/Delete/Clear. See [the full contract and remaining client work](../docs/sync-expiry.md).

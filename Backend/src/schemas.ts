@@ -201,7 +201,19 @@ export const SyncPushRequestV4 = z.object({
   operations: z.array(SyncOperationV4).max(1000)
 }).strict();
 
-export const SyncPushRequest = z.union([SyncPushRequestV4, SemanticSyncPushRequest, LegacySyncPushRequest]);
+// Expiry has its own envelope: it must never degrade into an unconditional
+// legacy delete, and existing immutable v2/v3/v4 parsing stays unchanged.
+export const SyncExpiryOperation = z.object({
+  kind: z.literal("expire"), entityType: z.literal("tab"), entityID: EntityID,
+  expectedServerSeq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  inactiveForSeconds: z.union([z.literal(43200), z.literal(86400), z.literal(259200), z.literal(604800), z.literal(2592000)])
+}).strict();
+export const SyncPushRequestV5 = z.object({
+  deviceID: z.string().uuid(), protocolVersion: z.literal(5), mutationID: z.string().uuid(),
+  operations: z.array(SyncExpiryOperation).max(100)
+}).strict();
+
+export const SyncPushRequest = z.union([SyncPushRequestV5, SyncPushRequestV4, SemanticSyncPushRequest, LegacySyncPushRequest]);
 
 const LegacySyncPullRequest = z.object({
   deviceID: z.string().uuid(),
@@ -209,9 +221,11 @@ const LegacySyncPullRequest = z.object({
   limit: z.number().int().positive().max(1000).default(500)
 });
 export const SyncPullRequestV4 = LegacySyncPullRequest.extend({ protocolVersion: z.literal(4) }).strict();
-// Do not let a malformed explicit v4 request fall back to the legacy parser,
+export const SyncPullRequestV5 = LegacySyncPullRequest.extend({ protocolVersion: z.literal(5) }).strict();
+// Do not let a malformed explicit versioned request fall back to the legacy parser,
 // which intentionally strips unknown fields for existing clients.
 export const SyncPullRequest = z.union([
+  SyncPullRequestV5,
   SyncPullRequestV4,
   LegacySyncPullRequest.extend({ protocolVersion: z.undefined().optional() })
 ]);
@@ -225,7 +239,10 @@ export type SyncOperationV4 = z.infer<typeof SyncOperationV4>;
 export type SyncEntityReferenceV4 = z.infer<typeof SyncEntityReferenceV4>;
 export type SyncDestinationV4 = z.infer<typeof SyncDestinationV4>;
 export type SyncPushRequestV4 = z.infer<typeof SyncPushRequestV4>;
+export type SyncExpiryOperation = z.infer<typeof SyncExpiryOperation>;
+export type SyncPushRequestV5 = z.infer<typeof SyncPushRequestV5>;
 export type SyncPullRequestV4 = z.infer<typeof SyncPullRequestV4>;
+export type SyncPullRequestV5 = z.infer<typeof SyncPullRequestV5>;
 export type FolderPayload = z.infer<typeof FolderPayload>;
 export type TabPayloadV4 = z.infer<typeof TabPayloadV4>;
 export type SpacePayload = z.infer<typeof SpacePayload>;

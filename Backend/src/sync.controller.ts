@@ -38,6 +38,22 @@ export class SyncController {
           operations: { type: "array", maxItems: 1000, items: { type: "object" },
             description: "Version 3 space/tab intents or version 4 mixed folder/tab intents. See /openapi.yaml for typed operation schemas." }
         }
+      }, {
+        type: "object", required: ["deviceID", "protocolVersion", "mutationID", "operations"], additionalProperties: false,
+        properties: {
+          deviceID: { type: "string", format: "uuid" }, protocolVersion: { type: "integer", enum: [5] },
+          mutationID: { type: "string", format: "uuid" },
+          operations: { type: "array", maxItems: 100, items: {
+            type: "object", additionalProperties: false,
+            required: ["kind", "entityType", "entityID", "expectedServerSeq", "inactiveForSeconds"],
+            properties: {
+              kind: { type: "string", enum: ["expire"] }, entityType: { type: "string", enum: ["tab"] },
+              entityID: { type: "string", minLength: 1 },
+              expectedServerSeq: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+              inactiveForSeconds: { type: "integer", enum: [43200, 86400, 259200, 604800, 2592000] }
+            }
+          }, description: "Conditional expiry only. Accepted deletes retain immutable canonical recovery data in their event." }
+        }
       }]
     }
   })
@@ -58,7 +74,7 @@ export class SyncController {
       additionalProperties: false,
       properties: {
         deviceID: { type: "string", format: "uuid" },
-        protocolVersion: { type: "integer", enum: [4], description: "Opt in to folder events. The first version 4 pull after device registration or a legacy pull requires cursor 0." },
+        protocolVersion: { type: "integer", enum: [4, 5], description: "Version 4 includes folders; version 5 also acknowledges expiry recovery support. Each upgrade after registration or an older pull requires cursor 0." },
         cursor: { type: "integer", minimum: 0, default: 0 },
         limit: { type: "integer", minimum: 1, maximum: 1000, default: 500 }
       }

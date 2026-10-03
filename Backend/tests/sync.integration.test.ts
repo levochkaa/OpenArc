@@ -13,6 +13,7 @@ import type pg from "pg";
 import type { SyncChange, SyncOperation } from "../src/schemas.js";
 import { registerFolderSyncTests } from "./sync-folders.js";
 import { registerActivitySyncTests } from "./sync-activity.js";
+import { registerExpirySyncTests } from "./sync-expiry.js";
 
 type SyncEvent = {
   serverSeq: number;
@@ -137,6 +138,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
 
   registerFolderSyncTests({ pool: () => pool, account, register, post, startServerProcess });
   registerActivitySyncTests({ pool: () => pool, account, post, startServerProcess });
+  registerExpirySyncTests({ pool: () => pool, account, post, startServerProcess });
 
   async function storedTabs(userID: string): Promise<StoredTab[]> {
     const result = await pool.query<StoredTab>(`
@@ -191,7 +193,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     await post("/v1/sync/push", a.token, {
       deviceID: a.id, changes: [space(randomUUID()), { entityType: "tab", entityID: randomUUID(), op: "upsert" }]
     }, 400);
-    assert.deepEqual(await pull(a), { protocolVersion: 2, supportedPushVersions: [2, 3, 4], cursor: 0, events: [] });
+    assert.deepEqual(await pull(a), { protocolVersion: 2, supportedPushVersions: [2, 3, 4, 5], cursor: 0, events: [] });
   });
 
   it("keeps a batch deleted when an offline client replays stale titles, ranks and placement", async () => {
@@ -405,14 +407,14 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
       await pool.query("DROP TRIGGER IF EXISTS sync_test_hold_event ON sync_events; DROP FUNCTION IF EXISTS sync_test_hold_event()");
     }
     assert.equal(secondFinishedWhileHeld, false, "Later account events must wait until earlier events commit");
-    assert.deepEqual(heldResponse, { protocolVersion: 2, supportedPushVersions: [2, 3, 4], cursor: 0, events: [] }, "Pull must not advance over an uncommitted event");
+    assert.deepEqual(heldResponse, { protocolVersion: 2, supportedPushVersions: [2, 3, 4, 5], cursor: 0, events: [] }, "Pull must not advance over an uncommitted event");
     assert.deepEqual((await allEvents(b, 0, 1)).map((event) => event.entityID), [firstID, secondID]);
   });
 
   it("advertises supported push versions without changing the v2 pull envelope", async () => {
     const { devices: [a] } = await account();
     assert.equal((await pull(a)).protocolVersion, 2);
-    assert.deepEqual((await pull(a)).supportedPushVersions, [2, 3, 4]);
+    assert.deepEqual((await pull(a)).supportedPushVersions, [2, 3, 4, 5]);
     for (const envelope of [
       { protocolVersion: 2 }, { mutationID: randomUUID() },
       { protocolVersion: 1, mutationID: randomUUID() }, { protocolVersion: 3, mutationID: randomUUID() },

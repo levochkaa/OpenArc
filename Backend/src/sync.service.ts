@@ -10,6 +10,7 @@ import type {
   RegisterDeviceRequest,
   SyncChange,
   SyncChangeV4,
+  SyncExpiryOperation,
   SyncOperation,
   SyncPullRequest,
   SyncPushRequest
@@ -30,11 +31,43 @@ type QueryFunction = (text: string, params?: unknown[]) => Promise<Pick<pg.Query
 type SyncResponse = {
   cursor: number;
   events: SerializedSyncEvent[];
-  protocolVersion?: 2 | 3 | 4;
+  protocolVersion?: 2 | 3 | 4 | 5;
   mutationID?: string;
   supportedPushVersions?: number[];
   outcomes?: OperationOutcome[];
 };
+
+type AutoArchivePayload = {
+  archivedAt: string;
+  sourceServerSeq: number;
+  tab: Record<string, unknown>;
+};
+
+const expiryResponseLimit = 4 * 1024 * 1024;
+
+class ExpiryResponseBudget {
+  private bytes = 2; // Array brackets.
+  private readonly sequences = new Set<number>();
+  // At most 100 small outcomes plus the response envelope fit well below this.
+  private readonly eventLimit = expiryResponseLimit - 64 * 1024;
+
+  canDelete(entityID: string, deviceID: string, payload: unknown): boolean {
+    const bytes = Buffer.byteLength(JSON.stringify({ entityType: "tab", entityID, deviceID, op: "delete", data: payload }), "utf8");
+    // Include the actual unbounded identity/payload strings, then reserve fixed
+    // serverSeq/createdAt metadata before the irreversible operation in this tx.
+    return this.bytes + bytes + 512 + 1 <= this.eventLimit;
+  }
+
+  include(events: SerializedSyncEvent[]): boolean {
+    const unseen = [...new Map(events.filter((event) => !this.sequences.has(event.serverSeq))
+      .map((event) => [event.serverSeq, event])).values()];
+    const bytes = unseen.reduce((total, event) => total + Buffer.byteLength(JSON.stringify(event), "utf8") + 1, 0);
+    if (this.bytes + bytes > this.eventLimit) return false;
+    this.bytes += bytes;
+    for (const event of unseen) this.sequences.add(event.serverSeq);
+    return true;
+  }
+}
 
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
@@ -133,7 +166,7 @@ export class SyncService {
 
       // Parsed payloads have defaults applied and unknown fields stripped. Sort
       // object keys, preserve change order, and exclude the replaceable device ID.
-      const payload = body.protocolVersion === 3 || body.protocolVersion === 4
+      const payload = body.protocolVersion === 3 || body.protocolVersion === 4 || body.protocolVersion === 5
         ? { protocolVersion: body.protocolVersion, operations: body.operations }
         : { protocolVersion: body.protocolVersion, changes: body.changes };
       const digest = body.mutationID ? createHash("sha256")
@@ -156,7 +189,7 @@ export class SyncService {
       // Legacy writers cannot create folders. Snapshot only Space IDs once
       // under the account lock, then invalidate after a Space cascade.
       const legacyFolderSpaces = new Set<string>();
-      if (body.protocolVersion !== 4) {
+      if (body.protocolVersion !== 4 && body.protocolVersion !== 5) {
         const folders = await client.query(
           "SELECT DISTINCT space_id FROM folders WHERE user_id = $1 AND deleted_at IS NULL", [userID]
         );
@@ -164,7 +197,14 @@ export class SyncService {
       }
       const events: SerializedSyncEvent[] = [];
       const outcomes: OperationOutcome[] = [];
-      if (body.protocolVersion === 4) {
+      if (body.protocolVersion === 5) {
+        const budget = new ExpiryResponseBudget();
+        for (const [index, operation] of body.operations.entries()) {
+          const result = await this.expireTab(client, userID, body.deviceID, operation, index, budget);
+          events.push(...result.events);
+          outcomes.push(result.outcome);
+        }
+      } else if (body.protocolVersion === 4) {
         const executor = new SyncFolderOperationExecutor(client, userID, {
           apply: (change) => this.applyChange(client, userID, body.deviceID, change, 4),
           tombstone: (type, id) => this.tombstoneEvent(client, userID, type, id),
@@ -221,15 +261,19 @@ export class SyncService {
       );
       // An acknowledgement is not a pull: events may include old authoritative
       // deletes. Clients must advance their pull cursor only after reading pull.
-      const visibleEvents = body.protocolVersion === 4 ? events.map((event) => this.v4Event(event)) : this.legacyEvents(events);
+      const visibleEvents = body.protocolVersion === 4 || body.protocolVersion === 5
+        ? events.map((event) => this.v4Event(event)) : this.legacyEvents(events);
       const response: SyncResponse = {
         cursor: Number(cursorResult.rows[0].cursor),
-        events: (body.protocolVersion === 3 || body.protocolVersion === 4
+        events: (body.protocolVersion === 3 || body.protocolVersion === 4 || body.protocolVersion === 5
           ? [...new Map(visibleEvents.map((event) => [event.serverSeq, event])).values()] : visibleEvents)
           .sort((a, b) => a.serverSeq - b.serverSeq),
         ...(body.mutationID ? { protocolVersion: body.protocolVersion, mutationID: body.mutationID } : {}),
-        ...(body.protocolVersion === 3 || body.protocolVersion === 4 ? { outcomes } : {})
+        ...(body.protocolVersion === 3 || body.protocolVersion === 4 || body.protocolVersion === 5 ? { outcomes } : {})
       };
+      if (body.protocolVersion === 5 && Buffer.byteLength(JSON.stringify(response), "utf8") > expiryResponseLimit) {
+        throw new Error("Expiry response exceeded its reserved budget");
+      }
       if (body.mutationID) {
         await client.query(
           "INSERT INTO sync_mutation_receipts (user_id, mutation_id, payload_digest, response) VALUES ($1, $2, $3, $4)",
@@ -251,10 +295,15 @@ export class SyncService {
     try {
       await client.query("BEGIN");
       const device = await client.query(
-        "SELECT folder_sync_enabled FROM devices WHERE id = $1 AND user_id = $2 FOR UPDATE", [body.deviceID, userID]
+        "SELECT folder_sync_enabled, expiry_sync_enabled FROM devices WHERE id = $1 AND user_id = $2 FOR UPDATE", [body.deviceID, userID]
       );
       if (!device.rowCount) throw new ForbiddenException("Device does not belong to user");
       const isV4 = body.protocolVersion === 4;
+      const isV5 = body.protocolVersion === 5;
+      const includesFolders = isV4 || isV5;
+      if (isV5 && !device.rows[0].expiry_sync_enabled && body.cursor !== 0) {
+        throw new ConflictException("Protocol 5 bootstrap requires cursor 0");
+      }
       if (isV4 && !device.rows[0].folder_sync_enabled && body.cursor !== 0) {
         throw new ConflictException("Protocol 4 bootstrap requires cursor 0");
       }
@@ -266,15 +315,16 @@ export class SyncService {
           ORDER BY server_seq ASC
           LIMIT $3
         `,
-        [userID, body.cursor, body.limit, isV4]
+        [userID, body.cursor, body.limit, includesFolders]
       );
 
       const rawEvents = result.rows.map((row) => this.serializeSyncEvent(row));
-      const events = isV4 ? rawEvents.map((event) => this.v4Event(event)) : this.legacyEvents(rawEvents);
+      const events = includesFolders ? rawEvents.map((event) => this.v4Event(event)) : this.legacyEvents(rawEvents);
       const cursor = events.length > 0 ? events[events.length - 1].serverSeq : body.cursor;
-      await client.query("UPDATE devices SET last_seen_at = now(), folder_sync_enabled = $2 WHERE id = $1", [body.deviceID, isV4]);
+      await client.query("UPDATE devices SET last_seen_at = now(), folder_sync_enabled = $2, expiry_sync_enabled = $3 WHERE id = $1",
+        [body.deviceID, includesFolders, isV5]);
       await client.query("COMMIT");
-      return { protocolVersion: isV4 ? 4 : 2, supportedPushVersions: [2, 3, 4], cursor, events };
+      return { protocolVersion: isV5 ? 5 : isV4 ? 4 : 2, supportedPushVersions: [2, 3, 4, 5], cursor, events };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -542,10 +592,55 @@ export class SyncService {
     return result.rows[0] ? this.serializeSyncEvent(result.rows[0]) : undefined;
   }
 
+  private async expireTab(
+    client: pg.PoolClient, userID: string, deviceID: string, operation: SyncExpiryOperation, operationIndex: number,
+    budget: ExpiryResponseBudget
+  ): Promise<{ events: SerializedSyncEvent[]; outcome: OperationOutcome }> {
+    const response = (events: SerializedSyncEvent[], status: OperationOutcome["status"], reason?: string) => {
+      const canonical = events.map((event) => this.v4Event(event));
+      return budget.include(canonical)
+        ? { events: canonical, outcome: { operationIndex, status, ...(reason ? { reason } : {}) } }
+        : { events: [], outcome: { operationIndex, status: "rejected" as const, reason: "response_limit" } };
+    };
+    const deleted = await this.tombstoneEvent(client, userID, "tab", operation.entityID);
+    if (deleted) return response([deleted], "deleted");
+    const current = await this.currentEvent(client, userID, "tab", operation.entityID);
+    const rejected = (reason: string) => response(current ? [current] : [], "rejected", reason);
+    // The account lock covers the observed sequence, eligibility, recovery data,
+    // tombstone and receipt. Client wall clocks do not choose the cutoff.
+    const result = await client.query<{
+      placement: string; known_activity: boolean; expired: boolean | null; archived_at: string;
+    }>(`SELECT placement, last_activity_at IS NOT NULL AND isfinite(last_activity_at) AS known_activity,
+      last_activity_at <= now() - ($3::double precision * interval '1 second') AS expired,
+      to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS archived_at
+      FROM tabs WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    [userID, operation.entityID, operation.inactiveForSeconds]);
+    const tab = result.rows[0];
+    if (!tab) return rejected("missing");
+    if (current?.op !== "upsert" || current.serverSeq !== operation.expectedServerSeq) return rejected("state_changed");
+    if (tab.placement !== "temporary") return rejected("not_temporary");
+    if (!tab.known_activity) return rejected("activity_unknown");
+    if (!tab.expired) return rejected("not_expired");
+    const data = this.v4Event(current).data;
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid canonical tab event");
+    const autoArchive: AutoArchivePayload = {
+      archivedAt: tab.archived_at, sourceServerSeq: current.serverSeq, tab: data as Record<string, unknown>
+    };
+    if (!budget.canDelete(operation.entityID, deviceID, { id: operation.entityID, autoArchive })) {
+      return { events: [], outcome: { operationIndex, status: "rejected", reason: "response_limit" } };
+    }
+    // Rank gaps are valid. Renumbering peers here would invalidate another
+    // candidate's observed sequence inside the same conditional expiry batch.
+    const events = await this.deleteEntity(client, userID, deviceID, "tab", operation.entityID, autoArchive);
+    if (!budget.include(events)) throw new Error("Expiry event exceeded its reserved budget");
+    return { events, outcome: { operationIndex, status: "applied" } };
+  }
+
   private async deleteEntity(
     client: pg.PoolClient, userID: string, deviceID: string,
-    entityType: EntityType, entityID: string
+    entityType: EntityType, entityID: string, autoArchive?: AutoArchivePayload
   ): Promise<SerializedSyncEvent[]> {
+    if (autoArchive && entityType !== "tab") throw new Error("Only tab expiry can carry archive recovery data");
     const events: SerializedSyncEvent[] = [];
     if (entityType === "space") {
       // Include children in the event stream, even for clients that already
@@ -587,7 +682,9 @@ export class SyncService {
        revision = revision + 1, updated_by_device_id = $3 WHERE user_id = $1 AND id = $2`,
       [userID, entityID, deviceID]
     );
-    const event = await this.insertSyncEvent(client, userID, deviceID, entityType, entityID, "delete", { id: entityID });
+    const event = await this.insertSyncEvent(client, userID, deviceID, entityType, entityID, "delete", {
+      id: entityID, ...(autoArchive ? { autoArchive } : {})
+    });
     await client.query(
       "INSERT INTO sync_tombstones (user_id, entity_type, entity_id, server_seq) VALUES ($1, $2, $3, $4)",
       [userID, entityType, entityID, event.serverSeq]
