@@ -441,6 +441,157 @@ import Testing
         try await fixture.complete(account)
     }
 
+    @Test func pendingRemoteURLTracksLatestAddressWithoutEchoOrDeletedTabResurrection() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("pending-navigation")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        let firstURL = "https://pending.example/first"
+        let remoteURL = "https://pending.example/remote"
+        let localURL = "https://example.com/pending-navigation/local"
+        func snapshot(url: String?, includesChild: Bool = false) -> BrowserTabSessionSnapshot {
+            let layout = syncHTTPExplicitSnapshot(
+                source: url == nil ? [] : includesChild ? ["pending", "child"] : ["pending"], target: ["anchor"]
+            )
+            return BrowserTabSessionSnapshot(spaces: layout.spaces, tabs: layout.tabs.map { tab in
+                guard tab.id == "pending", let url else { return tab }
+                return .init(
+                    id: "pending", urlString: url, spaceID: "source",
+                    lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970
+                )
+            })
+        }
+        await first.activate()
+        await first.saveAndSend(snapshot(url: nil))
+        await second.activate()
+
+        let suite = "BrowserSyncHTTPPendingNavigation.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = BrowserUserPreferencesStore(userDefaults: defaults)
+        preferences.restoreWindowsOnLaunch = true
+        let driver = FakeBrowserTabDriver()
+        let model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: first.store, sessionPreferencesStore: first.store,
+            commandBarSuggestionProvider: FakeSuggestionProvider(), userPreferencesStore: preferences,
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(), syncCoordinator: first.service,
+            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        )
+        defer {
+            first.service.setSnapshotApplier(nil)
+            model.discardUnsavedSessionForClosure()
+            model.prepareForTermination()
+        }
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        let anchor = try #require(model.tabs.first { $0.syncID == "anchor" })
+        model.selectTab(id: anchor.id)
+        driver.emitTabCreationState(id: anchor.id, state: .ready)
+        first.service.setSnapshotApplier(model)
+        await first.service.waitForPendingOperations()
+        try #require(model.selectedTabID == anchor.id)
+        try #require(first.store.pendingSyncQueue(for: first.owner).isEmpty)
+
+        await second.saveAndSend(snapshot(url: firstURL))
+        await first.pull()
+        driver.flushPendingCreateEvents()
+        let pending = try #require(model.tabs.first { $0.syncID == "pending" })
+        #expect(pending.creationState == .creating && pending.urlString == firstURL)
+        #expect(model.selectedTabID == anchor.id)
+
+        // Keep the allocated tab without a ready browser. A later pull must
+        // replace its initial target and SQLite projection without a local echo.
+        await second.saveAndSend(snapshot(url: remoteURL, includesChild: true))
+        let beforeRemoteApply = try await fixture.inspect(account)
+        let selectionsBefore = driver.selectedTabIDs
+        await first.pull()
+        let child = try #require(driver.createdTabRequests.last { $0.urlString == "https://child.example" })
+        let updated = try #require(model.tabs.first { $0.syncID == "pending" })
+        #expect(updated.id == pending.id && updated.creationState == .creating)
+        #expect(updated.urlString == remoteURL)
+        #expect(first.store.loadSnapshot()?.tabs.first { $0.id == "pending" }?.urlString == remoteURL)
+        #expect(driver.targetedNavigationRequests.contains { $0.id == pending.id && $0.urlString == remoteURL })
+        #expect(model.selectedTabID == anchor.id && driver.selectedTabIDs == selectionsBefore)
+        #expect(!model.tabs.contains { $0.syncID == "child" }, "Hold this logical-created callback until deletion")
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        let afterRemoteApply = try await fixture.inspect(account)
+        #expect(afterRemoteApply.eventCount == beforeRemoteApply.eventCount)
+        #expect(afterRemoteApply.receiptCount == beforeRemoteApply.receiptCount)
+        #expect(afterRemoteApply.attempts.count == beforeRemoteApply.attempts.count)
+
+        await second.saveAndSend(snapshot(url: remoteURL))
+        let beforeDeletedCallback = try await fixture.inspect(account)
+        await first.pull()
+        #expect(driver.closedTabRequests.contains { $0.id == child.id && $0.forceClose })
+        driver.flushPendingCreateEvents()
+        #expect(!model.tabs.contains { $0.id == child.id || $0.syncID == "child" })
+        let afterDeletionSnapshot = try #require(first.store.loadSnapshot())
+        #expect(!afterDeletionSnapshot.tabs.contains { $0.id == "child" })
+        #expect(model.selectedTabID == anchor.id)
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        let afterDeletedCallback = try await fixture.inspect(account)
+        #expect(afterDeletedCallback.eventCount == beforeDeletedCallback.eventCount)
+        #expect(afterDeletedCallback.receiptCount == beforeDeletedCallback.receiptCount)
+        #expect(afterDeletedCallback.attempts.count == beforeDeletedCallback.attempts.count)
+        #expect(afterDeletedCallback.tabs.first { $0.id == "child" }?.tombstoned == true)
+
+        model.selectTab(id: pending.id)
+        model.presentCurrentPageCommandBar()
+        model.currentPageCommandBarModel.query = localURL
+        await model.currentPageCommandBarModel.waitForPendingSuggestionLoad()
+        try #require(model.currentPageCommandBarModel.selectedSuggestion?.kind == .url)
+        model.currentPageCommandBarModel.submitSelection()
+        // Inspect the atomic local capture before yielding to the sender.
+        #expect(model.tabs.first { $0.syncID == "pending" }?.urlString == localURL)
+        #expect(model.selectedTabCreationState == .creating)
+        #expect(first.store.loadSnapshot()?.tabs.first { $0.id == "pending" }?.urlString == localURL)
+        let navigationQueue = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(navigationQueue.count == 1)
+        let navigation = try syncHTTPSemanticMutation(navigationQueue[0])
+        #expect(navigation.operations == [.patchTab(id: "pending", fields: .init(urlString: localURL))])
+        #expect(driver.targetedNavigationRequests.last == .init(id: pending.id, urlString: localURL))
+        model.setUserTitleOverride("Locally renamed", forTabID: pending.id)
+        let queue = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(queue.count == 2)
+        let rename = try syncHTTPSemanticMutation(queue[1])
+        #expect(rename.operations == [.patchTab(
+            id: "pending",
+            fields: .init(userTitleOverride: .set("Locally renamed"))
+        )])
+        driver.emitCreatedTab(id: pending.id, urlString: firstURL, isActive: false)
+        driver.emitTabCreationState(id: pending.id, state: .ready)
+        #expect(model.tabs.first { $0.syncID == "pending" }?.urlString == localURL)
+        #expect(try first.store.pendingSyncQueue(for: first.owner) == queue)
+        try await first.sendSavedChanges()
+        await second.pull()
+        await first.pull()
+        for profile in [first, second] {
+            let saved = try #require(profile.store.loadSnapshot())
+            #expect(Set(saved.tabs.compactMap(\.id)) == ["anchor", "pending"])
+            #expect(saved.tabs.first { $0.id == "pending" }?.urlString == localURL)
+            #expect(saved.tabs.first { $0.id == "pending" }?.userTitleOverride == "Locally renamed")
+            #expect(try profile.store.pendingSyncQueue(for: profile.owner).isEmpty)
+        }
+        let final = try await fixture.inspect(account)
+        #expect(final.tabs.first { $0.id == "pending" }?.urlString == localURL)
+        #expect(final.tabs.first { $0.id == "pending" }?.title == "Locally renamed")
+        #expect(final.tabs.first { $0.id == "child" }?.deleted == true)
+        #expect(final.tabs.first { $0.id == "child" }?.tombstoned == true)
+        #expect(final.receiptCount == afterDeletedCallback.receiptCount + 2)
+        let sent = final.attempts.dropFirst(afterDeletedCallback.attempts.count)
+        #expect(sent.map(\.mutationID) == [navigation.id, rename.id])
+        #expect(sent
+            .allSatisfy { $0.deviceID == account.devices[0].deviceID && $0.protocolVersion == 3 && $0.status == 201 })
+        #expect(model.tabs.first { $0.syncID == "pending" }?.id == pending.id)
+        #expect(model.selectedTabID == pending.id)
+        await first.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
     @Test func failedModelMoveBuffersLaterEditsAndRetriesExactIntentBeforeConverging() async throws {
         let fixture = try SyncHTTPFixture.load()
         let account = try fixture.account("persistence-retry")
@@ -1012,6 +1163,7 @@ private struct SyncHTTPFixture: Decodable {
             let rank: Double
             let spaceID: String
             let placement: String
+            let urlString: String
             let title: String?
             let deleted: Bool
             let tombstoned: Bool

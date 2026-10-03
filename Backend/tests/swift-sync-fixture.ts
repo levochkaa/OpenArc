@@ -49,7 +49,7 @@ const scenarios = [
   ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
   "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay",
-  "persistence-retry", "pending-parent-delete"
+  "persistence-retry", "pending-parent-delete", "pending-navigation"
 ];
 
 async function body(message: IncomingMessage): Promise<Buffer> {
@@ -163,7 +163,7 @@ async function inspect(userID: string) {
     pool.query("SELECT count(*)::int AS count FROM sync_events WHERE user_id = $1", [userID]),
     pool.query("SELECT count(*)::int AS count FROM sync_mutation_receipts WHERE user_id = $1", [userID]),
     pool.query(`
-      SELECT t.id, t.rank, t.space_id AS "spaceID", t.placement,
+      SELECT t.id, t.rank, t.space_id AS "spaceID", t.placement, t.url_string AS "urlString",
         t.user_title_override AS title, t.deleted_at IS NOT NULL AS deleted,
         EXISTS (SELECT 1 FROM sync_tombstones s
           WHERE s.user_id = t.user_id AND s.entity_type = 'tab' AND s.entity_id = t.id) AS tombstoned
