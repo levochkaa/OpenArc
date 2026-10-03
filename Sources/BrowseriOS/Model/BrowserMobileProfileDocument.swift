@@ -192,6 +192,11 @@ import Foundation
         notify()
     }
 
+    func syncArchiveDidChange() {
+        archiveRevision &+= 1
+        notify()
+    }
+
     @discardableResult func retryPersistence() -> Bool {
         guard !writeBuffer.isTerminal else { return false }
         guard !writeBuffer.writes.isEmpty else { return true }

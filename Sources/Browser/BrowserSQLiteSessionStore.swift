@@ -7,7 +7,7 @@ import OSLog
 // MARK: - BrowserSQLiteSessionStore
 
 final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, BrowserSessionPreferencesStoring,
-    BrowserTabArchiveStoring
+    BrowserTabArchiveStoring, BrowserSyncOwnershipReading
 {
     // MARK: Lifecycle
 
@@ -211,8 +211,26 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func syncPullProtocolVersion(for owner: BrowserSyncOwner) throws -> Int {
         try dbQueue.read { db in
             try requireSyncOwner(owner, in: db)
+            if try Bool
+                .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
+            {
+                return 5
+            }
             return try folderSyncEnabled(in: db) ? 4 : 2
         }
+    }
+
+    func syncArchiveRevision(for owner: BrowserSyncOwner) throws -> Int64 {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Int64.fetchOne(db, sql: "SELECT archive_revision FROM browser_sync_state WHERE id = 1") ?? 0
+        }
+    }
+
+    func completeExpirySyncBootstrap(
+        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner
+    ) throws -> BrowserTabSessionSnapshot {
+        try completeSyncBootstrap(events: events, cursor: cursor, for: owner, expiryRecovery: true)
     }
 
     /// Call only after every page of an explicit v4 pull starting at cursor zero.
@@ -221,31 +239,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func completeFolderSyncBootstrap(
         events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner
     ) throws -> BrowserTabSessionSnapshot {
-        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
-        return try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            let pending = try readSyncQueue(db)
-            guard pending.allSatisfy({ $0.protocolVersion == 4 }) else {
-                throw BrowserSyncQueueError.bootstrapRequiresLegacyDrain
-            }
-            let local = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
-            let previous = try readSyncBaseline(db)
-            var baseline = BrowserSyncOutboxBaseline()
-            baseline.deletedKeys = previous.deletedKeys
-            try baseline.apply(events)
-            if try !folderSyncEnabled(in: db) {
-                let values = BrowserSyncOutboxProjection.effectiveChanges(baseline: baseline, pending: pending)
-                let adoption = BrowserSyncFolderProjection.adoptionOperations(
-                    local: local, values: values, deleted: baseline.deletedKeys
-                )
-                try appendFolderSyncMutations(adoption, to: db)
-            }
-            try db.execute(
-                sql: "UPDATE browser_sync_state SET new_mutation_version = 4, cursor = ? WHERE id = 1",
-                arguments: [cursor]
-            )
-            return try writeSyncProjection(baseline, in: db)
-        }
+        try completeSyncBootstrap(events: events, cursor: cursor, for: owner, expiryRecovery: false)
     }
 
     func acknowledgeSyncMutation(
@@ -260,6 +254,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 return try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
             }
             guard storedVersion == protocolVersion else { throw BrowserSyncQueueError.protocolVersionMismatch }
+            try importExpiryRecovery(events, owner: owner, in: db)
             var baseline = try readSyncBaseline(db)
             try baseline.apply(events)
             try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id])
@@ -273,6 +268,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
         return try dbQueue.write { db in
             try requireSyncOwner(owner, in: db)
+            try importExpiryRecovery(events, owner: owner, in: db)
             var baseline = try readSyncBaseline(db)
             try baseline.apply(events)
             let snapshot = try writeSyncProjection(baseline, in: db)
@@ -644,6 +640,15 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         migrator.registerMigration("separateArchiveContentFromReceipts") { db in
             try Self.migrateArchiveContent(in: db)
         }
+        migrator.registerMigration("addSyncExpiryRecovery") { db in
+            try db.execute(sql: """
+            ALTER TABLE browser_sync_state ADD COLUMN expiry_recovery_enabled INTEGER NOT NULL DEFAULT 0 CHECK (expiry_recovery_enabled IN (0, 1));
+            ALTER TABLE browser_sync_state ADD COLUMN archive_revision INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE browser_sync_expiry_imports (
+                event_id TEXT PRIMARY KEY NOT NULL, payload_digest BLOB NOT NULL
+            );
+            """)
+        }
         return migrator
     }
 
@@ -768,6 +773,41 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try db.execute(sql: "DROP TABLE browser_tab_archive_legacy")
     }
 
+    private func completeSyncBootstrap(
+        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, expiryRecovery: Bool
+    ) throws -> BrowserTabSessionSnapshot {
+        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
+        return try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            let pending = try readSyncQueue(db)
+            guard pending.allSatisfy({ $0.protocolVersion == 4 }) else {
+                throw BrowserSyncQueueError.bootstrapRequiresLegacyDrain
+            }
+            let local = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
+            let previous = try readSyncBaseline(db)
+            try importExpiryRecovery(events, owner: owner, in: db)
+            var baseline = BrowserSyncOutboxBaseline()
+            baseline.deletedKeys = previous.deletedKeys
+            try baseline.apply(events)
+            if try !folderSyncEnabled(in: db) {
+                let values = BrowserSyncOutboxProjection.effectiveChanges(baseline: baseline, pending: pending)
+                let adoption = BrowserSyncFolderProjection.adoptionOperations(
+                    local: local, values: values, deleted: baseline.deletedKeys
+                )
+                try appendFolderSyncMutations(adoption, to: db)
+            }
+            try db.execute(
+                sql: "UPDATE browser_sync_state SET new_mutation_version = 4, cursor = ? WHERE id = 1",
+                arguments: [cursor]
+            )
+            try db.execute(
+                sql: "UPDATE browser_sync_state SET expiry_recovery_enabled = ? WHERE id = 1",
+                arguments: [expiryRecovery]
+            )
+            return try writeSyncProjection(baseline, in: db)
+        }
+    }
+
     /// Returns false only for an exact operation already committed. All effects
     /// and the following snapshot/outbox write share the surrounding transaction.
     private func applyArchiveAction(
@@ -845,6 +885,57 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             try writeSessionBatch([write])
         } catch {
             Self.logger.error("Failed to save SQLite session snapshot: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Must precede baseline deletion and queue removal in the same transaction.
+    /// The event receipt survives local Clear/Restore and historical rebootstrap.
+    private func importExpiryRecovery(
+        _ events: [BrowserSyncEvent], owner: BrowserSyncOwner, in db: Database
+    ) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var local: BrowserTabSessionSnapshot?
+        var pending: [BrowserSyncQueuedMutation]?
+        for event in events.sorted(by: { $0.serverSeq < $1.serverSeq }) {
+            guard case .deleted(_, let recovery?) = event.data else { continue }
+            let identity = try encoder.encode([
+                owner.baseURL.absoluteString,
+                owner.userID,
+                String(event.serverSeq),
+                event.entityID,
+            ])
+            let eventID = "sync-expiry-" + SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
+            let canonical = try recovery.entry(event: event, id: eventID)
+            let digest = try Data(SHA256.hash(data: encoder.encode(recovery)))
+            if let previous = try Data.fetchOne(
+                db,
+                sql: "SELECT payload_digest FROM browser_sync_expiry_imports WHERE event_id = ?",
+                arguments: [eventID]
+            ) {
+                guard previous == digest else { throw BrowserSyncOutboxError.invalidEvent }
+                continue
+            }
+            if pending == nil {
+                local = try readSnapshot(db)
+                pending = try readSyncQueue(db)
+            }
+            let entries = [canonical] + BrowserSyncExpiryRecovery.localEntries(
+                canonical: canonical, pending: pending ?? [], local: local
+            )
+            for entry in entries {
+                try entry.validate()
+                try db.execute(
+                    sql: "INSERT INTO browser_tab_archive_receipts (id, entry_digest) VALUES (?, ?)",
+                    arguments: [entry.id, Self.archiveFingerprint(entry)]
+                )
+                try Self.insertArchiveContent(entry, in: db)
+            }
+            try db.execute(
+                sql: "INSERT INTO browser_sync_expiry_imports (event_id, payload_digest) VALUES (?, ?)",
+                arguments: [eventID, digest]
+            )
+            try db.execute(sql: "UPDATE browser_sync_state SET archive_revision = archive_revision + 1 WHERE id = 1")
         }
     }
 

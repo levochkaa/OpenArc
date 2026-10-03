@@ -39,6 +39,7 @@ targetTemplates:
       - path: Sources/Browser/BrowserSyncPlatformConfiguration.swift
       - path: Sources/Browser/BrowserAccountStore.swift
       - path: Sources/Browser/BrowserSyncModels.swift
+      - path: Sources/Browser/BrowserSyncExpiryRecovery.swift
       - path: Sources/Browser/BrowserSyncSemanticModels.swift
       - path: Sources/Browser/BrowserSyncFolderModels.swift
       - path: Sources/Browser/BrowserSyncSemanticProjection.swift

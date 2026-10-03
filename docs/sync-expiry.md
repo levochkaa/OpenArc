@@ -1,6 +1,6 @@
 # Conditional automatic expiry
 
-This is the server foundation for automatic archiving. It does not enable a mobile timer or make the existing desktop timer safe for synchronized profiles. Client scheduling, durable recovery import and native settings remain required.
+The server supports conditional expiry, and shared Swift clients import its recovery data durably. Clients do not yet issue conditional expiry requests or run a mobile timer. The desktop local timer is disabled for durably sync-bound profiles until conditional scheduling is implemented. Native timing settings and the scheduler remain required.
 
 ## Product policy
 
@@ -57,7 +57,11 @@ The actual `tab` is the complete prior canonical event payload, including its or
 
 Older Swift clients decode only `data.id` and discard the recovery extension. They still honor deletion, but may advance their cursor without importing Archive content. Therefore v5 pull requires a new cursor-zero bootstrap after registration or any older-version pull. Migration `006_sync_expiry.sql` adds the per-device marker. V5 reads the full folder-aware history; v4/legacy reads reset expiry bootstrap capability. The marker proves a read request, not client durability or absence of offline edits.
 
-Future upgraded clients must read every bootstrap page and atomically commit baseline, recovery receipts, queue reconciliation and cursor. Identify recovery by the immutable delete event and retain a receipt after Restore/Delete/Clear so bootstrap cannot refill a cleared Archive. Before applying a new expiry tombstone, preserve locally divergent pending URL/title content too: the server payload cannot contain unreported offline changes. These client behaviors are not implemented by the server extension alone.
+Updated Swift clients read every bootstrap page before atomically committing baseline, recovery receipts, queue reconciliation and cursor. They negotiate v5 reading after folder support; ordinary local writes stay v4. A registered replacement device can demand cursor zero again. Failure during paging or storage leaves the previous durable state intact. A server downgrade fails closed; it does not silently bypass the recovery read contract.
+
+Recovery is imported before applying deletion or removing an acknowledged queue row, including additive recovery in v2/v3/v4 responses. Migration `addSyncExpiryRecovery` adds a separate recovery flag and import receipts without rewriting old outbox BLOBs, UUIDs or FIFO positions. Event identity is derived from account/server, sequence and tab ID. The first import stores canonical content and divergent final pending URL/title/explicit title-clearing content, plus a distinct current local snapshot if needed. Pending content is inspected even when an older binary already saved the tombstone and hid the tab. Local variants are recoverable Today entries; they do not revive the old tab or its pinned placement. Data already discarded by an old binary cannot be reconstructed.
+
+The first-import receipt and Archive receipts survive Restore/Delete/Clear. Repeated ACKs or bootstrap cannot refill a consumed Archive or invent new local variants from later state. Malformed recovery or conflicting immutable content aborts application. A durable archive revision notifies attached mobile scenes even when their tab snapshot is unchanged; live page engines and independent selections are retained.
 
 Archive payloads remain in permanent server events and receipts. Local Clear Archive is not server erasure, and no retention or secure-erasure guarantee is added. Recovery contains logical tab metadata, not WebKit navigation history, cookies, passwords or live page state.
 
@@ -67,4 +71,4 @@ Use a separate conditional intent with no optimistic local tombstone. The existi
 
 One scheduler per profile must wait for scene hydration, current pull completion and pending writes, protect every attached window's selected tab, use bounded passes and stop on persistence failure. Long-lived active selections need limited activity refresh. Candidate selection and submission must revalidate current IDs, activity, placement and leases. A failed or rejected automatic operation must not become a fixed ordinary delete in the manual Retry FIFO. Explicit manual Close keeps its existing semantics.
 
-The current desktop `archiveExpiredTemporaryTabs` invokes ordinary close from a local timer, including before activation's pull. That path must be replaced as part of client integration. Mobile expiry remains disabled until these storage, scheduling and recovery rules have full client/server proof.
+Desktop `archiveExpiredTemporaryTabs` checks durable sync ownership on every entry, including startup/foreground before pull, setting changes and periodic sweeps. A bound profile skips local expiry even while paused, logged out or offline; an ownership read failure also skips it. Never-bound local profiles retain their existing timer, and explicit manual Close remains available. Mobile expiry remains disabled. The next client slice must add immutable conditional intents and full request/rejection/retry proof before scheduling is enabled.

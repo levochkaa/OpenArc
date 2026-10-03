@@ -88,13 +88,13 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         authSession: BrowserAuthSession
     ) async throws -> BrowserSyncPullResponse {
         guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
-        guard [2, 4].contains(protocolVersion) else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
+        guard [2, 4, 5].contains(protocolVersion) else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
         return try await send(
             path: "/v1/sync/pull",
             method: "POST",
             body: BrowserSyncPullRequest(
                 deviceID: authSession.deviceID, cursor: cursor, limit: 500,
-                protocolVersion: protocolVersion == 4 ? 4 : nil
+                protocolVersion: protocolVersion == 2 ? nil : protocolVersion
             ),
             accessToken: authSession.accessToken
         )
@@ -222,9 +222,12 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             if path == "/v1/sync/pull", (response as? HTTPURLResponse)?.statusCode == 409,
                let error = try? Self.decoder.decode(SyncServerError.self, from: data),
-               error.message == "Protocol 4 bootstrap requires cursor 0"
+               ["Protocol 4 bootstrap requires cursor 0", "Protocol 5 bootstrap requires cursor 0"]
+                   .contains(error.message)
             {
-                throw BrowserRemoteSyncError.folderBootstrapRequired
+                throw error.message.hasPrefix("Protocol 5")
+                    ? BrowserRemoteSyncError.expiryBootstrapRequired
+                    : BrowserRemoteSyncError.folderBootstrapRequired
             }
             throw BrowserRemoteSyncError.unexpectedResponse(data)
         }
@@ -243,6 +246,23 @@ enum BrowserRemoteSyncError: Error {
     case unsupportedSyncProtocol
     case invalidMutationReceipt
     case folderBootstrapRequired
+    case expiryBootstrapRequired
+
+    // MARK: Internal
+
+    var isFolderBootstrapRequired: Bool {
+        if case .folderBootstrapRequired = self {
+            return true
+        }
+        return false
+    }
+
+    var isExpiryBootstrapRequired: Bool {
+        if case .expiryBootstrapRequired = self {
+            return true
+        }
+        return false
+    }
 }
 
 // MARK: - BrowserOpenAPIRequestMiddleware
@@ -796,6 +816,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 }
                 guard isCurrent(context), !Task.isCancelled else { return }
                 let previous = try localStore.loadSnapshotForSync(for: context.owner)
+                let archiveRevision = try localStore.syncArchiveRevision(for: context.owner)
                 let projected = try localStore.acknowledgeSyncMutation(
                     id: mutation.id,
                     protocolVersion: mutation.protocolVersion,
@@ -804,6 +825,10 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 )
                 if previous != projected {
                     snapshotApplier?.applyRemoteSyncSnapshot(projected)
+                }
+                guard isCurrent(context), !Task.isCancelled else { return }
+                if try archiveRevision != localStore.syncArchiveRevision(for: context.owner) {
+                    snapshotApplier?.syncArchiveDidChange()
                 }
                 // Model projection can itself fail to persist and synchronously
                 // block sync. Do not restore work from the invalidated generation.
@@ -848,7 +873,10 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     response = try await remoteClient.pull(
                         cursor: cursor, protocolVersion: protocolVersion, authSession: context.session
                     )
-                } catch BrowserRemoteSyncError.folderBootstrapRequired where protocolVersion == 4 && !bootstrap {
+                } catch let error as BrowserRemoteSyncError where !bootstrap &&
+                    ((protocolVersion == 4 && error.isFolderBootstrapRequired) ||
+                        (protocolVersion == 5 && error.isExpiryBootstrapRequired))
+                {
                     // A freshly registered device has no v4 read fence yet, even
                     // when this profile already has an adopted v4 baseline.
                     guard isCurrent(context), !Task.isCancelled else { return }
@@ -862,8 +890,10 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 guard response.protocolVersion == protocolVersion else {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
-                let pageVersions = Set(response.supportedPushVersions ?? [2]).intersection([2, 3, 4])
-                guard protocolVersion != 4 || pageVersions.contains(4) else {
+                let pageVersions = Set(response.supportedPushVersions ?? [2]).intersection([2, 3, 4, 5])
+                guard protocolVersion == 2 || pageVersions.contains(4),
+                      protocolVersion != 5 || pageVersions.contains(5)
+                else {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
                 advertisedVersions = advertisedVersions.map { $0.intersection(pageVersions) } ?? pageVersions
@@ -894,19 +924,37 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                         advertisedVersions = nil
                         continue
                     }
+                    if protocolVersion == 4, advertisedVersions?.contains(5) == true {
+                        protocolVersion = 5
+                        bootstrap = true
+                        cursor = 0
+                        latestEvents.removeAll()
+                        advertisedVersions = nil
+                        continue
+                    }
                     break
                 }
             }
             let previous = try localStore.loadSnapshotForSync(for: context.owner)
             let versions = advertisedVersions ?? []
             let events = latestEvents.values.sorted { $0.serverSeq < $1.serverSeq }
-            let projected = try bootstrap
-                ? localStore.completeFolderSyncBootstrap(events: events, cursor: cursor, for: context.owner)
-                : localStore.applyRemoteSyncEvents(
-                    events, cursor: cursor, for: context.owner, enableSemanticMutations: versions.contains(3)
-                )
+            let archiveRevision = try localStore.syncArchiveRevision(for: context.owner)
+            let projected: BrowserTabSessionSnapshot =
+                if bootstrap {
+                    try protocolVersion == 5
+                        ? localStore.completeExpirySyncBootstrap(events: events, cursor: cursor, for: context.owner)
+                        : localStore.completeFolderSyncBootstrap(events: events, cursor: cursor, for: context.owner)
+                } else {
+                    try localStore.applyRemoteSyncEvents(
+                        events, cursor: cursor, for: context.owner, enableSemanticMutations: versions.contains(3)
+                    )
+                }
             if previous != projected {
                 snapshotApplier?.applyRemoteSyncSnapshot(projected)
+            }
+            guard isCurrent(context), !Task.isCancelled else { return }
+            if try archiveRevision != localStore.syncArchiveRevision(for: context.owner) {
+                snapshotApplier?.syncArchiveDidChange()
             }
             guard isCurrent(context), !Task.isCancelled else { return }
             supportedPushVersions = versions

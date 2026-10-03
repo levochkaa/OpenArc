@@ -1142,9 +1142,7 @@ import Testing
 
 // MARK: - SyncHTTPFixture
 
-private struct SyncHTTPFixture: Decodable {
-    // MARK: Internal
-
+struct SyncHTTPFixture: Decodable {
     struct Device: Decodable {
         let deviceID: String
         let userID: String
@@ -1284,9 +1282,7 @@ private struct SyncHTTPFixture: Decodable {
         throw SyncHTTPError.acknowledgementWasNotHeld
     }
 
-    // MARK: Private
-
-    private func send(_ command: some Encodable) async throws -> Data {
+    func send(_ command: some Encodable) async throws -> Data {
         var request = URLRequest(url: controlURL, timeoutInterval: 10)
         request.httpMethod = "POST"
         request.setValue("Bearer \(controlToken)", forHTTPHeaderField: "Authorization")
@@ -1300,7 +1296,7 @@ private struct SyncHTTPFixture: Decodable {
 
 // MARK: - SyncHTTPProfile
 
-@MainActor private final class SyncHTTPProfile {
+@MainActor final class SyncHTTPProfile {
     // MARK: Lifecycle
 
     init(fixture: SyncHTTPFixture, device: SyncHTTPFixture.Device, directory: URL, databaseID: String? = nil) throws {

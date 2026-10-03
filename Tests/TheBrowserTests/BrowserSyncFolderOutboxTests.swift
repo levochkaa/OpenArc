@@ -38,10 +38,11 @@ import Testing
             cursor INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0,
             new_mutation_version INTEGER NOT NULL DEFAULT 2 CHECK(new_mutation_version IN (2,3))
         );
-        INSERT INTO old_state SELECT * FROM browser_sync_state;
+        INSERT INTO old_state SELECT id, base_url, user_id, cursor, paused, new_mutation_version FROM browser_sync_state;
         DROP TABLE browser_sync_state;
         ALTER TABLE old_state RENAME TO browser_sync_state;
-        DELETE FROM grdb_migrations WHERE identifier = 'addFolderSyncOutbox';
+        DROP TABLE browser_sync_expiry_imports;
+        DELETE FROM grdb_migrations WHERE identifier IN ('addFolderSyncOutbox', 'addSyncExpiryRecovery');
         """)
     }
     let before = try fixture.rows()

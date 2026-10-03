@@ -453,7 +453,9 @@ private struct BrowserSyncSemanticEncodedEvent: Encodable {
             try data.encodeIfPresent(tab.userTitleOverride, forKey: .userTitleOverride)
             try data.encodeIfPresent(tab.faviconURLString, forKey: .faviconURLString)
             try data.encodeIfPresent(tab.lastActivityAt, forKey: .lastActivityAt)
-        case .deleted(let id): try data.encode(id, forKey: .id)
+        case .deleted(let id, let recovery):
+            try data.encode(id, forKey: .id)
+            try data.encodeIfPresent(recovery, forKey: .autoArchive)
         case .unknown: break
         case .folder:
             throw EncodingError.invalidValue(event, .init(
@@ -467,7 +469,7 @@ private struct BrowserSyncSemanticEncodedEvent: Encodable {
 
     private enum CodingKeys: String, CodingKey { case serverSeq, deviceID, entityType, entityID, op, data, createdAt }
     private enum DataKeys: String, CodingKey {
-        case id, title, systemImageName, rank, isPinnedSectionCollapsed, selectedTabID
+        case id, title, systemImageName, rank, isPinnedSectionCollapsed, selectedTabID, autoArchive
         case spaceID, placement, urlString, pinnedURLString, userTitleOverride, faviconURLString, lastActivityAt
     }
 }

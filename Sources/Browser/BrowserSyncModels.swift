@@ -261,7 +261,7 @@ struct BrowserSyncEvent: Codable, Equatable {
         self.createdAt = try values.decode(String.self, forKey: .createdAt)
         self.data =
             if op == "delete" {
-                try .deleted(id: values.decode(BrowserSyncDeletedData.self, forKey: .data).id)
+                try Self.deletedData(values.decode(BrowserSyncDeletedData.self, forKey: .data))
             } else {
                 // Folder and tab metadata can both contain a title. The envelope,
                 // never the presence of a metadata field, determines the payload.
@@ -283,6 +283,12 @@ struct BrowserSyncEvent: Codable, Equatable {
     let op: String
     let data: BrowserSyncEventData
     let createdAt: String
+
+    // MARK: Private
+
+    private static func deletedData(_ data: BrowserSyncDeletedData) -> BrowserSyncEventData {
+        .deleted(id: data.id, autoArchive: data.autoArchive)
+    }
 }
 
 // MARK: - BrowserSyncEventData
@@ -291,7 +297,7 @@ enum BrowserSyncEventData: Codable, Equatable {
     case space(BrowserSyncEventSpaceData)
     case tab(BrowserSyncEventTabData)
     case folder(BrowserSyncEventFolderData)
-    case deleted(id: String)
+    case deleted(id: String, autoArchive: BrowserSyncAutoArchiveData? = nil)
     case unknown
 
     // MARK: Lifecycle
@@ -314,7 +320,7 @@ enum BrowserSyncEventData: Codable, Equatable {
         }
 
         if let deleted = try? container.decode(BrowserSyncDeletedData.self) {
-            self = .deleted(id: deleted.id)
+            self = .deleted(id: deleted.id, autoArchive: deleted.autoArchive)
             return
         }
 
@@ -329,7 +335,10 @@ enum BrowserSyncEventData: Codable, Equatable {
         case .space(let data): try values.encode(data)
         case .tab(let data): try values.encode(data)
         case .folder(let data): try values.encode(data)
-        case .deleted(let id): try values.encode(BrowserSyncDeletedData(id: id))
+        case .deleted(let id, let autoArchive): try values.encode(BrowserSyncDeletedData(
+                id: id,
+                autoArchive: autoArchive
+            ))
         case .unknown: try values.encode([String: String]())
         }
     }
@@ -399,6 +408,7 @@ struct BrowserSyncEventFolderData: Codable, Equatable {
 
 private struct BrowserSyncDeletedData: Codable {
     let id: String
+    let autoArchive: BrowserSyncAutoArchiveData?
 }
 
 // MARK: - BrowserSyncPushRequest
@@ -482,8 +492,19 @@ extension BrowserSyncCoordinating {
     func setLocalPersistenceBlocked(_: Bool) {}
 }
 
+// MARK: - BrowserSyncOwnershipReading
+
+protocol BrowserSyncOwnershipReading {
+    func syncOwner() throws -> BrowserSyncOwner?
+}
+
 // MARK: - BrowserSyncSnapshotApplying
 
 @MainActor protocol BrowserSyncSnapshotApplying: AnyObject {
     func applyRemoteSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot)
+    func syncArchiveDidChange()
+}
+
+extension BrowserSyncSnapshotApplying {
+    func syncArchiveDidChange() {}
 }

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import OSLog
 
 // MARK: - BrowserInternalPageRouting
 
@@ -1197,6 +1198,21 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        // A bound profile needs server-conditional expiry and recovery import.
+        // Pause, logout, and an unavailable network do not remove that binding.
+        // Read it on every entry point so adopting sync after launch also stops
+        // the local timer from queuing unconditional deletes.
+        if let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading {
+            do {
+                guard try ownership.syncOwner() == nil else { return }
+            } catch {
+                Self.automaticArchivalLogger.error(
+                    "Skipping automatic archival because sync ownership could not be read: \(error.localizedDescription, privacy: .public)"
+                )
+                return
+            }
+        }
+
         let cutoffDate = dateProvider().addingTimeInterval(-temporaryTabLifetime.timeInterval)
         let activeSpaceID = selectedSpaceID
         let tabIDsToArchive = tabs.compactMap { tab -> String? in
@@ -2093,6 +2109,10 @@ enum BrowserWindowMode: Equatable {
         let snapshot: BrowserTabSessionSnapshotTab
         let generation: Int
     }
+
+    private static let automaticArchivalLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "AutomaticArchival"
+    )
 
     private let tabDriver: BrowserTabDriving
     private let sessionSnapshotStore: BrowserTabSessionSnapshotStoring

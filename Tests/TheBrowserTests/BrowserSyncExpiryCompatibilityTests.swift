@@ -4,7 +4,7 @@ import Testing
 
 @Test func additiveExpiryRecoveryMetadataDecodesAsATerminalDeleteInExistingResponses() throws {
     let wire = ExpiryCompatibilityWire()
-    for version in [2, 4] {
+    for version in [2, 4, 5] {
         let response = try JSONDecoder().decode(
             BrowserSyncPullResponse.self, from: wire.pull(cursor: 4, protocolVersion: version)
         )
@@ -12,7 +12,12 @@ import Testing
         #expect(response.supportedPushVersions == [2, 3, 4, 5])
         let event = try #require(response.events.first)
         #expect(event.serverSeq == 100 && event.entityID == "expired" && event.op == "delete")
-        #expect(event.data == .deleted(id: "expired"))
+        guard case .deleted(let id, let recovery?) = event.data else {
+            Issue.record("Expiry deletion must retain typed recovery")
+            return
+        }
+        #expect(id == "expired" && recovery.tab.id == id && recovery.sourceServerSeq == 4)
+        #expect(try JSONDecoder().decode(BrowserSyncEvent.self, from: JSONEncoder().encode(event)) == event)
         var baseline = BrowserSyncOutboxBaseline()
         try baseline.apply(response.events)
         #expect(baseline.entities["tab:expired"]?.change.op == .delete)
@@ -26,7 +31,12 @@ import Testing
             case 3: try JSONDecoder().decode(BrowserSyncSemanticPushResponse.self, from: data).events
             default: try JSONDecoder().decode(BrowserSyncFolderPushResponse.self, from: data).events
             }
-        #expect(events.count == 1 && events.first?.data == .deleted(id: "expired"))
+        #expect(events.count == 1)
+        guard case .deleted(let id, let recovery?) = events.first?.data else {
+            Issue.record("Old receipt envelopes must retain recovery")
+            return
+        }
+        #expect(id == "expired" && recovery.tab.id == id)
     }
 }
 
@@ -103,10 +113,10 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
     #expect(try store.pendingSyncQueue(for: owner) == queued)
     #expect(try expiryStoredRows(databaseURL) == frozenRows)
     #expect(remote.sent == [pending])
-    #expect(
-        try store.loadArchivePage().entries.isEmpty,
-        "Existing clients intentionally ignore recovery metadata; this is not an Archive-import test"
-    )
+    let recovered = try store.loadArchivePage().entries
+    #expect(recovered.count == 2)
+    #expect(Set(recovered.map(\.tab.urlString)) == ["https://expiry.example/prior", "https://expiry.example/offline"])
+    #expect(applier.archiveChanges == 1)
     let deletedBaseline = try expiryBaseline(databaseURL)
     #expect(deletedBaseline.entities["tab:expired"]?.serverSeq == 100)
     #expect(deletedBaseline.entities["tab:expired"]?.change.op == .delete)
@@ -138,7 +148,7 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
     #expect(failures == [.push])
     #expect(remote.sent == [pending, pending])
     #expect(remote.receipts.count == 1, "Retry returns the same old pre-expiry receipt")
-    #expect(remote.pullVersions.allSatisfy { [2, 4].contains($0) })
+    #expect(remote.pullVersions.allSatisfy { [2, 4, 5].contains($0) })
     #expect(
         remote.sent.allSatisfy { [2, 3, 4].contains($0.protocolVersion) },
         "Advertising v5 does not schedule expiry in an existing coordinator"
@@ -148,7 +158,9 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
     #expect(reopened.loadSnapshot()?.tabs.isEmpty == true)
     let onlyDeletedTabsWereApplied = secondApplier.snapshots.allSatisfy(\.tabs.isEmpty)
     #expect(onlyDeletedTabsWereApplied)
-    #expect(try reopened.loadArchivePage().entries.isEmpty)
+    #expect(try reopened.loadArchivePage().entries == recovered)
+    #expect(secondApplier.archiveChanges == 0)
+    #expect(try reopened.syncPullProtocolVersion(for: owner) == 5)
     let finalBaseline = try expiryBaseline(databaseURL)
     #expect(finalBaseline.deletedKeys.contains("tab:expired"))
     #expect(finalBaseline.entities["tab:expired"]?.serverSeq == 100)
@@ -169,7 +181,7 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
     #expect(try reopened.pendingSyncQueue(for: owner).isEmpty)
     let finalOpen = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
     #expect(finalOpen.loadSnapshot()?.tabs.isEmpty == true)
-    #expect(try finalOpen.loadArchivePage().entries.isEmpty)
+    #expect(try finalOpen.loadArchivePage().entries == recovered)
 }
 
 // MARK: - ExpiryCompatibilityWire
@@ -349,6 +361,9 @@ private struct ExpiryCompatibilityWire {
 
 @MainActor private final class ExpiryCompatibilityApplier: BrowserSyncSnapshotApplying {
     var snapshots = [BrowserTabSessionSnapshot]()
+    var archiveChanges = 0
+
+    func syncArchiveDidChange() { archiveChanges += 1 }
 
     func applyRemoteSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot) { snapshots.append(snapshot) }
 }
