@@ -18,8 +18,12 @@ The palette proposes a stable `BrowserMobileSidebarDrop.rootTarget`. Hover and c
 
 The source rows and palette targets remain stable during the interaction. Source-table and palette endpoint holds are separate: leaving the table cannot release a palette drop. Preview containers remain attached through all animations and session terminals. Escape, disappearance, background or disconnect prevents a later commit. Temporary scene deactivation suspends that controller's admission, retaining the source token for another active window; another scene's notification must not cancel this drag. See the [shared interwindow lifetime contract](mobile-interwindow-drag.md).
 
+The palette's inner scroll view notifies the owner when its offset changes. The owner keeps a weak native drop session and reuses normal current-state validation to update the target and highlight at the session's current location. A point in a gap or over a disabled/deleted target clears feedback while retaining the active endpoint, allowing a later scroll into a valid row to recover. Exit, inactive, membership change, commit and dismissal clear the tracked session; scrolling cannot revive an old interaction. This corrects stale feedback and rejected valid drops after scrolling, without implementing a separate autoscroll driver.
+
 ## Verification boundary
 
 Hosted UIKit tests exercise the configured Space-button action and palette drop delegates with protocol fakes, plus the actual document and SQLite outbox. The public spring-loaded API does not expose a handler invocation method; callback wiring and control tests do not establish an observed physical spring-load gesture.
 
 The localhost HTTP fixture separately tests a group crossing Spaces after descendants enter and escape the selected folder, converging on two independent profiles, surviving deletion of the old Space and reopening from SQLite. Existing group replay tests retain lost-ACK and deletion-dominance coverage. Physical hover, cross-surface pointer/touch feel and autoscroll need separate observation.
+
+Long-list hosted tests hold a fixed window point while changing the inner scroll offset and verify the resulting highlight and one exact v4 move. They also cover gap-to-valid recovery and deleted/exited targets. These are actual UIKit scroll delegate checks with fake native sessions; they do not prove that a held physical drag automatically scrolls this palette.

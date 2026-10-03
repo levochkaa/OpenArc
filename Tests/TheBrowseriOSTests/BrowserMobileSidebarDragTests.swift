@@ -4,6 +4,254 @@ import Testing
 import UIKit
 
 extension BrowserMobileUITests {
+    @Test func stationaryWindowPointerScrollRequeriesTargetAndCommitsFrozenIdentityAfterLiveInsertion() async throws {
+        let f = try SidebarDragFixture(snapshot: sidebarLongListSnapshot())
+        defer { f.cleanup() }
+        await f.start()
+        let drag = try f.begin(row: 0, section: 2)
+        let point = f.point(row: 4, section: 2, fraction: 0.1)
+        let drop = SidebarDropSession(drag: drag, point: point)
+        let windowPoint = f.table.convert(point, to: f.window)
+        drop.fixLocation(windowPoint, in: f.window)
+        let proposal = f.hover(drop)
+        #expect(proposal.operation == .move)
+        let line = try #require(f.table.subviews.first { $0.accessibilityIdentifier == "browser.dropBoundary" })
+        #expect(abs(line.frame.midY - f.table.rectForRow(at: .init(row: 4, section: 2)).minY) < 0.5)
+        let queries = drop.locationQueryCount
+        let geometry = f.scroll(row: 22, section: 2, fraction: 0.1, under: windowPoint)
+        // No explicit hover call here: UIKit's scroll delegate must reread the
+        // stationary point in window coordinates against the new table bounds.
+        #expect(drop.locationQueryCount > queries)
+        #expect(f.table.indexPathForRow(at: drop.location(in: f.table)) == .init(row: 22, section: 2), "\(geometry)")
+        #expect(!line.isHidden)
+        #expect(abs(line.frame.midY - f.table.rectForRow(at: .init(row: 22, section: 2)).minY) < 0.5, "\(geometry)")
+        let inserted = try #require(f.document.createTab(spaceID: "source"))
+        #expect(f.document.move(
+            items: [.init(entityType: .tab, entityID: inserted)],
+            destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
+            before: .init(entityType: .tab, entityID: "row-0")
+        ))
+        let precedingQueue = try f.mutations()
+        #expect(f.table.numberOfRows(inSection: 2) == 80)
+        let target = try #require(f.table.cellForRow(at: .init(row: 22, section: 2)))
+        #expect(target.accessibilityIdentifier == "browser.tab.row-22")
+        let anchorPath = try #require(f.table.indexPathsForVisibleRows?.sorted().first { $0.section == 2 })
+        let anchorID = try #require(f.table.cellForRow(at: anchorPath)?.accessibilityIdentifier)
+        let anchorY = f.table.convert(f.table.rectForRow(at: anchorPath), to: f.window).minY
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        f.sidebar.tableView(f.table, performDropWith: coordinator)
+        let queue = try f.mutations()
+        #expect(queue.count == precedingQueue.count + 1)
+        #expect(Array(queue.prefix(precedingQueue.count)) == precedingQueue)
+        #expect(queue.last?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "row-0")],
+            destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
+            before: .init(entityType: .tab, entityID: "row-22"),
+            after: .init(entityType: .tab, entityID: "row-21")
+        )])
+        f.end(drag, drop)
+        #expect(f.table.numberOfRows(inSection: 2) == 80)
+        coordinator.animations.forEach { $0.finish() }
+        #expect(f.table.numberOfRows(inSection: 2) == 81)
+        let restored = try #require(f.table.indexPathsForVisibleRows?.first {
+            f.table.cellForRow(at: $0)?.accessibilityIdentifier == anchorID
+        })
+        #expect(abs(f.table.convert(f.table.rectForRow(at: restored), to: f.window).minY - anchorY) < 0.5)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func terminalRefreshRestoresFirstSurvivingVisibleAnchorAfterTopVisibleDeletion() async throws {
+        let f = try SidebarDragFixture(snapshot: sidebarLongListSnapshot())
+        defer { f.cleanup() }
+        await f.start()
+        let drag = try f.begin(row: 0, section: 2)
+        let point = f.point(row: 4, section: 2, fraction: 0.1)
+        let drop = SidebarDropSession(drag: drag, point: point)
+        let windowPoint = f.table.convert(point, to: f.window)
+        drop.fixLocation(windowPoint, in: f.window)
+        #expect(f.hover(drop).operation == .move)
+        let geometry = f.scroll(row: 24, section: 2, fraction: 0.35, under: windowPoint)
+        #expect(f.table.indexPathForRow(at: drop.location(in: f.table)) == .init(row: 24, section: 2), "\(geometry)")
+        let visible = (f.table.indexPathsForVisibleRows ?? []).filter { $0.section == 2 }.sorted()
+        try #require(visible.count > 2)
+        let deletedPath = visible[0], survivingPath = visible[1]
+        let deletedID = try #require(f.table.cellForRow(at: deletedPath)?.accessibilityIdentifier)
+        let survivorID = try #require(f.table.cellForRow(at: survivingPath)?.accessibilityIdentifier)
+        let survivorY = f.table.convert(f.table.rectForRow(at: survivingPath), to: f.window).minY
+        let prefix = "browser.tab."
+        #expect(f.document.removeTab(id: String(deletedID.dropFirst(prefix.count))))
+        let changed = try f.durableState()
+        #expect(f.table.cellForRow(at: deletedPath)?.accessibilityIdentifier == deletedID)
+        #expect(f.table.numberOfRows(inSection: 2) == 80)
+        f.end(drag, drop)
+        #expect(f.table.numberOfRows(inSection: 2) == 79)
+        let restored = try #require(f.table.indexPathsForVisibleRows?.first {
+            f.table.cellForRow(at: $0)?.accessibilityIdentifier == survivorID
+        })
+        #expect(abs(f.table.convert(f.table.rectForRow(at: restored), to: f.window).minY - survivorY) < 0.5)
+        #expect(try f.durableState() == changed)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func stationaryWindowPointerScrollCancelsOldFolderDwellAndTargetsNewVisibleFolder() async throws {
+        let scheduler = SidebarManualHoverScheduler()
+        let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+        let source = try SidebarDragFixture(snapshot: sidebarLongFolderSnapshot())
+        let destination = try SidebarDragFixture(sharing: source, hoverScheduler: scheduler, trackingTable: table)
+        defer { destination.cleanup()
+            source.cleanup()
+        }
+        // Bootstrap carries the shared tree, while expansion is local state.
+        // Collapse through the document before capturing either sidebar.
+        for index in 0..<40 {
+            #expect(source.document.setFolderExpanded(id: "folder-\(index)", isExpanded: false))
+        }
+        await source.start(spaceID: "other")
+        await destination.start()
+        #expect(destination.table.numberOfRows(inSection: 1) == 40)
+        #expect(destination.table.cellForRow(at: .init(row: 2, section: 1))?.accessibilityIdentifier
+            == "browser.folder.folder-2")
+        let drag = try source.begin(row: 0, section: 2)
+        let point = destination.point(row: 2, section: 1, fraction: 0.5)
+        let drop = SidebarDropSession(drag: drag, point: point)
+        let windowPoint = destination.table.convert(point, to: destination.window)
+        drop.fixLocation(windowPoint, in: destination.window)
+        #expect(destination.hover(drop).operation == .move)
+        try #require(scheduler.requests.count == 1)
+        let queries = drop.locationQueryCount
+        let geometry = destination.scroll(row: 12, section: 1, fraction: 0.5, under: windowPoint)
+        #expect(drop.locationQueryCount > queries)
+        #expect(destination.table.indexPathForRow(at: drop.location(in: destination.table)) == .init(
+            row: 12,
+            section: 1
+        ), "\(geometry)")
+        #expect(scheduler.requests[0].cancelled)
+        try #require(scheduler.requests.count == 2)
+        let before = try source.durableState()
+        scheduler.fire(0)
+        #expect(table.batchCount == 0)
+        scheduler.fire(1)
+        try await table.waitForBatches()
+        #expect(table.batchCount == 1)
+        #expect(destination.rowIDs(section: 1).contains("browser.tab.child-12"))
+        #expect(!destination.rowIDs(section: 1).contains("browser.tab.child-2"))
+        #expect(try source.durableState() == before)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+        #expect(destination.table.numberOfRows(inSection: 1) == 40)
+        #expect(try source.durableState() == before)
+        #expect(await source.workspace.shutdown())
+        #expect(await destination.workspace.shutdown())
+    }
+
+    @Test func stationaryWindowPointerPaletteScrollUpdatesHighlightAndCommitsCurrentSpace() async throws {
+        let f = try SidebarDragFixture(snapshot: sidebarManySpacesSnapshot())
+        defer { f.cleanup() }
+        await f.start(showNavigation: true)
+        let drag = try f.begin(row: 0, section: 2)
+        let palette = try f.openSpacePalette()
+        let scroll = try #require(palette.controller.view.subviews.compactMap { $0 as? UIScrollView }.first)
+        let drop = SidebarDropSession(drag: drag, point: .zero)
+        #expect(try palette.hover(drop, targetID: "browser.spaceDrop.space-0.pinned").operation == .move)
+        let original = try #require(sidebarDragView(
+            withID: "browser.spaceDrop.space-0.pinned",
+            in: palette.controller.view
+        ))
+        let target = try #require(sidebarDragView(
+            withID: "browser.spaceDrop.space-6.today",
+            in: palette.controller.view
+        ))
+        let windowPoint = palette.controller.view.convert(drop.point, to: f.window)
+        drop.fixLocation(windowPoint, in: f.window)
+        let targetWindowY = target.convert(CGPoint(x: target.bounds.midX, y: target.bounds.midY), to: f.window).y
+        let queries = drop.locationQueryCount
+        let before = try f.durableState()
+        scroll.setContentOffset(
+            CGPoint(x: 0, y: scroll.contentOffset.y + targetWindowY - windowPoint.y),
+            animated: false
+        )
+        palette.controller.view.layoutIfNeeded()
+        #expect(drop.locationQueryCount > queries)
+        #expect(target.bounds.contains(target.convert(windowPoint, from: f.window)))
+        #expect(original.backgroundColor?.isEqual(UIColor.tertiarySystemGroupedBackground) == true)
+        #expect(target.backgroundColor?.isEqual(palette.controller.view.tintColor.withAlphaComponent(0.16)) == true)
+        #expect(try f.durableState() == before)
+        // No explicit sessionDidUpdate after scroll: the installed inner scroll
+        // delegate must refresh both the feedback and commit's captured target.
+        palette.perform(drop)
+        #expect(try f.mutations().count == 1)
+        #expect(try f.mutations().first?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "drag")],
+            destination: .tabs(spaceID: "space-6", placement: .temporary, pinnedFolderID: nil)
+        )])
+        let animations = palette.installAnimations(for: drag.items)
+        f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+        palette.end(drop)
+        #expect(palette.controller.parent === f.sidebar)
+        animations.forEach { $0.finish() }
+        #expect(palette.controller.parent == nil)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func paletteScrollCannotCommitDeletedTargetOrRestoreExitedSession() async throws {
+        for change in ["delete-target", "exit", "gap", "gap-recover"] {
+            let f = try SidebarDragFixture(snapshot: sidebarManySpacesSnapshot())
+            defer { f.cleanup() }
+            await f.start(showNavigation: true)
+            let drag = try f.begin(row: 0, section: 2)
+            let palette = try f.openSpacePalette()
+            let scroll = try #require(palette.controller.view.subviews.compactMap { $0 as? UIScrollView }.first)
+            let drop = SidebarDropSession(drag: drag, point: .zero)
+            #expect(try palette.hover(drop, targetID: "browser.spaceDrop.space-0.pinned").operation == .move)
+            let windowPoint = palette.controller.view.convert(drop.point, to: f.window)
+            drop.fixLocation(windowPoint, in: f.window)
+            let target = try #require(sidebarDragView(
+                withID: "browser.spaceDrop.space-5.today",
+                in: palette.controller.view
+            ))
+            if change == "delete-target" {
+                #expect(f.document.delete(entity: .init(entityType: .space, entityID: "space-5")))
+            } else if change == "exit" {
+                palette.exit(drop)
+            }
+            let targetPoint = CGPoint(x: target.bounds.midX, y: change.hasPrefix("gap") ? -4 : target.bounds.midY)
+            let targetWindowY = target.convert(targetPoint, to: f.window).y
+            let changed = try f.durableState()
+            scroll.setContentOffset(
+                CGPoint(x: 0, y: scroll.contentOffset.y + targetWindowY - windowPoint.y),
+                animated: false
+            )
+            palette.controller.view.layoutIfNeeded()
+            #expect(target.backgroundColor?.isEqual(UIColor.tertiarySystemGroupedBackground) == true)
+            palette.perform(drop)
+            #expect(try f.durableState() == changed)
+            var recoveredAnimations = [SidebarDragAnimation]()
+            if change == "gap-recover" {
+                let centerY = target.convert(CGPoint(x: target.bounds.midX, y: target.bounds.midY), to: f.window).y
+                scroll.setContentOffset(
+                    CGPoint(x: 0, y: scroll.contentOffset.y + centerY - windowPoint.y),
+                    animated: false
+                )
+                palette.controller.view.layoutIfNeeded()
+                #expect(target.backgroundColor?
+                    .isEqual(palette.controller.view.tintColor.withAlphaComponent(0.16)) == true)
+                // Recover from the gap using only the next scroll callback.
+                palette.perform(drop)
+                #expect(try f.mutations().count == 1)
+                #expect(try f.mutations().first?.operations == [.move(
+                    items: [.init(entityType: .tab, entityID: "drag")],
+                    destination: .tabs(spaceID: "space-5", placement: .temporary, pinnedFolderID: nil)
+                )])
+                recoveredAnimations = palette.installAnimations(for: drag.items)
+            }
+            f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+            palette.end(drop)
+            recoveredAnimations.forEach { $0.finish() }
+            #expect(palette.controller.parent == nil)
+            #expect(await f.workspace.shutdown())
+        }
+    }
+
     @Test func addingAboveAndBelowUsesFrozenSidebarOrderAndAllInterwindowPreviews() async throws {
         let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
         let destination = try SidebarDragFixture(sharing: source)
@@ -2185,6 +2433,29 @@ extension BrowserMobileUITests {
         return .init(x: rect.midX, y: rect.minY + rect.height * fraction)
     }
 
+    /// One input scroll, using measured geometry rather than an assumed row
+    /// pitch. Final layout is intentionally not followed by a corrective scroll
+    /// or hover: stale production feedback must remain observable.
+    func scroll(row: Int, section: Int, fraction: CGFloat, under windowPoint: CGPoint) -> String {
+        window.layoutIfNeeded()
+        window.rootViewController?.view.layoutIfNeeded()
+        table.layoutIfNeeded()
+        let index = IndexPath(row: row, section: section)
+        func geometry() -> String {
+            "window=\(window.bounds), frame=\(table.frame), bounds=\(table.bounds), "
+                + "offset=\(table.contentOffset), insets=\(table.contentInset)/\(table.adjustedContentInset), "
+                + "row=\(table.rectForRow(at: index)), header=\(table.rectForHeader(inSection: section)), "
+                + "pointer=\(table.convert(windowPoint, from: window))"
+        }
+        let before = geometry()
+        let target = table.convert(point(row: row, section: section, fraction: fraction), to: window)
+        let offset = table.contentOffset
+        let requested = CGPoint(x: offset.x, y: offset.y + target.y - windowPoint.y)
+        table.setContentOffset(requested, animated: false)
+        table.layoutIfNeeded()
+        return "before: \(before); requested=\(requested); after: \(geometry())"
+    }
+
     func add(to session: SidebarDragSession, row: Int, section: Int) -> [UIDragItem] {
         sidebar.tableView(
             table,
@@ -2324,6 +2595,10 @@ extension BrowserMobileUITests {
         delegate.dropInteraction?(interaction, sessionDidEnd: session)
     }
 
+    func exit(_ session: SidebarDropSession) {
+        delegate.dropInteraction?(interaction, sessionDidExit: session)
+    }
+
     func conclude(_ session: SidebarDropSession) {
         delegate.dropInteraction?(interaction, concludeDrop: session)
     }
@@ -2344,15 +2619,35 @@ extension BrowserMobileUITests {
 // MARK: - SidebarDragDropSession
 
 @MainActor private class SidebarDragDropSession: NSObject, UIDragDropSession {
+    // MARK: Internal
+
     var items = [UIDragItem]()
     var point = CGPoint.zero
     var allowsMoveOperation = true
     var isRestrictedToDraggingApplication = true
     var pointProvider: ((UIView) -> CGPoint)?
+    private(set) var locationQueryCount = 0
 
-    func location(in view: UIView) -> CGPoint { pointProvider?(view) ?? point }
+    func fixLocation(_ point: CGPoint, in window: UIWindow) {
+        fixedWindowPoint = point
+        coordinateWindow = window
+    }
+
+    func location(in view: UIView) -> CGPoint {
+        locationQueryCount += 1
+        if let fixedWindowPoint, let coordinateWindow {
+            return view.convert(fixedWindowPoint, from: coordinateWindow)
+        }
+        return pointProvider?(view) ?? point
+    }
+
     func hasItemsConforming(toTypeIdentifiers _: [String]) -> Bool { true }
     func canLoadObjects(ofClass _: any NSItemProviderReading.Type) -> Bool { false }
+
+    // MARK: Private
+
+    private weak var coordinateWindow: UIWindow?
+    private var fixedWindowPoint: CGPoint?
 }
 
 // MARK: - SidebarDragSession
@@ -2559,4 +2854,41 @@ private func sidebarInterwindowSnapshot() -> BrowserTabSessionSnapshot {
             .init(id: "destination-page", urlString: "about:blank", spaceID: "other"),
         ]
     )
+}
+
+private func sidebarLongListSnapshot() -> BrowserTabSessionSnapshot {
+    .init(
+        spaces: [.init(id: "source", title: "Source", systemImageName: "globe")],
+        tabs: (0..<80).map { .init(id: "row-\($0)", urlString: "about:blank", spaceID: "source") }
+    )
+}
+
+private func sidebarLongFolderSnapshot() -> BrowserTabSessionSnapshot {
+    .init(spaces: [
+        .init(id: "source", title: "Source", systemImageName: "globe"),
+        .init(id: "other", title: "Other", systemImageName: "globe"),
+    ], pinnedTabFolders: (0..<40).map {
+        .init(
+            id: "folder-\($0)",
+            spaceID: "source",
+            title: "Folder \($0)",
+            isExpanded: false,
+            pinnedSiblingRank: Double($0)
+        )
+    }, tabs: (0..<40).map {
+        .init(
+            id: "child-\($0)",
+            urlString: "about:blank",
+            placement: .spacePinned,
+            spaceID: "source",
+            pinnedFolderID: "folder-\($0)",
+            pinnedSiblingRank: 0
+        )
+    } + [.init(id: "drag", urlString: "about:blank", spaceID: "other")])
+}
+
+private func sidebarManySpacesSnapshot() -> BrowserTabSessionSnapshot {
+    .init(spaces: [.init(id: "source", title: "Source", systemImageName: "globe")] + (0..<12).map {
+        .init(id: "space-\($0)", title: "Space \($0)", systemImageName: "globe")
+    }, tabs: [.init(id: "drag", urlString: "about:blank", spaceID: "source")])
 }

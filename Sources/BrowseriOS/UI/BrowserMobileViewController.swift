@@ -576,6 +576,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         guard dropInteraction(interaction, canHandle: session), let payload = payload(for: session),
               joinSidebarDrag(payload) else { return }
         spaceDropSessionID = ObjectIdentifier(session)
+        spaceHoverDropSession = session
     }
 
     func dropInteraction(
@@ -583,9 +584,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         sessionDidUpdate session: any UIDropSession
     ) -> UIDropProposal {
         guard dropInteraction(interaction, canHandle: session), let palette = spaceDropController,
-              let payload = payload(for: session), joinSidebarDrag(payload), let document = workspace.profileDocument,
-              let target = palette.target(at: session.location(in: palette.view)), target.isEnabled,
-              validatedPlan(source: payload.source, target: target.plannerTarget, snapshot: document.snapshot) != nil
+              let payload = payload(for: session), joinSidebarDrag(payload), let document = workspace.profileDocument
         else {
             if isSpaceDropInteraction(interaction) {
                 spaceDropHover = nil
@@ -594,6 +593,14 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             return .init(operation: .forbidden)
         }
         spaceDropSessionID = ObjectIdentifier(session)
+        spaceHoverDropSession = session
+        guard let target = palette.target(at: session.location(in: palette.view)), target.isEnabled,
+              validatedPlan(source: payload.source, target: target.plannerTarget, snapshot: document.snapshot) != nil
+        else {
+            spaceDropHover = nil
+            palette.highlight(nil)
+            return .init(operation: .forbidden)
+        }
         spaceDropHover = target
         palette.highlight(target)
         return .init(operation: .move)
@@ -772,6 +779,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             cancelPendingFolderExpansion(clearSession: true)
             hover = nil
             spaceDropHover = nil
+            spaceHoverDropSession = nil
             planCache = nil
             folderExpansionCache = nil
             clearDropFeedback()
@@ -780,6 +788,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
         if session.isCancelled || session.isCommitted {
             cancelPendingFolderExpansion(clearSession: true)
+            spaceHoverDropSession = nil
         }
         if session.isCancelled {
             spaceDropClosing = true
@@ -805,6 +814,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             dragAdmissionSuspended = true
             hover = nil
             spaceDropHover = nil
+            spaceHoverDropSession = nil
             clearDropFeedback()
             spaceDropController?.highlight(nil)
         case .background, .unattached:
@@ -923,6 +933,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var spaceDropTopConstraint: NSLayoutConstraint?
     private var spaceDropBottomConstraint: NSLayoutConstraint?
     private var spaceDropSessionID: ObjectIdentifier?
+    private weak var spaceHoverDropSession: (any UIDropSession)?
     private var spaceDropHover: BrowserMobileSpaceDropViewController.Target?
     private var spaceDropClosing = false
     private var spaceDropBatchID: UUID?
@@ -1328,6 +1339,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             includesFolders: payload.source.items.contains { $0.entityType == .folder },
             dropDelegate: self
         )
+        palette.onScroll = { [weak self, weak palette] interaction in
+            guard let self, let palette, spaceDropController === palette,
+                  isSpaceDropInteraction(interaction), let session = spaceHoverDropSession,
+                  spaceDropSessionID == ObjectIdentifier(session) else { return }
+            _ = dropInteraction(interaction, sessionDidUpdate: session)
+        }
         cancelPendingFolderExpansion(clearSession: true)
         spaceDropClosing = false
         spaceDropController = palette
@@ -1365,6 +1382,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private func endSpaceDropHover(_ interaction: UIDropInteraction, session: any UIDropSession) {
         guard isSpaceDropInteraction(interaction), spaceDropSessionID == ObjectIdentifier(session) else { return }
         spaceDropSessionID = nil
+        spaceHoverDropSession = nil
         spaceDropHover = nil
         spaceDropController?.highlight(nil)
         activeSource?.notifyParticipants()
@@ -1376,6 +1394,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         // Once admission is cancelled no destination callback can mutate state.
         // The preview container stays alive until its last animation completes.
         spaceDropSessionID = nil
+        spaceHoverDropSession = nil
         spaceDropHover = nil
         spaceDropBatchID = nil
         spaceDropBatchSessionID = nil
@@ -1411,6 +1430,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         sourceSessionID = nil
         dropSessionID = nil
         spaceDropSessionID = nil
+        spaceHoverDropSession = nil
         spaceDropClosing = true
         initialDragItems.removeAll(keepingCapacity: true)
         suppliedInitialItems.removeAll(keepingCapacity: true)
@@ -1434,6 +1454,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         activeSource?.invalidate()
         spaceDropClosing = true
         spaceDropHover = nil
+        spaceHoverDropSession = nil
         spaceDropController?.highlight(nil)
         if pendingDropAnimations.isEmpty {
             spaceDropController?.view.isHidden = true
@@ -1526,19 +1547,23 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func applyRows(_ newRows: [[Row]], snapshot: BrowserTabSessionSnapshot?) {
-        let anchor = tableView.indexPathsForVisibleRows?.sorted().first.flatMap { index -> (
-            BrowserSyncEntityReference,
-            CGFloat
-        )? in
-            guard let row = row(at: index) else { return nil }
-            return (row.reference, tableView.rectForRow(at: index).minY - tableView.contentOffset.y)
-        }
+        let newItems = Set(newRows.flatMap { $0 }.map(\.reference))
+        let anchor = tableView.indexPathsForVisibleRows?
+            .sorted()
+            .compactMap { index -> (
+                BrowserSyncEntityReference,
+                CGFloat
+            )? in
+                guard let row = row(at: index), newItems.contains(row.reference) else { return nil }
+                return (row.reference, tableView.rectForRow(at: index).minY - tableView.contentOffset.y)
+            }
+            .first
         let structuralChange = rows != newRows
         if renderedSnapshot != snapshot {
             capturedTargets.removeAll(keepingCapacity: true)
         }
         rows = newRows
-        selectedItems.formIntersection(Set(newRows.flatMap { $0 }.map(\.reference)))
+        selectedItems.formIntersection(newItems)
         renderedSnapshot = snapshot
         renderedDocument = workspace.profileDocument
         renderedSpaceID = workspace.selectedSpaceID

@@ -2,7 +2,7 @@ import UIKit
 
 /// A drag destination palette. Space identities and row geometry stay fixed for
 /// its lifetime; the source controller validates the latest document at drop.
-@MainActor final class BrowserMobileSpaceDropViewController: UIViewController {
+@MainActor final class BrowserMobileSpaceDropViewController: UIViewController, UIScrollViewDelegate {
     // MARK: Lifecycle
 
     init(spaces: [BrowserSpaceSessionSnapshot], includesFolders: Bool, dropDelegate: any UIDropInteractionDelegate) {
@@ -26,6 +26,8 @@ import UIKit
         }
     }
 
+    var onScroll: ((UIDropInteraction) -> Void)?
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.accessibilityIdentifier = "browser.spaceDropTargets"
@@ -35,9 +37,12 @@ import UIKit
         view.layer.borderColor = UIColor.separator.cgColor
         view.clipsToBounds = true
         if let dropDelegate {
-            view.addInteraction(UIDropInteraction(delegate: dropDelegate))
+            let interaction = UIDropInteraction(delegate: dropDelegate)
+            installedDropInteraction = interaction
+            view.addInteraction(interaction)
         }
         let scroll = UIScrollView()
+        scroll.delegate = self
         scroll.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scroll)
         let content = UIStackView()
@@ -83,6 +88,11 @@ import UIKit
         }
     }
 
+    func scrollViewDidScroll(_: UIScrollView) {
+        guard let installedDropInteraction else { return }
+        onScroll?(installedDropInteraction)
+    }
+
     func setIncludesFolders(_ value: Bool) {
         guard includesFolders != value else { return }
         includesFolders = value
@@ -125,6 +135,7 @@ import UIKit
     private let spaces: [BrowserSpaceSessionSnapshot]
     private var includesFolders: Bool
     private weak var dropDelegate: (any UIDropInteractionDelegate)?
+    private weak var installedDropInteraction: UIDropInteraction?
     private var targetViews = [(Target, UIView)]()
     private var todayLabels = [String: (title: UILabel, detail: UILabel)]()
 
