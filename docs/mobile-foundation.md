@@ -46,7 +46,9 @@ Hosted verification uses actual WK HTML and the public native interaction/sessio
 
 Native downloads use the original WebKit transfer, a profile-owned coordinator, durable completed files and a UIKit Downloads list with Save to Files, confirmed individual Delete and captured-set Clear Completed. Attachment responses, explicit download links and generated blob/data files retain the source document. Export leases block deletion across the profile's windows and remain owned by the Files picker after its list closes. Removal commits the manifest before file cleanup; failures retain an exact-ID or captured-batch retry, or a cleanup backlog. See [mobile-downloads.md](mobile-downloads.md) for the contract and verification limits.
 
-Remaining mobile work includes browser split; full scene/external-link routing; private browsing; auth/permission presentation, uploads and site settings; redownloading and active-transfer recovery; background/memory recovery; and observed gesture/visual polish. Physical Files/provider interaction and real OS multi-scene export lifecycle remain unverified. Auto-Archive policy and implementation are described below. Feature verification status belongs in the ledger. No placeholder controls claim these features exist.
+Default WebKit text-file upload presentation, injected picker results and real multipart delivery are covered by [mobile-uploads.md](mobile-uploads.md). The production engine preserves WebKit's built-in chooser; physical provider/media selection remains unverified.
+
+Remaining mobile work includes browser split; full scene/external-link routing; private browsing; auth/permission presentation and site settings; broader upload providers/media; redownloading and active-transfer recovery; background/memory recovery; and observed gesture/visual polish. Physical Files/provider interaction and real OS multi-scene export lifecycle remain unverified. Auto-Archive policy and implementation are described below. Feature verification status belongs in the ledger. No placeholder controls claim these features exist.
 
 
 ## Durable local Archive
