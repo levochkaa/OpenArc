@@ -289,6 +289,7 @@
 "browser.settings.temporary_tabs.lifetime.30d" = "30 Days (Default)";
 "browser.settings.temporary_tabs.sync_unavailable" = "Automatic archiving is off for synced profiles on this Mac.";
 "browser.settings.temporary_tabs.save_failed" = "Couldn’t save the archive timing. Try again.";
+"browser.settings.temporary_tabs.load_failed" = "Couldn’t load auto-archive settings. Try again.";
 "browser.permissions.notifications.title" = "Allow notifications for this site?";
 "browser.permissions.notifications.message" = "%@ wants to send notifications.";
 "browser.permissions.allow" = "Allow";
@@ -350,3 +351,7 @@
 "browser.archive.action_failed" = "Couldn’t update the Archive. Try again.";
 "browser.archive.unavailable" = "Archive is unavailable for this window.";
 "browser.archive.search_invalid" = "Use a shorter search, up to 256 characters.";
+
+"browser.settings.automatic_archival.off" = "Off";
+"browser.settings.automatic_archival.30d" = "30 Days";
+"browser.settings.automatic_archival.sync_description" = "Archive inactive temporary tabs using the latest synced activity. Pinned tabs and Favorites stay. Automatic archiving waits while sync is paused or offline. Restore archived tabs from File → Archive.";

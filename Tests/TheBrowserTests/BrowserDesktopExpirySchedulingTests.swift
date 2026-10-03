@@ -5,7 +5,7 @@ import Testing
 // MARK: - BrowserDesktopExpirySchedulingTests
 
 @Suite(.serialized) @MainActor struct BrowserDesktopExpirySchedulingTests {
-    @Test func desktopReadinessProtectsStableIdentityButKeepsExpiryOffUntilArchiveIsAvailable() throws {
+    @Test func desktopReadinessProtectsStableIdentityAndDefaultOffChangesOnlyAfterExplicitReload() throws {
         let f = try DesktopExpiryFixture()
         defer { f.close() }
         #expect(f.sync.scheduler === f.model)
@@ -19,6 +19,9 @@ import Testing
         #expect(state.inactiveForSeconds == nil)
         try f.store.saveAutomaticTabArchival(enabled: true, lifetime: .twelveHours)
         #expect(f.model.expirySchedulingState()?.inactiveForSeconds == nil)
+        #expect(!f.model.automaticTabArchivalEnabled)
+        #expect(f.model.reloadAutomaticTabArchivalSettings())
+        #expect(f.model.expirySchedulingState()?.inactiveForSeconds == 43200)
         let before = try f.store.loadSnapshotStrict()
         f.model.archiveExpiredTemporaryTabs()
         #expect(f.sync.sweeps > 0)
@@ -183,7 +186,7 @@ import Testing
         #expect(f.model.tabs.first { $0.id == f.model.selectedTabID }?.syncID == "b")
     }
 
-    @Test func desktopLifetimeSaveFailureIsVisibleAndSyncedSettingsCannotEnableExpiry() throws {
+    @Test func desktopLifetimeSaveFailureIsVisibleAndSyncedSettingsRequireAnExplicitChoice() throws {
         let f = try DesktopExpiryFixture()
         defer { f.close() }
         f.restore()
@@ -207,15 +210,16 @@ import Testing
             openProfile: { _ in }, openURL: { _ in }
         )
         let picker = try #require(desktopExpiryView(
-            "browser.settings.temporary-tab-lifetime",
+            "browser.settings.automatic-tab-archival",
             in: controller.view
         ) as? BrowserActionPopUpButton)
         let description = try #require(desktopExpiryView(
             "browser.settings.temporary-tab-availability",
             in: controller.view
         ) as? NSTextField)
-        #expect(!picker.isEnabled)
-        #expect(description.stringValue == BrowserStrings.settingsTemporaryTabsSyncUnavailable)
+        #expect(picker.isEnabled)
+        #expect(picker.titleOfSelectedItem == BrowserStrings.settingsAutomaticArchivalOff)
+        #expect(description.stringValue == BrowserStrings.settingsAutomaticArchivalSyncDescription)
         #expect(picker.itemTitles.contains(BrowserStrings.settingsLifetimeThreeDays))
         #expect(f.model.expirySchedulingState()?.inactiveForSeconds == nil)
         #expect(!f.store.loadAutomaticTabArchivalEnabled())

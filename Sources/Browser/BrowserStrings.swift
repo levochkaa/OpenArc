@@ -1447,6 +1447,18 @@ enum BrowserStrings {
         comment: "Option title for archiving temporary tabs after 12 hours."
     )
 
+    static let settingsAutomaticArchivalOff = NSLocalizedString(
+        "browser.settings.automatic_archival.off",
+        comment: "Disable automatic archiving for this synchronized profile."
+    )
+    static let settingsAutomaticArchivalThirtyDays = NSLocalizedString(
+        "browser.settings.automatic_archival.30d",
+        comment: "Thirty days without the local-only Default label; synced profiles default to Off."
+    )
+    static let settingsAutomaticArchivalSyncDescription = NSLocalizedString(
+        "browser.settings.automatic_archival.sync_description",
+        comment: "Synchronized automatic archive behavior and recovery entry point."
+    )
     static let settingsTemporaryTabsSyncUnavailable = NSLocalizedString(
         "browser.settings.temporary_tabs.sync_unavailable",
         comment: "Explains why automatic archiving is disabled for synchronized desktop profiles."
@@ -1455,6 +1467,11 @@ enum BrowserStrings {
     static let settingsTemporaryTabsSaveFailed = NSLocalizedString(
         "browser.settings.temporary_tabs.save_failed",
         comment: "Archive timing preference could not be saved."
+    )
+
+    static let settingsTemporaryTabsLoadFailed = NSLocalizedString(
+        "browser.settings.temporary_tabs.load_failed",
+        comment: "Automatic archive settings could not be read."
     )
 
     static let settingsLifetimeTwentyFourHours = NSLocalizedString(

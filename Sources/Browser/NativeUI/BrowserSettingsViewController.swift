@@ -137,7 +137,10 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         observe(shortcutStore.objectWillChange) { [weak self] in self?.refreshShortcuts() }
         observe(profileStore.objectWillChange) { [weak self] in self?.refreshProfiles() }
         if let accountStore {
-            observe(accountStore.objectWillChange) { [weak self] in self?.refreshAccounts() }
+            observe(accountStore.objectWillChange) { [weak self] in
+                self?.refreshAccounts()
+                self?.syncControls()
+            }
         }
     }
 
@@ -225,19 +228,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     private func configureGeneral() {
         let preferences = preferences
-        let model = model
-        let archivalDescription = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
-        let archivalError = BrowserNativeControls.label("", size: 12, color: .systemRed, wraps: true)
-        archivalDescription.setAccessibilityIdentifier("browser.settings.temporary-tab-availability")
-        archivalError.setAccessibilityIdentifier("browser.settings.temporary-tab-error")
-        updateBindings.append { [weak model, weak archivalDescription, weak archivalError] in
-            guard let model else { return }
-            archivalDescription?.stringValue = model.isAutomaticArchivalUnavailableForSync
-                ? BrowserStrings.settingsTemporaryTabsSyncUnavailable
-                : BrowserStrings.settingsTemporaryTabsDescription
-            archivalError?.stringValue = model.automaticArchivalSettingsError ?? ""
-            archivalError?.isHidden = model.automaticArchivalSettingsError == nil
-        }
         scrollView.setViews([
             section(BrowserStrings.settingsGeneralTab, rows: [
                 toggle(
@@ -310,20 +300,72 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 ),
                 link(BrowserStrings.settingsManageSearch, url: BrowserSettingsRoute.searchEnginesURL),
             ]),
-            section(BrowserStrings.settingsTemporaryTabsTitle, rows: [
-                picker(
-                    "temporary-tab-lifetime",
-                    BrowserStrings.settingsTemporaryTabsLifetimeLabel,
-                    options: BrowserTemporaryTabLifetime.allCases,
-                    title: BrowserStrings.title,
-                    get: { model.temporaryTabLifetime },
-                    set: { model.setTemporaryTabLifetime($0) },
-                    enabled: { !model.isAutomaticArchivalUnavailableForSync }
-                ),
-                archivalDescription,
-                archivalError,
-            ]),
+            section(BrowserStrings.settingsTemporaryTabsTitle, rows: automaticArchivalRows()),
         ])
+    }
+
+    private func automaticArchivalRows() -> [NSView] {
+        let model = model
+        let localRow = picker(
+            "temporary-tab-lifetime",
+            BrowserStrings.settingsTemporaryTabsLifetimeLabel,
+            options: BrowserTemporaryTabLifetime.allCases,
+            title: BrowserStrings.title,
+            get: { model.temporaryTabLifetime },
+            set: { [weak self] lifetime in
+                model.setTemporaryTabLifetime(lifetime)
+                self?.syncControls()
+            },
+            enabled: { !model.usesSynchronizedAutomaticArchival }
+        )
+        let synchronizedRow = picker(
+            "automatic-tab-archival",
+            BrowserStrings.settingsTemporaryTabsLifetimeLabel,
+            options: [nil] + BrowserTemporaryTabLifetime.allCases.map(Optional.some),
+            title: { lifetime in
+                guard let lifetime else { return BrowserStrings.settingsAutomaticArchivalOff }
+                return lifetime == .thirtyDays
+                    ? BrowserStrings.settingsAutomaticArchivalThirtyDays
+                    : BrowserStrings.title(for: lifetime)
+            },
+            get: { model.automaticTabArchivalEnabled ? model.temporaryTabLifetime : nil },
+            set: { [weak self] lifetime in
+                _ = model.setAutomaticTabArchival(lifetime: lifetime)
+                self?.syncControls()
+            },
+            enabled: { model.canConfigureAutomaticTabArchival }
+        )
+        let description = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
+        let error = BrowserNativeControls.label("", size: 12, color: .systemRed, wraps: true)
+        let retry = BrowserActionButton(BrowserStrings.sessionRecoveryRetry) { [weak self] in
+            _ = model.retryAutomaticTabArchivalSettings()
+            self?.syncControls()
+        }
+        description.setAccessibilityIdentifier("browser.settings.temporary-tab-availability")
+        error.setAccessibilityIdentifier("browser.settings.temporary-tab-error")
+        retry.setAccessibilityIdentifier("browser.settings.automatic-tab-archival-retry")
+        let errorRow = BrowserNativeControls.stack([error, retry], orientation: .horizontal, spacing: 12)
+        updateBindings.append { [
+            weak model,
+            weak localRow,
+            weak synchronizedRow,
+            weak description,
+            weak error,
+            weak retry,
+            weak errorRow
+        ] in
+            guard let model else { return }
+            let synchronized = model.usesSynchronizedAutomaticArchival
+            localRow?.isHidden = synchronized
+            synchronizedRow?.isHidden = !synchronized
+            description?.stringValue = synchronized
+                ? BrowserStrings.settingsAutomaticArchivalSyncDescription
+                : BrowserStrings.settingsTemporaryTabsDescription
+            error?.stringValue = model.automaticArchivalSettingsError ?? ""
+            errorRow?.isHidden = model.automaticArchivalSettingsError == nil
+            retry?.isEnabled = model.canRetryAutomaticTabArchivalSettings
+        }
+        return [localRow, synchronizedRow, description, errorRow]
     }
 
     private func configureProfiles() {

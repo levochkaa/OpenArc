@@ -154,6 +154,7 @@ enum BrowserWindowMode: Equatable {
         extensionSidePanelDriver?.onPanelClosed = { [weak self] panelID in
             self?.handleExtensionSidePanelClosed(panelID: panelID)
         }
+        reloadAutomaticTabArchivalSettings()
         syncCoordinator?.setExpiryScheduler(self)
         updateWindowTitle()
     }
@@ -201,6 +202,7 @@ enum BrowserWindowMode: Equatable {
     @Published var isSidebarVisible = true
     @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
     @Published private(set) var temporaryTabLifetime: BrowserTemporaryTabLifetime
+    @Published private(set) var automaticTabArchivalEnabled = false
     @Published private(set) var automaticArchivalSettingsError: String?
     @Published private(set) var archiveRevision = 0
     @Published private(set) var archiveError: String?
@@ -471,9 +473,21 @@ enum BrowserWindowMode: Equatable {
         activeSpace?.isPinnedSectionCollapsed ?? false
     }
 
-    var isAutomaticArchivalUnavailableForSync: Bool {
+    var usesSynchronizedAutomaticArchival: Bool {
         guard let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading else { return false }
         do { return try ownership.syncOwner() != nil } catch { return true }
+    }
+
+    var canConfigureAutomaticTabArchival: Bool {
+        guard canBrowseArchive, sessionPreferencesStore is BrowserSQLiteSessionStore,
+              let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading
+        else { return false }
+        return (try? ownership.syncOwner()) != nil
+    }
+
+    var canRetryAutomaticTabArchivalSettings: Bool {
+        windowMode.persistsSession && !isShuttingDown && !hasDiscardedSessionForClosure &&
+            pendingAutomaticArchivalSettingsRetry != nil
     }
 
     @discardableResult func retrySessionPersistence() -> Bool {
@@ -1204,15 +1218,76 @@ enum BrowserWindowMode: Equatable {
             do {
                 try sqlite.saveTemporaryTabLifetimeStrict(lifetime)
             } catch {
+                pendingAutomaticArchivalSettingsRetry = .localLifetime(lifetime)
                 automaticArchivalSettingsError = BrowserStrings.settingsTemporaryTabsSaveFailed
                 return
             }
         } else {
             sessionPreferencesStore.saveTemporaryTabLifetime(lifetime)
         }
-        automaticArchivalSettingsError = nil
         temporaryTabLifetime = lifetime
+        if sessionPreferencesStore is BrowserSQLiteSessionStore {
+            // A legacy lifetime change may repair a previously invalid value.
+            // Validate the enabled flag as well before clearing its Retry state.
+            reloadAutomaticTabArchivalSettings()
+        } else {
+            automaticArchivalSettingsError = nil
+            pendingAutomaticArchivalSettingsRetry = nil
+        }
         archiveExpiredTemporaryTabs()
+    }
+
+    /// The synced-profile picker expresses both enabled state and interval.
+    /// Off remains editable while a session write or engine creation is pending.
+    @discardableResult func setAutomaticTabArchival(lifetime: BrowserTemporaryTabLifetime?) -> Bool {
+        guard canConfigureAutomaticTabArchival,
+              let sqlite = sessionPreferencesStore as? BrowserSQLiteSessionStore else { return false }
+        let chosen = lifetime ?? temporaryTabLifetime
+        do {
+            try sqlite.saveAutomaticTabArchival(enabled: lifetime != nil, lifetime: chosen)
+            automaticTabArchivalEnabled = lifetime != nil
+            temporaryTabLifetime = chosen
+            automaticArchivalSettingsLoaded = true
+            pendingAutomaticArchivalSettingsRetry = nil
+            automaticArchivalSettingsError = nil
+            syncCoordinator?.requestExpirySweep()
+            return true
+        } catch {
+            pendingAutomaticArchivalSettingsRetry = .synchronized(lifetime)
+            automaticArchivalSettingsError = BrowserStrings.settingsTemporaryTabsSaveFailed
+            return false
+        }
+    }
+
+    @discardableResult func reloadAutomaticTabArchivalSettings() -> Bool {
+        guard windowMode.persistsSession, !isShuttingDown, !hasDiscardedSessionForClosure,
+              let sqlite = sessionPreferencesStore as? BrowserSQLiteSessionStore else { return false }
+        do {
+            let settings = try sqlite.loadAutomaticTabArchivalSettings()
+            automaticTabArchivalEnabled = settings.enabled
+            temporaryTabLifetime = settings.lifetime
+            automaticArchivalSettingsLoaded = true
+            pendingAutomaticArchivalSettingsRetry = nil
+            automaticArchivalSettingsError = nil
+            syncCoordinator?.requestExpirySweep()
+            return true
+        } catch {
+            automaticArchivalSettingsLoaded = false
+            pendingAutomaticArchivalSettingsRetry = .reload
+            automaticArchivalSettingsError = BrowserStrings.settingsTemporaryTabsLoadFailed
+            return false
+        }
+    }
+
+    @discardableResult func retryAutomaticTabArchivalSettings() -> Bool {
+        guard canRetryAutomaticTabArchivalSettings, let pendingAutomaticArchivalSettingsRetry else { return false }
+        switch pendingAutomaticArchivalSettingsRetry {
+        case .reload: return reloadAutomaticTabArchivalSettings()
+        case .synchronized(let lifetime): return setAutomaticTabArchival(lifetime: lifetime)
+        case .localLifetime(let lifetime):
+            setTemporaryTabLifetime(lifetime)
+            return automaticArchivalSettingsError == nil
+        }
     }
 
     func handleApplicationDidBecomeActive() {
@@ -2165,6 +2240,12 @@ enum BrowserWindowMode: Equatable {
         let generation: Int
     }
 
+    private enum AutomaticArchivalSettingsRetry {
+        case reload
+        case synchronized(BrowserTemporaryTabLifetime?)
+        case localLifetime(BrowserTemporaryTabLifetime)
+    }
+
     private static let automaticArchivalLogger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "AutomaticArchival"
     )
@@ -2214,6 +2295,9 @@ enum BrowserWindowMode: Equatable {
     private var pendingHydratedTabCreationIDs = Set<String>()
     private var tabCreationUndoReferences = [String: TabCreationUndoReference]()
     private var automaticArchivalTimer: Timer?
+    private var automaticArchivalSettingsLoaded = false
+    private var pendingAutomaticArchivalSettingsRetry: AutomaticArchivalSettingsRetry?
+
     private var isViewingActivityActive = true
     private var recentlySelectedTabIDs = [String]()
     private var tabPreviewImagesByID = [String: NSImage]()
@@ -3814,7 +3898,8 @@ extension BrowserChromeModel {
 
 extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     func expirySchedulingState() -> BrowserSyncExpirySchedulingState? {
-        guard isViewingActivityActive, isContextReady, isPersistenceEnabled, !isShuttingDown,
+        guard canBrowseArchive, automaticArchivalSettingsLoaded, !isArchiveOperationInFlight,
+              isViewingActivityActive, isContextReady, isPersistenceEnabled, !isShuttingDown,
               !isRestoringSession, !isApplyingRemoteSync, !isReconcilingRemoteProjection,
               deferredRemoteSyncSnapshot == nil, pendingRemoteTabCreations.isEmpty,
               pendingCreatedTabContexts.isEmpty, pendingHydratedTabCreationIDs.isEmpty,
@@ -3826,10 +3911,15 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                           .contains($0.id) })
         else { return nil }
         let protectedIDs = Set(tabs.filter { $0.id == selectedTabID }.map(\.syncID))
-        // Desktop recovery is available, but automatic expiry still needs its
-        // native timing controls and close-policy verification. A shared mobile
-        // preference must not silently enable it here.
-        return .init(inactiveForSeconds: nil, protectedTabIDs: protectedIDs)
+        guard let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading else { return nil }
+        let owner: BrowserSyncOwner?
+        do { owner = try ownership.syncOwner() } catch { return nil }
+        return .init(
+            inactiveForSeconds: owner != nil && automaticTabArchivalEnabled
+                ? Int(temporaryTabLifetime.timeInterval)
+                : nil,
+            protectedTabIDs: protectedIDs
+        )
     }
 
     func refreshExpiryActivity() -> Bool {
