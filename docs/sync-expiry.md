@@ -1,6 +1,6 @@
 # Conditional automatic expiry
 
-The server supports conditional expiry, and shared Swift clients import its recovery data durably. Clients do not yet issue conditional expiry requests or run a mobile timer. The desktop local timer is disabled for durably sync-bound profiles until conditional scheduling is implemented. Native timing settings and the scheduler remain required.
+The server supports conditional expiry, and shared Swift clients durably queue its requests and import recovery data. Automatic scheduling is not enabled yet. The desktop local timer is disabled for durably sync-bound profiles until conditional scheduling is implemented. Native timing settings and the scheduler remain required.
 
 ## Product policy
 
@@ -65,10 +65,20 @@ The first-import receipt and Archive receipts survive Restore/Delete/Clear. Repe
 
 Archive payloads remain in permanent server events and receipts. Local Clear Archive is not server erasure, and no retention or secure-erasure guarantee is added. Recovery contains logical tab metadata, not WebKit navigation history, cookies, passwords or live page state.
 
-## Client work required before enabling timers
+## Durable conditional intents
 
-Use a separate conditional intent with no optimistic local tombstone. The existing `archiveTab` path immediately emits an ordinary delete and permanently hides the identity; it cannot represent a rejected expiry safely. ACK/pull must reconcile recovery, current state and the immutable queued intent atomically. Loss of the response or process restart must neither lose recovery nor duplicate it.
+`BrowserSyncService.enqueueExpiry` requires an active authorized runtime, capabilities 4/5 from the current session's completed pull and durable v5 recovery adoption. It generates a fresh mutation UUID and persists a separate `.expiry` queue row before waking the sender. There is no optimistic local tombstone, Archive entry, snapshot change or pending overlay. Later ordinary edits retain their own v4 rows and order. The scheduler must supply current canonical tab sequences, never the account cursor.
+
+`addExpirySyncOutbox` widens only the queue's version constraint to 2/3/4/5. It copies existing BLOBs and UUIDs directly and preserves FIFO positions and the consumed-row AUTOINCREMENT high-water mark. The ordinary-write mode stays 4. An identical pending UUID/content enqueue is a no-op; a different codec or content under that queued UUID fails. After consumption, the server's permanent receipt remains the source of idempotency; the coordinator always chooses a new UUID for a new intent.
+
+Requests contain 1–100 distinct tab IDs with positive JavaScript-safe canonical sequences and one supported interval. Encoded request size is checked before insertion. The typed transport and coordinator both validate protocol, UUID, outcome count/indexes, status/reason and canonical events before acknowledging a row. An `applied` outcome requires the matching full recovery delete; a `deleted` outcome may reference an earlier manual tombstone. Rejected outcomes cannot apply a delete, and `response_limit` carries no canonical event.
+
+ACK atomically imports available recovery, applies canonical state, removes only the acknowledged row and projects the remaining queue. It never advances the pull cursor. Rejection is terminal for that UUID; no unconditional delete is substituted. Lost responses and restart preserve queued intent. A server downgrade stops sending without rewriting or skipping rows. Replacement-device cursor-zero recovery bootstrap accepts retained v4/v5 rows before retrying their original receipts.
+
+An admitted intent precedes any later local activity/edit in FIFO order. Selecting a tab after admission does not cancel that request, including after pause or restart. The server may still accept it before the later activity row arrives, even when selection happened before transmission; recovery then applies. Scheduler admission must therefore follow current selection/hydration checks and drained activity writes; any stronger pre-send cancellation policy needs explicit durable attempt tracking and cannot discard a possibly committed request as if it had never been sent.
+
+## Client work required before enabling timers
 
 One scheduler per profile must wait for scene hydration, current pull completion and pending writes, protect every attached window's selected tab, use bounded passes and stop on persistence failure. Long-lived active selections need limited activity refresh. Candidate selection and submission must revalidate current IDs, activity, placement and leases. A failed or rejected automatic operation must not become a fixed ordinary delete in the manual Retry FIFO. Explicit manual Close keeps its existing semantics.
 
-Desktop `archiveExpiredTemporaryTabs` checks durable sync ownership on every entry, including startup/foreground before pull, setting changes and periodic sweeps. A bound profile skips local expiry even while paused, logged out or offline; an ownership read failure also skips it. Never-bound local profiles retain their existing timer, and explicit manual Close remains available. Mobile expiry remains disabled. The next client slice must add immutable conditional intents and full request/rejection/retry proof before scheduling is enabled.
+Desktop `archiveExpiredTemporaryTabs` checks durable sync ownership on every entry, including startup/foreground before pull, setting changes and periodic sweeps. A bound profile skips local expiry even while paused, logged out or offline; an ownership read failure also skips it. Never-bound local profiles retain their existing timer, and explicit manual Close remains available. Mobile expiry remains disabled. The next client slice must connect the verified conditional queue to the bounded profile scheduler and native timing controls.

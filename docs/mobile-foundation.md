@@ -61,7 +61,7 @@ SQLite reads use a timestamp/ID keyset and a maximum of 100 entries; UIKit displ
 
 The choices above are TheBrowser policies.
 
-Retention, automatic archiving and desktop durable archive remain separate work. Archive records and compact receipts have no automatic expiry. Local activity and attached-window protection are defined below; expiry still needs a cross-device policy and restart/sweep timing. Native callback execution does not establish physical gesture quality or OS scene behavior.
+Retention, automatic archiving and desktop durable archive remain separate work. Archive records and compact receipts have no automatic expiry. Local activity and attached-window protection are defined below; the shared conditional expiry protocol and durable queue are defined in [sync expiry](sync-expiry.md), while restart/sweep timing remains open. Native callback execution does not establish physical gesture quality or OS scene behavior.
 
 
 ### Archive search and removal
@@ -88,6 +88,6 @@ The updated server keeps the maximum stored and incoming activity date for each 
 
 The shared client applies the same date maximum while replaying pending v2/v3/v4 changes, without rewriting queued payloads, UUIDs or receipts. Canonical baseline events still follow server sequence. Snapshot materialization preserves a local fractional timestamp only when the incoming whole-second value denotes that same second; a different valid canonical value wins. Missing/invalid values retain the existing local fallback. Older servers lack the maximum guarantee, and older client binaries can still display a regressed pending projection. Historical events and receipts are not rewritten; this change does not reconstruct previously regressed activity values.
 
-The maximum covers activity reported to the server. A completely offline device's current use remains unknown to other devices, and selection leases protect only attached windows in the local profile. Automatic archiving remains disabled pending an offline-device policy and conditional expiry enforcement. Local activity capture still uses whole seconds; synchronous snapshot persistence and unprofiled large-profile activity cost remain existing limits.
+The maximum covers activity reported to the server. A completely offline device's current use remains unknown to other devices, and selection leases protect only attached windows in the local profile. The [reported-activity policy](sync-expiry.md) preserves available divergent local content when a server expiry arrives; Restore creates a new identity. Shared conditional requests and recovery are implemented, but automatic archiving remains disabled pending profile scheduling and timing controls. Local activity capture still uses whole seconds; synchronous snapshot persistence and unprofiled large-profile activity cost remain existing limits.
 
 The lifecycle and lease rules above are TheBrowser policy. Scene-registry callbacks and controlled clocks are testable independently of OS scene delivery.

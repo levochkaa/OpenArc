@@ -198,6 +198,45 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
     }
 
+    /// Persist a conditional intent without hiding its tab or changing the
+    /// canonical baseline. Ordinary local edits continue to use the v4 codec.
+    /// Retries reuse a queued row unchanged. Once ACK removes it, the server's
+    /// permanent receipt owns replay identity; each new sweep needs a fresh UUID.
+    func enqueueSyncExpiry(_ mutation: BrowserSyncExpiryMutation, for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            guard try folderSyncEnabled(in: db),
+                  try Bool
+                      .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
+            else { throw BrowserSyncQueueError.expiryBootstrapRequired }
+            try mutation.validate()
+            if let row = try Row.fetchOne(
+                db, sql: "SELECT protocol_version, payload FROM browser_sync_outbox WHERE mutation_id = ?",
+                arguments: [mutation.id]
+            ) {
+                guard row["protocol_version"] as Int == 5,
+                      try JSONDecoder().decode(BrowserSyncExpiryMutation.self, from: row["payload"] as Data) == mutation
+                else { throw BrowserSyncQueueError.mutationIdentityConflict }
+                return
+            }
+            // Match the transport's default JSONEncoder, including escaped slashes.
+            // Stored rows use a different representation and can be much smaller.
+            let wirePayload = try JSONEncoder().encode(BrowserSyncExpiryPushRequest(
+                mutationID: mutation.id,
+                deviceID: "00000000-0000-4000-8000-000000000000",
+                operations: mutation.operations
+            ))
+            guard wirePayload.count <= 8 * 1024 * 1024 else { throw BrowserSyncQueueError.mutationTooLarge }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            let payload = try encoder.encode(mutation)
+            try db.execute(
+                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 5)",
+                arguments: [mutation.id, payload]
+            )
+        }
+    }
+
     func enableSemanticSyncMutations(for owner: BrowserSyncOwner) throws {
         try dbQueue.write { db in
             try requireSyncOwner(owner, in: db)
@@ -649,6 +688,32 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             );
             """)
         }
+        migrator.registerMigration("addExpirySyncOutbox") { db in
+            let sequence = try Int64.fetchOne(
+                db, sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_sync_outbox'"
+            )
+            // Preserve original request bytes and consumed-row high-water marks.
+            // The ordinary-write version CHECK remains 2/3/4 on sync_state.
+            try db.execute(sql: """
+            CREATE TABLE browser_sync_outbox_v5 (
+                position INTEGER PRIMARY KEY AUTOINCREMENT,
+                mutation_id TEXT NOT NULL UNIQUE,
+                payload BLOB NOT NULL,
+                protocol_version INTEGER NOT NULL DEFAULT 2 CHECK (protocol_version IN (2, 3, 4, 5))
+            );
+            INSERT INTO browser_sync_outbox_v5 (position, mutation_id, payload, protocol_version)
+                SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position;
+            DROP TABLE browser_sync_outbox;
+            ALTER TABLE browser_sync_outbox_v5 RENAME TO browser_sync_outbox;
+            """)
+            if let sequence {
+                try db.execute(sql: "DELETE FROM sqlite_sequence WHERE name = 'browser_sync_outbox'")
+                try db.execute(
+                    sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_sync_outbox', ?)",
+                    arguments: [sequence]
+                )
+            }
+        }
         return migrator
     }
 
@@ -780,7 +845,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         return try dbQueue.write { db in
             try requireSyncOwner(owner, in: db)
             let pending = try readSyncQueue(db)
-            guard pending.allSatisfy({ $0.protocolVersion == 4 }) else {
+            guard pending.allSatisfy({ $0.protocolVersion == 4 || $0.protocolVersion == 5 }) else {
                 throw BrowserSyncQueueError.bootstrapRequiresLegacyDrain
             }
             let local = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
@@ -1180,6 +1245,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     BrowserSyncFolderMutation.self,
                     from: row["payload"] as Data
                 ))
+            case 5:
+                let expiry = try JSONDecoder().decode(BrowserSyncExpiryMutation.self, from: row["payload"] as Data)
+                try expiry.validate()
+                mutation = .expiry(expiry)
             default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
             }
             guard mutation.id == row["mutation_id"] as String

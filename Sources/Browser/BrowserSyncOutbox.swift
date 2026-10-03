@@ -369,6 +369,7 @@ enum BrowserSyncOutboxProjection {
                     default: nil
                     }
                 }
+            case .expiry: []
             }
         })
         var deleted = baseline.deletedKeys.subtracting(pendingDeletes)
@@ -410,6 +411,10 @@ enum BrowserSyncOutboxProjection {
                 BrowserSyncSemanticProjection.apply(row.operations, to: &values, deleted: &deleted)
             case .folders(let row):
                 BrowserSyncFolderProjection.apply(row.operations, to: &values, deleted: &deleted)
+            case .expiry:
+                // Conditional requests leave live state untouched until the
+                // server returns its accepted delete or canonical rejection.
+                break
             }
         }
         deleted.formUnion(baseline.deletedKeys)

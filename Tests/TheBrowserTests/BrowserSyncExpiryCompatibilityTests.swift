@@ -91,6 +91,8 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
             }
             return false
         })
+    case .expiry:
+        Issue.record("This fixture must capture an ordinary local edit")
     }
     let frozenRows = try expiryStoredRows(databaseURL)
     let applier = ExpiryCompatibilityApplier()

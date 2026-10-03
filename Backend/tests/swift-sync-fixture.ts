@@ -39,7 +39,10 @@ const auth = app.get(AuthService);
 const controlToken = randomUUID();
 
 type Mode = "drop" | "hold";
-type Attempt = { deviceID: string; mutationID: string; protocolVersion: number; digest: string; compressed: boolean; status: number };
+type Attempt = {
+  deviceID: string; mutationID: string; protocolVersion: number; digest: string; compressed: boolean; status: number;
+  outcomeStatuses?: string[]; outcomeReasons?: string[]; hasAutoArchive?: boolean;
+};
 type ObservedPull = {
   deviceID: string; protocolVersion: number; cursor: number; status: number;
   eventCount?: number; responseCursor?: number;
@@ -63,6 +66,8 @@ const semanticAuthorizations = new Set<string>();
 const capabilityOverrides = new Map<string, number[]>();
 const adoptionScenario = "folder-adoption-paged";
 const expiryScenario = "expiry-recovery";
+const expiryQueueScenario = "expiry-queue";
+const expiryLimitScenario = "expiry-response-limit";
 const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
   "folder-device-rotation", "folder-pending-delete", "folder-activity-replay"
@@ -74,7 +79,8 @@ const desktopScenarios = [
   ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
   "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay",
-  "persistence-retry", "pending-parent-delete", "pending-navigation", ...folderScenarios, expiryScenario
+  "persistence-retry", "pending-parent-delete", "pending-navigation", ...folderScenarios,
+  expiryScenario, expiryQueueScenario, expiryLimitScenario
 ];
 const scenarios = suite === "mobile" ? [...mobileScenarios] : desktopScenarios;
 
@@ -162,13 +168,22 @@ const proxy = createServer((incoming, outgoing) => {
       observedPulls.push(observation);
     }
     if (push) {
+      const result = push.protocolVersion === 5 && status >= 200 && status < 300
+        ? JSON.parse((responseHeaders["content-encoding"] === "gzip" ? gunzipSync(data) : data).toString()) as {
+          outcomes: { status: string; reason?: string }[]; events: { data?: { autoArchive?: unknown } }[];
+        } : undefined;
       attempts.push({
         deviceID: push.deviceID, mutationID: push.mutationID,
         protocolVersion: push.protocolVersion ?? 1,
         digest: createHash("sha256").update(JSON.stringify(canonical({
           protocolVersion: push.protocolVersion, changes: push.changes, operations: push.operations
         }))).digest("hex"),
-        compressed, status
+        compressed, status,
+        ...(result ? {
+          outcomeStatuses: result.outcomes.map((outcome) => outcome.status),
+          outcomeReasons: result.outcomes.flatMap((outcome) => outcome.reason ? [outcome.reason] : []),
+          hasAutoArchive: result.events.some((event) => !!event.data?.autoArchive)
+        } : {})
       });
     }
     const mode = push ? modes.get(push.deviceID) : undefined;
@@ -219,7 +234,10 @@ for (const scenario of scenarios) {
   const userID = result.rows[0].id as string;
   const accessToken = await auth.issueAccessToken(userID);
   if (legacyScenarios.has(scenario)) legacyAuthorizations.add(`Bearer ${accessToken}`);
-  else if (!folderScenarios.has(scenario) && !mobileScenarios.has(scenario) && scenario !== expiryScenario) semanticAuthorizations.add(`Bearer ${accessToken}`);
+  else if (!folderScenarios.has(scenario) && !mobileScenarios.has(scenario)
+    && scenario !== expiryScenario && scenario !== expiryQueueScenario && scenario !== expiryLimitScenario) {
+    semanticAuthorizations.add(`Bearer ${accessToken}`);
+  }
   if (scenario === adoptionScenario) capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3]);
   else if (folderScenarios.has(scenario) || mobileScenarios.has(scenario)) {
     // These existing cases deliberately retain their v4 coverage. Only the
@@ -307,7 +325,7 @@ const control = createServer((incoming, outgoing) => {
       if (response) sendHeld(response);
     } else if (command.action === "setcapabilities") {
       const account = accounts.find((account) => account.userID === command.userID);
-      assert.ok(account?.scenario === adoptionScenario || account?.scenario === expiryScenario,
+      assert.ok(account?.scenario === adoptionScenario || account?.scenario === expiryScenario || account?.scenario === expiryQueueScenario,
         "Capability transitions belong to isolated upgrade scenarios");
       const allowed = account.scenario === adoptionScenario ? ["[2,3]", "[2,3,4]"] : ["[2,3,4]", "[2,3,4,5]"];
       assert.ok(allowed.includes(JSON.stringify(command.versions)));
@@ -342,7 +360,8 @@ const control = createServer((incoming, outgoing) => {
       result = { status: response.status, response: decoded };
     } else if (command.action === "rotate") {
       const account = accounts.find((account) => account.userID === command.userID);
-      assert.ok(account?.scenario === "folder-device-rotation", "Device rotation belongs to its isolated scenario");
+      assert.ok(account?.scenario === "folder-device-rotation" || account?.scenario === expiryQueueScenario,
+        "Device rotation belongs to isolated rebootstrap scenarios");
       const device = await registerDevice(account.userID, account.devices[0].accessToken, "Swift rotated device");
       account.devices.push(device);
       result = device;
@@ -363,6 +382,37 @@ const control = createServer((incoming, outgoing) => {
             && attempt.protocolVersion === 4 && attempt.status === 201),
           "Both mobile scenario devices must commit production v4 mutations");
         }
+      } else if (account.scenario === expiryLimitScenario) {
+        assert.ok(scenarioAttempts.every((attempt) => [4, 5].includes(attempt.protocolVersion)));
+        assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 4 && attempt.status === 201 && attempt.compressed),
+          "The oversized canonical row must be seeded by a real compressed v4 request");
+        assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 5 && attempt.status === 201
+          && attempt.outcomeReasons?.includes("response_limit") && attempt.outcomeStatuses?.includes("applied")
+          && attempt.hasAutoArchive), "One real queued batch must retain the oversized tab while expiring its small peer");
+        for (const device of account.devices) {
+          assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
+            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+          "Both response-limit clients must read production v5 state");
+        }
+      } else if (account.scenario === expiryQueueScenario) {
+        assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4, 5].includes(attempt.protocolVersion)));
+        const expiry = scenarioAttempts.filter((attempt) => attempt.protocolVersion === 5 && attempt.status === 201);
+        assert.ok(expiry.some((attempt) => attempt.outcomeReasons?.includes("state_changed")),
+          "Queued expiry must reject a stale canonical version");
+        assert.ok(expiry.some((receipt) => receipt.outcomeStatuses?.includes("applied") && receipt.hasAutoArchive
+          && new Set(expiry.filter((attempt) => attempt.mutationID === receipt.mutationID
+            && attempt.digest === receipt.digest && attempt.hasAutoArchive).map((attempt) => attempt.deviceID)).size >= 2),
+        "Accepted queued expiry must replay unchanged across real device rotation");
+        assert.equal(account.devices.length, 3, "Queued expiry must re-register one device");
+        for (const device of account.devices) {
+          assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
+            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+          "Queued expiry clients must complete real v5 bootstrap reads");
+        }
+        const rotated = account.devices[2];
+        assert.ok(observedPulls.some((pull) => pull.deviceID === rotated.deviceID
+          && pull.protocolVersion === 5 && pull.cursor > 0 && pull.status === 409),
+        "The rotated device must encounter the production v5 bootstrap fence");
       } else if (account.scenario === expiryScenario) {
         assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4].includes(attempt.protocolVersion)),
           "Recovery clients retain ordinary v2/v3/v4 mutations");

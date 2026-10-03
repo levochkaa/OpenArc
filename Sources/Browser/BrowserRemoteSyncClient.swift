@@ -136,6 +136,22 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         return response
     }
 
+    func push(
+        mutation: BrowserSyncExpiryMutation,
+        authSession: BrowserAuthSession
+    ) async throws -> BrowserSyncExpiryPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        try mutation.validate()
+        let response: BrowserSyncExpiryPushResponse = try await send(
+            path: "/v1/sync/push", method: "POST",
+            body: BrowserSyncExpiryPushRequest(
+                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations
+            ), accessToken: authSession.accessToken
+        )
+        try response.validate(for: mutation)
+        return response
+    }
+
     // MARK: Private
 
     private struct SyncServerError: Decodable { let message: String }
@@ -395,9 +411,21 @@ enum BrowserAuthSessionStoreError: Error {
         mutation: BrowserSyncFolderMutation,
         authSession: BrowserAuthSession
     ) async throws -> BrowserSyncFolderPushResponse
+
+    func push(
+        mutation: BrowserSyncExpiryMutation,
+        authSession: BrowserAuthSession
+    ) async throws -> BrowserSyncExpiryPushResponse
 }
 
 extension BrowserSyncRemoteServing {
+    func push(
+        mutation _: BrowserSyncExpiryMutation,
+        authSession _: BrowserAuthSession
+    ) throws -> BrowserSyncExpiryPushResponse {
+        throw BrowserRemoteSyncError.unsupportedSyncProtocol
+    }
+
     func pull(
         cursor: Int,
         protocolVersion: Int,
@@ -629,6 +657,22 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         startProcessing()
     }
 
+    /// A future profile scheduler supplies captured canonical sequences. This
+    /// entry point persists only conditional intent; live tabs remain untouched.
+    /// Capabilities are learned from the current session's completed pull and
+    /// cleared during every pull, sign-out, pause and runtime generation change.
+    @discardableResult func enqueueExpiry(operations: [BrowserSyncExpiryOperation]) throws -> String? {
+        guard !operations.isEmpty else { return nil }
+        guard let context = currentContext(), supportedPushVersions.isSuperset(of: [4, 5]),
+              try localStore.syncPullProtocolVersion(for: context.owner) == 5
+        else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
+        let mutation = BrowserSyncExpiryMutation(id: UUID().uuidString, operations: operations)
+        try localStore.enqueueSyncExpiry(mutation, for: context.owner)
+        pendingPushContext = context
+        startProcessing()
+        return mutation.id
+    }
+
     func setSnapshotApplier(_ snapshotApplier: (any BrowserSyncSnapshotApplying)?) {
         self.snapshotApplier = snapshotApplier
     }
@@ -812,6 +856,14 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                           response.outcomes.count == payload.operations.count,
                           Set(response.outcomes.map(\.operationIndex)) == Set(payload.operations.indices)
                     else { throw BrowserRemoteSyncError.invalidMutationReceipt }
+                    events = response.events
+                case .expiry(let payload):
+                    guard try localStore.syncPullProtocolVersion(for: context.owner) == 5 else {
+                        throw BrowserRemoteSyncError.unsupportedSyncProtocol
+                    }
+                    let response = try await remoteClient.push(mutation: payload, authSession: context.session)
+                    guard isCurrent(context), !Task.isCancelled else { return }
+                    try response.validate(for: payload)
                     events = response.events
                 }
                 guard isCurrent(context), !Task.isCancelled else { return }

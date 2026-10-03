@@ -87,6 +87,9 @@ enum BrowserSyncExpiryRecovery {
                     default: break
                     }
                 }
+            case .expiry:
+                // Expiry carries a condition, never newer local page content.
+                break
             }
         }
         var contents = [Content]()

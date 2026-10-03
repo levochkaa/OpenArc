@@ -42,7 +42,7 @@ import Testing
         DROP TABLE browser_sync_state;
         ALTER TABLE old_state RENAME TO browser_sync_state;
         DROP TABLE browser_sync_expiry_imports;
-        DELETE FROM grdb_migrations WHERE identifier IN ('addFolderSyncOutbox', 'addSyncExpiryRecovery');
+        DELETE FROM grdb_migrations WHERE identifier IN ('addFolderSyncOutbox', 'addSyncExpiryRecovery', 'addExpirySyncOutbox');
         """)
     }
     let before = try fixture.rows()
