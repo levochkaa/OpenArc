@@ -77,12 +77,20 @@ paths:
             schema:
               $ref: "#/components/schemas/SyncPushRequest"
       responses:
-        "200":
+        "201":
           description: Sync cursor and accepted remote events.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SyncResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/SyncResponse"
+                  - $ref: "#/components/schemas/SyncResponseV4"
+        "409":
+          description: This account already used mutationID with different parsed content or a different protocol version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         default:
           $ref: "#/components/responses/Error"
   /v1/sync/pull:
@@ -96,14 +104,24 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SyncPullRequest"
+              oneOf:
+                - $ref: "#/components/schemas/SyncPullRequest"
+                - $ref: "#/components/schemas/SyncPullRequestV4"
       responses:
-        "200":
+        "201":
           description: Sync cursor and remote events after the requested cursor.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SyncResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/SyncResponse"
+                  - $ref: "#/components/schemas/SyncResponseV4"
+        "409":
+          description: Protocol 4 bootstrap requires cursor 0. A legacy pull resets the per-device bootstrap marker.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         default:
           $ref: "#/components/responses/Error"
   /v1/releases:
@@ -343,11 +361,14 @@ components:
       oneOf:
       - $ref: '#/components/schemas/LegacySyncPushRequest'
       - $ref: '#/components/schemas/SemanticSyncPushRequest'
+      - $ref: '#/components/schemas/SyncPushRequestV4'
     LegacySyncPushRequest:
       type: object
       description: Omit protocolVersion and mutationID for legacy v1. Supply both for v2. Retries with
         the same account, mutationID, and parsed payload return the original receipt; a different payload
-        returns 409. Device rotation is allowed.
+        returns 409. Device rotation is allowed. In folder-bearing pinned Spaces, an existing v2 snapshot
+        preserves current Space, placement, rank, folder membership and pinned home while applying metadata.
+        New v2 pinned tabs append at the root using server rank. Explicit deletes remain terminal.
       required:
       - deviceID
       - changes
@@ -395,7 +416,9 @@ components:
         are recorded and later operations continue; storage errors roll back the whole transaction. Mutation
         IDs share the v2 account namespace. Reusing an ID with different content or another protocol
         version returns 409. Retries return the original durable receipt, excluding deviceID from content
-        identity. Maximum inflated JSON request size is 8 MiB.
+        identity. Maximum inflated JSON request size is 8 MiB. V3 create or move into a pinned Space with
+        live folders is rejected with upgrade_required. Metadata patches and deletes preserve folder
+        membership and mixed sibling ranks; explicit moves out clear incompatible membership.
     SpaceCreateData:
       type: object
       additionalProperties: false
@@ -529,7 +552,7 @@ components:
         independent of their historical spaceID. Moving into spacePinned derives home from the current
         URL, retains home when already pinned, and clears home when leaving pinned placement. Server
         ranks are canonical within each list; changed peers emit full current upserts. Legacy v2 clients
-        still submit full snapshots and can overwrite metadata or ranks.'
+        still submit full snapshots and can overwrite metadata or ranks outside folder-bearing pinned Spaces.'
       oneOf:
       - type: object
         additionalProperties: false
@@ -735,6 +758,11 @@ components:
           - entity_exists
           - target_missing
           - target_deleted
+          - target_wrong_space
+          - invalid_destination
+          - cycle
+          - overlapping_items
+          - upgrade_required
       required:
       - operationIndex
       - status
@@ -743,8 +771,14 @@ components:
         identity reports entity_exists and echoes its canonical state.
     SyncPullRequest:
       type: object
-      required: [deviceID, cursor, limit]
+      required: [deviceID]
       additionalProperties: false
+      description: >-
+        Legacy pull omits protocolVersion and returns only Space/tab events without
+        pinnedFolderID. Folder events are excluded before LIMIT, so a folder-only
+        page cannot hide later visible events. Cursor advances to the last visible
+        event; an empty response leaves it unchanged. Each legacy pull resets the
+        device's v4 bootstrap marker.
       properties:
         deviceID:
           type: string
@@ -784,7 +818,7 @@ components:
           format: date-time
     SyncResponse:
       type: object
-      description: Pull retains protocolVersion 2 and advertises supportedPushVersions [2, 3]. A v2 or
+      description: Legacy pull retains protocolVersion 2 and advertises supportedPushVersions [2, 3, 4]. A v2 or
         v3 push receipt echoes its protocolVersion and mutationID and is durably retained without expiry.
         Clients must observe supportedPushVersions before uploading v3 operations. V3 receipts also include
         per-operation outcomes and authoritative events, deduplicated by serverSeq. Push cursors must
@@ -811,14 +845,596 @@ components:
             $ref: '#/components/schemas/SyncEvent'
         supportedPushVersions:
           type: array
-          description: Present on pull responses. Exactly [2, 3] for this server.
+          description: Present on pull responses. Exactly [2, 3, 4] for this server.
           items:
             type: integer
             enum:
             - 2
             - 3
-          minItems: 2
-          maxItems: 2
+            - 4
+          minItems: 3
+          maxItems: 3
+          uniqueItems: true
+        outcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOperationOutcome'
+    FolderPayload:
+      type: object
+      additionalProperties: false
+      properties:
+        spaceID:
+          type: string
+          minLength: 1
+        parentFolderID:
+          type: string
+          minLength: 1
+          nullable: true
+        title:
+          type: string
+          minLength: 1
+        systemImageName:
+          type: string
+          minLength: 1
+          nullable: true
+        rank:
+          type: number
+      required:
+        - spaceID
+        - parentFolderID
+        - title
+        - rank
+      description: >-
+        A folder is a pinned sibling in its Space or parent folder. parentFolderID is required: null means the
+        Space pinned root. Expansion state is device-local.
+    FolderCreateData:
+      type: object
+      additionalProperties: false
+      properties:
+        spaceID:
+          type: string
+          minLength: 1
+        parentFolderID:
+          type: string
+          minLength: 1
+          nullable: true
+        title:
+          type: string
+          minLength: 1
+        systemImageName:
+          type: string
+          minLength: 1
+          nullable: true
+      required:
+        - spaceID
+        - parentFolderID
+        - title
+      description: Create without rank; the server assigns mixed folder/tab sibling order.
+    FolderPatchFields:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        systemImageName:
+          type: string
+          nullable: true
+          minLength: 1
+      minProperties: 1
+      description: >-
+        Metadata only. Absent fields remain unchanged; null clears the icon. Parent, Space and rank change only
+        through move.
+    TabPayloadV4:
+      type: object
+      required:
+        - spaceID
+        - placement
+        - rank
+        - urlString
+        - pinnedFolderID
+      additionalProperties: false
+      properties:
+        spaceID:
+          type: string
+          minLength: 1
+        placement:
+          type: string
+          enum:
+            - temporary
+            - spacePinned
+            - app
+          description: >-
+            app Favorites are global and survive deletion of their historical spaceID. Explicit deletion of the
+            tab remains permanent.
+        rank:
+          type: number
+        urlString:
+          type: string
+          minLength: 1
+        pinnedURLString:
+          type: string
+          nullable: true
+          minLength: 1
+          description: >-
+            Pinned home URL independent of the current URL. For spacePinned, omission preserves the stored home
+            (or defaults to urlString for a new tab); explicit null clears it. Other placements always clear it.
+        title:
+          type: string
+          nullable: true
+        userTitleOverride:
+          type: string
+          nullable: true
+        faviconURLString:
+          type: string
+          nullable: true
+        lastActivityAt:
+          type: string
+          nullable: true
+          format: date-time
+        pinnedFolderID:
+          type: string
+          minLength: 1
+          nullable: true
+      description: >-
+        pinnedFolderID is required: null means no folder. A non-null folder is allowed only for spacePinned and
+        must be live in the specified Space. Global app Favorites and temporary tabs require null.
+    TabCreateDataV4:
+      type: object
+      additionalProperties: false
+      properties:
+        spaceID:
+          type: string
+          minLength: 1
+        placement:
+          type: string
+          enum:
+            - temporary
+            - spacePinned
+            - app
+          description: >-
+            app Favorites are global and survive deletion of their historical spaceID. Explicit deletion of the
+            tab remains permanent.
+        urlString:
+          type: string
+          minLength: 1
+        pinnedURLString:
+          type: string
+          nullable: true
+          minLength: 1
+          description: >-
+            Pinned home URL independent of the current URL. For spacePinned, omission preserves the stored home
+            (or defaults to urlString for a new tab); explicit null clears it. Other placements always clear it.
+        title:
+          type: string
+          nullable: true
+        userTitleOverride:
+          type: string
+          nullable: true
+        faviconURLString:
+          type: string
+          nullable: true
+        lastActivityAt:
+          type: string
+          nullable: true
+          format: date-time
+        pinnedFolderID:
+          type: string
+          minLength: 1
+          nullable: true
+      required:
+        - spaceID
+        - placement
+        - urlString
+        - pinnedFolderID
+      description: >-
+        pinnedFolderID is required: null means no folder. A non-null folder is allowed only for spacePinned and
+        must be live in the specified Space. Global app Favorites and temporary tabs require null.
+    SyncEntityReferenceV4:
+      type: object
+      additionalProperties: false
+      properties:
+        entityType:
+          type: string
+          enum:
+            - space
+            - tab
+            - folder
+        entityID:
+          type: string
+          minLength: 1
+      required:
+        - entityType
+        - entityID
+    SyncAnchorV4:
+      type: object
+      additionalProperties: false
+      properties:
+        entityType:
+          type: string
+          enum:
+            - space
+            - tab
+            - folder
+        entityID:
+          type: string
+          minLength: 1
+      required:
+        - entityType
+        - entityID
+      nullable: true
+    SyncDestinationV4:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - spaces
+          required:
+            - kind
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - tabs
+            spaceID:
+              type: string
+              minLength: 1
+            placement:
+              type: string
+              enum:
+                - temporary
+                - spacePinned
+                - app
+            pinnedFolderID:
+              type: string
+              minLength: 1
+              nullable: true
+          required:
+            - kind
+            - spaceID
+            - placement
+            - pinnedFolderID
+      description: >-
+        Only Space items can target kind=spaces. Only tab/folder items can target kind=tabs; folders require
+        spacePinned. Non-pinned destinations require pinnedFolderID=null. A non-null target folder must belong to
+        the live target Space.
+    SyncOperationV4:
+      description: >-
+        Operations execute in request order. Typed before/after anchors distinguish folders from tabs even when
+        IDs match. Remove movers first, use a live before anchor in the target container, otherwise a live after
+        anchor, otherwise append. Move items are unique by (entityType, entityID), cannot be their own anchors,
+        and surviving items retain request order as one block. Selecting a folder with any selected descendant
+        rejects the entire move with overlapping_items. Moving a folder into its own subtree rejects with cycle.
+        Missing items remain absent and tombstones remain terminal. A valid folder move carries its current
+        subtree, including all descendant Space IDs, atomically. A folder delete permanently deletes its current
+        descendants and member tabs; a Space delete also deletes its folders and non-app tabs. Global Favorites
+        survive Space deletion. Metadata patches cannot change rank or membership. Pin transitions retain an
+        existing pinned home, derive a newly pinned home from the current URL, and clear it on unpinning. Changed
+        siblings emit full canonical upserts.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - create
+            entityType:
+              type: string
+              enum:
+                - space
+            entityID:
+              type: string
+              minLength: 1
+            data:
+              $ref: '#/components/schemas/SpaceCreateData'
+            before:
+              $ref: '#/components/schemas/SyncAnchorV4'
+            after:
+              $ref: '#/components/schemas/SyncAnchorV4'
+          required:
+            - kind
+            - entityType
+            - entityID
+            - data
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - create
+            entityType:
+              type: string
+              enum:
+                - tab
+            entityID:
+              type: string
+              minLength: 1
+            data:
+              $ref: '#/components/schemas/TabCreateDataV4'
+            before:
+              $ref: '#/components/schemas/SyncAnchorV4'
+            after:
+              $ref: '#/components/schemas/SyncAnchorV4'
+          required:
+            - kind
+            - entityType
+            - entityID
+            - data
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - create
+            entityType:
+              type: string
+              enum:
+                - folder
+            entityID:
+              type: string
+              minLength: 1
+            data:
+              $ref: '#/components/schemas/FolderCreateData'
+            before:
+              $ref: '#/components/schemas/SyncAnchorV4'
+            after:
+              $ref: '#/components/schemas/SyncAnchorV4'
+          required:
+            - kind
+            - entityType
+            - entityID
+            - data
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - patch
+            entityType:
+              type: string
+              enum:
+                - space
+            entityID:
+              type: string
+              minLength: 1
+            fields:
+              $ref: '#/components/schemas/SpacePatchFields'
+          required:
+            - kind
+            - entityType
+            - entityID
+            - fields
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - patch
+            entityType:
+              type: string
+              enum:
+                - tab
+            entityID:
+              type: string
+              minLength: 1
+            fields:
+              $ref: '#/components/schemas/TabPatchFields'
+          required:
+            - kind
+            - entityType
+            - entityID
+            - fields
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - patch
+            entityType:
+              type: string
+              enum:
+                - folder
+            entityID:
+              type: string
+              minLength: 1
+            fields:
+              $ref: '#/components/schemas/FolderPatchFields'
+          required:
+            - kind
+            - entityType
+            - entityID
+            - fields
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - move
+            items:
+              type: array
+              minItems: 1
+              maxItems: 1000
+              uniqueItems: true
+              items:
+                $ref: '#/components/schemas/SyncEntityReferenceV4'
+            destination:
+              $ref: '#/components/schemas/SyncDestinationV4'
+            before:
+              $ref: '#/components/schemas/SyncAnchorV4'
+            after:
+              $ref: '#/components/schemas/SyncAnchorV4'
+          required:
+            - kind
+            - items
+            - destination
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - delete
+            entityType:
+              type: string
+              enum:
+                - space
+                - tab
+                - folder
+            entityID:
+              type: string
+              minLength: 1
+          required:
+            - kind
+            - entityType
+            - entityID
+    SyncPushRequestV4:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceID:
+          type: string
+          format: uuid
+        protocolVersion:
+          type: integer
+          enum:
+            - 4
+        mutationID:
+          type: string
+          format: uuid
+        operations:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/SyncOperationV4'
+      required:
+        - deviceID
+        - protocolVersion
+        - mutationID
+        - operations
+      description: >-
+        Durable idempotent v4 operations. Observe supportedPushVersions before upload. Versions 2, 3 and 4 share
+        account+mutationID identity: identical parsed content replays the original receipt, different content or
+        protocol returns 409. deviceID is excluded from content identity. Operations, events, tombstones and
+        receipt commit in one account transaction. Semantic rejection does not abort later operations; storage
+        failure rolls back the entire batch. Maximum inflated JSON body is 8 MiB.
+    SyncPullRequestV4:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceID:
+          type: string
+          format: uuid
+        protocolVersion:
+          type: integer
+          enum:
+            - 4
+        cursor:
+          type: integer
+          minimum: 0
+          default: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 500
+      required:
+        - deviceID
+        - protocolVersion
+      description: >-
+        Opt in to folder events and tab membership. The first v4 pull for a device requires cursor 0, otherwise
+        409. Any legacy pull resets this requirement: downgrade then upgrade must replay from zero. Consume every
+        page and persist an independent v4 cursor/baseline; a legacy cursor skipped folder history and cannot
+        bootstrap v4.
+    SyncEventV4:
+      type: object
+      required:
+        - serverSeq
+        - deviceID
+        - entityType
+        - entityID
+        - op
+        - data
+        - createdAt
+      additionalProperties: false
+      properties:
+        serverSeq:
+          type: integer
+          minimum: 0
+        deviceID:
+          type: string
+          nullable: true
+        entityType:
+          type: string
+          enum:
+            - space
+            - tab
+            - folder
+        entityID:
+          type: string
+        op:
+          type: string
+          enum:
+            - upsert
+            - delete
+        data:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+      description: >-
+        Canonical event history includes folders and tab pinnedFolderID. Historical tab upserts written before
+        folder support return pinnedFolderID=null. Delete payloads identify the tombstoned entity. Entity identity
+        is (entityType, entityID).
+    SyncResponseV4:
+      type: object
+      description: >-
+        Negotiated v4 pulls include folder events and tab membership. V4 push receipts echo mutationID and include
+        one outcome per operation; authoritative events are deduplicated by serverSeq. Receipts and tombstones
+        have no expiry. Push cursor is only a server high-water mark and must never advance the pull cursor.
+      required:
+        - cursor
+        - events
+        - protocolVersion
+      additionalProperties: false
+      properties:
+        protocolVersion:
+          type: integer
+          enum:
+            - 4
+        mutationID:
+          type: string
+          format: uuid
+        cursor:
+          type: integer
+          minimum: 0
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncEventV4'
+        supportedPushVersions:
+          type: array
+          description: Present on pull responses. Exactly [2, 3, 4] for this server.
+          items:
+            type: integer
+            enum:
+              - 2
+              - 3
+              - 4
+          minItems: 3
+          maxItems: 3
           uniqueItems: true
         outcomes:
           type: array

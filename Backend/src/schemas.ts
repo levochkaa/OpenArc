@@ -96,18 +96,138 @@ const SemanticSyncPushRequest = z.object({
   operations: z.array(SyncOperation).max(1000)
 }).strict();
 
-export const SyncPushRequest = z.union([SemanticSyncPushRequest, LegacySyncPushRequest]);
+// V4 uses distinct schemas so older immutable mutations retain their original
+// parsing, defaults and receipt digests. Folder expansion stays device-local.
+export const FolderPayload = z.object({
+  spaceID: EntityID,
+  parentFolderID: EntityID.nullable(),
+  title: z.string().min(1),
+  systemImageName: z.string().min(1).nullable().optional(),
+  rank: z.number().finite()
+}).strict();
 
-export const SyncPullRequest = z.object({
+const TabFieldsV4 = TabPayload.extend({ pinnedFolderID: EntityID.nullable() }).strict();
+const validateTabFolder = (
+  data: { placement: "temporary" | "spacePinned" | "app"; pinnedFolderID: string | null },
+  context: z.RefinementCtx
+) => {
+  if (data.placement !== "spacePinned" && data.pinnedFolderID !== null) {
+    context.addIssue({ code: "custom", path: ["pinnedFolderID"], message: "Only pinned tabs can belong to a folder" });
+  }
+};
+export const TabPayloadV4 = TabFieldsV4.superRefine(validateTabFolder);
+const TabCreateDataV4 = TabFieldsV4.omit({ rank: true }).superRefine(validateTabFolder);
+const FolderCreateData = FolderPayload.omit({ rank: true });
+const FolderPatchFields = FolderPayload.pick({ title: true, systemImageName: true }).partial()
+  .refine((fields) => Object.keys(fields).length > 0, "Patch requires fields");
+
+export const SyncChangeV4 = z.discriminatedUnion("entityType", [
+  z.object({
+    entityType: z.literal("space"), entityID: EntityID,
+    op: z.enum(["upsert", "delete"]), data: SpacePayload.optional()
+  }).strict(),
+  z.object({
+    entityType: z.literal("tab"), entityID: EntityID,
+    op: z.enum(["upsert", "delete"]), data: TabPayloadV4.optional()
+  }).strict(),
+  z.object({
+    entityType: z.literal("folder"), entityID: EntityID,
+    op: z.enum(["upsert", "delete"]), data: FolderPayload.optional()
+  }).strict()
+]).superRefine((change, context) => {
+  if (change.op === "upsert" && !change.data) {
+    context.addIssue({ code: "custom", path: ["data"], message: "Upsert requires entity data" });
+  }
+});
+
+export const SyncEntityReferenceV4 = z.object({
+  entityType: z.enum(["space", "tab", "folder"]), entityID: EntityID
+}).strict();
+const TypedAnchors = {
+  before: SyncEntityReferenceV4.nullable().optional(),
+  after: SyncEntityReferenceV4.nullable().optional()
+};
+const entityReferenceKey = (reference: z.infer<typeof SyncEntityReferenceV4>) =>
+  `${reference.entityType}:${reference.entityID}`;
+const MoveItemsV4 = z.array(SyncEntityReferenceV4).min(1).max(1000)
+  .refine((items) => new Set(items.map(entityReferenceKey)).size === items.length, "Move items must be unique");
+export const SyncDestinationV4 = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("spaces") }).strict(),
+  z.object({
+    kind: z.literal("tabs"), spaceID: EntityID,
+    placement: TabPayload.shape.placement, pinnedFolderID: EntityID.nullable()
+  }).strict()
+]).superRefine((destination, context) => {
+  if (destination.kind === "tabs") validateTabFolder(destination, context);
+});
+
+export const SyncOperationV4 = z.union([
+  z.object({
+    kind: z.literal("create"), entityType: z.literal("space"), entityID: EntityID,
+    data: SpaceCreateData, ...TypedAnchors
+  }).strict(),
+  z.object({
+    kind: z.literal("create"), entityType: z.literal("tab"), entityID: EntityID,
+    data: TabCreateDataV4, ...TypedAnchors
+  }).strict(),
+  z.object({
+    kind: z.literal("create"), entityType: z.literal("folder"), entityID: EntityID,
+    data: FolderCreateData, ...TypedAnchors
+  }).strict(),
+  z.object({ kind: z.literal("patch"), entityType: z.literal("space"), entityID: EntityID, fields: SpacePatchFields }).strict(),
+  z.object({ kind: z.literal("patch"), entityType: z.literal("tab"), entityID: EntityID, fields: TabPatchFields }).strict(),
+  z.object({ kind: z.literal("patch"), entityType: z.literal("folder"), entityID: EntityID, fields: FolderPatchFields }).strict(),
+  z.object({ kind: z.literal("move"), items: MoveItemsV4, destination: SyncDestinationV4, ...TypedAnchors }).strict(),
+  z.object({ kind: z.literal("delete"), entityType: z.enum(["space", "tab", "folder"]), entityID: EntityID }).strict()
+]).superRefine((operation, context) => {
+  if (operation.kind !== "move") return;
+  const keys = new Set(operation.items.map(entityReferenceKey));
+  if ([operation.before, operation.after].some((anchor) => anchor != null && keys.has(entityReferenceKey(anchor)))) {
+    context.addIssue({ code: "custom", message: "Move anchors cannot belong to the moving group" });
+  }
+  const destination = operation.destination;
+  if (destination.kind === "spaces") {
+    if (operation.items.some((item) => item.entityType !== "space")) {
+      context.addIssue({ code: "custom", path: ["items"], message: "Only spaces belong to the spaces list" });
+    }
+  } else if (operation.items.some((item) => item.entityType === "space"
+    || (item.entityType === "folder" && destination.placement !== "spacePinned"))) {
+    context.addIssue({ code: "custom", path: ["items"], message: "Folders require a pinned destination; spaces cannot move into tab lists" });
+  }
+});
+
+export const SyncPushRequestV4 = z.object({
+  deviceID: z.string().uuid(), protocolVersion: z.literal(4), mutationID: z.string().uuid(),
+  operations: z.array(SyncOperationV4).max(1000)
+}).strict();
+
+export const SyncPushRequest = z.union([SyncPushRequestV4, SemanticSyncPushRequest, LegacySyncPushRequest]);
+
+const LegacySyncPullRequest = z.object({
   deviceID: z.string().uuid(),
   cursor: z.number().int().nonnegative().default(0),
   limit: z.number().int().positive().max(1000).default(500)
 });
+export const SyncPullRequestV4 = LegacySyncPullRequest.extend({ protocolVersion: z.literal(4) }).strict();
+// Do not let a malformed explicit v4 request fall back to the legacy parser,
+// which intentionally strips unknown fields for existing clients.
+export const SyncPullRequest = z.union([
+  SyncPullRequestV4,
+  LegacySyncPullRequest.extend({ protocolVersion: z.undefined().optional() })
+]);
 
 export type AuthAppleRequest = z.infer<typeof AuthAppleRequest>;
 export type RegisterDeviceRequest = z.infer<typeof RegisterDeviceRequest>;
 export type SyncChange = z.infer<typeof SyncChange>;
 export type SyncOperation = z.infer<typeof SyncOperation>;
+export type SyncChangeV4 = z.infer<typeof SyncChangeV4>;
+export type SyncOperationV4 = z.infer<typeof SyncOperationV4>;
+export type SyncEntityReferenceV4 = z.infer<typeof SyncEntityReferenceV4>;
+export type SyncDestinationV4 = z.infer<typeof SyncDestinationV4>;
+export type SyncPushRequestV4 = z.infer<typeof SyncPushRequestV4>;
+export type SyncPullRequestV4 = z.infer<typeof SyncPullRequestV4>;
+export type FolderPayload = z.infer<typeof FolderPayload>;
+export type TabPayloadV4 = z.infer<typeof TabPayloadV4>;
 export type SpacePayload = z.infer<typeof SpacePayload>;
 export type TabPayload = z.infer<typeof TabPayload>;
 export type SyncPushRequest = z.infer<typeof SyncPushRequest>;

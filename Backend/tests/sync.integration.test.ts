@@ -11,6 +11,7 @@ import { after, before, describe, it } from "node:test";
 import type { INestApplication } from "@nestjs/common";
 import type pg from "pg";
 import type { SyncChange, SyncOperation } from "../src/schemas.js";
+import { registerFolderSyncTests } from "./sync-folders.js";
 
 type SyncEvent = {
   serverSeq: number;
@@ -35,7 +36,9 @@ const testDatabaseURL = process.env.THEBROWSER_SYNC_TEST_DATABASE_URL;
 
 describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
   skip: testDatabaseURL ? false : "Run ./script/test_local_sync.sh for an isolated PostgreSQL integration run",
-  timeout: 30_000
+  // The complete serial suite includes two >1000-entity scenarios and server
+  // restarts. Individual HTTP calls retain their 15-second deadline.
+  timeout: 120_000
 }, () => {
   let app: INestApplication;
   let baseURL: string;
@@ -131,6 +134,8 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     deviceID: device.id, protocolVersion: 3, mutationID, operations
   });
 
+  registerFolderSyncTests({ pool: () => pool, account, register, post, startServerProcess });
+
   async function storedTabs(userID: string): Promise<StoredTab[]> {
     const result = await pool.query<StoredTab>(`
       SELECT id, space_id AS "spaceID", placement, rank, url_string AS "urlString",
@@ -184,7 +189,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     await post("/v1/sync/push", a.token, {
       deviceID: a.id, changes: [space(randomUUID()), { entityType: "tab", entityID: randomUUID(), op: "upsert" }]
     }, 400);
-    assert.deepEqual(await pull(a), { protocolVersion: 2, supportedPushVersions: [2, 3], cursor: 0, events: [] });
+    assert.deepEqual(await pull(a), { protocolVersion: 2, supportedPushVersions: [2, 3, 4], cursor: 0, events: [] });
   });
 
   it("keeps a batch deleted when an offline client replays stale titles, ranks and placement", async () => {
@@ -398,14 +403,14 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
       await pool.query("DROP TRIGGER IF EXISTS sync_test_hold_event ON sync_events; DROP FUNCTION IF EXISTS sync_test_hold_event()");
     }
     assert.equal(secondFinishedWhileHeld, false, "Later account events must wait until earlier events commit");
-    assert.deepEqual(heldResponse, { protocolVersion: 2, supportedPushVersions: [2, 3], cursor: 0, events: [] }, "Pull must not advance over an uncommitted event");
+    assert.deepEqual(heldResponse, { protocolVersion: 2, supportedPushVersions: [2, 3, 4], cursor: 0, events: [] }, "Pull must not advance over an uncommitted event");
     assert.deepEqual((await allEvents(b, 0, 1)).map((event) => event.entityID), [firstID, secondID]);
   });
 
   it("advertises supported push versions without changing the v2 pull envelope", async () => {
     const { devices: [a] } = await account();
     assert.equal((await pull(a)).protocolVersion, 2);
-    assert.deepEqual((await pull(a)).supportedPushVersions, [2, 3]);
+    assert.deepEqual((await pull(a)).supportedPushVersions, [2, 3, 4]);
     for (const envelope of [
       { protocolVersion: 2 }, { mutationID: randomUUID() },
       { protocolVersion: 1, mutationID: randomUUID() }, { protocolVersion: 3, mutationID: randomUUID() },

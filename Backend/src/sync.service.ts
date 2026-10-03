@@ -3,11 +3,14 @@ import { createHash } from "node:crypto";
 import type pg from "pg";
 import { AuthService } from "./auth.service.js";
 import { DatabaseService } from "./database.service.js";
-import { SyncOperationExecutor, type OperationOutcome } from "./sync-operations.js";
+import { SyncOperationExecutor, type OperationEvent, type OperationOutcome } from "./sync-operations.js";
+import { SyncFolderOperationExecutor, type FolderOperationEvent } from "./sync-folder-operations.js";
 import type {
   AuthAppleRequest,
   RegisterDeviceRequest,
   SyncChange,
+  SyncChangeV4,
+  SyncOperation,
   SyncPullRequest,
   SyncPushRequest
 } from "./schemas.js";
@@ -20,21 +23,14 @@ type SerializedDevice = {
   lastSeenAt: string;
 };
 
-type SerializedSyncEvent = {
-  serverSeq: number;
-  deviceID: string | null;
-  entityType: "space" | "tab";
-  entityID: string;
-  op: "upsert" | "delete";
-  data: unknown;
-  createdAt: string;
-};
+type SerializedSyncEvent = FolderOperationEvent;
+type EntityType = SerializedSyncEvent["entityType"];
 
 type QueryFunction = (text: string, params?: unknown[]) => Promise<Pick<pg.QueryResult, "rowCount">>;
 type SyncResponse = {
   cursor: number;
   events: SerializedSyncEvent[];
-  protocolVersion?: 2 | 3;
+  protocolVersion?: 2 | 3 | 4;
   mutationID?: string;
   supportedPushVersions?: number[];
   outcomes?: OperationOutcome[];
@@ -137,8 +133,8 @@ export class SyncService {
 
       // Parsed payloads have defaults applied and unknown fields stripped. Sort
       // object keys, preserve change order, and exclude the replaceable device ID.
-      const payload = body.protocolVersion === 3
-        ? { protocolVersion: 3, operations: body.operations }
+      const payload = body.protocolVersion === 3 || body.protocolVersion === 4
+        ? { protocolVersion: body.protocolVersion, operations: body.operations }
         : { protocolVersion: body.protocolVersion, changes: body.changes };
       const digest = body.mutationID ? createHash("sha256")
         .update(JSON.stringify(canonicalValue(payload)))
@@ -157,22 +153,53 @@ export class SyncService {
         }
       }
 
+      // Legacy writers cannot create folders. Snapshot only Space IDs once
+      // under the account lock, then invalidate after a Space cascade.
+      const legacyFolderSpaces = new Set<string>();
+      if (body.protocolVersion !== 4) {
+        const folders = await client.query(
+          "SELECT DISTINCT space_id FROM folders WHERE user_id = $1 AND deleted_at IS NULL", [userID]
+        );
+        for (const row of folders.rows) legacyFolderSpaces.add(row.space_id as string);
+      }
       const events: SerializedSyncEvent[] = [];
       const outcomes: OperationOutcome[] = [];
-      if (body.protocolVersion === 3) {
-        const executor = new SyncOperationExecutor(client, userID, {
-          apply: (change) => this.applyChange(client, userID, body.deviceID, change),
+      if (body.protocolVersion === 4) {
+        const executor = new SyncFolderOperationExecutor(client, userID, {
+          apply: (change) => this.applyChange(client, userID, body.deviceID, change, 4),
           tombstone: (type, id) => this.tombstoneEvent(client, userID, type, id),
+          currentEvent: (type, id) => this.currentEvent(client, userID, type, id)
+        });
+        for (const [index, operation] of body.operations.entries()) {
+          const result = await executor.apply(operation, index);
+          events.push(...result.events);
+          outcomes.push(result.outcome);
+        }
+      } else if (body.protocolVersion === 3) {
+        const executor = new SyncOperationExecutor(client, userID, {
+          apply: async (change) => this.legacyEvents(await this.applyChange(
+            client, userID, body.deviceID, change, 3, legacyFolderSpaces
+          )),
+          tombstone: async (type, id) => {
+            const event = await this.tombstoneEvent(client, userID, type, id);
+            return event ? this.legacyEvents([event])[0] : undefined;
+          },
           currentEvent: async (type, id) => {
-            const result = await client.query(
-              `SELECT server_seq, device_id, entity_type, entity_id, op, payload, created_at
-               FROM sync_events WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
-               ORDER BY server_seq DESC LIMIT 1`, [userID, type, id]
-            );
-            return result.rows[0] ? this.serializeSyncEvent(result.rows[0]) : undefined;
+            const event = await this.currentEvent(client, userID, type, id);
+            return event ? this.legacyEvents([event])[0] : undefined;
           }
         });
         for (const [index, operation] of body.operations.entries()) {
+          if (this.legacyOperationRequiresUpgrade(operation, legacyFolderSpaces)) {
+            const ids = operation.kind === "move" ? operation.entityIDs
+              : "entityID" in operation ? [operation.entityID] : [];
+            for (const id of ids) {
+              const current = await this.currentEvent(client, userID, "tab", id);
+              if (current) events.push(current);
+            }
+            outcomes.push({ operationIndex: index, status: "rejected", reason: "upgrade_required" });
+            continue;
+          }
           const result = await executor.apply(operation, index);
           events.push(...result.events);
           outcomes.push(result.outcome);
@@ -183,7 +210,9 @@ export class SyncService {
           ...body.changes.filter((change) => change.op === "upsert"),
           ...body.changes.filter((change) => change.op === "delete")
         ];
-        for (const change of orderedChanges) events.push(...await this.applyChange(client, userID, body.deviceID, change));
+        for (const change of orderedChanges) {
+          events.push(...await this.applyChange(client, userID, body.deviceID, change, 2, legacyFolderSpaces));
+        }
       }
 
       await client.query("UPDATE devices SET last_seen_at = now() WHERE id = $1", [body.deviceID]);
@@ -192,12 +221,14 @@ export class SyncService {
       );
       // An acknowledgement is not a pull: events may include old authoritative
       // deletes. Clients must advance their pull cursor only after reading pull.
+      const visibleEvents = body.protocolVersion === 4 ? events.map((event) => this.v4Event(event)) : this.legacyEvents(events);
       const response: SyncResponse = {
         cursor: Number(cursorResult.rows[0].cursor),
-        events: (body.protocolVersion === 3 ? [...new Map(events.map((event) => [event.serverSeq, event])).values()] : events)
+        events: (body.protocolVersion === 3 || body.protocolVersion === 4
+          ? [...new Map(visibleEvents.map((event) => [event.serverSeq, event])).values()] : visibleEvents)
           .sort((a, b) => a.serverSeq - b.serverSeq),
         ...(body.mutationID ? { protocolVersion: body.protocolVersion, mutationID: body.mutationID } : {}),
-        ...(body.protocolVersion === 3 ? { outcomes } : {})
+        ...(body.protocolVersion === 3 || body.protocolVersion === 4 ? { outcomes } : {})
       };
       if (body.mutationID) {
         await client.query(
@@ -216,24 +247,40 @@ export class SyncService {
   }
 
   async pull(userID: string, body: SyncPullRequest): Promise<SyncResponse> {
-    await this.assertDeviceBelongsToUser((text, params) => this.database.query(text, params), userID, body.deviceID);
+    const client = await this.database.connect();
+    try {
+      await client.query("BEGIN");
+      const device = await client.query(
+        "SELECT folder_sync_enabled FROM devices WHERE id = $1 AND user_id = $2 FOR UPDATE", [body.deviceID, userID]
+      );
+      if (!device.rowCount) throw new ForbiddenException("Device does not belong to user");
+      const isV4 = body.protocolVersion === 4;
+      if (isV4 && !device.rows[0].folder_sync_enabled && body.cursor !== 0) {
+        throw new ConflictException("Protocol 4 bootstrap requires cursor 0");
+      }
+      const result = await client.query(
+        `
+          SELECT server_seq, device_id, entity_type, entity_id, op, payload, created_at
+          FROM sync_events
+          WHERE user_id = $1 AND server_seq > $2 AND ($4 OR entity_type <> 'folder')
+          ORDER BY server_seq ASC
+          LIMIT $3
+        `,
+        [userID, body.cursor, body.limit, isV4]
+      );
 
-    const result = await this.database.query(
-      `
-        SELECT server_seq, device_id, entity_type, entity_id, op, payload, created_at
-        FROM sync_events
-        WHERE user_id = $1 AND server_seq > $2
-        ORDER BY server_seq ASC
-        LIMIT $3
-      `,
-      [userID, body.cursor, body.limit]
-    );
-
-    const events = result.rows.map((row) => this.serializeSyncEvent(row));
-    const cursor = events.length > 0 ? events[events.length - 1].serverSeq : body.cursor;
-    await this.database.query("UPDATE devices SET last_seen_at = now() WHERE id = $1", [body.deviceID]);
-
-    return { protocolVersion: 2, supportedPushVersions: [2, 3], cursor, events };
+      const rawEvents = result.rows.map((row) => this.serializeSyncEvent(row));
+      const events = isV4 ? rawEvents.map((event) => this.v4Event(event)) : this.legacyEvents(rawEvents);
+      const cursor = events.length > 0 ? events[events.length - 1].serverSeq : body.cursor;
+      await client.query("UPDATE devices SET last_seen_at = now(), folder_sync_enabled = $2 WHERE id = $1", [body.deviceID, isV4]);
+      await client.query("COMMIT");
+      return { protocolVersion: isV4 ? 4 : 2, supportedPushVersions: [2, 3, 4], cursor, events };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   private async assertDeviceBelongsToUser(query: QueryFunction, userID: string, deviceID: string): Promise<void> {
@@ -243,14 +290,53 @@ export class SyncService {
     }
   }
 
+  private legacyOperationRequiresUpgrade(operation: SyncOperation, folderSpaces: ReadonlySet<string>): boolean {
+    if (operation.entityType !== "tab") return false;
+    const destination = operation.kind === "create" ? operation.data
+      : operation.kind === "move" ? operation.destination : undefined;
+    return destination?.placement === "spacePinned" && folderSpaces.has(destination.spaceID);
+  }
+
+  private async currentEvent(client: pg.PoolClient, userID: string, type: EntityType, id: string): Promise<SerializedSyncEvent | undefined> {
+    const result = await client.query(
+      `SELECT server_seq, device_id, entity_type, entity_id, op, payload, created_at
+       FROM sync_events WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+       ORDER BY server_seq DESC LIMIT 1`, [userID, type, id]
+    );
+    return result.rows[0] ? this.serializeSyncEvent(result.rows[0]) : undefined;
+  }
+
+  private legacyEvents(events: SerializedSyncEvent[]): OperationEvent[] {
+    return events.flatMap((event): OperationEvent[] => {
+      if (event.entityType === "folder") return [];
+      const result: OperationEvent = { ...event, entityType: event.entityType };
+      if (event.entityType === "tab" && event.op === "upsert" && event.data && typeof event.data === "object") {
+        const data = { ...event.data } as Record<string, unknown>;
+        delete data.pinnedFolderID;
+        result.data = data;
+      }
+      return [result];
+    });
+  }
+
+  private v4Event(event: SerializedSyncEvent): SerializedSyncEvent {
+    if (event.entityType !== "tab" || event.op !== "upsert" || !event.data || typeof event.data !== "object") return event;
+    const data = event.data as Record<string, unknown>;
+    return { ...event, data: { ...data, pinnedFolderID: data.pinnedFolderID ?? null } };
+  }
+
   private async applyChange(
     client: pg.PoolClient,
     userID: string,
     deviceID: string,
-    change: SyncChange
+    change: SyncChange | SyncChangeV4,
+    protocolVersion: 2 | 3 | 4 = 2,
+    legacyFolderSpaces?: Set<string>
   ): Promise<SerializedSyncEvent[]> {
     if (change.op === "delete") {
-      return this.deleteEntity(client, userID, deviceID, change.entityType, change.entityID);
+      const events = await this.deleteEntity(client, userID, deviceID, change.entityType, change.entityID);
+      if (change.entityType === "space") legacyFolderSpaces?.delete(change.entityID);
+      return events;
     }
 
     const deleted = await this.tombstoneEvent(client, userID, change.entityType, change.entityID);
@@ -297,18 +383,79 @@ export class SyncService {
       })];
     }
 
+    if (change.entityType === "folder") {
+      if (!change.data) throw new Error("Folder upsert requires data");
+      await client.query(
+        `INSERT INTO folders (id, user_id, space_id, parent_folder_id, title, system_image_name, rank,
+          deleted_at, updated_at, revision, updated_by_device_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, now(), 1, $8)
+         ON CONFLICT (user_id, id) DO UPDATE SET space_id = EXCLUDED.space_id,
+          parent_folder_id = EXCLUDED.parent_folder_id, title = EXCLUDED.title,
+          system_image_name = EXCLUDED.system_image_name, rank = EXCLUDED.rank,
+          deleted_at = NULL, updated_at = now(), revision = folders.revision + 1,
+          updated_by_device_id = EXCLUDED.updated_by_device_id`,
+        [change.entityID, userID, change.data.spaceID, change.data.parentFolderID, change.data.title,
+          change.data.systemImageName ?? null, change.data.rank, deviceID]
+      );
+      return [await this.insertSyncEvent(client, userID, deviceID, "folder", change.entityID, "upsert", {
+        id: change.entityID, ...change.data, systemImageName: change.data.systemImageName ?? null
+      })];
+    }
+
     if (!change.data) {
       throw new Error("Tab upsert requires data");
     }
 
+    // V4's executor supplies canonical membership and home for every existing
+    // row. Only a new create may omit home, which defaults to its current URL.
+    const existingResult = protocolVersion === 4 ? undefined : await client.query(
+      "SELECT space_id, placement, rank, pinned_url_string, pinned_folder_id FROM tabs WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL",
+      [userID, change.entityID]
+    );
+    const existing = existingResult?.rows[0];
+    const data = { ...change.data };
+    if (protocolVersion !== 4) {
+      const sourceHasFolders = existing?.placement === "spacePinned"
+        && legacyFolderSpaces?.has(existing.space_id as string);
+      const targetHasFolders = data.placement === "spacePinned"
+        && legacyFolderSpaces?.has(data.spaceID);
+      if (protocolVersion === 2 && existing && (sourceHasFolders || targetHasFolders)) {
+        // A v2 snapshot has no structural intent. Keep the current tree while
+        // accepting page metadata, even if a stale snapshot claims another list.
+        data.spaceID = existing.space_id as string;
+        data.placement = existing.placement as typeof data.placement;
+        data.rank = existing.rank as number;
+        data.pinnedURLString = existing.pinned_url_string as string | null;
+      } else if (existing && sourceHasFolders && data.placement === "spacePinned" && data.spaceID === existing.space_id) {
+        // v3 normalizes the entire flattened pinned list after metadata/deletes.
+        // Preserve mixed folder/tab sibling ranks for those incidental writes.
+        data.rank = existing.rank as number;
+      } else if (!existing && targetHasFolders) {
+        const maximum = await client.query(
+          `SELECT COALESCE(MAX(rank), -1) + 1 AS rank FROM (
+            SELECT rank FROM tabs WHERE user_id = $1 AND space_id = $2 AND placement = 'spacePinned'
+              AND pinned_folder_id IS NULL AND deleted_at IS NULL
+            UNION ALL SELECT rank FROM folders WHERE user_id = $1 AND space_id = $2
+              AND parent_folder_id IS NULL AND deleted_at IS NULL
+           ) siblings`, [userID, data.spaceID]
+        );
+        data.rank = Number(maximum.rows[0].rank);
+      }
+    }
+
+    const pinnedFolderID = data.placement !== "spacePinned" ? null
+      : protocolVersion === 4 && "pinnedFolderID" in data ? data.pinnedFolderID
+        : existing?.space_id === data.spaceID && existing?.placement === "spacePinned"
+          ? existing.pinned_folder_id as string | null : null;
+
     // Favorites are global. Their historical space ID is metadata, not a
     // lifetime owner; an explicit tab tombstone was already checked above.
-    if (change.data.placement !== "app" && await this.tombstoneEvent(client, userID, "space", change.data.spaceID)) {
+    if (data.placement !== "app" && await this.tombstoneEvent(client, userID, "space", data.spaceID)) {
       // A tab moved out before the space deletion survives. A stale snapshot
       // must neither move it back into the deleted space nor delete it there.
       const survivor = await client.query(
         "SELECT 1 FROM tabs WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL AND (space_id <> $3 OR placement = 'app')",
-        [userID, change.entityID, change.data.spaceID]
+        [userID, change.entityID, data.spaceID]
       );
       if (survivor.rowCount) {
         const latest = await client.query(
@@ -322,15 +469,11 @@ export class SyncService {
     }
 
     let pinnedURLString: string | null = null;
-    if (change.data.placement === "spacePinned") {
-      if (change.data.pinnedURLString !== undefined) {
-        pinnedURLString = change.data.pinnedURLString;
+    if (data.placement === "spacePinned") {
+      if (data.pinnedURLString !== undefined) {
+        pinnedURLString = data.pinnedURLString;
       } else {
-        const existing = await client.query(
-          "SELECT pinned_url_string FROM tabs WHERE user_id = $1 AND id = $2",
-          [userID, change.entityID]
-        );
-        pinnedURLString = existing.rows.length ? existing.rows[0].pinned_url_string as string | null : change.data.urlString;
+        pinnedURLString = existing ? existing.pinned_url_string as string | null : data.urlString;
       }
     }
 
@@ -338,9 +481,9 @@ export class SyncService {
       `
         INSERT INTO tabs (
           id, user_id, space_id, placement, rank, url_string, title, user_title_override,
-          favicon_url_string, last_activity_at, deleted_at, updated_at, revision, updated_by_device_id, pinned_url_string
+          favicon_url_string, last_activity_at, deleted_at, updated_at, revision, updated_by_device_id, pinned_url_string, pinned_folder_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, now(), 1, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, now(), 1, $11, $12, $13)
         ON CONFLICT (user_id, id)
         DO UPDATE SET
           space_id = EXCLUDED.space_id,
@@ -348,6 +491,7 @@ export class SyncService {
           rank = EXCLUDED.rank,
           url_string = EXCLUDED.url_string,
           pinned_url_string = EXCLUDED.pinned_url_string,
+          pinned_folder_id = EXCLUDED.pinned_folder_id,
           title = EXCLUDED.title,
           user_title_override = EXCLUDED.user_title_override,
           favicon_url_string = EXCLUDED.favicon_url_string,
@@ -360,28 +504,30 @@ export class SyncService {
       [
         change.entityID,
         userID,
-        change.data.spaceID,
-        change.data.placement,
-        change.data.rank,
-        change.data.urlString,
-        change.data.title ?? null,
-        change.data.userTitleOverride ?? null,
-        change.data.faviconURLString ?? null,
-        change.data.lastActivityAt ?? null,
+        data.spaceID,
+        data.placement,
+        data.rank,
+        data.urlString,
+        data.title ?? null,
+        data.userTitleOverride ?? null,
+        data.faviconURLString ?? null,
+        data.lastActivityAt ?? null,
         deviceID,
-        pinnedURLString
+        pinnedURLString,
+        pinnedFolderID
       ]
     );
 
     return [await this.insertSyncEvent(client, userID, deviceID, "tab", change.entityID, "upsert", {
       id: change.entityID,
-      ...change.data,
-      pinnedURLString
+      ...data,
+      pinnedURLString,
+      pinnedFolderID
     })];
   }
 
   private async tombstoneEvent(
-    client: pg.PoolClient, userID: string, entityType: "space" | "tab", entityID: string
+    client: pg.PoolClient, userID: string, entityType: EntityType, entityID: string
   ): Promise<SerializedSyncEvent | undefined> {
     const result = await client.query(
       `SELECT e.server_seq, e.device_id, e.entity_type, e.entity_id, e.op, e.payload, e.created_at
@@ -394,7 +540,7 @@ export class SyncService {
 
   private async deleteEntity(
     client: pg.PoolClient, userID: string, deviceID: string,
-    entityType: "space" | "tab", entityID: string
+    entityType: EntityType, entityID: string
   ): Promise<SerializedSyncEvent[]> {
     const events: SerializedSyncEvent[] = [];
     if (entityType === "space") {
@@ -407,12 +553,31 @@ export class SyncService {
       for (const child of children.rows) {
         events.push(...await this.deleteEntity(client, userID, deviceID, "tab", child.id as string));
       }
+      const folders = await client.query(
+        "SELECT id FROM folders WHERE user_id = $1 AND space_id = $2 AND deleted_at IS NULL ORDER BY id", [userID, entityID]
+      );
+      for (const folder of folders.rows) {
+        events.push(...await this.deleteEntity(client, userID, deviceID, "folder", folder.id as string));
+      }
+    } else if (entityType === "folder") {
+      const children = await client.query(
+        "SELECT id FROM folders WHERE user_id = $1 AND parent_folder_id = $2 AND deleted_at IS NULL ORDER BY id", [userID, entityID]
+      );
+      for (const child of children.rows) {
+        events.push(...await this.deleteEntity(client, userID, deviceID, "folder", child.id as string));
+      }
+      const tabs = await client.query(
+        "SELECT id FROM tabs WHERE user_id = $1 AND pinned_folder_id = $2 AND deleted_at IS NULL ORDER BY id", [userID, entityID]
+      );
+      for (const tab of tabs.rows) {
+        events.push(...await this.deleteEntity(client, userID, deviceID, "tab", tab.id as string));
+      }
     }
     const previous = await this.tombstoneEvent(client, userID, entityType, entityID);
     if (previous) return [...events, previous];
 
     // Table name is chosen from the validated entity type, never user SQL.
-    const table = entityType === "space" ? "spaces" : "tabs";
+    const table = entityType === "space" ? "spaces" : entityType === "folder" ? "folders" : "tabs";
     await client.query(
       `UPDATE ${table} SET deleted_at = now(), updated_at = now(),
        revision = revision + 1, updated_by_device_id = $3 WHERE user_id = $1 AND id = $2`,
@@ -430,7 +595,7 @@ export class SyncService {
     client: pg.PoolClient,
     userID: string,
     deviceID: string,
-    entityType: "space" | "tab",
+    entityType: EntityType,
     entityID: string,
     op: "upsert" | "delete",
     payload: unknown
@@ -461,7 +626,7 @@ export class SyncService {
     return {
       serverSeq: Number(row.server_seq),
       deviceID: row.device_id as string | null,
-      entityType: row.entity_type as "space" | "tab",
+      entityType: row.entity_type as EntityType,
       entityID: row.entity_id as string,
       op: row.op as "upsert" | "delete",
       data: row.payload as unknown,

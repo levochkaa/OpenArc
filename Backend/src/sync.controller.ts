@@ -1,5 +1,5 @@
 import { Body, Controller, Headers, Inject, Post } from "@nestjs/common";
-import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { AuthService } from "./auth.service.js";
 import { SyncPullRequest, SyncPushRequest } from "./schemas.js";
 import { SyncService } from "./sync.service.js";
@@ -33,15 +33,15 @@ export class SyncController {
       }, {
         type: "object", required: ["deviceID", "protocolVersion", "mutationID", "operations"], additionalProperties: false,
         properties: {
-          deviceID: { type: "string", format: "uuid" }, protocolVersion: { type: "integer", enum: [3] },
+          deviceID: { type: "string", format: "uuid" }, protocolVersion: { type: "integer", enum: [3, 4] },
           mutationID: { type: "string", format: "uuid" },
           operations: { type: "array", maxItems: 1000, items: { type: "object" },
-            description: "Strict create/patch/move/delete intents. See /openapi.yaml for typed operation schemas." }
+            description: "Version 3 space/tab intents or version 4 mixed folder/tab intents. See /openapi.yaml for typed operation schemas." }
         }
       }]
     }
   })
-  @ApiOkResponse({ description: "Sync cursor and accepted remote events." })
+  @ApiCreatedResponse({ description: "Sync cursor and accepted remote events." })
   async push(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     const request = parseRequest(SyncPushRequest, body);
     const userID = await this.auth.userIDFromAuthorizationHeader(authorization);
@@ -58,12 +58,13 @@ export class SyncController {
       additionalProperties: false,
       properties: {
         deviceID: { type: "string", format: "uuid" },
+        protocolVersion: { type: "integer", enum: [4], description: "Opt in to folder events. The first version 4 pull after device registration or a legacy pull requires cursor 0." },
         cursor: { type: "integer", minimum: 0, default: 0 },
         limit: { type: "integer", minimum: 1, maximum: 1000, default: 500 }
       }
     }
   })
-  @ApiOkResponse({ description: "Sync cursor and remote events after the requested cursor." })
+  @ApiCreatedResponse({ description: "Sync cursor and remote events after the requested cursor." })
   async pull(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     const request = parseRequest(SyncPullRequest, body);
     const userID = await this.auth.userIDFromAuthorizationHeader(authorization);
