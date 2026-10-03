@@ -3,9 +3,9 @@ import Foundation
 import Testing
 import UIKit
 
-// MARK: - BrowserMobileLayoutTests
+// MARK: - BrowserMobileUITests
 
-@MainActor @Suite(.serialized) struct BrowserMobileLayoutTests {
+@MainActor @Suite(.serialized) struct BrowserMobileUITests {
     @Test func splitPageResizesChromeAndMountedContentInsideSafeArea() async throws {
         let engine = MobileLayoutEngine()
         let workspace = BrowserMobileWorkspace(engine: engine, store: MobileLayoutStore())
@@ -273,6 +273,10 @@ import UIKit
     }
 
     func shutdown() {}
+    func setJavaScriptDialogPresentationActive(_: Bool) {}
+    func resolveJavaScriptDialog(id: UUID, response _: BrowserMobileJavaScriptDialogResponse) {
+        onEvent?(.javaScriptDialogFinished(id: id))
+    }
 }
 
 // MARK: - MobileLayoutStore

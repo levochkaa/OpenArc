@@ -1,15 +1,18 @@
 /* Mobile browser controls. */
 "Address" = "Address";
 "Back" = "Back";
+"Cancel" = "Cancel";
 "Close" = "Close";
 "Close Tab" = "Close Tab";
 "Edit Address" = "Edit Address";
 "Forward" = "Forward";
 "New Tab" = "New Tab";
+"OK" = "OK";
 "Open Location" = "Open Location";
 "Opening your tabs" = "Opening your tabs";
 "Page could not load" = "Page could not load";
 "Reload" = "Reload";
+"Response" = "Response";
 "Restoring this window’s session…" = "Restoring this window’s session…";
 "Retry" = "Retry";
 "Search or Enter Address" = "Search or Enter Address";
@@ -20,4 +23,5 @@
 "Stop Loading" = "Stop Loading";
 "Tabs" = "Tabs";
 "Try Again" = "Try Again";
+"Unknown origin" = "Unknown origin";
 "Where next?" = "Where next?";

@@ -35,6 +35,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private(set) var isReady = false
     private(set) var sessionError: String?
     private(set) var navigationError: String?
+    private(set) var javaScriptDialog: BrowserMobileJavaScriptDialog?
 
     var selectedTab: BrowserMobileTab? { tabs.first { $0.id == selectedTabID } }
 
@@ -130,6 +131,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     func selectTab(id: String) {
         guard canEdit, let tab = tabs.first(where: { $0.id == id }) else { return }
         selectedTabID = id
+        cancelJavaScriptDialogIfSelectionChanged()
         navigationError = nil
         enqueueCurrentSession()
         engine.selectTab(id: tab.runtimeID)
@@ -166,6 +168,23 @@ struct BrowserMobileTab: Identifiable, Equatable {
         }
     }
 
+    func setJavaScriptDialogPresentationActive(_ active: Bool) {
+        isJavaScriptDialogPresentationActive = active && !isClosed
+        if !isJavaScriptDialogPresentationActive {
+            cancelJavaScriptDialog()
+        }
+        engine.setJavaScriptDialogPresentationActive(isJavaScriptDialogPresentationActive)
+    }
+
+    func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse) {
+        guard let dialog = javaScriptDialog, dialog.id == id else { return }
+        let mayRespond = canEdit && isJavaScriptDialogPresentationActive
+            && selectedTab?.runtimeID == dialog.runtimeID
+        javaScriptDialog = nil
+        engine.resolveJavaScriptDialog(id: id, response: mayRespond ? response : .cancel)
+        notify()
+    }
+
     @discardableResult func retryPersistence() async -> Bool {
         if !hasRestored {
             await restore()
@@ -190,6 +209,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
         if !isClosed {
             isClosed = true
             isReady = false
+            setJavaScriptDialogPresentationActive(false)
             engine.onEvent = nil
             engine.onPopupCreated = nil
             engine.shutdown()
@@ -211,6 +231,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private var lastSaved: BrowserMobileSession?
     private var saveWorker: Task<Void, Never>?
     private var saveFailed = false
+    private var isJavaScriptDialogPresentationActive = false
 
     private var canEdit: Bool { isReady && !isClosed && !isRestoring }
 
@@ -224,6 +245,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
         )
         tabs.append(tab)
         selectedTabID = tab.id
+        cancelJavaScriptDialogIfSelectionChanged()
         enqueueCurrentSession()
         engine.createTab(id: tab.runtimeID, url: url)
         if tabs.contains(where: { $0.id == tab.id }) {
@@ -251,6 +273,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
         )
         tabs.append(tab)
         selectedTabID = tab.id
+        cancelJavaScriptDialogIfSelectionChanged()
         navigationError = nil
         enqueueCurrentSession()
         engine.selectTab(id: runtimeID)
@@ -278,6 +301,25 @@ struct BrowserMobileTab: Identifiable, Equatable {
             }
             notify()
         case .closed(let runtimeID): removeTab(runtimeID: runtimeID)
+        case .javaScriptDialogRequested(let dialog):
+            guard canEdit, isJavaScriptDialogPresentationActive,
+                  selectedTab?.runtimeID == dialog.runtimeID
+            else {
+                engine.resolveJavaScriptDialog(id: dialog.id, response: .cancel)
+                return
+            }
+            if let current = javaScriptDialog {
+                if current.id != dialog.id {
+                    engine.resolveJavaScriptDialog(id: dialog.id, response: .cancel)
+                }
+                return
+            }
+            javaScriptDialog = dialog
+            notify()
+        case .javaScriptDialogFinished(let id):
+            guard javaScriptDialog?.id == id else { return }
+            javaScriptDialog = nil
+            notify()
         }
     }
 
@@ -287,12 +329,25 @@ struct BrowserMobileTab: Identifiable, Equatable {
         if selectedTabID == removed.id {
             selectedTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
         }
+        cancelJavaScriptDialogIfSelectionChanged()
         if tabs.isEmpty, canEdit {
             insertNewTab(url: Self.blankURL)
         } else {
             enqueueCurrentSession()
             engine.selectTab(id: selectedTab?.runtimeID)
         }
+        notify()
+    }
+
+    private func cancelJavaScriptDialogIfSelectionChanged() {
+        guard let dialog = javaScriptDialog, dialog.runtimeID != selectedTab?.runtimeID else { return }
+        cancelJavaScriptDialog()
+    }
+
+    private func cancelJavaScriptDialog() {
+        guard let dialog = javaScriptDialog else { return }
+        javaScriptDialog = nil
+        engine.resolveJavaScriptDialog(id: dialog.id, response: .cancel)
         notify()
     }
 

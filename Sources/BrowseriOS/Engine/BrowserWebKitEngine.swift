@@ -16,8 +16,15 @@ import WebKit
     // MARK: Internal
 
     let hostView = UIView(frame: .zero)
-    var onEvent: ((BrowserMobileEngineEvent) -> Void)?
     var onPopupCreated: ((String, URL?) -> Void)?
+
+    var onEvent: ((BrowserMobileEngineEvent) -> Void)? {
+        didSet {
+            if onEvent == nil {
+                cancelJavaScriptDialog()
+            }
+        }
+    }
 
     func createTab(id: String, url: URL) {
         guard !isShutDown, records[id] == nil else { return }
@@ -31,6 +38,10 @@ import WebKit
     func selectTab(id: String?) {
         guard !isShutDown else { return }
         let record = id.flatMap { records[$0] }
+        if selectedRuntimeID != record?.id {
+            selectedRuntimeID = record?.id
+            cancelJavaScriptDialog()
+        }
         let startsInitialLoad = record?.webView == nil
         let next = record.map { ensureWebView($0) }
         guard mountedWebView !== next else { return }
@@ -86,6 +97,8 @@ import WebKit
     func stop(id: String) {
         guard let record = records[id] else { return }
         record.generation += 1
+        record.isReplacingDialogDocument = false
+        cancelJavaScriptDialog(runtimeID: id)
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = false
         record.webView?.stopLoading()
@@ -95,6 +108,10 @@ import WebKit
 
     func closeTab(id: String) {
         guard let record = records.removeValue(forKey: id) else { return }
+        if selectedRuntimeID == id {
+            selectedRuntimeID = nil
+        }
+        cancelJavaScriptDialog(runtimeID: id)
         if let webView = record.webView {
             idsByWebView.removeValue(forKey: ObjectIdentifier(webView))
         }
@@ -113,11 +130,51 @@ import WebKit
     func shutdown() {
         guard !isShutDown else { return }
         isShutDown = true
+        isDialogPresentationActive = false
+        selectedRuntimeID = nil
+        cancelJavaScriptDialog()
         onEvent = nil
         onPopupCreated = nil
         for id in Array(records.keys) {
             closeTab(id: id)
         }
+    }
+
+    func setJavaScriptDialogPresentationActive(_ active: Bool) {
+        isDialogPresentationActive = active && !isShutDown
+        if !isDialogPresentationActive {
+            cancelJavaScriptDialog()
+        }
+    }
+
+    func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse) {
+        guard let pending = pendingDialog, pending.request.id == id else { return }
+        let isCurrent = !isShutDown && isDialogPresentationActive
+            && selectedRuntimeID == pending.request.runtimeID
+            && records[pending.request.runtimeID]?.generation == pending.generation
+        finishJavaScriptDialog(pending, response: isCurrent ? response : .cancel)
+    }
+
+    /// The delegate and tests share this admission/completion boundary. There is
+    /// no waiting queue: a hidden, busy or detached scene responds neutrally.
+    func requestJavaScriptDialog(
+        in webView: WKWebView,
+        kind: BrowserMobileJavaScriptDialog.Kind,
+        message: String,
+        origin: String,
+        completion: @escaping @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void
+    ) {
+        guard !isShutDown, !isFinishingDialog, isDialogPresentationActive, let record = record(for: webView),
+              record.hasCommittedDialogDocument, !record.isReplacingDialogDocument,
+              selectedRuntimeID == record.id, pendingDialog == nil, onEvent != nil
+        else { completion(.cancel)
+            return
+        }
+        let request = BrowserMobileJavaScriptDialog(
+            id: UUID(), runtimeID: record.id, origin: origin, message: message, kind: kind
+        )
+        pendingDialog = PendingDialog(request: request, generation: record.generation, completion: completion)
+        onEvent?(.javaScriptDialogRequested(request))
     }
 
     /// Local-document seam for integration tests; production addresses use navigate.
@@ -152,6 +209,12 @@ import WebKit
         case html(String, URL?)
     }
 
+    private struct PendingDialog {
+        let request: BrowserMobileJavaScriptDialog
+        let generation: Int
+        let completion: @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void
+    }
+
     private final class Record {
         // MARK: Lifecycle
 
@@ -176,6 +239,11 @@ import WebKit
         let navigationGenerations = NSMapTable<WKNavigation, NSNumber>.weakToStrongObjects()
         var allowsPageMetadata = false
         var hasStartedCurrentNavigation = false
+        var hasCommittedDialogDocument = false
+        var isReplacingDialogDocument = false
+        // Keep the accepted document URL independently of WKWebView.url and
+        // WKFrameInfo, which can already report a fragment target before policy.
+        var dialogDocumentURL: URL?
     }
 
     private let dataStore: WKWebsiteDataStore
@@ -183,6 +251,37 @@ import WebKit
     private var idsByWebView = [ObjectIdentifier: String]()
     private weak var mountedWebView: WKWebView?
     private var isShutDown = false
+    private var selectedRuntimeID: String?
+    private var isDialogPresentationActive = false
+    private var pendingDialog: PendingDialog?
+    private var isFinishingDialog = false
+
+    private static func dialogOrigin(_ frame: WKFrameInfo) -> String {
+        let origin = frame.securityOrigin
+        guard !origin.host.isEmpty, !origin.protocol.isEmpty else {
+            return String(localized: "Unknown origin", table: "Mobile")
+        }
+        var components = URLComponents()
+        components.scheme = origin.protocol
+        components.host = origin.host
+        if origin.port > 0,
+           !(origin.protocol == "https" && origin.port == 443),
+           !(origin.protocol == "http" && origin.port == 80)
+        {
+            components.port = origin.port
+        }
+        return components.string ?? origin.host
+    }
+
+    private static func isFragmentNavigation(from previous: URL?, to next: URL?) -> Bool {
+        guard let previous, let next, previous != next,
+              var previousParts = URLComponents(url: previous, resolvingAgainstBaseURL: false),
+              var nextParts = URLComponents(url: next, resolvingAgainstBaseURL: false)
+        else { return false }
+        previousParts.fragment = nil
+        nextParts.fragment = nil
+        return previousParts == nextParts
+    }
 
     private static func isAllowed(_ url: URL) -> Bool {
         switch url.scheme?.lowercased() {
@@ -190,6 +289,35 @@ import WebKit
         case "about": url.absoluteString.lowercased().split(separator: "#").first == "about:blank"
         default: false
         }
+    }
+
+    private static func isAllowed(_ action: WKNavigationAction) -> Bool {
+        guard let url = action.request.url else { return false }
+        if Self.isAllowed(url) {
+            return true
+        }
+        // srcdoc is an embedded HTML document, not an address the browser can
+        // open as a top-level page or external application.
+        return action.targetFrame?.isMainFrame == false
+            && url.absoluteString.lowercased().split(separator: "#").first == "about:srcdoc"
+    }
+
+    private func cancelJavaScriptDialog(runtimeID: String? = nil) {
+        guard let pending = pendingDialog,
+              runtimeID == nil || runtimeID == pending.request.runtimeID else { return }
+        finishJavaScriptDialog(pending, response: .cancel)
+    }
+
+    private func finishJavaScriptDialog(
+        _ pending: PendingDialog, response: BrowserMobileJavaScriptDialogResponse
+    ) {
+        guard pendingDialog?.request.id == pending.request.id else { return }
+        // Remove ownership before either callback can reenter or answer twice.
+        pendingDialog = nil
+        isFinishingDialog = true
+        defer { isFinishingDialog = false }
+        onEvent?(.javaScriptDialogFinished(id: pending.request.id))
+        pending.completion(response)
     }
 
     private func ensureWebView(
@@ -251,7 +379,11 @@ import WebKit
     }
 
     @discardableResult private func begin(_ record: Record, url: URL?, load: () -> WKNavigation?) -> WKNavigation? {
+        // A canceled modal can resume the old document while its replacement
+        // is still provisional. Only commit admits the new document's scripts.
+        record.isReplacingDialogDocument = !Self.isFragmentNavigation(from: record.dialogDocumentURL, to: url)
         record.generation += 1
+        cancelJavaScriptDialog(runtimeID: record.id)
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = false
         record.state.url = url
@@ -307,6 +439,8 @@ import WebKit
     private func fail(_ error: Error, webView: WKWebView, navigation: WKNavigation?) {
         guard let record = currentRecord(for: webView, navigation: navigation) else { return }
         record.state.isLoading = false
+        // A failed provisional load leaves the previous committed document.
+        record.isReplacingDialogDocument = false
         let nsError = error as NSError
         if !(nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled) {
             record.state.error = nsError.localizedDescription
@@ -329,8 +463,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
-        guard record(for: webView) != nil,
-              let url = navigationAction.request.url, Self.isAllowed(url)
+        guard record(for: webView) != nil, Self.isAllowed(navigationAction)
         else {
             if let record = record(for: webView), navigationAction.targetFrame?.isMainFrame != false {
                 record.state.error = NSLocalizedString(
@@ -341,6 +474,17 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             }
             decisionHandler(.cancel)
             return
+        }
+        if let frame = navigationAction.targetFrame, frame.isMainFrame,
+           let record = record(for: webView)
+        {
+            record.isReplacingDialogDocument = !Self.isFragmentNavigation(
+                from: record.dialogDocumentURL, to: navigationAction.request.url
+            )
+            if !record.isReplacingDialogDocument {
+                record.dialogDocumentURL = navigationAction.request.url
+            }
+            cancelJavaScriptDialog(runtimeID: record.id)
         }
         decisionHandler(.allow)
     }
@@ -355,6 +499,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             record.navigationGenerations.setObject(NSNumber(value: record.generation), forKey: navigation)
             record.currentNavigation = navigation
         }
+        cancelJavaScriptDialog(runtimeID: record.id)
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = true
         record.state.isLoading = true
@@ -371,6 +516,9 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation?) {
         guard let record = currentRecord(for: webView, navigation: navigation) else { return }
+        record.hasCommittedDialogDocument = true
+        record.isReplacingDialogDocument = false
+        record.dialogDocumentURL = webView.url
         record.allowsPageMetadata = true
         if case .url = record.retryLoad, let url = webView.url {
             record.retryLoad = .url(url)
@@ -397,6 +545,10 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard let record = record(for: webView) else { return }
         record.generation += 1
+        record.hasCommittedDialogDocument = false
+        record.isReplacingDialogDocument = false
+        record.dialogDocumentURL = nil
+        cancelJavaScriptDialog(runtimeID: record.id)
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = false
         record.state.isLoading = false
@@ -410,6 +562,50 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
 // MARK: WKUIDelegate
 
 extension BrowserWebKitEngine: WKUIDelegate {
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptAlertPanelWithMessage message: String,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping @MainActor () -> Void
+    ) {
+        requestJavaScriptDialog(in: webView, kind: .alert, message: message, origin: Self.dialogOrigin(frame)) { _ in
+            completionHandler()
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptConfirmPanelWithMessage message: String,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping @MainActor (Bool) -> Void
+    ) {
+        requestJavaScriptDialog(in: webView, kind: .confirm, message: message, origin: Self.dialogOrigin(frame)) {
+            response in
+            if case .accept = response {
+                completionHandler(true)
+            } else {
+                completionHandler(false)
+            }
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptTextInputPanelWithPrompt prompt: String,
+        defaultText: String?,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping @MainActor (String?) -> Void
+    ) {
+        requestJavaScriptDialog(
+            in: webView, kind: .prompt(defaultText: defaultText), message: prompt, origin: Self.dialogOrigin(frame)
+        ) { response in
+            switch response {
+            case .accept(let text): completionHandler(text ?? "")
+            case .cancel: completionHandler(nil)
+            }
+        }
+    }
+
     func webView(
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,

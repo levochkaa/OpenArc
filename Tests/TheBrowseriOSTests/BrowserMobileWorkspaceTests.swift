@@ -2,6 +2,134 @@ import Foundation
 import Testing
 import UIKit
 
+@MainActor @Test func mobileJavaScriptDialogTokensAreTransientAndStaleCompletionsCannotResolveNewDialog() async throws {
+    let f = MobileWorkspaceFixture()
+    defer { f.cleanup() }
+    let engine = MobileWorkspaceEngine()
+    let workspace = BrowserMobileWorkspace(engine: engine, store: BrowserMobileFileSessionStore(fileURL: f.url))
+    await workspace.restore()
+    workspace.submit("https://example.com/dialog")
+    #expect(await workspace.flushPersistence())
+    let baseline = try Data(contentsOf: f.url)
+    let tab = try #require(workspace.selectedTab)
+    workspace.setJavaScriptDialogPresentationActive(true)
+    let prompt = mobileWorkspaceDialog(runtimeID: tab.runtimeID, kind: .prompt(defaultText: "Initial"))
+    engine.onEvent?(.javaScriptDialogRequested(prompt))
+    #expect(workspace.javaScriptDialog == prompt)
+    engine.onEvent?(.javaScriptDialogRequested(prompt))
+    #expect(engine.dialogResponses.isEmpty, "A duplicate request cannot consume its live token")
+
+    let overlapping = mobileWorkspaceDialog(runtimeID: tab.runtimeID)
+    engine.onEvent?(.javaScriptDialogRequested(overlapping))
+    #expect(engine.dialogResponses.count == 1)
+    #expect(engine.dialogResponses.last?.id == overlapping.id)
+    #expect(engine.dialogResponses.last?.response == .cancel)
+    #expect(workspace.javaScriptDialog == prompt)
+    engine.onEvent?(.javaScriptDialogFinished(id: UUID()))
+    workspace.resolveJavaScriptDialog(id: overlapping.id, response: .accept(text: nil))
+    #expect(workspace.javaScriptDialog == prompt && engine.dialogResponses.count == 1)
+    #expect(await workspace.flushPersistence())
+    #expect(try Data(contentsOf: f.url) == baseline, "A visible prompt never writes its token, text or response")
+
+    workspace.resolveJavaScriptDialog(id: prompt.id, response: .accept(text: ""))
+    #expect(workspace.javaScriptDialog == nil)
+    #expect(engine.dialogResponses.last?.id == prompt.id)
+    #expect(engine.dialogResponses.last?.response == .accept(text: ""), "Empty prompt input differs from Cancel")
+    workspace.resolveJavaScriptDialog(id: prompt.id, response: .cancel)
+    #expect(engine.dialogResponses.count == 2)
+    let next = mobileWorkspaceDialog(runtimeID: tab.runtimeID, kind: .alert)
+    engine.onEvent?(.javaScriptDialogRequested(next))
+    engine.onEvent?(.javaScriptDialogFinished(id: prompt.id))
+    #expect(workspace.javaScriptDialog == next)
+    engine.onEvent?(.javaScriptDialogFinished(id: next.id))
+    #expect(workspace.javaScriptDialog == nil && engine.dialogResponses.count == 2)
+    #expect(await workspace.flushPersistence())
+    #expect(try Data(contentsOf: f.url) == baseline)
+    #expect(await workspace.shutdown())
+
+    let reopened = BrowserMobileWorkspace(
+        engine: MobileWorkspaceEngine(), store: BrowserMobileFileSessionStore(fileURL: f.url)
+    )
+    await reopened.restore()
+    #expect(reopened.javaScriptDialog == nil)
+    #expect(reopened.selectedTab?.id == tab.id && reopened.selectedTab?.urlString == tab.urlString)
+    #expect(await reopened.shutdown())
+}
+
+@MainActor @Test func mobileJavaScriptDialogsRequireActiveSelectedRuntimeAndCancelAcrossTabLifecycle() async throws {
+    let f = MobileWorkspaceFixture()
+    defer { f.cleanup() }
+    let engine = MobileWorkspaceEngine()
+    let workspace = BrowserMobileWorkspace(engine: engine, store: BrowserMobileFileSessionStore(fileURL: f.url))
+    workspace.setJavaScriptDialogPresentationActive(true)
+    let beforeRestore = mobileWorkspaceDialog(runtimeID: "not-created")
+    engine.onEvent?(.javaScriptDialogRequested(beforeRestore))
+    #expect(workspace.javaScriptDialog == nil && engine.dialogResponses.last?.response == .cancel)
+    await workspace.restore()
+    let first = try #require(workspace.selectedTab)
+    workspace.newTab()
+    let second = try #require(workspace.selectedTab)
+    for runtimeID in ["unknown", first.runtimeID] {
+        let rejected = mobileWorkspaceDialog(runtimeID: runtimeID)
+        engine.onEvent?(.javaScriptDialogRequested(rejected))
+        #expect(workspace.javaScriptDialog == nil)
+        #expect(engine.dialogResponses.last?.id == rejected.id && engine.dialogResponses.last?.response == .cancel)
+    }
+
+    let selected = mobileWorkspaceDialog(runtimeID: second.runtimeID)
+    engine.onEvent?(.javaScriptDialogRequested(selected))
+    #expect(workspace.javaScriptDialog == selected)
+    workspace.selectTab(id: first.id)
+    #expect(workspace.javaScriptDialog == nil)
+    #expect(engine.dialogResponses.last?.id == selected.id && engine.dialogResponses.last?.response == .cancel)
+    let countAfterSwitch = engine.dialogResponses.count
+    workspace.resolveJavaScriptDialog(id: selected.id, response: .accept(text: nil))
+    #expect(engine.dialogResponses.count == countAfterSwitch)
+
+    let oldTab = mobileWorkspaceDialog(runtimeID: first.runtimeID)
+    engine.onEvent?(.javaScriptDialogRequested(oldTab))
+    workspace.newTab()
+    #expect(engine.dialogResponses.last?.id == oldTab.id && engine.dialogResponses.last?.response == .cancel)
+    let third = try #require(workspace.selectedTab)
+    let closing = mobileWorkspaceDialog(runtimeID: third.runtimeID)
+    engine.onEvent?(.javaScriptDialogRequested(closing))
+    workspace.closeTab(id: third.id)
+    #expect(workspace.javaScriptDialog == nil && !workspace.tabs.contains { $0.id == third.id })
+    #expect(engine.dialogResponses.last?.id == closing.id && engine.dialogResponses.last?.response == .cancel)
+
+    let current = try #require(workspace.selectedTab)
+    let disappearing = mobileWorkspaceDialog(runtimeID: current.runtimeID)
+    engine.onEvent?(.javaScriptDialogRequested(disappearing))
+    workspace.setJavaScriptDialogPresentationActive(false)
+    #expect(!engine.dialogPresentationActive && workspace.javaScriptDialog == nil)
+    #expect(engine.dialogResponses.last?.id == disappearing.id && engine.dialogResponses.last?.response == .cancel)
+    let inactive = mobileWorkspaceDialog(runtimeID: current.runtimeID)
+    engine.onEvent?(.javaScriptDialogRequested(inactive))
+    #expect(workspace.javaScriptDialog == nil && engine.dialogResponses.last?.id == inactive.id)
+    #expect(engine.dialogResponses.last?.response == .cancel)
+
+    workspace.setJavaScriptDialogPresentationActive(true)
+    let shuttingDown = mobileWorkspaceDialog(runtimeID: current.runtimeID)
+    engine.onEvent?(.javaScriptDialogRequested(shuttingDown))
+    #expect(workspace.javaScriptDialog == shuttingDown)
+    #expect(await workspace.shutdown())
+    #expect(workspace.javaScriptDialog == nil && !engine.dialogPresentationActive)
+    #expect(engine.dialogResponses.last?.id == shuttingDown.id && engine.dialogResponses.last?.response == .cancel)
+    #expect(engine.onEvent == nil && engine.shutdownCount == 1)
+    let countAfterShutdown = engine.dialogResponses.count
+    workspace.resolveJavaScriptDialog(id: shuttingDown.id, response: .accept(text: nil))
+    workspace.setJavaScriptDialogPresentationActive(true)
+    #expect(!engine.dialogPresentationActive && engine.dialogResponses.count == countAfterShutdown)
+}
+
+private func mobileWorkspaceDialog(
+    runtimeID: String, kind: BrowserMobileJavaScriptDialog.Kind = .confirm
+) -> BrowserMobileJavaScriptDialog {
+    BrowserMobileJavaScriptDialog(
+        id: UUID(), runtimeID: runtimeID, origin: "https://example.com", message: "Page message", kind: kind
+    )
+}
+
 @MainActor @Test(arguments: [false, true])
 func mobileChangedURLClearsPreviousTitleThroughFailureAndFileReopen(engineReported: Bool) async throws {
     let f = MobileWorkspaceFixture()
@@ -262,6 +390,8 @@ private struct MobileWorkspaceFixture {
     var selectedID: String?
     var commands = [String]()
     var shutdownCount = 0
+    var dialogPresentationActive = false
+    var dialogResponses = [(id: UUID, response: BrowserMobileJavaScriptDialogResponse)]()
 
     func createTab(id: String, url: URL) {
         createdIDs.append(id)
@@ -279,6 +409,12 @@ private struct MobileWorkspaceFixture {
     func reload(id: String) { commands.append("reload:\(id)") }
     func stop(id: String) { commands.append("stop:\(id)") }
     func closeTab(id: String) { onEvent?(.closed(id: id)) }
+    func setJavaScriptDialogPresentationActive(_ active: Bool) { dialogPresentationActive = active }
+    func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse) {
+        dialogResponses.append((id, response))
+        onEvent?(.javaScriptDialogFinished(id: id))
+    }
+
     func shutdown() { shutdownCount += 1 }
     func emitState(id: String, url: String, title: String) {
         onEvent?(.state(id: id, .init(url: URL(string: url), title: title)))

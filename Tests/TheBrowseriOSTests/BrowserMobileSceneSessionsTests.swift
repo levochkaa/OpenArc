@@ -108,10 +108,13 @@ import UIKit
     let original = try await fixture.sessions.connect(sessionID: "scene")
     await fixture.sessions.waitForPendingOperations()
     #expect(await original.workspace.flushPersistence())
+    fixture.sessions.setActive(true, for: original)
+    #expect(fixture.engines[0].isJavaScriptDialogPresentationActive)
     await fixture.store.holdNextSave()
     original.workspace.submit("https://example.com/final")
     await fixture.store.waitForHeldSave()
     fixture.sessions.discard(sessionIDs: ["scene"])
+    #expect(!fixture.engines[0].isJavaScriptDialogPresentationActive)
     let reconnect = Task { try await fixture.sessions.connect(sessionID: "scene") }
     await fixture.waitForShutdown()
     #expect(fixture.engines.count == 1)
@@ -119,10 +122,74 @@ import UIKit
     let reopened = try await reconnect.value
     await fixture.sessions.waitForPendingOperations()
     #expect(reopened.workspace !== original.workspace && fixture.engines.count == 2)
+    #expect(!fixture.engines[1].isJavaScriptDialogPresentationActive)
     #expect(reopened.workspace.selectedTab?.urlString == "https://example.com/final")
     #expect(await fixture.store.maximumConcurrentSaves() == 1)
     fixture.sessions.discard(sessionIDs: ["scene"])
     await fixture.sessions.waitForPendingOperations()
+}
+
+@MainActor @Test func mobileSceneDialogActivityRejectsStaleAttachmentsAndReconnectStartsInactive() async throws {
+    let fixture = MobileSceneFixture()
+    defer { fixture.cleanup() }
+    let old = try await fixture.sessions.connect(sessionID: "scene")
+    await fixture.sessions.waitForPendingOperations()
+    let engine = try #require(fixture.engines.first)
+    #expect(!engine.isJavaScriptDialogPresentationActive)
+    fixture.sessions.setActive(true, for: old)
+    #expect(engine.isJavaScriptDialogPresentationActive)
+
+    let current = try await fixture.sessions.connect(sessionID: "scene")
+    #expect(current.workspace === old.workspace && !engine.isJavaScriptDialogPresentationActive)
+    fixture.sessions.setActive(true, for: old)
+    #expect(!engine.isJavaScriptDialogPresentationActive)
+    fixture.sessions.setActive(true, for: current)
+    fixture.sessions.setActive(false, for: old)
+    fixture.sessions.disconnect(old)
+    #expect(engine.isJavaScriptDialogPresentationActive)
+
+    fixture.sessions.disconnect(current)
+    #expect(!engine.isJavaScriptDialogPresentationActive)
+    fixture.sessions.setActive(true, for: current)
+    #expect(!engine.isJavaScriptDialogPresentationActive)
+    let reconnected = try await fixture.sessions.connect(sessionID: "scene")
+    #expect(reconnected.workspace === current.workspace && !engine.isJavaScriptDialogPresentationActive)
+    fixture.sessions.setActive(true, for: reconnected)
+    #expect(engine.isJavaScriptDialogPresentationActive)
+    fixture.sessions.discard(sessionIDs: ["scene"])
+    #expect(!engine.isJavaScriptDialogPresentationActive)
+    fixture.sessions.setActive(true, for: reconnected)
+    #expect(!engine.isJavaScriptDialogPresentationActive)
+    await fixture.sessions.waitForPendingOperations()
+}
+
+@MainActor @Test func mobileSceneDialogActivityStaysWithinItsOwnSession() async throws {
+    let fixture = MobileSceneFixture()
+    defer { fixture.cleanup() }
+    var engines = [String: MobileSceneEngine]()
+    let sessions = BrowserMobileSceneSessions { sessionID in
+        let engine = MobileSceneEngine()
+        engines[sessionID] = engine
+        let store = BrowserMobileFileSessionStore(
+            fileURL: fixture.directory.appendingPathComponent(sessionID + ".json")
+        )
+        return .init(workspace: BrowserMobileWorkspace(engine: engine, store: store), contentView: engine.hostView)
+    }
+    let first = try await sessions.connect(sessionID: "first")
+    let second = try await sessions.connect(sessionID: "second")
+    await sessions.waitForPendingOperations()
+    let firstEngine = try #require(engines["first"])
+    let secondEngine = try #require(engines["second"])
+    sessions.setActive(true, for: first)
+    #expect(firstEngine.isJavaScriptDialogPresentationActive && !secondEngine.isJavaScriptDialogPresentationActive)
+    sessions.setActive(true, for: second)
+    sessions.setActive(false, for: first)
+    #expect(!firstEngine.isJavaScriptDialogPresentationActive && secondEngine.isJavaScriptDialogPresentationActive)
+    sessions.disconnect(first)
+    #expect(secondEngine.isJavaScriptDialogPresentationActive)
+    sessions.discard(sessionIDs: ["first", "second"])
+    #expect(!firstEngine.isJavaScriptDialogPresentationActive && !secondEngine.isJavaScriptDialogPresentationActive)
+    await sessions.waitForPendingOperations()
 }
 
 @MainActor @Test func mobileCancelledSceneReconnectDoesNotAcquireRetiredSession() async throws {
@@ -189,6 +256,10 @@ import UIKit
     var onShutdown: (() -> Void)?
     var createdIDs = [String]()
     var shutdownCount = 0
+    private(set) var isJavaScriptDialogPresentationActive = false
+
+    func setJavaScriptDialogPresentationActive(_ active: Bool) { isJavaScriptDialogPresentationActive = active }
+    func resolveJavaScriptDialog(id _: UUID, response _: BrowserMobileJavaScriptDialogResponse) {}
 
     func createTab(id: String, url: URL) {
         createdIDs.append(id)

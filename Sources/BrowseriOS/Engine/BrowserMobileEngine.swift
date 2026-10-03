@@ -18,6 +18,8 @@ struct BrowserMobilePageState: Equatable, Sendable {
 enum BrowserMobileEngineEvent: Sendable {
     case state(id: String, BrowserMobilePageState)
     case closed(id: String)
+    case javaScriptDialogRequested(BrowserMobileJavaScriptDialog)
+    case javaScriptDialogFinished(id: UUID)
 }
 
 // MARK: - BrowserMobileEngine
@@ -39,5 +41,7 @@ enum BrowserMobileEngineEvent: Sendable {
     func reload(id: String)
     func stop(id: String)
     func closeTab(id: String)
+    func setJavaScriptDialogPresentationActive(_ active: Bool)
+    func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse)
     func shutdown()
 }

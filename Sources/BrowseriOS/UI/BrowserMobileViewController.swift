@@ -36,6 +36,10 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
     let workspace: BrowserMobileWorkspace
     let pageController: BrowserMobilePageViewController
     let tabsController: BrowserMobileTabsViewController
+    lazy var javaScriptDialogPresenter =
+        BrowserMobileJavaScriptDialogPresenter(host: self) { [weak self] id, response in
+            self?.workspace.resolveJavaScriptDialog(id: id, response: response)
+        }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -47,6 +51,7 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         pageController.render()
         tabsController.render()
         presentedTabs?.render()
+        javaScriptDialogPresenter.update(workspace.javaScriptDialog)
     }
 
     func splitViewController(_: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: Column) -> Column {
