@@ -19,7 +19,7 @@ export class AuthService {
   async verifyAppleIdentityToken(identityToken: string): Promise<AppleIdentity> {
     const result = await jwtVerify(identityToken, this.appleJWKS, {
       issuer: "https://appleid.apple.com",
-      audience: config.APPLE_CLIENT_ID
+      audience: config.APPLE_CLIENT_IDS
     });
 
     const appleSubject = result.payload.sub;

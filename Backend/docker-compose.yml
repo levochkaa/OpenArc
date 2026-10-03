@@ -22,6 +22,7 @@ services:
       PORT: ${PORT:-8080}
       HOST: ${HOST:-0.0.0.0}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-com.levochkaa.TheBrowser}
+      APPLE_CLIENT_IDS:
       JWT_SECRET: ${JWT_SECRET:-replace-with-at-least-32-random-bytes}
       JWT_ISSUER: ${JWT_ISSUER:-thebrowser-sync}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-thebrowser-clients}
