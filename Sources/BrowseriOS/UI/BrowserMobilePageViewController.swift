@@ -24,6 +24,10 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         return [
             find,
             UIKeyCommand(
+                title: String(localized: "Downloads", table: "Mobile"),
+                action: #selector(showDownloads), input: "l", modifierFlags: [.command, .alternate]
+            ),
+            UIKeyCommand(
                 title: String(localized: "Open Location", table: "Mobile"),
                 action: #selector(focusAddress),
                 input: "l",
@@ -135,6 +139,17 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         progress.progress = Float(tab?.state.progress ?? 0)
         progress.isHidden = !loading
         shareButton.isEnabled = shareURL != nil
+        downloadsButton.isEnabled = workspace.isReady && workspace.downloads != nil
+        let activeDownload = workspace.downloads?
+            .entries
+            .contains { $0.status == .downloading || $0.status == .saving } == true
+        let downloadError = workspace.downloads?.error != nil
+        downloadsButton.setImage(UIImage(systemName: downloadError
+                ? "exclamationmark.circle"
+                : activeDownload ? "arrow.down.circle.fill" : "arrow.down.circle"), for: .normal)
+        downloadsButton.accessibilityValue = downloadError
+            ? String(localized: "Failed", table: "Mobile")
+            : activeDownload ? String(localized: "Downloading", table: "Mobile") : nil
         bannerLabel.text = workspace.sessionError ?? workspace.navigationError
         banner.isHidden = bannerLabel.text == nil
         bannerAction.setTitle(
@@ -181,6 +196,21 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         workspace.presentFindInPage()
     }
 
+    @objc func showDownloads() {
+        guard workspace.isReady, let downloads = workspace.downloads,
+              workspace.javaScriptDialog == nil, presentedViewController == nil,
+              let window = viewIfLoaded?.window, !window.isHidden,
+              window.windowScene?.activationState == .foregroundActive,
+              !Self.hasPresentedController(window.rootViewController ?? self)
+        else { return }
+        workspace.dismissFindInPage()
+        addressField.resignFirstResponder()
+        let controller = BrowserMobileDownloadsViewController(downloads: downloads)
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.modalPresentationStyle = .formSheet
+        present(navigation, animated: true)
+    }
+
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         guard textField.markedTextRange == nil else { return false }
         let input = textField.text ?? ""
@@ -217,6 +247,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     private var newButton = UIButton(type: .system)
     private var shareButton = UIButton(type: .system)
     private var findButton = UIButton(type: .system)
+    private var downloadsButton = UIButton(type: .system)
 
     private var canPresentFind: Bool {
         guard workspace.canFindInPage, let window = viewIfLoaded?.window,
@@ -311,7 +342,10 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         reloadButton = button("arrow.clockwise", "Reload", "browser.reload") { [weak self] in
             self?.workspace.reloadOrStop()
         }
-        let addressRow = UIStackView(arrangedSubviews: [addressField, reloadButton])
+        downloadsButton = button("arrow.down.circle", "Downloads", "browser.downloads") { [weak self] in
+            self?.showDownloads()
+        }
+        let addressRow = UIStackView(arrangedSubviews: [addressField, downloadsButton, reloadButton])
         addressRow.spacing = 4
         chromeStack.addArrangedSubview(addressRow)
         backButton = button("chevron.backward", "Back", "browser.back") { [weak self] in self?.workspace.goBack() }

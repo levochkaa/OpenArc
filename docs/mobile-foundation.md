@@ -44,7 +44,9 @@ The toolbar's Find in Page action and Cmd+F enter through the current page. Addr
 
 Hosted verification uses actual WK HTML and the public native interaction/session after invoking the real action. It distinguishes presenting the panel, finding matches, selecting next/previous results and zero results. Bounded waits are required because presentation and matching have no completion callback. Keyboard action dispatch and layout checks are separate from physical hardware-key/touch verification.
 
-Remaining mobile work includes browser split; full scene/external-link routing; private browsing; auth/permission presentation, uploads/downloads and site settings; background/memory recovery; and observed gesture/visual polish. Auto-Archive policy and implementation are described below. Feature verification status belongs in the ledger. No placeholder controls claim these features exist.
+Native downloads now use the original WebKit transfer, a profile-owned coordinator, durable completed files and a UIKit Downloads list with Save to Files. Attachment responses, explicit download links and generated blob/data files retain the source document. See [mobile-downloads.md](mobile-downloads.md) for the storage, lifecycle and export contract and its verification limits.
+
+Remaining mobile work includes browser split; full scene/external-link routing; private browsing; auth/permission presentation, uploads and site settings; download removal/redownload and active-transfer recovery; background/memory recovery; and observed gesture/visual polish. Auto-Archive policy and implementation are described below. Feature verification status belongs in the ledger. No placeholder controls claim these features exist.
 
 
 ## Durable local Archive

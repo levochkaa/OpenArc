@@ -27,6 +27,10 @@ import WebKit
         }
     }
 
+    func setDownloads(_ downloads: BrowserMobileDownloads?) {
+        self.downloads = isShutDown ? nil : downloads
+    }
+
     func createTab(id: String, url: URL) {
         guard !isShutDown, records[id] == nil else { return }
         // Restoring a workspace must not launch a WebKit page for every saved
@@ -139,6 +143,9 @@ import WebKit
         cancelJavaScriptDialog()
         onEvent = nil
         onPopupCreated = nil
+        downloads = nil
+        actionDownloads.removeAllObjects()
+        responseDownloads.removeAllObjects()
         for id in Array(records.keys) {
             closeTab(id: id)
         }
@@ -249,6 +256,24 @@ import WebKit
         let completion: @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void
     }
 
+    private final class DownloadHandoff {
+        // MARK: Lifecycle
+
+        init(record: Record, coordinator: BrowserMobileDownloads, sourceURL: URL?) {
+            self.runtimeID = record.id
+            self.generation = record.generation
+            self.coordinator = coordinator
+            self.sourceURL = sourceURL
+        }
+
+        // MARK: Internal
+
+        let runtimeID: String
+        let generation: Int
+        weak var coordinator: BrowserMobileDownloads?
+        let sourceURL: URL?
+    }
+
     private final class Record {
         // MARK: Lifecycle
 
@@ -266,6 +291,9 @@ import WebKit
         var lastEmitted: BrowserMobilePageState?
         var observations = [NSKeyValueObservation]()
         var retryLoad: RetryLoad
+        var committedState: BrowserMobilePageState?
+        var committedRetryLoad: RetryLoad?
+        var isRestoringDownloadedDocument = false
         var generation = 0
         var currentNavigation: WKNavigation?
         // Weak keys retain generation information while WebKit can deliver that
@@ -289,6 +317,9 @@ import WebKit
     private var isDialogPresentationActive = false
     private var pendingDialog: PendingDialog?
     private var isFinishingDialog = false
+    private var downloads: BrowserMobileDownloads?
+    private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
+    private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
 
     private static func dialogOrigin(_ frame: WKFrameInfo) -> String {
         let origin = frame.securityOrigin
@@ -421,6 +452,7 @@ import WebKit
             dismissFindInPage()
         }
         record.generation += 1
+        record.isRestoringDownloadedDocument = false
         cancelJavaScriptDialog(runtimeID: record.id)
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = false
@@ -456,6 +488,12 @@ import WebKit
 
     private func refresh(_ record: Record) {
         guard let webView = record.webView else { return }
+        if record.isRestoringDownloadedDocument, !webView.isLoading,
+           webView.url == record.committedState?.url
+        {
+            record.isRestoringDownloadedDocument = false
+            record.allowsPageMetadata = true
+        }
         if record.allowsPageMetadata {
             record.state.url = webView.url ?? record.state.url
             record.state.title = webView.title ?? ""
@@ -465,7 +503,45 @@ import WebKit
         }
         record.state.canGoBack = webView.canGoBack
         record.state.canGoForward = webView.canGoForward
+        if record.allowsPageMetadata {
+            record.committedState = record.state
+            record.committedRetryLoad = record.retryLoad
+        }
         emit(record)
+    }
+
+    /// A response becoming a download never replaces the displayed document.
+    /// Invalidate only that provisional navigation so its cancellation/error
+    /// callbacks cannot publish the attachment URL or a page-load error.
+    private func preservePageAfterDownloadConversion(_ record: Record) {
+        record.generation += 1
+        record.currentNavigation = nil
+        record.allowsPageMetadata = false
+        record.hasStartedCurrentNavigation = false
+        record.isReplacingDialogDocument = false
+        record.isRestoringDownloadedDocument = record.committedState != nil
+        record.state = record.committedState ?? BrowserMobilePageState(url: URL(string: "about:blank"))
+        record.state.isLoading = false
+        record.state.error = nil
+        record.state.progress = record.hasCommittedDialogDocument ? 1 : 0
+        record.dialogDocumentURL = record.committedState?.url
+        if let retryLoad = record.committedRetryLoad {
+            record.retryLoad = retryLoad
+        }
+        emit(record)
+    }
+
+    private func adoptDownload(_ download: WKDownload, handoff: DownloadHandoff?, webView: WKWebView) {
+        guard !isShutDown, let handoff, let coordinator = handoff.coordinator,
+              downloads === coordinator, let record = record(for: webView),
+              record.id == handoff.runtimeID, record.generation == handoff.generation
+        else {
+            download.cancel { _ in }
+            return
+        }
+        // Bind the profile-owned WKDownloadDelegate before returning to WebKit;
+        // this preserves the original request's cookies, body and credentials.
+        coordinator.adopt(download, sourceURL: handoff.sourceURL)
     }
 
     private func emit(_ record: Record) {
@@ -504,9 +580,30 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
-        guard record(for: webView) != nil, Self.isAllowed(navigationAction)
+        guard let record = record(for: webView), !isShutDown else {
+            decisionHandler(.cancel)
+            return
+        }
+        let scheme = navigationAction.request.url?.scheme?.lowercased()
+        let isGeneratedDownload = scheme == "blob" || scheme == "data"
+        if navigationAction.shouldPerformDownload, Self.isAllowed(navigationAction) || isGeneratedDownload {
+            guard let downloads else {
+                decisionHandler(.cancel)
+                return
+            }
+            // Generated files are allowed only through WebKit's explicit
+            // download intent. Never retain their payload/token in provenance.
+            let sourceURL = isGeneratedDownload ? record.committedState?.url : navigationAction.request.url
+            actionDownloads.setObject(
+                DownloadHandoff(record: record, coordinator: downloads, sourceURL: sourceURL),
+                forKey: navigationAction
+            )
+            decisionHandler(.download)
+            return
+        }
+        guard Self.isAllowed(navigationAction)
         else {
-            if let record = record(for: webView), navigationAction.targetFrame?.isMainFrame != false {
+            if navigationAction.targetFrame?.isMainFrame != false {
                 record.state.error = NSLocalizedString(
                     "This link requires an unsupported app or browser page. Open another web address.",
                     comment: "Unsupported mobile navigation."
@@ -516,21 +613,71 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             decisionHandler(.cancel)
             return
         }
-        if let frame = navigationAction.targetFrame, frame.isMainFrame,
-           let record = record(for: webView)
-        {
+        if let frame = navigationAction.targetFrame, frame.isMainFrame {
             record.isReplacingDialogDocument = !Self.isFragmentNavigation(
                 from: record.dialogDocumentURL, to: navigationAction.request.url
             )
             if record.isReplacingDialogDocument, selectedRuntimeID == record.id {
                 dismissFindInPage()
             }
+            if record.isReplacingDialogDocument {
+                record.allowsPageMetadata = false
+            }
             if !record.isReplacingDialogDocument {
                 record.dialogDocumentURL = navigationAction.request.url
+                if record.isRestoringDownloadedDocument {
+                    record.isRestoringDownloadedDocument = false
+                    record.allowsPageMetadata = true
+                }
             }
             cancelJavaScriptDialog(runtimeID: record.id)
         }
         decisionHandler(.allow)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
+    ) {
+        guard let record = record(for: webView), !isShutDown else {
+            decisionHandler(.cancel)
+            return
+        }
+        let disposition = (navigationResponse.response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Disposition")?
+            .split(separator: ";", maxSplits: 1)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard navigationResponse.isForMainFrame,
+              disposition == "attachment" || !navigationResponse.canShowMIMEType
+        else {
+            decisionHandler(.allow)
+            return
+        }
+        preservePageAfterDownloadConversion(record)
+        guard let downloads else {
+            decisionHandler(.cancel)
+            return
+        }
+        responseDownloads.setObject(
+            DownloadHandoff(record: record, coordinator: downloads, sourceURL: navigationResponse.response.url),
+            forKey: navigationResponse
+        )
+        decisionHandler(.download)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        let handoff = actionDownloads.object(forKey: navigationAction)
+        actionDownloads.removeObject(forKey: navigationAction)
+        adoptDownload(download, handoff: handoff, webView: webView)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        let handoff = responseDownloads.object(forKey: navigationResponse)
+        responseDownloads.removeObject(forKey: navigationResponse)
+        adoptDownload(download, handoff: handoff, webView: webView)
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation?) {
@@ -544,6 +691,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             record.currentNavigation = navigation
         }
         cancelJavaScriptDialog(runtimeID: record.id)
+        record.isRestoringDownloadedDocument = false
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = true
         record.state.isLoading = true
@@ -590,6 +738,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         guard let record = record(for: webView) else { return }
         record.generation += 1
         record.hasCommittedDialogDocument = false
+        record.isRestoringDownloadedDocument = false
         record.isReplacingDialogDocument = false
         record.dialogDocumentURL = nil
         cancelJavaScriptDialog(runtimeID: record.id)

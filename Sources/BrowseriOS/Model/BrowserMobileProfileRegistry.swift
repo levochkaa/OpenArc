@@ -84,6 +84,10 @@ import Foundation
             return try await opening.value
         }
         let task = Task { @MainActor in
+            let downloads = BrowserMobileDownloads(directory: directory
+                .appendingPathComponent("MobileProfile", isDirectory: true)
+                .appendingPathComponent("Downloads", isDirectory: true))
+            await downloads.load()
             let store = try BrowserSQLiteSessionStore(databaseURL: directory
                 .appendingPathComponent("MobileProfile", isDirectory: true)
                 .appendingPathComponent(BrowserSQLiteSessionStore.databaseFileName))
@@ -94,7 +98,7 @@ import Foundation
             }
             let document = try BrowserMobileProfileDocument(
                 store: store,
-                loadSnapshot: { try store.loadSnapshotStrict() }
+                loadSnapshot: { try store.loadSnapshotStrict() }, downloads: downloads
             )
             syncSession = syncSessionFactory(store, document)
             return document

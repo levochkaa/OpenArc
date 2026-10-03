@@ -33,6 +33,7 @@ enum BrowserMobileEngineEvent: Sendable {
     /// The engine has registered a popup using WebKit's supplied configuration.
     /// Adopt its runtime ID before further delegate events are delivered.
     var onPopupCreated: ((String, URL?) -> Void)? { get set }
+    func setDownloads(_ downloads: BrowserMobileDownloads?)
     func createTab(id: String, url: URL)
     func selectTab(id: String?)
     func navigate(id: String, url: URL)
@@ -50,6 +51,7 @@ enum BrowserMobileEngineEvent: Sendable {
 }
 
 extension BrowserMobileEngine {
+    func setDownloads(_: BrowserMobileDownloads?) {}
     func canFindInPage(id _: String) -> Bool { false }
     @discardableResult func presentFindInPage(id _: String) -> Bool { false }
     func dismissFindInPage() {}

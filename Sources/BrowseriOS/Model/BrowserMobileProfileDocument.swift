@@ -11,6 +11,7 @@ import Foundation
         store: any BrowserTabSessionSnapshotStoring,
         initialSnapshot: BrowserTabSessionSnapshot?,
         syncCoordinator: (any BrowserSyncCoordinating)? = nil,
+        downloads: BrowserMobileDownloads? = nil,
         idProvider: @escaping () -> String = { UUID().uuidString },
         dateProvider: @escaping () -> Date = Date.init,
         automaticArchivalCheckInterval: Duration? = .seconds(60),
@@ -22,6 +23,7 @@ import Foundation
         self.store = store
         self.snapshot = initial
         self.syncCoordinator = syncCoordinator
+        self.downloads = downloads
         self.idProvider = idProvider
         self.dateProvider = dateProvider
         self.automaticArchivalCheckInterval = automaticArchivalCheckInterval
@@ -32,14 +34,19 @@ import Foundation
     convenience init(
         store: any BrowserTabSessionSnapshotStoring,
         loadSnapshot: () throws -> BrowserTabSessionSnapshot?,
-        syncCoordinator: (any BrowserSyncCoordinating)? = nil
+        syncCoordinator: (any BrowserSyncCoordinating)? = nil,
+        downloads: BrowserMobileDownloads? = nil
     ) throws {
-        try self.init(store: store, initialSnapshot: loadSnapshot(), syncCoordinator: syncCoordinator)
+        try self.init(
+            store: store, initialSnapshot: loadSnapshot(), syncCoordinator: syncCoordinator, downloads: downloads
+        )
     }
 
     // MARK: Internal
 
     typealias ObserverToken = UUID
+
+    let downloads: BrowserMobileDownloads?
 
     private(set) var snapshot: BrowserTabSessionSnapshot
     private(set) var archiveError: String?

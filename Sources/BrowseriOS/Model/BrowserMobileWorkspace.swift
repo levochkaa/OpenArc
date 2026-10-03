@@ -60,6 +60,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private(set) var selectedSpaceID: String?
 
     var syncSession: BrowserMobileSyncSession? { profileDocument?.syncSession }
+    var downloads: BrowserMobileDownloads? { profileDocument?.downloads }
 
     var spaces: [BrowserSpaceSessionSnapshot] { profileDocument?.snapshot.spaces ?? [] }
     var visibleTabs: [BrowserMobileTab] {
@@ -435,6 +436,10 @@ struct BrowserMobileTab: Identifiable, Equatable {
                 profileDocument?.removeObserver(documentObserver)
             }
             documentObserver = nil
+            if let downloadsObserver {
+                downloads?.removeObserver(downloadsObserver)
+            }
+            downloadsObserver = nil
             engine.shutdown()
             notify()
         }
@@ -464,6 +469,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private var sceneID = ""
     private var scenePreferences: UserDefaults?
     private var documentObserver: UUID?
+    private var downloadsObserver: UUID?
     private var applyingDocument = false
     private var registeredRuntimeIDs = Set<String>()
     private var adoptedPopupRuntimeID: String?
@@ -486,6 +492,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
                 return
             }
             profileDocument = document
+            engine.setDownloads(document.downloads)
+            downloadsObserver = document.downloads?.observe { [weak self] in self?.notify() }
             selectedSpaceID = scenePreferences?.string(forKey: selectionKey + ".space")
             selectedTabID = scenePreferences?.string(forKey: selectionKey + ".tab")
             if selectedSpaceID == nil {
