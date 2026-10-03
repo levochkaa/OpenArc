@@ -336,6 +336,11 @@ struct BrowserSyncPullResponse: Decodable {
 @MainActor protocol BrowserSyncCoordinating: AnyObject {
     func schedulePush(snapshot: BrowserTabSessionSnapshot)
     func schedulePull()
+    func setLocalPersistenceBlocked(_ blocked: Bool)
+}
+
+extension BrowserSyncCoordinating {
+    func setLocalPersistenceBlocked(_: Bool) {}
 }
 
 // MARK: - BrowserSyncSnapshotApplying

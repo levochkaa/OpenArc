@@ -3,6 +3,46 @@ import Foundation
 // MARK: - BrowserStrings
 
 enum BrowserStrings {
+    static let sessionRecoveryTitle = NSLocalizedString(
+        "browser.session.recovery.title",
+        comment: "Unsaved session banner title."
+    )
+    static let sessionRecoveryRetryMessage = NSLocalizedString(
+        "browser.session.recovery.retry_message",
+        comment: "Temporary persistence failure."
+    )
+    static let sessionRecoveryTerminalMessage = NSLocalizedString(
+        "browser.session.recovery.terminal_message",
+        comment: "Session cannot be retried safely."
+    )
+    static let sessionRecoveryRetry = NSLocalizedString(
+        "browser.session.recovery.retry",
+        comment: "Retry saving the session."
+    )
+    static let sessionRecoverySaveCopy = NSLocalizedString(
+        "browser.session.recovery.save_copy",
+        comment: "Export the unsaved session."
+    )
+    static let sessionRecoveryExportFailed = NSLocalizedString(
+        "browser.session.recovery.export_failed",
+        comment: "Session export error title."
+    )
+    static let sessionRecoveryCloseTitle = NSLocalizedString(
+        "browser.session.recovery.close_title",
+        comment: "Confirm loss of unsaved session changes."
+    )
+    static let sessionRecoveryCloseMessage = NSLocalizedString(
+        "browser.session.recovery.close_message",
+        comment: "Cancel to export a session copy."
+    )
+    static let sessionRecoveryCloseWithoutSaving = NSLocalizedString(
+        "browser.session.recovery.close_without_saving",
+        comment: "Explicitly discard unsaved changes."
+    )
+    static let sessionRecoveryCloseProfileBeforeDeleting = NSLocalizedString(
+        "browser.session.recovery.close_profile_before_deleting",
+        comment: "Open profiles cannot be deleted."
+    )
     static let applicationName = NSLocalizedString(
         "browser.app.name",
         comment: "The localized application name."

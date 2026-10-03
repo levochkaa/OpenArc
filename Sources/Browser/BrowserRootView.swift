@@ -38,10 +38,16 @@ final class BrowserRootView: NSView {
             tabEvents,
             tabSwitcher,
             fullscreenReader,
+            sessionRecovery,
         ] {
             addSubview(view)
         }
         find.bind(to: model)
+        sessionRecovery.onRetry = { [weak model] in model?.retrySessionPersistence() }
+        sessionRecovery.onSaveCopy = { [weak self] in
+            guard let self, let window else { return }
+            BrowserSessionRecoveryExporter.present(model: model, window: window)
+        }
         sidebar.onToggleSidebar = { [weak model] in model?.toggleSidebar() }
         sidebar.onDragInteractionChange = { [weak self] in
             DispatchQueue.main.async { [weak self] in self?.refresh() }
@@ -133,6 +139,14 @@ final class BrowserRootView: NSView {
             onDismiss: { [weak self] in self?.dismissSidebarHoverOverlay() }
         )
         let geometry = windowGeometry
+        let recoveryWidth = min(max(bounds.width - 32, 0), 640)
+        let recoveryHeight = sessionRecovery.height(for: recoveryWidth)
+        sessionRecovery.frame = NSRect(
+            x: (bounds.width - recoveryWidth) / 2,
+            y: max(bounds.height - recoveryHeight - 16, 0),
+            width: recoveryWidth,
+            height: recoveryHeight
+        )
         var targets: [(NSView, CGRect)] = [
             (content, geometry.contentFrame), (find, geometry.contentFrame), (sidebar, geometry.sidebarFrame),
             (
@@ -210,6 +224,7 @@ final class BrowserRootView: NSView {
     private let tabSwitcher = BrowserTabSwitcherNSView()
     private let tabSwitcherVisibility = BrowserNativeVisibilityAnimation()
     private let fullscreenReader = BrowserWindowFullscreenReaderNSView()
+    private let sessionRecovery = BrowserSessionPersistenceStatusView()
     private let extensionResize = BrowserNativeResizeHandle()
     private var extensionPanel: BrowserExtensionSidePanelNSView?
     private let toolbarVisibility = BrowserNativeVisibilityAnimation()
@@ -308,6 +323,7 @@ final class BrowserRootView: NSView {
     }
 
     private func refresh() {
+        sessionRecovery.update(model.sessionPersistenceFailure)
         let state = [
             model.isSidebarVisible,
             isSidebarHoverOverlayPresented,

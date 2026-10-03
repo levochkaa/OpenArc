@@ -254,18 +254,33 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
 
 protocol BrowserTabSessionSnapshotStoring {
     func loadSnapshot() -> BrowserTabSessionSnapshot?
+    /// Implementations must either commit the whole ordered batch or throw.
+    /// Selection preferences are saved separately after this succeeds.
+    func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot)
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent)
     func saveRemoteProjectionSnapshot(_ snapshot: BrowserTabSessionSnapshot)
 }
 
 extension BrowserTabSessionSnapshotStoring {
-    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot, syncMove _: BrowserSyncMoveIntent) {
-        saveSnapshot(snapshot)
+    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent) {
+        do {
+            try writeSessionBatch([BrowserSessionWrite(snapshot: snapshot, origin: .local(syncMove: syncMove))])
+        } catch {
+            BrowserSessionDiagnostics.logger.error(
+                "Failed to save session snapshot: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     func saveRemoteProjectionSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
-        saveSnapshot(snapshot)
+        do {
+            try writeSessionBatch([BrowserSessionWrite(snapshot: snapshot, origin: .remoteProjection)])
+        } catch {
+            BrowserSessionDiagnostics.logger.error(
+                "Failed to save remote projection: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 }
 
@@ -290,6 +305,9 @@ final class BrowserEphemeralSessionStore: BrowserTabSessionSnapshotStoring, Brow
     }
 
     func saveSnapshot(_: BrowserTabSessionSnapshot) {}
+
+    /// Private browsing deliberately has no durable session or sync outbox.
+    func writeSessionBatch(_: [BrowserSessionWrite]) {}
 
     func loadSelectedTabIndex(tabCount _: Int) -> Int? {
         nil
@@ -367,22 +385,30 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
     }
 
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
-        guard let snapshotURL else {
-            return
-        }
-
         do {
-            try fileManager.createDirectory(
-                at: snapshotURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let data = try encoder.encode(snapshot)
-            try data.write(to: snapshotURL, options: .atomic)
+            try writeSessionBatch([BrowserSessionWrite(snapshot: snapshot, origin: .local(syncMove: nil))])
         } catch {
             BrowserSessionDiagnostics.logger.error(
                 "Failed to save session snapshot: \(error.localizedDescription, privacy: .public)"
             )
         }
+    }
+
+    func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws {
+        guard !writes.isEmpty else { return }
+        guard let snapshotURL else { throw BrowserSessionWriteError.missingSnapshotURL }
+        var finalData: Data?
+        // Validate every action before touching the existing file, including an
+        // invalid intermediate snapshot followed by an otherwise valid last one.
+        for write in writes {
+            try write.validate()
+            finalData = try encoder.encode(write.snapshot)
+        }
+        guard let finalData else { return }
+        try fileManager.createDirectory(
+            at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try finalData.write(to: snapshotURL, options: .atomic)
     }
 
     // MARK: Private

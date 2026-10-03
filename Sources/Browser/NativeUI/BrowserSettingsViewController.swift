@@ -83,6 +83,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         currentProfileID: String,
         accountStore: BrowserAccountStore?,
         pane: BrowserSettingsPane,
+        canDeleteProfile: @escaping (BrowserProfile) -> Bool = { _ in true },
         openProfile: @escaping (BrowserProfile) -> Void,
         openURL: @escaping (URL) -> Void
     ) {
@@ -93,6 +94,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         self.currentProfileID = currentProfileID
         self.accountStore = accountStore
         self.pane = pane
+        self.canDeleteProfile = canDeleteProfile
         self.openProfile = openProfile
         self.openURL = openURL
         super.init(nibName: nil, bundle: nil)
@@ -159,6 +161,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let currentProfileID: String
     private let accountStore: BrowserAccountStore?
     private let pane: BrowserSettingsPane
+    private let canDeleteProfile: (BrowserProfile) -> Bool
     private let openProfile: (BrowserProfile) -> Void
     private let openURL: (URL) -> Void
     private let defaultBrowserService = BrowserDefaultBrowserService()
@@ -166,6 +169,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let searchField = NSSearchField()
     private var observations = Set<AnyCancellable>()
     private var updateBindings = [() -> Void]()
+    private var profileDeleteButtons = [(BrowserProfile, BrowserActionButton)]()
     private let shortcutsBody = NSStackView()
     private let profilesBody = NSStackView()
     private let accountsBody = NSStackView()
@@ -178,7 +182,14 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         publisher.receive(on: RunLoop.main).sink { action() }.store(in: &observations)
     }
 
-    private func syncControls() { updateBindings.forEach { $0() } }
+    private func syncControls() {
+        updateBindings.forEach { $0() }
+        for (profile, button) in profileDeleteButtons {
+            let isClosed = canDeleteProfile(profile)
+            button.isEnabled = profile.id != currentProfileID && !profile.isDefault && isClosed
+            button.toolTip = isClosed ? nil : BrowserStrings.sessionRecoveryCloseProfileBeforeDeleting
+        }
+    }
 
     private func configureContent() {
         switch pane {
@@ -463,6 +474,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     private func refreshProfiles() {
         guard pane == .profiles else { return }
+        profileDeleteButtons.removeAll()
         let rows = profileStore.profiles.map { profile -> NSView in
             let icon = NSImageView(image: NSImage(
                 systemSymbolName: "person.crop.circle",
@@ -492,10 +504,17 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             }
             backup.isEnabled = profileBackupInProgressID == nil
             let delete = BrowserActionButton(BrowserStrings.settingsDeleteProfile) { [weak self] in
-                _ = self?.profileStore.deleteProfile(profile)
+                guard let self, profile.id != currentProfileID, !profile.isDefault,
+                      canDeleteProfile(profile) else { return }
+                _ = profileStore.deleteProfile(profile)
             }
+            delete.setAccessibilityIdentifier("browser.settings.profile.delete.\(profile.id)")
             delete.contentTintColor = .systemRed
-            delete.isEnabled = profile.id != currentProfileID && !profile.isDefault
+            profileDeleteButtons.append((profile, delete))
+            delete.isEnabled = profile.id != currentProfileID && !profile.isDefault && canDeleteProfile(profile)
+            if !canDeleteProfile(profile) {
+                delete.toolTip = BrowserStrings.sessionRecoveryCloseProfileBeforeDeleting
+            }
             items += [backup, delete]
             let label = BrowserNativeControls.stack([icon, title], orientation: .horizontal, spacing: 10)
             let actions = BrowserNativeControls.stack(items, orientation: .horizontal, spacing: 16)

@@ -208,6 +208,7 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var profileDisplayName: String
     @Published private(set) var availableProfileCount: Int
     @Published private(set) var zoomPercent = 100
+    @Published private(set) var sessionPersistenceFailure: BrowserSessionPersistenceFailure?
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
     let shortcutStore: BrowserShortcutStore
@@ -263,6 +264,10 @@ enum BrowserWindowMode: Equatable {
 
     private(set) var isContextReady = false
     var isShuttingDown = false
+
+    var hasUncommittedSessionWrites: Bool {
+        !hasDiscardedSessionForClosure && (!sessionWriteBuffer.writes.isEmpty || sessionPersistenceFailure != nil)
+    }
 
     var extensionSidePanelHostView: NSView? {
         extensionSidePanelDriver?.hostView
@@ -444,6 +449,39 @@ enum BrowserWindowMode: Equatable {
         activeSpace?.isPinnedSectionCollapsed ?? false
     }
 
+    @discardableResult func retrySessionPersistence() -> Bool {
+        guard !hasDiscardedSessionForClosure, !sessionWriteBuffer.isTerminal else { return false }
+        guard !sessionWriteBuffer.writes.isEmpty else { return sessionPersistenceFailure == nil }
+        let hasLocalWrite = sessionWriteBuffer.writes.contains {
+            if case .local = $0.origin {
+                return true
+            }
+            return false
+        }
+        return commitSessionWrites(sessionWriteBuffer.writes, schedulesPush: hasLocalWrite)
+    }
+
+    /// Closure preflight is reversible. Teardown must only run after it succeeds
+    /// or the user explicitly chooses to discard the volatile session changes.
+    @discardableResult func prepareSessionForClosure() -> Bool {
+        guard !hasDiscardedSessionForClosure, isPersistenceEnabled else { return true }
+        guard !sessionWriteBuffer.isTerminal else { return false }
+        persistCurrentSessionIfAllowed()
+        isSessionClosurePrepared = !hasUncommittedSessionWrites
+        return isSessionClosurePrepared
+    }
+
+    func discardUnsavedSessionForClosure() {
+        hasDiscardedSessionForClosure = true
+        isPersistenceEnabled = false
+        deferredRemoteSyncSnapshot = nil
+        syncCoordinator?.setLocalPersistenceBlocked(true)
+    }
+
+    func sessionRecoverySnapshot() -> BrowserTabSessionSnapshot {
+        isApplyingRemoteSync ? snapshotPreservingPendingRemoteCreations() : currentSessionSnapshot()
+    }
+
     func webAppInstallMetadata(for tab: Tab) -> BrowserWebAppInstallMetadata? {
         guard
             tab.id == selectedTabID,
@@ -494,6 +532,12 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        // Close/quit already performed a reversible preflight. Do not introduce
+        // an unguarded second write after the controller approved destruction.
+        if !isSessionClosurePrepared, !hasDiscardedSessionForClosure {
+            persistCurrentSessionIfAllowed()
+        }
+        guard !hasUncommittedSessionWrites else { return }
         automaticArchivalTimer?.invalidate()
         automaticArchivalTimer = nil
         webAppManifestLoadTask?.cancel()
@@ -503,7 +547,6 @@ enum BrowserWindowMode: Equatable {
         extensionActionPopupDriver?.closeAllPopups()
         extensionSidePanel = nil
         persistSidebarWidthPreferenceIfAllowed()
-        persistCurrentSessionIfAllowed()
         isShuttingDown = true
         isPersistenceEnabled = false
     }
@@ -1644,6 +1687,12 @@ enum BrowserWindowMode: Equatable {
 
     func applyRemoteSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
         guard !isShuttingDown else { return }
+        guard !hasUncommittedSessionWrites, !hasDiscardedSessionForClosure else {
+            // The coordinator must gate its durable commit too. Never retain a
+            // stale projection to replay over successfully retried local actions.
+            deferredRemoteSyncSnapshot = nil
+            return
+        }
         guard isContextReady, !isRestoringSession else {
             deferredRemoteSyncSnapshot = snapshot
             return
@@ -2106,6 +2155,9 @@ enum BrowserWindowMode: Equatable {
     private var pendingReopenedAppTabIDs = [String: String]()
     private var pendingReopenedPinnedTabIDs = [String: String]()
     private var isPersistenceEnabled = true
+    private var sessionWriteBuffer = BrowserSessionWriteBuffer()
+    private var hasDiscardedSessionForClosure = false
+    private var isSessionClosurePrepared = false
     private var isRestoringSession = false
     private var isApplyingRemoteSync = false
     private var deferredRemoteSyncSnapshot: BrowserTabSessionSnapshot?
@@ -2217,23 +2269,22 @@ enum BrowserWindowMode: Equatable {
             selectActiveTabForSelectedSpace()
         }
         updateWindowTitle()
-        if needsRemoteFallbackPublication {
-            sessionSnapshotStore.saveSnapshot(currentSessionSnapshot())
-            needsRemoteFallbackPublication = false
-        } else {
-            sessionSnapshotStore.saveRemoteProjectionSnapshot(currentSessionSnapshot())
-        }
-        sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
-        sessionPreferencesStore.saveSelectedTabIndex(selectedTabIndex)
+        let origin: BrowserSessionWrite.Origin = needsRemoteFallbackPublication
+            ? .local(syncMove: nil)
+            : .remoteProjection
+        let schedulesPush = hasLocalChangesDuringRemoteProjection || needsRemoteFallbackPublication
+        needsRemoteFallbackPublication = false
         remoteProjectionSnapshot = nil
         isApplyingRemoteSync = false
-        if hasLocalChangesDuringRemoteProjection {
-            hasLocalChangesDuringRemoteProjection = false
-            syncCoordinator?.schedulePush(snapshot: currentSessionSnapshot())
-        }
+        hasLocalChangesDuringRemoteProjection = false
+        _ = persistSessionWrite(.init(snapshot: currentSessionSnapshot(), origin: origin), schedulesPush: schedulesPush)
     }
 
     @discardableResult private func drainDeferredRemoteSyncSnapshot() -> Bool {
+        guard !hasUncommittedSessionWrites, !hasDiscardedSessionForClosure else {
+            deferredRemoteSyncSnapshot = nil
+            return false
+        }
         guard isContextReady, !isRestoringSession, let snapshot = deferredRemoteSyncSnapshot else { return false }
         deferredRemoteSyncSnapshot = nil
         applyRemoteSyncSnapshot(snapshot)
@@ -2447,17 +2498,64 @@ enum BrowserWindowMode: Equatable {
         } else {
             snapshot = currentSessionSnapshot()
         }
-        if let syncMove {
-            sessionSnapshotStore.saveSnapshot(snapshot, syncMove: syncMove)
-        } else {
-            sessionSnapshotStore.saveSnapshot(snapshot)
+        _ = persistSessionWrite(
+            .init(snapshot: snapshot, origin: .local(syncMove: syncMove)),
+            schedulesPush: !isApplyingRemoteSync
+        )
+    }
+
+    @discardableResult private func persistSessionWrite(_ write: BrowserSessionWrite, schedulesPush: Bool) -> Bool {
+        isSessionClosurePrepared = false
+        guard isPersistenceEnabled, !hasDiscardedSessionForClosure, !sessionWriteBuffer.isTerminal else { return false }
+        if !sessionWriteBuffer.writes.isEmpty {
+            guard sessionWriteBuffer.append(write) else {
+                publishSessionPersistenceFailure()
+                return false
+            }
+            return commitSessionWrites(sessionWriteBuffer.writes, schedulesPush: schedulesPush)
         }
+        return commitSessionWrites([write], schedulesPush: schedulesPush)
+    }
+
+    @discardableResult private func commitSessionWrites(_ writes: [BrowserSessionWrite], schedulesPush: Bool) -> Bool {
+        guard !writes.isEmpty, !sessionWriteBuffer.isTerminal, !hasDiscardedSessionForClosure else { return false }
+        let wasBlocked = hasUncommittedSessionWrites
+        do {
+            try sessionSnapshotStore.writeSessionBatch(writes)
+        } catch {
+            if sessionWriteBuffer.writes.isEmpty {
+                for write in writes where !sessionWriteBuffer.isTerminal {
+                    sessionWriteBuffer.append(write)
+                }
+            }
+            sessionWriteBuffer.recordFailure(error)
+            publishSessionPersistenceFailure()
+            return false
+        }
+        sessionWriteBuffer.clearAfterSuccess()
+        sessionPersistenceFailure = nil
+        if wasBlocked {
+            deferredRemoteSyncSnapshot = nil
+            syncCoordinator?.setLocalPersistenceBlocked(false)
+            syncCoordinator?.schedulePull()
+        }
+        // Preferences remain a separate best-effort store. They are only written
+        // after the snapshot/outbox commits; this does not make them atomic with it.
         sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
         let selectedSyncID = selectedTab?.syncID
-        sessionPreferencesStore.saveSelectedTabIndex(snapshot.tabs.firstIndex { $0.id == selectedSyncID })
-        if !isApplyingRemoteSync {
-            syncCoordinator?.schedulePush(snapshot: snapshot)
+        if let snapshot = writes.last?.snapshot {
+            sessionPreferencesStore.saveSelectedTabIndex(snapshot.tabs.firstIndex { $0.id == selectedSyncID })
+            if schedulesPush, !isApplyingRemoteSync {
+                syncCoordinator?.schedulePush(snapshot: snapshot)
+            }
         }
+        return true
+    }
+
+    private func publishSessionPersistenceFailure() {
+        sessionPersistenceFailure = sessionWriteBuffer.failure
+        deferredRemoteSyncSnapshot = nil
+        syncCoordinator?.setLocalPersistenceBlocked(true)
     }
 
     private func snapshotPreservingPendingRemoteCreations() -> BrowserTabSessionSnapshot {

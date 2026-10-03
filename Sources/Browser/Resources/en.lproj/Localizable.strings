@@ -306,3 +306,13 @@
 "browser.save_page.format.single_file" = "Webpage, Single File";
 "browser.save_page.format.html_only" = "Webpage, HTML Only";
 "browser.save_page.default_filename" = "page";
+"browser.session.recovery.title" = "Tabs and Spaces Aren't Saved";
+"browser.session.recovery.retry_message" = "Your changes are still in this window. Retry saving them, or save a copy before closing. Sync is paused until saving succeeds.";
+"browser.session.recovery.terminal_message" = "These changes can't be saved. Save a copy before closing without saving. Sync is paused to protect your changes.";
+"browser.session.recovery.retry" = "Retry";
+"browser.session.recovery.save_copy" = "Save a Copy…";
+"browser.session.recovery.export_failed" = "Unable to Save Session Copy";
+"browser.session.recovery.close_title" = "Close Without Saving Your Changes?";
+"browser.session.recovery.close_message" = "Some changes to tabs and Spaces have not been saved. Cancel to return to your windows and save a copy. Closing without saving loses those changes.";
+"browser.session.recovery.close_without_saving" = "Close Without Saving";
+"browser.session.recovery.close_profile_before_deleting" = "Close this profile's window before deleting it.";

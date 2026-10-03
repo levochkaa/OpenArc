@@ -470,20 +470,21 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     func accountSessionDidChange(_ session: BrowserAuthSession?) {
-        generation &+= 1
         activeSession = session
-        pendingPushTask?.cancel()
-        pendingPushTask = nil
-        processingTask?.cancel()
-        pollTask?.cancel()
-        pollTask = nil
-        retryTask?.cancel()
-        retryTask = nil
-        retryAttempt = 0
-        pendingPushContext = nil
-        pendingPullContext = nil
-        supportedPushVersions = []
+        invalidatePendingRequests()
         if session != nil {
+            schedulePull()
+            startPolling()
+        }
+    }
+
+    func setLocalPersistenceBlocked(_ blocked: Bool) {
+        guard isLocalPersistenceBlocked != blocked else { return }
+        isLocalPersistenceBlocked = blocked
+        // A response from before a failed write stays stale even if the write
+        // recovers before that response arrives. The durable queue is untouched.
+        invalidatePendingRequests()
+        if !blocked {
             schedulePull()
             startPolling()
         }
@@ -554,6 +555,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     private let pollInterval: Duration?
     private let retryDelay: Duration?
     private var activeSession: BrowserAuthSession?
+    private var isLocalPersistenceBlocked = false
     private var generation: UInt64 = 0
     private var supportedPushVersions = Set<Int>()
     private var pendingPushTask: Task<Void, Never>?
@@ -565,12 +567,29 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     private var pendingPullContext: RequestContext?
     private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
 
+    private func invalidatePendingRequests() {
+        generation &+= 1
+        pendingPushTask?.cancel()
+        pendingPushTask = nil
+        // Keep the worker handle until it returns. A transport may deliver a
+        // response after cancellation; starting a second worker would overlap it.
+        processingTask?.cancel()
+        pollTask?.cancel()
+        pollTask = nil
+        clearRetry()
+        pendingPushContext = nil
+        pendingPullContext = nil
+        supportedPushVersions = []
+    }
+
     private func owner(for session: BrowserAuthSession) -> BrowserSyncOwner {
         BrowserSyncOwner(baseURL: remoteClient.baseURL, userID: session.userID)
     }
 
     private func currentContext() -> RequestContext? {
-        guard let session = activeSession, session == authSessionStore.loadSession() else { return nil }
+        guard !isLocalPersistenceBlocked,
+              let session = activeSession, session == authSessionStore.loadSession()
+        else { return nil }
         do {
             guard try bindingState(for: session) == .enabled else { return nil }
             return RequestContext(session: session, owner: owner(for: session), generation: generation)
@@ -645,7 +664,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     private func pushPending(context: RequestContext) async {
-        guard isCurrent(context), !supportedPushVersions.isEmpty else { return }
+        guard isCurrent(context), !Task.isCancelled, !supportedPushVersions.isEmpty else { return }
         do {
             var acknowledgedAny = false
             while isCurrent(context), !Task.isCancelled,
@@ -659,19 +678,21 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 switch mutation {
                 case .legacy(let payload):
                     let response = try await remoteClient.push(mutation: payload, authSession: context.session)
+                    guard isCurrent(context), !Task.isCancelled else { return }
                     guard response.protocolVersion == 2, response.mutationID == payload.id, response.cursor >= 0 else {
                         throw BrowserRemoteSyncError.invalidMutationReceipt
                     }
                     events = response.events
                 case .semantic(let payload):
                     let response = try await remoteClient.push(mutation: payload, authSession: context.session)
+                    guard isCurrent(context), !Task.isCancelled else { return }
                     guard response.protocolVersion == 3, response.mutationID == payload.id, response.cursor >= 0,
                           response.outcomes.count == payload.operations.count,
                           Set(response.outcomes.map(\.operationIndex)) == Set(payload.operations.indices)
                     else { throw BrowserRemoteSyncError.invalidMutationReceipt }
                     events = response.events
                 }
-                guard isCurrent(context) else { return }
+                guard isCurrent(context), !Task.isCancelled else { return }
                 let previous = try localStore.loadSnapshotForSync(for: context.owner)
                 let projected = try localStore.acknowledgeSyncMutation(
                     id: mutation.id,
@@ -682,6 +703,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 if previous != projected {
                     snapshotApplier?.applyRemoteSyncSnapshot(projected)
                 }
+                // Model projection can itself fail to persist and synchronously
+                // block sync. Do not restore work from the invalidated generation.
+                guard isCurrent(context), !Task.isCancelled else { return }
                 acknowledgedAny = true
                 if pendingPullContext != nil {
                     pendingPushContext = context
@@ -704,7 +728,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     private func pull(context: RequestContext) async {
-        guard isCurrent(context) else { return }
+        guard isCurrent(context), !Task.isCancelled else { return }
         supportedPushVersions = []
         do {
             var cursor = try localStore.syncCursor(for: context.owner)
@@ -712,7 +736,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             var advertisedVersions: Set<Int>?
             while true {
                 let response = try await remoteClient.pull(cursor: cursor, authSession: context.session)
-                guard isCurrent(context) else { return }
+                guard isCurrent(context), !Task.isCancelled else { return }
                 guard response.protocolVersion == 2 else {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
@@ -743,6 +767,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             if previous != projected {
                 snapshotApplier?.applyRemoteSyncSnapshot(projected)
             }
+            guard isCurrent(context), !Task.isCancelled else { return }
             supportedPushVersions = versions
             if try !localStore.pendingSyncQueue(for: context.owner, limit: 1).isEmpty {
                 pendingPushContext = context

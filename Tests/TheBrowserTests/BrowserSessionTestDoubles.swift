@@ -255,6 +255,28 @@ final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
     var loadedSnapshot: BrowserTabSessionSnapshot?
     private(set) var savedSnapshots = [BrowserTabSessionSnapshot]()
     private(set) var savedSyncMoves = [BrowserSyncMoveIntent]()
+    var sessionWriteError: Error?
+    private(set) var attemptedSessionWriteBatches = [[BrowserSessionWrite]]()
+    private(set) var savedSessionWriteBatches = [[BrowserSessionWrite]]()
+
+    func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws {
+        attemptedSessionWriteBatches.append(writes)
+        if let sessionWriteError {
+            throw sessionWriteError
+        }
+        savedSessionWriteBatches.append(writes)
+        for write in writes {
+            switch write.origin {
+            case .local(let syncMove):
+                if let syncMove {
+                    saveSnapshot(write.snapshot, syncMove: syncMove)
+                } else {
+                    saveSnapshot(write.snapshot)
+                }
+            case .remoteProjection: savedSnapshots.append(write.snapshot)
+            }
+        }
+    }
 
     func loadSnapshot() -> BrowserTabSessionSnapshot? {
         loadedSnapshot

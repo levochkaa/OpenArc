@@ -5,6 +5,54 @@ import Testing
 @MainActor struct BrowserNativeSettingsTests {
     // MARK: Internal
 
+    @Test func openProfileCannotBeDeletedEvenIfItOpensAfterSettingsRenders() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let profile = fixture.profiles.createProfile()
+        var openProfiles = Set<String>()
+        let controller = BrowserSettingsViewController(
+            model: fixture.model,
+            profileStore: fixture.profiles,
+            currentProfileID: BrowserProfile.defaultProfile.id,
+            accountStore: nil,
+            pane: .profiles,
+            canDeleteProfile: { !openProfiles.contains($0.id) },
+            openProfile: { _ in },
+            openURL: { _ in }
+        )
+        let delete = try #require(find(
+            "browser.settings.profile.delete.\(profile.id)",
+            in: controller.view
+        ) as? BrowserActionButton)
+        #expect(delete.isEnabled)
+        openProfiles.insert(profile.id)
+        delete.performClick(nil)
+        #expect(fixture.profiles.profile(withID: profile.id) != nil)
+
+        let freshController = BrowserSettingsViewController(
+            model: fixture.model,
+            profileStore: fixture.profiles,
+            currentProfileID: BrowserProfile.defaultProfile.id,
+            accountStore: nil,
+            pane: .profiles,
+            canDeleteProfile: { !openProfiles.contains($0.id) },
+            openProfile: { _ in },
+            openURL: { _ in }
+        )
+        let disabled = try #require(find(
+            "browser.settings.profile.delete.\(profile.id)",
+            in: freshController.view
+        ) as? BrowserActionButton)
+        #expect(!disabled.isEnabled)
+        #expect(disabled.toolTip == BrowserStrings.sessionRecoveryCloseProfileBeforeDeleting)
+        openProfiles.remove(profile.id)
+        fixture.model.updateProfilePresentation(profile: .defaultProfile, availableProfileCount: 2)
+        try await waitUntil { disabled.isEnabled }
+        #expect(disabled.toolTip == nil)
+        delete.performClick(nil)
+        #expect(fixture.profiles.profile(withID: profile.id) == nil)
+    }
+
     @Test func togglesAndPopupsWriteToExistingPreferencesAndReceiveExternalChanges() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

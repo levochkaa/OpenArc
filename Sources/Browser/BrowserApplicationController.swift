@@ -84,8 +84,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
-    public func windowShouldClose(_: NSWindow) -> Bool {
-        true
+    public func windowShouldClose(_ window: NSWindow) -> Bool {
+        let model = profileWindowSessions.first { $0.window === window }?.chromeModel
+            ?? incognitoWindowSessions.first { $0.window === window }?.chromeModel
+            ?? (webAppWindowSession?.window === window ? webAppWindowSession?.chromeModel : nil)
+        guard let model else { return true }
+        guard BrowserSessionClosureGuard.prepare(models: { [model] }, confirmation: confirmUnsavedSessionClosure) else {
+            return false
+        }
+        model.prepareForTermination()
+        return true
     }
 
     public func windowWillClose(_ notification: Notification) {
@@ -419,6 +427,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var hasReceivedBrowserContext = false
     private var isTerminationRequested = false
     private var isQuitWarningPresented = false
+    private var isSessionClosureConfirmationPresented = false
     private var didConfirmTerminationWarning = false
     private var layoutIndependentKeyMonitor: Any?
     private var shortcutStoreCancellable: AnyCancellable?
@@ -501,6 +510,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private func beginApplicationTermination() {
+        guard !isSessionClosureConfirmationPresented else { return }
+        guard BrowserSessionClosureGuard.prepare(
+            models: { allChromeModels },
+            confirmation: confirmUnsavedSessionClosure
+        ) else {
+            didConfirmTerminationWarning = false
+            return
+        }
         isTerminationRequested = true
         handleApplicationWillTerminate()
         for session in profileWindowSessions {
@@ -517,6 +534,25 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
 
             NSApp.stop(nil)
+        }
+    }
+
+    private func confirmUnsavedSessionClosure(_ models: [BrowserChromeModel]) -> BrowserSessionClosureGuard.Decision {
+        guard !isSessionClosureConfirmationPresented else { return .cancel }
+        isSessionClosureConfirmationPresented = true
+        defer { isSessionClosureConfirmationPresented = false }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = BrowserStrings.sessionRecoveryCloseTitle
+        alert.informativeText = BrowserStrings.sessionRecoveryCloseMessage
+        alert.addButton(withTitle: BrowserStrings.cancelAction)
+        let retry = alert.addButton(withTitle: BrowserStrings.sessionRecoveryRetry)
+        retry.isEnabled = models.allSatisfy { $0.sessionPersistenceFailure?.isRetryable == true }
+        alert.addButton(withTitle: BrowserStrings.sessionRecoveryCloseWithoutSaving)
+        switch alert.runModal() {
+        case .alertSecondButtonReturn: return .retry
+        case .alertThirdButtonReturn: return .discardUnsaved
+        default: return .cancel
         }
     }
 
@@ -1422,6 +1458,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 currentProfileID: currentProfileID,
                 accountStore: accountStore,
                 pane: pane,
+                canDeleteProfile: { [weak self] profile in
+                    guard let self else { return false }
+                    return !profileWindowSessions.contains { $0.profile.id == profile.id }
+                },
                 openProfile: { [weak self] profile in self?.openProfile(profile) },
                 openURL: { [weak self] url in self?.openBrowserInternalPage(url) }
             )
