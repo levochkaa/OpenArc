@@ -4,6 +4,99 @@ import Testing
 import UIKit
 
 extension BrowserMobileUITests {
+    @Test func nativeClearRejectsAnotherWindowsExportThenPreservesLaterCompletion() async throws {
+        try await withDownloadRemovalFixture { f in
+            var pickers = [UIDocumentPickerViewController]()
+            let first = try DownloadRemovalHost(downloads: f.downloads)
+            let second = try DownloadRemovalHost(downloads: f.downloads) { pickers.append($0) }
+            defer { first.close()
+                second.close()
+            }
+            try await removalWait { !f.downloads.isLoading }
+            let busyAlert = try await first.requestClear()
+            #expect(busyAlert.message?.contains("2") == true)
+            try second.export(f.first.id)
+            try await removalWait { pickers.count == 1 }
+            first.controller.confirmClearCompleted(dismissing: busyAlert)
+            try await removalWait {
+                (removalView("browser.downloads.status", in: first.controller.view) as? UILabel)?.text ==
+                    "Finish any Save to Files actions or retry pending deletions, then try Clear Completed again."
+            }
+            #expect(!f.downloads.canRetryPersistence && f.downloads.entries.count == 2)
+            #expect(try Data(contentsOf: f.firstURL) == f.firstBytes)
+            #expect(try Data(contentsOf: f.secondURL) == f.secondBytes)
+            let picker = try #require(pickers.first)
+            picker.delegate?.documentPickerWasCancelled?(picker)
+            await f.downloads.retryPersistence()
+            #expect(f.downloads.entries.count == 2)
+
+            let alert = try await first.requestClear()
+            #expect(alert.message?.contains("2") == true)
+            let laterBytes = Data("Completed while confirmation was open".utf8)
+            let later = try await f.completeLater(bytes: laterBytes)
+            #expect(f.downloads.entries.count == 3)
+            // An old alert callback cannot consume the newer confirmation.
+            first.controller.confirmClearCompleted(dismissing: busyAlert)
+            #expect(first.controller.presentedViewController === alert)
+            first.controller.confirmClearCompleted(dismissing: alert)
+            try await removalWait { f.downloads.entries.map(\.id) == [later.id] }
+            try await removalWait { first.rowCount == 1 && second.rowCount == 1 }
+            #expect(!FileManager.default.fileExists(atPath: f.firstURL.path))
+            #expect(!FileManager.default.fileExists(atPath: f.secondURL.path))
+            #expect(try await Data(contentsOf: f.downloads.exportURL(id: later.id)) == laterBytes)
+            #expect(f.downloads.error == nil && !f.downloads.canRetryPersistence)
+            for host in [first, second] {
+                #expect(host.controller.tableView.tableHeaderView == nil)
+            }
+            let reopened = BrowserMobileDownloads(directory: f.directory)
+            await reopened.load()
+            #expect(reopened.entries.map(\.id) == [later.id])
+        }
+    }
+
+    @Test func failedNativeClearRetriesItsOriginalBatchFromAnotherWindow() async throws {
+        try await withDownloadRemovalFixture { f in
+            let first = try DownloadRemovalHost(downloads: f.downloads)
+            let second = try DownloadRemovalHost(downloads: f.downloads)
+            defer { first.close()
+                second.close()
+            }
+            try await removalWait { !f.downloads.isLoading }
+            let manifest = f.directory.appendingPathComponent("downloads.json")
+            let original = try Data(contentsOf: manifest)
+            let alert = try await first.requestClear()
+            try FileManager.default.removeItem(at: manifest)
+            try FileManager.default.createDirectory(at: manifest, withIntermediateDirectories: false)
+            first.controller.confirmClearCompleted(dismissing: alert)
+            try await removalWait { f.downloads.canRetryPersistence && !f.downloads.isClearingCompleted }
+            #expect(f.downloads.entries.count == 2)
+            #expect(try Data(contentsOf: f.firstURL) == f.firstBytes)
+            #expect(try Data(contentsOf: f.secondURL) == f.secondBytes)
+            #expect(!f.downloads.canDelete(id: f.first.id) && !f.downloads.canDelete(id: f.second.id))
+            try FileManager.default.removeItem(at: manifest)
+            try original.write(to: manifest, options: .atomic)
+            let laterBytes = Data("Must survive Retry".utf8)
+            let later = try await f.completeLater(bytes: laterBytes)
+            #expect(f.downloads.entries.count == 3 && f.downloads.canDelete(id: later.id))
+            #expect(!f.downloads.canClearCompleted)
+            let retry = try #require(removalView("browser.downloads.retry", in: second.controller.view) as? UIButton)
+            try #require(!retry.isHidden && retry.isEnabled)
+            retry.sendActions(for: .touchUpInside)
+            try await removalWait { f.downloads.entries.map(\.id) == [later.id] && !f.downloads.canRetryPersistence }
+            try await removalWait { first.rowCount == 1 && second.rowCount == 1 }
+            #expect(f.downloads.error == nil && f.downloads.canClearCompleted)
+            #expect(!FileManager.default.fileExists(atPath: f.firstURL.path))
+            #expect(!FileManager.default.fileExists(atPath: f.secondURL.path))
+            for host in [first, second] {
+                #expect(host.controller.tableView.tableHeaderView == nil)
+            }
+            let reopened = BrowserMobileDownloads(directory: f.directory)
+            await reopened.load()
+            #expect(reopened.entries.map(\.id) == [later.id])
+            #expect(try await Data(contentsOf: reopened.exportURL(id: later.id)) == laterBytes)
+        }
+    }
+
     @Test func twoDownloadWindowsHoldIndependentExportsBeforeDeletingTheCapturedFile() async throws {
         try await withDownloadRemovalFixture { f in
             var firstPickers = [UIDocumentPickerViewController]()
@@ -140,12 +233,14 @@ extension BrowserMobileUITests {
 
     init(directory: URL) {
         self.directory = directory
-        self.downloads = BrowserMobileDownloads(directory: directory)
+        self.disk = BrowserMobileDownloadDisk(directory: directory)
+        self.downloads = BrowserMobileDownloads(disk: disk)
     }
 
     // MARK: Internal
 
     let directory: URL
+    let disk: BrowserMobileDownloadDisk
     let downloads: BrowserMobileDownloads
     let firstBytes = Data("First completed file".utf8)
     let secondBytes = Data("Second file with the same display name".utf8)
@@ -163,7 +258,6 @@ extension BrowserMobileUITests {
     }
 
     func prepare() async throws {
-        let disk = BrowserMobileDownloadDisk(directory: directory)
         let firstFile = try await disk.prepare(id: first.id, filename: first.filename)
         try firstBytes.write(to: firstFile)
         first = try await disk.complete(first)
@@ -172,6 +266,18 @@ extension BrowserMobileUITests {
         second = try await disk.complete(second)
         await downloads.load()
         try #require(downloads.entries.count == 2 && downloads.error == nil)
+    }
+
+    func completeLater(bytes: Data) async throws -> BrowserMobileDownload {
+        let entry = BrowserMobileDownload(
+            id: UUID(), filename: "later.txt", sourceURL: URL(string: "https://example.com/later"),
+            status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil
+        )
+        let file = try await disk.prepare(id: entry.id, filename: entry.filename)
+        try bytes.write(to: file)
+        let saved = try await disk.complete(entry)
+        await downloads.load()
+        return saved
     }
 }
 
@@ -232,6 +338,23 @@ extension BrowserMobileUITests {
         let alert = try #require(controller.presentedViewController as? UIAlertController)
         try await removalWait { !alert.isBeingPresented }
         #expect(alert.preferredStyle == .alert)
+        #expect(alert.actions.contains { $0.style == .cancel })
+        #expect(alert.actions.contains { $0.style == .destructive })
+        return alert
+    }
+
+    func requestClear() async throws -> UIAlertController {
+        let button = try #require(controller.navigationItem.leftBarButtonItems?.first {
+            $0.accessibilityIdentifier == "browser.downloads.clear-completed"
+        })
+        try await removalWait { button.isEnabled }
+        try #require(button.isEnabled)
+        let action = try #require(button.action)
+        #expect(UIApplication.shared.sendAction(action, to: button.target, from: button, for: nil))
+        try await removalWait { controller.presentedViewController is UIAlertController }
+        let alert = try #require(controller.presentedViewController as? UIAlertController)
+        try await removalWait { !alert.isBeingPresented }
+        #expect(alert.view.accessibilityIdentifier == "browser.downloads.clear-confirmation")
         #expect(alert.actions.contains { $0.style == .cancel })
         #expect(alert.actions.contains { $0.style == .destructive })
         return alert

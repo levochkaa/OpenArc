@@ -148,6 +148,58 @@ import WebKit
     }
 
     @Test(arguments: [false, true])
+    func clearCompletedPreservesDownloadsThatFinishAfterCapture(finishBeforeClear: Bool) async throws {
+        try await withDownloadWebKit { f in
+            let before = try f.store.loadSnapshotStrict()
+            let runtime = try #require(f.workspace.selectedTab?.runtimeID)
+            let view = try #require(f.engine.webView(for: runtime))
+            let history = view.backForwardList.backList.map(\.url)
+            for (index, element) in ["attribute", "attachment"].enumerated() {
+                _ = try await view.evaluateJavaScript("document.getElementById('\(element)').click()")
+                try await downloadWait {
+                    f.downloads.entries.count == index + 1 && f.downloads.entries.allSatisfy { $0.status == .completed }
+                }
+            }
+            let capturedIDs = Set(f.downloads.entries.map(\.id))
+            var oldFiles = [URL]()
+            for id in capturedIDs {
+                try await oldFiles.append(f.downloads.exportURL(id: id))
+            }
+            _ = try await view.evaluateJavaScript("document.getElementById('slow').click()")
+            try await downloadWait {
+                f.downloads.entries.contains { $0.status == .downloading && $0.receivedBytes > 0 }
+            }
+            let continuing = try #require(f.downloads.entries.first { !capturedIDs.contains($0.id) })
+            let scope = try #require(f.downloads.captureCompletedClear())
+            #expect(scope.ids == capturedIDs && scope.count == 2)
+            if finishBeforeClear {
+                f.server.finishSlowResponses()
+                try await downloadWait { f.downloads.entries.first { $0.id == continuing.id }?.status == .completed }
+            }
+            #expect(await f.downloads.clearCompleted(scope) == .removed)
+            #expect(f.downloads.entries.map(\.id) == [continuing.id])
+            #expect(oldFiles.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+            if !finishBeforeClear {
+                #expect(f.downloads.entries.first?.status == .downloading)
+                f.server.finishSlowResponses()
+                try await downloadWait { f.downloads.entries.first?.status == .completed }
+            }
+            let saved = try await f.downloads.exportURL(id: continuing.id)
+            #expect(try Data(contentsOf: saved) == DownloadHTTPFixture.slowBytes)
+            #expect(await f.downloads.clearCompleted(scope) == .removed)
+            #expect(f.downloads.entries.map(\.id) == [continuing.id])
+            #expect(f.engine.webView(for: runtime) === view)
+            #expect(view.backForwardList.backList.map(\.url) == history)
+            #expect(try await view.evaluateJavaScript("location.href") as? String == f.sourceURL.absoluteString)
+            #expect(try f.store.loadSnapshotStrict() == before)
+            let reopened = BrowserMobileDownloads(directory: f.downloadDirectory)
+            await reopened.load()
+            #expect(reopened.entries.map(\.id) == [continuing.id])
+            #expect(try await Data(contentsOf: reopened.exportURL(id: continuing.id)) == DownloadHTTPFixture.slowBytes)
+        }
+    }
+
+    @Test(arguments: [false, true])
     func profileTransferSurvivesTheSourceTabOrEngineClosing(shutdown: Bool) async throws {
         try await withDownloadWebKit { f in
             let runtime = try #require(f.workspace.selectedTab?.runtimeID)

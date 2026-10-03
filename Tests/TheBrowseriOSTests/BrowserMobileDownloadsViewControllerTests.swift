@@ -502,6 +502,22 @@ enum DownloadUIInvalidation: CaseIterable { case hidden, done, disconnected }
 
     var observerCount: Int { observers.count }
 
+    var canClearCompleted: Bool { !durableIDs.isEmpty && pendingRemoval == nil }
+    var isClearingCompleted: Bool { false }
+
+    func captureCompletedClear() -> BrowserMobileDownloadClearScope? {
+        canClearCompleted ? .init(ids: durableIDs, ownerID: clearOwnerID) : nil
+    }
+
+    func clearCompleted(_ scope: BrowserMobileDownloadClearScope) -> BrowserMobileDownloadClearResult {
+        let survivors = scope.ids.intersection(durableIDs)
+        guard survivors.allSatisfy({ canDelete(id: $0) }) else { return .busy }
+        entries.removeAll { survivors.contains($0.id) }
+        durableIDs.subtract(survivors)
+        notify()
+        return .removed
+    }
+
     func canDelete(id: UUID) -> Bool {
         durableIDs.contains(id) && entries.contains(where: { $0.id == id }) &&
             !deletingIDs.contains(id) && !leases.values.contains(id)
@@ -604,6 +620,7 @@ enum DownloadUIInvalidation: CaseIterable { case hidden, done, disconnected }
     // MARK: Private
 
     private let exportURL: URL
+    private let clearOwnerID = UUID()
     private var leases = [UUID: UUID]()
     private var deletingIDs = Set<UUID>()
     private var pendingRemoval: UUID?

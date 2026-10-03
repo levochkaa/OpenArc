@@ -16,6 +16,10 @@ import UIKit
     func canDelete(id: UUID) -> Bool
     func isDeleting(id: UUID) -> Bool
     func remove(id: UUID) async -> Bool
+    var canClearCompleted: Bool { get }
+    var isClearingCompleted: Bool { get }
+    func captureCompletedClear() -> BrowserMobileDownloadClearScope?
+    func clearCompleted(_ scope: BrowserMobileDownloadClearScope) async -> BrowserMobileDownloadClearResult
 }
 
 // MARK: - BrowserMobileDownloads + BrowserMobileDownloadsPresenting
@@ -66,6 +70,12 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         let done = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
         done.accessibilityIdentifier = "browser.downloads.done"
         navigationItem.rightBarButtonItem = done
+        let clear = UIBarButtonItem(
+            title: Self.localized("Clear Completed…"), style: .plain,
+            target: self, action: #selector(requestClearCompleted)
+        )
+        clear.accessibilityIdentifier = "browser.downloads.clear-completed"
+        navigationItem.leftBarButtonItem = clear
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
         statusLabel.adjustsFontForContentSizeCategory = true
         statusLabel.numberOfLines = 0
@@ -174,44 +184,83 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     }
 
     func confirmDeletion(id: UUID, dismissing alert: UIAlertController) {
-        guard deleteConfirmation === alert, deleteConfirmationID == id else { return }
-        let originalWindow = deleteConfirmationWindow
-        deleteConfirmation = nil
-        deleteConfirmationID = nil
-        deleteConfirmationWindow = nil
-        alert.dismiss(animated: true) { [weak self, weak originalWindow] in
-            guard let self, let originalWindow, viewIfLoaded?.window === originalWindow,
-                  canPresent, deleteTask == nil else { return }
+        guard case .delete(let capturedID) = confirmation?.action, capturedID == id else { return }
+        dismissConfirmation(alert) { owner, window in
+            let downloads = owner.downloads
             guard downloads.entries.contains(where: { $0.id == id }), downloads.canDelete(id: id) else {
-                interactionError = Self.localized("This download can no longer be deleted.")
-                interactionErrorDownloadID = id
-                render()
+                owner.interactionError = Self.localized("This download can no longer be deleted.")
+                owner.interactionErrorItemIDs = [id]
+                owner.render()
                 return
             }
-            interactionError = nil
-            deleteTask = Task { [weak self, downloads] in
+            owner.interactionError = nil
+            let generation = owner.presentationGeneration
+            owner.deleteTask = Task { [weak owner, weak window, downloads] in
+                guard owner?.canAdmitAction(in: window, generation: generation) == true else {
+                    owner?.deleteTask = nil
+                    owner?.render()
+                    return
+                }
                 let removed = await downloads.remove(id: id)
-                guard let self else { return }
-                deleteTask = nil
+                guard let owner else { return }
+                owner.deleteTask = nil
                 if !removed {
                     // Shared persistence errors must clear when another window
                     // retries successfully. Keep only local admission errors here.
-                    interactionError = downloads.error == nil
+                    owner.interactionError = downloads.error == nil
                         ? Self.localized("This download can no longer be deleted.")
                         : nil
-                    interactionErrorDownloadID = interactionError == nil ? nil : id
+                    owner.interactionErrorItemIDs = owner.interactionError == nil ? nil : [id]
                 }
-                render()
+                owner.render()
             }
+            owner.render()
         }
     }
 
     func cancelDeletion(dismissing alert: UIAlertController) {
-        guard deleteConfirmation === alert else { return }
-        deleteConfirmation = nil
-        deleteConfirmationID = nil
-        deleteConfirmationWindow = nil
-        alert.dismiss(animated: true)
+        guard case .delete = confirmation?.action else { return }
+        cancelConfirmation(alert)
+    }
+
+    func confirmClearCompleted(dismissing alert: UIAlertController) {
+        guard case .clear(let scope) = confirmation?.action else { return }
+        dismissConfirmation(alert) { owner, window in
+            owner.interactionError = nil
+            owner.interactionErrorItemIDs = nil
+            let generation = owner.presentationGeneration
+            owner.clearTask = Task { [weak owner, weak window, downloads = owner.downloads] in
+                guard owner?.canAdmitAction(in: window, generation: generation) == true else {
+                    owner?.clearTask = nil
+                    owner?.render()
+                    return
+                }
+                let result = await downloads.clearCompleted(scope)
+                guard let owner else { return }
+                owner.clearTask = nil
+                owner.interactionError =
+                    switch result {
+                    case .failed, .removed:
+                        // Persistence failures belong to the shared coordinator so
+                        // Retry in another window clears the same visible error.
+                        nil
+                    case .busy:
+                        Self.localized(
+                            "Finish any Save to Files actions or retry pending deletions, then try Clear Completed again."
+                        )
+                    case .invalidScope:
+                        Self.localized("This Clear Completed request is no longer available.")
+                    }
+                owner.interactionErrorItemIDs = owner.interactionError == nil ? nil : scope.ids
+                owner.render()
+            }
+            owner.render()
+        }
+    }
+
+    func cancelClearCompleted(dismissing alert: UIAlertController) {
+        guard case .clear = confirmation?.action else { return }
+        cancelConfirmation(alert)
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
@@ -225,9 +274,8 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     func invalidate() {
         guard !isClosing else { return }
         isClosing = true
-        deleteConfirmation = nil
-        deleteConfirmationID = nil
-        deleteConfirmationWindow = nil
+        presentationGeneration = UUID()
+        confirmation = nil
         exportPicker = nil
         cancelPendingExport()
         loadTask?.cancel()
@@ -249,19 +297,25 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     private var retryTask: Task<Void, Never>?
     private var exportTask: Task<Void, Never>?
     private var deleteTask: Task<Void, Never>?
-    private weak var deleteConfirmation: UIAlertController?
-    private var deleteConfirmationID: UUID?
-    private weak var deleteConfirmationWindow: UIWindow?
+    private var clearTask: Task<Void, Never>?
+    private var confirmation: DownloadConfirmation?
     private var exportAttempt: UUID?
     private var exportingID: UUID?
     private weak var exportPicker: UIDocumentPickerViewController?
     private var isClosing = false
+    private var presentationGeneration = UUID()
     private var sceneAllowsPresentation = true
     private var interactionError: String?
-    private var interactionErrorDownloadID: UUID?
+    private var interactionErrorItemIDs: Set<UUID>?
     private let statusLabel = UILabel()
     private let retryButton = UIButton(type: .system)
     private let statusStack = UIStackView()
+
+    private var hasPendingAction: Bool {
+        deleteTask != nil || clearTask != nil || retryTask != nil || exportingID != nil
+    }
+
+    private var canStartAction: Bool { canPresent && !hasPendingAction && confirmation == nil }
 
     private var canPresent: Bool {
         guard !isClosing, sceneAllowsPresentation, let window = viewIfLoaded?.window, !window.isHidden,
@@ -279,11 +333,16 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         NSLocalizedString(key, tableName: "Mobile", comment: "Downloads")
     }
 
+    private func canAdmitAction(in window: UIWindow?, generation: UUID) -> Bool {
+        guard let window else { return false }
+        return presentationGeneration == generation && viewIfLoaded?.window === window && canPresent
+    }
+
     private func render() {
         guard isViewLoaded, !isClosing else { return }
-        if let id = interactionErrorDownloadID, !downloads.entries.contains(where: { $0.id == id }) {
+        if let ids = interactionErrorItemIDs, !downloads.entries.contains(where: { ids.contains($0.id) }) {
             interactionError = nil
-            interactionErrorDownloadID = nil
+            interactionErrorItemIDs = nil
         }
         let previousIDs = entries.map(\.id)
         entries = downloads.entries
@@ -300,7 +359,9 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             ? Self.localized("Loading Downloads…")
             : entries.isEmpty ? Self.localized("No Downloads") : nil)
         retryButton.isHidden = !downloads.canRetryPersistence
-        retryButton.isEnabled = retryTask == nil && !downloads.isLoading
+        retryButton.isEnabled = !hasPendingAction && confirmation == nil && !downloads.isLoading
+        navigationItem.leftBarButtonItem?.isEnabled = canStartAction && downloads.canClearCompleted &&
+            !downloads.isClearingCompleted
         statusStack.isHidden = statusLabel.text == nil && retryButton.isHidden
         sizeStatusHeader()
     }
@@ -332,7 +393,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     }
 
     @discardableResult private func requestDeletion(id: UUID) -> Bool {
-        guard canPresent, let window = view.window, deleteTask == nil, deleteConfirmation == nil,
+        guard canStartAction, let window = view.window,
               downloads.canDelete(id: id),
               let entry = downloads.entries.first(where: { $0.id == id }) else { return false }
         let alert = UIAlertController(
@@ -343,9 +404,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             ), preferredStyle: .alert
         )
         alert.view.accessibilityIdentifier = "browser.downloads.delete-confirmation"
-        deleteConfirmation = alert
-        deleteConfirmationID = id
-        deleteConfirmationWindow = window
+        confirmation = DownloadConfirmation(alert: alert, window: window, action: .delete(id))
         alert.addAction(UIAlertAction(title: Self.localized("Delete"), style: .destructive) {
             [weak self, weak alert] _ in
             guard let alert else { return }
@@ -356,11 +415,66 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             self?.cancelDeletion(dismissing: alert)
         })
         present(alert, animated: true)
+        render()
         return true
     }
 
+    @objc private func requestClearCompleted() {
+        guard canStartAction, let window = view.window, downloads.canClearCompleted,
+              let scope = downloads.captureCompletedClear(), !scope.ids.isEmpty else { return }
+        let message = scope.count == 1
+            ? Self.localized("Remove this completed download from this browser? Copies saved to Files will remain.")
+            : String(
+                format: Self.localized(
+                    "Remove %d completed downloads from this browser? Copies saved to Files will remain."
+                ), scope.count
+            )
+        let alert = UIAlertController(
+            title: Self.localized("Clear Completed Downloads?"), message: message, preferredStyle: .alert
+        )
+        alert.view.accessibilityIdentifier = "browser.downloads.clear-confirmation"
+        confirmation = DownloadConfirmation(alert: alert, window: window, action: .clear(scope))
+        alert.addAction(UIAlertAction(title: Self.localized("Clear Completed"), style: .destructive) {
+            [weak self, weak alert] _ in
+            guard let alert else { return }
+            self?.confirmClearCompleted(dismissing: alert)
+        })
+        alert.addAction(UIAlertAction(title: Self.localized("Cancel"), style: .cancel) { [weak self, weak alert] _ in
+            guard let alert else { return }
+            self?.cancelClearCompleted(dismissing: alert)
+        })
+        interactionError = nil
+        interactionErrorItemIDs = nil
+        present(alert, animated: true)
+        render()
+    }
+
+    private func dismissConfirmation(
+        _ alert: UIAlertController,
+        perform: @escaping @MainActor (BrowserMobileDownloadsViewController, UIWindow) -> Void
+    ) {
+        guard let captured = confirmation, captured.alert === alert, !captured.isDismissing else { return }
+        captured.isDismissing = true
+        alert.dismiss(animated: true) { [weak self] in
+            guard let self, confirmation === captured else { return }
+            confirmation = nil
+            guard let window = captured.window, viewIfLoaded?.window === window, canStartAction else {
+                render()
+                return
+            }
+            perform(self, window)
+        }
+    }
+
+    private func cancelConfirmation(_ alert: UIAlertController) {
+        guard confirmation?.alert === alert else { return }
+        confirmation = nil
+        alert.dismiss(animated: true) { [weak self] in self?.render() }
+        render()
+    }
+
     private func beginExport(id: UUID) {
-        guard canPresent, exportingID == nil, let window = view.window,
+        guard canStartAction, let window = view.window,
               downloads.entries.first(where: { $0.id == id })?.status == .completed else { return }
         let attempt = UUID()
         exportAttempt = attempt
@@ -398,7 +512,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
                 interactionError = error as? BrowserMobileDownloadError == .busy
                     ? Self.localized("This download cannot be saved while its removal is pending.")
                     : Self.localized("This file could not be prepared. Try Save to Files again.")
-                interactionErrorDownloadID = id
+                interactionErrorItemIDs = [id]
                 render()
             }
         }
@@ -423,14 +537,20 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             return
         }
         sceneAllowsPresentation = notification.name == UIScene.didActivateNotification
-        if !sceneAllowsPresentation, exportTask != nil {
-            cancelPendingExport()
+        if !sceneAllowsPresentation {
+            presentationGeneration = UUID()
+            if exportTask != nil {
+                cancelPendingExport()
+            }
+            if let alert = confirmation?.alert {
+                cancelConfirmation(alert)
+            }
         }
         render()
     }
 
     @objc private func retryPersistence() {
-        guard !isClosing, retryTask == nil, downloads.canRetryPersistence else { return }
+        guard !isClosing, !hasPendingAction, confirmation == nil, downloads.canRetryPersistence else { return }
         interactionError = nil
         retryTask = Task { [weak self, downloads] in
             await downloads.retryPersistence()
@@ -464,6 +584,30 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             tableView.tableHeaderView = statusStack
         }
     }
+}
+
+// MARK: - DownloadConfirmation
+
+@MainActor private final class DownloadConfirmation {
+    // MARK: Lifecycle
+
+    init(alert: UIAlertController, window: UIWindow, action: Action) {
+        self.alert = alert
+        self.window = window
+        self.action = action
+    }
+
+    // MARK: Internal
+
+    enum Action {
+        case delete(UUID)
+        case clear(BrowserMobileDownloadClearScope)
+    }
+
+    weak var alert: UIAlertController?
+    weak var window: UIWindow?
+    let action: Action
+    var isDismissing = false
 }
 
 // MARK: - BrowserMobileDownloadExportPicker

@@ -25,6 +25,7 @@ protocol BrowserMobileDownloadStoring: Sendable {
     func prepare(id: UUID, filename: String) async throws -> URL
     func completeState(_ entry: BrowserMobileDownload) async throws -> BrowserMobileDownloadDiskState
     func removeState(id: UUID) async throws -> BrowserMobileDownloadDiskState
+    func removeState(ids: Set<UUID>) async throws -> BrowserMobileDownloadDiskState
     func retryCleanup() async throws -> BrowserMobileDownloadDiskState
     func exportURL(id: UUID) async throws -> URL
     func discardState(id: UUID) async throws -> BrowserMobileDownloadDiskState
@@ -127,16 +128,22 @@ actor BrowserMobileDownloadDisk: BrowserMobileDownloadStoring {
     }
 
     func removeState(id: UUID) throws -> BrowserMobileDownloadDiskState {
+        try removeState(ids: [id])
+    }
+
+    func removeState(ids: Set<UUID>) throws -> BrowserMobileDownloadDiskState {
         try ensureLoaded()
-        if completed.contains(where: { $0.id == id }) {
-            let next = completed.filter { $0.id != id }
-            // A failed commit leaves the record and its bytes untouched.
+        let removed = Set(completed.lazy.filter { ids.contains($0.id) }.map(\.id))
+        if !removed.isEmpty {
+            let next = completed.filter { !removed.contains($0.id) }
+            // One commit against the latest actor state preserves every later
+            // completion. A failed batch leaves all records and bytes intact.
             try commit(next)
             completed = next
-            pendingCleanupIDs.insert(id)
+            pendingCleanupIDs.formUnion(removed)
         }
         // Cleanup cannot turn a committed removal into a reported rollback.
-        if pendingCleanupIDs.contains(id) {
+        for id in pendingCleanupIDs.intersection(ids) {
             try? clean(id: id)
         }
         return try snapshot()

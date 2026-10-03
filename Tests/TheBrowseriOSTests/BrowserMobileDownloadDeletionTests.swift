@@ -343,6 +343,10 @@ private actor HeldDownloadDisk: BrowserMobileDownloadStoring {
         return try await base.removeState(id: id)
     }
 
+    func removeState(ids: Set<UUID>) async throws -> BrowserMobileDownloadDiskState {
+        try await base.removeState(ids: ids)
+    }
+
     func releaseRemoval() { removalContinuation?.resume()
         removalContinuation = nil
     }

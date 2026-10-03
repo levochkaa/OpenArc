@@ -134,4 +134,12 @@
 "Deleting…" = "Deleting…";
 "This download can no longer be deleted." = "This download can no longer be deleted.";
 "downloads.error.remove" = "Couldn’t delete this download. Try again.";
+"downloads.error.clear" = "Couldn’t clear completed downloads. Try again.";
 "This download cannot be saved while its removal is pending." = "This download cannot be saved while its removal is pending.";
+"Clear Completed…" = "Clear Completed…";
+"Clear Completed Downloads?" = "Clear Completed Downloads?";
+"Remove %d completed downloads from this browser? Copies saved to Files will remain." = "Remove %d completed downloads from this browser? Copies saved to Files will remain.";
+"Remove this completed download from this browser? Copies saved to Files will remain." = "Remove this completed download from this browser? Copies saved to Files will remain.";
+"Clear Completed" = "Clear Completed";
+"Finish any Save to Files actions or retry pending deletions, then try Clear Completed again." = "Finish any Save to Files actions or retry pending deletions, then try Clear Completed again.";
+"This Clear Completed request is no longer available." = "This Clear Completed request is no longer available.";

@@ -1,6 +1,6 @@
 # Mobile Downloads
 
-The mobile browser hands WebKit downloads to a coordinator owned by the logical profile. A UIKit Downloads list shows progress, Cancel, persistence errors and completed files with Save to Files and individual Delete. Download files and metadata remain local; this feature adds no sync messages.
+The mobile browser hands WebKit downloads to a coordinator owned by the logical profile. A UIKit Downloads list shows progress, Cancel, persistence errors and completed files with Save to Files, individual Delete and Clear Completed. Download files and metadata remain local; this feature adds no sync messages.
 
 ## WebKit handoff and page state
 
@@ -30,6 +30,16 @@ Removal atomically writes the remaining manifest before deleting the UUID direct
 
 After the manifest commits, the row is removed in every observing window. A file-cleanup failure does not reverse that result: it becomes a cleanup backlog with Retry. Reopening reconstructs that backlog from UUID directories absent from the valid manifest. Published disk states carry actor-ordered revisions, so a late read or completion cannot restore an older list or cleanup state. These revisions coordinate the running process; they are not a new manifest version.
 
+## Clear Completed
+
+Clear Completed captures the current durable entry IDs before presenting its native confirmation. The message shows the captured count. Missing-file records are included; active transfers and completions not yet durably published are excluded. Downloads completed after capture survive, even if they finish before the user confirms. Cancel makes no mutation request.
+
+The scope belongs to its originating coordinator. Confirmation revalidates its alert identity, window and active scene after dismissal. The model intersects the captured IDs with current durable entries. If any remaining member has an export lease, an active individual removal or a failed individual removal awaiting Retry, the whole Clear request returns busy without queuing deletion. Resolve that operation and explicitly start Clear Completed again. It never silently skips busy files.
+
+An admitted batch reserves all its members before an asynchronous disk call or observer notification. The actor performs one manifest commit against its latest state, filtering only the captured IDs; it does not loop through individual removals. Later completions and unrelated individual operations remain usable. Repeating a successful scope is harmless because IDs are never reused.
+
+A manifest failure preserves every batch record and file and retains that exact batch as one in-process Retry intent. Its members remain blocked against export and individual deletion until Retry succeeds. A second Clear is unavailable while that batch is active or failed. Retry from any observing window uses the same captured set, preserving later downloads. Failed batch intent does not survive termination; the original records do. After commit, cleanup uses the existing revisioned backlog and orphan reconstruction on reopen.
+
 ## UIKit ownership and export
 
 The page's Downloads button and Command-Option-L open its profile's list. Rows use Dynamic Type and native controls: Cancel while downloading, no action while saving, Save to Files after durable completion, and explicit failed/cancelled states. Persistence Retry does not restart network transfers.
@@ -48,10 +58,13 @@ The added tests target these contracts:
 - [BrowserMobileDownloadsTests](../Tests/TheBrowseriOSTests/BrowserMobileDownloadsTests.swift): disk reopening, filename isolation, provenance filtering, malformed manifests, interrupted-file cleanup and unsafe export rejection.
 - [BrowserMobileDownloadsViewControllerTests](../Tests/TheBrowseriOSTests/BrowserMobileDownloadsViewControllerTests.swift) and [composition tests](../Tests/TheBrowseriOSTests/BrowserMobileDownloadCompositionTests.swift): native controls, picker configuration, profile ownership and late asynchronous presentation guards.
 - [BrowserMobileDownloadRemovalIntegrationTests](../Tests/TheBrowseriOSTests/BrowserMobileDownloadRemovalIntegrationTests.swift): two controllers sharing a real coordinator, independent picker leases, retained picker after list destruction, durable removal/reopen and Retry from another window. [Deletion storage tests](../Tests/TheBrowseriOSTests/BrowserMobileDownloadDeletionTests.swift) and UIKit tests also cover manifest/cleanup failure, late-state publication, captured confirmation IDs, Cancel, busy rows and missing-file removal.
+- [BrowserMobileDownloadClearTests](../Tests/TheBrowseriOSTests/BrowserMobileDownloadClearTests.swift) checks one-write batch atomicity, reservation, exact Retry, stale reads and cleanup recovery. [Clear UIKit tests](../Tests/TheBrowseriOSTests/BrowserMobileDownloadClearViewControllerTests.swift) cover captured count/IDs, cancellation, native presentation guards, deferred task admission and compact controls. The composed removal suite also checks cross-window Clear/Retry; the real WK suite checks a transfer completing before or after Clear.
 
 The original download/export slice passed root and mobile Build/Test gates on 2026-10-03 with Xcode 26.6: each full iPhone/iPad suite passed 204 declarations / 228 runs, with five opt-in HTTP skips. The subsequent deletion slice passed mobile Build and the full iPhone/iPad suites: 218 declarations / 246 runs, five opt-in HTTP skips and zero failures per device.
 
 Hosted tests inspect real picker configuration, invoke its native delegate callbacks and present/dismiss a real full-screen covering controller. Confirmation tests verify the presented alert and call the same production callback installed on its native action. They do not operate the physical Files UI or establish provider-copy completion after forced teardown. Simulated notifications and multiple windows in the test host's scene do not prove real OS multi-scene or background-delivery behavior.
 
-Active-transfer restart/resume, guaranteed background delivery, bulk Clear, redownload, custom download authentication and dedicated Wallet handling remain follow-ups. Real Files-provider interaction and device lifecycle behavior need separate verification.
+Clear Completed passed root and mobile Build/Test gates with 235 declarations / 270 runs and five opt-in HTTP skips on each simulator. Its implementation is an explicit TheBrowser interaction.
+
+Active-transfer restart/resume, guaranteed background delivery, redownload, custom download authentication and dedicated Wallet handling remain follow-ups. Real Files-provider interaction and device lifecycle behavior need separate verification.
 
