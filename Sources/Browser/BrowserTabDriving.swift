@@ -9,6 +9,13 @@ enum BrowserTabCreationState: Equatable, Sendable {
     case failed
 }
 
+// MARK: - BrowserTabCloseOutcome
+
+enum BrowserTabCloseOutcome: Equatable, Sendable {
+    case closed
+    case cancelled
+}
+
 // MARK: - BrowserTabDriving
 
 @MainActor protocol BrowserTabDriving: AnyObject {
@@ -16,6 +23,7 @@ enum BrowserTabCreationState: Equatable, Sendable {
     var onTabCreated: ((String, String, String, Bool) -> Void)? { get set }
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)? { get set }
     var onTabUpdated: ((String, String?, String?, String?) -> Void)? { get set }
+    var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)? { get set }
     var onTabClosed: ((String) -> Void)? { get set }
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)? { get set }
     var onLoadingStateChanged: ((String, Bool) -> Void)? { get set }
@@ -49,6 +57,9 @@ enum BrowserTabCreationState: Equatable, Sendable {
     func setActiveTabZoomLevel(_ zoomLevel: Double)
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)
     func stopFindingInActiveTab(clearSelection: Bool)
+    /// Admits a manual close. Completion carries the same nonce; only `.closed`
+    /// means the engine has closed. Forced/structural closes supersede this request.
+    @discardableResult func requestCloseTab(withID tabID: String, requestID: String) -> Bool
     func closeTab(withID tabID: String, forceClose: Bool)
     func prepareForCefShutdown()
 }

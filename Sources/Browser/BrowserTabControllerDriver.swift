@@ -44,6 +44,7 @@ import Foundation
     var onTabCreated: ((String, String, String, Bool) -> Void)?
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
+    var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)?
     var onTabClosed: ((String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
@@ -151,6 +152,10 @@ import Foundation
         controller.stopFindingInActiveTab(clearSelection: clearSelection)
     }
 
+    @discardableResult func requestCloseTab(withID tabID: String, requestID: String) -> Bool {
+        controller.requestCloseTab(withID: tabID, requestID: requestID)
+    }
+
     func closeTab(withID tabID: String, forceClose: Bool) {
         controller.closeTab(withID: tabID, forceClose: forceClose)
     }
@@ -159,6 +164,7 @@ import Foundation
         onTabCreated = nil
         onTabCreationStateChanged = nil
         onTabUpdated = nil
+        onTabCloseRequestFinished = nil
         onTabClosed = nil
         onNavigationStateChanged = nil
         onLoadingStateChanged = nil
@@ -176,6 +182,24 @@ import Foundation
 // MARK: BrowserTabControllerDelegate
 
 extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didFinishCloseRequestForTabWithID tabID: String,
+        requestID: String,
+        outcome: BrowserTabCloseRequestOutcome
+    ) {
+        // FIFO keeps the token completion ahead of the generic closed event.
+        DispatchQueue.main.async { [weak self] in
+            let result: BrowserTabCloseOutcome
+            switch outcome {
+            case .closed: result = .closed
+            case .cancelled: result = .cancelled
+            @unknown default: return
+            }
+            self?.onTabCloseRequestFinished?(tabID, requestID, result)
+        }
+    }
+
     /// The bridge emits allocation before engine outcomes on the UI thread.
     /// Main-queue FIFO preserves that order and delivers after createTab returns.
     nonisolated func browserTabController(

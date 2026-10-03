@@ -13,6 +13,11 @@ typedef NS_ENUM(NSInteger, BrowserTabEngineCreationState) {
   BrowserTabEngineCreationStateFailed,
 };
 
+typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
+  BrowserTabCloseRequestOutcomeClosed,
+  BrowserTabCloseRequestOutcomeCancelled,
+};
+
 @protocol BrowserTabControllerDelegate <NSObject>
 
 - (void)browserTabController:(BrowserTabController *)controller
@@ -58,6 +63,13 @@ typedef NS_ENUM(NSInteger, BrowserTabEngineCreationState) {
 
 - (void)browserTabController:(BrowserTabController *)controller
               didCloseTabWithID:(NSString *)tabID;
+
+@optional
+// Emitted before didCloseTabWithID for a confirmed manual request.
+- (void)browserTabController:(BrowserTabController *)controller
+    didFinishCloseRequestForTabWithID:(NSString *)tabID
+                           requestID:(NSString *)requestID
+                             outcome:(BrowserTabCloseRequestOutcome)outcome;
 
 @end
 
@@ -116,6 +128,10 @@ typedef NS_ENUM(NSInteger, BrowserTabEngineCreationState) {
     NS_SWIFT_NAME(findInActiveTab(withText:forward:matchCase:findNext:));
 - (void)stopFindingInActiveTabWithClearSelection:(BOOL)clearSelection
     NS_SWIFT_NAME(stopFindingInActiveTab(clearSelection:));
+// YES means admitted, not closed. Exactly one nonce may be pending per tab.
+// A subsequent structural/forced close invalidates the manual request.
+- (BOOL)requestCloseTabWithID:(NSString *)tabID requestID:(NSString *)requestID
+    NS_SWIFT_NAME(requestCloseTab(withID:requestID:));
 - (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;
 - (void)closeTabWithID:(NSString *)tabID;
 - (void)closeAllTabs;

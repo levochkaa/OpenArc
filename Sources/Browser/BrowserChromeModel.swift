@@ -127,6 +127,9 @@ enum BrowserWindowMode: Equatable {
                 faviconURLString: faviconURLString
             )
         }
+        tabDriver.onTabCloseRequestFinished = { [weak self] tabID, requestID, outcome in
+            self?.handleTabCloseRequestFinished(id: tabID, requestID: requestID, outcome: outcome)
+        }
         tabDriver.onTabClosed = { [weak self] tabID in
             self?.handleClosedTab(id: tabID)
         }
@@ -160,6 +163,14 @@ enum BrowserWindowMode: Equatable {
     }
 
     // MARK: Internal
+
+    enum TabCloseReason {
+        case manual
+        case automaticExpiry
+        case structuralRemoval
+        case remoteProjection
+        case undoRedo
+    }
 
     nonisolated static let defaultSidebarWidth: CGFloat = 224
     nonisolated static let minSidebarWidth: CGFloat = defaultSidebarWidth
@@ -713,7 +724,7 @@ enum BrowserWindowMode: Equatable {
         let wasPersistenceEnabled = isPersistenceEnabled
         isPersistenceEnabled = false
         for tabID in tabs.filter({ $0.spaceID == spaceID && $0.placement != .app }).map(\.id) {
-            closeTab(id: tabID, registersUndo: false)
+            closeTab(id: tabID, registersUndo: false, reason: .structuralRemoval)
         }
         for (engineID, binding) in pendingRemoteTabCreations
             where binding.snapshot.spaceID == spaceID && binding.snapshot.placement != .app
@@ -910,7 +921,7 @@ enum BrowserWindowMode: Equatable {
         for tabID in tabs.filter({ $0.placement == .spacePinned && $0.pinnedFolderID.map(removed.contains) == true })
             .map(\.id)
         {
-            closeTab(id: tabID, registersUndo: false)
+            closeTab(id: tabID, registersUndo: false, reason: .structuralRemoval)
         }
         for (engineID, binding) in pendingRemoteTabCreations
             where binding.snapshot.placement == .spacePinned && binding.snapshot
@@ -1355,7 +1366,7 @@ enum BrowserWindowMode: Equatable {
         }
 
         for tabID in tabIDsToArchive {
-            closeTab(id: tabID, registersUndo: false)
+            closeTab(id: tabID, registersUndo: false, reason: .automaticExpiry)
         }
     }
 
@@ -1783,6 +1794,7 @@ enum BrowserWindowMode: Equatable {
     func closeAllTabs() {
         let openTabIDs = tabs.map(\.id)
         if isShuttingDown {
+            pendingTabCloseRequests.removeAll()
             closingTabIDs.formUnion(openTabIDs)
             for tabID in openTabIDs {
                 tabDriver.closeTab(withID: tabID, forceClose: true)
@@ -1842,7 +1854,7 @@ enum BrowserWindowMode: Equatable {
             || ((closedAppTabIDs.contains(tab.id) || closedPinnedTabIDs.contains(tab.id))
                 && remoteTabsByID[tab.syncID]?.placement != tab.placement)
         {
-            closeTab(id: tab.id, forceClose: true, registersUndo: false)
+            closeTab(id: tab.id, forceClose: true, registersUndo: false, reason: .remoteProjection)
         }
 
         let restoredSpaces = snapshot.spaces?.isEmpty != false ? [] : restoredSpaces(from: snapshot)
@@ -1911,8 +1923,13 @@ enum BrowserWindowMode: Equatable {
         return closeTab(id: selectedTabID)
     }
 
-    @discardableResult func closeAppTabProcess(id: String, forceClose: Bool = false) -> Bool {
+    @discardableResult func closeAppTabProcess(
+        id: String,
+        forceClose: Bool = false,
+        engineAlreadyClosed: Bool = false
+    ) -> Bool {
         guard
+            !closingTabIDs.contains(id),
             let tab = tabs.first(where: { $0.id == id }),
             tab.placement == .app,
             !closedAppTabIDs.contains(id)
@@ -1939,14 +1956,21 @@ enum BrowserWindowMode: Equatable {
             }
         }
 
-        tabDriver.closeTab(withID: id, forceClose: forceClose)
+        if !engineAlreadyClosed {
+            tabDriver.closeTab(withID: id, forceClose: forceClose)
+        }
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
         return true
     }
 
-    @discardableResult func closePinnedTabProcessOrReset(id: String, forceClose: Bool = false) -> Bool {
+    @discardableResult func closePinnedTabProcessOrReset(
+        id: String,
+        forceClose: Bool = false,
+        engineAlreadyClosed: Bool = false
+    ) -> Bool {
         guard
+            !closingTabIDs.contains(id),
             let tab = tabs.first(where: { $0.id == id }),
             tab.placement == .spacePinned,
             let pinnedURLString = effectivePinnedURLString(forPinnedTab: tab),
@@ -1985,7 +2009,9 @@ enum BrowserWindowMode: Equatable {
             }
         }
 
-        tabDriver.closeTab(withID: id, forceClose: forceClose)
+        if !engineAlreadyClosed {
+            tabDriver.closeTab(withID: id, forceClose: forceClose)
+        }
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
         return true
@@ -2109,59 +2135,39 @@ enum BrowserWindowMode: Equatable {
         id: String,
         forceClose: Bool = false,
         registersUndo: Bool = true,
-        undoActionName: String = BrowserStrings.tabArchiveAction
+        undoActionName: String = BrowserStrings.tabArchiveAction,
+        reason: TabCloseReason = .manual
     ) -> Bool {
-        guard
-            let closingIndex = tabs.firstIndex(where: { $0.id == id }),
-            !closingTabIDs.contains(id)
-        else {
-            return false
-        }
-
-        let closingTab = tabs[closingIndex]
-        let undoSnapshot = tabUndoSnapshot(forClosingTabAt: closingIndex)
-        let closingTabWasSelected = selectedTabID == id
-        closingTabIDs.insert(id)
-        BrowserTelemetry.captureUsage(.tabClosed, properties: telemetryProperties(for: closingTab))
-
-        tabs.removeAll { $0.id == id }
-        closedAppTabIDs.remove(id)
-        closedPinnedTabIDs.remove(id)
-        pendingReopenedAppTabIDs = pendingReopenedAppTabIDs.filter { $0.value != id && $0.key != id }
-        pendingReopenedPinnedTabIDs = pendingReopenedPinnedTabIDs.filter { $0.value != id && $0.key != id }
-        removeTabFromSwitcherTracking(id)
-        tabCreationUndoReferences.removeValue(forKey: id)?.currentTabID = nil
-        clearSelectedTab(id, forSpaceID: closingTab.spaceID)
-
-        if closingTabWasSelected {
-            let fallbackTabID = fallbackTabID(afterClosingTab: closingTab)
-            let fallbackUsesWindowedBrowser = fallbackTabID.map { tabUsesWindowedBrowser(id: $0) } ?? false
-            if fallbackUsesWindowedBrowser {
-                dismissFindBar()
+        guard let closingIndex = tabs.firstIndex(where: { $0.id == id }) else { return false }
+        // A remote/structural removal supersedes an outstanding local dialog.
+        // It must not be rejected merely because that request owns the close ID.
+        if forceClose || reason == .structuralRemoval || reason == .remoteProjection {
+            if pendingTabCloseRequests.removeValue(forKey: id) != nil {
+                closingTabIDs.remove(id)
             }
-            selectedTabID = fallbackTabID
-            findResultMatchCount = nil
-            if let fallbackTabID {
-                tabDriver.selectTab(withID: fallbackTabID)
-                setSelectedTabID(fallbackTabID, forSpaceID: closingTab.spaceID)
-                recordSelectedTab(fallbackTabID)
-                if !fallbackUsesWindowedBrowser {
-                    runFind(forward: true, findNext: false)
+        }
+        guard !closingTabIDs.contains(id) else { return false }
+        if reason == .manual, !forceClose, !isShuttingDown, tabs[closingIndex].placement == .temporary {
+            let requestID = UUID().uuidString
+            pendingTabCloseRequests[id] = PendingTabCloseRequest(
+                requestID: requestID, syncID: tabs[closingIndex].syncID,
+                registersUndo: registersUndo, undoActionName: undoActionName
+            )
+            closingTabIDs.insert(id)
+            // Install the nonce first: an engine-less record may finish inline.
+            guard tabDriver.requestCloseTab(withID: id, requestID: requestID) else {
+                if pendingTabCloseRequests[id]?.requestID == requestID {
+                    pendingTabCloseRequests.removeValue(forKey: id)
+                    closingTabIDs.remove(id)
                 }
-            } else {
-                tabDriver.deselectActiveTab()
+                return false
             }
-        } else if selectedTabID == id {
-            selectedTabID = nil
+            return true
         }
-
-        tabDriver.closeTab(withID: id, forceClose: forceClose)
-        updateWindowTitle()
-        persistCurrentSessionIfAllowed()
-        if registersUndo, let undoSnapshot {
-            registerTabArchiveUndo(undoSnapshot, actionName: undoActionName)
-        }
-        return true
+        return finishTabClose(
+            id: id, forceClose: forceClose, requestsEngineClose: true,
+            registersUndo: registersUndo, undoActionName: undoActionName
+        )
     }
 
     func setUserTitleOverride(_ titleOverride: String?, forTabID tabID: String) {
@@ -2208,6 +2214,13 @@ enum BrowserWindowMode: Equatable {
     }
 
     // MARK: Private
+
+    private struct PendingTabCloseRequest {
+        let requestID: String
+        let syncID: String
+        let registersUndo: Bool
+        let undoActionName: String
+    }
 
     private struct PendingCreatedTabContext {
         let spaceID: String
@@ -2270,6 +2283,8 @@ enum BrowserWindowMode: Equatable {
 
     private var hasCreatedInitialTab = false
     private var closingTabIDs = Set<String>()
+    private var pendingTabCloseRequests = [String: PendingTabCloseRequest]()
+    private var isCompletingTabClose = false
     private var closedAppTabIDs = Set<String>()
     private var closedPinnedTabIDs = Set<String>()
     private var pendingReopenedAppTabIDs = [String: String]()
@@ -2340,6 +2355,64 @@ enum BrowserWindowMode: Equatable {
 
     private var canRegisterTabUndo: Bool {
         isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
+    }
+
+    @discardableResult private func finishTabClose(
+        id: String, forceClose: Bool, requestsEngineClose: Bool,
+        registersUndo: Bool, undoActionName: String
+    ) -> Bool {
+        guard let closingIndex = tabs.firstIndex(where: { $0.id == id }) else { return false }
+        let closingTab = tabs[closingIndex]
+        let undoSnapshot = tabUndoSnapshot(forClosingTabAt: closingIndex)
+        let closingTabWasSelected = selectedTabID == id
+        closingTabIDs.insert(id)
+        BrowserTelemetry.captureUsage(.tabClosed, properties: telemetryProperties(for: closingTab))
+
+        let wasCompletingTabClose = isCompletingTabClose
+        isCompletingTabClose = true
+        tabs.removeAll { $0.id == id }
+        closedAppTabIDs.remove(id)
+        closedPinnedTabIDs.remove(id)
+        pendingReopenedAppTabIDs = pendingReopenedAppTabIDs.filter { $0.value != id && $0.key != id }
+        pendingReopenedPinnedTabIDs = pendingReopenedPinnedTabIDs.filter { $0.value != id && $0.key != id }
+        removeTabFromSwitcherTracking(id)
+        tabCreationUndoReferences.removeValue(forKey: id)?.currentTabID = nil
+        clearSelectedTab(id, forSpaceID: closingTab.spaceID)
+
+        if closingTabWasSelected {
+            let fallbackTabID = fallbackTabID(afterClosingTab: closingTab)
+            let fallbackUsesWindowedBrowser = fallbackTabID.map { tabUsesWindowedBrowser(id: $0) } ?? false
+            if fallbackUsesWindowedBrowser {
+                dismissFindBar()
+            }
+            selectedTabID = fallbackTabID
+            findResultMatchCount = nil
+            if let fallbackTabID {
+                tabDriver.selectTab(withID: fallbackTabID)
+                setSelectedTabID(fallbackTabID, forSpaceID: closingTab.spaceID)
+                recordSelectedTab(fallbackTabID)
+                if !fallbackUsesWindowedBrowser {
+                    runFind(forward: true, findNext: false)
+                }
+            } else {
+                tabDriver.deselectActiveTab()
+            }
+        } else if selectedTabID == id {
+            selectedTabID = nil
+        }
+
+        if requestsEngineClose {
+            tabDriver.closeTab(withID: id, forceClose: forceClose)
+        } else {
+            closingTabIDs.remove(id)
+        }
+        updateWindowTitle()
+        isCompletingTabClose = wasCompletingTabClose
+        persistCurrentSessionIfAllowed()
+        if registersUndo, let undoSnapshot {
+            registerTabArchiveUndo(undoSnapshot, actionName: undoActionName)
+        }
+        return true
     }
 
     private func indexedFolderMovePlan(
@@ -2780,7 +2853,9 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func persistCurrentSessionIfAllowed(syncMove: BrowserSyncMoveIntent? = nil) {
-        guard isContextReady, isPersistenceEnabled, !isRestoringSession, !isReconcilingRemoteProjection else {
+        guard isContextReady, isPersistenceEnabled, !isRestoringSession, !isReconcilingRemoteProjection,
+              !isCompletingTabClose
+        else {
             return
         }
 
@@ -3677,7 +3752,7 @@ enum BrowserWindowMode: Equatable {
             return nil
         }
 
-        guard closeTab(id: tabID, registersUndo: false) else {
+        guard closeTab(id: tabID, registersUndo: false, reason: .undoRedo) else {
             return nil
         }
 
@@ -3904,7 +3979,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
               deferredRemoteSyncSnapshot == nil, pendingRemoteTabCreations.isEmpty,
               pendingCreatedTabContexts.isEmpty, pendingHydratedTabCreationIDs.isEmpty,
               pendingReopenedAppTabIDs.isEmpty, pendingReopenedPinnedTabIDs.isEmpty,
-              !hasUncommittedSessionWrites,
+              !hasUncommittedSessionWrites, pendingTabCloseRequests.isEmpty,
               tabs
                   .allSatisfy({
                       $0.creationState == .ready || closedAppTabIDs.contains($0.id) || closedPinnedTabIDs
@@ -4324,6 +4399,34 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
     }
 
+    private func handleTabCloseRequestFinished(id: String, requestID: String, outcome: BrowserTabCloseOutcome) {
+        guard let request = pendingTabCloseRequests[id], request.requestID == requestID else { return }
+        pendingTabCloseRequests.removeValue(forKey: id)
+        closingTabIDs.remove(id)
+        guard outcome == .closed, !isShuttingDown,
+              let tab = tabs.first(where: { $0.id == id }), tab.syncID == request.syncID else { return }
+        if tab.placement == .temporary {
+            // Capture current metadata and selection only after the final engine
+            // callback. Cancellation never mutates the session or Undo history.
+            finishTabClose(
+                id: id, forceClose: false, requestsEngineClose: false,
+                registersUndo: request.registersUndo, undoActionName: request.undoActionName
+            )
+        } else {
+            // Pin/Favorite may have arrived while the page's dialog was open.
+            // Keep that persistent identity; its already-closed engine is dormant.
+            let wasCompletingTabClose = isCompletingTabClose
+            isCompletingTabClose = true
+            if tab.placement == .app {
+                closeAppTabProcess(id: id, engineAlreadyClosed: true)
+            } else {
+                closePinnedTabProcessOrReset(id: id, engineAlreadyClosed: true)
+            }
+            isCompletingTabClose = wasCompletingTabClose
+            persistCurrentSessionIfAllowed()
+        }
+    }
+
     func handleClosedTab(id: String) {
         if discardedRemoteTabCreationIDs.contains(id) {
             return
@@ -4337,13 +4440,11 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
         if closedAppTabIDs.contains(id), closedTab?.placement == .app {
             updateWindowTitle()
-            persistCurrentSessionIfAllowed()
             return
         }
 
         if closedPinnedTabIDs.contains(id), closedTab?.placement == .spacePinned {
             updateWindowTitle()
-            persistCurrentSessionIfAllowed()
             return
         }
 
@@ -4400,7 +4501,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             }
             return
         }
-        guard !closingTabIDs.contains(id),
+        guard !closingTabIDs.contains(id) || pendingTabCloseRequests[id] != nil,
               !closedAppTabIDs.contains(id), !closedPinnedTabIDs.contains(id),
               let index = tabs.firstIndex(where: { $0.id == id })
         else { return }

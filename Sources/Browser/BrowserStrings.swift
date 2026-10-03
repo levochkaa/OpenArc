@@ -3,6 +3,20 @@ import Foundation
 // MARK: - BrowserStrings
 
 enum BrowserStrings {
+    static let beforeUnloadTitle = NSLocalizedString(
+        "browser.before_unload.title",
+        comment: "Manual tab close confirmation."
+    )
+    static let beforeUnloadMessage = NSLocalizedString(
+        "browser.before_unload.message",
+        comment: "Unsaved webpage warning."
+    )
+    static let beforeUnloadKeepTab = NSLocalizedString("browser.before_unload.keep", comment: "Cancel closing the tab.")
+    static let beforeUnloadCloseTab = NSLocalizedString(
+        "browser.before_unload.close",
+        comment: "Confirm closing the tab."
+    )
+
     static let archiveTitle = NSLocalizedString(
         "browser.archive.title",
         comment: "Window title."

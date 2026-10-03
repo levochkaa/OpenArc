@@ -355,3 +355,8 @@
 "browser.settings.automatic_archival.off" = "Off";
 "browser.settings.automatic_archival.30d" = "30 Days";
 "browser.settings.automatic_archival.sync_description" = "Archive inactive temporary tabs using the latest synced activity. Pinned tabs and Favorites stay. Automatic archiving waits while sync is paused or offline. Restore archived tabs from File → Archive.";
+
+"browser.before_unload.title" = "Close this tab?";
+"browser.before_unload.message" = "Changes you made may not be saved.";
+"browser.before_unload.keep" = "Keep Tab";
+"browser.before_unload.close" = "Close Tab";

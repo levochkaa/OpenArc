@@ -1,8 +1,11 @@
 #import "Browser/BrowserTabController.h"
 
+#import <AuthenticationServices/AuthenticationServices.h>
+#import <Sparkle/Sparkle.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import "Browser/SwiftBridge.h"
+#import "TheBrowser-Swift.h"
 #include "Shared/BrowserSchemes.h"
 #include "Shared/ClientManager.h"
 #include "Shared/ClientUtil.h"
@@ -26,6 +29,7 @@
 #include "include/cef_focus_handler.h"
 #include "include/cef_frame.h"
 #include "include/cef_keyboard_handler.h"
+#include "include/cef_jsdialog_handler.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
 #include "include/cef_parser.h"
@@ -2302,6 +2306,7 @@ class BrowserTabClient final : public CefClient,
                                public CefDownloadHandler,
                                public CefFocusHandler,
                                public CefKeyboardHandler,
+                               public CefJSDialogHandler,
                                public CefLifeSpanHandler,
                                public CefLoadHandler,
                                public CefRequestHandler,
@@ -2315,6 +2320,7 @@ class BrowserTabClient final : public CefClient,
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
+  CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
@@ -2366,6 +2372,11 @@ class BrowserTabClient final : public CefClient,
                      CefEventHandle os_event,
                      bool *is_keyboard_shortcut) override;
 
+  bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser> browser,
+                            const CefString &message_text,
+                            bool is_reload,
+                            CefRefPtr<CefJSDialogCallback> callback) override;
+  void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
   bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
   bool DoClose(CefRefPtr<CefBrowser> browser) override;
@@ -2411,6 +2422,9 @@ struct TabRecord {
   bool initialNavigationEnabled = false;
   bool hasIssuedNavigation = false;
   bool isClosing = false;
+  std::string closeRequestID;
+  CefRefPtr<CefJSDialogCallback> closeDialogCallback;
+  __strong BrowserBeforeUnloadConfirmation *closeConfirmation = nil;
 };
 
 }  // namespace
@@ -2430,7 +2444,19 @@ struct TabRecord {
 - (BOOL)shouldBlockNavigationFocusForTabID:(NSString *)tabID;
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser
                      forTabID:(NSString *)tabID;
-- (void)handleBrowserClosedForTabID:(NSString *)tabID;
+- (void)handleBrowserClosed:(CefRefPtr<CefBrowser>)browser forTabID:(NSString *)tabID;
+- (BOOL)handleBeforeUnloadForTabID:(NSString *)tabID
+                         browser:(CefRefPtr<CefBrowser>)browser
+                        callback:(CefRefPtr<CefJSDialogCallback>)callback;
+- (void)resetCloseDialogForTabID:(NSString *)tabID browser:(CefRefPtr<CefBrowser>)browser;
+- (void)finishCloseDialogForTabID:(NSString *)tabID
+                      requestID:(NSString *)requestID
+                        browser:(CefRefPtr<CefBrowser>)browser
+                      confirmed:(BOOL)confirmed;
+- (void)invalidateCloseRequestForTabID:(NSString *)tabID;
+- (void)notifyCloseRequestForTabID:(NSString *)tabID
+                       requestID:(NSString *)requestID
+                         outcome:(BrowserTabCloseRequestOutcome)outcome;
 - (void)handleTitleChange:(NSString *)title forTabID:(NSString *)tabID;
 - (void)handleAddressChange:(NSString *)urlString forTabID:(NSString *)tabID;
 - (void)handleFaviconURLChange:(nullable NSString *)faviconURLString
@@ -2462,6 +2488,34 @@ struct TabRecord {
 @end
 
 namespace {
+
+class BrowserTabCloseReplyTask final : public CefTask {
+ public:
+  BrowserTabCloseReplyTask(BrowserTabController *controller,
+                          const std::string &tabID,
+                          const std::string &requestID,
+                          CefRefPtr<CefBrowser> browser,
+                          bool confirmed)
+      : controller_(controller), tab_id_(tabID), request_id_(requestID),
+        browser_(browser), confirmed_(confirmed) {}
+
+  void Execute() override {
+    CEF_REQUIRE_UI_THREAD();
+    BrowserTabController *controller = controller_;
+    [controller finishCloseDialogForTabID:ToNSString(tab_id_)
+                               requestID:ToNSString(request_id_)
+                                 browser:browser_
+                               confirmed:confirmed_];
+  }
+
+ private:
+  __weak BrowserTabController *controller_;
+  const std::string tab_id_;
+  const std::string request_id_;
+  CefRefPtr<CefBrowser> browser_;
+  const bool confirmed_;
+  IMPLEMENT_REFCOUNTING(BrowserTabCloseReplyTask);
+};
 
 // Resolve the record and latest target when the task runs. Holding a browser or
 // URL here would load obsolete work after another navigation or a tab close.
@@ -2657,11 +2711,14 @@ class BrowserTabNavigationTask final : public CefTask {
 
 - (void)acknowledgeTabReadyWithID:(NSString *)tabID {
   auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end() || it->second.isClosing ||
+  if (it == _tabRecords.end() ||
+      (it->second.isClosing && it->second.closeRequestID.empty()) ||
       it->second.creationState != BrowserTabEngineCreationStateReady) {
     return;
   }
 
+  // Preserve the ready handshake during a cancelable close; navigation itself
+  // stays suspended until cancellation clears isClosing.
   it->second.initialNavigationEnabled = true;
   [self scheduleNavigationForTabID:tabID];
 }
@@ -2742,7 +2799,7 @@ class BrowserTabNavigationTask final : public CefTask {
 - (void)goBackActiveTab {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
-  if (it == _tabRecords.end()) {
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
 
@@ -2755,7 +2812,7 @@ class BrowserTabNavigationTask final : public CefTask {
 - (void)goForwardActiveTab {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
-  if (it == _tabRecords.end()) {
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
 
@@ -2768,7 +2825,7 @@ class BrowserTabNavigationTask final : public CefTask {
 - (void)reloadActiveTab {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
-  if (it == _tabRecords.end()) {
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
 
@@ -2778,7 +2835,7 @@ class BrowserTabNavigationTask final : public CefTask {
 - (void)reloadActiveTabIgnoringCache {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
-  if (it == _tabRecords.end()) {
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
 
@@ -2788,7 +2845,7 @@ class BrowserTabNavigationTask final : public CefTask {
 - (void)clearCacheAndReloadActiveTab {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
-  if (it == _tabRecords.end()) {
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
 
@@ -2802,7 +2859,7 @@ class BrowserTabNavigationTask final : public CefTask {
 - (void)clearCookiesAndReloadActiveTab {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
-  if (it == _tabRecords.end()) {
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
 
@@ -2931,6 +2988,135 @@ class BrowserTabNavigationTask final : public CefTask {
   StopFindingBrowserOnUI(it->second.browser, clearSelection);
 }
 
+- (BOOL)requestCloseTabWithID:(NSString *)tabID requestID:(NSString *)requestID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (requestID.length == 0 || it == _tabRecords.end() ||
+      it->second.isClosing || !it->second.closeRequestID.empty()) {
+    return NO;
+  }
+
+  it->second.closeRequestID = ToStdString(requestID);
+  it->second.isClosing = true;
+  // Retain the latest pending navigation. Cancel must not drop an address
+  // accepted before this close, including the initial deferred engine load.
+  if (it->second.browser) {
+    it->second.browser->GetHost()->CloseBrowser(false);
+  } else {
+    const BOOL wasActive = [_activeTabID isEqualToString:tabID];
+    _tabRecords.erase(it);
+    [self notifyCloseRequestForTabID:tabID requestID:requestID
+                            outcome:BrowserTabCloseRequestOutcomeClosed];
+    [self.delegate browserTabController:self didCloseTabWithID:tabID];
+    [self updateBrowserVisibilityFocusingActiveTab:wasActive];
+  }
+  return YES;
+}
+
+- (void)notifyCloseRequestForTabID:(NSString *)tabID
+                       requestID:(NSString *)requestID
+                         outcome:(BrowserTabCloseRequestOutcome)outcome {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if (requestID.length > 0 &&
+      [delegate respondsToSelector:@selector(browserTabController:didFinishCloseRequestForTabWithID:requestID:outcome:)]) {
+    [delegate browserTabController:self didFinishCloseRequestForTabWithID:tabID
+                         requestID:requestID outcome:outcome];
+  }
+}
+
+- (BOOL)handleBeforeUnloadForTabID:(NSString *)tabID
+                         browser:(CefRefPtr<CefBrowser>)browser
+                        callback:(CefRefPtr<CefJSDialogCallback>)callback {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser ||
+      !it->second.browser->IsSame(browser) || it->second.closeRequestID.empty()) {
+    return NO;
+  }
+  // CEF admits one beforeunload continuation. Do not replace its owner.
+  if (it->second.closeDialogCallback) {
+    callback->Continue(false, CefString());
+    return YES;
+  }
+  it->second.closeDialogCallback = callback;
+  NSString *requestID = ToNSString(it->second.closeRequestID);
+  __weak BrowserTabController *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    BrowserTabController *controller = weakSelf;
+    if (!controller) return;
+    auto current = controller->_tabRecords.find(ToStdString(tabID));
+    if (current == controller->_tabRecords.end() ||
+        current->second.closeRequestID != ToStdString(requestID) ||
+        !current->second.closeDialogCallback || !current->second.browser ||
+        !current->second.browser->IsSame(browser)) return;
+
+    BrowserBeforeUnloadConfirmation *confirmation =
+        [[BrowserBeforeUnloadConfirmation alloc]
+            initWithWindow:controller->_hostView.window
+                completion:^(BOOL confirmed) {
+                  BrowserTabController *owner = weakSelf;
+                  if (!owner) return;
+                  CefPostTask(TID_UI, new BrowserTabCloseReplyTask(
+                      owner, ToStdString(tabID), ToStdString(requestID),
+                      browser, confirmed));
+                }];
+    current->second.closeConfirmation = confirmation;
+    [confirmation present];
+  });
+  return YES;
+}
+
+- (void)finishCloseDialogForTabID:(NSString *)tabID
+                      requestID:(NSString *)requestID
+                        browser:(CefRefPtr<CefBrowser>)browser
+                      confirmed:(BOOL)confirmed {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() ||
+      it->second.closeRequestID != ToStdString(requestID) ||
+      !it->second.browser || !it->second.browser->IsSame(browser) ||
+      !it->second.closeDialogCallback) return;
+
+  CefRefPtr<CefJSDialogCallback> callback = it->second.closeDialogCallback;
+  BrowserBeforeUnloadConfirmation *confirmation = it->second.closeConfirmation;
+  it->second.closeDialogCallback = nullptr;
+  it->second.closeConfirmation = nil;
+  // Continue can synchronously reset dialog state or close the browser. Clear
+  // the continuation first and never retain an iterator across this call.
+  callback->Continue(confirmed, CefString());
+  [confirmation cancel];
+  if (confirmed) return;  // Confirmation is not OnBeforeClose.
+
+  auto current = _tabRecords.find(ToStdString(tabID));
+  if (current == _tabRecords.end() ||
+      current->second.closeRequestID != ToStdString(requestID)) return;
+  current->second.closeRequestID.clear();
+  current->second.isClosing = false;
+  [self notifyCloseRequestForTabID:tabID requestID:requestID
+                          outcome:BrowserTabCloseRequestOutcomeCancelled];
+  [self scheduleNavigationForTabID:tabID];
+}
+
+- (void)resetCloseDialogForTabID:(NSString *)tabID browser:(CefRefPtr<CefBrowser>)browser {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.closeDialogCallback ||
+      !it->second.browser || !it->second.browser->IsSame(browser)) return;
+  [self finishCloseDialogForTabID:tabID
+                       requestID:ToNSString(it->second.closeRequestID)
+                         browser:browser confirmed:NO];
+}
+
+- (void)invalidateCloseRequestForTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) return;
+  CefRefPtr<CefJSDialogCallback> callback = it->second.closeDialogCallback;
+  BrowserBeforeUnloadConfirmation *confirmation = it->second.closeConfirmation;
+  it->second.closeRequestID.clear();
+  it->second.closeDialogCallback = nullptr;
+  it->second.closeConfirmation = nil;
+  // Structural/forced closure supersedes the manual request. Late UI replies
+  // carry its old nonce and cannot create a manual-close outcome.
+  [confirmation cancel];
+  if (callback) callback->Continue(true, CefString());
+}
+
 - (void)closeTabWithID:(NSString *)tabID {
   [self closeTabWithID:tabID forceClose:NO];
 }
@@ -2944,8 +3130,10 @@ class BrowserTabNavigationTask final : public CefTask {
 
   it->second.isClosing = true;
   it->second.navigationPending = false;
-  if (it->second.browser) {
-    it->second.browser->GetHost()->CloseBrowser(forceClose);
+  CefRefPtr<CefBrowser> browser = it->second.browser;
+  [self invalidateCloseRequestForTabID:tabID];
+  if (browser) {
+    if (browser->IsValid()) browser->GetHost()->CloseBrowser(forceClose);
     return;
   }
 
@@ -2972,6 +3160,11 @@ class BrowserTabNavigationTask final : public CefTask {
   _hostView.controller = nil;
   _hostView = nil;
   _activeTabID = nil;
+  std::vector<std::string> tabIDs;
+  for (const auto &entry : _tabRecords) tabIDs.push_back(entry.first);
+  for (const auto &tabID : tabIDs) {
+    [self invalidateCloseRequestForTabID:ToNSString(tabID)];
+  }
   _tabRecords.clear();
   _requestContext = nullptr;
 }
@@ -3015,10 +3208,17 @@ class BrowserTabNavigationTask final : public CefTask {
   // model has processed ready. CEF and DispatchQueue.main use separate queues.
 }
 
-- (void)handleBrowserClosedForTabID:(NSString *)tabID {
+- (void)handleBrowserClosed:(CefRefPtr<CefBrowser>)browser forTabID:(NSString *)tabID {
   std::string tabKey = ToStdString(tabID);
+  auto it = _tabRecords.find(tabKey);
+  // A cancelled allocation or an obsolete browser cannot close a new record.
+  if (it == _tabRecords.end() || !it->second.browser ||
+      !it->second.browser->IsSame(browser)) return;
+  NSString *requestID = ToNSString(it->second.closeRequestID);
+  BrowserBeforeUnloadConfirmation *confirmation = it->second.closeConfirmation;
   const BOOL wasActive = [_activeTabID isEqualToString:tabID];
-  _tabRecords.erase(tabKey);
+  _tabRecords.erase(it);
+  [confirmation cancel];
 
   if (wasActive) {
     if (_tabRecords.empty()) {
@@ -3028,6 +3228,8 @@ class BrowserTabNavigationTask final : public CefTask {
     }
   }
 
+  [self notifyCloseRequestForTabID:tabID requestID:requestID
+                          outcome:BrowserTabCloseRequestOutcomeClosed];
   [self.delegate browserTabController:self didCloseTabWithID:tabID];
   [self updateBrowserVisibilityFocusingActiveTab:wasActive];
 }
@@ -3050,7 +3252,8 @@ class BrowserTabNavigationTask final : public CefTask {
   }
 
   auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end() || it->second.isClosing ||
+  if (it == _tabRecords.end() ||
+      (it->second.isClosing && it->second.closeRequestID.empty()) ||
       !it->second.hasIssuedNavigation) {
     return;
   }
@@ -3434,6 +3637,24 @@ bool BrowserTabClient::OnSetFocus(CefRefPtr<CefBrowser>, FocusSource source) {
          [controller shouldBlockNavigationFocusForTabID:ToNSString(tab_id_)];
 }
 
+bool BrowserTabClient::OnBeforeUnloadDialog(
+    CefRefPtr<CefBrowser> browser, const CefString &, bool is_reload,
+    CefRefPtr<CefJSDialogCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  // Navigation/reload and clients without a manual request keep CEF's default
+  // behavior. Only a tokenized manual close receives our native confirmation.
+  if (is_reload) return false;
+  BrowserTabController *controller = controller_;
+  return controller && [controller handleBeforeUnloadForTabID:ToNSString(tab_id_)
+                                                     browser:browser callback:callback];
+}
+
+void BrowserTabClient::OnResetDialogState(CefRefPtr<CefBrowser> browser) {
+  CEF_REQUIRE_UI_THREAD();
+  BrowserTabController *controller = controller_;
+  [controller resetCloseDialogForTabID:ToNSString(tab_id_) browser:browser];
+}
+
 void BrowserTabClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UI_THREAD();
 
@@ -3474,7 +3695,7 @@ void BrowserTabClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
     return;
   }
 
-  [controller handleBrowserClosedForTabID:ToNSString(tab_id_)];
+  [controller handleBrowserClosed:browser forTabID:ToNSString(tab_id_)];
 }
 
 bool BrowserTabClient::OnBeforePopup(

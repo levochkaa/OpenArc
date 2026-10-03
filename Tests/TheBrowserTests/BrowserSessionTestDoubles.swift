@@ -19,6 +19,11 @@ import Foundation
         let forceClose: Bool
     }
 
+    struct ConfirmedCloseRequest: Equatable {
+        let id: String
+        let requestID: String
+    }
+
     struct RetryCreationRequest: Equatable {
         let id: String
         let urlString: String
@@ -42,6 +47,7 @@ import Foundation
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabClosed: ((String) -> Void)?
+    var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
@@ -56,6 +62,9 @@ import Foundation
     private(set) var deselectActiveTabCount = 0
     private(set) var activeTabNavigationURLStrings = [String]()
     private(set) var closedTabRequests = [CloseTabRequest]()
+    private(set) var confirmedCloseRequests = [ConfirmedCloseRequest]()
+    var automaticallyConfirmsCloseRequests = true
+    var closeRequestAdmissionResult = true
     private(set) var saveSuggestedNames = [String?]()
     private(set) var captureFullPageToPasteboardCount = 0
     private(set) var pasteAndMatchStyleCount = 0
@@ -208,6 +217,27 @@ import Foundation
 
     func closeTab(withID tabID: String, forceClose: Bool) {
         closedTabRequests.append(CloseTabRequest(id: tabID, forceClose: forceClose))
+    }
+
+    func requestCloseTab(withID tabID: String, requestID: String) -> Bool {
+        guard closeRequestAdmissionResult else { return false }
+        confirmedCloseRequests.append(ConfirmedCloseRequest(id: tabID, requestID: requestID))
+        closedTabRequests.append(CloseTabRequest(id: tabID, forceClose: false))
+        if automaticallyConfirmsCloseRequests {
+            emitCloseRequestOutcome(id: tabID, requestID: requestID, outcome: .closed)
+        }
+        return true
+    }
+
+    /// Normal completion preserves the bridge's outcome-before-close ordering.
+    /// Suppressing the generic event permits isolated stale-token delivery.
+    func emitCloseRequestOutcome(
+        id: String, requestID: String, outcome: BrowserTabCloseOutcome, emitsClosedEvent: Bool = true
+    ) {
+        onTabCloseRequestFinished?(id, requestID, outcome)
+        if outcome == .closed, emitsClosedEvent {
+            onTabClosed?(id)
+        }
     }
 
     func prepareForCefShutdown() {

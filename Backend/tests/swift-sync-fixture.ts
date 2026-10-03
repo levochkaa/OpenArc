@@ -70,6 +70,7 @@ const expiryQueueScenario = "expiry-queue";
 const expiryLimitScenario = "expiry-response-limit";
 const desktopArchiveScenario = "desktop-archive-restore";
 const desktopAutomaticScenario = "desktop-auto-archive";
+const desktopConfirmedCloseScenario = "desktop-confirmed-close";
 const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
   "folder-device-rotation", "folder-pending-delete", "folder-activity-replay"
@@ -84,7 +85,8 @@ const desktopScenarios = [
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
   "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay",
   "persistence-retry", "pending-parent-delete", "pending-navigation", ...folderScenarios,
-  expiryScenario, expiryQueueScenario, expiryLimitScenario, desktopArchiveScenario, desktopAutomaticScenario
+  expiryScenario, expiryQueueScenario, expiryLimitScenario, desktopArchiveScenario, desktopAutomaticScenario,
+  desktopConfirmedCloseScenario
 ];
 const scenarios = suite === "mobile" ? [...mobileScenarios] : desktopScenarios;
 
@@ -240,7 +242,8 @@ for (const scenario of scenarios) {
   if (legacyScenarios.has(scenario)) legacyAuthorizations.add(`Bearer ${accessToken}`);
   else if (!folderScenarios.has(scenario) && !mobileScenarios.has(scenario)
     && scenario !== expiryScenario && scenario !== expiryQueueScenario && scenario !== expiryLimitScenario
-    && scenario !== desktopArchiveScenario && scenario !== desktopAutomaticScenario) {
+    && scenario !== desktopArchiveScenario && scenario !== desktopAutomaticScenario
+    && scenario !== desktopConfirmedCloseScenario) {
     semanticAuthorizations.add(`Bearer ${accessToken}`);
   }
   if (scenario === adoptionScenario) capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3]);
@@ -399,6 +402,20 @@ const control = createServer((incoming, outgoing) => {
           assert.ok(scenarioAttempts.some((attempt) => attempt.deviceID === device.deviceID
             && attempt.protocolVersion === 4 && attempt.status === 201),
           "Both mobile scenario devices must commit production v4 mutations");
+        }
+      } else if (account.scenario === desktopConfirmedCloseScenario) {
+        assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === 4),
+          "Confirmed manual close and Undo use ordinary v4 semantic mutations");
+        const writes = scenarioAttempts.filter((attempt) => attempt.status === 201);
+        assert.ok(new Set(writes.map((attempt) => attempt.mutationID)).size >= 3,
+          "Confirmed close requires seed, terminal deletion and fresh restoration mutations");
+        assert.ok(writes.some((receipt) => writes.filter((attempt) => attempt.mutationID === receipt.mutationID
+          && attempt.digest === receipt.digest).length >= 2),
+        "Confirmed close must replay its exact immutable mutation after a lost ACK");
+        for (const device of account.devices) {
+          assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
+            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+          "Both confirmed-close clients must use the current recovery-capable production transport");
         }
       } else if (account.scenario === desktopArchiveScenario || account.scenario === desktopAutomaticScenario) {
         assert.ok(scenarioAttempts.every((attempt) => [4, 5].includes(attempt.protocolVersion)));
