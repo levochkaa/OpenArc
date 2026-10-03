@@ -96,7 +96,8 @@ import AppKit
     static func folder(
         _ folder: BrowserChromeModel.PinnedTabFolder,
         onRename: @escaping () -> Void,
-        onChangeIcon: @escaping (String?) -> Void
+        onChangeIcon: @escaping (String?) -> Void,
+        onDelete: (() -> Void)? = nil
     ) -> NSMenu {
         let menu = menu()
         add(BrowserStrings.pinnedTabFolderRenameAction, to: menu, action: onRename)
@@ -104,6 +105,10 @@ import AppKit
         add(BrowserStrings.pinnedTabFolderNoIconAction, to: icons) { onChangeIcon(nil) }
         icons.addItem(.separator())
         addIcons(to: icons, selected: folder.systemImageName) { onChangeIcon($0) }
+        if let onDelete {
+            menu.addItem(.separator())
+            add(BrowserStrings.pinnedTabFolderDeleteAction, to: menu, action: onDelete)
+        }
         return menu
     }
 

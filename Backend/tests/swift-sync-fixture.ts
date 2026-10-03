@@ -45,11 +45,13 @@ const attempts: Attempt[] = [];
 const completed = new Set<string>();
 const legacyScenarios = new Set(["offline-delete", "lost-ack", "edit-during-ack", "global-favorite"]);
 const legacyAuthorizations = new Set<string>();
+const semanticAuthorizations = new Set<string>();
+const folderScenarios = new Set(["folder-roundtrip", "folder-race", "folder-lost-ack"]);
 const scenarios = [
   ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
   "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay",
-  "persistence-retry", "pending-parent-delete", "pending-navigation"
+  "persistence-retry", "pending-parent-delete", "pending-navigation", ...folderScenarios
 ];
 
 async function body(message: IncomingMessage): Promise<Buffer> {
@@ -82,10 +84,12 @@ const proxy = createServer((incoming, outgoing) => {
       } : undefined;
     const legacyPull = new URL(incoming.url ?? "/", upstream).pathname === "/v1/sync/pull"
       && legacyAuthorizations.has(incoming.headers.authorization ?? "");
+    const semanticPull = new URL(incoming.url ?? "/", upstream).pathname === "/v1/sync/pull"
+      && semanticAuthorizations.has(incoming.headers.authorization ?? "");
     const headers = { ...incoming.headers, host: new URL(upstream).host };
     // Only the capability shim needs plaintext; other accounts retain real
     // production response compression negotiated by URLSession.
-    if (legacyPull) headers["accept-encoding"] = "identity";
+    if (legacyPull || semanticPull) headers["accept-encoding"] = "identity";
     const forwarded = request(new URL(incoming.url ?? "/", upstream), {
       method: incoming.method, headers, timeout: 15_000
     });
@@ -96,11 +100,12 @@ const proxy = createServer((incoming, outgoing) => {
     let data = await body(received);
     const responseHeaders = { ...received.headers };
     const status = received.statusCode ?? 502;
-    if (legacyPull && status >= 200 && status < 300) {
+    if ((legacyPull || semanticPull) && status >= 200 && status < 300) {
       // Keep the original v2 durability cases exercising an older server's
       // capability response. All writes still reach the unchanged production API.
       const result = JSON.parse(data.toString()) as { supportedPushVersions?: number[] };
-      delete result.supportedPushVersions;
+      if (legacyPull) delete result.supportedPushVersions;
+      else result.supportedPushVersions = [2, 3];
       data = Buffer.from(JSON.stringify(result));
       delete responseHeaders["transfer-encoding"];
       responseHeaders["content-length"] = String(data.length);
@@ -144,6 +149,7 @@ for (const scenario of scenarios) {
   const userID = result.rows[0].id as string;
   const accessToken = await auth.issueAccessToken(userID);
   if (legacyScenarios.has(scenario)) legacyAuthorizations.add(`Bearer ${accessToken}`);
+  else if (!folderScenarios.has(scenario)) semanticAuthorizations.add(`Bearer ${accessToken}`);
   const devices: Device[] = [];
   for (const name of ["Swift A", "Swift B"]) {
     const response = await fetch(new URL("/v1/devices", baseURL), {
@@ -159,20 +165,23 @@ for (const scenario of scenarios) {
 
 async function inspect(userID: string) {
   assert.ok(accounts.some((account) => account.userID === userID));
-  const [events, receipts, tabs] = await Promise.all([
+  const [events, receipts, tabs, folders] = await Promise.all([
     pool.query("SELECT count(*)::int AS count FROM sync_events WHERE user_id = $1", [userID]),
     pool.query("SELECT count(*)::int AS count FROM sync_mutation_receipts WHERE user_id = $1", [userID]),
     pool.query(`
       SELECT t.id, t.rank, t.space_id AS "spaceID", t.placement, t.url_string AS "urlString",
-        t.user_title_override AS title, t.deleted_at IS NOT NULL AS deleted,
+        t.user_title_override AS title, t.pinned_folder_id AS "pinnedFolderID", t.deleted_at IS NOT NULL AS deleted,
         EXISTS (SELECT 1 FROM sync_tombstones s
           WHERE s.user_id = t.user_id AND s.entity_type = 'tab' AND s.entity_id = t.id) AS tombstoned
       FROM tabs t WHERE t.user_id = $1 ORDER BY t.rank, t.id
-    `, [userID])
+    `, [userID]),
+    pool.query(`SELECT id, space_id AS "spaceID", parent_folder_id AS "parentFolderID", title,
+      system_image_name AS "systemImageName", rank, deleted_at IS NOT NULL AS deleted
+      FROM folders WHERE user_id = $1 ORDER BY rank, id`, [userID])
   ]);
   const deviceIDs = new Set(accounts.find((account) => account.userID === userID)!.devices.map((device) => device.deviceID));
   return {
-    eventCount: events.rows[0].count, receiptCount: receipts.rows[0].count, tabs: tabs.rows,
+    eventCount: events.rows[0].count, receiptCount: receipts.rows[0].count, tabs: tabs.rows, folders: folders.rows,
     attempts: attempts.filter((attempt) => deviceIDs.has(attempt.deviceID)),
     heldDeviceIDs: [...held.keys()]
   };
@@ -205,7 +214,7 @@ const control = createServer((incoming, outgoing) => {
       const deviceIDs = new Set(account.devices.map((device) => device.deviceID));
       const scenarioAttempts = attempts.filter((attempt) => deviceIDs.has(attempt.deviceID));
       assert.ok(scenarioAttempts.length > 0, "Completed scenario must send production sync mutations");
-      const expectedVersion = legacyScenarios.has(account.scenario) ? 2 : 3;
+      const expectedVersion = legacyScenarios.has(account.scenario) ? 2 : folderScenarios.has(account.scenario) ? 4 : 3;
       assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === expectedVersion),
         `Scenario ${account.scenario} must exercise protocol v${expectedVersion}`);
       completed.add(command.scenario);

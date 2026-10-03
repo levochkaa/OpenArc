@@ -136,14 +136,17 @@ struct BrowserSidebarSnapshot: Equatable {
         return result
     }
 
-    func replacingTabs(_ tabs: [BrowserChromeModel.Tab]) -> BrowserSidebarSnapshot {
+    func replacingTabs(
+        _ tabs: [BrowserChromeModel.Tab],
+        pinnedTabFolders folders: [BrowserChromeModel.PinnedTabFolder]? = nil
+    ) -> BrowserSidebarSnapshot {
         BrowserSidebarSnapshot(
             spaces: spaces,
             selectedSpaceID: selectedSpaceID,
             activeSpace: activeSpace,
             isActiveSpacePinnedSectionCollapsed: isActiveSpacePinnedSectionCollapsed,
             allTabs: tabs,
-            pinnedTabFolders: pinnedTabFolders,
+            pinnedTabFolders: folders ?? pinnedTabFolders,
             appTabs: tabs.filter { $0.placement == .app },
             spacePinnedTabs: tabs.filter { $0.spaceID == selectedSpaceID && $0.placement == .spacePinned },
             temporaryTabs: tabs.filter { $0.spaceID == selectedSpaceID && $0.placement == .temporary },

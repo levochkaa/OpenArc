@@ -1253,7 +1253,7 @@ import Testing
 }
 
 @Test
-@MainActor func creatingPinnedTabFolderFromTabInExistingSingleTabFolderRemovesEmptySourceFolder() throws {
+@MainActor func creatingPinnedTabFolderFromTabInExistingSingleTabFolderPreservesEmptySourceFolder() throws {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
     let preferencesStore = InMemorySessionPreferencesStore()
@@ -1272,10 +1272,10 @@ import Testing
     let oldFolderID = try #require(model.createPinnedTabFolder(containingTabIDs: Set([tabID])))
     let newFolderID = try #require(model.createPinnedTabFolder(containingTabIDs: Set([tabID])))
 
-    #expect(model.pinnedTabFolders.map(\.id) == [newFolderID])
-    #expect(!model.pinnedTabFolders.contains { $0.id == oldFolderID })
+    #expect(model.pinnedTabFolders.map(\.id) == [oldFolderID, newFolderID])
+    #expect(model.pinnedTabFolders.contains { $0.id == oldFolderID })
     #expect(model.spacePinnedTabs.map(\.pinnedFolderID) == [newFolderID])
-    #expect(snapshotStore.savedSnapshots.last?.pinnedTabFolders?.map(\.id) == [newFolderID])
+    #expect(snapshotStore.savedSnapshots.last?.pinnedTabFolders?.map(\.id) == [oldFolderID, newFolderID])
 }
 
 @Test

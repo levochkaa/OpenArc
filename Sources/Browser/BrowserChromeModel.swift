@@ -802,6 +802,18 @@ enum BrowserWindowMode: Equatable {
         guard !orderedTabs.isEmpty else {
             return nil
         }
+        let originalTree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        let rootContainer = BrowserSidebarDropContainer.pinned(selectedSpaceID)
+        let originalRoots = originalTree.items(in: rootContainer)
+        let insertion = originalRoots.firstIndex { item in
+            switch item {
+            case .tab(let id): selectedTabIDs.contains(id)
+            case .folder(let id): !selectedTabIDs.isDisjoint(with: originalTree.tabIDs(in: .pinned(
+                    selectedSpaceID,
+                    folderID: id
+                )))
+            }
+        } ?? originalRoots.count
 
         let folderID = uniquePinnedTabFolderID()
         let folder = PinnedTabFolder(
@@ -836,9 +848,44 @@ enum BrowserWindowMode: Equatable {
             temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: selectedTabIDs),
             appTabs: appTabs
         )
-        removeEmptyPinnedTabFolders()
+        var tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        let moving = Set(selectedTabIDs.map(BrowserSidebarItemID.tab))
+        var roots = originalRoots.filter { !moving.contains($0) }
+        let rootIndex = originalRoots.prefix(insertion).filter { !moving.contains($0) }.count
+        roots.insert(.folder(folderID), at: min(rootIndex, roots.count))
+        tree.children[rootContainer] = roots
+        tree.children[.pinned(selectedSpaceID, folderID: folderID)] = orderedTabs.map { .tab($0.id) }
+        applyPinnedTree(tree)
         persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: Set(orderedTabs.map(\.id))))
         return folderID
+    }
+
+    /// Explicit deletion removes the folder's current subtree. Empty folders
+    /// otherwise keep their identity when their last tab is moved or archived.
+    @discardableResult func deletePinnedTabFolder(id folderID: String) -> Bool {
+        guard pinnedTabFolders.contains(where: { $0.id == folderID }) else { return false }
+        let removed = descendantPinnedTabFolderIDs(including: folderID)
+        let wasPersistenceEnabled = isPersistenceEnabled
+        isPersistenceEnabled = false
+        for tabID in tabs.filter({ $0.placement == .spacePinned && $0.pinnedFolderID.map(removed.contains) == true })
+            .map(\.id)
+        {
+            closeTab(id: tabID, registersUndo: false)
+        }
+        for (engineID, binding) in pendingRemoteTabCreations
+            where binding.snapshot.placement == .spacePinned && binding.snapshot
+            .pinnedFolderID
+            .map(removed.contains) == true
+        {
+            pendingRemoteTabCreations.removeValue(forKey: engineID)
+            discardedRemoteTabCreationIDs.insert(engineID)
+            tabDriver.closeTab(withID: engineID, forceClose: true)
+        }
+        pinnedTabFolders.removeAll { removed.contains($0.id) }
+        isPersistenceEnabled = wasPersistenceEnabled
+        persistCurrentSessionIfAllowed()
+        finishRemoteSyncProjectionIfReady()
+        return true
     }
 
     func togglePinnedTabFolderExpanded(id folderID: String) {
@@ -987,7 +1034,6 @@ enum BrowserWindowMode: Equatable {
             return tab
         }
         pinnedTabFolders = plan.folders
-        removeEmptyPinnedTabFolders()
         for id in payload.tabIDs {
             guard let moved = tabs.first(where: { $0.id == id }) else { continue }
             if moved.placement != .app {
@@ -1010,225 +1056,91 @@ enum BrowserWindowMode: Equatable {
             selectActiveTabForSelectedSpace()
         }
         updateWindowTitle()
-        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: payload.tabIDs))
+        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(for: payload))
         return true
     }
 
     func canMoveTab(
-        withID tabID: String,
-        toPlacement placement: BrowserTabPlacement,
-        atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil,
-        targetPinnedFolderID: String? = nil
+        withID tabID: String, toPlacement placement: BrowserTabPlacement, atSectionIndex sectionIndex: Int,
+        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil
     ) -> Bool {
-        guard
-            let reorderedTabs = reorderedTabs(
-                movingTabID: tabID,
-                toPlacement: placement,
-                requestedSectionIndex: sectionIndex,
-                targetSpaceID: targetSpaceID,
-                targetPinnedFolderID: targetPinnedFolderID
-            )
-        else {
-            return false
-        }
-
-        return reorderedTabs != tabs
+        indexedTabMovePlan(
+            tabIDs: [tabID],
+            placement: placement,
+            sectionIndex: sectionIndex,
+            targetSpaceID: targetSpaceID,
+            targetPinnedFolderID: targetPinnedFolderID
+        ) != nil
     }
 
     func canMoveTabs(
-        withIDs tabIDs: Set<String>,
-        toPlacement placement: BrowserTabPlacement,
-        atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil,
-        targetPinnedFolderID: String? = nil
+        withIDs tabIDs: Set<String>, toPlacement placement: BrowserTabPlacement, atSectionIndex sectionIndex: Int,
+        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil
     ) -> Bool {
-        guard
-            let reorderedTabs = reorderedTabs(
-                movingTabIDs: tabIDs,
-                toPlacement: placement,
-                requestedSectionIndex: sectionIndex,
-                targetSpaceID: targetSpaceID,
-                targetPinnedFolderID: targetPinnedFolderID
-            )
-        else {
-            return false
-        }
-
-        return reorderedTabs != tabs
+        tabIDs.count > 1 && indexedTabMovePlan(
+            tabIDs: tabIDs,
+            placement: placement,
+            sectionIndex: sectionIndex,
+            targetSpaceID: targetSpaceID,
+            targetPinnedFolderID: targetPinnedFolderID
+        ) != nil
     }
 
     func moveTab(
-        withID tabID: String,
-        toPlacement placement: BrowserTabPlacement,
-        atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil,
-        targetPinnedFolderID: String? = nil
+        withID tabID: String, toPlacement placement: BrowserTabPlacement, atSectionIndex sectionIndex: Int,
+        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil
     ) {
-        guard
-            let movingTab = tabs.first(where: { $0.id == tabID }),
-            var reorderedTabs = reorderedTabs(
-                movingTabID: tabID,
-                toPlacement: placement,
-                requestedSectionIndex: sectionIndex,
-                targetSpaceID: targetSpaceID,
-                targetPinnedFolderID: targetPinnedFolderID
-            ),
-            reorderedTabs != tabs
-        else {
-            return
-        }
-
-        let wasSelectedInSourceSpace = spaces.first { $0.id == movingTab.spaceID }?.selectedTabID == tabID
-            || selectedTabID == tabID
-
-        if let movedTabIndex = reorderedTabs.firstIndex(where: { $0.id == tabID }) {
-            reorderedTabs[movedTabIndex].lastActivityAt = dateProvider()
-        }
-
-        tabs = reorderedTabs
-        removeEmptyPinnedTabFolders()
-        if
-            let movedTab = tabs.first(where: { $0.id == tabID }),
-            movedTab.placement != .app
-        {
-            closedAppTabIDs.remove(tabID)
-            if wasSelectedInSourceSpace {
-                clearSelectedTab(tabID, forSpaceID: movingTab.spaceID)
-                setSelectedTabID(tabID, forSpaceID: movedTab.spaceID)
-            }
-        }
-        if
-            let movedTab = tabs.first(where: { $0.id == tabID }),
-            movedTab.placement != .spacePinned
-        {
-            closedPinnedTabIDs.remove(tabID)
-        }
-        if selectedTabID == tabID {
-            selectActiveTabForSelectedSpace()
-        }
-        updateWindowTitle()
-        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: [tabID]))
+        guard let plan = indexedTabMovePlan(
+            tabIDs: [tabID],
+            placement: placement,
+            sectionIndex: sectionIndex,
+            targetSpaceID: targetSpaceID,
+            targetPinnedFolderID: targetPinnedFolderID
+        )
+        else { return }
+        commitSidebarDrop(payload: plan.payload, destination: plan.destination)
     }
 
     func moveTabs(
-        withIDs tabIDs: Set<String>,
-        toPlacement placement: BrowserTabPlacement,
-        atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil,
-        targetPinnedFolderID: String? = nil
+        withIDs tabIDs: Set<String>, toPlacement placement: BrowserTabPlacement, atSectionIndex sectionIndex: Int,
+        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil
     ) {
-        let movingTabIDs = Set(tabIDs)
-        guard
-            movingTabIDs.count > 1,
-            var reorderedTabs = reorderedTabs(
-                movingTabIDs: movingTabIDs,
-                toPlacement: placement,
-                requestedSectionIndex: sectionIndex,
-                targetSpaceID: targetSpaceID,
-                targetPinnedFolderID: targetPinnedFolderID
-            ),
-            reorderedTabs != tabs
-        else {
-            return
-        }
-
-        let now = dateProvider()
-        for index in reorderedTabs.indices where movingTabIDs.contains(reorderedTabs[index].id) {
-            reorderedTabs[index].lastActivityAt = now
-        }
-
-        let selectedMovedTabID = selectedTabID.flatMap { movingTabIDs.contains($0) ? $0 : nil }
-        tabs = reorderedTabs
-        removeEmptyPinnedTabFolders()
-
-        if
-            let selectedMovedTabID,
-            let movedTab = tabs.first(where: { $0.id == selectedMovedTabID }),
-            movedTab.placement != .app
-        {
-            setSelectedTabID(selectedMovedTabID, forSpaceID: movedTab.spaceID)
-        }
-        for tabID in movingTabIDs where tabs.first(where: { $0.id == tabID })?.placement != .spacePinned {
-            closedPinnedTabIDs.remove(tabID)
-        }
-
-        updateWindowTitle()
-        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: movingTabIDs))
+        guard tabIDs.count > 1,
+              let plan = indexedTabMovePlan(
+                  tabIDs: tabIDs,
+                  placement: placement,
+                  sectionIndex: sectionIndex,
+                  targetSpaceID: targetSpaceID,
+                  targetPinnedFolderID: targetPinnedFolderID
+              )
+        else { return }
+        commitSidebarDrop(payload: plan.payload, destination: plan.destination)
     }
 
     func canMovePinnedTabFolder(
-        withID folderID: String,
-        toRootSectionIndex rootSectionIndex: Int,
-        targetSpaceID: String? = nil,
-        targetParentFolderID: String? = nil
+        withID folderID: String, toRootSectionIndex rootSectionIndex: Int,
+        targetSpaceID: String? = nil, targetParentFolderID: String? = nil
     ) -> Bool {
-        guard
-            let folder = pinnedTabFolders.first(where: { $0.id == folderID }),
-            let reorderedTabs = reorderedTabs(
-                movingPinnedTabFolderID: folderID,
-                toRootSectionIndex: rootSectionIndex,
-                targetSpaceID: targetSpaceID,
-                targetParentFolderID: targetParentFolderID
-            )
-        else {
-            return false
-        }
-
-        let resolvedTargetSpaceID = targetParentFolderID
-            .flatMap { parentFolderID in pinnedTabFolders.first { $0.id == parentFolderID }?.spaceID }
-            ?? targetSpaceID
-            ?? selectedSpaceID
-            ?? folder.spaceID
-        return reorderedTabs != tabs
-            || folder.parentFolderID != targetParentFolderID
-            || folder.spaceID != resolvedTargetSpaceID
+        indexedFolderMovePlan(
+            folderID: folderID,
+            index: rootSectionIndex,
+            targetSpaceID: targetSpaceID,
+            parentFolderID: targetParentFolderID
+        ) != nil
     }
 
     func movePinnedTabFolder(
-        withID folderID: String,
-        toRootSectionIndex rootSectionIndex: Int,
-        targetSpaceID: String? = nil,
-        targetParentFolderID: String? = nil
+        withID folderID: String, toRootSectionIndex rootSectionIndex: Int,
+        targetSpaceID: String? = nil, targetParentFolderID: String? = nil
     ) {
-        guard
-            let folderIndex = pinnedTabFolders.firstIndex(where: { $0.id == folderID }),
-            let reorderedTabs = reorderedTabs(
-                movingPinnedTabFolderID: folderID,
-                toRootSectionIndex: rootSectionIndex,
-                targetSpaceID: targetSpaceID,
-                targetParentFolderID: targetParentFolderID
-            )
-        else {
-            return
-        }
-
-        let resolvedTargetSpaceID = targetParentFolderID
-            .flatMap { parentFolderID in pinnedTabFolders.first { $0.id == parentFolderID }?.spaceID }
-            ?? targetSpaceID
-            ?? selectedSpaceID
-            ?? pinnedTabFolders[folderIndex].spaceID
-        guard reorderedTabs != tabs
-            || pinnedTabFolders[folderIndex].parentFolderID != targetParentFolderID
-            || pinnedTabFolders[folderIndex].spaceID != resolvedTargetSpaceID
-        else {
-            return
-        }
-
-        let movedFolderIDs = descendantPinnedTabFolderIDs(including: folderID)
-        for index in pinnedTabFolders.indices where movedFolderIDs.contains(pinnedTabFolders[index].id) {
-            pinnedTabFolders[index].spaceID = resolvedTargetSpaceID
-        }
-        pinnedTabFolders[folderIndex].parentFolderID = targetParentFolderID
-        if targetParentFolderID != nil {
-            pinnedTabFolders[folderIndex].isExpanded = true
-        }
-        tabs = reorderedTabs
-        let movedTabIDs = Set(tabs.filter {
-            $0.placement == .spacePinned && $0.pinnedFolderID.map { movedFolderIDs.contains($0) } == true
-        }
-        .map(\.id))
-        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(forTabIDs: movedTabIDs))
+        guard let plan = indexedFolderMovePlan(
+            folderID: folderID,
+            index: rootSectionIndex,
+            targetSpaceID: targetSpaceID,
+            parentFolderID: targetParentFolderID
+        )
+        else { return }
+        commitSidebarDrop(payload: plan.payload, destination: plan.destination)
     }
 
     func clearTemporaryTabs(includingActiveTab: Bool = true) {
@@ -1928,7 +1840,6 @@ enum BrowserWindowMode: Equatable {
             closedAppTabIDs.remove(id)
             removeTabFromSwitcherTracking(id)
             clearSelectedTab(id, forSpaceID: tab.spaceID)
-            removeEmptyPinnedTabFolders()
             updateWindowTitle()
             persistCurrentSessionIfAllowed()
             return
@@ -2060,7 +1971,6 @@ enum BrowserWindowMode: Equatable {
         removeTabFromSwitcherTracking(id)
         tabCreationUndoReferences.removeValue(forKey: id)?.currentTabID = nil
         clearSelectedTab(id, forSpaceID: closingTab.spaceID)
-        removeEmptyPinnedTabFolders()
 
         if closingTabWasSelected {
             let fallbackTabID = fallbackTabID(afterClosingTab: closingTab)
@@ -2164,11 +2074,6 @@ enum BrowserWindowMode: Equatable {
         let creationUndoReference: TabCreationUndoReference?
     }
 
-    private struct PinnedRootItem {
-        let firstSectionIndex: Int
-        let afterSectionIndex: Int
-    }
-
     private struct RemoteTabCreation {
         let snapshot: BrowserTabSessionSnapshotTab
         let generation: Int
@@ -2262,6 +2167,87 @@ enum BrowserWindowMode: Equatable {
         isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
     }
 
+    private func indexedFolderMovePlan(
+        folderID: String, index: Int, targetSpaceID: String?, parentFolderID: String?
+    ) -> BrowserSidebarMovePlan? {
+        let tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        guard let folder = tree.folders[folderID],
+              targetSpaceID != nil || parentFolderID != nil || folder.spaceID == selectedSpaceID else { return nil }
+        let spaceID = parentFolderID.flatMap { tree.folders[$0]?.spaceID }
+            ?? targetSpaceID ?? selectedSpaceID ?? folder.spaceID
+        let container = BrowserSidebarDropContainer.pinned(spaceID, folderID: parentFolderID)
+        let siblings = tree.items(in: container).filter { $0 != .folder(folderID) }
+        let index = min(max(index, 0), siblings.count)
+        return sidebarMovePlan(
+            payload: .init(
+                primary: .folder(folderID),
+                tabIDs: Set(tree.tabIDs(in: .pinned(folder.spaceID, folderID: folderID)))
+            ),
+            destination: .init(container: container, beforeItem: index < siblings.count ? siblings[index] : nil)
+        )
+    }
+
+    private func indexedTabMovePlan(
+        tabIDs: Set<String>, placement: BrowserTabPlacement, sectionIndex: Int,
+        targetSpaceID: String?, targetPinnedFolderID: String?
+    ) -> BrowserSidebarMovePlan? {
+        guard let primary = tabs.first(where: { tabIDs.contains($0.id) })?.id else { return nil }
+        let candidate = tabIDs.count == 1
+            ? reorderedTabs(
+                movingTabID: primary,
+                toPlacement: placement,
+                requestedSectionIndex: sectionIndex,
+                targetSpaceID: targetSpaceID,
+                targetPinnedFolderID: targetPinnedFolderID
+            )
+            : reorderedTabs(
+                movingTabIDs: tabIDs,
+                toPlacement: placement,
+                requestedSectionIndex: sectionIndex,
+                targetSpaceID: targetSpaceID,
+                targetPinnedFolderID: targetPinnedFolderID
+            )
+        guard let candidate, candidate != tabs,
+              let moved = candidate.first(where: { $0.id == primary }) else { return nil }
+        // Index APIs retain their historical flattened-tab addressing. Resolve it
+        // once to a typed sibling anchor; the actual mutation uses the shared tree.
+        let unrankedTabs = candidate.map { tab in var tab = tab
+            tab.pinnedSiblingRank = nil
+            return tab
+        }
+        let unrankedFolders = pinnedTabFolders.map { folder in
+            var folder = folder
+            folder.pinnedSiblingRank = nil
+            return folder
+        }
+        let inferred = BrowserSidebarTabTree(snapshot: sidebarSnapshot.replacingTabs(
+            unrankedTabs,
+            pinnedTabFolders: unrankedFolders
+        ))
+        let container: BrowserSidebarDropContainer =
+            switch placement {
+            case .app: .app
+            case .temporary: .temporary(moved.spaceID)
+            case .spacePinned: .pinned(moved.spaceID, folderID: moved.pinnedFolderID)
+            }
+        let siblings = inferred.items(in: container)
+        let moving = Set(tabIDs.map(BrowserSidebarItemID.tab))
+        guard let last = siblings.lastIndex(where: { moving.contains($0) }) else { return nil }
+        let before = siblings.dropFirst(last + 1).first { !moving.contains($0) }
+        return sidebarMovePlan(
+            payload: .init(primary: .tab(primary), tabIDs: tabIDs),
+            destination: .init(container: container, beforeItem: before)
+        )
+    }
+
+    private func applyPinnedTree(_ value: BrowserSidebarTabTree) {
+        var tree = value
+        tree.assignPinnedRanks(to: &tabs)
+        pinnedTabFolders = pinnedTabFolders.compactMap { tree.folders[$0.id] }
+        let byID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+        tabs = tree.orderedTabIDs().compactMap { byID[$0] }
+    }
+
     private func applyRemoteTabMetadata(_ snapshot: BrowserTabSessionSnapshotTab, to tab: inout Tab) {
         tab.spaceID = snapshot.spaceID.flatMap { id in spaces.contains { $0.id == id } ? id : nil }
             ?? spaces.first?.id ?? Self.defaultSpaceID
@@ -2271,6 +2257,7 @@ enum BrowserWindowMode: Equatable {
             ? normalizedPinnedURLString(from: snapshot.pinnedURLString ?? snapshot.urlString)
             : nil
         tab.pinnedFolderID = snapshot.placement == .spacePinned ? snapshot.pinnedFolderID : nil
+        tab.pinnedSiblingRank = snapshot.placement == .spacePinned ? snapshot.pinnedSiblingRank : nil
         if tab.creationState != .ready, !tab.hasPendingLocalNavigation,
            tab.urlString != snapshot.urlString
         {
@@ -2495,6 +2482,7 @@ enum BrowserWindowMode: Equatable {
                     : nil,
                 placement: placement,
                 pinnedFolderID: tabSnapshot.pinnedFolderID,
+                pinnedSiblingRank: tabSnapshot.pinnedSiblingRank,
                 lastActivityAt: lastActivityDate(from: tabSnapshot) ?? dateProvider()
             ))
         }
@@ -2526,7 +2514,6 @@ enum BrowserWindowMode: Equatable {
         }
 
         removeInvalidPinnedTabFolderAssignments()
-        removeEmptyPinnedTabFolders()
         restoreSelectedTabsForSpaces()
         selectActiveTabForSelectedSpace()
 
@@ -2538,6 +2525,13 @@ enum BrowserWindowMode: Equatable {
         guard !drainDeferredRemoteSyncSnapshot() else { return }
         persistCurrentSessionIfAllowed()
         archiveExpiredTemporaryTabs()
+    }
+
+    private func syncMoveIntent(for payload: BrowserSidebarDragPayload) -> BrowserSyncMoveIntent? {
+        switch payload.primary {
+        case .folder(let id): BrowserSyncMoveIntent(items: [.init(entityType: .folder, entityID: id)])
+        case .tab: syncMoveIntent(forTabIDs: payload.tabIDs)
+        }
     }
 
     private func syncMoveIntent(forTabIDs tabIDs: Set<String>) -> BrowserSyncMoveIntent? {
@@ -2660,7 +2654,12 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func currentSessionSnapshot() -> BrowserTabSessionSnapshot {
-        BrowserTabSessionSnapshot(
+        var tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        var snapshotTabs = tabs
+        // Pending remote tabs may not have a model row yet. Preserve known ranks
+        // so a metadata save cannot compact their still-occupied sibling slots.
+        tree.assignPinnedRanks(to: &snapshotTabs, preservingExistingRanks: true)
+        return BrowserTabSessionSnapshot(
             spaces: spaces.map { space in
                 BrowserSpaceSessionSnapshot(
                     id: space.id,
@@ -2670,17 +2669,18 @@ enum BrowserWindowMode: Equatable {
                     selectedTabIndex: selectedTabIndex(inSpace: space.id)
                 )
             },
-            pinnedTabFolders: pinnedTabFolders.map { folder in
+            pinnedTabFolders: pinnedTabFolders.compactMap { tree.folders[$0.id] }.map { folder in
                 BrowserPinnedTabFolderSessionSnapshot(
                     id: folder.id,
                     spaceID: folder.spaceID,
                     parentFolderID: folder.parentFolderID,
                     title: folder.title,
                     systemImageName: folder.systemImageName,
-                    isExpanded: folder.isExpanded
+                    isExpanded: folder.isExpanded,
+                    pinnedSiblingRank: folder.pinnedSiblingRank
                 )
             },
-            tabs: tabs.map { tab in
+            tabs: snapshotTabs.map { tab in
                 BrowserTabSessionSnapshotTab(
                     id: tab.syncID,
                     urlString: tab.urlString,
@@ -2689,7 +2689,8 @@ enum BrowserWindowMode: Equatable {
                     placement: tab.placement,
                     spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID,
-                    lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970
+                    lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
+                    pinnedSiblingRank: tab.pinnedSiblingRank
                 )
             }
         )
@@ -3083,6 +3084,7 @@ enum BrowserWindowMode: Equatable {
             faviconURLString: undoSnapshot.tab.faviconURLString,
             placement: undoSnapshot.tab.placement,
             pinnedFolderID: undoSnapshot.tab.pinnedFolderID,
+            pinnedSiblingRank: undoSnapshot.tab.pinnedSiblingRank,
             lastActivityAt: undoSnapshot.tab.lastActivityAt
         )
     }
@@ -3127,6 +3129,7 @@ enum BrowserWindowMode: Equatable {
             faviconURLString: tab.faviconURLString,
             placement: .spacePinned,
             pinnedFolderID: tab.pinnedFolderID,
+            pinnedSiblingRank: tab.pinnedSiblingRank,
             lastActivityAt: lastActivityAt ?? tab.lastActivityAt
         )
     }
@@ -3710,6 +3713,7 @@ enum BrowserWindowMode: Equatable {
                 faviconURLString: undoSnapshot?.tab.faviconURLString,
                 placement: restoredPlacement,
                 pinnedFolderID: undoSnapshot?.tab.pinnedFolderID,
+                pinnedSiblingRank: undoSnapshot?.tab.pinnedSiblingRank,
                 lastActivityAt: undoSnapshot?.tab.lastActivityAt ?? dateProvider()
             )
         )
@@ -3857,7 +3861,6 @@ enum BrowserWindowMode: Equatable {
         if let closedTab {
             clearSelectedTab(id, forSpaceID: closedTab.spaceID)
         }
-        removeEmptyPinnedTabFolders()
 
         if selectedTabID == id {
             selectedTabID = fallbackTabID(afterClosingTab: closedTab) ?? sidebarTabsForSelectedSpace().first?.id
@@ -4099,7 +4102,8 @@ enum BrowserWindowMode: Equatable {
                 title: sanitizedPinnedTabFolderTitle(from: snapshot.title)
                     ?? BrowserStrings.pinnedTabFolderDefaultTitle,
                 systemImageName: snapshot.systemImageName,
-                isExpanded: snapshot.isExpanded
+                isExpanded: snapshot.isExpanded,
+                pinnedSiblingRank: snapshot.pinnedSiblingRank
             )
         }
     }
@@ -4436,84 +4440,6 @@ enum BrowserWindowMode: Equatable {
             appTabs: appTabs.filter { !movingTabIDs.contains($0.id) }
         )
     }
-
-    func reorderedTabs(
-        movingPinnedTabFolderID folderID: String,
-        toRootSectionIndex rootSectionIndex: Int,
-        targetSpaceID: String? = nil,
-        targetParentFolderID: String? = nil
-    ) -> [Tab]? {
-        guard let folder = pinnedTabFolders.first(where: { $0.id == folderID }) else {
-            return nil
-        }
-
-        let targetParentFolder = targetParentFolderID.flatMap { parentFolderID in
-            pinnedTabFolders.first { $0.id == parentFolderID }
-        }
-        guard targetParentFolderID == nil || targetParentFolder != nil else {
-            return nil
-        }
-        guard targetParentFolderID == nil || !descendantPinnedTabFolderIDs(including: folderID).contains(
-            targetParentFolderID ?? ""
-        ) else {
-            return nil
-        }
-
-        if targetSpaceID == nil, targetParentFolderID == nil, folder.spaceID != selectedSpaceID {
-            return nil
-        }
-
-        let resolvedTargetSpaceID = targetParentFolder?.spaceID ?? targetSpaceID ?? selectedSpaceID ?? folder.spaceID
-        guard spaces.contains(where: { $0.id == resolvedTargetSpaceID }) else {
-            return nil
-        }
-
-        let movingFolderIDs = descendantPinnedTabFolderIDs(including: folderID)
-        let movingChildren = tabs.filter {
-            $0.spaceID == folder.spaceID
-                && $0.placement == .spacePinned
-                && $0.pinnedFolderID.map { movingFolderIDs.contains($0) } == true
-        }
-        guard !movingChildren.isEmpty else {
-            return nil
-        }
-
-        var updatedSpacePinnedTabsBySpaceID = tabsBySpaceID(
-            for: .spacePinned,
-            removingTabIDs: Set(movingChildren.map(\.id))
-        )
-        var targetPinnedTabs = updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] ?? []
-        let destinationIndex: Int
-        if let targetParentFolderID {
-            destinationIndex = pinnedFolderChildInsertionIndex(
-                rootSectionIndex,
-                in: targetPinnedTabs,
-                folderID: targetParentFolderID
-            )
-        } else {
-            let targetRootItems = pinnedRootItems(from: targetPinnedTabs, inSpaceID: resolvedTargetSpaceID)
-            let clampedRootIndex = min(max(rootSectionIndex, 0), targetRootItems.count)
-            destinationIndex = targetRootItems.dropFirst(clampedRootIndex).first?.firstSectionIndex
-                ?? targetPinnedTabs.count
-        }
-
-        let movedChildren = movingChildren.map { tab in
-            var updatedTab = tab
-            updatedTab.spaceID = resolvedTargetSpaceID
-            updatedTab.placement = .spacePinned
-            return updatedTab
-        }
-        targetPinnedTabs.insert(contentsOf: movedChildren, at: destinationIndex)
-        updatedSpacePinnedTabsBySpaceID[resolvedTargetSpaceID] = targetPinnedTabs
-
-        return tabsByReplacingTabs(
-            spacePinnedTabsBySpaceID: updatedSpacePinnedTabsBySpaceID,
-            temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: Set(movingChildren.map(\.id))),
-            appTabs: appTabs.filter { tab in
-                !movingChildren.contains { $0.id == tab.id }
-            }
-        )
-    }
 }
 
 @MainActor private extension BrowserChromeModel {
@@ -4776,37 +4702,6 @@ enum BrowserWindowMode: Equatable {
         return childIndices[childIndices.count - 1] + 1
     }
 
-    private func pinnedRootItems(from pinnedTabs: [Tab], inSpaceID spaceID: String) -> [PinnedRootItem] {
-        let foldersByID = Dictionary(uniqueKeysWithValues: pinnedTabFolders.filter { $0.spaceID == spaceID }.map {
-            ($0.id, $0)
-        })
-        var seenFolderIDs = Set<String>()
-        return pinnedTabs.indices.compactMap { index -> PinnedRootItem? in
-            let tab = pinnedTabs[index]
-            guard
-                let folderID = tab.pinnedFolderID,
-                let folder = foldersByID[folderID]
-            else {
-                return PinnedRootItem(firstSectionIndex: index, afterSectionIndex: index + 1)
-            }
-
-            guard folder.parentFolderID == nil else {
-                return nil
-            }
-
-            guard !seenFolderIDs.contains(folderID) else {
-                return nil
-            }
-
-            seenFolderIDs.insert(folderID)
-            let childCount = pinnedTabs.filter { tab in
-                tab.pinnedFolderID.map { descendantPinnedTabFolderIDs(including: folderID).contains($0) } == true
-            }
-            .count
-            return PinnedRootItem(firstSectionIndex: index, afterSectionIndex: index + childCount)
-        }
-    }
-
     func descendantPinnedTabFolderIDs(including folderID: String) -> Set<String> {
         var result = Set<String>()
 
@@ -4869,28 +4764,6 @@ enum BrowserWindowMode: Equatable {
                 continue
             }
         }
-    }
-
-    func removeEmptyPinnedTabFolders() {
-        var folderIDsWithChildren = Set(tabs.compactMap { tab -> String? in
-            tab.placement == .spacePinned ? tab.pinnedFolderID : nil
-        })
-        var didAddParent = true
-        while didAddParent {
-            didAddParent = false
-            for folder in pinnedTabFolders {
-                guard let parentFolderID = folder.parentFolderID,
-                      folderIDsWithChildren.contains(folder.id),
-                      !folderIDsWithChildren.contains(parentFolderID)
-                else {
-                    continue
-                }
-
-                folderIDsWithChildren.insert(parentFolderID)
-                didAddParent = true
-            }
-        }
-        pinnedTabFolders.removeAll { !folderIDsWithChildren.contains($0.id) }
     }
 
     func sanitizedPinnedTabFolderTitle(from title: String?) -> String? {

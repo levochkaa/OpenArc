@@ -75,6 +75,31 @@ struct BrowserSidebarTabTree {
                 container = parent
             }
         }
+        // Legacy snapshots infer populated folders from their first descendant.
+        // Empty folders are independent identities and follow those known items.
+        for folder in snapshot.pinnedTabFolders {
+            let parent = folder.parentFolderID.flatMap {
+                $0 != folder.id && folders[$0]?.spaceID == folder.spaceID ? $0 : nil
+            }
+            append(.folder(folder.id), to: .pinned(folder.spaceID, folderID: parent))
+        }
+        let tabsByID = Dictionary(uniqueKeysWithValues: snapshot.allTabs.map { ($0.id, $0) })
+        for (container, items) in children where container.section == .spacePinned {
+            let ranks = Dictionary(uniqueKeysWithValues: items.enumerated().map { index, item in
+                let explicit: Double? =
+                    switch item {
+                    case .tab(let id): tabsByID[id]?.pinnedSiblingRank
+                    case .folder(let id): folders[id]?.pinnedSiblingRank
+                    }
+                return (item, explicit.flatMap { $0.isFinite ? $0 : nil } ?? Double(index))
+            })
+            children[container] = items.sorted {
+                if ranks[$0] != ranks[$1] {
+                    return ranks[$0]! < ranks[$1]!
+                }
+                return Self.orderKey($0) < Self.orderKey($1)
+            }
+        }
         for (container, items) in children {
             for item in items {
                 parents[item] = container
@@ -87,6 +112,29 @@ struct BrowserSidebarTabTree {
     let snapshot: BrowserSidebarSnapshot
     var children = [BrowserSidebarDropContainer: [BrowserSidebarItemID]]()
     var folders: [String: BrowserChromeModel.PinnedTabFolder]
+
+    mutating func assignPinnedRanks(
+        to tabs: inout [BrowserChromeModel.Tab], preservingExistingRanks: Bool = false
+    ) {
+        let indices = Dictionary(uniqueKeysWithValues: tabs.enumerated().map { ($0.element.id, $0.offset) })
+        for index in tabs.indices where tabs[index].placement != .spacePinned {
+            tabs[index].pinnedSiblingRank = nil
+        }
+        for (container, items) in children where container.section == .spacePinned {
+            for (rank, item) in items.enumerated() {
+                switch item {
+                case .tab(let id):
+                    if let index = indices[id], !preservingExistingRanks || tabs[index].pinnedSiblingRank == nil {
+                        tabs[index].pinnedSiblingRank = Double(rank)
+                    }
+                case .folder(let id):
+                    if !preservingExistingRanks || folders[id]?.pinnedSiblingRank == nil {
+                        folders[id]?.pinnedSiblingRank = Double(rank)
+                    }
+                }
+            }
+        }
+    }
 
     func items(in container: BrowserSidebarDropContainer) -> [BrowserSidebarItemID] { children[container] ?? [] }
     func container(of item: BrowserSidebarItemID) -> BrowserSidebarDropContainer? { parents[item] }
@@ -135,6 +183,11 @@ struct BrowserSidebarTabTree {
 
     private var parents = [BrowserSidebarItemID: BrowserSidebarDropContainer]()
 
+    private static func orderKey(_ item: BrowserSidebarItemID) -> String {
+        switch item { case .folder(let id): "folder:\(id)"
+        case .tab(let id): "tab:\(id)" }
+    }
+
     private mutating func append(_ item: BrowserSidebarItemID, to container: BrowserSidebarDropContainer) {
         if children[container]?.contains(item) != true {
             children[container, default: []].append(item)
@@ -158,6 +211,7 @@ struct BrowserSidebarTabTree {
     ) -> Self? {
         var tree = BrowserSidebarTabTree(snapshot: snapshot)
         let originalOrder = tree.orderedTabIDs()
+        let originalChildren = tree.children
         let originalFolders = tree.folders
         let target = destination.container
         guard target.section == .app || snapshot.spaces.contains(where: { $0.id == target.spaceID }) else { return nil }
@@ -184,8 +238,7 @@ struct BrowserSidebarTabTree {
             guard target.section == .spacePinned, let folder = tree.folders[id] else { return nil }
             let descendants = tree.descendantFolderIDs(including: id)
             guard target.folderID.map({ !descendants.contains($0) }) ?? true,
-                  Set(tree.tabIDs(in: .pinned(folder.spaceID, folderID: id))) == payload.tabIDs,
-                  !payload.tabIDs.isEmpty else { return nil }
+                  Set(tree.tabIDs(in: .pinned(folder.spaceID, folderID: id))) == payload.tabIDs else { return nil }
             movingItems = [.folder(id)]
             let spaceID = target.spaceID!
             for descendant in descendants {
@@ -215,14 +268,17 @@ struct BrowserSidebarTabTree {
         let orderedIDs = tree.orderedTabIDs()
         guard Set(orderedIDs).count == snapshot.allTabs.count,
               orderedIDs.count == snapshot.allTabs.count else { return nil }
-        let tabs = orderedIDs.compactMap { updatedTabs[$0] }
-        let folders = snapshot.pinnedTabFolders.compactMap { tree.folders[$0.id] }
-        let folderContainerChanged = folders.contains {
+        var tabs = orderedIDs.compactMap { updatedTabs[$0] }
+        let foldersBeforeRanks = snapshot.pinnedTabFolders.compactMap { tree.folders[$0.id] }
+        let folderContainerChanged = foldersBeforeRanks.contains {
             $0.spaceID != originalFolders[$0.id]?.spaceID || $0.parentFolderID != originalFolders[$0.id]?.parentFolderID
         }
         // Auto-expanding a moved folder is presentation metadata, not a reason
         // to turn dropping it back at its own position into an actual move.
-        guard orderedIDs != originalOrder || updatedTabs != originalTabs || folderContainerChanged else { return nil }
+        guard orderedIDs != originalOrder || updatedTabs != originalTabs || folderContainerChanged
+            || tree.children != originalChildren else { return nil }
+        tree.assignPinnedRanks(to: &tabs)
+        let folders = snapshot.pinnedTabFolders.compactMap { tree.folders[$0.id] }
         return Self(payload: payload, destination: destination, tabs: tabs, folders: folders)
     }
 }

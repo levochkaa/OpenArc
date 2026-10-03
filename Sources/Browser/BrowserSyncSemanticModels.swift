@@ -268,6 +268,11 @@ enum BrowserSyncSemanticOperation: Codable, Equatable {
                 )
             case (.delete, .space): try .deleteSpace(id: values.decode(String.self, forKey: .entityID))
             case (.delete, .tab): try .deleteTab(id: values.decode(String.self, forKey: .entityID))
+            case (_, .folder):
+                throw DecodingError.dataCorruptedError(
+                    forKey: .entityType, in: values,
+                    debugDescription: "Protocol version 3 cannot encode folder operations"
+                )
             }
     }
 
@@ -450,6 +455,11 @@ private struct BrowserSyncSemanticEncodedEvent: Encodable {
             try data.encodeIfPresent(tab.lastActivityAt, forKey: .lastActivityAt)
         case .deleted(let id): try data.encode(id, forKey: .id)
         case .unknown: break
+        case .folder:
+            throw EncodingError.invalidValue(event, .init(
+                codingPath: encoder.codingPath,
+                debugDescription: "Protocol version 3 cannot encode folder events"
+            ))
         }
     }
 

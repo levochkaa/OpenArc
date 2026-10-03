@@ -89,7 +89,50 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func enableSemanticSyncMutations(for owner: BrowserSyncOwner) throws {
         try dbQueue.write { db in
             try requireSyncOwner(owner, in: db)
-            try db.execute(sql: "UPDATE browser_sync_state SET new_mutation_version = 3 WHERE id = 1")
+            try db
+                .execute(
+                    sql: "UPDATE browser_sync_state SET new_mutation_version = MAX(new_mutation_version, 3) WHERE id = 1"
+                )
+        }
+    }
+
+    func syncPullProtocolVersion(for owner: BrowserSyncOwner) throws -> Int {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try folderSyncEnabled(in: db) ? 4 : 2
+        }
+    }
+
+    /// Call only after every page of an explicit v4 pull starting at cursor zero.
+    /// Re-registering a device can require the same bootstrap again; adoption is
+    /// tied to the profile's durable version and never repeats on that path.
+    func completeFolderSyncBootstrap(
+        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner
+    ) throws -> BrowserTabSessionSnapshot {
+        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
+        return try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            let pending = try readSyncQueue(db)
+            guard pending.allSatisfy({ $0.protocolVersion == 4 }) else {
+                throw BrowserSyncQueueError.bootstrapRequiresLegacyDrain
+            }
+            let local = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
+            let previous = try readSyncBaseline(db)
+            var baseline = BrowserSyncOutboxBaseline()
+            baseline.deletedKeys = previous.deletedKeys
+            try baseline.apply(events)
+            if try !folderSyncEnabled(in: db) {
+                let values = BrowserSyncOutboxProjection.effectiveChanges(baseline: baseline, pending: pending)
+                let adoption = BrowserSyncFolderProjection.adoptionOperations(
+                    local: local, values: values, deleted: baseline.deletedKeys
+                )
+                try appendFolderSyncMutations(adoption, to: db)
+            }
+            try db.execute(
+                sql: "UPDATE browser_sync_state SET new_mutation_version = 4, cursor = ? WHERE id = 1",
+                arguments: [cursor]
+            )
+            return try writeSyncProjection(baseline, in: db)
         }
     }
 
@@ -125,7 +168,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1", arguments: [cursor]
             )
             if enableSemanticMutations {
-                try db.execute(sql: "UPDATE browser_sync_state SET new_mutation_version = 3 WHERE id = 1")
+                try db
+                    .execute(
+                        sql: "UPDATE browser_sync_state SET new_mutation_version = MAX(new_mutation_version, 3) WHERE id = 1"
+                    )
             }
             return snapshot
         }
@@ -383,6 +429,45 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     sql: "ALTER TABLE browser_sync_state ADD COLUMN new_mutation_version INTEGER NOT NULL DEFAULT 2 CHECK (new_mutation_version IN (2, 3))"
                 )
         }
+        migrator.registerMigration("addFolderSyncOutbox") { db in
+            try db.execute(sql: "ALTER TABLE browser_tabs ADD COLUMN pinned_sibling_rank DOUBLE")
+            try db.execute(sql: "ALTER TABLE browser_pinned_tab_folders ADD COLUMN pinned_sibling_rank DOUBLE")
+            // SQLite cannot widen a CHECK constraint in place. Copy immutable
+            // payload BLOBs and FIFO positions directly, including deleted-row
+            // sequence history, without decoding any existing mutation.
+            let sequence = try Int64.fetchOne(
+                db,
+                sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_sync_outbox'"
+            )
+            try db.execute(sql: """
+            CREATE TABLE browser_sync_outbox_v4 (
+                position INTEGER PRIMARY KEY AUTOINCREMENT,
+                mutation_id TEXT NOT NULL UNIQUE,
+                payload BLOB NOT NULL,
+                protocol_version INTEGER NOT NULL DEFAULT 2 CHECK (protocol_version IN (2, 3, 4))
+            );
+            INSERT INTO browser_sync_outbox_v4 (position, mutation_id, payload, protocol_version)
+                SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position;
+            DROP TABLE browser_sync_outbox;
+            ALTER TABLE browser_sync_outbox_v4 RENAME TO browser_sync_outbox;
+            CREATE TABLE browser_sync_state_v4 (
+                id INTEGER PRIMARY KEY CHECK (id = 1), base_url TEXT NOT NULL, user_id TEXT NOT NULL,
+                cursor INTEGER NOT NULL DEFAULT 0 CHECK (cursor >= 0),
+                paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
+                new_mutation_version INTEGER NOT NULL DEFAULT 2 CHECK (new_mutation_version IN (2, 3, 4))
+            );
+            INSERT INTO browser_sync_state_v4 SELECT id, base_url, user_id, cursor, paused, new_mutation_version FROM browser_sync_state;
+            DROP TABLE browser_sync_state;
+            ALTER TABLE browser_sync_state_v4 RENAME TO browser_sync_state;
+            """)
+            if let sequence {
+                try db.execute(sql: "DELETE FROM sqlite_sequence WHERE name = 'browser_sync_outbox'")
+                try db.execute(
+                    sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_sync_outbox', ?)",
+                    arguments: [sequence]
+                )
+            }
+        }
         return migrator
     }
 
@@ -421,8 +506,13 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             baseline.recordLocalDeletes(changes)
             try appendSyncMutations(changes, to: db)
         case 3:
+            // Legacy operations cannot name a folder root. Infer its affected
+            // tab movements instead of interpreting an empty tab hint as no move.
+            let legacyMove = syncMove.flatMap { move in
+                !move.tabIDs.isEmpty && move.items.allSatisfy { $0.entityType == .tab } ? move : nil
+            }
             let operations = BrowserSyncSemanticProjection.operations(
-                from: previous ?? BrowserTabSessionSnapshot(tabs: []), to: normalized, syncMove: syncMove
+                from: previous ?? BrowserTabSessionSnapshot(tabs: []), to: normalized, syncMove: legacyMove
             )
             for operation in operations {
                 switch operation {
@@ -438,6 +528,28 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 }
             }
             try appendSemanticSyncMutations(operations, to: db)
+        case 4:
+            let operations = BrowserSyncFolderProjection.operations(
+                from: previous,
+                to: normalized,
+                moveIntent: syncMove
+            )
+            for operation in operations {
+                let reference: BrowserSyncEntityReference? =
+                    switch operation {
+                    case .deleteSpace(let id): .init(entityType: .space, entityID: id)
+                    case .deleteTab(let id): .init(entityType: .tab, entityID: id)
+                    case .deleteFolder(let id): .init(entityType: .folder, entityID: id)
+                    default: nil
+                    }
+                if let reference {
+                    baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
+                        type: reference.entityType,
+                        id: reference.entityID
+                    ))
+                }
+            }
+            try appendFolderSyncMutations(operations, to: db)
         default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
         }
         try writeSyncBaseline(baseline, to: db)
@@ -448,7 +560,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             db,
             sql: """
             SELECT id, url_string, pinned_url_string, user_title_override, placement, space_id,
-                   pinned_folder_id, last_activity_timestamp
+                   pinned_folder_id, last_activity_timestamp, pinned_sibling_rank
             FROM browser_tabs
             ORDER BY position ASC
             """
@@ -478,7 +590,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         let pinnedTabFolders = try Row.fetchAll(
             db,
             sql: """
-            SELECT id, space_id, parent_folder_id, title, system_image_name, is_expanded
+            SELECT id, space_id, parent_folder_id, title, system_image_name, is_expanded, pinned_sibling_rank
             FROM browser_pinned_tab_folders
             ORDER BY position ASC
             """
@@ -490,7 +602,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 parentFolderID: row["parent_folder_id"],
                 title: row["title"],
                 systemImageName: row["system_image_name"],
-                isExpanded: row["is_expanded"]
+                isExpanded: row["is_expanded"], pinnedSiblingRank: row["pinned_sibling_rank"]
             )
         }
 
@@ -506,7 +618,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     placement: BrowserTabPlacement(rawValue: row["placement"] as String) ?? .temporary,
                     spaceID: row["space_id"],
                     pinnedFolderID: row["pinned_folder_id"],
-                    lastActivityTimestamp: row["last_activity_timestamp"]
+                    lastActivityTimestamp: row["last_activity_timestamp"], pinnedSiblingRank: row["pinned_sibling_rank"]
                 )
             }
         )
@@ -556,6 +668,16 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
     }
 
+    private func appendFolderSyncMutations(_ operations: [BrowserSyncFolderOperation], to db: Database) throws {
+        for chunk in try syncChunks(operations) {
+            let mutation = BrowserSyncFolderMutation(id: UUID().uuidString, operations: chunk)
+            try db.execute(
+                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 4)",
+                arguments: [mutation.id, JSONEncoder().encode(mutation)]
+            )
+        }
+    }
+
     private func syncChunks<Item: Encodable>(_ items: [Item]) throws -> [[Item]] {
         // The server caps inflated JSON at 8 MiB. Reserve more than the fixed
         // UUID/device/version envelope requires, counting escaped UTF-8 item bytes.
@@ -596,6 +718,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     BrowserSyncSemanticMutation.self,
                     from: row["payload"] as Data
                 ))
+            case 4: mutation = try .folders(JSONDecoder().decode(
+                    BrowserSyncFolderMutation.self,
+                    from: row["payload"] as Data
+                ))
             default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
             }
             guard mutation.id == row["mutation_id"] as String
@@ -609,11 +735,16 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         in db: Database
     ) throws -> BrowserTabSessionSnapshot {
         let snapshot = try BrowserSyncOutboxProjection.snapshot(
-            baseline: baseline, pending: readSyncQueue(db), local: readSnapshot(db)
+            baseline: baseline, pending: readSyncQueue(db), local: readSnapshot(db),
+            folderSyncEnabled: folderSyncEnabled(in: db)
         )
         try writeSyncBaseline(baseline, to: db)
         try writeSnapshot(snapshot, to: db)
         return snapshot
+    }
+
+    private func folderSyncEnabled(in db: Database) throws -> Bool {
+        try Int.fetchOne(db, sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id = 1") == 4
     }
 
     private func storedSyncOwner(_ db: Database) throws -> BrowserSyncOwner? {
@@ -660,9 +791,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             try db.execute(
                 sql: """
                 INSERT INTO browser_pinned_tab_folders (
-                  id, space_id, parent_folder_id, title, system_image_name, is_expanded, position
+                  id, space_id, parent_folder_id, title, system_image_name, is_expanded, position, pinned_sibling_rank
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
                     folder.id,
@@ -672,6 +803,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     folder.systemImageName,
                     folder.isExpanded,
                     index,
+                    folder.pinnedSiblingRank,
                 ]
             )
         }
@@ -681,9 +813,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 sql: """
                 INSERT INTO browser_tabs (
                   id, url_string, pinned_url_string, user_title_override, placement, space_id,
-                  pinned_folder_id, last_activity_timestamp, position
+                  pinned_folder_id, last_activity_timestamp, position, pinned_sibling_rank
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
                     tab.id ?? UUID().uuidString,
@@ -695,6 +827,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     tab.pinnedFolderID,
                     tab.lastActivityTimestamp,
                     index,
+                    tab.pinnedSiblingRank,
                 ]
             )
         }

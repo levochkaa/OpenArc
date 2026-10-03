@@ -675,7 +675,10 @@ final class BrowserNativeSidebarNSView: NSView {
                 row.menuProvider = { [weak row] in BrowserNativeMenus.folder(
                     folder,
                     onRename: { row?.onBeginRename() },
-                    onChangeIcon: { model.setIcon($0, forPinnedTabFolderID: folder.id) }
+                    onChangeIcon: { model.setIcon($0, forPinnedTabFolderID: folder.id) },
+                    onDelete: { [weak state] in
+                        state?.withSidebarAnimation { _ = model.deletePinnedTabFolder(id: folder.id) }
+                    }
                 ) }
                 row.dragCoordinateView = content
                 row.onBeginDragSession = { [weak self, weak row] value in

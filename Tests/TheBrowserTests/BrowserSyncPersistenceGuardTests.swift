@@ -413,6 +413,8 @@ private struct PersistenceGuardDiskState: Equatable {
                 }
             case .semantic(let batch):
                 BrowserSyncSemanticProjection.apply(batch.operations, to: &values, deleted: &deleted)
+            case .folders(let batch):
+                BrowserSyncFolderProjection.apply(batch.operations, to: &values, deleted: &deleted)
             }
             if let extra = extraOnNextPush {
                 values[BrowserSyncOutboxProjection.key(extra)] = extra

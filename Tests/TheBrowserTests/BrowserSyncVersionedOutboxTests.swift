@@ -286,6 +286,9 @@ import Testing
                 deviceID: device,
                 operations: mutation.operations
             ))
+        case .folders:
+            Issue.record("Legacy migration fixture must contain only v2/v3 rows")
+            return
         }
         #expect(request.count < 8 * 1024 * 1024)
     }

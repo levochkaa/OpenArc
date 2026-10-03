@@ -13,7 +13,7 @@ struct BrowserSessionWrite: Equatable {
 
     func validate() throws {
         if case .local(let syncMove) = origin, let syncMove,
-           Set(syncMove.tabIDs).count != syncMove.tabIDs.count
+           Set(syncMove.items).count != syncMove.items.count
         {
             throw BrowserSessionWriteError.duplicateMoveIDs
         }

@@ -75,7 +75,8 @@ struct BrowserPinnedTabFolderSessionSnapshot: Codable, Equatable {
         parentFolderID: String? = nil,
         title: String,
         systemImageName: String? = nil,
-        isExpanded: Bool = true
+        isExpanded: Bool = true,
+        pinnedSiblingRank: Double? = nil
     ) {
         self.id = id
         self.spaceID = spaceID
@@ -83,6 +84,7 @@ struct BrowserPinnedTabFolderSessionSnapshot: Codable, Equatable {
         self.title = title
         self.systemImageName = systemImageName
         self.isExpanded = isExpanded
+        self.pinnedSiblingRank = pinnedSiblingRank
     }
 
     // MARK: Internal
@@ -93,6 +95,7 @@ struct BrowserPinnedTabFolderSessionSnapshot: Codable, Equatable {
     let title: String
     let systemImageName: String?
     let isExpanded: Bool
+    let pinnedSiblingRank: Double?
 }
 
 // MARK: - BrowserTabSessionSnapshotTab
@@ -108,7 +111,8 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         placement: BrowserTabPlacement = .temporary,
         spaceID: String? = nil,
         pinnedFolderID: String? = nil,
-        lastActivityTimestamp: TimeInterval? = nil
+        lastActivityTimestamp: TimeInterval? = nil,
+        pinnedSiblingRank: Double? = nil
     ) {
         self.id = id
         self.urlString = urlString
@@ -117,6 +121,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         self.placement = placement
         self.spaceID = spaceID
         self.pinnedFolderID = pinnedFolderID
+        self.pinnedSiblingRank = pinnedSiblingRank
         self.lastActivityTimestamp = lastActivityTimestamp
     }
 
@@ -134,6 +139,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         }
         self.spaceID = try container.decodeIfPresent(String.self, forKey: .spaceID)
         self.pinnedFolderID = try container.decodeIfPresent(String.self, forKey: .pinnedFolderID)
+        self.pinnedSiblingRank = try container.decodeIfPresent(Double.self, forKey: .pinnedSiblingRank)
         self.lastActivityTimestamp = try container.decodeIfPresent(TimeInterval.self, forKey: .lastActivityTimestamp)
     }
 
@@ -146,6 +152,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
     let placement: BrowserTabPlacement
     let spaceID: String?
     let pinnedFolderID: String?
+    let pinnedSiblingRank: Double?
     let lastActivityTimestamp: TimeInterval?
 
     func encode(to encoder: Encoder) throws {
@@ -157,6 +164,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         try container.encode(placement, forKey: .placement)
         try container.encodeIfPresent(spaceID, forKey: .spaceID)
         try container.encodeIfPresent(pinnedFolderID, forKey: .pinnedFolderID)
+        try container.encodeIfPresent(pinnedSiblingRank, forKey: .pinnedSiblingRank)
         try container.encodeIfPresent(lastActivityTimestamp, forKey: .lastActivityTimestamp)
     }
 
@@ -170,6 +178,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable {
         case placement
         case spaceID
         case pinnedFolderID
+        case pinnedSiblingRank
         case isPinned
         case lastActivityTimestamp
     }

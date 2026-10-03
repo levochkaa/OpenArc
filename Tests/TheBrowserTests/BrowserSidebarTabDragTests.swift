@@ -3,6 +3,173 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserSidebarDropTests {
+    @Test func emptyFolderMixedOrderSurvivesDropAndSnapshotRestart() throws {
+        let f = SidebarDragFixture(folders: [
+            .init(id: "empty", spaceID: "s", title: "Empty", pinnedSiblingRank: 1),
+        ])
+        #expect(BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot).items(in: .pinned("s")) == [
+            f.item("a"),
+            .folder("empty"),
+            f.item("b"),
+        ])
+        #expect(f.model.sidebarSnapshot.visiblePinnedRows(in: "s").count == 3)
+        let payload = f.folderPayload("empty")
+        #expect(payload.tabIDs.isEmpty)
+        #expect(f.model.commitSidebarDrop(
+            payload: payload,
+            destination: .init(container: .pinned("s"), beforeItem: f.item("a"))
+        ))
+        #expect(f.store.savedSyncMoves == [.init(items: [.init(entityType: .folder, entityID: "empty")])])
+        let snapshot = try #require(f.store.savedSnapshots.last)
+        #expect(snapshot.pinnedTabFolders?.first?.pinnedSiblingRank == 0)
+        #expect(snapshot.tabs.filter { $0.placement == .spacePinned }.map(\.pinnedSiblingRank) == [1, 2])
+        let store = InMemorySessionSnapshotStore(loadedSnapshot: snapshot)
+        let driver = FakeBrowserTabDriver()
+        let restored = BrowserChromeModel(
+            tabDriver: driver,
+            sessionSnapshotStore: store,
+            sessionPreferencesStore: InMemorySessionPreferencesStore(),
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            extensionManager: FakeBrowserExtensionManager(),
+            windowTitleHandler: { _ in },
+            allTabsClosedHandler: {}
+        )
+        restored.handleContextReady()
+        driver.flushPendingCreateEvents()
+        let roots = BrowserSidebarTabTree(snapshot: restored.sidebarSnapshot).items(in: .pinned("s"))
+        #expect(roots.first == .folder("empty"))
+        #expect(restored.tabs.filter { $0.placement == .spacePinned }.map(\.pinnedSiblingRank) == [1, 2])
+        #expect(store.savedSyncMoves.isEmpty)
+    }
+
+    @Test func directMovesKeepEmptyFoldersAndMixedSiblingRanks() throws {
+        let f = SidebarDragFixture(folders: [
+            .init(id: "empty", spaceID: "s", title: "Empty"),
+            .init(id: "parent", spaceID: "t", title: "Parent"),
+        ])
+        #expect(f.model.canMovePinnedTabFolder(withID: "empty", toRootSectionIndex: 0))
+        f.model.movePinnedTabFolder(withID: "empty", toRootSectionIndex: 0)
+        #expect(BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot)
+            .items(in: .pinned("s"))
+            .first == .folder("empty"))
+        f.model.moveTab(withID: f.id("b"), toPlacement: .spacePinned, atSectionIndex: 0, targetPinnedFolderID: "empty")
+        #expect(f.model.tabs.first { $0.syncID == "b" }?.pinnedSiblingRank == 0)
+        f.model.moveTab(withID: f.id("b"), toPlacement: .temporary, atSectionIndex: 0)
+        #expect(f.model.pinnedTabFolders.contains { $0.id == "empty" })
+        f.model.movePinnedTabFolder(
+            withID: "empty",
+            toRootSectionIndex: 0,
+            targetSpaceID: "t",
+            targetParentFolderID: "parent"
+        )
+        let folder = try #require(f.model.pinnedTabFolders.first { $0.id == "empty" })
+        #expect(folder.spaceID == "t" && folder.parentFolderID == "parent" && folder.pinnedSiblingRank == 0)
+        #expect(f.store.savedSyncMoves.last == .init(items: [.init(entityType: .folder, entityID: "empty")]))
+        #expect(!f.model.canMovePinnedTabFolder(withID: "parent", toRootSectionIndex: 0, targetParentFolderID: "empty"))
+    }
+
+    @Test func explicitFolderDeletionRemovesCurrentSubtreeAndKeepsMovedOutTabsAndFavorites() {
+        let f = SidebarDragFixture(
+            pinned: [("one", "nested"), ("escape", "nested"), ("root", nil)],
+            apps: ["favorite"],
+            folders: [
+                .init(id: "parent", spaceID: "s", title: "Parent"),
+                .init(id: "nested", spaceID: "s", parentFolderID: "parent", title: "Nested"),
+            ]
+        )
+        f.model.moveTab(withID: f.id("escape"), toPlacement: .spacePinned, atSectionIndex: 0, targetSpaceID: "t")
+        let count = f.store.savedSnapshots.count
+        #expect(f.model.deletePinnedTabFolder(id: "parent"))
+        #expect(f.model.pinnedTabFolders.isEmpty)
+        #expect(Set(f.model.tabs.map(\.syncID)) == ["escape", "root", "favorite", "x", "y"])
+        #expect(f.model.tabs.first { $0.syncID == "escape" }?.spaceID == "t")
+        #expect(f.store.savedSnapshots.count == count + 1)
+        #expect(!f.model.deletePinnedTabFolder(id: "parent"))
+    }
+
+    @Test func deletingFolderDuringRemoteCreationCancelsPendingChildrenWithoutResurrection() throws {
+        let f = SidebarDragFixture()
+        let current = try #require(f.store.savedSnapshots.last)
+        f.model.applyRemoteSyncSnapshot(.init(
+            spaces: current.spaces,
+            pinnedTabFolders: [.init(
+                id: "remote",
+                spaceID: "s",
+                title: "Remote",
+                pinnedSiblingRank: 1
+            )],
+            tabs: current.tabs + [.init(
+                id: "pending",
+                urlString: "https://example.com/pending",
+                placement: .spacePinned,
+                spaceID: "s",
+                pinnedFolderID: "remote",
+                pinnedSiblingRank: 0
+            )]
+        ))
+        #expect(!f.model.tabs.contains { $0.syncID == "pending" })
+        #expect(f.model.deletePinnedTabFolder(id: "remote"))
+        f.driver.flushPendingCreateEvents()
+        #expect(!f.model.tabs.contains { $0.syncID == "pending" })
+        #expect(!f.model.pinnedTabFolders.contains { $0.id == "remote" })
+        #expect(f.store.savedSnapshots.last?.tabs.contains { $0.id == "pending" } == false)
+    }
+
+    @Test func metadataSavePreservesRemoteMixedRanksUntilPendingTabCallbackArrives() throws {
+        let f = SidebarDragFixture(pinned: [("ready", nil)], temporary: [])
+        let current = try #require(f.store.savedSnapshots.last)
+        f.model.applyRemoteSyncSnapshot(.init(
+            spaces: current.spaces,
+            pinnedTabFolders: [.init(
+                id: "empty",
+                spaceID: "s",
+                title: "Empty",
+                pinnedSiblingRank: 1
+            )],
+            tabs: [
+                .init(
+                    id: "pending",
+                    urlString: "https://example.com/pending",
+                    placement: .spacePinned,
+                    spaceID: "s",
+                    pinnedSiblingRank: 0
+                ),
+                .init(
+                    id: "ready",
+                    urlString: "https://ready.example",
+                    userTitleOverride: "ready",
+                    placement: .spacePinned,
+                    spaceID: "s",
+                    pinnedSiblingRank: 2
+                ),
+            ]
+        ))
+        #expect(!f.model.tabs.contains { $0.syncID == "pending" })
+        f.model.setTitle("Renamed while loading", forPinnedTabFolderID: "empty")
+        let saved = try #require(f.store.savedSnapshots.last)
+        #expect(saved.pinnedTabFolders?.first?.pinnedSiblingRank == 1)
+        #expect(saved.tabs.first { $0.id == "pending" }?.pinnedSiblingRank == 0)
+        #expect(saved.tabs.first { $0.id == "ready" }?.pinnedSiblingRank == 2)
+        f.driver.flushPendingCreateEvents()
+        let pending = try #require(f.model.tabs.first { $0.syncID == "pending" })
+        #expect(BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot).items(in: .pinned("s")) == [
+            .tab(pending.id), .folder("empty"), f.item("ready"),
+        ])
+        #expect(f.model.pinnedTabFolders.first?.title == "Renamed while loading")
+    }
+
+    @Test func moveIntentValidationKeepsTabAndFolderNamespacesDistinct() throws {
+        let write = BrowserSessionWrite(snapshot: .init(tabs: []), origin: .local(syncMove: .init(items: [
+            .init(entityType: .tab, entityID: "shared"), .init(entityType: .folder, entityID: "shared"),
+        ])))
+        try write.validate()
+        #expect(throws: BrowserSessionWriteError.duplicateMoveIDs) {
+            try BrowserSessionWrite(snapshot: .init(tabs: []), origin: .local(syncMove: .init(items: [
+                .init(entityType: .folder, entityID: "shared"), .init(entityType: .folder, entityID: "shared"),
+            ]))).validate()
+        }
+    }
+
     @Test func moveIntentDistinguishesActedTabFromComplementaryReorder() {
         let movingA = SidebarDragFixture(pinned: [], temporary: ["a", "b"])
         #expect(movingA.model.commitSidebarDrop(
@@ -40,7 +207,7 @@ import Testing
         #expect(f.model.selectedSpaceID == "s")
     }
 
-    @Test func moveIntentCapturesNestedFolderDescendantsForDropAndDirectMove() {
+    @Test func moveIntentCapturesOnlyTheFolderRootForDropAndDirectMove() {
         let folders: [BrowserPinnedTabFolderSessionSnapshot] = [
             .init(id: "parent", spaceID: "s", title: "Parent"),
             .init(id: "child", spaceID: "s", parentFolderID: "parent", title: "Child"),
@@ -49,9 +216,12 @@ import Testing
         #expect(f.model.commitSidebarDrop(
             payload: f.folderPayload("parent"), destination: .init(container: .pinned("s"))
         ))
-        #expect(f.store.savedSyncMoves == [.init(tabIDs: ["one", "two"])])
+        #expect(f.store.savedSyncMoves == [.init(items: [.init(entityType: .folder, entityID: "parent")])])
         f.model.movePinnedTabFolder(withID: "parent", toRootSectionIndex: 0, targetSpaceID: "t")
-        #expect(f.store.savedSyncMoves == [.init(tabIDs: ["one", "two"]), .init(tabIDs: ["one", "two"])])
+        #expect(f.store.savedSyncMoves == Array(
+            repeating: .init(items: [.init(entityType: .folder, entityID: "parent")]),
+            count: 2
+        ))
         #expect(f.store
             .savedSnapshots
             .last?
@@ -259,7 +429,7 @@ import Testing
         ))
         #expect(f.model.temporaryTabs.map(\.id) == [f.id("one"), f.id("two"), f.id("x"), activeID])
         #expect(f.model.selectedTabID == activeID)
-        #expect(f.model.pinnedTabFolders.isEmpty)
+        #expect(f.model.pinnedTabFolders.map(\.id) == ["folder"])
         #expect(f.model.tabs.filter { payload.tabIDs.contains($0.id) }.allSatisfy {
             $0.spaceID == "t" && $0.placement == .temporary && $0.pinnedFolderID == nil && $0.pinnedURLString == nil
         })

@@ -6,6 +6,7 @@ import Foundation
 enum BrowserSyncQueuedMutation: Equatable {
     case legacy(BrowserSyncMutation)
     case semantic(BrowserSyncSemanticMutation)
+    case folders(BrowserSyncFolderMutation)
 
     // MARK: Internal
 
@@ -13,6 +14,7 @@ enum BrowserSyncQueuedMutation: Equatable {
         switch self {
         case .legacy(let mutation): mutation.id
         case .semantic(let mutation): mutation.id
+        case .folders(let mutation): mutation.id
         }
     }
 
@@ -20,6 +22,7 @@ enum BrowserSyncQueuedMutation: Equatable {
         switch self {
         case .legacy: 2
         case .semantic: 3
+        case .folders: 4
         }
     }
 }
@@ -31,4 +34,5 @@ enum BrowserSyncQueueError: Error, Equatable {
     case protocolVersionMismatch
     case invalidMutationIdentity
     case mutationTooLarge
+    case bootstrapRequiresLegacyDrain
 }

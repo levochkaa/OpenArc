@@ -1,6 +1,6 @@
 # Folder synchronization protocol
 
-Protocol v4 adds account-scoped folder identities, nesting, pinned-tab membership and mixed folder/tab ordering to the existing authenticated sync endpoints. This is a server foundation for S08. Desktop capture, SQLite outbox/overlay, remote model application and mobile synchronization still use their previous contracts; no folder sync through the product UI is claimed yet.
+Protocol v4 adds account-scoped folder identities, nesting, pinned-tab membership and mixed folder/tab ordering to the existing authenticated sync endpoints. The macOS client captures folder actions, persists versioned operations in SQLite and projects the canonical tree into the AppKit model. Mobile synchronization and live desktop drag verification remain open.
 
 The reference is the user's explicit requirement for reliable bidirectional workspace sync and reorder. These conflict rules are TheBrowser's contract.
 
@@ -68,18 +68,26 @@ Old writers cannot express the mixed tree:
 - V3 incidental rank normalization preserves existing pinned ranks in Spaces containing folders.
 - V2 full-record updates touching a folder-bearing source/target preserve existing structural fields and pinned home URL while applying page metadata. A new legacy pinned tab appends at the root using server order.
 
-These compatibility restrictions prevent silent flattening; they are not full reorder parity for older clients. The next client slice must handle canonical rejections and capability transitions explicitly.
+These compatibility restrictions prevent silent flattening; they are not full reorder parity for older clients. The Swift coordinator applies canonical outcomes for rejected operations and removes the acknowledged immutable row. It does not reinterpret a frozen v3 move as a v4 operation.
 
-## Verification and next client slice
+## Swift persistence and upgrade
 
-`./script/test_local_sync.sh` uses two independent authenticated HTTP devices, the production controller/service/executor and a disposable localhost PostgreSQL database. `Backend/tests/sync-folders.ts` registers folder scenarios within that existing fixture. It verifies paged tree reconstruction, typed identity collisions, mixed order, current-subtree movement, metadata/move ordering, tombstones, invalid topology, legacy compatibility, capability downgrade/upgrade, account isolation, receipt retry after process restart, rollback and migration preservation.
+`BrowserSyncFolderProjection` owns v4 canonical records, metadata diffs, typed neighbor operations and the pending-operation overlay. `BrowserSyncEvent` decodes its data using the envelope entity type; a page title cannot turn a tab or folder into a Space.
 
-This does not prove production Swift folder capture or UI behavior. Next:
+`pinnedSiblingRank` on persisted tabs and folders expresses one order per pinned container. The sidebar tree includes empty folders, infers legacy missing ranks from the first descendant tab and appends empty legacy folders. Drop and direct move actions use the same planner. Folder expansion remains local; title, icon, nesting, membership and sibling order synchronize. An empty folder survives moving or closing its last tab; **Delete Folder and Contents** explicitly removes its current subtree.
 
-1. Add v4 Swift transport/event/operation types and semantic overlay without rewriting frozen v2/v3 rows.
-2. Migrate SQLite queue/state version constraints while preserving UUID, payload bytes and FIFO. Persist the baseline protocol with its cursor; negotiate and replay from zero atomically.
-3. Adopt existing local folder IDs/membership once. Preserve local expansion state and define durable mixed sibling order, including empty folders.
-4. Capture exact model actions with typed roots/anchors, excluding descendants already carried by a selected ancestor. Project canonical folder entities into a fresh profile without echo or recreation.
-5. Prove actual model → SQLite/outbox → HTTP/backend → second model → restart, including loss of ACK, failed writes, pending old rows and deletion/move races. Then verify native drag geometry/selection/scroll under the existing runtime permission boundary.
+A folder drag journals only its stable folder identity. Descendant Space changes in the snapshot do not become stale tab moves. Folder deletion similarly journals the root rather than separate descendant deletes. Local rank changes are structural intent; metadata saves preserve authoritative ranks while engine callbacks are still pending.
 
-Current executor work scales with affected sibling lists and folder subtrees. Per-entity queries/writes and full-history upgrade replay are not yet profiled at large tree sizes. No latency or queue-compaction claim is made.
+The SQLite migration adds nullable sibling-rank columns and v4 queue/state constraints. Existing v2/v3 UUIDs, payload BLOBs, FIFO positions and the AUTOINCREMENT high-water mark are copied without decoding/re-encoding. New v4 rows retain the existing operation-count and request-size limits.
+
+The coordinator first negotiates through the old pull endpoint and drains all immutable v2/v3 rows. It then requests every v4 page from cursor zero. One SQLite transaction rebuilds the baseline, retains tombstones, adopts eligible local folders once, writes the projected session/cursor and marks new mutations v4. A legacy local edit during paging aborts that transaction; the next cycle drains it before retrying. An already-adopted profile receiving the device bootstrap 409 repeats the zero-based read without repeating adoption, while retaining pending v4 work. Partial pages are never published to the model.
+
+Adoption preserves stable local IDs, title/icon and the typed mixed order for missing folders. It moves legacy root-pinned members into those folders using explicit local neighbors. Existing authoritative folder metadata/location and nonnull remote membership win. A deleted folder, its absent parent or a stale descendant cannot be recreated by adoption or local snapshot writes.
+
+## Verification
+
+`./script/test_local_sync.sh` exercises the production controller/service/executor with independent authenticated devices and disposable localhost PostgreSQL. Its backend coverage includes paged tree reconstruction, typed identity collisions, mixed order, current-subtree movement, metadata/move ordering, tombstones, invalid topology, legacy compatibility, capability transitions, account isolation, receipt retry after process restart, rollback and migration preservation.
+
+`./script/test_swift_sync.sh` runs the production Swift transport, coordinator and SQLite store against that server. The folder scenarios invoke the actual model with a fake browser engine, create/nest/rename folders, reorder an empty folder among tabs, reopen a second profile, preserve an escaped child during an offline folder move/delete, and retry an identical lost-ACK mutation after client restart. Historical v2/v3 cases retain explicit capability shims so adding v4 does not silently remove their coverage. Unit/integration tests separately cover migration BLOB preservation, transaction rollback, adoption, cursor/capability fences, stale snapshots, partial engine hydration and invalid receipts.
+
+These checks do not establish live CEF behavior or native drag geometry, selection/scroll stability and animation quality. They do not implement mobile folder synchronization. Current executor work scales with affected sibling lists and folder subtrees. Per-entity SQL, full-history upgrade replay and synchronous client snapshot/overlay work still need measured performance work; no latency or queue-compaction claim is made.

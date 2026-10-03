@@ -17,6 +17,7 @@ extension BrowserChromeModel {
         var faviconURLString: String?
         var placement = BrowserTabPlacement.temporary
         var pinnedFolderID: String?
+        var pinnedSiblingRank: Double?
         var lastActivityAt = Date()
         var canGoBack = false
         var canGoForward = false
@@ -120,6 +121,7 @@ extension BrowserChromeModel {
         var title: String
         var systemImageName: String?
         var isExpanded: Bool
+        var pinnedSiblingRank: Double?
     }
 
     struct TabSwitcherEntry: Identifiable {

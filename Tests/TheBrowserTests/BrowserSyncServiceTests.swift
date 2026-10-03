@@ -417,6 +417,129 @@ import Testing
 
 // MARK: - SyncServiceHarness
 
+@Test @MainActor func syncServiceDrainsFrozenLegacyRowsBeforeFolderAdoption() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.remote.supportedPushVersions = [2, 3, 4]
+    h.store.saveSnapshot(syncServiceSnapshot(tabID: "legacy"))
+    let frozen = try h.store.pendingSyncQueue(for: h.owner)
+    #expect(frozen.map(\.protocolVersion) == [2])
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pushes.map(\.mutation.id) == frozen.map(\.id))
+    #expect(h.remote.folderPullCursors == [0])
+    #expect(try h.store.syncPullProtocolVersion(for: h.owner) == 4)
+    h.store.saveSnapshot(syncServiceSnapshot(tabID: "legacy", title: "v4 edit"))
+    #expect(try h.store.pendingSyncQueue(for: h.owner).map(\.protocolVersion) == [4])
+    let reopened = try BrowserSQLiteSessionStore(databaseURL: h.databaseURL)
+    #expect(try reopened.syncPullProtocolVersion(for: h.owner) == 4)
+    #expect(h.remote.maximumConcurrentRequests == 1)
+}
+
+@Test @MainActor func syncServiceFolderBootstrapPublishesOnlyAfterAllPages() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.remote.supportedPushVersions = [2, 3, 4]
+    h.remote.folderResponsePages[0] = BrowserSyncPullResponse(
+        cursor: 500, events: [syncServiceSpace(sequence: 1)] + (2...500).map {
+            syncServiceFolder(sequence: $0, title: "historical")
+        }, protocolVersion: 4, supportedPushVersions: [2, 3, 4]
+    )
+    h.remote.folderResponsePages[500] = BrowserSyncPullResponse(
+        cursor: 501, events: [syncServiceFolder(sequence: 501, title: "latest")],
+        protocolVersion: 4, supportedPushVersions: [2, 3, 4]
+    )
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.folderPullCursors == [0, 500])
+    #expect(h.applier.snapshots.count == 1)
+    #expect(h.applier.snapshots.first?.pinnedTabFolders?.first?.title == "latest")
+    #expect(try h.store.syncCursor(for: h.owner) == 501)
+    #expect(try h.store.syncPullProtocolVersion(for: h.owner) == 4)
+    #expect(try h.store.pendingSyncQueue(for: h.owner).isEmpty)
+}
+
+@Test @MainActor func syncServiceNewLegacyEditDuringFolderBootstrapDefersAdoption() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.remote.supportedPushVersions = [2, 3, 4]
+    let gate = SyncServiceGate()
+    h.remote.folderPullGate = gate
+    defer { gate.open() }
+    h.service.schedulePull()
+    await h.remote.folderPullStarted.wait()
+    h.store.saveSnapshot(syncServiceSnapshot(tabID: "during-upgrade"))
+    let pending = try h.store.pendingSyncQueue(for: h.owner)
+    gate.open()
+    await h.service.waitForPendingOperations()
+    #expect(try h.store.syncPullProtocolVersion(for: h.owner) == 2)
+    #expect(try h.store.pendingSyncQueue(for: h.owner) == pending)
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pushes.map(\.mutation.id) == pending.map(\.id))
+    #expect(try h.store.syncPullProtocolVersion(for: h.owner) == 4)
+    #expect(h.store.loadSnapshot()?.tabs.first?.id == "during-upgrade")
+}
+
+@Test @MainActor func syncServiceDeviceReRegistrationRebuildsV4BaselineFromZero() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.remote.supportedPushVersions = [2, 3, 4]
+    h.remote.events = [syncServiceSpace(sequence: 1), syncServiceFolder(sequence: 2, title: "Folder")]
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(try h.store.syncPullProtocolVersion(for: h.owner) == 4)
+    h.remote.folderPullCursors.removeAll()
+    h.remote.folderRequiresBootstrap = true
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.folderPullCursors == [2, 0])
+    #expect(h.store.loadSnapshot()?.pinnedTabFolders?.map(\.id) == ["folder"])
+    #expect(try h.store.pendingSyncQueue(for: h.owner).isEmpty)
+}
+
+@Test(arguments: ["version", "identity", "outcomes"])
+@MainActor func syncServiceInvalidFolderReceiptPreservesImmutableRow(defect: String) async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.remote.supportedPushVersions = [2, 3, 4]
+    h.remote.events = [syncServiceSpace(sequence: 1)]
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    h.remote.folderReceipt = { mutation in
+        BrowserSyncFolderPushResponse(
+            protocolVersion: defect == "version" ? 3 : 4,
+            mutationID: defect == "identity" ? UUID().uuidString : mutation.id,
+            cursor: 999, events: [],
+            outcomes: defect == "outcomes"
+                ? []
+                : mutation.operations.indices.map {
+                    BrowserSyncSemanticOutcome(operationIndex: $0, status: .applied, reason: nil)
+                }
+        )
+    }
+    let snapshot = syncServiceSnapshot(tabID: "pending")
+    h.persist(snapshot)
+    let pending = try h.store.pendingSyncQueue(for: h.owner)
+    await h.service.waitForPendingOperations()
+    #expect(pending.map(\.protocolVersion) == [4])
+    #expect(h.remote.folderPushes.count == 1)
+    #expect(try h.store.pendingSyncQueue(for: h.owner) == pending)
+    #expect(h.store.loadSnapshot() == snapshot)
+    #expect(try h.store.syncCursor(for: h.owner) == 1)
+}
+
+private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent {
+    BrowserSyncEvent(
+        serverSeq: sequence, deviceID: "remote", entityType: "folder", entityID: "folder", op: "upsert",
+        data: .folder(BrowserSyncEventFolderData(
+            id: "folder", spaceID: "space", parentFolderID: nil, title: title, systemImageName: nil, rank: 0
+        )), createdAt: "2026-10-03T00:00:00Z"
+    )
+}
+
+// MARK: - SyncServiceHarness
+
 @MainActor private final class SyncServiceHarness {
     // MARK: Lifecycle
 
@@ -487,6 +610,13 @@ import Testing
     var semanticPushes = [BrowserSyncSemanticMutation]()
     var pushedVersions = [Int]()
     var semanticReceipt: ((BrowserSyncSemanticMutation) throws -> BrowserSyncSemanticPushResponse)?
+    var folderReceipt: ((BrowserSyncFolderMutation) throws -> BrowserSyncFolderPushResponse)?
+    var folderPushes = [BrowserSyncFolderMutation]()
+    var folderPullCursors = [Int]()
+    var folderResponsePages = [Int: BrowserSyncPullResponse]()
+    var folderPullGate: SyncServiceGate?
+    var folderPullStarted = SyncServiceGate()
+    var folderRequiresBootstrap = false
     var pullCursors = [Int]()
     var events = [BrowserSyncEvent]()
     var pushCursorOverride: Int?
@@ -565,6 +695,43 @@ import Testing
         if let pullError {
             throw pullError
         }
+        return response
+    }
+
+    func pull(
+        cursor: Int,
+        protocolVersion: Int,
+        authSession: BrowserAuthSession
+    ) async throws -> BrowserSyncPullResponse {
+        guard protocolVersion == 4 else { return try await pull(cursor: cursor, authSession: authSession) }
+        beginRequest()
+        defer { activeRequests -= 1 }
+        folderPullCursors.append(cursor)
+        if folderRequiresBootstrap, cursor != 0 {
+            throw BrowserRemoteSyncError.folderBootstrapRequired
+        }
+        folderRequiresBootstrap = false
+        let page = Array(events.filter { $0.serverSeq > cursor }.prefix(500))
+        let response = folderResponsePages[cursor] ?? BrowserSyncPullResponse(
+            cursor: page.last?.serverSeq ?? cursor, events: page, protocolVersion: 4,
+            supportedPushVersions: supportedPushVersions
+        )
+        folderPullStarted.open()
+        await folderPullGate?.wait()
+        return response
+    }
+
+    func push(
+        mutation: BrowserSyncFolderMutation,
+        authSession _: BrowserAuthSession
+    ) throws -> BrowserSyncFolderPushResponse {
+        beginRequest()
+        defer { activeRequests -= 1 }
+        folderPushes.append(mutation)
+        pushedVersions.append(4)
+        guard let folderReceipt else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
+        let response = try folderReceipt(mutation)
+        events += response.events
         return response
     }
 
