@@ -81,8 +81,16 @@ typedef NS_ENUM(NSInteger, BrowserTabEngineCreationState) {
 // Creating, ready, removed and unknown records are not eligible.
 - (BOOL)retryTabCreationWithID:(NSString *)tabID urlString:(NSString *)urlString
     NS_SWIFT_NAME(retryTabCreation(withID:urlString:));
+// The delegate acknowledges after delivering ready to its model. The first
+// app navigation remains queued until then; removed/closing tabs are ignored.
+- (void)acknowledgeTabReadyWithID:(NSString *)tabID
+    NS_SWIFT_NAME(acknowledgeTabReady(withID:));
 - (void)selectTabWithID:(NSString *)tabID;
 - (void)deselectActiveTab;
+// YES accepts the latest target for an existing tab, including one whose engine
+// is still creating or failed. It does not mean the page has loaded.
+- (BOOL)navigateTabWithID:(NSString *)tabID toURLString:(NSString *)urlString
+    NS_SWIFT_NAME(navigateTab(withID:toURLString:));
 - (void)navigateActiveTabToURLString:(NSString *)urlString
     NS_SWIFT_NAME(navigateActiveTab(toURLString:));
 - (void)goBackActiveTab;

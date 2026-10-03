@@ -916,8 +916,7 @@ enum BrowserWindowMode: Equatable {
             return true
         }
 
-        tabDriver.navigateActiveTab(toURLString: resolvedBrowserURLString(pinnedURLString))
-        return true
+        return navigateSelectedTab(toURLString: pinnedURLString)
     }
 
     @discardableResult func replacePinnedURLWithCurrent(forTabID tabID: String) -> Bool {
@@ -1765,6 +1764,9 @@ enum BrowserWindowMode: Equatable {
             pendingRemoteTabCreations[engineID] = RemoteTabCreation(
                 snapshot: replacement, generation: remoteProjectionGeneration
             )
+            if replacement.urlString != binding.snapshot.urlString {
+                tabDriver.navigateTab(withID: engineID, toURLString: resolvedBrowserURLString(replacement.urlString))
+            }
         }
 
         for tab in tabs where !seenSyncIDs.contains(tab.syncID)
@@ -2214,6 +2216,7 @@ enum BrowserWindowMode: Equatable {
     private var restoredTabCreationIDs = Set<String>()
     private var pendingRestoredSpaces = [BrowserSpaceSessionSnapshot]()
     private var pendingCreatedTabContexts = [String: PendingCreatedTabContext]()
+    private var pendingHydratedTabCreationIDs = Set<String>()
     private var tabCreationUndoReferences = [String: TabCreationUndoReference]()
     private var automaticArchivalTimer: Timer?
     private var recentlySelectedTabIDs = [String]()
@@ -2268,8 +2271,16 @@ enum BrowserWindowMode: Equatable {
             ? normalizedPinnedURLString(from: snapshot.pinnedURLString ?? snapshot.urlString)
             : nil
         tab.pinnedFolderID = snapshot.placement == .spacePinned ? snapshot.pinnedFolderID : nil
-        // Existing engines keep their live URL, title, navigation stack and loading
-        // state. A remote URL initializes a new identity; it does not navigate a live page.
+        if tab.creationState != .ready, !tab.hasPendingLocalNavigation,
+           tab.urlString != snapshot.urlString
+        {
+            tabDriver.navigateTab(withID: tab.id, toURLString: resolvedBrowserURLString(snapshot.urlString))
+            tab.urlString = snapshot.urlString
+            tab.title = ""
+            tab.faviconURLString = nil
+        }
+        // Attached engines keep their live URL/history. Before attachment a
+        // remote URL initializes the page unless the user already chose a target.
     }
 
     private func finishRemoteSyncProjectionIfReady() {
@@ -2343,8 +2354,10 @@ enum BrowserWindowMode: Equatable {
             return true
         }
         var tab = Tab(
-            id: id, syncID: syncID, spaceID: Self.defaultSpaceID, title: title,
-            urlString: urlString, lastActivityAt: lastActivityDate(from: binding.snapshot) ?? dateProvider()
+            id: id, syncID: syncID, spaceID: Self.defaultSpaceID,
+            title: urlString == binding.snapshot.urlString ? title : "",
+            urlString: binding.snapshot.urlString,
+            lastActivityAt: lastActivityDate(from: binding.snapshot) ?? dateProvider()
         )
         applyRemoteTabMetadata(binding.snapshot, to: &tab)
         tabs.append(tab)
@@ -2718,7 +2731,10 @@ enum BrowserWindowMode: Equatable {
         selectedTabID = tabID
         setSelectedTabID(tabID, forSpaceID: selectedSpaceID)
         findResultMatchCount = nil
-        updateWindowTitle()
+        // The returned ID already identifies a logical tab. Persist it before
+        // another user action can target it, independently of the allocation callback.
+        handleCreatedTab(id: tabID, title: "", urlString: resolvedURLString, isActive: true)
+        pendingHydratedTabCreationIDs.insert(tabID)
     }
 
     private func openResolvedSelectionInNewTab(_ resolvedURLString: String) {
@@ -2750,15 +2766,32 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
-        tabDriver.navigateActiveTab(toURLString: resolvedBrowserURLString(urlString))
+        navigateSelectedTab(toURLString: urlString)
     }
 
-    private func navigateSelectedTab(toURLString urlString: String) {
-        guard canCreateTab, selectedTabID != nil else {
-            return
-        }
+    @discardableResult private func navigateSelectedTab(toURLString urlString: String) -> Bool {
+        guard canCreateTab, let index = selectedTabIndex else { return false }
+        let resolvedURL = resolvedBrowserURLString(urlString)
+        let id = tabs[index].id
+        guard tabDriver.navigateTab(withID: id, toURLString: resolvedURL) else { return false }
+        guard tabs[index].creationState != .ready else { return true }
 
-        tabDriver.navigateActiveTab(toURLString: resolvedBrowserURLString(urlString))
+        // Preserve the intent even if there is no engine yet, the process exits,
+        // or creation is refused. Engine callbacks are not the durable owner.
+        tabs[index].hasPendingLocalNavigation = true
+        if tabs[index].urlString != resolvedURL {
+            tabs[index].urlString = resolvedURL
+            tabs[index].title = ""
+            tabs[index].faviconURLString = nil
+            tabs[index].lastActivityAt = dateProvider()
+            invalidateSelectedTabWebAppInstallMetadata()
+            updateWindowTitle()
+            persistCurrentSessionIfAllowed()
+        }
+        if tabs[index].creationState == .failed {
+            retrySelectedTabCreation()
+        }
+        return true
     }
 
     private func localCommandSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
@@ -3179,13 +3212,16 @@ enum BrowserWindowMode: Equatable {
         }
 
         let tab = tabs[index]
-        tabs[index] = reidentifiedPinnedTab(
+        var replacement = reidentifiedPinnedTab(
             from: tab,
             id: id,
-            title: title,
-            urlString: urlString,
+            title: tab.urlString == urlString ? title : tab.title,
+            urlString: tab.urlString,
             lastActivityAt: tab.lastActivityAt
         )
+        replacement.creationState = tab.creationState
+        replacement.hasPendingLocalNavigation = tab.hasPendingLocalNavigation
+        tabs[index] = replacement
         closedPinnedTabIDs.remove(previousID)
         closedPinnedTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: previousID, newID: id, spaceID: tab.spaceID)
@@ -3209,13 +3245,16 @@ enum BrowserWindowMode: Equatable {
         }
 
         let tab = tabs[index]
-        tabs[index] = reidentifiedAppTab(
+        var replacement = reidentifiedAppTab(
             from: tab,
             id: id,
-            title: title,
-            urlString: urlString,
+            title: tab.urlString == urlString ? title : tab.title,
+            urlString: tab.urlString,
             lastActivityAt: tab.lastActivityAt
         )
+        replacement.creationState = tab.creationState
+        replacement.hasPendingLocalNavigation = tab.hasPendingLocalNavigation
+        tabs[index] = replacement
         closedAppTabIDs.remove(previousID)
         closedAppTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: previousID, newID: id, spaceID: tab.spaceID)
@@ -3423,7 +3462,11 @@ enum BrowserWindowMode: Equatable {
             setSelectedTabID(tabID, forSpaceID: undoSnapshot.tab.spaceID)
             findResultMatchCount = nil
         }
-        updateWindowTitle()
+        handleCreatedTab(
+            id: tabID, title: undoSnapshot.tab.title, urlString: undoSnapshot.tab.urlString,
+            isActive: undoSnapshot.wasSelectedTab
+        )
+        pendingHydratedTabCreationIDs.insert(tabID)
         return tabID
     }
 }
@@ -3601,6 +3644,15 @@ enum BrowserWindowMode: Equatable {
 
     func handleCreatedTab(id: String, title: String, urlString: String, isActive: Bool) {
         if handleRemoteCreatedTab(id: id, title: title, urlString: urlString) {
+            return
+        }
+        if pendingHydratedTabCreationIDs.remove(id) != nil {
+            if let index = tabs.firstIndex(where: { $0.id == id }),
+               tabs[index].title.isEmpty, tabs[index].urlString == urlString
+            {
+                tabs[index].title = title
+                updateWindowTitle()
+            }
             return
         }
         if restoredTabCreationIDs.contains(id) {
@@ -3841,7 +3893,16 @@ enum BrowserWindowMode: Equatable {
     }
 
     func handleTabCreationStateChange(id: String, state: BrowserTabCreationState) {
-        guard !isShuttingDown, !closingTabIDs.contains(id),
+        if isShuttingDown {
+            // The driver acknowledges ready after this callback. Closing the
+            // record first keeps that ACK from enabling its initial load.
+            // Pending remote records may not have a logical tab yet.
+            if state == .ready {
+                tabDriver.closeTab(withID: id, forceClose: true)
+            }
+            return
+        }
+        guard !closingTabIDs.contains(id),
               !closedAppTabIDs.contains(id), !closedPinnedTabIDs.contains(id),
               let index = tabs.firstIndex(where: { $0.id == id })
         else { return }
@@ -3853,6 +3914,9 @@ enum BrowserWindowMode: Equatable {
             // Duplicates and obsolete outcomes cannot regress an attached page
             // or revive a refused attempt. Only explicit Retry starts another.
             return
+        }
+        if state == .ready {
+            tabs[index].hasPendingLocalNavigation = false
         }
         if state == .failed {
             tabs[index].isLoading = false

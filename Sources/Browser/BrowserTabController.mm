@@ -23,6 +23,7 @@
 #include "include/cef_download_handler.h"
 #include "include/cef_download_item.h"
 #include "include/cef_find_handler.h"
+#include "include/cef_focus_handler.h"
 #include "include/cef_frame.h"
 #include "include/cef_keyboard_handler.h"
 #include "include/cef_life_span_handler.h"
@@ -2299,6 +2300,7 @@ bool ShouldUseEmbeddedChromeRuntimeForURL(const std::string &) {
 class BrowserTabClient final : public CefClient,
                                public CefDisplayHandler,
                                public CefDownloadHandler,
+                               public CefFocusHandler,
                                public CefKeyboardHandler,
                                public CefLifeSpanHandler,
                                public CefLoadHandler,
@@ -2311,6 +2313,7 @@ class BrowserTabClient final : public CefClient,
 
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
+  CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
@@ -2364,6 +2367,7 @@ class BrowserTabClient final : public CefClient,
                      bool *is_keyboard_shortcut) override;
 
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
+  bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
   bool DoClose(CefRefPtr<CefBrowser> browser) override;
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override;
 
@@ -2401,6 +2405,12 @@ struct TabRecord {
   CefRefPtr<CefBrowser> browser;
   BrowserTabEngineCreationState creationState =
       BrowserTabEngineCreationStateCreating;
+  std::string latestURL;
+  bool navigationPending = false;
+  bool navigationDrainScheduled = false;
+  bool initialNavigationEnabled = false;
+  bool hasIssuedNavigation = false;
+  bool isClosing = false;
 };
 
 }  // namespace
@@ -2415,6 +2425,9 @@ struct TabRecord {
 
 - (void)startBrowserCreationForTabID:(NSString *)tabID
                          URLString:(NSString *)urlString;
+- (void)scheduleNavigationForTabID:(NSString *)tabID;
+- (void)drainNavigationForTabID:(NSString *)tabID;
+- (BOOL)shouldBlockNavigationFocusForTabID:(NSString *)tabID;
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser
                      forTabID:(NSString *)tabID;
 - (void)handleBrowserClosedForTabID:(NSString *)tabID;
@@ -2444,8 +2457,34 @@ struct TabRecord {
                    targetDisposition:(cef_window_open_disposition_t)targetDisposition;
 - (void)syncBrowserFrames;
 - (void)updateBrowserVisibility;
+- (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
 
 @end
+
+namespace {
+
+// Resolve the record and latest target when the task runs. Holding a browser or
+// URL here would load obsolete work after another navigation or a tab close.
+class BrowserTabNavigationTask final : public CefTask {
+ public:
+  BrowserTabNavigationTask(BrowserTabController *controller,
+                           const std::string &tabID)
+      : controller_(controller), tab_id_(tabID) {}
+
+  void Execute() override {
+    CEF_REQUIRE_UI_THREAD();
+    BrowserTabController *controller = controller_;
+    [controller drainNavigationForTabID:ToNSString(tab_id_)];
+  }
+
+ private:
+  __weak BrowserTabController *controller_;
+  const std::string tab_id_;
+
+  IMPLEMENT_REFCOUNTING(BrowserTabNavigationTask);
+};
+
+}  // namespace
 
 @implementation BrowserTabHostView
 
@@ -2535,6 +2574,8 @@ struct TabRecord {
 
   TabRecord record;
   record.client = client;
+  record.latestURL = ToStdString(resolvedURLString);
+  record.navigationPending = true;
   _tabRecords[tabKey] = record;
 
   BOOL isActive = makeActive || _activeTabID == nil;
@@ -2554,7 +2595,7 @@ struct TabRecord {
 
 - (BOOL)retryTabCreationWithID:(NSString *)tabID urlString:(NSString *)urlString {
   auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end() ||
+  if (it == _tabRecords.end() || it->second.isClosing ||
       it->second.creationState != BrowserTabEngineCreationStateFailed) {
     return NO;
   }
@@ -2565,6 +2606,10 @@ struct TabRecord {
   it->second.client = new BrowserTabClient(self, ToStdString(tabID));
   NSString *resolvedURLString =
       urlString.length > 0 ? [urlString copy] : @"about:blank";
+  it->second.latestURL = ToStdString(resolvedURLString);
+  it->second.navigationPending = true;
+  it->second.initialNavigationEnabled = false;
+  it->second.hasIssuedNavigation = false;
   [self startBrowserCreationForTabID:tabID URLString:resolvedURLString];
   return YES;
 }
@@ -2573,7 +2618,7 @@ struct TabRecord {
                          URLString:(NSString *)urlString {
   std::string tabKey = ToStdString(tabID);
   auto it = _tabRecords.find(tabKey);
-  if (it == _tabRecords.end() ||
+  if (it == _tabRecords.end() || it->second.isClosing ||
       it->second.creationState != BrowserTabEngineCreationStateCreating) {
     return;
   }
@@ -2592,8 +2637,10 @@ struct TabRecord {
     windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   }
 
+  // CEF's initial URL is loaded after OnAfterCreated. Bootstrap without one so
+  // that a newer queued target cannot be overwritten by that original load.
   const bool accepted = CefBrowserHost::CreateBrowser(
-      windowInfo, client, resolvedURL, CefBrowserSettings(), nullptr,
+      windowInfo, client, CefString(), CefBrowserSettings(), nullptr,
       _requestContext);
   if (!accepted) {
     auto failed = _tabRecords.find(tabKey);
@@ -2605,7 +2652,18 @@ struct TabRecord {
                                        state:BrowserTabEngineCreationStateFailed];
     }
   }
-  [self updateBrowserVisibility];
+  [self updateBrowserVisibilityFocusingActiveTab:[_activeTabID isEqualToString:tabID]];
+}
+
+- (void)acknowledgeTabReadyWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing ||
+      it->second.creationState != BrowserTabEngineCreationStateReady) {
+    return;
+  }
+
+  it->second.initialNavigationEnabled = true;
+  [self scheduleNavigationForTabID:tabID];
 }
 
 - (void)selectTabWithID:(NSString *)tabID {
@@ -2618,18 +2676,67 @@ struct TabRecord {
   [self updateBrowserVisibility];
 }
 
+- (BOOL)navigateTabWithID:(NSString *)tabID toURLString:(NSString *)urlString {
+  if (tabID.length == 0 || urlString.length == 0) {
+    return NO;
+  }
+
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing) {
+    return NO;
+  }
+
+  it->second.latestURL = ToStdString(urlString);
+  it->second.navigationPending = true;
+  [self scheduleNavigationForTabID:tabID];
+  return YES;
+}
+
 - (void)navigateActiveTabToURLString:(NSString *)urlString {
-  if (urlString.length == 0) {
+  if (_activeTabID != nil) {
+    [self navigateTabWithID:_activeTabID toURLString:urlString];
+  }
+}
+
+- (void)scheduleNavigationForTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing ||
+      it->second.creationState != BrowserTabEngineCreationStateReady ||
+      !it->second.initialNavigationEnabled ||
+      !it->second.browser || !it->second.navigationPending ||
+      it->second.navigationDrainScheduled) {
     return;
   }
 
-  std::string activeKey = ToStdString(_activeTabID);
-  auto it = _tabRecords.find(activeKey);
+  it->second.navigationDrainScheduled = true;
+  if (!CefPostTask(TID_UI, new BrowserTabNavigationTask(self, it->first))) {
+    it->second.navigationDrainScheduled = false;
+  }
+}
+
+- (void)drainNavigationForTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end()) {
     return;
   }
+  it->second.navigationDrainScheduled = false;
+  if (it->second.isClosing || !it->second.navigationPending ||
+      !it->second.initialNavigationEnabled ||
+      it->second.creationState != BrowserTabEngineCreationStateReady ||
+      !it->second.browser) {
+    return;
+  }
 
-  NavigateBrowserOnUI(it->second.browser, ToStdString(urlString));
+  const std::string target = it->second.latestURL;
+  it->second.navigationPending = false;
+  it->second.hasIssuedNavigation = true;
+  NavigateBrowserOnUI(it->second.browser, target);
+}
+
+- (BOOL)shouldBlockNavigationFocusForTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  return it == _tabRecords.end() || it->second.isClosing ||
+         ![_activeTabID isEqualToString:tabID];
 }
 
 - (void)goBackActiveTab {
@@ -2639,7 +2746,10 @@ struct TabRecord {
     return;
   }
 
-  GoBackBrowserOnUI(it->second.browser);
+  if (it->second.browser && it->second.browser->CanGoBack()) {
+    it->second.navigationPending = false;
+    GoBackBrowserOnUI(it->second.browser);
+  }
 }
 
 - (void)goForwardActiveTab {
@@ -2649,7 +2759,10 @@ struct TabRecord {
     return;
   }
 
-  GoForwardBrowserOnUI(it->second.browser);
+  if (it->second.browser && it->second.browser->CanGoForward()) {
+    it->second.navigationPending = false;
+    GoForwardBrowserOnUI(it->second.browser);
+  }
 }
 
 - (void)reloadActiveTab {
@@ -2707,7 +2820,10 @@ struct TabRecord {
     return;
   }
 
-  StopLoadingBrowserOnUI(it->second.browser);
+  if (it->second.browser) {
+    it->second.navigationPending = false;
+    StopLoadingBrowserOnUI(it->second.browser);
+  }
 }
 
 - (void)saveActiveTabWithSuggestedName:(NSString *)suggestedName {
@@ -2826,27 +2942,28 @@ struct TabRecord {
     return;
   }
 
+  it->second.isClosing = true;
+  it->second.navigationPending = false;
   if (it->second.browser) {
     it->second.browser->GetHost()->CloseBrowser(forceClose);
     return;
   }
 
+  const BOOL wasActive = [_activeTabID isEqualToString:tabID];
   _tabRecords.erase(tabKey);
   [self.delegate browserTabController:self didCloseTabWithID:tabID];
-  [self updateBrowserVisibility];
+  [self updateBrowserVisibilityFocusingActiveTab:wasActive];
 }
 
 - (void)closeAllTabs {
-  std::vector<CefRefPtr<CefBrowser>> browsers;
-  browsers.reserve(_tabRecords.size());
+  std::vector<std::string> tabIDs;
+  tabIDs.reserve(_tabRecords.size());
   for (const auto &entry : _tabRecords) {
-    if (entry.second.browser) {
-      browsers.push_back(entry.second.browser);
-    }
+    tabIDs.push_back(entry.first);
   }
 
-  for (const auto &browser : browsers) {
-    browser->GetHost()->CloseBrowser(false);
+  for (const auto &tabID : tabIDs) {
+    [self closeTabWithID:ToNSString(tabID)];
   }
 }
 
@@ -2877,7 +2994,7 @@ struct TabRecord {
                      forTabID:(NSString *)tabID {
   std::string tabKey = ToStdString(tabID);
   auto it = _tabRecords.find(tabKey);
-  if (it == _tabRecords.end() ||
+  if (it == _tabRecords.end() || it->second.isClosing ||
       it->second.creationState != BrowserTabEngineCreationStateCreating) {
     browser->GetHost()->CloseBrowser(false);
     return;
@@ -2893,14 +3010,17 @@ struct TabRecord {
                                   canGoBack:browser->CanGoBack()
                                canGoForward:browser->CanGoForward()];
 
-  [self updateBrowserVisibility];
+  [self updateBrowserVisibilityFocusingActiveTab:[_activeTabID isEqualToString:tabID]];
+  // The Swift delegate enables the first posted navigation only after its
+  // model has processed ready. CEF and DispatchQueue.main use separate queues.
 }
 
 - (void)handleBrowserClosedForTabID:(NSString *)tabID {
   std::string tabKey = ToStdString(tabID);
+  const BOOL wasActive = [_activeTabID isEqualToString:tabID];
   _tabRecords.erase(tabKey);
 
-  if ([_activeTabID isEqualToString:tabID]) {
+  if (wasActive) {
     if (_tabRecords.empty()) {
       _activeTabID = nil;
     } else {
@@ -2909,7 +3029,7 @@ struct TabRecord {
   }
 
   [self.delegate browserTabController:self didCloseTabWithID:tabID];
-  [self updateBrowserVisibility];
+  [self updateBrowserVisibilityFocusingActiveTab:wasActive];
 }
 
 - (void)handleTitleChange:(NSString *)title forTabID:(NSString *)tabID {
@@ -2929,6 +3049,14 @@ struct TabRecord {
     return;
   }
 
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing ||
+      !it->second.hasIssuedNavigation) {
+    return;
+  }
+
+  // Before the first app load, CEF may report its empty bootstrap document.
+  // After that load starts, forward every address, including redirects/back.
   [self.delegate browserTabController:self
                       didUpdateTabWithID:tabID
                                    title:nil
@@ -3009,7 +3137,7 @@ struct TabRecord {
         return YES;
       }
 
-      NavigateBrowserOnUI(it->second.browser, ToStdString(resolvedURLString));
+      [self navigateTabWithID:sourceTabID toURLString:resolvedURLString];
       return YES;
     }
     case CEF_WOD_NEW_BACKGROUND_TAB:
@@ -3034,6 +3162,10 @@ struct TabRecord {
 }
 
 - (void)updateBrowserVisibility {
+  [self updateBrowserVisibilityFocusingActiveTab:YES];
+}
+
+- (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive {
   std::string activeKey = ToStdString(_activeTabID);
   for (auto &entry : _tabRecords) {
     BOOL isActive = entry.first == activeKey;
@@ -3058,7 +3190,7 @@ struct TabRecord {
     SyncBrowserViewFrame(_hostView, activeIt->second.browser);
   }
 
-  if (activeIt->second.browser) {
+  if (focusActive && activeIt->second.browser) {
     activeIt->second.browser->GetHost()->SetFocus(true);
   }
 }
@@ -3289,6 +3421,17 @@ bool BrowserTabClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
                                      bool *) {
   CEF_REQUIRE_UI_THREAD();
   return false;
+}
+
+bool BrowserTabClient::OnSetFocus(CefRefPtr<CefBrowser>, FocusSource source) {
+  CEF_REQUIRE_UI_THREAD();
+  if (source != FOCUS_SOURCE_NAVIGATION) {
+    return false;
+  }
+
+  BrowserTabController *controller = controller_;
+  return controller == nil ||
+         [controller shouldBlockNavigationFocusForTabID:ToNSString(tab_id_)];
 }
 
 void BrowserTabClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {

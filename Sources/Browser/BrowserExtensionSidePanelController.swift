@@ -120,9 +120,15 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
     /// retain their existing presentation and dismissal behavior.
     nonisolated func browserTabController(
         _: BrowserTabController,
-        didChangeCreationStateForTabWithID _: String,
-        state _: BrowserTabEngineCreationState
-    ) {}
+        didChangeCreationStateForTabWithID tabID: String,
+        state: BrowserTabEngineCreationState
+    ) {
+        guard state == .ready else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, activePopupID == tabID else { return }
+            controller.acknowledgeTabReady(withID: tabID)
+        }
+    }
 
     nonisolated func browserTabController(
         _: BrowserTabController,
@@ -188,9 +194,15 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
     /// Extension panels do not expose the browser tab recovery controls.
     nonisolated func browserTabController(
         _: BrowserTabController,
-        didChangeCreationStateForTabWithID _: String,
-        state _: BrowserTabEngineCreationState
-    ) {}
+        didChangeCreationStateForTabWithID tabID: String,
+        state: BrowserTabEngineCreationState
+    ) {
+        guard state == .ready else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, activePanelID == tabID else { return }
+            controller.acknowledgeTabReady(withID: tabID)
+        }
+    }
 
     nonisolated func browserTabController(
         _: BrowserTabController,

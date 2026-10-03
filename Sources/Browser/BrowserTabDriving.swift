@@ -29,6 +29,9 @@ enum BrowserTabCreationState: Equatable, Sendable {
     func retryTabCreation(withID tabID: String, urlString: String) -> Bool
     func selectTab(withID tabID: String)
     func deselectActiveTab()
+    /// Accepts the latest target for an existing tab, including a pending engine.
+    /// Returns false for an empty target or an unknown/closing tab.
+    @discardableResult func navigateTab(withID tabID: String, toURLString urlString: String) -> Bool
     func navigateActiveTab(toURLString urlString: String)
     func goBackActiveTab()
     func goForwardActiveTab()

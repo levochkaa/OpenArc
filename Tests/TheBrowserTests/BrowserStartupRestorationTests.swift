@@ -94,6 +94,7 @@ import Testing
         f.model.handleContextReady()
         let savedRequests = f.driver.createdTabRequests
         let b = try #require(f.model.tabs.first { $0.syncID == "b" })
+        f.driver.emitTabCreationState(id: b.id, state: .ready)
         f.driver.emitUpdate(id: b.id, title: "Current page", urlString: "https://live.example/")
         f.model.applyRemoteSyncSnapshot(.init(
             spaces: [.init(id: "work", title: "Remote", systemImageName: "star")],

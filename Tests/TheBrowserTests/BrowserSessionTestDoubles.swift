@@ -24,6 +24,11 @@ import Foundation
         let urlString: String
     }
 
+    struct TargetedNavigationRequest: Equatable {
+        let id: String
+        let urlString: String
+    }
+
     struct FindRequest: Equatable {
         let text: String
         let forward: Bool
@@ -45,6 +50,8 @@ import Foundation
     private(set) var createdTabRequests = [CreatedTabRequest]()
     private(set) var retryCreationRequests = [RetryCreationRequest]()
     var retryTabCreationAdmissionResult = true
+    private(set) var targetedNavigationRequests = [TargetedNavigationRequest]()
+    var targetedNavigationAdmissionResult = true
     private(set) var selectedTabIDs = [String]()
     private(set) var deselectActiveTabCount = 0
     private(set) var activeTabNavigationURLStrings = [String]()
@@ -116,6 +123,15 @@ import Foundation
 
     func navigateActiveTab(toURLString urlString: String) {
         activeTabNavigationURLStrings.append(urlString)
+    }
+
+    func navigateTab(withID tabID: String, toURLString urlString: String) -> Bool {
+        targetedNavigationRequests.append(TargetedNavigationRequest(id: tabID, urlString: urlString))
+        guard targetedNavigationAdmissionResult else { return false }
+        if activeTabID == tabID {
+            activeTabNavigationURLStrings.append(urlString)
+        }
+        return true
     }
 
     func goBackActiveTab() {

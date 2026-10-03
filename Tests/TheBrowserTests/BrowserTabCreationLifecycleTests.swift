@@ -155,6 +155,36 @@ import Testing
     #expect(try h.outboxBytes() == outboxBytes)
 }
 
+@Test(arguments: [false, true])
+@MainActor func lateReadinessAfterTerminationClosesRecordBeforeDriverAcknowledges(pendingRemote: Bool) throws {
+    let h = try TabCreationLifecycleHarness()
+    defer { h.cleanup() }
+    let id: String
+    if pendingRemote {
+        let remoteTab = BrowserTabSessionSnapshotTab(
+            id: "late-remote", urlString: "https://late.example/", spaceID: "second",
+            lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970
+        )
+        let remote = try h.store.applyRemoteSyncEvents(
+            tabCreationLifecycleEvents(.init(tabs: [remoteTab]), startingAt: 10), cursor: 10, for: h.owner
+        )
+        h.model.applyRemoteSyncSnapshot(remote)
+        id = try #require(h.driver.createdTabRequests.last { $0.urlString == remoteTab.urlString }).id
+        #expect(!h.model.tabs.contains { $0.id == id })
+    } else {
+        id = try #require(h.model.tabs.first { $0.syncID == "pinned" }).id
+    }
+    h.model.prepareForTermination()
+    let before = try h.diskState()
+    let closeCount = h.driver.closedTabRequests.count
+    h.driver.emitTabCreationState(id: id, state: .ready)
+    // The bridge marks a force-closed record closing synchronously, so the
+    // driver's following ACK cannot enable the initial navigation.
+    #expect(Array(h.driver.closedTabRequests.dropFirst(closeCount)) == [.init(id: id, forceClose: true)])
+    #expect(h.model.tabs.first { $0.id == id }?.creationState != .ready)
+    #expect(try h.diskState() == before)
+}
+
 // MARK: - TabCreationLifecycleHarness
 
 @MainActor private final class TabCreationLifecycleHarness {

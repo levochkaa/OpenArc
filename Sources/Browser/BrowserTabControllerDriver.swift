@@ -70,6 +70,10 @@ import Foundation
         controller.deselectActiveTab()
     }
 
+    @discardableResult func navigateTab(withID tabID: String, toURLString urlString: String) -> Bool {
+        controller.navigateTab(withID: tabID, toURLString: urlString)
+    }
+
     func navigateActiveTab(toURLString urlString: String) {
         controller.navigateActiveTab(toURLString: urlString)
     }
@@ -180,6 +184,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         state: BrowserTabEngineCreationState
     ) {
         DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
             let creationState: BrowserTabCreationState
             switch state {
             case .creating: creationState = .creating
@@ -187,7 +192,12 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
             case .failed: creationState = .failed
             @unknown default: return
             }
-            self?.onTabCreationStateChanged?(tabID, creationState)
+            onTabCreationStateChanged?(tabID, creationState)
+            if creationState == .ready {
+                // A callback may close the tab or shut down the controller.
+                // The bridge rechecks the record before enabling navigation.
+                controller.acknowledgeTabReady(withID: tabID)
+            }
         }
     }
 

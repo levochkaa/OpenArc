@@ -41,16 +41,18 @@ import Testing
     harness.model.handleContextReady()
     harness.driver.flushPendingCreateEvents()
     let originalID = try #require(harness.model.tabs.first?.id)
+    harness.driver.emitTabCreationState(id: originalID, state: .ready)
     harness.model.moveTab(withID: originalID, toPlacement: placement, atSectionIndex: 0)
     #expect(harness.model.archiveSelectedTab())
     harness.driver.emitClose(id: originalID)
     harness.model.selectTab(id: originalID)
-    let reopenedID = try #require(harness.driver.createdTabRequests.last?.id)
+    let reopenedRequest = try #require(harness.driver.createdTabRequests.last)
+    let reopenedID = reopenedRequest.id
 
     harness.driver.emitCreatedTab(
         id: reopenedID,
         title: "Created title",
-        urlString: "https://redirect.example",
+        urlString: reopenedRequest.urlString,
         isActive: true
     )
 
@@ -58,7 +60,16 @@ import Testing
     #expect(harness.model.tabs.first?.id == reopenedID)
     #expect(harness.model.tabs.first?.syncID == "a")
     #expect(harness.model.tabs.first?.title == "Created title")
+    #expect(harness.model.tabs.first?.urlString == reopenedRequest.urlString)
+    #expect(harness.model.tabs.first?.creationState == .creating)
+    // Allocation can supply a title; a redirect belongs to the attached engine's
+    // address callback and must still update the reopened persistent identity.
+    harness.driver.emitTabCreationState(id: reopenedID, state: .ready)
+    harness.driver.emitUpdate(id: reopenedID, urlString: "https://redirect.example")
+    #expect(harness.model.tabs.first?.id == reopenedID && harness.model.tabs.first?.syncID == "a")
+    #expect(harness.model.tabs.first?.title == "Created title")
     #expect(harness.model.tabs.first?.urlString == "https://redirect.example")
+    #expect(harness.store.savedSnapshots.last?.tabs.first?.urlString == "https://redirect.example")
 }
 
 @Test
@@ -91,6 +102,8 @@ import Testing
     harness.driver.flushPendingCreateEvents()
     let tabA = try #require(harness.model.tabs.first { $0.syncID == "a" })
     let tabB = try #require(harness.model.tabs.first { $0.syncID == "b" })
+    harness.driver.emitTabCreationState(id: tabA.id, state: .ready)
+    harness.driver.emitTabCreationState(id: tabB.id, state: .ready)
     harness.model.selectTab(id: tabB.id)
     harness.driver.emitUpdate(id: tabB.id, title: "Live title", urlString: "https://live.example/current")
     harness.driver.emitNavigationStateChange(id: tabB.id, canGoBack: true, canGoForward: true)
