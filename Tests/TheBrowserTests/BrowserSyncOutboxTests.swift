@@ -38,6 +38,8 @@ import Testing
         try db.execute(sql: "DROP TABLE browser_sync_outbox")
         try db.execute(sql: "DROP TABLE browser_sync_baseline")
         try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'addDurableSyncOutbox'")
+        try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'addVersionedSyncOutbox'")
+        try db.execute(sql: "ALTER TABLE browser_sync_state DROP COLUMN new_mutation_version")
     }
     let upgraded = try harness.store()
     #expect(try upgraded.syncCursor(for: harness.owner) == 0)

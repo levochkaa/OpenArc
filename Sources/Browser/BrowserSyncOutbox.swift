@@ -47,7 +47,11 @@ struct BrowserSyncOutboxBaseline: Codable {
                 )
                 continue
             }
-            guard !deletedKeys.contains(key) else { continue }
+            // A local-only delete may be later than pending creates in the FIFO.
+            // Retain acknowledged canonical parents for those earlier operations;
+            // projection still hides local deletes after replay. Server tombstones
+            // are permanent and can never accept another upsert of this identity.
+            guard entities[key]?.change.op != .delete else { continue }
             let change: BrowserSyncChange
             switch (type, event.data) {
             case (.space, .space(let data)):
@@ -109,6 +113,20 @@ enum BrowserSyncOutboxProjection {
         baseline: BrowserSyncOutboxBaseline,
         pending: [BrowserSyncMutation]
     ) -> [BrowserSyncChange] {
+        changes(
+            from: previous,
+            to: snapshot,
+            baseline: baseline,
+            pending: pending.map(BrowserSyncQueuedMutation.legacy)
+        )
+    }
+
+    @_disfavoredOverload static func changes(
+        from previous: BrowserTabSessionSnapshot?,
+        to snapshot: BrowserTabSessionSnapshot,
+        baseline: BrowserSyncOutboxBaseline,
+        pending: [BrowserSyncQueuedMutation]
+    ) -> [BrowserSyncChange] {
         let before = canonicalChanges(previous ?? BrowserTabSessionSnapshot(tabs: []))
         let after = canonicalChanges(snapshot)
         let effective = effectiveChanges(baseline: baseline, pending: pending)
@@ -158,12 +176,21 @@ enum BrowserSyncOutboxProjection {
         pending: [BrowserSyncMutation],
         local: BrowserTabSessionSnapshot?
     ) -> BrowserTabSessionSnapshot {
+        snapshot(baseline: baseline, pending: pending.map(BrowserSyncQueuedMutation.legacy), local: local)
+    }
+
+    @_disfavoredOverload static func snapshot(
+        baseline: BrowserSyncOutboxBaseline,
+        pending: [BrowserSyncQueuedMutation],
+        local: BrowserTabSessionSnapshot?
+    ) -> BrowserTabSessionSnapshot {
         let live = effectiveChanges(baseline: baseline, pending: pending).values
         let spaceChanges = live.filter { $0.entityType == .space && $0.spaceData != nil }.sorted {
             let left = $0.spaceData!.rank, right = $1.spaceData!.rank
             return left == right ? $0.entityID < $1.entityID : left < right
         }
         let spaceIDs = Set(spaceChanges.map(\.entityID))
+        let spaceOrder = Dictionary(uniqueKeysWithValues: spaceChanges.enumerated().map { ($1.entityID, $0) })
         let localTabs = Dictionary(uniqueKeysWithValues: (local?.tabs ?? []).compactMap { tab in
             tab.id.map { ($0, tab) }
         })
@@ -171,6 +198,20 @@ enum BrowserSyncOutboxProjection {
             $0.entityType == .tab && $0.tabData.map { $0.placement == .app || spaceIDs.contains($0.spaceID) } == true
         }
         .sorted {
+            // v3 ranks belong to one sidebar list, never to the flattened tab array.
+            let leftData = $0.tabData!, rightData = $1.tabData!
+            if (leftData.placement == .app) != (rightData.placement == .app) {
+                return leftData.placement == .app
+            }
+            if leftData.placement != .app {
+                let leftSpace = spaceOrder[leftData.spaceID]!, rightSpace = spaceOrder[rightData.spaceID]!
+                if leftSpace != rightSpace {
+                    return leftSpace < rightSpace
+                }
+                if leftData.placement != rightData.placement {
+                    return leftData.placement == .spacePinned
+                }
+            }
             let left = $0.tabData!.rank, right = $1.tabData!.rank
             return left == right ? $0.entityID < $1.entityID : left < right
         }
@@ -210,41 +251,68 @@ enum BrowserSyncOutboxProjection {
         )
     }
 
-    // MARK: Private
-
-    private static func delta(before: [BrowserSyncChange], after: [BrowserSyncChange]) -> [BrowserSyncChange] {
-        let beforeByKey = Dictionary(uniqueKeysWithValues: before.map { (key($0), $0) })
-        let afterKeys = Set(after.map(key))
-        let upserts = after.filter { beforeByKey[key($0)] != $0 }
-        let deletes = before.filter { !afterKeys.contains(key($0)) }.map {
-            BrowserSyncChange(
-                entityType: $0.entityType,
-                entityID: $0.entityID,
-                op: .delete,
-                spaceData: nil,
-                tabData: nil
-            )
-        }
-        return upserts + deletes
-    }
-
-    private static func effectiveChanges(
-        baseline: BrowserSyncOutboxBaseline, pending: [BrowserSyncMutation]
+    static func effectiveChanges(
+        baseline: BrowserSyncOutboxBaseline, pending: [BrowserSyncQueuedMutation]
     ) -> [String: BrowserSyncChange] {
         var values = baseline.entities.mapValues(\.change)
-        var deleted = baseline.deletedKeys
-        for mutation in pending {
-            for change in mutation.changes where change.op == .delete {
-                deleted.insert(key(change))
+        // Local tombstones are recorded before debounce, including deletes later in
+        // this FIFO. Replay their preceding creates/move-outs first. Authoritative
+        // server tombstones remain effective from the start.
+        let pendingDeletes = Set(pending.flatMap { mutation -> [String] in
+            switch mutation {
+            case .legacy(let row): row.changes.filter { $0.op == .delete }.map(key)
+            case .semantic(let row):
+                row.operations.compactMap { operation in
+                    switch operation {
+                    case .deleteSpace(let id): key(type: .space, id: id)
+                    case .deleteTab(let id): key(type: .tab, id: id)
+                    default: nil
+                    }
+                }
             }
-            for change in mutation.changes where change.op == .upsert && !deleted.contains(key(change)) {
-                values[key(change)] = change
+        })
+        var deleted = baseline.deletedKeys.subtracting(pendingDeletes)
+        deleted.formUnion(values.filter { $0.value.op == .delete }.keys)
+        for mutation in pending {
+            switch mutation {
+            case .legacy(let row):
+                for change in row.changes where change.op == .upsert && !deleted.contains(key(change)) {
+                    if let tab = change.tabData, tab.placement != .app,
+                       deleted.contains(key(type: .space, id: tab.spaceID))
+                    {
+                        // A stale full record cannot move a canonical survivor back
+                        // into a deleted parent. New stale children are deleted.
+                        if let current = values[key(change)]?.tabData,
+                           current.spaceID != tab.spaceID || current.placement == .app
+                        {
+                            continue
+                        }
+                        deleted.insert(key(change))
+                        continue
+                    }
+                    values[key(change)] = change
+                }
+                // The v2 server applies upserts first, then deletions, without
+                // semantic rank normalization. Its parent cascade is permanent.
+                for change in row.changes where change.op == .delete {
+                    deleted.insert(key(change))
+                    if change.entityType == .space {
+                        for child in values.values {
+                            if let tab = child.tabData, tab.placement != .app, tab.spaceID == change.entityID {
+                                deleted.insert(key(child))
+                            }
+                        }
+                    }
+                }
+            case .semantic(let row):
+                BrowserSyncSemanticProjection.apply(row.operations, to: &values, deleted: &deleted)
             }
         }
+        deleted.formUnion(baseline.deletedKeys)
         return values.filter { $0.value.op == .upsert && !deleted.contains($0.key) }
     }
 
-    private static func replacingRank(of change: BrowserSyncChange, with rank: Double?) -> BrowserSyncChange {
+    static func replacingRank(of change: BrowserSyncChange, with rank: Double?) -> BrowserSyncChange {
         guard let rank else { return change }
         if let data = change.spaceData {
             return BrowserSyncChange(
@@ -266,15 +334,7 @@ enum BrowserSyncOutboxProjection {
         )
     }
 
-    private static func sidebarTabs(
-        _ tabs: [BrowserTabSessionSnapshotTab],
-        spaceID: String
-    ) -> [BrowserTabSessionSnapshotTab] {
-        let inSpace = tabs.filter { ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == spaceID }
-        return inSpace.filter { $0.placement == .spacePinned } + inSpace.filter { $0.placement == .temporary }
-    }
-
-    private static func canonicalChanges(_ snapshot: BrowserTabSessionSnapshot) -> [BrowserSyncChange] {
+    static func canonicalChanges(_ snapshot: BrowserTabSessionSnapshot) -> [BrowserSyncChange] {
         var result = [BrowserSyncChange]()
         var spaces = snapshot.spaces ?? []
         // Ordinary legacy tabs need an implicit parent; global app favorites do not.
@@ -316,5 +376,31 @@ enum BrowserSyncOutboxProjection {
             ))
         }
         return result
+    }
+
+    // MARK: Private
+
+    private static func delta(before: [BrowserSyncChange], after: [BrowserSyncChange]) -> [BrowserSyncChange] {
+        let beforeByKey = Dictionary(uniqueKeysWithValues: before.map { (key($0), $0) })
+        let afterKeys = Set(after.map(key))
+        let upserts = after.filter { beforeByKey[key($0)] != $0 }
+        let deletes = before.filter { !afterKeys.contains(key($0)) }.map {
+            BrowserSyncChange(
+                entityType: $0.entityType,
+                entityID: $0.entityID,
+                op: .delete,
+                spaceData: nil,
+                tabData: nil
+            )
+        }
+        return upserts + deletes
+    }
+
+    private static func sidebarTabs(
+        _ tabs: [BrowserTabSessionSnapshotTab],
+        spaceID: String
+    ) -> [BrowserTabSessionSnapshotTab] {
+        let inSpace = tabs.filter { ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == spaceID }
+        return inSpace.filter { $0.placement == .spacePinned } + inSpace.filter { $0.placement == .temporary }
     }
 }

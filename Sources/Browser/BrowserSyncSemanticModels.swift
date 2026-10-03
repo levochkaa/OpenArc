@@ -34,6 +34,10 @@ enum BrowserSyncPatchValue<Value: Codable & Equatable>: Codable, Equatable {
     }
 }
 
+// MARK: Sendable
+
+extension BrowserSyncPatchValue: Sendable where Value: Sendable {}
+
 // MARK: - BrowserSyncSemanticSpaceCreate
 
 struct BrowserSyncSemanticSpaceCreate: Codable, Equatable {

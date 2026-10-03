@@ -50,11 +50,37 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 try writeSnapshot(filtered, to: db)
                 // Read back generated legacy tab IDs before making the immutable payload.
                 let normalized = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
-                let changes = try BrowserSyncOutboxProjection.changes(
-                    from: previous, to: normalized, baseline: baseline, pending: readSyncMutations(db)
-                )
-                baseline.recordLocalDeletes(changes)
-                try appendSyncMutations(changes, to: db)
+                let version = try Int.fetchOne(
+                    db,
+                    sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id = 1"
+                ) ?? 2
+                switch version {
+                case 2:
+                    let changes = try BrowserSyncOutboxProjection.changes(
+                        from: previous, to: normalized, baseline: baseline, pending: readSyncQueue(db)
+                    )
+                    baseline.recordLocalDeletes(changes)
+                    try appendSyncMutations(changes, to: db)
+                case 3:
+                    let operations = BrowserSyncSemanticProjection.operations(
+                        from: previous ?? BrowserTabSessionSnapshot(tabs: []), to: normalized
+                    )
+                    for operation in operations {
+                        switch operation {
+                        case .deleteSpace(let id): baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
+                                type: .space,
+                                id: id
+                            ))
+                        case .deleteTab(let id): baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
+                                type: .tab,
+                                id: id
+                            ))
+                        default: break
+                        }
+                    }
+                    try appendSemanticSyncMutations(operations, to: db)
+                default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
+                }
                 try writeSyncBaseline(baseline, to: db)
             }
         } catch {
@@ -78,18 +104,39 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     func pendingSyncMutations(for owner: BrowserSyncOwner, limit: Int = 100) throws -> [BrowserSyncMutation] {
+        try pendingSyncQueue(for: owner, limit: limit).map { mutation in
+            guard case .legacy(let legacy) = mutation else { throw BrowserSyncQueueError.protocolVersionMismatch }
+            return legacy
+        }
+    }
+
+    func pendingSyncQueue(for owner: BrowserSyncOwner, limit: Int = 100) throws -> [BrowserSyncQueuedMutation] {
         guard limit > 0 else { throw BrowserSyncOutboxError.invalidLimit }
         return try dbQueue.read { db in
             try requireSyncOwner(owner, in: db)
-            return try readSyncMutations(db, limit: limit)
+            return try readSyncQueue(db, limit: limit)
+        }
+    }
+
+    func enableSemanticSyncMutations(for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try db.execute(sql: "UPDATE browser_sync_state SET new_mutation_version = 3 WHERE id = 1")
         }
     }
 
     func acknowledgeSyncMutation(
-        id: String, events: [BrowserSyncEvent], for owner: BrowserSyncOwner
+        id: String, protocolVersion: Int = 2, events: [BrowserSyncEvent], for owner: BrowserSyncOwner
     ) throws -> BrowserTabSessionSnapshot {
         try dbQueue.write { db in
             try requireSyncOwner(owner, in: db)
+            guard let storedVersion = try Int.fetchOne(
+                db, sql: "SELECT protocol_version FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id]
+            ) else {
+                // Duplicate ACKs cannot introduce unproven events after their row is gone.
+                return try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
+            }
+            guard storedVersion == protocolVersion else { throw BrowserSyncQueueError.protocolVersionMismatch }
             var baseline = try readSyncBaseline(db)
             try baseline.apply(events)
             try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id])
@@ -98,7 +145,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     func applyRemoteSyncEvents(
-        _ events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner
+        _ events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, enableSemanticMutations: Bool = false
     ) throws -> BrowserTabSessionSnapshot {
         guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
         return try dbQueue.write { db in
@@ -109,6 +156,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             try db.execute(
                 sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1", arguments: [cursor]
             )
+            if enableSemanticMutations {
+                try db.execute(sql: "UPDATE browser_sync_state SET new_mutation_version = 3 WHERE id = 1")
+            }
             return snapshot
         }
     }
@@ -354,6 +404,17 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             )
             """)
         }
+        migrator.registerMigration("addVersionedSyncOutbox") { db in
+            // ALTER leaves existing UUIDs, FIFO positions and immutable BLOBs untouched.
+            try db
+                .execute(
+                    sql: "ALTER TABLE browser_sync_outbox ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 2 CHECK (protocol_version IN (2, 3))"
+                )
+            try db
+                .execute(
+                    sql: "ALTER TABLE browser_sync_state ADD COLUMN new_mutation_version INTEGER NOT NULL DEFAULT 2 CHECK (new_mutation_version IN (2, 3))"
+                )
+        }
         return migrator
     }
 
@@ -453,23 +514,71 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     private func appendSyncMutations(_ changes: [BrowserSyncChange], to db: Database) throws {
-        for offset in stride(from: 0, to: changes.count, by: 1000) {
-            let mutation = BrowserSyncMutation(
-                id: UUID().uuidString,
-                changes: Array(changes[offset..<min(offset + 1000, changes.count)])
-            )
+        for chunk in try syncChunks(changes) {
+            let mutation = BrowserSyncMutation(id: UUID().uuidString, changes: chunk)
             try db.execute(
-                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload) VALUES (?, ?)",
+                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 2)",
                 arguments: [mutation.id, JSONEncoder().encode(mutation)]
             )
         }
     }
 
-    private func readSyncMutations(_ db: Database, limit: Int? = nil) throws -> [BrowserSyncMutation] {
+    private func appendSemanticSyncMutations(_ operations: [BrowserSyncSemanticOperation], to db: Database) throws {
+        for chunk in try syncChunks(operations) {
+            let mutation = BrowserSyncSemanticMutation(id: UUID().uuidString, operations: chunk)
+            try db.execute(
+                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 3)",
+                arguments: [mutation.id, JSONEncoder().encode(mutation)]
+            )
+        }
+    }
+
+    private func syncChunks<Item: Encodable>(_ items: [Item]) throws -> [[Item]] {
+        // The server caps inflated JSON at 8 MiB. Reserve more than the fixed
+        // UUID/device/version envelope requires, counting escaped UTF-8 item bytes.
+        let maximumItemBytes = 8 * 1024 * 1024 - 1024
+        let encoder = JSONEncoder()
+        var chunks = [[Item]]()
+        var current = [Item]()
+        var currentBytes = 0
+        for item in items {
+            let itemBytes = try encoder.encode(item).count
+            guard itemBytes <= maximumItemBytes else { throw BrowserSyncQueueError.mutationTooLarge }
+            if !current.isEmpty, current.count == 1000 || currentBytes + itemBytes + 1 > maximumItemBytes {
+                chunks.append(current)
+                current = []
+                currentBytes = 0
+            }
+            current.append(item)
+            currentBytes += itemBytes + 1
+        }
+        if !current.isEmpty {
+            chunks.append(current)
+        }
+        return chunks
+    }
+
+    private func readSyncQueue(_ db: Database, limit: Int? = nil) throws -> [BrowserSyncQueuedMutation] {
         let rows = try Row.fetchAll(
-            db, sql: "SELECT payload FROM browser_sync_outbox ORDER BY position ASC LIMIT ?", arguments: [limit ?? -1]
+            db,
+            sql: "SELECT mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position ASC LIMIT ?",
+            arguments: [limit ?? -1]
         )
-        return try rows.map { row in try JSONDecoder().decode(BrowserSyncMutation.self, from: row["payload"] as Data) }
+        return try rows.map { row in
+            let version: Int = row["protocol_version"]
+            let mutation: BrowserSyncQueuedMutation
+            switch version {
+            case 2: mutation = try .legacy(JSONDecoder().decode(BrowserSyncMutation.self, from: row["payload"] as Data))
+            case 3: mutation = try .semantic(JSONDecoder().decode(
+                    BrowserSyncSemanticMutation.self,
+                    from: row["payload"] as Data
+                ))
+            default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
+            }
+            guard mutation.id == row["mutation_id"] as String
+            else { throw BrowserSyncQueueError.invalidMutationIdentity }
+            return mutation
+        }
     }
 
     private func writeSyncProjection(
@@ -477,7 +586,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         in db: Database
     ) throws -> BrowserTabSessionSnapshot {
         let snapshot = try BrowserSyncOutboxProjection.snapshot(
-            baseline: baseline, pending: readSyncMutations(db), local: readSnapshot(db)
+            baseline: baseline, pending: readSyncQueue(db), local: readSnapshot(db)
         )
         try writeSyncBaseline(baseline, to: db)
         try writeSnapshot(snapshot, to: db)

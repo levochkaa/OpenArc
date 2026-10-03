@@ -88,8 +88,6 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         )
     }
 
-    /// Transport foundation only. The durable coordinator continues to send its
-    /// immutable v2 queue until semantic capture and mixed-version overlay exist.
     func push(
         mutation: BrowserSyncSemanticMutation,
         authSession: BrowserAuthSession
@@ -338,7 +336,21 @@ enum BrowserAuthSessionStoreError: Error {
         authSession: BrowserAuthSession
     ) async throws -> BrowserSyncPushResponse
 
+    func push(
+        mutation: BrowserSyncSemanticMutation,
+        authSession: BrowserAuthSession
+    ) async throws -> BrowserSyncSemanticPushResponse
+
     func pull(cursor: Int, authSession: BrowserAuthSession) async throws -> BrowserSyncPullResponse
+}
+
+extension BrowserSyncRemoteServing {
+    func push(
+        mutation _: BrowserSyncSemanticMutation,
+        authSession _: BrowserAuthSession
+    ) throws -> BrowserSyncSemanticPushResponse {
+        throw BrowserRemoteSyncError.unsupportedSyncProtocol
+    }
 }
 
 // MARK: - BrowserRemoteSyncClient + BrowserSyncRemoteServing
@@ -470,7 +482,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         retryAttempt = 0
         pendingPushContext = nil
         pendingPullContext = nil
-        supportsDurableMutations = false
+        supportedPushVersions = []
         if session != nil {
             schedulePull()
             startPolling()
@@ -480,7 +492,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     /// Local persistence has already committed the snapshot and immutable outbox
     /// in one transaction. Debounce only wakes the sender; it owns no user data.
     func schedulePush(snapshot _: BrowserTabSessionSnapshot) {
-        guard supportsDurableMutations else {
+        guard !supportedPushVersions.isEmpty else {
             schedulePull()
             return
         }
@@ -543,7 +555,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     private let retryDelay: Duration?
     private var activeSession: BrowserAuthSession?
     private var generation: UInt64 = 0
-    private var supportsDurableMutations = false
+    private var supportedPushVersions = Set<Int>()
     private var pendingPushTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
@@ -633,21 +645,38 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     private func pushPending(context: RequestContext) async {
-        guard isCurrent(context), supportsDurableMutations else { return }
+        guard isCurrent(context), !supportedPushVersions.isEmpty else { return }
         do {
             var acknowledgedAny = false
             while isCurrent(context), !Task.isCancelled,
-                  let mutation = try localStore.pendingSyncMutations(for: context.owner, limit: 1).first
+                  let mutation = try localStore.pendingSyncQueue(for: context.owner, limit: 1).first
             {
-                let response = try await remoteClient.push(mutation: mutation, authSession: context.session)
-                guard isCurrent(context) else { return }
-                guard response.protocolVersion == 2, response.mutationID == mutation.id else {
-                    throw BrowserRemoteSyncError.invalidMutationReceipt
+                guard supportedPushVersions.contains(mutation.protocolVersion) else {
+                    // Never rewrite or bypass an immutable row after a server downgrade.
+                    throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
+                let events: [BrowserSyncEvent]
+                switch mutation {
+                case .legacy(let payload):
+                    let response = try await remoteClient.push(mutation: payload, authSession: context.session)
+                    guard response.protocolVersion == 2, response.mutationID == payload.id, response.cursor >= 0 else {
+                        throw BrowserRemoteSyncError.invalidMutationReceipt
+                    }
+                    events = response.events
+                case .semantic(let payload):
+                    let response = try await remoteClient.push(mutation: payload, authSession: context.session)
+                    guard response.protocolVersion == 3, response.mutationID == payload.id, response.cursor >= 0,
+                          response.outcomes.count == payload.operations.count,
+                          Set(response.outcomes.map(\.operationIndex)) == Set(payload.operations.indices)
+                    else { throw BrowserRemoteSyncError.invalidMutationReceipt }
+                    events = response.events
+                }
+                guard isCurrent(context) else { return }
                 let previous = try localStore.loadSnapshotForSync(for: context.owner)
                 let projected = try localStore.acknowledgeSyncMutation(
                     id: mutation.id,
-                    events: response.events,
+                    protocolVersion: mutation.protocolVersion,
+                    events: events,
                     for: context.owner
                 )
                 if previous != projected {
@@ -676,16 +705,19 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
 
     private func pull(context: RequestContext) async {
         guard isCurrent(context) else { return }
+        supportedPushVersions = []
         do {
             var cursor = try localStore.syncCursor(for: context.owner)
             var latestEvents = [EntityKey: BrowserSyncEvent]()
+            var advertisedVersions: Set<Int>?
             while true {
                 let response = try await remoteClient.pull(cursor: cursor, authSession: context.session)
                 guard isCurrent(context) else { return }
                 guard response.protocolVersion == 2 else {
-                    supportsDurableMutations = false
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
+                let pageVersions = Set(response.supportedPushVersions ?? [2]).intersection([2, 3])
+                advertisedVersions = advertisedVersions.map { $0.intersection(pageVersions) } ?? pageVersions
                 guard response.cursor >= cursor,
                       response.events.isEmpty || response.cursor > cursor
                 else { throw BrowserRemoteSyncError.invalidPullCursor }
@@ -703,14 +735,16 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 }
             }
             let previous = try localStore.loadSnapshotForSync(for: context.owner)
+            let versions = advertisedVersions ?? []
             let projected = try localStore.applyRemoteSyncEvents(
-                latestEvents.values.sorted { $0.serverSeq < $1.serverSeq }, cursor: cursor, for: context.owner
+                latestEvents.values.sorted { $0.serverSeq < $1.serverSeq }, cursor: cursor, for: context.owner,
+                enableSemanticMutations: versions.contains(3)
             )
             if previous != projected {
                 snapshotApplier?.applyRemoteSyncSnapshot(projected)
             }
-            supportsDurableMutations = true
-            if try !localStore.pendingSyncMutations(for: context.owner, limit: 1).isEmpty {
+            supportedPushVersions = versions
+            if try !localStore.pendingSyncQueue(for: context.owner, limit: 1).isEmpty {
                 pendingPushContext = context
             } else {
                 clearRetry()

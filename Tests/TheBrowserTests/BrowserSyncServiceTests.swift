@@ -287,6 +287,134 @@ import Testing
     #expect(try h.store.pendingSyncMutations(for: h.owner).isEmpty)
 }
 
+@Test @MainActor func syncServiceCapabilityUpgradeKeepsLegacyFIFOAndSendsNewSemanticEdits() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.store.saveSnapshot(syncServiceSnapshot(tabID: "tab", title: "legacy"))
+    let legacy = try #require(h.store.pendingSyncMutations(for: h.owner).first)
+    h.remote.supportedPushVersions = [2, 3]
+    h.remote.onPush = { count in
+        if count == 1 {
+            h.persist(syncServiceSnapshot(tabID: "tab", title: "semantic"))
+        }
+    }
+    h.remote.semanticReceipt = { mutation in
+        BrowserSyncSemanticPushResponse(
+            protocolVersion: 3, mutationID: mutation.id, cursor: 999,
+            events: [syncServiceUpsert(id: "tab", title: "semantic", sequence: 3)],
+            outcomes: mutation.operations.indices.map {
+                BrowserSyncSemanticOutcome(operationIndex: $0, status: .applied, reason: nil)
+            }
+        )
+    }
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pushes.map(\.mutation) == [legacy])
+    #expect(h.remote.pushedVersions == [2, 3])
+    #expect(h.remote.semanticPushes.first?.operations == [
+        .patchTab(id: "tab", fields: BrowserSyncSemanticTabPatch(userTitleOverride: .set("semantic"))),
+    ])
+    #expect(try h.store.pendingSyncQueue(for: h.owner).isEmpty)
+    #expect(h.store.loadSnapshot()?.tabs.first?.userTitleOverride == "semantic")
+    #expect(try h.store.syncCursor(for: h.owner) == 3)
+    #expect(!h.remote.pullCursors.contains(999))
+}
+
+@Test @MainActor func syncServiceDowngradeRetainsSemanticRowsAndTheirVersionAfterRestart() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.remote.supportedPushVersions = [2, 3]
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    let snapshot = syncServiceSnapshot(tabID: "offline", title: "retained")
+    h.store.saveSnapshot(snapshot)
+    let pending = try h.store.pendingSyncQueue(for: h.owner)
+    #expect(!pending.isEmpty && pending.allSatisfy { $0.protocolVersion == 3 })
+    h.remote.supportedPushVersions = [2]
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pushedVersions.isEmpty)
+    #expect(try h.store.pendingSyncQueue(for: h.owner) == pending)
+    #expect(h.store.loadSnapshot() == snapshot)
+    h.service.accountSessionDidChange(nil)
+    let reopened = try BrowserSQLiteSessionStore(databaseURL: h.databaseURL)
+    reopened.saveSnapshot(syncServiceSnapshot(tabID: "offline", title: "new offline edit"))
+    let afterRestart = try reopened.pendingSyncQueue(for: h.owner)
+    #expect(Array(afterRestart.prefix(pending.count)) == pending)
+    #expect(afterRestart.count > pending.count)
+    #expect(afterRestart.allSatisfy { $0.protocolVersion == 3 })
+}
+
+@Test(arguments: ["id", "version", "outcomes"])
+@MainActor func syncServiceRejectsMalformedSemanticReceiptWithoutLosingQueue(defect: String) async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.remote.supportedPushVersions = [2, 3]
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    h.remote.semanticReceipt = { mutation in
+        BrowserSyncSemanticPushResponse(
+            protocolVersion: defect == "version" ? 2 : 3,
+            mutationID: defect == "id" ? "wrong" : mutation.id,
+            cursor: 1, events: [syncServiceDelete(id: "tab", sequence: 1)],
+            outcomes: defect == "outcomes"
+                ? []
+                : mutation.operations.indices.map {
+                    BrowserSyncSemanticOutcome(operationIndex: $0, status: .applied, reason: nil)
+                }
+        )
+    }
+    let snapshot = syncServiceSnapshot(tabID: "tab", title: "pending")
+    h.persist(snapshot)
+    let pending = try h.store.pendingSyncQueue(for: h.owner)
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.semanticPushes.count == 1)
+    #expect(try h.store.pendingSyncQueue(for: h.owner) == pending)
+    #expect(h.store.loadSnapshot() == snapshot)
+    #expect(try h.store.syncCursor(for: h.owner) == 0)
+}
+
+@Test @MainActor func syncServiceSemanticRejectionAppliesCanonicalStateAndTerminatesOverlay() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.persist(syncServiceSnapshot(tabID: "tab", title: "original"))
+    await h.service.waitForPendingOperations()
+    h.remote.supportedPushVersions = [2, 3]
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    h.remote.semanticReceipt = { mutation in
+        BrowserSyncSemanticPushResponse(
+            protocolVersion: 3, mutationID: mutation.id, cursor: 3,
+            events: [syncServiceUpsert(id: "tab", title: "canonical", sequence: 3)],
+            outcomes: mutation.operations.indices.map {
+                BrowserSyncSemanticOutcome(operationIndex: $0, status: .rejected, reason: "missing")
+            }
+        )
+    }
+    h.persist(syncServiceSnapshot(tabID: "tab", title: "rejected local edit"))
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.semanticPushes.count == 1)
+    #expect(try h.store.pendingSyncQueue(for: h.owner).isEmpty)
+    #expect(h.store.loadSnapshot()?.tabs.first?.userTitleOverride == "canonical")
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.semanticPushes.count == 1)
+}
+
+@Test @MainActor func syncServiceRequiresCapabilityAcrossEveryBootstrapPage() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    h.remote.responsePages[0] = BrowserSyncPullResponse(
+        cursor: 500, events: (1...500).map { syncServiceSpace(sequence: $0) }, supportedPushVersions: [2, 3]
+    )
+    h.remote.responsePages[500] = BrowserSyncPullResponse(cursor: 500, events: [], supportedPushVersions: [2])
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    h.store.saveSnapshot(syncServiceSnapshot(tabID: "tab"))
+    let pending = try h.store.pendingSyncQueue(for: h.owner)
+    #expect(!pending.isEmpty && pending.allSatisfy { $0.protocolVersion == 2 })
+}
+
 // MARK: - SyncServiceHarness
 
 @MainActor private final class SyncServiceHarness {
@@ -354,7 +482,11 @@ import Testing
 
     var baseURL = syncServiceURL("https://sync.example")
     var protocolVersion: Int? = 2
+    var supportedPushVersions: [Int]?
     var pushes = [Push]()
+    var semanticPushes = [BrowserSyncSemanticMutation]()
+    var pushedVersions = [Int]()
+    var semanticReceipt: ((BrowserSyncSemanticMutation) throws -> BrowserSyncSemanticPushResponse)?
     var pullCursors = [Int]()
     var events = [BrowserSyncEvent]()
     var pushCursorOverride: Int?
@@ -373,6 +505,7 @@ import Testing
         beginRequest()
         defer { activeRequests -= 1 }
         pushes.append(Push(mutation: mutation, authSession: authSession))
+        pushedVersions.append(2)
         let receipt: BrowserSyncPushResponse
         if let existing = receipts[mutation.id] {
             receipt = existing
@@ -402,13 +535,30 @@ import Testing
         )
     }
 
+    func push(
+        mutation: BrowserSyncSemanticMutation,
+        authSession _: BrowserAuthSession
+    ) async throws -> BrowserSyncSemanticPushResponse {
+        beginRequest()
+        defer { activeRequests -= 1 }
+        semanticPushes.append(mutation)
+        pushedVersions.append(3)
+        pushStarted.open()
+        await pushGate?.wait()
+        guard let semanticReceipt else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
+        let response = try semanticReceipt(mutation)
+        events += response.events
+        return response
+    }
+
     func pull(cursor: Int, authSession _: BrowserAuthSession) async throws -> BrowserSyncPullResponse {
         beginRequest()
         defer { activeRequests -= 1 }
         pullCursors.append(cursor)
         let page = Array(events.filter { $0.serverSeq > cursor }.prefix(500))
         let response = responsePages[cursor] ?? BrowserSyncPullResponse(
-            cursor: page.last?.serverSeq ?? cursor, events: page, protocolVersion: protocolVersion
+            cursor: page.last?.serverSeq ?? cursor, events: page, protocolVersion: protocolVersion,
+            supportedPushVersions: supportedPushVersions
         )
         pullStarted.open()
         await pullGate?.wait()
