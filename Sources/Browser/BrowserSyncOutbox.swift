@@ -194,6 +194,7 @@ enum BrowserSyncOutboxProjection {
         let localTabs = Dictionary(uniqueKeysWithValues: (local?.tabs ?? []).compactMap { tab in
             tab.id.map { ($0, tab) }
         })
+        let dateFormatter = ISO8601DateFormatter()
         let projectedTabs = live.filter {
             $0.entityType == .tab && $0.tabData.map { $0.placement == .app || spaceIDs.contains($0.spaceID) } == true
         }
@@ -226,22 +227,25 @@ enum BrowserSyncOutboxProjection {
                     ? previous?.pinnedFolderID
                     : nil,
                 lastActivityTimestamp: data.lastActivityAt
-                    .flatMap { ISO8601DateFormatter().date(from: $0)?.timeIntervalSince1970 }
+                    .flatMap { dateFormatter.date(from: $0)?.timeIntervalSince1970 }
                     ?? previous?.lastActivityTimestamp
             )
         }
+        let localSpaces = Dictionary((local?.spaces ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let previousTabIDsBySpace = sidebarTabIDsBySpace(local?.tabs ?? [])
+        let currentTabIDsBySpace = sidebarTabIDsBySpace(projectedTabs)
         let projectedSpaces = spaceChanges.map { change in
             let data = change.spaceData!
-            let previousSpace = local?.spaces?.first { $0.id == change.entityID }
-            let previousTabs = sidebarTabs(local?.tabs ?? [], spaceID: change.entityID)
+            let previousSpace = localSpaces[change.entityID]
+            let previousTabs = previousTabIDsBySpace[change.entityID] ?? []
             let selectedID = previousSpace?.selectedTabIndex.flatMap {
-                previousTabs.indices.contains($0) ? previousTabs[$0].id : nil
+                previousTabs.indices.contains($0) ? previousTabs[$0] : nil
             }
-            let currentTabs = sidebarTabs(projectedTabs, spaceID: change.entityID)
+            let currentTabs = currentTabIDsBySpace[change.entityID] ?? []
             return BrowserSpaceSessionSnapshot(
                 id: change.entityID, title: data.title, systemImageName: data.systemImageName,
                 isPinnedSectionCollapsed: data.isPinnedSectionCollapsed,
-                selectedTabIndex: selectedID.flatMap { id in currentTabs.firstIndex { $0.id == id } }
+                selectedTabIndex: selectedID.flatMap { id in currentTabs.firstIndex { $0 == id } }
             )
         }
         return BrowserTabSessionSnapshot(
@@ -336,6 +340,7 @@ enum BrowserSyncOutboxProjection {
 
     static func canonicalChanges(_ snapshot: BrowserTabSessionSnapshot) -> [BrowserSyncChange] {
         var result = [BrowserSyncChange]()
+        let dateFormatter = ISO8601DateFormatter()
         var spaces = snapshot.spaces ?? []
         // Ordinary legacy tabs need an implicit parent; global app favorites do not.
         if !spaces.contains(where: { $0.id == BrowserChromeModel.defaultSpaceID }),
@@ -371,7 +376,7 @@ enum BrowserSyncOutboxProjection {
                     rank: Double(index), urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                     title: nil, userTitleOverride: tab.userTitleOverride, faviconURLString: nil,
                     lastActivityAt: tab.lastActivityTimestamp
-                        .map { ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: $0)) }
+                        .map { dateFormatter.string(from: Date(timeIntervalSince1970: $0)) }
                 )
             ))
         }
@@ -396,11 +401,15 @@ enum BrowserSyncOutboxProjection {
         return upserts + deletes
     }
 
-    private static func sidebarTabs(
-        _ tabs: [BrowserTabSessionSnapshotTab],
-        spaceID: String
-    ) -> [BrowserTabSessionSnapshotTab] {
-        let inSpace = tabs.filter { ($0.spaceID ?? BrowserChromeModel.defaultSpaceID) == spaceID }
-        return inSpace.filter { $0.placement == .spacePinned } + inSpace.filter { $0.placement == .temporary }
+    private static func sidebarTabIDsBySpace(_ tabs: [BrowserTabSessionSnapshotTab]) -> [String: [String?]] {
+        var result = [String: [String?]]()
+        // Preserve nil-ID slots and within-section order when restoring selection.
+        // Favorites are global and do not use a Space's selectedTabIndex.
+        for placement in [BrowserTabPlacement.spacePinned, .temporary] {
+            for tab in tabs where tab.placement == placement {
+                result[tab.spaceID ?? BrowserChromeModel.defaultSpaceID, default: []].append(tab.id)
+            }
+        }
+        return result
     }
 }

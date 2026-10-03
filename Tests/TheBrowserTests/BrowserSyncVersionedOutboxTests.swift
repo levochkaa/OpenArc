@@ -166,6 +166,9 @@ import Testing
     let pending = try #require(store.pendingSyncQueue(for: harness.owner).first)
     let beforeRows = try harness.rows()
     let beforeSnapshot = store.loadSnapshot()
+    // The successful local save may re-encode baseline JSON with a different
+    // dictionary key order. Rollback must preserve the bytes immediately before ACK.
+    let beforeAckBaseline = try harness.baseline()
     try database.write { db in
         try db
             .execute(
@@ -179,7 +182,7 @@ import Testing
         )
     }
     #expect(try harness.rows() == beforeRows)
-    #expect(try harness.baseline() == baseline)
+    #expect(try harness.baseline() == beforeAckBaseline)
     #expect(store.loadSnapshot() == beforeSnapshot)
     #expect(try store.syncCursor(for: harness.owner) == 0)
 }
