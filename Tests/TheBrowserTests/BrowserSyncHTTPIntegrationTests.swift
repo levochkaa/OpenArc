@@ -339,6 +339,108 @@ import Testing
         try await fixture.complete(account)
     }
 
+    @Test func deletingSpaceBeforeRemoteCreateCallbacksKeepsOnlyGlobalFavoriteOnBothClients() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("pending-parent-delete")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        await first.activate()
+        let initial = syncHTTPExplicitSnapshot(source: [], target: ["anchor"])
+        await first.saveAndSend(initial)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+
+        let suite = "BrowserSyncHTTPPendingParent.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let driver = FakeBrowserTabDriver()
+        let model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: first.store, sessionPreferencesStore: first.store,
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(), syncCoordinator: first.service,
+            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        )
+        defer {
+            first.service.setSnapshotApplier(nil)
+            model.discardUnsavedSessionForClosure()
+            model.prepareForTermination()
+        }
+        model.handleContextReady()
+        // Restored identities exist before the fake engine delivers callbacks.
+        let restoredAnchor = try #require(model.tabs.first { $0.syncID == "anchor" })
+        driver.flushPendingCreateEvents()
+        #expect(model.tabs.map(\.syncID) == ["anchor"])
+        #expect(model.tabs.first?.id == restoredAnchor.id)
+        first.service.setSnapshotApplier(model)
+        await first.service.waitForPendingOperations()
+
+        let ordinary = syncHTTPExplicitSnapshot(
+            source: ["child"], target: ["anchor"], titles: ["child": "Remote child"]
+        )
+        let favorite = BrowserTabSessionSnapshotTab(
+            id: "favorite", urlString: "https://favorite.example", userTitleOverride: "Global Favorite",
+            placement: .app, spaceID: "source", lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970
+        )
+        await second.saveAndSend(BrowserTabSessionSnapshot(
+            spaces: ordinary.spaces, tabs: [favorite] + ordinary.tabs
+        ))
+        await first.pull()
+        let childRequest = try #require(driver.createdTabRequests.last { $0.urlString == "https://child.example" })
+        let favoriteRequest = try #require(driver.createdTabRequests.last {
+            $0.urlString == "https://favorite.example"
+        })
+        #expect(model.tabs.map(\.syncID) == ["anchor"], "Keep the new engine callbacks pending")
+        let beforeDeletion = try await fixture.inspect(account)
+        try #require(first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        #expect(model.deleteSpace(id: "source"))
+        #expect(driver.closedTabRequests.contains { $0.id == childRequest.id && $0.forceClose })
+        #expect(!driver.closedTabRequests.contains { $0.id == favoriteRequest.id })
+        let queue = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(queue.count == 1)
+        let deletion = try syncHTTPSemanticMutation(queue[0])
+        #expect(deletion.operations == [.deleteSpace(id: "source")])
+        #expect(Set(first.store.loadSnapshot()?.tabs.compactMap(\.id) ?? []) == ["favorite", "anchor"])
+
+        driver.flushPendingCreateEvents()
+        #expect(model.tabs.map(\.syncID) == ["favorite", "anchor"])
+        #expect(!model.tabs.contains { $0.id == childRequest.id || $0.syncID == "child" })
+        #expect(model.appTabs.first?.id == favoriteRequest.id)
+        #expect(model.appTabs.first?.userTitleOverride == "Global Favorite")
+        #expect(model.appTabs.first?.spaceID == "target")
+        #expect(try first.store.pendingSyncQueue(for: first.owner) == queue)
+        await first.service.waitForPendingOperations()
+        await second.pull()
+        await first.pull()
+        for profile in [first, second] {
+            let saved = try #require(profile.store.loadSnapshot())
+            #expect(saved.spaces?.map(\.id) == ["target"])
+            #expect(saved.tabs.compactMap(\.id) == ["favorite", "anchor"])
+            #expect(saved.tabs.first { $0.id == "favorite" }?.placement == .app)
+            #expect(saved.tabs.first { $0.id == "favorite" }?.userTitleOverride == "Global Favorite")
+            #expect(try profile.store.pendingSyncQueue(for: profile.owner).isEmpty)
+        }
+        let final = try await fixture.inspect(account)
+        #expect(Set(final.tabs.filter { !$0.deleted }.map(\.id)) == ["favorite", "anchor"])
+        #expect(final.tabs.filter { !$0.deleted && $0.placement == "app" }.map(\.id) == ["favorite"])
+        #expect(final.tabs
+            .filter {
+                !$0.deleted && $0.spaceID == "target" && $0.placement == "temporary"
+            }
+            .map(\.id) == ["anchor"])
+        #expect(final.tabs.first { $0.id == "child" }?.tombstoned == true)
+        #expect(final.tabs.first { $0.id == "favorite" }?.tombstoned == false)
+        #expect(final.receiptCount == beforeDeletion.receiptCount + 1)
+        let deletionAttempts = final.attempts.dropFirst(beforeDeletion.attempts.count)
+        #expect(deletionAttempts.count == 1)
+        #expect(deletionAttempts.first?.mutationID == deletion.id && deletionAttempts.first?.status == 201)
+        await first.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
     @Test func failedModelMoveBuffersLaterEditsAndRetriesExactIntentBeforeConverging() async throws {
         let fixture = try SyncHTTPFixture.load()
         let account = try fixture.account("persistence-retry")
