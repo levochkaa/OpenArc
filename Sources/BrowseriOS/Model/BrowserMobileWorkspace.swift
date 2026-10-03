@@ -59,6 +59,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private(set) var profileDocument: BrowserMobileProfileDocument?
     private(set) var selectedSpaceID: String?
 
+    var syncSession: BrowserMobileSyncSession? { profileDocument?.syncSession }
+
     var spaces: [BrowserSpaceSessionSnapshot] { profileDocument?.snapshot.spaces ?? [] }
     var visibleTabs: [BrowserMobileTab] {
         guard profileDocument != nil else { return tabs }
@@ -240,6 +242,11 @@ struct BrowserMobileTab: Identifiable, Equatable {
         }
     }
 
+    func setSyncActive(_ active: Bool) {
+        isSyncActive = active && !isClosed
+        syncSession?.setSceneActive(isSyncActive, sceneID: sceneID)
+    }
+
     func setJavaScriptDialogPresentationActive(_ active: Bool) {
         isJavaScriptDialogPresentationActive = active && !isClosed
         if !isJavaScriptDialogPresentationActive {
@@ -291,6 +298,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             isClosed = true
             isReady = false
             setJavaScriptDialogPresentationActive(false)
+            setSyncActive(false)
             engine.onEvent = nil
             engine.onPopupCreated = nil
             if let documentObserver {
@@ -317,6 +325,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private var saveWorker: Task<Void, Never>?
     private var saveFailed = false
     private var isJavaScriptDialogPresentationActive = false
+    private var isSyncActive = false
     private var profileLoader: (@MainActor () async throws -> BrowserMobileProfileDocument)?
     private var sceneID = ""
     private var scenePreferences: UserDefaults?
@@ -343,6 +352,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
                 return
             }
             profileDocument = document
+            syncSession?.setSceneActive(isSyncActive, sceneID: sceneID)
             selectedSpaceID = scenePreferences?.string(forKey: selectionKey + ".space")
             selectedTabID = scenePreferences?.string(forKey: selectionKey + ".tab")
             if selectedSpaceID == nil {

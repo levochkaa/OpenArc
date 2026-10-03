@@ -39,6 +39,7 @@ import Foundation
     typealias ObserverToken = UUID
 
     private(set) var snapshot: BrowserTabSessionSnapshot
+    weak var syncSession: BrowserMobileSyncSession?
 
     var persistenceFailure: BrowserSessionPersistenceFailure? { writeBuffer.failure }
     var hasUncommittedWrites: Bool { !writeBuffer.writes.isEmpty || writeBuffer.isTerminal }

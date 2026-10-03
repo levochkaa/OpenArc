@@ -114,6 +114,12 @@ final class BrowserMobileTabsViewController: UITableViewController {
                 self?.didSelectTab?()
             }
         )
+        let accountButton = UIBarButtonItem(
+            title: String(localized: "Account", table: "Mobile"), image: UIImage(systemName: "person.crop.circle"),
+            primaryAction: UIAction { [weak self] _ in self?.showAccount() }
+        )
+        accountButton.accessibilityIdentifier = "browser.account"
+        navigationItem.leftBarButtonItems = [navigationItem.leftBarButtonItem!, accountButton]
         spaceButton.showsMenuAsPrimaryAction = true
         spaceButton.accessibilityIdentifier = "browser.spaces"
         spaceButton.titleLabel?.lineBreakMode = .byTruncatingTail
@@ -225,6 +231,7 @@ final class BrowserMobileTabsViewController: UITableViewController {
         guard isViewLoaded else { return }
         let canEdit = workspace.isReady && (workspace.profileDocument?.canEdit ?? true)
         navigationItem.leftBarButtonItem?.isEnabled = canEdit
+        navigationItem.leftBarButtonItems?.last?.isEnabled = workspace.syncSession != nil
         if let document = workspace.profileDocument {
             var configuration = UIButton.Configuration.plain()
             configuration.title = workspace.spaces.first { $0.id == workspace.selectedSpaceID }?.title
@@ -356,6 +363,14 @@ final class BrowserMobileTabsViewController: UITableViewController {
 
     private let spaceButton = UIButton(type: .system)
     private var rows = [[Row]]()
+
+    private func showAccount() {
+        guard presentedViewController == nil, let session = workspace.syncSession else { return }
+        let controller = BrowserMobileAccountViewController(session: session)
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.modalPresentationStyle = .formSheet
+        present(navigation, animated: true)
+    }
 
     private func row(at indexPath: IndexPath) -> Row? {
         guard rows.indices.contains(indexPath.section),

@@ -46,3 +46,28 @@
 "Spaces" = "Spaces";
 "Today" = "Today";
 "Unpin" = "Unpin";
+
+/* Account and sync. */
+"Account & Sync" = "Account & Sync";
+"Sync Server" = "Sync Server";
+"https://your-sync-server" = "https://your-sync-server";
+"Save Server" = "Save Server";
+"Enable Sync" = "Enable Sync";
+"Pause Sync" = "Pause Sync";
+"Resume Sync" = "Resume Sync";
+"Retry Sync" = "Retry Sync";
+"Sign Out" = "Sign Out";
+"Cancel Sign-In" = "Cancel Sign-In";
+"Signing in…" = "Signing in…";
+"Enter your sync server to sign in." = "Enter your sync server to sign in.";
+"Sign in to sync this profile." = "Sign in to sync this profile.";
+"Sync is enabled." = "Sync is enabled.";
+"Sync is paused. Your data stays on this device." = "Sync is paused. Your data stays on this device.";
+"Choose whether to sync this profile." = "Choose whether to sync this profile.";
+"This profile belongs to another account." = "This profile belongs to another account.";
+"Signed in." = "Signed in.";
+"Sync shares your Spaces, folders, and tab addresses with your other devices through this server." = "Sync shares your Spaces, folders, and tab addresses with your other devices through this server.";
+"Open this window to sign in." = "Open this window to sign in.";
+"Sign-in is already in progress." = "Sign-in is already in progress.";
+
+"Account" = "Account";

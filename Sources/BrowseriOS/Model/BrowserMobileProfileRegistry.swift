@@ -5,12 +5,23 @@ import Foundation
 @MainActor final class BrowserMobileProfileRegistry {
     // MARK: Lifecycle
 
-    init(directory: URL = .applicationSupportDirectory) { self.directory = directory }
+    init(
+        directory: URL = .applicationSupportDirectory,
+        syncSessionFactory: @escaping (BrowserSQLiteSessionStore, BrowserMobileProfileDocument)
+            -> BrowserMobileSyncSession = {
+                BrowserMobileSyncSession(store: $0, document: $1)
+            }
+    ) {
+        self.directory = directory
+        self.syncSessionFactory = syncSessionFactory
+    }
 
     // MARK: Internal
 
     static let shared = BrowserMobileProfileRegistry()
     static let importIdentifier = "mobile-json-v1"
+
+    private(set) var syncSession: BrowserMobileSyncSession?
 
     static func legacySpaceID(filename: String) -> String {
         "mobile-import-" + SHA256.hash(data: Data(filename.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -81,7 +92,12 @@ import Foundation
                     .readLegacySessions(directory: directory.appendingPathComponent("MobileSessions"))
                 try Self.importLegacySessions(imports, into: store)
             }
-            return try BrowserMobileProfileDocument(store: store, loadSnapshot: { try store.loadSnapshotStrict() })
+            let document = try BrowserMobileProfileDocument(
+                store: store,
+                loadSnapshot: { try store.loadSnapshotStrict() }
+            )
+            syncSession = syncSessionFactory(store, document)
+            return document
         }
         opening = task
         do {
@@ -98,6 +114,8 @@ import Foundation
     // MARK: Private
 
     private let directory: URL
+    private let syncSessionFactory: (BrowserSQLiteSessionStore, BrowserMobileProfileDocument)
+        -> BrowserMobileSyncSession
     private var current: BrowserMobileProfileDocument?
     private var opening: Task<BrowserMobileProfileDocument, Error>?
 

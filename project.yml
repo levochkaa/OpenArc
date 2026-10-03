@@ -297,6 +297,8 @@ targets:
         PRODUCT_NAME: TheBrowser
         PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser.ios
         INFOPLIST_FILE: Support/TheBrowseriOS-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Support/TheBrowseriOS.entitlements
+        THEBROWSER_SYNC_BASE_URL: ""
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_STRICT_CONCURRENCY: complete

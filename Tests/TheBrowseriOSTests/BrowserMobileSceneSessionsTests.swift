@@ -213,6 +213,66 @@ import UIKit
     #expect(saved?.tabs.first?.urlString == "https://example.com/final")
 }
 
+@MainActor @Test func mobileSceneSyncActivityUsesSharedRegistryAndRejectsStaleAttachments() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-scene-sync-\(UUID())")
+    let suite = "mobile-scene-sync-\(UUID())"
+    let preferences = try #require(UserDefaults(suiteName: suite))
+    defer {
+        preferences.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: directory)
+    }
+    var createdSessions = 0
+    let registry = BrowserMobileProfileRegistry(directory: directory) { store, document in
+        createdSessions += 1
+        return BrowserMobileSyncSession(
+            store: store, document: document, preferences: preferences,
+            authSessionStore: MobileSceneSyncAuth(), environment: [:], packagedServerURL: nil
+        )
+    }
+    let scenes = BrowserMobileSceneSessions { id in
+        let engine = MobileSceneEngine()
+        return .init(workspace: BrowserMobileWorkspace(
+            engine: engine, sceneID: id, profileLoader: { try await registry.document() }, preferences: preferences
+        ), contentView: engine.hostView)
+    }
+    let first = try await scenes.connect(sessionID: "first")
+    // Activity can arrive while the shared SQLite profile is still opening.
+    scenes.setActive(true, for: first)
+    let second = try await scenes.connect(sessionID: "second")
+    await scenes.waitForPendingOperations()
+    let runtime = try #require(registry.syncSession)
+    #expect(createdSessions == 1)
+    #expect(first.workspace.profileDocument === second.workspace.profileDocument)
+    #expect(first.workspace.syncSession === runtime && second.workspace.syncSession === runtime)
+    #expect(runtime.isForeground)
+    scenes.setActive(true, for: second)
+    scenes.disconnect(first)
+    #expect(runtime.isForeground)
+    let replacement = try await scenes.connect(sessionID: "second")
+    #expect(!runtime.isForeground)
+    scenes.setActive(true, for: second)
+    #expect(!runtime.isForeground, "Old attachment cannot activate replacement")
+    scenes.setActive(true, for: replacement)
+    scenes.setActive(false, for: second)
+    scenes.disconnect(second)
+    #expect(runtime.isForeground, "Old attachment cannot deactivate replacement")
+    let tabs = BrowserMobileTabsViewController(workspace: replacement.workspace)
+    tabs.loadViewIfNeeded()
+    let accountButton = try #require(tabs.navigationItem.leftBarButtonItems?.last)
+    #expect(accountButton.accessibilityIdentifier == "browser.account" && accountButton.isEnabled)
+    scenes.discard(sessionIDs: ["first", "second"])
+    await scenes.waitForPendingOperations()
+    #expect(!runtime.isForeground)
+}
+
+// MARK: - MobileSceneSyncAuth
+
+@MainActor private final class MobileSceneSyncAuth: BrowserSyncAuthSessionStoring {
+    func loadSession() -> BrowserAuthSession? { nil }
+    func saveSession(_: BrowserAuthSession) {}
+    func clearSession() {}
+}
+
 // MARK: - MobileSceneFixture
 
 @MainActor private final class MobileSceneFixture {

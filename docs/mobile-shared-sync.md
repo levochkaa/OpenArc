@@ -18,7 +18,21 @@ Both iOS targets compile the same Foundation wire types, v2/v3/v4 projections, i
 
 `BrowserSessionDefaults` removes shared references to the AppKit model. `BrowserSyncDeviceIdentity` is supplied by the platform composition root. Shared account state and Apple identity protocols live separately from the AppKit presenter. `BrowserAuthSessionNamespace` retains exact desktop Keychain names while allowing an explicit mobile namespace. Sync error reporting is injected; the desktop root keeps its existing telemetry mapping. `loadSnapshotStrict()` lets mobile restoration distinguish an empty profile from a failed read.
 
-The mobile document can attach the production `BrowserSyncService` as its single snapshot applier. **The shipped mobile composition does not yet create an account store/service or expose sign-in and sync consent.** Shared SQLite/outbox tests and compilation do not establish mobile network synchronization. That is the next vertical slice.
+`BrowserMobileProfileRegistry` also owns one `BrowserMobileSyncSession` for the profile. That session composes the shared account store, production HTTP client and coordinator; the document remains the coordinator's sole snapshot applier. The document's link back to the session is weak. Scenes contribute foreground activity, with attachment guards rejecting callbacks from an old scene connection. The last inactive scene suspends transport without removing credentials, changing durable Pause or discarding queued writes. A later active scene resumes polling and queue delivery.
+
+## Account and server configuration
+
+The Tabs controller exposes Account on both iPhone and iPad. Its sheet provides server configuration, Sign in with Apple, explicit Enable Sync consent, Pause/Resume, Sign Out, errors and Retry. The Apple provider anchors authorization to the caller's active window. Cancellation and stale-result guards prevent dismissed or superseded requests from writing credentials. Account state is shared across scenes; each presentation owns its sign-in attempt.
+
+Server selection uses `THEBROWSER_SYNC_BASE_URL` from the process environment, then the saved mobile server preference, then the packaged `TheBrowserSyncBaseURL` Info.plist value. The packaged value comes from the `THEBROWSER_SYNC_BASE_URL` build setting and is empty by default. The Account sheet saves a canonical root URL. HTTPS is required except for HTTP loopback testing; paths, credentials, query strings and fragments are rejected. No public server is selected implicitly.
+
+Mobile credentials use the explicit Keychain namespace `.profile("mobile")`. A profile binds durably to the normalized server URL and user ID after consent. Signing out preserves the owner, cursor, baseline and immutable queue, pauses sync and attempts to remove credentials. Another account or server cannot silently adopt those records. Local persistence failure blocks transport until the document's buffered writes commit successfully.
+
+**Pause after restart:** the shared account store treats all cached paused sessions as requiring sign-in again. This protects against a previous Sign Out whose Keychain deletion failed, but also means that a deliberate Pause followed by app termination cannot use Resume until the user signs in again. Same-process Pause/Resume retains credentials and needs no new Apple request. Distinguishing those durable states remains follow-up work.
+
+The iOS target declares `com.apple.developer.applesignin` in `Support/TheBrowseriOS.entitlements`. Signing capability, provisioning and cross-app Apple subject/account grouping still require verification with provisioned desktop and mobile clients. Adding the local entitlement does not provision an Apple account or establish production authentication.
+
+The backend accepts an optional explicit `APPLE_CLIENT_IDS` comma-list. Entries are trimmed and deduplicated; empty entries, wildcards, URL-shaped values and malformed identifiers fail configuration. The list replaces the single `APPLE_CLIENT_ID` fallback; it never adds a mobile audience automatically. Compose forwards the list only when configured. See `Backend/.env.example` for the setting and use the exact provisioned client IDs. JWT verification retains Apple's issuer and signing-key checks and requires an allowed audience. Local-JWKS tests exercise signed desktop/mobile audiences and rejected issuer/audience/expiry claims; they do not verify real Apple provisioning.
 
 ## Legacy sessions and scene state
 
@@ -28,16 +42,31 @@ Before opening the new `MobileProfile/TheBrowser.sqlite`, the registry reads and
 
 Scene selection is stored separately under its persistent scene ID. Disconnect/reconnect retains the workspace; discarding a scene releases its runtimes without deleting the registry's document or pending writes. Concurrent first connections await one registry open operation. Initial creation of a fresh local profile creates Personal and one blank tab only once; later empty state never triggers implicit synchronized replacements.
 
-## Remaining network and account integration
+## Localhost integration fixture
 
-1. Add a scene-anchored UIKit Apple identity provider and visible Account/Sync controls for sign-in, explicit enable consent, pause/sign-out and errors. Configure the server explicitly; do not silently select an origin or reuse another origin's credentials. `BrowserSyncConfiguration.current()` currently reads an environment variable only.
-2. Compose one account store/coordinator per profile, attach it to the document, and make foreground polling profile-owned across scene activity. Preserve owner binding, cursor, baseline and pending FIFO on sign-out. Reject a different account rather than silently rebinding local data.
-3. Verify iOS entitlement, provisioning and backend Apple audience configuration. The backend currently validates one `APPLE_CLIENT_ID`; distinct desktop/mobile bundle IDs require verified account grouping/audience support. Loopback test identities do not prove production Apple authentication. Production deployment/account writes remain outside this goal.
-4. Extend the real localhost HTTP fixture to the mobile test host. Prove desktop v4 tree → mobile document → selected real WebKit page, then mobile action → SQLite/outbox → production Swift transport/backend → second client. Cover offline move/rename, lost ACK/reopen, paged adoption, current-subtree delete, unsupported URL retention and two-scene isolation. Keep frozen mutation UUIDs/bytes intact.
-5. Add native reorder, archive, recovery export/import and remaining mobile browser capabilities. Profile synchronous document/SQLite/reducer work before moving it off MainActor; preserve action ordering and transaction boundaries.
+`BrowserMobileSyncHTTPIntegrationTests` uses the profile session, document, scene workspace, real SQLite/outbox and production Swift HTTP transport against the production NestJS/PostgreSQL sync API. Its isolated accounts each register two devices through the real device endpoint. The test authorization adapter supplies fixture credentials issued by `AuthService`; it does not contact Apple or exercise a real Apple sign-in exchange.
+
+`mobile-v4-roundtrip` exercises a real WebKit link and Back/Forward navigation, shared tab metadata and nested/empty folders. A second scene shares the document while retaining independent selection and runtime IDs. A folder move from the other device preserves live views/history; a later subtree delete closes affected runtimes in both scenes. An unsupported desktop URL remains durable without loading, and the final state is reopened from SQLite. `mobile-v4-recovery` covers a committed push with a lost acknowledgement, immutable mutation UUID/payload bytes across reopen, and deletion defeating later stale rename/move intent. These are test definitions.
+
+The runner creates a disposable PostgreSQL container with no persistent volume and only a loopback port. The test-only proxy can drop or hold an acknowledgement after the real server commits; authenticated HTTP controls expose bootstrap credentials, observations and completion. Unauthenticated static `/mobile-test-page` and `/mobile-test-second` routes provide linked WebKit content for navigation history. Neither fault controls nor these pages are production backend routes.
+
+Simulator tests receive only the control URL/token through `TEST_RUNNER_` environment forwarding and fetch their fixture over authenticated HTTP. They do not read a host fixture path. Credentials stay out of command arguments and ordinary fixture logs. Completion permits the real first-login v2/v3 queue drain, then requires successful v4 writes from both devices in each named scenario. A missing, skipped or filtered scenario fails the wrapper. The existing desktop HTTP fixture defaults and runner are retained.
+
+## Remaining work
+
+Verify real Apple authentication and account identity across provisioned clients, then separately verify any authorized production deployment. Extend mobile-specific HTTP coverage for paged adoption, device rotation and concurrent subtree/scene lifecycle races; the desktop fixture already exercises broader protocol behavior. Add native reorder, archive, recovery export/import and remaining browser capabilities. Profile synchronous document/SQLite/reducer work before moving it off MainActor, preserving action ordering and transaction boundaries.
 
 ## Verification
 
 Use `./build.sh ios-build`, then `./build.sh ios-test --ios-destination ...` on iPhone and iPad. Tests use the separate `BrowserMobileTestHost`, real SQLite, actual UIKit controls and localhost WebKit pages. Model callback tests use a fake engine to control closure and event order. Existing legacy JSON tests remain as migration/regression coverage; production scenes use the new document.
+
+For the mobile HTTP suite, install the backend dependencies with Node.js 26 and have Docker available, then run this command for each chosen simulator:
+
+```sh
+./script/test_mobile_sync.sh \
+  --ios-destination 'platform=iOS Simulator,id=SIMULATOR-UUID'
+```
+
+The wrapper invokes `./build.sh ios-test` with the mobile HTTP suite selected and checks its completion report. Running the ordinary iOS suite without its fixture environment intentionally skips these network scenarios. The dedicated UIKit test host is used; this command does not launch the TheBrowser product.
 
 The shared refactor also requires warning-free desktop `./build.sh build` followed by `./build.sh test` and the existing real Swift HTTP harness. Native menu method/control invocation does not prove physical taps, drag smoothness or OS Stage Manager lifecycle. The product TheBrowser/Helper launch prohibition remains in force.

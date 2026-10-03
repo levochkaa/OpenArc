@@ -2,7 +2,11 @@ TheBrowser sync backend runs NestJS on Node.js 26 with PostgreSQL 17. The checke
 
 For local development, install dependencies with `npm ci` in `Backend`, copy `.env.example` to `.env`, and configure an isolated database plus a local JWT secret. Run `npm run migrate`, then `npm run dev`. The default API port is 8080. The repository's `script/test_local_sync.sh` starts and removes its own disposable PostgreSQL container and runs authenticated HTTP integration tests; it does not use the development database.
 
-Current clients can keep using v2/v3. Folder synchronization is a backend v4 foundation; the production Swift sync coordinator still uploads v3 operations. A future v4 client must implement folder projection and bootstrap before enabling v4 uploads.
+The shared desktop/mobile Swift coordinator negotiates v4 after draining immutable v2/v3 work and completing a cursor-zero folder bootstrap. Legacy clients can keep using v2/v3 within the compatibility rules below.
+
+Apple identity verification accepts the configured `APPLE_CLIENT_ID`, or an explicit comma-separated `APPLE_CLIENT_IDS` allowlist. The list replaces the fallback and must contain the exact provisioned desktop/mobile client IDs; no mobile audience is added automatically. Entries are trimmed and deduplicated. Empty entries, wildcards, URLs and malformed identifiers fail startup. Apple issuer, signature and audience validation remain required. Cross-app Apple account grouping and device provisioning must be verified separately.
+
+`script/test_swift_sync.sh` runs the production desktop Swift transport fixture. `script/test_mobile_sync.sh --ios-destination 'platform=iOS Simulator,id=SIMULATOR-UUID'` runs its mobile counterpart in the dedicated test host. Each runner creates an isolated localhost database and fixture identities; neither proves a real Apple sign-in exchange.
 
 | Protocol | Push body | Pull behavior |
 | --- | --- | --- |

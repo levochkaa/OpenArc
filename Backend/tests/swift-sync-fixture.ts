@@ -13,6 +13,8 @@ import { gunzipSync } from "node:zlib";
 // every sync request use the production server. Fault controls live separately.
 const [fixturePath, reportPath] = process.argv.slice(2);
 assert.ok(fixturePath && reportPath, "Expected fixture and completion-report paths");
+const suite = process.env.THEBROWSER_SYNC_FIXTURE_SUITE ?? "desktop";
+assert.ok(suite === "desktop" || suite === "mobile", "Unknown Swift sync fixture suite");
 const databaseURL = new URL(process.env.THEBROWSER_SYNC_TEST_DATABASE_URL ?? "");
 assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(databaseURL.hostname));
 assert.match(databaseURL.pathname, /^\/thebrowser_sync_test_[a-z0-9_]+$/);
@@ -59,12 +61,14 @@ const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
   "folder-device-rotation", "folder-pending-delete"
 ]);
-const scenarios = [
+const mobileScenarios = new Set(["mobile-v4-roundtrip", "mobile-v4-recovery"]);
+const desktopScenarios = [
   ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
   "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay",
   "persistence-retry", "pending-parent-delete", "pending-navigation", ...folderScenarios
 ];
+const scenarios = suite === "mobile" ? [...mobileScenarios] : desktopScenarios;
 
 async function body(message: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -88,9 +92,17 @@ function sendHeld(value: HeldResponse): void {
 
 const proxy = createServer((incoming, outgoing) => {
   void (async () => {
+    const path = new URL(incoming.url ?? "/", upstream).pathname;
+    if (suite === "mobile" && incoming.method === "GET"
+      && ["/mobile-test-page", "/mobile-test-second"].includes(path)) {
+      outgoing.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+      outgoing.end(path === "/mobile-test-page"
+        ? "<!doctype html><html><head><title>Mobile sync fixture</title></head><body>Mobile sync fixture page<a id='next' href='/mobile-test-second'>Next page</a></body></html>"
+        : "<!doctype html><html><head><title>Mobile sync second</title></head><body>Mobile sync second page</body></html>");
+      return;
+    }
     const bytes = await body(incoming);
     const compressed = incoming.headers["content-encoding"] === "gzip";
-    const path = new URL(incoming.url ?? "/", upstream).pathname;
     const authorization = incoming.headers.authorization ?? "";
     const push = path === "/v1/sync/push"
       ? JSON.parse((compressed ? gunzipSync(bytes) : bytes).toString()) as {
@@ -198,7 +210,7 @@ for (const scenario of scenarios) {
   const userID = result.rows[0].id as string;
   const accessToken = await auth.issueAccessToken(userID);
   if (legacyScenarios.has(scenario)) legacyAuthorizations.add(`Bearer ${accessToken}`);
-  else if (!folderScenarios.has(scenario)) semanticAuthorizations.add(`Bearer ${accessToken}`);
+  else if (!folderScenarios.has(scenario) && !mobileScenarios.has(scenario)) semanticAuthorizations.add(`Bearer ${accessToken}`);
   if (scenario === adoptionScenario) capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3]);
   const devices: Device[] = [];
   for (const name of ["Swift A", "Swift B"]) {
@@ -235,15 +247,25 @@ async function inspect(userID: string) {
 
 const control = createServer((incoming, outgoing) => {
   void (async () => {
-    assert.equal(incoming.method, "POST");
-    assert.equal(incoming.url, "/control");
-    assert.equal(incoming.headers.authorization, `Bearer ${controlToken}`);
+    if (incoming.method !== "POST" || incoming.url !== "/control") {
+      outgoing.writeHead(404);
+      outgoing.end();
+      return;
+    }
+    if (incoming.headers.authorization !== `Bearer ${controlToken}`) {
+      // Never include the expected or supplied credentials in assertion logs.
+      outgoing.writeHead(401, { "content-type": "application/json" });
+      outgoing.end(JSON.stringify({ error: "Fixture authorization required" }));
+      return;
+    }
     const command = JSON.parse((await body(incoming)).toString()) as {
       action: string; deviceID?: string; userID?: string; scenario?: string;
       cursor?: number; versions?: number[];
     };
     let result: unknown = {};
-    if (command.action === "drop" || command.action === "hold") {
+    if (command.action === "fixture") {
+      result = { baseURL, controlURL, controlToken, accounts };
+    } else if (command.action === "drop" || command.action === "hold") {
       assert.ok(command.deviceID && accounts.some((account) => account.devices.some((device) => device.deviceID === command.deviceID)));
       modes.set(command.deviceID, command.action);
     } else if (command.action === "release") {
@@ -285,7 +307,15 @@ const control = createServer((incoming, outgoing) => {
       const deviceIDs = new Set(account.devices.map((device) => device.deviceID));
       const scenarioAttempts = attempts.filter((attempt) => deviceIDs.has(attempt.deviceID));
       assert.ok(scenarioAttempts.length > 0, "Completed scenario must send production sync mutations");
-      if (account.scenario === adoptionScenario) {
+      if (mobileScenarios.has(account.scenario)) {
+        assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4].includes(attempt.protocolVersion)),
+          "Mobile scenarios allow initial v2/v3 bootstrap before v4 adoption");
+        for (const device of account.devices) {
+          assert.ok(scenarioAttempts.some((attempt) => attempt.deviceID === device.deviceID
+            && attempt.protocolVersion === 4 && attempt.status === 201),
+          "Both mobile scenario devices must commit production v4 mutations");
+        }
+      } else if (account.scenario === adoptionScenario) {
         assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4].includes(attempt.protocolVersion)));
         assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 3 && attempt.status === 201), "Adoption must begin with v3 writes");
         assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 4 && attempt.status === 201), "Adoption must finish with v4 writes");
