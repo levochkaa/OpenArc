@@ -25,3 +25,24 @@
 "Try Again" = "Try Again";
 "Unknown origin" = "Unknown origin";
 "Where next?" = "Where next?";
+
+/* Shared profile sidebar. */
+"Add to Favorites" = "Add to Favorites";
+"Collapsed" = "Collapsed";
+"Delete" = "Delete";
+"Delete Folder and Contents" = "Delete Folder and Contents";
+"Expanded" = "Expanded";
+"Favorites" = "Favorites";
+"Move To" = "Move To";
+"New Folder" = "New Folder";
+"New Space" = "New Space";
+"Pin" = "Pin";
+"Pinned" = "Pinned";
+"Remove" = "Remove";
+"Remove from Favorites" = "Remove from Favorites";
+"Rename" = "Rename";
+"Rename Space" = "Rename Space";
+"Save" = "Save";
+"Spaces" = "Spaces";
+"Today" = "Today";
+"Unpin" = "Unpin";

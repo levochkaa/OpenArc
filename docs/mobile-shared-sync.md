@@ -1,59 +1,43 @@
-# Mobile shared workspace and sync plan
+# Mobile shared profile and sync
 
-This is an implementation plan based on the mobile foundation and desktop v4 client at `48d638c`. It does not claim mobile Spaces, folders, account authentication or synchronization are implemented. The existing iPhone/iPad app has scene-owned WebKit runtimes, a flat tab list and version-1 JSON session persistence.
+## Implemented boundary
 
-## Shared core
+The UIKit app now uses one `BrowserMobileProfileDocument` per local profile, shared by all scenes through `BrowserMobileProfileRegistry`. It owns the complete logical Space/folder/tab snapshot and SQLite writes. `BrowserMobileWorkspace` is a scene adapter: stable logical tab IDs map to independent WebKit runtime IDs, selection, navigation history and dialogs. Scenes submit stable-ID actions against the current document; they never overwrite it with independent full-window snapshots.
 
-Reuse the existing v2/v3/v4 wire types, projections, immutable outbox and coordinator. Do not introduce a separate mobile protocol or reinterpret frozen mutation payloads. The shared source set should include `BrowserSyncModels`, `BrowserSyncSemanticModels`, `BrowserSyncFolderModels`, both semantic projections, `BrowserSyncOutbox`, `BrowserSyncQueuedMutation`, `BrowserSyncOwner`, `BrowserSyncMoveIntent`, session snapshot/write types, `BrowserSessionWriteBuffer`, `BrowserSQLiteSessionStore` and `BrowserSyncService`/transport.
+The document uses the existing v4 folder reducer, canonical projection and typed move intent. Create, rename, pin, Favorite, move and explicit remove write the full snapshot with immutable outbox intent through `BrowserSessionWrite`. Folder moves carry roots; subtree deletion uses current membership. Failed writes remain in the bounded FIFO with their origin/order, block the coordinator and expose Retry in every scene. A terminal overflow rejects the new action before changing visible state. In-memory failed writes still cannot survive process termination; keep the existing recovery limitation explicit.
 
-The concrete extraction seams are:
+UIKit provides a Space picker, New Space, Favorites/Pinned/Today sections, nested and empty folders, expansion, New Folder/Subfolder, Rename, Pin/Unpin, Favorite, Move To and explicit Remove. The same controller appears in the iPhone sheet and iPad sidebar. Captured menu actions resolve stable IDs against current state. Native drag reorder and archive remain separate work.
 
-- Move `BrowserChromeModel.defaultSpaceID` and `defaultSpaceIconName` to a Foundation-only defaults type. Outbox, folder projection and the older snapshot merger currently reference the AppKit model for these constants.
-- Inject device name/platform into authentication instead of using `Host.current()` and `macOS` defaults in `BrowserRemoteSyncClient.swift` and `BrowserAccountStore`.
-- Give `BrowserAuthSessionStore` an explicit profile namespace rather than depending on `BrowserProfile.defaultDirectoryName`. Preserve existing desktop Keychain account names.
-- Separate shared account state/protocols from the AppKit provider in `BrowserAppleSignInService.swift`. The mobile Apple identity provider must receive the presenting scene's window.
-- Inject the coordinator's error reporter rather than requiring `BrowserTelemetry` and Sentry in the shared sync core.
-- Add the same source files, GRDB, Gzip, HTTPTypes, OpenAPI runtime/URLSession transport and authentication code generation to both iOS targets in `project.yml`. The current targets include only shared navigation/search/strings and DomainParser. A new package is optional; source inclusion can establish the boundary first.
+Remote metadata/order changes preserve surviving WebKit views and history. Remote deletion unregisters identity before engine teardown; late callbacks cannot recreate it. Empty remote state stays empty. Unsupported desktop URLs remain durable records and show an unavailable-address state without WebKit loading them. Entering a supported address creates or navigates once after document admission.
 
-CoreGraphics preference types and Foundation/Security logging are not themselves AppKit dependencies. Desktop profile discovery, Chromium files, browser engines and native views should stay outside the shared source set.
+Ordinary Close/Cmd+W and `window.close()` remove temporary tabs. For pinned/Favorite tabs they unload only that scene's runtime; the shared record and other scenes survive. Explicit sidebar Remove deletes the shared identity. Selecting an unloaded persistent tab creates a fresh runtime. User title overrides remain separate from real page titles, so clearing Rename restores each scene's current page title.
 
-## One document, separate scene runtimes
+## Shared platform code
 
-A proposed `BrowserMobileProfileDocument` owns one profile's logical Spaces, folders, tabs, SQLite store, authentication state and sync coordinator. It is the coordinator's single `BrowserSyncSnapshotApplying` receiver and publishes changes to multiple scene subscribers. Do not attach the last connected window directly as the service's weak applier.
+Both iOS targets compile the same Foundation wire types, v2/v3/v4 projections, immutable outbox, SQLite store, coordinator and HTTP transport used by macOS. `project.yml` explicitly lists shared sources and reuses GRDB, Gzip, HTTPTypes, OpenAPI runtime/URLSession and generation from the existing backend schema. No mobile protocol fork exists.
 
-`BrowserMobileWorkspace` remains the scene adapter: stable logical tab ID to scene-local runtime ID, selected Space/tab, WebKit state and dialogs. Each scene keeps its own engine and host view. Existing live WebKit views/history survive remote metadata and order changes; new remote identities register lazily. Remote deletion removes the logical identity before closing its runtime. An empty remote document must not implicitly create and upload a replacement blank tab.
+`BrowserSessionDefaults` removes shared references to the AppKit model. `BrowserSyncDeviceIdentity` is supplied by the platform composition root. Shared account state and Apple identity protocols live separately from the AppKit presenter. `BrowserAuthSessionNamespace` retains exact desktop Keychain names while allowing an explicit mobile namespace. Sync error reporting is injected; the desktop root keeps its existing telemetry mapping. `loadSnapshotStrict()` lets mobile restoration distinguish an empty profile from a failed read.
 
-All structural actions pass through the document and commit `BrowserSessionWrite` plus the immutable outbox in one SQLite transaction. Capture typed acted-on roots for folder/tab moves. The current mobile worker's replaceable latest snapshot is suitable for its flat JSON session, but cannot retain a failed move followed by another action. Reuse the bounded failed-write FIFO, retain each origin/move intent, block remote application while writes are unresolved and resume through a fresh pull after recovery.
+The mobile document can attach the production `BrowserSyncService` as its single snapshot applier. **The shipped mobile composition does not yet create an account store/service or expose sign-in and sync consent.** Shared SQLite/outbox tests and compilation do not establish mobile network synchronization. That is the next vertical slice.
 
-Separate complete snapshots from independent iPad windows must never write to the same database: each would treat the other window's omitted tabs as deletions. Scene selection is local presentation state, not a competing full document. `BrowserMobileSceneSessions` should acquire the shared document while retaining each scene's engine and reconnect lifecycle. Foreground polling should be owned at the profile level; background suspension must not pause another active window or change durable sign-out state.
+## Legacy sessions and scene state
 
-## Existing sessions and unsupported URLs
+Before opening the new `MobileProfile/TheBrowser.sqlite`, the registry reads and validates every legacy `MobileSessions/*.json`. Each file becomes a separate Space with stable IDs, tab order and its selected index. Colliding IDs from separate files receive distinct IDs. Cached page titles are refreshed by WebKit; they do not become user rename overrides. Original JSON files, including those cached titles, are kept intact.
 
-Import each `MobileSessions/*.json` once into a separate Space, preserving stable tab IDs, order and per-scene selection. Allocate and persist the destination Space ID with the import marker and document rows in one SQLite transaction. Preserve source JSON files; only a committed marker suppresses a later import. A corrupt or unsupported file must remain available for recovery rather than being replaced by an empty session. Handle stable-ID collisions explicitly before committing; do not silently overwrite an imported tab.
+`importSessionOnce` commits the logical snapshot and marker in one SQLite transaction. A failed marker write rolls back the imported rows; after successful import, deleting tabs and restarting cannot reimport them. A damaged/unsupported source blocks restoration and shows Retry without replacing either source or durable state. Import into an already account-bound profile fails closed, because existing tombstones require an explicit merge policy. Normal product import precedes account binding.
 
-The mobile validator currently accepts HTTP, HTTPS and `about:blank`. A synchronized desktop record with an unsupported address, such as an internal browser page, must remain in the document and outbox projection. Present an unsupported-address state without asking WebKit to load it. Filtering that record from a local snapshot would become an unintended synchronized deletion.
+Scene selection is stored separately under its persistent scene ID. Disconnect/reconnect retains the workspace; discarding a scene releases its runtimes without deleting the registry's document or pending writes. Concurrent first connections await one registry open operation. Initial creation of a fresh local profile creates Personal and one blank tab only once; later empty state never triggers implicit synchronized replacements.
 
-Reuse the coordinator's existing negotiation, legacy FIFO drain, zero-cursor v4 bootstrap and atomic adoption. Signing out preserves the profile owner, baseline and pending queue. A different account cannot silently rebind or upload the existing profile.
+## Remaining network and account integration
 
-## First product entry point
+1. Add a scene-anchored UIKit Apple identity provider and visible Account/Sync controls for sign-in, explicit enable consent, pause/sign-out and errors. Configure the server explicitly; do not silently select an origin or reuse another origin's credentials. `BrowserSyncConfiguration.current()` currently reads an environment variable only.
+2. Compose one account store/coordinator per profile, attach it to the document, and make foreground polling profile-owned across scene activity. Preserve owner binding, cursor, baseline and pending FIFO on sign-out. Reject a different account rather than silently rebinding local data.
+3. Verify iOS entitlement, provisioning and backend Apple audience configuration. The backend currently validates one `APPLE_CLIENT_ID`; distinct desktop/mobile bundle IDs require verified account grouping/audience support. Loopback test identities do not prove production Apple authentication. Production deployment/account writes remain outside this goal.
+4. Extend the real localhost HTTP fixture to the mobile test host. Prove desktop v4 tree → mobile document → selected real WebKit page, then mobile action → SQLite/outbox → production Swift transport/backend → second client. Cover offline move/rename, lost ACK/reopen, paged adoption, current-subtree delete, unsupported URL retention and two-scene isolation. Keep frozen mutation UUIDs/bytes intact.
+5. Add native reorder, archive, recovery export/import and remaining mobile browser capabilities. Profile synchronous document/SQLite/reducer work before moving it off MainActor; preserve action ordering and transaction boundaries.
 
-Extend `BrowserMobileTabsViewController` in `BrowserMobileViewController.swift`: it already appears as the iPad sidebar and iPhone sheet. The first useful slice includes a Space picker, Favorites, pinned mixed folder/tab tree, temporary tabs and empty-folder expansion. Context menus provide Pin, Rename, New Folder, Move To and explicit Remove actions. Closing a pinned page runtime must remain distinct from deleting its shared identity. Native drag geometry can be a later interaction slice.
+## Verification
 
-Add an Account/Sync entry with authentication, explicit enable consent, pause/sign-out, persistence recovery and visible errors. Keep engine errors distinct from persistence and account errors.
+Use `./build.sh ios-build`, then `./build.sh ios-test --ios-destination ...` on iPhone and iPad. Tests use the separate `BrowserMobileTestHost`, real SQLite, actual UIKit controls and localhost WebKit pages. Model callback tests use a fake engine to control closure and event order. Existing legacy JSON tests remain as migration/regression coverage; production scenes use the new document.
 
-## Provisioning and authorization boundary
-
-`BrowserSyncConfiguration.current()` currently reads only `THEBROWSER_SYNC_BASE_URL`; a normal mobile installation needs an explicit app configuration source. Do not silently select a server or reuse credentials issued by another origin.
-
-The iOS target currently has no Apple Sign In entitlement. `Backend/src/auth.service.ts` validates one configured `APPLE_CLIENT_ID`, while desktop and iOS have different bundle identifiers. Mobile provisioning, allowed audiences and Apple account grouping must be verified before claiming a shared production account. A loopback fixture with injected test identity proves transport and data behavior, not real Apple authentication or provisioning. Production deployment and production account writes remain outside this goal.
-
-## First vertical acceptance
-
-1. Desktop v4 tree, including nested/empty folders and Favorites, reaches the mobile document; selecting a tab loads a local WebKit fixture. IDs, tree order and scene selection survive restart.
-2. Mobile Pin/Rename/Move/Remove actions pass through the actual document, SQLite queue, production HTTP client/backend and a second independent client. Folder actions carry roots, not stale descendants.
-3. Two iPad scene adapters observe shared edits while keeping independent selection and runtime identities. Disconnect/reconnect does not delete shared records or lose failed writes.
-4. Offline move followed by rename, SQL write failure/retry and lost ACK/reopen retain immutable mutation IDs, bytes and FIFO order. Remote application cannot overwrite unresolved local actions.
-5. Concurrent subtree move/delete preserves escaped children, rejects dead destinations and produces no resurrection or remote echo. Unsupported desktop URLs remain durable records.
-6. JSON import is atomic and repeatable after interruption. Corrupt input and a different signed-in account cannot overwrite existing data.
-
-Use the existing desktop Build/Test gates for the shared-core refactor and `./build.sh ios-build` plus `./build.sh ios-test --ios-destination ...` for the mobile test host. Add composed mobile-model/SQLite/HTTP tests and real local-document WebKit checks; keep real Apple sign-in, deployment and live product UI proof as separate evidence. No build, test or product launch was performed for this planning audit.
+The shared refactor also requires warning-free desktop `./build.sh build` followed by `./build.sh test` and the existing real Swift HTTP harness. Native menu method/control invocation does not prove physical taps, drag smoothness or OS Stage Manager lifecycle. The product TheBrowser/Helper launch prohibition remains in force.

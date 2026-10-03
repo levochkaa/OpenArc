@@ -26,6 +26,47 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     static let databaseFileName = "TheBrowser.sqlite"
 
+    /// New profile owners must distinguish an empty database from a failed read.
+    func loadSnapshotStrict() throws -> BrowserTabSessionSnapshot? {
+        try dbQueue.read { try readSnapshot($0) }
+    }
+
+    func hasCompletedSessionImport(_ identifier: String) throws -> Bool {
+        try dbQueue.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT value FROM browser_preferences WHERE key = ?",
+                arguments: ["session_import:" + identifier]
+            ) == "1"
+        }
+    }
+
+    /// The marker and imported logical state commit together. Retrying after a
+    /// crash cannot reintroduce imported tabs that the user has since deleted.
+    @discardableResult func importSessionOnce(
+        _ identifier: String,
+        makeSnapshot: (BrowserTabSessionSnapshot?) throws -> BrowserTabSessionSnapshot
+    ) throws -> Bool {
+        try dbQueue.write { db in
+            let key = "session_import:" + identifier
+            guard try String.fetchOne(
+                db,
+                sql: "SELECT value FROM browser_preferences WHERE key = ?",
+                arguments: [key]
+            ) != "1" else { return false }
+            // Import precedes account binding. A separate explicit merge policy
+            // is required for identities that may already have tombstones.
+            guard try storedSyncOwner(db) == nil else { throw BrowserSessionImportError.syncedProfile }
+            let snapshot = try makeSnapshot(readSnapshot(db))
+            try saveLocalSnapshot(snapshot, syncMove: nil, in: db)
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO browser_preferences (key, value) VALUES (?, '1')",
+                arguments: [key]
+            )
+            return true
+        }
+    }
+
     func loadSnapshot() -> BrowserTabSessionSnapshot? {
         do {
             return try dbQueue.read { db in
@@ -871,5 +912,17 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         } catch {
             Self.logger.error("Failed to save SQLite preference: \(error.localizedDescription, privacy: .public)")
         }
+    }
+}
+
+// MARK: - BrowserSessionImportError
+
+enum BrowserSessionImportError: Error, LocalizedError {
+    case syncedProfile
+
+    // MARK: Internal
+
+    var errorDescription: String? {
+        "The saved windows cannot be imported into an already synchronized profile. The original files have been kept."
     }
 }

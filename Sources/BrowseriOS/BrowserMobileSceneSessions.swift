@@ -132,12 +132,14 @@ import WebKit
     private var entries = [String: Entry]()
 
     private static func makeComponents(sessionID: String) -> Components {
-        let identifier = Data(sessionID.utf8).base64EncodedString().replacingOccurrences(of: "/", with: "_")
-        let directory = URL.applicationSupportDirectory.appendingPathComponent("MobileSessions", isDirectory: true)
-        let store = BrowserMobileFileSessionStore(fileURL: directory.appendingPathComponent(identifier + ".json"))
         let engine = BrowserWebKitEngine(dataStore: .default())
         return Components(
-            workspace: BrowserMobileWorkspace(engine: engine, store: store),
+            workspace: BrowserMobileWorkspace(
+                engine: engine,
+                sceneID: sessionID,
+                profileLoader: { try await BrowserMobileProfileRegistry.shared.document()
+                }
+            ),
             contentView: engine.hostView
         )
     }
