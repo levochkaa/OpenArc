@@ -471,7 +471,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         pushDebounce: Duration = .milliseconds(750),
         pollInterval: Duration? = .seconds(15),
         retryDelay: Duration? = .seconds(2),
-        errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in }
+        runtimeActive: Bool = true,
+        errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in },
+        operationDidSucceed: @escaping @MainActor (BrowserSyncFailurePhase) -> Void = { _ in }
     ) {
         self.localStore = localStore
         self.remoteClient = remoteClient
@@ -479,7 +481,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         self.pushDebounce = pushDebounce
         self.pollInterval = pollInterval
         self.retryDelay = retryDelay
+        self.isRuntimeActive = runtimeActive
         self.errorReporter = errorReporter
+        self.operationDidSucceed = operationDidSucceed
     }
 
     deinit {
@@ -524,6 +528,18 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         activeSession = session
         invalidatePendingRequests()
         if session != nil {
+            schedulePull()
+            startPolling()
+        }
+    }
+
+    /// Foreground activity controls transport only. Credentials, owner, durable
+    /// Pause, and the immutable queue survive the last scene becoming inactive.
+    func setRuntimeActive(_ active: Bool) {
+        guard isRuntimeActive != active else { return }
+        isRuntimeActive = active
+        invalidatePendingRequests()
+        if active {
             schedulePull()
             startPolling()
         }
@@ -606,9 +622,11 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     private let pollInterval: Duration?
     private let retryDelay: Duration?
     private var activeSession: BrowserAuthSession?
+    private var isRuntimeActive: Bool
     private var isLocalPersistenceBlocked = false
     private var generation: UInt64 = 0
     private let errorReporter: BrowserSyncErrorReporter
+    private let operationDidSucceed: @MainActor (BrowserSyncFailurePhase) -> Void
     private var supportedPushVersions = Set<Int>()
     private var pendingPushTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
@@ -639,7 +657,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     private func currentContext() -> RequestContext? {
-        guard !isLocalPersistenceBlocked,
+        guard isRuntimeActive, !isLocalPersistenceBlocked,
               let session = activeSession, session == authSessionStore.loadSession()
         else { return nil }
         do {
@@ -772,8 +790,11 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     break
                 }
             }
+            guard isCurrent(context), !Task.isCancelled else { return }
             clearRetry()
             if acknowledgedAny {
+                operationDidSucceed(.push)
+                guard isCurrent(context), !Task.isCancelled else { return }
                 pendingPullContext = context
             }
         } catch {
@@ -870,6 +891,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             } else {
                 clearRetry()
             }
+            operationDidSucceed(.pull)
         } catch {
             guard isCurrent(context), !Task.isCancelled else { return }
             pendingPushContext = nil

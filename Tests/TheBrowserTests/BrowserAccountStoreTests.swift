@@ -5,6 +5,63 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserAccountStoreTests {
+    @Test(arguments: [false, true])
+    func cancellingOldSignInDoesNotFinishOrPublishOverTheNextAttempt(serverDispatched: Bool) async {
+        let f = AccountStoreFixture()
+        let oldGate = AccountTestGate(), newGate = AccountTestGate()
+        if serverDispatched {
+            f.remote.release = oldGate
+        } else {
+            f.identity.release = oldGate
+        }
+        defer { oldGate.open()
+            newGate.open()
+        }
+        let old = Task { await f.store.signInWithApple() }
+        if serverDispatched {
+            await f.remote.started.wait()
+        } else {
+            await f.identity.started.wait()
+        }
+        f.store.cancelSignIn()
+        #expect(!f.store.isSigningIn && f.store.session == nil)
+
+        f.identity.started = AccountTestGate()
+        f.identity.release = newGate
+        let next = Task { await f.store.signInWithApple() }
+        await f.identity.started.wait()
+        oldGate.open()
+        await old.value
+        #expect(f.store.isSigningIn)
+        #expect(f.auth.saved.isEmpty && f.store.session == nil)
+        await f.store.signInWithApple()
+        #expect(f.identity.requests == 2)
+        f.remote.release = nil
+        newGate.open()
+        await next.value
+        #expect(!f.store.isSigningIn)
+        #expect(f.auth.saved == [f.remote.response])
+        #expect(f.store.session == f.remote.response)
+    }
+
+    @Test func pauseAndResumeKeepCredentialsAndRequireNoAppleRequest() {
+        let session = accountSession()
+        let f = AccountStoreFixture(binding: .enabled, cachedSession: session)
+        f.store.pauseSync()
+        #expect(f.store.session == session && f.auth.session == session)
+        #expect(f.store.bindingState == .paused)
+        #expect(f.sync.suspensions == 1 && f.identity.requests == 0)
+        f.store.resumeSync()
+        #expect(f.store.bindingState == .enabled && f.store.session == session)
+        #expect(f.sync.resumedSessions == [session])
+        #expect(f.sync.sessionChanges.last == .some(session))
+        #expect(f.auth.saved.isEmpty && f.identity.requests == 0)
+        f.sync.suspendError = AccountTestError.failure
+        f.store.pauseSync()
+        #expect(f.store.bindingState == .enabled && f.store.lastError != nil)
+        #expect(f.store.session == session && f.auth.session == session)
+    }
+
     @Test func authenticationUsesTheInjectedPlatformIdentity() async {
         for identity in [
             BrowserSyncDeviceIdentity(name: "Personal Mac", platform: "macOS"),
@@ -233,7 +290,7 @@ import Testing
 
 @MainActor private final class AccountTestIdentity: BrowserAppleIdentityProviding {
     var requests = 0
-    let started = AccountTestGate()
+    var started = AccountTestGate()
     var release: AccountTestGate?
 
     func requestIdentityToken() async -> String {
@@ -303,6 +360,7 @@ import Testing
     var resumedSessions = [BrowserAuthSession]()
     var sessionChanges = [BrowserAuthSession?]()
     var suspensions = 0
+    var suspendError: Error?
 
     func bindingState(for _: BrowserAuthSession) -> BrowserSyncBindingState { state }
 
@@ -316,8 +374,11 @@ import Testing
         state = .enabled
     }
 
-    func suspendSync() {
+    func suspendSync() throws {
         suspensions += 1
+        if let suspendError {
+            throw suspendError
+        }
         state = .paused
     }
 

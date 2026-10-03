@@ -87,7 +87,11 @@ enum BrowserAppleSignInError: Error {
         lastError = nil
         signInGeneration &+= 1
         let attempt = signInGeneration
-        defer { isSigningIn = false }
+        defer {
+            if attempt == signInGeneration {
+                isSigningIn = false
+            }
+        }
         do {
             let identityToken = try await appleSignInService.requestIdentityToken()
             guard attempt == signInGeneration else { return }
@@ -125,8 +129,39 @@ enum BrowserAppleSignInError: Error {
         }
     }
 
-    func signOut() {
+    /// Invalidates both the Apple request and a dispatched server exchange. The
+    /// platform provider owns dismissing its authorization presentation.
+    func cancelSignIn() {
         signInGeneration &+= 1
+        isSigningIn = false
+    }
+
+    func pauseSync() {
+        guard let session, let syncCoordinator, bindingState == .enabled else { return }
+        cancelSignIn()
+        do {
+            try syncCoordinator.suspendSync()
+            bindingState = try syncCoordinator.bindingState(for: session)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func resumeSync() {
+        guard let session, let syncCoordinator else { return }
+        do {
+            try syncCoordinator.resumeSync(for: session)
+            bindingState = try syncCoordinator.bindingState(for: session)
+            lastError = nil
+            syncCoordinator.accountSessionDidChange(session)
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func signOut() {
+        cancelSignIn()
         syncCoordinator?.accountSessionDidChange(nil)
         session = nil
         bindingState = nil

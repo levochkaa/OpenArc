@@ -1,6 +1,113 @@
 import Foundation
 import Testing
 
+@Test @MainActor func runtimeGateKeepsCachedAuthorizationAndDurableQueueWithoutStartingRequests() async throws {
+    var successes = [BrowserSyncFailurePhase]()
+    let h = try await SyncServiceHarness(runtimeActive: false, operationDidSucceed: { successes.append($0) })
+    defer { h.cleanup() }
+    let session = try #require(h.auth.session)
+    let local = syncServiceSnapshot(tabID: "offline")
+    h.persist(local)
+    let queued = try h.store.pendingSyncQueue(for: h.owner)
+    let cursor = try h.store.syncCursor(for: h.owner)
+    h.service.setLocalPersistenceBlocked(true)
+    h.service.setLocalPersistenceBlocked(false)
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pushes.isEmpty && h.remote.pullCursors.isEmpty && successes.isEmpty)
+    #expect(try h.store.pendingSyncQueue(for: h.owner) == queued)
+    #expect(try h.store.syncOwner() == h.owner)
+    #expect(try h.store.syncCursor(for: h.owner) == cursor)
+    #expect(try h.service.bindingState(for: session) == .enabled)
+
+    h.service.setRuntimeActive(true)
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pushes.count == 1)
+    #expect(successes == [.pull, .push, .pull])
+    #expect(try h.store.pendingSyncQueue(for: h.owner).isEmpty)
+    #expect(h.store.loadSnapshot() == local)
+    #expect(h.auth.session == session)
+    try h.service.suspendSync()
+    h.service.accountSessionDidChange(session)
+    h.service.setRuntimeActive(false)
+    h.service.setRuntimeActive(true)
+    let requests = h.remote.pullCursors.count
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pullCursors.count == requests)
+    #expect(try h.store.isSyncPaused(for: h.owner))
+}
+
+@Test(arguments: [false, true])
+@MainActor func inactiveRuntimeDiscardsInFlightPullAndBothKindsOfStatusCallbacks(fails: Bool) async throws {
+    var successes = [BrowserSyncFailurePhase](), failures = [BrowserSyncFailurePhase]()
+    let h = try await SyncServiceHarness(
+        errorReporter: { _, phase in failures.append(phase) },
+        operationDidSucceed: { successes.append($0) }
+    )
+    defer { h.cleanup() }
+    h.persist(syncServiceSnapshot(tabID: "retained"))
+    await h.service.waitForPendingOperations()
+    successes.removeAll()
+    h.applier.snapshots.removeAll()
+    let cursor = try h.store.syncCursor(for: h.owner)
+    let snapshot = h.store.loadSnapshot()
+    h.remote.responsePages[cursor] = .init(cursor: cursor + 1, events: [
+        syncServiceDelete(id: "retained", sequence: cursor + 1),
+    ])
+    let gate = SyncServiceGate()
+    defer { gate.open() }
+    h.remote.pullGate = gate
+    h.remote.pullStarted = SyncServiceGate()
+    h.remote.pullError = fails ? URLError(.notConnectedToInternet) : nil
+    h.service.schedulePull()
+    await h.remote.pullStarted.wait()
+    h.service.setRuntimeActive(false)
+    gate.open()
+    await h.service.waitForPendingOperations()
+    #expect(successes.isEmpty && failures.isEmpty && h.applier.snapshots.isEmpty)
+    #expect(h.store.loadSnapshot() == snapshot)
+    #expect(try h.store.syncCursor(for: h.owner) == cursor)
+    #expect(try h.store.syncOwner() == h.owner)
+    #expect(try !h.store.isSyncPaused(for: h.owner))
+
+    h.remote.pullError = nil
+    h.remote.pullGate = nil
+    h.service.setRuntimeActive(true)
+    await h.service.waitForPendingOperations()
+    #expect(successes == [.pull] && failures.isEmpty)
+    #expect(h.store.loadSnapshot()?.tabs.isEmpty == true)
+    #expect(try h.store.syncCursor(for: h.owner) == cursor + 1)
+}
+
+@Test @MainActor func runtimeReactivationReplaysUnacknowledgedPushWithoutClearingItsRow() async throws {
+    var successes = [BrowserSyncFailurePhase]()
+    let h = try await SyncServiceHarness(operationDidSucceed: { successes.append($0) })
+    defer { h.cleanup() }
+    successes.removeAll()
+    let gate = SyncServiceGate()
+    defer { gate.open() }
+    h.remote.pushGate = gate
+    h.persist(syncServiceSnapshot(tabID: "pending"))
+    await h.remote.pushStarted.wait()
+    let queued = try h.store.pendingSyncQueue(for: h.owner)
+    h.service.setRuntimeActive(false)
+    gate.open()
+    await h.service.waitForPendingOperations()
+    #expect(successes.isEmpty)
+    #expect(try h.store.pendingSyncQueue(for: h.owner) == queued)
+    #expect(try h.store.syncCursor(for: h.owner) == 0)
+    #expect(try !h.store.isSyncPaused(for: h.owner))
+
+    h.remote.pushGate = nil
+    h.service.setRuntimeActive(true)
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pushes.count == 2)
+    #expect(h.remote.pushes.first?.mutation == h.remote.pushes.last?.mutation)
+    #expect(h.remote.maximumConcurrentRequests == 1)
+    #expect(try h.store.pendingSyncQueue(for: h.owner).isEmpty)
+    #expect(successes == [.pull, .push, .pull])
+}
+
 @Test @MainActor func syncServiceReportsFailurePhaseThroughInjectedReporter() async throws {
     var phases = [BrowserSyncFailurePhase]()
     var errorCodes = [Int]()
@@ -565,8 +672,13 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
 @MainActor private final class SyncServiceHarness {
     // MARK: Lifecycle
 
-    init(bindOwner: Bool = true, errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in }) async throws {
+    init(
+        bindOwner: Bool = true, runtimeActive: Bool = true,
+        errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in },
+        operationDidSucceed: @escaping @MainActor (BrowserSyncFailurePhase) -> Void = { _ in }
+    ) async throws {
         self.errorReporter = errorReporter
+        self.operationDidSucceed = operationDidSucceed
         self.directoryURL = FileManager.default
             .temporaryDirectory
             .appendingPathComponent("SyncService-\(UUID().uuidString)")
@@ -574,7 +686,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
         if bindOwner {
             try store.bindSyncOwner(owner)
         }
-        self.service = makeService(store: store)
+        self.service = makeService(store: store, runtimeActive: runtimeActive)
         service.setSnapshotApplier(applier)
         service.accountSessionDidChange(auth.session)
         await service.waitForPendingOperations()
@@ -593,10 +705,13 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
     let applier = SyncServiceSnapshotApplier()
     var service: BrowserSyncService!
     let errorReporter: BrowserSyncErrorReporter
+    let operationDidSucceed: @MainActor (BrowserSyncFailurePhase) -> Void
 
     var databaseURL: URL { directoryURL.appendingPathComponent("Browser.sqlite") }
 
-    func makeService(store: BrowserSQLiteSessionStore, retryDelay: Duration? = nil) -> BrowserSyncService {
+    func makeService(
+        store: BrowserSQLiteSessionStore, retryDelay: Duration? = nil, runtimeActive: Bool = true
+    ) -> BrowserSyncService {
         BrowserSyncService(
             localStore: store,
             remoteClient: remote,
@@ -604,7 +719,9 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
             pushDebounce: .zero,
             pollInterval: nil,
             retryDelay: retryDelay,
-            errorReporter: errorReporter
+            runtimeActive: runtimeActive,
+            errorReporter: errorReporter,
+            operationDidSucceed: operationDidSucceed
         )
     }
 
