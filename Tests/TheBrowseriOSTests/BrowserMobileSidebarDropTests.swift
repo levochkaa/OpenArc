@@ -95,7 +95,7 @@ struct BrowserMobileSidebarDropTests {
         let snapshot = dropSnapshot()
         let source = try #require(Drop.source(item: folder("folder"), in: snapshot))
         let target = Drop.rootTarget(spaceID: "target", placement: .spacePinned)
-        let relocated = apply([.move(items: sourceItems(source), destination: .tabs(
+        let relocated = apply([.move(items: source.items, destination: .tabs(
             spaceID: "source", placement: .spacePinned, pinnedFolderID: "empty"
         ))], to: snapshot)
         #expect(Drop.plan(source: source, target: target, in: relocated) == nil)
@@ -158,6 +158,136 @@ struct BrowserMobileSidebarDropTests {
         ) == nil)
     }
 
+    @Test func groupMovePreservesSuppliedRootOrderAcrossNoncontiguousSelection() throws {
+        let snapshot = groupTabSnapshot()
+        let source = try #require(Drop.source(items: [tab("a"), tab("c")], in: snapshot))
+        let target = try #require(Drop.target(relativeTo: tab("d"), position: .before, in: snapshot))
+        let plan = try #require(Drop.plan(source: source, target: target, in: snapshot))
+        #expect(source.items == [tab("a"), tab("c")])
+        #expect(plan.items == source.items && plan.before == tab("d"))
+        #expect(apply(plan, to: snapshot).tabs.compactMap(\.id) == ["b", "a", "c", "d"])
+
+        // The caller supplies sidebar order; capture must not replace it with
+        // dictionary, ID, or gesture-addition ordering.
+        let reverse = try #require(Drop.source(items: [tab("c"), tab("a")], in: snapshot))
+        let append = Drop.rootTarget(spaceID: "source", placement: .temporary)
+        let reversePlan = try #require(Drop.plan(source: reverse, target: append, in: snapshot))
+        #expect(apply(reversePlan, to: snapshot).tabs.compactMap(\.id) == ["b", "d", "c", "a"])
+    }
+
+    @Test func groupCaptureNormalizesSelectedAncestorsAndRejectsInvalidReferences() throws {
+        let snapshot = dropSnapshot()
+        let selected = [tab("child"), tab("loose"), folder("nested"), folder("folder"), tab("today")]
+        let source = try #require(Drop.source(items: selected, in: snapshot))
+        #expect(source.items == [tab("loose"), folder("folder"), tab("today")])
+        let collision = try #require(Drop.source(items: [tab("folder"), folder("folder")], in: snapshot))
+        #expect(collision.items == [tab("folder"), folder("folder")])
+        #expect(Drop.source(items: [], in: snapshot) == nil)
+        #expect(Drop.source(items: [tab("today"), tab("today")], in: snapshot) == nil)
+        #expect(Drop.source(items: [folder("folder"), tab("child"), tab("child")], in: snapshot) == nil)
+        #expect(Drop.source(items: [tab("today"), tab("unknown")], in: snapshot) == nil)
+        #expect(Drop.source(items: [.init(entityType: .space, entityID: "source"), tab("today")], in: snapshot) == nil)
+        #expect(Drop.source(item: tab("today"), in: snapshot)?.items == [tab("today")])
+    }
+
+    @Test func oneStaleGroupRootRejectsEntireMoveWhileMetadataAndSiblingInsertionRemainSafe() throws {
+        let snapshot = groupTabSnapshot()
+        let source = try #require(Drop.source(items: [tab("a"), tab("c")], in: snapshot))
+        let target = try #require(Drop.target(relativeTo: tab("d"), position: .before, in: snapshot))
+        let invalidSnapshots = [
+            apply([.deleteTab(id: "c")], to: snapshot),
+            apply([.move(items: [tab("c")], destination: .tabs(
+                spaceID: "target", placement: .temporary, pinnedFolderID: nil
+            ))], to: snapshot),
+            apply([.move(items: [tab("a")], destination: .tabs(
+                spaceID: "source", placement: .spacePinned, pinnedFolderID: nil
+            ))], to: snapshot),
+        ]
+        for latest in invalidSnapshots {
+            #expect(Drop.plan(source: source, target: target, in: latest) == nil)
+        }
+        let latest = apply([
+            .patchTab(id: "c", fields: .init(userTitleOverride: .set("Remote title"))),
+            .createTab(id: "inserted", data: .init(
+                spaceID: "source", placement: .temporary, pinnedFolderID: nil, urlString: "about:blank"
+            ), before: tab("d")),
+        ], to: snapshot)
+        let plan = try #require(Drop.plan(source: source, target: target, in: latest))
+        let moved = apply(plan, to: latest)
+        #expect(moved.tabs.compactMap(\.id) == ["b", "inserted", "a", "c", "d"])
+        #expect(moved.tabs.first { $0.id == "c" }?.userTitleOverride == "Remote title")
+    }
+
+    @Test func mixedGroupUsesCurrentSubtreeAndRejectsInvalidDestinationsOrMovingAnchors() throws {
+        let snapshot = dropSnapshot()
+        let source = try #require(Drop.source(items: [folder("folder"), tab("loose")], in: snapshot))
+        let forbidden = try [
+            #require(Drop.target(relativeTo: tab("loose"), position: .before, in: snapshot)),
+            #require(Drop.target(relativeTo: folder("folder"), position: .inside, in: snapshot)),
+            #require(Drop.target(relativeTo: folder("nested"), position: .inside, in: snapshot)),
+            #require(Drop.target(relativeTo: tab("child"), position: .after, in: snapshot)),
+            Drop.rootTarget(spaceID: "source", placement: .temporary),
+            Drop.rootTarget(spaceID: "source", placement: .app),
+        ]
+        for target in forbidden {
+            #expect(Drop.plan(source: source, target: target, in: snapshot) == nil)
+        }
+        let latest = apply([
+            .move(items: [tab("child")], destination: .tabs(
+                spaceID: "source", placement: .spacePinned, pinnedFolderID: nil
+            )),
+            .move(items: [tab("today")], destination: .tabs(
+                spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder"
+            )),
+        ], to: snapshot)
+        let plan = try #require(Drop.plan(
+            source: source, target: Drop.rootTarget(spaceID: "target", placement: .spacePinned), in: latest
+        ))
+        let moved = apply(plan, to: latest)
+        #expect(plan.items == [folder("folder"), tab("loose")])
+        #expect(moved.tabs.first { $0.id == "child" }?.spaceID == "source")
+        #expect(moved.tabs.first { $0.id == "today" }?.spaceID == "target")
+        #expect(moved.tabs.first { $0.id == "loose" }?.spaceID == "target")
+        #expect(moved.pinnedTabFolders?.first { $0.id == "nested" }?.spaceID == "target")
+    }
+
+    @Test func groupNoOpIgnoresSparseRanksAndRankNormalization() throws {
+        let snapshot = dropSnapshot()
+        let source = try #require(Drop.source(items: [folder("folder"), tab("loose")], in: snapshot))
+        let target = try #require(Drop.target(relativeTo: folder("empty"), position: .before, in: snapshot))
+        #expect(Drop.plan(source: source, target: target, in: snapshot) == nil)
+        let allRoots = try #require(Drop.source(items: [folder("folder"), tab("loose"), folder("empty")], in: snapshot))
+        #expect(Drop.plan(
+            source: allRoots, target: Drop.rootTarget(spaceID: "source", placement: .spacePinned), in: snapshot
+        ) == nil)
+    }
+
+    @Test func groupLimitCountsNormalizedRootsAndAcceptsExactlyOneThousand() throws {
+        let tabs = (0...1000).map {
+            BrowserTabSessionSnapshotTab(id: "tab-\($0)", urlString: "about:blank", spaceID: "source")
+        }
+        let snapshot = BrowserTabSessionSnapshot(spaces: [
+            .init(id: "source", title: "Source", systemImageName: "globe"),
+            .init(id: "target", title: "Target", systemImageName: "globe"),
+        ], tabs: tabs)
+        let references = tabs.compactMap(\.id).map(tab)
+        let source = try #require(Drop.source(items: Array(references.prefix(1000)), in: snapshot))
+        #expect(source.items.count == 1000)
+        let plan = try #require(Drop.plan(
+            source: source, target: Drop.rootTarget(spaceID: "target", placement: .temporary), in: snapshot
+        ))
+        #expect(plan.items == source.items)
+        #expect(Drop.source(items: references, in: snapshot) == nil)
+
+        let descendants = BrowserTabSessionSnapshot(spaces: snapshot.spaces, pinnedTabFolders: [
+            .init(id: "parent", spaceID: "source", title: "Parent"),
+        ], tabs: tabs.map { .init(
+            id: $0.id, urlString: $0.urlString, placement: .spacePinned, spaceID: "source", pinnedFolderID: "parent"
+        ) })
+        let collapsed = try #require(Drop.source(items: references + [folder("parent")], in: descendants))
+        #expect(collapsed.items == [folder("parent")])
+    }
+
     // MARK: Private
 
     private typealias Drop = BrowserMobileSidebarDrop
@@ -165,7 +295,6 @@ struct BrowserMobileSidebarDropTests {
 
 private func tab(_ id: String) -> BrowserSyncEntityReference { .init(entityType: .tab, entityID: id) }
 private func folder(_ id: String) -> BrowserSyncEntityReference { .init(entityType: .folder, entityID: id) }
-private func sourceItems(_ source: BrowserMobileSidebarDrop.Source) -> [BrowserSyncEntityReference] { [source.item] }
 
 private func apply(
     _ plan: BrowserMobileSidebarDrop.Plan,
@@ -246,4 +375,13 @@ private func favoriteSnapshot(firstSpace: String, secondSpace: String) -> Browse
         .init(id: "first", urlString: "about:blank", placement: .app, spaceID: firstSpace),
         .init(id: "second", urlString: "about:blank", placement: .app, spaceID: secondSpace),
     ])
+}
+
+private func groupTabSnapshot() -> BrowserTabSessionSnapshot {
+    .init(spaces: [
+        .init(id: "source", title: "Source", systemImageName: "globe"),
+        .init(id: "target", title: "Target", systemImageName: "globe"),
+    ], tabs: ["a", "b", "c", "d"].map {
+        .init(id: $0, urlString: "about:blank", spaceID: "source")
+    })
 }

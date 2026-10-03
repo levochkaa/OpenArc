@@ -122,7 +122,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         tableView.dragDelegate = self
         tableView.dropDelegate = self
         tableView.dragInteractionEnabled = true
+        tableView.allowsMultipleSelectionDuringEditing = true
+        tableView.allowsSelectionDuringEditing = true
         tableView.estimatedRowHeight = 60
+        selectionButton.accessibilityIdentifier = "browser.selectTabs"
+        nonSelectionRightButtons = navigationItem.rightBarButtonItems ?? []
+        updateSelectionButton()
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: String(localized: "New Tab", table: "Mobile"), image: UIImage(systemName: "plus"),
             primaryAction: UIAction { [weak self] _ in
@@ -182,6 +187,15 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     override func tableView(_: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard !isHoldingRows else { return }
+        if isSelectingRows {
+            guard let row = row(at: indexPath) else { return }
+            selectedItems.insert(row.reference)
+            if let cell = tableView.cellForRow(at: indexPath) {
+                configure(cell, at: indexPath)
+            }
+            return
+        }
         switch row(at: indexPath) {
         case .tab(let id, _):
             guard workspace.tabs.contains(where: { $0.id == id }) else { return }
@@ -196,10 +210,28 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
     }
 
+    override func tableView(_: UITableView, didDeselectRowAt indexPath: IndexPath) {
+        guard isSelectingRows, !isHoldingRows, let row = row(at: indexPath) else { return }
+        selectedItems.remove(row.reference)
+        if let cell = tableView.cellForRow(at: indexPath) {
+            configure(cell, at: indexPath)
+        }
+    }
+
+    override func tableView(_: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        isHoldingRows ? nil : indexPath
+    }
+
+    override func tableView(_: UITableView, willDeselectRowAt indexPath: IndexPath) -> IndexPath? {
+        isHoldingRows ? nil : indexPath
+    }
+
+    override func tableView(_: UITableView, shouldBeginMultipleSelectionInteractionAt _: IndexPath) -> Bool { false }
+
     override func tableView(_: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath)
         -> UISwipeActionsConfiguration?
     {
-        guard workspace.isReady, workspace.profileDocument?.canEdit != false,
+        guard !isSelectingRows, workspace.isReady, workspace.profileDocument?.canEdit != false,
               case .tab(let id, _) = row(at: indexPath),
               let tab = workspace.tabs.first(where: { $0.id == id }) else { return nil }
         let removes = workspace.profileDocument != nil && tab.placement != .temporary
@@ -209,7 +241,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 ? String(localized: "Remove", table: "Mobile")
                 : String(localized: "Close", table: "Mobile")
         ) { [weak self] _, _, completion in
-            guard let self else { completion(false)
+            guard let self, !isSelectingRows else { completion(false)
                 return
             }
             completion(removeTab(id: id))
@@ -221,12 +253,15 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     override func tableView(_: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point _: CGPoint)
         -> UIContextMenuConfiguration?
     {
-        guard let row = row(at: indexPath) else { return nil }
+        guard !isSelectingRows, let row = row(at: indexPath) else { return nil }
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in self?.menu(for: row) })
     }
 
     func render() {
         guard isViewLoaded else { return }
+        if renderedSpaceID != workspace.selectedSpaceID || renderedDocument !== workspace.profileDocument {
+            selectedItems.removeAll()
+        }
         if isHoldingRows || tableView.hasUncommittedUpdates {
             needsStructuralRefresh = true
             if renderedSpaceID != workspace.selectedSpaceID || renderedDocument !== workspace.profileDocument {
@@ -238,8 +273,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             return
         }
         let canEdit = workspace.isReady && (workspace.profileDocument?.canEdit ?? true)
-        navigationItem.leftBarButtonItem?.isEnabled = canEdit
+        navigationItem.leftBarButtonItem?.isEnabled = canEdit && !isSelectingRows
         navigationItem.leftBarButtonItems?.last?.isEnabled = workspace.syncSession != nil
+        updateSelectionButton()
         if let document = workspace.profileDocument {
             var configuration = UIButton.Configuration.plain()
             configuration.title = workspace.spaces.first { $0.id == workspace.selectedSpaceID }?.title
@@ -264,31 +300,48 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         itemsForBeginning session: any UIDragSession,
         at indexPath: IndexPath
     ) -> [UIDragItem] {
+        let sessionID = ObjectIdentifier(session)
+        if sourceSessionID == sessionID, let payload = activeSource {
+            guard !payload.isCancelled, payload.document === workspace.profileDocument,
+                  payload.spaceID == workspace.selectedSpaceID, let row = row(at: indexPath) else { return [] }
+            return initialDragItem(for: row.reference)
+        }
         guard !isHoldingRows, workspace.isReady, let document = workspace.profileDocument, document.canEdit,
-              let row = row(at: indexPath),
-              let source = BrowserMobileSidebarDrop.source(item: row.reference, in: document.snapshot)
+              let row = row(at: indexPath) else { return [] }
+        let requestedItems = isSelectingRows && selectedItems.contains(row.reference)
+            ? rows.flatMap { $0 }.map(\.reference).filter { selectedItems.contains($0) }
+            : [row.reference]
+        guard let source = BrowserMobileSidebarDrop.source(items: requestedItems, in: document.snapshot)
         else { return [] }
+        // UIKit may never begin a session for a row that returns no items.
+        // A selected descendant must not freeze the table before its root lifts.
+        guard source.items.contains(row.reference) else { return [] }
+        if isSelectingRows, !selectedItems.contains(row.reference) {
+            selectedItems = [row.reference]
+            restoreRowSelection()
+        }
         let payload = SidebarDragPayload(
             owner: self,
             document: document,
             spaceID: workspace.selectedSpaceID,
-            source: source
+            source: source,
+            sourceSessionID: sessionID
         )
-        let label: String =
-            switch row {
-            case .tab(let id, _): renderedTabs[id].map(displayTitle) ?? String(localized: "Tabs", table: "Mobile")
-            case .folder(let id, _): renderedSnapshot?.pinnedTabFolders?.first(where: { $0.id == id })?.title ?? String(
-                    localized: "Tabs",
-                    table: "Mobile"
-                )
-            }
-        let item = UIDragItem(itemProvider: NSItemProvider(object: label as NSString))
-        item.localObject = payload
+        initialDragItems.removeAll(keepingCapacity: true)
+        suppliedInitialItems.removeAll(keepingCapacity: true)
+        for reference in source.items {
+            let label = dragLabel(for: reference)
+            let item = UIDragItem(itemProvider: NSItemProvider(object: label as NSString))
+            item.localObject = payload
+            initialDragItems[reference] = item
+        }
+        payload.dragItemIDs = Set(initialDragItems.values.map(ObjectIdentifier.init))
         session.localContext = payload
         activeSource = payload
-        sourceSessionID = ObjectIdentifier(session)
+        sourceSessionID = sessionID
+        updateSelectionButton()
         becomeFirstResponder()
-        return [item]
+        return initialDragItem(for: row.reference)
     }
 
     func tableView(
@@ -304,6 +357,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         guard sourceSessionID == ObjectIdentifier(session) else { return }
         sourceSessionID = nil
         activeSource = nil
+        initialDragItems.removeAll(keepingCapacity: true)
+        suppliedInitialItems.removeAll(keepingCapacity: true)
         finishInteractionIfPossible()
     }
 
@@ -381,8 +436,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func tableView(_ tableView: UITableView, performDropWith coordinator: any UITableViewDropCoordinator) {
-        guard coordinator.items.count == 1, coordinator.proposal.operation == .move,
+        guard coordinator.proposal.operation == .move,
               let payload = payload(for: coordinator.session), let document = workspace.profileDocument,
+              matches(coordinator.items.map(\.dragItem), payload: payload),
               dropSessionID == ObjectIdentifier(coordinator.session), let hover,
               let finalTarget = dropTarget(at: coordinator.session.location(in: tableView)),
               finalTarget.target == hover.target,
@@ -393,26 +449,37 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         // Keep the data source frozen through synchronous document observers and
         // UIKit's drop animation. The terminal refresh reads the latest tree.
         isCommittingDrop = true
+        defer {
+            isCommittingDrop = false
+            finishInteractionIfPossible()
+        }
         let moved = document.move(
             items: plan.items,
             destination: plan.destination,
             before: plan.before,
             after: plan.after
         )
-        isCommittingDrop = false
         guard moved else { return }
         payload.isCancelled = true
         needsStructuralRefresh = true
-        isAnimatingDrop = true
+        let batchID = UUID()
+        animationBatchID = batchID
+        pendingDropAnimations = payload.dragItemIDs
         let target = UIDragPreviewTarget(container: tableView, center: hover.point)
-        coordinator.drop(coordinator.items[0].dragItem, to: target).addCompletion { [weak self] _ in
-            guard let self else { return }
-            isAnimatingDrop = false
-            finishInteractionIfPossible()
+        for item in coordinator.items {
+            let itemID = ObjectIdentifier(item.dragItem)
+            coordinator.drop(item.dragItem, to: target).addCompletion { [weak self] _ in
+                guard let self, animationBatchID == batchID, pendingDropAnimations.remove(itemID) != nil else { return }
+                if pendingDropAnimations.isEmpty {
+                    animationBatchID = nil
+                }
+                finishInteractionIfPossible()
+            }
         }
     }
 
     func tabMenu(id: String) -> UIMenu? {
+        guard !isSelectingRows else { return nil }
         guard let tab = workspace.tabs.first(where: { $0.id == id }) else { return nil }
         guard let document = workspace.profileDocument else {
             return UIMenu(children: [UIAction(
@@ -473,7 +540,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func folderMenu(id: String) -> UIMenu? {
-        guard let document = workspace.profileDocument,
+        guard !isSelectingRows, let document = workspace.profileDocument,
               let folder = document.snapshot.pinnedTabFolders?.first(where: { $0.id == id }) else { return nil }
         let disabled: UIMenuElement.Attributes = document.canEdit ? [] : .disabled
         return UIMenu(children: [
@@ -541,12 +608,14 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             owner: BrowserMobileTabsViewController,
             document: BrowserMobileProfileDocument,
             spaceID: String?,
-            source: BrowserMobileSidebarDrop.Source
+            source: BrowserMobileSidebarDrop.Source,
+            sourceSessionID: ObjectIdentifier
         ) {
             self.owner = owner
             self.document = document
             self.spaceID = spaceID
             self.source = source
+            self.sourceSessionID = sourceSessionID
         }
 
         // MARK: Internal
@@ -555,6 +624,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         weak var document: BrowserMobileProfileDocument?
         let spaceID: String?
         let source: BrowserMobileSidebarDrop.Source
+        let sourceSessionID: ObjectIdentifier
+        var dragItemIDs = Set<ObjectIdentifier>()
         var isCancelled = false
     }
 
@@ -578,26 +649,98 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private let spaceButton = UIButton(type: .system)
+    private lazy var selectionButton = UIBarButtonItem(
+        title: String(localized: "Select", table: "Mobile"), style: .plain,
+        target: self, action: #selector(toggleSidebarSelection)
+    )
+    private var nonSelectionRightButtons = [UIBarButtonItem]()
+    private var isSelectingRows = false
+    private var selectedItems = Set<BrowserSyncEntityReference>()
     private var rows = [[Row]]()
     private var renderedSnapshot: BrowserTabSessionSnapshot?
     private var renderedTabs = [String: BrowserMobileTab]()
     private weak var renderedDocument: BrowserMobileProfileDocument?
     private var renderedSpaceID: String?
     private var activeSource: SidebarDragPayload?
+    private var initialDragItems = [BrowserSyncEntityReference: UIDragItem]()
+    private var suppliedInitialItems = Set<BrowserSyncEntityReference>()
     private var sourceSessionID: ObjectIdentifier?
     private var dropSessionID: ObjectIdentifier?
     private var hover: DropHover?
     private var highlightedFolder: IndexPath?
     private var needsStructuralRefresh = false
     private var isCommittingDrop = false
-    private var isAnimatingDrop = false
+    private var pendingDropAnimations = Set<ObjectIdentifier>()
+    private var animationBatchID: UUID?
     private let insertionLine = UIView()
     private var capturedTargets = [TargetKey: BrowserMobileSidebarDrop.Target]()
     private var planCache: PlanCache?
     private var terminalRefreshTask: Task<Void, Never>?
 
     private var isHoldingRows: Bool {
-        sourceSessionID != nil || dropSessionID != nil || isCommittingDrop || isAnimatingDrop
+        sourceSessionID != nil || dropSessionID != nil || isCommittingDrop || !pendingDropAnimations.isEmpty
+    }
+
+    @objc private func toggleSidebarSelection() {
+        guard !isHoldingRows, !tableView.hasUncommittedUpdates,
+              isSelectingRows || (workspace.isReady && workspace.profileDocument?.canEdit == true) else { return }
+        isSelectingRows.toggle()
+        selectedItems.removeAll()
+        super.setEditing(isSelectingRows, animated: true)
+        restoreRowSelection()
+        render()
+    }
+
+    private func updateSelectionButton() {
+        selectionButton.title = isSelectingRows
+            ? String(localized: "Done", table: "Mobile")
+            : String(localized: "Select", table: "Mobile")
+        selectionButton
+            .isEnabled = !isHoldingRows &&
+            (isSelectingRows || (workspace.isReady && workspace.profileDocument?.canEdit == true))
+        navigationItem.rightBarButtonItems = isSelectingRows
+            ? [selectionButton]
+            : nonSelectionRightButtons + [selectionButton]
+    }
+
+    private func restoreRowSelection() {
+        for index in tableView.indexPathsForSelectedRows ?? [] {
+            if !isSelectingRows || row(at: index).map({ !selectedItems.contains($0.reference) }) != false {
+                tableView.deselectRow(at: index, animated: false)
+            }
+        }
+        if isSelectingRows {
+            for item in selectedItems {
+                if let index = indexPath(for: item) {
+                    tableView.selectRow(
+                        at: index,
+                        animated: false,
+                        scrollPosition: .none
+                    )
+                }
+            }
+        }
+        for index in tableView.indexPathsForVisibleRows ?? [] {
+            if let cell = tableView.cellForRow(at: index) {
+                configure(cell, at: index)
+            }
+        }
+    }
+
+    private func dragLabel(for item: BrowserSyncEntityReference) -> String {
+        switch item.entityType {
+        case .tab: renderedTabs[item.entityID].map(displayTitle) ?? String(localized: "Tabs", table: "Mobile")
+        case .folder: renderedSnapshot?.pinnedTabFolders?.first(where: { $0.id == item.entityID })?.title ?? String(
+                localized: "Tabs",
+                table: "Mobile"
+            )
+        case .space: String(localized: "Spaces", table: "Mobile")
+        }
+    }
+
+    private func initialDragItem(for reference: BrowserSyncEntityReference) -> [UIDragItem] {
+        guard let item = initialDragItems[reference], suppliedInitialItems.insert(reference).inserted else { return [] }
+        return [item]
     }
 
     private func configure(_ cell: UITableViewCell, at indexPath: IndexPath) {
@@ -619,9 +762,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             content.secondaryTextProperties.lineBreakMode = .byTruncatingMiddle
             content.image = UIImage(systemName: tab.state.error == nil ? "globe" : "exclamationmark.circle")
             cell.indentationLevel = depth
-            cell.accessoryType = workspace.selectedTabID == id ? .checkmark : .none
+            cell.accessoryType = !isSelectingRows && workspace.selectedTabID == id ? .checkmark : .none
             cell.accessibilityIdentifier = "browser.tab." + id
-            cell.accessibilityTraits = workspace.selectedTabID == id ? [.button, .selected] : [.button]
+            cell.accessibilityTraits = (isSelectingRows
+                ? selectedItems.contains(.init(entityType: .tab, entityID: id))
+                : workspace.selectedTabID == id)
+                ? [.button, .selected]
+                : [.button]
         case .folder(let id, let depth):
             guard let folder = renderedSnapshot?.pinnedTabFolders?.first(where: { $0.id == id })
             else { return }
@@ -629,7 +776,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             content
                 .image = UIImage(systemName: folder.systemImageName ?? (folder.isExpanded ? "folder.fill" : "folder"))
             cell.indentationLevel = depth
-            cell.accessoryType = folder.isExpanded ? .none : .disclosureIndicator
+            cell.accessoryType = isSelectingRows || folder.isExpanded ? .none : .disclosureIndicator
+            if isSelectingRows,
+               selectedItems
+                   .contains(.init(entityType: .folder, entityID: id))
+            {
+                cell.accessibilityTraits.insert(.selected)
+            }
             cell.accessibilityIdentifier = "browser.folder." + id
             cell.accessibilityValue = folder.isExpanded
                 ? String(localized: "Expanded", table: "Mobile")
@@ -641,14 +794,22 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func payload(for session: any UIDropSession) -> SidebarDragPayload? {
         guard workspace.isReady, let document = workspace.profileDocument, document.canEdit,
-              session.allowsMoveOperation, session.items.count == 1,
-              let local = session.localDragSession, local.items.count == 1,
-              let payload = session.items[0].localObject as? SidebarDragPayload,
-              local.localContext as? SidebarDragPayload === payload,
+              session.allowsMoveOperation, let local = session.localDragSession,
+              let payload = local.localContext as? SidebarDragPayload,
               payload.owner === self, payload.document === document, !payload.isCancelled,
-              payload.spaceID == workspace.selectedSpaceID
+              activeSource === payload, sourceSessionID == payload.sourceSessionID,
+              ObjectIdentifier(local) == payload.sourceSessionID,
+              payload.spaceID == workspace.selectedSpaceID,
+              matches(session.items, payload: payload), matches(local.items, payload: payload)
         else { return nil }
         return payload
+    }
+
+    private func matches(_ items: [UIDragItem], payload: SidebarDragPayload) -> Bool {
+        items.count == payload.source.items.count && !items.isEmpty
+            && Set(items.map(ObjectIdentifier.init)) == payload.dragItemIDs
+            && payload.dragItemIDs.count == items.count
+            && items.allSatisfy { $0.localObject as? SidebarDragPayload === payload }
     }
 
     private func dropTarget(at point: CGPoint) -> DropHover? {
@@ -784,6 +945,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
         planCache = nil
         clearDropFeedback()
+        updateSelectionButton()
         if needsStructuralRefresh {
             needsStructuralRefresh = false
             render()
@@ -813,6 +975,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             capturedTargets.removeAll(keepingCapacity: true)
         }
         rows = newRows
+        selectedItems.formIntersection(Set(newRows.flatMap { $0 }.map(\.reference)))
         renderedSnapshot = snapshot
         renderedDocument = workspace.profileDocument
         renderedSpaceID = workspace.selectedSpaceID
@@ -839,6 +1002,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 }
             }
         }
+        restoreRowSelection()
     }
 
     private func indexPath(for item: BrowserSyncEntityReference) -> IndexPath? {

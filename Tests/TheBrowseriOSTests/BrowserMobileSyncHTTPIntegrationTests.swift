@@ -175,6 +175,123 @@ import WebKit
         try await fixture.complete(account)
     }
 
+    @Test func mobileV4GroupMovePreservesRemoteRenameAndLostACKReplayCannotUndoNewerChanges() async throws {
+        let fixture = try await MobileHTTPFixture.load()
+        let account = try fixture.account("mobile-v4-group-replay")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try MobileHTTPProfile(
+            fixture: fixture, device: account.devices[0], directory: directory, initial: mobileHTTPGroupSeed()
+        )
+        let second = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        defer { first.cleanup()
+            second.cleanup()
+        }
+        try await first.start()
+        try await second.start()
+        first.workspace.setSyncActive(false)
+
+        let roots: [BrowserSyncEntityReference] = [
+            .init(entityType: .folder, entityID: "group"),
+            .init(entityType: .tab, entityID: "browsing"),
+        ]
+        let source = try #require(BrowserMobileSidebarDrop.source(items: roots, in: first.document.snapshot))
+        let target = try #require(BrowserMobileSidebarDrop.target(
+            relativeTo: .init(entityType: .folder, entityID: "destination"), position: .inside,
+            in: first.document.snapshot
+        ))
+        let plan = try #require(BrowserMobileSidebarDrop.plan(
+            source: source,
+            target: target,
+            in: first.document.snapshot
+        ))
+        #expect(plan.items == roots)
+        try #require(first.document.move(
+            items: plan.items, destination: plan.destination, before: plan.before, after: plan.after
+        ))
+        let pending = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(pending.count == 1)
+        guard case .folders(let mutation) = pending[0] else {
+            Issue.record("Group move must use the production v4 outbox")
+            return
+        }
+        #expect(mutation.operations == [.move(
+            items: roots, destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "destination"),
+            before: nil, after: nil
+        )])
+        let bytes = try first.outboxBytes()
+        try #require(second.document.renameTab(id: "browsing", title: "Concurrent remote title"))
+        try #require(second.document.renameFolder(id: "group", title: "Concurrent folder title"))
+        try await second.drain()
+        try await fixture.command("drop", deviceID: account.devices[0].deviceID)
+        first.workspace.setSyncActive(true)
+        await first.service.waitForPendingOperations()
+        #expect(first.runtime.lastSyncError != nil)
+        #expect(try first.store.pendingSyncQueue(for: first.owner) == pending)
+        #expect(try first.outboxBytes() == bytes)
+        let committed = try await fixture.inspect(account)
+        let original = try #require(committed.attempts.last { $0.mutationID == mutation.id })
+        try #require(original.status == 201 && original.protocolVersion == 4)
+        try await first.stop()
+
+        try await second.pull()
+        #expect(second.document
+            .snapshot
+            .tabs
+            .first { $0.id == "browsing" }?
+            .userTitleOverride == "Concurrent remote title")
+        #expect(second.document.snapshot.tabs.first { $0.id == "browsing" }?.pinnedFolderID == "destination")
+        #expect(second.document.snapshot.tabs.first { $0.id == "child" }?.pinnedFolderID == "group")
+        #expect(second.document.snapshot.pinnedTabFolders?.first { $0.id == "group" }?.parentFolderID == "destination")
+        #expect(second.document
+            .snapshot
+            .pinnedTabFolders?
+            .first { $0.id == "group" }?
+            .title == "Concurrent folder title")
+        let siblings = BrowserSyncFolderProjection.canonicalChanges(second.document.snapshot)
+            .filter {
+                $0.folderData?.parentFolderID == "destination" || $0.tabData?.pinnedFolderID == "destination"
+            }
+            .sorted { ($0.folderData?.rank ?? $0.tabData?.rank ?? 0) < ($1.folderData?.rank ?? $1.tabData?.rank ?? 0) }
+        #expect(siblings.map { BrowserSyncEntityReference(entityType: $0.entityType, entityID: $0.entityID) } == roots)
+
+        try #require(second.document.move(
+            items: [.init(entityType: .tab, entityID: "browsing")],
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+        ))
+        try #require(second.document.delete(entity: .init(entityType: .folder, entityID: "group")))
+        try await second.drain()
+        let beforeReplay = try await fixture.inspect(account)
+        try await fixture.command("release", deviceID: account.devices[0].deviceID)
+        let reopened = try MobileHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        defer { reopened.cleanup() }
+        #expect(try reopened.store.pendingSyncQueue(for: reopened.owner) == pending)
+        #expect(try reopened.outboxBytes() == bytes)
+        try await reopened.start()
+        try await second.pull()
+        let afterReplay = try await fixture.inspect(account)
+        let attempts = afterReplay.attempts.filter { $0.mutationID == mutation.id }
+        #expect(attempts.count > beforeReplay.attempts.filter { $0.mutationID == mutation.id }.count)
+        #expect(Set(attempts.map(\.digest)) == [original.digest])
+        #expect(attempts.allSatisfy { $0.protocolVersion == 4 && $0.status == 201 })
+        #expect(afterReplay.eventCount == beforeReplay.eventCount && afterReplay.receiptCount == beforeReplay
+            .receiptCount)
+        #expect(reopened.document.snapshot.tabs == second.document.snapshot.tabs)
+        #expect(reopened.document.snapshot.pinnedTabFolders == second.document.snapshot.pinnedTabFolders)
+        #expect(reopened.document.snapshot.tabs.first { $0.id == "browsing" }?.spaceID == "target")
+        #expect(reopened.document
+            .snapshot
+            .tabs
+            .first { $0.id == "browsing" }?
+            .userTitleOverride == "Concurrent remote title")
+        #expect(!reopened.document.snapshot.tabs.contains { $0.id == "child" })
+        #expect(reopened.document.snapshot.pinnedTabFolders?.contains { $0.id == "group" } == false)
+        #expect(afterReplay.tabs.first { $0.id == "child" }?.tombstoned == true)
+        try await reopened.stop()
+        try await second.stop()
+        try await fixture.complete(account)
+    }
+
     @Test func mobileV4LostAcknowledgementReopensImmutableQueueAndDeletionDefeatsStaleEdits() async throws {
         let fixture = try await MobileHTTPFixture.load()
         let account = try fixture.account("mobile-v4-recovery")
@@ -558,6 +675,39 @@ private struct MobileHTTPFixture: Decodable {
     ) async throws -> BrowserSyncFolderPushResponse {
         try await client.push(mutation: mutation, authSession: authSession)
     }
+}
+
+private func mobileHTTPGroupSeed() -> BrowserTabSessionSnapshot {
+    .init(spaces: [
+        .init(id: "source", title: "Source", systemImageName: "globe"),
+        .init(id: "target", title: "Target", systemImageName: "folder"),
+    ], pinnedTabFolders: [
+        .init(id: "group", spaceID: "source", title: "Group", pinnedSiblingRank: 0),
+        .init(id: "destination", spaceID: "source", title: "Destination", pinnedSiblingRank: 2),
+    ], tabs: [
+        .init(
+            id: "child",
+            urlString: "about:blank",
+            placement: .spacePinned,
+            spaceID: "source",
+            pinnedFolderID: "group",
+            pinnedSiblingRank: 0
+        ),
+        .init(
+            id: "browsing",
+            urlString: "about:blank",
+            placement: .spacePinned,
+            spaceID: "source",
+            pinnedSiblingRank: 1
+        ),
+        .init(
+            id: "retained",
+            urlString: "about:blank",
+            placement: .spacePinned,
+            spaceID: "source",
+            pinnedSiblingRank: 3
+        ),
+    ])
 }
 
 private func mobileHTTPSeed(includeUnsupportedURL: Bool = false) -> BrowserTabSessionSnapshot {

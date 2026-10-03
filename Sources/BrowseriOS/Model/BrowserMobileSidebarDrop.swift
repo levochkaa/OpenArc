@@ -11,11 +11,11 @@ enum BrowserMobileSidebarDrop {
     struct Source: Equatable {
         // MARK: Internal
 
-        let item: BrowserSyncEntityReference
+        let items: [BrowserSyncEntityReference]
 
         // MARK: Fileprivate
 
-        fileprivate let container: Container
+        fileprivate let containers: [BrowserSyncEntityReference: Container]
     }
 
     struct Target: Equatable {
@@ -31,19 +31,36 @@ enum BrowserMobileSidebarDrop {
     }
 
     struct Plan: Equatable {
-        let item: BrowserSyncEntityReference
+        let items: [BrowserSyncEntityReference]
         let destination: BrowserSyncFolderDestination
         let before: BrowserSyncEntityReference?
         let after: BrowserSyncEntityReference?
-
-        var items: [BrowserSyncEntityReference] { [item] }
     }
 
     static func source(
         item: BrowserSyncEntityReference, in snapshot: BrowserTabSessionSnapshot
     ) -> Source? {
-        guard let value = canonical(snapshot)[key(item)], let container = container(value) else { return nil }
-        return Source(item: item, container: container)
+        source(items: [item], in: snapshot)
+    }
+
+    /// Input order is the rendered sidebar order supplied by UIKit, not the
+    /// sequence in which checkboxes were selected. Descendants of a selected
+    /// folder travel with that root and do not become independent move items.
+    static func source(
+        items: [BrowserSyncEntityReference], in snapshot: BrowserTabSessionSnapshot
+    ) -> Source? {
+        guard !items.isEmpty, Set(items).count == items.count else { return nil }
+        let values = canonical(snapshot)
+        var containers = [BrowserSyncEntityReference: Container]()
+        for item in items {
+            guard let value = values[key(item)], let container = container(value) else { return nil }
+            containers[item] = container
+        }
+        let folders = Set(items.filter { $0.entityType == .folder }.map(\.entityID))
+        let roots = items.filter { !hasAncestor($0, in: folders, values: values) }
+        guard !roots.isEmpty, roots.count <= 1000 else { return nil }
+        let rootSet = Set(roots)
+        return Source(items: roots, containers: containers.filter { rootSet.contains($0.key) })
     }
 
     static func target(
@@ -72,14 +89,18 @@ enum BrowserMobileSidebarDrop {
         source: Source, target: Target, in snapshot: BrowserTabSessionSnapshot
     ) -> Plan? {
         var values = canonical(snapshot)
-        guard let moving = values[key(source.item)], container(moving) == source.container else { return nil }
+        for item in source.items {
+            guard let moving = values[key(item)], container(moving) == source.containers[item] else { return nil }
+        }
         if let reference = target.reference {
-            guard reference != source.item, let anchor = values[key(reference)],
-                  container(anchor) == target.referenceContainer else { return nil }
+            let folders = Set(source.items.filter { $0.entityType == .folder }.map(\.entityID))
+            guard !source.items.contains(reference), let anchor = values[key(reference)],
+                  container(anchor) == target.referenceContainer,
+                  !hasAncestor(reference, in: folders, values: values) else { return nil }
         }
         let before = target.position == .before ? target.reference : nil
         let after = target.position == .after ? target.reference : nil
-        let plan = Plan(item: source.item, destination: target.destination, before: before, after: after)
+        let plan = Plan(items: source.items, destination: target.destination, before: before, after: after)
         let previous = orderedContainers(values)
         var deleted = Set<String>()
         // Reuse v4 validation for dead parents, cycles, folder placements and
@@ -114,6 +135,23 @@ enum BrowserMobileSidebarDrop {
 
     private static func key(_ item: BrowserSyncEntityReference) -> String {
         BrowserSyncOutboxProjection.key(type: item.entityType, id: item.entityID)
+    }
+
+    private static func hasAncestor(
+        _ item: BrowserSyncEntityReference,
+        in selectedFolders: Set<String>,
+        values: [String: BrowserSyncChange]
+    ) -> Bool {
+        guard let value = values[key(item)] else { return false }
+        var parent = value.folderData?.parentFolderID ?? value.tabData?.pinnedFolderID
+        var visited = Set<String>()
+        while let id = parent, visited.insert(id).inserted {
+            if selectedFolders.contains(id) {
+                return true
+            }
+            parent = values[key(.init(entityType: .folder, entityID: id))]?.folderData?.parentFolderID
+        }
+        return false
     }
 
     private static func container(_ change: BrowserSyncChange) -> Container? {

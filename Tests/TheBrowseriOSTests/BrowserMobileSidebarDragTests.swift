@@ -4,6 +4,188 @@ import Testing
 import UIKit
 
 extension BrowserMobileUITests {
+    @Test func selectedNoncontiguousTabsMoveAsOneOrderedBlockAfterEveryAnimationEnds() async throws {
+        let f = try SidebarDragFixture()
+        defer { f.cleanup() }
+        await f.start()
+        f.workspace.selectTab(id: "b")
+        let selectedRuntime = f.engine.selectedID
+        let runtimes = Set(f.workspace.tabs.map(\.runtimeID))
+        var navigations = 0
+        f.sidebar.didSelectTab = { navigations += 1 }
+        try f.toggleSelection()
+        // Selection order differs from sidebar order. Lifting C must still
+        // carry the stable block [A, C], without changing the active page.
+        f.select(row: 2, section: 2)
+        f.select(row: 0, section: 2)
+        f.sidebar.render()
+        f.sidebar.render()
+        #expect(f.table.isEditing)
+        #expect(Set(f.table.indexPathsForSelectedRows ?? []) == Set([
+            IndexPath(row: 0, section: 2), IndexPath(row: 2, section: 2),
+        ]))
+        #expect(f.workspace.selectedTabID == "b" && f.engine.selectedID == selectedRuntime)
+        #expect(navigations == 0)
+        #expect(try f.mutations().isEmpty)
+        let drag = try f.begin(row: 2, section: 2, expectedItems: 2)
+        #expect(drag.beginRows == [IndexPath(row: 2, section: 2), IndexPath(row: 0, section: 2)])
+        #expect(drag.beginResponses[.init(row: 2, section: 2)]?.count == 1)
+        #expect(drag.beginResponses[.init(row: 0, section: 2)]?.count == 1)
+        let drop = SidebarDropSession(drag: drag, point: f.point(row: 1, section: 2, fraction: 0.1))
+        #expect(f.sidebar.tableView(f.table, canHandle: drop))
+        let proposal = f.hover(drop)
+        #expect(proposal.operation == .move && proposal.intent == .unspecified)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        f.sidebar.tableView(f.table, performDropWith: coordinator)
+        let mutations = try f.mutations()
+        #expect(mutations.count == 1)
+        #expect(mutations.first?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "a"), .init(entityType: .tab, entityID: "c")],
+            destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
+            before: .init(entityType: .tab, entityID: "b")
+        )])
+        #expect(f.todayIDs == ["a", "c", "b"])
+        #expect(coordinator.droppedItems.map(ObjectIdentifier.init) == drag.items.map(ObjectIdentifier.init))
+        try #require(coordinator.animations.count == 2)
+        #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.b", "browser.tab.c"])
+        #expect(f.workspace.selectedTabID == "b" && f.engine.selectedID == selectedRuntime)
+        #expect(Set(f.workspace.tabs.map(\.runtimeID)) == runtimes && f.engine.closed.isEmpty)
+
+        // A newer tree and reversed terminal/completion order must not release
+        // the captured rows while either group's preview is still animating.
+        #expect(f.document.removeTab(id: "b"))
+        f.sidebar.tableView(f.table, dropSessionDidEnd: drop)
+        coordinator.animations[1].finish()
+        #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.b", "browser.tab.c"])
+        f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+        #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.b", "browser.tab.c"])
+        coordinator.animations[0].finish()
+        #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.c"])
+        let currentTab = f.workspace.selectedTabID
+        let currentRuntime = f.engine.selectedID
+        try f.toggleSelection()
+        #expect(!f.table.isEditing && (f.table.indexPathsForSelectedRows ?? []).isEmpty)
+        #expect(f.sidebar.navigationItem.rightBarButtonItems?.contains { $0 === f.dismissButton } == true)
+        #expect(f.workspace.selectedTabID == currentTab && f.engine.selectedID == currentRuntime)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func inlineGroupPreviewCompletionsKeepRowsHeldThroughTheSessionTerminals() async throws {
+        let f = try SidebarDragFixture()
+        defer { f.cleanup() }
+        await f.start()
+        try f.toggleSelection()
+        f.select(row: 0, section: 2)
+        f.select(row: 2, section: 2)
+        let drag = try f.begin(row: 2, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: drag, point: f.point(row: 1, section: 2, fraction: 0.1))
+        let proposal = f.hover(drop)
+        #expect(proposal.operation == .move)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal, completesInline: true)
+        f.sidebar.tableView(f.table, performDropWith: coordinator)
+        #expect(coordinator.droppedItems.count == 2)
+        #expect(coordinator.animations.map(\.completionCount) == [1, 1])
+        #expect(f.todayIDs == ["a", "c", "b"])
+        #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.b", "browser.tab.c"])
+        f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+        #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.b", "browser.tab.c"])
+        f.sidebar.tableView(f.table, dropSessionDidEnd: drop)
+        #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.c", "browser.tab.b"])
+        #expect(try f.mutations().count == 1)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func beginningOnAnUnselectedRowReplacesTheGroupAndMovesOnlyThatRow() async throws {
+        let f = try SidebarDragFixture()
+        defer { f.cleanup() }
+        await f.start()
+        try f.toggleSelection()
+        f.select(row: 0, section: 2)
+        f.select(row: 2, section: 2)
+        let drag = try f.begin(row: 1, section: 2)
+        #expect(drag.beginRows == [IndexPath(row: 1, section: 2)])
+        #expect(f.table.indexPathsForSelectedRows == [IndexPath(row: 1, section: 2)])
+        let drop = SidebarDropSession(drag: drag, point: f.point(row: 2, section: 2, fraction: 0.9))
+        let proposal = f.hover(drop)
+        #expect(proposal.operation == .move)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        f.sidebar.tableView(f.table, performDropWith: coordinator)
+        let mutations = try f.mutations()
+        #expect(mutations.count == 1)
+        #expect(mutations.first?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "b")],
+            destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
+            after: .init(entityType: .tab, entityID: "c")
+        )])
+        #expect(f.todayIDs == ["a", "c", "b"])
+        f.end(drag, drop)
+        coordinator.animation.finish()
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func selectedBlockNoOpAndEscapeCancelLeaveTheDurableQueueUnchanged() async throws {
+        let f = try SidebarDragFixture()
+        defer { f.cleanup() }
+        await f.start()
+        try f.toggleSelection()
+        f.select(row: 1, section: 2)
+        f.select(row: 0, section: 2)
+        let before = try f.durableState()
+        let drag = try f.begin(row: 1, section: 2, expectedItems: 2)
+        let noOp = SidebarDropSession(drag: drag, point: f.point(row: 2, section: 2, fraction: 0.1))
+        let noOpProposal = f.hover(noOp)
+        #expect(noOpProposal.operation == .forbidden)
+        let noOpCoordinator = SidebarDropCoordinator(session: noOp, proposal: noOpProposal)
+        f.sidebar.tableView(f.table, performDropWith: noOpCoordinator)
+        #expect(noOpCoordinator.droppedItems.isEmpty)
+        f.end(drag, noOp)
+        #expect(try f.durableState() == before)
+
+        let cancelled = try f.begin(row: 0, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: cancelled, point: f.point(row: 2, section: 2, fraction: 0.9))
+        let proposal = f.hover(drop)
+        #expect(proposal.operation == .move)
+        let command = try #require(f.sidebar.keyCommands?.first { $0.input == UIKeyCommand.inputEscape })
+        let action = try #require(command.action)
+        #expect(UIApplication.shared.sendAction(action, to: f.sidebar, from: command, for: nil))
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        f.sidebar.tableView(f.table, performDropWith: coordinator)
+        #expect(coordinator.droppedItems.isEmpty)
+        f.end(cancelled, drop)
+        #expect(try f.durableState() == before)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func selectedBlockRejectsTheWholeMoveWhenOneRootDisappearsOrChangesContainer() async throws {
+        for remove in [true, false] {
+            let f = try SidebarDragFixture()
+            defer { f.cleanup() }
+            await f.start()
+            try f.toggleSelection()
+            f.select(row: 0, section: 2)
+            f.select(row: 2, section: 2)
+            let drag = try f.begin(row: 0, section: 2, expectedItems: 2)
+            let drop = SidebarDropSession(drag: drag, point: f.point(row: 1, section: 2, fraction: 0.1))
+            let proposal = f.hover(drop)
+            #expect(proposal.operation == .move)
+            if remove {
+                #expect(f.document.removeTab(id: "c"))
+            } else {
+                #expect(f.document.setPlacement(
+                    tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                ))
+            }
+            let afterConcurrentChange = try f.durableState()
+            let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+            f.sidebar.tableView(f.table, performDropWith: coordinator)
+            #expect(coordinator.droppedItems.isEmpty)
+            #expect(try f.durableState() == afterConcurrentChange)
+            #expect(f.todayIDs == ["a", "b"])
+            f.end(drag, drop)
+            #expect(await f.workspace.shutdown())
+        }
+    }
+
     @Test func nativeSidebarDropQueuesOnlyActedOnTabAndDefersRowsUntilAllTerminals() async throws {
         let f = try SidebarDragFixture()
         defer { f.cleanup() }
@@ -107,7 +289,26 @@ extension BrowserMobileUITests {
         f.workspace.selectTab(id: "deep")
         let selectedRuntime = f.engine.selectedID
         let runtimes = Set(f.workspace.tabs.map(\.runtimeID))
-        let drag = try f.begin(row: 0, section: 1)
+        try f.toggleSelection()
+        f.select(row: 1, section: 1)
+        f.select(row: 0, section: 1)
+        #expect(f.workspace.selectedTabID == "deep" && f.engine.selectedID == selectedRuntime)
+        #expect(f.rowIDs(section: 1).count == 5)
+        // An empty descendant callback may never become a native drag. It must
+        // not require a terminal callback to unlock the selection controls.
+        let abandoned = SidebarDragSession()
+        #expect(f.sidebar.tableView(f.table, itemsForBeginning: abandoned, at: .init(row: 1, section: 1)).isEmpty)
+        try f.toggleSelection()
+        #expect(!f.table.isEditing)
+        try f.toggleSelection()
+        f.select(row: 1, section: 1)
+        f.select(row: 0, section: 1)
+        // Folder and selected child normalize to one root/preview. Selection
+        // must not toggle disclosure, navigate, or freeze descendant membership.
+        let drag = try f.begin(row: 1, section: 1)
+        #expect(drag.beginRows == [IndexPath(row: 1, section: 1), IndexPath(row: 0, section: 1)])
+        #expect(drag.beginResponses[.init(row: 1, section: 1)]?.isEmpty == true)
+        #expect(drag.beginResponses[.init(row: 0, section: 1)]?.count == 1)
         let drop = SidebarDropSession(drag: drag, point: f.point(row: 4, section: 1, fraction: 0.5))
         let proposal = f.hover(drop)
         #expect(proposal.operation == .move && proposal.intent == .insertIntoDestinationIndexPath)
@@ -191,7 +392,7 @@ extension BrowserMobileUITests {
         #expect(await f.workspace.shutdown())
     }
 
-    @Test func sidebarRejectsForeignExternalAndMultipleDragPayloads() async throws {
+    @Test func sidebarAcceptsOneCompleteGroupAndRejectsForeignExternalOrMismatchedPayloads() async throws {
         let f = try SidebarDragFixture()
         let other = try SidebarDragFixture()
         defer { other.cleanup()
@@ -199,8 +400,11 @@ extension BrowserMobileUITests {
         }
         await f.start()
         await other.start()
-        let drag = try f.begin(row: 0, section: 2)
-        let drop = SidebarDropSession(drag: drag, point: f.point(row: 2, section: 2, fraction: 0.9))
+        try f.toggleSelection()
+        f.select(row: 0, section: 2)
+        f.select(row: 2, section: 2)
+        let drag = try f.begin(row: 0, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: drag, point: f.point(row: 1, section: 2, fraction: 0.1))
         #expect(f.sidebar.tableView(f.table, canHandle: drop))
         #expect(!other.sidebar.tableView(other.table, canHandle: drop))
         let sameDocumentSidebar = BrowserMobileTabsViewController(workspace: f.workspace)
@@ -211,10 +415,22 @@ extension BrowserMobileUITests {
         drop.localDragSession = drag
         drop.items.append(drag.items[0])
         #expect(!f.sidebar.tableView(f.table, canHandle: drop))
+        drop.items = [drag.items[0]]
+        #expect(!f.sidebar.tableView(f.table, canHandle: drop))
+        let foreignDrag = try other.begin(row: 0, section: 2)
+        drop.items = [drag.items[0], foreignDrag.items[0]]
+        #expect(!f.sidebar.tableView(f.table, canHandle: drop))
+        let clone = UIDragItem(itemProvider: drag.items[1].itemProvider)
+        clone.localObject = drag.items[1].localObject
+        drop.items = [drag.items[0], clone]
+        #expect(!f.sidebar.tableView(f.table, canHandle: drop))
+        drop.items = drag.items
+        #expect(f.sidebar.tableView(f.table, canHandle: drop))
         #expect(f.sidebar
             .tableView(f.table, itemsForAddingTo: drag, at: .init(row: 1, section: 2), point: .zero)
             .isEmpty)
         f.end(drag, drop)
+        other.end(foreignDrag, SidebarDropSession(drag: foreignDrag, point: .zero))
         #expect(try f.mutations().isEmpty)
         #expect(try other.mutations().isEmpty)
         #expect(await f.workspace.shutdown())
@@ -251,6 +467,7 @@ extension BrowserMobileUITests {
         )
         self.sidebar = BrowserMobileTabsViewController(workspace: workspace)
         self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
+        sidebar.navigationItem.rightBarButtonItem = dismissButton
         workspace.onChange = { [weak sidebar] in sidebar?.render() }
     }
 
@@ -266,6 +483,7 @@ extension BrowserMobileUITests {
     let engine = SidebarDragEngine()
     let preferences: UserDefaults
     let window: UIWindow
+    let dismissButton = UIBarButtonItem(barButtonSystemItem: .done, target: nil, action: nil)
 
     var table: UITableView { sidebar.tableView }
     var todayIDs: [String] {
@@ -287,10 +505,40 @@ extension BrowserMobileUITests {
         table.layoutIfNeeded()
     }
 
-    func begin(row: Int, section: Int) throws -> SidebarDragSession {
+    func toggleSelection() throws {
+        let buttons = (sidebar.navigationItem.leftBarButtonItems ?? [])
+            + (sidebar.navigationItem.rightBarButtonItems ?? []) + (sidebar.toolbarItems ?? [])
+        let button = try #require(buttons.first { $0.accessibilityIdentifier == "browser.selectTabs" })
+        let action = try #require(button.action)
+        #expect(UIApplication.shared.sendAction(action, to: button.target, from: button, for: nil))
+        table.layoutIfNeeded()
+    }
+
+    func select(row: Int, section: Int) {
+        let indexPath = IndexPath(row: row, section: section)
+        table.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+        sidebar.tableView(table, didSelectRowAt: indexPath)
+    }
+
+    func begin(row: Int, section: Int, expectedItems: Int = 1) throws -> SidebarDragSession {
         let session = SidebarDragSession()
-        session.items = sidebar.tableView(table, itemsForBeginning: session, at: .init(row: row, section: section))
-        try #require(session.items.count == 1)
+        let lifted = IndexPath(row: row, section: section)
+        let selected = table.indexPathsForSelectedRows ?? []
+        var initialRows = [lifted]
+        if table.isEditing, selected.contains(lifted) {
+            initialRows += selected.sorted().reversed().filter { $0 != lifted }
+        }
+        // UIKit asks once per selected row, not once per whole selection. Keep
+        // callback order independent from sidebar order and accumulate results
+        // only after each callback, as a native drag session does.
+        for indexPath in initialRows {
+            let items = sidebar.tableView(table, itemsForBeginning: session, at: indexPath)
+            session.beginRows.append(indexPath)
+            session.beginResponses[indexPath] = items
+            session.items.append(contentsOf: items)
+        }
+        try #require(session.items.count == expectedItems)
+        #expect(Set(session.items.map(ObjectIdentifier.init)).count == expectedItems)
         return session
     }
 
@@ -368,6 +616,8 @@ extension BrowserMobileUITests {
 
 @MainActor private final class SidebarDragSession: SidebarDragDropSession, UIDragSession {
     var localContext: Any?
+    var beginRows = [IndexPath]()
+    var beginResponses = [IndexPath: [UIDragItem]]()
 }
 
 // MARK: - SidebarDropSession
@@ -414,14 +664,33 @@ extension BrowserMobileUITests {
 // MARK: - SidebarDragAnimation
 
 @MainActor private final class SidebarDragAnimation: NSObject, UIDragAnimating {
+    // MARK: Lifecycle
+
+    init(completesInline: Bool = false) { self.completesInline = completesInline }
+
+    // MARK: Internal
+
+    let completesInline: Bool
+    var completionCount = 0
     var completions = [(UIViewAnimatingPosition) -> Void]()
 
     func addAnimations(_ animations: @escaping () -> Void) { animations() }
-    func addCompletion(_ completion: @escaping (UIViewAnimatingPosition) -> Void) { completions.append(completion) }
+    func addCompletion(_ completion: @escaping (UIViewAnimatingPosition) -> Void) {
+        if completesInline {
+            completionCount += 1
+            completion(.end)
+        } else {
+            completions.append(completion)
+        }
+    }
+
     func finish() {
         let pending = completions
         completions.removeAll()
-        pending.forEach { $0(.end) }
+        for completion in pending {
+            completionCount += 1
+            completion(.end)
+        }
     }
 }
 
@@ -430,10 +699,12 @@ extension BrowserMobileUITests {
 @MainActor private final class SidebarDropCoordinator: NSObject, UITableViewDropCoordinator {
     // MARK: Lifecycle
 
-    init(session: SidebarDropSession, proposal: UITableViewDropProposal) {
+    init(session: SidebarDropSession, proposal: UITableViewDropProposal, completesInline: Bool = false) {
         self.session = session
         self.proposal = proposal
         self.items = session.items.map { SidebarDropItem($0) }
+        self.completesInline = completesInline
+        self.animation = SidebarDragAnimation(completesInline: completesInline)
     }
 
     // MARK: Internal
@@ -442,22 +713,28 @@ extension BrowserMobileUITests {
     let destinationIndexPath: IndexPath? = nil
     let proposal: UITableViewDropProposal
     let session: any UIDropSession
-    let animation = SidebarDragAnimation()
+    let completesInline: Bool
+    let animation: SidebarDragAnimation
+    var animations = [SidebarDragAnimation]()
+    var droppedItems = [UIDragItem]()
     var previewTarget: UIDragPreviewTarget?
 
-    func drop(_: UIDragItem, to target: UIDragPreviewTarget) -> any UIDragAnimating {
+    func drop(_ item: UIDragItem, to target: UIDragPreviewTarget) -> any UIDragAnimating {
         previewTarget = target
-        return animation
+        droppedItems.append(item)
+        let nextAnimation = animations.isEmpty ? animation : SidebarDragAnimation(completesInline: completesInline)
+        animations.append(nextAnimation)
+        return nextAnimation
     }
 
     func drop(_: UIDragItem, toRowAt _: IndexPath) -> any UIDragAnimating {
         Issue.record("Expected semantic preview target, not UIKit row insertion")
-        return animation
+        return SidebarDragAnimation()
     }
 
     func drop(_: UIDragItem, intoRowAt _: IndexPath, rect _: CGRect) -> any UIDragAnimating {
         Issue.record("Expected semantic preview target")
-        return animation
+        return SidebarDragAnimation()
     }
 
     func drop(_: UIDragItem, to _: UITableViewDropPlaceholder) -> any UITableViewDropPlaceholderContext {
