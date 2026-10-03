@@ -253,25 +253,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func showArchive(_: Any?) {
-        guard !isTerminationRequested, let model = archiveContextModel, model.canBrowseArchive else { return }
-        let key = ObjectIdentifier(model)
-        if let existing = archiveWindowControllers[key] {
-            existing.showWindow(nil)
-            existing.window?.makeKeyAndOrderFront(nil)
-            existing.archiveController.focusSearch()
-            return
-        }
-        let controller = BrowserArchiveWindowController(model: model)
-        controller.onClose = { [weak self] in self?.archiveWindowControllers.removeValue(forKey: key) }
-        controller.onRestore = { [weak self, weak model] in
-            guard let self, let model,
-                  let window = profileWindowSessions.first(where: { $0.chromeModel === model })?.window else { return }
-            window.makeKeyAndOrderFront(nil)
-        }
-        archiveWindowControllers[key] = controller
-        controller.window?.center()
-        controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
+        guard let model = archiveContextModel else { return }
+        _ = performArchiveCommand(.viewArchive, from: model)
+    }
+
+    public func clearArchive(_: Any?) {
+        guard let model = archiveContextModel else { return }
+        _ = performArchiveCommand(.clearArchive, from: model)
     }
 
     public func goBack(_: Any?) {
@@ -390,6 +378,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return focusedArchiveWindowController != nil || activeChromeModel?.canArchiveSelectedTab == true
         case #selector(showArchive(_:)):
             return !isTerminationRequested && archiveContextModel?.canBrowseArchive == true
+        case #selector(clearArchive(_:)):
+            return !isTerminationRequested && archiveContextModel?.canBrowseArchive == true &&
+                archiveContextModel?.isArchiveOperationInFlight == false
         case #selector(goBack(_:)):
             return activeChromeModel?.canGoBack ?? false
         case #selector(goForward(_:)):
@@ -539,6 +530,29 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var activeIncognitoWindowSession: BrowserIncognitoWindowSession? {
         incognitoWindowSession(containing: NSApp.keyWindow)
             ?? incognitoWindowSession(containing: NSApp.mainWindow)
+    }
+
+    @nonobjc private func showArchive(for model: BrowserChromeModel) -> BrowserArchiveWindowController? {
+        guard !isTerminationRequested, model.canBrowseArchive,
+              profileWindowSessions.contains(where: { $0.chromeModel === model }) else { return nil }
+        let key = ObjectIdentifier(model)
+        if let existing = archiveWindowControllers[key] {
+            existing.showWindow(nil)
+            existing.window?.makeKeyAndOrderFront(nil)
+            return existing
+        }
+        let controller = BrowserArchiveWindowController(model: model)
+        controller.onClose = { [weak self] in self?.archiveWindowControllers.removeValue(forKey: key) }
+        controller.onRestore = { [weak self, weak model] in
+            guard let self, let model,
+                  let window = profileWindowSessions.first(where: { $0.chromeModel === model })?.window else { return }
+            window.makeKeyAndOrderFront(nil)
+        }
+        archiveWindowControllers[key] = controller
+        controller.window?.center()
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        return controller
     }
 
     private func profileWindowSession(containing candidateWindow: NSWindow?) -> BrowserProfileWindowSession? {
@@ -739,14 +753,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         fileMenu.addItem(archiveTabItem)
 
-        let archiveItem = NSMenuItem(
-            title: BrowserStrings.archiveMenuTitle,
-            action: #selector(showArchive(_:)),
-            keyEquivalent: ""
-        )
-        archiveItem.target = self
-        archiveItem.identifier = NSUserInterfaceItemIdentifier("browser.archive.open")
-        fileMenu.addItem(archiveItem)
+        for item in BrowserArchiveCommandRouting.menuItems(
+            shortcutResolver: shortcutStore,
+            viewAction: #selector(showArchive(_:)),
+            clearAction: #selector(clearArchive(_:)),
+            target: self
+        ) {
+            fileMenu.addItem(item)
+        }
 
         let savePageItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .savePage),
@@ -1236,6 +1250,26 @@ NSMenuDelegate, NSUserInterfaceValidations {
         return false
     }
 
+    @nonobjc private func performCommandBarCommand(_ command: BrowserCommandID, from owner: BrowserChromeModel) {
+        _ =
+            switch command {
+            case .clearArchive, .viewArchive:
+                performArchiveCommand(command, from: owner)
+            default:
+                performLayoutIndependentShortcutCommand(command.layoutIndependentCommand)
+            }
+    }
+
+    @nonobjc private func performArchiveCommand(_ command: BrowserCommandID, from owner: BrowserChromeModel) -> Bool {
+        BrowserArchiveCommandRouting.perform(
+            command,
+            from: owner,
+            registeredOwners: profileWindowSessions.map(\.chromeModel),
+            isTerminating: isTerminationRequested,
+            present: { [weak self] model in self?.showArchive(for: model)?.archiveController }
+        )
+    }
+
     private func performLayoutIndependentShortcutCommand(
         _ command: BrowserLayoutIndependentShortcutCommand
     ) -> Bool {
@@ -1309,6 +1343,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
 
             return activeChromeModel?.archiveSelectedTab() ?? false
+        case .viewArchive:
+            guard let model = archiveContextModel else { return false }
+            return performArchiveCommand(.viewArchive, from: model)
+        case .clearArchive:
+            guard let model = archiveContextModel else { return false }
+            return performArchiveCommand(.clearArchive, from: model)
         case .savePage:
             guard activeChromeModel?.canSavePage ?? false else {
                 return false
@@ -1619,8 +1659,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 .path),
             windowMode: .webApp(configuration),
             profile: profile,
-            commandHandler: { [weak self] commandID in
-                _ = self?.performLayoutIndependentShortcutCommand(commandID.layoutIndependentCommand)
+            commandHandler: { [weak self] commandID, owner in
+                self?.performCommandBarCommand(commandID, from: owner)
             },
             windowTitleHandler: { title in
                 windowReference?.title = title
@@ -1789,8 +1829,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             syncCoordinator: syncCoordinator,
             profile: profile,
             availableProfileCount: profileStore?.profiles.count ?? 1,
-            commandHandler: { [weak self] commandID in
-                _ = self?.performLayoutIndependentShortcutCommand(commandID.layoutIndependentCommand)
+            commandHandler: { [weak self] commandID, owner in
+                self?.performCommandBarCommand(commandID, from: owner)
             },
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
@@ -1958,8 +1998,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             historyStore: BrowserEmptyHistoryStore(),
             extensionManager: BrowserEmptyExtensionManager(),
             windowMode: .incognito,
-            commandHandler: { [weak self] commandID in
-                _ = self?.performLayoutIndependentShortcutCommand(commandID.layoutIndependentCommand)
+            commandHandler: { [weak self] commandID, owner in
+                self?.performCommandBarCommand(commandID, from: owner)
             },
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}

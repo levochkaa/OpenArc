@@ -128,6 +128,18 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("w")
     )
 
+    static let viewArchive = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.archiveViewAction,
+        helpTitle: BrowserStrings.archiveViewAction,
+        shortcut: .unassigned
+    )
+
+    static let clearArchive = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.archiveClear,
+        helpTitle: BrowserStrings.archiveClear,
+        shortcut: .unassigned
+    )
+
     static let savePage = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSavePageAs,
         helpTitle: BrowserStrings.menuSavePageAs,
@@ -282,6 +294,8 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case openHistory
     case toggleBookmark
     case archiveTab
+    case viewArchive
+    case clearArchive
     case savePage
     case printPage
     case copyLink

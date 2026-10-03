@@ -3001,7 +3001,7 @@ import Testing
         windowMode: windowMode,
         dateProvider: dateProvider,
         spaceIDProvider: spaceIDProvider,
-        commandHandler: commandHandler,
+        commandHandler: { commandID, _ in commandHandler(commandID) },
         windowTitleHandler: { _ in },
         allTabsClosedHandler: {}
     )

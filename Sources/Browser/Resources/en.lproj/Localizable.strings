@@ -329,6 +329,7 @@
 // Durable profile Archive.
 "browser.archive.title" = "Archive";
 "browser.archive.menu" = "Archive…";
+"browser.archive.view" = "View Archive";
 "browser.archive.search" = "Search Archive";
 "browser.archive.restore" = "Restore";
 "browser.archive.remove" = "Delete";

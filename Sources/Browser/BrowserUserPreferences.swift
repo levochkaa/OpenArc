@@ -308,6 +308,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case openHistory
     case toggleBookmark
     case archiveTab
+    case viewArchive
+    case clearArchive
     case savePage
     case printPage
     case copyLink
@@ -348,6 +350,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.toggleBookmark
         case .archiveTab:
             BrowserCommands.archiveTab
+        case .viewArchive:
+            BrowserCommands.viewArchive
+        case .clearArchive:
+            BrowserCommands.clearArchive
         case .savePage:
             BrowserCommands.savePage
         case .printPage:
@@ -401,6 +407,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .toggleBookmark
         case .archiveTab:
             .archiveTab
+        case .viewArchive:
+            .viewArchive
+        case .clearArchive:
+            .clearArchive
         case .savePage:
             .savePage
         case .printPage:

@@ -75,7 +75,7 @@ enum BrowserWindowMode: Equatable {
         dateProvider: @escaping () -> Date = Date.init,
         spaceIDProvider: @escaping () -> String = { UUID().uuidString },
         tabSyncIDProvider: @escaping () -> String = { UUID().uuidString },
-        commandHandler: @escaping (BrowserCommandID) -> Void = { _ in },
+        commandHandler: @escaping (BrowserCommandID, BrowserChromeModel) -> Void = { _, _ in },
         windowTitleHandler: @escaping (String) -> Void,
         allTabsClosedHandler: @escaping () -> Void
     ) {
@@ -263,7 +263,8 @@ enum BrowserWindowMode: Equatable {
             self?.openCommandBarTabSelection(tabIDs: tabIDs)
         },
         commandHandler: { [weak self] commandID in
-            self?.commandHandler(commandID)
+            guard let self else { return }
+            commandHandler(commandID, self)
         }
     )
     lazy var currentPageCommandBarModel = BrowserCommandBarModel(
@@ -285,7 +286,8 @@ enum BrowserWindowMode: Equatable {
             self?.openCommandBarTabSelection(tabIDs: tabIDs)
         },
         commandHandler: { [weak self] commandID in
-            self?.commandHandler(commandID)
+            guard let self else { return }
+            commandHandler(commandID, self)
         }
     )
 
@@ -2300,7 +2302,7 @@ enum BrowserWindowMode: Equatable {
     private let dateProvider: () -> Date
     private let spaceIDProvider: () -> String
     private let tabSyncIDProvider: () -> String
-    private let commandHandler: (BrowserCommandID) -> Void
+    private let commandHandler: (BrowserCommandID, BrowserChromeModel) -> Void
 
     private var hasCreatedInitialTab = false
     private var closingTabIDs = Set<String>()
@@ -3408,6 +3410,10 @@ enum BrowserWindowMode: Equatable {
             selectedTab?.urlString.isEmpty == false
         case .archiveTab:
             canArchiveSelectedTab
+        case .viewArchive:
+            canBrowseArchive
+        case .clearArchive:
+            canBrowseArchive && !isArchiveOperationInFlight
         case .savePage:
             canSavePage
         case .printPage:
@@ -5789,6 +5795,10 @@ extension BrowserCommandID {
             ["bookmark", "add bookmark", "remove bookmark", "star"]
         case .archiveTab:
             ["archive tab", "close tab", "close current tab"]
+        case .viewArchive:
+            ["view archive", "open archive", "archived tabs", "restore closed tabs"]
+        case .clearArchive:
+            ["clear archive", "empty archive", "delete archived tabs"]
         case .savePage:
             ["save page", "save as", "download page"]
         case .printPage:
@@ -5846,8 +5856,10 @@ extension BrowserCommandID {
             "clock.arrow.circlepath"
         case .toggleBookmark:
             "star"
-        case .archiveTab:
+        case .archiveTab, .viewArchive:
             "archivebox"
+        case .clearArchive:
+            "trash"
         case .savePage:
             "square.and.arrow.down"
         case .printPage:

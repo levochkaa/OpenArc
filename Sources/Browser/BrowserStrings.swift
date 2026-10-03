@@ -25,6 +25,10 @@ enum BrowserStrings {
         "browser.archive.menu",
         comment: "Open the profile Archive."
     )
+    static let archiveViewAction = NSLocalizedString(
+        "browser.archive.view",
+        comment: "Command Bar action to open the profile Archive."
+    )
     static let archiveSearch = NSLocalizedString(
         "browser.archive.search",
         comment: "Archive search placeholder."
