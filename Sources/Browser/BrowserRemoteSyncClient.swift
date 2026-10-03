@@ -484,7 +484,7 @@ enum BrowserSyncBindingState: Equatable {
 // MARK: - BrowserSyncAccountError
 
 enum BrowserSyncAccountError: LocalizedError, Equatable {
-    case serverChanged, differentAccount, unavailable, signInRequired
+    case serverChanged, differentAccount, unavailable, signInRequired, localPersistenceBlocked
 
     // MARK: Internal
 
@@ -494,6 +494,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         case .differentAccount: BrowserStrings.syncAccountDifferentOwner
         case .unavailable: BrowserStrings.syncAccountUnavailable
         case .signInRequired: BrowserStrings.syncAccountSignInAgain
+        case .localPersistenceBlocked: BrowserStrings.sessionRecoveryRetryMessage
         }
     }
 }
@@ -566,8 +567,15 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     func enableSync(for session: BrowserAuthSession) throws {
         guard try !requiresSignIn() else { throw BrowserSyncAccountError.signInRequired }
         guard authSessionStore.loadSession() == session else { throw BrowserSyncAccountError.unavailable }
-        guard try bindingState(for: session) != .differentAccount else {
+        let state = try bindingState(for: session)
+        guard state != .differentAccount else {
             throw BrowserSyncAccountError.differentAccount
+        }
+        // First adoption seeds the durable snapshot into the sync outbox. A
+        // failed local write must recover before that snapshot acquires an owner;
+        // otherwise its later Retry could become an unconditional remote delete.
+        guard state != .needsConsent || !isLocalPersistenceBlocked else {
+            throw BrowserSyncAccountError.localPersistenceBlocked
         }
         try localStore.bindSyncOwner(owner(for: session))
         try localStore.resumeSync(for: owner(for: session))

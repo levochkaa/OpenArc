@@ -1349,46 +1349,17 @@ enum BrowserWindowMode: Equatable {
     }
 
     func archiveExpiredTemporaryTabs() {
-        guard isContextReady, !isShuttingDown else {
-            return
-        }
-
-        // A bound profile needs server-conditional expiry and recovery import.
-        // Pause, logout, and an unavailable network do not remove that binding.
-        // Read it on every entry point so adopting sync after launch also stops
-        // the local timer from queuing unconditional deletes.
-        if let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading {
-            do {
-                guard try ownership.syncOwner() == nil else {
-                    syncCoordinator?.requestExpirySweep()
-                    return
-                }
-            } catch {
-                Self.automaticArchivalLogger.error(
-                    "Skipping automatic archival because sync ownership could not be read: \(error.localizedDescription, privacy: .public)"
+        guard canAdmitLocalAutomaticArchive, localAutomaticArchiveCandidates.isEmpty,
+              localAutomaticArchivalOwnershipAllowsClose() else { return }
+        localAutomaticArchiveCandidates = Array(tabs.lazy
+            .filter { self.isLocalAutomaticArchiveEligible($0) }
+            .prefix(100)
+            .map {
+                LocalAutomaticArchiveCandidate(
+                    id: $0.id, syncID: $0.syncID, spaceID: $0.spaceID, lastActivityAt: $0.lastActivityAt
                 )
-                return
-            }
-        }
-
-        let cutoffDate = dateProvider().addingTimeInterval(-temporaryTabLifetime.timeInterval)
-        let activeSpaceID = selectedSpaceID
-        let tabIDsToArchive = tabs.compactMap { tab -> String? in
-            guard
-                tab.spaceID == activeSpaceID,
-                tab.placement == .temporary,
-                tab.id != selectedTabID,
-                tab.lastActivityAt <= cutoffDate
-            else {
-                return nil
-            }
-
-            return tab.id
-        }
-
-        for tabID in tabIDsToArchive {
-            closeTab(id: tabID, registersUndo: false, reason: .automaticExpiry)
-        }
+            })
+        continueLocalAutomaticArchiveSweep()
     }
 
     func presentCommandBar() {
@@ -1816,6 +1787,7 @@ enum BrowserWindowMode: Equatable {
         let openTabIDs = tabs.map(\.id)
         if isShuttingDown {
             pendingTabCloseRequests.removeAll()
+            localAutomaticArchiveCandidates.removeAll()
             closingTabIDs.formUnion(openTabIDs)
             for tabID in openTabIDs {
                 tabDriver.closeTab(withID: tabID, forceClose: true)
@@ -2063,9 +2035,12 @@ enum BrowserWindowMode: Equatable {
     func selectTab(id: String) {
         guard
             let tab = tabs.first(where: { $0.id == id }),
-            !closingTabIDs.contains(id)
+            !blocksTabInteraction(id)
         else {
             return
+        }
+        if pendingTabCloseRequests[id]?.localAutomaticCandidate != nil {
+            pendingTabCloseRequests[id]?.invalidatedAutomaticClose = true
         }
 
         let didRecordActivity = recordExplicitViewingActivity(ids: [selectedTabID, id])
@@ -2166,6 +2141,9 @@ enum BrowserWindowMode: Equatable {
             if let superseded = pendingTabCloseRequests.removeValue(forKey: id) {
                 closingTabIDs.remove(id)
                 superseded.completion?(.removed)
+                if superseded.localAutomaticCandidate != nil {
+                    localAutomaticArchiveCandidates.removeAll()
+                }
             }
         }
         guard !closingTabIDs.contains(id) else { return false }
@@ -2226,6 +2204,13 @@ enum BrowserWindowMode: Equatable {
 
     // MARK: Private
 
+    private struct LocalAutomaticArchiveCandidate {
+        let id: String
+        let syncID: String
+        let spaceID: String
+        let lastActivityAt: Date
+    }
+
     private struct PendingTabCloseRequest {
         let requestID: String
         let syncID: String
@@ -2233,6 +2218,8 @@ enum BrowserWindowMode: Equatable {
         let undoActionName: String
         let createsArchive: Bool
         let preservesPersistentTab: Bool
+        let localAutomaticCandidate: LocalAutomaticArchiveCandidate?
+        var invalidatedAutomaticClose = false
         let completion: ((HistoryCloseResult) -> Void)?
     }
 
@@ -2319,6 +2306,8 @@ enum BrowserWindowMode: Equatable {
     private var closingTabIDs = Set<String>()
     private var pendingTabCloseRequests = [String: PendingTabCloseRequest]()
     private var isCompletingTabClose = false
+    private var localAutomaticArchiveCandidates = [LocalAutomaticArchiveCandidate]()
+    private var isProcessingLocalAutomaticArchiveCandidates = false
     private var pendingSessionCompletions = [PendingSessionCompletion]()
     private var pendingHistoryRestore: PendingHistoryRestore?
     private var historyRestoreFailure: BrowserSessionPersistenceFailure?
@@ -2357,6 +2346,13 @@ enum BrowserWindowMode: Equatable {
     private var tabSwitcherSessionID = UUID()
     private var webAppManifestLoadTask: Task<Void, Never>?
 
+    private var canAdmitLocalAutomaticArchive: Bool {
+        isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
+            !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
+            !isApplyingRemoteSync && !isReconcilingRemoteProjection && !isArchiveOperationInFlight &&
+            !isCompletingTabClose && !undoManager.isTabTransitionPending && pendingTabCloseRequests.isEmpty
+    }
+
     private var selectedTab: Tab? {
         guard let selectedTabID else {
             return nil
@@ -2394,9 +2390,60 @@ enum BrowserWindowMode: Equatable {
         isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
     }
 
+    private func localAutomaticArchivalOwnershipAllowsClose() -> Bool {
+        // A paused, signed-out or offline owner still requires conditional expiry.
+        guard let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading else { return true }
+        do {
+            guard try ownership.syncOwner() == nil else {
+                syncCoordinator?.requestExpirySweep()
+                return false
+            }
+            return true
+        } catch {
+            Self.automaticArchivalLogger.error(
+                "Skipping automatic archival because sync ownership could not be read: \(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
+    }
+
+    private func isLocalAutomaticArchiveEligible(_ tab: Tab) -> Bool {
+        let now = dateProvider().timeIntervalSince1970
+        let activity = tab.lastActivityAt.timeIntervalSince1970
+        return now.isFinite && activity.isFinite && tab.spaceID == selectedSpaceID &&
+            tab.placement == .temporary && tab.id != selectedTabID &&
+            activity <= now - temporaryTabLifetime.timeInterval
+    }
+
+    private func continueLocalAutomaticArchiveSweep() {
+        guard !isProcessingLocalAutomaticArchiveCandidates else { return }
+        isProcessingLocalAutomaticArchiveCandidates = true
+        defer { isProcessingLocalAutomaticArchiveCandidates = false }
+        while !localAutomaticArchiveCandidates.isEmpty {
+            guard canAdmitLocalAutomaticArchive, localAutomaticArchivalOwnershipAllowsClose() else {
+                localAutomaticArchiveCandidates.removeAll()
+                return
+            }
+            let candidate = localAutomaticArchiveCandidates.removeFirst()
+            guard let tab = tabs.first(where: { $0.id == candidate.id && $0.syncID == candidate.syncID }),
+                  tab.spaceID == candidate.spaceID, tab.lastActivityAt == candidate.lastActivityAt,
+                  isLocalAutomaticArchiveEligible(tab) else { continue }
+            _ = requestConfirmedTabClose(
+                id: tab.id, registersUndo: false, actionName: BrowserStrings.tabArchiveAction,
+                createsArchive: true, preservesPersistentTab: true, localAutomaticCandidate: candidate
+            )
+            // Inline engine-less outcomes continue this loop; a deferred result
+            // resumes it after finishing its own transaction. Never stack sheets.
+            if pendingTabCloseRequests[tab.id] != nil {
+                return
+            }
+        }
+    }
+
     @discardableResult private func requestConfirmedTabClose(
         id: String, registersUndo: Bool, actionName: String, createsArchive: Bool,
-        preservesPersistentTab: Bool, completion: ((HistoryCloseResult) -> Void)? = nil
+        preservesPersistentTab: Bool, localAutomaticCandidate: LocalAutomaticArchiveCandidate? = nil,
+        completion: ((HistoryCloseResult) -> Void)? = nil
     ) -> Bool {
         guard let tab = tabs.first(where: { $0.id == id }), !closingTabIDs.contains(id) else { return false }
         if closedAppTabIDs.contains(id) || closedPinnedTabIDs.contains(id) {
@@ -2416,7 +2463,8 @@ enum BrowserWindowMode: Equatable {
         pendingTabCloseRequests[id] = PendingTabCloseRequest(
             requestID: requestID, syncID: tab.syncID, registersUndo: registersUndo,
             undoActionName: actionName, createsArchive: createsArchive,
-            preservesPersistentTab: preservesPersistentTab, completion: completion
+            preservesPersistentTab: preservesPersistentTab, localAutomaticCandidate: localAutomaticCandidate,
+            completion: completion
         )
         closingTabIDs.insert(id)
         guard tabDriver.requestCloseTab(withID: id, requestID: requestID) else {
@@ -2455,6 +2503,11 @@ enum BrowserWindowMode: Equatable {
         let wasCompletingTabClose = isCompletingTabClose
         isCompletingTabClose = true
         tabs.removeAll { $0.id == id }
+        // A logical tab can close before its allocation placeholder arrives.
+        // Retain the retired identity so repeated late callbacks cannot recreate it.
+        restoredTabCreationIDs.insert(id)
+        pendingCreatedTabContexts.removeValue(forKey: id)
+        pendingHydratedTabCreationIDs.remove(id)
         closedAppTabIDs.remove(id)
         closedPinnedTabIDs.remove(id)
         pendingReopenedAppTabIDs = pendingReopenedAppTabIDs.filter { $0.value != id && $0.key != id }
@@ -3218,7 +3271,8 @@ enum BrowserWindowMode: Equatable {
         let resolvedURL = resolvedBrowserURLString(urlString)
         let id = tabs[index].id
         guard tabDriver.navigateTab(withID: id, toURLString: resolvedURL) else { return false }
-        guard tabs[index].creationState != .ready else { return true }
+        guard tabs[index].creationState != .ready || pendingTabCloseRequests[id]?.localAutomaticCandidate != nil
+        else { return true }
 
         // Preserve the intent even if there is no engine yet, the process exits,
         // or creation is refused. Engine callbacks are not the durable owner.
@@ -3717,7 +3771,9 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
-    private func replaceTabRuntimeReferences(oldID: String, newID: String, spaceID: String) {
+    private func replaceTabRuntimeReferences(
+        oldID: String, newID: String, spaceID: String, selectsInSpace: Bool = true
+    ) {
         if selectedTabID == oldID {
             selectedTabID = newID
         }
@@ -3725,7 +3781,9 @@ enum BrowserWindowMode: Equatable {
         for index in spaces.indices where spaces[index].selectedTabID == oldID {
             spaces[index].selectedTabID = newID
         }
-        setSelectedTabID(newID, forSpaceID: spaceID)
+        if selectsInSpace {
+            setSelectedTabID(newID, forSpaceID: spaceID)
+        }
 
         recentlySelectedTabIDs = recentlySelectedTabIDs.map { $0 == oldID ? newID : $0 }
         if let previewImage = tabPreviewImagesByID.removeValue(forKey: oldID) {
@@ -4673,10 +4731,49 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
     }
 
+    private func blocksTabInteraction(_ id: String) -> Bool {
+        closingTabIDs.contains(id) && pendingTabCloseRequests[id]?.localAutomaticCandidate == nil
+    }
+
+    private func replaceRuntimeAfterInvalidatedAutomaticClose(_ tab: Tab) {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        let wasCompleting = isCompletingTabClose
+        isCompletingTabClose = true
+        defer { isCompletingTabClose = wasCompleting }
+        let selected = selectedTabID == tab.id
+        let newID = tabDriver.createTab(withURLString: resolvedBrowserURLString(tab.urlString), makeActive: selected)
+        // Both old and replacement allocation callbacks are placeholders. Neither
+        // may manufacture another logical identity after a late/duplicate reply.
+        restoredTabCreationIDs.formUnion([tab.id, newID])
+        pendingCreatedTabContexts.removeValue(forKey: tab.id)
+        pendingHydratedTabCreationIDs.remove(tab.id)
+        closedAppTabIDs.remove(tab.id)
+        closedPinnedTabIDs.remove(tab.id)
+        tabs[index] = Tab(
+            id: newID, syncID: tab.syncID, spaceID: tab.spaceID, title: tab.title,
+            userTitleOverride: tab.userTitleOverride, urlString: tab.urlString,
+            pinnedURLString: tab.pinnedURLString, faviconURLString: tab.faviconURLString,
+            placement: tab.placement, pinnedFolderID: tab.pinnedFolderID,
+            pinnedSiblingRank: tab.pinnedSiblingRank, lastActivityAt: tab.lastActivityAt
+        )
+        replaceTabRuntimeReferences(oldID: tab.id, newID: newID, spaceID: tab.spaceID, selectsInSpace: false)
+        if selected {
+            findResultMatchCount = nil
+            invalidateSelectedTabWebAppInstallMetadata()
+        }
+        updateWindowTitle()
+        // Runtime replacement changes no persistent identity, content or order.
+    }
+
     private func handleTabCloseRequestFinished(id: String, requestID: String, outcome: BrowserTabCloseOutcome) {
         guard let request = pendingTabCloseRequests[id], request.requestID == requestID else { return }
         pendingTabCloseRequests.removeValue(forKey: id)
         closingTabIDs.remove(id)
+        defer {
+            if request.localAutomaticCandidate != nil {
+                continueLocalAutomaticArchiveSweep()
+            }
+        }
         guard outcome == .closed else {
             request.completion?(.cancelled)
             return
@@ -4684,6 +4781,15 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         guard !isShuttingDown, let tab = tabs.first(where: { $0.id == id }), tab.syncID == request.syncID else {
             request.completion?(.removed)
             return
+        }
+        if let candidate = request.localAutomaticCandidate {
+            guard !request.invalidatedAutomaticClose, canAdmitLocalAutomaticArchive,
+                  localAutomaticArchivalOwnershipAllowsClose(), tab.spaceID == candidate.spaceID,
+                  tab.lastActivityAt == candidate.lastActivityAt, isLocalAutomaticArchiveEligible(tab)
+            else {
+                replaceRuntimeAfterInvalidatedAutomaticClose(tab)
+                return
+            }
         }
         if tab.placement == .temporary || !request.preservesPersistentTab {
             // Capture current metadata and selection only after the final engine
@@ -5329,7 +5435,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         guard
             let selectedTabID,
             tabs.contains(where: { $0.id == selectedTabID }),
-            !closingTabIDs.contains(selectedTabID),
+            !blocksTabInteraction(selectedTabID),
             !closedAppTabIDs.contains(selectedTabID),
             !closedPinnedTabIDs.contains(selectedTabID)
         else {
@@ -5341,7 +5447,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
         func appendTabID(_ tabID: String) {
             guard
-                !closingTabIDs.contains(tabID),
+                !blocksTabInteraction(tabID),
                 !closedAppTabIDs.contains(tabID),
                 !closedPinnedTabIDs.contains(tabID),
                 seenTabIDs.insert(tabID).inserted
@@ -5358,7 +5464,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         let fallbackTabs = tabs
             .filter {
                 !seenTabIDs.contains($0.id)
-                    && !closingTabIDs.contains($0.id)
+                    && !blocksTabInteraction($0.id)
                     && !closedAppTabIDs.contains($0.id)
                     && !closedPinnedTabIDs.contains($0.id)
             }
@@ -5417,7 +5523,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         guard
             let tabID,
             tabs.contains(where: { $0.id == tabID }),
-            !closingTabIDs.contains(tabID),
+            !blocksTabInteraction(tabID),
             !closedPinnedTabIDs.contains(tabID)
         else {
             return
@@ -5447,7 +5553,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
     func pruneTabSwitcherTracking() {
         let openTabIDs = Set(tabs.map(\.id))
-            .subtracting(closingTabIDs)
+            .subtracting(closingTabIDs.filter { blocksTabInteraction($0) })
             .subtracting(closedAppTabIDs)
             .subtracting(closedPinnedTabIDs)
         recentlySelectedTabIDs.removeAll { !openTabIDs.contains($0) }
@@ -5460,7 +5566,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     func captureSelectedTabPreviewIfNeeded() {
         guard
             let selectedTabID,
-            !closingTabIDs.contains(selectedTabID),
+            !blocksTabInteraction(selectedTabID),
             !closedAppTabIDs.contains(selectedTabID),
             !closedPinnedTabIDs.contains(selectedTabID),
             let previewImage = BrowserTabPreviewCapture.image(for: hostView)

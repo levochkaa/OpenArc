@@ -28,9 +28,19 @@ Redo Close requests engine confirmation again, creates a new archive ID for the 
 
 An already-consumed or cleared Archive entry cannot be restored through stale history. The obsolete action is dropped with an Archive error. If the original Space is gone, Undo cancels and retains recovery; the native Archive surface can select a destination explicitly. Undo history itself is session-local and does not survive restart.
 
+## Local automatic archival
+
+A profile with no sync owner keeps the existing 30-day default and current-Space policy. A sweep captures at most 100 expired Today tabs, excluding the selected tab, Favorites and pinned tabs. It requests one engine confirmation at a time and registers no user Undo. Cancellation keeps the tab and advances to the next captured candidate; it does not retry the cancelled tab in that sweep.
+
+Admission and final closure both read durable ownership. Bound, paused and signed-out profiles use the conditional sync scheduler; ownership-read failure cannot fall back to a local delete. Before writing Archive, the model checks the candidate's original Space and activity against current placement, selected Space/tab and lifetime. Failed session writes, remote projection, pending history and Archive operations stop local admission.
+
+Selecting an automatic candidate remains possible and invalidates that request even if the clock cannot advance. If eligibility changes after native closing starts, final closure preserves the logical tab and replaces its engine with a new runtime ID. Its stable sync ID, current URL/metadata, order and selection stay unchanged. The replacement updates creation history and remembered selections without changing persistence. Late callbacks for the old or replacement allocation cannot duplicate the tab. Loading may restart because the original engine has already closed; preserving its page's in-memory state is not promised.
+
+Confirmed eligible closure uses the same atomic Archive/session transaction and FIFO Retry as manual Close. First sync adoption is blocked while local persistence is failed, preventing an uncommitted local expiry from becoming an unconditional synced deletion after adoption. Existing owned profiles can resume while blocked, but network writes remain gated until recovery.
+
 ## Scope and evidence
 
-The never-bound timer still uses its earlier expiry path; confirmed timer archival is follow-up work. Persistent-tab unload/reset, structural deletion, remote force-close and window/quit approval retain separate policies. This does not implement beforeunload approval for every close source. Synchronized automatic expiry continues to use the existing conditional server protocol and waits for outstanding manual requests.
+Persistent-tab unload/reset, structural deletion, remote force-close and window/quit approval retain separate policies. This does not implement beforeunload approval for every close source. Synchronized automatic expiry continues to use the existing conditional server protocol and waits for outstanding close requests. Legacy non-Archive stores can retain confirmed local deletion behavior without durable recovery; production normal profiles use SQLite.
 
 Model tests use real SQLite with controlled engine outcomes. They cover atomic Archive/deletion, rollback/FIFO Retry, fresh-ID consumption, multiple Undo/Redo, cancellation, new actions during pending transitions, original creation references, missing entries, dormant engines, closure Retry, cross-Space folders and live-URL projection with pending creation. Store tests cover exact Archive replay after later edits. The HTTP scenario uses two production sync clients and PostgreSQL for SQL failure, immutable lost-ACK replay, restoration, Redo, reopen and tombstone dominance.
 

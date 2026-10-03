@@ -134,18 +134,25 @@ import Testing
         defer { fixture.close(model) }
         model.handleContextReady()
         driver.flushPendingCreateEvents()
+        let startupReads = failing.readAttempts
+        #expect(startupReads > 0)
         model.handleApplicationDidBecomeActive()
+        let activeReads = failing.readAttempts
+        #expect(activeReads > startupReads)
         model.setTemporaryTabLifetime(.twentyFourHours)
+        let settingsReads = failing.readAttempts
+        #expect(settingsReads > activeReads)
         model.archiveExpiredTemporaryTabs()
-        #expect(failing.readAttempts == 4)
+        #expect(failing.readAttempts > settingsReads)
         #expect(model.tabs.map(\.syncID) == automaticArchivalTabIDs)
         #expect(driver.closedTabRequests.isEmpty)
         #expect(!model.hasUncommittedSessionWrites, "The fault affects only ownership reads, not session writes")
         #expect(try fixture.outboxRows().isEmpty)
 
+        let failedReads = failing.readAttempts
         failing.failRead = false
         model.archiveExpiredTemporaryTabs()
-        #expect(failing.readAttempts == 5)
+        #expect(failing.readAttempts > failedReads)
         #expect(model.tabs.map(\.syncID) == ["favorite", "pinned", "selected", "other-space"])
         #expect(driver.closedTabRequests.map(\.id) == ["tab-3"])
         #expect(store.loadSnapshot()?.tabs.compactMap(\.id) == model.tabs.map(\.syncID))
@@ -269,7 +276,8 @@ private let automaticArchivalTabIDs = ["favorite", "pinned", "expired", "selecte
 
 // MARK: - AutomaticArchivalOwnershipFailure
 
-private final class AutomaticArchivalOwnershipFailure: BrowserTabSessionSnapshotStoring, BrowserSyncOwnershipReading {
+private final class AutomaticArchivalOwnershipFailure: BrowserTabSessionSnapshotStoring, BrowserSyncOwnershipReading,
+BrowserTabArchiveStoring {
     // MARK: Lifecycle
 
     init(store: BrowserSQLiteSessionStore) { self.store = store }
@@ -293,4 +301,26 @@ private final class AutomaticArchivalOwnershipFailure: BrowserTabSessionSnapshot
     func loadSnapshot() -> BrowserTabSessionSnapshot? { store.loadSnapshot() }
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) { store.saveSnapshot(snapshot) }
     func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws { try store.writeSessionBatch(writes) }
+    func loadArchiveEntry(id: String) throws -> BrowserTabArchiveEntry? { try store.loadArchiveEntry(id: id) }
+    func loadArchivePage(before: BrowserTabArchiveCursor?, limit: Int) throws -> BrowserTabArchivePage {
+        try store.loadArchivePage(before: before, limit: limit)
+    }
+
+    nonisolated(nonsending) func searchArchivePage(
+        query: String, before: BrowserTabArchiveCursor?, limit: Int
+    ) async throws -> BrowserTabArchivePage {
+        try await store.searchArchivePage(query: query, before: before, limit: limit)
+    }
+
+    nonisolated(nonsending) func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary {
+        try await store.archiveClearBoundary()
+    }
+
+    nonisolated(nonsending) func removeArchiveEntry(id: String) async throws -> Bool {
+        try await store.removeArchiveEntry(id: id)
+    }
+
+    nonisolated(nonsending) func clearArchive(through boundary: BrowserTabArchiveBoundary) async throws -> Int {
+        try await store.clearArchive(through: boundary)
+    }
 }

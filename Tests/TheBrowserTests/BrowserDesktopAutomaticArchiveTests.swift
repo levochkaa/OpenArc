@@ -243,7 +243,7 @@ import Testing
         }
     }
 
-    @Test func neverBoundProfileRetainsThirtyDayActiveSpaceTimerAndDoesNotCreateDurableArchive() throws {
+    @Test func neverBoundProfileRetainsThirtyDayActiveSpaceTimerAndCreatesDurableArchive() throws {
         let f = try DesktopAutomaticArchiveFixture(bound: false)
         defer { f.close() }
         f.restore()
@@ -255,7 +255,8 @@ import Testing
         f.model.archiveExpiredTemporaryTabs()
         #expect(f.driver.closedTabRequests == [.init(id: oldB, forceClose: false)])
         #expect(Set(f.model.tabs.map(\.syncID)) == ["a", "other", "pin", "favorite"])
-        #expect(try f.store.loadArchivePage().entries.isEmpty)
+        #expect(try f.store.loadArchivePage().entries.map(\.tab.id) == ["b"])
+        #expect(!f.model.undoManager.canUndo)
         #expect(try f.store.syncOwner() == nil)
         #expect(try f.queueBytes().isEmpty)
     }
