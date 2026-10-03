@@ -92,8 +92,14 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 {
     // MARK: Lifecycle
 
-    init(workspace: BrowserMobileWorkspace) {
+    init(
+        workspace: BrowserMobileWorkspace,
+        hoverScheduler: any BrowserMobileSidebarHoverScheduling = BrowserMobileSidebarHoverScheduler(),
+        tableView: UITableView? = nil
+    ) {
         self.workspace = workspace
+        self.hoverScheduler = hoverScheduler
+        self.suppliedTableView = tableView
         super.init(style: .insetGrouped)
         title = String(localized: "Tabs", table: "Mobile")
     }
@@ -117,12 +123,25 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     let workspace: BrowserMobileWorkspace
     var didSelectTab: (() -> Void)?
 
+    var sidebarDragHasHoverProjection: Bool { isApplyingHoverProjection }
+
     var sidebarDragHasNativeHold: Bool {
         sourceSessionID != nil || dropSessionID != nil || spaceDropSessionID != nil || isCommittingDrop
+            || isApplyingHoverProjection
+    }
+
+    override func loadView() {
+        if let suppliedTableView {
+            tableView = suppliedTableView
+        } else {
+            super.loadView()
+        }
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.dataSource = self
+        tableView.delegate = self
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Tab")
         tableView.accessibilityIdentifier = "browser.tabs"
         tableView.dragDelegate = self
@@ -289,6 +308,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in self?.menu(for: row) })
     }
 
+    override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === tableView, !isApplyingHoverProjection, let session = hoverDropSession else { return }
+        _ = tableView(tableView, dropSessionDidUpdate: session, withDestinationIndexPath: nil)
+    }
+
     func render() {
         guard isViewLoaded else { return }
         if renderedSpaceID != workspace.selectedSpaceID || renderedDocument !== workspace.profileDocument {
@@ -320,7 +344,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             spaceButton.isEnabled = workspace.isReady
             spaceButton.menu = spaceMenu(document)
             navigationItem.titleView = spaceButton
-            applyRows(sharedRows(document.snapshot), snapshot: document.snapshot)
+            applyRows(sharedRows(
+                document.snapshot, spaceID: workspace.selectedSpaceID,
+                available: Set(workspace.visibleTabs.map(\.id)), expanded: []
+            ), snapshot: document.snapshot)
         } else {
             navigationItem.titleView = nil
             applyRows([workspace.tabs.map { .tab($0.id, depth: 0) }], snapshot: nil)
@@ -389,6 +416,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     func tableView(_: UITableView, dragSessionDidEnd session: any UIDragSession) {
         guard sourceSessionID == ObjectIdentifier(session) else { return }
+        cancelPendingFolderExpansion(clearSession: true)
         sourceSessionID = nil
         spaceDropClosing = true
         initialDragItems.removeAll(keepingCapacity: true)
@@ -406,6 +434,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     func tableView(_: UITableView, dropSessionDidExit session: any UIDropSession) {
         guard dropSessionID == ObjectIdentifier(session) else { return }
+        cancelPendingFolderExpansion(clearSession: true)
         dropSessionID = nil
         hover = nil
         clearDropFeedback()
@@ -415,6 +444,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     func tableView(_: UITableView, dropSessionDidEnd session: any UIDropSession) {
         guard dropSessionID == ObjectIdentifier(session) else { return }
+        cancelPendingFolderExpansion(clearSession: true)
         dropSessionID = nil
         hover = nil
         clearDropFeedback()
@@ -428,14 +458,22 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         withDestinationIndexPath _: IndexPath?
     ) -> UITableViewDropProposal {
         clearDropFeedback()
-        guard let payload = payload(for: session), joinSidebarDrag(payload), let document = workspace.profileDocument,
-              let target = dropTarget(at: session.location(in: tableView)),
-              validatedPlan(source: payload.source, target: target.target, snapshot: document.snapshot) != nil
+        guard !isApplyingHoverProjection,
+              let payload = payload(for: session), joinSidebarDrag(payload), let document = workspace.profileDocument,
+              let target = dropTarget(at: session.location(in: tableView))
         else {
+            cancelPendingFolderExpansion()
             hover = nil
             return .init(operation: .forbidden)
         }
+        hoverDropSession = session
         dropSessionID = ObjectIdentifier(session)
+        let canMove = validatedPlan(source: payload.source, target: target.target, snapshot: document.snapshot) != nil
+        updateFolderExpansion(session: session, payload: payload, target: target)
+        guard canMove else {
+            hover = nil
+            return .init(operation: .forbidden)
+        }
         hover = target
         if let index = target.insideFolder, let cell = tableView.cellForRow(at: index) {
             var background = UIBackgroundConfiguration.listCell()
@@ -473,7 +511,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func tableView(_ tableView: UITableView, performDropWith coordinator: any UITableViewDropCoordinator) {
-        guard coordinator.proposal.operation == .move,
+        guard !isApplyingHoverProjection, coordinator.proposal.operation == .move,
               let payload = payload(for: coordinator.session), let document = workspace.profileDocument,
               matches(coordinator.items.map(\.dragItem), payload: payload),
               dropSessionID == ObjectIdentifier(coordinator.session), let hover,
@@ -541,7 +579,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func dropInteraction(_ interaction: UIDropInteraction, performDrop session: any UIDropSession) {
-        guard dropInteraction(interaction, canHandle: session), let palette = spaceDropController,
+        guard !isApplyingHoverProjection, dropInteraction(interaction, canHandle: session),
+              let palette = spaceDropController,
               let payload = payload(for: session), let document = workspace.profileDocument,
               spaceDropSessionID == ObjectIdentifier(session), let target = spaceDropHover,
               palette.target(at: session.location(in: palette.view)) == target, target.isEnabled,
@@ -699,6 +738,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     func sidebarDragSessionDidChange(_ session: BrowserMobileSidebarDragSession) {
         guard activeSource === session else { return }
+        if session.isCancelled || session.isCommitted {
+            cancelPendingFolderExpansion(clearSession: true)
+        }
         if session.isCancelled {
             spaceDropClosing = true
             spaceDropHover = nil
@@ -719,6 +761,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         switch state {
         case .foregroundActive: dragAdmissionSuspended = false
         case .foregroundInactive:
+            cancelPendingFolderExpansion(clearSession: true)
             dragAdmissionSuspended = true
             hover = nil
             spaceDropHover = nil
@@ -787,6 +830,33 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         let snapshot: BrowserTabSessionSnapshot
         let plan: BrowserMobileSidebarDrop.Plan?
     }
+
+    private struct FolderHoverCandidate {
+        let tokenID: ObjectIdentifier
+        let sessionID: ObjectIdentifier
+        let folderID: String
+        let target: BrowserMobileSidebarDrop.Target
+        let generation: UUID
+        var isDue = false
+        var retryCount = 0
+        var retryScheduled = false
+    }
+
+    private struct FolderExpansionCache {
+        let source: BrowserMobileSidebarDrop.Source
+        let target: BrowserMobileSidebarDrop.Target
+        let snapshot: BrowserTabSessionSnapshot
+        let isEligible: Bool
+    }
+
+    private let hoverScheduler: any BrowserMobileSidebarHoverScheduling
+    private let suppliedTableView: UITableView?
+    private var folderHoverCandidate: FolderHoverCandidate?
+    private var folderExpansionCache: FolderExpansionCache?
+    private weak var hoverDropSession: (any UIDropSession)?
+    private var transientExpandedFolderIDs = Set<String>()
+    private var renderedAvailableTabIDs = Set<String>()
+    private var isApplyingHoverProjection = false
 
     private let spaceButton = UIButton(type: .system)
     private lazy var selectionButton = UIBarButtonItem(
@@ -940,11 +1010,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         case .folder(let id, let depth):
             guard let folder = renderedSnapshot?.pinnedTabFolders?.first(where: { $0.id == id })
             else { return }
+            let isExpanded = folder.isExpanded || transientExpandedFolderIDs.contains(id)
             content.text = folder.title
             content
-                .image = UIImage(systemName: folder.systemImageName ?? (folder.isExpanded ? "folder.fill" : "folder"))
+                .image = UIImage(systemName: folder.systemImageName ?? (isExpanded ? "folder.fill" : "folder"))
             cell.indentationLevel = depth
-            cell.accessoryType = isSelectingRows || folder.isExpanded ? .none : .disclosureIndicator
+            cell.accessoryType = isSelectingRows || isExpanded ? .none : .disclosureIndicator
             if isSelectingRows,
                selectedItems
                    .contains(.init(entityType: .folder, entityID: id))
@@ -952,7 +1023,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 cell.accessibilityTraits.insert(.selected)
             }
             cell.accessibilityIdentifier = "browser.folder." + id
-            cell.accessibilityValue = folder.isExpanded
+            cell.accessibilityValue = isExpanded
                 ? String(localized: "Expanded", table: "Mobile")
                 : String(localized: "Collapsed", table: "Mobile")
         case nil: break
@@ -984,6 +1055,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func joinSidebarDrag(_ payload: BrowserMobileSidebarDragSession) -> Bool {
         guard activeSource == nil || activeSource === payload else { return false }
+        if activeSource !== payload {
+            cancelPendingFolderExpansion(clearSession: true)
+        }
         activeSource = payload
         dragScene = view.window?.windowScene
         payload.register(self)
@@ -993,6 +1067,145 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func matches(_ items: [UIDragItem], payload: BrowserMobileSidebarDragSession) -> Bool {
         payload.matches(items)
+    }
+
+    private func cancelPendingFolderExpansion(clearSession: Bool = false) {
+        hoverScheduler.cancel()
+        folderHoverCandidate = nil
+        if clearSession {
+            hoverDropSession = nil
+        }
+    }
+
+    private func updateFolderExpansion(
+        session: any UIDropSession, payload: BrowserMobileSidebarDragSession, target: DropHover
+    ) {
+        guard let index = target.insideFolder, case .folder(let folderID, _) = row(at: index),
+              !transientExpandedFolderIDs.contains(folderID),
+              renderedSnapshot?.pinnedTabFolders?.first(where: { $0.id == folderID })?.isExpanded == false,
+              let document = workspace.profileDocument,
+              canExpandFolder(source: payload.source, target: target.target, snapshot: document.snapshot)
+        else { cancelPendingFolderExpansion()
+            return
+        }
+        if let candidate = folderHoverCandidate, candidate.tokenID == ObjectIdentifier(payload),
+           candidate.sessionID == ObjectIdentifier(session), candidate.folderID == folderID,
+           candidate.target == target.target
+        {
+            if candidate.isDue {
+                expandHoveredFolder(generation: candidate.generation)
+            }
+            return
+        }
+        cancelPendingFolderExpansion()
+        let generation = UUID()
+        folderHoverCandidate = .init(
+            tokenID: ObjectIdentifier(payload), sessionID: ObjectIdentifier(session), folderID: folderID,
+            target: target.target, generation: generation
+        )
+        hoverScheduler.schedule(after: .milliseconds(600)) { [weak self] in
+            guard let self, folderHoverCandidate?.generation == generation else { return }
+            folderHoverCandidate?.isDue = true
+            expandHoveredFolder(generation: generation)
+        }
+    }
+
+    private func canExpandFolder(
+        source: BrowserMobileSidebarDrop.Source, target: BrowserMobileSidebarDrop.Target,
+        snapshot: BrowserTabSessionSnapshot
+    ) -> Bool {
+        if let cache = folderExpansionCache, cache.source == source, cache.target == target,
+           cache.snapshot == snapshot
+        {
+            return cache.isEligible
+        }
+        let eligible = BrowserMobileSidebarDrop.canExpandFolder(source: source, target: target, in: snapshot)
+        folderExpansionCache = .init(source: source, target: target, snapshot: snapshot, isEligible: eligible)
+        return eligible
+    }
+
+    private func scheduleFolderExpansionRetry(generation: UUID) {
+        guard var candidate = folderHoverCandidate, candidate.generation == generation,
+              !candidate.retryScheduled, candidate.retryCount < 10 else { return }
+        candidate.retryScheduled = true
+        candidate.retryCount += 1
+        folderHoverCandidate = candidate
+        // One bounded retry chain lets stationary hover outlast UIKit's short
+        // insertion/gap transaction. Later native events may retry a due folder.
+        hoverScheduler.schedule(after: .milliseconds(50)) { [weak self] in
+            guard let self, folderHoverCandidate?.generation == generation else { return }
+            folderHoverCandidate?.retryScheduled = false
+            expandHoveredFolder(generation: generation)
+        }
+    }
+
+    private func expandHoveredFolder(generation: UUID) {
+        guard let candidate = folderHoverCandidate, candidate.generation == generation, candidate.isDue,
+              !isApplyingHoverProjection, let session = hoverDropSession,
+              ObjectIdentifier(session) == candidate.sessionID,
+              let payload = payload(for: session), ObjectIdentifier(payload) == candidate.tokenID,
+              dropSessionID == candidate.sessionID,
+              let target = dropTarget(at: session.location(in: tableView)), target.target == candidate.target,
+              let index = target.insideFolder, row(at: index)?.reference.entityID == candidate.folderID,
+              let snapshot = renderedSnapshot, let document = workspace.profileDocument,
+              canExpandFolder(source: payload.source, target: target.target, snapshot: document.snapshot)
+        else { cancelPendingFolderExpansion()
+            return
+        }
+        guard !tableView.hasUncommittedUpdates else {
+            scheduleFolderExpansionRetry(generation: generation)
+            return
+        }
+        var expanded = transientExpandedFolderIDs
+        expanded.insert(candidate.folderID)
+        let nextRows = sharedRows(
+            snapshot,
+            spaceID: renderedSpaceID,
+            available: renderedAvailableTabIDs,
+            expanded: expanded
+        )
+        let previousRows = rows
+        let previousIDs = Set(previousRows.flatMap { $0 }.map(\.reference))
+        let insertions = nextRows.enumerated().flatMap { section, values in
+            values.enumerated().compactMap { row, item in
+                previousIDs.contains(item.reference) ? nil : IndexPath(row: row, section: section)
+            }
+        }
+        // Expansion may only reveal descendants; no source or existing target
+        // may move because a concurrent document update has been deferred.
+        guard zip(previousRows, nextRows).allSatisfy({ old, new in
+            new.filter { previousIDs.contains($0.reference) } == old
+        }) else { cancelPendingFolderExpansion()
+            return
+        }
+        cancelPendingFolderExpansion()
+        isApplyingHoverProjection = true
+        transientExpandedFolderIDs = expanded
+        needsStructuralRefresh = true
+        hover = nil
+        clearDropFeedback()
+        UIView.performWithoutAnimation {
+            tableView.performBatchUpdates {
+                self.rows = nextRows
+                self.tableView.insertRows(at: insertions, with: .none)
+            } completion: { [weak self, payload] _ in
+                guard let self else { payload.notifyParticipants()
+                    return
+                }
+                isApplyingHoverProjection = false
+                if let folderIndex = indexPath(for: .init(entityType: .folder, entityID: candidate.folderID)),
+                   let cell = tableView.cellForRow(at: folderIndex)
+                {
+                    configure(cell, at: folderIndex)
+                }
+                restoreRowSelection()
+                payload.notifyParticipants()
+                if let session = hoverDropSession {
+                    _ = tableView(tableView, dropSessionDidUpdate: session, withDestinationIndexPath: nil)
+                }
+                finishInteractionIfPossible()
+            }
+        }
     }
 
     private func dropTarget(at point: CGPoint) -> DropHover? {
@@ -1073,6 +1286,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             includesFolders: payload.source.items.contains { $0.entityType == .folder },
             dropDelegate: self
         )
+        cancelPendingFolderExpansion(clearSession: true)
         spaceDropClosing = false
         spaceDropController = palette
         addChild(palette)
@@ -1146,6 +1360,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func endSidebarDragForSceneLoss() {
+        cancelPendingFolderExpansion(clearSession: true)
         guard let token = activeSource else { return }
         // An already-exited destination must not cancel a drag elsewhere.
         if token.owner === self || sidebarDragHasNativeHold || spaceDropBatchID != nil {
@@ -1165,12 +1380,14 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         _ plan: BrowserMobileSidebarDrop.Plan, document: BrowserMobileProfileDocument,
         payload: BrowserMobileSidebarDragSession
     ) -> UUID? {
-        payload.commit {
+        cancelPendingFolderExpansion(clearSession: true)
+        return payload.commit {
             document.move(items: plan.items, destination: plan.destination, before: plan.before, after: plan.after)
         }
     }
 
     @objc private func cancelSidebarDrag() {
+        cancelPendingFolderExpansion(clearSession: true)
         guard isHoldingRows else { return }
         activeSource?.invalidate()
         spaceDropClosing = true
@@ -1240,7 +1457,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             scheduleTerminalRefresh()
             return
         }
+        cancelPendingFolderExpansion(clearSession: true)
+        if !transientExpandedFolderIDs.isEmpty {
+            transientExpandedFolderIDs.removeAll()
+            needsStructuralRefresh = true
+        }
         planCache = nil
+        folderExpansionCache = nil
         clearDropFeedback()
         updateSelectionButton()
         if needsStructuralRefresh {
@@ -1276,6 +1499,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         renderedSnapshot = snapshot
         renderedDocument = workspace.profileDocument
         renderedSpaceID = workspace.selectedSpaceID
+        renderedAvailableTabIDs = Set(workspace.visibleTabs.map(\.id))
         renderedTabs = Dictionary(workspace.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         if structuralChange {
             tableView.reloadData()
@@ -1328,8 +1552,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         return rows[indexPath.section][indexPath.row]
     }
 
-    private func sharedRows(_ snapshot: BrowserTabSessionSnapshot) -> [[Row]] {
-        let available = Set(workspace.visibleTabs.map(\.id))
+    private func sharedRows(
+        _ snapshot: BrowserTabSessionSnapshot, spaceID: String?, available: Set<String>, expanded: Set<String>
+    ) -> [[Row]] {
         let folders = Dictionary(
             (snapshot.pinnedTabFolders ?? []).map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -1338,14 +1563,15 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         func visibleDepth(parent: String?) -> Int? {
             var next = parent, depth = 0, seen = Set<String>()
             while let id = next {
-                guard seen.insert(id).inserted, let folder = folders[id], folder.isExpanded else { return nil }
+                guard seen.insert(id).inserted, let folder = folders[id],
+                      folder.isExpanded || expanded.contains(id) else { return nil }
                 depth += 1
                 next = folder.parentFolderID
             }
             return depth
         }
         for change in BrowserSyncFolderProjection.canonicalChanges(snapshot) {
-            if let folder = change.folderData, folder.spaceID == workspace.selectedSpaceID,
+            if let folder = change.folderData, folder.spaceID == spaceID,
                let depth = visibleDepth(parent: folder.parentFolderID)
             {
                 result[1].append(.folder(change.entityID, depth: depth))

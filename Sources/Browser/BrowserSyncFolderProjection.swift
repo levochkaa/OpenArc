@@ -6,6 +6,14 @@ import Foundation
 enum BrowserSyncFolderProjection {
     // MARK: Internal
 
+    /// Uses the same validation as reduction, including valid semantic no-ops.
+    static func canMove(
+        items: [BrowserSyncEntityReference], destination: BrowserSyncFolderDestination,
+        values: [String: BrowserSyncChange], deleted: Set<String> = []
+    ) -> Bool {
+        moveContext(items, destination: destination, values: values, deleted: deleted) != nil
+    }
+
     static func canonicalChanges(_ snapshot: BrowserTabSessionSnapshot) -> [BrowserSyncChange] {
         let base = BrowserSyncOutboxProjection.canonicalChanges(snapshot)
         let localTabs = Dictionary(
@@ -609,6 +617,29 @@ enum BrowserSyncFolderProjection {
         return result
     }
 
+    private static func moveContext(
+        _ items: [Ref], destination: BrowserSyncFolderDestination,
+        values: [String: Change], deleted: Set<String>
+    ) -> (survivors: [Change], folders: Set<String>)? {
+        guard valid(destination, values, deleted), Set(items).count == items.count else { return nil }
+        let survivors = items.compactMap { live($0, values, deleted) }
+        guard !survivors.isEmpty, survivors.allSatisfy({ change in
+            switch destination {
+            case .spaces: change.entityType == .space
+            case .tabs(_, let placement, _): change
+                .entityType != .space && (change.entityType != .folder || placement == .spacePinned)
+            }
+        }) else { return nil }
+        let folders = subtree(Set(survivors.filter { $0.folderData != nil }.map(\.entityID)), values, deleted)
+        guard !survivors.contains(where: { change in
+            (change.folderData?.parentFolderID ?? change.tabData?.pinnedFolderID).map(folders.contains) == true
+        }) else { return nil }
+        if case .tabs(_, _, let parent) = destination, parent.map(folders.contains) == true {
+            return nil
+        }
+        return (survivors, folders)
+    }
+
     private static func move(
         _ items: [Ref],
         to destination: BrowserSyncFolderDestination,
@@ -617,22 +648,10 @@ enum BrowserSyncFolderProjection {
         values: inout [String: Change],
         deleted: Set<String>
     ) {
-        guard valid(destination, values, deleted), Set(items).count == items.count else { return }
-        let survivors = items.compactMap { live($0, values, deleted) }
-        guard !survivors.isEmpty, survivors.allSatisfy({ change in
-            switch destination {
-            case .spaces: change.entityType == .space
-            case .tabs(_, let placement, _): change
-                .entityType != .space && (change.entityType != .folder || placement == .spacePinned)
-            }
-        }) else { return }
-        let folders = subtree(Set(survivors.filter { $0.folderData != nil }.map(\.entityID)), values, deleted)
-        guard !survivors.contains(where: { change in
-            (change.folderData?.parentFolderID ?? change.tabData?.pinnedFolderID).map(folders.contains) == true
-        }) else { return }
-        if case .tabs(_, _, let parent) = destination, parent.map(folders.contains) == true {
-            return
-        }
+        guard let context = moveContext(items, destination: destination, values: values, deleted: deleted)
+        else { return }
+        let survivors = context.survivors
+        let folders = context.folders
         let moved = Set(survivors.map(ref))
         for source in Set(survivors.map(container)) where source != container(destination) {
             publish(list(source, values, deleted).filter { !moved.contains(ref($0)) }, values: &values)

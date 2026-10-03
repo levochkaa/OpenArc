@@ -4,6 +4,489 @@ import Testing
 import UIKit
 
 extension BrowserMobileUITests {
+    @Test func hoverExpansionRevealsNestedFrozenRowsWithoutChangingDurableCollapseOrReloading() async throws {
+        let scheduler = SidebarManualHoverScheduler()
+        let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+        let f = try SidebarDragFixture(hoverScheduler: scheduler, trackingTable: table)
+        defer { f.cleanup() }
+        await f.start()
+        #expect(f.document.setFolderExpanded(id: "folder", isExpanded: false))
+        #expect(f.document.setFolderExpanded(id: "nested", isExpanded: false))
+        let durable = try f.durableState()
+        let reloads = table.reloadCount
+        let drag = try f.begin(row: 0, section: 2)
+        let drop = SidebarDropSession(drag: drag, point: f.point(row: 0, section: 1, fraction: 0.5))
+        #expect(f.hover(drop).operation == .move)
+        try #require(scheduler.requests.count == 1)
+        #expect(scheduler.requests[0].delay == .milliseconds(600))
+        #expect(f.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+        scheduler.fire(0)
+        try await table.waitForBatches()
+        #expect(f.rowIDs(section: 1) == [
+            "browser.folder.folder", "browser.tab.child", "browser.folder.nested", "browser.folder.empty",
+        ])
+        drop.point = f.point(row: 2, section: 1, fraction: 0.5)
+        #expect(f.hover(drop).operation == .move)
+        try #require(scheduler.requests.count == 2)
+        scheduler.fire(1)
+        try await table.waitForBatches()
+        #expect(f.rowIDs(section: 1) == [
+            "browser.folder.folder", "browser.tab.child", "browser.folder.nested", "browser.tab.deep",
+            "browser.folder.empty",
+        ])
+        #expect(table.batchCount == 2)
+        #expect(table.insertedRows == [
+            [.init(row: 1, section: 1), .init(row: 2, section: 1)], [.init(row: 3, section: 1)],
+        ])
+        #expect(table.reloadCount == reloads)
+        #expect(try f.durableState() == durable)
+        #expect(f.document
+            .snapshot
+            .pinnedTabFolders?
+            .filter { ["folder", "nested"].contains($0.id) }
+            .allSatisfy { !$0.isExpanded } == true)
+        f.end(drag, drop)
+        #expect(f.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+        #expect(try f.durableState() == durable)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func hoverTimerCannotRevealRowsAfterLeaveInactiveEscapeOrNewNativeToken() async throws {
+        for cancellation in ["leave", "inactive", "escape", "new-token"] {
+            let scheduler = SidebarManualHoverScheduler()
+            let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+            let f = try SidebarDragFixture(hoverScheduler: scheduler, trackingTable: table)
+            defer { f.cleanup() }
+            await f.start()
+            #expect(f.document.setFolderExpanded(id: "folder", isExpanded: false))
+            let before = try f.durableState()
+            let drag = try f.begin(row: 0, section: 2)
+            let drop = SidebarDropSession(drag: drag, point: f.point(row: 0, section: 1, fraction: 0.5))
+            #expect(f.hover(drop).operation == .move)
+            try #require(scheduler.requests.count == 1)
+            var replacement: SidebarDragSession?
+            switch cancellation {
+            case "leave": f.sidebar.tableView(f.table, dropSessionDidExit: drop)
+            case "inactive": f.sidebar.updateSidebarDragSceneState(.foregroundInactive)
+            case "escape":
+                let command = try #require(f.sidebar.keyCommands?.first { $0.input == UIKeyCommand.inputEscape })
+                let action = try #require(command.action)
+                #expect(UIApplication.shared.sendAction(action, to: f.sidebar, from: command, for: nil))
+            default:
+                f.end(drag, drop)
+                replacement = try f.begin(row: 1, section: 2)
+            }
+            #expect(scheduler.requests[0].cancelled)
+            scheduler.fire(0)
+            #expect(table.batchCount == 0)
+            #expect(f.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+            #expect(try f.durableState() == before)
+            f.sidebar.updateSidebarDragSceneState(.foregroundActive)
+            if let replacement {
+                f.end(replacement, SidebarDropSession(drag: replacement, point: .zero))
+            } else {
+                f.end(drag, drop)
+            }
+            #expect(await f.workspace.shutdown())
+        }
+    }
+
+    @Test func hoverRevalidatesCapturedTargetAndSourceBeforeTimerExpansion() async throws {
+        for change in ["delete-folder", "move-folder", "delete-source", "move-source"] {
+            let scheduler = SidebarManualHoverScheduler()
+            let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+            let f = try SidebarDragFixture(hoverScheduler: scheduler, trackingTable: table)
+            defer { f.cleanup() }
+            await f.start()
+            #expect(f.document.setFolderExpanded(id: "folder", isExpanded: false))
+            let drag = try f.begin(row: 0, section: 2)
+            let drop = SidebarDropSession(drag: drag, point: f.point(row: 0, section: 1, fraction: 0.5))
+            #expect(f.hover(drop).operation == .move)
+            try #require(scheduler.requests.count == 1)
+            switch change {
+            case "delete-folder": #expect(f.document.delete(entity: .init(entityType: .folder, entityID: "folder")))
+            case "move-folder": #expect(f.document.move(
+                    items: [.init(entityType: .folder, entityID: "folder")],
+                    destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil)
+                ))
+            case "delete-source": #expect(f.document.removeTab(id: "a"))
+            default: #expect(f.document.setPlacement(tabID: "a", placement: .temporary, spaceID: "other"))
+            }
+            let changed = try f.durableState()
+            scheduler.fire(0)
+            #expect(table.batchCount == 0)
+            #expect(f.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+            #expect(try f.durableState() == changed)
+            f.end(drag, drop)
+            #expect(await f.workspace.shutdown())
+        }
+    }
+
+    @Test func hoverTimerQueriesCurrentPointerAndScrolledGeometryWithoutAnotherHoverCallback() async throws {
+        for scroll in [false, true] {
+            let scheduler = SidebarManualHoverScheduler()
+            let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+            let f = try SidebarDragFixture(hoverScheduler: scheduler, trackingTable: table)
+            defer { f.cleanup() }
+            await f.start()
+            #expect(f.document.setFolderExpanded(id: "folder", isExpanded: false))
+            let before = try f.durableState()
+            let drag = try f.begin(row: 0, section: 2)
+            let drop = SidebarDropSession(drag: drag, point: f.point(row: 0, section: 1, fraction: 0.5))
+            #expect(f.hover(drop).operation == .move)
+            try #require(scheduler.requests.count == 1)
+            if scroll {
+                let windowPoint = f.table.convert(drop.point, to: f.window)
+                drop.pointProvider = { [weak window = f.window] view in view.convert(windowPoint, from: window) }
+                f.table.setContentOffset(CGPoint(x: 0, y: f.table.contentOffset.y + 80), animated: false)
+                f.table.layoutIfNeeded()
+            } else {
+                drop.point = f.point(row: 0, section: 1, fraction: 0.05)
+            }
+            scheduler.fire(0)
+            #expect(table.batchCount == 0)
+            #expect(try f.durableState() == before)
+            f.end(drag, drop)
+            #expect(await f.workspace.shutdown())
+        }
+    }
+
+    @Test func hoverExpansionDoesNotLeakConcurrentNewRowsIntoFrozenTree() async throws {
+        let scheduler = SidebarManualHoverScheduler()
+        let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+        let f = try SidebarDragFixture(hoverScheduler: scheduler, trackingTable: table)
+        defer { f.cleanup() }
+        await f.start()
+        #expect(f.document.setFolderExpanded(id: "folder", isExpanded: false))
+        let drag = try f.begin(row: 0, section: 2)
+        let drop = SidebarDropSession(drag: drag, point: f.point(row: 0, section: 1, fraction: 0.5))
+        #expect(f.hover(drop).operation == .move)
+        try #require(scheduler.requests.count == 1)
+        let tab = try #require(f.document.createTab(
+            spaceID: "source",
+            placement: .spacePinned,
+            pinnedFolderID: "folder"
+        ))
+        let folder = try #require(f.document.createFolder(
+            spaceID: "source",
+            parentFolderID: "folder",
+            title: "New folder"
+        ))
+        #expect(f.document.renameTab(id: "child", title: "Latest metadata"))
+        let current = try f.durableState()
+        let reloads = table.reloadCount
+        scheduler.fire(0)
+        try await table.waitForBatches()
+        #expect(f.rowIDs(section: 1) == [
+            "browser.folder.folder", "browser.tab.child", "browser.folder.nested", "browser.tab.deep",
+            "browser.folder.empty",
+        ])
+        #expect(!f.rowIDs(section: 1).contains("browser.tab." + tab))
+        #expect(!f.rowIDs(section: 1).contains("browser.folder." + folder))
+        #expect(table.reloadCount == reloads)
+        #expect(try f.durableState() == current)
+        f.end(drag, drop)
+        #expect(f.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+        #expect(f.document.setFolderExpanded(id: "folder", isExpanded: true))
+        #expect(f.rowIDs(section: 1).contains("browser.tab." + tab))
+        #expect(f.rowIDs(section: 1).contains("browser.folder." + folder))
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func hoverRevealedNestedChildAcceptsOneExactInterwindowGroupMoveAndRetainsTransientRows() async throws {
+        for before in [true, false] {
+            let scheduler = SidebarManualHoverScheduler()
+            let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+            let source = try SidebarDragFixture()
+            let destination = try SidebarDragFixture(sharing: source, hoverScheduler: scheduler, trackingTable: table)
+            defer { destination.cleanup()
+                source.cleanup()
+            }
+            #expect(source.document.setFolderExpanded(id: "folder", isExpanded: false))
+            #expect(source.document.setFolderExpanded(id: "nested", isExpanded: false))
+            await source.start()
+            await destination.start()
+            source.workspace.selectTab(id: "b")
+            destination.workspace.selectTab(id: "b")
+            let sourceRuntime = source.engine.selectedID
+            let destinationRuntime = destination.engine.selectedID
+            try source.toggleSelection()
+            source.select(row: 0, section: 2)
+            source.select(row: 2, section: 2)
+            let drag = try source.begin(row: 0, section: 2, expectedItems: 2)
+            let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 1, fraction: 0.5))
+            #expect(destination.hover(drop).operation == .move)
+            try #require(scheduler.requests.count == 1)
+            scheduler.fire(0)
+            try await table.waitForBatches()
+            drop.point = destination.point(row: 2, section: 1, fraction: 0.5)
+            #expect(destination.hover(drop).operation == .move)
+            try #require(scheduler.requests.count == 2)
+            scheduler.fire(1)
+            try await table.waitForBatches()
+            let expandedRows = destination.rowIDs(section: 1)
+            let reloads = table.reloadCount
+            drop.point = destination.point(row: 3, section: 1, fraction: before ? 0.1 : 0.9)
+            let proposal = destination.hover(drop)
+            #expect(proposal.operation == .move)
+            let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+            destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+            let anchor = BrowserSyncEntityReference(entityType: .tab, entityID: "deep")
+            #expect(try source.mutations().count == 1)
+            #expect(try source.mutations().first?.operations == [.move(
+                items: [.init(entityType: .tab, entityID: "a"), .init(entityType: .tab, entityID: "c")],
+                destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "nested"),
+                before: before ? anchor : nil, after: before ? nil : anchor
+            )])
+            #expect(source.engine.selectedID == sourceRuntime && destination.engine.selectedID == destinationRuntime)
+            #expect(source.engine.closed.isEmpty && destination.engine.closed.isEmpty)
+            try #require(coordinator.animations.count == 2)
+            source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+            destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+            coordinator.animations[1].finish()
+            #expect(destination.rowIDs(section: 1) == expandedRows)
+            #expect(table.reloadCount == reloads)
+            coordinator.animations[0].finish()
+            #expect(destination.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+            #expect(source.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+            #expect(source.document
+                .snapshot
+                .pinnedTabFolders?
+                .filter { ["folder", "nested"].contains($0.id) }
+                .allSatisfy { !$0.isExpanded } == true)
+            #expect(await source.workspace.shutdown())
+            #expect(await destination.workspace.shutdown())
+        }
+    }
+
+    @Test func hoverCanRevealNoOpAppendFolderThenMoveExistingLastChildBeforeFirst() async throws {
+        let scheduler = SidebarManualHoverScheduler()
+        let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+        let source = try SidebarDragFixture(snapshot: .init(
+            spaces: [.init(id: "source", title: "Source", systemImageName: "globe")],
+            pinnedTabFolders: [.init(id: "folder", spaceID: "source", title: "Folder")],
+            tabs: ["first", "last"].enumerated().map { rank, id in
+                .init(
+                    id: id,
+                    urlString: "about:blank",
+                    placement: .spacePinned,
+                    spaceID: "source",
+                    pinnedFolderID: "folder",
+                    pinnedSiblingRank: Double(rank)
+                )
+            }
+        ))
+        let destination = try SidebarDragFixture(sharing: source, hoverScheduler: scheduler, trackingTable: table)
+        defer { destination.cleanup()
+            source.cleanup()
+        }
+        await source.start()
+        await destination.start()
+        let drag = try source.begin(row: 2, section: 1)
+        #expect(source.document.setFolderExpanded(id: "folder", isExpanded: false))
+        #expect(source.rowIDs(section: 1) == ["browser.folder.folder", "browser.tab.first", "browser.tab.last"])
+        #expect(destination.rowIDs(section: 1) == ["browser.folder.folder"])
+        let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 1, fraction: 0.5))
+        let appendProposal = destination.hover(drop)
+        let before = try source.durableState()
+        let noOpCoordinator = SidebarDropCoordinator(session: drop, proposal: appendProposal)
+        destination.sidebar.tableView(destination.table, performDropWith: noOpCoordinator)
+        #expect(try source.durableState() == before)
+        #expect(noOpCoordinator.droppedItems.isEmpty)
+        try #require(scheduler.requests.count == 1)
+        scheduler.fire(0)
+        try await table.waitForBatches()
+        #expect(destination.rowIDs(section: 1) == ["browser.folder.folder", "browser.tab.first", "browser.tab.last"])
+        #expect(try source.durableState() == before)
+        drop.point = destination.point(row: 1, section: 1, fraction: 0.1)
+        let proposal = destination.hover(drop)
+        #expect(proposal.operation == .move)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+        destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+        #expect(try source.mutations().count == 1)
+        #expect(try source.mutations().first?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "last")],
+            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder"),
+            before: .init(entityType: .tab, entityID: "first")
+        )])
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+        coordinator.animations.forEach { $0.finish() }
+        #expect(destination.rowIDs(section: 1) == ["browser.folder.folder"])
+        #expect(await source.workspace.shutdown())
+        #expect(await destination.workspace.shutdown())
+    }
+
+    @Test func hoverNativeBatchCompletionHoldsBothEndpointsAndInterruptedCompletionRestoresCollapse() async throws {
+        for cancel in [false, true] {
+            let scheduler = SidebarManualHoverScheduler()
+            let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+            table.holdsBatchCompletions = true
+            let source = try SidebarDragFixture()
+            let destination = try SidebarDragFixture(sharing: source, hoverScheduler: scheduler, trackingTable: table)
+            defer { destination.cleanup()
+                source.cleanup()
+            }
+            #expect(source.document.setFolderExpanded(id: "folder", isExpanded: false))
+            await source.start()
+            await destination.start()
+            let originalSourceRows = source.rowIDs(section: 2)
+            let drag = try source.begin(row: 0, section: 2)
+            let drop = SidebarDropSession(drag: drag, point: destination.point(row: 0, section: 1, fraction: 0.5))
+            let proposal = destination.hover(drop)
+            #expect(proposal.operation == .move)
+            try #require(scheduler.requests.count == 1)
+            let durable = try source.durableState()
+            let reloads = table.reloadCount
+            scheduler.fire(0)
+            try await table.waitForBatches()
+            try #require(table.heldBatchCompletions.count == 1)
+            #expect(table.batchCount == 1 && table.reloadCount == reloads)
+            let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
+            destination.sidebar.tableView(destination.table, performDropWith: coordinator)
+            #expect(coordinator.droppedItems.isEmpty)
+            #expect(try source.durableState() == durable)
+            if cancel {
+                destination.sidebar.updateSidebarDragSceneState(.background)
+            }
+            source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+            destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
+            #expect(source.rowIDs(section: 2) == originalSourceRows)
+            #expect(destination.rowIDs(section: 1).contains("browser.tab.child"))
+            #expect(table.reloadCount == reloads)
+            // UIKit's real batch ran; defer its client completion to exercise
+            // asynchronous/interrupted lifecycle ordering deterministically.
+            table.finishHeldBatches(finished: false)
+            #expect(destination.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+            #expect(try source.durableState() == durable)
+            #expect(await source.workspace.shutdown())
+            #expect(await destination.workspace.shutdown())
+        }
+    }
+
+    @Test func hoverBatchInOneWindowBlocksAnotherReceiverCommitUntilProjectionCompletes() async throws {
+        let scheduler = SidebarManualHoverScheduler()
+        let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+        table.holdsBatchCompletions = true
+        let source = try SidebarDragFixture()
+        let expanding = try SidebarDragFixture(sharing: source, hoverScheduler: scheduler, trackingTable: table)
+        let receiving = try SidebarDragFixture(sharing: source)
+        defer { receiving.cleanup()
+            expanding.cleanup()
+            source.cleanup()
+        }
+        #expect(source.document.setFolderExpanded(id: "folder", isExpanded: false))
+        await source.start()
+        await expanding.start()
+        await receiving.start()
+        let drag = try source.begin(row: 0, section: 2)
+        let hover = SidebarDropSession(drag: drag, point: expanding.point(row: 0, section: 1, fraction: 0.5))
+        #expect(expanding.hover(hover).operation == .move)
+        let drop = SidebarDropSession(drag: drag, point: receiving.point(row: 2, section: 2, fraction: 0.9))
+        let proposal = receiving.hover(drop)
+        #expect(proposal.operation == .move)
+        let reloads = table.reloadCount
+        scheduler.fire(0)
+        try await table.waitForBatches()
+        try #require(table.heldBatchCompletions.count == 1)
+        let stale = SidebarDropCoordinator(session: drop, proposal: proposal)
+        receiving.sidebar.tableView(receiving.table, performDropWith: stale)
+        #expect(stale.droppedItems.isEmpty)
+        #expect(try source.mutations().isEmpty)
+        #expect(table.reloadCount == reloads)
+        table.finishHeldBatches(finished: false)
+        let freshProposal = receiving.hover(drop)
+        #expect(freshProposal.operation == .move)
+        let coordinator = SidebarDropCoordinator(session: drop, proposal: freshProposal)
+        receiving.sidebar.tableView(receiving.table, performDropWith: coordinator)
+        #expect(try source.mutations().count == 1)
+        #expect(try source.mutations().first?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "a")],
+            destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
+            after: .init(entityType: .tab, entityID: "c")
+        )])
+        let expandedRows = expanding.rowIDs(section: 1)
+        source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
+        expanding.sidebar.tableView(expanding.table, dropSessionDidEnd: hover)
+        receiving.sidebar.tableView(receiving.table, dropSessionDidEnd: drop)
+        #expect(expanding.rowIDs(section: 1) == expandedRows && table.reloadCount == reloads)
+        coordinator.animations.forEach { $0.finish() }
+        #expect(expanding.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+        #expect(await source.workspace.shutdown())
+        #expect(await expanding.workspace.shutdown())
+        #expect(await receiving.workspace.shutdown())
+    }
+
+    @Test func hoverDueWhileUIKitHasPendingUpdatesRetriesWithoutAnotherPointerEvent() async throws {
+        let scheduler = SidebarManualHoverScheduler()
+        let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+        let f = try SidebarDragFixture(hoverScheduler: scheduler, trackingTable: table)
+        defer { f.cleanup() }
+        await f.start()
+        #expect(f.document.setFolderExpanded(id: "folder", isExpanded: false))
+        let before = try f.durableState()
+        let drag = try f.begin(row: 0, section: 2)
+        let drop = SidebarDropSession(drag: drag, point: f.point(row: 0, section: 1, fraction: 0.5))
+        #expect(f.hover(drop).operation == .move)
+        table.forcedUncommittedUpdates = true
+        scheduler.fire(0)
+        #expect(table.batchCount == 0)
+        try #require(scheduler.requests.count == 2)
+        #expect(scheduler.requests[1].delay < .milliseconds(600))
+        table.forcedUncommittedUpdates = false
+        scheduler.fire(1)
+        try await table.waitForBatches()
+        #expect(table.batchCount == 1)
+        #expect(f.rowIDs(section: 1).contains("browser.tab.child"))
+        #expect(try f.durableState() == before)
+        f.end(drag, drop)
+        #expect(f.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func hoverPendingUpdateRetriesAreBoundedAndCanceledRetryCannotExpand() async throws {
+        for cancel in [true, false] {
+            let scheduler = SidebarManualHoverScheduler()
+            let table = SidebarHoverTrackingTable(frame: .zero, style: .insetGrouped)
+            let f = try SidebarDragFixture(hoverScheduler: scheduler, trackingTable: table)
+            defer { f.cleanup() }
+            await f.start()
+            #expect(f.document.setFolderExpanded(id: "folder", isExpanded: false))
+            let before = try f.durableState()
+            let drag = try f.begin(row: 0, section: 2)
+            let drop = SidebarDropSession(drag: drag, point: f.point(row: 0, section: 1, fraction: 0.5))
+            #expect(f.hover(drop).operation == .move)
+            table.forcedUncommittedUpdates = true
+            scheduler.fire(0)
+            try #require(scheduler.requests.count == 2)
+            if cancel {
+                f.sidebar.updateSidebarDragSceneState(.foregroundInactive)
+                table.forcedUncommittedUpdates = false
+                scheduler.fire(1)
+                #expect(table.batchCount == 0)
+                f.sidebar.updateSidebarDragSceneState(.foregroundActive)
+            } else {
+                var index = 1
+                while index < scheduler.requests.count, index < 20 {
+                    scheduler.fire(index)
+                    index += 1
+                }
+                #expect(scheduler.requests.count == 11)
+                #expect(scheduler.requests.dropFirst().allSatisfy { $0.delay == .milliseconds(50) })
+                #expect(table.batchCount == 0)
+                table.forcedUncommittedUpdates = false
+                _ = f.hover(drop)
+                try await table.waitForBatches()
+                #expect(table.batchCount == 1)
+                #expect(scheduler.requests.count == 11)
+            }
+            #expect(try f.durableState() == before)
+            f.end(drag, drop)
+            #expect(f.rowIDs(section: 1) == ["browser.folder.folder", "browser.folder.empty"])
+            #expect(await f.workspace.shutdown())
+        }
+    }
+
     @Test func interwindowGroupMoveUsesCurrentSubtreeAndHoldsBothTablesThroughEveryAnimation() async throws {
         let source = try SidebarDragFixture(snapshot: sidebarInterwindowSnapshot())
         let destination = try SidebarDragFixture(sharing: source)
@@ -1129,6 +1612,98 @@ extension BrowserMobileUITests {
     }
 }
 
+// MARK: - SidebarManualHoverScheduler
+
+@MainActor private final class SidebarManualHoverScheduler: BrowserMobileSidebarHoverScheduling {
+    // MARK: Internal
+
+    struct Request {
+        let delay: Duration
+        let action: @MainActor () -> Void
+        var cancelled = false
+    }
+
+    var requests = [Request]()
+
+    func schedule(after delay: Duration, action: @escaping @MainActor () -> Void) {
+        cancel()
+        activeIndex = requests.count
+        requests.append(.init(delay: delay, action: action))
+    }
+
+    func cancel() {
+        if let activeIndex {
+            requests[activeIndex].cancelled = true
+        }
+        activeIndex = nil
+    }
+
+    /// Deliberately permits canceled requests: production generations, not the
+    /// fake's cancellation, must reject a callback already queued for delivery.
+    func fire(_ index: Int) {
+        if activeIndex == index {
+            activeIndex = nil
+        }
+        requests[index].action()
+    }
+
+    // MARK: Private
+
+    private var activeIndex: Int?
+}
+
+// MARK: - SidebarHoverTrackingTable
+
+@MainActor private final class SidebarHoverTrackingTable: UITableView {
+    override var hasUncommittedUpdates: Bool { forcedUncommittedUpdates || super.hasUncommittedUpdates }
+
+    var reloadCount = 0
+    var batchCount = 0
+    var pendingBatches = 0
+    var insertedRows = [[IndexPath]]()
+    var holdsBatchCompletions = false
+    var heldBatchCompletions = [(Bool) -> Void]()
+    var forcedUncommittedUpdates = false
+
+    override func reloadData() {
+        reloadCount += 1
+        super.reloadData()
+    }
+
+    override func insertRows(at indexPaths: [IndexPath], with animation: UITableView.RowAnimation) {
+        insertedRows.append(indexPaths)
+        super.insertRows(at: indexPaths, with: animation)
+    }
+
+    override func performBatchUpdates(_ updates: (() -> Void)?, completion: ((Bool) -> Void)? = nil) {
+        batchCount += 1
+        pendingBatches += 1
+        super.performBatchUpdates(updates) { [weak self] finished in
+            self?.pendingBatches -= 1
+            if self?.holdsBatchCompletions == true, let completion {
+                self?.heldBatchCompletions.append(completion)
+            } else {
+                completion?(finished)
+            }
+        }
+    }
+
+    func finishHeldBatches(finished: Bool) {
+        let callbacks = heldBatchCompletions
+        heldBatchCompletions.removeAll()
+        callbacks.forEach { $0(finished) }
+    }
+
+    func waitForBatches() async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while pendingBatches > 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        try #require(pendingBatches == 0)
+        layoutIfNeeded()
+    }
+}
+
 // MARK: - SidebarDragFixture
 
 @MainActor private final class SidebarDragFixture {
@@ -1136,7 +1711,9 @@ extension BrowserMobileUITests {
 
     init(
         sharing shared: SidebarDragFixture? = nil,
-        snapshot: BrowserTabSessionSnapshot = sidebarDragSnapshot()
+        snapshot: BrowserTabSessionSnapshot = sidebarDragSnapshot(),
+        hoverScheduler: (any BrowserMobileSidebarHoverScheduling)? = nil,
+        trackingTable: SidebarHoverTrackingTable? = nil
     ) throws {
         let document: BrowserMobileProfileDocument
         if let shared {
@@ -1168,7 +1745,11 @@ extension BrowserMobileUITests {
         self.workspace = BrowserMobileWorkspace(
             engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences
         )
-        self.sidebar = BrowserMobileTabsViewController(workspace: workspace)
+        self.sidebar = BrowserMobileTabsViewController(
+            workspace: workspace,
+            hoverScheduler: hoverScheduler ?? BrowserMobileSidebarHoverScheduler(),
+            tableView: trackingTable
+        )
         self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
         sidebar.navigationItem.rightBarButtonItem = dismissButton
         workspace.onChange = { [weak sidebar] in sidebar?.render() }
@@ -1423,8 +2004,9 @@ extension BrowserMobileUITests {
     var point = CGPoint.zero
     var allowsMoveOperation = true
     var isRestrictedToDraggingApplication = true
+    var pointProvider: ((UIView) -> CGPoint)?
 
-    func location(in _: UIView) -> CGPoint { point }
+    func location(in view: UIView) -> CGPoint { pointProvider?(view) ?? point }
     func hasItemsConforming(toTypeIdentifiers _: [String]) -> Bool { true }
     func canLoadObjects(ofClass _: any NSItemProviderReading.Type) -> Bool { false }
 }

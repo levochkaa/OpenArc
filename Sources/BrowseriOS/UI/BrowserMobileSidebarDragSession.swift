@@ -50,7 +50,9 @@ import UIKit
     }
 
     func commit(_ action: () -> Bool) -> UUID? {
-        guard !isCancelled, !isCommitted else { return nil }
+        guard !isCancelled, !isCommitted,
+              !participants.contains(where: { $0.controller?.sidebarDragHasHoverProjection == true })
+        else { return nil }
         // Freeze both observers and claim the once-only commit before publishing.
         isCommitted = true
         isCommitting = true

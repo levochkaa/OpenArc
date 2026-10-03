@@ -85,19 +85,22 @@ enum BrowserMobileSidebarDrop {
         )
     }
 
+    static func canExpandFolder(
+        source: Source, target: Target, in snapshot: BrowserTabSessionSnapshot
+    ) -> Bool {
+        guard target.position == .inside, target.reference?.entityType == .folder,
+              let values = validatedValues(source: source, target: target, snapshot: snapshot) else { return false }
+        return BrowserSyncFolderProjection.canMove(
+            items: source.items,
+            destination: target.destination,
+            values: values
+        )
+    }
+
     static func plan(
         source: Source, target: Target, in snapshot: BrowserTabSessionSnapshot
     ) -> Plan? {
-        var values = canonical(snapshot)
-        for item in source.items {
-            guard let moving = values[key(item)], container(moving) == source.containers[item] else { return nil }
-        }
-        if let reference = target.reference {
-            let folders = Set(source.items.filter { $0.entityType == .folder }.map(\.entityID))
-            guard !source.items.contains(reference), let anchor = values[key(reference)],
-                  container(anchor) == target.referenceContainer,
-                  !hasAncestor(reference, in: folders, values: values) else { return nil }
-        }
+        guard var values = validatedValues(source: source, target: target, snapshot: snapshot) else { return nil }
         let before = target.position == .before ? target.reference : nil
         let after = target.position == .after ? target.reference : nil
         let plan = Plan(items: source.items, destination: target.destination, before: before, after: after)
@@ -125,6 +128,22 @@ enum BrowserMobileSidebarDrop {
     }
 
     // MARK: Private
+
+    private static func validatedValues(
+        source: Source, target: Target, snapshot: BrowserTabSessionSnapshot
+    ) -> [String: BrowserSyncChange]? {
+        let values = canonical(snapshot)
+        for item in source.items {
+            guard let moving = values[key(item)], container(moving) == source.containers[item] else { return nil }
+        }
+        if let reference = target.reference {
+            let folders = Set(source.items.filter { $0.entityType == .folder }.map(\.entityID))
+            guard !source.items.contains(reference), let anchor = values[key(reference)],
+                  container(anchor) == target.referenceContainer,
+                  !hasAncestor(reference, in: folders, values: values) else { return nil }
+        }
+        return values
+    }
 
     private static func canonical(_ snapshot: BrowserTabSessionSnapshot) -> [String: BrowserSyncChange] {
         Dictionary(
