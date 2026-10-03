@@ -56,6 +56,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private(set) var sessionError: String?
     private(set) var navigationError: String?
     private(set) var javaScriptDialog: BrowserMobileJavaScriptDialog?
+    private(set) var httpAuthentication: BrowserMobileHTTPAuthentication?
     private(set) var profileDocument: BrowserMobileProfileDocument?
     private(set) var selectedSpaceID: String?
 
@@ -84,7 +85,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     }
 
     var canFindInPage: Bool {
-        guard isReady, !isClosed, !isRestoring, javaScriptDialog == nil,
+        guard isReady, !isClosed, !isRestoring, javaScriptDialog == nil, httpAuthentication == nil,
               let tab = selectedTab, tab.state.error == nil, tab.urlString != "about:blank"
         else { return false }
         return engine.canFindInPage(id: tab.runtimeID)
@@ -378,6 +379,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
         isJavaScriptDialogPresentationActive = next
         if !isJavaScriptDialogPresentationActive {
             cancelJavaScriptDialog()
+            cancelHTTPAuthentication()
         }
         engine.setJavaScriptDialogPresentationActive(isJavaScriptDialogPresentationActive)
         if changed {
@@ -391,6 +393,22 @@ struct BrowserMobileTab: Identifiable, Equatable {
             && selectedTab?.runtimeID == dialog.runtimeID
         javaScriptDialog = nil
         engine.resolveJavaScriptDialog(id: id, response: mayRespond ? response : .cancel)
+        notify()
+    }
+
+    func resolveHTTPAuthentication(id: UUID, response: BrowserMobileHTTPAuthenticationResponse) {
+        guard let request = httpAuthentication, request.id == id else { return }
+        let mayRespond = canEdit && isJavaScriptDialogPresentationActive && javaScriptDialog == nil
+            && selectedTab?.runtimeID == request.runtimeID
+        httpAuthentication = nil
+        engine.resolveHTTPAuthentication(id: id, response: mayRespond ? response : .cancel)
+        notify()
+    }
+
+    func cancelHTTPAuthentication() {
+        guard let request = httpAuthentication else { return }
+        httpAuthentication = nil
+        engine.resolveHTTPAuthentication(id: request.id, response: .cancel)
         notify()
     }
 
@@ -786,7 +804,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
                 removeTab(runtimeID: runtimeID)
             }
         case .javaScriptDialogRequested(let dialog):
-            guard canEdit, isJavaScriptDialogPresentationActive,
+            guard canEdit, isJavaScriptDialogPresentationActive, httpAuthentication == nil,
                   selectedTab?.runtimeID == dialog.runtimeID
             else {
                 engine.resolveJavaScriptDialog(id: dialog.id, response: .cancel)
@@ -803,6 +821,26 @@ struct BrowserMobileTab: Identifiable, Equatable {
         case .javaScriptDialogFinished(let id):
             guard javaScriptDialog?.id == id else { return }
             javaScriptDialog = nil
+            notify()
+        case .httpAuthenticationRequested(let request):
+            guard canEdit, isJavaScriptDialogPresentationActive, javaScriptDialog == nil,
+                  selectedTab?.runtimeID == request.runtimeID
+            else {
+                engine.resolveHTTPAuthentication(id: request.id, response: .cancel)
+                return
+            }
+            if let current = httpAuthentication {
+                if current.id != request.id {
+                    engine.resolveHTTPAuthentication(id: request.id, response: .cancel)
+                }
+                return
+            }
+            engine.dismissFindInPage()
+            httpAuthentication = request
+            notify()
+        case .httpAuthenticationFinished(let id):
+            guard httpAuthentication?.id == id else { return }
+            httpAuthentication = nil
             notify()
         }
     }
@@ -824,8 +862,12 @@ struct BrowserMobileTab: Identifiable, Equatable {
     }
 
     private func cancelJavaScriptDialogIfSelectionChanged() {
-        guard let dialog = javaScriptDialog, dialog.runtimeID != selectedTab?.runtimeID else { return }
-        cancelJavaScriptDialog()
+        if let dialog = javaScriptDialog, dialog.runtimeID != selectedTab?.runtimeID {
+            cancelJavaScriptDialog()
+        }
+        if let request = httpAuthentication, request.runtimeID != selectedTab?.runtimeID {
+            cancelHTTPAuthentication()
+        }
     }
 
     private func cancelJavaScriptDialog() {

@@ -1,5 +1,6 @@
 /* Mobile browser controls. */
 "Address" = "Address";
+"Authentication required" = "Authentication required";
 "Back" = "Back";
 "Cancel" = "Cancel";
 "Close" = "Close";
@@ -12,6 +13,8 @@
 "Open Location" = "Open Location";
 "Opening your tabs" = "Opening your tabs";
 "Page could not load" = "Page could not load";
+"Password" = "Password";
+"Realm: %@" = "Realm: %@";
 "Reload" = "Reload";
 "Response" = "Response";
 "Restoring this window’s session…" = "Restoring this window’s session…";
@@ -21,10 +24,13 @@
 "Search the web or enter an address." = "Search the web or enter an address.";
 "Share" = "Share";
 "Show Tabs" = "Show Tabs";
+"Sign In" = "Sign In";
 "Stop Loading" = "Stop Loading";
 "Tabs" = "Tabs";
+"The username or password was not accepted. Try again." = "The username or password was not accepted. Try again.";
 "Try Again" = "Try Again";
 "Unknown origin" = "Unknown origin";
+"Username" = "Username";
 "Where next?" = "Where next?";
 
 /* Shared profile sidebar. */

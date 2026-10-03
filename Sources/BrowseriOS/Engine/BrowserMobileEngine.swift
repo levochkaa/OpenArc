@@ -20,6 +20,8 @@ enum BrowserMobileEngineEvent: Sendable {
     case closed(id: String)
     case javaScriptDialogRequested(BrowserMobileJavaScriptDialog)
     case javaScriptDialogFinished(id: UUID)
+    case httpAuthenticationRequested(BrowserMobileHTTPAuthentication)
+    case httpAuthenticationFinished(id: UUID)
 }
 
 // MARK: - BrowserMobileEngine
@@ -47,11 +49,13 @@ enum BrowserMobileEngineEvent: Sendable {
     func dismissFindInPage()
     func setJavaScriptDialogPresentationActive(_ active: Bool)
     func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse)
+    func resolveHTTPAuthentication(id: UUID, response: BrowserMobileHTTPAuthenticationResponse)
     func shutdown()
 }
 
 extension BrowserMobileEngine {
     func setDownloads(_: BrowserMobileDownloads?) {}
+    func resolveHTTPAuthentication(id _: UUID, response _: BrowserMobileHTTPAuthenticationResponse) {}
     func canFindInPage(id _: String) -> Bool { false }
     @discardableResult func presentFindInPage(id _: String) -> Bool { false }
     func dismissFindInPage() {}

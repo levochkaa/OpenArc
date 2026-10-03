@@ -23,6 +23,7 @@ import WebKit
             if onEvent == nil {
                 dismissFindInPage()
                 cancelJavaScriptDialog()
+                cancelHTTPAuthentication(abort: false)
             }
         }
     }
@@ -47,6 +48,7 @@ import WebKit
             dismissFindInPage()
             selectedRuntimeID = record?.id
             cancelJavaScriptDialog()
+            cancelHTTPAuthentication(abort: false)
         }
         let startsInitialLoad = record?.webView == nil
         let next = record.map { ensureWebView($0) }
@@ -105,6 +107,7 @@ import WebKit
         record.generation += 1
         record.isReplacingDialogDocument = false
         cancelJavaScriptDialog(runtimeID: id)
+        cancelHTTPAuthentication(runtimeID: id)
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = false
         record.webView?.stopLoading()
@@ -119,6 +122,7 @@ import WebKit
             selectedRuntimeID = nil
         }
         cancelJavaScriptDialog(runtimeID: id)
+        cancelHTTPAuthentication(runtimeID: id)
         if let webView = record.webView {
             idsByWebView.removeValue(forKey: ObjectIdentifier(webView))
         }
@@ -141,6 +145,7 @@ import WebKit
         isDialogPresentationActive = false
         selectedRuntimeID = nil
         cancelJavaScriptDialog()
+        cancelHTTPAuthentication()
         onEvent = nil
         onPopupCreated = nil
         downloads = nil
@@ -156,13 +161,14 @@ import WebKit
         if !isDialogPresentationActive {
             dismissFindInPage()
             cancelJavaScriptDialog()
+            cancelHTTPAuthentication(abort: false)
         }
     }
 
     func canFindInPage(id: String) -> Bool {
         guard !isShutDown, isDialogPresentationActive, selectedRuntimeID == id, let record = records[id],
               record.hasCommittedDialogDocument, !record.isReplacingDialogDocument,
-              !record.state.isLoading, record.state.error == nil, pendingDialog == nil,
+              !record.state.isLoading, record.state.error == nil, pendingDialog == nil, pendingAuthentication == nil,
               let webView = record.webView, mountedWebView === webView,
               webView.superview === hostView, let window = webView.window,
               !window.isHidden, window.windowScene?.activationState == .foregroundActive
@@ -204,7 +210,8 @@ import WebKit
         origin: String,
         completion: @escaping @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void
     ) {
-        guard !isShutDown, !isFinishingDialog, isDialogPresentationActive, let record = record(for: webView),
+        guard !isShutDown, !isFinishingDialog, !isFinishingAuthentication, isDialogPresentationActive,
+              pendingAuthentication == nil, let record = record(for: webView),
               record.hasCommittedDialogDocument, !record.isReplacingDialogDocument,
               selectedRuntimeID == record.id, pendingDialog == nil, onEvent != nil
         else { completion(.cancel)
@@ -216,6 +223,48 @@ import WebKit
         dismissFindInPage()
         pendingDialog = PendingDialog(request: request, generation: record.generation, completion: completion)
         onEvent?(.javaScriptDialogRequested(request))
+    }
+
+    func resolveHTTPAuthentication(id: UUID, response: BrowserMobileHTTPAuthenticationResponse) {
+        guard let pending = pendingAuthentication, pending.request.id == id else { return }
+        finishHTTPAuthentication(pending, response: response)
+    }
+
+    /// Shared by the real WKNavigationDelegate and engine tests. Basic auth may
+    /// precede the first commit or belong to a subresource, so no committed-page
+    /// requirement or top-level-origin comparison belongs here. WebKit supplies
+    /// no navigation/frame identity; generation protects admitted tokens, not a
+    /// challenge that first arrives after an unrelated navigation has begun.
+    func requestHTTPAuthentication(
+        in webView: WKWebView,
+        challenge: URLAuthenticationChallenge,
+        completion: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        guard let origin = Self.authenticationOrigin(challenge.protectionSpace) else {
+            // Preserve WKNavigationDelegate's default for every unsupported
+            // protection space, including server trust, Digest and proxy auth.
+            completion(.rejectProtectionSpace, nil)
+            return
+        }
+        guard !isFinishingAuthentication, !isFinishingDialog,
+              pendingAuthentication == nil, pendingDialog == nil,
+              let record = record(for: webView), canPresentHTTPAuthentication(record)
+        else {
+            // Unprompted challenges keep WebKit's default: no credential is
+            // sent and the server's 401 document renders, so Reload can retry.
+            completion(.rejectProtectionSpace, nil)
+            return
+        }
+        let request = BrowserMobileHTTPAuthentication(
+            id: UUID(), runtimeID: record.id, origin: origin,
+            realm: challenge.protectionSpace.realm, previousFailureCount: challenge.previousFailureCount
+        )
+        dismissFindInPage()
+        pendingAuthentication = PendingAuthentication(
+            request: request, generation: record.generation, webViewID: ObjectIdentifier(webView),
+            completion: completion
+        )
+        onEvent?(.httpAuthenticationRequested(request))
     }
 
     /// Local-document seam for integration tests; production addresses use navigate.
@@ -254,6 +303,13 @@ import WebKit
         let request: BrowserMobileJavaScriptDialog
         let generation: Int
         let completion: @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void
+    }
+
+    private struct PendingAuthentication {
+        let request: BrowserMobileHTTPAuthentication
+        let generation: Int
+        let webViewID: ObjectIdentifier
+        let completion: @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     }
 
     private final class DownloadHandoff {
@@ -317,9 +373,30 @@ import WebKit
     private var isDialogPresentationActive = false
     private var pendingDialog: PendingDialog?
     private var isFinishingDialog = false
+    private var pendingAuthentication: PendingAuthentication?
+    private var isFinishingAuthentication = false
     private var downloads: BrowserMobileDownloads?
     private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
     private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
+
+    private static func authenticationOrigin(_ space: URLProtectionSpace) -> String? {
+        let unsafeHostScalars = CharacterSet.whitespacesAndNewlines
+            .union(.controlCharacters)
+            .union(CharacterSet(charactersIn: "/\\?#@"))
+        guard space.authenticationMethod == NSURLAuthenticationMethodHTTPBasic, !space.isProxy(),
+              let scheme = space.protocol?.lowercased(), scheme == "http" || scheme == "https",
+              !space.host.isEmpty, (0...65535).contains(space.port),
+              !space.host.unicodeScalars.contains(where: unsafeHostScalars.contains)
+        else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = space.host
+        if space.port > 0, !(scheme == "http" && space.port == 80), !(scheme == "https" && space.port == 443) {
+            components.port = space.port
+        }
+        guard let url = components.url, url.host?.isEmpty == false else { return nil }
+        return url.absoluteString
+    }
 
     private static func dialogOrigin(_ frame: WKFrameInfo) -> String {
         let origin = frame.securityOrigin
@@ -365,6 +442,53 @@ import WebKit
         // open as a top-level page or external application.
         return action.targetFrame?.isMainFrame == false
             && url.absoluteString.lowercased().split(separator: "#").first == "about:srcdoc"
+    }
+
+    private func canPresentHTTPAuthentication(_ record: Record) -> Bool {
+        guard !isShutDown, isDialogPresentationActive, onEvent != nil,
+              records[record.id] === record, selectedRuntimeID == record.id, record.state.error == nil,
+              let webView = record.webView, mountedWebView === webView,
+              webView.superview === hostView, !hostView.isHidden, !webView.isHidden,
+              let window = webView.window, !window.isHidden,
+              window.windowScene?.activationState == .foregroundActive
+        else { return false }
+        return true
+    }
+
+    /// `abort` cancels a challenged load that is being replaced or torn down.
+    /// Otherwise the load stays wanted and the protection space is declined.
+    private func cancelHTTPAuthentication(runtimeID: String? = nil, abort: Bool = true) {
+        guard let pending = pendingAuthentication,
+              runtimeID == nil || runtimeID == pending.request.runtimeID else { return }
+        finishHTTPAuthentication(pending, response: abort ? nil : .cancel)
+    }
+
+    /// A nil response aborts the challenged load. Cancel, or credentials that
+    /// can no longer be released, reject the protection space instead: WebKit
+    /// renders the server's 401 document at the challenged address, as
+    /// Chromium does after Cancel, and Reload can prompt again.
+    private func finishHTTPAuthentication(
+        _ pending: PendingAuthentication, response: BrowserMobileHTTPAuthenticationResponse?
+    ) {
+        guard pendingAuthentication?.request.id == pending.request.id else { return }
+        pendingAuthentication = nil
+        isFinishingAuthentication = true
+        defer { isFinishingAuthentication = false }
+        onEvent?(.httpAuthenticationFinished(id: pending.request.id))
+        // The finished observer may synchronously navigate or detach the scene.
+        // Recheck afterwards before releasing any supplied credentials to WK.
+        guard let response, !isShutDown,
+              let record = records[pending.request.runtimeID], record.generation == pending.generation,
+              let webView = record.webView, ObjectIdentifier(webView) == pending.webViewID
+        else {
+            pending.completion(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        guard case .credentials(let username, let password) = response, canPresentHTTPAuthentication(record) else {
+            pending.completion(.rejectProtectionSpace, nil)
+            return
+        }
+        pending.completion(.useCredential, URLCredential(user: username, password: password, persistence: .none))
     }
 
     private func cancelJavaScriptDialog(runtimeID: String? = nil) {
@@ -454,6 +578,7 @@ import WebKit
         record.generation += 1
         record.isRestoringDownloadedDocument = false
         cancelJavaScriptDialog(runtimeID: record.id)
+        cancelHTTPAuthentication(runtimeID: record.id)
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = false
         record.state.url = url
@@ -515,6 +640,7 @@ import WebKit
     /// callbacks cannot publish the attachment URL or a page-load error.
     private func preservePageAfterDownloadConversion(_ record: Record) {
         record.generation += 1
+        cancelHTTPAuthentication(runtimeID: record.id)
         record.currentNavigation = nil
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = false
@@ -547,6 +673,7 @@ import WebKit
     private func emit(_ record: Record) {
         if record.state.error != nil, selectedRuntimeID == record.id {
             dismissFindInPage()
+            cancelHTTPAuthentication(runtimeID: record.id)
         }
         guard records[record.id] === record, record.lastEmitted != record.state else { return }
         record.lastEmitted = record.state
@@ -555,6 +682,7 @@ import WebKit
 
     private func fail(_ error: Error, webView: WKWebView, navigation: WKNavigation?) {
         guard let record = currentRecord(for: webView, navigation: navigation) else { return }
+        cancelHTTPAuthentication(runtimeID: record.id)
         record.state.isLoading = false
         // A failed provisional load leaves the previous committed document.
         record.isReplacingDialogDocument = false
@@ -575,6 +703,14 @@ import WebKit
 // MARK: WKNavigationDelegate
 
 extension BrowserWebKitEngine: WKNavigationDelegate {
+    func webView(
+        _ webView: WKWebView,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        requestHTTPAuthentication(in: webView, challenge: challenge, completion: completionHandler)
+    }
+
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
@@ -631,6 +767,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
                 }
             }
             cancelJavaScriptDialog(runtimeID: record.id)
+            cancelHTTPAuthentication(runtimeID: record.id)
         }
         decisionHandler(.allow)
     }
@@ -691,6 +828,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             record.currentNavigation = navigation
         }
         cancelJavaScriptDialog(runtimeID: record.id)
+        cancelHTTPAuthentication(runtimeID: record.id)
         record.isRestoringDownloadedDocument = false
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = true
@@ -742,6 +880,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         record.isReplacingDialogDocument = false
         record.dialogDocumentURL = nil
         cancelJavaScriptDialog(runtimeID: record.id)
+        cancelHTTPAuthentication(runtimeID: record.id)
         record.allowsPageMetadata = false
         record.hasStartedCurrentNavigation = false
         record.state.isLoading = false

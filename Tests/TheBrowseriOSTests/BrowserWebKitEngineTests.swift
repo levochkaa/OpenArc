@@ -468,7 +468,8 @@ import WebKit
             switch event {
             case .state(let id, let state): states[id] = state
             case .closed(let id): closedIDs.append(id)
-            case .javaScriptDialogFinished, .javaScriptDialogRequested: break
+            case .httpAuthenticationFinished, .httpAuthenticationRequested, .javaScriptDialogFinished,
+                 .javaScriptDialogRequested: break
             }
         }
     }

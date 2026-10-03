@@ -334,7 +334,7 @@ extension BrowserMobileUITests {
             guard let self else { return }
             switch event {
             case .state(let id, let state): states[id] = state
-            case .closed: break
+            case .closed, .httpAuthenticationFinished, .httpAuthenticationRequested: break
             case .javaScriptDialogRequested(let request):
                 requests.append(request)
                 if let answer = response?(request) {

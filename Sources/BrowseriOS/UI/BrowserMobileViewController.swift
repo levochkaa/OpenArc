@@ -51,6 +51,11 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
             self?.workspace.resolveJavaScriptDialog(id: id, response: response)
         }
 
+    lazy var httpAuthenticationPresenter =
+        BrowserMobileHTTPAuthenticationPresenter(host: self) { [weak self] id, response in
+            self?.workspace.resolveHTTPAuthentication(id: id, response: response)
+        }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -62,6 +67,7 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         tabsController.render()
         presentedTabs?.render()
         javaScriptDialogPresenter.update(workspace.javaScriptDialog)
+        httpAuthenticationPresenter.update(workspace.httpAuthentication)
     }
 
     func splitViewController(_: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: Column) -> Column {

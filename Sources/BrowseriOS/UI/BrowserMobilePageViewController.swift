@@ -198,7 +198,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
 
     @objc func showDownloads() {
         guard workspace.isReady, let downloads = workspace.downloads,
-              workspace.javaScriptDialog == nil, presentedViewController == nil,
+              workspace.javaScriptDialog == nil, workspace.httpAuthentication == nil, presentedViewController == nil,
               let window = viewIfLoaded?.window, !window.isHidden,
               window.windowScene?.activationState == .foregroundActive,
               !Self.hasPresentedController(window.rootViewController ?? self)

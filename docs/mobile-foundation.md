@@ -12,7 +12,7 @@ The old `7c4ed73` SwiftUI shell was not carried forward. Its default-store-only 
 
 The engine registers restored tabs without creating WKWebViews. Selection or an explicit navigation creates a view; visited background tabs retain their history. Only the selected view is mounted. Callbacks revalidate view identity and navigation generation, and queued observations read current values. Failed loads and a web-content-process termination callback expose Retry; the latter is distinct from detecting or testing a real process kill.
 
-Popup construction preserves WebKit's supplied configuration and lets WebKit perform the load. This follows Apple's [WKUIDelegate contract](https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:createwebviewwith:for:windowfeatures:)). Website data stores are injected; ordinary production scenes use the persistent default store. Nonpersistent stores in tests prove isolation, not a completed private-browsing UI. TLS/auth use WebKit defaults. Unsupported schemes produce an error instead of launching an external application or showing mock internal pages.
+Popup construction preserves WebKit's supplied configuration and lets WebKit perform the load. This follows Apple's [WKUIDelegate contract](https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:createwebviewwith:for:windowfeatures:)). Website data stores are injected; ordinary production scenes use the persistent default store. Nonpersistent stores in tests prove isolation, not a completed private-browsing UI. TLS trust, client certificates and proxy auth use WebKit defaults; HTTP Basic uses a native prompt, see [mobile-authentication.md](mobile-authentication.md). Unsupported schemes produce an error instead of launching an external application or showing mock internal pages.
 
 ## Storage and scene lifetime
 
@@ -48,7 +48,7 @@ Native downloads use the original WebKit transfer, a profile-owned coordinator, 
 
 Default WebKit text-file upload presentation, injected picker results and real multipart delivery are covered by [mobile-uploads.md](mobile-uploads.md). The production engine preserves WebKit's built-in chooser; physical provider/media selection remains unverified.
 
-Remaining mobile work includes browser split; full scene/external-link routing; private browsing; auth/permission presentation and site settings; broader upload providers/media; redownloading and active-transfer recovery; background/memory recovery; and observed gesture/visual polish. Physical Files/provider interaction and real OS multi-scene export lifecycle remain unverified. Auto-Archive policy and implementation are described below. Feature verification status belongs in the ledger. No placeholder controls claim these features exist.
+Remaining mobile work includes browser split; full scene/external-link routing; private browsing; permission presentation, non-Basic auth and site settings; broader upload providers/media; redownloading and active-transfer recovery; background/memory recovery; and observed gesture/visual polish. Physical Files/provider interaction and real OS multi-scene export lifecycle remain unverified. Auto-Archive policy and implementation are described below. Feature verification status belongs in the ledger. No placeholder controls claim these features exist.
 
 
 ## Durable local Archive
