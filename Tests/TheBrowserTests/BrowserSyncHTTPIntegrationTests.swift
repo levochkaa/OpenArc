@@ -338,6 +338,163 @@ import Testing
         try await fixture.complete(account)
     }
 
+    @Test(arguments: [false, true])
+    func actualModelDropPreservesMovedIdentityAgainstConflictingRemoteMove(localFirst: Bool) async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account(localFirst ? "explicit-local-first" : "explicit-remote-first")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        await first.activate()
+        let initial = syncHTTPExplicitSnapshot(source: ["a", "b", "c"], target: ["anchor"])
+        await first.saveAndSend(initial)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        await first.suspend()
+        await second.suspend()
+        // Restore the real model using a fake browser engine, then invoke its
+        // production drop entry point. The resulting SQLite row uses stable IDs.
+        try syncHTTPCaptureActualModelDrop(profile: first, movedID: "a", beforeID: "c")
+        let localQueue = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(localQueue.count == 1)
+        let localMutation = try syncHTTPSemanticMutation(localQueue[0])
+        #expect(localMutation.operations == [
+            .moveTabs(
+                ids: ["a"],
+                destination: .init(spaceID: "source", placement: .temporary),
+                beforeID: "c",
+                afterID: "b"
+            ),
+        ])
+        #expect(first.store.loadSnapshot()?.tabs.compactMap(\.id) == ["b", "a", "c", "anchor"])
+
+        let remotelyMoved = syncHTTPExplicitSnapshot(
+            source: ["b", "c"], target: ["a", "anchor"], titles: ["a": "remote metadata survives"]
+        )
+        second.store.saveSnapshot(remotelyMoved, syncMove: BrowserSyncMoveIntent(tabIDs: ["a"]))
+        let remoteQueue = try second.store.pendingSyncQueue(for: second.owner)
+        try #require(remoteQueue.count == 1 && remoteQueue[0].protocolVersion == 3)
+        if localFirst {
+            await first.activate()
+            await second.activate()
+        } else {
+            await second.activate()
+            await first.activate()
+        }
+        await first.pull()
+        await second.pull()
+        let expected = localFirst
+            ? remotelyMoved
+            : syncHTTPExplicitSnapshot(
+                source: ["b", "a", "c"], target: ["anchor"], titles: ["a": "remote metadata survives"]
+            )
+        #expect(first.store.loadSnapshot()?.tabs == expected.tabs)
+        #expect(second.store.loadSnapshot()?.tabs == expected.tabs)
+        #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
+        #expect(try second.store.pendingSyncQueue(for: second.owner).isEmpty)
+        let state = try await fixture.inspect(account)
+        let a = try #require(state.tabs.first { $0.id == "a" })
+        #expect(a.spaceID == (localFirst ? "target" : "source"))
+        #expect(a.title == "remote metadata survives" && !a.deleted && !a.tombstoned)
+        let delivered = state.attempts
+            .filter { $0.mutationID == localMutation.id || $0.mutationID == remoteQueue[0].id }
+        #expect(delivered.map(\.mutationID) == (localFirst
+                ? [localMutation.id, remoteQueue[0].id]
+                : [remoteQueue[0].id, localMutation.id]))
+        #expect(delivered.allSatisfy { $0.protocolVersion == 3 && $0.status == 201 })
+        await first.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
+    @Test func explicitGroupMoveKeepsFrozenIDsAcrossRemoteDeletesLostACKAndReopen() async throws {
+        let fixture = try SyncHTTPFixture.load()
+        let account = try fixture.account("explicit-group-replay")
+        let directory = SyncHTTPProfile.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var first: SyncHTTPProfile? = try SyncHTTPProfile(
+            fixture: fixture, device: account.devices[0], directory: directory
+        )
+        let owner = try #require(first?.owner)
+        await first?.activate()
+        let initial = syncHTTPExplicitSnapshot(source: ["g1", "g2", "g3"], target: ["left", "anchor", "tail"])
+        await first?.saveAndSend(initial)
+        let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        await second.activate()
+        await first?.suspend()
+        let optimistic = syncHTTPExplicitSnapshot(source: [], target: ["left", "g1", "g2", "g3", "anchor", "tail"])
+        first?.store.saveSnapshot(optimistic, syncMove: BrowserSyncMoveIntent(tabIDs: ["g1", "g2", "g3"]))
+        let storedQueue = try first?.store.pendingSyncQueue(for: owner)
+        let pending = try #require(storedQueue)
+        try #require(pending.count == 1)
+        let group = try syncHTTPSemanticMutation(pending[0])
+        #expect(group.operations == [
+            .moveTabs(
+                ids: ["g1", "g2", "g3"],
+                destination: .init(spaceID: "target", placement: .temporary),
+                beforeID: "anchor",
+                afterID: "left"
+            ),
+        ])
+        // The canonical member and preferred anchor disappear before replay.
+        // The surviving group must use its captured after-anchor and metadata.
+        let remoteDeletion = syncHTTPExplicitSnapshot(
+            source: ["g1", "g3"], target: ["left", "tail"], titles: ["g3": "remote survivor title"]
+        )
+        await second.saveAndSend(remoteDeletion)
+        try await fixture.command("drop", deviceID: account.devices[0].deviceID)
+        await first?.activate()
+        let afterDrop = try await fixture.inspect(account)
+        let committed = try #require(afterDrop.attempts.last { $0.mutationID == group.id })
+        #expect(committed.protocolVersion == 3 && committed.status == 201)
+        #expect(afterDrop.tabs.filter { !$0.deleted && $0.spaceID == "target" }.map(\.id) == [
+            "left",
+            "g1",
+            "g3",
+            "tail",
+        ])
+        #expect(afterDrop.tabs.first { $0.id == "g2" }?.tombstoned == true)
+        #expect(afterDrop.tabs.first { $0.id == "anchor" }?.tombstoned == true)
+        #expect(try first?.store.pendingSyncQueue(for: owner) == pending)
+        await first?.disconnect()
+        first = nil
+
+        await second.pull()
+        // Make an older receipt observably stale: a surviving member moves again.
+        let latest = syncHTTPExplicitSnapshot(
+            source: ["g3"], target: ["left", "g1", "tail"], titles: ["g3": "newer after committed group"]
+        )
+        second.store.saveSnapshot(latest, syncMove: BrowserSyncMoveIntent(tabIDs: ["g3"]))
+        try await second.sendSavedChanges()
+        let beforeRetry = try await fixture.inspect(account)
+        try await fixture.command("release", deviceID: account.devices[0].deviceID)
+        first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        #expect(
+            try first?.store.pendingSyncQueue(for: owner) == pending,
+            "Deleted IDs remain frozen in the durable row"
+        )
+        await first?.activate()
+        await first?.pull()
+        await second.pull()
+        let afterRetry = try await fixture.inspect(account)
+        let retries = afterRetry.attempts.filter { $0.mutationID == group.id }
+        #expect(retries.count > beforeRetry.attempts.filter { $0.mutationID == group.id }.count)
+        #expect(Set(retries.map(\.digest)) == [committed.digest])
+        #expect(retries.allSatisfy { $0.protocolVersion == 3 && $0.status == 201 })
+        #expect(afterRetry.eventCount == beforeRetry.eventCount && afterRetry.receiptCount == beforeRetry.receiptCount)
+        #expect(first?.store.loadSnapshot()?.tabs == latest.tabs)
+        #expect(second.store.loadSnapshot()?.tabs == latest.tabs)
+        #expect(try first?.store.pendingSyncQueue(for: owner).isEmpty == true)
+        #expect(try second.store.pendingSyncQueue(for: second.owner).isEmpty)
+        #expect(afterRetry.tabs.first { $0.id == "g2" }?.tombstoned == true)
+        #expect(afterRetry.tabs.first { $0.id == "anchor" }?.tombstoned == true)
+        #expect(afterRetry.tabs.first { $0.id == "g3" }?.spaceID == "source")
+        #expect(afterRetry.tabs.first { $0.id == "g3" }?.title == "newer after committed group")
+        await first?.disconnect()
+        await second.disconnect()
+        try await fixture.complete(account)
+    }
+
     @Test func offlineDeletionSurvivesSQLiteReopenAndRemoteEdits() async throws {
         let fixture = try SyncHTTPFixture.load()
         let account = try fixture.account("offline-delete")
@@ -768,6 +925,7 @@ private struct SyncHTTPFixture: Decodable {
 
 private enum SyncHTTPError: Error {
     case acknowledgementWasNotHeld
+    case expectedSemanticMutation
 }
 
 private func syncHTTPSnapshot(
@@ -815,4 +973,77 @@ private func syncHTTPSemanticSnapshot(
         ],
         tabs: deleted ? [sentinel, anchor] : (moved ? [sentinel, moving, anchor] : [moving, sentinel, anchor])
     )
+}
+
+private let syncHTTPModelDate = Date(timeIntervalSince1970: 1_800_000_000)
+
+private func syncHTTPExplicitSnapshot(
+    source: [String], target: [String], titles: [String: String] = [:]
+) -> BrowserTabSessionSnapshot {
+    BrowserTabSessionSnapshot(
+        spaces: [
+            BrowserSpaceSessionSnapshot(
+                id: "source",
+                title: "Source",
+                systemImageName: "globe",
+                selectedTabIndex: source.isEmpty
+                    ? nil
+                    : 0
+            ),
+            BrowserSpaceSessionSnapshot(
+                id: "target",
+                title: "Target",
+                systemImageName: "star",
+                selectedTabIndex: target.isEmpty
+                    ? nil
+                    : 0
+            ),
+        ],
+        tabs: [("source", source), ("target", target)].flatMap { space, ids in
+            ids.map { id in BrowserTabSessionSnapshotTab(
+                id: id, urlString: "https://\(id).example", userTitleOverride: titles[id], spaceID: space,
+                lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970
+            ) }
+        }
+    )
+}
+
+private func syncHTTPSemanticMutation(_ queued: BrowserSyncQueuedMutation) throws -> BrowserSyncSemanticMutation {
+    guard case .semantic(let mutation) = queued else {
+        Issue.record("Expected durable semantic mutation")
+        throw SyncHTTPError.expectedSemanticMutation
+    }
+    return mutation
+}
+
+@MainActor private func syncHTTPCaptureActualModelDrop(
+    profile: SyncHTTPProfile, movedID: String, beforeID: String
+) throws {
+    let suite = "BrowserSyncHTTPModel.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let driver = FakeBrowserTabDriver()
+    let model = BrowserChromeModel(
+        tabDriver: driver, sessionSnapshotStore: profile.store, sessionPreferencesStore: profile.store,
+        commandBarSuggestionProvider: FakeSuggestionProvider(),
+        userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+        shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+        extensionManager: FakeBrowserExtensionManager(), syncCoordinator: profile.service,
+        dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+    )
+    defer { model.prepareForTermination() }
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let moved = try #require(model.tabs.first { $0.syncID == movedID })
+    let anchor = try #require(model.tabs.first { $0.syncID == beforeID })
+    let selectedBefore = model.tabs.first { $0.id == model.selectedTabID }?.syncID
+    #expect(model.commitSidebarDrop(
+        payload: BrowserSidebarDragPayload(primary: .tab(moved.id), tabIDs: [moved.id]),
+        destination: BrowserSidebarDropDestination(container: .temporary("source"), beforeItem: .tab(anchor.id))
+    ))
+    #expect(
+        model.tabs.first { $0.id == model.selectedTabID }?.syncID == selectedBefore,
+        "The real model retains selection across a local drop"
+    )
+    #expect(model.tabs.filter { $0.spaceID == "source" }.map(\.syncID) == ["b", "a", "c"])
 }

@@ -48,7 +48,7 @@ const legacyAuthorizations = new Set<string>();
 const scenarios = [
   ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
-  "coordinator-space-delete-move"
+  "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay"
 ];
 
 async function body(message: IncomingMessage): Promise<Buffer> {
