@@ -4,6 +4,17 @@ import Foundation
 // MARK: - BrowserChromeModel Types
 
 extension BrowserChromeModel {
+    /// A local Split View: one sidebar item showing several tabs in one window.
+    /// Members are sync IDs in pane order because runtime IDs change when a
+    /// dormant tab reopens. Groups are never sent through sync.
+    struct SplitGroup: Identifiable, Equatable {
+        let id: String
+        var tabSyncIDs: [String]
+        var orientation = BrowserTabSplitOrientation.horizontal
+        var fractions: [Double]?
+        var focusedTabSyncID: String?
+    }
+
     struct Tab: Identifiable, Equatable {
         // MARK: Internal
 

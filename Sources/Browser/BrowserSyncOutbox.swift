@@ -245,7 +245,10 @@ enum BrowserSyncOutboxProjection {
                         .map {
                             !deletedFolderIDs.contains($0) && !deleted.contains(key(type: .folder, id: $0))
                         } != false)
-            }
+            },
+            // Local split state follows the local writer; the store prunes
+            // members that this filter removed.
+            splitGroups: snapshot.splitGroups
         )
     }
 

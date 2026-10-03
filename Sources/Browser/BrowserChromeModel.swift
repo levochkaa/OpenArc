@@ -214,6 +214,10 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var spaces = [Space]()
     @Published private(set) var pinnedTabFolders = [PinnedTabFolder]()
+    /// Raw local Split View state. Only `BrowserChromeModel+SplitGroups.swift`
+    /// mutates it; readers use `splitGroup(containingTabID:)`, which validates
+    /// members against the current tabs.
+    @Published var splitGroups = [SplitGroup]()
     @Published private(set) var selectedSpaceID: String?
     @Published private(set) var tabSwitcherState: TabSwitcherState?
     @Published var isSidebarVisible = true
@@ -297,10 +301,15 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var selectedTabID: String? {
         willSet {
             guard selectedTabID != newValue, canRecordViewingActivity else { return }
-            for id in [selectedTabID, newValue].compactMap({ $0 }) {
+            // Every pane of a split is on screen while one member is focused.
+            let ids = [selectedTabID, newValue].compactMap { $0 }.flatMap { splitPaneTabIDs(forTabID: $0) }
+            for id in Set(ids) {
                 guard tabs.first(where: { $0.id == id })?.creationState == .ready else { continue }
                 touchTab(id: id)
             }
+        }
+        didSet {
+            recordSplitFocus(tabID: selectedTabID)
         }
     }
 
@@ -2226,6 +2235,12 @@ enum BrowserWindowMode: Equatable {
         sessionPreferencesStore.saveSidebarWidth(sidebarWidth)
     }
 
+    /// Split View edits persist like other local tree edits. The store keeps
+    /// them out of sync because sync payloads never include split groups.
+    func persistSplitGroupChange() {
+        persistCurrentSessionIfAllowed()
+    }
+
     // MARK: Private
 
     private struct LocalAutomaticArchiveCandidate {
@@ -2449,6 +2464,7 @@ enum BrowserWindowMode: Equatable {
         let activity = tab.lastActivityAt.timeIntervalSince1970
         return now.isFinite && activity.isFinite && tab.spaceID == selectedSpaceID &&
             tab.placement == .temporary && tab.id != selectedTabID &&
+            !(selectedTabID.map { splitPaneTabIDs(forTabID: $0).contains(tab.id) } ?? false) &&
             activity <= now - temporaryTabLifetime.timeInterval
     }
 
@@ -2976,6 +2992,7 @@ enum BrowserWindowMode: Equatable {
         hasCreatedInitialTab = true
         spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
+        splitGroups = restoredSplitGroups(from: snapshot)
         let selectedSpaceIndex = sessionPreferencesStore.loadSelectedSpaceIndex(
             spaceCount: spaces.count
         ) ?? 0
@@ -3185,11 +3202,15 @@ enum BrowserWindowMode: Equatable {
         return BrowserTabSessionSnapshot(
             spaces: spaceSnapshots,
             pinnedTabFolders: current.pinnedTabFolders,
-            tabs: mergedTabs
+            tabs: mergedTabs,
+            splitGroups: current.splitGroups
         )
     }
 
     private func currentSessionSnapshot() -> BrowserTabSessionSnapshot {
+        if !isRestoringSession {
+            pruneSplitGroupsIfNeeded()
+        }
         var tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
         var snapshotTabs = tabs
         // Pending remote tabs may not have a model row yet. Preserve known ranks
@@ -3228,7 +3249,8 @@ enum BrowserWindowMode: Equatable {
                     lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
                     pinnedSiblingRank: tab.pinnedSiblingRank
                 )
-            }
+            },
+            splitGroups: splitGroupSessionSnapshots()
         )
     }
 
@@ -4037,7 +4059,7 @@ enum BrowserWindowMode: Equatable {
                         isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                         selectedTabIndex: visible.firstIndex { $0.id == selectedID }
                     )
-                }, pinnedTabFolders: current.pinnedTabFolders, tabs: nextTabs
+                }, pinnedTabFolders: current.pinnedTabFolders, tabs: nextTabs, splitGroups: current.splitGroups
             )
             try sessionSnapshotStore.writeSessionBatch([.init(
                 snapshot: next, origin: .local(syncMove: nil),
@@ -4254,7 +4276,7 @@ extension BrowserChromeModel {
                         selectedTabIndex: nextTabs.filter { $0.spaceID == destination && $0.placement != .app }
                             .count - 1
                     )
-                }, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: nextTabs
+                }, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: nextTabs, splitGroups: snapshot.splitGroups
             )
             // Archive transitions cannot be buffered independently of the live
             // tree: a later full snapshot could otherwise drop a consumed restore.
@@ -4328,7 +4350,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                       $0.creationState == .ready || closedAppTabIDs.contains($0.id) || closedPinnedTabIDs
                           .contains($0.id) })
         else { return nil }
-        let protectedIDs = Set(tabs.filter { $0.id == selectedTabID }.map(\.syncID))
+        let visibleIDs = Set(selectedTabID.map { splitPaneTabIDs(forTabID: $0) } ?? [])
+        let protectedIDs = Set(tabs.filter { visibleIDs.contains($0.id) }.map(\.syncID))
         guard let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading else { return nil }
         let owner: BrowserSyncOwner?
         do { owner = try ownership.syncOwner() } catch { return nil }

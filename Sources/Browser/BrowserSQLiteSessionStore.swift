@@ -723,6 +723,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         category: "SQLiteSession"
     )
 
+    private static let splitGroupsTable = "browser_tab_split_groups"
+
     private static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
         migrator.registerMigration("createSessionTables") { db in
@@ -912,6 +914,17 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             CREATE TABLE browser_sync_automatic_expiry (
                 mutation_id TEXT PRIMARY KEY NOT NULL,
                 attempted INTEGER NOT NULL CHECK(attempted IN (0,1))
+            );
+            """)
+        }
+        migrator.registerMigration("addTabSplitGroups") { db in
+            // Local Split View groups. The payload is a validated JSON group whose
+            // members are tab IDs; sync never reads or writes this table.
+            try db.execute(sql: """
+            CREATE TABLE \(Self.splitGroupsTable) (
+                id TEXT PRIMARY KEY NOT NULL,
+                position INTEGER NOT NULL,
+                payload BLOB NOT NULL
             );
             """)
         }
@@ -1335,6 +1348,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 isExpanded: row["is_expanded"], pinnedSiblingRank: row["pinned_sibling_rank"]
             )
         }
+        let splitGroups = try readSplitGroups(db)
 
         return BrowserTabSessionSnapshot(
             spaces: spaces.isEmpty ? nil : spaces,
@@ -1350,8 +1364,50 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     pinnedFolderID: row["pinned_folder_id"],
                     lastActivityTimestamp: row["last_activity_timestamp"], pinnedSiblingRank: row["pinned_sibling_rank"]
                 )
-            }
+            },
+            splitGroups: splitGroups.isEmpty ? nil : splitGroups
         )
+    }
+
+    /// Earlier migrations may read a snapshot before the split table exists.
+    /// A malformed local group is dropped instead of failing session restore.
+    private func readSplitGroups(_ db: Database) throws -> [BrowserTabSplitGroupSessionSnapshot] {
+        guard try db.tableExists(Self.splitGroupsTable) else { return [] }
+        return try Row.fetchAll(
+            db,
+            sql: "SELECT id, payload FROM \(Self.splitGroupsTable) ORDER BY position ASC"
+        )
+        .compactMap { row in
+            guard let group = try? JSONDecoder().decode(
+                BrowserTabSplitGroupSessionSnapshot.self,
+                from: row["payload"] as Data
+            ), group.id == row["id"] as String else { return nil }
+            return group
+        }
+    }
+
+    /// A snapshot without split state (remote projection, mobile, archive
+    /// transitions) keeps the stored groups. Either way only members that are
+    /// still present survive, and a group needs two of them.
+    private func writeSplitGroups(for snapshot: BrowserTabSessionSnapshot, to db: Database) throws {
+        guard try db.tableExists(Self.splitGroupsTable) else { return }
+        let groups = try snapshot.splitGroups ?? readSplitGroups(db)
+        let tabIDs = Set(snapshot.tabs.compactMap(\.id))
+        try db.execute(sql: "DELETE FROM \(Self.splitGroupsTable)")
+        var seenGroupIDs = Set<String>()
+        var claimedTabIDs = Set<String>()
+        var position = 0
+        for group in groups {
+            guard seenGroupIDs.insert(group.id).inserted,
+                  let kept = group.keeping(tabIDs: tabIDs.subtracting(claimedTabIDs))
+            else { continue }
+            claimedTabIDs.formUnion(kept.tabIDs)
+            try db.execute(
+                sql: "INSERT INTO \(Self.splitGroupsTable) (id, position, payload) VALUES (?, ?, ?)",
+                arguments: [kept.id, position, JSONEncoder().encode(kept)]
+            )
+            position += 1
+        }
     }
 
     private func initializeSyncOutbox(in db: Database) throws {
@@ -1565,6 +1621,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 ]
             )
         }
+        try writeSplitGroups(for: snapshot, to: db)
     }
 
     private func hasStoredSpaces(_ db: Database) throws -> Bool {

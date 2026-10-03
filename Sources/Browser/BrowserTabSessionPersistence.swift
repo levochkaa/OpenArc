@@ -196,12 +196,14 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         version: Int = currentVersion,
         spaces: [BrowserSpaceSessionSnapshot]? = nil,
         pinnedTabFolders: [BrowserPinnedTabFolderSessionSnapshot]? = nil,
-        tabs: [BrowserTabSessionSnapshotTab]
+        tabs: [BrowserTabSessionSnapshotTab],
+        splitGroups: [BrowserTabSplitGroupSessionSnapshot]? = nil
     ) {
         self.version = version
         self.spaces = spaces
         self.pinnedTabFolders = pinnedTabFolders
         self.tabs = tabs
+        self.splitGroups = splitGroups
     }
 
     init(version: Int = currentVersion, tabURLStrings: [String]) {
@@ -218,6 +220,10 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         self.pinnedTabFolders = try container.decodeIfPresent(
             [BrowserPinnedTabFolderSessionSnapshot].self,
             forKey: .pinnedTabFolders
+        )
+        self.splitGroups = try container.decodeIfPresent(
+            [BrowserTabSplitGroupSessionSnapshot].self,
+            forKey: .splitGroups
         )
 
         if let tabs = try container.decodeIfPresent([BrowserTabSessionSnapshotTab].self, forKey: .tabs) {
@@ -237,6 +243,9 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
     let spaces: [BrowserSpaceSessionSnapshot]?
     let pinnedTabFolders: [BrowserPinnedTabFolderSessionSnapshot]?
     let tabs: [BrowserTabSessionSnapshotTab]
+    /// Local Split View groups. nil means the writer does not own split state,
+    /// so durable stores keep their groups; sync never carries this field.
+    let splitGroups: [BrowserTabSplitGroupSessionSnapshot]?
 
     var tabURLStrings: [String] {
         tabs.map(\.urlString)
@@ -249,6 +258,7 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         try container.encodeIfPresent(pinnedTabFolders, forKey: .pinnedTabFolders)
         try container.encode(tabs, forKey: .tabs)
         try container.encode(tabURLStrings, forKey: .tabURLStrings)
+        try container.encodeIfPresent(splitGroups, forKey: .splitGroups)
     }
 
     // MARK: Private
@@ -259,6 +269,99 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         case pinnedTabFolders
         case tabs
         case tabURLStrings
+        case splitGroups
+    }
+}
+
+// MARK: - BrowserTabSplitOrientation
+
+/// Horizontal panes sit side by side; vertical panes are stacked.
+enum BrowserTabSplitOrientation: String, Codable, Sendable {
+    case horizontal
+    case vertical
+}
+
+// MARK: - BrowserTabSplitGroupSessionSnapshot
+
+/// One Split View in pane order. Members are tab sync IDs. Decoding tolerates
+/// unknown orientations and malformed fractions so one bad group cannot fail
+/// a whole session restore.
+struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
+    // MARK: Lifecycle
+
+    init(
+        id: String,
+        tabIDs: [String],
+        orientation: BrowserTabSplitOrientation = .horizontal,
+        fractions: [Double]? = nil,
+        focusedTabID: String? = nil
+    ) {
+        self.id = id
+        self.tabIDs = tabIDs
+        self.orientation = orientation
+        self.fractions = Self.validFractions(fractions, count: tabIDs.count)
+        self.focusedTabID = focusedTabID.flatMap { tabIDs.contains($0) ? $0 : nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let tabIDs = try container.decode([String].self, forKey: .tabIDs)
+        try self.init(
+            id: container.decode(String.self, forKey: .id),
+            tabIDs: tabIDs,
+            orientation: (try? container.decodeIfPresent(BrowserTabSplitOrientation.self, forKey: .orientation))
+                .flatMap { $0 } ?? .horizontal,
+            fractions: (try? container.decodeIfPresent([Double].self, forKey: .fractions)).flatMap { $0 },
+            focusedTabID: (try? container.decodeIfPresent(String.self, forKey: .focusedTabID)).flatMap { $0 }
+        )
+    }
+
+    // MARK: Internal
+
+    static let maximumTabCount = 4
+
+    let id: String
+    let tabIDs: [String]
+    let orientation: BrowserTabSplitOrientation
+    let fractions: [Double]?
+    let focusedTabID: String?
+
+    /// Pane fractions must name every pane, be finite and positive, and sum to 1.
+    static func validFractions(_ fractions: [Double]?, count: Int) -> [Double]? {
+        guard let fractions, fractions.count == count, count > 1,
+              fractions.allSatisfy({ $0.isFinite && $0 > 0 })
+        else { return nil }
+        let total = fractions.reduce(0, +)
+        guard total.isFinite, total > 0 else { return nil }
+        return fractions.map { $0 / total }
+    }
+
+    /// Drops members the stored tree no longer contains. A group needs two panes.
+    func keeping(tabIDs existing: Set<String>) -> Self? {
+        var seen = Set<String>()
+        let members = tabIDs.filter { existing.contains($0) && seen.insert($0).inserted }
+        guard members.count >= 2 else { return nil }
+        guard members != tabIDs else { return self }
+        return Self(id: id, tabIDs: members, orientation: orientation, focusedTabID: focusedTabID)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(tabIDs, forKey: .tabIDs)
+        try container.encode(orientation, forKey: .orientation)
+        try container.encodeIfPresent(fractions, forKey: .fractions)
+        try container.encodeIfPresent(focusedTabID, forKey: .focusedTabID)
+    }
+
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case tabIDs
+        case orientation
+        case fractions
+        case focusedTabID
     }
 }
 
