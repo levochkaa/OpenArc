@@ -126,6 +126,12 @@
 "downloads.error.transfer" = "The download failed.";
 "downloads.error.save" = "The file downloaded, but its saved record could not be written. Try again.";
 "downloads.error.missingFile" = "The downloaded file is no longer available.";
-"downloads.error.cleanup" = "Couldn’t remove an incomplete download.";
+"downloads.error.cleanup" = "Couldn’t remove a download file. Try again.";
 "Saving…" = "Saving…";
 "This file could not be prepared. Try Save to Files again." = "This file could not be prepared. Try Save to Files again.";
+"Delete Download?" = "Delete Download?";
+"Delete “%@” from this browser? Copies saved to Files will remain." = "Delete “%@” from this browser? Copies saved to Files will remain.";
+"Deleting…" = "Deleting…";
+"This download can no longer be deleted." = "This download can no longer be deleted.";
+"downloads.error.remove" = "Couldn’t delete this download. Try again.";
+"This download cannot be saved while its removal is pending." = "This download cannot be saved while its removal is pending.";

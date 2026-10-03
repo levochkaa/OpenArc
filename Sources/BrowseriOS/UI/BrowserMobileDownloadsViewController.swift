@@ -12,7 +12,10 @@ import UIKit
     func removeObserver(_ id: UUID)
     func cancel(id: UUID)
     func retryPersistence() async
-    func exportURL(id: UUID) async throws -> URL
+    func acquireExport(id: UUID) async throws -> BrowserMobileDownloadExportLease
+    func canDelete(id: UUID) -> Bool
+    func isDeleting(id: UUID) -> Bool
+    func remove(id: UUID) async -> Bool
 }
 
 // MARK: - BrowserMobileDownloads + BrowserMobileDownloadsPresenting
@@ -22,7 +25,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 // MARK: - BrowserMobileDownloadsViewController
 
 @MainActor final class BrowserMobileDownloadsViewController: UITableViewController,
-    UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate
+    UIAdaptivePresentationControllerDelegate
 {
     // MARK: Lifecycle
 
@@ -131,16 +134,88 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         return cell
     }
 
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { finishExport(controller) }
+    override func tableView(
+        _: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        guard entries.indices.contains(indexPath.row), downloads.canDelete(id: entries[indexPath.row].id) else {
+            return nil
+        }
+        let id = entries[indexPath.row].id
+        let action = UIContextualAction(style: .destructive, title: Self.localized("Delete")) {
+            [weak self] _, _, completion in
+            _ = self?.requestDeletion(id: id)
+            // Opening confirmation has not removed a row.
+            completion(false)
+        }
+        let configuration = UISwipeActionsConfiguration(actions: [action])
+        configuration.performsFirstActionWithFullSwipe = false
+        return configuration
+    }
 
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt _: [URL]) {
-        finishExport(controller)
+    override func tableView(
+        _: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point _: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard entries.indices.contains(indexPath.row) else { return nil }
+        let entry = entries[indexPath.row]
+        guard entry.status == .completed || downloads.canDelete(id: entry.id) else { return nil }
+        return UIContextMenuConfiguration(identifier: entry.id as NSUUID, previewProvider: nil) { [weak self] _ in
+            guard let self else { return nil }
+            let attributes: UIMenuElement.Attributes = downloads.canDelete(id: entry.id)
+                ? .destructive
+                : [.destructive, .disabled]
+            return UIMenu(children: [UIAction(
+                title: Self.localized("Delete"),
+                image: UIImage(systemName: "trash"),
+                attributes: attributes
+            ) { [weak self] _ in
+                _ = self?.requestDeletion(id: entry.id)
+            }])
+        }
+    }
+
+    func confirmDeletion(id: UUID, dismissing alert: UIAlertController) {
+        guard deleteConfirmation === alert, deleteConfirmationID == id else { return }
+        let originalWindow = deleteConfirmationWindow
+        deleteConfirmation = nil
+        deleteConfirmationID = nil
+        deleteConfirmationWindow = nil
+        alert.dismiss(animated: true) { [weak self, weak originalWindow] in
+            guard let self, let originalWindow, viewIfLoaded?.window === originalWindow,
+                  canPresent, deleteTask == nil else { return }
+            guard downloads.entries.contains(where: { $0.id == id }), downloads.canDelete(id: id) else {
+                interactionError = Self.localized("This download can no longer be deleted.")
+                interactionErrorDownloadID = id
+                render()
+                return
+            }
+            interactionError = nil
+            deleteTask = Task { [weak self, downloads] in
+                let removed = await downloads.remove(id: id)
+                guard let self else { return }
+                deleteTask = nil
+                if !removed {
+                    // Shared persistence errors must clear when another window
+                    // retries successfully. Keep only local admission errors here.
+                    interactionError = downloads.error == nil
+                        ? Self.localized("This download can no longer be deleted.")
+                        : nil
+                    interactionErrorDownloadID = interactionError == nil ? nil : id
+                }
+                render()
+            }
+        }
+    }
+
+    func cancelDeletion(dismissing alert: UIAlertController) {
+        guard deleteConfirmation === alert else { return }
+        deleteConfirmation = nil
+        deleteConfirmationID = nil
+        deleteConfirmationWindow = nil
+        alert.dismiss(animated: true)
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        if let picker = presentationController.presentedViewController as? UIDocumentPickerViewController {
-            finishExport(picker)
-        } else if presentationController.presentedViewController === navigationController ||
+        if presentationController.presentedViewController === navigationController ||
             presentationController.presentedViewController === self
         {
             invalidate()
@@ -150,6 +225,10 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     func invalidate() {
         guard !isClosing else { return }
         isClosing = true
+        deleteConfirmation = nil
+        deleteConfirmationID = nil
+        deleteConfirmationWindow = nil
+        exportPicker = nil
         cancelPendingExport()
         loadTask?.cancel()
         retryTask?.cancel()
@@ -169,12 +248,17 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     private var loadTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
     private var exportTask: Task<Void, Never>?
+    private var deleteTask: Task<Void, Never>?
+    private weak var deleteConfirmation: UIAlertController?
+    private var deleteConfirmationID: UUID?
+    private weak var deleteConfirmationWindow: UIWindow?
     private var exportAttempt: UUID?
     private var exportingID: UUID?
     private weak var exportPicker: UIDocumentPickerViewController?
     private var isClosing = false
     private var sceneAllowsPresentation = true
     private var interactionError: String?
+    private var interactionErrorDownloadID: UUID?
     private let statusLabel = UILabel()
     private let retryButton = UIButton(type: .system)
     private let statusStack = UIStackView()
@@ -197,6 +281,10 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 
     private func render() {
         guard isViewLoaded, !isClosing else { return }
+        if let id = interactionErrorDownloadID, !downloads.entries.contains(where: { $0.id == id }) {
+            interactionError = nil
+            interactionErrorDownloadID = nil
+        }
         let previousIDs = entries.map(\.id)
         entries = downloads.entries
         if previousIDs != entries.map(\.id) {
@@ -218,9 +306,17 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     }
 
     private func configure(_ cell: BrowserMobileDownloadCell, entry: BrowserMobileDownload) {
-        cell.configure(entry: entry, exportPending: exportingID == entry.id, exportAvailable: exportingID == nil)
+        cell.configure(
+            entry: entry,
+            exportPending: exportingID == entry.id,
+            exportAvailable: exportingID == nil,
+            deleting: downloads.isDeleting(id: entry.id)
+        )
         let id = entry.id
         cell.action = { [weak self] in self?.performAction(id: id) }
+        cell.deleteAction = downloads.canDelete(id: id)
+            ? { [weak self] in self?.requestDeletion(id: id) ?? false }
+            : nil
     }
 
     private func performAction(id: UUID) {
@@ -235,6 +331,34 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         }
     }
 
+    @discardableResult private func requestDeletion(id: UUID) -> Bool {
+        guard canPresent, let window = view.window, deleteTask == nil, deleteConfirmation == nil,
+              downloads.canDelete(id: id),
+              let entry = downloads.entries.first(where: { $0.id == id }) else { return false }
+        let alert = UIAlertController(
+            title: Self.localized("Delete Download?"),
+            message: String(
+                format: Self.localized("Delete “%@” from this browser? Copies saved to Files will remain."),
+                entry.filename
+            ), preferredStyle: .alert
+        )
+        alert.view.accessibilityIdentifier = "browser.downloads.delete-confirmation"
+        deleteConfirmation = alert
+        deleteConfirmationID = id
+        deleteConfirmationWindow = window
+        alert.addAction(UIAlertAction(title: Self.localized("Delete"), style: .destructive) {
+            [weak self, weak alert] _ in
+            guard let alert else { return }
+            self?.confirmDeletion(id: id, dismissing: alert)
+        })
+        alert.addAction(UIAlertAction(title: Self.localized("Cancel"), style: .cancel) { [weak self, weak alert] _ in
+            guard let alert else { return }
+            self?.cancelDeletion(dismissing: alert)
+        })
+        present(alert, animated: true)
+        return true
+    }
+
     private func beginExport(id: UUID) {
         guard canPresent, exportingID == nil, let window = view.window,
               downloads.entries.first(where: { $0.id == id })?.status == .completed else { return }
@@ -245,7 +369,13 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         render()
         exportTask = Task { [weak self, weak window, downloads] in
             do {
-                let url = try await downloads.exportURL(id: id)
+                let lease = try await downloads.acquireExport(id: id)
+                var transferred = false
+                defer {
+                    if !transferred {
+                        lease.finish()
+                    }
+                }
                 guard let self, exportAttempt == attempt else { return }
                 guard !Task.isCancelled, let window, viewIfLoaded?.window === window, canPresent,
                       downloads.entries.first(where: { $0.id == id })?.status == .completed
@@ -254,20 +384,21 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
                     render()
                     return
                 }
-                let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
-                picker.loadViewIfNeeded()
-                picker.shouldShowFileExtensions = true
-                picker.modalPresentationStyle = .formSheet
-                picker.delegate = self
-                picker.view.accessibilityIdentifier = "browser.downloads.export"
+                let picker = BrowserMobileDownloadExportPicker(lease: lease) { [weak self] picker in
+                    self?.finishExport(picker)
+                }
+                transferred = true
                 exportPicker = picker
                 exportTask = nil
                 exportPresenter(self, picker)
-                picker.presentationController?.delegate = self
+                picker.presentationController?.delegate = picker
             } catch {
                 guard let self, exportAttempt == attempt else { return }
                 cancelPendingExport()
-                interactionError = Self.localized("This file could not be prepared. Try Save to Files again.")
+                interactionError = error as? BrowserMobileDownloadError == .busy
+                    ? Self.localized("This download cannot be saved while its removal is pending.")
+                    : Self.localized("This file could not be prepared. Try Save to Files again.")
+                interactionErrorDownloadID = id
                 render()
             }
         }
@@ -335,6 +466,71 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     }
 }
 
+// MARK: - BrowserMobileDownloadExportPicker
+
+@MainActor private final class BrowserMobileDownloadExportPicker: UIDocumentPickerViewController,
+    UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate
+{
+    // MARK: Lifecycle
+
+    init(
+        lease: BrowserMobileDownloadExportLease,
+        onFinish: @escaping @MainActor (UIDocumentPickerViewController) -> Void
+    ) {
+        self.lease = lease
+        self.onFinish = onFinish
+        super.init(forExporting: [lease.url], asCopy: true)
+        loadViewIfNeeded()
+        shouldShowFileExtensions = true
+        modalPresentationStyle = .formSheet
+        delegate = self
+        view.accessibilityIdentifier = "browser.downloads.export"
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    isolated deinit { lease?.finish() }
+
+    // MARK: Internal
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        presentationController?.delegate = self
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        if controller === self {
+            finish()
+        }
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt _: [URL]) {
+        if controller === self {
+            finish()
+        }
+    }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        if presentationController.presentedViewController === self {
+            finish()
+        }
+    }
+
+    // MARK: Private
+
+    private var lease: BrowserMobileDownloadExportLease?
+    private var onFinish: (@MainActor (UIDocumentPickerViewController) -> Void)?
+
+    private func finish() {
+        guard let lease else { return }
+        self.lease = nil
+        lease.finish()
+        let callback = onFinish
+        onFinish = nil
+        callback?(self)
+    }
+}
+
 // MARK: - BrowserMobileDownloadCell
 
 @MainActor private final class BrowserMobileDownloadCell: UITableViewCell {
@@ -387,7 +583,19 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 
     var action: (() -> Void)?
 
-    func configure(entry: BrowserMobileDownload, exportPending: Bool, exportAvailable: Bool) {
+    var deleteAction: (() -> Bool)? {
+        didSet {
+            filenameLabel.accessibilityCustomActions = deleteAction == nil
+                ? nil
+                : [
+                    UIAccessibilityCustomAction(name: Self.localized("Delete")) { [deleteAction] _ in
+                        deleteAction?() ?? false
+                    },
+                ]
+        }
+    }
+
+    func configure(entry: BrowserMobileDownload, exportPending: Bool, exportAvailable: Bool, deleting: Bool) {
         let prefix = "browser.downloads." + entry.id.uuidString
         accessibilityIdentifier = prefix
         filenameLabel.text = entry.filename
@@ -404,7 +612,12 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         }
         progress.isHidden = entry.status != .downloading || (entry.totalBytes ?? 0) <= 0
         actionButton.isHidden = entry.status != .downloading && entry.status != .completed
-        actionButton.isEnabled = entry.status == .downloading || exportAvailable
+        actionButton.isEnabled = !deleting && (entry.status == .downloading || exportAvailable)
+        if deleting {
+            statusLabel.text = Self.localized("Deleting…")
+            progress.isHidden = true
+            return
+        }
         switch entry.status {
         case .downloading:
             statusLabel.text = Self.localized("Downloading") + " · " + amount

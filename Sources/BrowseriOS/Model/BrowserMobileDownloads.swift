@@ -15,6 +15,35 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
     var error: String?
 }
 
+// MARK: - BrowserMobileDownloadExportLease
+
+@MainActor final class BrowserMobileDownloadExportLease {
+    // MARK: Lifecycle
+
+    init(url: URL, downloadID: UUID, onFinish: @escaping @MainActor () -> Void) {
+        self.url = url
+        self.downloadID = downloadID
+        self.onFinish = onFinish
+    }
+
+    isolated deinit { onFinish?() }
+
+    // MARK: Internal
+
+    let url: URL
+    let downloadID: UUID
+
+    func finish() {
+        let callback = onFinish
+        onFinish = nil
+        callback?()
+    }
+
+    // MARK: Private
+
+    private var onFinish: (@MainActor () -> Void)?
+}
+
 // MARK: - BrowserMobileDownloads
 
 /// A profile owns this coordinator independently of its windows and page views.
@@ -28,13 +57,21 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         super.init()
     }
 
+    init(disk: any BrowserMobileDownloadStoring) {
+        self.disk = disk
+        super.init()
+    }
+
     // MARK: Internal
 
     private(set) var entries = [BrowserMobileDownload]()
     private(set) var isLoading = false
     private(set) var error: String?
 
-    var canRetryPersistence: Bool { !hasLoaded || !completionFailures.isEmpty || !pendingDiscards.isEmpty }
+    var canRetryPersistence: Bool {
+        !hasLoaded || !completionFailures.isEmpty || !pendingDiscards.isEmpty || !diskCleanupIDs.isEmpty
+            || !failedRemovals.isEmpty
+    }
 
     /// A generated transfer may have no committed source page. Filtering only
     /// the engine's supplied URL would let its original-request fallback retain
@@ -56,6 +93,59 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         return nil
     }
 
+    func canDelete(id: UUID) -> Bool {
+        hasLoaded && persistedIDs.contains(id) && !removingIDs.contains(id)
+            && !exportTokens.values.contains(id) && pendingCompletions[id] == nil
+            && !transfers.values.contains(where: { $0.id == id })
+    }
+
+    func isDeleting(id: UUID) -> Bool { removingIDs.contains(id) }
+
+    func remove(id: UUID) async -> Bool {
+        guard canDelete(id: id) else {
+            return hasLoaded && !persistedIDs.contains(id) && !entries.contains(where: { $0.id == id })
+        }
+        removingIDs.insert(id)
+        notify()
+        defer { removingIDs.remove(id)
+            notify()
+        }
+        do {
+            let state = try await disk.removeState(id: id)
+            failedRemovals.remove(id)
+            publish(state)
+            refreshError()
+            return true
+        } catch {
+            failedRemovals.insert(id)
+            refreshError()
+            return false
+        }
+    }
+
+    func acquireExport(id: UUID) async throws -> BrowserMobileDownloadExportLease {
+        guard !removingIDs.contains(id), !failedRemovals.contains(id) else {
+            throw BrowserMobileDownloadError.busy
+        }
+        guard persistedIDs.contains(id), entries.contains(where: { $0.id == id && $0.status == .completed }) else {
+            throw BrowserMobileDownloadError.notCompleted
+        }
+        let token = UUID()
+        exportTokens[token] = id
+        notify()
+        do {
+            try Task.checkCancellation()
+            let url = try await disk.exportURL(id: id)
+            try Task.checkCancellation()
+            return BrowserMobileDownloadExportLease(url: url, downloadID: id) { [self] in
+                releaseExport(token: token)
+            }
+        } catch {
+            releaseExport(token: token)
+            throw error
+        }
+    }
+
     func observe(_ observer: @escaping @MainActor () -> Void) -> UUID {
         let id = UUID()
         observers[id] = observer
@@ -69,23 +159,14 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         isLoading = true
         notify()
         do {
-            let restored = try await disk.load()
-            let protectedIDs = Set(transfers.values.map(\.id)).union(pendingCompletions.keys)
-            for entry in restored {
-                if let index = entries.firstIndex(where: { $0.id == entry.id }) {
-                    if !protectedIDs.contains(entry.id) {
-                        entries[index] = entry
-                    }
-                } else {
-                    entries.append(entry)
-                }
-            }
+            let state = try await disk.snapshot()
+            publish(state)
             hasLoaded = true
-            if completionFailures.isEmpty, pendingDiscards.isEmpty {
-                error = nil
-            }
+            loadFailed = false
+            refreshError()
         } catch {
-            self.error = String(localized: "downloads.error.load", table: "Mobile")
+            loadFailed = true
+            refreshError()
         }
         isLoading = false
         notify()
@@ -102,9 +183,16 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
                 await commitCompletion(entry)
             }
         }
-        for id in Array(pendingDiscards) {
-            await discard(id: id)
+        for id in Array(failedRemovals) {
+            _ = await remove(id: id)
         }
+        for id in Array(pendingDiscards) {
+            await discardIncompleteDownload(id: id)
+        }
+        do { try await publish(disk.retryCleanup())
+            refreshError()
+            notify()
+        } catch { reportCleanupFailure() }
     }
 
     func adopt(_ download: WKDownload, sourceURL: URL?) {
@@ -134,8 +222,11 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         // Wait for WebKit to stop writing before removing the partial file.
         transfer.download.cancel { [weak self, disk] _ in
             Task {
-                do { try await disk.discard(id: id) }
-                catch { self?.reportCleanupFailure(id: id) }
+                if let self {
+                    await self.discardIncompleteDownload(id: id)
+                } else {
+                    _ = try? await disk.discardState(id: id)
+                }
             }
         }
         notify()
@@ -173,7 +264,7 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
             }
             guard transfers[key] === transfer else {
                 completionHandler(nil)
-                await discard(id: transfer.id)
+                await discardIncompleteDownload(id: transfer.id)
                 return
             }
             completionHandler(url)
@@ -196,6 +287,13 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         fail(key: ObjectIdentifier(download), message: String(localized: "downloads.error.transfer", table: "Mobile"))
     }
 
+    /// Shared by terminal WebKit callbacks and deferred cleanup Retry.
+    func discardIncompleteDownload(id: UUID) async {
+        do {
+            try await acceptCleanup(disk.discardState(id: id), id: id)
+        } catch { reportCleanupFailure(id: id) }
+    }
+
     // MARK: Private
 
     private final class Transfer {
@@ -211,11 +309,18 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         let download: WKDownload
     }
 
-    private let disk: BrowserMobileDownloadDisk
+    private let disk: any BrowserMobileDownloadStoring
     private var transfers = [ObjectIdentifier: Transfer]()
     private var pendingCompletions = [UUID: BrowserMobileDownload]()
     private var completionFailures = Set<UUID>()
     private var pendingDiscards = Set<UUID>()
+    private var diskCleanupIDs = Set<UUID>()
+    private var persistedIDs = Set<UUID>()
+    private var failedRemovals = Set<UUID>()
+    private var removingIDs = Set<UUID>()
+    private var exportTokens = [UUID: UUID]()
+    private var latestDiskState: BrowserMobileDownloadDiskState?
+    private var loadFailed = false
     private var observers = [UUID: @MainActor () -> Void]()
     private var progressTask: Task<Void, Never>?
     private var hasLoaded = false
@@ -227,20 +332,18 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         }
         notify()
         do {
-            let saved = try await disk.complete(entry)
+            let state = try await disk.completeState(entry)
             pendingCompletions.removeValue(forKey: entry.id)
             completionFailures.remove(entry.id)
-            update(entry.id) { $0 = saved }
-            if completionFailures.isEmpty, pendingDiscards.isEmpty {
-                error = nil
-            }
+            publish(state)
+            refreshError()
         } catch {
             let message = String(localized: "downloads.error.save", table: "Mobile")
-            self.error = message
             completionFailures.insert(entry.id)
             update(entry.id) { $0.status = .failed
                 $0.error = message
             }
+            refreshError()
         }
         notify()
     }
@@ -253,8 +356,11 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         }
         stopProgressUpdatesIfIdle()
         Task { [weak self, disk] in
-            do { try await disk.discard(id: transfer.id) }
-            catch { self?.reportCleanupFailure(id: transfer.id) }
+            if let self {
+                await discardIncompleteDownload(id: transfer.id)
+            } else {
+                _ = try? await disk.discardState(id: transfer.id)
+            }
         }
         notify()
     }
@@ -297,21 +403,70 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
         transform(&entries[index])
     }
 
-    private func discard(id: UUID) async {
-        do {
-            try await disk.discard(id: id)
-            pendingDiscards.remove(id)
-            if completionFailures.isEmpty, pendingDiscards.isEmpty {
-                error = nil
-            }
-            notify()
-        } catch { reportCleanupFailure(id: id) }
+    private func acceptCleanup(_ state: BrowserMobileDownloadDiskState, id: UUID) {
+        pendingDiscards.remove(id)
+        publish(state)
+        refreshError()
+        notify()
     }
 
-    private func reportCleanupFailure(id: UUID) {
-        pendingDiscards.insert(id)
-        error = String(localized: "downloads.error.cleanup", table: "Mobile")
+    private func reportCleanupFailure(id: UUID? = nil) {
+        if let id {
+            pendingDiscards.insert(id)
+        }
+        refreshError()
+        if error == nil {
+            error = String(localized: "downloads.error.cleanup", table: "Mobile")
+        }
         notify()
+    }
+
+    private func releaseExport(token: UUID) {
+        guard exportTokens.removeValue(forKey: token) != nil else { return }
+        notify()
+    }
+
+    private func publish(_ state: BrowserMobileDownloadDiskState) {
+        if state.revision >= (latestDiskState?.revision ?? 0) {
+            latestDiskState = state
+        }
+        guard let state = latestDiskState else { return }
+        // Even an older completion can release a transient saving guard. Always
+        // reconcile against the newest disk state, never that older payload.
+        let incomingIDs = Set(state.entries.map(\.id))
+        let protectedIDs = Set(transfers.values.map(\.id)).union(pendingCompletions.keys)
+        entries
+            .removeAll { persistedIDs.contains($0.id) && !incomingIDs.contains($0.id) && !protectedIDs.contains($0.id) }
+        for entry in state.entries {
+            if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+                if !protectedIDs.contains(entry.id) {
+                    entries[index] = entry
+                }
+            } else {
+                entries.append(entry)
+            }
+        }
+        persistedIDs = incomingIDs
+        failedRemovals.formIntersection(incomingIDs)
+        diskCleanupIDs = state.pendingCleanupIDs
+    }
+
+    private func refreshError() {
+        error =
+            if loadFailed {
+                String(localized: "downloads.error.load", table: "Mobile")
+            } else if !failedRemovals.isEmpty {
+                String(localized: "downloads.error.remove", table: "Mobile")
+            } else if !completionFailures.isEmpty {
+                String(localized: "downloads.error.save", table: "Mobile")
+            } else if !pendingDiscards.isEmpty || !diskCleanupIDs.isEmpty {
+                String(
+                    localized: "downloads.error.cleanup",
+                    table: "Mobile"
+                )
+            } else {
+                nil
+            }
     }
 
     private func notify() {
