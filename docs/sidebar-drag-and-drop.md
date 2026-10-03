@@ -6,13 +6,14 @@ The drag implementation uses AppKit events and a shared tab tree. A drop destina
 
 - Dragging between temporary, pinned and app tabs changes placement using the existing model rules. App capacity remains enforced; app-grid drops accept one tab. Command-click toggles selection across pinned and temporary rows, and Shift-click selects a range in visible tree order. Hidden collapsed children are not added by a range selection. Groups preserve their relative order when moving between pinned folders, temporary sections and spaces.
 - The pointer chooses the destination. A list shows one insertion cue in the real gap; list items do not reorder during hover.
+- Starting to drag a single tab activates it. The tab stays active after a cancelled or no-op drop. An explicit multi-selection or a folder keeps the current tab. A tab from another Space is not activated, so starting a drag never switches Spaces.
 - Dropping on a space header inserts at the start of its pinned section. Dropping on a folder body inserts at the start of that folder. Both use a stronger row highlight, not an insertion line.
 - Expanded folder children support insertion between siblings. An outside insertion follows the entire visible subtree, not the folder header. A collapsed folder's visible gap has one destination even when hidden children lie between the visible siblings.
 - The app grid previews the actual planned order. Preview dimensions match the future cell, including stretched partial rows. An empty app target uses existing chrome spacing instead of moving the list when the gesture begins.
 - After the app grid expands, leaving it holds the actual allocated height until release. A neutral empty cell marks the available space. The list therefore does not move away from the pointer when the projected app item is removed.
 - The preview keeps the normalized grab point captured on mouse-down. This remains true if the source row moves before the drag threshold or the preview changes between a row and a tile.
 - On release, the preview travels to the final row/cell. The real moved rows remain hidden until it arrives; they do not fly independently from their old positions. Hidden destinations merge into the visible folder/space header. The settling preview can be picked up immediately for another drag.
-- An insertion cue has a small endpoint in the row margin. Its stroke avoids the floating preview, so the destination remains visible without drawing a line through preview text.
+- An insertion cue has a small hollow ring in the row margin. The line starts at the ring's edge and avoids the floating preview, so the destination remains visible without drawing a line through preview text. The ring stays in the margin because the opaque preview usually covers the gap.
 - Edge autoscroll updates both the viewport and drop geometry. Offscreen rows and other cached space pages cannot advertise a drop in the active page.
 - Escape, release outside a valid destination, loss of window/application activity, closure and removal of the source clean up the session. Cancelled gestures do not change tab order. No system copy/plus badge is involved.
 

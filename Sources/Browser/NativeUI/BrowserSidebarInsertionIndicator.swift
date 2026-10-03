@@ -1,8 +1,11 @@
 import AppKit
 
-/// A single insertion cue with a leading endpoint in the row margin. The dragged
-/// row may cover the middle of the gap; its text is never crossed by the line.
+/// A single insertion cue with a hollow leading ring in the row margin, as in
+/// sidebar drags. The dragged row may cover the middle of the gap; its text is never
+/// crossed by the line, and the line starts at the ring's outer edge.
 final class BrowserSidebarInsertionIndicator: NSView {
+    // MARK: Internal
+
     override var isFlipped: Bool { true }
 
     private(set) var lineFrame: CGRect?
@@ -14,9 +17,18 @@ final class BrowserSidebarInsertionIndicator: NSView {
     }
 
     override func draw(_: NSRect) {
-        BrowserChromeColors.sidebarDropIndicator.setFill()
-        let diameter = BrowserChromeLayout.sidebarDropIndicatorThickness * 2
-        NSBezierPath(ovalIn: CGRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
+        let color = BrowserChromeColors.sidebarDropIndicator
+        let inset = Self.ringLineWidth / 2
+        let ring = NSBezierPath(ovalIn: CGRect(
+            x: inset,
+            y: inset,
+            width: Self.ringDiameter - Self.ringLineWidth,
+            height: Self.ringDiameter - Self.ringLineWidth
+        ))
+        ring.lineWidth = Self.ringLineWidth
+        color.setStroke()
+        ring.stroke()
+        color.setFill()
         for segment in visibleLineSegments {
             let local = segment.offsetBy(dx: -frame.minX, dy: -frame.minY)
             NSBezierPath(roundedRect: local, xRadius: local.height / 2, yRadius: local.height / 2).fill()
@@ -31,12 +43,13 @@ final class BrowserSidebarInsertionIndicator: NSView {
         }
         isHidden = false
         let thickness = BrowserChromeLayout.sidebarDropIndicatorThickness
-        let diameter = thickness * 2
+        let diameter = Self.ringDiameter
         frame = CGRect(x: line.minX - 12, y: line.midY - diameter / 2, width: line.width + 12, height: diameter)
+        let strokeMinX = frame.minX + diameter - Self.ringLineWidth / 2
         let stroke = CGRect(
-            x: frame.minX + diameter / 2,
+            x: strokeMinX,
             y: line.minY,
-            width: line.maxX - frame.minX - diameter / 2,
+            width: max(line.maxX - strokeMinX, 0),
             height: thickness
         )
         visibleLineSegments =
@@ -60,4 +73,9 @@ final class BrowserSidebarInsertionIndicator: NSView {
             }
         needsDisplay = true
     }
+
+    // MARK: Private
+
+    private static let ringDiameter = BrowserChromeLayout.sidebarDropIndicatorThickness * 3
+    private static let ringLineWidth = BrowserChromeLayout.sidebarDropIndicatorThickness * 0.75
 }

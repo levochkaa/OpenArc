@@ -295,6 +295,51 @@ import Testing
         #expect(h.rows.allSatisfy { $0.dragOpacity == 1 && !$0.isDragging })
     }
 
+    /// A single dragged tab activates at drag start and stays active even
+    /// when the drop is a no-op. Order changes only on an accepted drop.
+    @Test func singleTabDragActivatesTheDraggedTabEvenWhenCancelled() async throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        try h.begin("z")
+        #expect(f.model.selectedTabID == f.id("z"))
+        #expect(h.state.drag.payload?.tabIDs == [f.id("z")])
+        #expect(f.names(f.model.temporaryTabs) == ["x", "y", "z"])
+        h.view.cancelDragging()
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(h.state.drag.phase == .idle)
+        #expect(f.model.selectedTabID == f.id("z"))
+        #expect(f.names(f.model.temporaryTabs) == ["x", "y", "z"])
+    }
+
+    /// Group and folder drags keep the current tab.
+    @Test func groupAndFolderDragsKeepTheActiveTab() async throws {
+        let f = SidebarDragFixture(
+            pinned: [("a", nil), ("one", "folder")],
+            temporary: ["x", "y", "z"],
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+        )
+        f.model.selectTab(id: f.id("z"))
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        h.state.toggleSidebarTabSelection(f.id("x"))
+        h.state.toggleSidebarTabSelection(f.id("y"))
+        try h.begin("x")
+        #expect(h.state.drag.payload?.tabIDs == Set([f.id("x"), f.id("y")]))
+        #expect(f.model.selectedTabID == f.id("z"))
+        h.view.cancelDragging()
+        try await Task.sleep(for: .milliseconds(500))
+        let folderRow = try #require(h.row(.folder("folder")))
+        let point = folderRow.convert(folderRow.bounds.center, to: folderRow.dragCoordinateView)
+        #expect(h.view.beginDragging(
+            item: .folder("folder"),
+            from: folderRow,
+            value: .init(startLocation: point, location: point, translation: .zero, predictedEndTranslation: .zero)
+        ))
+        #expect(f.model.selectedTabID == f.id("z"))
+    }
+
     @Test func windowDeactivationCancelsOnlyTheOwnedSession() {
         let window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

@@ -296,6 +296,7 @@ final class BrowserNativeSidebarNSView: NSView {
         dragPreviewAnimation.cancel()
         dragEvents.stop()
         state.clearTabDragState()
+        activateSingleDraggedTab(item)
         state.update(snapshot: state.model.sidebarSnapshot, sidebarWidth: state.sidebarWidth, isResizing: false)
         let tree = BrowserSidebarTabTree(snapshot: state.snapshot)
         let ids: Set<String>
@@ -437,6 +438,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private let dragIndicator = BrowserSidebarInsertionIndicator()
     private let dragPreview = BrowserNativeSidebarDragPreview()
     private let dragEvents = BrowserSidebarDragEventSession()
+
     private let landingAnimation = BrowserNativeAnimation()
     private let dragPreviewAnimation = BrowserNativeAnimation()
     private var dragPreviewTargetSize: CGSize?
@@ -453,6 +455,21 @@ final class BrowserNativeSidebarNSView: NSView {
     private let frameTransitions = BrowserNativeFrameTransitions()
 
     private var renderedSnapshot: BrowserSidebarSnapshot { state.renderedSnapshot(for: state.snapshot) }
+
+    /// A single dragged tab activates when the gesture starts; the tab stays
+    /// active even if the drop is a no-op. Explicit multi-selections and
+    /// folders keep the current tab.
+    /// A tab from another Space is never activated, so a drag cannot switch Spaces.
+    private func activateSingleDraggedTab(_ item: BrowserSidebarItemID) {
+        guard case .tab(let id) = item, !state.selectedSidebarTabIDs.contains(id),
+              state.model.selectedTabID != id,
+              let tab = state.model.tabs.first(where: { $0.id == id }),
+              tab.placement == .app || tab.spaceID == state.model.selectedSpaceID
+        else { return }
+        state.clearSidebarTabSelection()
+        state.sidebarTabSelectionAnchorID = id
+        state.model.selectTab(id: id)
+    }
 
     private func layoutContent(animated: Bool) {
         guard !isLayingOut else { return }
