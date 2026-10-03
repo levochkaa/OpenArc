@@ -108,7 +108,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try dbQueue.write { db in
             for write in writes {
                 if let archiveAction = write.archiveAction,
-                   try !applyArchiveAction(archiveAction, snapshot: write.snapshot, in: db)
+                   try !applyArchiveAction(
+                       archiveAction, snapshot: write.snapshot,
+                       archiveProjectionSnapshot: write.archiveProjectionSnapshot, in: db
+                   )
                 {
                     // A receipt retry must not replay an old full snapshot over
                     // edits committed after the original archive operation.
@@ -1074,7 +1077,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     /// Returns false only for an exact operation already committed. All effects
     /// and the following snapshot/outbox write share the surrounding transaction.
     private func applyArchiveAction(
-        _ action: BrowserTabArchiveAction, snapshot: BrowserTabSessionSnapshot, in db: Database
+        _ action: BrowserTabArchiveAction, snapshot: BrowserTabSessionSnapshot,
+        archiveProjectionSnapshot: BrowserTabSessionSnapshot?, in db: Database
     ) throws -> Bool {
         switch action {
         case .insert(let entry):
@@ -1084,6 +1088,11 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             ) {
                 guard existing == fingerprint else { throw BrowserTabArchiveError.archiveIDConflict }
                 return false
+            }
+            if let archiveProjectionSnapshot {
+                // The receipt must be checked first: replaying this preclose
+                // snapshot after a successful insert would resurrect its tab.
+                try writeSnapshot(archiveProjectionSnapshot, to: db)
             }
             guard let previous = try readSnapshot(db),
                   previous.tabs.first(where: { $0.id == entry.tab.id }) == entry.tab,

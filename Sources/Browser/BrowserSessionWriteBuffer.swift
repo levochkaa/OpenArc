@@ -47,7 +47,8 @@ struct BrowserSessionWriteBuffer {
         do {
             let encoder = JSONEncoder()
             let archiveBytes = try write.archiveAction.map { try encoder.encode($0).count } ?? 0
-            let size = try encoder.encode(write.snapshot).count + archiveBytes
+            let projectionBytes = try write.archiveProjectionSnapshot.map { try encoder.encode($0).count } ?? 0
+            let size = try encoder.encode(write.snapshot).count + archiveBytes + projectionBytes
             guard size <= maximumBytes - encodedBytes else {
                 failure = .init(reason: .bufferLimitExceeded)
                 return false

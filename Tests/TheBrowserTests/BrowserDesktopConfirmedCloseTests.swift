@@ -55,11 +55,12 @@ import Testing
         #expect(f.model.tabs.first { $0.id == id }?.title == "Latest loaded title")
         f.recording.reset()
         f.finish(request, .closed)
-        #expect(try f.store.loadArchivePage().entries.isEmpty)
+        let archived = try #require(try f.store.loadArchivePage().entries.first)
+        #expect(archived.tab == preclose && archived.title == "Latest loaded title")
         #expect(f.recording.attempts.count == 1)
         let write = try #require(f.recording.attempts.first?.first)
         #expect(f.recording.attempts.first?.count == 1)
-        #expect(write.origin == .local(syncMove: nil) && write.archiveAction == nil)
+        #expect(write.origin == .local(syncMove: nil) && write.archiveAction == .insert(archived))
         #expect(write.snapshot.tabs.map(\.id) == ["b"])
         #expect(!f.model.tabs.contains { $0.syncID == "a" })
         #expect(f.model.tabs.first { $0.id == f.model.selectedTabID }?.syncID == "b")
@@ -72,7 +73,7 @@ import Testing
         #expect(try f.evidence() == committed)
         #expect(f.recording.attempts.count == 1)
         let reopened = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
-        #expect(try reopened.loadArchivePage().entries.isEmpty)
+        #expect(try reopened.loadArchivePage().entries == [archived])
         #expect(try reopened.loadSnapshotStrict()?.tabs.contains { $0.id == "a" } == false)
     }
 
@@ -93,14 +94,20 @@ import Testing
         #expect(try f.evidence() == before)
         let firstBatch = try #require(f.recording.attempts.last)
         let deleteWrite = try #require(firstBatch.first)
-        #expect(firstBatch.count == 1 && deleteWrite.archiveAction == nil)
+        let archiveAction = try #require(deleteWrite.archiveAction)
+        guard case .insert(let archived) = archiveAction else {
+            Issue.record("Confirmed Today Close must atomically insert its Archive entry")
+            return
+        }
+        #expect(firstBatch.count == 1 && archived.tab.id == "a")
+        #expect(!f.model.undoManager.canUndo)
         #expect(deleteWrite.origin == .local(syncMove: nil) && deleteWrite.snapshot.tabs.map(\.id) == ["b"])
         f.clock.now += 600
         try f.model.setUserTitleOverride("Later survivor edit", forTabID: f.runtimeID("b"))
         let fifo = try #require(f.recording.attempts.last)
         #expect(fifo.count > firstBatch.count)
         #expect(Array(fifo.prefix(firstBatch.count)) == firstBatch)
-        #expect(fifo.allSatisfy { $0.archiveAction == nil })
+        #expect(fifo.compactMap(\.archiveAction) == [archiveAction])
         #expect(try f.evidence() == before)
         #expect(!f.model.retrySessionPersistence())
         #expect(f.recording.attempts.last == fifo)
@@ -108,7 +115,8 @@ import Testing
         #expect(f.model.retrySessionPersistence())
         #expect(f.recording.attempts.last == fifo)
         #expect(!f.model.hasUncommittedSessionWrites && f.sync.blocked.last == false)
-        #expect(try f.store.loadArchivePage().entries.isEmpty)
+        #expect(f.model.undoManager.canUndo)
+        #expect(try f.store.loadArchivePage().entries == [archived])
         #expect(try f.store
             .loadSnapshotStrict()?
             .tabs
@@ -116,7 +124,7 @@ import Testing
             .userTitleOverride == "Later survivor edit")
         #expect(try f.hasTombstone("a"))
         let reopened = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
-        #expect(try reopened.loadArchivePage().entries.isEmpty)
+        #expect(try reopened.loadArchivePage().entries == [archived])
         #expect(try reopened.loadSnapshotStrict()?.tabs.contains { $0.id == "a" } == false)
     }
 
@@ -129,6 +137,8 @@ import Testing
         f.driver.emitUpdate(id: originalID, title: "Latest loaded title", urlString: "https://example.com/undo-latest")
         try f.finish(#require(f.driver.confirmedCloseRequests.last), .closed)
         #expect(f.model.undoManager.canUndo)
+        let archived = try #require(try f.store.loadArchivePage().entries.first)
+        f.recording.reset()
         f.model.undoManager.undo()
         f.flushReady()
         let restored = try #require(f.model.tabs.first { $0.urlString == "https://example.com/undo-latest" })
@@ -138,6 +148,9 @@ import Testing
         #expect(f.model.selectedTabID == restored.id)
         #expect(f.model.tabs.map(\.syncID) == [restored.syncID, "b"])
         #expect(try f.store.loadArchivePage().entries.isEmpty)
+        #expect(f.recording.attempts.flatMap { $0 }.compactMap(\.archiveAction).contains(
+            .restore(archiveID: archived.id, tabID: restored.syncID)
+        ))
         #expect(try f.hasTombstone("a"))
         #expect(f.model.undoManager.canRedo)
         #expect(try f.store.loadSnapshotStrict()?.tabs.map(\.id) == [restored.syncID, "b"])
@@ -234,7 +247,7 @@ import Testing
             #expect(try f.operations().filter { $0 == .deleteTab(id: "a") }.count == 1)
             #expect(try f.hasTombstone("a"))
         }
-        #expect(try f.store.loadArchivePage().entries.isEmpty)
+        #expect(try f.store.loadArchivePage().entries.map(\.tab.id) == (outcome == .closed ? ["a"] : []))
     }
 
     @Test func cancellationPreservesReadinessDeliveredWhileTheInitialEngineCloseWasPending() throws {
@@ -282,7 +295,7 @@ import Testing
         try f.sql("DROP TRIGGER fail_last_close")
         #expect(f.model.retrySessionPersistence())
         #expect(!f.model.hasUncommittedSessionWrites)
-        #expect(try f.store.loadArchivePage().entries.isEmpty)
+        #expect(try f.store.loadArchivePage().entries.map(\.tab.id) == ["a"])
         #expect(try f.store.loadSnapshotStrict()?.tabs.isEmpty == true)
         #expect(f.model.prepareSessionForClosure())
     }
@@ -290,7 +303,7 @@ import Testing
 
 // MARK: - ConfirmedCloseFixture
 
-@MainActor private final class ConfirmedCloseFixture {
+@MainActor final class ConfirmedCloseFixture {
     // MARK: Lifecycle
 
     init(tabIDs: [String] = ["a", "b"], ready: Bool = true) throws {
@@ -421,7 +434,7 @@ import Testing
 
 // MARK: - ConfirmedCloseEvidence
 
-private struct ConfirmedCloseEvidence: Equatable {
+struct ConfirmedCloseEvidence: Equatable {
     let snapshot: BrowserTabSessionSnapshot?
     let queue: [Data]
     let baseline: [Data]
@@ -432,15 +445,15 @@ private struct ConfirmedCloseEvidence: Equatable {
 
 // MARK: - ConfirmedCloseClock
 
-@MainActor private final class ConfirmedCloseClock { var now: TimeInterval = 1_800_000_000 }
+@MainActor final class ConfirmedCloseClock { var now: TimeInterval = 1_800_000_000 }
 
 // MARK: - ConfirmedCloseLifecycle
 
-@MainActor private final class ConfirmedCloseLifecycle { var allClosed = 0 }
+@MainActor final class ConfirmedCloseLifecycle { var allClosed = 0 }
 
 // MARK: - ConfirmedCloseCoordinator
 
-@MainActor private final class ConfirmedCloseCoordinator: BrowserSyncCoordinating {
+@MainActor final class ConfirmedCloseCoordinator: BrowserSyncCoordinating {
     var blocked = [Bool]()
 
     func schedulePush(snapshot _: BrowserTabSessionSnapshot) {}
@@ -450,7 +463,7 @@ private struct ConfirmedCloseEvidence: Equatable {
 
 // MARK: - ConfirmedCloseRecordingStore
 
-private final class ConfirmedCloseRecordingStore: BrowserTabSessionSnapshotStoring, BrowserTabArchiveStoring,
+final class ConfirmedCloseRecordingStore: BrowserTabSessionSnapshotStoring, BrowserTabArchiveStoring,
 BrowserSyncOwnershipReading {
     // MARK: Lifecycle
 
