@@ -68,6 +68,7 @@ const adoptionScenario = "folder-adoption-paged";
 const expiryScenario = "expiry-recovery";
 const expiryQueueScenario = "expiry-queue";
 const expiryLimitScenario = "expiry-response-limit";
+const desktopArchiveScenario = "desktop-archive-restore";
 const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
   "folder-device-rotation", "folder-pending-delete", "folder-activity-replay"
@@ -82,7 +83,7 @@ const desktopScenarios = [
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",
   "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay",
   "persistence-retry", "pending-parent-delete", "pending-navigation", ...folderScenarios,
-  expiryScenario, expiryQueueScenario, expiryLimitScenario
+  expiryScenario, expiryQueueScenario, expiryLimitScenario, desktopArchiveScenario
 ];
 const scenarios = suite === "mobile" ? [...mobileScenarios] : desktopScenarios;
 
@@ -237,7 +238,8 @@ for (const scenario of scenarios) {
   const accessToken = await auth.issueAccessToken(userID);
   if (legacyScenarios.has(scenario)) legacyAuthorizations.add(`Bearer ${accessToken}`);
   else if (!folderScenarios.has(scenario) && !mobileScenarios.has(scenario)
-    && scenario !== expiryScenario && scenario !== expiryQueueScenario && scenario !== expiryLimitScenario) {
+    && scenario !== expiryScenario && scenario !== expiryQueueScenario && scenario !== expiryLimitScenario
+    && scenario !== desktopArchiveScenario) {
     semanticAuthorizations.add(`Bearer ${accessToken}`);
   }
   if (scenario === adoptionScenario) capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3]);
@@ -397,6 +399,22 @@ const control = createServer((incoming, outgoing) => {
             && attempt.protocolVersion === 4 && attempt.status === 201),
           "Both mobile scenario devices must commit production v4 mutations");
         }
+      } else if (account.scenario === desktopArchiveScenario) {
+        assert.ok(scenarioAttempts.every((attempt) => [4, 5].includes(attempt.protocolVersion)));
+        for (const device of account.devices) {
+          assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
+            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+          "Both desktop Archive clients must bootstrap recovery through production v5 pulls");
+        }
+        const expiry = scenarioAttempts.filter((attempt) => attempt.protocolVersion === 5 && attempt.status === 201
+          && attempt.outcomeStatuses?.includes("applied") && attempt.hasAutoArchive);
+        assert.ok(expiry.some((receipt) => expiry.filter((attempt) => attempt.mutationID === receipt.mutationID
+          && attempt.digest === receipt.digest).length >= 2),
+        "Desktop Archive requires accepted canonical recovery and an exact expiry replay");
+        const writes = scenarioAttempts.filter((attempt) => attempt.protocolVersion === 4 && attempt.status === 201);
+        assert.ok(writes.some((receipt) => writes.filter((attempt) => attempt.mutationID === receipt.mutationID
+          && attempt.digest === receipt.digest).length >= 2),
+        "Desktop Archive restore must replay an immutable production mutation after a lost ACK");
       } else if (account.scenario === expiryLimitScenario) {
         assert.ok(scenarioAttempts.every((attempt) => [4, 5].includes(attempt.protocolVersion)));
         assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 4 && attempt.status === 201 && attempt.compressed),

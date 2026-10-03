@@ -97,8 +97,21 @@ Never-bound mobile SQLite profiles use local Archive transactions instead of ser
 
 ## Desktop boundary and verification limits
 
-Desktop `archiveExpiredTemporaryTabs` still checks durable sync ownership on every entry. A bound profile requests the shared conditional pass, but its desktop delegate reports Off regardless of stored preferences until native Archive restoration exists. The lifetime picker is disabled with an explanation for bound profiles. Never-bound profiles keep their existing local timer and default lifetime; explicit manual Close remains available.
+Desktop `archiveExpiredTemporaryTabs` still checks durable sync ownership on every entry. A bound profile requests the shared conditional pass, but its desktop delegate still reports Off regardless of stored preferences pending native timing controls and close-policy verification. The lifetime picker is disabled with an explanation for bound profiles. Never-bound profiles keep their existing local timer and default lifetime; explicit manual Close remains available.
 
 The desktop model records outgoing/incoming ready-tab viewing, a final app-resign instant and monotonic whole-second activity. It carries already-merged remote activity into live-engine projections, protects selected stable sync IDs, blocks scheduling during pending creation/restoration/projection or failed writes, and stops sync runtime on closure/background. Foreground activity is app-level across open profile windows; key-window focus is not inferred. These are model/console-test seams, not evidence of a launched CEF runtime.
 
-Controlled clocks, scene callbacks and hosted native menu actions do not establish physical gestures, actual OS background execution or completely offline cross-device protection. Desktop durable Archive UI and large-profile import/replay profiling remain open.
+Controlled clocks, scene callbacks and hosted native menu actions do not establish physical gestures, actual OS background execution or completely offline cross-device protection. Physical desktop Archive interaction, CEF restoration and large-profile import/replay profiling remain unverified.
+
+
+## Native desktop Archive
+
+File → Archive… opens one AppKit recovery window for the owning profile. The window reads the shared durable Archive in 50-entry pages, supports literal/Unicode-folded search, stable-ID selection, Restore, Delete and confirmed Clear. Clear captures an insertion-sequence boundary before confirmation; entries added later survive, including when Retry follows a storage failure. Async page generations reject stale search results. Private and installed web-app windows cannot expose regular profile recovery.
+
+Restore re-reads the entry and current logical tree. If its original Space is gone, the user must choose an existing destination; no implicit Space is created. A fresh stable tab ID, complete session snapshot, ordinary v4 outbox mutation and consumed Archive receipt commit in one SQLite transaction before an engine is requested. The old ID stays tombstoned. The restored Today tab becomes selected in its destination, while existing engines and other Space selections remain intact. Only URL/title metadata is restored, not the archived page's navigation history or live state.
+
+Pending session writes or incomplete logical projection block Restore. Storage failure leaves the current model, selection, engines and Archive unchanged; explicit Retry rebuilds the action from the latest live tree. This action is not placed in the failed-session snapshot buffer: consuming recovery before publishing a restored tab there would let a later snapshot silently discard it. After commit, engine refusal retains the durable new tab with ordinary creation Retry. A crash between commit and engine allocation is recovered through session startup. Delete/Clear affect only recovery payloads and preserve compact receipts, the active snapshot and sync queue.
+
+Recovery imports notify the Archive window even when the active tab snapshot does not change. Cmd+W closes that auxiliary window; Cmd+F focuses its search. Closing the owner closes its Archive, and closing Archive cancels actions that have not started. Already admitted database operations may finish.
+
+This surface exposes previously stored local/server recovery. Desktop manual Close and the never-bound expiry timer still use their existing behavior and do not insert durable Archive entries. Bound automatic expiry remains Off; enabling it and changing desktop Close/beforeunload policy are separate work. Offscreen AppKit tests and fake-driver restoration do not establish a launched CEF page or physical keyboard/pointer behavior.

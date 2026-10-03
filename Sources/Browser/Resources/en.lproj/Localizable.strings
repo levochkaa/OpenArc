@@ -287,7 +287,7 @@
 "browser.settings.temporary_tabs.lifetime.3d" = "3 Days";
 "browser.settings.temporary_tabs.lifetime.7d" = "7 Days";
 "browser.settings.temporary_tabs.lifetime.30d" = "30 Days (Default)";
-"browser.settings.temporary_tabs.sync_unavailable" = "Automatic archiving is off for synced profiles on this Mac until Archive restoration is available.";
+"browser.settings.temporary_tabs.sync_unavailable" = "Automatic archiving is off for synced profiles on this Mac.";
 "browser.settings.temporary_tabs.save_failed" = "Couldn’t save the archive timing. Try again.";
 "browser.permissions.notifications.title" = "Allow notifications for this site?";
 "browser.permissions.notifications.message" = "%@ wants to send notifications.";
@@ -324,3 +324,29 @@
 "browser.session.recovery.close_message" = "Some changes to tabs and Spaces have not been saved. Cancel to return to your windows and save a copy. Closing without saving loses those changes.";
 "browser.session.recovery.close_without_saving" = "Close Without Saving";
 "browser.session.recovery.close_profile_before_deleting" = "Close this profile's window before deleting it.";
+
+// Durable profile Archive.
+"browser.archive.title" = "Archive";
+"browser.archive.menu" = "Archive…";
+"browser.archive.search" = "Search Archive";
+"browser.archive.restore" = "Restore";
+"browser.archive.remove" = "Delete";
+"browser.archive.clear" = "Clear Archive…";
+"browser.archive.clear_confirm" = "Clear Archive";
+"browser.archive.clear_message" = "Delete all entries currently in this profile’s Archive? Tabs archived after this confirmation opens will be kept. Active tabs are unchanged.";
+"browser.archive.destination_title" = "Choose a Space";
+"browser.archive.destination_message" = "The original Space no longer exists. Choose where to restore this tab.";
+"browser.archive.empty" = "No archived tabs";
+"browser.archive.no_results" = "No matching archived tabs";
+"browser.archive.loading" = "Loading Archive…";
+"browser.archive.newer" = "Newer";
+"browser.archive.older" = "Older";
+"browser.archive.column_title" = "Title";
+"browser.archive.column_url" = "URL";
+"browser.archive.column_date" = "Archived";
+"browser.archive.restore_failed" = "Couldn’t restore this tab. Try again.";
+"browser.archive.destination_missing" = "Choose an existing Space to restore this tab. Create a Space first if none are available.";
+"browser.archive.entry_missing" = "This Archive entry is no longer available.";
+"browser.archive.action_failed" = "Couldn’t update the Archive. Try again.";
+"browser.archive.unavailable" = "Archive is unavailable for this window.";
+"browser.archive.search_invalid" = "Use a shorter search, up to 256 characters.";

@@ -3,6 +3,103 @@ import Foundation
 // MARK: - BrowserStrings
 
 enum BrowserStrings {
+    static let archiveTitle = NSLocalizedString(
+        "browser.archive.title",
+        comment: "Window title."
+    )
+    static let archiveMenuTitle = NSLocalizedString(
+        "browser.archive.menu",
+        comment: "Open the profile Archive."
+    )
+    static let archiveSearch = NSLocalizedString(
+        "browser.archive.search",
+        comment: "Archive search placeholder."
+    )
+    static let archiveRestore = NSLocalizedString(
+        "browser.archive.restore",
+        comment: "Restore an archived tab with a new identity."
+    )
+    static let archiveRemove = NSLocalizedString(
+        "browser.archive.remove",
+        comment: "Remove an archive entry."
+    )
+    static let archiveClear = NSLocalizedString(
+        "browser.archive.clear",
+        comment: "Clear local archive entries."
+    )
+    static let archiveClearConfirm = NSLocalizedString(
+        "browser.archive.clear_confirm",
+        comment: "Confirm clearing the captured archive entries."
+    )
+    static let archiveClearMessage = NSLocalizedString(
+        "browser.archive.clear_message",
+        comment: "Archive clear confirmation scope."
+    )
+    static let archiveDestinationTitle = NSLocalizedString(
+        "browser.archive.destination_title",
+        comment: "Missing original Space recovery title."
+    )
+    static let archiveDestinationMessage = NSLocalizedString(
+        "browser.archive.destination_message",
+        comment: "Explicit archive destination."
+    )
+    static let archiveEmpty = NSLocalizedString(
+        "browser.archive.empty",
+        comment: "Empty archive."
+    )
+    static let archiveNoResults = NSLocalizedString(
+        "browser.archive.no_results",
+        comment: "Empty archive search."
+    )
+    static let archiveLoading = NSLocalizedString(
+        "browser.archive.loading",
+        comment: "Archive loading state."
+    )
+    static let archiveNewer = NSLocalizedString(
+        "browser.archive.newer",
+        comment: "Previous archive page."
+    )
+    static let archiveOlder = NSLocalizedString(
+        "browser.archive.older",
+        comment: "Next archive page."
+    )
+    static let archiveColumnTitle = NSLocalizedString(
+        "browser.archive.column_title",
+        comment: "Archive title column."
+    )
+    static let archiveColumnURL = NSLocalizedString(
+        "browser.archive.column_url",
+        comment: "Archive URL column."
+    )
+    static let archiveColumnDate = NSLocalizedString(
+        "browser.archive.column_date",
+        comment: "Archive date column."
+    )
+    static let archiveRestoreFailed = NSLocalizedString(
+        "browser.archive.restore_failed",
+        comment: "Durable restore failure."
+    )
+    static let archiveDestinationMissing = NSLocalizedString(
+        "browser.archive.destination_missing",
+        comment: "Missing destination."
+    )
+    static let archiveEntryMissing = NSLocalizedString(
+        "browser.archive.entry_missing",
+        comment: "Missing or consumed archive entry."
+    )
+    static let archiveActionFailed = NSLocalizedString(
+        "browser.archive.action_failed",
+        comment: "Archive operation failure."
+    )
+    static let archiveUnavailable = NSLocalizedString(
+        "browser.archive.unavailable",
+        comment: "Archive unavailable state."
+    )
+    static let archiveSearchInvalid = NSLocalizedString(
+        "browser.archive.search_invalid",
+        comment: "Invalid archive query."
+    )
+
     static let sessionRecoveryTitle = NSLocalizedString(
         "browser.session.recovery.title",
         comment: "Unsaved session banner title."

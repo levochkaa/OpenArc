@@ -202,6 +202,9 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
     @Published private(set) var temporaryTabLifetime: BrowserTemporaryTabLifetime
     @Published private(set) var automaticArchivalSettingsError: String?
+    @Published private(set) var archiveRevision = 0
+    @Published private(set) var archiveError: String?
+    @Published private(set) var isArchiveOperationInFlight = false
     @Published private(set) var isFindBarPresented = false
     @Published private(set) var findBarFocusRequest = 0
     @Published private(set) var findResultMatchCount: Int?
@@ -3629,6 +3632,184 @@ enum BrowserWindowMode: Equatable {
     }
 }
 
+// MARK: - Durable Archive
+
+extension BrowserChromeModel {
+    var canBrowseArchive: Bool {
+        windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown && !hasDiscardedSessionForClosure &&
+            sessionSnapshotStore is any BrowserTabArchiveStoring
+    }
+
+    var canRestoreArchivedTab: Bool {
+        canBrowseArchive && canCreateTab && !isArchiveOperationInFlight && !hasUncommittedSessionWrites &&
+            !isRestoringSession && !isApplyingRemoteSync && !isReconcilingRemoteProjection &&
+            deferredRemoteSyncSnapshot == nil && pendingRemoteTabCreations.isEmpty &&
+            pendingCreatedTabContexts.isEmpty && pendingHydratedTabCreationIDs.isEmpty &&
+            pendingReopenedAppTabIDs.isEmpty && pendingReopenedPinnedTabIDs.isEmpty
+    }
+
+    func loadArchivedTabs(
+        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50
+    ) async throws -> BrowserTabArchivePage {
+        guard canBrowseArchive, let archive = sessionSnapshotStore as? any BrowserTabArchiveStoring
+        else { throw BrowserTabArchiveError.unsupportedStore }
+        return try await archive.searchArchivePage(query: query, before: before, limit: limit)
+    }
+
+    func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary {
+        guard canBrowseArchive, let archive = sessionSnapshotStore as? any BrowserTabArchiveStoring
+        else { throw BrowserTabArchiveError.unsupportedStore }
+        return try await archive.archiveClearBoundary()
+    }
+
+    @discardableResult func deleteArchivedTab(id: String) async -> Bool {
+        guard canBrowseArchive, !isArchiveOperationInFlight,
+              let archive = sessionSnapshotStore as? any BrowserTabArchiveStoring else { return false }
+        isArchiveOperationInFlight = true
+        archiveError = nil
+        defer { isArchiveOperationInFlight = false }
+        do {
+            _ = try await archive.removeArchiveEntry(id: id)
+            archiveRevision &+= 1
+            return true
+        } catch {
+            archiveError = BrowserStrings.archiveActionFailed
+            return false
+        }
+    }
+
+    @discardableResult func clearArchive(through boundary: BrowserTabArchiveBoundary) async -> Bool {
+        guard canBrowseArchive, !isArchiveOperationInFlight,
+              let archive = sessionSnapshotStore as? any BrowserTabArchiveStoring else { return false }
+        isArchiveOperationInFlight = true
+        archiveError = nil
+        defer { isArchiveOperationInFlight = false }
+        do {
+            _ = try await archive.clearArchive(through: boundary)
+            archiveRevision &+= 1
+            return true
+        } catch {
+            archiveError = BrowserStrings.archiveActionFailed
+            return false
+        }
+    }
+
+    func syncArchiveDidChange() {
+        guard canBrowseArchive else { return }
+        archiveRevision &+= 1
+    }
+
+    /// Commit the new identity and consume its recovery entry together before
+    /// allocating an engine. Failed storage has no optimistic state to replay:
+    /// an explicit Retry rebuilds this action against the latest live snapshot.
+    @discardableResult func restoreArchivedTab(id: String, toSpaceID: String? = nil) -> String? {
+        guard canRestoreArchivedTab, let archive = sessionSnapshotStore as? any BrowserTabArchiveStoring else {
+            archiveError = BrowserStrings.archiveUnavailable
+            return nil
+        }
+        isArchiveOperationInFlight = true
+        archiveError = nil
+        defer { isArchiveOperationInFlight = false }
+        do {
+            guard let entry = try archive.loadArchiveEntry(id: id) else {
+                archiveError = BrowserStrings.archiveEntryMissing
+                archiveRevision &+= 1
+                return nil
+            }
+            guard let destination = toSpaceID ?? entry.tab.spaceID,
+                  spaces.contains(where: { $0.id == destination })
+            else {
+                archiveError = BrowserStrings.archiveDestinationMissing
+                return nil
+            }
+            let syncID = tabSyncIDProvider()
+            guard !syncID.isEmpty, syncID != entry.tab.id, !tabs.contains(where: { $0.syncID == syncID })
+            else { throw BrowserTabArchiveError.restoredTabIDNotFresh }
+            let now = dateProvider().timeIntervalSince1970.rounded(.down)
+            guard now.isFinite else { throw BrowserTabArchiveError.invalidEntry }
+            let snapshot = currentSessionSnapshot()
+            let outgoing = canRecordExplicitViewingActivity && selectedTab?.creationState == .ready ? selectedTab : nil
+            let outgoingDate = outgoing.map { advancedActivityDate(after: $0.lastActivityAt) }
+            let restored = BrowserTabSessionSnapshotTab(
+                id: syncID, urlString: entry.tab.urlString, userTitleOverride: entry.tab.userTitleOverride,
+                placement: .temporary, spaceID: destination, lastActivityTimestamp: now
+            )
+            let nextTabs = snapshot.tabs.map { tab in
+                guard tab.id == outgoing?.syncID, let outgoingDate else { return tab }
+                return BrowserTabSessionSnapshotTab(
+                    id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
+                    userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
+                    pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: outgoingDate.timeIntervalSince1970,
+                    pinnedSiblingRank: tab.pinnedSiblingRank
+                )
+            } + [restored]
+            let next = BrowserTabSessionSnapshot(
+                spaces: snapshot.spaces?.map { space in
+                    guard space.id == destination else { return space }
+                    return BrowserSpaceSessionSnapshot(
+                        id: space.id, title: space.title, systemImageName: space.systemImageName,
+                        isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
+                        selectedTabIndex: nextTabs.filter { $0.spaceID == destination && $0.placement != .app }
+                            .count - 1
+                    )
+                }, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: nextTabs
+            )
+            // Archive transitions cannot be buffered independently of the live
+            // tree: a later full snapshot could otherwise drop a consumed restore.
+            try sessionSnapshotStore.writeSessionBatch([.init(
+                snapshot: next, origin: .local(syncMove: nil), archiveAction: .restore(archiveID: id, tabID: syncID)
+            )])
+            isSessionClosurePrepared = false
+            publishArchivedTab(entry: entry, restored: restored, outgoing: outgoing, outgoingDate: outgoingDate)
+            archiveRevision &+= 1
+            sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
+            sessionPreferencesStore.saveSelectedTabIndex(next.tabs.firstIndex { $0.id == syncID })
+            syncCoordinator?.schedulePush(snapshot: next)
+            return syncID
+        } catch {
+            archiveError = (error as? BrowserTabArchiveError) == .entryMissing ||
+                (error as? BrowserTabArchiveError) == .archiveAlreadyRestored
+                ? BrowserStrings.archiveEntryMissing
+                : BrowserStrings.archiveRestoreFailed
+            return nil
+        }
+    }
+
+    private func publishArchivedTab(
+        entry: BrowserTabArchiveEntry, restored: BrowserTabSessionSnapshotTab, outgoing: Tab?, outgoingDate: Date?
+    ) {
+        guard let syncID = restored.id, let destination = restored.spaceID,
+              let activity = restored.lastActivityTimestamp else { return }
+        // Suppress incidental selection persistence during this synchronous
+        // publication; its complete snapshot already committed with the receipt.
+        isRestoringSession = true
+        defer { isRestoringSession = false }
+        if let outgoingDate, let index = tabs.firstIndex(where: { $0.id == outgoing?.id }) {
+            tabs[index].lastActivityAt = outgoingDate
+        }
+        captureSelectedTabPreviewIfNeeded()
+        dismissCommandBar()
+        dismissFindBar()
+        invalidateSelectedTabWebAppInstallMetadata()
+        let runtimeID = tabDriver.createTab(
+            withURLString: resolvedBrowserURLString(restored.urlString),
+            makeActive: true
+        )
+        restoredTabCreationIDs.insert(runtimeID)
+        tabs.append(Tab(
+            id: runtimeID, syncID: syncID, spaceID: destination, title: entry.title ?? "",
+            userTitleOverride: restored.userTitleOverride, urlString: restored.urlString,
+            placement: .temporary, lastActivityAt: Date(timeIntervalSince1970: activity)
+        ))
+        selectedSpaceID = destination
+        selectedTabID = runtimeID
+        setSelectedTabID(runtimeID, forSpaceID: destination)
+        findResultMatchCount = nil
+        recordSelectedTab(runtimeID)
+        updateWindowTitle()
+    }
+}
+
 // MARK: BrowserSyncExpiryScheduling
 
 extension BrowserChromeModel: BrowserSyncExpiryScheduling {
@@ -3645,8 +3826,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                           .contains($0.id) })
         else { return nil }
         let protectedIDs = Set(tabs.filter { $0.id == selectedTabID }.map(\.syncID))
-        // Desktop recovery is durable, but its native Archive surface is not
-        // available yet. Never enable conditional expiry from a shared setting.
+        // Desktop recovery is available, but automatic expiry still needs its
+        // native timing controls and close-policy verification. A shared mobile
+        // preference must not silently enable it here.
         return .init(inactiveForSeconds: nil, protectedTabIDs: protectedIDs)
     }
 

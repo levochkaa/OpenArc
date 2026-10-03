@@ -125,6 +125,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         if let index = profileWindowSessions.firstIndex(where: { $0.window === closedWindow }) {
             let session = profileWindowSessions.remove(at: index)
+            archiveWindowControllers.removeValue(forKey: ObjectIdentifier(session.chromeModel))?.close()
             session.chromeModel.prepareForTermination()
             updateProfilePresentationForOpenWindows()
             return
@@ -251,6 +252,28 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.archiveSelectedTab()
     }
 
+    public func showArchive(_: Any?) {
+        guard !isTerminationRequested, let model = archiveContextModel, model.canBrowseArchive else { return }
+        let key = ObjectIdentifier(model)
+        if let existing = archiveWindowControllers[key] {
+            existing.showWindow(nil)
+            existing.window?.makeKeyAndOrderFront(nil)
+            existing.archiveController.focusSearch()
+            return
+        }
+        let controller = BrowserArchiveWindowController(model: model)
+        controller.onClose = { [weak self] in self?.archiveWindowControllers.removeValue(forKey: key) }
+        controller.onRestore = { [weak self, weak model] in
+            guard let self, let model,
+                  let window = profileWindowSessions.first(where: { $0.chromeModel === model })?.window else { return }
+            window.makeKeyAndOrderFront(nil)
+        }
+        archiveWindowControllers[key] = controller
+        controller.window?.center()
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+    }
+
     public func goBack(_: Any?) {
         activeChromeModel?.goBack()
     }
@@ -292,6 +315,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func findInPage(_: Any?) {
+        if let archive = focusedArchiveWindowController {
+            archive.archiveController.focusSearch()
+            return
+        }
         _ = activeChromeModel?.presentFindInPage()
     }
 
@@ -360,7 +387,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(openHistory(_:)):
             return activeChromeModel != nil && !isTerminationRequested
         case #selector(archiveCurrentTab(_:)):
-            return activeChromeModel?.canArchiveSelectedTab ?? false
+            return focusedArchiveWindowController != nil || activeChromeModel?.canArchiveSelectedTab == true
+        case #selector(showArchive(_:)):
+            return !isTerminationRequested && archiveContextModel?.canBrowseArchive == true
         case #selector(goBack(_:)):
             return activeChromeModel?.canGoBack ?? false
         case #selector(goForward(_:)):
@@ -379,7 +408,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(copySelectedTabLink(_:)):
             return activeChromeModel?.canCopySelectedTabLink ?? false
         case #selector(findInPage(_:)):
-            return activeChromeModel?.canPresentFindInPage ?? false
+            return focusedArchiveWindowController != nil || activeChromeModel?.canPresentFindInPage == true
         case #selector(findNextInPage(_:)), #selector(findPreviousInPage(_:)):
             return activeChromeModel?.canStepThroughFindMatches ?? false
         case #selector(findAndReplace(_:)), #selector(jumpToSelection(_:)), #selector(useSelectionToFind(_:)):
@@ -419,6 +448,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private var aboutWindow: NSWindow?
     private var settingsWindowController: SettingsWindowController?
+    private var archiveWindowControllers = [ObjectIdentifier: BrowserArchiveWindowController]()
     private var webAppWindowSession: BrowserWebAppWindowSession?
     private var incognitoWindowSessions = [BrowserIncognitoWindowSession]()
     private var profileWindowSessions = [BrowserProfileWindowSession]()
@@ -458,6 +488,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private var activeChromeModel: BrowserChromeModel? {
+        // An Archive is an auxiliary document surface. Page commands must not
+        // target an unrelated browser window behind it.
+        if focusedArchiveWindowController != nil {
+            return nil
+        }
         if let webAppWindowSession {
             return webAppWindowSession.chromeModel
         }
@@ -467,6 +502,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
 
         return activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
+    }
+
+    private var archiveContextModel: BrowserChromeModel? {
+        focusedArchiveWindowController?.model ?? activeChromeModel
+    }
+
+    private var focusedArchiveWindowController: BrowserArchiveWindowController? {
+        var candidate = NSApp.keyWindow
+        while let window = candidate {
+            if let archive = archiveWindowControllers.values.first(where: { $0.window === window }) {
+                return archive
+            }
+            candidate = window.sheetParent ?? window.parent
+        }
+        return nil
     }
 
     private var activeBrowserWindow: NSWindow? {
@@ -567,6 +617,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             + profileWindowSessions.map(\.window)
             + incognitoWindowSessions.map(\.window)
         webAppWindowSession = nil
+        let archiveControllers = Array(archiveWindowControllers.values)
+        archiveWindowControllers.removeAll()
+        for controller in archiveControllers {
+            controller.close()
+        }
         profileWindowSessions.removeAll()
         incognitoWindowSessions.removeAll()
 
@@ -683,6 +738,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(archiveCurrentTab(_:))
         )
         fileMenu.addItem(archiveTabItem)
+
+        let archiveItem = NSMenuItem(
+            title: BrowserStrings.archiveMenuTitle,
+            action: #selector(showArchive(_:)),
+            keyEquivalent: ""
+        )
+        archiveItem.target = self
+        archiveItem.identifier = NSUserInterfaceItemIdentifier("browser.archive.open")
+        fileMenu.addItem(archiveItem)
 
         let savePageItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .savePage),
@@ -1155,10 +1219,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private func closeActiveAuxiliaryWindow() -> Bool {
-        guard let keyWindow = NSApp.keyWindow,
-              keyWindow === aboutWindow || keyWindow === settingsWindowController?.window else { return false }
-        keyWindow.performClose(nil)
-        return true
+        var candidate = NSApp.keyWindow
+        while let window = candidate {
+            if archiveWindowControllers.values.contains(where: { $0.window === window }) {
+                // A confirmation sheet belongs to this auxiliary window; Cmd+W
+                // must never fall through to Close Tab on its profile window.
+                window.performClose(nil)
+                return true
+            }
+            if window === aboutWindow || window === settingsWindowController?.window {
+                window.performClose(nil)
+                return true
+            }
+            candidate = window.sheetParent ?? window.parent
+        }
+        return false
     }
 
     private func performLayoutIndependentShortcutCommand(
@@ -1255,6 +1330,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
             return activeChromeModel?.copySelectedTabLink() ?? false
         case .findInPage:
+            if let archive = focusedArchiveWindowController {
+                archive.archiveController.focusSearch()
+                return true
+            }
             guard activeChromeModel?.canPresentFindInPage ?? false else {
                 return false
             }
