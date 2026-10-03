@@ -115,6 +115,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onTabCreated = { [weak self] tabID, title, urlString, isActive in
             self?.handleCreatedTab(id: tabID, title: title, urlString: urlString, isActive: isActive)
         }
+        tabDriver.onTabCreationStateChanged = { [weak self] tabID, state in
+            self?.handleTabCreationStateChange(id: tabID, state: state)
+        }
         tabDriver.onTabUpdated = { [weak self] tabID, title, urlString, faviconURLString in
             self?.handleUpdatedTab(
                 id: tabID,
@@ -293,6 +296,10 @@ enum BrowserWindowMode: Equatable {
 
     var canReload: Bool {
         canCreateTab && selectedTabID != nil
+    }
+
+    var selectedTabCreationState: BrowserTabCreationState? {
+        selectedTab?.creationState
     }
 
     var canStopLoading: Bool {
@@ -1385,13 +1392,40 @@ enum BrowserWindowMode: Equatable {
         guard canReload else {
             return
         }
+        if selectedTabCreationState == .failed {
+            retrySelectedTabCreation()
+            return
+        }
 
         tabDriver.reloadActiveTab()
         BrowserTelemetry.captureUsage(.tabReloaded, properties: telemetryProperties)
     }
 
+    @discardableResult func retrySelectedTabCreation() -> Bool {
+        guard canCreateTab, let index = selectedTabIndex,
+              tabs[index].creationState == .failed,
+              !closedAppTabIDs.contains(tabs[index].id),
+              !closedPinnedTabIDs.contains(tabs[index].id),
+              !closingTabIDs.contains(tabs[index].id)
+        else { return false }
+
+        let tab = tabs[index]
+        // Retry only the runtime allocation. The logical tab and its durable
+        // snapshot/outbox remain unchanged, including selection and undo IDs.
+        tabs[index].creationState = .creating
+        guard tabDriver.retryTabCreation(withID: tab.id, urlString: resolvedBrowserURLString(tab.urlString)) else {
+            tabs[index].creationState = .failed
+            return false
+        }
+        return true
+    }
+
     func forceReloadCurrentTab() {
         guard canReload else {
+            return
+        }
+        if selectedTabCreationState == .failed {
+            retrySelectedTabCreation()
             return
         }
 
@@ -3804,6 +3838,27 @@ enum BrowserWindowMode: Equatable {
 
         tabs[index].canGoBack = canGoBack
         tabs[index].canGoForward = canGoForward
+    }
+
+    func handleTabCreationStateChange(id: String, state: BrowserTabCreationState) {
+        guard !isShuttingDown, !closingTabIDs.contains(id),
+              !closedAppTabIDs.contains(id), !closedPinnedTabIDs.contains(id),
+              let index = tabs.firstIndex(where: { $0.id == id })
+        else { return }
+
+        switch (tabs[index].creationState, state) {
+        case (.creating, .failed), (.creating, .ready), (.failed, .creating):
+            tabs[index].creationState = state
+        default:
+            // Duplicates and obsolete outcomes cannot regress an attached page
+            // or revive a refused attempt. Only explicit Retry starts another.
+            return
+        }
+        if state == .failed {
+            tabs[index].isLoading = false
+            tabs[index].canGoBack = false
+            tabs[index].canGoForward = false
+        }
     }
 
     func handleLoadingStateChange(id: String, isLoading: Bool) {

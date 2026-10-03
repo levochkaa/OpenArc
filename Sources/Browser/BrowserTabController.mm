@@ -2399,6 +2399,8 @@ class BrowserTabClient final : public CefClient,
 struct TabRecord {
   CefRefPtr<CefClient> client;
   CefRefPtr<CefBrowser> browser;
+  BrowserTabEngineCreationState creationState =
+      BrowserTabEngineCreationStateCreating;
 };
 
 }  // namespace
@@ -2411,6 +2413,8 @@ struct TabRecord {
 
 @interface BrowserTabController ()
 
+- (void)startBrowserCreationForTabID:(NSString *)tabID
+                         URLString:(NSString *)urlString;
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser
                      forTabID:(NSString *)tabID;
 - (void)handleBrowserClosedForTabID:(NSString *)tabID;
@@ -2544,7 +2548,41 @@ struct TabRecord {
                                urlString:resolvedURLString
                                 isActive:isActive];
 
-  std::string resolvedURL = ToStdString(resolvedURLString);
+  [self startBrowserCreationForTabID:tabID URLString:resolvedURLString];
+  return tabID;
+}
+
+- (BOOL)retryTabCreationWithID:(NSString *)tabID urlString:(NSString *)urlString {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() ||
+      it->second.creationState != BrowserTabEngineCreationStateFailed) {
+    return NO;
+  }
+
+  // A synchronous refusal never created a browser. Retain the logical ID and
+  // selection, and admit exactly one new attempt from that terminal state.
+  it->second.creationState = BrowserTabEngineCreationStateCreating;
+  it->second.client = new BrowserTabClient(self, ToStdString(tabID));
+  NSString *resolvedURLString =
+      urlString.length > 0 ? [urlString copy] : @"about:blank";
+  [self startBrowserCreationForTabID:tabID URLString:resolvedURLString];
+  return YES;
+}
+
+- (void)startBrowserCreationForTabID:(NSString *)tabID
+                         URLString:(NSString *)urlString {
+  std::string tabKey = ToStdString(tabID);
+  auto it = _tabRecords.find(tabKey);
+  if (it == _tabRecords.end() ||
+      it->second.creationState != BrowserTabEngineCreationStateCreating) {
+    return;
+  }
+  CefRefPtr<CefClient> client = it->second.client;
+  [self.delegate browserTabController:self
+       didChangeCreationStateForTabWithID:tabID
+                                   state:BrowserTabEngineCreationStateCreating];
+
+  std::string resolvedURL = ToStdString(urlString);
   CefWindowInfo windowInfo;
   windowInfo.SetAsChild((__bridge CefWindowHandle)_hostView,
                         CefRectFromBounds(_hostView.bounds));
@@ -2554,10 +2592,20 @@ struct TabRecord {
     windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   }
 
-  CefBrowserHost::CreateBrowser(windowInfo, client, resolvedURL,
-                                CefBrowserSettings(), nullptr, _requestContext);
+  const bool accepted = CefBrowserHost::CreateBrowser(
+      windowInfo, client, resolvedURL, CefBrowserSettings(), nullptr,
+      _requestContext);
+  if (!accepted) {
+    auto failed = _tabRecords.find(tabKey);
+    if (failed != _tabRecords.end() &&
+        failed->second.creationState == BrowserTabEngineCreationStateCreating) {
+      failed->second.creationState = BrowserTabEngineCreationStateFailed;
+      [self.delegate browserTabController:self
+           didChangeCreationStateForTabWithID:tabID
+                                       state:BrowserTabEngineCreationStateFailed];
+    }
+  }
   [self updateBrowserVisibility];
-  return tabID;
 }
 
 - (void)selectTabWithID:(NSString *)tabID {
@@ -2829,13 +2877,18 @@ struct TabRecord {
                      forTabID:(NSString *)tabID {
   std::string tabKey = ToStdString(tabID);
   auto it = _tabRecords.find(tabKey);
-  if (it == _tabRecords.end()) {
+  if (it == _tabRecords.end() ||
+      it->second.creationState != BrowserTabEngineCreationStateCreating) {
     browser->GetHost()->CloseBrowser(false);
     return;
   }
 
   it->second.browser = browser;
+  it->second.creationState = BrowserTabEngineCreationStateReady;
   SyncBrowserViewFrame(_hostView, browser);
+  [self.delegate browserTabController:self
+       didChangeCreationStateForTabWithID:tabID
+                                   state:BrowserTabEngineCreationStateReady];
   [self handleNavigationStateChangeForTabID:tabID
                                   canGoBack:browser->CanGoBack()
                                canGoForward:browser->CanGoForward()];

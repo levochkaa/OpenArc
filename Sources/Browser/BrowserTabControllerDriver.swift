@@ -42,6 +42,7 @@ import Foundation
     // MARK: Internal
 
     var onTabCreated: ((String, String, String, Bool) -> Void)?
+    var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabClosed: ((String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
@@ -55,6 +56,10 @@ import Foundation
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {
         controller.createTab(withURLString: urlString, makeActive: makeActive)
+    }
+
+    func retryTabCreation(withID tabID: String, urlString: String) -> Bool {
+        controller.retryTabCreation(withID: tabID, urlString: urlString)
     }
 
     func selectTab(withID tabID: String) {
@@ -148,6 +153,7 @@ import Foundation
 
     func prepareForCefShutdown() {
         onTabCreated = nil
+        onTabCreationStateChanged = nil
         onTabUpdated = nil
         onTabClosed = nil
         onNavigationStateChanged = nil
@@ -166,6 +172,25 @@ import Foundation
 // MARK: BrowserTabControllerDelegate
 
 extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
+    /// The bridge emits allocation before engine outcomes on the UI thread.
+    /// Main-queue FIFO preserves that order and delivers after createTab returns.
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didChangeCreationStateForTabWithID tabID: String,
+        state: BrowserTabEngineCreationState
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            let creationState: BrowserTabCreationState
+            switch state {
+            case .creating: creationState = .creating
+            case .ready: creationState = .ready
+            case .failed: creationState = .failed
+            @unknown default: return
+            }
+            self?.onTabCreationStateChanged?(tabID, creationState)
+        }
+    }
+
     nonisolated func browserTabController(
         _: BrowserTabController,
         didCreateTabWithID tabID: String,
@@ -173,7 +198,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         urlString: String,
         isActive: Bool
     ) {
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.onTabCreated?(tabID, title, urlString, isActive)
         }
     }
@@ -185,13 +210,13 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         urlString: String?,
         faviconURLString: String?
     ) {
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.onTabUpdated?(tabID, title, urlString, faviconURLString)
         }
     }
 
     nonisolated func browserTabController(_: BrowserTabController, didCloseTabWithID tabID: String) {
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.onTabClosed?(tabID)
         }
     }
@@ -202,7 +227,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         canGoBack: Bool,
         canGoForward: Bool
     ) {
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.onNavigationStateChanged?(tabID, canGoBack, canGoForward)
         }
     }
@@ -212,7 +237,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         didUpdateLoadingStateForTabWithID tabID: String,
         isLoading: Bool
     ) {
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.onLoadingStateChanged?(tabID, isLoading)
         }
     }
@@ -224,7 +249,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         activeMatchOrdinal: Int,
         finalUpdate: Bool
     ) {
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             self?.onFindResultChanged?(tabID, matchCount, activeMatchOrdinal, finalUpdate)
         }
     }
@@ -240,7 +265,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         currentSpeedBytesPerSecond: Int64,
         stateRawValue: String
     ) {
-        Task { @MainActor [weak self] in
+        DispatchQueue.main.async { [weak self] in
             let state = BrowserDownloadState(rawValue: stateRawValue) ?? .interrupted
             self?.onDownloadUpdated?(BrowserDownloadUpdate(
                 id: downloadID,

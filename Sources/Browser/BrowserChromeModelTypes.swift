@@ -21,6 +21,7 @@ extension BrowserChromeModel {
         var canGoBack = false
         var canGoForward = false
         var isLoading = false
+        var creationState = BrowserTabCreationState.creating
 
         var displayTitle: String {
             let trimmedUserTitleOverride = userTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

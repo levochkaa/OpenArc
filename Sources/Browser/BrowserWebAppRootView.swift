@@ -40,6 +40,7 @@ final class BrowserWebAppRootView: NSView {
             addSubview(view)
         }
         find.bind(to: model)
+        content.bindTabCreation(to: model)
         fullscreen.onFullscreenStateChange = { [weak self] state in self?.isFullscreen = state.isFullscreen
             self?.refresh()
         }
@@ -121,7 +122,8 @@ final class BrowserWebAppRootView: NSView {
             isContextReady: model.isContextReady,
             hasSelectedTab: model.selectedTabID != nil,
             isSidebarVisible: false,
-            usesWindowContentInsets: windowLayout.usesWindowContentInsets
+            usesWindowContentInsets: windowLayout.usesWindowContentInsets,
+            selectedTabCreationState: model.selectedTabCreationState
         )
         if let previousShowsToolbar, previousShowsToolbar != showsToolbar {
             animateNextLayout = true

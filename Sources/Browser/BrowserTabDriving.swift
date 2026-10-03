@@ -1,9 +1,20 @@
 import AppKit
 import Foundation
 
+// MARK: - BrowserTabCreationState
+
+enum BrowserTabCreationState: Equatable, Sendable {
+    case creating
+    case ready
+    case failed
+}
+
+// MARK: - BrowserTabDriving
+
 @MainActor protocol BrowserTabDriving: AnyObject {
     var hostView: NSView { get }
     var onTabCreated: ((String, String, String, Bool) -> Void)? { get set }
+    var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)? { get set }
     var onTabUpdated: ((String, String?, String?, String?) -> Void)? { get set }
     var onTabClosed: ((String) -> Void)? { get set }
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)? { get set }
@@ -12,6 +23,10 @@ import Foundation
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
+    /// True admits another attempt for a synchronously refused creation.
+    /// Creation-state notifications use onTabCreationStateChanged; admission
+    /// does not establish readiness or guarantee completion of an accepted attempt.
+    func retryTabCreation(withID tabID: String, urlString: String) -> Bool
     func selectTab(withID tabID: String)
     func deselectActiveTab()
     func navigateActiveTab(toURLString urlString: String)

@@ -116,6 +116,14 @@ import Foundation
 // MARK: BrowserTabControllerDelegate
 
 extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
+    /// Tab recovery belongs to the browser content surface. Extension popups
+    /// retain their existing presentation and dismissal behavior.
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didChangeCreationStateForTabWithID _: String,
+        state _: BrowserTabEngineCreationState
+    ) {}
+
     nonisolated func browserTabController(
         _: BrowserTabController,
         didCreateTabWithID _: String,
@@ -177,6 +185,13 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
 // MARK: - BrowserExtensionSidePanelController + BrowserTabControllerDelegate
 
 extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
+    /// Extension panels do not expose the browser tab recovery controls.
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didChangeCreationStateForTabWithID _: String,
+        state _: BrowserTabEngineCreationState
+    ) {}
+
     nonisolated func browserTabController(
         _: BrowserTabController,
         didCreateTabWithID _: String,

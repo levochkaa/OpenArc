@@ -158,6 +158,26 @@ enum BrowserStrings {
         comment: "Loading message shown while the browser initializes."
     )
 
+    static let loadingOpeningTab = NSLocalizedString(
+        "browser.loading.opening_tab",
+        comment: "Loading message shown while a tab opens."
+    )
+
+    static let tabCreationFailedTitle = NSLocalizedString(
+        "browser.tab.creation_failed.title",
+        comment: "Title shown when a tab could not open."
+    )
+
+    static let tabCreationFailedMessage = NSLocalizedString(
+        "browser.tab.creation_failed.message",
+        comment: "Recovery instruction shown when a tab could not open."
+    )
+
+    static let tabCreationRetry = NSLocalizedString(
+        "browser.tab.creation_failed.retry",
+        comment: "Button that retries opening the selected tab."
+    )
+
     static let commandBarPlaceholder = NSLocalizedString(
         "browser.command_bar.placeholder",
         comment: "Placeholder shown in the command bar search field."

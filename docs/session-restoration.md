@@ -4,7 +4,7 @@
 
 The durable session describes logical tabs, their stable sync IDs, Spaces, folders, order and selection. An engine ID identifies the runtime record for one logical tab. Restoring those relationships must not depend on callback delivery order.
 
-`BrowserTabController.createTab` allocates the runtime record and calls its `didCreateTab` delegate before invoking `CefBrowserHost::CreateBrowser`. The Swift driver delivers that callback in a MainActor task. This is a placeholder notification, not evidence that CEF has created or loaded a page. The real `OnAfterCreated` path attaches the browser later. Readiness and terminal engine creation failures require a separate lifecycle contract.
+`BrowserTabController.createTab` allocates the runtime record and calls its `didCreateTab` delegate before invoking `CefBrowserHost::CreateBrowser`. The Swift driver delivers that callback asynchronously on the main queue. This is a placeholder notification, not evidence that CEF has created or loaded a page. The real `OnAfterCreated` path attaches the browser later. Readiness and immediate engine refusal use the separate [tab creation lifecycle](tab-creation-lifecycle.md).
 
 ## Current repair
 
@@ -30,4 +30,4 @@ Late attachment of an applier to an already-running coordinator still lacks repe
 
 Regression cases cover reversed and duplicate callbacks, local creation and edits before callback delivery, saved selection, remote supersession, deleting pending remote children, global Favorite survival and offline SQLite reopen. Fake engine callbacks establish model behavior, not actual CEF loading or native UI quality.
 
-Engine creation refusal is still a separate gap: the current bridge ignores `CreateBrowser`'s Boolean result and exposes no ready/failure callback. Do not label a timeout as a confirmed engine failure or equate the existing placeholder callback with successful page creation. No CEF/Chromium source, artifacts or baseline changes are part of this repair.
+The subsequent tab-creation slice handles `CreateBrowser(false)` and exposes actual ready/refused states with Retry. An accepted request that never completes and navigation updates before attachment remain separate gaps. Do not label a timeout as a confirmed engine failure or equate the placeholder callback with successful page creation. No CEF/Chromium source, artifacts or baseline changes are part of the restoration repair.

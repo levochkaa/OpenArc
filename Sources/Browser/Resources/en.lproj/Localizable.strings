@@ -69,6 +69,10 @@
 "browser.find_bar.next_match" = "Next Match";
 "browser.find_bar.close" = "Close Find";
 "browser.loading.launching" = "Launching browser...";
+"browser.loading.opening_tab" = "Opening tab…";
+"browser.tab.creation_failed.title" = "Couldn’t Open This Tab";
+"browser.tab.creation_failed.message" = "Try opening this tab again.";
+"browser.tab.creation_failed.retry" = "Retry";
 "browser.menu.file" = "File";
 "browser.menu.edit" = "Edit";
 "browser.menu.view" = "View";

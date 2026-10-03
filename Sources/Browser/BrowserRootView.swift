@@ -43,6 +43,7 @@ final class BrowserRootView: NSView {
             addSubview(view)
         }
         find.bind(to: model)
+        content.bindTabCreation(to: model)
         sessionRecovery.onRetry = { [weak model] in model?.retrySessionPersistence() }
         sessionRecovery.onSaveCopy = { [weak self] in
             guard let self, let window else { return }
@@ -350,7 +351,8 @@ final class BrowserRootView: NSView {
             isContextReady: model.isContextReady,
             hasSelectedTab: model.selectedTabID != nil,
             isSidebarVisible: model.isSidebarVisible,
-            usesWindowContentInsets: usesWindowContentInsets
+            usesWindowContentInsets: usesWindowContentInsets,
+            selectedTabCreationState: model.selectedTabCreationState
         )
         sidebar.showsWindowControls = showsWindowControlsInSidebarChrome
         sidebar.isOverlayPresentation = isSidebarOverlayPresentation

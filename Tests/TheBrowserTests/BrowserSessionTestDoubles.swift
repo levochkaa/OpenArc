@@ -19,6 +19,11 @@ import Foundation
         let forceClose: Bool
     }
 
+    struct RetryCreationRequest: Equatable {
+        let id: String
+        let urlString: String
+    }
+
     struct FindRequest: Equatable {
         let text: String
         let forward: Bool
@@ -29,6 +34,7 @@ import Foundation
     let hostView = NSView(frame: .zero)
 
     var onTabCreated: ((String, String, String, Bool) -> Void)?
+    var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabClosed: ((String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
@@ -37,6 +43,8 @@ import Foundation
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)?
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
+    private(set) var retryCreationRequests = [RetryCreationRequest]()
+    var retryTabCreationAdmissionResult = true
     private(set) var selectedTabIDs = [String]()
     private(set) var deselectActiveTabCount = 0
     private(set) var activeTabNavigationURLStrings = [String]()
@@ -85,6 +93,15 @@ import Foundation
         for request in pendingRequests {
             onTabCreated?(request.id, defaultTitle(for: request.urlString), request.urlString, request.isActive)
         }
+    }
+
+    func retryTabCreation(withID tabID: String, urlString: String) -> Bool {
+        retryCreationRequests.append(RetryCreationRequest(id: tabID, urlString: urlString))
+        return retryTabCreationAdmissionResult
+    }
+
+    func emitTabCreationState(id: String, state: BrowserTabCreationState) {
+        onTabCreationStateChanged?(id, state)
     }
 
     func selectTab(withID tabID: String) {

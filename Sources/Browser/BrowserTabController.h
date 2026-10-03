@@ -7,6 +7,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class BrowserTabController;
 
+typedef NS_ENUM(NSInteger, BrowserTabEngineCreationState) {
+  BrowserTabEngineCreationStateCreating,
+  BrowserTabEngineCreationStateReady,
+  BrowserTabEngineCreationStateFailed,
+};
+
 @protocol BrowserTabControllerDelegate <NSObject>
 
 - (void)browserTabController:(BrowserTabController *)controller
@@ -14,6 +20,10 @@ NS_ASSUME_NONNULL_BEGIN
                           title:(NSString *)title
                       urlString:(NSString *)urlString
                        isActive:(BOOL)isActive;
+
+- (void)browserTabController:(BrowserTabController *)controller
+    didChangeCreationStateForTabWithID:(NSString *)tabID
+                                state:(BrowserTabEngineCreationState)state;
 
 - (void)browserTabController:(BrowserTabController *)controller
              didUpdateTabWithID:(NSString *)tabID
@@ -67,6 +77,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (instancetype)new NS_UNAVAILABLE;
 
 - (NSString *)createTabWithURLString:(NSString *)urlString makeActive:(BOOL)makeActive;
+// YES means a failed record admitted a retry, even if CEF refuses it again.
+// Creating, ready, removed and unknown records are not eligible.
+- (BOOL)retryTabCreationWithID:(NSString *)tabID urlString:(NSString *)urlString
+    NS_SWIFT_NAME(retryTabCreation(withID:urlString:));
 - (void)selectTabWithID:(NSString *)tabID;
 - (void)deselectActiveTab;
 - (void)navigateActiveTabToURLString:(NSString *)urlString

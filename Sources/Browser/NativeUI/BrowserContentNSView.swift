@@ -35,27 +35,38 @@ final class BrowserContentNSView: NSView {
         self.viewport = BrowserViewportClipView(hostView: hostView)
         super.init(frame: .zero)
         addSubview(viewport)
-        loading.fillColor = BrowserChromeColors.contentBackground
-        loading.wantsLayer = true
-        loading.layer?.masksToBounds = true
-        loading.layer?.cornerCurve = .continuous
-        addSubview(loading)
+        for overlay in [loading, failure] {
+            overlay.fillColor = BrowserChromeColors.contentBackground
+            overlay.wantsLayer = true
+            overlay.layer?.masksToBounds = true
+            overlay.layer?.cornerCurve = .continuous
+            overlay.isHidden = true
+            addSubview(overlay)
+        }
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
-        let label = BrowserNativeControls.label(
-            BrowserStrings.loadingLaunchingBrowser,
-            size: 12,
-            color: BrowserChromeColors.secondaryText
-        )
-        let content = BrowserNativeControls.stack([spinner, label], spacing: 10)
-        content.alignment = .centerX
-        content.translatesAutoresizingMaskIntoConstraints = false
-        loading.addSubview(content)
-        NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: loading.centerXAnchor),
-            content.centerYAnchor.constraint(equalTo: loading.centerYAnchor),
-        ])
+        loading.addSubview(spinner)
+        loading.addSubview(loadingLabel)
+        for label in [loadingLabel, failureTitle, failureMessage] {
+            label.alignment = .center
+            label.maximumNumberOfLines = 0
+        }
+        for control in [failureTitle, failureMessage, retry] {
+            failure.addSubview(control)
+        }
+        retry.onAction = { [weak self] in
+            guard let self, !failure.isHidden else { return }
+            onRetryTabCreation()
+        }
+        loading.setAccessibilityIdentifier("browser.content.loading")
+        loadingLabel.setAccessibilityIdentifier("browser.content.loading.message")
+        failure.setAccessibilityRole(.group)
+        failure.setAccessibilityLabel(BrowserStrings.tabCreationFailedTitle)
+        failure.setAccessibilityIdentifier("browser.content.creation-failure")
+        failureTitle.setAccessibilityIdentifier("browser.content.creation-failure.title")
+        failureMessage.setAccessibilityIdentifier("browser.content.creation-failure.message")
+        retry.setAccessibilityIdentifier("browser.content.creation-failure.retry")
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("browser.content")
@@ -68,11 +79,37 @@ final class BrowserContentNSView: NSView {
     override var isFlipped: Bool { true }
 
     let viewport: BrowserViewportClipView
+    var onRetryTabCreation: () -> Void = {}
 
     override func layout() {
         super.layout()
         viewport.frame = bounds
         loading.frame = bounds
+        failure.frame = bounds
+
+        let width = min(max(bounds.width - 48, 0), 360)
+        let x = (bounds.width - width) / 2
+        let loadingHeight = textHeight(loadingLabel, width: width)
+        let loadingY = (bounds.height - loadingHeight - 26) / 2
+        spinner.frame = NSRect(x: (bounds.width - 16) / 2, y: loadingY, width: 16, height: 16)
+        loadingLabel.frame = NSRect(x: x, y: loadingY + 26, width: width, height: loadingHeight)
+
+        let titleHeight = textHeight(failureTitle, width: width)
+        let messageHeight = textHeight(failureMessage, width: width)
+        let failureY = (bounds.height - titleHeight - messageHeight - 60) / 2
+        failureTitle.frame = NSRect(x: x, y: failureY, width: width, height: titleHeight)
+        failureMessage.frame = NSRect(x: x, y: failureTitle.frame.maxY + 8, width: width, height: messageHeight)
+        let retryWidth = min(max(retry.intrinsicContentSize.width, 80), width)
+        retry.frame = NSRect(
+            x: (bounds.width - retryWidth) / 2,
+            y: failureMessage.frame.maxY + 20,
+            width: retryWidth,
+            height: 32
+        )
+    }
+
+    func bindTabCreation(to model: BrowserChromeModel) {
+        onRetryTabCreation = { [weak model] in model?.retrySelectedTabCreation() }
     }
 
     func update(
@@ -80,27 +117,69 @@ final class BrowserContentNSView: NSView {
         isContextReady: Bool,
         hasSelectedTab: Bool,
         isSidebarVisible: Bool,
-        usesWindowContentInsets: Bool
+        usesWindowContentInsets: Bool,
+        selectedTabCreationState: BrowserTabCreationState? = nil
     ) {
         viewport.update(hostView: hostView)
-        viewport.isHidden = !hasSelectedTab
+        let isCreatingTab = hasSelectedTab && selectedTabCreationState == .creating
+        let didFailToCreateTab = hasSelectedTab && selectedTabCreationState == .failed
+        viewport.isHidden = !isContextReady || !hasSelectedTab || isCreatingTab || didFailToCreateTab
         let clipping = BrowserContentClipping(
             isSidebarVisible: isSidebarVisible,
             usesWindowContentInsets: usesWindowContentInsets
         )
         viewport.updateClipping(cornerRadius: clipping.radius, maskedCorners: clipping.corners)
-        loading.layer?.cornerRadius = clipping.radius
-        loading.layer?.maskedCorners = clipping.corners
-        loading.isHidden = isContextReady
-        if isContextReady {
+        for overlay in [loading, failure] {
+            overlay.layer?.cornerRadius = clipping.radius
+            overlay.layer?.maskedCorners = clipping.corners
+        }
+        loadingLabel.stringValue = isContextReady
+            ? BrowserStrings.loadingOpeningTab
+            : BrowserStrings.loadingLaunchingBrowser
+        loading.isHidden = isContextReady && !isCreatingTab
+        failure.isHidden = !isContextReady || !didFailToCreateTab
+        retry.isEnabled = !failure.isHidden
+        if loading.isHidden {
             spinner.stopAnimation(nil)
         } else {
             spinner.startAnimation(nil)
         }
+        needsLayout = true
     }
 
     // MARK: Private
 
     private let loading = BrowserNativeSurface()
     private let spinner = NSProgressIndicator()
+    private let loadingLabel = BrowserNativeControls.label(
+        BrowserStrings.loadingLaunchingBrowser,
+        size: 12,
+        color: BrowserChromeColors.secondaryText,
+        wraps: true
+    )
+    private let failure = BrowserNativeSurface()
+    private let failureTitle = BrowserNativeControls.label(
+        BrowserStrings.tabCreationFailedTitle,
+        size: 16,
+        weight: .semibold,
+        color: BrowserChromeColors.primaryText,
+        wraps: true
+    )
+    private let failureMessage = BrowserNativeControls.label(
+        BrowserStrings.tabCreationFailedMessage,
+        size: 13,
+        color: BrowserChromeColors.secondaryText,
+        wraps: true
+    )
+    private let retry = BrowserActionButton(BrowserStrings.tabCreationRetry, action: {})
+
+    private func textHeight(_ label: NSTextField, width: CGFloat) -> CGFloat {
+        ceil((label.stringValue as NSString)
+            .boundingRect(
+                with: NSSize(width: max(width, 1), height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: label.font ?? NSFont.systemFont(ofSize: 13)]
+            )
+            .height)
+    }
 }
