@@ -236,6 +236,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     func selectTab(id: String) {
         guard canEdit, let tab = tabs.first(where: { $0.id == id }) else { return }
+        let previousID = selectedTabID
         unloadedPersistentIDs.remove(id)
         if profileDocument != nil, tab.placement != .app {
             selectedSpaceID = tab.spaceID
@@ -245,11 +246,13 @@ struct BrowserMobileTab: Identifiable, Equatable {
         navigationError = nil
         enqueueCurrentSession()
         selectCurrentRuntime()
+        recordSelectionActivity(previousID: previousID)
         notify()
     }
 
     func selectSpace(id: String) {
         guard canEdit, spaces.contains(where: { $0.id == id }) else { return }
+        let previousID = selectedTabID
         selectedSpaceID = id
         if !visibleTabs.contains(where: { $0.id == selectedTabID }) {
             selectedTabID = visibleTabs.first?.id
@@ -257,11 +260,18 @@ struct BrowserMobileTab: Identifiable, Equatable {
         cancelJavaScriptDialogIfSelectionChanged()
         saveSceneSelection()
         selectCurrentRuntime()
+        recordSelectionActivity(previousID: previousID)
         notify()
     }
 
     func closeTab(id: String) {
         guard canEdit, let tab = tabs.first(where: { $0.id == id }) else { return }
+        let previousID = selectedTabID
+        defer {
+            if selectedTabID != previousID {
+                recordSelectionActivity(previousID: previousID)
+            }
+        }
         if let profileDocument {
             if tab.placement == .temporary {
                 if profileDocument.supportsArchive {
@@ -311,6 +321,32 @@ struct BrowserMobileTab: Identifiable, Equatable {
     func setSyncActive(_ active: Bool) {
         isSyncActive = active && !isClosed
         syncSession?.setSceneActive(isSyncActive, sceneID: sceneID)
+    }
+
+    /// Attachment outlives foreground activity. A background window still owns
+    /// its selection; a retained but disconnected workspace does not.
+    func setSceneAttached(_ attached: Bool) {
+        let next = attached && !isClosed
+        guard isSceneAttached != next else { return }
+        if !next {
+            setActivityActive(false)
+        }
+        isSceneAttached = next
+        updateSelectionLease()
+    }
+
+    func setActivityActive(_ active: Bool) {
+        let next = active && isSceneAttached && !isClosed
+        guard isActivityActive != next else { return }
+        // Record both arrival and departure. A tab used for hours must not look
+        // idle immediately after switching away or backgrounding its window.
+        if isActivityActive {
+            recordSelectionActivity()
+        }
+        isActivityActive = next
+        if next {
+            recordSelectionActivity()
+        }
     }
 
     func setJavaScriptDialogPresentationActive(_ active: Bool) {
@@ -366,6 +402,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     @discardableResult func shutdown() async -> Bool {
         if !isClosed {
+            setSceneAttached(false)
             isClosed = true
             isReady = false
             setJavaScriptDialogPresentationActive(false)
@@ -397,6 +434,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private var saveFailed = false
     private var isJavaScriptDialogPresentationActive = false
     private var isSyncActive = false
+    private var isSceneAttached = false
+    private var isActivityActive = false
+    private let selectionLeaseOwner = UUID()
     private var profileLoader: (@MainActor () async throws -> BrowserMobileProfileDocument)?
     private var sceneID = ""
     private var scenePreferences: UserDefaults?
@@ -423,7 +463,6 @@ struct BrowserMobileTab: Identifiable, Equatable {
                 return
             }
             profileDocument = document
-            syncSession?.setSceneActive(isSyncActive, sceneID: sceneID)
             selectedSpaceID = scenePreferences?.string(forKey: selectionKey + ".space")
             selectedTabID = scenePreferences?.string(forKey: selectionKey + ".tab")
             if selectedSpaceID == nil {
@@ -441,6 +480,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
             isRestoring = false
             isReady = true
             documentObserver = document.observe { [weak self] snapshot in self?.applyProfile(snapshot) }
+            recordSelectionActivity()
+            syncSession?.setSceneActive(isSyncActive, sceneID: sceneID)
         } catch {
             isRestoring = false
             guard !isClosed else { return }
@@ -536,6 +577,21 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private func saveSceneSelection() {
         scenePreferences?.set(selectedSpaceID, forKey: selectionKey + ".space")
         scenePreferences?.set(selectedTabID, forKey: selectionKey + ".tab")
+        updateSelectionLease()
+    }
+
+    private func updateSelectionLease() {
+        guard let profileDocument else { return }
+        if isSceneAttached {
+            profileDocument.updateSelectionLease(owner: selectionLeaseOwner, selectedTabID: selectedTabID)
+        } else {
+            profileDocument.removeSelectionLease(owner: selectionLeaseOwner)
+        }
+    }
+
+    private func recordSelectionActivity(previousID: String? = nil) {
+        guard isActivityActive, isReady, !isClosed, !isRestoring else { return }
+        profileDocument?.recordActivity(tabIDs: Set([previousID, selectedTabID].compactMap { $0 }))
     }
 
     private func selectCurrentRuntime() {

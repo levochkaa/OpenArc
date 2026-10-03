@@ -16,11 +16,13 @@ import WebKit
         let account = try fixture.account("mobile-v4-roundtrip")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
+        var activityDate = Date(timeIntervalSince1970: 1_800_000_000)
         let first = try MobileHTTPProfile(
             fixture: fixture,
             device: account.devices[0],
             directory: directory,
-            initial: mobileHTTPSeed(includeUnsupportedURL: true)
+            initial: mobileHTTPSeed(includeUnsupportedURL: true),
+            dateProvider: { activityDate }
         )
         let second = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
         defer { first.cleanup()
@@ -146,6 +148,53 @@ import WebKit
         #expect(server.folders.first { $0.id == folder }?.spaceID == "target")
         #expect(server.folders.first { $0.id == nested }?.title == "Renamed on second device")
 
+        // Activity alone crosses the real v4 transport without recreating or
+        // navigating either device's existing runtime. This is local monotonic
+        // capture, not a claim about global ordering of offline timestamps.
+        let secondLive = try #require(second.engine.webView(for: secondRuntime))
+        let secondHistory = secondLive.backForwardList.backList.map(\.url)
+        let activitySentinel = UUID().uuidString
+        _ = try await live.evaluateJavaScript("window.__activitySentinel = '\(activitySentinel)'")
+        _ = try await secondLive.evaluateJavaScript("window.__activitySentinel = '\(activitySentinel)'")
+        let activityTimestamp: TimeInterval = 1_900_000_000
+        activityDate = Date(timeIntervalSince1970: activityTimestamp + 0.875)
+        try #require(first.document.recordActivity(tabIDs: ["browsing"]))
+        let activityQueue = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(activityQueue.count == 1)
+        guard case .folders(let activityMutation) = activityQueue[0] else {
+            Issue.record("Activity must use one production v4 mutation")
+            return
+        }
+        #expect(activityMutation.operations == [.patchTab(
+            id: "browsing", fields: .init(lastActivityAt: .set(
+                ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: activityTimestamp))
+            ))
+        )])
+        try await first.drain()
+        try await second.pull()
+        #expect(second.document
+            .snapshot
+            .tabs
+            .first { $0.id == "browsing" }?
+            .lastActivityTimestamp == activityTimestamp)
+        #expect(second.workspace.tabs.first { $0.id == "browsing" }?.runtimeID == secondRuntime)
+        #expect(second.engine.webView(for: secondRuntime) === secondLive)
+        #expect(secondLive.url == secondURL && secondLive.backForwardList.backList.map(\.url) == secondHistory)
+        #expect(first.engine.webView(for: runtimeID) === live)
+        #expect(live.url == secondURL && live.backForwardList.backList.map(\.url) == history)
+        #expect(try await live.evaluateJavaScript("window.__activitySentinel") as? String == activitySentinel)
+        #expect(try await secondLive.evaluateJavaScript("window.__activitySentinel") as? String == activitySentinel)
+        let activityServer = try await fixture.inspect(account)
+        #expect(activityServer.attempts.contains {
+            $0.mutationID == activityMutation.id && $0.protocolVersion == 4 && $0.status == 201
+        })
+        let activityReopen = try BrowserSQLiteSessionStore(databaseURL: second.databaseURL)
+        #expect(try activityReopen.loadSnapshotStrict()?
+            .tabs
+            .first { $0.id == "browsing" }?
+            .lastActivityTimestamp == activityTimestamp)
+        #expect(try second.store.pendingSyncQueue(for: second.owner).isEmpty)
+
         try #require(second.document.delete(entity: .init(entityType: .folder, entityID: folder)))
         try await second.drain()
         try await first.pull()
@@ -161,6 +210,10 @@ import WebKit
         let afterDeletion = try await fixture.inspect(account)
         #expect(afterDeletion.tabs.first { $0.id == "browsing" }?.tombstoned == true)
         #expect(afterDeletion.tabs.first { $0.id == "unsupported" }?.deleted == false)
+        let afterDeletionQueue = try first.outboxBytes()
+        #expect(!first.document.recordActivity(tabIDs: ["browsing"]))
+        #expect(try first.outboxBytes() == afterDeletionQueue)
+        #expect(!first.document.snapshot.tabs.contains { $0.id == "browsing" })
         // Archive remains profile-local. Only the old-identity delete and fresh
         // restored create cross the existing v4 wire; neither device resurrects
         // the permanent tombstone or receives the other profile's archive row.
@@ -689,7 +742,8 @@ private struct MobileHTTPFixture: Decodable {
         fixture: MobileHTTPFixture,
         device: MobileHTTPFixture.Device,
         directory: URL,
-        initial: BrowserTabSessionSnapshot? = nil
+        initial: BrowserTabSessionSnapshot? = nil,
+        dateProvider: @escaping () -> Date = Date.init
     ) throws {
         self.databaseURL = directory.appendingPathComponent(device.deviceID + ".sqlite")
         let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
@@ -697,7 +751,9 @@ private struct MobileHTTPFixture: Decodable {
         if try store.loadSnapshotStrict() == nil, let initial {
             try store.writeSessionBatch([.init(snapshot: initial, origin: .local(syncMove: nil))])
         }
-        let document = try BrowserMobileProfileDocument(store: store, loadSnapshot: { try store.loadSnapshotStrict() })
+        let document = try BrowserMobileProfileDocument(
+            store: store, initialSnapshot: store.loadSnapshotStrict(), dateProvider: dateProvider
+        )
         self.document = document
         self.owner = BrowserSyncOwner(baseURL: fixture.baseURL, userID: device.userID)
         self.preferencesName = "MobileHTTPProfile." + UUID().uuidString

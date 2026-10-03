@@ -44,7 +44,7 @@ The toolbar's Find in Page action and Cmd+F enter through the current page. Addr
 
 Hosted verification uses actual WK HTML and the public native interaction/session after invoking the real action. It distinguishes presenting the panel, finding matches, selecting next/previous results and zero results. Bounded waits are required because presentation and matching have no completion callback. Keyboard action dispatch and layout checks are separate from physical hardware-key/touch verification.
 
-Remaining mobile work includes archive search/clear/auto-archive; browser split; full scene/external-link routing; private browsing; auth/permission presentation, uploads/downloads and site settings; background/memory recovery; and observed gesture/visual polish. Find implementation and verification status belong in the ledger. No placeholder controls claim these features exist.
+Remaining mobile work includes auto-archive; browser split; full scene/external-link routing; private browsing; auth/permission presentation, uploads/downloads and site settings; background/memory recovery; and observed gesture/visual polish. Find implementation and verification status belong in the ledger. No placeholder controls claim these features exist.
 
 
 ## Durable local Archive
@@ -61,7 +61,7 @@ SQLite reads use a timestamp/ID keyset and a maximum of 100 entries; UIKit displ
 
 The choices above are TheBrowser policies.
 
-Retention, automatic archiving and desktop durable archive remain separate work. Archive records and compact receipts have no automatic expiry. Before adding auto-archive, define activity updates on selection, active-window exclusions and restart timing. Native callback execution does not establish physical gesture quality or OS scene behavior.
+Retention, automatic archiving and desktop durable archive remain separate work. Archive records and compact receipts have no automatic expiry. Local activity and attached-window protection are defined below; expiry still needs a cross-device policy and restart/sweep timing. Native callback execution does not establish physical gesture quality or OS scene behavior.
 
 
 ### Archive search and removal
@@ -75,3 +75,15 @@ The profile document serializes Archive mutations across windows. Restore, anoth
 The migration separates legacy active content from receipts and removes consumed payloads from the active table. Receipts use SHA-256 over a canonical encoding to recognize an exact insert; a consumed restore also remembers its fresh tab ID. An old insert cannot recreate cleared content, and a delayed same-ID restore cannot reinstall its old snapshot. Compact receipts and permanent sync tombstones remain. Logical content removal is not a secure-erasure claim for SQLite free pages, WAL files or backups. Migration still runs in the existing synchronous store-open path; opening a very large legacy archive has not been profiled.
 
 The native mobile interaction and captured confirmation scope above are TheBrowser's own design.
+
+## Tab activity and attached windows
+
+An active connected window records both the tab it leaves and the tab it selects when the user switches tabs or Spaces. An explicit later click on the already selected tab also counts as activity. Entering active state records its selected tab; leaving active state records the final viewing instant. Repeated lifecycle callbacks do not write. If activation arrives before asynchronous profile loading completes, the selected identity is recorded after hydration. Loading an inactive/disconnected workspace and applying a remote projection do not fabricate activity. Explicit Close on the selected tab records the surviving fallback; missing/deleted IDs are ignored. Engine close and remote deletion update selection protection without an activity echo.
+
+The document samples one time for each group of activity updates and uses the existing ordered SQLite/sync write path. Patches contain activity only. They do not share a window's selection or instantiate/navigate another window's page. An accepted move from pinned/Favorite into Today also advances activity in that same move transaction, so unpinning does not retain an old idle time. Ordinary URL changes use the same local monotonic rule. A whole-second timestamp must be strictly newer than the current known value; same-second callbacks and clock rollback do not write activity, and unchanged fractional stored values survive other local edits. Unknown timestamps can acquire a value on actual use. Future known timestamps remain conservative. The existing bounded failed-write FIFO and visible Retry apply; crash-durable recovery of failed writes remains open.
+
+Each workspace has an independent selection lease in its profile document. All attached windows protect their selected live tab, including inactive/background windows. Disconnect, discard and shutdown release the lease even when the workspace remains retained for save recovery. Replacing a scene connection preserves selection, and the registry's attachment token rejects stale activation/disconnect callbacks. A remote deletion/fallback refreshes the lease without emitting an activity patch; deleted identities are excluded. Leases are in memory, are never synced or persisted, and do not by themselves enable an expiry sweep.
+
+Local monotonicity is not a cross-device maximum. V4 still orders canonical updates by server sequence and assigns the received activity value; a delayed older activity patch can replace a newer one. Even a conditional server delete could protect only activity already reported to the server, not an active completely offline device. Automatic archiving stays disabled until the product defines that case and the protocol enforces the chosen policy. Whole-second wire precision, synchronous snapshot persistence and unprofiled large-profile activity cost remain existing limits.
+
+The lifecycle and lease rules above are TheBrowser policy. Scene-registry callbacks and controlled clocks are testable independently of OS scene delivery.

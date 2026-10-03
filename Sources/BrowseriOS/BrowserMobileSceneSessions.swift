@@ -49,6 +49,8 @@ import WebKit
                 entry.restoreTask = nil
             }
         }
+        entry.components.workspace.setActivityActive(false)
+        entry.components.workspace.setSceneAttached(true)
         entry.components.workspace.setJavaScriptDialogPresentationActive(false)
         entry.components.workspace.setSyncActive(false)
         let attachmentID = UUID()
@@ -63,6 +65,7 @@ import WebKit
 
     func setActive(_ active: Bool, for connection: Connection) {
         guard let entry = currentEntry(for: connection) else { return }
+        entry.components.workspace.setActivityActive(active)
         entry.components.workspace.setJavaScriptDialogPresentationActive(active)
         entry.components.workspace.setSyncActive(active)
     }
@@ -78,6 +81,7 @@ import WebKit
 
     func disconnect(_ connection: Connection) {
         guard let entry = currentEntry(for: connection) else { return }
+        entry.components.workspace.setSceneAttached(false)
         entry.components.workspace.setJavaScriptDialogPresentationActive(false)
         entry.components.workspace.setSyncActive(false)
         flush(connection)
@@ -88,6 +92,7 @@ import WebKit
     func discard(sessionIDs: Set<String>) {
         for sessionID in sessionIDs {
             guard let entry = entries[sessionID], entry.discardTask == nil else { continue }
+            entry.components.workspace.setSceneAttached(false)
             entry.components.workspace.setJavaScriptDialogPresentationActive(false)
             entry.components.workspace.setSyncActive(false)
             entry.attachmentID = nil

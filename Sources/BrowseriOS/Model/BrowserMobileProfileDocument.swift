@@ -54,6 +54,34 @@ import Foundation
 
     var canRestoreArchivedTab: Bool { canManageArchive }
 
+    /// Protection is local to attached windows, never a claim about another
+    /// device. A stale lease cannot recreate or protect a deleted identity.
+    var protectedTabIDs: Set<String> {
+        Set(selectionLeases.values).intersection(snapshot.tabs.compactMap(\.id))
+    }
+
+    func updateSelectionLease(owner: UUID, selectedTabID: String?) {
+        selectionLeases[owner] = selectedTabID
+    }
+
+    func removeSelectionLease(owner: UUID) {
+        selectionLeases.removeValue(forKey: owner)
+    }
+
+    @discardableResult func recordActivity(tabIDs: Set<String>) -> Bool {
+        guard canEdit, !tabIDs.isEmpty else { return false }
+        let now = dateProvider().timeIntervalSince1970
+        let formatter = ISO8601DateFormatter()
+        let operations: [BrowserSyncFolderOperation] = snapshot.tabs.compactMap { tab in
+            guard let id = tab.id, tabIDs.contains(id),
+                  let activity = Self.newActivity(tab: tab, now: now, formatter: formatter)
+            else { return nil }
+            return .patchTab(id: id, fields: .init(lastActivityAt: .set(activity)))
+        }
+        guard !operations.isEmpty else { return false }
+        return apply(operations)
+    }
+
     func archivePage(before: BrowserTabArchiveCursor? = nil, limit: Int = 50) throws -> BrowserTabArchivePage {
         guard let archive = store as? any BrowserTabArchiveStoring
         else { throw BrowserTabArchiveError.unsupportedStore }
@@ -197,8 +225,11 @@ import Foundation
     @discardableResult func updateURL(tabID: String, urlString: String) -> Bool {
         guard Self.nonempty(urlString) != nil, let tab = snapshot.tabs.first(where: { $0.id == tabID }),
               tab.urlString != urlString else { return false }
+        let activity = Self.newActivity(
+            tab: tab, now: dateProvider().timeIntervalSince1970, formatter: ISO8601DateFormatter()
+        )
         return apply([.patchTab(id: tabID, fields: .init(
-            urlString: urlString, lastActivityAt: .set(ISO8601DateFormatter().string(from: dateProvider()))
+            urlString: urlString, lastActivityAt: activity.map(BrowserSyncPatchValue.set) ?? .unchanged
         ))])
     }
 
@@ -267,7 +298,7 @@ import Foundation
               after.map({ !items.contains($0) }) ?? true else { return false }
         return apply(
             [.move(items: items, destination: destination, before: before, after: after)],
-            moveIntent: .init(items: items)
+            moveIntent: .init(items: items), recordTodayTransitions: true
         )
     }
 
@@ -296,12 +327,24 @@ import Foundation
     private let dateProvider: () -> Date
     private var writeBuffer: BrowserSessionWriteBuffer
     private var observers = [ObserverToken: (BrowserTabSessionSnapshot) -> Void]()
+    private var selectionLeases = [UUID: String]()
     private var isNotifying = false
     private var needsNotification = false
 
     private static func nonempty(_ value: String?) -> String? {
         guard let text = value?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
         return text
+    }
+
+    private static func newActivity(
+        tab: BrowserTabSessionSnapshotTab, now: TimeInterval, formatter: ISO8601DateFormatter
+    ) -> String? {
+        guard now.isFinite else { return nil }
+        let second = floor(now)
+        if let previous = tab.lastActivityTimestamp, previous.isFinite, second <= previous {
+            return nil
+        }
+        return formatter.string(from: Date(timeIntervalSince1970: second))
     }
 
     private static func archiveErrorMessage(_ error: Error) -> String {
@@ -382,7 +425,7 @@ import Foundation
 
     private func apply(
         _ operations: [BrowserSyncFolderOperation], moveIntent: BrowserSyncMoveIntent? = nil,
-        archiveAction: BrowserTabArchiveAction? = nil
+        archiveAction: BrowserTabArchiveAction? = nil, recordTodayTransitions: Bool = false
     ) -> Bool {
         guard canEdit else { return false }
         var values = Dictionary(uniqueKeysWithValues: BrowserSyncFolderProjection.canonicalChanges(snapshot).map {
@@ -391,9 +434,44 @@ import Foundation
         let previousValues = values
         var deleted = Set<String>()
         BrowserSyncFolderProjection.apply(operations, to: &values, deleted: &deleted)
+        if recordTodayTransitions {
+            let now = dateProvider().timeIntervalSince1970
+            let formatter = ISO8601DateFormatter()
+            let activity: [BrowserSyncFolderOperation] = snapshot.tabs.compactMap { tab in
+                guard tab.placement != .temporary, let id = tab.id,
+                      values[BrowserSyncOutboxProjection.key(type: .tab, id: id)]?.tabData?.placement == .temporary,
+                      let date = Self.newActivity(tab: tab, now: now, formatter: formatter)
+                else { return nil }
+                return .patchTab(id: id, fields: .init(lastActivityAt: .set(date)))
+            }
+            BrowserSyncFolderProjection.apply(activity, to: &values, deleted: &deleted)
+        }
         values = values.filter { $0.value.op == .upsert && !deleted.contains($0.key) }
         guard values != previousValues else { return false }
-        let next = BrowserSyncFolderProjection.snapshot(values: values, local: snapshot)
+        let projected = BrowserSyncFolderProjection.snapshot(values: values, local: snapshot)
+        let previousTabs = Dictionary(uniqueKeysWithValues: snapshot.tabs.compactMap { tab in
+            tab.id.map { ($0, tab) }
+        })
+        // The wire uses whole seconds. An unrelated local change must not round
+        // a more precise stored activity timestamp backwards.
+        let tabs = projected.tabs.map { tab in
+            guard let id = tab.id, let previous = previousTabs[id],
+                  previous.lastActivityTimestamp != tab.lastActivityTimestamp
+            else { return tab }
+            let key = BrowserSyncOutboxProjection.key(type: .tab, id: id)
+            guard values[key]?.tabData?.lastActivityAt == previousValues[key]?.tabData?.lastActivityAt
+            else { return tab }
+            return BrowserTabSessionSnapshotTab(
+                id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
+                userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
+                pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: previous.lastActivityTimestamp,
+                pinnedSiblingRank: tab.pinnedSiblingRank
+            )
+        }
+        let next = BrowserTabSessionSnapshot(
+            version: projected.version, spaces: projected.spaces, pinnedTabFolders: projected.pinnedTabFolders,
+            tabs: tabs
+        )
         guard next != snapshot, (try? Self.validate(next)) != nil else { return false }
         return commit(next, moveIntent: moveIntent, archiveAction: archiveAction)
     }
