@@ -15,7 +15,7 @@ import Testing
         let created = try #require(f.model.tabs.first { $0.urlString == url.absoluteString })
         f.model.moveTab(withID: created.id, toPlacement: placement, atSectionIndex: 0)
         #expect(f.model.archiveSelectedTab())
-        f.driver.emitClose(id: created.id)
+        try f.finish(#require(f.driver.confirmedCloseRequests.last), .closed)
         #expect(f.model.tabs.contains { $0.id == created.id && $0.placement == placement })
         #expect(try f.store.loadArchivePage().entries.isEmpty)
         let requests = f.driver.confirmedCloseRequests.count

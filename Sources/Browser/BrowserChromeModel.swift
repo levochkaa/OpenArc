@@ -1932,13 +1932,22 @@ enum BrowserWindowMode: Equatable {
             return false
         }
 
+        if !forceClose, !engineAlreadyClosed {
+            guard !isShuttingDown else { return false }
+            return requestConfirmedTabClose(
+                id: id, registersUndo: false, actionName: BrowserStrings.tabArchiveAction,
+                createsArchive: false, preservesPersistentTab: true, unloadsPersistentTab: true
+            )
+        }
+
+        retireTabCreationCallbacks(id: id)
         closedAppTabIDs.insert(id)
         removeTabFromSwitcherTracking(id)
         BrowserTelemetry.captureUsage(.tabClosed, properties: telemetryProperties(for: tab))
 
         if selectedTabID == id {
             clearSelectedTab(id, forSpaceID: tab.spaceID)
-            let fallbackTabID = fallbackTabID(afterClosingTab: tab) ?? sidebarTabsForSelectedSpace().first?.id
+            let fallbackTabID = fallbackTabID(afterClosingDormantTab: tab, excluding: [id])
             selectedTabID = fallbackTabID
             findResultMatchCount = nil
             if let fallbackTabID {
@@ -1974,6 +1983,15 @@ enum BrowserWindowMode: Equatable {
             return false
         }
 
+        if !forceClose, !engineAlreadyClosed {
+            guard !isShuttingDown else { return false }
+            return requestConfirmedTabClose(
+                id: id, registersUndo: false, actionName: BrowserStrings.tabArchiveAction,
+                createsArchive: false, preservesPersistentTab: true, unloadsPersistentTab: true
+            )
+        }
+
+        retireTabCreationCallbacks(id: id)
         if !areEquivalentPinnedURLStrings(tab.urlString, pinnedURLString),
            let index = tabs.firstIndex(where: { $0.id == id })
         {
@@ -2220,6 +2238,7 @@ enum BrowserWindowMode: Equatable {
         let undoActionName: String
         let createsArchive: Bool
         let preservesPersistentTab: Bool
+        let unloadsPersistentTab: Bool
         let localAutomaticCandidate: LocalAutomaticArchiveCandidate?
         var invalidatedAutomaticClose = false
         let completion: ((HistoryCloseResult) -> Void)?
@@ -2243,6 +2262,11 @@ enum BrowserWindowMode: Equatable {
         let isCreation: Bool
         let actionName: String
         let completion: (BrowserTabUndoManager.Outcome) -> Void
+    }
+
+    private struct PendingReopenedTabCreation {
+        let previousID: String
+        let titleAtRequest: String
     }
 
     private struct PendingCreatedTabContext {
@@ -2315,8 +2339,8 @@ enum BrowserWindowMode: Equatable {
     private var historyRestoreFailure: BrowserSessionPersistenceFailure?
     private var closedAppTabIDs = Set<String>()
     private var closedPinnedTabIDs = Set<String>()
-    private var pendingReopenedAppTabIDs = [String: String]()
-    private var pendingReopenedPinnedTabIDs = [String: String]()
+    private var pendingReopenedAppTabCreations = [String: PendingReopenedTabCreation]()
+    private var pendingReopenedPinnedTabCreations = [String: PendingReopenedTabCreation]()
     private var isPersistenceEnabled = true
     private var sessionWriteBuffer = BrowserSessionWriteBuffer()
     private var hasDiscardedSessionForClosure = false
@@ -2444,7 +2468,8 @@ enum BrowserWindowMode: Equatable {
 
     @discardableResult private func requestConfirmedTabClose(
         id: String, registersUndo: Bool, actionName: String, createsArchive: Bool,
-        preservesPersistentTab: Bool, localAutomaticCandidate: LocalAutomaticArchiveCandidate? = nil,
+        preservesPersistentTab: Bool, unloadsPersistentTab: Bool = false,
+        localAutomaticCandidate: LocalAutomaticArchiveCandidate? = nil,
         completion: ((HistoryCloseResult) -> Void)? = nil
     ) -> Bool {
         guard let tab = tabs.first(where: { $0.id == id }), !closingTabIDs.contains(id) else { return false }
@@ -2465,7 +2490,8 @@ enum BrowserWindowMode: Equatable {
         pendingTabCloseRequests[id] = PendingTabCloseRequest(
             requestID: requestID, syncID: tab.syncID, registersUndo: registersUndo,
             undoActionName: actionName, createsArchive: createsArchive,
-            preservesPersistentTab: preservesPersistentTab, localAutomaticCandidate: localAutomaticCandidate,
+            preservesPersistentTab: preservesPersistentTab, unloadsPersistentTab: unloadsPersistentTab,
+            localAutomaticCandidate: localAutomaticCandidate,
             completion: completion
         )
         closingTabIDs.insert(id)
@@ -2507,13 +2533,9 @@ enum BrowserWindowMode: Equatable {
         tabs.removeAll { $0.id == id }
         // A logical tab can close before its allocation placeholder arrives.
         // Retain the retired identity so repeated late callbacks cannot recreate it.
-        restoredTabCreationIDs.insert(id)
-        pendingCreatedTabContexts.removeValue(forKey: id)
-        pendingHydratedTabCreationIDs.remove(id)
+        retireTabCreationCallbacks(id: id)
         closedAppTabIDs.remove(id)
         closedPinnedTabIDs.remove(id)
-        pendingReopenedAppTabIDs = pendingReopenedAppTabIDs.filter { $0.value != id && $0.key != id }
-        pendingReopenedPinnedTabIDs = pendingReopenedPinnedTabIDs.filter { $0.value != id && $0.key != id }
         removeTabFromSwitcherTracking(id)
         tabCreationUndoReferences.removeValue(forKey: id)?.currentTabID = nil
         clearSelectedTab(id, forSpaceID: closingTab.spaceID)
@@ -3655,7 +3677,7 @@ enum BrowserWindowMode: Equatable {
             withURLString: resolvedBrowserURLString(tab.urlString),
             makeActive: true
         )
-        pendingReopenedAppTabIDs[newTabID] = id
+        pendingReopenedAppTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = reidentifiedAppTab(
             from: tab,
             id: newTabID,
@@ -3692,7 +3714,7 @@ enum BrowserWindowMode: Equatable {
             withURLString: resolvedBrowserURLString(pinnedURLString),
             makeActive: true
         )
-        pendingReopenedPinnedTabIDs[newTabID] = id
+        pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = reidentifiedPinnedTab(
             from: tab,
             id: newTabID,
@@ -3711,70 +3733,19 @@ enum BrowserWindowMode: Equatable {
         persistCurrentSessionIfAllowed()
     }
 
-    private func handleReopenedPinnedTabCreated(
-        id: String,
-        previousID: String,
-        title: String,
-        urlString: String
-    ) -> Bool {
-        guard let index = tabs.firstIndex(where: { $0.id == id || $0.id == previousID }) else {
-            return false
-        }
-
-        let tab = tabs[index]
-        var replacement = reidentifiedPinnedTab(
-            from: tab,
-            id: id,
-            title: tab.urlString == urlString ? title : tab.title,
-            urlString: tab.urlString,
-            lastActivityAt: tab.lastActivityAt
-        )
-        replacement.creationState = tab.creationState
-        replacement.hasPendingLocalNavigation = tab.hasPendingLocalNavigation
-        tabs[index] = replacement
-        closedPinnedTabIDs.remove(previousID)
-        closedPinnedTabIDs.remove(id)
-        replaceTabRuntimeReferences(oldID: previousID, newID: id, spaceID: tab.spaceID)
-
-        if selectedTabID == id {
-            recordSelectedTab(id)
-        }
+    private func handleReopenedPersistentTabCreated(id: String, title: String, urlString: String) {
+        // Reopen publishes its logical identity and selection before allocation.
+        // A delayed placeholder must not replay its old placement or selection,
+        // nor revive an engine that has already completed another unload.
+        guard let creation = pendingReopenedAppTabCreations[id] ?? pendingReopenedPinnedTabCreations[id] else { return }
+        // Archive controls also depend on the pending binding. Publish its
+        // completion even if newer metadata makes the title callback obsolete.
+        objectWillChange.send()
+        retireTabCreationCallbacks(id: id)
+        guard let index = tabs.firstIndex(where: { $0.id == id }),
+              tabs[index].title == creation.titleAtRequest, tabs[index].urlString == urlString else { return }
+        tabs[index].title = title
         updateWindowTitle()
-        persistCurrentSessionIfAllowed()
-        return true
-    }
-
-    private func handleReopenedAppTabCreated(
-        id: String,
-        previousID: String,
-        title: String,
-        urlString: String
-    ) -> Bool {
-        guard let index = tabs.firstIndex(where: { $0.id == id || $0.id == previousID }) else {
-            return false
-        }
-
-        let tab = tabs[index]
-        var replacement = reidentifiedAppTab(
-            from: tab,
-            id: id,
-            title: tab.urlString == urlString ? title : tab.title,
-            urlString: tab.urlString,
-            lastActivityAt: tab.lastActivityAt
-        )
-        replacement.creationState = tab.creationState
-        replacement.hasPendingLocalNavigation = tab.hasPendingLocalNavigation
-        tabs[index] = replacement
-        closedAppTabIDs.remove(previousID)
-        closedAppTabIDs.remove(id)
-        replaceTabRuntimeReferences(oldID: previousID, newID: id, spaceID: tab.spaceID)
-
-        if selectedTabID == id {
-            recordSelectedTab(id)
-        }
-        updateWindowTitle()
-        persistCurrentSessionIfAllowed()
-        return true
     }
 
     private func replaceTabRuntimeReferences(
@@ -4142,7 +4113,7 @@ extension BrowserChromeModel {
             !isRestoringSession && !isApplyingRemoteSync && !isReconcilingRemoteProjection &&
             deferredRemoteSyncSnapshot == nil && pendingRemoteTabCreations.isEmpty &&
             pendingCreatedTabContexts.isEmpty && pendingHydratedTabCreationIDs.isEmpty &&
-            pendingReopenedAppTabIDs.isEmpty && pendingReopenedPinnedTabIDs.isEmpty
+            pendingReopenedAppTabCreations.isEmpty && pendingReopenedPinnedTabCreations.isEmpty
     }
 
     func loadArchivedTabs(
@@ -4316,7 +4287,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
               !isRestoringSession, !isApplyingRemoteSync, !isReconcilingRemoteProjection,
               deferredRemoteSyncSnapshot == nil, pendingRemoteTabCreations.isEmpty,
               pendingCreatedTabContexts.isEmpty, pendingHydratedTabCreationIDs.isEmpty,
-              pendingReopenedAppTabIDs.isEmpty, pendingReopenedPinnedTabIDs.isEmpty,
+              pendingReopenedAppTabCreations.isEmpty, pendingReopenedPinnedTabCreations.isEmpty,
               !hasUncommittedSessionWrites, pendingTabCloseRequests.isEmpty,
               tabs
                   .allSatisfy({
@@ -4580,17 +4551,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             }
             return
         }
-        if
-            let previousID = pendingReopenedPinnedTabIDs.removeValue(forKey: id),
-            handleReopenedPinnedTabCreated(id: id, previousID: previousID, title: title, urlString: urlString)
-        {
-            return
-        }
-
-        if
-            let previousID = pendingReopenedAppTabIDs.removeValue(forKey: id),
-            handleReopenedAppTabCreated(id: id, previousID: previousID, title: title, urlString: urlString)
-        {
+        if pendingReopenedPinnedTabCreations[id] != nil || pendingReopenedAppTabCreations[id] != nil {
+            handleReopenedPersistentTabCreated(id: id, title: title, urlString: urlString)
             return
         }
 
@@ -4741,7 +4703,17 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         closingTabIDs.contains(id) && pendingTabCloseRequests[id]?.localAutomaticCandidate == nil
     }
 
-    private func replaceRuntimeAfterInvalidatedAutomaticClose(_ tab: Tab) {
+    private func retireTabCreationCallbacks(id: String) {
+        restoredTabCreationIDs.insert(id)
+        pendingCreatedTabContexts.removeValue(forKey: id)
+        pendingHydratedTabCreationIDs.remove(id)
+        pendingReopenedAppTabCreations = pendingReopenedAppTabCreations
+            .filter { $0.key != id && $0.value.previousID != id }
+        pendingReopenedPinnedTabCreations = pendingReopenedPinnedTabCreations
+            .filter { $0.key != id && $0.value.previousID != id }
+    }
+
+    private func replaceRuntimeAfterPreservedClose(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         let wasCompleting = isCompletingTabClose
         isCompletingTabClose = true
@@ -4750,9 +4722,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         let newID = tabDriver.createTab(withURLString: resolvedBrowserURLString(tab.urlString), makeActive: selected)
         // Both old and replacement allocation callbacks are placeholders. Neither
         // may manufacture another logical identity after a late/duplicate reply.
-        restoredTabCreationIDs.formUnion([tab.id, newID])
-        pendingCreatedTabContexts.removeValue(forKey: tab.id)
-        pendingHydratedTabCreationIDs.remove(tab.id)
+        retireTabCreationCallbacks(id: tab.id)
+        restoredTabCreationIDs.insert(newID)
         closedAppTabIDs.remove(tab.id)
         closedPinnedTabIDs.remove(tab.id)
         tabs[index] = Tab(
@@ -4793,9 +4764,16 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                   localAutomaticArchivalOwnershipAllowsClose(), tab.spaceID == candidate.spaceID,
                   tab.lastActivityAt == candidate.lastActivityAt, isLocalAutomaticArchiveEligible(tab)
             else {
-                replaceRuntimeAfterInvalidatedAutomaticClose(tab)
+                replaceRuntimeAfterPreservedClose(tab)
                 return
             }
+        }
+        if request.unloadsPersistentTab, tab.placement == .temporary {
+            // Unpinning while the page confirms must not turn an unload into a
+            // deletion. Preserve the new logical state and replace its engine.
+            replaceRuntimeAfterPreservedClose(tab)
+            request.completion?(.removed)
+            return
         }
         if tab.placement == .temporary || !request.preservesPersistentTab {
             // Capture current metadata and selection only after the final engine

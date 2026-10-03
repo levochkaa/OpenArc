@@ -72,6 +72,7 @@ const desktopArchiveScenario = "desktop-archive-restore";
 const desktopAutomaticScenario = "desktop-auto-archive";
 const desktopConfirmedCloseScenario = "desktop-confirmed-close";
 const desktopLocalAutomaticScenario = "desktop-local-auto-archive";
+const desktopPersistentCloseScenario = "desktop-persistent-close";
 const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
   "folder-device-rotation", "folder-pending-delete", "folder-activity-replay"
@@ -87,7 +88,7 @@ const desktopScenarios = [
   "coordinator-space-delete-move", "explicit-local-first", "explicit-remote-first", "explicit-group-replay",
   "persistence-retry", "pending-parent-delete", "pending-navigation", ...folderScenarios,
   expiryScenario, expiryQueueScenario, expiryLimitScenario, desktopArchiveScenario, desktopAutomaticScenario,
-  desktopConfirmedCloseScenario, desktopLocalAutomaticScenario
+  desktopConfirmedCloseScenario, desktopLocalAutomaticScenario, desktopPersistentCloseScenario
 ];
 const scenarios = suite === "mobile" ? [...mobileScenarios] : desktopScenarios;
 
@@ -244,7 +245,8 @@ for (const scenario of scenarios) {
   else if (!folderScenarios.has(scenario) && !mobileScenarios.has(scenario)
     && scenario !== expiryScenario && scenario !== expiryQueueScenario && scenario !== expiryLimitScenario
     && scenario !== desktopArchiveScenario && scenario !== desktopAutomaticScenario
-    && scenario !== desktopConfirmedCloseScenario && scenario !== desktopLocalAutomaticScenario) {
+    && scenario !== desktopConfirmedCloseScenario && scenario !== desktopLocalAutomaticScenario
+    && scenario !== desktopPersistentCloseScenario) {
     semanticAuthorizations.add(`Bearer ${accessToken}`);
   }
   if (scenario === adoptionScenario) capabilityOverrides.set(`Bearer ${accessToken}`, [2, 3]);
@@ -420,6 +422,24 @@ const control = createServer((incoming, outgoing) => {
         assert.deepEqual(state.tabs.map((tab) => tab.id).sort(), ["active", "pinned"],
           "The locally archived identity must never be adopted or remotely tombstoned");
         assert.ok(state.tabs.every((tab) => !tab.deleted && !tab.tombstoned));
+      } else if (account.scenario === desktopPersistentCloseScenario) {
+        assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === 4),
+          "Persistent unload may only submit ordinary metadata changes");
+        const writes = scenarioAttempts.filter((attempt) => attempt.status === 201);
+        assert.ok(new Set(writes.map((attempt) => attempt.mutationID)).size >= 3,
+          "Persistent close requires the seed, confirmed home reset and later metadata write");
+        assert.ok(writes.some((receipt) => writes.filter((attempt) => attempt.mutationID === receipt.mutationID
+          && attempt.digest === receipt.digest).length >= 2),
+        "Confirmed home reset must replay its exact immutable mutation after a lost ACK");
+        for (const device of account.devices) {
+          assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
+            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+          "Both persistent-close clients must finish recovery-capable bootstrap");
+        }
+        const state = await inspect(account.userID);
+        assert.deepEqual(state.tabs.map((tab) => tab.id).sort(), ["anchor", "favorite", "pinned"]);
+        assert.ok(state.tabs.every((tab) => !tab.deleted && !tab.tombstoned),
+          "Unloading a persistent engine must preserve every server identity");
       } else if (account.scenario === desktopConfirmedCloseScenario) {
         assert.ok(scenarioAttempts.every((attempt) => attempt.protocolVersion === 4),
           "Confirmed manual close and Undo use ordinary v4 semantic mutations");

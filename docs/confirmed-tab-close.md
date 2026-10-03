@@ -28,6 +28,18 @@ Redo Close requests engine confirmation again, creates a new archive ID for the 
 
 An already-consumed or cleared Archive entry cannot be restored through stale history. The obsolete action is dropped with an Archive error. If the original Space is gone, Undo cancels and retains recovery; the native Archive surface can select a destination explicitly. Undo history itself is session-local and does not survive restart.
 
+## Persistent tab unload
+
+The explicit Favorite and selected pinned-tab Close actions now use the same tokenized engine confirmation. Admission marks only the pending request. It does not reset the URL, mark the engine dormant, change selection or write a session. Refusal and Cancel leave the live page and independent edits intact. Ready events that arrive while the request is pending remain valid.
+
+After `.closed`, current placement determines the retained-tab behavior. A Favorite keeps its latest URL; a pinned tab resets to its current home URL. Stable identity, placement, folder and sibling rank survive. Only a still-selected tab changes the active selection, using a fallback that excludes dormant pinned engines. With no live fallback, selection clears. Unload registers no Archive entry or user Undo. A failed reset write remains in the ordinary ordered session buffer; Retry commits it before later edits and sync stays blocked until recovery.
+
+If the tab became Today while confirmation was pending, unloading must not turn into a logical deletion. The model retains its latest state and stable ID, replacing only the closed runtime. This replacement makes no persistence mutation. Favorites changing to pinned tabs and pinned tabs changing to Favorites follow their final persistent placement. Remote/structural removal and shutdown supersede a pending request through their existing explicit policies.
+
+Reopen publishes the new runtime and selection synchronously. Its later allocation callback can update the title for the matching current URL only while that title still equals the value captured at reopen. Newer title changes remain intact. It cannot restore an old placement, override a newer selection, clear a subsequent dormant state or persist a stale snapshot. Retired allocation IDs remain suppressed, and obsolete pending-reopen maps are cleared, including another unload before allocation or an unpin followed by replacement. Completing a pending reopen notifies derived Archive controls even when newer metadata makes its allocation callback obsolete. A failed replacement uses normal creation Retry.
+
+The sidebar's existing distinction is retained: a selected pin unloads/resets; removing an unselected pin follows the separate logical-removal path. Explicit force/already-closed paths bypass confirmation. This slice does not extend the confirmation policy to every persistent-tab removal or to window/quit.
+
 ## Local automatic archival
 
 A profile with no sync owner keeps the existing 30-day default and current-Space policy. A sweep captures at most 100 expired Today tabs, excluding the selected tab, Favorites and pinned tabs. It requests one engine confirmation at a time and registers no user Undo. Cancellation keeps the tab and advances to the next captured candidate; it does not retry the cancelled tab in that sweep.
@@ -40,7 +52,7 @@ Confirmed eligible closure uses the same atomic Archive/session transaction and 
 
 ## Scope and evidence
 
-Persistent-tab unload/reset, structural deletion, remote force-close and window/quit approval retain separate policies. This does not implement beforeunload approval for every close source. Synchronized automatic expiry continues to use the existing conditional server protocol and waits for outstanding close requests. Legacy non-Archive stores can retain confirmed local deletion behavior without durable recovery; production normal profiles use SQLite.
+Persistent-tab logical removal, structural deletion, remote force-close and window/quit approval retain separate policies. This does not implement beforeunload approval for every close source. Synchronized automatic expiry continues to use the existing conditional server protocol and waits for outstanding close requests. Legacy non-Archive stores can retain confirmed local deletion behavior without durable recovery; production normal profiles use SQLite.
 
 Model tests use real SQLite with controlled engine outcomes. They cover atomic Archive/deletion, rollback/FIFO Retry, fresh-ID consumption, multiple Undo/Redo, cancellation, new actions during pending transitions, original creation references, missing entries, dormant engines, closure Retry, cross-Space folders and live-URL projection with pending creation. Store tests cover exact Archive replay after later edits. The HTTP scenario uses two production sync clients and PostgreSQL for SQL failure, immutable lost-ACK replay, restoration, Redo, reopen and tombstone dominance.
 
