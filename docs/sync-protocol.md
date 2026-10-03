@@ -4,7 +4,7 @@ V2 and v3 share bearer authentication, account/device checks, permanent deletion
 
 ## V3 operations
 
-`POST /v1/sync/push` accepts `{ protocolVersion: 3, mutationID, deviceID, operations }`. A request has at most 1,000 operations and at most 8 MiB of inflated JSON, including gzip requests. The server applies operations in request order; validation or a database error rolls back the entire request. Semantic rejection applies to that operation and is included in its durable receipt. Client byte-based chunking still needs to accompany the existing item-count limit; oversized immutable queue entries must not be silently discarded or rewritten.
+`POST /v1/sync/push` accepts `{ protocolVersion: 3, mutationID, deviceID, operations }`. A request has at most 1,000 operations and at most 8 MiB of inflated JSON, including gzip requests. New client batches count encoded item bytes with envelope headroom and cap each move at 1,000 IDs. An oversized individual operation rolls back local persistence and logs a storage error; visible recovery UI remains required. Existing immutable rows are never silently rewritten or discarded. The server applies operations in request order; validation or a database error rolls back the entire request. Semantic rejection applies to that operation and is included in its durable receipt.
 
 | Kind | Identity and content | Effect |
 | --- | --- | --- |
@@ -31,8 +31,16 @@ ACK cursor is informational; it is not a pull cursor. Clients advance a pull cur
 
 ## Client transition
 
-The desktop coordinator currently writes and sends v2. The v3 server and typed Swift transport are a foundation for the next client slice, not a claim that production UI reorder already uses semantic operations.
+The desktop coordinator negotiates push versions across every bootstrap page. Capability upgrade, remote baseline, projection and pull cursor commit in one SQLite transaction. New actions become v3 after successful discovery; failed discovery cannot partially enable them. Old-server responses without the additive capability field retain v2 behavior.
 
-The planned SQLite transition adds an explicit version per queue row and a version for new mutations. Existing v2 UUIDs, positions and payload bytes remain unchanged. After capability discovery, only new actions become v3; the sender and pending overlay reducer consume both formats in the same FIFO. A lost v2 ACK is resolved by replaying that exact v2 mutation. A server downgrade must retain v3 rows rather than convert them to full snapshots.
+SQLite stores `protocol_version` per queue row and durable `new_mutation_version`. Migration preserves existing v2 UUIDs, positions and payload bytes. The sender and pending overlay reducer consume both formats in one FIFO. A lost ACK retries that exact mutation and version; a valid receipt applies canonical events and removes only the matching row. Rejected/no-op semantic outcomes are terminal. Wrong identity/version or incomplete outcomes retain the row. Unknown/already removed ACKs do not inject new events. A server downgrade retains v3 rows and retries after capability recovery; it never converts them to full snapshots or bypasses their FIFO position.
 
-No account-wide write floor blocks older devices. Mixed-version operation preserves the v2 full-record contract: an old full upsert can still overwrite fields that a newer device changed independently. V3 commutation guarantees apply to v3 intents. This limitation ends for new activity after devices upgrade and old queues drain; it cannot be repaired by guessing touched fields from old payloads.
+Local-only tombstones hide deleted objects after replay while retaining acknowledged canonical parents needed by earlier pending creates/moves. Authoritative server tombstones remain permanent from the start of replay. New v3 Space removal emits the parent delete and lets the server cascade through current membership. It does not infer explicit deletes for every child seen in the old snapshot, so a child moved away by another device survives. Explicit tab deletes remain terminal.
+
+No account-wide write floor blocks older devices. An old v2 full upsert can still overwrite independent newer changes, and a frozen v2 parent-deletion batch may already contain explicit child deletes. Existing payloads retain those semantics; touched fields or parent-deletion intent cannot be safely recovered by guessing. V3 guarantees apply to new v3 intents after upgrade and queue drain.
+
+## Capture boundary
+
+The current model persists snapshots. Capture emits only changed metadata and infers a minimal move set using the longest unchanged subsequence in each list. This keeps shifted peers out of reorder mutations and preserves independent remote metadata. Scoped rank projection renders global Favorites, then each Space's pinned and temporary lists; it never compares ranks across unrelated lists.
+
+Snapshot inference cannot distinguish dragging A after B from dragging B before A when both yield the same order. Direct drag capture must still persist the actual moved sync IDs and neighbor anchors atomically with the snapshot/outbox. Until that seam is connected, convergence of inferred operations is verified, but exact user drag intent under conflicting moves is not. Folder hierarchy and membership sync remain outside v3.
