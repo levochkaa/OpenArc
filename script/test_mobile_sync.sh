@@ -130,7 +130,9 @@ node --input-type=module - "$report_path" <<'JS'
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const report = JSON.parse(readFileSync(process.argv[2], "utf8"));
-assert.deepEqual(report.completed, ["mobile-v4-group-replay", "mobile-v4-recovery", "mobile-v4-roundtrip"]);
-assert.ok(report.attempts >= 6);
-console.log("Mobile production HTTP sync: all three scenarios completed");
+assert.deepEqual(report.completed, [
+  "mobile-v4-cross-space", "mobile-v4-group-replay", "mobile-v4-recovery", "mobile-v4-roundtrip"
+]);
+assert.ok(report.attempts >= 8);
+console.log("Mobile production HTTP sync: all four scenarios completed");
 JS

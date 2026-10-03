@@ -2,11 +2,11 @@
 
 ## Scope and contract
 
-Native UIKit drag/drop operates within the current mobile Space. The source is a tab, folder root or selected group. Tabs can move between Favorites, Pinned and Today; a group containing folders stays in Pinned. A folder move carries its current subtree through the existing v4 operation. The existing Move To menus continue to support explicit cross-Space moves.
+Native UIKit drag/drop operates within the current mobile Space and through a [cross-Space destination palette](mobile-cross-space-drag.md). The source is a tab, folder root or selected group. Tabs can move between Favorites, Pinned and Today; a group containing folders stays in Pinned. A folder move carries its current subtree through the existing v4 operation. The existing Move To menus continue to support explicit moves.
 
 Select/Done enters native multiple selection without changing the active page or expanding folders. Group order follows the rendered sidebar, independent of selection order or callback order. Selecting both a folder and its descendants contributes only that folder root. Dragging an unselected row replaces the selection with that row. A single move accepts at most 1000 normalized roots, matching the v4 operation limit.
 
-Cross-Space drag, interwindow drag, adding items during an active drag and hover expansion remain required follow-up work. Unsupported sessions are rejected without copying records or synthesizing IDs. Native auto-scroll and physical touch/pointer smoothness require separate runtime observation; delegate tests alone do not prove them.
+Interwindow drag, adding items during an active drag and hover expansion remain required follow-up work. Unsupported sessions are rejected without copying records or synthesizing IDs. Native auto-scroll and physical touch/pointer smoothness require separate runtime observation; delegate tests alone do not prove them.
 
 ## Stable identity and conflict rules
 

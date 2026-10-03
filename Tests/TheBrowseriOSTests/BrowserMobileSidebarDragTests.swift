@@ -4,6 +4,224 @@ import Testing
 import UIKit
 
 extension BrowserMobileUITests {
+    @Test func spaceButtonOpensDropTargetsWithoutSwitchingSpaceAndMovesCurrentGroupSubtree() async throws {
+        let f = try SidebarDragFixture()
+        defer { f.cleanup() }
+        await f.start(showNavigation: true)
+        f.workspace.selectTab(id: "b")
+        let selectedRuntime = f.engine.selectedID
+        let runtimes = Set(f.workspace.tabs.map(\.runtimeID))
+        try f.toggleSelection()
+        f.select(row: 0, section: 1)
+        f.select(row: 0, section: 2)
+        let drag = try f.begin(row: 0, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: drag, point: .zero)
+        let beforeOpening = try f.durableState()
+        let sourceRows = f.rowIDs(section: 1)
+        f.sidebar.tableView(f.table, dropSessionDidEnter: drop)
+        let palette = try f.openSpacePalette()
+        #expect(palette.controller.parent === f.sidebar)
+        #expect(f.sidebar.presentedViewController == nil)
+        #expect(f.workspace.selectedSpaceID == "source" && f.workspace.selectedTabID == "b")
+        #expect(f.engine.selectedID == selectedRuntime)
+        #expect(try f.durableState() == beforeOpening)
+        #expect(f.rowIDs(section: 1) == sourceRows)
+        let paletteFrame = palette.controller.view.convert(palette.controller.view.bounds, to: f.window)
+        let navigationBar = try #require(f.sidebar.navigationController?.navigationBar)
+        let navigationBarFrame = navigationBar.convert(navigationBar.bounds, to: f.window)
+        #expect(!navigationBar.isHidden)
+        #expect(paletteFrame.minY >= navigationBarFrame.maxY + 7.5)
+        let visibleTableFrame = f.table.convert(f.table.bounds, to: f.window)
+        #expect(paletteFrame.maxY <= visibleTableFrame.maxY - f.table.safeAreaInsets.bottom - 7.5)
+        let oldOffset = f.table.contentOffset
+        f.table.setContentOffset(CGPoint(x: oldOffset.x, y: oldOffset.y + 40), animated: false)
+        f.sidebar.view.layoutIfNeeded()
+        let scrolledFrame = palette.controller.view.convert(palette.controller.view.bounds, to: f.window)
+        #expect(abs(scrolledFrame.minY - paletteFrame.minY) < 0.5)
+        #expect(abs(scrolledFrame.minX - paletteFrame.minX) < 0.5)
+        #expect(scrolledFrame.size == paletteFrame.size)
+        f.table.setContentOffset(oldOffset, animated: false)
+        f.sidebar.view.layoutIfNeeded()
+        #expect(try palette.hover(drop, targetID: "browser.spaceDrop.other.today").operation == .forbidden)
+        #expect(try palette.hover(drop, targetID: "browser.spaceDrop.other.pinned").operation == .move)
+        f.sidebar.tableView(f.table, dropSessionDidExit: drop)
+        #expect(palette.controller.parent === f.sidebar)
+
+        #expect(f.document.setPlacement(tabID: "child", placement: .spacePinned, spaceID: "source"))
+        #expect(f.document.setPlacement(
+            tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+        ))
+        let previousQueue = try f.mutations()
+        palette.perform(drop)
+        let queue = try f.mutations()
+        #expect(Array(queue.prefix(previousQueue.count)) == previousQueue)
+        #expect(queue.count == previousQueue.count + 1)
+        #expect(queue.last?.operations == [.move(
+            items: [.init(entityType: .folder, entityID: "folder"), .init(entityType: .tab, entityID: "a")],
+            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil)
+        )])
+        let moved = f.document.snapshot
+        #expect(moved.pinnedTabFolders?.first { $0.id == "folder" }?.spaceID == "other")
+        #expect(moved.pinnedTabFolders?.first { $0.id == "nested" }?.spaceID == "other")
+        #expect(moved.tabs.first { $0.id == "child" }?.spaceID == "source")
+        #expect(moved.tabs.first { $0.id == "c" }?.spaceID == "other")
+        #expect(moved.tabs.first { $0.id == "deep" }?.spaceID == "other")
+        #expect(moved.tabs.first { $0.id == "a" }?.spaceID == "other")
+        #expect(f.workspace.selectedSpaceID == "source" && f.workspace.selectedTabID == "b")
+        #expect(f.engine.selectedID == selectedRuntime && Set(f.workspace.tabs.map(\.runtimeID)) == runtimes)
+        #expect(f.engine.closed.isEmpty)
+
+        let animations = palette.installAnimations(for: drag.items)
+        try #require(animations.count == 2)
+        #expect(f.rowIDs(section: 1) == sourceRows)
+        f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+        animations[1].finish()
+        #expect(palette.controller.parent === f.sidebar)
+        #expect(f.rowIDs(section: 1) == sourceRows)
+        NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: f.window.windowScene)
+        #expect(palette.controller.parent === f.sidebar)
+        #expect(try f.mutations() == queue)
+        palette.end(drop)
+        #expect(palette.controller.parent === f.sidebar)
+        animations[0].finish()
+        palette.conclude(drop)
+        #expect(palette.controller.parent == nil)
+        #expect(f.rowIDs(section: 1) == ["browser.folder.empty", "browser.tab.child"])
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func crossSpaceTodayDropRetainsMovedRuntimeAndUsesExistingActiveTabFallback() async throws {
+        let f = try SidebarDragFixture()
+        defer { f.cleanup() }
+        await f.start(showNavigation: true)
+        f.workspace.selectTab(id: "a")
+        let runtime = try #require(f.workspace.selectedTab?.runtimeID)
+        try f.toggleSelection()
+        f.select(row: 0, section: 2)
+        f.select(row: 2, section: 2)
+        let drag = try f.begin(row: 0, section: 2, expectedItems: 2)
+        let drop = SidebarDropSession(drag: drag, point: .zero)
+        let palette = try f.openSpacePalette()
+        #expect(try palette.hover(drop, targetID: "browser.spaceDrop.other.today").operation == .move)
+        palette.perform(drop)
+        let queue = try f.mutations()
+        #expect(queue.count == 1)
+        #expect(queue.first?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "a"), .init(entityType: .tab, entityID: "c")],
+            destination: .tabs(spaceID: "other", placement: .temporary, pinnedFolderID: nil)
+        )])
+        #expect(f.document.snapshot.tabs.filter { $0.spaceID == "other" }.compactMap(\.id) == ["a", "c"])
+        #expect(f.workspace.selectedSpaceID == "source")
+        #expect(f.workspace.selectedTabID != "a")
+        #expect(f.workspace.visibleTabs.contains { $0.id == f.workspace.selectedTabID })
+        #expect(f.workspace.tabs.first { $0.id == "a" }?.runtimeID == runtime)
+        #expect(f.engine.closed.isEmpty)
+        let animations = palette.installAnimations(for: drag.items, completesInline: true)
+        #expect(animations.map(\.completionCount) == [1, 1])
+        palette.conclude(drop)
+        palette.end(drop)
+        #expect(palette.controller.parent === f.sidebar)
+        f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+        #expect(palette.controller.parent == nil)
+        #expect(f.rowIDs(section: 2) == ["browser.tab.b"])
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func crossSpaceTargetKeepsCapturedIdentityAfterSpaceRenameAndReorder() async throws {
+        let f = try SidebarDragFixture()
+        defer { f.cleanup() }
+        await f.start(showNavigation: true)
+        let drag = try f.begin(row: 0, section: 2)
+        let drop = SidebarDropSession(drag: drag, point: .zero)
+        let palette = try f.openSpacePalette()
+        #expect(try palette.hover(drop, targetID: "browser.spaceDrop.other.pinned").operation == .move)
+        let capturedPoint = drop.point
+        #expect(f.document.renameSpace(id: "other", title: "Renamed destination"))
+        #expect(f.document.move(
+            items: [.init(entityType: .space, entityID: "other")], destination: .spaces,
+            before: .init(entityType: .space, entityID: "source")
+        ))
+        #expect(f.document.snapshot.spaces?.map(\.id) == ["other", "source"])
+        let previous = try f.mutations()
+        #expect(drop.point == capturedPoint)
+        palette.perform(drop)
+        #expect(f.document.snapshot.tabs.first { $0.id == "a" }?.spaceID == "other")
+        #expect(try f.mutations().count == previous.count + 1)
+        #expect(try f.mutations().last?.operations == [.move(
+            items: [.init(entityType: .tab, entityID: "a")],
+            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil)
+        )])
+        let animations = palette.installAnimations(for: drag.items)
+        f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+        palette.end(drop)
+        animations.forEach { $0.finish() }
+        palette.conclude(drop)
+        #expect(palette.controller.parent == nil)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func crossSpaceDropRejectsDeletedDestinationReparentedSourceAndOwningSceneCancellation() async throws {
+        for change in ["space-deleted", "source-moved", "scene-inactive"] {
+            let f = try SidebarDragFixture()
+            defer { f.cleanup() }
+            await f.start(showNavigation: true)
+            let drag = try f.begin(row: 0, section: 2)
+            let drop = SidebarDropSession(drag: drag, point: .zero)
+            let palette = try f.openSpacePalette()
+            #expect(try palette.hover(drop, targetID: "browser.spaceDrop.other.today").operation == .move)
+            switch change {
+            case "space-deleted": #expect(f.document.delete(entity: .init(entityType: .space, entityID: "other")))
+            case "source-moved": #expect(f.document.setPlacement(
+                    tabID: "a", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                ))
+            default:
+                // This drives the installed notification callback, not an OS
+                // background transition. An unrelated object must be ignored.
+                NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: NSObject())
+                #expect(try palette.hover(drop, targetID: "browser.spaceDrop.other.today").operation == .move)
+                NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: f.window.windowScene)
+            }
+            let changed = try f.durableState()
+            palette.perform(drop)
+            #expect(try f.durableState() == changed)
+            f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+            palette.end(drop)
+            palette.conclude(drop)
+            #expect(palette.controller.parent == nil)
+            #expect(await f.workspace.shutdown())
+        }
+    }
+
+    @Test func crossSpacePaletteRejectsForeignAndExternalSessionsWithoutWriting() async throws {
+        let f = try SidebarDragFixture()
+        let other = try SidebarDragFixture()
+        defer { other.cleanup()
+            f.cleanup()
+        }
+        await other.start(showNavigation: true)
+        let foreign = try other.begin(row: 0, section: 2)
+        await f.start(showNavigation: true)
+        let drag = try f.begin(row: 0, section: 2)
+        let ownDrop = SidebarDropSession(drag: drag, point: .zero)
+        let palette = try f.openSpacePalette()
+        let foreignDrop = SidebarDropSession(drag: foreign, point: .zero)
+        #expect(!palette.canHandle(foreignDrop))
+        #expect(try palette.hover(foreignDrop, targetID: "browser.spaceDrop.other.pinned").operation == .forbidden)
+        let externalDrop = SidebarDropSession(drag: drag, point: foreignDrop.point)
+        externalDrop.localDragSession = nil
+        #expect(!palette.canHandle(externalDrop))
+        palette.perform(foreignDrop)
+        palette.perform(externalDrop)
+        #expect(try f.mutations().isEmpty && other.mutations().isEmpty)
+        f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+        palette.end(ownDrop)
+        palette.conclude(ownDrop)
+        #expect(palette.controller.parent == nil)
+        other.end(foreign, foreignDrop)
+        #expect(await f.workspace.shutdown())
+        #expect(await other.workspace.shutdown())
+    }
+
     @Test func selectedNoncontiguousTabsMoveAsOneOrderedBlockAfterEveryAnimationEnds() async throws {
         let f = try SidebarDragFixture()
         defer { f.cleanup() }
@@ -490,19 +708,38 @@ extension BrowserMobileUITests {
         document.snapshot.tabs.filter { $0.placement == .temporary && $0.spaceID == "source" }.compactMap(\.id)
     }
 
-    func start() async {
+    func start(showNavigation: Bool = false) async {
         await workspace.restore()
         workspace.selectSpace(id: "source")
-        window.rootViewController = sidebar
+        let root: UIViewController = showNavigation ? UINavigationController(rootViewController: sidebar) : sidebar
+        window.rootViewController = root
         window.frame = CGRect(x: 0, y: 0, width: 600, height: 1100)
         window.makeKeyAndVisible()
         sidebar.loadViewIfNeeded()
         table.estimatedRowHeight = 0
         table.rowHeight = 52
         sidebar.render()
-        sidebar.view.frame = window.bounds
+        root.view.frame = window.bounds
+        root.view.layoutIfNeeded()
         sidebar.view.layoutIfNeeded()
         table.layoutIfNeeded()
+    }
+
+    func openSpacePalette() throws -> SidebarSpaceDropHarness {
+        let button = try #require(sidebar.navigationItem.titleView as? UIButton)
+        #expect(button.accessibilityIdentifier == "browser.spaces")
+        #expect(button.window === window)
+        #expect(button.interactions.contains { $0 is UISpringLoadedInteraction })
+        // The installed spring handler dispatches this same real control action.
+        // This test proves callback wiring, not physical hover recognition.
+        button.sendActions(for: .primaryActionTriggered)
+        let controller = try #require(sidebar.children.first {
+            $0.viewIfLoaded?.accessibilityIdentifier == "browser.spaceDropTargets"
+        })
+        sidebar.view.layoutIfNeeded()
+        controller.view.layoutIfNeeded()
+        let interaction = try #require(controller.view.interactions.compactMap { $0 as? UIDropInteraction }.first)
+        return try SidebarSpaceDropHarness(controller: controller, interaction: interaction)
     }
 
     func toggleSelection() throws {
@@ -597,6 +834,70 @@ extension BrowserMobileUITests {
         let snapshot: BrowserTabSessionSnapshot?
         let queue: [BrowserSyncFolderMutation]
     }
+}
+
+// MARK: - SidebarSpaceDropHarness
+
+@MainActor private struct SidebarSpaceDropHarness {
+    // MARK: Lifecycle
+
+    init(controller: UIViewController, interaction: UIDropInteraction) throws {
+        self.controller = controller
+        self.interaction = interaction
+        self.delegate = try #require(interaction.delegate)
+    }
+
+    // MARK: Internal
+
+    let controller: UIViewController
+    let interaction: UIDropInteraction
+    let delegate: any UIDropInteractionDelegate
+
+    func canHandle(_ session: SidebarDropSession) -> Bool {
+        delegate.dropInteraction?(interaction, canHandle: session) ?? false
+    }
+
+    func hover(_ session: SidebarDropSession, targetID: String) throws -> UIDropProposal {
+        controller.view.layoutIfNeeded()
+        let target = try #require(sidebarDragView(withID: targetID, in: controller.view))
+        session.point = target.convert(CGPoint(x: target.bounds.midX, y: target.bounds.midY), to: controller.view)
+        if canHandle(session) {
+            delegate.dropInteraction?(interaction, sessionDidEnter: session)
+        }
+        return try #require(delegate.dropInteraction?(interaction, sessionDidUpdate: session))
+    }
+
+    func perform(_ session: SidebarDropSession) {
+        delegate.dropInteraction?(interaction, performDrop: session)
+    }
+
+    func installAnimations(for items: [UIDragItem], completesInline: Bool = false) -> [SidebarDragAnimation] {
+        items.map { item in
+            let animation = SidebarDragAnimation(completesInline: completesInline)
+            delegate.dropInteraction?(interaction, item: item, willAnimateDropWith: animation)
+            return animation
+        }
+    }
+
+    func end(_ session: SidebarDropSession) {
+        delegate.dropInteraction?(interaction, sessionDidEnd: session)
+    }
+
+    func conclude(_ session: SidebarDropSession) {
+        delegate.dropInteraction?(interaction, concludeDrop: session)
+    }
+}
+
+@MainActor private func sidebarDragView(withID id: String, in view: UIView) -> UIView? {
+    if view.accessibilityIdentifier == id {
+        return view
+    }
+    for child in view.subviews {
+        if let found = sidebarDragView(withID: id, in: child) {
+            return found
+        }
+    }
+    return nil
 }
 
 // MARK: - SidebarDragDropSession

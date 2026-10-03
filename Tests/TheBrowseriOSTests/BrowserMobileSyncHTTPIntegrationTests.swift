@@ -292,6 +292,158 @@ import WebKit
         try await fixture.complete(account)
     }
 
+    @Test func mobileV4CrossSpaceGroupUsesCurrentSubtreeAndSurvivesSourceSpaceDeletion() async throws {
+        let fixture = try await MobileHTTPFixture.load()
+        let account = try fixture.account("mobile-v4-cross-space")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try MobileHTTPProfile(
+            fixture: fixture, device: account.devices[0], directory: directory,
+            initial: mobileHTTPCrossSpaceSeed(pageURL: fixture.baseURL.appendingPathComponent("mobile-test-page"))
+        )
+        let second = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        defer { first.cleanup()
+            second.cleanup()
+        }
+        try await first.start()
+        first.workspace.selectTab(id: "browsing")
+        try #require(await mobileHTTPEventually {
+            first.workspace.selectedTab?.title == "Mobile sync fixture"
+                && first.workspace.selectedTab?.state.isLoading == false
+        })
+        try await first.drain()
+        try await second.start()
+        second.workspace.selectTab(id: "browsing")
+        try #require(await mobileHTTPEventually {
+            second.workspace.selectedTab?.title == "Mobile sync fixture"
+                && second.workspace.selectedTab?.state.isLoading == false
+        })
+        try await second.drain()
+        let firstIDs = Dictionary(uniqueKeysWithValues: first.workspace.tabs.map { ($0.id, $0.runtimeID) })
+        let secondIDs = Dictionary(uniqueKeysWithValues: second.workspace.tabs.map { ($0.id, $0.runtimeID) })
+        let firstRuntime = try #require(firstIDs["browsing"])
+        let secondRuntime = try #require(secondIDs["browsing"])
+        let firstPage = try #require(first.engine.webView(for: firstRuntime))
+        let secondPage = try #require(second.engine.webView(for: secondRuntime))
+        let roots: [BrowserSyncEntityReference] = [
+            .init(entityType: .folder, entityID: "group"), .init(entityType: .tab, entityID: "browsing"),
+        ]
+        first.workspace.setSyncActive(false)
+        let source = try #require(BrowserMobileSidebarDrop.source(items: roots, in: first.document.snapshot))
+
+        // The source token outlives a real remote membership change. Descendants
+        // leaving the folder stay behind; children joining it travel with it.
+        try #require(second.document.move(
+            items: [.init(entityType: .tab, entityID: "escaped")],
+            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil)
+        ))
+        try #require(second.document.move(
+            items: [.init(entityType: .tab, entityID: "joining")],
+            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "nested")
+        ))
+        try #require(second.document.renameFolder(id: "group", title: "Remote group title"))
+        try #require(second.document.renameTab(id: "joining", title: "Joined remotely"))
+        try await second.drain()
+        first.workspace.setSyncActive(true)
+        try await first.pull()
+        #expect(first.document.snapshot.tabs.first { $0.id == "escaped" }?.pinnedFolderID == nil)
+        #expect(first.document.snapshot.tabs.first { $0.id == "joining" }?.pinnedFolderID == "nested")
+        first.workspace.setSyncActive(false)
+        let plan = try #require(BrowserMobileSidebarDrop.plan(
+            source: source,
+            target: BrowserMobileSidebarDrop.rootTarget(spaceID: "target", placement: .spacePinned),
+            in: first.document.snapshot
+        ))
+        #expect(plan.items == roots && plan.before == nil && plan.after == nil)
+        try #require(first.document.move(
+            items: plan.items, destination: plan.destination, before: plan.before, after: plan.after
+        ))
+        let pending = try first.store.pendingSyncQueue(for: first.owner)
+        try #require(pending.count == 1)
+        guard case .folders(let mutation) = pending[0] else {
+            Issue.record("Cross-Space group must use the production v4 outbox")
+            return
+        }
+        #expect(mutation.operations == [.move(
+            items: roots, destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+        )])
+        #expect(first.document.snapshot.tabs.first { $0.id == "escaped" }?.spaceID == "source")
+        for id in ["browsing", "deep", "joining"] {
+            #expect(first.document.snapshot.tabs.first { $0.id == id }?.spaceID == "target")
+            #expect(first.workspace.tabs.first { $0.id == id }?.runtimeID == firstIDs[id])
+        }
+        first.workspace.setSyncActive(true)
+        try await first.drain()
+        try await second.pull()
+        #expect(first.document.snapshot == second.document.snapshot)
+        let targetRoots = BrowserSyncFolderProjection.canonicalChanges(first.document.snapshot)
+            .filter {
+                ($0.folderData?.spaceID == "target" && $0.folderData?.parentFolderID == nil)
+                    || ($0.tabData?.spaceID == "target" && $0.tabData?.placement == .spacePinned
+                        && $0.tabData?.pinnedFolderID == nil)
+            }
+            .sorted { ($0.folderData?.rank ?? $0.tabData?.rank ?? 0) < ($1.folderData?.rank ?? $1.tabData?.rank ?? 0) }
+        #expect(targetRoots
+            .map { BrowserSyncEntityReference(entityType: $0.entityType, entityID: $0.entityID) } == roots)
+        let moved = try await fixture.inspect(account)
+        #expect(moved.tabs.first { $0.id == "escaped" }?.spaceID == "source")
+        #expect(moved.tabs.first { $0.id == "joining" }?.spaceID == "target")
+        #expect(moved.tabs.first { $0.id == "joining" }?.pinnedFolderID == "nested")
+        #expect(moved.folders.first { $0.id == "group" }?.spaceID == "target")
+        #expect(moved.folders.first { $0.id == "nested" }?.parentFolderID == "group")
+        #expect(moved.folders.first { $0.id == "group" }?.title == "Remote group title")
+
+        second.workspace.setSyncActive(false)
+        try #require(second.document.delete(entity: .init(entityType: .space, entityID: "source")))
+        let deletion = try second.store.pendingSyncQueue(for: second.owner)
+        try #require(deletion.count == 1)
+        guard case .folders(let deletionMutation) = deletion[0] else {
+            Issue.record("Source-Space deletion must use the production v4 outbox")
+            return
+        }
+        #expect(deletionMutation.operations == [.deleteSpace(id: "source")])
+        second.workspace.setSyncActive(true)
+        try await second.drain()
+        try await first.pull()
+        #expect(first.document.snapshot == second.document.snapshot)
+        #expect(first.document.snapshot.spaces?.map(\.id) == ["target"])
+        #expect(Set(first.document.snapshot.tabs.compactMap(\.id)) == ["browsing", "deep", "joining"])
+        #expect(Set(first.document.snapshot.pinnedTabFolders?.map(\.id) ?? []) == ["group", "nested"])
+        #expect(first.document.snapshot.tabs.first { $0.id == "joining" }?.userTitleOverride == "Joined remotely")
+        #expect(first.document.snapshot.tabs.first { $0.id == "deep" }?.pinnedFolderID == "nested")
+        for id in ["browsing", "deep", "joining"] {
+            #expect(first.workspace.tabs.first { $0.id == id }?.runtimeID == firstIDs[id])
+            #expect(second.workspace.tabs.first { $0.id == id }?.runtimeID == secondIDs[id])
+        }
+        #expect(first.engine.webView(for: firstRuntime) === firstPage)
+        #expect(second.engine.webView(for: secondRuntime) === secondPage)
+        #expect(firstPage.url == secondPage.url && firstPage.url?.lastPathComponent == "mobile-test-page")
+        let deleted = try await fixture.inspect(account)
+        for id in ["escaped", "source-only"] {
+            #expect(deleted.tabs.first { $0.id == id }?.deleted == true)
+            #expect(deleted.tabs.first { $0.id == id }?.tombstoned == true)
+        }
+        for id in ["browsing", "deep", "joining"] {
+            #expect(deleted.tabs.first { $0.id == id }?.spaceID == "target")
+            #expect(deleted.tabs.first { $0.id == id }?.deleted == false)
+            #expect(deleted.tabs.first { $0.id == id }?.tombstoned == false)
+        }
+        #expect(deleted.folders.filter { !$0.deleted }.allSatisfy { $0.spaceID == "target" })
+        let saved = first.document.snapshot
+        try await first.stop()
+        try await second.stop()
+        let reopened = try MobileHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        defer { reopened.cleanup() }
+        #expect(reopened.document.snapshot == saved)
+        try await reopened.start()
+        #expect(reopened.document.snapshot == saved)
+        #expect(reopened.workspace.tabs.map(\.id) == saved.tabs.compactMap(\.id))
+        let afterReopen = try await fixture.inspect(account)
+        #expect(afterReopen.eventCount == deleted.eventCount && afterReopen.receiptCount == deleted.receiptCount)
+        try await reopened.stop()
+        try await fixture.complete(account)
+    }
+
     @Test func mobileV4LostAcknowledgementReopensImmutableQueueAndDeletionDefeatsStaleEdits() async throws {
         let fixture = try await MobileHTTPFixture.load()
         let account = try fixture.account("mobile-v4-recovery")
@@ -398,6 +550,7 @@ private struct MobileHTTPFixture: Decodable {
     struct Inspection: Decodable {
         struct Tab: Decodable {
             let id: String
+            let spaceID: String
             let pinnedFolderID: String?
             let deleted: Bool
             let tombstoned: Bool
@@ -405,7 +558,9 @@ private struct MobileHTTPFixture: Decodable {
 
         struct Folder: Decodable { let id: String
             let spaceID: String
+            let parentFolderID: String?
             let title: String
+            let deleted: Bool
         }
 
         struct Attempt: Decodable {
@@ -707,6 +862,34 @@ private func mobileHTTPGroupSeed() -> BrowserTabSessionSnapshot {
             spaceID: "source",
             pinnedSiblingRank: 3
         ),
+    ])
+}
+
+private func mobileHTTPCrossSpaceSeed(pageURL: URL) -> BrowserTabSessionSnapshot {
+    .init(spaces: [
+        .init(id: "source", title: "Source", systemImageName: "globe"),
+        .init(id: "target", title: "Target", systemImageName: "folder"),
+    ], pinnedTabFolders: [
+        .init(id: "group", spaceID: "source", title: "Group", pinnedSiblingRank: 0),
+        .init(id: "nested", spaceID: "source", parentFolderID: "group", title: "Nested", pinnedSiblingRank: 1),
+    ], tabs: [
+        .init(
+            id: "escaped", urlString: "about:blank", placement: .spacePinned, spaceID: "source",
+            pinnedFolderID: "group", pinnedSiblingRank: 0
+        ),
+        .init(
+            id: "deep", urlString: "about:blank", placement: .spacePinned, spaceID: "source",
+            pinnedFolderID: "nested", pinnedSiblingRank: 0
+        ),
+        .init(
+            id: "browsing", urlString: pageURL.absoluteString, placement: .spacePinned,
+            spaceID: "source", pinnedSiblingRank: 1
+        ),
+        .init(
+            id: "joining", urlString: "about:blank", placement: .spacePinned,
+            spaceID: "source", pinnedSiblingRank: 2
+        ),
+        .init(id: "source-only", urlString: "about:blank", spaceID: "source"),
     ])
 }
 

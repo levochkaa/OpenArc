@@ -61,7 +61,9 @@ const folderScenarios = new Set([
   "folder-roundtrip", "folder-race", "folder-lost-ack", adoptionScenario,
   "folder-device-rotation", "folder-pending-delete"
 ]);
-const mobileScenarios = new Set(["mobile-v4-roundtrip", "mobile-v4-recovery", "mobile-v4-group-replay"]);
+const mobileScenarios = new Set([
+  "mobile-v4-roundtrip", "mobile-v4-recovery", "mobile-v4-group-replay", "mobile-v4-cross-space"
+]);
 const desktopScenarios = [
   ...legacyScenarios, "semantic-move-first", "semantic-patch-first",
   "coordinator-move-first", "coordinator-patch-first", "coordinator-lost-ack", "coordinator-delete-pending",

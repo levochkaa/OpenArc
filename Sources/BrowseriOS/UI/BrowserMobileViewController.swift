@@ -87,7 +87,9 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
 // MARK: - BrowserMobileTabsViewController
 
-final class BrowserMobileTabsViewController: UITableViewController, UITableViewDragDelegate, UITableViewDropDelegate {
+final class BrowserMobileTabsViewController: UITableViewController, UITableViewDragDelegate, UITableViewDropDelegate,
+    UIDropInteractionDelegate
+{
     // MARK: Lifecycle
 
     init(workspace: BrowserMobileWorkspace) {
@@ -142,11 +144,30 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         accountButton.accessibilityIdentifier = "browser.account"
         navigationItem.leftBarButtonItems = [navigationItem.leftBarButtonItem!, accountButton]
         spaceButton.showsMenuAsPrimaryAction = true
+        spaceButton.isSpringLoaded = false
+        spaceButton.addTarget(self, action: #selector(showSpaceDropTargets), for: .primaryActionTriggered)
+        let behavior = SpaceSpringBehavior { [weak self] in self?.canOpenSpaceDropTargets == true }
+        spaceButton.addInteraction(UISpringLoadedInteraction(
+            interactionBehavior: behavior, interactionEffect: nil
+        ) { [weak spaceButton] _, _ in
+            spaceButton?.sendActions(for: .primaryActionTriggered)
+        })
+        for name in [UIScene.willDeactivateNotification, UIScene.didDisconnectNotification] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(dragSceneBecameInactive(_:)), name: name, object: nil
+            )
+        }
         spaceButton.accessibilityIdentifier = "browser.spaces"
         spaceButton.titleLabel?.lineBreakMode = .byTruncatingTail
         spaceButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         spaceButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         render()
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        spaceDropTopConstraint?.constant = tableView.safeAreaInsets.top + 8
+        spaceDropBottomConstraint?.constant = -tableView.safeAreaInsets.bottom - 8
     }
 
     override func numberOfSections(in _: UITableView) -> Int { rows.count }
@@ -338,6 +359,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         payload.dragItemIDs = Set(initialDragItems.values.map(ObjectIdentifier.init))
         session.localContext = payload
         activeSource = payload
+        dragScene = view.window?.windowScene
         sourceSessionID = sessionID
         updateSelectionButton()
         becomeFirstResponder()
@@ -356,6 +378,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     func tableView(_: UITableView, dragSessionDidEnd session: any UIDragSession) {
         guard sourceSessionID == ObjectIdentifier(session) else { return }
         sourceSessionID = nil
+        spaceDropClosing = true
         activeSource = nil
         initialDragItems.removeAll(keepingCapacity: true)
         suppliedInitialItems.removeAll(keepingCapacity: true)
@@ -453,29 +476,106 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             isCommittingDrop = false
             finishInteractionIfPossible()
         }
-        let moved = document.move(
-            items: plan.items,
-            destination: plan.destination,
-            before: plan.before,
-            after: plan.after
-        )
-        guard moved else { return }
-        payload.isCancelled = true
-        needsStructuralRefresh = true
-        let batchID = UUID()
-        animationBatchID = batchID
-        pendingDropAnimations = payload.dragItemIDs
+        guard let batchID = commit(plan, document: document, payload: payload) else { return }
         let target = UIDragPreviewTarget(container: tableView, center: hover.point)
         for item in coordinator.items {
             let itemID = ObjectIdentifier(item.dragItem)
             coordinator.drop(item.dragItem, to: target).addCompletion { [weak self] _ in
-                guard let self, animationBatchID == batchID, pendingDropAnimations.remove(itemID) != nil else { return }
-                if pendingDropAnimations.isEmpty {
-                    animationBatchID = nil
-                }
-                finishInteractionIfPossible()
+                self?.finishDropAnimation(itemID: itemID, batchID: batchID)
             }
         }
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: any UIDropSession) -> Bool {
+        isSpaceDropInteraction(interaction) && !spaceDropClosing && payload(for: session) != nil
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnter session: any UIDropSession) {
+        guard dropInteraction(interaction, canHandle: session) else { return }
+        spaceDropSessionID = ObjectIdentifier(session)
+    }
+
+    func dropInteraction(
+        _ interaction: UIDropInteraction,
+        sessionDidUpdate session: any UIDropSession
+    ) -> UIDropProposal {
+        guard dropInteraction(interaction, canHandle: session), let palette = spaceDropController,
+              let payload = payload(for: session), let document = workspace.profileDocument,
+              let target = palette.target(at: session.location(in: palette.view)), target.isEnabled,
+              validatedPlan(source: payload.source, target: target.plannerTarget, snapshot: document.snapshot) != nil
+        else {
+            if isSpaceDropInteraction(interaction) {
+                spaceDropHover = nil
+                spaceDropController?.highlight(nil)
+            }
+            return .init(operation: .forbidden)
+        }
+        spaceDropSessionID = ObjectIdentifier(session)
+        spaceDropHover = target
+        palette.highlight(target)
+        return .init(operation: .move)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: any UIDropSession) {
+        endSpaceDropHover(interaction, session: session)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: any UIDropSession) {
+        endSpaceDropHover(interaction, session: session)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: any UIDropSession) {
+        guard dropInteraction(interaction, canHandle: session), let palette = spaceDropController,
+              let payload = payload(for: session), let document = workspace.profileDocument,
+              spaceDropSessionID == ObjectIdentifier(session), let target = spaceDropHover,
+              palette.target(at: session.location(in: palette.view)) == target, target.isEnabled,
+              let plan = validatedPlan(
+                  source: payload.source,
+                  target: target.plannerTarget,
+                  snapshot: document.snapshot
+              )
+        else { return }
+        isCommittingDrop = true
+        defer {
+            isCommittingDrop = false
+            finishInteractionIfPossible()
+        }
+        guard let batchID = commit(plan, document: document, payload: payload) else { return }
+        spaceDropBatchID = batchID
+        spaceDropBatchSessionID = ObjectIdentifier(session)
+        spaceDropPreviewTarget = target
+        spaceDropClosing = true
+    }
+
+    func dropInteraction(
+        _ interaction: UIDropInteraction, previewForDropping item: UIDragItem,
+        withDefault defaultPreview: UITargetedDragPreview
+    ) -> UITargetedDragPreview? {
+        guard isSpaceDropInteraction(interaction), spaceDropBatchID == animationBatchID,
+              pendingDropAnimations.contains(ObjectIdentifier(item)), let target = spaceDropPreviewTarget,
+              let previewTarget = spaceDropController?.previewTarget(for: target) else { return nil }
+        return defaultPreview.retargetedPreview(with: previewTarget)
+    }
+
+    func dropInteraction(
+        _ interaction: UIDropInteraction, item: UIDragItem, willAnimateDropWith animator: any UIDragAnimating
+    ) {
+        let itemID = ObjectIdentifier(item)
+        guard isSpaceDropInteraction(interaction), let batchID = spaceDropBatchID, batchID == animationBatchID,
+              pendingDropAnimations.contains(itemID),
+              registeredSpaceDropAnimations.insert(itemID).inserted else { return }
+        animator.addCompletion { [weak self] _ in
+            self?.finishDropAnimation(itemID: itemID, batchID: batchID)
+        }
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, concludeDrop session: any UIDropSession) {
+        // UIKit calls this after every drop animation, including non-visible items.
+        guard isSpaceDropInteraction(interaction), spaceDropBatchSessionID == ObjectIdentifier(session),
+              let batchID = spaceDropBatchID, batchID == animationBatchID else { return }
+        pendingDropAnimations.removeAll()
+        animationBatchID = nil
+        finishInteractionIfPossible()
     }
 
     func tabMenu(id: String) -> UIMenu? {
@@ -629,6 +729,22 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         var isCancelled = false
     }
 
+    private final class SpaceSpringBehavior: NSObject, UISpringLoadedInteractionBehavior {
+        // MARK: Lifecycle
+
+        init(canActivate: @escaping () -> Bool) { self.canActivate = canActivate }
+
+        // MARK: Internal
+
+        func shouldAllow(_: UISpringLoadedInteraction, with _: any UISpringLoadedInteractionContext) -> Bool {
+            canActivate()
+        }
+
+        // MARK: Private
+
+        private let canActivate: () -> Bool
+    }
+
     private struct DropHover {
         let target: BrowserMobileSidebarDrop.Target
         let point: CGPoint
@@ -667,6 +783,17 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var sourceSessionID: ObjectIdentifier?
     private var dropSessionID: ObjectIdentifier?
     private var hover: DropHover?
+    private weak var dragScene: UIWindowScene?
+    private var spaceDropController: BrowserMobileSpaceDropViewController?
+    private var spaceDropTopConstraint: NSLayoutConstraint?
+    private var spaceDropBottomConstraint: NSLayoutConstraint?
+    private var spaceDropSessionID: ObjectIdentifier?
+    private var spaceDropHover: BrowserMobileSpaceDropViewController.Target?
+    private var spaceDropClosing = false
+    private var spaceDropBatchID: UUID?
+    private var spaceDropBatchSessionID: ObjectIdentifier?
+    private var spaceDropPreviewTarget: BrowserMobileSpaceDropViewController.Target?
+    private var registeredSpaceDropAnimations = Set<ObjectIdentifier>()
     private var highlightedFolder: IndexPath?
     private var needsStructuralRefresh = false
     private var isCommittingDrop = false
@@ -678,7 +805,19 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var terminalRefreshTask: Task<Void, Never>?
 
     private var isHoldingRows: Bool {
-        sourceSessionID != nil || dropSessionID != nil || isCommittingDrop || !pendingDropAnimations.isEmpty
+        sourceSessionID != nil || dropSessionID != nil || spaceDropSessionID != nil
+            || isCommittingDrop || !pendingDropAnimations.isEmpty
+    }
+
+    private var canOpenSpaceDropTargets: Bool {
+        guard workspace.isReady, let document = workspace.profileDocument, document.canEdit,
+              let payload = activeSource, !payload.isCancelled, payload.document === document,
+              payload.owner === self, sourceSessionID == payload.sourceSessionID,
+              payload.spaceID == workspace.selectedSpaceID,
+              dragScene?.activationState == .foregroundActive,
+              view.window?.windowScene === dragScene,
+              (document.snapshot.spaces ?? []).contains(where: { $0.id != payload.spaceID }) else { return false }
+        return BrowserMobileSidebarDrop.source(items: payload.source.items, in: document.snapshot) == payload.source
     }
 
     @objc private func toggleSidebarSelection() {
@@ -882,9 +1021,108 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         return nil
     }
 
+    @objc private func showSpaceDropTargets() {
+        guard spaceDropController == nil, canOpenSpaceDropTargets, let payload = activeSource,
+              let document = workspace.profileDocument else { return }
+        let palette = BrowserMobileSpaceDropViewController(
+            spaces: (document.snapshot.spaces ?? []).filter { $0.id != payload.spaceID },
+            includesFolders: payload.source.items.contains { $0.entityType == .folder },
+            dropDelegate: self
+        )
+        spaceDropClosing = false
+        spaceDropController = palette
+        addChild(palette)
+        palette.view.translatesAutoresizingMaskIntoConstraints = false
+        tableView.addSubview(palette.view)
+        let top = palette.view.topAnchor.constraint(
+            equalTo: tableView.frameLayoutGuide.topAnchor, constant: tableView.safeAreaInsets.top + 8
+        )
+        let bottom = palette.view.bottomAnchor.constraint(
+            lessThanOrEqualTo: tableView.frameLayoutGuide.bottomAnchor, constant: -tableView.safeAreaInsets.bottom - 8
+        )
+        spaceDropTopConstraint = top
+        spaceDropBottomConstraint = bottom
+        let height = palette.view.heightAnchor.constraint(equalToConstant: 400)
+        height.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            palette.view.leadingAnchor.constraint(equalTo: tableView.frameLayoutGuide.leadingAnchor, constant: 8),
+            palette.view.trailingAnchor.constraint(equalTo: tableView.frameLayoutGuide.trailingAnchor, constant: -8),
+            top,
+            bottom,
+            height,
+        ])
+        palette.didMove(toParent: self)
+        tableView.bringSubviewToFront(palette.view)
+        hover = nil
+        clearDropFeedback()
+    }
+
+    private func isSpaceDropInteraction(_ interaction: UIDropInteraction) -> Bool {
+        guard let palette = spaceDropController else { return false }
+        return interaction.view === palette.view
+    }
+
+    private func endSpaceDropHover(_ interaction: UIDropInteraction, session: any UIDropSession) {
+        guard isSpaceDropInteraction(interaction), spaceDropSessionID == ObjectIdentifier(session) else { return }
+        spaceDropSessionID = nil
+        spaceDropHover = nil
+        spaceDropController?.highlight(nil)
+        finishInteractionIfPossible()
+    }
+
+    private func dismissSpaceDropTargetsIfPossible() {
+        guard spaceDropClosing, !isHoldingRows, let palette = spaceDropController else { return }
+        // Once admission is cancelled no destination callback can mutate state.
+        // The preview container stays alive until its last animation completes.
+        spaceDropSessionID = nil
+        spaceDropHover = nil
+        spaceDropBatchID = nil
+        spaceDropBatchSessionID = nil
+        spaceDropPreviewTarget = nil
+        registeredSpaceDropAnimations.removeAll()
+        palette.willMove(toParent: nil)
+        palette.view.removeFromSuperview()
+        palette.removeFromParent()
+        spaceDropController = nil
+        spaceDropTopConstraint = nil
+        spaceDropBottomConstraint = nil
+    }
+
+    @objc private func dragSceneBecameInactive(_ notification: Notification) {
+        guard let scene = notification.object as? UIWindowScene, scene === dragScene else { return }
+        cancelSidebarDrag()
+    }
+
+    private func commit(
+        _ plan: BrowserMobileSidebarDrop.Plan, document: BrowserMobileProfileDocument, payload: SidebarDragPayload
+    ) -> UUID? {
+        guard document.move(items: plan.items, destination: plan.destination, before: plan.before, after: plan.after)
+        else { return nil }
+        payload.isCancelled = true
+        needsStructuralRefresh = true
+        let batchID = UUID()
+        animationBatchID = batchID
+        pendingDropAnimations = payload.dragItemIDs
+        return batchID
+    }
+
+    private func finishDropAnimation(itemID: ObjectIdentifier, batchID: UUID) {
+        guard animationBatchID == batchID, pendingDropAnimations.remove(itemID) != nil else { return }
+        if pendingDropAnimations.isEmpty {
+            animationBatchID = nil
+        }
+        finishInteractionIfPossible()
+    }
+
     @objc private func cancelSidebarDrag() {
         guard isHoldingRows else { return }
         activeSource?.isCancelled = true
+        spaceDropClosing = true
+        spaceDropHover = nil
+        spaceDropController?.highlight(nil)
+        if pendingDropAnimations.isEmpty {
+            spaceDropController?.view.isHidden = true
+        }
         hover = nil
         clearDropFeedback()
         needsStructuralRefresh = true
@@ -937,7 +1175,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func finishInteractionIfPossible() {
+        dismissSpaceDropTargetsIfPossible()
         guard !isHoldingRows else { return }
+        dragScene = nil
         guard !tableView.hasUncommittedUpdates else {
             needsStructuralRefresh = true
             scheduleTerminalRefresh()
