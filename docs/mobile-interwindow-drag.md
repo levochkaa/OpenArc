@@ -6,6 +6,8 @@ Two open mobile sidebars may exchange a tab, folder or selected group when they 
 
 The operation changes shared membership/order once through the existing document and v4 persistence path. Each window keeps its selected Space and independent page selection. When the source's active tab leaves that Space, existing workspace fallback selects a surviving visible neighbor. A destination does not automatically select the moved tab. WebKit runtime identities remain owned by each workspace; drag/drop does not transfer a web view between windows.
 
+The source may [add another row](mobile-drag-adding.md) to the active group. Other windows cannot contribute source items. The shared membership revision clears old hover/dwell across participants, requires the expanded exact native item set and updates the source sidebar's open Space palette without changing its geometry.
+
 ## Native lifetime
 
 The native [local drag session](https://developer.apple.com/documentation/uikit/uidropsession/localdragsession) and its [local context](https://developer.apple.com/documentation/uikit/uidragsession/localcontext) carry the shared token. Source ownership, destination admission, endpoint lifetimes and preview animations are separate concerns. A participant freezes its base tree before synchronous document observers run. [Hover expansion](mobile-hover-expand.md) can reveal descendants from that base in a controlled local batch; every participant rejects commit until that batch completes. Normal source/destination refresh waits for the relevant native terminals, projection batches and every pending preview. Late callbacks from an older batch cannot unlock a newer drag or commit twice.

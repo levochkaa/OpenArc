@@ -4,7 +4,7 @@
 
 While dragging a tab or selected group, hovering inside a collapsed folder for 600 ms reveals its descendants as drop targets. Expansion belongs to that sidebar's current interaction. It does not change the folder's saved expansion state or create a sync operation. Nested collapsed folders can reveal their own children after a separate dwell. This is a designed mobile adaptation.
 
-The source's ordered roots and exact native items remain unchanged. A receiver keeps a frozen tree snapshot, captured Space and available tab identities. Temporary expansion projects only from this base; incoming inserts, moves or deletions do not silently replace the displayed geometry. Every proposed drop still validates against the latest document, so a deleted or reparented source/target cannot receive a stale operation.
+Expansion leaves the source's ordered roots and exact native items unchanged. Explicit [row addition](mobile-drag-adding.md) can extend that group and cancels any pending dwell. A receiver keeps a frozen tree snapshot, captured Space and available tab identities. Temporary expansion projects only from this base; incoming inserts, moves or deletions do not silently replace the displayed geometry. Every proposed drop still validates against the latest document, so a deleted or reparented source/target cannot receive a stale operation.
 
 Hover eligibility differs from a nonempty move: a tab already last in its parent can still reveal that folder to choose a different sibling position. Dropping back into the same place remains a semantic no-op and writes nothing. Invalid cycles, stale identities and unsupported containers remain rejected.
 

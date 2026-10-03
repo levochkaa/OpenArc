@@ -6,7 +6,7 @@ Native UIKit drag/drop operates within the current mobile Space, through a [cros
 
 Select/Done enters native multiple selection without changing the active page or expanding folders. Group order follows the rendered sidebar, independent of selection order or callback order. Selecting both a folder and its descendants contributes only that folder root. Dragging an unselected row replaces the selection with that row. A single move accepts at most 1000 normalized roots, matching the v4 operation limit.
 
-[Hover expansion](mobile-hover-expand.md) temporarily reveals collapsed folder descendants during a drag. Adding items during an active drag remains required follow-up work. Unsupported sessions are rejected without copying records or synthesizing IDs. Native auto-scroll and physical touch/pointer smoothness require separate runtime observation; delegate tests alone do not prove them.
+[Hover expansion](mobile-hover-expand.md) temporarily reveals collapsed folder descendants during a drag. [Adding another row](mobile-drag-adding.md) extends the active group from its originating sidebar while preserving captured containers and sidebar order. Unsupported sessions are rejected without copying records or synthesizing IDs. Native auto-scroll and physical touch/pointer smoothness require separate runtime observation; delegate tests alone do not prove them.
 
 ## Stable identity and conflict rules
 

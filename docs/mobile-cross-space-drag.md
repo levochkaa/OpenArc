@@ -6,11 +6,13 @@ The mobile sidebar offers a destination palette while dragging a local tab or se
 
 The palette lists each other Space with Pinned and Today destinations. A group containing a folder cannot enter Today; that target remains visible but unavailable. A drop appends the ordered roots to the chosen section. Empty destinations are valid. The palette captures target Space IDs when opened, so subsequent rename/reorder cannot redirect the drop to another Space.
 
+If the originating sidebar [adds a folder to the active group](mobile-drag-adding.md), an open palette disables Today in place. The hint occupies reserved space, preserving target geometry and captured Space identities. Old hover feedback is cleared before another drop may be proposed.
+
 The source Space stays selected. Moving other tabs preserves the active page. If the active tab itself leaves that Space, the existing workspace selects a surviving visible neighbor, or no tab when none remains. The moved page runtime stays alive; the palette does not select the destination or reload the moved page.
 
 ## Ownership and persistence
 
-The originating tabs controller owns the source payload and commits the move. Admission requires the same controller, profile document and native session, with the complete exact drag-item set. This surface does not permit cross-window/profile or external payloads.
+The originating tabs controller owns the source payload and opens this palette. Admission validates source ownership and the native session's complete exact drag-item set. Another window may receive the group through its table, but cannot open this palette for that source's drag. Cross-profile and external payloads are rejected.
 
 The palette proposes a stable `BrowserMobileSidebarDrop.rootTarget`. Hover and commit validate it against the current document, including the captured source containers. A deleted destination Space or deleted/reparented root rejects the entire local drop. One `document.move` records the ordered root intent in the existing v4 FIFO; folder descendants are resolved from the current tree.
 

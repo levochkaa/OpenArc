@@ -6,6 +6,87 @@ import Testing
 struct BrowserMobileSidebarDropTests {
     // MARK: Internal
 
+    @Test func extendingSourceKeepsOldAndNewCapturedContainersAndFrozenOrder() throws {
+        let snapshot = groupTabSnapshot()
+        let source = try #require(Drop.source(item: tab("b"), in: snapshot))
+        let addition = try #require(Drop.source(item: tab("a"), in: snapshot))
+        // Metadata and current sibling order do not recapture the original
+        // stable container tokens or replace the frozen semantic group order.
+        let changed = apply([
+            .patchTab(id: "b", fields: .init(userTitleOverride: .set("Renamed"))),
+            .move(
+                items: [tab("a")],
+                destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
+                after: tab("d")
+            ),
+        ], to: snapshot)
+        let extended = try #require(Drop.extending(
+            source: source,
+            adding: addition,
+            orderedItems: [tab("a"), tab("b")],
+            in: changed
+        ))
+        #expect(extended.items == [tab("a"), tab("b")])
+        for id in ["a", "b"] {
+            let moved = apply(
+                [.move(
+                    items: [tab(id)],
+                    destination: .tabs(spaceID: "target", placement: .temporary, pinnedFolderID: nil)
+                )],
+                to: snapshot
+            )
+            #expect(Drop
+                .extending(source: source, adding: addition, orderedItems: [tab("a"), tab("b")], in: moved) == nil)
+        }
+        #expect(Drop.extending(source: source, adding: source, orderedItems: [tab("b")], in: snapshot) == nil)
+        #expect(Drop
+            .extending(source: source, adding: addition, orderedItems: [tab("a"), tab("a")], in: snapshot) == nil)
+        let firstPair = try #require(Drop.source(items: [tab("a"), tab("b")], in: snapshot))
+        let last = try #require(Drop.source(item: tab("c"), in: snapshot))
+        #expect(Drop.extending(
+            source: firstPair,
+            adding: last,
+            orderedItems: [tab("b"), tab("a"), tab("c")],
+            in: snapshot
+        ) == nil)
+    }
+
+    @Test func extendingSourceRejectsAncestorReplacementAndStopsAtOneThousandRoots() throws {
+        let snapshot = dropSnapshot()
+        let parent = try #require(Drop.source(item: folder("folder"), in: snapshot))
+        let child = try #require(Drop.source(item: tab("child"), in: snapshot))
+        #expect(Drop.extending(
+            source: parent,
+            adding: child,
+            orderedItems: [folder("folder"), tab("child")],
+            in: snapshot
+        ) == nil)
+        #expect(Drop.extending(
+            source: child,
+            adding: parent,
+            orderedItems: [folder("folder"), tab("child")],
+            in: snapshot
+        ) == nil)
+        let rows = (0...1000).map { BrowserTabSessionSnapshotTab(
+            id: "tab-\($0)",
+            urlString: "about:blank",
+            spaceID: "source"
+        ) }
+        let large = BrowserTabSessionSnapshot(spaces: snapshot.spaces, tabs: rows)
+        let references = rows.compactMap(\.id).map(tab)
+        let initial = try #require(Drop.source(items: Array(references.prefix(999)), in: large))
+        let thousandth = try #require(Drop.source(item: references[999], in: large))
+        let full = try #require(Drop.extending(
+            source: initial,
+            adding: thousandth,
+            orderedItems: Array(references.prefix(1000)),
+            in: large
+        ))
+        #expect(full.items.count == 1000)
+        let overflow = try #require(Drop.source(item: references[1000], in: large))
+        #expect(Drop.extending(source: full, adding: overflow, orderedItems: references, in: large) == nil)
+    }
+
     @Test func mixedSiblingMoveKeepsTypedAnchorAndFolderRootOnly() throws {
         let snapshot = dropSnapshot()
         let source = try #require(Drop.source(item: folder("folder"), in: snapshot))

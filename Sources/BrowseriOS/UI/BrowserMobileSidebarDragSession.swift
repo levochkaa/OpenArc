@@ -22,9 +22,10 @@ import UIKit
     weak var owner: BrowserMobileTabsViewController?
     weak var document: BrowserMobileProfileDocument?
     let spaceID: String?
-    let source: BrowserMobileSidebarDrop.Source
+    private(set) var source: BrowserMobileSidebarDrop.Source
     let sourceSessionID: ObjectIdentifier
-    var dragItemIDs = Set<ObjectIdentifier>()
+    private(set) var dragItemIDs = Set<ObjectIdentifier>()
+    private(set) var membershipRevision = 0
     private(set) var isCancelled = false
     private(set) var isCommitted = false
     private(set) var animationBatchID: UUID?
@@ -33,6 +34,33 @@ import UIKit
     var isHoldingRows: Bool {
         isCommitting || !pendingDropAnimations.isEmpty
             || participants.contains { $0.controller?.sidebarDragHasNativeHold == true }
+    }
+
+    var canAddItems: Bool {
+        !isCancelled && !isCommitted && !isCommitting
+            && !participants.contains { $0.controller?.sidebarDragHasHoverProjection == true }
+    }
+
+    func setInitialItems(_ items: [UIDragItem]) {
+        guard dragItemIDs.isEmpty, items.count == source.items.count,
+              Set(items.map(ObjectIdentifier.init)).count == items.count,
+              items.allSatisfy({ $0.localObject as? BrowserMobileSidebarDragSession === self }) else { return }
+        dragItemIDs = Set(items.map(ObjectIdentifier.init))
+    }
+
+    @discardableResult func append(_ item: UIDragItem, source nextSource: BrowserMobileSidebarDrop.Source) -> Bool {
+        let itemID = ObjectIdentifier(item)
+        let previousItems = Set(source.items)
+        guard canAddItems, !dragItemIDs.contains(itemID),
+              item.localObject as? BrowserMobileSidebarDragSession === self,
+              nextSource.items.count == source.items.count + 1, nextSource.items.count <= 1000,
+              Set(nextSource.items).count == nextSource.items.count,
+              nextSource.items.filter({ previousItems.contains($0) }) == source.items else { return false }
+        source = nextSource
+        dragItemIDs.insert(itemID)
+        membershipRevision += 1
+        notifyParticipants()
+        return true
     }
 
     func register(_ controller: BrowserMobileTabsViewController) {

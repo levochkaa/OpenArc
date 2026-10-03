@@ -63,6 +63,26 @@ enum BrowserMobileSidebarDrop {
         return Source(items: roots, containers: containers.filter { rootSet.contains($0.key) })
     }
 
+    /// Adding cannot replace a native item already supplied to UIKit. Preserve
+    /// all captured containers and reject any normalization that removes a root.
+    static func extending(
+        source: Source, adding: Source, orderedItems: [BrowserSyncEntityReference],
+        in snapshot: BrowserTabSessionSnapshot
+    ) -> Source? {
+        let existing = Set(source.items)
+        let additions = Set(adding.items)
+        let expected = existing.union(additions)
+        guard !additions.isEmpty, existing.isDisjoint(with: additions), expected.count <= 1000,
+              orderedItems.count == expected.count, Set(orderedItems) == expected,
+              orderedItems.filter({ existing.contains($0) }) == source.items,
+              orderedItems.filter({ additions.contains($0) }) == adding.items,
+              let current = Self.source(items: orderedItems, in: snapshot), current.items == orderedItems
+        else { return nil }
+        let captured = source.containers.merging(adding.containers) { first, _ in first }
+        guard current.containers == captured else { return nil }
+        return Source(items: orderedItems, containers: captured)
+    }
+
     static func target(
         relativeTo item: BrowserSyncEntityReference, position: Position, in snapshot: BrowserTabSessionSnapshot
     ) -> Target? {

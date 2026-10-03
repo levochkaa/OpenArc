@@ -395,9 +395,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             item.localObject = payload
             initialDragItems[reference] = item
         }
-        payload.dragItemIDs = Set(initialDragItems.values.map(ObjectIdentifier.init))
+        payload.setInitialItems(Array(initialDragItems.values))
         session.localContext = payload
         activeSource = payload
+        observedDragMembershipRevision = payload.membershipRevision
         dragScene = view.window?.windowScene
         sourceSessionID = sessionID
         updateSelectionButton()
@@ -406,11 +407,39 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func tableView(
-        _: UITableView,
-        itemsForAddingTo _: any UIDragSession,
-        at _: IndexPath,
-        point _: CGPoint
-    ) -> [UIDragItem] { [] }
+        _ tableView: UITableView,
+        itemsForAddingTo session: any UIDragSession,
+        at indexPath: IndexPath,
+        point: CGPoint
+    ) -> [UIDragItem] {
+        guard acceptsSidebarDrops, workspace.isReady, let document = workspace.profileDocument, document.canEdit,
+              let payload = activeSource, payload.canAddItems, ownsSidebarDrag(payload),
+              session.localContext as? BrowserMobileSidebarDragSession === payload,
+              ObjectIdentifier(session) == payload.sourceSessionID, payload.matches(session.items),
+              renderedDocument === document, renderedSpaceID == workspace.selectedSpaceID,
+              tableView.indexPathForRow(at: point) == indexPath, let row = row(at: indexPath),
+              !payload.source.items.contains(row.reference), let snapshot = renderedSnapshot,
+              let addition = BrowserMobileSidebarDrop.source(item: row.reference, in: snapshot)
+        else { return [] }
+        let references = Set(payload.source.items).union(addition.items)
+        let ordered = rows.flatMap { $0 }.map(\.reference).filter { references.contains($0) }
+        guard let capturedGroup = BrowserMobileSidebarDrop.source(items: ordered, in: snapshot),
+              capturedGroup.items == ordered,
+              let extended = BrowserMobileSidebarDrop.extending(
+                  source: payload.source, adding: addition, orderedItems: ordered, in: document.snapshot
+              ) else { return [] }
+        let item = UIDragItem(itemProvider: NSItemProvider(object: dragLabel(for: row.reference) as NSString))
+        item.localObject = payload
+        guard payload.append(item, source: extended) else { return [] }
+        initialDragItems[row.reference] = item
+        suppliedInitialItems.insert(row.reference)
+        if isSelectingRows {
+            selectedItems.insert(row.reference)
+            restoreRowSelection()
+        }
+        return [item]
+    }
+
     func tableView(_: UITableView, dragSessionAllowsMoveOperation _: any UIDragSession) -> Bool { true }
     func tableView(_: UITableView, dragSessionIsRestrictedToDraggingApplication _: any UIDragSession) -> Bool { true }
 
@@ -738,6 +767,17 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     func sidebarDragSessionDidChange(_ session: BrowserMobileSidebarDragSession) {
         guard activeSource === session else { return }
+        if observedDragMembershipRevision != session.membershipRevision {
+            observedDragMembershipRevision = session.membershipRevision
+            cancelPendingFolderExpansion(clearSession: true)
+            hover = nil
+            spaceDropHover = nil
+            planCache = nil
+            folderExpansionCache = nil
+            clearDropFeedback()
+            spaceDropController?.setIncludesFolders(session.source.items.contains { $0.entityType == .folder })
+            spaceDropController?.highlight(nil)
+        }
         if session.isCancelled || session.isCommitted {
             cancelPendingFolderExpansion(clearSession: true)
         }
@@ -872,6 +912,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private weak var renderedDocument: BrowserMobileProfileDocument?
     private var renderedSpaceID: String?
     private var activeSource: BrowserMobileSidebarDragSession?
+    private var observedDragMembershipRevision: Int?
     private var initialDragItems = [BrowserSyncEntityReference: UIDragItem]()
     private var suppliedInitialItems = Set<BrowserSyncEntityReference>()
     private var sourceSessionID: ObjectIdentifier?
@@ -1057,6 +1098,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         guard activeSource == nil || activeSource === payload else { return false }
         if activeSource !== payload {
             cancelPendingFolderExpansion(clearSession: true)
+            observedDragMembershipRevision = payload.membershipRevision
         }
         activeSource = payload
         dragScene = view.window?.windowScene
@@ -1451,6 +1493,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         dismissSpaceDropTargetsIfPossible()
         guard !isHoldingRows else { return }
         activeSource = nil
+        observedDragMembershipRevision = nil
         dragScene = nil
         guard !tableView.hasUncommittedUpdates else {
             needsStructuralRefresh = true

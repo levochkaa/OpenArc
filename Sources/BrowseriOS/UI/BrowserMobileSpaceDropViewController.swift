@@ -83,6 +83,22 @@ import UIKit
         }
     }
 
+    func setIncludesFolders(_ value: Bool) {
+        guard includesFolders != value else { return }
+        includesFolders = value
+        guard isViewLoaded else { return }
+        for index in targetViews.indices where targetViews[index].0.placement == .temporary {
+            let previous = targetViews[index].0
+            let target = Target(spaceID: previous.spaceID, placement: previous.placement, isEnabled: !value)
+            targetViews[index].0 = target
+            let row = targetViews[index].1
+            row.accessibilityTraits = target.isEnabled ? .staticText : [.staticText, .notEnabled]
+            row.accessibilityValue = target.isEnabled ? nil : String(localized: "Tabs only", table: "Mobile")
+            todayLabels[target.spaceID]?.title.textColor = target.isEnabled ? .label : .secondaryLabel
+            todayLabels[target.spaceID]?.detail.alpha = target.isEnabled ? 0 : 1
+        }
+    }
+
     func target(at point: CGPoint) -> Target? {
         guard view.bounds.contains(point) else { return nil }
         return targetViews.first { _, row in row.bounds.contains(row.convert(point, from: view)) }?.0
@@ -107,9 +123,10 @@ import UIKit
     // MARK: Private
 
     private let spaces: [BrowserSpaceSessionSnapshot]
-    private let includesFolders: Bool
+    private var includesFolders: Bool
     private weak var dropDelegate: (any UIDropInteractionDelegate)?
     private var targetViews = [(Target, UIView)]()
+    private var todayLabels = [String: (title: UILabel, detail: UILabel)]()
 
     private func makeRow(_ target: Target) -> UIView {
         let row = UIView()
@@ -130,15 +147,19 @@ import UIKit
         let labels = UIStackView(arrangedSubviews: [label])
         labels.axis = .vertical
         labels.spacing = 2
-        if !target.isEnabled {
+        if !isPinned {
             let detail = UILabel()
             detail.text = String(localized: "Tabs only", table: "Mobile")
             detail.font = .preferredFont(forTextStyle: .caption1)
             detail.adjustsFontForContentSizeCategory = true
             detail.textColor = .secondaryLabel
             detail.numberOfLines = 0
+            // Reserve the hint's layout from the start: adding a folder must
+            // change eligibility without moving a target under the pointer.
+            detail.alpha = target.isEnabled ? 0 : 1
             labels.addArrangedSubview(detail)
-            row.accessibilityValue = detail.text
+            todayLabels[target.spaceID] = (label, detail)
+            row.accessibilityValue = target.isEnabled ? nil : detail.text
         }
         labels.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(labels)
