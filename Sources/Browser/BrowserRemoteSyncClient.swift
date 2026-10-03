@@ -436,7 +436,7 @@ enum BrowserSyncBindingState: Equatable {
 // MARK: - BrowserSyncAccountError
 
 enum BrowserSyncAccountError: LocalizedError, Equatable {
-    case serverChanged, differentAccount, unavailable
+    case serverChanged, differentAccount, unavailable, signInRequired
 
     // MARK: Internal
 
@@ -445,6 +445,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         case .serverChanged: BrowserStrings.syncAccountSignInAgain
         case .differentAccount: BrowserStrings.syncAccountDifferentOwner
         case .unavailable: BrowserStrings.syncAccountUnavailable
+        case .signInRequired: BrowserStrings.syncAccountSignInAgain
         }
     }
 }
@@ -452,10 +453,13 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
 // MARK: - BrowserAccountSyncControlling
 
 @MainActor protocol BrowserAccountSyncControlling: AnyObject {
+    func requiresSignIn() throws -> Bool
     func bindingState(for session: BrowserAuthSession) throws -> BrowserSyncBindingState
+    func completeAuthentication(for session: BrowserAuthSession) throws
     func enableSync(for session: BrowserAuthSession) throws
     func resumeSync(for session: BrowserAuthSession) throws
     func suspendSync() throws
+    func signOut() throws
     func accountSessionDidChange(_ session: BrowserAuthSession?)
 }
 
@@ -495,6 +499,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
 
     // MARK: Internal
 
+    func requiresSignIn() throws -> Bool { try localStore.requiresSyncSignIn() }
+
     func bindingState(for session: BrowserAuthSession) throws -> BrowserSyncBindingState {
         guard session.belongs(to: remoteClient.baseURL) else { throw BrowserSyncAccountError.serverChanged }
         let owner = owner(for: session)
@@ -504,6 +510,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     func enableSync(for session: BrowserAuthSession) throws {
+        guard try !requiresSignIn() else { throw BrowserSyncAccountError.signInRequired }
         guard authSessionStore.loadSession() == session else { throw BrowserSyncAccountError.unavailable }
         guard try bindingState(for: session) != .differentAccount else {
             throw BrowserSyncAccountError.differentAccount
@@ -513,15 +520,31 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     func resumeSync(for session: BrowserAuthSession) throws {
+        guard try !requiresSignIn() else { throw BrowserSyncAccountError.signInRequired }
         guard session.belongs(to: remoteClient.baseURL), authSessionStore.loadSession() == session else {
             throw BrowserSyncAccountError.serverChanged
         }
         try localStore.resumeSync(for: owner(for: session))
     }
 
+    func completeAuthentication(for session: BrowserAuthSession) throws {
+        guard session.belongs(to: remoteClient.baseURL), authSessionStore.loadSession() == session else {
+            throw BrowserSyncAccountError.serverChanged
+        }
+        guard try bindingState(for: session) != .differentAccount else {
+            throw BrowserSyncAccountError.differentAccount
+        }
+        try localStore.completeSyncAuthentication(for: owner(for: session))
+    }
+
     func suspendSync() throws {
         accountSessionDidChange(nil)
         try localStore.pauseSync()
+    }
+
+    func signOut() throws {
+        accountSessionDidChange(nil)
+        try localStore.requireSyncSignIn()
     }
 
     func accountSessionDidChange(_ session: BrowserAuthSession?) {
@@ -661,6 +684,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
               let session = activeSession, session == authSessionStore.loadSession()
         else { return nil }
         do {
+            guard try !requiresSignIn() else { return nil }
             guard try bindingState(for: session) == .enabled else { return nil }
             return RequestContext(session: session, owner: owner(for: session), generation: generation)
         } catch {

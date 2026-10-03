@@ -101,7 +101,8 @@ import Testing
         let f = AccountStoreFixture(binding: .paused)
         await f.store.signInWithApple()
 
-        #expect(f.sync.resumedSessions == [f.remote.response])
+        #expect(f.sync.completedAuthentications == [f.remote.response])
+        #expect(f.sync.resumedSessions.isEmpty)
         #expect(f.sync.enabledSessions.isEmpty)
         #expect(f.store.bindingState == .enabled)
     }
@@ -171,12 +172,13 @@ import Testing
         #expect(!f.store.isSigningIn)
     }
 
-    @Test func logoutPausesSyncBeforeRemovingCredentialsAndReportsRemovalFailure() async {
+    @Test func logoutMarksSignInRequiredBeforeRemovingCredentialsAndReportsRemovalFailure() async {
         let f = AccountStoreFixture(binding: .enabled)
         await f.store.signInWithApple()
         f.auth.clearError = AccountTestError.failure
         f.auth.onClear = {
-            #expect(f.sync.suspensions == 1)
+            #expect(f.sync.signOuts == 1)
+            #expect(f.sync.signInRequired)
             #expect(f.sync.state == .paused)
             #expect(f.sync.sessionChanges.last == .some(nil))
         }
@@ -189,13 +191,16 @@ import Testing
         #expect(f.sync.state == .paused)
     }
 
-    @Test func cachedPausedSessionDoesNotResumeWithoutExplicitSignIn() {
-        let f = AccountStoreFixture(binding: .paused, cachedSession: accountSession())
+    @Test func cachedExplicitlyPausedSessionRemainsVisibleWithoutStartingSync() {
+        let cached = accountSession()
+        let f = AccountStoreFixture(binding: .paused, cachedSession: cached)
 
-        #expect(f.store.session == nil)
-        #expect(f.store.bindingState == nil)
+        #expect(f.store.session == cached)
+        #expect(f.store.bindingState == .paused)
         #expect(f.sync.resumedSessions.isEmpty)
         #expect(f.sync.enabledSessions.isEmpty)
+        #expect(f.sync.sessionChanges.compactMap { $0 }.isEmpty)
+        #expect(f.identity.requests == 0 && f.remote.tokens.isEmpty)
     }
 
     @Test func legacyAndForeignServerCredentialsAreQuarantinedAtStartup() {
@@ -360,16 +365,43 @@ import Testing
     var resumedSessions = [BrowserAuthSession]()
     var sessionChanges = [BrowserAuthSession?]()
     var suspensions = 0
+    var signOuts = 0
+    var signInRequired = false
+    var completedAuthentications = [BrowserAuthSession]()
     var suspendError: Error?
+
+    func requiresSignIn() -> Bool { signInRequired }
+
+    func completeAuthentication(for session: BrowserAuthSession) throws {
+        guard state != .differentAccount else { throw BrowserSyncAccountError.differentAccount }
+        completedAuthentications.append(session)
+        signInRequired = false
+        if state == .paused {
+            state = .enabled
+        }
+    }
+
+    func signOut() throws {
+        signOuts += 1
+        if let suspendError {
+            throw suspendError
+        }
+        signInRequired = true
+        if state == .enabled {
+            state = .paused
+        }
+    }
 
     func bindingState(for _: BrowserAuthSession) -> BrowserSyncBindingState { state }
 
-    func enableSync(for session: BrowserAuthSession) {
+    func enableSync(for session: BrowserAuthSession) throws {
+        guard !signInRequired else { throw BrowserSyncAccountError.unavailable }
         enabledSessions.append(session)
         state = .enabled
     }
 
-    func resumeSync(for session: BrowserAuthSession) {
+    func resumeSync(for session: BrowserAuthSession) throws {
+        guard !signInRequired else { throw BrowserSyncAccountError.unavailable }
         resumedSessions.append(session)
         state = .enabled
     }

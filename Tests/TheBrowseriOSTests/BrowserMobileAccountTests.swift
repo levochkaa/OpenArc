@@ -381,14 +381,36 @@ import UIKit
 @MainActor private final class MobileAccountSyncController: BrowserAccountSyncControlling {
     var state = BrowserSyncBindingState.needsConsent
     var enables = 0
+    var signInRequired = false
+
+    func requiresSignIn() -> Bool { signInRequired }
+    func completeAuthentication(for _: BrowserAuthSession) throws {
+        guard state != .differentAccount else { throw BrowserSyncAccountError.differentAccount }
+        signInRequired = false
+        if state == .paused {
+            state = .enabled
+        }
+    }
+
+    func signOut() {
+        signInRequired = true
+        if state == .enabled {
+            state = .paused
+        }
+    }
 
     func bindingState(for _: BrowserAuthSession) -> BrowserSyncBindingState { state }
-    func enableSync(for _: BrowserAuthSession) {
+    func enableSync(for _: BrowserAuthSession) throws {
+        guard !signInRequired else { throw BrowserSyncAccountError.unavailable }
         enables += 1
         state = .enabled
     }
 
-    func resumeSync(for _: BrowserAuthSession) { state = .enabled }
+    func resumeSync(for _: BrowserAuthSession) throws {
+        guard !signInRequired else { throw BrowserSyncAccountError.unavailable }
+        state = .enabled
+    }
+
     func suspendSync() { state = .paused }
     func accountSessionDidChange(_: BrowserAuthSession?) {}
 }

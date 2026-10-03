@@ -318,6 +318,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     func bindSyncOwner(_ owner: BrowserSyncOwner) throws {
         try dbQueue.write { db in
+            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
             if let existingOwner = try storedSyncOwner(db) {
                 guard existingOwner == owner else { throw BrowserSyncStoreError.ownerMismatch }
                 try initializeSyncOutbox(in: db)
@@ -356,7 +357,40 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     func pauseSync() throws {
         try dbQueue.write { db in
+            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
             try db.execute(sql: "UPDATE browser_sync_state SET paused = 1 WHERE id = 1")
+        }
+    }
+
+    /// Independent of ownership: logout before adoption must also quarantine
+    /// credentials that Keychain failed to remove.
+    func requiresSyncSignIn() throws -> Bool {
+        try dbQueue.read { try requiresSyncSignIn(in: $0) }
+    }
+
+    func requireSyncSignIn() throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO browser_preferences (key, value) VALUES (?, '1')",
+                arguments: [Key.syncRequiresSignIn]
+            )
+            try db.execute(sql: "UPDATE browser_sync_state SET paused = 1 WHERE id = 1")
+        }
+    }
+
+    /// Only a newly authenticated, durably saved credential may clear logout.
+    /// Completing authentication never adopts an unbound local profile.
+    func completeSyncAuthentication(for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            _ = try requiresSyncSignIn(in: db)
+            if let existing = try storedSyncOwner(db) {
+                guard existing == owner else { throw BrowserSyncStoreError.ownerMismatch }
+                try db.execute(sql: "UPDATE browser_sync_state SET paused = 0 WHERE id = 1")
+            }
+            try db.execute(
+                sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
+                arguments: [Key.syncRequiresSignIn]
+            )
         }
     }
 
@@ -370,6 +404,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func resumeSync(for owner: BrowserSyncOwner) throws {
         try dbQueue.write { db in
             try requireSyncOwner(owner, in: db)
+            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
             try db.execute(sql: "UPDATE browser_sync_state SET paused = 0 WHERE id = 1")
         }
     }
@@ -382,6 +417,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         static let sidebarWidth = "browser.session.sidebarWidth"
         static let temporaryTabLifetime = "browser.settings.temporaryTabLifetime"
         static let syncCursor = "browser.sync.cursor"
+        static let syncRequiresSignIn = "browser.sync.requiresSignIn"
     }
 
     private static let logger = Logger(
@@ -509,10 +545,32 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 )
             }
         }
+        migrator.registerMigration("distinguishSyncPauseFromLogout") { db in
+            // Old paused records cannot distinguish Pause from failed logout.
+            // Preserve their stricter reauthentication policy during upgrade.
+            try db.execute(
+                sql: """
+                INSERT INTO browser_preferences (key, value)
+                VALUES (?, CASE WHEN EXISTS (SELECT 1 FROM browser_sync_state WHERE paused = 1) THEN '1' ELSE '0' END)
+                """,
+                arguments: [Key.syncRequiresSignIn]
+            )
+        }
         return migrator
     }
 
     private let dbQueue: DatabaseQueue
+
+    private func requiresSyncSignIn(in db: Database) throws -> Bool {
+        let value = try String.fetchOne(
+            db, sql: "SELECT value FROM browser_preferences WHERE key = ?", arguments: [Key.syncRequiresSignIn]
+        )
+        switch value {
+        case "0": return false
+        case "1": return true
+        default: throw BrowserSyncStoreError.invalidAuthenticationState
+        }
+    }
 
     private func saveCompatibility(_ write: BrowserSessionWrite) {
         do {

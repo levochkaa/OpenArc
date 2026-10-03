@@ -58,4 +58,6 @@ enum BrowserSyncStoreError: Error, Equatable {
     case ownerMismatch
     case invalidCursor
     case invalidStoredOwner
+    case authenticationRequired
+    case invalidAuthenticationState
 }

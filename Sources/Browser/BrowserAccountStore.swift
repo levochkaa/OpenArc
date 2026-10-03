@@ -43,22 +43,24 @@ enum BrowserAppleSignInError: Error {
         self.syncCoordinator = syncCoordinator
         self.appleSignInService = appleSignInService
         self.deviceIdentity = deviceIdentity
-        guard let cached = authSessionStore.loadSession() else { return }
         guard let syncClient, let syncCoordinator else { return }
-        guard cached.belongs(to: syncClient.baseURL) else {
-            self.lastError = BrowserStrings.syncAccountSignInAgain
-            return
-        }
         do {
-            let state = try syncCoordinator.bindingState(for: cached)
             // A failed Keychain removal must not silently sign back in at launch.
-            guard state != .paused else {
+            guard try !syncCoordinator.requiresSignIn() else {
                 self.lastError = BrowserStrings.syncAccountSignInAgain
                 return
             }
+            guard let cached = authSessionStore.loadSession() else { return }
+            guard cached.belongs(to: syncClient.baseURL) else {
+                self.lastError = BrowserStrings.syncAccountSignInAgain
+                return
+            }
+            let state = try syncCoordinator.bindingState(for: cached)
             self.session = cached
             self.bindingState = state
-            syncCoordinator.accountSessionDidChange(cached)
+            if state != .paused {
+                syncCoordinator.accountSessionDidChange(cached)
+            }
         } catch {
             self.lastError = error.localizedDescription
         }
@@ -105,9 +107,7 @@ enum BrowserAppleSignInError: Error {
             let state = try syncCoordinator.bindingState(for: session)
             guard state != .differentAccount else { throw BrowserSyncAccountError.differentAccount }
             try authSessionStore.saveSession(session)
-            if state == .paused {
-                try syncCoordinator.resumeSync(for: session)
-            }
+            try syncCoordinator.completeAuthentication(for: session)
             self.session = session
             bindingState = try syncCoordinator.bindingState(for: session)
             syncCoordinator.accountSessionDidChange(session)
@@ -166,10 +166,10 @@ enum BrowserAppleSignInError: Error {
         session = nil
         bindingState = nil
         lastError = nil
-        // Pause durably before removing credentials; preserve ownership and cursor.
+        // Require fresh authentication before removing credentials; preserve ownership and cursor.
         // Attempt both writes so either successful operation prevents auto-resume.
         var failures = [String]()
-        do { try syncCoordinator?.suspendSync() }
+        do { try syncCoordinator?.signOut() }
         catch { failures.append(error.localizedDescription) }
         do { try authSessionStore.clearSession() }
         catch { failures.append(error.localizedDescription) }
