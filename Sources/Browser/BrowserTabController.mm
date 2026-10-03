@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cctype>
+#include <algorithm>
 #include <map>
 #include <set>
 #include <string>
@@ -1556,6 +1557,19 @@ void SyncBrowserViewFrame(BrowserTabHostView *hostView,
   browserView.frame = targetFrame;
 }
 
+// A Split View pane is laid out on every host layout, so it must not also
+// autoresize to the whole host.
+void SyncBrowserViewPaneFrame(CefRefPtr<CefBrowser> browser, NSRect frame) {
+  NSView *browserView = BrowserViewForBrowser(browser);
+  if (browserView == nil) {
+    return;
+  }
+  browserView.autoresizingMask = NSViewNotSizable;
+  if (!NSEqualRects(browserView.frame, frame)) {
+    browserView.frame = frame;
+  }
+}
+
 NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser) {
   if (!browser) {
     return nil;
@@ -2379,6 +2393,7 @@ class BrowserTabClient final : public CefClient,
   void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
   bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
+  void OnGotFocus(CefRefPtr<CefBrowser> browser) override;
   bool DoClose(CefRefPtr<CefBrowser> browser) override;
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override;
 
@@ -2484,6 +2499,7 @@ struct TabRecord {
 - (void)syncBrowserFrames;
 - (void)updateBrowserVisibility;
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
+- (void)handleFocusForTabID:(NSString *)tabID;
 
 @end
 
@@ -2588,6 +2604,9 @@ class BrowserTabNavigationTask final : public CefTask {
   std::map<std::string, TabRecord> _tabRecords;
   CefRefPtr<CefRequestContext> _requestContext;
   NSString *_activeTabID;
+  NSArray<NSString *> *_visibleLayoutTabIDs;
+  BOOL _visibleLayoutVertical;
+  NSArray<NSNumber *> *_visibleLayoutFractions;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
@@ -2726,6 +2745,105 @@ class BrowserTabNavigationTask final : public CefTask {
 - (void)selectTabWithID:(NSString *)tabID {
   _activeTabID = [tabID copy];
   [self updateBrowserVisibility];
+}
+
+- (void)setVisibleTabLayoutWithTabIDs:(NSArray<NSString *> *)tabIDs
+                             vertical:(BOOL)vertical
+                            fractions:(NSArray<NSNumber *> *)fractions {
+  NSArray<NSString *> *nextTabIDs = tabIDs.count >= 2 ? [tabIDs copy] : nil;
+  NSArray<NSNumber *> *nextFractions =
+      fractions.count == nextTabIDs.count ? [fractions copy] : nil;
+  if ((_visibleLayoutTabIDs == nextTabIDs ||
+       [_visibleLayoutTabIDs isEqualToArray:nextTabIDs]) &&
+      _visibleLayoutVertical == vertical &&
+      (_visibleLayoutFractions == nextFractions ||
+       [_visibleLayoutFractions isEqualToArray:nextFractions])) {
+    return;
+  }
+  _visibleLayoutTabIDs = nextTabIDs;
+  _visibleLayoutVertical = vertical;
+  _visibleLayoutFractions = nextFractions;
+  // Layout changes never move keyboard focus; selection does that.
+  [self updateBrowserVisibilityFocusingActiveTab:NO];
+}
+
+// Tabs shown in this window, in pane order. Outside a split, or when fewer
+// than two panes have a live engine, only the active tab is shown.
+- (std::vector<std::string>)visiblePaneKeys {
+  std::vector<std::string> keys;
+  if (_activeTabID == nil) {
+    return keys;
+  }
+  if ([_visibleLayoutTabIDs containsObject:_activeTabID]) {
+    for (NSString *tabID in _visibleLayoutTabIDs) {
+      auto it = _tabRecords.find(ToStdString(tabID));
+      if (it != _tabRecords.end() && !it->second.isClosing &&
+          BrowserViewForBrowser(it->second.browser) != nil) {
+        keys.push_back(it->first);
+      }
+    }
+  }
+  if (keys.size() < 2) {
+    keys.assign(1, ToStdString(_activeTabID));
+  }
+  return keys;
+}
+
+- (BOOL)isVisiblePaneTabID:(NSString *)tabID {
+  const std::string key = ToStdString(tabID);
+  for (const auto &visible : [self visiblePaneKeys]) {
+    if (visible == key) {
+      return YES;
+    }
+  }
+  return NO;
+}
+
+- (void)layoutVisiblePanes:(const std::vector<std::string> &)keys {
+  BrowserTabHostView *hostView = _hostView;
+  if (hostView == nil || keys.empty()) {
+    return;
+  }
+  if (keys.size() == 1) {
+    auto it = _tabRecords.find(keys.front());
+    if (it != _tabRecords.end()) {
+      SyncBrowserViewFrame(hostView, it->second.browser);
+    }
+    return;
+  }
+  NSMutableArray<NSNumber *> *fractions = [NSMutableArray array];
+  if (_visibleLayoutFractions.count == _visibleLayoutTabIDs.count) {
+    for (NSUInteger index = 0; index < _visibleLayoutTabIDs.count; index++) {
+      if (std::find(keys.begin(), keys.end(),
+                    ToStdString(_visibleLayoutTabIDs[index])) != keys.end()) {
+        [fractions addObject:_visibleLayoutFractions[index]];
+      }
+    }
+  }
+  NSArray<NSValue *> *frames =
+      [BrowserSplitPaneLayout paneFramesInBounds:hostView.bounds
+                                           count:(NSInteger)keys.size()
+                                        vertical:_visibleLayoutVertical
+                                       fractions:fractions
+                                         flipped:hostView.isFlipped];
+  for (size_t index = 0; index < keys.size() && index < frames.count; index++) {
+    auto it = _tabRecords.find(keys[index]);
+    if (it != _tabRecords.end()) {
+      SyncBrowserViewPaneFrame(it->second.browser, frames[index].rectValue);
+    }
+  }
+}
+
+- (void)handleFocusForTabID:(NSString *)tabID {
+  if (tabID == nil || [_activeTabID isEqualToString:tabID] ||
+      ![self isVisiblePaneTabID:tabID]) {
+    return;
+  }
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:
+                                                 didFocusTabWithID:)]) {
+    [delegate browserTabController:self didFocusTabWithID:tabID];
+  }
 }
 
 - (void)deselectActiveTab {
@@ -3174,13 +3292,7 @@ class BrowserTabNavigationTask final : public CefTask {
 }
 
 - (void)syncBrowserFrames {
-  std::string activeKey = ToStdString(_activeTabID);
-  for (auto &entry : _tabRecords) {
-    BOOL isActive = entry.first == activeKey;
-    if (isActive) {
-      SyncBrowserViewFrame(_hostView, entry.second.browser);
-    }
-  }
+  [self layoutVisiblePanes:[self visiblePaneKeys]];
 }
 
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser
@@ -3369,10 +3481,11 @@ class BrowserTabNavigationTask final : public CefTask {
 }
 
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive {
-  std::string activeKey = ToStdString(_activeTabID);
+  const std::string activeKey = ToStdString(_activeTabID);
+  const std::vector<std::string> visibleKeys = [self visiblePaneKeys];
   for (auto &entry : _tabRecords) {
-    BOOL isActive = entry.first == activeKey;
-    if (isActive) {
+    if (std::find(visibleKeys.begin(), visibleKeys.end(), entry.first) !=
+        visibleKeys.end()) {
       continue;
     }
 
@@ -3382,15 +3495,21 @@ class BrowserTabNavigationTask final : public CefTask {
     }
   }
 
+  for (const auto &key : visibleKeys) {
+    auto it = _tabRecords.find(key);
+    if (it == _tabRecords.end()) {
+      continue;
+    }
+    NSView *browserView = BrowserViewForBrowser(it->second.browser);
+    if (browserView != nil) {
+      browserView.hidden = NO;
+    }
+  }
+  [self layoutVisiblePanes:visibleKeys];
+
   auto activeIt = _tabRecords.find(activeKey);
   if (activeIt == _tabRecords.end()) {
     return;
-  }
-
-  NSView *browserView = BrowserViewForBrowser(activeIt->second.browser);
-  if (browserView != nil) {
-    browserView.hidden = NO;
-    SyncBrowserViewFrame(_hostView, activeIt->second.browser);
   }
 
   if (focusActive && activeIt->second.browser) {
@@ -3635,6 +3754,13 @@ bool BrowserTabClient::OnSetFocus(CefRefPtr<CefBrowser>, FocusSource source) {
   BrowserTabController *controller = controller_;
   return controller == nil ||
          [controller shouldBlockNavigationFocusForTabID:ToNSString(tab_id_)];
+}
+
+void BrowserTabClient::OnGotFocus(CefRefPtr<CefBrowser>) {
+  CEF_REQUIRE_UI_THREAD();
+  // A click into another visible Split View pane makes it the active tab.
+  BrowserTabController *controller = controller_;
+  [controller handleFocusForTabID:ToNSString(tab_id_)];
 }
 
 bool BrowserTabClient::OnBeforeUnloadDialog(

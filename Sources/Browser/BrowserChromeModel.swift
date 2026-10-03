@@ -139,6 +139,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onTabClosed = { [weak self] tabID in
             self?.handleClosedTab(id: tabID)
         }
+        tabDriver.onTabFocused = { [weak self] tabID in
+            self?.handleSplitPaneFocused(tabID)
+        }
         tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
             self?.handleNavigationStateChange(
                 id: tabID,
@@ -214,10 +217,6 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var spaces = [Space]()
     @Published private(set) var pinnedTabFolders = [PinnedTabFolder]()
-    /// Raw local Split View state. Only `BrowserChromeModel+SplitGroups.swift`
-    /// mutates it; readers use `splitGroup(containingTabID:)`, which validates
-    /// members against the current tabs.
-    @Published var splitGroups = [SplitGroup]()
     @Published private(set) var selectedSpaceID: String?
     @Published private(set) var tabSwitcherState: TabSwitcherState?
     @Published var isSidebarVisible = true
@@ -298,6 +297,19 @@ enum BrowserWindowMode: Equatable {
     private(set) var isContextReady = false
     var isShuttingDown = false
 
+    /// Last Split View layout sent to the engine. Only `syncSplitLayout()`
+    /// changes it, so repeated selection inside one split sends nothing.
+    var appliedSplitLayout: BrowserTabVisibleLayout?
+
+    /// Raw local Split View state. Only `BrowserChromeModel+SplitGroups.swift`
+    /// mutates it; readers use `splitGroup(containingTabID:)`, which validates
+    /// members against the current tabs.
+    @Published var splitGroups = [SplitGroup]() {
+        didSet {
+            syncSplitLayout()
+        }
+    }
+
     @Published private(set) var selectedTabID: String? {
         willSet {
             guard selectedTabID != newValue, canRecordViewingActivity else { return }
@@ -310,6 +322,7 @@ enum BrowserWindowMode: Equatable {
         }
         didSet {
             recordSplitFocus(tabID: selectedTabID)
+            syncSplitLayout()
         }
     }
 
@@ -2239,6 +2252,10 @@ enum BrowserWindowMode: Equatable {
     /// them out of sync because sync payloads never include split groups.
     func persistSplitGroupChange() {
         persistCurrentSessionIfAllowed()
+    }
+
+    func sendVisibleTabLayout(_ layout: BrowserTabVisibleLayout?) {
+        tabDriver.setVisibleTabLayout(layout)
     }
 
     // MARK: Private

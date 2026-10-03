@@ -52,6 +52,7 @@ import Foundation
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)?
+    var onTabFocused: ((String) -> Void)?
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
     private(set) var retryCreationRequests = [RetryCreationRequest]()
@@ -59,6 +60,7 @@ import Foundation
     private(set) var targetedNavigationRequests = [TargetedNavigationRequest]()
     var targetedNavigationAdmissionResult = true
     private(set) var selectedTabIDs = [String]()
+    private(set) var visibleTabLayouts = [BrowserTabVisibleLayout?]()
     private(set) var deselectActiveTabCount = 0
     private(set) var activeTabNavigationURLStrings = [String]()
     private(set) var closedTabRequests = [CloseTabRequest]()
@@ -123,6 +125,15 @@ import Foundation
     func selectTab(withID tabID: String) {
         activeTabID = tabID
         selectedTabIDs.append(tabID)
+    }
+
+    func setVisibleTabLayout(_ layout: BrowserTabVisibleLayout?) {
+        visibleTabLayouts.append(layout)
+    }
+
+    /// Simulates CEF reporting focus in a visible split pane.
+    func simulateTabFocus(_ tabID: String) {
+        onTabFocused?(tabID)
     }
 
     func deselectActiveTab() {

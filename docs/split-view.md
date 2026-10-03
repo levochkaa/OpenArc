@@ -15,6 +15,12 @@ Members keep their own rows in the shared tab tree, so order, drag, Undo and syn
 
 The selected tab is the focused pane, so the toolbar, Find and active-tab commands need no split awareness. Selecting a member records it as the group's focus. Switching to or away from a split touches every pane's activity, and automatic archive and sync expiry protect every pane of the selected split.
 
+## Engine layout and focus
+
+`syncSplitLayout()` sends `BrowserTabVisibleLayout` (panes, orientation, fractions) through `BrowserTabDriving.setVisibleTabLayout` whenever the selected split or its groups change, or nil outside a split; an identical layout is not resent. `BrowserTabController` keeps all CEF views in one host view: it shows every listed pane with a live engine while the active tab is one of them, hides the rest, and lays panes out on each host layout with `BrowserSplitPaneLayout` (6 pt gap, integer edges, left to right or top to bottom in flipped and unflipped hosts). Fewer than two live panes fall back to the active tab alone. Layout changes never move keyboard focus.
+
+`CefFocusHandler::OnGotFocus` in a visible non-active pane reports `didFocusTabWithID`; the model selects that tab, so the toolbar follows the clicked pane. Hidden tabs and panes of an unselected split cannot take selection this way. Navigation focus stealing stays blocked for inactive panes.
+
 ## Actions
 
 | Action | Behavior |
@@ -35,9 +41,9 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 ## Status and next slices
 
-Implemented: model, actions, validation, persistence, archive/expiry protection and tests. Not implemented yet:
+Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout and click focus, with tests. CEF layout is compile-verified and covered through the fake driver; it has not run in a launched TheBrowser. Not implemented yet:
 
-1. Content layout: a driver API to show several CEF views with fractions, focus reporting from `CefFocusHandler::OnGotFocus`, and a divider.
+1. Divider drag to resize panes (commit with `setSplitFractions` on drag end) and the focused-pane border.
 2. Sidebar: one row with member chips at the first member, hidden member rows, split context menu (Separate All Tabs, Add Tab, Convert, Tab Options) and the tab menu's Open in Split View.
 3. Pane chrome and commands: per-pane back/forward/host/close strip, Split View Menu, Cmd-L for the focused pane, Add Left/Right/Top/Bottom Split in the command bar, Cmd-Shift-Plus and drag into the center.
 4. iPad browser split in UIKit/WebKit.

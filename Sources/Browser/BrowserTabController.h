@@ -70,6 +70,9 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     didFinishCloseRequestForTabWithID:(NSString *)tabID
                            requestID:(NSString *)requestID
                              outcome:(BrowserTabCloseRequestOutcome)outcome;
+// A visible Split View pane other than the active tab received focus.
+- (void)browserTabController:(BrowserTabController *)controller
+             didFocusTabWithID:(NSString *)tabID;
 
 @end
 
@@ -98,6 +101,12 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)acknowledgeTabReadyWithID:(NSString *)tabID
     NS_SWIFT_NAME(acknowledgeTabReady(withID:));
 - (void)selectTabWithID:(NSString *)tabID;
+// Shows every listed tab as a Split View pane while the active tab is one of
+// them. nil or fewer than two tabs shows only the active tab.
+- (void)setVisibleTabLayoutWithTabIDs:(nullable NSArray<NSString *> *)tabIDs
+                             vertical:(BOOL)vertical
+                            fractions:(nullable NSArray<NSNumber *> *)fractions
+    NS_SWIFT_NAME(setVisibleTabLayout(withTabIDs:vertical:fractions:));
 - (void)deselectActiveTab;
 // YES accepts the latest target for an existing tab, including one whose engine
 // is still creating or failed. It does not mean the page has loaded.

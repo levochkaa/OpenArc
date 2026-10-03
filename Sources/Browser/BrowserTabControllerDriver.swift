@@ -50,6 +50,7 @@ import Foundation
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)?
+    var onTabFocused: ((String) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -65,6 +66,14 @@ import Foundation
 
     func selectTab(withID tabID: String) {
         controller.selectTab(withID: tabID)
+    }
+
+    func setVisibleTabLayout(_ layout: BrowserTabVisibleLayout?) {
+        controller.setVisibleTabLayout(
+            withTabIDs: layout?.tabIDs,
+            vertical: layout?.orientation == .vertical,
+            fractions: layout?.fractions?.map { NSNumber(value: $0) }
+        )
     }
 
     func deselectActiveTab() {
@@ -170,6 +179,7 @@ import Foundation
         onLoadingStateChanged = nil
         onFindResultChanged = nil
         onDownloadUpdated = nil
+        onTabFocused = nil
         controller.prepareForCefShutdown()
     }
 
@@ -182,6 +192,12 @@ import Foundation
 // MARK: BrowserTabControllerDelegate
 
 extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
+    nonisolated func browserTabController(_: BrowserTabController, didFocusTabWithID tabID: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onTabFocused?(tabID)
+        }
+    }
+
     nonisolated func browserTabController(
         _: BrowserTabController,
         didFinishCloseRequestForTabWithID tabID: String,

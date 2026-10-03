@@ -111,6 +111,30 @@ extension BrowserChromeModel {
         splitGroups[index].focusedTabSyncID = syncID
     }
 
+    /// The window shows every pane of the selected tab's split, or only the
+    /// selected tab. Identical layouts are not resent to the engine.
+    func syncSplitLayout() {
+        let layout = selectedSplitGroup.map { group in
+            BrowserTabVisibleLayout(
+                tabIDs: splitPaneTabIDs(of: group),
+                orientation: group.orientation,
+                fractions: group.fractions
+            )
+        }
+        guard layout != appliedSplitLayout else { return }
+        appliedSplitLayout = layout
+        sendVisibleTabLayout(layout)
+    }
+
+    /// A click in another visible pane focuses that pane's tab.
+    func handleSplitPaneFocused(_ tabID: String) {
+        guard tabID != selectedTabID,
+              let group = selectedSplitGroup,
+              splitPaneTabIDs(of: group).contains(tabID)
+        else { return }
+        selectTab(id: tabID)
+    }
+
     /// "Open in Split View": the selected tab keeps its pane and sidebar
     /// position, `tabID` becomes the next pane and is focused. Its own row joins
     /// the group, moving into the selected tab's Space, section and folder.

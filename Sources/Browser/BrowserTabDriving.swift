@@ -16,6 +16,15 @@ enum BrowserTabCloseOutcome: Equatable, Sendable {
     case cancelled
 }
 
+// MARK: - BrowserTabVisibleLayout
+
+/// Several tabs shown at once in one window (Split View), in pane order.
+struct BrowserTabVisibleLayout: Equatable, Sendable {
+    let tabIDs: [String]
+    let orientation: BrowserTabSplitOrientation
+    let fractions: [Double]?
+}
+
 // MARK: - BrowserTabDriving
 
 @MainActor protocol BrowserTabDriving: AnyObject {
@@ -29,6 +38,8 @@ enum BrowserTabCloseOutcome: Equatable, Sendable {
     var onLoadingStateChanged: ((String, Bool) -> Void)? { get set }
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)? { get set }
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)? { get set }
+    /// A visible split pane received focus, for example from a click.
+    var onTabFocused: ((String) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     /// True admits another attempt for a synchronously refused creation.
@@ -36,6 +47,9 @@ enum BrowserTabCloseOutcome: Equatable, Sendable {
     /// does not establish readiness or guarantee completion of an accepted attempt.
     func retryTabCreation(withID tabID: String, urlString: String) -> Bool
     func selectTab(withID tabID: String)
+    /// Shows every tab of a Split View with the active tab focused. nil shows
+    /// only the active tab. Tabs without an engine are skipped.
+    func setVisibleTabLayout(_ layout: BrowserTabVisibleLayout?)
     func deselectActiveTab()
     /// Accepts the latest target for an existing tab, including a pending engine.
     /// Returns false for an empty target or an unknown/closing tab.
