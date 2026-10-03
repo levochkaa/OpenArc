@@ -315,6 +315,9 @@ targets:
     platform: iOS
     sources:
       - path: Tests/BrowserMobileTestHost
+    dependencies:
+      # Keep Bundle.module's main-bundle lookup valid in hosted tests.
+      - package: DomainParser
     settings:
       base:
         PRODUCT_NAME: BrowserMobileTestHost
