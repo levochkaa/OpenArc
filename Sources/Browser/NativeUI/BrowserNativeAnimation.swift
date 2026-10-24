@@ -21,7 +21,10 @@ import QuartzCore
         // MARK: Internal
 
         static let sidebar = Curve.easeInOut(0.18)
-        static let hover = Curve.easeOut(0.14)
+        /// Hover fills: 0.1 s, timing (0, 0, 0.58, 1).
+        static let hover = Curve.easeOut(0.1)
+        /// Element appearance: opacity over 0.15 s, timing (0, 0, 0.58, 1).
+        static let appearance = Curve.easeOut(0.15)
         static let press = Curve.spring(response: 0.18, damping: 0.72)
         /// Press on sidebar rows: stiffness 987, damping 31.4.
         static let rowPress = Curve.spring(response: 0.2, damping: 0.5)

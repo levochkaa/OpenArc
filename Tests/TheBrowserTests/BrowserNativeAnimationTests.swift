@@ -34,6 +34,8 @@ import Testing
             .max() ?? 0
         #expect(rowPeak > 1.1)
         #expect(sidebarPeak > 1 && sidebarPeak < 1.03)
+        #expect(BrowserNativeAnimation.Curve.hover.duration == 0.1, "Hover fills")
+        #expect(BrowserNativeAnimation.Curve.appearance.duration == 0.15, "Element appearance")
         #expect(BrowserNativeSidebarRowNSView().pressCurve.duration == BrowserNativeAnimation.Curve.rowPress.duration)
         #expect(BrowserNativePressableView().pressCurve.duration == BrowserNativeAnimation.Curve.press.duration)
     }

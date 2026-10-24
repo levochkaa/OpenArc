@@ -337,7 +337,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         let from = panel.isVisible ? panel.alphaValue : 0
         panel.alphaValue = from
         panel.orderFront(nil)
-        visibilityAnimation.start(.hover) { [weak panel] progress in
+        visibilityAnimation.start(.appearance) { [weak panel] progress in
             panel?.alphaValue = from + (1 - from) * progress
         }
     }
@@ -345,7 +345,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
     private func hide() {
         guard let panel else { return }
         let from = panel.alphaValue
-        visibilityAnimation.start(.hover) { [weak panel] progress in
+        visibilityAnimation.start(.appearance) { [weak panel] progress in
             panel?.alphaValue = from * (1 - progress)
         } completion: { [weak panel] in
             guard let panel else { return }
