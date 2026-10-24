@@ -428,11 +428,9 @@ import AppKit
 
         var updatedRevealedTabIDsByFolderID = [String: Set<String>]()
         for (folderID, tabIDs) in revealedPinnedFolderTabIDsByFolderID {
-            guard let folder = snapshot.pinnedTabFolder(withID: folderID) else {
-                continue
-            }
-
-            guard !folder.isExpanded || snapshot.selectedTab?.pinnedFolderID == folderID else {
+            guard let folder = snapshot.pinnedTabFolder(withID: folderID),
+                  !folder.isExpanded || snapshot.selectedTab?.pinnedFolderID == folderID
+            else {
                 continue
             }
 
@@ -512,7 +510,7 @@ import AppKit
         }
     }
 
-    func dismissRenamingIfNeeded(in window: NSWindow? = NSApp.keyWindow) {
+    func dismissRenamingIfNeeded(in window: NSWindow? = NSApp?.keyWindow) {
         guard renamingTabID != nil || renamingSpaceID != nil || renamingPinnedTabFolderID != nil else {
             return
         }
