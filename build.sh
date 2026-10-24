@@ -11,6 +11,8 @@ CONFIGURATION="${CONFIGURATION:-Debug}"
 DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode"
 IOS_SCHEME="TheBrowseriOS"
 IOS_DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode-ios"
+THEBROWSER_BUILD_CACHE_ROOT="$HOME/Library/Caches/TheBrowserBuild"
+source_packages_dir=""
 ios_destination="${THEBROWSER_IOS_DESTINATION:-}"
 APP_BUNDLE="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
@@ -66,7 +68,10 @@ Options:
 Worktree behavior:
   Build and test automatically prepare reusable worktree artifacts when needed.
   Codex worktree setup also runs prepare-worktree. Linked worktrees reuse the primary
-  checkout's Chromium source/out, CEF export, and Sparkle tools while keeping app output local.
+  checkout's Chromium source/out, CEF export, CEF wrapper, and Sparkle tools while keeping app
+  output local. All checkouts share resolved Swift package graphs and one compilation cache under
+  ~/Library/Caches/TheBrowserBuild, so a new worktree skips package resolution and reuses compiled
+  modules.
   Each worktree uses its own .build directory, runtime cache, session storage, and scoped
   process shutdown, so running one checkout does not stop another checkout's browser.
 
@@ -279,6 +284,31 @@ link_chromium_directory() {
   ln -s "$source_path" "$destination_path"
 }
 
+# The CEF wrapper depends only on the shared CEF export, so a new worktree clones the source
+# checkout's libraries instead of configuring and compiling its own copy.
+copy_cef_wrapper_from_source() {
+  local source_root="$1"
+  local current_link="ThirdParty/cef/current"
+  local export_root
+  local configuration
+  local wrapper_path
+
+  [[ "$source_root" != "$ROOT_DIR" ]] || return 0
+  [[ ! -e "$ROOT_DIR/$current_link" && ! -L "$ROOT_DIR/$current_link" ]] || return 0
+  export_root="$(cd "$ROOT_DIR/ThirdParty/cef/export" && pwd -P)"
+  [[ "$(readlink "$source_root/$current_link" 2>/dev/null || true)" == "$export_root" ]] || return 0
+
+  for configuration in Debug Release; do
+    wrapper_path=".build/cef-wrapper/libcef_dll_wrapper/$configuration/libcef_dll_wrapper.a"
+    [[ -f "$source_root/$wrapper_path" ]] || continue
+    mkdir -p "$(dirname "$ROOT_DIR/$wrapper_path")"
+    cp -c "$source_root/$wrapper_path" "$ROOT_DIR/$wrapper_path" 2>/dev/null ||
+      cp "$source_root/$wrapper_path" "$ROOT_DIR/$wrapper_path"
+    echo "Copied $configuration libcef_dll_wrapper from $source_root"
+  done
+  ln -s "$export_root" "$ROOT_DIR/$current_link"
+}
+
 prepare_worktree() {
   local source_root
   source_root="$(resolved_chromium_artifact_source)"
@@ -307,6 +337,7 @@ prepare_worktree() {
 
     echo "Chromium/CEF worktree links prepared successfully"
   fi
+  copy_cef_wrapper_from_source "$source_root"
 
   if sparkle_tools_ready && [[ "$refresh_chromium_artifacts" != "1" ]]; then
     echo "Sparkle tools are ready in $SPARKLE_TOOLS_DIR"
@@ -361,15 +392,41 @@ run_with_xcode_output() {
 }
 
 resolve_swift_packages() {
-  run_with_xcode_output xcodebuild \
-    -resolvePackageDependencies \
-    -project "$ROOT_DIR/$PROJECT_NAME.xcodeproj" \
-    -scheme "$SCHEME" \
-    -derivedDataPath "$DERIVED_DATA_PATH" \
-    -packageAuthorizationProvider netrc \
-    -scmProvider system \
-    -skipPackagePluginValidation \
-    -skipMacroValidation
+  local scheme="$1"
+  local derived_data_path="$2"
+  source_packages_dir="$("$ROOT_DIR/script/package_graph_cache.sh" path)"
+  run_with_xcode_output "$ROOT_DIR/script/package_graph_cache.sh" prepare "$scheme" "$derived_data_path"
+}
+
+# Builds use the shared package graph prepared by resolve_swift_packages, so xcodebuild must not
+# resolve again. They also share one compilation cache across checkouts: prefix mapping records
+# the checkout path, which also holds DerivedData, as /^root in Swift and /^src in Objective-C++
+# debug info, so a new worktree reuses modules compiled in another one. LLDB needs
+# `settings set target.source-map /^root <checkout> /^src <checkout>` for full-path breakpoints;
+# the debug action sets it.
+shared_cache_arguments() {
+  SHARED_CACHE_ARGS=(
+    -clonedSourcePackagesDirPath "$source_packages_dir"
+    -disableAutomaticPackageResolution
+  )
+
+  # Xcode splits list settings on whitespace, so such a checkout path cannot be mapped.
+  [[ "$ROOT_DIR" != *[[:space:]]* ]] || return 0
+  SHARED_CACHE_ARGS+=(
+    COMPILATION_CACHE_ENABLE_CACHING=YES
+    "COMPILATION_CACHE_CAS_PATH=$THEBROWSER_BUILD_CACHE_ROOT/CompilationCache/$(xcode_build_version)"
+    COMPILATION_CACHE_LIMIT_SIZE=20G
+    SWIFT_ENABLE_PREFIX_MAPPING=YES
+    SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES
+    CLANG_ENABLE_PREFIX_MAPPING=YES
+    CLANG_ENABLE_PROJECT_PREFIX_MAPPING=YES
+    "SWIFT_OTHER_PREFIX_MAPPINGS=$ROOT_DIR=/^root"
+    "CLANG_OTHER_PREFIX_MAPPINGS=$ROOT_DIR=/^root"
+  )
+}
+
+xcode_build_version() {
+  xcodebuild -version | awk '/^Build version / { print $3 }'
 }
 
 prepare_build_environment() {
@@ -377,7 +434,7 @@ prepare_build_environment() {
   source "$ROOT_DIR/script/xcode_env.sh"
   run_with_xcode_output ensure_sparkle_tools
   run_with_xcode_output "$ROOT_DIR/script/generate_xcodeproj.sh"
-  resolve_swift_packages
+  resolve_swift_packages "$SCHEME" "$DERIVED_DATA_PATH"
   run_with_xcode_output "$ROOT_DIR/script/chromium.sh" ensure "$CONFIGURATION"
 }
 
@@ -407,6 +464,8 @@ xcodebuild_arguments() {
     -skipPackagePluginValidation
     -skipMacroValidation
   )
+  shared_cache_arguments
+  XCODEBUILD_ARGS+=("${SHARED_CACHE_ARGS[@]}")
 
   if [[ "$CODE_SIGNING_ALLOWED" == "YES" && "$CODE_SIGN_STYLE" == "Automatic" ]]; then
     if [[ "$ALLOW_PROVISIONING_UPDATES" == "YES" ]]; then
@@ -450,15 +509,7 @@ test_app() {
 prepare_ios_build_environment() {
   source "$ROOT_DIR/script/xcode_env.sh"
   run_with_xcode_output "$ROOT_DIR/script/generate_xcodeproj.sh"
-  run_with_xcode_output xcodebuild \
-    -resolvePackageDependencies \
-    -project "$ROOT_DIR/$PROJECT_NAME.xcodeproj" \
-    -scheme "$IOS_SCHEME" \
-    -derivedDataPath "$IOS_DERIVED_DATA_PATH" \
-    -packageAuthorizationProvider netrc \
-    -scmProvider system \
-    -skipPackagePluginValidation \
-    -skipMacroValidation
+  resolve_swift_packages "$IOS_SCHEME" "$IOS_DERIVED_DATA_PATH"
 }
 
 ios_xcodebuild_arguments() {
@@ -475,6 +526,8 @@ ios_xcodebuild_arguments() {
     CODE_SIGNING_ALLOWED=NO
     CODE_SIGNING_REQUIRED=NO
   )
+  shared_cache_arguments
+  IOS_XCODEBUILD_ARGS+=("${SHARED_CACHE_ARGS[@]}")
   if [[ "$passthrough_arg_count" -gt 0 ]]; then
     IOS_XCODEBUILD_ARGS+=("${passthrough_args[@]}")
   fi
@@ -675,7 +728,8 @@ case "$action" in
     ;;
   debug)
     prepare_run
-    lldb -- "$APP_BINARY" "--runtime-suffix=$runtime_suffix"
+    lldb -o "settings set target.source-map /^root '$ROOT_DIR' /^src '$ROOT_DIR'" \
+      -- "$APP_BINARY" "--runtime-suffix=$runtime_suffix"
     ;;
   logs|run-logs|telemetry)
     run_and_stream_logs "$action"

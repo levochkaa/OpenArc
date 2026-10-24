@@ -19,6 +19,7 @@
 - Before finishing any task, run the `Build` action to verify the project compiles successfully in the console only. Do not launch `TheBrowser` or `TheBrowser Helper`, and do not check whether their processes started.
 - If the `Build` action emits warnings, fix those warnings before treating the task as complete.
 - After a successful `Build` action and before finishing any task, run the `Test` action to verify the test suite passes in the console. Run tests through `./build.sh test`, the same root script used by the Codex `Test` action, and not by calling `xcodebuild test` directly.
+- `build.sh` builds in every checkout share resolved Swift package graphs and one compilation cache under `~/Library/Caches/TheBrowserBuild`. Debug info records the checkout path as `/^root` (Swift) or `/^src` (Objective-C++), so in LLDB run `settings set target.source-map /^root <checkout> /^src <checkout>` before full-path breakpoints or source listing; `./build.sh debug` sets it.
 
 ## Commit Workflow
 

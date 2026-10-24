@@ -190,6 +190,14 @@ targets:
         INFOPLIST_FILE: Support/TheBrowser-Info.plist
         ENABLE_APP_INTENTS_METADATA_GENERATION: NO
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Browser/TheBrowser-Bridging-Header.h
+        # TheBrowser-Swift.h imports the bridging header by name. Compile caching would otherwise
+        # write its prefix-mapped /^root path, which the Objective-C++ sources cannot open.
+        OTHER_SWIFT_FLAGS:
+          - $(inherited)
+          - -Xfrontend
+          - -bridging-header-directory-for-print
+          - -Xfrontend
+          - '""'
         SWIFT_EMIT_LOC_STRINGS: NO
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
