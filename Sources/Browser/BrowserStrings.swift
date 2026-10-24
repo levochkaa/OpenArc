@@ -803,6 +803,11 @@ enum BrowserStrings {
         comment: "View menu and command title that moves the page URL from the toolbar back into the sidebar."
     )
 
+    static let splitPaneGripAccessibilityLabel = NSLocalizedString(
+        "browser.split.pane_grip",
+        comment: "Accessibility label of the handle that reorders a Split View pane by dragging."
+    )
+
     static let menuOpenLocation = NSLocalizedString(
         "browser.menu.open_location",
         comment: "File menu and command title that edits the current page's URL in the command bar."

@@ -274,18 +274,33 @@ extension BrowserChromeModel {
     /// places, and sizes, with its neighbor.
     @discardableResult func moveSelectedSplitPane(by offset: Int) -> Bool {
         guard let group = selectedSplitGroup, let selectedTabID,
-              let syncID = tabs.first(where: { $0.id == selectedTabID })?.syncID,
+              let index = splitPaneTabIDs(of: group).firstIndex(of: selectedTabID)
+        else { return false }
+        return moveSplitPane(tabID: selectedTabID, to: index + offset)
+    }
+
+    /// Pane drag: a pane moves to another position, keeps its size and
+    /// takes focus. The other panes keep their order.
+    @discardableResult func moveSplitPane(tabID: String, to destination: Int) -> Bool {
+        guard let group = splitGroup(containingTabID: tabID),
+              let syncID = tabs.first(where: { $0.id == tabID })?.syncID,
               let index = group.tabSyncIDs.firstIndex(of: syncID),
-              group.tabSyncIDs.indices.contains(index + offset), offset != 0,
+              group.tabSyncIDs.indices.contains(destination), destination != index,
               let groupIndex = splitGroups.firstIndex(where: { $0.id == group.id })
         else { return false }
         var members = group.tabSyncIDs
-        members.swapAt(index, index + offset)
+        members.insert(members.remove(at: index), at: destination)
         var fractions = group.fractions
-        fractions?.swapAt(index, index + offset)
+        if var sizes = fractions, sizes.count == members.count {
+            sizes.insert(sizes.remove(at: index), at: destination)
+            fractions = sizes
+        }
         splitGroups[groupIndex].tabSyncIDs = members
         splitGroups[groupIndex].fractions = fractions
         persistSplitGroupChange()
+        if selectedTabID != tabID {
+            selectTab(id: tabID)
+        }
         return true
     }
 

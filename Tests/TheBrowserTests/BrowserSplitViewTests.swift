@@ -332,6 +332,57 @@ import Testing
         #expect(!f.model.moveSelectedSplitPane(by: -1))
     }
 
+    @Test func draggingThePaneGripMovesThePaneWhereItIsDropped() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.setSplitFractions([0.5, 0.3, 0.2], groupID: group.id))
+        f.model.selectTab(id: f.id("x"))
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let content = BrowserContentNSView(hostView: NSView())
+        content.frame = NSRect(x: 0, y: 0, width: 1000, height: 600)
+        window.contentView = content
+        content.bindTabCreation(to: f.model)
+        content.update(
+            hostView: content.viewport.hostedView,
+            isContextReady: true,
+            hasSelectedTab: true,
+            isSidebarVisible: true,
+            usesWindowContentInsets: true
+        )
+        content.layoutSubtreeIfNeeded()
+        let host = content.viewport.hostedView
+        let ids = [f.id("x"), f.id("y"), f.id("z")]
+        f.driver.simulateSplitPaneLayout(ids, frames: [
+            CGRect(x: 0, y: 0, width: 496, height: 600),
+            CGRect(x: 504, y: 0, width: 296, height: 600),
+            CGRect(x: 808, y: 0, width: 192, height: 600),
+        ])
+        let bars = content.splitPaneBars
+        #expect(bars.bar(forTabID: f.id("x"))?.grip.isHidden == false)
+        #expect(bars.bar(forTabID: f.id("y"))?.grip.isHidden == true, "Only the focused pane has a grip")
+        let overLast = bars.convert(CGPoint(x: 900, y: 300), from: host)
+        #expect(bars.paneDropTarget(for: f.id("x"), at: overLast) == f.id("z"))
+        #expect(
+            bars.paneDropTarget(for: f.id("x"), at: bars.convert(CGPoint(x: 100, y: 300), from: host)) == nil,
+            "Over its own pane nothing moves"
+        )
+        bars.finishPaneDrag(for: f.id("x"), at: overLast)
+        let moved = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: moved) == [f.id("y"), f.id("z"), f.id("x")])
+        #expect(moved.fractions == [0.3, 0.2, 0.5], "The pane keeps its size")
+        #expect(f.model.selectedTabID == f.id("x"))
+    }
+
     @Test func expandCurrentSplitShowsTheFocusedPaneUntilFocusMoves() {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
         f.model.selectTab(id: f.id("x"))
@@ -578,6 +629,20 @@ import Testing
 }
 
 // MARK: - BrowserSplitViewPersistenceTests
+
+@Test func aDraggedPaneLandsOnThePaneWithTheNearestCenter() {
+    let row = [
+        CGRect(x: 0, y: 0, width: 400, height: 600),
+        CGRect(x: 408, y: 0, width: 200, height: 600),
+        CGRect(x: 616, y: 0, width: 384, height: 600),
+    ]
+    #expect(BrowserSplitPaneLayout.paneIndex(at: CGPoint(x: 404, y: 10), in: row, orientation: .horizontal) == 1)
+    #expect(BrowserSplitPaneLayout.paneIndex(at: CGPoint(x: -50, y: 10), in: row, orientation: .horizontal) == 0)
+    #expect(BrowserSplitPaneLayout.paneIndex(at: CGPoint(x: 2000, y: 10), in: row, orientation: .horizontal) == 2)
+    let stack = [CGRect(x: 0, y: 0, width: 800, height: 300), CGRect(x: 0, y: 308, width: 800, height: 292)]
+    #expect(BrowserSplitPaneLayout.paneIndex(at: CGPoint(x: 10, y: 500), in: stack, orientation: .vertical) == 1)
+    #expect(BrowserSplitPaneLayout.paneIndex(at: CGPoint(x: 10, y: 500), in: [], orientation: .vertical) == nil)
+}
 
 @Test func splitGroupDecodingToleratesUnknownValuesAndOldSnapshots() throws {
     let group = try JSONDecoder().decode(

@@ -35,6 +35,21 @@ import AppKit
     /// Grip drawn in the middle of a divider while it is hovered or dragged.
     static let dividerGripSize = CGSize(width: 2, height: 24)
 
+    /// Pane drag handle: a 24 × 2 grip at the top center of the focused
+    /// pane. The hit area around it is larger so it is easy to grab.
+    static let paneGripSize = CGSize(width: 24, height: 2)
+    static let paneGripHitSize = CGSize(width: 56, height: 8)
+
+    /// The pane a dragged pane lands on: the one under `point` along the split
+    /// axis, or the first or last pane past either end. Frames are in pane order.
+    static func paneIndex(at point: CGPoint, in frames: [CGRect], orientation: BrowserTabSplitOrientation) -> Int? {
+        guard !frames.isEmpty else { return nil }
+        let position = orientation == .horizontal ? point.x : point.y
+        let centers = frames.map { orientation == .horizontal ? $0.midX : $0.midY }
+        // Nearest center wins, so the gaps between panes split evenly.
+        return centers.indices.min { abs(centers[$0] - position) < abs(centers[$1] - position) }
+    }
+
     @objc static var focusRingCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
 
     /// Every pane corner is rounded like the outer content corners.

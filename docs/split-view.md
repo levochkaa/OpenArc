@@ -25,7 +25,7 @@ Panes sit `BrowserWindowGeometry.browserContentEdgeInset` (8 pt) apart, the same
 
 ### Pane bars
 
-Every pane of a visible split has its own 32 pt bar above the page (`BrowserSplitPaneLayout.paneBarHeight`). The engine lays each page out below its pane's bar and rounds only the page's bottom corners; it reports the pane frames synchronously through `didLayoutSplitPanesWithTabIDs:frames:` → `BrowserTabDriving.onSplitPaneLayout` → `BrowserChromeModel.splitPaneLayoutTabIDs/Frames` (not published, so a divider drag does not refresh the whole window). `BrowserSplitPaneBarsView`, a transparent layer above the engine host in `BrowserContentNSView`, puts a `BrowserSplitPaneBarView` on each pane: back, forward, reload or stop on the focused pane, the page host with a link icon (click copies the URL) and Close this Split Pane. A bar acts on its own pane: an unfocused pane is focused first, then the active-tab command runs. The bar draws the pane's top corners and stays inside the focus ring.
+Every pane of a visible split has its own 32 pt bar above the page (`BrowserSplitPaneLayout.paneBarHeight`). The engine lays each page out below its pane's bar and rounds only the page's bottom corners; it reports the pane frames synchronously through `didLayoutSplitPanesWithTabIDs:frames:` → `BrowserTabDriving.onSplitPaneLayout` → `BrowserChromeModel.splitPaneLayoutTabIDs/Frames` (not published, so a divider drag does not refresh the whole window). `BrowserSplitPaneBarsView`, a transparent layer above the engine host in `BrowserContentNSView`, puts a `BrowserSplitPaneBarView` on each pane: back, forward, reload or stop on the focused pane, the page host with a link icon (click copies the URL) and Close this Split Pane. A bar acts on its own pane: an unfocused pane is focused first, then the active-tab command runs. The bar draws the pane's top corners and stays inside the focus ring. The focused pane's bar has a 24 × 2 grip at its top center (`BrowserSplitPaneGripView`, 56 × 8 hit area): dragging it outlines the pane with the nearest center along the split axis, and releasing there moves the dragged pane to that position through `moveSplitPane(tabID:to:)`. The pane keeps its size and focus; the other panes keep their order.
 
 ### Divider
 
@@ -100,6 +100,6 @@ Open Location (`⌘L`) edits the focused pane's URL, because the focused pane is
 
 Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, pane bars, dividers, the one-row sidebar entry, drop-to-split, commands with shortcuts, pane moves and expansion, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
-1. Pane chrome: reorder by a top grip and drag into the center. The bars do not show window controls when the sidebar is hidden yet.
+1. Pane chrome: drag a sidebar tab into a pane's center or edge. The bars do not show window controls when the sidebar is hidden yet.
 2. iPad browser split in UIKit/WebKit.
 3. A custom split title and icon.

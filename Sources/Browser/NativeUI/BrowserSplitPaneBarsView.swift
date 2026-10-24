@@ -24,6 +24,32 @@ final class BrowserSplitPaneBarsView: NSView {
 
     func bar(forTabID tabID: String) -> BrowserSplitPaneBarView? { bars[tabID] }
 
+    /// The pane a grip drag would land on, while it differs from the dragged one.
+    private(set) var paneDropTargetTabID: String? {
+        didSet {
+            if oldValue != paneDropTargetTabID {
+                needsDisplay = true
+            }
+        }
+    }
+
+    /// The landing pane is outlined while a pane is dragged by its grip.
+    override func draw(_: NSRect) {
+        guard let paneDropTargetTabID, let target = paneRects[paneDropTargetTabID] else { return }
+        let radius = BrowserSplitPaneLayout.paneCornerRadius
+        let ring = BrowserSplitPaneLayout.focusRingWidth
+        let path = NSBezierPath(
+            roundedRect: target.insetBy(dx: ring / 2, dy: ring / 2),
+            xRadius: radius,
+            yRadius: radius
+        )
+        BrowserSplitPaneLayout.focusRingColor.withAlphaComponent(0.12).setFill()
+        path.fill()
+        path.lineWidth = ring
+        BrowserSplitPaneLayout.focusRingColor.setStroke()
+        path.stroke()
+    }
+
     func refresh() {
         guard let model, let hostView, hostView.window === window || window == nil else {
             removeBars(keeping: [])
@@ -32,6 +58,10 @@ final class BrowserSplitPaneBarsView: NSView {
         let ids = model.splitPaneLayoutTabIDs
         let frames = model.splitPaneLayoutFrames
         removeBars(keeping: Set(ids))
+        paneRects = Dictionary(
+            zip(ids, frames).map { ($0, convert($1, from: hostView)) },
+            uniquingKeysWith: { first, _ in first }
+        )
         for (id, paneFrame) in zip(ids, frames) {
             guard let tab = model.tabs.first(where: { $0.id == id }) else {
                 bars.removeValue(forKey: id)?.removeFromSuperview()
@@ -46,17 +76,48 @@ final class BrowserSplitPaneBarsView: NSView {
                 width: pane.width,
                 height: min(BrowserSplitPaneLayout.paneBarHeight, pane.height)
             )
-            bar.update(tab: tab, focused: model.selectedTabID == id)
+            bar.update(tab: tab, focused: model.selectedTabID == id, canReorder: ids.count > 1)
         }
+    }
+
+    /// The pane that a pane dragged by its grip lands on at `point`, in this
+    /// view's coordinates, or nil over the dragged pane itself.
+    func paneDropTarget(for tabID: String, at point: NSPoint) -> String? {
+        guard let model, let group = model.splitGroup(containingTabID: tabID) else { return nil }
+        let ids = model.splitPaneLayoutTabIDs.filter { paneRects[$0] != nil }
+        guard let index = BrowserSplitPaneLayout.paneIndex(
+            at: point,
+            in: ids.compactMap { paneRects[$0] },
+            orientation: group.orientation
+        ), ids[index] != tabID else { return nil }
+        return ids[index]
+    }
+
+    /// Ends a grip drag: the pane takes the landing pane's position.
+    func finishPaneDrag(for tabID: String, at point: NSPoint) {
+        paneDropTargetTabID = nil
+        guard let model, let target = paneDropTarget(for: tabID, at: point),
+              let index = model.splitPaneTabIDs(forTabID: tabID).firstIndex(of: target)
+        else { return }
+        model.moveSplitPane(tabID: tabID, to: index)
     }
 
     // MARK: Private
 
     private var bars = [String: BrowserSplitPaneBarView]()
+    private var paneRects = [String: CGRect]()
 
     private func makeBar() -> BrowserSplitPaneBarView {
         let bar = BrowserSplitPaneBarView()
         bar.onAction = { [weak self] action, tabID in self?.perform(action, tabID: tabID) }
+        bar.onGripDrag = { [weak self] tabID, location in
+            guard let self else { return }
+            paneDropTargetTabID = paneDropTarget(for: tabID, at: convert(location, from: nil))
+        }
+        bar.onGripDragEnd = { [weak self] tabID, location in
+            guard let self else { return }
+            finishPaneDrag(for: tabID, at: convert(location, from: nil))
+        }
         addSubview(bar)
         return bar
     }
@@ -110,6 +171,7 @@ final class BrowserSplitPaneBarView: NSView {
             addSubview(button)
         }
         addSubview(hostButton)
+        addSubview(grip)
         hostButton.addSubview(linkIcon)
         hostButton.addSubview(hostLabel)
         hostLabel.lineBreakMode = .byTruncatingMiddle
@@ -122,6 +184,14 @@ final class BrowserSplitPaneBarView: NSView {
         reloadButton.onAction = { [weak self] in self?.send(.reload) }
         closeButton.onAction = { [weak self] in self?.send(.close) }
         hostButton.onClick = { [weak self] _ in self?.send(.copyURL) }
+        grip.onDrag = { [weak self] location in
+            guard let self, let tabID else { return }
+            onGripDrag(tabID, location)
+        }
+        grip.onDragEnd = { [weak self] location in
+            guard let self, let tabID else { return }
+            onGripDragEnd(tabID, location)
+        }
         hostButton.setAccessibilityRole(.button)
         setAccessibilityElement(true)
         setAccessibilityRole(.toolbar)
@@ -137,6 +207,9 @@ final class BrowserSplitPaneBarView: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
 
     var onAction: (Action, String) -> Void = { _, _ in }
+    /// Pointer locations in window coordinates while the grip is dragged.
+    var onGripDrag: (String, NSPoint) -> Void = { _, _ in }
+    var onGripDragEnd: (String, NSPoint) -> Void = { _, _ in }
     private(set) var tabID: String?
     private(set) var isFocused = false
 
@@ -165,6 +238,7 @@ final class BrowserSplitPaneBarView: NSView {
         action: {}
     )
     let hostButton = BrowserNativePressableView()
+    let grip = BrowserSplitPaneGripView()
 
     override func mouseDown(with _: NSEvent) {
         send(.focus)
@@ -193,6 +267,13 @@ final class BrowserSplitPaneBarView: NSView {
             y: ((size - 16) / 2).rounded(),
             width: max(width - iconWidth - 4, 0),
             height: 16
+        )
+        let gripHit = BrowserSplitPaneLayout.paneGripHitSize
+        grip.frame = NSRect(
+            x: ((bounds.width - gripHit.width) / 2).rounded(),
+            y: 0,
+            width: gripHit.width,
+            height: gripHit.height
         )
     }
 
@@ -224,8 +305,10 @@ final class BrowserSplitPaneBarView: NSView {
         path.fill()
     }
 
-    func update(tab: BrowserChromeModel.Tab, focused: Bool) {
+    func update(tab: BrowserChromeModel.Tab, focused: Bool, canReorder: Bool = true) {
         tabID = tab.id
+        // The drag grip shows on the focused pane only.
+        grip.isHidden = !focused || !canReorder
         if isFocused != focused {
             isFocused = focused
             needsDisplay = true
@@ -246,6 +329,7 @@ final class BrowserSplitPaneBarView: NSView {
         forwardButton.setAccessibilityIdentifier("browser.split.pane-bar.forward.\(tab.id)")
         reloadButton.setAccessibilityIdentifier("browser.split.pane-bar.reload.\(tab.id)")
         closeButton.setAccessibilityIdentifier("browser.split.pane-bar.close.\(tab.id)")
+        grip.setAccessibilityIdentifier("browser.split.pane-bar.grip.\(tab.id)")
         setAccessibilityIdentifier("browser.split.pane-bar.\(tab.id)")
         setAccessibilityLabel(tab.displayTitle)
         needsLayout = true
@@ -259,5 +343,69 @@ final class BrowserSplitPaneBarView: NSView {
     private func send(_ action: Action) {
         guard let tabID else { return }
         onAction(action, tabID)
+    }
+}
+
+// MARK: - BrowserSplitPaneGripView
+
+/// Pane drag handle at the top center of the focused pane. Dragging it
+/// moves the pane to the position under the pointer on release.
+final class BrowserSplitPaneGripView: NSView {
+    // MARK: Lifecycle
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.handle)
+        setAccessibilityLabel(BrowserStrings.splitPaneGripAccessibilityLabel)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    var onDrag: (NSPoint) -> Void = { _ in }
+    var onDragEnd: (NSPoint) -> Void = { _ in }
+    private(set) var isDragging = false
+
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
+    override func draw(_: NSRect) {
+        let size = BrowserSplitPaneLayout.paneGripSize
+        let rect = NSRect(
+            x: ((bounds.width - size.width) / 2).rounded(),
+            y: ((bounds.height - size.height) / 2).rounded(),
+            width: size.width,
+            height: size.height
+        )
+        let color = isDragging ? BrowserChromeColors.primaryText : BrowserChromeColors.secondaryText
+        color.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: size.height / 2, yRadius: size.height / 2).fill()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: isDragging ? .closedHand : .openHand)
+    }
+
+    override func mouseDown(with _: NSEvent) {
+        isDragging = true
+        NSCursor.closedHand.push()
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragging else { return }
+        onDrag(event.locationInWindow)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isDragging else { return }
+        isDragging = false
+        NSCursor.pop()
+        needsDisplay = true
+        onDragEnd(event.locationInWindow)
     }
 }
