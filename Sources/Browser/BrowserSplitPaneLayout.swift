@@ -40,6 +40,47 @@ import AppKit
     static let paneGripSize = CGSize(width: 24, height: 2)
     static let paneGripHitSize = CGSize(width: 56, height: 8)
 
+    /// The edge of a page or pane that a tab dragged from the sidebar would
+    /// split. The zones: min(W/3, 80) at the left and right edges and
+    /// min(H/3, 50) at the top and bottom; in a corner the relatively closer
+    /// edge wins. `pane` and `point` share flipped coordinates.
+    enum PageDropEdge: Equatable {
+        case leading, trailing, top, bottom
+
+        var orientation: BrowserTabSplitOrientation {
+            self == .leading || self == .trailing ? .horizontal : .vertical
+        }
+
+        /// A new pane on the leading or top edge goes before the pane it splits.
+        var isBefore: Bool { self == .leading || self == .top }
+    }
+
+    static let pageDropMaximumWidth: CGFloat = 80
+    static let pageDropMaximumHeight: CGFloat = 50
+
+    static func pageDropEdge(at point: CGPoint, in pane: CGRect) -> PageDropEdge? {
+        guard pane.contains(point) else { return nil }
+        let horizontal = min(pane.width / 3, pageDropMaximumWidth)
+        let vertical = min(pane.height / 3, pageDropMaximumHeight)
+        let candidates: [(PageDropEdge, CGFloat)] = [
+            (.leading, (point.x - pane.minX) / horizontal),
+            (.trailing, (pane.maxX - point.x) / horizontal),
+            (.top, (point.y - pane.minY) / vertical),
+            (.bottom, (pane.maxY - point.y) / vertical),
+        ]
+        return candidates.filter { $0.1 < 1 }.min { $0.1 < $1.1 }?.0
+    }
+
+    /// Half of the pane on the side the dropped tab will take.
+    static func pageDropPreview(for edge: PageDropEdge, in pane: CGRect) -> CGRect {
+        switch edge {
+        case .leading: pane.divided(atDistance: pane.width / 2, from: .minXEdge).slice
+        case .trailing: pane.divided(atDistance: pane.width / 2, from: .maxXEdge).slice
+        case .top: pane.divided(atDistance: pane.height / 2, from: .minYEdge).slice
+        case .bottom: pane.divided(atDistance: pane.height / 2, from: .maxYEdge).slice
+        }
+    }
+
     /// The pane a dragged pane lands on: the one under `point` along the split
     /// axis, or the first or last pane past either end. Frames are in pane order.
     static func paneIndex(at point: CGPoint, in frames: [CGRect], orientation: BrowserTabSplitOrientation) -> Int? {

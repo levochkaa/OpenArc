@@ -336,10 +336,12 @@ final class BrowserNativeSidebarNSView: NSView {
         guard state.drag.isDragging else { return }
         lastWindowDragPoint = point
         state.drag.updatePointer(content.convert(point, from: nil))
+        state.drag.updatePageDrop(atWindowPoint: point)
     }
 
     func finishDragging(atWindowPoint point: CGPoint) {
         guard state.drag.isDragging else { return }
+        state.drag.updatePageDrop(atWindowPoint: point)
         endDragging(at: content.convert(point, from: nil), cancelled: false)
     }
 

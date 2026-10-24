@@ -189,10 +189,12 @@ extension BrowserChromeModel {
     /// keeps its pane and sidebar position, `tabID` becomes the next pane and is
     /// focused. Its own row joins the group, moving into the anchor's Space,
     /// section and folder.
+    /// `orientation` applies when this creates a split; an existing split keeps its own.
     @discardableResult func openInSplitView(
         tabID: String,
         anchorTabID: String? = nil,
-        insertion: SplitInsertion = .end
+        insertion: SplitInsertion = .end,
+        orientation: BrowserTabSplitOrientation = .horizontal
     ) -> Bool {
         guard let anchorID = anchorTabID ?? selectedTabID, anchorID != tabID,
               let anchor = tabs.first(where: { $0.id == anchorID }), anchor.placement != .app,
@@ -220,6 +222,7 @@ extension BrowserChromeModel {
             splitGroups.append(SplitGroup(
                 id: UUID().uuidString,
                 tabSyncIDs: insertion == .before ? [added.syncID, anchor.syncID] : [anchor.syncID, added.syncID],
+                orientation: orientation,
                 focusedTabSyncID: added.syncID
             ))
         }

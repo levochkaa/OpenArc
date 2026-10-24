@@ -26,6 +26,14 @@ import AppKit
         let side: Side
     }
 
+    /// A drop on the page beside the sidebar: the dragged tab opens in a Split
+    /// View next to the page or pane under the pointer.
+    struct PageSplitDropTarget: Equatable {
+        let anchorTabID: String
+        let insertion: BrowserChromeModel.SplitInsertion
+        let orientation: BrowserTabSplitOrientation
+    }
+
     /// A dragged tab combines with the tab row it rests on into a Split View
     /// after a short pause; the pause keeps ordinary reorders unaffected. The
     /// exact delay is unknown.
@@ -43,6 +51,10 @@ import AppKit
     private(set) var geometry: BrowserSidebarDragGeometry?
     private(set) var projectedPlan: BrowserSidebarMovePlan?
     private(set) var splitTarget: SplitDropTarget?
+    private(set) var pageSplitTarget: PageSplitDropTarget?
+    /// Finds the page drop for a window point and the dragged tab and shows its
+    /// preview; a nil point clears the preview. Set by the window root.
+    var pageSplitDropResolver: ((CGPoint?, String) -> PageSplitDropTarget?)?
     var onPresentationChange: () -> Void = {}
     var onLayoutChange: () -> Void = {}
     var onTargetChange: () -> Void = {}
@@ -158,6 +170,21 @@ import AppKit
         onPresentationChange()
     }
 
+    /// Follows the pointer over the page. Only a single tab outside every
+    /// sidebar target can split the page.
+    func updatePageDrop(atWindowPoint point: CGPoint) {
+        guard isDragging, let payload, payload.tabIDs.count == 1, case .tab(let id) = payload.primary,
+              proposal == nil, splitTarget == nil
+        else {
+            clearPageDrop()
+            return
+        }
+        let target = pageSplitDropResolver?(point, id)
+        guard target != pageSplitTarget else { return }
+        pageSplitTarget = target
+        onPresentationChange()
+    }
+
     @discardableResult func release(at pointer: CGPoint, cancel: Bool = false) -> Bool {
         guard isDragging, let payload else { return false }
         if !cancel {
@@ -170,12 +197,20 @@ import AppKit
                     anchorTabID: target.tabID,
                     insertion: target.side == .leading ? .before : .after
                 )
+            } else if !cancel, let target = pageSplitTarget, case .tab(let id) = payload.primary {
+                model.openInSplitView(
+                    tabID: id,
+                    anchorTabID: target.anchorTabID,
+                    insertion: target.insertion,
+                    orientation: target.orientation
+                )
             } else {
                 !cancel && proposal.map {
                     model.commitSidebarDrop(payload: payload, destination: $0.destination)
                 } == true
             }
         resetSplitDrop()
+        clearPageDrop()
         phase = .settling
         proposal = nil
         geometricProposal = nil
@@ -186,6 +221,7 @@ import AppKit
 
     func complete() {
         resetSplitDrop()
+        clearPageDrop()
         phase = .idle
         payload = nil
         sourceContainer = nil
@@ -212,6 +248,15 @@ import AppKit
     private var splitCandidateTabID: String?
     private var splitCandidateSince = Date.distantFuture
     private var splitDelayWork: DispatchWorkItem?
+
+    private func clearPageDrop() {
+        let hadTarget = pageSplitTarget != nil
+        pageSplitTarget = nil
+        _ = pageSplitDropResolver?(nil, "")
+        if hadTarget {
+            onPresentationChange()
+        }
+    }
 
     private func resetSplitDrop() {
         splitDelayWork?.cancel()

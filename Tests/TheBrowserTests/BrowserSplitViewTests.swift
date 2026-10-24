@@ -400,6 +400,85 @@ import Testing
         #expect(f.model.selectedTabID == f.id("x"))
     }
 
+    @Test func aSidebarTabDroppedOnThePageEdgeSplitsThePageThere() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        let drag = BrowserSidebarDragState(model: f.model)
+        var clears = 0
+        drag.pageSplitDropResolver = { point, _ in
+            guard point != nil else {
+                clears += 1
+                return nil
+            }
+            return .init(anchorTabID: f.id("x"), insertion: .before, orientation: .vertical)
+        }
+        drag.begin(
+            payload: .init(primary: .tab(f.id("x")), tabIDs: [f.id("x"), f.id("y")]),
+            sourceFrame: .zero,
+            start: .zero,
+            pointer: .zero
+        )
+        drag.updatePageDrop(atWindowPoint: CGPoint(x: 500, y: 20))
+        #expect(drag.pageSplitTarget == nil, "A group of tabs cannot split the page")
+        drag.complete()
+        drag.begin(payload: .init(primary: .tab(f.id("y")), tabIDs: [f.id("y")]), sourceFrame: .zero, start: .zero, pointer: .zero)
+        drag.updatePageDrop(atWindowPoint: CGPoint(x: 500, y: 20))
+        #expect(drag.pageSplitTarget?.orientation == .vertical)
+        #expect(drag.release(at: .zero))
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: group) == [f.id("y"), f.id("x")], "The top edge puts the tab first")
+        #expect(group.orientation == .vertical)
+        #expect(drag.pageSplitTarget == nil && clears > 0, "Releasing clears the preview")
+    }
+
+    @Test func pageDropZonesFollowThePanesAndTheSplitAxis() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let content = BrowserContentNSView(hostView: NSView())
+        content.frame = NSRect(x: 0, y: 0, width: 1000, height: 600)
+        window.contentView = content
+        content.bindTabCreation(to: f.model)
+        content.update(
+            hostView: content.viewport.hostedView,
+            isContextReady: true,
+            hasSelectedTab: true,
+            isSidebarVisible: true,
+            usesWindowContentInsets: true
+        )
+        content.layoutSubtreeIfNeeded()
+        let bars = content.splitPaneBars
+        let host = content.viewport.hostedView
+        func drop(_ x: CGFloat, _ y: CGFloat) -> BrowserSidebarDragState.PageSplitDropTarget? {
+            let point = host.convert(CGPoint(x: x, y: y), to: nil)
+            return bars.pageSplitDrop(atWindowPoint: point, draggedTabID: f.id("y"))
+        }
+        let page = bars.convert(host.bounds, from: host)
+        let leading = try #require(drop(page.minX + 20, page.midY))
+        #expect(leading.anchorTabID == f.id("x") && leading.insertion == .before && leading.orientation == .horizontal)
+        #expect(bars.pageDropPreview?.width == page.width / 2)
+        #expect(drop(host.bounds.midX, host.bounds.midY) == nil, "The middle of the page is not a drop zone")
+        #expect(bars.pageDropPreview == nil)
+
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        f.driver.simulateSplitPaneLayout([f.id("x"), f.id("z")], frames: [
+            CGRect(x: 0, y: 0, width: 496, height: 600),
+            CGRect(x: 504, y: 0, width: 496, height: 600),
+        ])
+        let trailing = try #require(drop(990, 300))
+        #expect(trailing.anchorTabID == f.id("z") && trailing.insertion == .after)
+        #expect(drop(750, host.isFlipped ? 590 : 10) == nil, "A side-by-side split does not grow downward")
+        _ = bars.pageSplitDrop(atWindowPoint: nil, draggedTabID: f.id("y"))
+        #expect(bars.pageDropPreview == nil)
+    }
+
     @Test func expandCurrentSplitShowsTheFocusedPaneUntilFocusMoves() {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
         f.model.selectTab(id: f.id("x"))
@@ -659,6 +738,19 @@ import Testing
     let stack = [CGRect(x: 0, y: 0, width: 800, height: 300), CGRect(x: 0, y: 308, width: 800, height: 292)]
     #expect(BrowserSplitPaneLayout.paneIndex(at: CGPoint(x: 10, y: 500), in: stack, orientation: .vertical) == 1)
     #expect(BrowserSplitPaneLayout.paneIndex(at: CGPoint(x: 10, y: 500), in: [], orientation: .vertical) == nil)
+}
+
+@Test func pageDropEdgesUseArcZoneSizes() {
+    let page = CGRect(x: 0, y: 0, width: 900, height: 600)
+    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 79, y: 300), in: page) == .leading)
+    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 81, y: 300), in: page) == nil, "At most 80 pt wide")
+    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 850, y: 300), in: page) == .trailing)
+    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 450, y: 49), in: page) == .top)
+    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 450, y: 560), in: page) == .bottom)
+    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 10, y: 40), in: page) == .leading, "The relatively closer edge wins")
+    let narrow = CGRect(x: 0, y: 0, width: 150, height: 600)
+    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 55, y: 300), in: narrow) == nil, "A third of a narrow pane")
+    #expect(BrowserSplitPaneLayout.pageDropPreview(for: .bottom, in: page) == CGRect(x: 0, y: 300, width: 900, height: 300))
 }
 
 @Test func splitGroupDecodingToleratesUnknownValuesAndOldSnapshots() throws {

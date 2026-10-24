@@ -64,6 +64,8 @@ A split is one sidebar row in place of its first member (in sidebar order); the 
 
 Resting a dragged tab for 0.5 s on the middle band of another tab row offers drop-to-split: the row splits into two halves, the half under the pointer fills, and the insertion line disappears. Dropping there runs `openInSplitView` with the dragged tab before (leading half) or after (trailing half) the row's tab, or adds it to that row's split. The row edges keep reordering, a quick pass never splits, and the target must accept another pane (`canOpenInSplitView`).
 
+A single tab dragged out of the sidebar over the page uses page drop zones: min(W/3, 80) pt at a pane's left and right edges and min(H/3, 50) pt at its top and bottom (`BrowserSplitPaneLayout.pageDropEdge`). The half of the pane the tab would take is outlined by `BrowserSplitPaneBarsView`; dropping runs `openInSplitView` with the pane under the pointer as the anchor, before it on the leading or top edge and after it otherwise. Without a split the whole page is one pane and a top or bottom drop makes a stacked split; a shown split grows only along its own axis. The page's middle is not a drop target.
+
 Dragging the row carries every pane as one group through the existing sidebar drop path, so the split moves as a block and stays valid. Drop slots exist only before and after the row, never between panes. Starting a drag on a split that is already selected keeps its focused pane.
 
 ## Commands and controls
@@ -98,8 +100,8 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 Open Location (`⌘L`) edits the focused pane's URL, because the focused pane is the selected tab.
 
-Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, pane bars, dividers, the one-row sidebar entry, drop-to-split, commands with shortcuts, pane moves and expansion, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
+Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, pane bars with grip reorder and window controls, dividers, the one-row sidebar entry, drop-to-split on rows and page edges, commands with shortcuts, pane moves and expansion, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
-1. Pane chrome: drag a sidebar tab into a pane's center or edge.
-2. iPad browser split in UIKit/WebKit.
-3. A custom split title and icon.
+1. iPad browser split in UIKit/WebKit.
+2. A custom split title and icon.
+3. A drop in a pane's middle, once its behavior there is decided.

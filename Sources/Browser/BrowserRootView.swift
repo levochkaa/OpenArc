@@ -51,6 +51,9 @@ final class BrowserRootView: NSView {
         }
         sidebar.onToggleSidebar = { [weak model] in model?.toggleSidebar() }
         model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
+        sidebar.sidebar.state.drag.pageSplitDropResolver = { [weak content] point, tabID in
+            content?.splitPaneBars.pageSplitDrop(atWindowPoint: point, draggedTabID: tabID)
+        }
         sidebar.onDragInteractionChange = { [weak self] in
             DispatchQueue.main.async { [weak self] in self?.refresh() }
         }

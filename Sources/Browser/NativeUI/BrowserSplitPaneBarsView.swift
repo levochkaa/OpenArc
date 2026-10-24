@@ -43,9 +43,19 @@ final class BrowserSplitPaneBarsView: NSView {
         }
     }
 
-    /// The landing pane is outlined while a pane is dragged by its grip.
+    /// The half of a page or pane that a tab dragged from the sidebar would take.
+    private(set) var pageDropPreview: CGRect? {
+        didSet {
+            if oldValue != pageDropPreview {
+                needsDisplay = true
+            }
+        }
+    }
+
+    /// The landing pane is outlined while a pane is dragged by its grip, and
+    /// the new pane's place while a sidebar tab is dragged over the page.
     override func draw(_: NSRect) {
-        guard let paneDropTargetTabID, let target = paneRects[paneDropTargetTabID] else { return }
+        guard let target = pageDropPreview ?? paneDropTargetTabID.flatMap({ paneRects[$0] }) else { return }
         let radius = BrowserSplitPaneLayout.paneCornerRadius
         let ring = BrowserSplitPaneLayout.focusRingWidth
         let path = NSBezierPath(
@@ -105,6 +115,35 @@ final class BrowserSplitPaneBarsView: NSView {
             orientation: group.orientation
         ), ids[index] != tabID else { return nil }
         return ids[index]
+    }
+
+    /// Page drop zones while a sidebar tab is dragged over the page: each
+    /// visible pane, or the single page, splits at the edge under the pointer.
+    /// A split only grows along its own axis. A nil point clears the preview.
+    func pageSplitDrop(
+        atWindowPoint point: CGPoint?,
+        draggedTabID: String
+    ) -> BrowserSidebarDragState.PageSplitDropTarget? {
+        guard let point, let model, let hostView, !isHidden, window != nil else {
+            pageDropPreview = nil
+            return nil
+        }
+        let local = convert(point, from: nil)
+        let group = model.selectedSplitGroup
+        var panes = model.splitPaneLayoutTabIDs.compactMap { id in paneRects[id].map { (id: id, frame: $0) } }
+        if panes.isEmpty, let selectedTabID = model.selectedTabID {
+            panes = [(selectedTabID, convert(hostView.bounds, from: hostView))]
+        }
+        guard let pane = panes.first(where: { $0.frame.contains(local) }),
+              let edge = BrowserSplitPaneLayout.pageDropEdge(at: local, in: pane.frame),
+              group.map({ $0.orientation == edge.orientation }) ?? true,
+              model.canOpenInSplitView(tabID: draggedTabID, anchorTabID: pane.id)
+        else {
+            pageDropPreview = nil
+            return nil
+        }
+        pageDropPreview = BrowserSplitPaneLayout.pageDropPreview(for: edge, in: pane.frame)
+        return .init(anchorTabID: pane.id, insertion: edge.isBefore ? .before : .after, orientation: edge.orientation)
     }
 
     /// Ends a grip drag: the pane takes the landing pane's position.
