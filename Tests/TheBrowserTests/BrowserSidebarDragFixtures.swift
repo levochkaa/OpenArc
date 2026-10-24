@@ -49,6 +49,8 @@ import Testing
             userPreferencesStore: prefs,
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(),
+            // A fixed clock keeps activity dates stable when activating a dragged tab crosses a second.
+            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) },
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
         )
