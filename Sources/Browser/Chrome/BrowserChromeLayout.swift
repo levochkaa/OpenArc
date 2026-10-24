@@ -76,7 +76,10 @@ enum BrowserChromeLayout {
     static let detachedSidebarWindowBorderInset: CGFloat = 1
     static let sidebarOverlayBorderWidth: CGFloat = 1
     static let sidebarOverlayCornerRadius: CGFloat = leadingContentCornerRadius
-    static let sidebarSnapThreshold: CGFloat = 10
+    /// The sidebar edge snaps to the default width within 14 pt.
+    static let sidebarSnapThreshold: CGFloat = 14
+    /// Dragging the sidebar edge below this width hides the sidebar (82 pt).
+    static let sidebarCollapseDragWidth: CGFloat = 82
     static let browserContentEdgeInset: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
     static let chromeButtonSize: CGFloat = 28
     static let chromeButtonSymbolSize: CGFloat = 13.5

@@ -142,6 +142,46 @@ import Testing
         #expect(closed == 1)
     }
 
+    @Test func sidebarEdgeResetsOnDoubleClickAndCollapsesWhenDraggedNarrow() throws {
+        let handle = BrowserNativeResizeHandle()
+        var width: CGFloat = 400
+        var phases = [Bool]()
+        var collapses = 0
+        handle.getWidth = { width }
+        handle.setWidth = { width = $0 }
+        handle.defaultWidth = 224
+        handle.hapticsEnabled = false
+        handle.collapseWidth = BrowserChromeLayout.sidebarCollapseDragWidth
+        handle.onCollapse = { collapses += 1 }
+        handle.onResizePhaseChange = { phases.append($0) }
+        func event(clicks: Int) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: .leftMouseDown,
+                location: NSPoint(x: 100, y: 100),
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                eventNumber: 1,
+                clickCount: clicks,
+                pressure: 1
+            ))
+        }
+        try handle.mouseDown(with: event(clicks: 2))
+        #expect(width == 224, "A double click restores the default width")
+        #expect(phases == [true, false])
+        try handle.mouseDown(with: event(clicks: 1))
+        handle.updateDrag(translation: -100)
+        try handle.mouseUp(with: event(clicks: 1))
+        #expect(collapses == 0, "A drag that stays wide keeps the sidebar")
+        try handle.mouseDown(with: event(clicks: 1))
+        handle.updateDrag(translation: -200)
+        try handle.mouseUp(with: event(clicks: 1))
+        #expect(collapses == 1, "Dragging below the collapse width hides the sidebar")
+        #expect(BrowserChromeModel.maxSidebarWidth == 500)
+        #expect(BrowserChromeLayout.sidebarSnapThreshold == 14)
+    }
+
     @Test func resizeSnapsWithoutAccumulatingTranslationAndEndsCleanly() throws {
         let handle = BrowserNativeResizeHandle()
         var width: CGFloat = 330

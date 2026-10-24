@@ -27,6 +27,12 @@ final class BrowserSidebarChromeView: NSView {
         resize.defaultWidth = BrowserChromeModel.defaultSidebarWidth
         resize.getWidth = { [weak model] in model?.sidebarWidth ?? BrowserChromeModel.defaultSidebarWidth }
         resize.setWidth = { [weak model] in model?.setSidebarWidth($0) }
+        resize.collapseWidth = BrowserChromeLayout.sidebarCollapseDragWidth
+        resize.onCollapse = { [weak model] in
+            if model?.isSidebarVisible == true {
+                model?.toggleSidebar()
+            }
+        }
         resize.onResizePhaseChange = { [weak self] active in
             guard let self else { return }
             if active {

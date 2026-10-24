@@ -35,6 +35,9 @@ final class BrowserNativeResizeHandle: NSView {
     var verticalPadding = BrowserChromeLayout.sidebarOuterPadding
     var hapticsEnabled = true
     var onResizePhaseChange: (Bool) -> Void = { _ in }
+    /// When set, releasing a drag that went below this width calls `onCollapse`.
+    var collapseWidth: CGFloat?
+    var onCollapse: () -> Void = {}
     private(set) var isResizing = false
 
     override func updateTrackingAreas() {
@@ -87,6 +90,13 @@ final class BrowserNativeResizeHandle: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        // A double click on the sidebar edge restores the default width.
+        if event.clickCount == 2, defaultWidth > 0 {
+            onResizePhaseChange(true)
+            setWidth(defaultWidth)
+            onResizePhaseChange(false)
+            return
+        }
         startX = screenPoint(event).x
         startWidth = getWidth()
         isResizing = true
@@ -110,6 +120,7 @@ final class BrowserNativeResizeHandle: NSView {
     func updateDrag(translation: CGFloat) {
         guard isResizing else { return }
         let proposed = startWidth + translation * direction
+        lastProposedWidth = proposed
         let shouldSnap = abs(proposed - defaultWidth) <= BrowserChromeLayout.sidebarSnapThreshold
         setWidth(shouldSnap ? defaultWidth : proposed)
         if shouldSnap, !snapped, hapticsEnabled {
@@ -131,6 +142,7 @@ final class BrowserNativeResizeHandle: NSView {
     private var snapped = false
     private var startX: CGFloat = 0
     private var startWidth: CGFloat = 0
+    private var lastProposedWidth: CGFloat?
 
     private func screenPoint(_ event: NSEvent) -> NSPoint { window?
         .convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
@@ -152,13 +164,21 @@ final class BrowserNativeResizeHandle: NSView {
 
     private func finishResize() {
         let wasResizing = isResizing
+        var collapses = false
+        if wasResizing, let collapseWidth, let lastProposedWidth {
+            collapses = lastProposedWidth < collapseWidth
+        }
         isResizing = false
         snapped = false
+        lastProposedWidth = nil
         if !hovering || !highlighted {
             popCursor()
         }
         if wasResizing {
             onResizePhaseChange(false)
+        }
+        if collapses {
+            onCollapse()
         }
         needsDisplay = true
     }

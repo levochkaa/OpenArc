@@ -189,7 +189,9 @@ enum BrowserWindowMode: Equatable {
 
     nonisolated static let defaultSidebarWidth: CGFloat = 224
     nonisolated static let minSidebarWidth: CGFloat = defaultSidebarWidth
-    nonisolated static let maxSidebarWidth: CGFloat = defaultSidebarWidth * 2
+    /// The sidebar is capped at 500 pt. The minimum stays at the default,
+    /// because the sidebar header has no compact layout.
+    nonisolated static let maxSidebarWidth: CGFloat = 500
     nonisolated static let defaultExtensionSidePanelWidth: CGFloat = 360
     nonisolated static let minExtensionSidePanelWidth: CGFloat = 280
     nonisolated static let maxExtensionSidePanelWidth: CGFloat = 560
