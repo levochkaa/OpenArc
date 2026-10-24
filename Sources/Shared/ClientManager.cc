@@ -58,6 +58,9 @@ void ClientManager::CloseAllBrowsers(bool force_close) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   for (const auto& browser : browser_list_) {
+    // DevTools browsers are not tracked here; close them with their page so
+    // none outlives the message loop.
+    browser->GetHost()->CloseDevTools();
     browser->GetHost()->CloseBrowser(force_close);
   }
 }
