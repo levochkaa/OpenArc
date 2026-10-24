@@ -818,6 +818,31 @@ enum BrowserStrings {
         comment: "View menu and command title that opens the downloads list."
     )
 
+    static let menuSelectNextTabAlternate = NSLocalizedString(
+        "browser.menu.select_next_tab_alternate",
+        comment: "Settings shortcut title for the second shortcut of Next Tab."
+    )
+
+    static let menuSelectPreviousTabAlternate = NSLocalizedString(
+        "browser.menu.select_previous_tab_alternate",
+        comment: "Settings shortcut title for the second shortcut of Previous Tab."
+    )
+
+    static let menuSelectNextSpace = NSLocalizedString(
+        "browser.menu.select_next_space",
+        comment: "View menu and command title that switches to the next Space."
+    )
+
+    static let menuSelectPreviousSpace = NSLocalizedString(
+        "browser.menu.select_previous_space",
+        comment: "View menu and command title that switches to the previous Space."
+    )
+
+    static let menuCopyLinkAsMarkdown = NSLocalizedString(
+        "browser.menu.copy_link_as_markdown",
+        comment: "Edit menu and command title that copies the page as a Markdown link."
+    )
+
     static let menuSelectNextTab = NSLocalizedString(
         "browser.menu.select_next_tab",
         comment: "View menu and command title that selects the next item in the sidebar."

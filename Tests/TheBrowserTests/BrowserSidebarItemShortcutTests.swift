@@ -49,6 +49,33 @@ import Testing
         #expect(f.model.selectedTabID == f.id("y"), "Selecting the split it is already in keeps the pane")
     }
 
+    @Test func arrowShortcutsSwitchSpacesAndTabsLikeArc() {
+        #expect(BrowserCommands.selectNextSpace.shortcut.displayText == "\u{2325}\u{2318}\u{2192}")
+        #expect(BrowserCommands.selectPreviousTabAlternate.shortcut.displayText == "\u{2325}\u{2318}\u{2191}")
+        #expect(BrowserCommandID.selectNextTabAlternate.layoutIndependentCommand == .selectNextTab)
+        let f = SidebarDragFixture(temporary: ["x"])
+        func commands(_ query: String) -> [BrowserCommandID] {
+            f.model.presentCommandBar()
+            f.model.commandBarModel.query = query
+            defer { f.model.dismissCommandBar() }
+            return f.model.commandBarModel.suggestions.compactMap(\.commandID)
+        }
+        #expect(commands("next space").contains(.selectNextSpace))
+        #expect(!commands("next tab").contains(.selectNextTabAlternate), "Next Tab is listed once")
+        #expect(f.model.selectedSpaceID == "s")
+        f.model.selectNextSpace()
+        #expect(f.model.selectedSpaceID == "t")
+    }
+
+    @Test func markdownLinksEscapeTheTitleAndURL() {
+        #expect(BrowserMarkdownLink.text(title: "Example", urlString: "https://example.com") == "[Example](https://example.com)")
+        #expect(
+            BrowserMarkdownLink.text(title: "A [b] c", urlString: "https://e.com/a_(b)") == "[A \\[b\\] c](https://e.com/a_%28b%29)"
+        )
+        #expect(BrowserMarkdownLink.text(title: "  ", urlString: "https://e.com") == "[https://e.com](https://e.com)")
+        #expect(BrowserCommands.copyLinkAsMarkdown.shortcut == BrowserKeyboardShortcut("c", modifiers: [.command, .option, .shift]))
+    }
+
     @Test func openLocationEditsTheFocusedPaneURL() {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         #expect(BrowserCommands.openLocation.shortcut == BrowserKeyboardShortcut("l"))

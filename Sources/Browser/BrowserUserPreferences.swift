@@ -343,6 +343,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case savePage
     case printPage
     case copyLink
+    case copyLinkAsMarkdown
     case findInPage
     case findAndReplace
     case findNext
@@ -352,6 +353,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case viewDownloads
     case selectNextTab
     case selectPreviousTab
+    case selectNextTabAlternate
+    case selectPreviousTabAlternate
+    case selectNextSpace
+    case selectPreviousSpace
     case goToSidebarItem1
     case goToSidebarItem2
     case goToSidebarItem3
@@ -480,6 +485,16 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.selectNextTab
         case .selectPreviousTab:
             BrowserCommands.selectPreviousTab
+        case .selectNextTabAlternate:
+            BrowserCommands.selectNextTabAlternate
+        case .selectPreviousTabAlternate:
+            BrowserCommands.selectPreviousTabAlternate
+        case .selectNextSpace:
+            BrowserCommands.selectNextSpace
+        case .selectPreviousSpace:
+            BrowserCommands.selectPreviousSpace
+        case .copyLinkAsMarkdown:
+            BrowserCommands.copyLinkAsMarkdown
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             BrowserCommands.goToSidebarItem(sidebarItemIndex)
@@ -576,8 +591,16 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .viewDownloads
         case .selectNextTab:
             .selectNextTab
-        case .selectPreviousTab:
+        case .selectPreviousTab, .selectPreviousTabAlternate:
             .selectPreviousTab
+        case .selectNextTabAlternate:
+            .selectNextTab
+        case .selectNextSpace:
+            .selectNextSpace
+        case .selectPreviousSpace:
+            .selectPreviousSpace
+        case .copyLinkAsMarkdown:
+            .copyLinkAsMarkdown
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             .goToSidebarItem(sidebarItemIndex)

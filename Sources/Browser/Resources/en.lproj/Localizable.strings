@@ -147,6 +147,11 @@
 "browser.split.pane_grip" = "Move Split Pane";
 "browser.menu.view_downloads" = "View Downloads";
 "browser.menu.select_next_tab" = "Next Tab";
+"browser.menu.select_next_tab_alternate" = "Next Tab (Alternate)";
+"browser.menu.select_previous_tab_alternate" = "Previous Tab (Alternate)";
+"browser.menu.select_next_space" = "Next Space";
+"browser.menu.select_previous_space" = "Previous Space";
+"browser.menu.copy_link_as_markdown" = "Copy URL as Markdown";
 "browser.menu.select_previous_tab" = "Previous Tab";
 "browser.menu.go_to_sidebar_item" = "Go to Sidebar Item %d";
 "browser.menu.go_to_last_sidebar_item" = "Go to Last Sidebar Item";

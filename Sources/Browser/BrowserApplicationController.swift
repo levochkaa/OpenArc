@@ -244,6 +244,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.toggleDownloads()
     }
 
+    public func selectNextSpace(_: Any?) {
+        activeChromeModel?.selectNextSpace()
+    }
+
+    public func selectPreviousSpace(_: Any?) {
+        activeChromeModel?.selectPreviousSpace()
+    }
+
+    public func copySelectedTabLinkAsMarkdown(_: Any?) {
+        activeChromeModel?.copySelectedTabLinkAsMarkdown()
+    }
+
     public func selectNextTab(_: Any?) {
         activeChromeModel?.selectAdjacentSidebarItem(offset: 1)
     }
@@ -504,6 +516,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 menuItem.title = model.siteToolbarToggleTitle
             }
             return activeChromeModel?.isWebApp == false
+        case #selector(selectNextSpace(_:)), #selector(selectPreviousSpace(_:)):
+            return activeChromeModel.map { !$0.isWebApp && $0.supportsSpaces && $0.spaces.count > 1 } ?? false
+        case #selector(copySelectedTabLinkAsMarkdown(_:)):
+            return activeChromeModel?.canCopySelectedTabLink ?? false
         case #selector(viewDownloads(_:)):
             return activeChromeModel?.onToggleDownloads != nil
         case #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)), #selector(goToLastSidebarItem(_:)):
@@ -923,6 +939,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             )
         )
         editMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .copyLinkAsMarkdown),
+                action: #selector(copySelectedTabLinkAsMarkdown(_:))
+            )
+        )
+        editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuPaste,
                 action: #selector(NSText.paste(_:)),
@@ -1085,6 +1107,23 @@ NSMenuDelegate, NSUserInterfaceValidations {
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectPreviousTab),
             action: #selector(selectPreviousTab(_:))
+        ))
+        for (commandID, action) in [
+            (BrowserCommandID.selectNextTabAlternate, #selector(selectNextTab(_:))),
+            (.selectPreviousTabAlternate, #selector(selectPreviousTab(_:))),
+        ] {
+            let item = makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action)
+            item.isHidden = true
+            item.allowsKeyEquivalentWhenHidden = true
+            viewMenu.addItem(item)
+        }
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .selectNextSpace),
+            action: #selector(selectNextSpace(_:))
+        ))
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .selectPreviousSpace),
+            action: #selector(selectPreviousSpace(_:))
         ))
         // Go to Sidebar Item has no visible menu entry; the hidden
         // items keep their key equivalents ahead of the page.
@@ -1659,6 +1698,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return true
         case .viewDownloads:
             return activeChromeModel?.toggleDownloads() ?? false
+        case .selectNextSpace, .selectPreviousSpace:
+            guard let model = activeChromeModel, !model.isWebApp, model.supportsSpaces, model.spaces.count > 1 else {
+                return false
+            }
+
+            command == .selectNextSpace ? model.selectNextSpace() : model.selectPreviousSpace()
+            return true
+        case .copyLinkAsMarkdown:
+            return activeChromeModel?.copySelectedTabLinkAsMarkdown() ?? false
         case .selectNextTab:
             guard activeChromeModel?.isWebApp == false else { return false }
             return activeChromeModel?.selectAdjacentSidebarItem(offset: 1) ?? false

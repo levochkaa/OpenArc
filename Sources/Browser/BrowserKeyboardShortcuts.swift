@@ -22,6 +22,12 @@ struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
 
     static let unassigned = BrowserKeyboardShortcut("", modifiers: [])
 
+    /// Menu key equivalents for the arrow keys.
+    static let upArrow = functionKey(NSUpArrowFunctionKey)
+    static let downArrow = functionKey(NSDownArrowFunctionKey)
+    static let leftArrow = functionKey(NSLeftArrowFunctionKey)
+    static let rightArrow = functionKey(NSRightArrowFunctionKey)
+
     let keyEquivalent: String
     let modifiers: NSEvent.ModifierFlags
 
@@ -48,7 +54,8 @@ struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
             result.append("\u{2318}")
         }
 
-        result.append(keyEquivalent.uppercased())
+        let arrows = [Self.upArrow: "\u{2191}", Self.downArrow: "\u{2193}", Self.leftArrow: "\u{2190}", Self.rightArrow: "\u{2192}"]
+        result.append(arrows[keyEquivalent] ?? keyEquivalent.uppercased())
         return result
     }
 
@@ -72,6 +79,10 @@ struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case keyEquivalent
         case modifiersRawValue
+    }
+
+    private static func functionKey(_ key: Int) -> String {
+        UnicodeScalar(UInt32(key)).map { String(Character($0)) } ?? ""
     }
 }
 
@@ -361,6 +372,39 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("[", modifiers: [.command, .shift])
     )
 
+    /// Tabs menu: Next/Previous Tab are Option-Command-Down/Up.
+    static let selectNextTabAlternate = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuSelectNextTabAlternate,
+        helpTitle: BrowserStrings.menuSelectNextTabAlternate,
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.downArrow, modifiers: [.command, .option])
+    )
+
+    static let selectPreviousTabAlternate = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuSelectPreviousTabAlternate,
+        helpTitle: BrowserStrings.menuSelectPreviousTabAlternate,
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.upArrow, modifiers: [.command, .option])
+    )
+
+    /// Spaces menu: Next/Previous Space are Option-Command-Right/Left.
+    static let selectNextSpace = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuSelectNextSpace,
+        helpTitle: BrowserStrings.menuSelectNextSpace,
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.rightArrow, modifiers: [.command, .option])
+    )
+
+    static let selectPreviousSpace = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuSelectPreviousSpace,
+        helpTitle: BrowserStrings.menuSelectPreviousSpace,
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.leftArrow, modifiers: [.command, .option])
+    )
+
+    /// Edit menu: Copy URL as Markdown is Option-Shift-Command-C.
+    static let copyLinkAsMarkdown = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuCopyLinkAsMarkdown,
+        helpTitle: BrowserStrings.menuCopyLinkAsMarkdown,
+        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .option, .shift])
+    )
+
     /// Go to Sidebar Item 1–8 is Command-1…8.
     static func goToSidebarItem(_ index: Int) -> BrowserCommandDescriptor {
         BrowserCommandDescriptor(
@@ -466,6 +510,9 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case viewDownloads
     case selectNextTab
     case selectPreviousTab
+    case selectNextSpace
+    case selectPreviousSpace
+    case copyLinkAsMarkdown
     /// Go to Sidebar Item N, counted from 0.
     case goToSidebarItem(Int)
     case goToLastSidebarItem
@@ -621,6 +668,14 @@ enum BrowserKeyboardShortcutBridge {
             "8"
         case 25:
             "9"
+        case 123:
+            BrowserKeyboardShortcut.leftArrow
+        case 124:
+            BrowserKeyboardShortcut.rightArrow
+        case 125:
+            BrowserKeyboardShortcut.downArrow
+        case 126:
+            BrowserKeyboardShortcut.upArrow
         case 30:
             "]"
         case 33:

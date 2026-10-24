@@ -1645,6 +1645,17 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// Copy URL as Markdown: `[title](url)` for the selected tab.
+    @discardableResult func copySelectedTabLinkAsMarkdown() -> Bool {
+        guard let selectedTab, !selectedTab.urlString.isEmpty else { return false }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        return pasteboard.setString(
+            BrowserMarkdownLink.text(title: selectedTab.displayTitle, urlString: selectedTab.urlString),
+            forType: .string
+        )
+    }
+
     @discardableResult func copyTabLink(forTabID tabID: String) -> Bool {
         guard
             let urlString = tabURLString(forTabID: tabID),
@@ -3556,7 +3567,7 @@ enum BrowserWindowMode: Equatable {
             canSavePage
         case .printPage:
             canPrintPage
-        case .copyLink:
+        case .copyLink, .copyLinkAsMarkdown:
             canCopySelectedTabLink
         case .findInPage:
             canPresentFindInPage
@@ -3570,6 +3581,11 @@ enum BrowserWindowMode: Equatable {
             onToggleDownloads != nil
         case .selectNextTab, .selectPreviousTab, .goToLastSidebarItem:
             !sidebarItemTabIDs.isEmpty
+        case .selectNextTabAlternate, .selectPreviousTabAlternate:
+            // The command bar lists Next/Previous Tab once.
+            false
+        case .selectNextSpace, .selectPreviousSpace:
+            supportsSpaces && spaces.count > 1
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             sidebarItemTabIDs.count > commandID.sidebarItemIndex
@@ -5959,6 +5975,8 @@ extension BrowserCommandID {
             ["print page", "print current page"]
         case .copyLink:
             ["copy link", "copy url", "copy address", "copy current url"]
+        case .copyLinkAsMarkdown:
+            ["copy markdown", "markdown link", "copy url as markdown", "copy link as markdown"]
         case .findInPage:
             ["find", "find in page", "search page"]
         case .findAndReplace:
@@ -5977,6 +5995,12 @@ extension BrowserCommandID {
             ["next tab", "select next tab"]
         case .selectPreviousTab:
             ["previous tab", "select previous tab"]
+        case .selectNextTabAlternate, .selectPreviousTabAlternate:
+            []
+        case .selectNextSpace:
+            ["next space", "switch space"]
+        case .selectPreviousSpace:
+            ["previous space", "switch space"]
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             ["tab \(sidebarItemIndex + 1)", "sidebar item \(sidebarItemIndex + 1)", "go to tab"]
@@ -6055,6 +6079,8 @@ extension BrowserCommandID {
             "printer"
         case .copyLink:
             "link"
+        case .copyLinkAsMarkdown:
+            "text.badge.plus"
         case .findInPage:
             "doc.text.magnifyingglass"
         case .findAndReplace:
@@ -6071,8 +6097,14 @@ extension BrowserCommandID {
             "arrow.down.circle"
         case .selectNextTab:
             "arrow.down.square"
-        case .selectPreviousTab:
+        case .selectPreviousTab, .selectPreviousTabAlternate:
             "arrow.up.square"
+        case .selectNextTabAlternate:
+            "arrow.down.square"
+        case .selectNextSpace:
+            "arrow.right.square"
+        case .selectPreviousSpace:
+            "arrow.left.square"
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             "\(sidebarItemIndex + 1).circle"
@@ -6228,3 +6260,23 @@ private enum BrowserTabPreviewCapture {
         return image
     }
 }
+
+// MARK: - BrowserMarkdownLink
+
+enum BrowserMarkdownLink {
+    /// A Markdown link whose title cannot end the link text early. An empty
+    /// title falls back to the URL.
+    static func text(title: String, urlString: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = (trimmed.isEmpty ? urlString : trimmed)
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "[", with: "\\[")
+            .replacingOccurrences(of: "]", with: "\\]")
+        let destination = urlString
+            .replacingOccurrences(of: "(", with: "%28")
+            .replacingOccurrences(of: ")", with: "%29")
+            .replacingOccurrences(of: " ", with: "%20")
+        return "[\(label)](\(destination))"
+    }
+}
+
