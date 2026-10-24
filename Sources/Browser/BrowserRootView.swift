@@ -383,6 +383,7 @@ final class BrowserRootView: NSView {
         }
         previousLayoutState = state
         background.mode = chromeBackgroundMode
+        background.tint = model.selectedSpaceColor?.color
         content.update(
             hostView: model.hostView,
             isContextReady: model.isContextReady,

@@ -337,7 +337,9 @@ enum BrowserSyncOutboxProjection {
             return BrowserSpaceSessionSnapshot(
                 id: change.entityID, title: data.title, systemImageName: data.systemImageName,
                 isPinnedSectionCollapsed: data.isPinnedSectionCollapsed,
-                selectedTabIndex: selectedID.flatMap { id in currentTabs.firstIndex { $0 == id } }
+                selectedTabIndex: selectedID.flatMap { id in currentTabs.firstIndex { $0 == id } },
+                // Colors are local; keep this device's.
+                colorName: previousSpace?.colorName
             )
         }
         return BrowserTabSessionSnapshot(

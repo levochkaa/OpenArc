@@ -12,8 +12,10 @@ final class BrowserChromeBackgroundNSView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         addSubview(effect)
+        addSubview(tintView)
         effect.blendingMode = .behindWindow
         effect.state = .active
+        tintView.wantsLayer = true
         update()
     }
 
@@ -22,10 +24,23 @@ final class BrowserChromeBackgroundNSView: NSView {
     // MARK: Internal
 
     var mode = BrowserChromeBackgroundMode.blurred { didSet { update() } }
+    /// The selected Space's color over the background, nil for neutral. Space
+    /// changes cross-fade.
+    var tint: NSColor? {
+        didSet {
+            guard tint != oldValue else { return }
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = BrowserNativeAnimation.Curve.sidebar.duration
+            tintView.layer?.add(fade, forKey: "tint")
+            update()
+        }
+    }
 
     override func hitTest(_: NSPoint) -> NSView? { nil }
     override func layout() { super.layout()
         effect.frame = bounds
+        tintView.frame = bounds
     }
 
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance()
@@ -42,10 +57,13 @@ final class BrowserChromeBackgroundNSView: NSView {
     // MARK: Private
 
     private let effect = NSVisualEffectView()
+    private let tintView = NSView()
 
     private func update() {
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         effect.isHidden = mode != .blurred
-        effect.material = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .hudWindow : .sidebar
+        effect.material = dark ? .hudWindow : .sidebar
+        tintView.layer?.backgroundColor = tint?.withAlphaComponent(BrowserSpaceColor.tintAlpha(dark: dark)).cgColor
         needsDisplay = true
     }
 }

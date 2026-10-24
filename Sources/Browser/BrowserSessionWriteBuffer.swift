@@ -88,7 +88,8 @@ struct BrowserSessionWriteBuffer {
     private let maximumCount: Int
     private let maximumBytes: Int
 
+    /// Tab icons and Space colors, which snapshot equality ignores.
     private static func icons(of write: BrowserSessionWrite) -> [String?] {
-        write.snapshot.tabs.map(\.systemImageName)
+        write.snapshot.tabs.map(\.systemImageName) + (write.snapshot.spaces ?? []).map(\.colorName)
     }
 }

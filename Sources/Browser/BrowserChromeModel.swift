@@ -362,6 +362,8 @@ enum BrowserWindowMode: Equatable {
     /// sidebar scrolls the selected row into view.
     @Published var sidebarRevealRequestID = 0
 
+    /// Space themes as a light window tint, by Space ID. Local.
+    @Published private(set) var spaceColorsByID = [String: String]()
     /// Change Icon: the symbol shown instead of a tab's favicon, by sync
     /// ID so it survives a dormant tab reopening under a new runtime ID. Local.
     private(set) var tabIconsBySyncID = [String: String]()
@@ -642,6 +644,12 @@ enum BrowserWindowMode: Equatable {
     }
 
     var canCaptureArea: Bool { canCreateTab && selectedTab?.creationState == .ready && onBeginAreaCapture != nil }
+
+    /// The tint of the selected Space, or nil for the neutral window.
+    var selectedSpaceColor: BrowserSpaceColor? {
+        guard supportsSpaces, let selectedSpaceID else { return nil }
+        return spaceColorsByID[selectedSpaceID].flatMap(BrowserSpaceColor.init(rawValue:))
+    }
 
     /// Use Selection to Find: the page copies its selection to the find
     /// pasteboard, read after a short round trip because Chromium writes it
@@ -1373,6 +1381,16 @@ enum BrowserWindowMode: Equatable {
             persistCurrentSessionIfAllowed()
         }
         return changed
+    }
+
+    /// Space color; nil keeps the window neutral.
+    @discardableResult func setColor(_ color: BrowserSpaceColor?, forSpaceID spaceID: String) -> Bool {
+        guard spaces.contains(where: { $0.id == spaceID }), spaceColorsByID[spaceID] != color?.rawValue else {
+            return false
+        }
+        spaceColorsByID[spaceID] = color?.rawValue
+        persistCurrentSessionIfAllowed()
+        return true
     }
 
     func icon(forTabID tabID: String) -> String? {
@@ -2308,6 +2326,10 @@ enum BrowserWindowMode: Equatable {
             hasLocalChangesDuringRemoteProjection = true
         } else {
             spaces = restoredSpaces
+        }
+        // A deferred launch projection carries this device's stored colors.
+        for space in snapshot.spaces ?? [] where spaceColorsByID[space.id] == nil {
+            spaceColorsByID[space.id] = space.colorName
         }
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
         selectedSpaceID = selectedSpaceID.flatMap { selectedSpaceID in
@@ -3468,6 +3490,10 @@ enum BrowserWindowMode: Equatable {
         isRestoringSession = true
         hasCreatedInitialTab = true
         spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
+        spaceColorsByID = Dictionary(
+            (snapshot.spaces ?? []).compactMap { space in space.colorName.map { (space.id, $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
         splitGroups = restoredSplitGroups(from: snapshot)
         let selectedSpaceIndex = sessionPreferencesStore.loadSelectedSpaceIndex(
@@ -3684,7 +3710,8 @@ enum BrowserWindowMode: Equatable {
             return BrowserSpaceSessionSnapshot(
                 id: space.id, title: space.title, systemImageName: space.systemImageName,
                 isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                selectedTabIndex: visible.firstIndex { $0.id == selectedSyncID }
+                selectedTabIndex: visible.firstIndex { $0.id == selectedSyncID },
+                colorName: space.colorName
             )
         }
         return BrowserTabSessionSnapshot(
@@ -3711,7 +3738,8 @@ enum BrowserWindowMode: Equatable {
                     title: space.title,
                     systemImageName: space.systemImageName,
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                    selectedTabIndex: selectedTabIndex(inSpace: space.id)
+                    selectedTabIndex: selectedTabIndex(inSpace: space.id),
+                    colorName: spaceColorsByID[space.id]
                 )
             },
             pinnedTabFolders: pinnedTabFolders.compactMap { tree.folders[$0.id] }.map { folder in
@@ -4688,7 +4716,8 @@ enum BrowserWindowMode: Equatable {
                     return BrowserSpaceSessionSnapshot(
                         id: space.id, title: space.title, systemImageName: space.systemImageName,
                         isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                        selectedTabIndex: visible.firstIndex { $0.id == selectedID }
+                        selectedTabIndex: visible.firstIndex { $0.id == selectedID },
+                        colorName: space.colorName
                     )
                 }, pinnedTabFolders: current.pinnedTabFolders, tabs: nextTabs, splitGroups: current.splitGroups
             )
@@ -4908,7 +4937,8 @@ extension BrowserChromeModel {
                         id: space.id, title: space.title, systemImageName: space.systemImageName,
                         isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                         selectedTabIndex: nextTabs.filter { $0.spaceID == destination && $0.placement != .app }
-                            .count - 1
+                            .count - 1,
+                        colorName: space.colorName
                     )
                 }, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: nextTabs, splitGroups: snapshot.splitGroups
             )

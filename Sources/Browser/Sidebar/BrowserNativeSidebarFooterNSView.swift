@@ -136,10 +136,12 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
                 space,
                 canDelete: spaces.count > 1,
                 canResetTabs: model.canResetSpaceTabs(spaceID: space.id),
+                color: model.spaceColorsByID[space.id].flatMap(BrowserSpaceColor.init(rawValue:)),
                 onRename: { [weak state] in state?.clearSidebarTabSelection()
                     state?.beginRenamingSpace(id: space.id)
                 },
                 onChangeIcon: { model.setIcon($0, forSpaceID: space.id) },
+                onChangeColor: { model.setColor($0, forSpaceID: space.id) },
                 onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },
                 onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
                     state?.clearSidebarTabSelection()

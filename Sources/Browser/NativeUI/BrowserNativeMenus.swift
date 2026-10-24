@@ -81,8 +81,10 @@ import AppKit
         _ space: BrowserChromeModel.Space,
         canDelete: Bool,
         canResetTabs: Bool = false,
+        color: BrowserSpaceColor? = nil,
         onRename: @escaping () -> Void,
         onChangeIcon: @escaping (String) -> Void,
+        onChangeColor: ((BrowserSpaceColor?) -> Void)? = nil,
         onResetTabs: @escaping () -> Void = {},
         onDelete: @escaping () -> Void
     ) -> NSMenu {
@@ -90,6 +92,16 @@ import AppKit
         add(BrowserStrings.spaceRenameAction, to: menu, action: onRename)
         let icons = submenu(BrowserStrings.spaceChangeIconAction, in: menu)
         addIcons(to: icons, selected: space.systemImageName, action: onChangeIcon)
+        if let onChangeColor {
+            let colors = submenu(BrowserStrings.spaceChangeColorAction, in: menu)
+            add(BrowserStrings.spaceColorNone, to: colors) { onChangeColor(nil) }.state = color == nil ? .on : .off
+            colors.addItem(.separator())
+            for option in BrowserSpaceColor.allCases {
+                let item = add(option.title, to: colors) { onChangeColor(option) }
+                item.state = option == color ? .on : .off
+                item.image = swatch(option.color)
+            }
+        }
         menu.addItem(.separator())
         add(BrowserStrings.menuResetSpaceTabs, to: menu, enabled: canResetTabs, action: onResetTabs)
         menu.addItem(.separator())
@@ -136,6 +148,15 @@ import AppKit
         for name in BrowserSpaceIconCatalog.systemImageNames {
             let item = add(name, to: menu) { action(name) }
             item.image = NSImage(systemSymbolName: selected == name ? "checkmark" : name, accessibilityDescription: nil)
+        }
+    }
+
+    /// A round color sample for a menu item.
+    private static func swatch(_ color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
+            return true
         }
     }
 }

@@ -1004,6 +1004,61 @@ enum BrowserStrings {
         comment: "Tabs menu and command title that returns a pinned tab to its pinned URL."
     )
 
+    static let spaceChangeColorAction = NSLocalizedString(
+        "browser.space.change_color_action",
+        comment: "Space menu submenu that tints the window for the Space."
+    )
+
+    static let spaceColorNone = NSLocalizedString(
+        "browser.space.color.none",
+        comment: "Space color option that keeps the window neutral."
+    )
+
+    static let spaceColorBlue = NSLocalizedString(
+        "browser.space.color.blue",
+        comment: "Space color option."
+    )
+
+    static let spaceColorPurple = NSLocalizedString(
+        "browser.space.color.purple",
+        comment: "Space color option."
+    )
+
+    static let spaceColorPink = NSLocalizedString(
+        "browser.space.color.pink",
+        comment: "Space color option."
+    )
+
+    static let spaceColorRed = NSLocalizedString(
+        "browser.space.color.red",
+        comment: "Space color option."
+    )
+
+    static let spaceColorOrange = NSLocalizedString(
+        "browser.space.color.orange",
+        comment: "Space color option."
+    )
+
+    static let spaceColorYellow = NSLocalizedString(
+        "browser.space.color.yellow",
+        comment: "Space color option."
+    )
+
+    static let spaceColorGreen = NSLocalizedString(
+        "browser.space.color.green",
+        comment: "Space color option."
+    )
+
+    static let spaceColorTeal = NSLocalizedString(
+        "browser.space.color.teal",
+        comment: "Space color option."
+    )
+
+    static let spaceColorGray = NSLocalizedString(
+        "browser.space.color.gray",
+        comment: "Space color option."
+    )
+
     static let menuResetSpaceTabs = NSLocalizedString(
         "browser.menu.reset_space_tabs",
         comment: "Spaces menu, Space menu and command title that returns every pinned tab of the Space to its pinned page."

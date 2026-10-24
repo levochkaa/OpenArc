@@ -49,13 +49,15 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
         title: String,
         systemImageName: String,
         isPinnedSectionCollapsed: Bool = false,
-        selectedTabIndex: Int? = nil
+        selectedTabIndex: Int? = nil,
+        colorName: String? = nil
     ) {
         self.id = id
         self.title = title
         self.systemImageName = systemImageName
         self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
         self.selectedTabIndex = selectedTabIndex
+        self.colorName = colorName
     }
 
     // MARK: Internal
@@ -65,6 +67,15 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
     let systemImageName: String
     let isPinnedSectionCollapsed: Bool
     let selectedTabIndex: Int?
+    /// The Space's window tint (`BrowserSpaceColor`), local like tab icons:
+    /// never synced, and ignored by equality so sync checks do not see it.
+    let colorName: String?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.title == rhs.title && lhs.systemImageName == rhs.systemImageName
+            && lhs.isPinnedSectionCollapsed == rhs.isPinnedSectionCollapsed
+            && lhs.selectedTabIndex == rhs.selectedTabIndex
+    }
 }
 
 // MARK: - BrowserPinnedTabFolderSessionSnapshot

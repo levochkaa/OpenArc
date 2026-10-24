@@ -394,7 +394,9 @@ enum BrowserSyncFolderProjection {
                 systemImageName: data.systemImageName,
                 isPinnedSectionCollapsed: data.isPinnedSectionCollapsed,
                 selectedTabIndex: selected
-                    .flatMap { id in newIDs[change.entityID, default: []].firstIndex { $0 == id } }
+                    .flatMap { id in newIDs[change.entityID, default: []].firstIndex { $0 == id } },
+                // Colors are local; keep this device's.
+                colorName: oldSpaces[change.entityID]?.colorName
             )
         }
         return .init(

@@ -119,6 +119,17 @@
 "browser.menu.new_incognito_window" = "New Incognito Window";
 "browser.menu.new_little_window" = "New Small Window";
 "browser.menu.reset_space_tabs" = "Reset All Tabs in This Space";
+"browser.space.change_color_action" = "Change Color";
+"browser.space.color.none" = "None";
+"browser.space.color.blue" = "Blue";
+"browser.space.color.purple" = "Purple";
+"browser.space.color.pink" = "Pink";
+"browser.space.color.red" = "Red";
+"browser.space.color.orange" = "Orange";
+"browser.space.color.yellow" = "Yellow";
+"browser.space.color.green" = "Green";
+"browser.space.color.teal" = "Teal";
+"browser.space.color.gray" = "Gray";
 "browser.peek.address_placeholder" = "Search or enter address";
 "browser.peek.open_in" = "Open In";
 "browser.incognito.banner.title" = "Incognito";

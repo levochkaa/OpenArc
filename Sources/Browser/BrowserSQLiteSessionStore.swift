@@ -936,6 +936,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             // The icon chosen for a tab, local only.
             try db.execute(sql: "ALTER TABLE browser_tabs ADD COLUMN system_image_name TEXT")
         }
+        migrator.registerMigration("addSpaceColors") { db in
+            // The tint chosen for a Space, local only.
+            try db.execute(sql: "ALTER TABLE browser_spaces ADD COLUMN color_name TEXT")
+        }
         return migrator
     }
 
@@ -1311,6 +1315,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try db.columns(in: "browser_tabs").contains { $0.name == "page_title" }
     }
 
+    private func hasSpaceColorColumn(_ db: Database) throws -> Bool {
+        try db.columns(in: "browser_spaces").contains { $0.name == "color_name" }
+    }
+
     private func hasTabIconColumn(_ db: Database) throws -> Bool {
         try db.columns(in: "browser_tabs").contains { $0.name == "system_image_name" }
     }
@@ -1332,10 +1340,11 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             return nil
         }
 
+        let spaceColorColumn = try hasSpaceColorColumn(db) ? ", color_name" : ""
         let spaces = try Row.fetchAll(
             db,
             sql: """
-            SELECT id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index
+            SELECT id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index\(spaceColorColumn)
             FROM browser_spaces
             ORDER BY position ASC
             """
@@ -1346,7 +1355,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 title: row["title"],
                 systemImageName: row["system_image_name"],
                 isPinnedSectionCollapsed: row["is_pinned_section_collapsed"],
-                selectedTabIndex: row["selected_tab_index"]
+                selectedTabIndex: row["selected_tab_index"],
+                colorName: spaceColorColumn.isEmpty ? nil : row["color_name"]
             )
         }
         let pinnedTabFolders = try Row.fetchAll(
@@ -1580,6 +1590,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try db.execute(sql: "DELETE FROM browser_pinned_tab_folders")
         try db.execute(sql: "DELETE FROM browser_tabs")
 
+        let writesSpaceColors = try hasSpaceColorColumn(db)
         for (index, space) in (snapshot.spaces ?? []).enumerated() {
             try db.execute(
                 sql: """
@@ -1597,6 +1608,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     index,
                 ]
             )
+            if writesSpaceColors, let color = space.colorName {
+                try db.execute(
+                    sql: "UPDATE browser_spaces SET color_name = ? WHERE id = ?",
+                    arguments: [color, space.id]
+                )
+            }
         }
 
         for (index, folder) in (snapshot.pinnedTabFolders ?? []).enumerated() {

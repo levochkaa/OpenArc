@@ -210,7 +210,7 @@ private func syncActivityMutation(
 
 @Test(arguments: [false, true]) func projectionsKeepThisDevicesTitlesAndIcons(folderSyncEnabled: Bool) throws {
     let local = BrowserTabSessionSnapshot(
-        spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
+        spaces: [.init(id: "space", title: "Space", systemImageName: "globe", colorName: "teal")],
         tabs: [.init(
             id: "a",
             urlString: "https://activity.example/a",
@@ -225,6 +225,7 @@ private func syncActivityMutation(
     )
     #expect(projected.tabs.first?.pageTitle == "Inbox")
     #expect(projected.tabs.first?.systemImageName == "leaf", "Local icons survive a sync projection")
+    #expect(projected.spaces?.first?.colorName == "teal", "Local Space colors survive a sync projection")
 }
 
 private func syncActivityBaseline(activity: String?) throws -> BrowserSyncOutboxBaseline {
