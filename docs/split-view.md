@@ -17,7 +17,7 @@ The selected tab is the focused pane, so the toolbar, Find and active-tab comman
 
 ## Engine layout and focus
 
-`syncSplitLayout()` sends `BrowserTabVisibleLayout` (panes, orientation, fractions) through `BrowserTabDriving.setVisibleTabLayout` whenever the selected split or its groups change, or nil outside a split; an identical layout is not resent. `BrowserTabController` keeps all CEF views in one host view: it shows every listed pane with a live engine while the active tab is one of them, hides the rest, and lays panes out on each host layout with `BrowserSplitPaneLayout` (6 pt gap, integer edges, left to right or top to bottom in flipped and unflipped hosts). Fewer than two live panes fall back to the active tab alone. Layout changes never move keyboard focus.
+`syncSplitLayout()` sends `BrowserTabVisibleLayout` (panes, orientation, fractions) through `BrowserTabDriving.setVisibleTabLayout` whenever the selected split or its groups change, or nil outside a split; an identical layout is not resent. `BrowserTabController` keeps all CEF views in one host view: it shows every listed pane with a live engine while the active tab is one of them, hides the rest, and lays panes out on each host layout with `BrowserSplitPaneLayout` (a gap equal to the content inset, integer edges, left to right or top to bottom in flipped and unflipped hosts). Fewer than two live panes fall back to the active tab alone. Layout changes never move keyboard focus.
 
 `CefFocusHandler::OnGotFocus` in a visible non-active pane reports `didFocusTabWithID`; the model selects that tab, so the toolbar follows the clicked pane. Hidden tabs and panes of an unselected split cannot take selection this way. Navigation focus stealing stays blocked for inactive panes.
 
@@ -68,7 +68,7 @@ Dragging the row carries every pane as one group through the existing sidebar dr
 
 ## Commands and controls
 
-TheBrowser adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Shift+-`) and Separate Page from Split View as `BrowserCommandID`s, plus Separate All Tabs and Convert from the split menus, so they appear in the View menu, the command bar and the Settings shortcut list. Expand Current Split is not implemented yet:
+TheBrowser adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Shift+-`) and Separate Page from Split View as `BrowserCommandID`s, plus Separate All Tabs and Convert from the split menus, so they appear in the View menu, the command bar and the Settings shortcut list. Expand Current Split, Move Left/Right and Add Left/Right Split come from the Split View menu:
 
 | Command | Default | Available |
 | --- | --- | --- |
@@ -96,7 +96,7 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 ## Status and next slices
 
-Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, commands with shortcuts, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
+Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, pane bars, dividers, the one-row sidebar entry, drop-to-split, commands with shortcuts, pane moves and expansion, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
 1. Pane chrome: Cmd-L for the focused pane, reorder by a top grip and drag into the center. The bars do not show window controls when the sidebar is hidden yet.
 2. iPad browser split in UIKit/WebKit.
