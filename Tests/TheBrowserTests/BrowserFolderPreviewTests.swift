@@ -88,4 +88,37 @@ import Testing
         coordinator.show(folderID: "f", beside: row)
         #expect(coordinator.panel == nil, "Turned off in Settings")
     }
+
+    @Test func passingOverAnotherFolderStillHidesThePreview() async throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 200, y: 200, width: 1000, height: 700),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let rowA = NSView(frame: NSRect(x: 10, y: 500, width: 200, height: 30))
+        let rowB = NSView(frame: NSRect(x: 10, y: 460, width: 200, height: 30))
+        window.contentView?.addSubview(rowA)
+        window.contentView?.addSubview(rowB)
+        let coordinator = BrowserFolderPreviewCoordinator()
+        coordinator.items = { id in
+            [BrowserFolderPreviewItem(id: id, title: id, urlString: "https://\(id).example", faviconURL: nil)]
+        }
+        defer { coordinator.dismiss() }
+
+        coordinator.show(folderID: "a", beside: rowA)
+        coordinator.rowHoverChanged(folderID: "a", row: rowA, hovered: false)
+        coordinator.rowHoverChanged(folderID: "b", row: rowB, hovered: true)
+        coordinator.rowHoverChanged(folderID: "b", row: rowB, hovered: false)
+        try await Task.sleep(for: .milliseconds(450))
+        #expect(coordinator.panel == nil, "Sweeping across folder B still hides A's preview")
+
+        coordinator.show(folderID: "a", beside: rowA)
+        coordinator.rowHoverChanged(folderID: "a", row: rowA, hovered: false)
+        coordinator.rowHoverChanged(folderID: "b", row: rowB, hovered: true)
+        try await Task.sleep(for: .milliseconds(800))
+        #expect(coordinator.shownFolderID == "b", "Resting on B replaces A's preview after it hides")
+    }
 }

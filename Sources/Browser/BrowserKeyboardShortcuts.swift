@@ -717,6 +717,12 @@ enum BrowserKeyboardShortcutBridge {
             }?.command
     }
 
+    /// The US-layout key that types a shortcut's character, for shortcuts
+    /// registered outside the app's key handling.
+    static func physicalKeyCode(forKeyEquivalent keyEquivalent: String) -> UInt16? {
+        (0..<128).first { usKeyEquivalent(for: $0) == keyEquivalent.lowercased() }
+    }
+
     // MARK: Private
 
     private struct ShortcutMatch {

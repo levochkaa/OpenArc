@@ -63,9 +63,17 @@ import Carbon.HIToolbox
 
     // MARK: Internal
 
-    /// New Small Window from any app.
-    static func newLittleWindow(action: @escaping () -> Void) -> BrowserGlobalHotKey? {
-        BrowserGlobalHotKey(keyCode: UInt32(kVK_ANSI_N), carbonModifiers: UInt32(cmdKey | optionKey), action: action)
+    /// A command's shortcut from any app; nil when it is unassigned or has no
+    /// US-layout key.
+    static func make(for shortcut: BrowserKeyboardShortcut, action: @escaping () -> Void) -> BrowserGlobalHotKey? {
+        guard shortcut.isAssigned,
+              let keyCode = BrowserKeyboardShortcutBridge.physicalKeyCode(forKeyEquivalent: shortcut.keyEquivalent)
+        else { return nil }
+        let flags: [(NSEvent.ModifierFlags, Int)] = [
+            (.command, cmdKey), (.option, optionKey), (.control, controlKey), (.shift, shiftKey),
+        ]
+        let modifiers = flags.reduce(UInt32(0)) { $0 | (shortcut.modifiers.contains($1.0) ? UInt32($1.1) : 0) }
+        return BrowserGlobalHotKey(keyCode: UInt32(keyCode), carbonModifiers: modifiers, action: action)
     }
 
     // MARK: Private

@@ -106,6 +106,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
         return true
     }
 
+    public func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              profileWindowSessions.contains(where: { $0.window === window })
+        else { return }
+        lastKeyProfileWindow = window
+    }
+
     public func windowWillClose(_ notification: Notification) {
         guard let closedWindow = notification.object as? NSWindow else {
             return
@@ -714,6 +721,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var shortcutStoreCancellable: AnyCancellable?
     private var appearancePreferenceCancellable: AnyCancellable?
     private var littleWindowHotKeyCancellable: AnyCancellable?
+    private weak var lastKeyProfileWindow: NSWindow?
     /// Option-Command-N from any app, when turned on in Settings.
     private var littleWindowHotKey: BrowserGlobalHotKey?
     private var profileStoreCancellable: AnyCancellable?
@@ -757,9 +765,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     /// The small window opens from the window behind a card or small window too,
-    /// where page commands are off.
+    /// where page commands are off, and from the last used profile window while
+    /// another app is active.
     private var littleWindowModel: BrowserChromeModel? {
-        (activeProfileWindowSession ?? profileWindowSessions.first)?.chromeModel
+        let lastUsed = profileWindowSessions.first { $0.window === lastKeyProfileWindow }
+        return (activeProfileWindowSession ?? lastUsed ?? profileWindowSessions.first)?.chromeModel
     }
 
     private var focusedArchiveWindowController: BrowserArchiveWindowController? {
@@ -2203,6 +2213,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
                 installMainMenu(for: NSApp)
                 refreshSetAsDefaultBrowserMenuItem()
+                refreshLittleWindowHotKey(enabled: userPreferencesStore.opensLittleWindowFromAnyApp)
             }
         }
     }
@@ -2629,14 +2640,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         guard webAppConfiguration == nil else { return }
         littleWindowHotKeyCancellable = userPreferencesStore.$opensLittleWindowFromAnyApp.sink { [weak self] enabled in
-            self?.littleWindowHotKey = enabled
-                ? BrowserGlobalHotKey.newLittleWindow { [weak self] in
-                    guard let self, !isTerminationRequested,
-                          littleWindowModel?.openNewLittleWindow() == true else { return }
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-                : nil
+            self?.refreshLittleWindowHotKey(enabled: enabled)
         }
+    }
+
+    /// New Small Window's shortcut, as customized, from any app.
+    private func refreshLittleWindowHotKey(enabled: Bool) {
+        littleWindowHotKey = nil
+        guard enabled, webAppConfiguration == nil else { return }
+        littleWindowHotKey = BrowserGlobalHotKey
+            .make(for: shortcutStore.shortcut(for: .newLittleWindow)) { [weak self] in
+                guard let self, !isTerminationRequested,
+                      littleWindowModel?.openNewLittleWindow() == true else { return }
+                NSApp.activate(ignoringOtherApps: true)
+            }
     }
 
     private func applyAppearancePreference(_ preference: BrowserAppearancePreference) {

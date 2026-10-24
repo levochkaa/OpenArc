@@ -92,6 +92,8 @@ import AppKit
     @objc var onOpenInTab: (() -> Void)?
     /// A typed address or search, resolved to the URL the page should load.
     @objc var onNavigate: ((String) -> Void)?
+    /// Gives the keyboard to the page through the engine.
+    @objc var onFocusPage: (() -> Void)?
     /// The window's Spaces for Open In, in sidebar order.
     @objc var spacesProvider: (() -> [BrowserPeekSpace])?
     /// Open In: the page becomes a tab of the chosen Space.
@@ -112,6 +114,9 @@ import AppKit
         action: {}
     )
     let hostLabel = BrowserPeekAddressField(string: "")
+
+    /// The engine keeps a loading page from taking the keys meanwhile.
+    @objc var isEditingAddress: Bool { hostLabel.currentEditor() != nil }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53, !isStandalone {
@@ -282,9 +287,10 @@ import AppKit
         update(urlString: currentURLString)
     }
 
-    /// The engine's page view, or the window until the page attaches.
+    /// The engine focuses its page; until the page attaches, the window keeps the keys.
     private func focusPage() {
-        makeFirstResponder(hostView.subviews.first)
+        makeFirstResponder(nil)
+        onFocusPage?()
     }
 
     /// The bar keeps its place on resize; the small window leaves room for the

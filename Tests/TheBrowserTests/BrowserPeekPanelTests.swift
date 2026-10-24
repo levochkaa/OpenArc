@@ -76,6 +76,7 @@ import Testing
             context: nil, characters: "l", charactersIgnoringModifiers: "l", isARepeat: false, keyCode: 37
         ))
         #expect(panel.handleShortcut(commandL))
+        #expect(panel.isEditingAddress, "The engine keeps a loading page from taking these keys")
         let editor = try #require(panel.hostLabel.currentEditor() as? NSTextView)
         #expect(editor.string == "https://www.example.com/a", "Editing shows the full address")
         editor.string = "example.org"

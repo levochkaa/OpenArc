@@ -47,8 +47,12 @@ struct BrowserFolderPreviewItem: Equatable {
 
     func rowHoverChanged(folderID: String, row: NSView, hovered: Bool) {
         if hovered {
-            hideWork?.cancel()
-            guard shownFolderID != folderID else { return }
+            // Passing over another folder keeps this preview's pending hide;
+            // that folder's own preview replaces it if the pointer rests.
+            guard shownFolderID != folderID else {
+                hideWork?.cancel()
+                return
+            }
             schedule(&showWork, after: Self.showDelay) { [weak self, weak row] in
                 guard let self, let row else { return }
                 show(folderID: folderID, beside: row)
@@ -93,12 +97,7 @@ struct BrowserFolderPreviewItem: Equatable {
     func dismiss() {
         showWork?.cancel()
         hideWork?.cancel()
-        if let panel {
-            panel.parent?.removeChildWindow(panel)
-            panel.orderOut(nil)
-        }
-        panel = nil
-        shownFolderID = nil
+        hidePanel()
     }
 
     // MARK: Private
@@ -106,11 +105,21 @@ struct BrowserFolderPreviewItem: Equatable {
     private var showWork: DispatchWorkItem?
     private var hideWork: DispatchWorkItem?
 
+    /// Keeps a pending preview of another folder, which replaces this one.
     private func scheduleHide() {
         schedule(&hideWork, after: Self.hideDelay) { [weak self] in
             guard let self, panel?.isPointerInside != true, panel?.isKeyWindow != true else { return }
-            dismiss()
+            hidePanel()
         }
+    }
+
+    private func hidePanel() {
+        if let panel {
+            panel.parent?.removeChildWindow(panel)
+            panel.orderOut(nil)
+        }
+        panel = nil
+        shownFolderID = nil
     }
 
     private func schedule(_ work: inout DispatchWorkItem?, after delay: TimeInterval, _ action: @escaping () -> Void) {

@@ -2625,6 +2625,7 @@ class BrowserTabClient final : public CefClient,
 class BrowserPeekClient final : public CefClient,
                                 public CefDisplayHandler,
                                 public CefDownloadHandler,
+                                public CefFocusHandler,
                                 public CefKeyboardHandler,
                                 public CefLifeSpanHandler,
                                 public CefRequestHandler {
@@ -2634,10 +2635,12 @@ class BrowserPeekClient final : public CefClient,
 
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
+  CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
 
+  bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
   void OnAddressChange(CefRefPtr<CefBrowser> browser,
                        CefRefPtr<CefFrame> frame,
                        const CefString &url) override;
@@ -2736,6 +2739,7 @@ struct TabRecord {
 - (void)handlePeekAddressChange:(NSString *)urlString session:(int)sessionID;
 - (void)closePeekSession:(int)sessionID;
 - (BOOL)isPeekSessionStandalone:(int)sessionID;
+- (BOOL)isPeekSessionEditingAddress:(int)sessionID;
 - (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone;
 - (void)navigatePeekSession:(int)sessionID toURLString:(NSString *)urlString;
 - (BOOL)shouldPeekNavigationFromTabID:(NSString *)tabID toURLString:(NSString *)urlString;
@@ -3664,12 +3668,19 @@ void WatchClickModifiers();
     }
     id<BrowserTabControllerDelegate> delegate = strongSelf.delegate;
     NSString *current = strongSelf->_peekSessions[@(sessionID)].urlString;
-    if (current.length == 0 ||
+    if (current.length == 0 || [current isEqualToString:@"about:blank"] ||
         ![delegate respondsToSelector:@selector(browserTabController:openPeekURLString:inSpaceWithID:)]) {
       return;
     }
     [strongSelf closePeekSession:sessionID];
     [delegate browserTabController:strongSelf openPeekURLString:current inSpaceWithID:spaceID];
+  };
+  session.panel.onFocusPage = ^{
+    BrowserTabController *strongSelf = weakSelf;
+    BrowserPeekSession *focused = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
+    if (focused != nil && focused->_browser) {
+      focused->_browser->GetHost()->SetFocus(true);
+    }
   };
   session.panel.onOpenInTab = ^{
     BrowserTabController *strongSelf = weakSelf;
@@ -3678,7 +3689,8 @@ void WatchClickModifiers();
     }
     NSString *current = strongSelf->_peekSessions[@(sessionID)].urlString;
     [strongSelf closePeekSession:sessionID];
-    if (current.length > 0) {
+    // An empty small window has nothing to keep.
+    if (current.length > 0 && ![current isEqualToString:@"about:blank"]) {
       [strongSelf createTabWithURLString:current makeActive:YES];
     }
   };
@@ -3758,6 +3770,10 @@ void WatchClickModifiers();
 
 - (BOOL)isPeekSessionStandalone:(int)sessionID {
   return _peekSessions[@(sessionID)].panel.isStandalone;
+}
+
+- (BOOL)isPeekSessionEditingAddress:(int)sessionID {
+  return _peekSessions[@(sessionID)].panel.isEditingAddress;
 }
 
 - (void)handlePeekAddressChange:(NSString *)urlString session:(int)sessionID {
@@ -4711,6 +4727,12 @@ bool BrowserTabClient::OnShowPermissionPrompt(
                                           : CEF_PERMISSION_RESULT_DENY);
   });
   return true;
+}
+
+bool BrowserPeekClient::OnSetFocus(CefRefPtr<CefBrowser>, FocusSource source) {
+  CEF_REQUIRE_UI_THREAD();
+  // A loading page must not take the keys from the small window's address field.
+  return source == FOCUS_SOURCE_NAVIGATION && [controller_ isPeekSessionEditingAddress:session_id_];
 }
 
 void BrowserPeekClient::OnAddressChange(CefRefPtr<CefBrowser>,
