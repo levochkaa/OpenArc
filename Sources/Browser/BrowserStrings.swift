@@ -1098,6 +1098,16 @@ enum BrowserStrings {
         comment: "Context menu title for archiving a tab."
     )
 
+    static let tabMuteAction = NSLocalizedString(
+        "browser.tab.mute_action",
+        comment: "Context menu title that silences a tab."
+    )
+
+    static let tabUnmuteAction = NSLocalizedString(
+        "browser.tab.unmute_action",
+        comment: "Context menu and button title that lets a muted tab play sound again."
+    )
+
     static let tabDuplicateAction = NSLocalizedString(
         "browser.tab.duplicate_action",
         comment: "Context menu title that opens a copy of the tab below it."

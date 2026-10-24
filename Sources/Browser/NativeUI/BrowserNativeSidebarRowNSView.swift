@@ -11,9 +11,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     override init(frame: NSRect) {
         super.init(frame: frame)
         pressCurve = .rowPress
-        for view in [favicon, symbol, badge, titleLabel, captionLabel, renameField, closeButton] {
+        for view in [favicon, symbol, badge, titleLabel, captionLabel, renameField, muteButton, closeButton] {
             addSubview(view)
         }
+        muteButton.onAction = { [weak self] in self?.onToggleMute() }
         for image in [symbol, badge] {
             image.imageScaling = .scaleProportionallyUpOrDown
             image.setAccessibilityElement(false)
@@ -83,6 +84,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     var onBackToPinnedURL: () -> Void = {}
     var onToggle: () -> Void = {}
     var onClose: () -> Void = {}
+    var onToggleMute: () -> Void = {}
     var onSelectSplitMember: (String) -> Void = { _ in }
     var onCloseSplitMember: (String) -> Void = { _ in }
     let titleLabel = BrowserNativeControls.label("", size: 12.5, weight: .medium)
@@ -94,6 +96,14 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     )
     let renameField = BrowserSidebarRenameNSTextField()
     let closeButton = BrowserNativeChromeButton(symbol: "xmark", title: "", style: .sidebarClose, action: {})
+    /// A muted tab shows a crossed-out speaker that unmutes it.
+    let muteButton = BrowserNativeChromeButton(
+        symbol: "speaker.slash.fill",
+        title: BrowserStrings.tabUnmuteAction,
+        style: .sidebarClose,
+        action: {}
+    )
+    private(set) var isMuted = false
 
     /// Tab IDs of the split shown by this row, in pane order.
     private(set) var splitMemberIDs = [String]()
@@ -170,9 +180,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         let titleX = pinnedURLRow
             ? indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize
             : iconFrame.maxX + BrowserChromeLayout.sidebarRowContentSpacing - (kind == .newTab ? 2 : 0)
-        let trailing = closeButton.isHidden
-            ? bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
-            : closeButton.frame.minX - BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
+        muteButton.frame = closeButton.isHidden
+            ? closeButton.frame
+            : closeButton.frame.offsetBy(dx: -(closeSize + 2), dy: 0)
+        let trailingControl = [muteButton, closeButton].filter { !$0.isHidden }.map(\.frame.minX).min()
+        let trailing = trailingControl.map { $0 - BrowserChromeLayout.sidebarCloseButtonLeadingSpacing }
+            ?? bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
         let titleWidth = max(trailing - titleX, 0)
         // Share the rename field's frame so the title glyphs stay centered and do not jump on rename.
         // The pinned URL caption lifts the title to keep the two-line stack centered.
@@ -317,9 +330,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         indentLevel: Int = 0,
         isResizing: Bool,
         resetID: Int = 0,
-        closeDescriptor: BrowserCommandDescriptor
+        closeDescriptor: BrowserCommandDescriptor,
+        muted: Bool = false
     ) {
         kind = appTile ? .appTab : .tab
+        isMuted = muted && !appTile
+        muteButton.setAccessibilityIdentifier("browser.sidebar.unmute-tab.\(tab.id)")
         self.selected = selected
         self.multiSelected = multiSelected
         pinnedURLRow = !appTile && tab.placement == .spacePinned && tab.pinnedURLString != nil
@@ -676,6 +692,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
         captionLabel.stringValue = BrowserStrings.pinnedTabBackToPinnedURL
         closeButton.isHidden = !(kind == .space || kind == .tab) || !isHovered || isRenaming || isResizing
+        muteButton.isHidden = kind != .tab || !isMuted || isRenaming || isResizing
         if kind == .space {
             let disclosure = hasPinnedTabs && isHovered && !isRenaming
             symbol.image = Self.symbol(

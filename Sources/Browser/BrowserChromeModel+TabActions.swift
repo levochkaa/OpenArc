@@ -21,6 +21,10 @@ extension BrowserChromeModel {
         return newID
     }
 
+    func isTabMuted(id: String) -> Bool {
+        tabs.first { $0.id == id }.map { mutedTabSyncIDs.contains($0.syncID) } ?? false
+    }
+
     /// Spaces a tab can move to with Move to.
     func spacesForMovingTab(id: String) -> [Space] {
         guard supportsSpaces, let tab = tabs.first(where: { $0.id == id }), tab.placement != .app else { return [] }

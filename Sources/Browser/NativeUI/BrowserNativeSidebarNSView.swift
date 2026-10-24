@@ -784,8 +784,10 @@ final class BrowserNativeSidebarNSView: NSView {
             indentLevel: indent,
             isResizing: state.isSidebarResizing,
             resetID: state.tabRowInteractionResetID,
-            closeDescriptor: model.shortcutStore.descriptor(for: .archiveTab)
+            closeDescriptor: model.shortcutStore.descriptor(for: .archiveTab),
+            muted: state.snapshot.mutedTabIDs.contains(tab.id)
         )
+        row.onToggleMute = { model.setTabMuted(false, id: tab.id) }
         row.dragOpacity = state.draggedTabIDs.contains(tab.id) ? 0 : 1
         row.onSelect = { [weak state] in
             guard let state else { return }
@@ -975,6 +977,10 @@ final class BrowserNativeSidebarNSView: NSView {
                 }
         }
         BrowserNativeMenus.add(BrowserStrings.tabRenameAction, to: menu, action: row.onBeginRename)
+        let muted = model.isTabMuted(id: tab.id)
+        BrowserNativeMenus.add(muted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction, to: menu) {
+            model.setTabMuted(!muted, id: tab.id)
+        }
         if tab.placement == .spacePinned {
             BrowserNativeMenus
                 .add(BrowserStrings.pinnedTabReplaceURLWithCurrentAction, to: menu) {

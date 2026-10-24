@@ -30,6 +30,34 @@ import Testing
         #expect(f.model.tabs.first { $0.id == f.id("a") }?.placement == .spacePinned)
     }
 
+    @Test func muteSilencesTheEngineAndShowsASpeakerThatUnmutes() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        let x = f.id("x")
+        f.model.setTabMuted(true, id: x)
+        #expect(f.model.isTabMuted(id: x))
+        #expect(f.driver.audioMuteRequests.last?.tabID == x && f.driver.audioMuteRequests.last?.muted == true)
+        #expect(f.model.sidebarSnapshot.mutedTabIDs == [x])
+        let tab = try #require(f.model.tabs.first { $0.id == x })
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        row.update(
+            tab: tab,
+            selected: false,
+            isResizing: false,
+            closeDescriptor: BrowserCommands.archiveTab,
+            muted: true
+        )
+        row.layoutSubtreeIfNeeded()
+        #expect(!row.muteButton.isHidden)
+        #expect(row.titleLabel.frame.maxX <= row.muteButton.frame.minX, "The title stops before the speaker")
+        var unmutes = 0
+        row.onToggleMute = { unmutes += 1 }
+        row.muteButton.performClick(nil)
+        #expect(unmutes == 1)
+        f.model.setTabMuted(false, id: x)
+        #expect(!f.model.isTabMuted(id: x))
+        #expect(f.driver.audioMuteRequests.last?.muted == false)
+    }
+
     @Test func archivingOthersOrAboveClosesOnlyTemporaryTabs() {
         let f = SidebarDragFixture(temporary: ["x", "y", "z", "w"])
         #expect(f.model.temporaryTabIDsAbove(id: f.id("z")) == [f.id("x"), f.id("y")])

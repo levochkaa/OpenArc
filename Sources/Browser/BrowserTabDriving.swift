@@ -76,6 +76,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func castActiveTab()
     func requestActiveTabWebAppManifest() async -> String?
     func setActiveTabZoomLevel(_ zoomLevel: Double)
+    /// Mute Tab. The engine keeps the state for a tab whose page attaches later.
+    func setAudioMuted(_ muted: Bool, forTabWithID tabID: String)
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)
     func stopFindingInActiveTab(clearSelection: Bool)
     /// Admits a manual close. Completion carries the same nonce; only `.closed`

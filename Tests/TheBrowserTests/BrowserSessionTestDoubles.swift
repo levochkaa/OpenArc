@@ -84,6 +84,7 @@ import Foundation
     var webAppManifestPayloadJSON: String?
     private(set) var webAppManifestRequestCount = 0
     private(set) var zoomLevels = [Double]()
+    private(set) var audioMuteRequests = [(tabID: String, muted: Bool)]()
     private(set) var goBackCount = 0
     private(set) var goForwardCount = 0
     private(set) var prepareForCefShutdownCount = 0
@@ -221,6 +222,10 @@ import Foundation
 
     func setActiveTabZoomLevel(_ zoomLevel: Double) {
         zoomLevels.append(zoomLevel)
+    }
+
+    func setAudioMuted(_ muted: Bool, forTabWithID tabID: String) {
+        audioMuteRequests.append((tabID, muted))
     }
 
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool) {

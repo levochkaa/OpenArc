@@ -18,7 +18,8 @@ extension BrowserChromeModel {
             canGoForward: canGoForward,
             canStopLoading: canStopLoading,
             canReload: canReload,
-            splitGroups: validatedSplitGroups().map { splitPaneTabIDs(of: $0) }.filter { $0.count > 1 }
+            splitGroups: validatedSplitGroups().map { splitPaneTabIDs(of: $0) }.filter { $0.count > 1 },
+            mutedTabIDs: Set(tabs.filter { mutedTabSyncIDs.contains($0.syncID) }.map(\.id))
         )
     }
 }

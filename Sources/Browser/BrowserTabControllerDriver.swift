@@ -146,6 +146,10 @@ import Foundation
         }
     }
 
+    func setAudioMuted(_ muted: Bool, forTabWithID tabID: String) {
+        controller.setAudioMuted(muted, forTabWithID: tabID)
+    }
+
     func setActiveTabZoomLevel(_ zoomLevel: Double) {
         controller.setActiveTabZoomLevel(zoomLevel)
     }

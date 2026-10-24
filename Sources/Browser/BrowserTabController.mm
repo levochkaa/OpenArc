@@ -1649,6 +1649,30 @@ void ReloadBrowserOnUI(CefRefPtr<CefBrowser> browser, bool ignore_cache) {
           base::BindOnce(&ReloadBrowser, browser, ignore_cache)));
 }
 
+void SetBrowserAudioMuted(CefRefPtr<CefBrowser> browser, bool muted) {
+  if (!browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (host) {
+    host->SetAudioMuted(muted);
+  }
+}
+
+void SetBrowserAudioMutedOnUI(CefRefPtr<CefBrowser> browser, bool muted) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    SetBrowserAudioMuted(browser, muted);
+    return;
+  }
+
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&SetBrowserAudioMuted, browser, muted)));
+}
+
 void SetBrowserZoomLevel(CefRefPtr<CefBrowser> browser, double zoom_level) {
   if (!browser) {
     return;
@@ -2475,6 +2499,8 @@ struct TabRecord {
   bool initialNavigationEnabled = false;
   bool hasIssuedNavigation = false;
   bool isClosing = false;
+  // Applied again when the engine attaches, so a mute set early survives.
+  bool audioMuted = false;
   std::string closeRequestID;
   CefRefPtr<CefJSDialogCallback> closeDialogCallback;
   __strong BrowserBeforeUnloadConfirmation *closeConfirmation = nil;
@@ -3330,6 +3356,16 @@ class BrowserTabNavigationTask final : public CefTask {
   observer->Start(host);
 }
 
+- (void)setAudioMuted:(BOOL)muted forTabWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) {
+    return;
+  }
+
+  it->second.audioMuted = muted;
+  SetBrowserAudioMutedOnUI(it->second.browser, muted);
+}
+
 - (void)setActiveTabZoomLevel:(double)zoomLevel {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
@@ -3570,6 +3606,9 @@ class BrowserTabNavigationTask final : public CefTask {
 
   it->second.browser = browser;
   it->second.creationState = BrowserTabEngineCreationStateReady;
+  if (it->second.audioMuted) {
+    SetBrowserAudioMutedOnUI(browser, true);
+  }
   SyncBrowserViewFrame(_hostView, browser);
   [self.delegate browserTabController:self
        didChangeCreationStateForTabWithID:tabID

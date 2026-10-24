@@ -343,6 +343,9 @@ enum BrowserWindowMode: Equatable {
     var onSplitPaneLayoutChange: (() -> Void)?
     /// UI-only: the window's downloads list, toggled by View Downloads.
     var onToggleDownloads: (() -> Void)?
+    /// Muted tabs by sync ID, for this run only; a reopened dormant tab keeps it.
+    /// Only `setTabMuted(_:id:)` writes it.
+    @Published var mutedTabSyncIDs = Set<String>()
     /// UI-only: the window's site control center, opened by Open Extensions.
     var onOpenExtensions: (() -> Void)?
     /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.
@@ -1650,6 +1653,17 @@ enum BrowserWindowMode: Equatable {
 
         tabDriver.captureFullPageActiveTabToPasteboard()
         return true
+    }
+
+    /// Mute Tab / Unmute Tab.
+    func setTabMuted(_ muted: Bool, id: String) {
+        guard let tab = tabs.first(where: { $0.id == id }), mutedTabSyncIDs.contains(tab.syncID) != muted else { return }
+        if muted {
+            mutedTabSyncIDs.insert(tab.syncID)
+        } else {
+            mutedTabSyncIDs.remove(tab.syncID)
+        }
+        tabDriver.setAudioMuted(muted, forTabWithID: id)
     }
 
     /// Copy URL as Markdown: `[title](url)` for the selected tab.
@@ -5079,6 +5093,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
         if state == .ready {
             tabs[index].hasPendingLocalNavigation = false
+            if mutedTabSyncIDs.contains(tabs[index].syncID) {
+                tabDriver.setAudioMuted(true, forTabWithID: id)
+            }
         }
         if state == .failed {
             tabs[index].isLoading = false

@@ -24,6 +24,8 @@ struct BrowserSidebarSnapshot: Equatable {
     /// Runtime tab IDs of each Split View in pane order. The sidebar shows a
     /// split as one row in place of its first member.
     var splitGroups = [[String]]()
+    /// Runtime IDs of muted tabs; their rows show a speaker that unmutes.
+    var mutedTabIDs = Set<String>()
 
     var selectedTab: BrowserChromeModel.Tab? {
         guard let selectedTabID else {
