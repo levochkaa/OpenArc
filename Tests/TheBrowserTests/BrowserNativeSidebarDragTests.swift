@@ -335,6 +335,49 @@ import Testing
         #expect(h.state.drag.phase == .idle)
     }
 
+    /// A dragged tab combines with the row it rests on into a Split View;
+    /// the half under the pointer decides the side.
+    @Test func restingOnARowHalfCreatesASplitOnThatSide() async throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        try h.begin("z")
+        let row = try #require(h.row(f.item("x")))
+        let coordinates = try #require(h.coordinateView)
+        let leading = row.convert(CGPoint(x: row.bounds.width * 0.25, y: row.bounds.midY), to: coordinates)
+        h.move(leading)
+        #expect(h.state.drag.splitTarget == nil, "The split waits for a pause")
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(h.state.drag.splitTarget == .init(tabID: f.id("x"), side: .leading))
+        #expect(h.state.drag.proposal == nil, "No insertion line while the split is offered")
+        let edge = row.convert(CGPoint(x: row.bounds.width * 0.25, y: row.bounds.minY + 1), to: coordinates)
+        h.move(edge)
+        #expect(h.state.drag.splitTarget == nil, "The row edges keep reordering")
+        h.move(leading)
+        try await Task.sleep(for: .milliseconds(700))
+        h.release(leading)
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: group) == [f.id("z"), f.id("x")])
+        #expect(f.model.selectedTabID == f.id("z"))
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(h.state.drag.phase == .idle)
+    }
+
+    @Test func passingOverARowDoesNotCreateASplit() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        try h.begin("z")
+        let row = try #require(h.row(f.item("x")))
+        let trailing = try row.convert(
+            CGPoint(x: row.bounds.width * 0.75, y: row.bounds.midY),
+            to: #require(h.coordinateView)
+        )
+        h.move(trailing)
+        h.release(trailing)
+        #expect(f.model.selectedSplitGroup == nil)
+    }
+
     /// A single dragged tab activates at drag start and stays active even
     /// when the drop is a no-op. Order changes only on an accepted drop.
     @Test func singleTabDragActivatesTheDraggedTabEvenWhenCancelled() async throws {

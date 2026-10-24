@@ -231,6 +231,16 @@ extension BrowserChromeModel {
         return true
     }
 
+    /// Whether `openInSplitView(tabID:anchorTabID:)` would accept the pair.
+    func canOpenInSplitView(tabID: String, anchorTabID: String) -> Bool {
+        guard anchorTabID != tabID,
+              let anchor = tabs.first(where: { $0.id == anchorTabID }), anchor.placement != .app,
+              let added = tabs.first(where: { $0.id == tabID }), added.placement != .app
+        else { return false }
+        let panes = splitPaneTabIDs(forTabID: anchorTabID)
+        return !panes.contains(tabID) && panes.count < Self.maximumSplitPaneCount
+    }
+
     /// "Add Split View": the selected tab, or the selected split, can take
     /// another pane.
     var canAddSplitView: Bool {

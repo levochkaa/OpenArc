@@ -193,6 +193,22 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     }
 
     override func draw(_: NSRect) {
+        if let side = splitDropSide {
+            let gap: CGFloat = 4
+            let surface = NSRect(x: indent, y: 0, width: max(bounds.width - indent, 0), height: bounds.height)
+            let half = (surface.width - gap) / 2
+            let leading = NSRect(x: surface.minX, y: 0, width: half, height: surface.height)
+            let trailing = NSRect(x: leading.maxX + gap, y: 0, width: half, height: surface.height)
+            for (rect, active) in [(leading, side == .leading), (trailing, side == .trailing)] {
+                (active ? BrowserChromeColors.rowSelected : BrowserChromeColors.rowHover).setFill()
+                NSBezierPath(
+                    roundedRect: rect,
+                    xRadius: BrowserChromeLayout.sidebarRowCornerRadius,
+                    yRadius: BrowserChromeLayout.sidebarRowCornerRadius
+                ).fill()
+            }
+            return
+        }
         if kind == .appTab {
             (isHovered ? BrowserChromeColors.currentURLRowHover : BrowserChromeColors.currentURLRow).setFill()
             NSBezierPath(
@@ -250,6 +266,14 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             }
             path.fill()
         }
+    }
+
+    /// Split drop preview: the row splits into two halves and the half
+    /// the dragged tab will take is filled.
+    func setSplitDropSide(_ side: BrowserSidebarDragState.SplitDropTarget.Side?) {
+        guard splitDropSide != side else { return }
+        splitDropSide = side
+        needsDisplay = true
     }
 
     func setDropHighlighted(_ value: Bool) {
@@ -478,6 +502,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private var selected = false
     private var multiSelected = false
     private var dropTargeted = false
+    private var splitDropSide: BrowserSidebarDragState.SplitDropTarget.Side?
     private var indent: CGFloat = 0
     private var pinnedURLRow = false
     private var splitPinnedControls = false

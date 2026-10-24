@@ -17,6 +17,23 @@ import AppKit
 
     enum Phase { case idle, dragging, settling }
 
+    /// A tab row that the dragged tab will join as a Split View, on the row's
+    /// leading or trailing half.
+    struct SplitDropTarget: Equatable {
+        enum Side { case leading, trailing }
+
+        let tabID: String
+        let side: Side
+    }
+
+    /// A dragged tab combines with the tab row it rests on into a Split View
+    /// after a short pause; the pause keeps ordinary reorders unaffected. The
+    /// exact delay is unknown.
+    static let splitDropDelay: TimeInterval = 0.5
+
+    /// The middle of a row, away from the insertion edges, offers the split.
+    static let splitDropBandFraction: CGFloat = 0.5
+
     private(set) var phase = Phase.idle
     private(set) var payload: BrowserSidebarDragPayload?
     private(set) var proposal: BrowserSidebarDropProposal?
@@ -25,6 +42,7 @@ import AppKit
     private(set) var sourceFrame = CGRect.zero
     private(set) var geometry: BrowserSidebarDragGeometry?
     private(set) var projectedPlan: BrowserSidebarMovePlan?
+    private(set) var splitTarget: SplitDropTarget?
     var onPresentationChange: () -> Void = {}
     var onLayoutChange: () -> Void = {}
     var onTargetChange: () -> Void = {}
@@ -85,6 +103,7 @@ import AppKit
         proposal = nil
         geometricProposal = nil
         projectedPlan = nil
+        resetSplitDrop()
         plans.removeAll()
         validity.removeAll()
     }
@@ -110,6 +129,17 @@ import AppKit
     func updatePointer(_ pointer: CGPoint) {
         guard isDragging, let payload else { return }
         self.pointer = pointer
+        if updateSplitDrop(payload: payload) {
+            let hadProposal = proposal != nil || projectedPlan != nil
+            proposal = nil
+            geometricProposal = nil
+            projectedPlan = nil
+            if hadProposal {
+                onLayoutChange()
+            }
+            onPresentationChange()
+            return
+        }
         let proposed = geometry?.proposal(at: pointer, previous: proposal)
         geometricProposal = proposed
         let resolution = proposed.map { resolve(payload: payload, destination: $0.destination) }
@@ -133,9 +163,19 @@ import AppKit
         if !cancel {
             updatePointer(pointer)
         }
-        let committed = !cancel && proposal.map {
-            model.commitSidebarDrop(payload: payload, destination: $0.destination)
-        } == true
+        let committed: Bool =
+            if !cancel, let target = splitTarget, case .tab(let id) = payload.primary {
+                model.openInSplitView(
+                    tabID: id,
+                    anchorTabID: target.tabID,
+                    insertion: target.side == .leading ? .before : .after
+                )
+            } else {
+                !cancel && proposal.map {
+                    model.commitSidebarDrop(payload: payload, destination: $0.destination)
+                } == true
+            }
+        resetSplitDrop()
         phase = .settling
         proposal = nil
         geometricProposal = nil
@@ -145,6 +185,7 @@ import AppKit
     }
 
     func complete() {
+        resetSplitDrop()
         phase = .idle
         payload = nil
         sourceContainer = nil
@@ -168,6 +209,53 @@ import AppKit
 
     private var plans = [BrowserSidebarDropDestination: BrowserSidebarMovePlan]()
     private var validity = [BrowserSidebarDropDestination: Bool]()
+    private var splitCandidateTabID: String?
+    private var splitCandidateSince = Date.distantFuture
+    private var splitDelayWork: DispatchWorkItem?
+
+    private func resetSplitDrop() {
+        splitDelayWork?.cancel()
+        splitDelayWork = nil
+        splitCandidateTabID = nil
+        splitTarget = nil
+    }
+
+    /// True while the pointer rests on a split target. Moving to another row
+    /// restarts the pause; moving between halves of the same row only flips
+    /// the side.
+    private func updateSplitDrop(payload: BrowserSidebarDragPayload) -> Bool {
+        guard let candidate = splitCandidate(payload: payload) else {
+            resetSplitDrop()
+            return false
+        }
+        if candidate.tabID != splitCandidateTabID {
+            resetSplitDrop()
+            splitCandidateTabID = candidate.tabID
+            splitCandidateSince = Date()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, isDragging else { return }
+                updatePointer(pointer)
+            }
+            splitDelayWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.splitDropDelay, execute: work)
+            return false
+        }
+        guard Date().timeIntervalSince(splitCandidateSince) >= Self.splitDropDelay - 0.01 else { return false }
+        splitTarget = candidate
+        return true
+    }
+
+    private func splitCandidate(payload: BrowserSidebarDragPayload) -> SplitDropTarget? {
+        guard payload.tabIDs.count == 1, case .tab(let draggedID) = payload.primary,
+              let row = geometry?.rows.first(where: { $0.frame.contains(pointer) }),
+              case .tab(let targetID) = row.item, targetID != draggedID, row.container.section != .app
+        else { return nil }
+        let band = row.frame.height * (1 - Self.splitDropBandFraction) / 2
+        guard pointer.y >= row.frame.minY + band, pointer.y <= row.frame.maxY - band,
+              model.canOpenInSplitView(tabID: draggedID, anchorTabID: targetID)
+        else { return nil }
+        return SplitDropTarget(tabID: targetID, side: pointer.x < row.frame.midX ? .leading : .trailing)
+    }
 
     private func refreshSourceMetadata() {
         guard let payload else { sourceContainer = nil

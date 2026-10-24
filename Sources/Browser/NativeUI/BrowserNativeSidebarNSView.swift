@@ -440,6 +440,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private var lastWindowDragPoint = CGPoint.zero
     private var reportedDragging = false
     private var highlightedDropRow: BrowserNativeSidebarRowNSView?
+    private var splitPreviewRow: BrowserNativeSidebarRowNSView?
     private let scrollObserver = BrowserSpacePagerScrollNSView()
     private var pages = [String: BrowserNativeSidebarPage]()
     private var appTiles = [String: BrowserNativeSidebarRowNSView]()
@@ -1185,6 +1186,12 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         highlightedDropRow?.setDropHighlighted(false)
         highlightedDropRow = nil
+        splitPreviewRow?.setSplitDropSide(nil)
+        splitPreviewRow = nil
+        if let target = state.drag.splitTarget {
+            splitPreviewRow = pages.values.compactMap { $0.rows["tab:\(target.tabID)"] }.first
+            splitPreviewRow?.setSplitDropSide(target.side)
+        }
         dragIndicator.update(line: nil, occluding: nil)
         if let proposal = state.drag.proposal {
             switch proposal.feedback {

@@ -62,6 +62,8 @@ Closing a member or moving it to another Space or section removes it through val
 
 A split is one sidebar row in place of its first member (in sidebar order); the other members have no row of their own. `BrowserSidebarSnapshot.splitGroups` carries the runtime tab IDs of each split in pane order, and the page builds entries from it. The row (`BrowserNativeSidebarRowNSView`, kind `.split`) shows a chip per pane in pane order: 28 pt tall, equal widths, 4 pt apart and 4 pt inside the row, radius 8, with the focused pane's chip filled more strongly. A click on a chip selects that pane, a click elsewhere selects the focused pane, and a chip shows a close button on hover. The row menu offers Separate All Tabs, Add Split View, Convert and a submenu per pane (Separate from Split View, Copy Link, Close).
 
+Resting a dragged tab for 0.5 s on the middle band of another tab row offers drop-to-split: the row splits into two halves, the half under the pointer fills, and the insertion line disappears. Dropping there runs `openInSplitView` with the dragged tab before (leading half) or after (trailing half) the row's tab, or adds it to that row's split. The row edges keep reordering, a quick pass never splits, and the target must accept another pane (`canOpenInSplitView`).
+
 Dragging the row carries every pane as one group through the existing sidebar drop path, so the split moves as a block and stays valid. Drop slots exist only before and after the row, never between panes. Starting a drag on a split that is already selected keeps its focused pane.
 
 ## Commands and controls
@@ -98,4 +100,4 @@ Implemented: model, actions, validation, persistence, archive/expiry protection,
 
 1. Pane chrome: Cmd-L for the focused pane, reorder by a top grip and drag into the center. The bars do not show window controls when the sidebar is hidden yet.
 2. iPad browser split in UIKit/WebKit.
-3. Drop on a row's left or right half to create a split, and a custom split title.
+3. A custom split title and icon.
