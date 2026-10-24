@@ -992,6 +992,7 @@ final class BrowserNativeSidebarNSView: NSView {
         if section != .app {
             addSplitItems(for: tab, to: menu)
         }
+        addArrangeItems(for: tab, to: menu)
         menu.addItem(.separator())
         BrowserNativeMenus.add(
             section == .app ? BrowserStrings.tabCloseAction : close.menuTitle,
@@ -1007,6 +1008,20 @@ final class BrowserNativeSidebarNSView: NSView {
                     state?.withSidebarAnimation { model.removeAppTabFavorite(id: tab.id) }
                 }
         } else {
+            if section == .temporary {
+                let others = model.otherTemporaryTabIDs(id: tab.id)
+                BrowserNativeMenus.add(BrowserStrings.tabArchiveOtherTabsAction, to: menu, enabled: !others.isEmpty) {
+                    [weak state] in
+                    state?.renamingTabID = nil
+                    state?.withSidebarAnimation { model.closeOtherTemporaryTabs(id: tab.id) }
+                }
+                let above = model.temporaryTabIDsAbove(id: tab.id)
+                BrowserNativeMenus.add(BrowserStrings.tabArchiveTabsAboveAction, to: menu, enabled: !above.isEmpty) {
+                    [weak state] in
+                    state?.renamingTabID = nil
+                    state?.withSidebarAnimation { model.closeTemporaryTabsAbove(id: tab.id) }
+                }
+            }
             BrowserNativeMenus.add(
                 BrowserStrings.tabArchiveTabsBelowAction,
                 to: menu,
@@ -1017,6 +1032,29 @@ final class BrowserNativeSidebarNSView: NSView {
             }
         }
         return menu
+    }
+
+    /// Duplicate and Move to.
+    private func addArrangeItems(for tab: BrowserChromeModel.Tab, to menu: NSMenu) {
+        let model = state.model
+        let state = state
+        let spaces = model.spacesForMovingTab(id: tab.id)
+        let canDuplicate = tab.placement == .app || tab.spaceID == state.snapshot.selectedSpaceID
+        guard canDuplicate || !spaces.isEmpty else { return }
+        menu.addItem(.separator())
+        if canDuplicate {
+            BrowserNativeMenus.add(BrowserStrings.tabDuplicateAction, to: menu) { [weak state] in
+                state?.withSidebarAnimation { _ = model.duplicateTab(id: tab.id) }
+            }
+        }
+        guard !spaces.isEmpty else { return }
+        let submenu = BrowserNativeMenus.submenu(BrowserStrings.tabMoveToSpaceAction, in: menu)
+        for space in spaces {
+            let item = BrowserNativeMenus.add(space.title, to: submenu) { [weak state] in
+                state?.withSidebarAnimation { _ = model.moveTabToSpace(id: tab.id, spaceID: space.id) }
+            }
+            item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
+        }
     }
 
     /// Open in Split View joins the row to the selected tab's split; a

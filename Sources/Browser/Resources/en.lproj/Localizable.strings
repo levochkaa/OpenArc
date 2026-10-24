@@ -205,6 +205,10 @@
 "browser.sidebar.clear_temporary_tabs_tooltip" = "Archive all temporary tabs";
 "browser.tab.archive_action" = "Archive Tab";
 "browser.tab.archive_tabs_below_action" = "Archive Tabs Below";
+"browser.tab.duplicate_action" = "Duplicate";
+"browser.tab.move_to_space_action" = "Move to";
+"browser.tab.archive_other_tabs_action" = "Archive Other Tabs";
+"browser.tab.archive_tabs_above_action" = "Archive Tabs Above";
 "browser.tab.archive_tooltip" = "Archive this tab";
 "browser.tab.close_action" = "Close Tab";
 "browser.app_tab.remove_favorite_action" = "Remove Favorite";

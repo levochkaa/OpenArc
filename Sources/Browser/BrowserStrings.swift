@@ -1098,6 +1098,26 @@ enum BrowserStrings {
         comment: "Context menu title for archiving a tab."
     )
 
+    static let tabDuplicateAction = NSLocalizedString(
+        "browser.tab.duplicate_action",
+        comment: "Context menu title that opens a copy of the tab below it."
+    )
+
+    static let tabMoveToSpaceAction = NSLocalizedString(
+        "browser.tab.move_to_space_action",
+        comment: "Context menu submenu title listing the Spaces a tab can move to."
+    )
+
+    static let tabArchiveOtherTabsAction = NSLocalizedString(
+        "browser.tab.archive_other_tabs_action",
+        comment: "Context menu title for archiving the other temporary tabs of the Space."
+    )
+
+    static let tabArchiveTabsAboveAction = NSLocalizedString(
+        "browser.tab.archive_tabs_above_action",
+        comment: "Context menu title for archiving the temporary tabs above the current tab."
+    )
+
     static let tabArchiveTabsBelowAction = NSLocalizedString(
         "browser.tab.archive_tabs_below_action",
         comment: "Context menu title for archiving tabs below the current tab."
