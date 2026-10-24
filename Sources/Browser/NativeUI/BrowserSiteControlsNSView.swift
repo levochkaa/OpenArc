@@ -516,8 +516,13 @@ final class BrowserSiteControlsNSView: NSView {
         extensionPopovers.showControlCenter(relativeTo: siteButton, preferredEdge: mode == .toolbar ? .minY : .minX)
     }
 
+    /// A pinned extension's popup points at its own button.
     private func openExtension(_ id: String) {
-        extensionPopovers.openExtension(id: id, relativeTo: siteButton, preferredEdge: mode == .toolbar ? .minY : .minX)
+        extensionPopovers.openExtension(
+            id: id,
+            relativeTo: extensionButtons[id] ?? siteButton,
+            preferredEdge: mode == .toolbar ? .minY : .minX
+        )
     }
 
     private func extensionMenu(_ browserExtension: BrowserExtension) -> NSMenu { extensionPopovers
