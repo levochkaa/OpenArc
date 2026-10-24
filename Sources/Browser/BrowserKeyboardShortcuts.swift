@@ -262,6 +262,12 @@ enum BrowserCommands {
         shortcut: .unassigned
     )
 
+    static let toggleSidebarPosition = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuMoveSidebarRight,
+        helpTitle: BrowserStrings.menuMoveSidebarRight,
+        shortcut: .unassigned
+    )
+
     static let toggleSidebar = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuToggleSidebar,
         helpTitle: BrowserStrings.sidebarHide,
@@ -349,6 +355,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case separateSplitView
     case toggleSplitOrientation
     case toggleSidebar
+    case toggleSidebarPosition
     case toggleBookmarksBar
 }
 

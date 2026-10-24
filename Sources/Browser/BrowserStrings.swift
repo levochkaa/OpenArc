@@ -713,6 +713,31 @@ enum BrowserStrings {
         comment: "Settings and command title for switching a split between side by side and stacked panes."
     )
 
+    static let settingsSidebarPosition = NSLocalizedString(
+        "browser.settings.sidebar_position",
+        comment: "Settings title for the window edge that shows the sidebar."
+    )
+
+    static let settingsSidebarPositionLeft = NSLocalizedString(
+        "browser.settings.sidebar_position.left",
+        comment: "Sidebar position option: the left window edge."
+    )
+
+    static let settingsSidebarPositionRight = NSLocalizedString(
+        "browser.settings.sidebar_position.right",
+        comment: "Sidebar position option: the right window edge."
+    )
+
+    static let menuMoveSidebarRight = NSLocalizedString(
+        "browser.menu.move_sidebar_right",
+        comment: "View menu and command title that moves the sidebar to the right window edge."
+    )
+
+    static let menuMoveSidebarLeft = NSLocalizedString(
+        "browser.menu.move_sidebar_left",
+        comment: "View menu and command title that moves the sidebar to the left window edge."
+    )
+
     static let splitViewButtonTitle = NSLocalizedString(
         "browser.split.button",
         comment: "Toolbar button and menu title for Split View."

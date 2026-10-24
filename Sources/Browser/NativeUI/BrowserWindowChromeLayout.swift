@@ -1,6 +1,8 @@
 import AppKit
 
-/// Window chrome reserves space for a pinned sidebar; a hover sidebar stays above the viewport.
+/// Window chrome reserves space for a pinned sidebar on its window edge; a hover
+/// sidebar stays above the viewport. The sidebar edge has no content inset,
+/// because the sidebar brings its own padding.
 struct BrowserWindowChromeLayout {
     let windowSize: CGSize
     let sidebarWidth: CGFloat
@@ -11,11 +13,15 @@ struct BrowserWindowChromeLayout {
     let showsSiteToolbar: Bool
     let showsBookmarksBar: Bool
     let extensionSidePanelWidth: CGFloat?
+    var sidebarPosition = BrowserSidebarPosition.left
 
     var edgeInset: CGFloat { isFullscreen ? 0 : BrowserChromeLayout.browserContentEdgeInset }
     var sidebarReservedWidth: CGFloat { isSidebarVisible ? sidebarWidth : 0 }
-    var leadingInset: CGFloat { isSidebarVisible ? 0 : edgeInset }
-    var contentMinX: CGFloat { sidebarReservedWidth + leadingInset }
+    var leadingInset: CGFloat { isSidebarVisible && sidebarPosition == .left ? 0 : edgeInset }
+    var trailingInset: CGFloat { isSidebarVisible && sidebarPosition == .right ? 0 : edgeInset }
+    var leadingReservedWidth: CGFloat { sidebarPosition == .left ? sidebarReservedWidth : 0 }
+    var trailingReservedWidth: CGFloat { sidebarPosition == .right ? sidebarReservedWidth : 0 }
+    var contentMinX: CGFloat { leadingReservedWidth + leadingInset }
     var chromeTopInset: CGFloat { showsSiteToolbar || showsBookmarksBar
         ? max(edgeInset, BrowserChromeLayout.sidebarOuterPadding)
         : edgeInset
@@ -36,7 +42,7 @@ struct BrowserWindowChromeLayout {
         extensionSidePanelWidth.map { $0 + BrowserChromeLayout.sidebarOuterPadding } ?? 0
     }
 
-    var barWidth: CGFloat { max(windowSize.width - contentMinX - edgeInset, 0) }
+    var barWidth: CGFloat { max(windowSize.width - contentMinX - trailingInset - trailingReservedWidth, 0) }
     var contentFrame: CGRect {
         CGRect(
             x: contentMinX,
@@ -61,8 +67,15 @@ struct BrowserWindowChromeLayout {
     var sidebarFrame: CGRect {
         let overlay = !isSidebarVisible && isOverlayChromeVisible
         let inset = BrowserChromeLayout.sidebarHoverOverlayEdgeInset
+        let x: CGFloat =
+            switch sidebarPosition {
+            case .left: isSidebarVisible ? 0 : isHoverSidebarPresented ? inset : -sidebarWidth
+            case .right: windowSize.width - sidebarWidth - (isSidebarVisible
+                    ? 0
+                    : isHoverSidebarPresented ? inset : -sidebarWidth)
+            }
         return CGRect(
-            x: isSidebarVisible ? 0 : isHoverSidebarPresented ? inset : -sidebarWidth,
+            x: x,
             y: overlay ? inset : 0,
             width: sidebarWidth,
             height: max(windowSize.height - (overlay
@@ -74,7 +87,7 @@ struct BrowserWindowChromeLayout {
     var extensionFrame: CGRect {
         let width = extensionSidePanelWidth ?? 0
         return CGRect(
-            x: max(windowSize.width - edgeInset - width, 0),
+            x: max(windowSize.width - trailingReservedWidth - trailingInset - width, 0),
             y: contentMinY,
             width: width,
             height: contentFrame.height

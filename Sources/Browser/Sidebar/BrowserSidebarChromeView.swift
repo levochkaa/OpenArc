@@ -55,12 +55,20 @@ final class BrowserSidebarChromeView: NSView {
     var onDragInteractionChange: () -> Void = {}
     var onURLFrameChange: (CGRect?) -> Void = { _ in }
 
+    var sidebarPosition = BrowserSidebarPosition.left {
+        didSet {
+            guard oldValue != sidebarPosition else { return }
+            resize.direction = sidebarPosition == .left ? 1 : -1
+            needsLayout = true
+        }
+    }
+
     override func layout() {
         super.layout()
         background.frame = bounds
         sidebar.frame = bounds
         resize.frame = NSRect(
-            x: max(bounds.width - BrowserChromeLayout.sidebarResizeHitWidth, 0),
+            x: sidebarPosition == .left ? max(bounds.width - BrowserChromeLayout.sidebarResizeHitWidth, 0) : 0,
             y: 0,
             width: BrowserChromeLayout.sidebarResizeHitWidth,
             height: bounds.height

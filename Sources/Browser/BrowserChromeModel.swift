@@ -3480,6 +3480,8 @@ enum BrowserWindowMode: Equatable {
                 : BrowserStrings.settingsShowBookmarksBar
         case .toggleSplitOrientation:
             splitOrientationToggleTitle
+        case .toggleSidebarPosition:
+            sidebarPositionToggleTitle
         default:
             descriptor.menuTitle
         }
@@ -3540,6 +3542,8 @@ enum BrowserWindowMode: Equatable {
             selectedSplitGroup != nil && !isShuttingDown
         case .toggleSidebar:
             true
+        case .toggleSidebarPosition:
+            !isWebApp
         case .toggleBookmarksBar:
             true
         }
@@ -5936,6 +5940,8 @@ extension BrowserCommandID {
             ["convert split", "vertical split", "horizontal split", "rotate split", "split orientation"]
         case .toggleSidebar:
             ["sidebar", "toggle sidebar", "show sidebar", "hide sidebar"]
+        case .toggleSidebarPosition:
+            ["sidebar right", "sidebar left", "move sidebar", "sidebar position", "right sidebar"]
         case .toggleBookmarksBar:
             ["bookmarks bar", "bookmark bar", "toggle bookmarks bar", "show bookmarks bar", "hide bookmarks bar"]
         }
@@ -5999,6 +6005,8 @@ extension BrowserCommandID {
             "rectangle.split.1x2"
         case .toggleSidebar:
             "sidebar.left"
+        case .toggleSidebarPosition:
+            "sidebar.right"
         case .toggleBookmarksBar:
             "book"
         }

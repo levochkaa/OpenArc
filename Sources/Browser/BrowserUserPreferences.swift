@@ -137,6 +137,28 @@ enum BrowserAppearancePreference: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+// MARK: - BrowserSidebarPosition
+
+/// Window edge of the sidebar, left or right; the right one
+/// follows Zen, where the window controls move with the sidebar.
+enum BrowserSidebarPosition: String, CaseIterable, Codable, Identifiable {
+    case left
+    case right
+
+    // MARK: Internal
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .left: BrowserStrings.settingsSidebarPositionLeft
+        case .right: BrowserStrings.settingsSidebarPositionRight
+        }
+    }
+
+    var opposite: BrowserSidebarPosition { self == .left ? .right : .left }
+}
+
 // MARK: - BrowserUserPreferencesStore
 
 final class BrowserUserPreferencesStore: ObservableObject {
@@ -151,6 +173,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.appearancePreference = rawAppearancePreference
             .flatMap(BrowserAppearancePreference.init(rawValue:)) ?? .system
         self.warnBeforeQuitting = Self.loadBool(userDefaults, key: Key.warnBeforeQuitting, defaultValue: true)
+        self.sidebarPosition = userDefaults.string(forKey: Key.sidebarPosition)
+            .flatMap(BrowserSidebarPosition.init(rawValue:)) ?? .left
         let rawSearchEngine = userDefaults.string(forKey: Key.searchEngine)
         self.searchEngine = rawSearchEngine.flatMap(BrowserSearchEngine.init(rawValue:)) ?? .google
         let rawAISearchProvider = userDefaults.string(forKey: Key.aiSearchProvider)
@@ -196,6 +220,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var appearancePreference: BrowserAppearancePreference {
         didSet { userDefaults.set(appearancePreference.rawValue, forKey: Key.appearancePreference) }
+    }
+
+    @Published var sidebarPosition: BrowserSidebarPosition {
+        didSet { userDefaults.set(sidebarPosition.rawValue, forKey: Key.sidebarPosition) }
     }
 
     @Published var warnBeforeQuitting: Bool {
@@ -256,6 +284,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let automaticUpdatesEnabled = "browser.settings.automaticUpdatesEnabled"
         static let updateChannel = "browser.settings.updateChannel"
         static let appearancePreference = "browser.settings.appearancePreference"
+        static let sidebarPosition = "browser.settings.sidebarPosition"
         static let warnBeforeQuitting = "browser.settings.warnBeforeQuitting"
         static let searchEngine = "browser.settings.searchEngine"
         static let aiSearchProvider = "browser.settings.aiSearchProvider"
@@ -331,6 +360,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case separateSplitView
     case toggleSplitOrientation
     case toggleSidebar
+    case toggleSidebarPosition
     case toggleBookmarksBar
 
     // MARK: Internal
@@ -401,6 +431,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.toggleSplitOrientation
         case .toggleSidebar:
             BrowserCommands.toggleSidebar
+        case .toggleSidebarPosition:
+            BrowserCommands.toggleSidebarPosition
         case .toggleBookmarksBar:
             BrowserCommands.toggleBookmarksBar
         }
@@ -468,6 +500,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .toggleSplitOrientation
         case .toggleSidebar:
             .toggleSidebar
+        case .toggleSidebarPosition:
+            .toggleSidebarPosition
         case .toggleBookmarksBar:
             .toggleBookmarksBar
         }
@@ -583,11 +617,10 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         userDefaults: UserDefaults,
         decoder: JSONDecoder
     ) -> [BrowserCommandID: BrowserKeyboardShortcut] {
-        guard let data = userDefaults.data(forKey: Key.overrides) else {
-            return [:]
-        }
-
-        guard let rawOverrides = try? decoder.decode([String: BrowserKeyboardShortcut].self, from: data) else {
+        guard let data = userDefaults.data(forKey: Key.overrides), let rawOverrides = try? decoder.decode(
+            [String: BrowserKeyboardShortcut].self,
+            from: data
+        ) else {
             return [:]
         }
 

@@ -122,6 +122,7 @@ final class BrowserRootView: NSView {
         margins.frame = bounds
         margins.configure(
             blockedLeadingWidth: contentEdgeDragBlockedLeadingWidth,
+            blockedTrailingWidth: windowGeometry.trailingReservedWidth,
             leading: browserContentLeadingInset,
             top: browserContentTopInset,
             trailing: browserContentTrailingInset,
@@ -130,8 +131,20 @@ final class BrowserRootView: NSView {
         for overlay in [command, currentPageCommand, tabEvents, tabSwitcher, sidebarDismiss] {
             overlay.frame = bounds
         }
-        sidebarInteraction.frame = NSRect(x: 0, y: 0, width: sidebarLayoutWidth, height: bounds.height)
-        revealEdge.frame = NSRect(x: 0, y: 0, width: BrowserChromeLayout.sidebarHoverRevealWidth, height: bounds.height)
+        let onRight = preferences.sidebarPosition == .right
+        sidebarInteraction.frame = NSRect(
+            x: onRight ? bounds.width - sidebarLayoutWidth : 0,
+            y: 0,
+            width: sidebarLayoutWidth,
+            height: bounds.height
+        )
+        let revealWidth = BrowserChromeLayout.sidebarHoverRevealWidth
+        revealEdge.frame = NSRect(
+            x: onRight ? bounds.width - revealWidth : 0,
+            y: 0,
+            width: revealWidth,
+            height: bounds.height
+        )
         sidebarDismiss.update(
             isPresented: isSidebarHoverOverlayActive,
             sidebarFrame: sidebarFrame(in: bounds.size),
@@ -193,7 +206,12 @@ final class BrowserRootView: NSView {
                 view.layoutSubtreeIfNeeded()
             }
             // Keep hit regions and anchored panels on the same geometry as the page.
-            sidebarInteraction.frame.size.width = max(content.frame.minX, 0)
+            if preferences.sidebarPosition == .right {
+                let minX = min(max(content.frame.maxX, extensionPanel?.frame.maxX ?? 0), bounds.width)
+                sidebarInteraction.frame = NSRect(x: minX, y: 0, width: bounds.width - minX, height: bounds.height)
+            } else {
+                sidebarInteraction.frame.size.width = max(content.frame.minX, 0)
+            }
         }
         if animate {
             frameAnimation.start(.sidebar, updates: updates) { [weak self] in
@@ -263,7 +281,8 @@ final class BrowserRootView: NSView {
             isFullscreen: isWindowFullscreen,
             showsSiteToolbar: showsSiteToolbar,
             showsBookmarksBar: showsBookmarksBar,
-            extensionSidePanelWidth: isExtensionSidePanelPresented ? model.extensionSidePanelWidth : nil
+            extensionSidePanelWidth: isExtensionSidePanelPresented ? model.extensionSidePanelWidth : nil,
+            sidebarPosition: preferences.sidebarPosition
         )
     }
 
@@ -290,7 +309,7 @@ final class BrowserRootView: NSView {
         !isWindowFullscreenTransitioning && !isSidebarHoverOverlayPointerSyncSuspended
     }
 
-    private var contentEdgeDragBlockedLeadingWidth: CGFloat { sidebarLayoutWidth }
+    private var contentEdgeDragBlockedLeadingWidth: CGFloat { windowGeometry.leadingReservedWidth }
     private var currentPageCommandBarFaviconCandidate: BrowserCommandBarFaviconCandidate? {
         model.currentTab.map(BrowserCommandBarFaviconCandidate.init(tab:))
     }
@@ -298,7 +317,7 @@ final class BrowserRootView: NSView {
     private var usesWindowContentInsets: Bool { !isWindowFullscreen }
     private var browserContentLeadingInset: CGFloat { windowGeometry.leadingInset }
     private var browserContentTopInset: CGFloat { windowGeometry.edgeInset }
-    private var browserContentTrailingInset: CGFloat { windowGeometry.edgeInset }
+    private var browserContentTrailingInset: CGFloat { windowGeometry.trailingInset }
     private var browserContentBottomInset: CGFloat { windowGeometry.edgeInset }
     private var browserContentMinX: CGFloat { windowGeometry.contentMinX }
 
@@ -311,9 +330,16 @@ final class BrowserRootView: NSView {
     }
 
     private func configureCommandBars() {
-        command.configure(blockedLeadingInset: browserContentMinX, style: .standard, faviconCandidate: nil)
+        let blockedTrailingInset = windowGeometry.trailingReservedWidth
+        command.configure(
+            blockedLeadingInset: browserContentMinX,
+            blockedTrailingInset: blockedTrailingInset,
+            style: .standard,
+            faviconCandidate: nil
+        )
         currentPageCommand.configure(
             blockedLeadingInset: browserContentMinX,
+            blockedTrailingInset: blockedTrailingInset,
             style: .compact(
                 anchorFrame: currentURLRowWindowFrame,
                 sidebarWidth: model.sidebarWidth,
@@ -331,6 +357,7 @@ final class BrowserRootView: NSView {
             showsBookmarksBar,
             showsSiteToolbar,
             isExtensionSidePanelPresented,
+            preferences.sidebarPosition == .right,
         ]
         if let previousLayoutState, previousLayoutState != state {
             animateNextLayout = true
@@ -338,13 +365,7 @@ final class BrowserRootView: NSView {
                 finishSidebarHoverOverlayPromotionIfNeeded()
             }
         }
-        previousLayoutState = [
-            model.isSidebarVisible,
-            isSidebarHoverOverlayPresented,
-            showsBookmarksBar,
-            showsSiteToolbar,
-            isExtensionSidePanelPresented,
-        ]
+        previousLayoutState = state
         background.mode = chromeBackgroundMode
         content.update(
             hostView: model.hostView,
@@ -352,8 +373,10 @@ final class BrowserRootView: NSView {
             hasSelectedTab: model.selectedTabID != nil,
             isSidebarVisible: model.isSidebarVisible,
             usesWindowContentInsets: usesWindowContentInsets,
+            sidebarPosition: preferences.sidebarPosition,
             selectedTabCreationState: model.selectedTabCreationState
         )
+        sidebar.sidebarPosition = preferences.sidebarPosition
         sidebar.showsWindowControls = showsWindowControlsInSidebarChrome
         sidebar.isOverlayPresentation = isSidebarOverlayPresentation
         sidebar.refresh()

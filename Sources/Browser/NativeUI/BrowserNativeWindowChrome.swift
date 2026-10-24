@@ -68,16 +68,20 @@ final class BrowserNativeWindowMargins: NSView {
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
     override func menu(for _: NSEvent) -> NSMenu? { menuProvider?() }
 
-    func configure(blockedLeadingWidth: CGFloat, leading: CGFloat, top: CGFloat, trailing: CGFloat, bottom: CGFloat) {
+    func configure(
+        blockedLeadingWidth: CGFloat,
+        blockedTrailingWidth: CGFloat = 0,
+        leading: CGFloat,
+        top: CGFloat,
+        trailing: CGFloat,
+        bottom: CGFloat
+    ) {
+        let width = max(bounds.width - blockedLeadingWidth - blockedTrailingWidth, 0)
+        let trailingEdge = max(bounds.width - blockedTrailingWidth, 0)
         regions = [
-            CGRect(x: blockedLeadingWidth, y: 0, width: max(bounds.width - blockedLeadingWidth, 0), height: top),
-            CGRect(
-                x: blockedLeadingWidth,
-                y: max(bounds.height - bottom, 0),
-                width: max(bounds.width - blockedLeadingWidth, 0),
-                height: bottom
-            ),
-            CGRect(x: max(bounds.width - trailing, 0), y: 0, width: trailing, height: bounds.height),
+            CGRect(x: blockedLeadingWidth, y: 0, width: width, height: top),
+            CGRect(x: blockedLeadingWidth, y: max(bounds.height - bottom, 0), width: width, height: bottom),
+            CGRect(x: max(trailingEdge - trailing, 0), y: 0, width: trailing, height: bounds.height),
             CGRect(x: blockedLeadingWidth, y: 0, width: leading, height: bounds.height),
         ].filter { !$0.isEmpty }
     }

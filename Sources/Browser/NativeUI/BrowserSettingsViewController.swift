@@ -255,6 +255,14 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     get: { preferences.appearancePreference },
                     set: { preferences.appearancePreference = $0 }
                 ),
+                picker(
+                    "sidebar-position",
+                    BrowserStrings.settingsSidebarPosition,
+                    options: BrowserSidebarPosition.allCases,
+                    title: { $0.title },
+                    get: { preferences.sidebarPosition },
+                    set: { preferences.sidebarPosition = $0 }
+                ),
                 toggle(
                     "warn-before-quitting",
                     BrowserStrings.settingsWarnBeforeQuitting,

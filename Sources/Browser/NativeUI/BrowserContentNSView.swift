@@ -6,6 +6,7 @@ import QuartzCore
 struct BrowserContentClipping: Equatable {
     let isSidebarVisible: Bool
     let usesWindowContentInsets: Bool
+    var sidebarPosition = BrowserSidebarPosition.left
 
     var radius: CGFloat { isSidebarVisible || usesWindowContentInsets
         ? BrowserChromeLayout.leadingContentCornerRadius
@@ -13,14 +14,13 @@ struct BrowserContentClipping: Equatable {
     }
 
     var corners: CACornerMask {
+        let leading: CACornerMask = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+        let trailing: CACornerMask = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
         var corners: CACornerMask = []
-        if isSidebarVisible ||
-            usesWindowContentInsets
-        {
-            corners.formUnion([.layerMinXMinYCorner, .layerMinXMaxYCorner])
-        }
         if usesWindowContentInsets {
-            corners.formUnion([.layerMaxXMinYCorner, .layerMaxXMaxYCorner])
+            corners.formUnion(leading.union(trailing))
+        } else if isSidebarVisible {
+            corners.formUnion(sidebarPosition == .left ? leading : trailing)
         }
         return corners
     }
@@ -118,6 +118,7 @@ final class BrowserContentNSView: NSView {
         hasSelectedTab: Bool,
         isSidebarVisible: Bool,
         usesWindowContentInsets: Bool,
+        sidebarPosition: BrowserSidebarPosition = .left,
         selectedTabCreationState: BrowserTabCreationState? = nil
     ) {
         viewport.update(hostView: hostView)
@@ -126,7 +127,8 @@ final class BrowserContentNSView: NSView {
         viewport.isHidden = !isContextReady || !hasSelectedTab || isCreatingTab || didFailToCreateTab
         let clipping = BrowserContentClipping(
             isSidebarVisible: isSidebarVisible,
-            usesWindowContentInsets: usesWindowContentInsets
+            usesWindowContentInsets: usesWindowContentInsets,
+            sidebarPosition: sidebarPosition
         )
         viewport.updateClipping(cornerRadius: clipping.radius, maskedCorners: clipping.corners)
         for overlay in [loading, failure] {

@@ -227,6 +227,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         userPreferencesStore.bookmarksBarVisible.toggle()
     }
 
+    public func toggleSidebarPosition(_: Any?) {
+        userPreferencesStore.sidebarPosition = userPreferencesStore.sidebarPosition.opposite
+    }
+
     public func createNewTab(_: Any?) {
         guard activeChromeModel?.isWebApp != true else {
             return
@@ -452,6 +456,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 menuItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
             }
             return true
+        case #selector(toggleSidebarPosition(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = userPreferencesStore.sidebarPosition == .left
+                    ? BrowserStrings.menuMoveSidebarRight
+                    : BrowserStrings.menuMoveSidebarLeft
+            }
+            return activeChromeModel?.isWebApp != true
         case #selector(setAsDefaultBrowser(_:)):
             return updateSetAsDefaultBrowserMenuItem(item as? NSMenuItem)
         case #selector(checkForUpdates(_:)):
@@ -986,6 +997,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(toggleSidebar(_:))
         )
         viewMenu.addItem(toggleSidebarItem)
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .toggleSidebarPosition),
+            action: #selector(toggleSidebarPosition(_:))
+        ))
 
         let toggleBookmarksBarItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .toggleBookmarksBar),
@@ -1509,6 +1524,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
 
             toggleSidebar(nil)
+            return true
+        case .toggleSidebarPosition:
+            guard activeChromeModel?.isWebApp == false else { return false }
+            toggleSidebarPosition(nil)
             return true
         case .toggleBookmarksBar:
             toggleBookmarksBar(nil)

@@ -143,10 +143,10 @@ struct BrowserCommandBarLayout {
                 max(availableSize.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
             )
         case .compact(let anchor, let sidebarWidth, let matchesAnchorWidth):
-            let viewportMaximum = max(
-                availableSize.width - origin.x - BrowserChromeLayout.compactCommandBarHorizontalViewportPadding,
-                0
-            )
+            let padding = BrowserChromeLayout.compactCommandBarHorizontalViewportPadding
+            let viewportMaximum = isTrailingAnchor
+                ? max((anchor?.maxX ?? availableSize.width) - padding, 0)
+                : max(availableSize.width - leadingOriginX - padding, 0)
             if matchesAnchorWidth, let anchor {
                 return min(max(anchor.width, 0), viewportMaximum)
             }
@@ -167,6 +167,17 @@ struct BrowserCommandBarLayout {
         }
     }
 
+    /// The anchor sits in the right half of the window, as with a sidebar on the right.
+    var isTrailingAnchor: Bool {
+        guard case .compact(let anchor?, _, _) = style else { return false }
+        return anchor.midX > availableSize.width / 2
+    }
+
+    var leadingOriginX: CGFloat {
+        guard case .compact(let anchor, _, _) = style else { return 0 }
+        return max(anchor?.minX ?? BrowserChromeLayout.sidebarOuterPadding, BrowserChromeLayout.sidebarOuterPadding)
+    }
+
     var origin: CGPoint {
         switch style {
         case .standard:
@@ -178,10 +189,10 @@ struct BrowserCommandBarLayout {
                 y: standardTopInset
             )
         case .compact(let anchor, _, _):
-            let x = max(
-                anchor?.minX ?? BrowserChromeLayout.sidebarOuterPadding,
-                BrowserChromeLayout.sidebarOuterPadding
-            )
+            // A sidebar on the right anchors the bar at its trailing edge.
+            let x = isTrailingAnchor
+                ? max((anchor?.maxX ?? availableSize.width) - panelWidth, BrowserChromeLayout.sidebarOuterPadding)
+                : leadingOriginX
             let y: CGFloat =
                 if let anchor {
                     max(

@@ -37,6 +37,63 @@ import Testing
         ])
     }
 
+    @Test func aRightSidebarRoundsTheTrailingCornersInFullscreen() {
+        let right = BrowserContentClipping(
+            isSidebarVisible: true,
+            usesWindowContentInsets: false,
+            sidebarPosition: .right
+        )
+        #expect(right.corners == [.layerMaxXMinYCorner, .layerMaxXMaxYCorner])
+    }
+
+    @Test func aRightSidebarMirrorsTheWindowChrome() {
+        func layout(position: BrowserSidebarPosition, visible: Bool, hover: Bool = false) -> BrowserWindowChromeLayout {
+            BrowserWindowChromeLayout(
+                windowSize: CGSize(width: 1200, height: 800),
+                sidebarWidth: 240,
+                isSidebarVisible: visible,
+                isHoverSidebarPresented: hover,
+                isOverlayChromeVisible: hover,
+                isFullscreen: false,
+                showsSiteToolbar: false,
+                showsBookmarksBar: false,
+                extensionSidePanelWidth: 300,
+                sidebarPosition: position
+            )
+        }
+        let inset = BrowserChromeLayout.browserContentEdgeInset
+        let left = layout(position: .left, visible: true)
+        let right = layout(position: .right, visible: true)
+        #expect(left.sidebarFrame.minX == 0)
+        #expect(right.sidebarFrame == CGRect(x: 960, y: 0, width: 240, height: 800))
+        #expect(right.contentFrame.minX == inset)
+        #expect(right.contentFrame.width == left.contentFrame.width, "The content keeps its width on either side")
+        #expect(right.extensionFrame.maxX == 960, "Extensions sit between the content and the sidebar")
+        #expect(right.contentFrame.maxX + BrowserChromeLayout.sidebarOuterPadding == right.extensionFrame.minX)
+        #expect(
+            layout(position: .right, visible: false).sidebarFrame.minX == 1200,
+            "A hidden sidebar leaves to the right"
+        )
+        let hover = layout(position: .right, visible: false, hover: true).sidebarFrame
+        #expect(hover.maxX == 1200 - BrowserChromeLayout.sidebarHoverOverlayEdgeInset)
+        let hidden = layout(position: .right, visible: false)
+        #expect(hidden.contentFrame.minX == inset)
+        #expect(hidden.trailingInset == inset)
+    }
+
+    @Test func aTrailingCommandBarAnchorGrowsTowardTheWindowMiddle() {
+        let anchor = CGRect(x: 960, y: 40, width: 220, height: 36)
+        let layout = BrowserCommandBarLayout(
+            availableSize: CGSize(width: 1200, height: 800),
+            style: .compact(anchorFrame: anchor, sidebarWidth: 240, matchesAnchorWidth: false),
+            displayText: "example.com",
+            suggestionCount: 0
+        )
+        #expect(layout.isTrailingAnchor)
+        #expect(layout.origin.x + layout.panelWidth == anchor.maxX)
+        #expect(layout.origin.x >= BrowserChromeLayout.sidebarOuterPadding)
+    }
+
     @Test func hiddenTabCannotLeaveAnInvisibleEngineViewInteractive() {
         let host = NSView()
         let view = BrowserContentNSView(hostView: host)

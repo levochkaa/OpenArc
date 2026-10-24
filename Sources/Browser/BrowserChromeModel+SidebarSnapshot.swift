@@ -22,3 +22,12 @@ extension BrowserChromeModel {
         )
     }
 }
+
+extension BrowserChromeModel {
+    /// View menu and command bar title that moves the sidebar to the other window edge.
+    var sidebarPositionToggleTitle: String {
+        userPreferencesStore.sidebarPosition == .left
+            ? BrowserStrings.menuMoveSidebarRight
+            : BrowserStrings.menuMoveSidebarLeft
+    }
+}

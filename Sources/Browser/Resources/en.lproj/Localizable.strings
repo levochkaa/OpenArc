@@ -123,6 +123,11 @@
 "browser.menu.separate_page_from_split_view" = "Separate Page from Split View";
 "browser.menu.toggle_split_orientation" = "Toggle Split View Orientation";
 "browser.split.button" = "Split View";
+"browser.settings.sidebar_position" = "Sidebar position";
+"browser.settings.sidebar_position.left" = "Left";
+"browser.settings.sidebar_position.right" = "Right";
+"browser.menu.move_sidebar_right" = "Move Sidebar to the Right";
+"browser.menu.move_sidebar_left" = "Move Sidebar to the Left";
 "browser.split.divider" = "Split View divider";
 "browser.split.open_in_split_view" = "Open in Split View";
 "browser.split.separate_tab" = "Separate Tab from Split";

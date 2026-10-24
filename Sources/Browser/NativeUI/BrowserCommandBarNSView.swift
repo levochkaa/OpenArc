@@ -87,7 +87,8 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         if hit !== self {
             return hit
         }
-        return convert(point, from: superview).x >= blockedLeadingInset ? self : nil
+        let x = convert(point, from: superview).x
+        return x >= blockedLeadingInset && x <= bounds.width - blockedTrailingInset ? self : nil
     }
 
     override func mouseDown(with _: NSEvent) { model.dismiss() }
@@ -136,9 +137,11 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
 
     func configure(
         blockedLeadingInset: CGFloat,
+        blockedTrailingInset: CGFloat = 0,
         style: BrowserCommandBarOverlayStyle,
         faviconCandidate: BrowserCommandBarFaviconCandidate?
     ) {
+        self.blockedTrailingInset = blockedTrailingInset
         let inputStyleChanged = self.style.fontSize != style.fontSize || self.style.selectsTextOnFocus != style
             .selectsTextOnFocus
         self.blockedLeadingInset = blockedLeadingInset
@@ -214,6 +217,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     private let table = BrowserCommandSuggestionTableView()
     private var style = BrowserCommandBarOverlayStyle.standard
     private var blockedLeadingInset: CGFloat = 0
+    private var blockedTrailingInset: CGFloat = 0
     private var faviconCandidate: BrowserCommandBarFaviconCandidate?
     private var scrolledSelectionID: String?
     private let scrollAnimation = BrowserNativeAnimation()
