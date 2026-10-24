@@ -14,6 +14,16 @@ final class BrowserSplitPaneBarsView: NSView {
     weak var model: BrowserChromeModel?
     weak var hostView: NSView?
 
+    /// The window controls move into the top-leading pane's bar while the
+    /// sidebar, which normally holds them, is hidden.
+    var showsWindowControls = false {
+        didSet {
+            if oldValue != showsWindowControls {
+                refresh()
+            }
+        }
+    }
+
     /// Tab IDs of the bars on screen, in pane order.
     var paneTabIDs: [String] { model?.splitPaneLayoutTabIDs.filter { bars[$0] != nil } ?? [] }
 
@@ -62,6 +72,9 @@ final class BrowserSplitPaneBarsView: NSView {
             zip(ids, frames).map { ($0, convert($1, from: hostView)) },
             uniquingKeysWith: { first, _ in first }
         )
+        let topLeadingID = paneRects.min { first, second in
+            (first.value.minY, first.value.minX) < (second.value.minY, second.value.minX)
+        }?.key
         for (id, paneFrame) in zip(ids, frames) {
             guard let tab = model.tabs.first(where: { $0.id == id }) else {
                 bars.removeValue(forKey: id)?.removeFromSuperview()
@@ -77,6 +90,7 @@ final class BrowserSplitPaneBarsView: NSView {
                 height: min(BrowserSplitPaneLayout.paneBarHeight, pane.height)
             )
             bar.update(tab: tab, focused: model.selectedTabID == id, canReorder: ids.count > 1)
+            bar.showsWindowControls = showsWindowControls && id == topLeadingID
         }
     }
 
@@ -172,6 +186,10 @@ final class BrowserSplitPaneBarView: NSView {
         }
         addSubview(hostButton)
         addSubview(grip)
+        windowControls.managesSystemButtons = false
+        windowControls.showsInSidebar = false
+        windowControls.isHidden = true
+        addSubview(windowControls)
         hostButton.addSubview(linkIcon)
         hostButton.addSubview(hostLabel)
         hostLabel.lineBreakMode = .byTruncatingMiddle
@@ -239,6 +257,16 @@ final class BrowserSplitPaneBarView: NSView {
     )
     let hostButton = BrowserNativePressableView()
     let grip = BrowserSplitPaneGripView()
+    let windowControls = BrowserWindowControlsHostView()
+
+    var showsWindowControls = false {
+        didSet {
+            guard oldValue != showsWindowControls else { return }
+            windowControls.showsInSidebar = showsWindowControls
+            windowControls.isHidden = !showsWindowControls
+            needsLayout = true
+        }
+    }
 
     override func mouseDown(with _: NSEvent) {
         send(.focus)
@@ -248,7 +276,14 @@ final class BrowserSplitPaneBarView: NSView {
         super.layout()
         let size = BrowserChromeLayout.sidebarCurrentURLButtonSize
         let y = ((bounds.height - size) / 2).rounded()
-        let inset: CGFloat = 4
+        var inset: CGFloat = 4
+        if showsWindowControls {
+            // The controls sit where they would in the sidebar header.
+            let controlsWidth = windowControls.intrinsicContentSize.width
+            let controlsX = BrowserChromeLayout.sidebarOuterPadding
+            windowControls.frame = NSRect(x: controlsX, y: y, width: controlsWidth, height: size)
+            inset = controlsX + controlsWidth + BrowserChromeLayout.windowControlsTrailingGap
+        }
         backButton.frame = NSRect(x: inset, y: y, width: size, height: size)
         forwardButton.frame = backButton.frame.offsetBy(dx: size, dy: 0)
         reloadButton.frame = forwardButton.frame.offsetBy(dx: size, dy: 0)

@@ -253,6 +253,23 @@ import Testing
         try bitmap.representation(using: .png, properties: [:])?
             .write(to: URL(fileURLWithPath: "/tmp/thebrowser-split-pane-bars.png"))
 
+        func showSidebar(_ visible: Bool) {
+            content.update(
+                hostView: content.viewport.hostedView,
+                isContextReady: true,
+                hasSelectedTab: true,
+                isSidebarVisible: visible,
+                usesWindowContentInsets: true
+            )
+            bars.layoutSubtreeIfNeeded()
+        }
+        showSidebar(false)
+        #expect(other.showsWindowControls && !focused.showsWindowControls, "The top-leading pane holds the controls")
+        #expect(other.backButton.frame.minX >= other.windowControls.frame.maxX, "Navigation moves past the controls")
+        #expect(!other.windowControls.managesSystemButtons)
+        showSidebar(true)
+        #expect(!other.showsWindowControls, "With the sidebar shown its header holds them")
+
         other.backButton.performClick(nil)
         #expect(f.model.selectedTabID == f.id("x"), "The bar focuses its pane first")
         #expect(f.driver.goBackCount == 1)

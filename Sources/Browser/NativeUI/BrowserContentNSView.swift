@@ -134,6 +134,7 @@ final class BrowserContentNSView: NSView {
         let didFailToCreateTab = hasSelectedTab && selectedTabCreationState == .failed
         viewport.isHidden = !isContextReady || !hasSelectedTab || isCreatingTab || didFailToCreateTab
         splitPaneBars.isHidden = viewport.isHidden
+        splitPaneBars.showsWindowControls = !isSidebarVisible
         splitPaneBars.refresh()
         let clipping = BrowserContentClipping(
             isSidebarVisible: isSidebarVisible,

@@ -6,7 +6,9 @@ final class BrowserWindowControlsHostView: NSView {
     // MARK: Lifecycle
 
     isolated deinit {
-        updateSystemButtons(hidden: false, for: observedWindow)
+        if managesSystemButtons {
+            updateSystemButtons(hidden: false, for: observedWindow)
+        }
         stopObservingWindow()
     }
 
@@ -22,6 +24,11 @@ final class BrowserWindowControlsHostView: NSView {
             height: BrowserWindowControlsLayout.controlsHeight
         )
     }
+
+    /// The sidebar header's host hides the system buttons it replaces. Other
+    /// hosts in the same window, such as a split pane bar, leave them alone,
+    /// so removing one never brings the system buttons back.
+    var managesSystemButtons = true
 
     var showsInSidebar = true {
         didSet {
@@ -194,7 +201,9 @@ final class BrowserWindowControlsHostView: NSView {
             return
         }
 
-        updateSystemButtons(hidden: false, for: observedWindow)
+        if managesSystemButtons {
+            updateSystemButtons(hidden: false, for: observedWindow)
+        }
         stopObservingWindow()
 
         guard let window else {
@@ -295,7 +304,9 @@ final class BrowserWindowControlsHostView: NSView {
     private func updateWindowButtons() {
         ensureCustomButtons()
         syncCustomButtonState()
-        updateSystemButtons(hidden: shouldHideSystemButtons, for: window)
+        if managesSystemButtons {
+            updateSystemButtons(hidden: shouldHideSystemButtons, for: window)
+        }
 
         switch displayMode {
         case .hidden:
