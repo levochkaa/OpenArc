@@ -330,6 +330,76 @@ import Testing
         try data.write(to: URL(fileURLWithPath: "/tmp/thebrowser-new-tab-native.png"))
     }
 
+    @Test(arguments: [BrowserNativeSidebarRowNSView.Kind.tab, .space])
+    func rowTitleIsCenteredLikeItsRenameEditor(kind: BrowserNativeSidebarRowNSView.Kind) throws {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 240, height: 36),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let surface = BrowserNativeSurface(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
+        surface.appearance = NSAppearance(named: .aqua)
+        surface.fillColor = .white
+        surface.strokeWidth = 0
+        window.contentView = surface
+        let row = BrowserNativeSidebarRowNSView(frame: surface.bounds)
+        surface.addSubview(row)
+        func update(renaming: Bool) {
+            switch kind {
+            case .space:
+                row.update(
+                    space: .init(id: "space", title: "HOME", systemImageName: "house", isPinnedSectionCollapsed: false),
+                    renaming: renaming,
+                    collapsed: false,
+                    hasPinnedTabs: false,
+                    dropTargeted: false,
+                    isResizing: false,
+                    resetID: 0
+                )
+            default:
+                row.update(
+                    tab: .init(id: "tab", syncID: "tab", spaceID: "space", title: "HOME", urlString: "about:blank"),
+                    selected: true,
+                    renaming: renaming,
+                    isResizing: false,
+                    closeDescriptor: BrowserCommands.archiveTab
+                )
+            }
+            surface.layoutSubtreeIfNeeded()
+        }
+        func textMidY() throws -> CGFloat {
+            let bitmap = try #require(surface.bitmapImageRepForCachingDisplay(in: surface.bounds))
+            surface.cacheDisplay(in: surface.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsWide) / surface.bounds.width
+            let columns = Int(row.renameField.frame.minX * scale)..<Int((row.renameField.frame.minX + 40) * scale)
+            var rows = [Int]()
+            for x in columns {
+                for y in 0..<bitmap.pixelsHigh {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                    if max(color.redComponent, color.greenComponent, color.blueComponent) < 0.85 {
+                        rows.append(y)
+                    }
+                }
+            }
+            return try CGFloat(#require(rows.min()) + #require(rows.max()) + 1) / 2 / scale
+        }
+
+        update(renaming: false)
+        let title = try textMidY()
+        update(renaming: true)
+        #expect(window.makeFirstResponder(row.renameField))
+        #expect(row.renameField.currentEditor() != nil)
+        let editor = try textMidY()
+
+        #expect(abs(title - editor) <= 0.5, "title \(title), editor \(editor)")
+        #expect(abs(title - surface.bounds.midY) <= 0.75, "title \(title), row \(surface.bounds.midY)")
+        #expect(!window.isVisible)
+    }
+
     // MARK: Private
 
     private func tab() -> BrowserChromeModel.Tab {

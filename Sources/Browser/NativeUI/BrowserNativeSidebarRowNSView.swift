@@ -153,8 +153,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             ? bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
             : closeButton.frame.minX - BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
         let titleWidth = max(trailing - titleX, 0)
-        // NSTextField's cell adds text padding; compensate for the original centered HStack.
-        let titleY = (height - 17) / 2 - 6.5 * captionProgress + (kind == .newTab ? 1 : 0)
+        // Share the rename field's frame so the title glyphs stay centered and do not jump on rename.
+        // The pinned URL caption lifts the title to keep the two-line stack centered.
+        let titleY = (height - 17) / 2 + 1 - 7.5 * captionProgress
         titleLabel.frame = NSRect(
             x: titleX,
             y: titleY,
