@@ -36,11 +36,6 @@ final class BrowserNativeSidebarNSView: NSView {
         emptyAppGuide.fillColor = BrowserChromeColors.rowHover
         emptyAppGuide.strokeColor = BrowserChromeColors.sidebarOverlayBorder
         emptyAppGuide.isHidden = true
-        appGrid.addSubview(appDropGuide)
-        appDropGuide.cornerRadius = BrowserChromeLayout.sidebarRowCornerRadius
-        appDropGuide.strokeColor = BrowserChromeColors.sidebarOverlayBorder
-        appDropGuide.fillColor = BrowserChromeColors.rowHover
-        appDropGuide.isHidden = true
         frameTransitions.onFrameChange = { [weak self] in self?.needsLayout = true }
         pagerClip.addSubview(pagesContainer)
         pagerClip.wantsLayer = true
@@ -427,7 +422,6 @@ final class BrowserNativeSidebarNSView: NSView {
 
     private let content = BrowserNativeSidebarBackground()
     private let appGrid = BrowserNativeSidebarBackground()
-    private let appDropGuide = BrowserNativeNoninteractiveSurface()
     private let emptyAppGuide = BrowserNativeNoninteractiveSurface()
     private var emptyAppEntryFrame: CGRect?
     private var reservedAppHeight: CGFloat = 0
@@ -505,7 +499,6 @@ final class BrowserNativeSidebarNSView: NSView {
         emptyAppEntryFrame = offersEmptyAppDrop ? emptyAppGuide.frame.insetBy(dx: 0, dy: -4) : nil
         emptyAppGuide.isHidden = !offersEmptyAppDrop || showsApps
         let appLayout = BrowserSidebarAppTabGridLayout(spacing: BrowserChromeLayout.appTabGridSpacing)
-        let actualAppHeight = appLayout.height(for: appTabs.count, availableWidth: width)
         var appHeight = showsApps
             ? max(
                 appLayout.height(for: appTabs.count, availableWidth: width),
@@ -526,9 +519,6 @@ final class BrowserNativeSidebarNSView: NSView {
             height: appHeight
         )
         setFrame(appFrame, of: appGrid, animated: animated)
-        let guideY = actualAppHeight > 0 ? actualAppHeight + BrowserChromeLayout.appTabGridSpacing : 0
-        appDropGuide.frame = CGRect(x: 0, y: guideY, width: width, height: max(appHeight - guideY, 0))
-        appDropGuide.isHidden = !state.drag.isDragging || appDropGuide.frame.height < 1
         let appFrames = appLayout.frames(for: appTabs.count, availableWidth: width)
         for (index, tab) in appTabs.enumerated() where appFrames.indices.contains(index) {
             if let tile = appTiles[tab.id] {
