@@ -40,6 +40,9 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)? { get set }
     /// A visible split pane received focus, for example from a click.
     var onTabFocused: ((String) -> Void)? { get set }
+    /// A divider drag or reset ended in the visible split: every pane's tab ID
+    /// in pane order with its new size fraction.
+    var onSplitResized: (([String], [Double]) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     /// True admits another attempt for a synchronously refused creation.

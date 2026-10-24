@@ -159,6 +159,23 @@ import Testing
         #expect(f.model.selectedTabID == f.id("y"), "Panes of an unselected split are hidden")
     }
 
+    @Test func aDividerDragCommitsSizesOnlyForTheVisibleSplit() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        f.driver.simulateSplitResize([f.id("x"), f.id("z")], fractions: [0.7, 0.3])
+        #expect(f.model.selectedSplitGroup?.fractions == [0.7, 0.3])
+        #expect(f.driver.visibleTabLayouts.last == BrowserTabVisibleLayout(
+            tabIDs: [f.id("x"), f.id("z")], orientation: .horizontal, fractions: [0.7, 0.3]
+        ))
+        f.driver.simulateSplitResize([f.id("z"), f.id("x")], fractions: [0.5, 0.5])
+        #expect(f.model.selectedSplitGroup?.fractions == [0.7, 0.3], "Stale pane order is ignored")
+        f.model.selectTab(id: f.id("y"))
+        f.driver.simulateSplitResize([f.id("x"), f.id("z")], fractions: [0.5, 0.5])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.selectedSplitGroup?.fractions == [0.7, 0.3], "A hidden split keeps its sizes")
+    }
+
     @Test func addSplitViewOpensTheCommandBarResultAsTheNextPane() throws {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         f.model.selectTab(id: f.id("x"))
@@ -299,7 +316,7 @@ import Testing
 
 @Test func splitPaneFramesFillTheHostWithFixedGaps() {
     let gap = BrowserSplitPaneLayout.paneGap
-    let bounds = CGRect(x: 0, y: 0, width: 1006, height: 600)
+    let bounds = CGRect(x: 0, y: 0, width: 1000 + gap, height: 600)
     let equal = BrowserSplitPaneLayout.frames(
         in: bounds, count: 2, orientation: .horizontal, fractions: nil, flipped: false
     )
@@ -314,10 +331,10 @@ import Testing
     )
     #expect(invalid == equal)
     let three = BrowserSplitPaneLayout.frames(
-        in: CGRect(x: 10, y: 20, width: 912, height: 100), count: 3, orientation: .horizontal,
+        in: CGRect(x: 10, y: 20, width: 900 + gap * 2, height: 100), count: 3, orientation: .horizontal,
         fractions: nil, flipped: false
     )
-    #expect(three.map(\.width).reduce(0, +) + gap * 2 == 912)
+    #expect(three.map(\.width).reduce(0, +) + gap * 2 == 900 + gap * 2)
     #expect(zip(three, three.dropFirst()).allSatisfy { $1.minX - $0.maxX == gap })
     #expect(BrowserSplitPaneLayout.frames(
         in: bounds, count: 1, orientation: .vertical, fractions: nil, flipped: false
@@ -326,17 +343,87 @@ import Testing
 
 @Test func verticalSplitPanesRunTopToBottomInBothCoordinateSystems() {
     let gap = BrowserSplitPaneLayout.paneGap
-    let bounds = CGRect(x: 0, y: 0, width: 800, height: 606)
+    let bounds = CGRect(x: 0, y: 0, width: 800, height: 600 + gap)
     let unflipped = BrowserSplitPaneLayout.frames(
         in: bounds, count: 2, orientation: .vertical, fractions: nil, flipped: false
     )
-    #expect(unflipped[0] == CGRect(x: 0, y: 303 + gap / 2, width: 800, height: 300))
+    #expect(unflipped[0] == CGRect(x: 0, y: 300 + gap, width: 800, height: 300))
     #expect(unflipped[1] == CGRect(x: 0, y: 0, width: 800, height: 300))
     let flipped = BrowserSplitPaneLayout.frames(
         in: bounds, count: 2, orientation: .vertical, fractions: nil, flipped: true
     )
     #expect(flipped[0] == CGRect(x: 0, y: 0, width: 800, height: 300))
     #expect(flipped[1] == CGRect(x: 0, y: 300 + gap, width: 800, height: 300))
+}
+
+@Test func dividerDragMovesOnlyItsNeighborsAndKeepsAMinimumPane() throws {
+    let gap = BrowserSplitPaneLayout.paneGap
+    let minimum = BrowserSplitPaneLayout.minimumPaneLength
+    // Three panes of 300 pt with two gaps.
+    let length: CGFloat = 900 + gap * 2
+    let dragged = try #require(BrowserSplitPaneLayout.fractions(
+        movingDivider: 0, to: 360 + gap / 2, length: length, count: 3, fractions: nil
+    ))
+    #expect(abs(dragged[0] - 360 / 900) < 1e-9)
+    #expect(abs(dragged[1] - 240 / 900) < 1e-9)
+    #expect(abs(dragged[2] - 1 / 3) < 1e-9, "The far pane keeps its size")
+    let clamped = try #require(BrowserSplitPaneLayout.fractions(
+        movingDivider: 1, to: 0, length: length, count: 3, fractions: dragged
+    ))
+    #expect(abs(clamped[1] * 900 - minimum) < 1e-9, "A pane stops at the minimum length")
+    #expect(abs(clamped.reduce(0, +) - 1) < 1e-9)
+    #expect(BrowserSplitPaneLayout.fractions(movingDivider: 2, to: 10, length: length, count: 3, fractions: nil) == nil)
+    let frames = BrowserSplitPaneLayout.frames(
+        in: CGRect(x: 0, y: 0, width: length, height: 500), count: 3, orientation: .horizontal,
+        fractions: dragged, flipped: false
+    )
+    #expect(frames[0].width == 360)
+    #expect(frames[1].minX == 360 + gap)
+}
+
+@Test func dividersCoverTheGapsInBothOrientations() {
+    let gap = BrowserSplitPaneLayout.paneGap
+    let outset = BrowserSplitPaneLayout.dividerHitOutset
+    let horizontal = BrowserSplitPaneLayout.frames(
+        in: CGRect(x: 0, y: 0, width: 1000 + gap, height: 600), count: 2, orientation: .horizontal,
+        fractions: nil, flipped: false
+    )
+    #expect(BrowserSplitPaneLayout.dividerFrames(between: horizontal, orientation: .horizontal) == [
+        CGRect(x: 500 - outset, y: 0, width: gap + outset * 2, height: 600),
+    ])
+    let vertical = BrowserSplitPaneLayout.frames(
+        in: CGRect(x: 0, y: 0, width: 800, height: 600 + gap), count: 2, orientation: .vertical,
+        fractions: nil, flipped: false
+    )
+    #expect(BrowserSplitPaneLayout.dividerFrames(between: vertical, orientation: .vertical) == [
+        CGRect(x: 0, y: 300 - outset, width: 800, height: gap + outset * 2),
+    ])
+    let bounds = CGRect(x: 0, y: 0, width: 800, height: 606)
+    #expect(BrowserSplitPaneLayout.axisPosition(
+        of: CGPoint(x: 10, y: 100), in: bounds, orientation: .vertical, flipped: false
+    ) == 506)
+    #expect(BrowserSplitPaneLayout.axisPosition(
+        of: CGPoint(x: 10, y: 100), in: bounds, orientation: .vertical, flipped: true
+    ) == 100)
+}
+
+@Test func dividerSnapsToEqualNeighborsAndDoubleClickEqualizesThem() throws {
+    let gap = BrowserSplitPaneLayout.paneGap
+    let snap = BrowserSplitPaneLayout.equalSnapDistance
+    let length = 1000 + gap
+    let near = try #require(BrowserSplitPaneLayout.fractions(
+        movingDivider: 0, to: 500 + snap - 1 + gap / 2, length: length, count: 2, fractions: [0.3, 0.7]
+    ))
+    #expect(near == [0.5, 0.5], "Within the snap distance the neighbors become equal")
+    let far = try #require(BrowserSplitPaneLayout.fractions(
+        movingDivider: 0, to: 500 + snap + 10 + gap / 2, length: length, count: 2, fractions: nil
+    ))
+    #expect(abs(far[0] * 1000 - (500 + snap + 10)) < 1e-9)
+    let three = try #require(BrowserSplitPaneLayout.equalizingNeighbors(
+        ofDivider: 1, count: 3, fractions: [0.5, 0.1, 0.4]
+    ))
+    #expect(three == [0.5, 0.25, 0.25], "Only the divider's neighbors change")
+    #expect(BrowserSplitPaneLayout.equalizingNeighbors(ofDivider: 2, count: 3, fractions: nil) == nil)
 }
 
 // MARK: - BrowserSplitViewPersistenceTests

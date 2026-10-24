@@ -718,6 +718,11 @@ enum BrowserStrings {
         comment: "Toolbar button and menu title for Split View."
     )
 
+    static let splitDividerAccessibilityLabel = NSLocalizedString(
+        "browser.split.divider",
+        comment: "Accessibility label of the handle that resizes Split View panes."
+    )
+
     static let splitOpenInSplitViewAction = NSLocalizedString(
         "browser.split.open_in_split_view",
         comment: "Tab context menu action that opens the tab as a new Split View pane."

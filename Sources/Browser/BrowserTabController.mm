@@ -2666,6 +2666,8 @@ class BrowserTabNavigationTask final : public CefTask {
   BOOL _visibleLayoutVertical;
   NSArray<NSNumber *> *_visibleLayoutFractions;
   BrowserSplitFocusRingView *_splitFocusRing;
+  NSMutableArray<BrowserSplitDividerView *> *_splitDividers;
+  BOOL _splitDividerMoved;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
@@ -2862,6 +2864,7 @@ class BrowserTabNavigationTask final : public CefTask {
   BrowserTabHostView *hostView = _hostView;
   if (hostView == nil || keys.size() < 2) {
     _splitFocusRing.hidden = YES;
+    [self hideSplitDividersFromIndex:0];
   }
   if (hostView == nil || keys.empty()) {
     return;
@@ -2888,6 +2891,9 @@ class BrowserTabNavigationTask final : public CefTask {
                                         vertical:_visibleLayoutVertical
                                        fractions:fractions
                                          flipped:hostView.isFlipped];
+  [self layoutSplitDividersInHostView:hostView
+                          paneFrames:frames
+                                keys:keys];
   const std::string activeKey = ToStdString(_activeTabID);
   BOOL showsFocusRing = NO;
   for (size_t index = 0; index < keys.size() && index < frames.count; index++) {
@@ -2903,6 +2909,129 @@ class BrowserTabNavigationTask final : public CefTask {
   if (!showsFocusRing) {
     _splitFocusRing.hidden = YES;
   }
+}
+
+// Dividers sit in the gaps above the pane views. They only resize when every
+// pane of the split has a live engine, because the fractions name all panes.
+- (void)layoutSplitDividersInHostView:(BrowserTabHostView *)hostView
+                           paneFrames:(NSArray<NSValue *> *)paneFrames
+                                 keys:(const std::vector<std::string> &)keys {
+  if (keys.size() != _visibleLayoutTabIDs.count) {
+    [self hideSplitDividersFromIndex:0];
+    return;
+  }
+  NSArray<NSValue *> *frames =
+      [BrowserSplitPaneLayout dividerFramesBetweenPaneFrames:paneFrames
+                                                    vertical:_visibleLayoutVertical];
+  if (_splitDividers == nil) {
+    _splitDividers = [NSMutableArray array];
+  }
+  NSInteger topPaneIndex = -1;
+  for (const auto &key : keys) {
+    auto it = _tabRecords.find(key);
+    NSView *paneView =
+        it == _tabRecords.end() ? nil : BrowserViewForBrowser(it->second.browser);
+    NSUInteger index = paneView == nil ? NSNotFound
+                                       : [hostView.subviews indexOfObjectIdenticalTo:paneView];
+    if (index != NSNotFound) {
+      topPaneIndex = MAX(topPaneIndex, (NSInteger)index);
+    }
+  }
+  __weak BrowserTabController *weakSelf = self;
+  for (NSUInteger index = 0; index < frames.count; index++) {
+    if (index >= _splitDividers.count) {
+      BrowserSplitDividerView *divider =
+          [[BrowserSplitDividerView alloc] initWithFrame:NSZeroRect];
+      __weak BrowserSplitDividerView *weakDivider = divider;
+      divider.onDrag = ^(NSPoint point) {
+        [weakSelf dragSplitDividerAtIndex:weakDivider.index toPoint:point];
+      };
+      divider.onDragEnd = ^{
+        [weakSelf finishSplitDividerDrag];
+      };
+      divider.onReset = ^{
+        [weakSelf equalizeSplitPanesAroundDividerAtIndex:weakDivider.index];
+      };
+      [_splitDividers addObject:divider];
+    }
+    BrowserSplitDividerView *divider = _splitDividers[index];
+    divider.index = (NSInteger)index;
+    divider.isVerticalSplit = _visibleLayoutVertical;
+    // Browser views created later are added above, so keep dividers on top.
+    NSUInteger currentIndex = divider.superview == hostView
+                                  ? [hostView.subviews indexOfObjectIdenticalTo:divider]
+                                  : NSNotFound;
+    if (currentIndex == NSNotFound || (NSInteger)currentIndex < topPaneIndex) {
+      [hostView addSubview:divider positioned:NSWindowAbove relativeTo:nil];
+    }
+    if (!NSEqualRects(divider.frame, frames[index].rectValue)) {
+      divider.frame = frames[index].rectValue;
+    }
+    divider.hidden = NO;
+  }
+  [self hideSplitDividersFromIndex:frames.count];
+}
+
+- (void)hideSplitDividersFromIndex:(NSUInteger)start {
+  for (NSUInteger index = start; index < _splitDividers.count; index++) {
+    _splitDividers[index].hidden = YES;
+  }
+}
+
+// Live resize keeps the new sizes local until the drag ends, so the model and
+// session store see one change per drag.
+- (void)dragSplitDividerAtIndex:(NSInteger)index toPoint:(NSPoint)point {
+  BrowserTabHostView *hostView = _hostView;
+  if (hostView == nil || _visibleLayoutTabIDs.count < 2) {
+    return;
+  }
+  NSArray<NSNumber *> *fractions =
+      [BrowserSplitPaneLayout fractionsMovingDivider:index
+                                             toPoint:point
+                                            inBounds:hostView.bounds
+                                               count:(NSInteger)_visibleLayoutTabIDs.count
+                                            vertical:_visibleLayoutVertical
+                                             flipped:hostView.isFlipped
+                                           fractions:_visibleLayoutFractions ?: @[]];
+  if (fractions == nil || [fractions isEqualToArray:_visibleLayoutFractions]) {
+    return;
+  }
+  _visibleLayoutFractions = fractions;
+  _splitDividerMoved = YES;
+  [self layoutVisiblePanes:[self visiblePaneKeys]];
+}
+
+- (void)finishSplitDividerDrag {
+  if (!_splitDividerMoved) {
+    return;
+  }
+  _splitDividerMoved = NO;
+  [self reportSplitPaneSizes];
+}
+
+// A double click makes the divider's two neighbors equal.
+- (void)equalizeSplitPanesAroundDividerAtIndex:(NSInteger)index {
+  NSArray<NSNumber *> *fractions = [BrowserSplitPaneLayout
+      fractionsEqualizingNeighborsOfDivider:index
+                                      count:(NSInteger)_visibleLayoutTabIDs.count
+                                  fractions:_visibleLayoutFractions ?: @[]];
+  if (fractions == nil) {
+    return;
+  }
+  _visibleLayoutFractions = fractions;
+  [self layoutVisiblePanes:[self visiblePaneKeys]];
+  [self reportSplitPaneSizes];
+}
+
+- (void)reportSplitPaneSizes {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if (_visibleLayoutTabIDs.count < 2 || _visibleLayoutFractions.count != _visibleLayoutTabIDs.count ||
+      ![delegate respondsToSelector:@selector(browserTabController:didResizeSplitWithTabIDs:fractions:)]) {
+    return;
+  }
+  [delegate browserTabController:self
+        didResizeSplitWithTabIDs:_visibleLayoutTabIDs
+                       fractions:_visibleLayoutFractions];
 }
 
 - (void)showSplitFocusRingInHostView:(BrowserTabHostView *)hostView
@@ -3366,6 +3495,10 @@ class BrowserTabNavigationTask final : public CefTask {
   self.delegate = nil;
   [_splitFocusRing removeFromSuperview];
   _splitFocusRing = nil;
+  for (BrowserSplitDividerView *divider in _splitDividers) {
+    [divider removeFromSuperview];
+  }
+  _splitDividers = nil;
   _hostView.controller = nil;
   _hostView = nil;
   _activeTabID = nil;

@@ -142,6 +142,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onTabFocused = { [weak self] tabID in
             self?.handleSplitPaneFocused(tabID)
         }
+        tabDriver.onSplitResized = { [weak self] tabIDs, fractions in
+            self?.handleSplitResize(tabIDs: tabIDs, fractions: fractions)
+        }
         tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
             self?.handleNavigationStateChange(
                 id: tabID,

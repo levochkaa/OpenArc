@@ -51,6 +51,7 @@ import Foundation
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)?
     var onTabFocused: ((String) -> Void)?
+    var onSplitResized: (([String], [Double]) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -180,6 +181,7 @@ import Foundation
         onFindResultChanged = nil
         onDownloadUpdated = nil
         onTabFocused = nil
+        onSplitResized = nil
         controller.prepareForCefShutdown()
     }
 
@@ -195,6 +197,17 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(_: BrowserTabController, didFocusTabWithID tabID: String) {
         DispatchQueue.main.async { [weak self] in
             self?.onTabFocused?(tabID)
+        }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didResizeSplitWithTabIDs tabIDs: [String],
+        fractions: [NSNumber]
+    ) {
+        let sizes = fractions.map(\.doubleValue)
+        DispatchQueue.main.async { [weak self] in
+            self?.onSplitResized?(tabIDs, sizes)
         }
     }
 

@@ -123,6 +123,7 @@
 "browser.menu.separate_page_from_split_view" = "Separate Page from Split View";
 "browser.menu.toggle_split_orientation" = "Toggle Split View Orientation";
 "browser.split.button" = "Split View";
+"browser.split.divider" = "Split View divider";
 "browser.split.open_in_split_view" = "Open in Split View";
 "browser.split.separate_tab" = "Separate Tab from Split";
 "browser.split.separate_all_tabs" = "Separate All Tabs";

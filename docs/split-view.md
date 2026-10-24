@@ -21,6 +21,19 @@ The selected tab is the focused pane, so the toolbar, Find and active-tab comman
 
 `CefFocusHandler::OnGotFocus` in a visible non-active pane reports `didFocusTabWithID`; the model selects that tab, so the toolbar follows the clicked pane. Hidden tabs and panes of an unselected split cannot take selection this way. Navigation focus stealing stays blocked for inactive panes.
 
+Panes sit `BrowserWindowGeometry.browserContentEdgeInset` (8 pt) apart, the same distance as the content from the window edge. Every pane view rounds all four corners with the content corner radius while a split is shown, so the inner corners match the outer ones.
+
+### Divider
+
+A `BrowserSplitDividerView` fills each gap above the pane views. Dragging resizes the two neighbors live in the controller; the sizes reach the model once, on release, through `BrowserTabControllerDelegate.didResizeSplitWithTabIDs:fractions:` → `BrowserTabDriving.onSplitResized` → `setSplitFractions`, so the session store sees one change per drag. The model ignores a report whose tab IDs are no longer the selected split's panes. Rules:
+
+- A pane never shrinks below 220 pt unless its neighbors together are shorter.
+- Within 14 pt of the point where the two neighbors are equal, the divider snaps there.
+- A double click makes the divider's two neighbors equal and leaves other panes alone.
+- A 2 × 24 pt grip fades in over 0.16 s while the divider is hovered or dragged.
+
+Dividers only act when every pane has a live engine, because the fractions name all panes.
+
 While two or more panes are shown, the controller draws a 2 pt accent ring (`BrowserSplitFocusRingView`, rounded like the content corners) inside the active pane's frame. It sits above the pane views, ignores mouse events and hides outside a split.
 
 ## Actions
@@ -67,7 +80,6 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, commands with shortcuts, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
-1. Divider drag to resize panes (commit with `setSplitFractions` on drag end).
-2. Sidebar: one row with member chips at the first member, hidden member rows and the split row menu (Add Tab, Tab Options).
-3. Pane chrome: per-pane back/forward/host/close strip, Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane and drag into the center.
-4. iPad browser split in UIKit/WebKit.
+1. Sidebar: one row with member chips at the first member, hidden member rows and the split row menu (Add Tab, Tab Options).
+2. Pane chrome: per-pane back/forward/host/close strip, Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane and drag into the center.
+3. iPad browser split in UIKit/WebKit.

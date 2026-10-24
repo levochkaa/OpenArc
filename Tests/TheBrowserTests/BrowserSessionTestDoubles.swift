@@ -53,6 +53,7 @@ import Foundation
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)?
     var onTabFocused: ((String) -> Void)?
+    var onSplitResized: (([String], [Double]) -> Void)?
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
     private(set) var retryCreationRequests = [RetryCreationRequest]()
@@ -134,6 +135,11 @@ import Foundation
     /// Simulates CEF reporting focus in a visible split pane.
     func simulateTabFocus(_ tabID: String) {
         onTabFocused?(tabID)
+    }
+
+    /// Simulates the end of a divider drag in the visible split.
+    func simulateSplitResize(_ tabIDs: [String], fractions: [Double]) {
+        onSplitResized?(tabIDs, fractions)
     }
 
     func deselectActiveTab() {

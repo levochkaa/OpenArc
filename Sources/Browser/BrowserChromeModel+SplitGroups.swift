@@ -127,6 +127,13 @@ extension BrowserChromeModel {
     }
 
     /// A click in another visible pane focuses that pane's tab.
+    /// A divider drag ended in the engine. The sizes apply only while the
+    /// visible panes are still exactly the selected split's panes.
+    func handleSplitResize(tabIDs: [String], fractions: [Double]) {
+        guard let group = selectedSplitGroup, splitPaneTabIDs(of: group) == tabIDs else { return }
+        setSplitFractions(fractions, groupID: group.id)
+    }
+
     func handleSplitPaneFocused(_ tabID: String) {
         guard tabID != selectedTabID,
               let group = selectedSplitGroup,
