@@ -22,4 +22,4 @@ Apple's [adding-items callback](https://developer.apple.com/documentation/uikit/
 
 Hosted tests call production UIKit delegates, use real table geometry and document/SQLite state, and supply protocol-fake native sessions/coordinators. They cover append timing, semantic order, stale containers, exact identity sets, shared projection exclusion, palette stability, hover cancellation and one interwindow move with all preview completions. Pure planner tests cover the root limit and captured-container rules. These checks do not establish physical tap-to-add recognition, OS scene ordering, auto-scroll or touch/pointer smoothness.
 
-The existing HTTP group replay and cross-Space scenarios separately verify the unchanged v4 operation through localhost NestJS/PostgreSQL.
+The existing HTTP group replay and cross-Space scenarios separately verify the unchanged v4 operation through the localhost sync server and PostgreSQL.

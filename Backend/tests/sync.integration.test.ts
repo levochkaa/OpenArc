@@ -1,16 +1,11 @@
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
 import { readFile } from "node:fs/promises";
-import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { after, before, describe, it } from "node:test";
-import type { INestApplication } from "@nestjs/common";
-import type pg from "pg";
-import type { SyncChange, SyncOperation } from "../src/schemas.js";
+import pg from "pg";
+import type { SyncChange, SyncOperation } from "./sync-types.js";
+import { issueAccessToken, migrate, startSyncServer, type SyncServer } from "./sync-server.js";
 import { registerFolderSyncTests } from "./sync-folders.js";
 import { registerActivitySyncTests } from "./sync-activity.js";
 import { registerExpirySyncTests } from "./sync-expiry.js";
@@ -42,10 +37,10 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
   // restarts. Individual HTTP calls retain their 15-second deadline.
   timeout: 120_000
 }, () => {
-  let app: INestApplication;
+  let server: SyncServer | undefined;
   let baseURL: string;
   let pool: pg.Pool;
-  let issueAccessToken: (userID: string) => Promise<string>;
+  const startServerProcess = () => startSyncServer(testDatabaseURL!);
   const legacy = { userID: randomUUID(), deletedSpace: randomUUID(), liveSpace: randomUUID(), orphan: randomUUID(), moved: randomUUID() };
 
   before(async () => {
@@ -53,18 +48,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     const url = new URL(testDatabaseURL);
     assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(url.hostname), "Only loopback test databases are allowed");
     assert.match(url.pathname, /^\/thebrowser_sync_test_[a-z0-9_]+$/, "Use a dedicated disposable test database");
-    process.env.DATABASE_URL = testDatabaseURL;
-    process.env.APPLE_CLIENT_ID = "com.thebrowser.sync-integration-tests";
-    process.env.JWT_SECRET = "local-integration-only-secret-at-least-thirty-two-bytes";
-    process.env.JWT_ISSUER = "thebrowser-sync-integration-tests";
-    process.env.JWT_AUDIENCE = "thebrowser-sync-integration-clients";
-
-    const [{ buildApp }, { AuthService }, database] = await Promise.all([
-      import("../src/app.js"),
-      import("../src/auth.service.js"),
-      import("../src/db.js")
-    ]);
-    pool = database.pool;
+    pool = new pg.Pool({ connectionString: testDatabaseURL, max: 10 });
     const databaseName = await pool.query("SELECT current_database() AS name");
     assert.equal(databaseName.rows[0].name, url.pathname.slice(1));
     const existingSchema = await pool.query("SELECT to_regclass('public.app_users') AS table_name");
@@ -86,19 +70,14 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
         INSERT INTO sync_events (user_id, entity_type, entity_id, op, payload) VALUES ($1, $2, $3, $4, $5)
       `, [legacy.userID, change.entityType, change.entityID, change.op, JSON.stringify({ id: change.entityID, ...change.data })]);
     }
-    await promisify(execFile)(process.execPath, ["--import", "tsx", "src/migrate.ts"], {
-      cwd: fileURLToPath(new URL("../", import.meta.url)), timeout: 10_000
-    });
-    app = await buildApp({ logger: false });
-    await app.listen(0, "127.0.0.1");
-    baseURL = await app.getUrl();
-    const auth = app.get(AuthService);
-    issueAccessToken = (userID) => auth.issueAccessToken(userID);
+    await migrate(testDatabaseURL);
+    server = await startServerProcess();
+    baseURL = server.url;
   });
 
   after(async () => {
-    if (app) await app.close();
-    else if (pool) await pool.end();
+    await server?.stop();
+    await pool?.end();
   });
 
   async function post<T>(path: string, token: string, body: unknown, expectedStatus = 201, serverURL = baseURL): Promise<T> {
@@ -957,44 +936,4 @@ async function waitUntil(predicate: () => Promise<boolean>): Promise<void> {
     await delay(20);
   }
   assert.fail("Database did not reach the expected synchronization point");
-}
-
-async function startServerProcess(): Promise<{ url: string; stop: () => Promise<void> }> {
-  const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", `
-    const { buildApp } = await import("./src/app.ts");
-    const app = await buildApp({ logger: false });
-    await app.listen(0, "127.0.0.1");
-    process.stdout.write("SYNC_TEST_READY " + await app.getUrl() + "\\n");
-    process.once("SIGTERM", async () => { await app.close(); process.exit(0); });
-  `], { cwd: fileURLToPath(new URL("../", import.meta.url)), stdio: ["ignore", "pipe", "pipe"] });
-  let errors = "";
-  child.stderr.on("data", (data: Buffer) => { errors += data.toString(); });
-  const lines = createInterface({ input: child.stdout });
-  const url = await new Promise<string>((resolve, reject) => {
-    const timeout = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`Backend startup timed out: ${errors}`)); }, 10_000);
-    child.once("error", (error) => { clearTimeout(timeout); reject(error); });
-    child.once("exit", (code) => { clearTimeout(timeout); reject(new Error(`Backend exited during startup (${code}): ${errors}`)); });
-    lines.on("line", (line: string) => {
-      if (line.startsWith("SYNC_TEST_READY ")) {
-        clearTimeout(timeout);
-        resolve(line.slice("SYNC_TEST_READY ".length));
-      }
-    });
-  });
-  return { url, stop: async () => {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      lines.close();
-      assert.fail(`Backend exited before shutdown (${child.exitCode ?? child.signalCode}): ${errors}`);
-    }
-    const closed = once(child, "close");
-    child.kill("SIGTERM");
-    const timeout = setTimeout(() => { child.kill("SIGKILL"); }, 5_000);
-    try {
-      const [code] = await closed;
-      assert.equal(code, 0, `Backend shutdown failed: ${errors}`);
-    } finally {
-      clearTimeout(timeout);
-      lines.close();
-    }
-  } };
 }

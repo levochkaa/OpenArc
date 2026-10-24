@@ -52,7 +52,7 @@ Snapshot materialization preserves local fractional precision only for the same 
 
 ## Localhost integration fixture
 
-`BrowserMobileSyncHTTPIntegrationTests` uses the profile session, document, scene workspace, real SQLite/outbox and production Swift HTTP transport against the production NestJS/PostgreSQL sync API. Its isolated accounts each register two devices through the real device endpoint. The test authorization adapter supplies fixture credentials issued by `AuthService`; it does not contact Apple or exercise a real Apple sign-in exchange.
+`BrowserMobileSyncHTTPIntegrationTests` uses the profile session, document, scene workspace, real SQLite/outbox and production Swift HTTP transport against the production Rust sync server and PostgreSQL. Its isolated accounts each register two devices through the real device endpoint. The test authorization adapter supplies fixture credentials signed with the server's test secret; it does not contact Apple or exercise a real Apple sign-in exchange.
 
 `mobile-v4-roundtrip` exercises a real WebKit link and Back/Forward navigation, shared tab metadata and nested/empty folders. A second scene shares the document while retaining independent selection and runtime IDs. A folder move from the other device preserves live views/history; a later subtree delete closes affected runtimes in both scenes. An activity-only patch reaches the second client and SQLite reopen while both live pages retain their runtime IDs, history and JavaScript sentinels; touching the subsequently tombstoned ID creates no outbox work. An unsupported desktop URL remains durable without loading. Closing a Today tab writes a local Archive entry and a server tombstone; fresh-ID restore reaches the second device while the old tombstone persists, neither profile receives remote archive entries, and the final state/consumed receipt survive SQLite reopen. `mobile-v4-recovery` covers a committed push with a lost acknowledgement, immutable mutation UUID/payload bytes across reopen, and deletion defeating later stale rename/move intent. `mobile-v4-group-replay` sends one mixed folder/tab root move from the production planner, preserves concurrent remote titles and verifies exact replay after a lost acknowledgement and SQLite reopen. The replay cannot undo a newer move or resurrect a deleted folder/child. `mobile-v4-cross-space` moves a group after remote descendants enter/escape its folder, then deletes the old Space. Moved descendants and loaded page runtimes survive; both clients and SQLite reopen converge without new echo operations. These are test definitions.
 
@@ -68,7 +68,7 @@ Verify real Apple authentication and account identity across provisioned clients
 
 Use `./build.sh ios-build`, then `./build.sh ios-test --ios-destination ...` on iPhone and iPad. Tests use the separate `BrowserMobileTestHost`, real SQLite, actual UIKit controls and localhost WebKit pages. Model callback tests use a fake engine to control closure and event order. Existing legacy JSON tests remain as migration/regression coverage; production scenes use the new document.
 
-For the mobile HTTP suite, install the backend dependencies with Node.js 26 and have Docker available, then run this command for each chosen simulator:
+For the mobile HTTP suite, install Rust, install the backend test dependencies with Node.js 26 and have Docker available, then run this command for each chosen simulator:
 
 ```sh
 ./script/test_mobile_sync.sh \

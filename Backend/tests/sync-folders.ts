@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { it } from "node:test";
 import type pg from "pg";
-import type { SyncOperationV4 } from "../src/schemas.js";
+import type { SyncOperationV4 } from "./sync-types.js";
 
 type Device = { id: string; token: string };
 type Ref = { entityType: "space" | "tab" | "folder"; entityID: string };

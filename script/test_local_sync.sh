@@ -13,6 +13,10 @@ if [[ ! -x node_modules/.bin/tsx ]]; then
   exit 1
 fi
 docker info >/dev/null
+THEBROWSER_SYNC_SERVER_BINARY="$("$repo_root/script/build_sync_server.sh")"
+export THEBROWSER_SYNC_SERVER_BINARY
+# Unit and database-free HTTP tests, including the receipt digest fixture.
+PATH="/opt/homebrew/opt/rustup/bin:$PATH" cargo test --quiet
 
 test_id="$(node -p 'require("node:crypto").randomBytes(8).toString("hex")')"
 container_name="thebrowser-sync-test-$test_id"
@@ -64,5 +68,5 @@ export JWT_SECRET=local-integration-only-secret-at-least-thirty-two-bytes
 export JWT_ISSUER=thebrowser-sync-integration-tests
 export JWT_AUDIENCE=thebrowser-sync-integration-clients
 
-# The suite seeds v1 fixtures before running the real migration command.
+# The suite seeds v1 fixtures before running the server's migrate command.
 node --test --import tsx --test-reporter spec tests/sync.integration.test.ts

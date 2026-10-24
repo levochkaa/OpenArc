@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { writeFile } from "node:fs/promises";
 import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
+import pg from "pg";
+import { issueAccessToken, migrate, startSyncServer } from "./sync-server.js";
 
 // This driver is test-only. Authentication, device registration, migrations and
 // every sync request use the production server. Fault controls live separately.
@@ -18,24 +17,12 @@ assert.ok(suite === "desktop" || suite === "mobile", "Unknown Swift sync fixture
 const databaseURL = new URL(process.env.THEBROWSER_SYNC_TEST_DATABASE_URL ?? "");
 assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(databaseURL.hostname));
 assert.match(databaseURL.pathname, /^\/thebrowser_sync_test_[a-z0-9_]+$/);
-process.env.DATABASE_URL = databaseURL.toString();
-process.env.APPLE_CLIENT_ID = "com.thebrowser.sync-integration-tests";
-process.env.JWT_SECRET = "local-integration-only-secret-at-least-thirty-two-bytes";
-process.env.JWT_ISSUER = "thebrowser-sync-integration-tests";
-process.env.JWT_AUDIENCE = "thebrowser-sync-integration-clients";
-
-const [{ buildApp }, { AuthService }, { pool }] = await Promise.all([
-  import("../src/app.js"), import("../src/auth.service.js"), import("../src/db.js")
-]);
+const pool = new pg.Pool({ connectionString: databaseURL.toString(), max: 10 });
 const schema = await pool.query("SELECT to_regclass('public.app_users') AS table_name");
 assert.equal(schema.rows[0].table_name, null, "Swift HTTP tests require a fresh empty database");
-await promisify(execFile)(process.execPath, ["--import", "tsx", "src/migrate.ts"], {
-  cwd: fileURLToPath(new URL("../", import.meta.url)), timeout: 15_000
-});
-const app = await buildApp({ logger: false });
-await app.listen(0, "127.0.0.1");
-const upstream = await app.getUrl();
-const auth = app.get(AuthService);
+await migrate(databaseURL.toString());
+const server = await startSyncServer(databaseURL.toString());
+const upstream = server.url;
 const controlToken = randomUUID();
 
 type Mode = "drop" | "hold";
@@ -243,7 +230,7 @@ async function registerDevice(userID: string, accessToken: string, name: string)
 for (const scenario of scenarios) {
   const result = await pool.query("INSERT INTO app_users (apple_subject) VALUES ($1) RETURNING id", [`swift-${randomUUID()}`]);
   const userID = result.rows[0].id as string;
-  const accessToken = await auth.issueAccessToken(userID);
+  const accessToken = await issueAccessToken(userID);
   if (legacyScenarios.has(scenario)) legacyAuthorizations.add(`Bearer ${accessToken}`);
   else if (!folderScenarios.has(scenario) && !mobileScenarios.has(scenario)
     && scenario !== expiryScenario && scenario !== expiryQueueScenario && scenario !== expiryLimitScenario
@@ -584,7 +571,8 @@ async function close(): Promise<void> {
   proxy.closeAllConnections();
   control.closeAllConnections();
   await Promise.all([new Promise<void>((resolve) => proxy.close(() => resolve())), new Promise<void>((resolve) => control.close(() => resolve()))]);
-  await app.close();
+  await server.stop();
+  await pool.end();
 }
 process.once("SIGTERM", () => void close());
 process.once("SIGINT", () => void close());

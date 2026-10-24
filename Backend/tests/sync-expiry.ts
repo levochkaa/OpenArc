@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { it } from "node:test";
 import type pg from "pg";
-import type { SyncExpiryOperation, SyncOperationV4 } from "../src/schemas.js";
+import type { SyncExpiryOperation, SyncOperationV4 } from "./sync-types.js";
 
 type Device = { id: string; token: string };
 type Event = { serverSeq: number; entityType: string; entityID: string; op: string; data: Record<string, unknown> };

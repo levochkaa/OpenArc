@@ -36,6 +36,8 @@ if [[ ! -x node_modules/.bin/tsx ]]; then
   exit 1
 fi
 docker info >/dev/null
+THEBROWSER_SYNC_SERVER_BINARY="$("$repo_root/script/build_sync_server.sh")"
+export THEBROWSER_SYNC_SERVER_BINARY
 
 test_id="$(node -p 'require("node:crypto").randomBytes(8).toString("hex")')"
 container_name="thebrowser-mobile-sync-test-$test_id"

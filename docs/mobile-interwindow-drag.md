@@ -20,4 +20,4 @@ Temporary [`foregroundInactive`](https://developer.apple.com/documentation/uikit
 
 Hosted tests use two real UIWindows and workspaces sharing document/SQLite, with independent engines and selections. Native drag sessions, coordinators and animation completions use protocol fakes. The test host has one UIWindowScene, so these tests do not establish physical inter-scene dragging, window activation order or Stage Manager behavior.
 
-Existing real HTTP scenarios verify the unchanged document/planner operation through localhost NestJS/PostgreSQL, including group replay and cross-Space deletion dominance. They are separate from native participant tests.
+Existing real HTTP scenarios verify the unchanged document/planner operation through the localhost sync server and PostgreSQL, including group replay and cross-Space deletion dominance. They are separate from native participant tests.

@@ -1,17 +1,16 @@
-FROM node:26-bookworm-slim AS build
+FROM rust:1-bookworm AS build
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm install
-COPY tsconfig.json ./
+COPY Cargo.toml Cargo.lock rustfmt.toml ./
 COPY src ./src
-RUN npm run build
-
-FROM node:26-bookworm-slim
-WORKDIR /app
-ENV NODE_ENV=production
-COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
-COPY --from=build /app/dist ./dist
-COPY openapi.yaml ./openapi.yaml
 COPY migrations ./migrations
-CMD ["node", "dist/server.js"]
+COPY openapi.yaml ./openapi.yaml
+RUN cargo build --release --locked
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+# Migrations and the OpenAPI contract are compiled into the binary.
+COPY --from=build /app/target/release/thebrowser-sync-server /usr/local/bin/thebrowser-sync-server
+USER nobody
+CMD ["thebrowser-sync-server", "serve"]
