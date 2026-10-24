@@ -865,6 +865,11 @@ enum BrowserStrings {
         comment: "Settings detail for the Peek toggle."
     )
 
+    static let settingsLittleWindowOptionCommandClick = NSLocalizedString(
+        "browser.settings.little_window_option_command_click",
+        comment: "Settings toggle: Option-Command-clicked links open in a small window of their own."
+    )
+
     static let settingsPeekOtherSites = NSLocalizedString(
         "browser.settings.peek_other_sites",
         comment: "Settings toggle: links to other sites from pinned tabs and Favorites open in Peek."

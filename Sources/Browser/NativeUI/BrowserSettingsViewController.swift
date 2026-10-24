@@ -312,6 +312,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.littleArcEnabled = $0 }
                 ),
                 toggle(
+                    "little-window-option-command-click",
+                    BrowserStrings.settingsLittleWindowOptionCommandClick,
+                    get: { preferences.opensOptionCommandClicksInLittleWindow },
+                    set: { preferences.opensOptionCommandClicksInLittleWindow = $0 }
+                ),
+                toggle(
                     "warn-before-quitting",
                     BrowserStrings.settingsWarnBeforeQuitting,
                     get: { preferences.warnBeforeQuitting },

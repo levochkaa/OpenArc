@@ -61,6 +61,15 @@ import Testing
         #expect(closes == 1)
     }
 
+    @Test func optionCommandClicksIntoTheSmallWindowAreOptIn() throws {
+        let defaults = try #require(UserDefaults(suiteName: "BrowserPeekPanelTests.\(UUID().uuidString)"))
+        let store = BrowserUserPreferencesStore(userDefaults: defaults)
+        #expect(!store.opensOptionCommandClicksInLittleWindow)
+        store.opensOptionCommandClicksInLittleWindow = true
+        #expect(defaults.bool(forKey: BrowserUserPreferencesStore.littleWindowOptionCommandClickKey))
+        #expect(BrowserUserPreferencesStore(userDefaults: defaults).opensOptionCommandClicksInLittleWindow)
+    }
+
     @Test func closingTheWindowClosesItsPeeks() {
         let f = SidebarDragFixture(temporary: ["x"])
         f.model.prepareForTermination()

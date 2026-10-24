@@ -212,6 +212,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         }
         self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
         self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
+        self.opensOptionCommandClicksInLittleWindow = userDefaults.bool(forKey: Self.littleWindowOptionCommandClickKey)
         self.peeksLinksToOtherSites = Self.loadBool(userDefaults, key: Key.peeksLinksToOtherSites, defaultValue: false)
         self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)
             .flatMap { try? JSONDecoder().decode([BrowserLinkRoute].self, from: $0) } ?? []
@@ -223,6 +224,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
     static let downloadDirectoryKey = "browser.settings.downloadDirectoryPath"
     /// Read by the engine through `BrowserPeekSettings`.
     static let peekEnabledKey = "browser.settings.peekEnabled"
+    static let littleWindowOptionCommandClickKey = "browser.settings.littleWindowOptionCommandClick"
 
     @Published var automaticUpdatesEnabled: Bool {
         didSet { userDefaults.set(automaticUpdatesEnabled, forKey: Key.automaticUpdatesEnabled) }
@@ -301,6 +303,14 @@ final class BrowserUserPreferencesStore: ObservableObject {
     /// default here, so links keep opening as tabs unless the user opts in.
     @Published var littleArcEnabled: Bool {
         didSet { userDefaults.set(littleArcEnabled, forKey: Key.littleArcEnabled) }
+    }
+
+    /// An Option-Command-clicked link opens in a small
+    /// window instead of a background tab. Off by default.
+    @Published var opensOptionCommandClicksInLittleWindow: Bool {
+        didSet {
+            userDefaults.set(opensOptionCommandClicksInLittleWindow, forKey: Self.littleWindowOptionCommandClickKey)
+        }
     }
 
     /// Peek for links to other sites from pinned tabs and Favorites. Off

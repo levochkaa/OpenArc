@@ -209,4 +209,9 @@ import AppKit
     @objc static var isEnabled: Bool {
         UserDefaults.standard.object(forKey: BrowserUserPreferencesStore.peekEnabledKey) as? Bool ?? true
     }
+
+    /// Option-Command-click into the small window, off unless turned on.
+    @objc static var opensOptionCommandClicksInLittleWindow: Bool {
+        UserDefaults.standard.bool(forKey: BrowserUserPreferencesStore.littleWindowOptionCommandClickKey)
+    }
 }

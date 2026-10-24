@@ -4282,6 +4282,18 @@ void BrowserTabClient::OnFaviconURLChange(
                             forTabID:ToNSString(tab_id_)];
 }
 
+/// Option-Command-click into the small window, when turned on. Chromium reports
+/// the click as a Command-click, so the held keys decide.
+bool IsOptionCommandClick(cef_window_open_disposition_t disposition, bool user_gesture) {
+  if (!user_gesture ||
+      (disposition != CEF_WOD_NEW_BACKGROUND_TAB && disposition != CEF_WOD_NEW_FOREGROUND_TAB) ||
+      !BrowserPeekSettings.opensOptionCommandClicksInLittleWindow) {
+    return false;
+  }
+  const NSEventModifierFlags flags = NSEvent.modifierFlags;
+  return (flags & NSEventModifierFlagOption) != 0 && (flags & NSEventModifierFlagCommand) != 0;
+}
+
 /// Shared by tabs and Peek: saves into the download folder and reports to the
 /// window's download list.
 bool HandleBeforeDownload(BrowserTabController *controller,
@@ -4453,6 +4465,10 @@ bool BrowserTabClient::OnOpenURLFromTab(
     [controller showPeekWithURLString:urlString];
     return true;
   }
+  if (IsOptionCommandClick(target_disposition, user_gesture)) {
+    [controller showLittleWindowWithURLString:urlString];
+    return true;
+  }
   return [controller openURLFromTabWithURLString:urlString
                                      sourceTabID:ToNSString(tab_id_)
                                targetDisposition:target_disposition];
@@ -4588,6 +4604,10 @@ bool BrowserTabClient::OnBeforePopup(
   NSString *urlString = ToNSString(target_url.ToString());
   if (target_disposition == CEF_WOD_NEW_WINDOW && user_gesture && BrowserPeekSettings.isEnabled) {
     [controller showPeekWithURLString:urlString];
+    return true;
+  }
+  if (IsOptionCommandClick(target_disposition, user_gesture)) {
+    [controller showLittleWindowWithURLString:urlString];
     return true;
   }
   return [controller openURLFromTabWithURLString:urlString
