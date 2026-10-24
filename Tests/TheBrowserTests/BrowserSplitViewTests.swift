@@ -480,8 +480,40 @@ import Testing
         let trailing = try #require(drop(990, 300))
         #expect(trailing.anchorTabID == f.id("z") && trailing.insertion == .after)
         #expect(drop(750, host.isFlipped ? 590 : 10) == nil, "A side-by-side split does not grow downward")
+        let middle = try #require(drop(250, 300))
+        #expect(middle == .init(anchorTabID: f.id("x"), replacesAnchor: true), "The middle of a pane replaces it")
+        #expect(bars.pageDropPreview?.size == CGSize(width: 496, height: 600), "The whole pane is outlined")
         _ = bars.pageSplitDrop(atWindowPoint: nil, draggedTabID: f.id("y"))
         #expect(bars.pageDropPreview == nil)
+    }
+
+    @Test func aTabDroppedInAPanesMiddleTakesItsPlaceAndSize() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z", "w"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.setSplitFractions([0.5, 0.3, 0.2], groupID: group.id))
+        #expect(!f.model.canReplaceSplitPane(anchorTabID: f.id("w"), with: f.id("x")), "Only a shown split's pane")
+
+        #expect(f.model.replaceSplitPane(anchorTabID: f.id("y"), with: f.id("w")))
+        let replaced = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: replaced) == [f.id("x"), f.id("w"), f.id("z")])
+        #expect(replaced.fractions == [0.5, 0.3, 0.2], "The new pane keeps the old pane's size")
+        #expect(f.model.selectedTabID == f.id("w"))
+        #expect(f.model.splitGroup(containingTabID: f.id("y")) == nil)
+        let order = f.model.temporaryTabs.map(\.id)
+        #expect(
+            try #require(order.firstIndex(of: f.id("y"))) > #require(order.firstIndex(of: f.id("z"))),
+            "The replaced row follows the split"
+        )
+
+        #expect(f.model.replaceSplitPane(anchorTabID: f.id("x"), with: f.id("z")), "A member moves to the pane")
+        #expect(try f.model.splitPaneTabIDs(of: #require(f.model.selectedSplitGroup)) == [
+            f.id("z"),
+            f.id("x"),
+            f.id("w"),
+        ])
     }
 
     @Test func expandCurrentSplitShowsTheFocusedPaneUntilFocusMoves() {

@@ -27,11 +27,13 @@ import AppKit
     }
 
     /// A drop on the page beside the sidebar: the dragged tab opens in a Split
-    /// View next to the page or pane under the pointer.
+    /// View next to the page or pane under the pointer, or, in the middle of a
+    /// shown split's pane, takes that pane's place.
     struct PageSplitDropTarget: Equatable {
         let anchorTabID: String
-        let insertion: BrowserChromeModel.SplitInsertion
-        let orientation: BrowserTabSplitOrientation
+        var insertion = BrowserChromeModel.SplitInsertion.end
+        var orientation = BrowserTabSplitOrientation.horizontal
+        var replacesAnchor = false
     }
 
     /// A dragged tab combines with the tab row it rests on into a Split View
@@ -197,6 +199,10 @@ import AppKit
                     anchorTabID: target.tabID,
                     insertion: target.side == .leading ? .before : .after
                 )
+            } else if !cancel, let target = pageSplitTarget, target.replacesAnchor,
+                      case .tab(let id) = payload.primary
+            {
+                model.replaceSplitPane(anchorTabID: target.anchorTabID, with: id)
             } else if !cancel, let target = pageSplitTarget, case .tab(let id) = payload.primary {
                 model.openInSplitView(
                     tabID: id,

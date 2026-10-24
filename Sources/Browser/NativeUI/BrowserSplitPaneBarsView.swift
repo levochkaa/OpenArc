@@ -119,7 +119,9 @@ final class BrowserSplitPaneBarsView: NSView {
 
     /// Page drop zones while a sidebar tab is dragged over the page: each
     /// visible pane, or the single page, splits at the edge under the pointer.
-    /// A split only grows along its own axis. A nil point clears the preview.
+    /// A split only grows along its own axis. The middle of a shown split's
+    /// pane replaces that pane; the middle of a single page is no drop zone.
+    /// A nil point clears the preview.
     func pageSplitDrop(
         atWindowPoint point: CGPoint?,
         draggedTabID: String
@@ -134,9 +136,19 @@ final class BrowserSplitPaneBarsView: NSView {
         if panes.isEmpty, let selectedTabID = model.selectedTabID {
             panes = [(selectedTabID, convert(hostView.bounds, from: hostView))]
         }
-        guard let pane = panes.first(where: { $0.frame.contains(local) }),
-              let edge = BrowserSplitPaneLayout.pageDropEdge(at: local, in: pane.frame),
-              group.map({ $0.orientation == edge.orientation }) ?? true,
+        guard let pane = panes.first(where: { $0.frame.contains(local) }) else {
+            pageDropPreview = nil
+            return nil
+        }
+        guard let edge = BrowserSplitPaneLayout.pageDropEdge(at: local, in: pane.frame) else {
+            guard group != nil, model.canReplaceSplitPane(anchorTabID: pane.id, with: draggedTabID) else {
+                pageDropPreview = nil
+                return nil
+            }
+            pageDropPreview = pane.frame
+            return .init(anchorTabID: pane.id, replacesAnchor: true)
+        }
+        guard group.map({ $0.orientation == edge.orientation }) ?? true,
               model.canOpenInSplitView(tabID: draggedTabID, anchorTabID: pane.id)
         else {
             pageDropPreview = nil

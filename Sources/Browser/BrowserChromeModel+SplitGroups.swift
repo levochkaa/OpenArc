@@ -269,6 +269,44 @@ extension BrowserChromeModel {
         return !panes.contains(tabID) && panes.count < Self.maximumSplitPaneCount
     }
 
+    /// A sidebar tab dropped in the middle of a pane takes that pane's place and
+    /// size and is focused; the replaced tab leaves the split and its row
+    /// follows the group, as with Separate Tab from Split. A tab already in the
+    /// split moves to that pane's position instead.
+    @discardableResult func replaceSplitPane(anchorTabID: String, with tabID: String) -> Bool {
+        guard canReplaceSplitPane(anchorTabID: anchorTabID, with: tabID),
+              let group = splitGroup(containingTabID: anchorTabID),
+              let anchor = tabs.first(where: { $0.id == anchorTabID }),
+              let added = tabs.first(where: { $0.id == tabID }),
+              let index = group.tabSyncIDs.firstIndex(of: anchor.syncID)
+        else { return false }
+        if group.tabSyncIDs.contains(added.syncID) {
+            return moveSplitPane(tabID: tabID, to: index)
+        }
+        removeFromSplitGroups(syncID: added.syncID)
+        guard placeTab(tabID, after: anchorTabID),
+              let groupIndex = splitGroups.firstIndex(where: { $0.id == group.id })
+        else { return false }
+        var members = group.tabSyncIDs
+        members[index] = added.syncID
+        splitGroups[groupIndex].tabSyncIDs = members
+        splitGroups[groupIndex].fractions = group.fractions
+        splitGroups[groupIndex].focusedTabSyncID = added.syncID
+        if let last = splitPaneTabIDs(of: splitGroups[groupIndex]).last {
+            _ = placeTab(anchorTabID, after: last)
+        }
+        selectTab(id: tabID)
+        persistSplitGroupChange()
+        return true
+    }
+
+    func canReplaceSplitPane(anchorTabID: String, with tabID: String) -> Bool {
+        guard anchorTabID != tabID, splitGroup(containingTabID: anchorTabID) != nil,
+              let added = tabs.first(where: { $0.id == tabID })
+        else { return false }
+        return added.placement != .app
+    }
+
     /// "Add Split View": the selected tab, or the selected split, can take
     /// another pane.
     var canAddSplitView: Bool {
