@@ -81,18 +81,14 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     }
 
     func inlineCompletionSuffix(relativeTo query: String) -> String? {
-        guard kind != .command else {
-            return nil
-        }
-
-        guard
-            !query.isEmpty,
-            let matchedRange = displayText.range(
-                of: query,
-                options: [.anchored, .caseInsensitive, .diacriticInsensitive]
-            ),
-            matchedRange.lowerBound == displayText.startIndex,
-            matchedRange.upperBound < displayText.endIndex
+        guard kind != .command,
+              !query.isEmpty,
+              let matchedRange = displayText.range(
+                  of: query,
+                  options: [.anchored, .caseInsensitive, .diacriticInsensitive]
+              ),
+              matchedRange.lowerBound == displayText.startIndex,
+              matchedRange.upperBound < displayText.endIndex
         else {
             return nil
         }
@@ -240,11 +236,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     }
 
     var previewDisplayText: String? {
-        guard let selectedSuggestion else {
-            return nil
-        }
-
-        guard selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
+        guard let selectedSuggestion, selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
             return nil
         }
 
@@ -261,11 +253,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     }
 
     @discardableResult func acceptSelectedSuggestion() -> Bool {
-        guard let selectedSuggestion else {
-            return false
-        }
-
-        guard selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
+        guard let selectedSuggestion, selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
             return false
         }
 
@@ -378,11 +366,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         )
         selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
 
-        guard !trimmedQuery.isEmpty else {
-            return
-        }
-
-        guard remoteSuggestionsEnabledProvider() else {
+        guard !trimmedQuery.isEmpty, remoteSuggestionsEnabledProvider() else {
             return
         }
 
@@ -400,11 +384,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
                 }
             }
 
-            guard !Task.isCancelled else {
-                return
-            }
-
-            guard remoteSuggestionsEnabledProvider() else {
+            guard !Task.isCancelled, remoteSuggestionsEnabledProvider() else {
                 return
             }
 

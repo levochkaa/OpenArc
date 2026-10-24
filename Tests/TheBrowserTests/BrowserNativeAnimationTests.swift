@@ -30,7 +30,8 @@ import Testing
         }
         // The row press bounces visibly; the floating sidebar barely overshoots.
         let rowPeak = stride(from: 0.0, to: 0.2, by: 0.005).map(BrowserNativeAnimation.Curve.rowPress.value).max() ?? 0
-        let sidebarPeak = stride(from: 0.0, to: 0.2, by: 0.005).map(BrowserNativeAnimation.Curve.floatingSidebar.value)
+        let sidebarPeak = stride(from: 0.0, to: 0.2, by: 0.005)
+            .map(BrowserNativeAnimation.Curve.floatingSidebar.value)
             .max() ?? 0
         #expect(rowPeak > 1.1)
         #expect(sidebarPeak > 1 && sidebarPeak < 1.03)

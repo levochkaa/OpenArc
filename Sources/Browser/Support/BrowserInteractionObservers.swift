@@ -160,11 +160,7 @@ final class BrowserPassthroughInteractionNSView: NSView {
         localMonitorCleanup.set(NSEvent.addLocalMonitorForEvents(
             matching: eventMask
         ) { [weak self] event in
-            guard let self else {
-                return event
-            }
-
-            guard let window, event.window === window else {
+            guard let self, let window, event.window === window else {
                 return event
             }
 

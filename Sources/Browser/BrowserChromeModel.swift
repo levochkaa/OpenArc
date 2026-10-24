@@ -246,8 +246,6 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var profileDisplayName: String
     @Published private(set) var availableProfileCount: Int
     @Published private(set) var zoomPercent = 100
-    /// Tabs whose video was sent to Picture in Picture on leaving them.
-    private var pictureInPictureTabIDs = Set<String>()
     @Published private(set) var sessionPersistenceFailure: BrowserSessionPersistenceFailure?
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
@@ -303,7 +301,6 @@ enum BrowserWindowMode: Equatable {
             commandHandler(commandID, self)
         }
     )
-
     private(set) var isContextReady = false
     var isShuttingDown = false
 
@@ -317,25 +314,6 @@ enum BrowserWindowMode: Equatable {
     var pendingSplitAnchorTabID: String?
     /// Where the pending pane goes relative to its anchor (Add Left/Right Split).
     var pendingSplitInsertion = SplitInsertion.end
-    /// Expand Current Split: this pane alone fills the window until focus
-    /// moves. UI-only, never persisted.
-    var expandedSplitPaneTabID: String? {
-        didSet {
-            if oldValue != expandedSplitPaneTabID {
-                syncSplitLayout()
-            }
-        }
-    }
-
-    /// Raw local Split View state. Only `BrowserChromeModel+SplitGroups.swift`
-    /// mutates it; readers use `splitGroup(containingTabID:)`, which validates
-    /// members against the current tabs.
-    @Published var splitGroups = [SplitGroup]() {
-        didSet {
-            syncSplitLayout()
-        }
-    }
-
     /// UI-only: the visible split's pane frames in the engine host view, in pane
     /// order, as the engine last laid them out. Not published: it changes on
     /// every frame of a divider drag, and pane bars listen through
@@ -361,6 +339,25 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
     /// sidebar scrolls the selected row into view.
     @Published var sidebarRevealRequestID = 0
+
+    /// Expand Current Split: this pane alone fills the window until focus
+    /// moves. UI-only, never persisted.
+    var expandedSplitPaneTabID: String? {
+        didSet {
+            if oldValue != expandedSplitPaneTabID {
+                syncSplitLayout()
+            }
+        }
+    }
+
+    /// Raw local Split View state. Only `BrowserChromeModel+SplitGroups.swift`
+    /// mutates it; readers use `splitGroup(containingTabID:)`, which validates
+    /// members against the current tabs.
+    @Published var splitGroups = [SplitGroup]() {
+        didSet {
+            syncSplitLayout()
+        }
+    }
 
     @Published private(set) var selectedTabID: String? {
         willSet {
@@ -585,6 +582,27 @@ enum BrowserWindowMode: Equatable {
             pendingAutomaticArchivalSettingsRetry != nil
     }
 
+    /// Arc's sidebar can only join a persistent window that is not busy with
+    /// restore or sync.
+    var canImportArcSidebar: Bool {
+        supportsSpaces && windowMode.persistsSession && !isShuttingDown && !isRestoringSession
+            && !isApplyingRemoteSync && !isReconcilingRemoteProjection
+    }
+
+    /// Open Location edits the selected tab's URL, which is the focused pane in a split.
+    var canOpenLocation: Bool { canCreateTab && selectedTab != nil && !isWebApp }
+
+    /// The small window for links from other apps, when turned on in Settings.
+    var opensExternalLinksInLittleWindow: Bool {
+        userPreferencesStore.littleArcEnabled && canCreateTab && !isWebApp && !isIncognito
+    }
+
+    var canShowDeveloperTools: Bool { canCreateTab && selectedTabID != nil && !isWebApp }
+
+    var canZoomIn: Bool { canCreateTab && selectedTabID != nil && zoomPercent < (Self.zoomPercentages.last ?? 100) }
+    var canZoomOut: Bool { canCreateTab && selectedTabID != nil && zoomPercent > (Self.zoomPercentages.first ?? 100) }
+    var canResetZoom: Bool { canCreateTab && selectedTabID != nil && zoomPercent != 100 }
+
     @discardableResult func retrySessionPersistence() -> Bool {
         guard !hasDiscardedSessionForClosure, !sessionWriteBuffer.isTerminal else { return false }
         if !sessionWriteBuffer.writes.isEmpty {
@@ -788,13 +806,6 @@ enum BrowserWindowMode: Equatable {
         bookmarksModel.containsBookmark(urlString: urlString)
     }
 
-    /// Arc's sidebar can only join a persistent window that is not busy with
-    /// restore or sync.
-    var canImportArcSidebar: Bool {
-        supportsSpaces && windowMode.persistsSession && !isShuttingDown && !isRestoringSession
-            && !isApplyingRemoteSync && !isReconcilingRemoteProjection
-    }
-
     /// Adds Arc's Spaces with their pinned tabs and folders, and its Favorites
     /// up to the app tile capacity. Imported tabs are dormant, like pinned tabs
     /// closed earlier: their pages load when first selected. The current Space
@@ -804,7 +815,12 @@ enum BrowserWindowMode: Equatable {
         var result = BrowserArcSidebarImportResult()
         let now = dateProvider()
 
-        func dormantTab(_ node: BrowserArcSidebar.Node, spaceID: String, folderID: String?, placement: BrowserTabPlacement)
+        func dormantTab(
+            _ node: BrowserArcSidebar.Node,
+            spaceID: String,
+            folderID: String?,
+            placement: BrowserTabPlacement
+        )
             -> Tab?
         {
             guard case .tab(let title, let savedTitle, let urlString) = node else { return nil }
@@ -835,7 +851,11 @@ enum BrowserWindowMode: Equatable {
         for arcSpace in sidebar.spaces {
             let title = sanitizedSpaceTitle(from: arcSpace.title)
             let arcURLs = pinnedURLs(arcSpace.pinned.flatMap(\.tabs).compactMap { node in
-                if case .tab(_, _, let url) = node { url } else { nil }
+                if case .tab(_, _, let url) = node {
+                    url
+                } else {
+                    nil
+                }
             })
             if let title, existing.contains(where: { $0.title == title && arcURLs.isSubset(of: $0.urls) }) {
                 continue
@@ -865,8 +885,15 @@ enum BrowserWindowMode: Equatable {
                             id: id,
                             spaceID: space.id,
                             parentFolderID: folderID,
-                            title: sanitizedPinnedTabFolderTitle(from: title) ?? BrowserStrings.pinnedTabFolderDefaultTitle,
-                            systemImageName: icon.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil ? nil : $0 },
+                            title: sanitizedPinnedTabFolderTitle(from: title) ?? BrowserStrings
+                                .pinnedTabFolderDefaultTitle,
+                            systemImageName: icon.flatMap { NSImage(
+                                systemSymbolName: $0,
+                                accessibilityDescription: nil
+                            ) == nil
+                                ? nil
+                                : $0
+                            },
                             isExpanded: false
                         ))
                         result.folderCount += 1
@@ -974,13 +1001,9 @@ enum BrowserWindowMode: Equatable {
     }
 
     func selectSpace(id spaceID: String) {
-        guard supportsSpaces else {
-            return
-        }
-
-        guard
-            spaces.contains(where: { $0.id == spaceID }),
-            selectedSpaceID != spaceID
+        guard supportsSpaces,
+              spaces.contains(where: { $0.id == spaceID }),
+              selectedSpaceID != spaceID
         else {
             return
         }
@@ -1012,11 +1035,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func toggleActiveSpacePinnedSectionCollapsed() {
-        guard supportsSpaces else {
-            return
-        }
-
-        guard let index = selectedSpaceIndex else {
+        guard supportsSpaces, let index = selectedSpaceIndex else {
             return
         }
 
@@ -1025,11 +1044,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func setTitle(_ title: String?, forSpaceID spaceID: String) {
-        guard supportsSpaces else {
-            return
-        }
-
-        guard let index = spaces.firstIndex(where: { $0.id == spaceID }) else {
+        guard supportsSpaces, let index = spaces.firstIndex(where: { $0.id == spaceID }) else {
             return
         }
 
@@ -1043,13 +1058,9 @@ enum BrowserWindowMode: Equatable {
     }
 
     func setIcon(_ systemImageName: String, forSpaceID spaceID: String) {
-        guard supportsSpaces else {
-            return
-        }
-
-        guard
-            let index = spaces.firstIndex(where: { $0.id == spaceID }),
-            spaces[index].systemImageName != systemImageName
+        guard supportsSpaces,
+              let index = spaces.firstIndex(where: { $0.id == spaceID }),
+              spaces[index].systemImageName != systemImageName
         else {
             return
         }
@@ -1245,12 +1256,9 @@ enum BrowserWindowMode: Equatable {
         guard
             let index = tabs.firstIndex(where: { $0.id == tabID }),
             tabs[index].placement == .spacePinned,
-            let normalizedURLString = normalizedPinnedURLString(from: urlString)
+            let normalizedURLString = normalizedPinnedURLString(from: urlString),
+            tabs[index].pinnedURLString != normalizedURLString
         else {
-            return false
-        }
-
-        guard tabs[index].pinnedURLString != normalizedURLString else {
             return false
         }
 
@@ -1610,9 +1618,6 @@ enum BrowserWindowMode: Equatable {
         currentPageCommandBarModel.dismiss()
     }
 
-    /// Open Location edits the selected tab's URL, which is the focused pane in a split.
-    var canOpenLocation: Bool { canCreateTab && selectedTab != nil && !isWebApp }
-
     func presentCurrentPageCommandBar() {
         guard
             canCreateTab,
@@ -1801,7 +1806,8 @@ enum BrowserWindowMode: Equatable {
 
     /// Mute Tab / Unmute Tab.
     func setTabMuted(_ muted: Bool, id: String) {
-        guard let tab = tabs.first(where: { $0.id == id }), mutedTabSyncIDs.contains(tab.syncID) != muted else { return }
+        guard let tab = tabs.first(where: { $0.id == id }),
+              mutedTabSyncIDs.contains(tab.syncID) != muted else { return }
         if muted {
             mutedTabSyncIDs.insert(tab.syncID)
         } else {
@@ -2018,45 +2024,15 @@ enum BrowserWindowMode: Equatable {
         setZoomPercent(100)
     }
 
-    /// Picture in Picture on leaving a tab: a playing video follows the
-    /// user out of its tab and returns when they come back. Panes that stay on
-    /// screen in a split and closing tabs are left alone.
-    private func updatePictureInPicture(leaving oldID: String?, entering newID: String?) {
-        guard oldID != newID else { return }
-        if let newID, pictureInPictureTabIDs.remove(newID) != nil {
-            tabDriver.setPictureInPicture(false, forTabWithID: newID)
-        }
-        guard userPreferencesStore.pictureInPictureEnabled, let oldID,
-              tabs.contains(where: { $0.id == oldID }), !closingTabIDs.contains(oldID),
-              !closedAppTabIDs.contains(oldID), !closedPinnedTabIDs.contains(oldID),
-              !(newID.map { splitPaneTabIDs(forTabID: $0).contains(oldID) } ?? false)
-        else { return }
-        // Forget tabs that have closed since.
-        pictureInPictureTabIDs.formIntersection(tabs.map(\.id))
-        pictureInPictureTabIDs.insert(oldID)
-        tabDriver.setPictureInPicture(true, forTabWithID: oldID)
-    }
-
-    /// The small window for links from other apps, when turned on in Settings.
-    var opensExternalLinksInLittleWindow: Bool {
-        userPreferencesStore.littleArcEnabled && canCreateTab && !isWebApp && !isIncognito
-    }
-
     func openInLittleWindow(_ url: URL) {
         tabDriver.showLittleWindow(withURLString: url.absoluteString)
     }
-
-    var canShowDeveloperTools: Bool { canCreateTab && selectedTabID != nil && !isWebApp }
 
     @discardableResult func showDeveloperTools() -> Bool {
         guard canShowDeveloperTools else { return false }
         tabDriver.showDevToolsForActiveTab()
         return true
     }
-
-    var canZoomIn: Bool { canCreateTab && selectedTabID != nil && zoomPercent < (Self.zoomPercentages.last ?? 100) }
-    var canZoomOut: Bool { canCreateTab && selectedTabID != nil && zoomPercent > (Self.zoomPercentages.first ?? 100) }
-    var canResetZoom: Bool { canCreateTab && selectedTabID != nil && zoomPercent != 100 }
 
     func setZoomPercent(_ percent: Int) {
         guard canCreateTab, selectedTabID != nil, Self.zoomPercentages.contains(percent) else {
@@ -2190,11 +2166,9 @@ enum BrowserWindowMode: Equatable {
     }
 
     @discardableResult func archiveSelectedTab() -> Bool {
-        guard canArchiveSelectedTab, let selectedTabID else {
-            return false
-        }
-
-        guard let selectedTab = tabs.first(where: { $0.id == selectedTabID }) else {
+        guard canArchiveSelectedTab, let selectedTabID,
+              let selectedTab = tabs.first(where: { $0.id == selectedTabID })
+        else {
             return false
         }
 
@@ -2622,6 +2596,9 @@ enum BrowserWindowMode: Equatable {
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "AutomaticArchival"
     )
 
+    /// Tabs whose video was sent to Picture in Picture on leaving them.
+    private var pictureInPictureTabIDs = Set<String>()
+
     private let tabDriver: BrowserTabDriving
     private let sessionSnapshotStore: BrowserTabSessionSnapshotStoring
     private let sessionPreferencesStore: BrowserSessionPreferencesStoring
@@ -2729,6 +2706,25 @@ enum BrowserWindowMode: Equatable {
 
     private var canRegisterTabUndo: Bool {
         isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
+    }
+
+    /// Picture in Picture on leaving a tab: a playing video follows the
+    /// user out of its tab and returns when they come back. Panes that stay on
+    /// screen in a split and closing tabs are left alone.
+    private func updatePictureInPicture(leaving oldID: String?, entering newID: String?) {
+        guard oldID != newID else { return }
+        if let newID, pictureInPictureTabIDs.remove(newID) != nil {
+            tabDriver.setPictureInPicture(false, forTabWithID: newID)
+        }
+        guard userPreferencesStore.pictureInPictureEnabled, let oldID,
+              tabs.contains(where: { $0.id == oldID }), !closingTabIDs.contains(oldID),
+              !closedAppTabIDs.contains(oldID), !closedPinnedTabIDs.contains(oldID),
+              !(newID.map { splitPaneTabIDs(forTabID: $0).contains(oldID) } ?? false)
+        else { return }
+        // Forget tabs that have closed since.
+        pictureInPictureTabIDs.formIntersection(tabs.map(\.id))
+        pictureInPictureTabIDs.insert(oldID)
+        tabDriver.setPictureInPicture(true, forTabWithID: oldID)
     }
 
     private func localAutomaticArchivalOwnershipAllowsClose() -> Bool {
@@ -3260,15 +3256,9 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func restoreSessionIfAvailable() -> Bool {
-        guard windowMode.persistsSession else {
-            return false
-        }
-
-        guard userPreferencesStore.restoreWindowsOnLaunch else {
-            return false
-        }
-
-        guard let snapshot = sessionSnapshotStore.loadSnapshot() else {
+        guard windowMode.persistsSession, userPreferencesStore.restoreWindowsOnLaunch,
+              let snapshot = sessionSnapshotStore.loadSnapshot()
+        else {
             return false
         }
 
@@ -3333,11 +3323,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func restoreSidebarWidthIfNeeded() {
-        guard isPersistenceEnabled else {
-            return
-        }
-
-        guard let storedSidebarWidth = sessionPreferencesStore.loadSidebarWidth(
+        guard isPersistenceEnabled, let storedSidebarWidth = sessionPreferencesStore.loadSidebarWidth(
             minimum: Self.minSidebarWidth,
             maximum: Self.maxSidebarWidth
         ) else {
@@ -3845,7 +3831,7 @@ enum BrowserWindowMode: Equatable {
             canCreateFolderFromSelectedTab
         case .captureFullPage:
             canCreateTab && selectedTabID != nil
-        case .selectNextTab, .selectPreviousTab, .goToLastSidebarItem:
+        case .goToLastSidebarItem, .selectNextTab, .selectPreviousTab:
             !sidebarItemTabIDs.isEmpty
         case .selectNextTabAlternate, .selectPreviousTabAlternate:
             // The command bar lists Next/Previous Tab once.
@@ -3871,7 +3857,7 @@ enum BrowserWindowMode: Equatable {
             selectedSplitGroup != nil && !isShuttingDown
         case .focusSplitPane1, .focusSplitPane2, .focusSplitPane3, .focusSplitPane4:
             selectedSplitGroup.map { splitPaneTabIDs(of: $0).count > commandID.splitPaneIndex } == true
-        case .focusNextSplitPane, .focusPreviousSplitPane, .expandCurrentSplit:
+        case .expandCurrentSplit, .focusNextSplitPane, .focusPreviousSplitPane:
             selectedSplitGroup != nil
         case .toggleSidebar:
             true
@@ -4133,7 +4119,9 @@ enum BrowserWindowMode: Equatable {
 
         // A tab restored unloaded keeps the page it showed last; one the user
         // unloaded opens its pinned URL.
-        let urlString = lastPageRestoreTabIDs.remove(id) != nil && !tab.urlString.isEmpty ? tab.urlString : pinnedURLString
+        let urlString = lastPageRestoreTabIDs.remove(id) != nil && !tab.urlString.isEmpty
+            ? tab.urlString
+            : pinnedURLString
         let newTabID = tabDriver.createTab(
             withURLString: resolvedBrowserURLString(urlString),
             makeActive: true
@@ -4164,7 +4152,10 @@ enum BrowserWindowMode: Equatable {
         let tab = tabs[index]
         lastPageRestoreTabIDs.remove(id)
         let isSelected = selectedTabID == id
-        let newTabID = tabDriver.createTab(withURLString: resolvedBrowserURLString(tab.urlString), makeActive: isSelected)
+        let newTabID = tabDriver.createTab(
+            withURLString: resolvedBrowserURLString(tab.urlString),
+            makeActive: isSelected
+        )
         pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = Tab(
             id: newTabID, syncID: tab.syncID, spaceID: tab.spaceID, title: tab.title,
@@ -4757,9 +4748,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
               pendingReopenedAppTabCreations.isEmpty, pendingReopenedPinnedTabCreations.isEmpty,
               !hasUncommittedSessionWrites, pendingTabCloseRequests.isEmpty,
               tabs
-                  .allSatisfy({
-                      $0.creationState == .ready || closedAppTabIDs.contains($0.id) || closedPinnedTabIDs
-                          .contains($0.id) })
+                .allSatisfy({
+                    $0.creationState == .ready || closedAppTabIDs.contains($0.id) || closedPinnedTabIDs
+                        .contains($0.id) })
         else { return nil }
         let visibleIDs = Set(selectedTabID.map { splitPaneTabIDs(forTabID: $0) } ?? [])
         let protectedIDs = Set(tabs.filter { visibleIDs.contains($0.id) }.map(\.syncID))
@@ -5312,7 +5303,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
         if selectedTabID == id {
             selectedTabID = fallbackTabID(afterClosingTab: closedTab) ?? sidebarTabsForSelectedSpace().first?.id
-            if let fallback = selectedTabID, closedPinnedTabIDs.contains(fallback) || closedAppTabIDs.contains(fallback) {
+            if let fallback = selectedTabID,
+               closedPinnedTabIDs.contains(fallback) || closedAppTabIDs.contains(fallback)
+            {
                 // An unloaded fallback loads like a click instead of showing a blank page.
                 selectedTabID = nil
                 selectTab(id: fallback)
@@ -5731,12 +5724,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         targetSpaceID: String? = nil,
         targetPinnedFolderID: String? = nil
     ) -> [Tab]? {
-        guard supportsAppTabs || placement != .app else {
-            return nil
-        }
-
-        guard
-            let movingTab = tabs.first(where: { $0.id == movingTabID })
+        guard supportsAppTabs || placement != .app,
+              let movingTab = tabs.first(where: { $0.id == movingTabID })
         else {
             return nil
         }
@@ -5753,14 +5742,12 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
 
         let resolvedTargetSpaceID = targetFolder?.spaceID ?? targetSpaceID ?? selectedSpaceID ?? movingTab.spaceID
-        guard placement == .app || spaces.contains(where: { $0.id == resolvedTargetSpaceID }) else {
-            return nil
-        }
-        guard targetFolder == nil || placement == .spacePinned else {
-            return nil
-        }
-
-        guard canMoveTab(movingTab, to: placement) else {
+        guard placement == .app || spaces.contains(where: { $0.id == resolvedTargetSpaceID }),
+              targetFolder == nil || placement == .spacePinned, canMoveTab(
+                  movingTab,
+                  to: placement
+              )
+        else {
             return nil
         }
 
@@ -5861,10 +5848,10 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
 
         let resolvedTargetSpaceID = targetFolder?.spaceID ?? targetSpaceID ?? selectedSpaceID ?? movingTabs[0].spaceID
-        guard spaces.contains(where: { $0.id == resolvedTargetSpaceID }) else {
-            return nil
-        }
-        guard movingTabs.allSatisfy({ canMoveTab($0, to: placement) }) else {
+        guard spaces.contains(where: { $0.id == resolvedTargetSpaceID }), movingTabs.allSatisfy({ canMoveTab(
+            $0,
+            to: placement
+        ) }) else {
             return nil
         }
 
@@ -6665,4 +6652,3 @@ enum BrowserMarkdownLink {
         return "[\(label)](\(destination))"
     }
 }
-

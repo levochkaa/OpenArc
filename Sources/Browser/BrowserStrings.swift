@@ -838,20 +838,6 @@ enum BrowserStrings {
         comment: "Alert shown when the window cannot take an import right now."
     )
 
-    /// Shared with iOS, so it takes counts rather than the macOS import result.
-    static func arcImportResult(spaces: Int, pinnedTabs: Int, folders: Int, favorites: Int) -> String {
-        String(
-            format: NSLocalizedString(
-                "browser.arc_import.result",
-                comment: "Alert after importing from Arc: Spaces, pinned tabs, folders, Favorites."
-            ),
-            spaces,
-            pinnedTabs,
-            folders,
-            favorites
-        )
-    }
-
     static let peekCloseAction = NSLocalizedString("browser.peek.close", comment: "Button that closes a Peek card.")
 
     static let peekOpenInTabAction = NSLocalizedString(
@@ -1922,6 +1908,55 @@ enum BrowserStrings {
         comment: "Don't Allow button title for notification permissions."
     )
 
+    static let menuHideOthers = NSLocalizedString(
+        "browser.menu.hide_others",
+        comment: "App menu item that hides the other apps."
+    )
+
+    static let menuShowAll = NSLocalizedString(
+        "browser.menu.show_all",
+        comment: "App menu item that shows every hidden app."
+    )
+
+    static let menuServices = NSLocalizedString(
+        "browser.menu.services",
+        comment: "App menu title of the system Services submenu."
+    )
+
+    static let menuWindow = NSLocalizedString(
+        "browser.menu.window",
+        comment: "Title of the Window menu."
+    )
+
+    static let menuMinimize = NSLocalizedString(
+        "browser.menu.minimize",
+        comment: "Window menu item that minimizes the front window."
+    )
+
+    static let menuZoom = NSLocalizedString(
+        "browser.menu.zoom",
+        comment: "Window menu item that zooms the front window."
+    )
+
+    static let menuBringAllToFront = NSLocalizedString(
+        "browser.menu.bring_all_to_front",
+        comment: "Window menu item that brings every app window to the front."
+    )
+
+    /// Shared with iOS, so it takes counts rather than the macOS import result.
+    static func arcImportResult(spaces: Int, pinnedTabs: Int, folders: Int, favorites: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.arc_import.result",
+                comment: "Alert after importing from Arc: Spaces, pinned tabs, folders, Favorites."
+            ),
+            spaces,
+            pinnedTabs,
+            folders,
+            favorites
+        )
+    }
+
     static func menuGoToSidebarItem(_ number: Int) -> String {
         String(
             format: NSLocalizedString(
@@ -2097,41 +2132,6 @@ enum BrowserStrings {
             appName
         )
     }
-
-    static let menuHideOthers = NSLocalizedString(
-        "browser.menu.hide_others",
-        comment: "App menu item that hides the other apps."
-    )
-
-    static let menuShowAll = NSLocalizedString(
-        "browser.menu.show_all",
-        comment: "App menu item that shows every hidden app."
-    )
-
-    static let menuServices = NSLocalizedString(
-        "browser.menu.services",
-        comment: "App menu title of the system Services submenu."
-    )
-
-    static let menuWindow = NSLocalizedString(
-        "browser.menu.window",
-        comment: "Title of the Window menu."
-    )
-
-    static let menuMinimize = NSLocalizedString(
-        "browser.menu.minimize",
-        comment: "Window menu item that minimizes the front window."
-    )
-
-    static let menuZoom = NSLocalizedString(
-        "browser.menu.zoom",
-        comment: "Window menu item that zooms the front window."
-    )
-
-    static let menuBringAllToFront = NSLocalizedString(
-        "browser.menu.bring_all_to_front",
-        comment: "Window menu item that brings every app window to the front."
-    )
 
     static func quitMenuItem(appName: String) -> String {
         String(

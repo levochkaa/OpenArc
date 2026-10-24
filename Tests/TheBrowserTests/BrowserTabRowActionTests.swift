@@ -14,7 +14,10 @@ import Testing
         #expect(f.model.selectedTabID == copy)
 
         let pinnedCopy = try #require(f.model.duplicateTab(id: f.id("a")))
-        #expect(f.model.temporaryTabs.first?.id == pinnedCopy, "A pinned tab's copy opens at the top of the temporary tabs")
+        #expect(
+            f.model.temporaryTabs.first?.id == pinnedCopy,
+            "A pinned tab's copy opens at the top of the temporary tabs"
+        )
         #expect(f.pinnedNames() == ["a", "b"])
     }
 
@@ -101,7 +104,7 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserTabCommandTests {
-    @Test func pinDuplicateResetAndFolderCommandsActOnTheSelection() throws {
+    @Test func pinDuplicateResetAndFolderCommandsActOnTheSelection() {
         let f = SidebarDragFixture(
             pinned: [("a", nil), ("child", "folder")],
             temporary: ["x"],
@@ -122,7 +125,7 @@ import Testing
         #expect(f.model.canSetActiveSpaceFoldersExpanded(true))
         #expect(!f.model.canSetActiveSpaceFoldersExpanded(false))
         #expect(f.model.setActiveSpaceFoldersExpanded(true))
-        #expect(f.model.pinnedTabFolders.allSatisfy { $0.isExpanded })
+        #expect(!f.model.pinnedTabFolders.contains { !$0.isExpanded })
         #expect(!f.model.setActiveSpaceFoldersExpanded(true))
         #expect(f.model.setActiveSpaceFoldersExpanded(false))
         #expect(f.model.pinnedTabFolders.allSatisfy { !$0.isExpanded })
@@ -166,8 +169,10 @@ import Testing
         #expect(f.driver.pictureInPictureRequests.dropFirst(start).map(\.tabID) == [x])
         #expect(f.driver.pictureInPictureRequests.last?.active == true)
         f.model.selectTab(id: x)
-        #expect(f.driver.pictureInPictureRequests.dropFirst(start).map(\.active) == [true, false, true],
-                "Returning to x brings its video back and y's goes to Picture in Picture")
+        #expect(
+            f.driver.pictureInPictureRequests.dropFirst(start).map(\.active) == [true, false, true],
+            "Returning to x brings its video back and y's goes to Picture in Picture"
+        )
         // Moving focus between panes of a split keeps both on screen.
         #expect(f.model.openInSplitView(tabID: z))
         let beforeFocus = f.driver.pictureInPictureRequests.filter(\.active).count

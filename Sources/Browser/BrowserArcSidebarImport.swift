@@ -28,7 +28,7 @@ struct BrowserArcSidebar: Equatable {
             }
         }
         let reader = Reader(items: items)
-        spaces = Self.pairs(container["spaces"] as? [Any] ?? []).compactMap { _, value in
+        self.spaces = Self.pairs(container["spaces"] as? [Any] ?? []).compactMap { _, value in
             guard let space = value as? [String: Any] else { return nil }
             let containerIDs = Self.pairs(space["containerIDs"] as? [Any] ?? [])
             let pinnedID = containerIDs.first { $0.key as? String == "pinned" }?.value as? String
@@ -38,10 +38,11 @@ struct BrowserArcSidebar: Equatable {
                 pinned: pinnedID.map { reader.children(of: $0) } ?? []
             )
         }
-        let favoritesID = Self.pairs(container["topAppsContainerIDs"] as? [Any] ?? []).first { key, _ in
-            (key as? [String: Any])?["default"] as? Bool == true
-        }?.value as? String
-        favorites = favoritesID.map { reader.children(of: $0).flatMap(\.tabs) } ?? []
+        let favoritesID = Self.pairs(container["topAppsContainerIDs"] as? [Any] ?? [])
+            .first { key, _ in
+                (key as? [String: Any])?["default"] as? Bool == true
+            }?.value as? String
+        self.favorites = favoritesID.map { reader.children(of: $0).flatMap(\.tabs) } ?? []
     }
 
     // MARK: Internal
@@ -75,7 +76,9 @@ struct BrowserArcSidebar: Equatable {
 
     /// Arc keeps the file in its Application Support folder.
     static var defaultFileURL: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
             .appendingPathComponent("Arc", isDirectory: true)
             .appendingPathComponent("StorableSidebar.json")
     }

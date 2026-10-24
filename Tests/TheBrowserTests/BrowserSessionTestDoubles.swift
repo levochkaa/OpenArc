@@ -91,6 +91,11 @@ import Foundation
     private(set) var goForwardCount = 0
     private(set) var prepareForCefShutdownCount = 0
 
+    private(set) var littleWindowURLs = [String]()
+
+    /// Engine zoom per tab; tests may share a value to mimic per-site zoom.
+    var zoomLevelsByTabID = [String: Double]()
+
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {
         nextTabNumber += 1
         let tabID = "tab-\(nextTabNumber)"
@@ -217,8 +222,6 @@ import Foundation
         devToolsCount += 1
     }
 
-    private(set) var littleWindowURLs = [String]()
-
     func showLittleWindow(withURLString urlString: String) {
         littleWindowURLs.append(urlString)
     }
@@ -242,9 +245,6 @@ import Foundation
             zoomLevelsByTabID[activeTabID] = zoomLevel
         }
     }
-
-    /// Engine zoom per tab; tests may share a value to mimic per-site zoom.
-    var zoomLevelsByTabID = [String: Double]()
 
     func zoomLevel(forTabWithID tabID: String) -> Double? {
         zoomLevelsByTabID[tabID]

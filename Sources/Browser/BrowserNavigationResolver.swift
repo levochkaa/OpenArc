@@ -178,15 +178,11 @@ struct BrowserNavigationResolver {
     }
 
     private func isValidDomainLabel(_ label: Substring) -> Bool {
-        guard !label.isEmpty, label.count <= 63 else {
-            return false
-        }
-
-        guard
-            let first = label.unicodeScalars.first,
-            let last = label.unicodeScalars.last,
-            isASCIIAlphaNumeric(first),
-            isASCIIAlphaNumeric(last)
+        guard !label.isEmpty, label.count <= 63,
+              let first = label.unicodeScalars.first,
+              let last = label.unicodeScalars.last,
+              isASCIIAlphaNumeric(first),
+              isASCIIAlphaNumeric(last)
         else {
             return false
         }

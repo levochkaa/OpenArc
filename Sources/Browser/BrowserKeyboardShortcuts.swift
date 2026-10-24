@@ -54,7 +54,12 @@ struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
             result.append("\u{2318}")
         }
 
-        let arrows = [Self.upArrow: "\u{2191}", Self.downArrow: "\u{2193}", Self.leftArrow: "\u{2190}", Self.rightArrow: "\u{2192}"]
+        let arrows = [
+            Self.upArrow: "\u{2191}",
+            Self.downArrow: "\u{2193}",
+            Self.leftArrow: "\u{2190}",
+            Self.rightArrow: "\u{2192}",
+        ]
         result.append(arrows[keyEquivalent] ?? keyEquivalent.uppercased())
         return result
     }
@@ -520,6 +525,13 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .option, .shift])
     )
 
+    /// Go to last Sidebar Item is Command-9.
+    static let goToLastSidebarItem = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuGoToLastSidebarItem,
+        helpTitle: BrowserStrings.menuGoToLastSidebarItem,
+        shortcut: BrowserKeyboardShortcut("9")
+    )
+
     /// Go to Sidebar Item 1–8 is Command-1…8.
     static func goToSidebarItem(_ index: Int) -> BrowserCommandDescriptor {
         BrowserCommandDescriptor(
@@ -528,13 +540,6 @@ enum BrowserCommands {
             shortcut: BrowserKeyboardShortcut("\(index + 1)")
         )
     }
-
-    /// Go to last Sidebar Item is Command-9.
-    static let goToLastSidebarItem = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuGoToLastSidebarItem,
-        helpTitle: BrowserStrings.menuGoToLastSidebarItem,
-        shortcut: BrowserKeyboardShortcut("9")
-    )
 }
 
 // MARK: - BrowserSpaceShortcuts
@@ -658,6 +663,16 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
 enum BrowserKeyboardShortcutBridge {
     // MARK: Internal
 
+    static let windowShortcuts: [
+        (command: BrowserLayoutIndependentShortcutCommand, shortcut: BrowserKeyboardShortcut)
+    ] =
+        [
+            (.hideApplication, BrowserKeyboardShortcut("h")),
+            (.hideOtherApplications, BrowserKeyboardShortcut("h", modifiers: [.command, .option])),
+            (.minimizeWindow, BrowserKeyboardShortcut("m")),
+            (.closeWindow, BrowserKeyboardShortcut("w", modifiers: [.command, .shift])),
+        ]
+
     static func commandForLayoutIndependentDispatch(
         keyCode: UInt16,
         modifierFlags: NSEvent.ModifierFlags,
@@ -665,15 +680,10 @@ enum BrowserKeyboardShortcutBridge {
         shortcutResolver: BrowserShortcutResolving? = nil
     ) -> BrowserLayoutIndependentShortcutCommand? {
         let normalizedModifiers = modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard !normalizedModifiers.isDisjoint(with: [.command, .control]) else {
-            return nil
-        }
-
-        guard let usKeyEquivalent = usKeyEquivalent(for: keyCode) else {
-            return nil
-        }
-
-        guard normalizedCharacters(from: charactersIgnoringModifiers) != usKeyEquivalent else {
+        guard !normalizedModifiers.isDisjoint(with: [.command, .control]),
+              let usKeyEquivalent = usKeyEquivalent(for: keyCode),
+              normalizedCharacters(from: charactersIgnoringModifiers) != usKeyEquivalent
+        else {
             return nil
         }
 
@@ -716,6 +726,10 @@ enum BrowserKeyboardShortcutBridge {
         let modifiers: NSEvent.ModifierFlags
     }
 
+    private static var windowShortcutMatches: [ShortcutMatch] {
+        windowShortcuts.map { ShortcutMatch(command: $0.command, shortcut: $0.shortcut) }
+    }
+
     private static func shortcutMatches(shortcutResolver: BrowserShortcutResolving?) -> [ShortcutMatch] {
         var matches = [
             ShortcutMatch(command: .undo, keyEquivalent: "z", modifiers: [.command]),
@@ -740,17 +754,6 @@ enum BrowserKeyboardShortcutBridge {
         // gave a command before they were reserved keeps working.
         matches += windowShortcutMatches
         return matches
-    }
-
-    static let windowShortcuts: [(command: BrowserLayoutIndependentShortcutCommand, shortcut: BrowserKeyboardShortcut)] = [
-        (.hideApplication, BrowserKeyboardShortcut("h")),
-        (.hideOtherApplications, BrowserKeyboardShortcut("h", modifiers: [.command, .option])),
-        (.minimizeWindow, BrowserKeyboardShortcut("m")),
-        (.closeWindow, BrowserKeyboardShortcut("w", modifiers: [.command, .shift])),
-    ]
-
-    private static var windowShortcutMatches: [ShortcutMatch] {
-        windowShortcuts.map { ShortcutMatch(command: $0.command, shortcut: $0.shortcut) }
     }
 
     private static func normalizedCharacters(from characters: String?) -> String? {

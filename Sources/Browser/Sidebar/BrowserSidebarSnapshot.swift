@@ -279,4 +279,3 @@ struct BrowserSidebarSplitName: Equatable {
     var title: String
     var systemImageName: String?
 }
-

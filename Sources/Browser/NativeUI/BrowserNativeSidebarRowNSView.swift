@@ -108,6 +108,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     /// Tab IDs of the split shown by this row, in pane order.
     private(set) var splitMemberIDs = [String]()
 
+    /// A renamed split shows its icon and name, and each pane as a favicon.
+    private(set) var splitName: BrowserSidebarSplitName?
+
     var contentIndent: CGFloat { indent }
 
     var dragOpacity: CGFloat = 1 { didSet { alphaValue = dragOpacity * appearanceProgress } }
@@ -520,8 +523,6 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     private let favicon = BrowserFaviconNSView()
     private var splitChips = [BrowserNativeSidebarSplitChipView]()
-    /// A renamed split shows its icon and name, and each pane as a favicon.
-    private(set) var splitName: BrowserSidebarSplitName?
     private let symbol = NSImageView()
     private let badge = NSImageView()
     private var selected = false
@@ -801,7 +802,12 @@ final class BrowserNativeSidebarSplitChipView: NSView {
         super.layout()
         let icon = BrowserChromeLayout.sidebarFaviconSize
         if isCompact {
-            favicon.frame = NSRect(x: (bounds.width - icon) / 2, y: (bounds.height - icon) / 2, width: icon, height: icon)
+            favicon.frame = NSRect(
+                x: (bounds.width - icon) / 2,
+                y: (bounds.height - icon) / 2,
+                width: icon,
+                height: icon
+            )
             return
         }
         let padding: CGFloat = 7

@@ -642,7 +642,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCopySelectedTabLink ?? false
         case #selector(viewDownloads(_:)):
             return activeChromeModel?.onToggleDownloads != nil
-        case #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)), #selector(goToLastSidebarItem(_:)):
+        case #selector(goToLastSidebarItem(_:)), #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)):
             return activeChromeModel.map { !$0.isWebApp && !$0.sidebarItemTabIDs.isEmpty } ?? false
         case #selector(goToSidebarItem(_:)):
             let index = (item as? NSMenuItem)?.tag ?? 0

@@ -507,11 +507,7 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
     static let snapshotFileName = "tabs.json"
 
     func loadSnapshot() -> BrowserTabSessionSnapshot? {
-        guard let snapshotURL else {
-            return nil
-        }
-
-        guard fileManager.fileExists(atPath: snapshotURL.path) else {
+        guard let snapshotURL, fileManager.fileExists(atPath: snapshotURL.path) else {
             return nil
         }
 
@@ -581,11 +577,7 @@ final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
     // MARK: Internal
 
     func loadSelectedTabIndex(tabCount: Int) -> Int? {
-        guard tabCount > 0 else {
-            return nil
-        }
-
-        guard userDefaults.object(forKey: Key.selectedTabIndex) != nil else {
+        guard tabCount > 0, userDefaults.object(forKey: Key.selectedTabIndex) != nil else {
             return nil
         }
 
@@ -603,11 +595,7 @@ final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
     }
 
     func loadSelectedSpaceIndex(spaceCount: Int) -> Int? {
-        guard spaceCount > 0 else {
-            return nil
-        }
-
-        guard userDefaults.object(forKey: Key.selectedSpaceIndex) != nil else {
+        guard spaceCount > 0, userDefaults.object(forKey: Key.selectedSpaceIndex) != nil else {
             return nil
         }
 

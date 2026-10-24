@@ -236,9 +236,9 @@ struct BrowserSidebarDropProposal: Equatable {
         }
         if let entry = appEntryFrame,
            let size = BrowserSidebarAppTabGridLayout(spacing: BrowserChromeLayout.appTabGridSpacing)
-               .frames(for: 1, availableWidth: rowWidth)
-               .first?
-               .size
+            .frames(for: 1, availableWidth: rowWidth)
+            .first?
+            .size
         {
             append(.init(container: .app), feedback: .app, frame: entry, focus: entry.midY, size: size, priority: 0)
         }
@@ -306,9 +306,9 @@ struct BrowserSidebarDropProposal: Equatable {
         guard !candidates.isEmpty else { return nil }
         if let previous,
            let retained = candidates
-               .first(where: {
-                   $0.proposal.destination == previous.destination && $0.proposal.feedback == previous.feedback
-               })
+            .first(where: {
+                $0.proposal.destination == previous.destination && $0.proposal.feedback == previous.feedback
+            })
         {
             return retained.proposal
         }

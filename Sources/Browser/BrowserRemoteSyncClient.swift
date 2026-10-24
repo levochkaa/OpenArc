@@ -239,7 +239,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
             if path == "/v1/sync/pull", (response as? HTTPURLResponse)?.statusCode == 409,
                let error = try? Self.decoder.decode(SyncServerError.self, from: data),
                ["Protocol 4 bootstrap requires cursor 0", "Protocol 5 bootstrap requires cursor 0"]
-                   .contains(error.message)
+                .contains(error.message)
             {
                 throw error.message.hasPrefix("Protocol 5")
                     ? BrowserRemoteSyncError.expiryBootstrapRequired
@@ -797,8 +797,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
               let session = activeSession, session == authSessionStore.loadSession()
         else { return nil }
         do {
-            guard try !requiresSignIn() else { return nil }
-            guard try bindingState(for: session) == .enabled else { return nil }
+            guard try !requiresSignIn(), try bindingState(for: session) == .enabled else { return nil }
             return RequestContext(session: session, owner: owner(for: session), generation: generation)
         } catch {
             Self.logger.error("Sync authorization failed: \(error.localizedDescription, privacy: .public)")
@@ -1002,8 +1001,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         if lastExpiryActivityRefresh
             .map({ now.timeIntervalSince($0) >= expiryActivityRefreshInterval || now < $0 }) ?? true
         {
-            guard scheduler.refreshExpiryActivity() else { return }
-            guard isCurrent(context), !Task.isCancelled else { return }
+            guard scheduler.refreshExpiryActivity(), isCurrent(context), !Task.isCancelled else { return }
             lastExpiryActivityRefresh = now
         }
         guard try localStore.pendingSyncQueue(for: context.owner, limit: 1).isEmpty else {

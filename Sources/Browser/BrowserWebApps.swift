@@ -860,11 +860,9 @@ struct BrowserWebAppBundleInstaller {
             guard
                 let infoData = try? Data(contentsOf: infoURL),
                 let infoDictionary = try? PropertyListSerialization.propertyList(from: infoData, format: nil)
-                as? [String: Any]
+                as? [String: Any],
+                let identifier = infoDictionary[BrowserWebAppConfiguration.identifierInfoKey] as? String
             else {
-                return false
-            }
-            guard let identifier = infoDictionary[BrowserWebAppConfiguration.identifierInfoKey] as? String else {
                 return false
             }
             return identifiers.contains(identifier)

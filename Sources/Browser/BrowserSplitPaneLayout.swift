@@ -7,6 +7,23 @@ import AppKit
 /// typed one. Horizontal panes run left to right and vertical panes top to
 /// bottom, whatever the host view's flipping.
 @objc final class BrowserSplitPaneLayout: NSObject {
+    /// The edge of a page or pane that a tab dragged from the sidebar would
+    /// split. The zones: min(W/3, 80) at the left and right edges and
+    /// min(H/3, 50) at the top and bottom; in a corner the relatively closer
+    /// edge wins. `pane` and `point` share flipped coordinates.
+    enum PageDropEdge: Equatable {
+        case leading, trailing, top, bottom
+
+        // MARK: Internal
+
+        var orientation: BrowserTabSplitOrientation {
+            self == .leading || self == .trailing ? .horizontal : .vertical
+        }
+
+        /// A new pane on the leading or top edge goes before the pane it splits.
+        var isBefore: Bool { self == .leading || self == .top }
+    }
+
     /// Panes are as far apart as the content is from the window edge, as in
     /// a single page: the gap equals the content inset.
     static let paneGap: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
@@ -40,23 +57,15 @@ import AppKit
     static let paneGripSize = CGSize(width: 24, height: 2)
     static let paneGripHitSize = CGSize(width: 56, height: 8)
 
-    /// The edge of a page or pane that a tab dragged from the sidebar would
-    /// split. The zones: min(W/3, 80) at the left and right edges and
-    /// min(H/3, 50) at the top and bottom; in a corner the relatively closer
-    /// edge wins. `pane` and `point` share flipped coordinates.
-    enum PageDropEdge: Equatable {
-        case leading, trailing, top, bottom
-
-        var orientation: BrowserTabSplitOrientation {
-            self == .leading || self == .trailing ? .horizontal : .vertical
-        }
-
-        /// A new pane on the leading or top edge goes before the pane it splits.
-        var isBefore: Bool { self == .leading || self == .top }
-    }
-
     static let pageDropMaximumWidth: CGFloat = 80
     static let pageDropMaximumHeight: CGFloat = 50
+
+    @objc static var focusRingCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
+
+    /// Every pane corner is rounded like the outer content corners.
+    @objc static var paneCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
+
+    @objc static var focusRingColor: NSColor { BrowserChromeColors.splitFocusedPaneBorder }
 
     static func pageDropEdge(at point: CGPoint, in pane: CGRect) -> PageDropEdge? {
         guard pane.contains(point) else { return nil }
@@ -90,13 +99,6 @@ import AppKit
         // Nearest center wins, so the gaps between panes split evenly.
         return centers.indices.min { abs(centers[$0] - position) < abs(centers[$1] - position) }
     }
-
-    @objc static var focusRingCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
-
-    /// Every pane corner is rounded like the outer content corners.
-    @objc static var paneCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
-
-    @objc static var focusRingColor: NSColor { BrowserChromeColors.splitFocusedPaneBorder }
 
     /// The page part of a pane, below its bar, in the host's coordinates.
     @objc(webContentFrameForPaneFrame:flipped:) static func webContentFrame(

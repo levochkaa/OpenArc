@@ -50,6 +50,7 @@ import AppKit
             model.sidebarRevealedPinnedTabIDsByFolderID = revealedPinnedFolderTabIDsByFolderID
         }
     }
+
     var tabRowInteractionResetID = 0 { didSet { invalidate() } }
     var topChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }
     var bottomChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }

@@ -5,7 +5,7 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserPeekPanelTests {
-    @Test func theCardCoversMostOfTheWindowAndClosesOrOpensAsATab() throws {
+    @Test func theCardCoversMostOfTheWindowAndClosesOrOpensAsATab() {
         let window = NSWindow(
             contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
             styleMask: [.borderless],
@@ -37,7 +37,8 @@ import Testing
         #expect(opens == 1)
         panel.dismiss()
         #expect(panel.parent == nil)
-        #expect(BrowserPeekSettings.isEnabled || UserDefaults.standard.object(forKey: BrowserUserPreferencesStore.peekEnabledKey) != nil)
+        #expect(BrowserPeekSettings.isEnabled || UserDefaults.standard
+            .object(forKey: BrowserUserPreferencesStore.peekEnabledKey) != nil)
     }
 
     @Test func littleArcIsOptInAndOpensAStandaloneWindow() throws {
@@ -45,7 +46,7 @@ import Testing
         #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")
         f.model.userPreferencesStore.littleArcEnabled = true
         #expect(f.model.opensExternalLinksInLittleWindow)
-        f.model.openInLittleWindow(try #require(URL(string: "https://example.com/a")))
+        try f.model.openInLittleWindow(#require(URL(string: "https://example.com/a")))
         #expect(f.driver.littleWindowURLs == ["https://example.com/a"])
 
         let panel = BrowserPeekPanel.presentStandalone()
@@ -60,4 +61,3 @@ import Testing
         #expect(closes == 1)
     }
 }
-

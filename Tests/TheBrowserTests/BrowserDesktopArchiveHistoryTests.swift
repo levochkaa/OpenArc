@@ -32,7 +32,10 @@ import Testing
     @Test func restoreLastClosedTabUndoesOnlyATabClose() throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
-        #expect(BrowserCommands.restoreLastClosedTab.shortcut == BrowserKeyboardShortcut("t", modifiers: [.command, .shift]))
+        #expect(BrowserCommands.restoreLastClosedTab.shortcut == BrowserKeyboardShortcut(
+            "t",
+            modifiers: [.command, .shift]
+        ))
         let created = try createHistoryTab(in: f, path: "restore")
         #expect(!f.model.canRestoreLastClosedTab, "The latest action opened a tab")
         try confirmHistoryClose(in: f, id: created.id)

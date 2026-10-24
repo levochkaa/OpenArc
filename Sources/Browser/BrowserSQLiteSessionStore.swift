@@ -219,14 +219,14 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             try requireSyncOwner(owner, in: db)
             guard try folderSyncEnabled(in: db),
                   try Bool
-                      .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
+                    .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
             else { throw BrowserSyncQueueError.expiryBootstrapRequired }
             try mutation.validate()
             if let automaticBaseline {
                 guard try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM browser_sync_outbox") == 0,
                       try Data
-                          .fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1") ==
-                          automaticBaseline
+                        .fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1") ==
+                        automaticBaseline
                 else { throw BrowserSyncExpiryError.candidatesChanged }
             }
             if let row = try Row.fetchOne(
@@ -1372,7 +1372,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     placement: BrowserTabPlacement(rawValue: row["placement"] as String) ?? .temporary,
                     spaceID: row["space_id"],
                     pinnedFolderID: row["pinned_folder_id"],
-                    lastActivityTimestamp: row["last_activity_timestamp"], pinnedSiblingRank: row["pinned_sibling_rank"],
+                    lastActivityTimestamp: row["last_activity_timestamp"],
+                    pinnedSiblingRank: row["pinned_sibling_rank"],
                     pageTitle: pageTitleColumn.isEmpty ? nil : row["page_title"]
                 )
             },

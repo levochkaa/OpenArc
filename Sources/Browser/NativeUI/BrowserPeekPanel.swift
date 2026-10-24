@@ -66,6 +66,8 @@ import AppKit
     /// visible around it.
     static let windowFraction: CGFloat = 0.84
 
+    override var canBecomeKey: Bool { true }
+
     /// A small window rather than a Peek card.
     @objc let isStandalone: Bool
     @objc let hostView = NSView()
@@ -86,7 +88,24 @@ import AppKit
     )
     let hostLabel = BrowserNativeControls.label("", size: 12, weight: .medium, color: BrowserChromeColors.secondaryText)
 
-    override var canBecomeKey: Bool { true }
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, !isStandalone {
+            onClose?()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func cancelOperation(_: Any?) {
+        if !isStandalone {
+            onClose?()
+        }
+    }
+
+    /// Close Window and Command-W reach the card without a title bar button.
+    override func performClose(_: Any?) {
+        onClose?()
+    }
 
     /// The card's frame for a parent window, centered over its content.
     static func frame(over window: NSWindow) -> NSRect {
@@ -100,8 +119,13 @@ import AppKit
     @objc(presentStandalone) static func presentStandalone() -> BrowserPeekPanel {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         let size = NSSize(width: min(820, screen.width - 80), height: min(640, screen.height - 80))
-        let frame = NSRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height)
-            .integral
+        let frame = NSRect(
+            x: screen.midX - size.width / 2,
+            y: screen.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        .integral
         let panel = BrowserPeekPanel(contentRect: frame, standalone: true)
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -128,25 +152,6 @@ import AppKit
         stopWatchingParent()
         parent?.removeChildWindow(self)
         orderOut(nil)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53, !isStandalone {
-            onClose?()
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    override func cancelOperation(_: Any?) {
-        if !isStandalone {
-            onClose?()
-        }
-    }
-
-    /// Close Window and Command-W reach the card without a title bar button.
-    override func performClose(_: Any?) {
-        onClose?()
     }
 
     // MARK: Private
@@ -178,7 +183,10 @@ import AppKit
 
     /// A click on the window behind closes the card.
     private func watchParent(_ window: NSWindow) {
-        parentMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+        parentMonitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .leftMouseDown,
+            .rightMouseDown,
+        ]) { [weak self] event in
             guard let self, event.window === window else { return event }
             onClose?()
             return event
@@ -202,4 +210,3 @@ import AppKit
         UserDefaults.standard.object(forKey: BrowserUserPreferencesStore.peekEnabledKey) as? Bool ?? true
     }
 }
-

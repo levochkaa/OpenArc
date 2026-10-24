@@ -30,11 +30,7 @@ enum BrowserTelemetryEvent: String {
     // MARK: Internal
 
     static func startIfConfigured() {
-        guard !hasStarted else {
-            return
-        }
-
-        guard let dsn = infoString("TheBrowserSentryDSN"), isUsableConfigurationValue(dsn) else {
+        guard !hasStarted, let dsn = infoString("TheBrowserSentryDSN"), isUsableConfigurationValue(dsn) else {
             return
         }
 

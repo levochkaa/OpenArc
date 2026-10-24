@@ -940,14 +940,20 @@ final class BrowserNativeSidebarNSView: NSView {
             let submenu = BrowserNativeMenus.submenu(BrowserStrings.tabMoveToSpaceAction, in: menu)
             for space in spaces {
                 let item = BrowserNativeMenus.add(space.title, to: submenu) { [weak state] in
-                    state?.withSidebarAnimation { _ = model.moveSplitToSpace(containingTabID: first.id, spaceID: space.id) }
+                    state?.withSidebarAnimation { _ = model.moveSplitToSpace(
+                        containingTabID: first.id,
+                        spaceID: space.id
+                    ) }
                 }
                 item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
             }
         }
         menu.addItem(.separator())
         BrowserNativeMenus.add(BrowserStrings.splitRenameAction, to: menu) {
-            if let title = BrowserNativeMenus.prompt(title: BrowserStrings.splitRenameAction, defaultValue: group.title ?? "") {
+            if let title = BrowserNativeMenus.prompt(
+                title: BrowserStrings.splitRenameAction,
+                defaultValue: group.title ?? ""
+            ) {
                 model.setSplitTitle(title, groupID: group.id)
             }
         }

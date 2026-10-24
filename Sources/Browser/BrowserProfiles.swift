@@ -181,11 +181,7 @@ final class BrowserProfileStore: ObservableObject {
         )
 
         return orderedDirectoryNames.compactMap { directoryName in
-            guard !deletedDirectoryNames.contains(directoryName) else {
-                return nil
-            }
-
-            guard isProfileDirectoryName(directoryName) else {
+            guard !deletedDirectoryNames.contains(directoryName), isProfileDirectoryName(directoryName) else {
                 return nil
             }
 

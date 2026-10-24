@@ -13,7 +13,13 @@ import Testing
         let snapshot = BrowserTabSessionSnapshot(
             spaces: [.init(id: "s", title: "Space", systemImageName: "star")],
             tabs: [
-                .init(id: "a", urlString: "https://a.example", placement: .spacePinned, spaceID: "s", pageTitle: "Inbox"),
+                .init(
+                    id: "a",
+                    urlString: "https://a.example",
+                    placement: .spacePinned,
+                    spaceID: "s",
+                    pageTitle: "Inbox"
+                ),
                 .init(id: "b", urlString: "https://b.example", spaceID: "s"),
             ]
         )
@@ -36,8 +42,14 @@ import Testing
             spaces: [.init(id: "s", title: "Space", systemImageName: "star")],
             tabs: [
                 .init(id: "fav", urlString: "https://fav.example", placement: .app, spaceID: "s"),
-                .init(id: "p1", urlString: "https://p1.example/inbox", pinnedURLString: "https://p1.example",
-                      placement: .spacePinned, spaceID: "s", pageTitle: "Inbox"),
+                .init(
+                    id: "p1",
+                    urlString: "https://p1.example/inbox",
+                    pinnedURLString: "https://p1.example",
+                    placement: .spacePinned,
+                    spaceID: "s",
+                    pageTitle: "Inbox"
+                ),
                 .init(id: "p2", urlString: "https://p2.example", placement: .spacePinned, spaceID: "s"),
                 .init(id: "p3", urlString: "https://p3.example", placement: .spacePinned, spaceID: "s"),
                 .init(id: "t", urlString: "https://t.example", spaceID: "s"),
@@ -53,17 +65,30 @@ import Testing
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
-        #expect(driver.createdTabRequests.map(\.urlString) == ["https://fav.example", "https://p3.example", "https://t.example"])
+        #expect(driver.createdTabRequests.map(\.urlString) == [
+            "https://fav.example",
+            "https://p3.example",
+            "https://t.example",
+        ])
         let p1 = try #require(model.tabs.first { $0.syncID == "p1" })
         #expect(p1.displayTitle == "Inbox", "An unloaded tab shows its last title")
         model.selectTab(id: p1.id)
-        #expect(driver.createdTabRequests.last?.urlString == "https://p1.example/inbox", "It reopens at the page it showed")
+        #expect(
+            driver.createdTabRequests.last?.urlString == "https://p1.example/inbox",
+            "It reopens at the page it showed"
+        )
     }
 
     @Test func restoredTabsShowTheirLastTitleBeforeThePageLoads() throws {
         let store = InMemorySessionSnapshotStore(loadedSnapshot: BrowserTabSessionSnapshot(
             spaces: [.init(id: "s", title: "Space", systemImageName: "star")],
-            tabs: [.init(id: "a", urlString: "https://a.example", placement: .spacePinned, spaceID: "s", pageTitle: "Inbox")]
+            tabs: [.init(
+                id: "a",
+                urlString: "https://a.example",
+                placement: .spacePinned,
+                spaceID: "s",
+                pageTitle: "Inbox"
+            )]
         ))
         let driver = FakeBrowserTabDriver()
         let model = BrowserChromeModel(
@@ -86,6 +111,8 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserLazySpaceSelectionTests {
+    // MARK: Internal
+
     @Test func switchingSpacesLoadsTheRememberedUnloadedPinnedTab() throws {
         let store = InMemorySessionSnapshotStore(loadedSnapshot: BrowserTabSessionSnapshot(
             spaces: [
@@ -112,27 +139,6 @@ import Testing
         let selected = try #require(model.tabs.first { $0.id == model.selectedTabID })
         #expect(selected.syncID == "pinned", "The Space shows its remembered tab, now loaded")
         #expect(driver.createdTabRequests.last?.urlString == "https://pinned.example")
-    }
-
-    private func lazyModel() -> (BrowserChromeModel, FakeBrowserTabDriver) {
-        let store = InMemorySessionSnapshotStore(loadedSnapshot: BrowserTabSessionSnapshot(
-            spaces: [.init(id: "s", title: "One", systemImageName: "star")],
-            tabs: [
-                .init(id: "p", urlString: "https://p.example/deep", pinnedURLString: "https://p.example",
-                      placement: .spacePinned, spaceID: "s"),
-                .init(id: "t", urlString: "https://t.example", spaceID: "s"),
-            ]
-        ))
-        let driver = FakeBrowserTabDriver()
-        let model = BrowserChromeModel(
-            tabDriver: driver, sessionSnapshotStore: store,
-            sessionPreferencesStore: InMemorySessionPreferencesStore(storedSelectedTabIndex: 1),
-            commandBarSuggestionProvider: FakeSuggestionProvider(),
-            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
-        )
-        model.handleContextReady()
-        driver.flushPendingCreateEvents()
-        return (model, driver)
     }
 
     @Test func movingAnUnloadedPinnedTabToTemporaryTabsLoadsIt() throws {
@@ -162,5 +168,32 @@ import Testing
         #expect(selected.syncID == "p")
         #expect(driver.createdTabRequests.last?.urlString == "https://p.example/deep", "The fallback loads")
     }
-}
 
+    // MARK: Private
+
+    private func lazyModel() -> (BrowserChromeModel, FakeBrowserTabDriver) {
+        let store = InMemorySessionSnapshotStore(loadedSnapshot: BrowserTabSessionSnapshot(
+            spaces: [.init(id: "s", title: "One", systemImageName: "star")],
+            tabs: [
+                .init(
+                    id: "p",
+                    urlString: "https://p.example/deep",
+                    pinnedURLString: "https://p.example",
+                    placement: .spacePinned,
+                    spaceID: "s"
+                ),
+                .init(id: "t", urlString: "https://t.example", spaceID: "s"),
+            ]
+        ))
+        let driver = FakeBrowserTabDriver()
+        let model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: store,
+            sessionPreferencesStore: InMemorySessionPreferencesStore(storedSelectedTabIndex: 1),
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        )
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        return (model, driver)
+    }
+}

@@ -73,10 +73,9 @@ import UIKit
 
     static func configuration(_ raw: String) -> BrowserSyncConfiguration? {
         guard let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let configuration = BrowserSyncConfiguration(baseURL: url) else { return nil }
-        guard let host = configuration.baseURL.host?.lowercased() else { return nil }
-        guard configuration.baseURL.scheme == "https"
-            || (configuration.baseURL.scheme == "http" && ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host))
+              let configuration = BrowserSyncConfiguration(baseURL: url),
+              let host = configuration.baseURL.host?.lowercased(), configuration.baseURL.scheme == "https"
+              || (configuration.baseURL.scheme == "http" && ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host))
         else { return nil }
         return configuration
     }

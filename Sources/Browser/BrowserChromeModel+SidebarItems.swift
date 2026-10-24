@@ -16,7 +16,8 @@ extension BrowserChromeModel {
             pinnedIDs = snapshot.visiblePinnedRows(
                 in: spaceID,
                 revealedTabIDsByFolderID: sidebarRevealedPinnedTabIDsByFolderID
-            ).compactMap { row in
+            )
+            .compactMap { row in
                 if case .tab(let tabRow) = row {
                     tabRow.tab.id
                 } else {
@@ -52,7 +53,8 @@ extension BrowserChromeModel {
         let current = selectedTabID.flatMap { selected in
             ids.firstIndex { splitPaneTabIDs(forTabID: $0).contains(selected) }
         }
-        let index = current.map { ($0 + offset % ids.count + ids.count) % ids.count } ?? (offset > 0 ? 0 : ids.count - 1)
+        let index = current
+            .map { ($0 + offset % ids.count + ids.count) % ids.count } ?? (offset > 0 ? 0 : ids.count - 1)
         return selectSidebarItem(tabID: ids[index])
     }
 

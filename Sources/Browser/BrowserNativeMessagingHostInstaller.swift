@@ -88,13 +88,9 @@ struct BrowserNativeMessagingHostInstaller {
             return resolvedDestinationURL.path != sourceManifestURL.standardizedFileURL.path
         }
 
-        guard fileManager.fileExists(atPath: destinationURL.path) else {
-            return true
-        }
-
-        guard
-            let destinationData = try? Data(contentsOf: destinationURL),
-            let sourceData = try? Data(contentsOf: sourceManifestURL)
+        guard fileManager.fileExists(atPath: destinationURL.path),
+              let destinationData = try? Data(contentsOf: destinationURL),
+              let sourceData = try? Data(contentsOf: sourceManifestURL)
         else {
             return true
         }

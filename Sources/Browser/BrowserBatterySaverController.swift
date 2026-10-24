@@ -111,7 +111,7 @@ final class BrowserPowerSourceMonitor: BrowserBatteryStateProviding, @unchecked 
             guard
                 let description = IOPSGetPowerSourceDescription(snapshot, source)?
                     .takeUnretainedValue() as? [String: Any],
-                    boolValue(from: description[kIOPSIsPresentKey as String])
+                boolValue(from: description[kIOPSIsPresentKey as String])
             else {
                 continue
             }

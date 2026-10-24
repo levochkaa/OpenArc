@@ -422,6 +422,16 @@ final class BrowserSiteControlsNSView: NSView {
 
     func closePopovers() { extensionPopovers.close() }
 
+    /// Opens the site control center with its extensions, from the site
+    /// button or from `anchor` while these controls are off screen.
+    func showControlCenter(anchor: NSView? = nil, preferredEdge: NSRectEdge? = nil) {
+        guard model.currentTab != nil, !isSidebarResizing else { return }
+        extensionPopovers.showControlCenter(
+            relativeTo: anchor ?? siteButton,
+            preferredEdge: preferredEdge ?? (mode == .toolbar ? .minY : .minX)
+        )
+    }
+
     // MARK: Private
 
     private let backButton = BrowserNativeChromeButton(
@@ -538,16 +548,6 @@ final class BrowserSiteControlsNSView: NSView {
             return
         }
         splitMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: splitButton.bounds.maxY + 4), in: splitButton)
-    }
-
-    /// Opens the site control center with its extensions, from the site
-    /// button or from `anchor` while these controls are off screen.
-    func showControlCenter(anchor: NSView? = nil, preferredEdge: NSRectEdge? = nil) {
-        guard model.currentTab != nil, !isSidebarResizing else { return }
-        extensionPopovers.showControlCenter(
-            relativeTo: anchor ?? siteButton,
-            preferredEdge: preferredEdge ?? (mode == .toolbar ? .minY : .minX)
-        )
     }
 
     /// A pinned extension's popup points at its own button.

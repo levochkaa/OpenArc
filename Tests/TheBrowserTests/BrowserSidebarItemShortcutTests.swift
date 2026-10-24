@@ -104,12 +104,16 @@ import Testing
     }
 
     @Test func markdownLinksEscapeTheTitleAndURL() {
-        #expect(BrowserMarkdownLink.text(title: "Example", urlString: "https://example.com") == "[Example](https://example.com)")
+        #expect(BrowserMarkdownLink
+            .text(title: "Example", urlString: "https://example.com") == "[Example](https://example.com)")
         #expect(
             BrowserMarkdownLink.text(title: "A [b] c", urlString: "https://e.com/a_(b)") == "[A \\[b\\] c](https://e.com/a_%28b%29)"
         )
         #expect(BrowserMarkdownLink.text(title: "  ", urlString: "https://e.com") == "[https://e.com](https://e.com)")
-        #expect(BrowserCommands.copyLinkAsMarkdown.shortcut == BrowserKeyboardShortcut("c", modifiers: [.command, .option, .shift]))
+        #expect(BrowserCommands.copyLinkAsMarkdown.shortcut == BrowserKeyboardShortcut(
+            "c",
+            modifiers: [.command, .option, .shift]
+        ))
     }
 
     @Test func openLocationEditsTheFocusedPaneURL() {
@@ -129,7 +133,10 @@ import Testing
         #expect(BrowserCommandID.goToSidebarItem8.defaultDescriptor.shortcut == BrowserKeyboardShortcut("8"))
         #expect(BrowserCommandID.goToLastSidebarItem.defaultDescriptor.shortcut == BrowserKeyboardShortcut("9"))
         #expect(BrowserCommands.selectNextTab.shortcut == BrowserKeyboardShortcut("]", modifiers: [.command, .shift]))
-        #expect(BrowserCommands.toggleSiteToolbar.shortcut == BrowserKeyboardShortcut("d", modifiers: [.command, .shift]))
+        #expect(BrowserCommands.toggleSiteToolbar.shortcut == BrowserKeyboardShortcut(
+            "d",
+            modifiers: [.command, .shift]
+        ))
         // Shift turns ] into }, so the physical-key monitor dispatches Next Tab.
         #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
             keyCode: 30,

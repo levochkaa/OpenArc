@@ -27,13 +27,6 @@ final class BrowserSplitPaneBarsView: NSView {
     /// Tab IDs of the bars on screen, in pane order.
     var paneTabIDs: [String] { model?.splitPaneLayoutTabIDs.filter { bars[$0] != nil } ?? [] }
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        return hit === self ? nil : hit
-    }
-
-    func bar(forTabID tabID: String) -> BrowserSplitPaneBarView? { bars[tabID] }
-
     /// The pane a grip drag would land on, while it differs from the dragged one.
     private(set) var paneDropTargetTabID: String? {
         didSet {
@@ -50,6 +43,11 @@ final class BrowserSplitPaneBarsView: NSView {
                 needsDisplay = true
             }
         }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
     }
 
     /// The landing pane is outlined while a pane is dragged by its grip, and
@@ -69,6 +67,8 @@ final class BrowserSplitPaneBarsView: NSView {
         BrowserSplitPaneLayout.focusRingColor.setStroke()
         path.stroke()
     }
+
+    func bar(forTabID tabID: String) -> BrowserSplitPaneBarView? { bars[tabID] }
 
     func refresh() {
         guard let model, let hostView, hostView.window === window || window == nil else {

@@ -8,7 +8,8 @@ import Foundation
 @objc final class BrowserDownloadLocation: NSObject {
     /// Called by the engine on its own thread; `UserDefaults` is thread-safe.
     @objc static func directoryPath() -> String {
-        directory(customPath: UserDefaults.standard.string(forKey: BrowserUserPreferencesStore.downloadDirectoryKey)).path
+        directory(customPath: UserDefaults.standard.string(forKey: BrowserUserPreferencesStore.downloadDirectoryKey))
+            .path
     }
 
     static func directory(customPath: String?, fileManager: FileManager = .default) -> URL {

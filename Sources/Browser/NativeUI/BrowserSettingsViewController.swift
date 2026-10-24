@@ -370,7 +370,10 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             BrowserNativeControls.label(BrowserStrings.settingsDownloadLocation, wraps: true),
             path,
         ], spacing: 2)
-        return row(label: label, control: BrowserNativeControls.stack([reset, choose], orientation: .horizontal, spacing: 8))
+        return row(
+            label: label,
+            control: BrowserNativeControls.stack([reset, choose], orientation: .horizontal, spacing: 8)
+        )
     }
 
     private func automaticArchivalRows() -> [NSView] {
@@ -516,22 +519,25 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.bookmarksBarVisible = $0 }
                 ),
             ]),
-            section(BrowserStrings.bookmarksImport, rows: [arcSidebarImportRow()] + BrowserBookmarkImportSource.allCases.map { source in
-                let button = BrowserActionButton(source.title) { [weak self] in
-                    guard let self else { return }
-                    if source == .safari {
-                        guard let url = BrowserSafariBookmarkImportPanel.chooseSourceURL() else { return }
-                        _ = model.bookmarksModel.importSafariBookmarks(from: url)
-                    } else {
-                        _ = model.importBookmarks(from: source)
+            section(
+                BrowserStrings.bookmarksImport,
+                rows: [arcSidebarImportRow()] + BrowserBookmarkImportSource.allCases.map { source in
+                    let button = BrowserActionButton(source.title) { [weak self] in
+                        guard let self else { return }
+                        if source == .safari {
+                            guard let url = BrowserSafariBookmarkImportPanel.chooseSourceURL() else { return }
+                            _ = model.bookmarksModel.importSafariBookmarks(from: url)
+                        } else {
+                            _ = model.importBookmarks(from: source)
+                        }
                     }
+                    button.isBordered = false
+                    button.alignment = .left
+                    button.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
+                    button.imagePosition = .imageLeading
+                    return BrowserNativeControls.padded(button, vertical: 8)
                 }
-                button.isBordered = false
-                button.alignment = .left
-                button.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
-                button.imagePosition = .imageLeading
-                return BrowserNativeControls.padded(button, vertical: 8)
-            }),
+            ),
             section(BrowserStrings.settingsContentTab, rows: [
                 link(BrowserStrings.settingsMoreSettings, url: BrowserSettingsRoute.rootURL),
                 link(BrowserStrings.settingsTranslateSitePrompts, url: BrowserSettingsRoute.languageURL),

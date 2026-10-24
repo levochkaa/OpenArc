@@ -456,12 +456,12 @@ enum BrowserSyncOutboxProjection {
         // Ordinary legacy tabs need an implicit parent; global app favorites do not.
         if !spaces.contains(where: { $0.id == BrowserSessionDefaults.defaultSpaceID }),
            snapshot.tabs
-               .contains(where: {
-                   $0
-                       .placement != .app && ($0.spaceID ?? BrowserSessionDefaults.defaultSpaceID) ==
-                       BrowserSessionDefaults
-                       .defaultSpaceID
-               })
+            .contains(where: {
+                $0
+                    .placement != .app && ($0.spaceID ?? BrowserSessionDefaults.defaultSpaceID) ==
+                    BrowserSessionDefaults
+                    .defaultSpaceID
+            })
         {
             spaces.append(BrowserSpaceSessionSnapshot(
                 id: BrowserSessionDefaults.defaultSpaceID, title: BrowserStrings.defaultSpaceTitle(index: 1),

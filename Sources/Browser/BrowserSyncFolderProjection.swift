@@ -747,15 +747,13 @@ enum BrowserSyncFolderProjection {
                 {
                     targets.append(ref(value))
                 }
-            } else if reference.entityType == .folder {
-                if value.entityType == .folder && folders.contains(value.entityID)
-                    ||
-                    (value.tabData?.placement == .spacePinned && value.tabData?
-                        .pinnedFolderID
-                        .map(folders.contains) == true)
-                {
-                    targets.append(ref(value))
-                }
+            } else if reference.entityType == .folder, value.entityType == .folder && folders.contains(value.entityID)
+                ||
+                (value.tabData?.placement == .spacePinned && value.tabData?
+                    .pinnedFolderID
+                    .map(folders.contains) == true)
+            {
+                targets.append(ref(value))
             }
         }
         for target in targets {

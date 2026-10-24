@@ -116,19 +116,18 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
 
         var document = loadDocumentOrDefault()
         let existingURLs = allBookmarkURLStrings(in: document, excludingID: id)
-        guard !existingURLs.contains(Self.normalizedURLString(trimmedURLString)) else {
-            return false
-        }
+        guard !existingURLs.contains(Self.normalizedURLString(trimmedURLString)), mutateRoots(
+            in: &document,
+            mutation: { root in
+                var children = root[Key.children] as? [BookmarkDocument] ?? []
+                guard updateBookmarkURL(withID: id, urlString: trimmedURLString, in: &children) else {
+                    return false
+                }
 
-        guard mutateRoots(in: &document, mutation: { root in
-            var children = root[Key.children] as? [BookmarkDocument] ?? []
-            guard updateBookmarkURL(withID: id, urlString: trimmedURLString, in: &children) else {
-                return false
+                root[Key.children] = children
+                return true
             }
-
-            root[Key.children] = children
-            return true
-        }) else {
+        ) else {
             return false
         }
 
@@ -466,11 +465,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         var didChange = false
 
         for rootName in [Key.bookmarkBar, Key.other, Key.synced] {
-            guard var root = roots[rootName] as? BookmarkDocument else {
-                continue
-            }
-
-            guard mutation(&root) else {
+            guard var root = roots[rootName] as? BookmarkDocument, mutation(&root) else {
                 continue
             }
 

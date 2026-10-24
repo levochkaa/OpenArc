@@ -579,8 +579,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
               let finalTarget = dropTarget(at: coordinator.session.location(in: tableView)),
               finalTarget.target == hover.target,
               coordinator.proposal
-                  .intent == (hover.insideFolder == nil ? .unspecified : .insertIntoDestinationIndexPath),
-                  let plan = validatedPlan(source: payload.source, target: hover.target, snapshot: document.snapshot)
+                .intent == (hover.insideFolder == nil ? .unspecified : .insertIntoDestinationIndexPath),
+              let plan = validatedPlan(source: payload.source, target: hover.target, snapshot: document.snapshot)
         else { return }
         // Keep the data source frozen through synchronous document observers and
         // UIKit's drop animation. The terminal refresh reads the latest tree.
@@ -702,8 +702,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func tabMenu(id: String) -> UIMenu? {
-        guard !isSelectingRows else { return nil }
-        guard let tab = workspace.tabs.first(where: { $0.id == id }) else { return nil }
+        guard !isSelectingRows, let tab = workspace.tabs.first(where: { $0.id == id }) else { return nil }
         guard let document = workspace.profileDocument else {
             return UIMenu(children: [UIAction(
                 title: String(localized: "Close Tab", table: "Mobile"),
@@ -1117,7 +1116,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             cell.accessoryType = isSelectingRows || isExpanded ? .none : .disclosureIndicator
             if isSelectingRows,
                selectedItems
-                   .contains(.init(entityType: .folder, entityID: id))
+                .contains(.init(entityType: .folder, entityID: id))
             {
                 cell.accessibilityTraits.insert(.selected)
             }

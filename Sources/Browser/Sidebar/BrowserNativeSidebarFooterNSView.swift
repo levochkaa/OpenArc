@@ -57,6 +57,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
 
     var onSizeChanged: () -> Void = {}
 
+    var isDownloadsPresented: Bool { popover.isShown }
+
     override func layout() {
         super.layout()
         let toastHeight = toast.height(for: max(bounds.width - 4, 0)) * toastProgress
@@ -162,6 +164,22 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
 
     func popoverDidClose(_: Notification) { refreshDownloadsButton() }
 
+    /// Opens the list from the Downloads button, or from `anchor` while the
+    /// sidebar is off screen; closes it if it is open.
+    func toggleDownloads(anchor: (rect: CGRect, view: NSView, edge: NSRectEdge)? = nil) {
+        guard !isResizing else { return }
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            _ = downloadsController.view
+            downloadsController.refresh()
+            popover.contentSize = downloadsController.preferredContentSize
+            let anchor = anchor ?? (downloadsButton.bounds, downloadsButton, .maxY)
+            popover.show(relativeTo: anchor.rect, of: anchor.view, preferredEdge: anchor.edge)
+        }
+        refreshDownloadsButton()
+    }
+
     // MARK: Private
 
     private let state: BrowserNativeSidebarState
@@ -226,24 +244,6 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         )
         downloadsButton.isSelected = popover.isShown || active
         downloadDot.isHidden = !active || !state.model.supportsSpaces
-    }
-
-    var isDownloadsPresented: Bool { popover.isShown }
-
-    /// Opens the list from the Downloads button, or from `anchor` while the
-    /// sidebar is off screen; closes it if it is open.
-    func toggleDownloads(anchor: (rect: CGRect, view: NSView, edge: NSRectEdge)? = nil) {
-        guard !isResizing else { return }
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            _ = downloadsController.view
-            downloadsController.refresh()
-            popover.contentSize = downloadsController.preferredContentSize
-            let anchor = anchor ?? (downloadsButton.bounds, downloadsButton, .maxY)
-            popover.show(relativeTo: anchor.rect, of: anchor.view, preferredEdge: anchor.edge)
-        }
-        refreshDownloadsButton()
     }
 }
 

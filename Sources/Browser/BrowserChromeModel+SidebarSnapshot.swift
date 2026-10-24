@@ -23,7 +23,10 @@ extension BrowserChromeModel {
         )
         snapshot.splitNames = Dictionary(
             validatedSplitGroups().compactMap { group in
-                group.title.map { (splitPaneTabIDs(of: group), BrowserSidebarSplitName(title: $0, systemImageName: group.systemImageName)) }
+                group.title.map { (
+                    splitPaneTabIDs(of: group),
+                    BrowserSidebarSplitName(title: $0, systemImageName: group.systemImageName)
+                ) }
             },
             uniquingKeysWith: { first, _ in first }
         )

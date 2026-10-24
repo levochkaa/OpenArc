@@ -206,17 +206,20 @@ final class BrowserUserPreferencesStore: ObservableObject {
         )
         self.batterySaverEnabled = Self.loadBool(userDefaults, key: Key.batterySaverEnabled, defaultValue: true)
         self.pinnedExtensionIDs = Self.loadStringArray(userDefaults, key: Key.pinnedExtensionIDs)
-        self.downloadDirectoryPath = userDefaults.string(forKey: Self.downloadDirectoryKey).flatMap { $0.isEmpty ? nil : $0 }
+        self.downloadDirectoryPath = userDefaults.string(forKey: Self.downloadDirectoryKey).flatMap { $0.isEmpty
+            ? nil
+            : $0
+        }
         self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
         self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
     }
+
+    // MARK: Internal
 
     /// Read by the engine through `BrowserDownloadLocation` on its own thread.
     static let downloadDirectoryKey = "browser.settings.downloadDirectoryPath"
     /// Read by the engine through `BrowserPeekSettings`.
     static let peekEnabledKey = "browser.settings.peekEnabled"
-
-    // MARK: Internal
 
     @Published var automaticUpdatesEnabled: Bool {
         didSet { userDefaults.set(automaticUpdatesEnabled, forKey: Key.automaticUpdatesEnabled) }

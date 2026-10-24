@@ -421,7 +421,12 @@ import Testing
         drag.updatePageDrop(atWindowPoint: CGPoint(x: 500, y: 20))
         #expect(drag.pageSplitTarget == nil, "A group of tabs cannot split the page")
         drag.complete()
-        drag.begin(payload: .init(primary: .tab(f.id("y")), tabIDs: [f.id("y")]), sourceFrame: .zero, start: .zero, pointer: .zero)
+        drag.begin(
+            payload: .init(primary: .tab(f.id("y")), tabIDs: [f.id("y")]),
+            sourceFrame: .zero,
+            start: .zero,
+            pointer: .zero
+        )
         drag.updatePageDrop(atWindowPoint: CGPoint(x: 500, y: 20))
         #expect(drag.pageSplitTarget?.orientation == .vertical)
         #expect(drag.release(at: .zero))
@@ -747,10 +752,21 @@ import Testing
     #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 850, y: 300), in: page) == .trailing)
     #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 450, y: 49), in: page) == .top)
     #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 450, y: 560), in: page) == .bottom)
-    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 10, y: 40), in: page) == .leading, "The relatively closer edge wins")
+    #expect(
+        BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 10, y: 40), in: page) == .leading,
+        "The relatively closer edge wins"
+    )
     let narrow = CGRect(x: 0, y: 0, width: 150, height: 600)
-    #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 55, y: 300), in: narrow) == nil, "A third of a narrow pane")
-    #expect(BrowserSplitPaneLayout.pageDropPreview(for: .bottom, in: page) == CGRect(x: 0, y: 300, width: 900, height: 300))
+    #expect(
+        BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 55, y: 300), in: narrow) == nil,
+        "A third of a narrow pane"
+    )
+    #expect(BrowserSplitPaneLayout.pageDropPreview(for: .bottom, in: page) == CGRect(
+        x: 0,
+        y: 300,
+        width: 900,
+        height: 300
+    ))
 }
 
 @Test func splitGroupDecodingToleratesUnknownValuesAndOldSnapshots() throws {

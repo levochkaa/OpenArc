@@ -183,8 +183,7 @@ import Foundation
                 guard expirySchedulingState()?.inactiveForSeconds == interval, !protectedTabIDs.contains(id),
                       let tab = snapshot.tabs.first(where: { $0.id == id }), tab.placement == .temporary,
                       let activity = tab.lastActivityTimestamp, activity.isFinite, activity <= cutoff,
-                      try sqlite.syncOwner() == nil else { return }
-                guard archiveTab(id: id), !hasUncommittedWrites else { return }
+                      try sqlite.syncOwner() == nil, archiveTab(id: id), !hasUncommittedWrites else { return }
             }
         } catch {
             automaticTabArchivalError = String(
@@ -315,8 +314,7 @@ import Foundation
     /// The coordinator has already committed this canonical projection and cursor.
     /// A blocked document never retains a response to replay over recovered edits.
     func applyRemoteSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
-        guard !hasUncommittedWrites, (try? Self.validate(snapshot)) != nil else { return }
-        guard self.snapshot != snapshot else { return }
+        guard !hasUncommittedWrites, (try? Self.validate(snapshot)) != nil, self.snapshot != snapshot else { return }
         self.snapshot = snapshot
         notify()
     }

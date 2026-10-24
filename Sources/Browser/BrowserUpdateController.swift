@@ -116,12 +116,9 @@ import Sparkle
         guard
             let selectedFeedURLString,
             let feedURL = URL(string: selectedFeedURLString),
-            ["http", "https"].contains(feedURL.scheme?.lowercased() ?? "")
+            ["http", "https"].contains(feedURL.scheme?.lowercased() ?? ""),
+            let publicKey = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String
         else {
-            return false
-        }
-
-        guard let publicKey = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String else {
             return false
         }
 
