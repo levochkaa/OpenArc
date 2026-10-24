@@ -10,8 +10,8 @@ extension BrowserChromeModel {
     /// original or at the top of the temporary tabs. Only tabs of the selected
     /// Space and app tiles can be duplicated, since new tabs open there.
     @discardableResult func duplicateTab(id: String) -> String? {
-        guard canCreateTab, let tab = tabs.first(where: { $0.id == id }), let url = URL(string: tab.urlString),
-              tab.placement == .app || tab.spaceID == selectedSpaceID
+        guard canDuplicateTab(id: id), let tab = tabs.first(where: { $0.id == id }),
+              let url = URL(string: tab.urlString)
         else { return nil }
         openURLInNewTab(url)
         guard let newID = selectedTabID, newID != id else { return nil }
@@ -19,6 +19,69 @@ extension BrowserChromeModel {
         let index = tab.placement == .temporary ? siblings.firstIndex(of: id).map { $0 + 1 } ?? 0 : 0
         moveTab(withID: newID, toPlacement: .temporary, atSectionIndex: index)
         return newID
+    }
+
+    private var selectedTabValue: Tab? { selectedTabID.flatMap { id in tabs.first { $0.id == id } } }
+
+    /// Pin/Unpin Tab for the selected tab of the selected Space.
+    var canTogglePinSelectedTab: Bool {
+        guard let tab = selectedTabValue else { return false }
+        return tab.placement != .app && tab.spaceID == selectedSpaceID
+    }
+
+    var pinToggleTitle: String {
+        selectedTabValue?.placement == .spacePinned ? BrowserStrings.menuUnpinTab : BrowserStrings.menuPinTab
+    }
+
+    @discardableResult func togglePinSelectedTab() -> Bool {
+        guard canTogglePinSelectedTab, let selectedTabID else { return false }
+        togglePinned(forTabID: selectedTabID)
+        return true
+    }
+
+    func canDuplicateTab(id: String) -> Bool {
+        guard canCreateTab, let tab = tabs.first(where: { $0.id == id }), URL(string: tab.urlString) != nil else {
+            return false
+        }
+        return tab.placement == .app || tab.spaceID == selectedSpaceID
+    }
+
+    @discardableResult func duplicateSelectedTab() -> Bool {
+        selectedTabID.flatMap { duplicateTab(id: $0) } != nil
+    }
+
+    /// Rename Tab edits the selected row in place; app tiles and split panes
+    /// have no title field there.
+    var canRenameSelectedTab: Bool {
+        guard let tab = selectedTabValue, tab.placement != .app else { return false }
+        return splitGroup(containingTabID: tab.id) == nil
+    }
+
+    @discardableResult func renameSelectedTab() -> Bool {
+        guard canRenameSelectedTab else { return false }
+        revealSelectedTabInSidebar()
+        sidebarRenameRequestID &+= 1
+        return true
+    }
+
+    var canResetSelectedTabToPinnedURL: Bool { selectedTabValue?.canResetToPinnedURL == true }
+
+    @discardableResult func resetSelectedTabToPinnedURL() -> Bool {
+        guard canResetSelectedTabToPinnedURL, let selectedTabID else { return false }
+        return resetPinnedTabToPinnedURL(id: selectedTabID)
+    }
+
+    /// Collapse/Expand All Folders for the selected Space.
+    func canSetActiveSpaceFoldersExpanded(_ expanded: Bool) -> Bool {
+        pinnedTabFolders.contains { $0.spaceID == selectedSpaceID && $0.isExpanded != expanded }
+    }
+
+    @discardableResult func setActiveSpaceFoldersExpanded(_ expanded: Bool) -> Bool {
+        let ids = pinnedTabFolders.filter { $0.spaceID == selectedSpaceID && $0.isExpanded != expanded }.map(\.id)
+        for id in ids {
+            togglePinnedTabFolderExpanded(id: id)
+        }
+        return !ids.isEmpty
     }
 
     func isTabMuted(id: String) -> Bool {

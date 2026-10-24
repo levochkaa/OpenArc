@@ -154,6 +154,15 @@
 "browser.menu.open_location" = "Open Location…";
 "browser.split.pane_grip" = "Move Split Pane";
 "browser.menu.view_downloads" = "View Downloads";
+"browser.menu.tabs" = "Tabs";
+"browser.menu.spaces" = "Spaces";
+"browser.menu.pin_tab" = "Pin Tab";
+"browser.menu.unpin_tab" = "Unpin Tab";
+"browser.menu.duplicate_tab" = "Duplicate Tab";
+"browser.menu.rename_tab" = "Rename Tab";
+"browser.menu.reset_tab_to_pinned_url" = "Reset Tab to Original URL";
+"browser.menu.collapse_all_folders" = "Collapse All Folders";
+"browser.menu.expand_all_folders" = "Expand All Folders";
 "browser.menu.select_next_tab" = "Next Tab";
 "browser.menu.select_next_tab_alternate" = "Next Tab (Alternate)";
 "browser.menu.select_previous_tab_alternate" = "Previous Tab (Alternate)";

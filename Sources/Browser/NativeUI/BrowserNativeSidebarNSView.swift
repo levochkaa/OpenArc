@@ -159,7 +159,10 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     func refresh(animated: Bool = false) {
-        defer { revealSelectedRowIfRequested() }
+        defer {
+            revealSelectedRowIfRequested()
+            renameSelectedRowIfRequested()
+        }
         let snapshot = renderedSnapshot
         let selectedIndex = state.selectedSpaceIndex(in: snapshot) ?? 0
         let wantedPages = Set(snapshot.spaces
@@ -441,6 +444,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private let dragPreviewAnimation = BrowserNativeAnimation()
     private var dragPreviewTargetSize: CGSize?
     private lazy var handledRevealRequestID = state.model.sidebarRevealRequestID
+    private lazy var handledRenameRequestID = state.model.sidebarRenameRequestID
     private var lastWindowDragPoint = CGPoint.zero
     private var reportedDragging = false
     private var highlightedDropRow: BrowserNativeSidebarRowNSView?
@@ -1209,6 +1213,17 @@ final class BrowserNativeSidebarNSView: NSView {
             for id in state.snapshot.splitMembers(ofTabID: selectedID) ?? [selectedID] {
                 ensureDestinationVisible(.tab(id))
             }
+        }
+    }
+
+    /// Starts renaming the selected row once per Rename Tab request.
+    private func renameSelectedRowIfRequested() {
+        let request = state.model.sidebarRenameRequestID
+        guard request != handledRenameRequestID else { return }
+        handledRenameRequestID = request
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let selectedID = state.snapshot.selectedTabID else { return }
+            state.beginRenamingTab(id: selectedID)
         }
     }
 

@@ -59,6 +59,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu.identifier == Self.spacesMenuIdentifier {
+            updateSpacesMenu(menu)
+            return
+        }
         guard let installWebAppItem = menu.items.first(where: {
             $0.identifier == Self.installWebAppMenuItemIdentifier
         }) else {
@@ -250,6 +254,39 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func selectPreviousSpace(_: Any?) {
         activeChromeModel?.selectPreviousSpace()
+    }
+
+    public func togglePinTab(_: Any?) {
+        activeChromeModel?.togglePinSelectedTab()
+    }
+
+    public func duplicateTab(_: Any?) {
+        activeChromeModel?.duplicateSelectedTab()
+    }
+
+    public func renameTab(_: Any?) {
+        activeChromeModel?.renameSelectedTab()
+    }
+
+    public func resetTabToPinnedURL(_: Any?) {
+        activeChromeModel?.resetSelectedTabToPinnedURL()
+    }
+
+    public func collapseAllFolders(_: Any?) {
+        activeChromeModel?.setActiveSpaceFoldersExpanded(false)
+    }
+
+    public func expandAllFolders(_: Any?) {
+        activeChromeModel?.setActiveSpaceFoldersExpanded(true)
+    }
+
+    public func createNewSpace(_: Any?) {
+        activeChromeModel?.createNewSpace()
+    }
+
+    /// A Spaces menu item; its tag is the Space's position.
+    public func selectSpaceFromMenu(_ sender: Any?) {
+        _ = selectSpace(at: (sender as? NSMenuItem)?.tag ?? 0)
     }
 
     public func openExtensions(_: Any?) {
@@ -528,6 +565,29 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel.map { !$0.isWebApp && $0.supportsSpaces && $0.spaces.count > 1 } ?? false
         case #selector(openExtensions(_:)):
             return activeChromeModel?.canOpenExtensions ?? false
+        case #selector(togglePinTab(_:)):
+            if let menuItem = item as? NSMenuItem, let model = activeChromeModel {
+                menuItem.title = model.pinToggleTitle
+            }
+            return activeChromeModel?.canTogglePinSelectedTab ?? false
+        case #selector(duplicateTab(_:)):
+            return activeChromeModel.map { model in model.selectedTabID.map(model.canDuplicateTab) ?? false } ?? false
+        case #selector(renameTab(_:)):
+            return activeChromeModel?.canRenameSelectedTab ?? false
+        case #selector(resetTabToPinnedURL(_:)):
+            return activeChromeModel?.canResetSelectedTabToPinnedURL ?? false
+        case #selector(collapseAllFolders(_:)):
+            return activeChromeModel?.canSetActiveSpaceFoldersExpanded(false) ?? false
+        case #selector(expandAllFolders(_:)):
+            return activeChromeModel?.canSetActiveSpaceFoldersExpanded(true) ?? false
+        case #selector(createNewSpace(_:)):
+            return activeChromeModel.map { $0.supportsSpaces && !$0.isWebApp } ?? false
+        case #selector(selectSpaceFromMenu(_:)):
+            if let menuItem = item as? NSMenuItem, let model = activeChromeModel {
+                menuItem.state = model.spaces.indices.contains(menuItem.tag)
+                    && model.spaces[menuItem.tag].id == model.selectedSpaceID ? .on : .off
+            }
+            return activeChromeModel?.supportsSpaces ?? false
         case #selector(revealCurrentTab(_:)):
             return activeChromeModel?.canRevealSelectedTab ?? false
         case #selector(copySelectedTabLinkAsMarkdown(_:)):
@@ -557,6 +617,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     // MARK: Private
 
+    private static let spacesMenuIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces")
+    private static let spaceListEndIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces.list-end")
     private static let installWebAppMenuItemIdentifier = NSUserInterfaceItemIdentifier(
         "browser.install-web-app"
     )
@@ -806,6 +868,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         menubar.addItem(fileMenuItem)
         menubar.addItem(editMenuItem)
         menubar.addItem(viewMenuItem)
+        let spacesMenuItem = NSMenuItem()
+        spacesMenuItem.title = BrowserStrings.menuSpaces
+        menubar.addItem(spacesMenuItem)
+        let tabsMenuItem = NSMenuItem()
+        tabsMenuItem.title = BrowserStrings.menuTabs
+        menubar.addItem(tabsMenuItem)
         addWindowMenu(to: menubar, app: app)
         app.mainMenu = menubar
 
@@ -1119,12 +1187,28 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(toggleSiteToolbar(_:))
         ))
         viewMenu.addItem(.separator())
-
         viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .openExtensions),
+            action: #selector(openExtensions(_:))
+        ))
+        viewMenuItem.submenu = viewMenu
+
+        // Tabs menu.
+        let tabsMenu = NSMenu(title: BrowserStrings.menuTabs)
+        for (commandID, action) in [
+            (BrowserCommandID.togglePinTab, #selector(togglePinTab(_:))),
+            (.duplicateTab, #selector(duplicateTab(_:))),
+            (.renameTab, #selector(renameTab(_:))),
+            (.resetTabToPinnedURL, #selector(resetTabToPinnedURL(_:))),
+        ] {
+            tabsMenu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
+        }
+        tabsMenu.addItem(.separator())
+        tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectNextTab),
             action: #selector(selectNextTab(_:))
         ))
-        viewMenu.addItem(makeMenuItem(
+        tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectPreviousTab),
             action: #selector(selectPreviousTab(_:))
         ))
@@ -1135,23 +1219,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             let item = makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action)
             item.isHidden = true
             item.allowsKeyEquivalentWhenHidden = true
-            viewMenu.addItem(item)
+            tabsMenu.addItem(item)
         }
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .selectNextSpace),
-            action: #selector(selectNextSpace(_:))
-        ))
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .selectPreviousSpace),
-            action: #selector(selectPreviousSpace(_:))
-        ))
-        viewMenu.addItem(makeMenuItem(
+        tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .revealCurrentTab),
             action: #selector(revealCurrentTab(_:))
-        ))
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .openExtensions),
-            action: #selector(openExtensions(_:))
         ))
         // Go to Sidebar Item has no visible menu entry; the hidden
         // items keep their key equivalents ahead of the page.
@@ -1167,7 +1239,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             item.tag = commandID.sidebarItemIndex
             item.isHidden = true
             item.allowsKeyEquivalentWhenHidden = true
-            viewMenu.addItem(item)
+            tabsMenu.addItem(item)
         }
         let lastSidebarItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .goToLastSidebarItem),
@@ -1175,14 +1247,72 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         lastSidebarItem.isHidden = true
         lastSidebarItem.allowsKeyEquivalentWhenHidden = true
-        viewMenu.addItem(lastSidebarItem)
-
-        let clearTemporaryTabsItem = makeMenuItem(
+        tabsMenu.addItem(lastSidebarItem)
+        tabsMenu.addItem(.separator())
+        tabsMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .collapseAllFolders),
+            action: #selector(collapseAllFolders(_:))
+        ))
+        tabsMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .expandAllFolders),
+            action: #selector(expandAllFolders(_:))
+        ))
+        tabsMenu.addItem(.separator())
+        tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .clearTemporaryTabs),
             action: #selector(clearTemporaryTabs(_:))
-        )
-        viewMenu.addItem(clearTemporaryTabsItem)
-        viewMenuItem.submenu = viewMenu
+        ))
+        tabsMenuItem.submenu = tabsMenu
+
+        // Spaces menu: next/previous, then one item per Space, filled
+        // when the menu opens.
+        let spacesMenu = NSMenu(title: BrowserStrings.menuSpaces)
+        spacesMenu.identifier = Self.spacesMenuIdentifier
+        spacesMenu.delegate = self
+        spacesMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .selectNextSpace),
+            action: #selector(selectNextSpace(_:))
+        ))
+        spacesMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .selectPreviousSpace),
+            action: #selector(selectPreviousSpace(_:))
+        ))
+        spacesMenu.addItem(.separator())
+        spacesMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newSpace),
+            action: #selector(createNewSpace(_:))
+        ))
+        spacesMenuItem.submenu = spacesMenu
+    }
+
+    /// Rebuilds the Space list after the first separator of the Spaces menu.
+    private func updateSpacesMenu(_ menu: NSMenu) {
+        for item in menu.items
+            where item.action == #selector(selectSpaceFromMenu(_:)) || item.identifier == Self.spaceListEndIdentifier
+        {
+            menu.removeItem(item)
+        }
+        guard let model = activeChromeModel, model.supportsSpaces, !model.spaces.isEmpty,
+              let separator = menu.items.firstIndex(where: \.isSeparatorItem)
+        else { return }
+        var position = separator + 1
+        for (index, space) in model.spaces.enumerated() {
+            let shortcut = BrowserSpaceShortcuts.shortcut(forSpaceIndex: index)
+            let item = NSMenuItem(
+                title: space.title,
+                action: #selector(selectSpaceFromMenu(_:)),
+                keyEquivalent: shortcut?.keyEquivalent ?? ""
+            )
+            item.keyEquivalentModifierMask = shortcut?.modifiers ?? []
+            item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
+            item.tag = index
+            item.target = self
+            menu.insertItem(item, at: position)
+            position += 1
+        }
+        let end = NSMenuItem.separator()
+        end.identifier = Self.spaceListEndIdentifier
+        menu.insertItem(end, at: position)
     }
 
     private func installWebAppMainMenu(for app: NSApplication, session: BrowserWebAppWindowSession) {
@@ -1813,6 +1943,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.revealSelectedTabInSidebar() ?? false
         case .openExtensions:
             return activeChromeModel?.openExtensionsControlCenter() ?? false
+        case .togglePinTab:
+            return activeChromeModel?.togglePinSelectedTab() ?? false
+        case .duplicateTab:
+            return activeChromeModel?.duplicateSelectedTab() ?? false
+        case .renameTab:
+            return activeChromeModel?.renameSelectedTab() ?? false
+        case .resetTabToPinnedURL:
+            return activeChromeModel?.resetSelectedTabToPinnedURL() ?? false
+        case .setAllFoldersExpanded(let expanded):
+            return activeChromeModel?.setActiveSpaceFoldersExpanded(expanded) ?? false
+        case .newSpace:
+            guard let model = activeChromeModel, model.supportsSpaces, !model.isWebApp else { return false }
+            model.createNewSpace()
+            return true
         case .selectNextTab:
             guard activeChromeModel?.isWebApp == false else { return false }
             return activeChromeModel?.selectAdjacentSidebarItem(offset: 1) ?? false

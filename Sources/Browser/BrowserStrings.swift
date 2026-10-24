@@ -813,6 +813,45 @@ enum BrowserStrings {
         comment: "File menu and command title that edits the current page's URL in the command bar."
     )
 
+    static let menuTabs = NSLocalizedString("browser.menu.tabs", comment: "Title of the Tabs menu.")
+
+    static let menuSpaces = NSLocalizedString("browser.menu.spaces", comment: "Title of the Spaces menu.")
+
+    static let menuPinTab = NSLocalizedString(
+        "browser.menu.pin_tab",
+        comment: "Tabs menu and command title that moves the selected tab into the pinned tabs."
+    )
+
+    static let menuUnpinTab = NSLocalizedString(
+        "browser.menu.unpin_tab",
+        comment: "Tabs menu and command title that moves the selected pinned tab back to the temporary tabs."
+    )
+
+    static let menuDuplicateTab = NSLocalizedString(
+        "browser.menu.duplicate_tab",
+        comment: "Tabs menu and command title that opens a copy of the selected tab."
+    )
+
+    static let menuRenameTab = NSLocalizedString(
+        "browser.menu.rename_tab",
+        comment: "Tabs menu and command title that starts renaming the selected tab in the sidebar."
+    )
+
+    static let menuResetTabToPinnedURL = NSLocalizedString(
+        "browser.menu.reset_tab_to_pinned_url",
+        comment: "Tabs menu and command title that returns a pinned tab to its pinned URL."
+    )
+
+    static let menuCollapseAllFolders = NSLocalizedString(
+        "browser.menu.collapse_all_folders",
+        comment: "Tabs menu and command title that collapses every folder of the Space."
+    )
+
+    static let menuExpandAllFolders = NSLocalizedString(
+        "browser.menu.expand_all_folders",
+        comment: "Tabs menu and command title that expands every folder of the Space."
+    )
+
     static let menuViewDownloads = NSLocalizedString(
         "browser.menu.view_downloads",
         comment: "View menu and command title that opens the downloads list."

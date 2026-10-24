@@ -351,6 +351,50 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("d", modifiers: [.command, .shift])
     )
 
+    /// Pin/Unpin Tab has no default: Command-D is Add Bookmark.
+    static let togglePinTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuPinTab,
+        helpTitle: BrowserStrings.menuPinTab,
+        shortcut: .unassigned
+    )
+
+    /// These commands have no default shortcut.
+    static let duplicateTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuDuplicateTab,
+        helpTitle: BrowserStrings.menuDuplicateTab,
+        shortcut: .unassigned
+    )
+
+    static let renameTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuRenameTab,
+        helpTitle: BrowserStrings.menuRenameTab,
+        shortcut: .unassigned
+    )
+
+    static let resetTabToPinnedURL = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuResetTabToPinnedURL,
+        helpTitle: BrowserStrings.menuResetTabToPinnedURL,
+        shortcut: .unassigned
+    )
+
+    static let collapseAllFolders = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuCollapseAllFolders,
+        helpTitle: BrowserStrings.menuCollapseAllFolders,
+        shortcut: .unassigned
+    )
+
+    static let expandAllFolders = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuExpandAllFolders,
+        helpTitle: BrowserStrings.menuExpandAllFolders,
+        shortcut: .unassigned
+    )
+
+    static let newSpace = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.spaceNewAction,
+        helpTitle: BrowserStrings.spaceNewAction,
+        shortcut: .unassigned
+    )
+
     /// Window menu: View Downloads is Command-Shift-J.
     static let viewDownloads = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuViewDownloads,
@@ -526,6 +570,12 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case toggleSidebarPosition
     case toggleBookmarksBar
     case toggleSiteToolbar
+    case togglePinTab
+    case duplicateTab
+    case renameTab
+    case resetTabToPinnedURL
+    case setAllFoldersExpanded(Bool)
+    case newSpace
     case viewDownloads
     case selectNextTab
     case selectPreviousTab

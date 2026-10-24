@@ -359,6 +359,13 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case findPrevious
     case jumpToSelection
     case clearTemporaryTabs
+    case togglePinTab
+    case duplicateTab
+    case renameTab
+    case resetTabToPinnedURL
+    case collapseAllFolders
+    case expandAllFolders
+    case newSpace
     case viewDownloads
     case selectNextTab
     case selectPreviousTab
@@ -492,6 +499,20 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.toggleSiteToolbar
         case .viewDownloads:
             BrowserCommands.viewDownloads
+        case .togglePinTab:
+            BrowserCommands.togglePinTab
+        case .duplicateTab:
+            BrowserCommands.duplicateTab
+        case .renameTab:
+            BrowserCommands.renameTab
+        case .resetTabToPinnedURL:
+            BrowserCommands.resetTabToPinnedURL
+        case .collapseAllFolders:
+            BrowserCommands.collapseAllFolders
+        case .expandAllFolders:
+            BrowserCommands.expandAllFolders
+        case .newSpace:
+            BrowserCommands.newSpace
         case .selectNextTab:
             BrowserCommands.selectNextTab
         case .selectPreviousTab:
@@ -604,6 +625,20 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .toggleSiteToolbar
         case .viewDownloads:
             .viewDownloads
+        case .togglePinTab:
+            .togglePinTab
+        case .duplicateTab:
+            .duplicateTab
+        case .renameTab:
+            .renameTab
+        case .resetTabToPinnedURL:
+            .resetTabToPinnedURL
+        case .collapseAllFolders:
+            .setAllFoldersExpanded(false)
+        case .expandAllFolders:
+            .setAllFoldersExpanded(true)
+        case .newSpace:
+            .newSpace
         case .selectNextTab:
             .selectNextTab
         case .selectPreviousTab, .selectPreviousTabAlternate:

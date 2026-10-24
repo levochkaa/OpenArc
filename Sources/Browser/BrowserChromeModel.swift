@@ -353,6 +353,9 @@ enum BrowserWindowMode: Equatable {
     var onOpenExtensions: (() -> Void)?
     /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.
     var onRevealSidebar: (() -> Void)?
+    /// UI-only: bumped by `renameSelectedTab()`, the only writer, so the
+    /// sidebar starts renaming the selected row.
+    @Published var sidebarRenameRequestID = 0
     /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
     /// sidebar scrolls the selected row into view.
     @Published var sidebarRevealRequestID = 0
@@ -3551,6 +3554,8 @@ enum BrowserWindowMode: Equatable {
             isSelectedSplitPaneExpanded ? BrowserStrings.menuShowAllSplitPanes : BrowserStrings.menuExpandCurrentSplit
         case .toggleSiteToolbar:
             siteToolbarToggleTitle
+        case .togglePinTab:
+            pinToggleTitle
         default:
             descriptor.menuTitle
         }
@@ -3603,6 +3608,20 @@ enum BrowserWindowMode: Equatable {
             canClearTemporaryTabs
         case .viewDownloads:
             onToggleDownloads != nil
+        case .togglePinTab:
+            canTogglePinSelectedTab
+        case .duplicateTab:
+            selectedTabID.map { canDuplicateTab(id: $0) } ?? false
+        case .renameTab:
+            canRenameSelectedTab
+        case .resetTabToPinnedURL:
+            canResetSelectedTabToPinnedURL
+        case .collapseAllFolders:
+            canSetActiveSpaceFoldersExpanded(false)
+        case .expandAllFolders:
+            canSetActiveSpaceFoldersExpanded(true)
+        case .newSpace:
+            supportsSpaces && !isShuttingDown
         case .selectNextTab, .selectPreviousTab, .goToLastSidebarItem:
             !sidebarItemTabIDs.isEmpty
         case .selectNextTabAlternate, .selectPreviousTabAlternate:
@@ -6022,6 +6041,20 @@ extension BrowserCommandID {
             ["clear temporary tabs", "clear temp tabs", "temporary tabs"]
         case .viewDownloads:
             ["downloads", "view downloads", "show downloads", "downloaded files"]
+        case .togglePinTab:
+            ["pin tab", "unpin tab", "pin", "unpin"]
+        case .duplicateTab:
+            ["duplicate tab", "duplicate", "copy tab"]
+        case .renameTab:
+            ["rename tab", "rename"]
+        case .resetTabToPinnedURL:
+            ["reset tab", "original url", "pinned url", "back to pinned url"]
+        case .collapseAllFolders:
+            ["collapse folders", "collapse all folders", "close folders"]
+        case .expandAllFolders:
+            ["expand folders", "expand all folders", "open folders"]
+        case .newSpace:
+            ["new space", "create space", "add space"]
         case .selectNextTab:
             ["next tab", "select next tab"]
         case .selectPreviousTab:
@@ -6130,6 +6163,20 @@ extension BrowserCommandID {
             "xmark.circle"
         case .viewDownloads:
             "arrow.down.circle"
+        case .togglePinTab:
+            "pin"
+        case .duplicateTab:
+            "plus.square.on.square"
+        case .renameTab:
+            "pencil"
+        case .resetTabToPinnedURL:
+            "arrow.uturn.backward"
+        case .collapseAllFolders:
+            "folder"
+        case .expandAllFolders:
+            "folder.fill"
+        case .newSpace:
+            "plus.rectangle.on.rectangle"
         case .selectNextTab:
             "arrow.down.square"
         case .selectPreviousTab, .selectPreviousTabAlternate:

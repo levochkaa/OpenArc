@@ -96,3 +96,48 @@ import Testing
         #expect(f.pinnedNames() == ["a", "b"], "Pinned tabs stay")
     }
 }
+
+// MARK: - BrowserTabCommandTests
+
+@Suite(.serialized)
+@MainActor struct BrowserTabCommandTests {
+    @Test func pinDuplicateResetAndFolderCommandsActOnTheSelection() throws {
+        let f = SidebarDragFixture(
+            pinned: [("a", nil), ("child", "folder")],
+            temporary: ["x"],
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)]
+        )
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.pinToggleTitle == BrowserStrings.menuPinTab)
+        #expect(f.model.togglePinSelectedTab())
+        #expect(f.model.tabs.first { $0.id == f.id("x") }?.placement == .spacePinned)
+        #expect(f.model.pinToggleTitle == BrowserStrings.menuUnpinTab)
+        #expect(f.model.togglePinSelectedTab())
+        #expect(f.model.tabs.first { $0.id == f.id("x") }?.placement == .temporary)
+
+        #expect(f.model.duplicateSelectedTab())
+        #expect(f.model.temporaryTabs.count == 2)
+        #expect(!f.model.canResetSelectedTabToPinnedURL, "A temporary tab has no pinned URL")
+
+        #expect(f.model.canSetActiveSpaceFoldersExpanded(true))
+        #expect(!f.model.canSetActiveSpaceFoldersExpanded(false))
+        #expect(f.model.setActiveSpaceFoldersExpanded(true))
+        #expect(f.model.pinnedTabFolders.allSatisfy { $0.isExpanded })
+        #expect(!f.model.setActiveSpaceFoldersExpanded(true))
+        #expect(f.model.setActiveSpaceFoldersExpanded(false))
+        #expect(f.model.pinnedTabFolders.allSatisfy { !$0.isExpanded })
+    }
+
+    @Test func renameTabRevealsTheRowAndAsksTheSidebarToEditIt() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        var reveals = 0
+        f.model.onRevealSidebar = { reveals += 1 }
+        let request = f.model.sidebarRenameRequestID
+        #expect(f.model.renameSelectedTab())
+        #expect(f.model.sidebarRenameRequestID == request + 1)
+        #expect(reveals == 1)
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        #expect(!f.model.canRenameSelectedTab, "A split row has no title field")
+    }
+}
