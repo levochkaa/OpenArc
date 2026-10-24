@@ -418,6 +418,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         selected: Bool,
         multiSelected: Bool = false,
         indentLevel: Int = 0,
+        name: BrowserSidebarSplitName? = nil,
         isResizing: Bool,
         resetID: Int = 0
     ) {
@@ -428,7 +429,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         splitPinnedControls = false
         indent = CGFloat(max(indentLevel, 0)) * BrowserChromeLayout.sidebarPinnedFolderTabIndent
         splitMemberIDs = members.map(\.id)
-        title = members.map(\.displayTitle).joined(separator: ", ")
+        splitName = name
+        title = name?.title ?? members.map(\.displayTitle).joined(separator: ", ")
+        baseSymbol = name?.systemImageName ?? "rectangle.split.2x1"
+        symbol.image = Self.symbol(baseSymbol, size: BrowserChromeLayout.sidebarFaviconSize)
+        symbol.contentTintColor = BrowserChromeColors.secondaryText
         tooltipTitle = nil
         tooltipCaption = nil
         tooltipShortcut = nil
@@ -450,6 +455,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
         for (chip, tab) in zip(splitChips, members) {
             chip.update(tab: tab, focused: selected && tab.id == focusedTabID)
+            chip.isCompact = name != nil
         }
         setAccessibilityIdentifier("browser.sidebar.split.\(members.first?.id ?? "")")
         updateCommon(
@@ -514,6 +520,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     private let favicon = BrowserFaviconNSView()
     private var splitChips = [BrowserNativeSidebarSplitChipView]()
+    /// A renamed split shows its icon and name, and each pane as a favicon.
+    private(set) var splitName: BrowserSidebarSplitName?
     private let symbol = NSImageView()
     private let badge = NSImageView()
     private var selected = false
@@ -584,6 +592,30 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         let height = min(BrowserNativeSidebarSplitChipView.height, max(bounds.height - inset * 2, 0))
         let count = CGFloat(splitChips.count)
         guard count > 0 else { return }
+        if splitName != nil {
+            let side = height
+            var x = bounds.width - inset - side * count - spacing * (count - 1)
+            let chipsMinX = x
+            for chip in splitChips {
+                chip.frame = NSRect(x: x, y: ((bounds.height - side) / 2).rounded(), width: side, height: side)
+                x += side + spacing
+            }
+            let icon = BrowserChromeLayout.sidebarFaviconSize
+            symbol.frame = NSRect(
+                x: indent + BrowserChromeLayout.sidebarRowHorizontalPadding,
+                y: (bounds.height - icon) / 2,
+                width: icon,
+                height: icon
+            )
+            let titleX = symbol.frame.maxX + BrowserChromeLayout.sidebarRowContentSpacing
+            titleLabel.frame = NSRect(
+                x: titleX,
+                y: (bounds.height - 17) / 2 + 1,
+                width: max(chipsMinX - 6 - titleX, 0),
+                height: 17
+            )
+            return
+        }
         let available = max(bounds.width - indent - inset * 2 - spacing * (count - 1), 0)
         let width = (available / count).rounded(.down)
         var x = indent + inset
@@ -660,10 +692,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     }
 
     private func refreshAppearance() {
-        titleLabel.isHidden = kind == .appTab || kind == .split || isRenaming
+        titleLabel.isHidden = kind == .appTab || (kind == .split && splitName == nil) || isRenaming
         renameField.isHidden = !isRenaming
         favicon.isHidden = kind != .tab && kind != .appTab
-        symbol.isHidden = kind == .tab || kind == .appTab || kind == .split
+        symbol.isHidden = kind == .tab || kind == .appTab || (kind == .split && splitName == nil)
         for chip in splitChips {
             chip.isHidden = kind != .split
             chip.isInteractionEnabled = !isResizing
@@ -745,19 +777,33 @@ final class BrowserNativeSidebarSplitChipView: NSView {
     var isHovered = false {
         didSet {
             guard oldValue != isHovered else { return }
-            closeButton.isHidden = !isHovered || !isInteractionEnabled
+            closeButton.isHidden = !isHovered || !isInteractionEnabled || isCompact
             needsLayout = true
             needsDisplay = true
         }
     }
 
     var isInteractionEnabled = true {
-        didSet { closeButton.isHidden = !isHovered || !isInteractionEnabled }
+        didSet { closeButton.isHidden = !isHovered || !isInteractionEnabled || isCompact }
+    }
+
+    /// A favicon-only chip in a renamed split row; its pane closes from the row menu.
+    var isCompact = false {
+        didSet {
+            guard oldValue != isCompact else { return }
+            titleLabel.isHidden = isCompact
+            closeButton.isHidden = !isHovered || !isInteractionEnabled || isCompact
+            needsLayout = true
+        }
     }
 
     override func layout() {
         super.layout()
         let icon = BrowserChromeLayout.sidebarFaviconSize
+        if isCompact {
+            favicon.frame = NSRect(x: (bounds.width - icon) / 2, y: (bounds.height - icon) / 2, width: icon, height: icon)
+            return
+        }
         let padding: CGFloat = 7
         favicon.frame = NSRect(x: padding, y: (bounds.height - icon) / 2, width: icon, height: icon)
         let closeSize: CGFloat = 20

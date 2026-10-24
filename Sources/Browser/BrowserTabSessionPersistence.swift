@@ -310,8 +310,12 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
         tabIDs: [String],
         orientation: BrowserTabSplitOrientation = .horizontal,
         fractions: [Double]? = nil,
-        focusedTabID: String? = nil
+        focusedTabID: String? = nil,
+        title: String? = nil,
+        systemImageName: String? = nil
     ) {
+        self.title = title
+        self.systemImageName = systemImageName
         self.id = id
         self.tabIDs = tabIDs
         self.orientation = orientation
@@ -328,7 +332,9 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
             orientation: (try? container.decodeIfPresent(BrowserTabSplitOrientation.self, forKey: .orientation))
                 .flatMap { $0 } ?? .horizontal,
             fractions: (try? container.decodeIfPresent([Double].self, forKey: .fractions)).flatMap { $0 },
-            focusedTabID: (try? container.decodeIfPresent(String.self, forKey: .focusedTabID)).flatMap { $0 }
+            focusedTabID: (try? container.decodeIfPresent(String.self, forKey: .focusedTabID)).flatMap { $0 },
+            title: (try? container.decodeIfPresent(String.self, forKey: .title)).flatMap { $0 },
+            systemImageName: (try? container.decodeIfPresent(String.self, forKey: .systemImageName)).flatMap { $0 }
         )
     }
 
@@ -341,6 +347,9 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
     let orientation: BrowserTabSplitOrientation
     let fractions: [Double]?
     let focusedTabID: String?
+    /// Rename… and Change Icon… on a split row.
+    let title: String?
+    let systemImageName: String?
 
     /// Pane fractions must name every pane, be finite and positive, and sum to 1.
     static func validFractions(_ fractions: [Double]?, count: Int) -> [Double]? {
@@ -358,7 +367,10 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
         let members = tabIDs.filter { existing.contains($0) && seen.insert($0).inserted }
         guard members.count >= 2 else { return nil }
         guard members != tabIDs else { return self }
-        return Self(id: id, tabIDs: members, orientation: orientation, focusedTabID: focusedTabID)
+        return Self(
+            id: id, tabIDs: members, orientation: orientation, focusedTabID: focusedTabID,
+            title: title, systemImageName: systemImageName
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -368,6 +380,8 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
         try container.encode(orientation, forKey: .orientation)
         try container.encodeIfPresent(fractions, forKey: .fractions)
         try container.encodeIfPresent(focusedTabID, forKey: .focusedTabID)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(systemImageName, forKey: .systemImageName)
     }
 
     // MARK: Private
@@ -378,6 +392,8 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
         case orientation
         case fractions
         case focusedTabID
+        case title
+        case systemImageName
     }
 }
 

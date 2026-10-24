@@ -87,7 +87,9 @@ extension BrowserChromeModel {
                 tabIDs: group.tabSyncIDs,
                 orientation: group.orientation,
                 fractions: group.fractions,
-                focusedTabID: group.focusedTabSyncID
+                focusedTabID: group.focusedTabSyncID,
+                title: group.title,
+                systemImageName: group.systemImageName
             )
         }
     }
@@ -99,9 +101,32 @@ extension BrowserChromeModel {
                 tabSyncIDs: group.tabIDs,
                 orientation: group.orientation,
                 fractions: group.fractions,
-                focusedTabSyncID: group.focusedTabID
+                focusedTabSyncID: group.focusedTabID,
+                title: group.title,
+                systemImageName: group.systemImageName
             )
         }
+    }
+
+    /// Rename… on a split row; an empty title restores the pane chips.
+    @discardableResult func setSplitTitle(_ title: String?, groupID: String) -> Bool {
+        guard let index = splitGroups.firstIndex(where: { $0.id == groupID }) else { return false }
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = trimmed?.isEmpty == false ? String(trimmed!.prefix(80)) : nil
+        guard splitGroups[index].title != value else { return false }
+        splitGroups[index].title = value
+        persistSplitGroupChange()
+        return true
+    }
+
+    /// Change Icon… on a split row.
+    @discardableResult func setSplitIcon(_ systemImageName: String?, groupID: String) -> Bool {
+        guard let index = splitGroups.firstIndex(where: { $0.id == groupID }),
+              splitGroups[index].systemImageName != systemImageName
+        else { return false }
+        splitGroups[index].systemImageName = systemImageName
+        persistSplitGroupChange()
+        return true
     }
 
     /// Remembers the focused pane so returning to the split restores it.

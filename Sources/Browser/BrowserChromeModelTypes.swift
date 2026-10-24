@@ -13,6 +13,8 @@ extension BrowserChromeModel {
         var orientation = BrowserTabSplitOrientation.horizontal
         var fractions: [Double]?
         var focusedTabSyncID: String?
+        var title: String?
+        var systemImageName: String?
     }
 
     struct Tab: Identifiable, Equatable {

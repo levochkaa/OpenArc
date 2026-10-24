@@ -871,6 +871,7 @@ final class BrowserNativeSidebarNSView: NSView {
             selected: selectedID.map(memberIDs.contains) == true && !isCommandBarPresented,
             multiSelected: memberIDs.contains(where: state.selectedSidebarTabIDs.contains),
             indentLevel: indent,
+            name: state.snapshot.splitNames[memberIDs],
             isResizing: state.isSidebarResizing,
             resetID: state.tabRowInteractionResetID
         )
@@ -944,6 +945,18 @@ final class BrowserNativeSidebarNSView: NSView {
                 item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
             }
         }
+        menu.addItem(.separator())
+        BrowserNativeMenus.add(BrowserStrings.splitRenameAction, to: menu) {
+            if let title = BrowserNativeMenus.prompt(title: BrowserStrings.splitRenameAction, defaultValue: group.title ?? "") {
+                model.setSplitTitle(title, groupID: group.id)
+            }
+        }
+        BrowserNativeMenus.addIconMenu(
+            BrowserStrings.splitChangeIconAction,
+            to: menu,
+            selected: group.systemImageName,
+            noIconTitle: BrowserStrings.pinnedTabFolderNoIconAction
+        ) { model.setSplitIcon($0, groupID: group.id) }
         BrowserNativeMenus.add(BrowserStrings.splitArchiveAction, to: menu) { [weak state] in
             state?.withSidebarAnimation { model.closeSplit(containingTabID: first.id) }
         }

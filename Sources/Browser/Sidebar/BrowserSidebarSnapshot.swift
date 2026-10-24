@@ -24,6 +24,8 @@ struct BrowserSidebarSnapshot: Equatable {
     /// Runtime tab IDs of each Split View in pane order. The sidebar shows a
     /// split as one row in place of its first member.
     var splitGroups = [[String]]()
+    /// Custom names of splits, by their pane IDs in pane order.
+    var splitNames = [[String]: BrowserSidebarSplitName]()
     /// Runtime IDs of muted tabs; their rows show a speaker that unmutes.
     var mutedTabIDs = Set<String>()
 
@@ -270,3 +272,11 @@ struct BrowserSidebarPinnedTabFolderCreationSelection: Equatable {
         return tabIDs
     }
 }
+
+// MARK: - BrowserSidebarSplitName
+
+struct BrowserSidebarSplitName: Equatable {
+    var title: String
+    var systemImageName: String?
+}
+

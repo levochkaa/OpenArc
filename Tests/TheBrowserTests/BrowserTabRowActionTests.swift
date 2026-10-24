@@ -218,3 +218,41 @@ import Testing
         ) == .resetZoom)
     }
 }
+
+// MARK: - BrowserSplitNameTests
+
+@Suite(.serialized)
+@MainActor struct BrowserSplitNameTests {
+    @Test func aRenamedSplitKeepsItsNameAndIconAndShowsThemInItsRow() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.setSplitTitle("  Research  ", groupID: group.id))
+        #expect(f.model.setSplitIcon("book", groupID: group.id))
+        let saved = try #require(f.store.savedSnapshots.last?.splitGroups?.first)
+        #expect(saved.title == "Research" && saved.systemImageName == "book")
+        let decoded = try JSONDecoder().decode(
+            BrowserTabSplitGroupSessionSnapshot.self,
+            from: JSONEncoder().encode(saved)
+        )
+        #expect(decoded.title == "Research", "The name survives the stored JSON")
+        let members = f.model.splitPaneTabIDs(of: group)
+        #expect(f.model.sidebarSnapshot.splitNames[members] == .init(title: "Research", systemImageName: "book"))
+
+        let tabs = members.compactMap { id in f.model.tabs.first { $0.id == id } }
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        row.update(
+            split: tabs,
+            focusedTabID: f.model.selectedTabID,
+            selected: true,
+            name: .init(title: "Research", systemImageName: "book"),
+            isResizing: false
+        )
+        row.layoutSubtreeIfNeeded()
+        #expect(!row.titleLabel.isHidden && row.titleLabel.stringValue == "Research")
+
+        #expect(f.model.setSplitTitle("", groupID: group.id))
+        #expect(f.model.sidebarSnapshot.splitNames.isEmpty, "An empty name brings the pane chips back")
+    }
+}

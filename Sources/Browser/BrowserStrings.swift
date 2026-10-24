@@ -1186,6 +1186,16 @@ enum BrowserStrings {
         comment: "Context menu title for archiving a tab."
     )
 
+    static let splitRenameAction = NSLocalizedString(
+        "browser.split.rename_action",
+        comment: "Split View row menu item and prompt title that names the split."
+    )
+
+    static let splitChangeIconAction = NSLocalizedString(
+        "browser.split.change_icon_action",
+        comment: "Split View row menu submenu that picks the split's icon."
+    )
+
     static let splitArchiveAction = NSLocalizedString(
         "browser.split.archive_action",
         comment: "Split View row menu item that archives every pane of the split."

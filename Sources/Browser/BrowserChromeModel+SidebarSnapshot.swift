@@ -2,7 +2,7 @@ import AppKit
 
 extension BrowserChromeModel {
     var sidebarSnapshot: BrowserSidebarSnapshot {
-        BrowserSidebarSnapshot(
+        var snapshot = BrowserSidebarSnapshot(
             spaces: spaces,
             selectedSpaceID: selectedSpaceID,
             activeSpace: activeSpace,
@@ -21,6 +21,13 @@ extension BrowserChromeModel {
             splitGroups: validatedSplitGroups().map { splitPaneTabIDs(of: $0) }.filter { $0.count > 1 },
             mutedTabIDs: Set(tabs.filter { mutedTabSyncIDs.contains($0.syncID) }.map(\.id))
         )
+        snapshot.splitNames = Dictionary(
+            validatedSplitGroups().compactMap { group in
+                group.title.map { (splitPaneTabIDs(of: group), BrowserSidebarSplitName(title: $0, systemImageName: group.systemImageName)) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return snapshot
     }
 }
 

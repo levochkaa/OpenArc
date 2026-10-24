@@ -112,6 +112,20 @@ import AppKit
         return menu
     }
 
+    /// An icon submenu with a No Icon choice, as folders use.
+    static func addIconMenu(
+        _ title: String,
+        to menu: NSMenu,
+        selected: String?,
+        noIconTitle: String,
+        action: @escaping (String?) -> Void
+    ) {
+        let icons = submenu(title, in: menu)
+        add(noIconTitle, to: icons) { action(nil) }
+        icons.addItem(.separator())
+        addIcons(to: icons, selected: selected) { action($0) }
+    }
+
     // MARK: Private
 
     private static func addIcons(to menu: NSMenu, selected: String?, action: @escaping (String) -> Void) {
