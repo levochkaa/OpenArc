@@ -88,6 +88,7 @@ final class BrowserContentNSView: NSView {
 
     override func layout() {
         super.layout()
+        cancelAreaCaptureIfStale()
         viewport.frame = bounds
         splitPaneBars.frame = bounds
         splitPaneBars.refresh()
@@ -119,27 +120,43 @@ final class BrowserContentNSView: NSView {
         onRetryTabCreation = { [weak model] in model?.retrySelectedTabCreation() }
         splitPaneBars.model = model
         model.onSplitPaneLayoutChange = { [weak self] in self?.splitPaneBars.refresh() }
+        captureModel = model
         model.onBeginAreaCapture = { [weak self, weak model] in
             guard let self, let model else { return false }
-            beginAreaCapture(pageTabID: model.selectedTabID) { model.captureArea(fraction: $0) }
+            let tabID = model.selectedTabID
+            beginAreaCapture(pageTabID: tabID) { fraction in
+                if let fraction {
+                    model.captureArea(fraction: fraction, tabID: tabID)
+                }
+                model.focusSelectedPage()
+            }
             return true
+        }
+    }
+
+    /// The outline belongs to one page at one size: a resize, a layout change or
+    /// another selected tab cancels it.
+    func cancelAreaCaptureIfStale() {
+        guard let areaCapture else { return }
+        if areaCapture.frame != bounds || captureModel?.selectedTabID != areaCaptureTabID {
+            areaCapture.onFinish(nil)
         }
     }
 
     /// Capture…: outlines part of the selected page, or of the focused
     /// pane in a split.
-    func beginAreaCapture(pageTabID: String?, onCapture: @escaping (CGRect) -> Void) {
+    func beginAreaCapture(pageTabID: String?, onFinish: @escaping (CGRect?) -> Void) {
         areaCapture?.removeFromSuperview()
+        areaCaptureTabID = pageTabID
         let page = pageTabID.flatMap { splitPaneBars.pageFrame(forTabID: $0) }
             .map { convert($0, from: splitPaneBars) } ?? bounds
         let overlay = BrowserAreaCaptureOverlay(pageFrame: page)
         overlay.frame = bounds
         overlay.onFinish = { [weak self, weak overlay] fraction in
-            overlay?.removeFromSuperview()
+            guard let overlay, overlay.superview != nil else { return }
+            overlay.removeFromSuperview()
             self?.areaCapture = nil
-            if let fraction {
-                onCapture(fraction)
-            }
+            onFinish(fraction)
         }
         addSubview(overlay)
         window?.makeFirstResponder(overlay)
@@ -155,6 +172,7 @@ final class BrowserContentNSView: NSView {
         sidebarPosition: BrowserSidebarPosition = .left,
         selectedTabCreationState: BrowserTabCreationState? = nil
     ) {
+        cancelAreaCaptureIfStale()
         viewport.update(hostView: hostView)
         splitPaneBars.hostView = hostView
         let isCreatingTab = hasSelectedTab && selectedTabCreationState == .creating
@@ -188,6 +206,9 @@ final class BrowserContentNSView: NSView {
     }
 
     // MARK: Private
+
+    private var areaCaptureTabID: String?
+    private weak var captureModel: BrowserChromeModel?
 
     private let loading = BrowserNativeSurface()
     private let spinner = NSProgressIndicator()

@@ -58,4 +58,43 @@ import Testing
         #expect(f.driver.regionCaptures == [part])
         #expect(!f.model.captureArea(fraction: .zero))
     }
+
+    @Test func anOutlineForAnotherTabIsCancelledAndFocusReturnsToThePage() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        let content = BrowserContentNSView(hostView: NSView())
+        content.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        content.bindTabCreation(to: f.model)
+        #expect(f.model.beginAreaCapture())
+        #expect(content.areaCapture != nil)
+        #expect(!f.model.captureArea(fraction: CGRect(x: 0, y: 0, width: 0.5, height: 0.5), tabID: f.id("y")))
+
+        f.model.selectTab(id: f.id("y"))
+        content.cancelAreaCaptureIfStale()
+        #expect(content.areaCapture == nil, "Another selected tab cancels the outline")
+        #expect(f.driver.regionCaptures.isEmpty && f.driver.pageFocusCount == 1, "The keys go back to the page")
+
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.beginAreaCapture())
+        content.frame.size.width = 900
+        content.cancelAreaCaptureIfStale()
+        #expect(content.areaCapture == nil, "A resize cancels it too")
+    }
+
+    @Test func selectionFindActionsGoToThePageItself() async throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        f.model.findPasteboardText = { "needle" }
+        #expect(f.model.useSelectionForFind())
+        #expect(f.driver.pageActions == [Selector(("copyToFindPboard:"))])
+        try await Task.sleep(for: .milliseconds(Int(BrowserChromeModel.findPasteboardDelay * 1000) + 150))
+        #expect(f.model.isFindBarPresented && f.model.findQuery == "needle")
+
+        #expect(f.model.jumpToSelection())
+        #expect(f.driver.pageActions.last == #selector(NSResponder.centerSelectionInVisibleArea(_:)))
+        f.driver.pageActionResult = false
+        #expect(!f.model.useSelectionForFind(), "No page view, no find")
+    }
 }

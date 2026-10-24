@@ -240,6 +240,8 @@ enum BrowserWindowMode: Equatable {
         500,
     ]
 
+    static let findPasteboardDelay: TimeInterval = 0.25
+
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var spaces = [Space]()
     @Published private(set) var pinnedTabFolders = [PinnedTabFolder]()
@@ -267,6 +269,8 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var sessionPersistenceFailure: BrowserSessionPersistenceFailure?
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
+    /// The text Use Selection to Find reads; tests replace the system pasteboard.
+    var findPasteboardText: () -> String? = { NSPasteboard(name: .find).string(forType: .string) }
     let shortcutStore: BrowserShortcutStore
     let bookmarksModel: BrowserBookmarksModel
     let downloadsModel: BrowserDownloadsModel
@@ -638,6 +642,27 @@ enum BrowserWindowMode: Equatable {
     }
 
     var canCaptureArea: Bool { canCreateTab && selectedTab?.creationState == .ready && onBeginAreaCapture != nil }
+
+    /// Use Selection to Find: the page copies its selection to the find
+    /// pasteboard, read after a short round trip because Chromium writes it
+    /// asynchronously and reports nothing when the text is unchanged.
+    @discardableResult func useSelectionForFind() -> Bool {
+        guard canPresentFindInPage, tabDriver.sendActionToActivePage(Selector(("copyToFindPboard:"))) else {
+            return false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.findPasteboardDelay) { [weak self] in
+            guard let self, canPresentFindInPage, let text = findPasteboardText(), !text.isEmpty else { return }
+            findQuery = text
+            _ = presentFindInPage()
+        }
+        return true
+    }
+
+    /// Scrolls the page's selection into view, even with focus in the find field.
+    @discardableResult func jumpToSelection() -> Bool {
+        guard canFindInPage else { return false }
+        return tabDriver.sendActionToActivePage(#selector(NSResponder.centerSelectionInVisibleArea(_:)))
+    }
 
     /// Peek for pinned tabs and Favorites, when turned on in Settings: a
     /// clicked link, or its redirect, to another site opens in Peek and the tab
@@ -1921,10 +1946,18 @@ enum BrowserWindowMode: Equatable {
         return onBeginAreaCapture?() ?? false
     }
 
-    @discardableResult func captureArea(fraction: CGRect) -> Bool {
-        guard canCreateTab, selectedTabID != nil, fraction.width > 0, fraction.height > 0 else { return false }
+    /// `tabID` is the tab the outline was drawn over; another selected tab refuses.
+    @discardableResult func captureArea(fraction: CGRect, tabID: String? = nil) -> Bool {
+        guard canCreateTab, let selectedTabID, tabID == nil || tabID == selectedTabID,
+              fraction.width > 0, fraction.height > 0
+        else { return false }
         tabDriver.captureActiveTabRegionToPasteboard(fraction: fraction)
         return true
+    }
+
+    /// After Capture Area closes, the keys go back to the page.
+    func focusSelectedPage() {
+        tabDriver.focusActivePage()
     }
 
     @discardableResult func captureFullPageSelectedTabToPasteboard() -> Bool {
@@ -2650,11 +2683,15 @@ enum BrowserWindowMode: Equatable {
 
     /// Peek's Open in Split View: the page becomes a pane beside the shown tab.
     /// False when the shown tab cannot take another pane.
+    /// True once the page has a tab, split or not, so the caller never opens a
+    /// second one. Web-app windows have no splits.
     @discardableResult func openURLInSplitView(_ url: URL) -> Bool {
-        guard canAddSplitView, let anchor = selectedTabID else { return false }
+        guard !isWebApp, canAddSplitView, let anchor = selectedTabID else { return false }
         createTab(withURLString: url.absoluteString)
-        guard let tabID = selectedTabID, tabID != anchor else { return false }
-        return openInSplitView(tabID: tabID, anchorTabID: anchor)
+        if let tabID = selectedTabID, tabID != anchor {
+            openInSplitView(tabID: tabID, anchorTabID: anchor)
+        }
+        return true
     }
 
     // MARK: Private

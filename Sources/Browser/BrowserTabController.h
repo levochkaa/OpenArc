@@ -165,6 +165,11 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)setAudioMuted:(BOOL)muted forTabWithID:(NSString *)tabID;
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
 - (void)captureFullPageActiveTabToPasteboard;
+/// Sends a Cocoa action such as `copyToFindPboard:` to the active page's
+/// Chromium view, wherever the window's focus is. NO without such a view.
+- (BOOL)sendActionToActivePage:(SEL)action NS_SWIFT_NAME(sendActionToActivePage(_:));
+/// Gives the keyboard back to the active page.
+- (void)focusActivePage;
 /// Capture: `fraction` is the outlined part of the active page view,
 /// each coordinate from 0 to 1 with y growing downward.
 - (void)captureActiveTabRegionToPasteboard:(CGRect)fraction

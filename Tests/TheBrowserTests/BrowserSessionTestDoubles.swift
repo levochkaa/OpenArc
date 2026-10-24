@@ -107,6 +107,18 @@ import Foundation
     var zoomLevelsByTabID = [String: Double]()
 
     private(set) var regionCaptures = [CGRect]()
+    private(set) var pageActions = [Selector]()
+    private(set) var pageFocusCount = 0
+    var pageActionResult = true
+
+    @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool {
+        pageActions.append(action)
+        return pageActionResult
+    }
+
+    func focusActivePage() {
+        pageFocusCount += 1
+    }
 
     func showPeek(withURLString urlString: String) {
         peekURLs.append(urlString)

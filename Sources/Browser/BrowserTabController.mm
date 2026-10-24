@@ -753,6 +753,24 @@ void UpdateSavePanelSelection(NSSavePanel *panel,
   panel.allowedContentTypes = @[ ContentTypeForSavePageFormat(format) ];
 }
 
+/// Chromium's page view inside a CEF browser view, which implements the page's
+/// Cocoa editing actions.
+NSView *PageViewHandlingAction(NSView *view, SEL action) {
+  if (view == nil) {
+    return nil;
+  }
+  if ([NSStringFromClass(view.class) containsString:@"RenderWidgetHostViewCocoa"] &&
+      [view respondsToSelector:action]) {
+    return view;
+  }
+  for (NSView *subview in view.subviews) {
+    if (NSView *found = PageViewHandlingAction(subview, action)) {
+      return found;
+    }
+  }
+  return nil;
+}
+
 /// DevTools JSON writes whole numbers as integers, which CEF parses as ints;
 /// `GetDouble` reads those as 0.
 double DevToolsNumber(CefRefPtr<CefDictionaryValue> dictionary, const char *key, double fallback = 0) {
@@ -3706,6 +3724,22 @@ void WatchClickModifiers();
                             observer->Start(host);
                           },
                           host)));
+}
+
+- (BOOL)sendActionToActivePage:(SEL)action {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return NO;
+  }
+  NSView *page = PageViewHandlingAction(BrowserViewForBrowser(it->second.browser), action);
+  return page != nil && [NSApp sendAction:action to:page from:nil];
+}
+
+- (void)focusActivePage {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.browser) {
+    it->second.browser->GetHost()->SetFocus(true);
+  }
 }
 
 - (void)captureActiveTabRegionToPasteboard:(CGRect)fraction {

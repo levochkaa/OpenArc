@@ -82,6 +82,9 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func stopLoadingActiveTab()
     func saveActiveTab(withSuggestedName suggestedName: String?)
     func captureFullPageActiveTabToPasteboard()
+    /// A Cocoa action for the active page's own view; false without one.
+    @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool
+    func focusActivePage()
     /// The outlined part of the page as fractions of its view, y downward.
     func captureActiveTabRegionToPasteboard(fraction: CGRect)
     func pasteAndMatchStyleActiveTab()

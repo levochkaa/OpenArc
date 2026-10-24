@@ -26,6 +26,8 @@ final class BrowserAreaCaptureOverlay: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    /// A drag outlines; it never moves the window, even under the title bar.
+    override var mouseDownCanMoveWindow: Bool { false }
 
     let pageFrame: CGRect
     private(set) var selection: CGRect?

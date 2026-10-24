@@ -131,6 +131,14 @@ import Foundation
         controller.captureFullPageActiveTabToPasteboard()
     }
 
+    @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool {
+        controller.sendActionToActivePage(action)
+    }
+
+    func focusActivePage() {
+        controller.focusActivePage()
+    }
+
     func captureActiveTabRegionToPasteboard(fraction: CGRect) {
         controller.captureActiveTabRegionToPasteboard(fraction: fraction)
     }
