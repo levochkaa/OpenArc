@@ -127,6 +127,24 @@ extension BrowserChromeModel {
     }
 
     /// A click in another visible pane focuses that pane's tab.
+    /// Switch to Split View N: focuses the pane at a position, counted from 0.
+    @discardableResult func focusSplitPane(at index: Int) -> Bool {
+        guard let group = selectedSplitGroup else { return false }
+        let panes = splitPaneTabIDs(of: group)
+        guard panes.indices.contains(index), panes[index] != selectedTabID else { return false }
+        selectTab(id: panes[index])
+        return true
+    }
+
+    /// Switch to next/previous Split View: moves focus by one pane and wraps.
+    @discardableResult func focusAdjacentSplitPane(offset: Int) -> Bool {
+        guard let group = selectedSplitGroup, let selectedTabID else { return false }
+        let panes = splitPaneTabIDs(of: group)
+        guard panes.count > 1, let index = panes.firstIndex(of: selectedTabID) else { return false }
+        selectTab(id: panes[(index + offset % panes.count + panes.count) % panes.count])
+        return true
+    }
+
     /// A divider drag ended in the engine. The sizes apply only while the
     /// visible panes are still exactly the selected split's panes.
     func handleSplitResize(tabIDs: [String], fractions: [Double]) {

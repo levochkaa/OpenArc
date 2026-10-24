@@ -124,6 +124,9 @@
 "browser.menu.toggle_split_orientation" = "Toggle Split View Orientation";
 "browser.split.button" = "Split View";
 "browser.settings.sidebar_position" = "Sidebar position";
+"browser.menu.focus_split_pane" = "Switch to Split Pane %d";
+"browser.menu.focus_next_split_pane" = "Switch to Next Split Pane";
+"browser.menu.focus_previous_split_pane" = "Switch to Previous Split Pane";
 "browser.settings.sidebar_position.left" = "Left";
 "browser.settings.sidebar_position.right" = "Right";
 "browser.menu.move_sidebar_right" = "Move Sidebar to the Right";

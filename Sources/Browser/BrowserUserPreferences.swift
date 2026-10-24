@@ -359,6 +359,12 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case separateTabFromSplit
     case separateSplitView
     case toggleSplitOrientation
+    case focusSplitPane1
+    case focusSplitPane2
+    case focusSplitPane3
+    case focusSplitPane4
+    case focusNextSplitPane
+    case focusPreviousSplitPane
     case toggleSidebar
     case toggleSidebarPosition
     case toggleBookmarksBar
@@ -433,6 +439,18 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.toggleSidebar
         case .toggleSidebarPosition:
             BrowserCommands.toggleSidebarPosition
+        case .focusSplitPane1:
+            BrowserCommands.focusSplitPane1
+        case .focusSplitPane2:
+            BrowserCommands.focusSplitPane2
+        case .focusSplitPane3:
+            BrowserCommands.focusSplitPane3
+        case .focusSplitPane4:
+            BrowserCommands.focusSplitPane4
+        case .focusNextSplitPane:
+            BrowserCommands.focusNextSplitPane
+        case .focusPreviousSplitPane:
+            BrowserCommands.focusPreviousSplitPane
         case .toggleBookmarksBar:
             BrowserCommands.toggleBookmarksBar
         }
@@ -502,6 +520,18 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .toggleSidebar
         case .toggleSidebarPosition:
             .toggleSidebarPosition
+        case .focusSplitPane1:
+            .focusSplitPane1
+        case .focusSplitPane2:
+            .focusSplitPane2
+        case .focusSplitPane3:
+            .focusSplitPane3
+        case .focusSplitPane4:
+            .focusSplitPane4
+        case .focusNextSplitPane:
+            .focusNextSplitPane
+        case .focusPreviousSplitPane:
+            .focusPreviousSplitPane
         case .toggleBookmarksBar:
             .toggleBookmarksBar
         }

@@ -1518,6 +1518,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.separateSelectedSplitGroup() ?? false
         case .toggleSplitOrientation:
             return activeChromeModel?.toggleSelectedSplitOrientation() ?? false
+        case .focusSplitPane1:
+            return activeChromeModel?.focusSplitPane(at: 0) ?? false
+        case .focusSplitPane2:
+            return activeChromeModel?.focusSplitPane(at: 1) ?? false
+        case .focusSplitPane3:
+            return activeChromeModel?.focusSplitPane(at: 2) ?? false
+        case .focusSplitPane4:
+            return activeChromeModel?.focusSplitPane(at: 3) ?? false
+        case .focusNextSplitPane:
+            return activeChromeModel?.focusAdjacentSplitPane(offset: 1) ?? false
+        case .focusPreviousSplitPane:
+            return activeChromeModel?.focusAdjacentSplitPane(offset: -1) ?? false
         case .toggleSidebar:
             guard activeChromeModel != nil else {
                 return false

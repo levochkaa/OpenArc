@@ -176,6 +176,32 @@ import Testing
         #expect(f.model.selectedSplitGroup?.fractions == [0.7, 0.3], "A hidden split keeps its sizes")
     }
 
+    @Test func splitPaneCommandsFocusPanesByPositionAndWrap() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        #expect(f.model.selectedTabID == f.id("z"))
+        #expect(f.model.focusSplitPane(at: 0))
+        #expect(f.model.selectedTabID == f.id("x"))
+        #expect(!f.model.focusSplitPane(at: 3), "There is no fourth pane")
+        #expect(f.model.focusAdjacentSplitPane(offset: -1))
+        #expect(f.model.selectedTabID == f.id("z"), "Previous wraps to the last pane")
+        #expect(f.model.focusAdjacentSplitPane(offset: 1))
+        #expect(f.model.selectedTabID == f.id("x"), "Next wraps to the first pane")
+        func commands(_ query: String) -> [BrowserCommandID] {
+            f.model.presentCommandBar()
+            f.model.commandBarModel.query = query
+            defer { f.model.dismissCommandBar() }
+            return f.model.commandBarModel.suggestions.compactMap(\.commandID)
+        }
+        #expect(commands("split pane 3").contains(.focusSplitPane3))
+        #expect(!commands("split pane 4").contains(.focusSplitPane4), "Only existing panes are offered")
+        _ = f.model.separateSelectedSplitGroup()
+        #expect(!commands("next split pane").contains(.focusNextSplitPane))
+        #expect(!f.model.focusAdjacentSplitPane(offset: 1))
+    }
+
     @Test func addSplitViewOpensTheCommandBarResultAsTheNextPane() throws {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         f.model.selectTab(id: f.id("x"))

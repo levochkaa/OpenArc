@@ -68,6 +68,8 @@ TheBrowser adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Sh
 | Separate Page from Split View | none | A split is selected |
 | Separate All Tabs | none | A split is selected |
 | Convert to Vertical/Horizontal Split View | none | A split is selected; the title follows the current orientation |
+| Switch to Split Pane 1–4 | `⌃⇧1` … `⌃⇧4` | The selected split has that pane |
+| Switch to Next/Previous Split Pane | `⌃⇧]` / `⌃⇧[` | A split is selected; focus wraps around |
 
 The physical-key monitor also dispatches Control shortcuts and the `=`/`-` keys, because Shift changes their characters (`+`, `_`) and menu key equivalents do not match them reliably.
 
@@ -88,4 +90,4 @@ Implemented: model, actions, validation, persistence, archive/expiry protection,
 
 1. Pane chrome: per-pane back/forward/host/close strip, Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane and drag into the center.
 2. iPad browser split in UIKit/WebKit.
-3. Split pane shortcuts (`⌃⇧1…4`, `⌃⇧]` / `⌃⇧[`), drop on a row's left or right half to create a split, and a custom split title.
+3. Drop on a row's left or right half to create a split, and a custom split title.

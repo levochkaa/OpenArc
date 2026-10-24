@@ -170,3 +170,30 @@ import Testing
         charactersIgnoringModifiers: "+"
     ) == nil, "Cmd-Shift-= is Zoom In, not a split command")
 }
+
+@Test func splitPaneShortcutsUseArcDefaultsAndDispatchFromPhysicalKeys() {
+    #expect(BrowserCommands.focusSplitPane1.shortcut == BrowserKeyboardShortcut("1", modifiers: [.control, .shift]))
+    #expect(BrowserCommands.focusNextSplitPane.shortcut == BrowserKeyboardShortcut("]", modifiers: [.control, .shift]))
+    // Shift turns 1 into "!" and ] into "}".
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 18,
+        modifierFlags: [.control, .shift],
+        charactersIgnoringModifiers: "!"
+    ) == .focusSplitPane1)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 21,
+        modifierFlags: [.control, .shift],
+        charactersIgnoringModifiers: "$"
+    ) == .focusSplitPane4)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 30,
+        modifierFlags: [.control, .shift],
+        charactersIgnoringModifiers: "}"
+    ) == .focusNextSplitPane)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 33,
+        modifierFlags: [.control, .shift],
+        charactersIgnoringModifiers: "{"
+    ) == .focusPreviousSplitPane)
+    #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 18, modifierFlags: [.control, .shift]) == nil)
+}

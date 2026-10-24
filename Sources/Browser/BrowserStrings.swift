@@ -713,6 +713,16 @@ enum BrowserStrings {
         comment: "Settings and command title for switching a split between side by side and stacked panes."
     )
 
+    static let menuFocusNextSplitPane = NSLocalizedString(
+        "browser.menu.focus_next_split_pane",
+        comment: "Command title that focuses the next Split View pane."
+    )
+
+    static let menuFocusPreviousSplitPane = NSLocalizedString(
+        "browser.menu.focus_previous_split_pane",
+        comment: "Command title that focuses the previous Split View pane."
+    )
+
     static let settingsSidebarPosition = NSLocalizedString(
         "browser.settings.sidebar_position",
         comment: "Settings title for the window edge that shows the sidebar."
@@ -1606,6 +1616,16 @@ enum BrowserStrings {
         "browser.permissions.dont_allow",
         comment: "Don't Allow button title for notification permissions."
     )
+
+    static func splitFocusPaneTitle(_ number: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.menu.focus_split_pane",
+                comment: "Command title that focuses a Split View pane by its position. %d is 1 to 4."
+            ),
+            number
+        )
+    }
 
     static func webAppErrorBundleSigningFailed(_ details: String) -> String {
         let format = NSLocalizedString(

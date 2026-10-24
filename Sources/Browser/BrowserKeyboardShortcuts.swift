@@ -262,6 +262,44 @@ enum BrowserCommands {
         shortcut: .unassigned
     )
 
+    /// Switch to Split View 1–4 is Control-Shift-1…4
+    /// and next/previous is Control-Shift-]/[.
+    static let focusSplitPane1 = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitFocusPaneTitle(1),
+        helpTitle: BrowserStrings.splitFocusPaneTitle(1),
+        shortcut: BrowserKeyboardShortcut("1", modifiers: [.control, .shift])
+    )
+
+    static let focusSplitPane2 = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitFocusPaneTitle(2),
+        helpTitle: BrowserStrings.splitFocusPaneTitle(2),
+        shortcut: BrowserKeyboardShortcut("2", modifiers: [.control, .shift])
+    )
+
+    static let focusSplitPane3 = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitFocusPaneTitle(3),
+        helpTitle: BrowserStrings.splitFocusPaneTitle(3),
+        shortcut: BrowserKeyboardShortcut("3", modifiers: [.control, .shift])
+    )
+
+    static let focusSplitPane4 = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitFocusPaneTitle(4),
+        helpTitle: BrowserStrings.splitFocusPaneTitle(4),
+        shortcut: BrowserKeyboardShortcut("4", modifiers: [.control, .shift])
+    )
+
+    static let focusNextSplitPane = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuFocusNextSplitPane,
+        helpTitle: BrowserStrings.menuFocusNextSplitPane,
+        shortcut: BrowserKeyboardShortcut("]", modifiers: [.control, .shift])
+    )
+
+    static let focusPreviousSplitPane = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuFocusPreviousSplitPane,
+        helpTitle: BrowserStrings.menuFocusPreviousSplitPane,
+        shortcut: BrowserKeyboardShortcut("[", modifiers: [.control, .shift])
+    )
+
     static let toggleSidebarPosition = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuMoveSidebarRight,
         helpTitle: BrowserStrings.menuMoveSidebarRight,
@@ -354,6 +392,12 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case separateTabFromSplit
     case separateSplitView
     case toggleSplitOrientation
+    case focusSplitPane1
+    case focusSplitPane2
+    case focusSplitPane3
+    case focusSplitPane4
+    case focusNextSplitPane
+    case focusPreviousSplitPane
     case toggleSidebar
     case toggleSidebarPosition
     case toggleBookmarksBar
@@ -489,6 +533,14 @@ enum BrowserKeyboardShortcutBridge {
             "j"
         case 40:
             "k"
+        case 18:
+            "1"
+        case 19:
+            "2"
+        case 20:
+            "3"
+        case 21:
+            "4"
         case 30:
             "]"
         case 33:

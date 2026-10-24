@@ -3540,6 +3540,10 @@ enum BrowserWindowMode: Equatable {
             canAddSplitView
         case .closeSplitPane, .separateSplitView, .separateTabFromSplit, .toggleSplitOrientation:
             selectedSplitGroup != nil && !isShuttingDown
+        case .focusSplitPane1, .focusSplitPane2, .focusSplitPane3, .focusSplitPane4:
+            selectedSplitGroup.map { splitPaneTabIDs(of: $0).count > commandID.splitPaneIndex } == true
+        case .focusNextSplitPane, .focusPreviousSplitPane:
+            selectedSplitGroup != nil
         case .toggleSidebar:
             true
         case .toggleSidebarPosition:
@@ -5872,6 +5876,16 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 // MARK: - Command Bar Actions
 
 extension BrowserCommandID {
+    /// Pane position of a Switch to Split Pane command, counted from 0.
+    var splitPaneIndex: Int {
+        switch self {
+        case .focusSplitPane2: 1
+        case .focusSplitPane3: 2
+        case .focusSplitPane4: 3
+        default: 0
+        }
+    }
+
     var commandBarSearchAliases: [String] {
         switch self {
         case .openSettings:
@@ -5938,6 +5952,12 @@ extension BrowserCommandID {
             ["separate all tabs", "exit split view", "end split view", "unsplit"]
         case .toggleSplitOrientation:
             ["convert split", "vertical split", "horizontal split", "rotate split", "split orientation"]
+        case .focusSplitPane1, .focusSplitPane2, .focusSplitPane3, .focusSplitPane4:
+            ["split pane \(splitPaneIndex + 1)", "switch split pane", "focus pane"]
+        case .focusNextSplitPane:
+            ["next split pane", "next pane"]
+        case .focusPreviousSplitPane:
+            ["previous split pane", "previous pane"]
         case .toggleSidebar:
             ["sidebar", "toggle sidebar", "show sidebar", "hide sidebar"]
         case .toggleSidebarPosition:
@@ -6003,6 +6023,12 @@ extension BrowserCommandID {
             "rectangle.on.rectangle"
         case .toggleSplitOrientation:
             "rectangle.split.1x2"
+        case .focusSplitPane1, .focusSplitPane2, .focusSplitPane3, .focusSplitPane4:
+            "\(splitPaneIndex + 1).square"
+        case .focusNextSplitPane:
+            "arrow.right.square"
+        case .focusPreviousSplitPane:
+            "arrow.left.square"
         case .toggleSidebar:
             "sidebar.left"
         case .toggleSidebarPosition:
