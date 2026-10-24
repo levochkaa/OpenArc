@@ -373,7 +373,8 @@ struct BrowserExtensionControlCenterItem: Identifiable, Equatable {
 // MARK: - BrowserExtensionControlCenterModel
 
 enum BrowserExtensionControlCenterModel {
-    static let maximumVisibleTiles = 4
+    /// Two rows of four in the site control center; Manage lists the rest.
+    static let maximumVisibleTiles = 8
 
     static func gridItems(
         for extensions: [BrowserExtension],

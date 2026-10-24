@@ -408,6 +408,126 @@ enum BrowserStrings {
         comment: "A remembered site permission answer: blocked."
     )
 
+    static let siteSettingCamera = NSLocalizedString(
+        "browser.site_setting.camera",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingMicrophone = NSLocalizedString(
+        "browser.site_setting.microphone",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingLocation = NSLocalizedString(
+        "browser.site_setting.location",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingNotifications = NSLocalizedString(
+        "browser.site_setting.notifications",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingClipboard = NSLocalizedString(
+        "browser.site_setting.clipboard",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingPopups = NSLocalizedString(
+        "browser.site_setting.popups",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingSound = NSLocalizedString(
+        "browser.site_setting.sound",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingAutomaticDownloads = NSLocalizedString(
+        "browser.site_setting.automatic_downloads",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingMIDI = NSLocalizedString(
+        "browser.site_setting.midi",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingWindowManagement = NSLocalizedString(
+        "browser.site_setting.window_management",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingLocalFonts = NSLocalizedString(
+        "browser.site_setting.local_fonts",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingIdleDetection = NSLocalizedString(
+        "browser.site_setting.idle_detection",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingAutoPictureInPicture = NSLocalizedString(
+        "browser.site_setting.auto_picture_in_picture",
+        comment: "Site setting row title in the site control center."
+    )
+
+    static let siteSettingAskState = NSLocalizedString(
+        "browser.site_setting.ask",
+        comment: "A site setting that asks the user each time."
+    )
+
+    static let siteSettingAskAction = NSLocalizedString(
+        "browser.site_setting.ask_action",
+        comment: "Site setting menu item that makes the site ask again."
+    )
+
+    static let siteControlSettingsSection = NSLocalizedString(
+        "browser.site_control.settings",
+        comment: "Section of the site control center listing the site's settings."
+    )
+
+    static let siteControlSecure = NSLocalizedString(
+        "browser.site_control.secure",
+        comment: "Site control center label for a page loaded over HTTPS."
+    )
+
+    static let siteControlNotSecure = NSLocalizedString(
+        "browser.site_control.not_secure",
+        comment: "Site control center label for a page loaded without HTTPS."
+    )
+
+    static let siteControlShare = NSLocalizedString(
+        "browser.site_control.share",
+        comment: "Site control center button that shares the page."
+    )
+
+    static let siteControlCapture = NSLocalizedString(
+        "browser.site_control.capture",
+        comment: "Site control center button that captures part of the page."
+    )
+
+    static let siteControlMore = NSLocalizedString(
+        "browser.site_control.more",
+        comment: "Accessibility label of the site control center's menu button."
+    )
+
+    static let siteControlClearCache = NSLocalizedString(
+        "browser.site_control.clear_cache",
+        comment: "Site control center menu item that clears the cache and reloads."
+    )
+
+    static let siteControlClearCookies = NSLocalizedString(
+        "browser.site_control.clear_cookies",
+        comment: "Site control center menu item that clears cookies and reloads."
+    )
+
+    static let siteControlAllSiteSettings = NSLocalizedString(
+        "browser.site_control.all_site_settings",
+        comment: "Site control center menu item that opens every setting of the site."
+    )
+
     static let commandBarSiteSearchPlaceholder = NSLocalizedString(
         "browser.command_bar.site_search.placeholder",
         comment: "Placeholder of the command bar field while it searches one site."

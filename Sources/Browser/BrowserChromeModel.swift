@@ -2012,6 +2012,19 @@ enum BrowserWindowMode: Equatable {
         tabDriver.resolveSitePermissionRequest(id, allowed: allowed)
     }
 
+    /// Chromium's settings for a page that differ from the profile default.
+    func siteSettingsInEngine(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue] {
+        tabDriver.siteSettings(forURLString: urlString)
+    }
+
+    func setSiteSettingInEngine(
+        _ kind: BrowserSiteSettingKind,
+        value: BrowserSiteSettingValue,
+        forURLString urlString: String
+    ) {
+        tabDriver.setSiteSetting(kind, value: value, forURLString: urlString)
+    }
+
     func setTabMuted(_ muted: Bool, id: String) {
         guard let tab = tabs.first(where: { $0.id == id }),
               mutedTabSyncIDs.contains(tab.syncID) != muted else { return }

@@ -193,6 +193,24 @@ import Foundation
         controller.resolveSitePermissionRequest(id, allowed: allowed.map { NSNumber(value: $0) })
     }
 
+    func siteSettings(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue] {
+        var settings = [BrowserSiteSettingKind: BrowserSiteSettingValue]()
+        for (kind, value) in controller.siteSettings(forURLString: urlString) {
+            if let kind = BrowserSiteSettingKind(rawValue: kind), let value = BrowserSiteSettingValue(rawValue: value) {
+                settings[kind] = value
+            }
+        }
+        return settings
+    }
+
+    func setSiteSetting(
+        _ kind: BrowserSiteSettingKind,
+        value: BrowserSiteSettingValue,
+        forURLString urlString: String
+    ) {
+        controller.setSiteSetting(kind.rawValue, value: value.rawValue, forURLString: urlString)
+    }
+
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String) {
         controller.setAudioMuted(muted, forTabWithID: tabID)
     }

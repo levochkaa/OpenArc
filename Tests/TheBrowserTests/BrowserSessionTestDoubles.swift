@@ -114,6 +114,9 @@ import Foundation
     private(set) var pageFocusCount = 0
     var pageActionResult = true
 
+    /// Site settings by URL; `.default` removes one.
+    var siteSettingsByURL = [String: [BrowserSiteSettingKind: BrowserSiteSettingValue]]()
+
     @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool {
         pageActions.append(action)
         return pageActionResult
@@ -299,6 +302,18 @@ import Foundation
 
     func resolveSitePermissionRequest(_ id: Int, allowed: Bool?) {
         sitePermissionResolutions.append((id, allowed))
+    }
+
+    func siteSettings(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue] {
+        siteSettingsByURL[urlString] ?? [:]
+    }
+
+    func setSiteSetting(
+        _ kind: BrowserSiteSettingKind,
+        value: BrowserSiteSettingValue,
+        forURLString urlString: String
+    ) {
+        siteSettingsByURL[urlString, default: [:]][kind] = value == .default ? nil : value
     }
 
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool) {

@@ -22,6 +22,18 @@ import AppKit
             openExtension(id: id, relativeTo: anchor, preferredEdge: preferredEdge)
         }
         centerController.menuForExtension = { [weak self] in self?.menu(for: $0) ?? NSMenu() }
+        centerController.onAction = { [weak self] action in
+            self?.close()
+            let urlString = model.currentTab?.urlString ?? ""
+            switch action {
+            case .copyURL: _ = model.copySelectedTabLink()
+            case .capture: _ = model.beginAreaCapture()
+            case .captureFullPage: _ = model.captureFullPageSelectedTabToPasteboard()
+            case .clearCache: model.clearCacheAndRefreshCurrentTab()
+            case .clearCookies: model.clearCookiesAndRefreshCurrentTab()
+            case .allSiteSettings: model.openAllSiteSettings(forURLString: urlString)
+            }
+        }
     }
 
     isolated deinit { popupController?.close() }
@@ -38,7 +50,7 @@ import AppKit
         self.preferredEdge = preferredEdge
         model.refreshBrowserExtensions()
         _ = centerController.view
-        centerController.refresh()
+        centerController.reloadSiteSettings()
         center.contentSize = centerController.preferredContentSize
         center.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: preferredEdge)
         onPresentationChanged()

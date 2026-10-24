@@ -2,23 +2,13 @@ import Foundation
 import Testing
 
 @Test func extensionControlCenterGridAlwaysKeepsAddTileLast() {
-    let extensions = [
-        makeExtension(id: "one"),
-        makeExtension(id: "two"),
-        makeExtension(id: "three"),
-        makeExtension(id: "four"),
-        makeExtension(id: "five"),
-    ]
+    let extensions = (1...9).map { makeExtension(id: "e\($0)") }
 
     let items = BrowserExtensionControlCenterModel.gridItems(for: extensions)
 
-    #expect(items.count == 4)
-    #expect(items.map(\.id) == [
-        "extension:one",
-        "extension:two",
-        "extension:three",
-        "extension:add",
-    ])
+    // Two rows of four: seven extensions, then Add.
+    #expect(items.count == 8)
+    #expect(items.map(\.id) == (1...7).map { "extension:e\($0)" } + ["extension:add"])
 }
 
 @Test func extensionControlCenterGridShowsAddTileWhenNoExtensionsAreInstalled() {

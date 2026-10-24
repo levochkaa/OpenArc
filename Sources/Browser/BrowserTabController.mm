@@ -2492,6 +2492,45 @@ struct PendingSitePermission {
   uint64_t promptID = 0;
 };
 
+/// Chromium content settings the site control center lists, by
+/// BrowserSiteSettingKind raw value.
+const std::vector<std::pair<NSString *, cef_content_setting_types_t>> &SiteSettingTypes() {
+  static const std::vector<std::pair<NSString *, cef_content_setting_types_t>> types = {
+      {@"location", CEF_CONTENT_SETTING_TYPE_GEOLOCATION},
+      {@"notifications", CEF_CONTENT_SETTING_TYPE_NOTIFICATIONS},
+      {@"clipboard", CEF_CONTENT_SETTING_TYPE_CLIPBOARD_READ_WRITE},
+      {@"popups", CEF_CONTENT_SETTING_TYPE_POPUPS},
+      {@"sound", CEF_CONTENT_SETTING_TYPE_SOUND},
+      {@"automaticDownloads", CEF_CONTENT_SETTING_TYPE_AUTOMATIC_DOWNLOADS},
+      {@"midi", CEF_CONTENT_SETTING_TYPE_MIDI_SYSEX},
+      {@"windowManagement", CEF_CONTENT_SETTING_TYPE_WINDOW_MANAGEMENT},
+      {@"localFonts", CEF_CONTENT_SETTING_TYPE_LOCAL_FONTS},
+      {@"idleDetection", CEF_CONTENT_SETTING_TYPE_IDLE_DETECTION},
+      {@"autoPictureInPicture", CEF_CONTENT_SETTING_TYPE_AUTO_PICTURE_IN_PICTURE},
+  };
+  return types;
+}
+
+NSString *SiteSettingValueName(cef_content_setting_values_t value) {
+  switch (value) {
+    case CEF_CONTENT_SETTING_VALUE_ALLOW:
+      return @"allow";
+    case CEF_CONTENT_SETTING_VALUE_BLOCK:
+      return @"block";
+    case CEF_CONTENT_SETTING_VALUE_ASK:
+      return @"ask";
+    default:
+      return nil;
+  }
+}
+
+cef_content_setting_values_t SiteSettingValue(NSString *name) {
+  if ([name isEqualToString:@"allow"]) return CEF_CONTENT_SETTING_VALUE_ALLOW;
+  if ([name isEqualToString:@"block"]) return CEF_CONTENT_SETTING_VALUE_BLOCK;
+  if ([name isEqualToString:@"ask"]) return CEF_CONTENT_SETTING_VALUE_ASK;
+  return CEF_CONTENT_SETTING_VALUE_DEFAULT;
+}
+
 /// BrowserSitePermissionKind raw values for getUserMedia devices.
 NSArray<NSString *> *SitePermissionKindsForMedia(uint32_t permissions) {
   NSMutableArray<NSString *> *kinds = [NSMutableArray array];
@@ -2985,6 +3024,7 @@ struct TabRecord {
                                 kinds:(NSArray<NSString *> *)kinds
                               pending:(PendingSitePermission)pending;
 - (void)dismissSitePermissionPromptWithID:(uint64_t)promptID;
+- (CefRefPtr<CefRequestContext>)siteSettingsContext;
 - (void)cancelSitePermissionsForTabID:(NSString *)tabID;
 - (void)notifySitePermissionDismissed:(NSInteger)requestID;
 
@@ -4180,6 +4220,42 @@ void WatchClickModifiers();
                                   allowed == nil      ? CEF_PERMISSION_RESULT_IGNORE
                                   : allowed.boolValue ? CEF_PERMISSION_RESULT_ACCEPT
                                                       : CEF_PERMISSION_RESULT_DENY);
+  }
+}
+
+- (CefRefPtr<CefRequestContext>)siteSettingsContext {
+  return _requestContext ? _requestContext : CefRequestContext::GetGlobalContext();
+}
+
+- (NSDictionary<NSString *, NSString *> *)siteSettingsForURLString:(NSString *)urlString {
+  CefRefPtr<CefRequestContext> context = [self siteSettingsContext];
+  if (!context || !CefCurrentlyOn(TID_UI) || urlString.length == 0) {
+    return @{};
+  }
+  const std::string url = ToStdString(urlString);
+  NSMutableDictionary<NSString *, NSString *> *settings = [NSMutableDictionary dictionary];
+  for (const auto &entry : SiteSettingTypes()) {
+    const cef_content_setting_values_t value = context->GetContentSetting(url, url, entry.second);
+    const cef_content_setting_values_t fallback = context->GetContentSetting(CefString(), CefString(), entry.second);
+    NSString *name = SiteSettingValueName(value);
+    if (value != fallback && name != nil) {
+      settings[entry.first] = name;
+    }
+  }
+  return settings;
+}
+
+- (void)setSiteSetting:(NSString *)kind value:(NSString *)value forURLString:(NSString *)urlString {
+  CefRefPtr<CefRequestContext> context = [self siteSettingsContext];
+  if (!context || !CefCurrentlyOn(TID_UI) || urlString.length == 0) {
+    return;
+  }
+  for (const auto &entry : SiteSettingTypes()) {
+    if ([entry.first isEqualToString:kind]) {
+      const std::string url = ToStdString(urlString);
+      context->SetContentSetting(url, url, entry.second, SiteSettingValue(value));
+      return;
+    }
   }
 }
 

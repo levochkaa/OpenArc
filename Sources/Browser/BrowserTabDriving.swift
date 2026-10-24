@@ -114,6 +114,9 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String)
     /// true allows, false blocks, nil dismisses the request without an answer.
     func resolveSitePermissionRequest(_ id: Int, allowed: Bool?)
+    /// Chromium's settings for a page that differ from the profile default.
+    func siteSettings(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue]
+    func setSiteSetting(_ kind: BrowserSiteSettingKind, value: BrowserSiteSettingValue, forURLString urlString: String)
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)
     func stopFindingInActiveTab(clearSelection: Bool)
     /// Admits a manual close. Completion carries the same nonce; only `.closed`

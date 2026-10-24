@@ -180,6 +180,13 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 /// dismisses it without an answer. Unknown or withdrawn requests are ignored.
 - (void)resolveSitePermissionRequest:(NSInteger)requestID allowed:(nullable NSNumber *)allowed
     NS_SWIFT_NAME(resolveSitePermissionRequest(_:allowed:));
+/// Chromium's content settings for a page that differ from the profile
+/// default, by BrowserSiteSettingKind raw value: "allow", "block" or "ask".
+- (NSDictionary<NSString *, NSString *> *)siteSettingsForURLString:(NSString *)urlString
+    NS_SWIFT_NAME(siteSettings(forURLString:));
+/// Sets one, or with "default" removes the page's own value.
+- (void)setSiteSetting:(NSString *)kind value:(NSString *)value forURLString:(NSString *)urlString
+    NS_SWIFT_NAME(setSiteSetting(_:value:forURLString:));
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
 - (void)captureFullPageActiveTabToPasteboard;
 /// Sends a Cocoa action such as `copyToFindPboard:` to the active page's
