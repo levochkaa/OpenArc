@@ -17,16 +17,6 @@
       "icon": "play"
     },
     {
-      "name": "Build",
-      "command": "./build.sh build",
-      "icon": "build"
-    },
-    {
-      "name": "Test",
-      "command": "./build.sh test",
-      "icon": "test"
-    },
-    {
       "name": "Setup worktree",
       "command": "./build.sh prepare-worktree",
       "icon": "configure",
