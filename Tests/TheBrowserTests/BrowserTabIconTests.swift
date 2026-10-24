@@ -80,3 +80,22 @@ import Testing
             .allSatisfy { $0 is BrowserFaviconNSView })
     }
 }
+
+// MARK: - BrowserExpiryRecoveryIconTests
+
+@Test func archiveEntriesRecoveredFromThisDeviceKeepItsIcon() {
+    let canonical = BrowserTabArchiveEntry(
+        id: "entry",
+        tab: .init(id: "a", urlString: "https://a.example/old", spaceID: "s", lastActivityTimestamp: 100),
+        archivedAt: 200,
+        title: "Old"
+    )
+    let local = BrowserTabSessionSnapshot(tabs: [.init(
+        id: "a",
+        urlString: "https://a.example/new",
+        spaceID: "s",
+        systemImageName: "leaf"
+    )])
+    let entries = BrowserSyncExpiryRecovery.localEntries(canonical: canonical, pending: [], local: local)
+    #expect(!entries.isEmpty && entries.allSatisfy { $0.tab.systemImageName == "leaf" })
+}

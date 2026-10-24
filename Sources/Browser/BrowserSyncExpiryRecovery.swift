@@ -96,6 +96,8 @@ enum BrowserSyncExpiryRecovery {
         if queued != original {
             contents.append(queued)
         }
+        // Icons are local; an archived tab keeps this device's.
+        let icon = local?.tabs.first(where: { $0.id == tabID })?.systemImageName
         if let tab = local?.tabs.first(where: { $0.id == tabID }) {
             // Snapshot stores the user's override, but page title lives in sync
             // metadata. Avoid manufacturing a second variant from that omission.
@@ -107,7 +109,8 @@ enum BrowserSyncExpiryRecovery {
         return contents.enumerated().map { index, content in
             BrowserTabArchiveEntry(id: canonical.id + "-local-\(index)", tab: .init(
                 id: tabID, urlString: content.url, userTitleOverride: content.override,
-                spaceID: canonical.tab.spaceID, lastActivityTimestamp: canonical.tab.lastActivityTimestamp
+                spaceID: canonical.tab.spaceID, lastActivityTimestamp: canonical.tab.lastActivityTimestamp,
+                systemImageName: icon
             ), archivedAt: canonical.archivedAt, title: content.title)
         }
     }
