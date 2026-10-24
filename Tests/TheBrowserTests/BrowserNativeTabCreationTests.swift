@@ -132,6 +132,17 @@ import Testing
         #expect(driver.retryCreationRequests.count == 1)
     }
 
+    @Test func aPageThatAttachesAfterTheCreationWatchdogStillShows() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.emitTabCreationState(id: f.id("x"), state: .failed)
+        #expect(f.model.selectedTabCreationState == .failed)
+        // The engine reports a late page as Creating, then Ready.
+        f.driver.emitTabCreationState(id: f.id("x"), state: .creating)
+        f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        #expect(f.model.selectedTabCreationState == .ready)
+    }
+
     // MARK: Private
 
     private func update(

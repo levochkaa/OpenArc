@@ -58,6 +58,8 @@ constexpr char kSavePageSingleFileMethod[] = "Page.captureSnapshot";
 constexpr char kSavePageSerializeDocumentMethod[] = "Runtime.evaluate";
 constexpr char kPageLayoutMetricsMethod[] = "Page.getLayoutMetrics";
 constexpr char kPageCaptureScreenshotMethod[] = "Page.captureScreenshot";
+// CEF creates a page in well under a second; a page missing this long is lost.
+constexpr double kBrowserCreationTimeoutSeconds = 30;
 constexpr char kWebAppManifestMethod[] = "Runtime.evaluate";
 
 constexpr char kWebAppManifestExpression[] = R"JS(
@@ -2792,6 +2794,10 @@ struct TabRecord {
   CefRefPtr<CefBrowser> browser;
   BrowserTabEngineCreationState creationState =
       BrowserTabEngineCreationStateCreating;
+  // Counts accepted creation attempts, so a watchdog only fails its own.
+  int creationAttempt = 0;
+  // Failed by the watchdog rather than refused: a late page still attaches.
+  bool creationTimedOut = false;
   std::string latestURL;
   bool navigationPending = false;
   bool navigationDrainScheduled = false;
@@ -2817,6 +2823,8 @@ struct TabRecord {
 
 - (void)startBrowserCreationForTabID:(NSString *)tabID
                          URLString:(NSString *)urlString;
+- (void)watchBrowserCreationForTabID:(NSString *)tabID;
+- (void)failStalledBrowserCreationForTabID:(NSString *)tabID attempt:(int)attempt;
 - (void)scheduleNavigationForTabID:(NSString *)tabID;
 - (void)drainNavigationForTabID:(NSString *)tabID;
 - (BOOL)shouldBlockNavigationFocusForTabID:(NSString *)tabID;
@@ -3114,6 +3122,7 @@ void WatchClickModifiers();
   // A synchronous refusal never created a browser. Retain the logical ID and
   // selection, and admit exactly one new attempt from that terminal state.
   it->second.creationState = BrowserTabEngineCreationStateCreating;
+  it->second.creationTimedOut = false;
   it->second.client = new BrowserTabClient(self, ToStdString(tabID));
   NSString *resolvedURLString =
       urlString.length > 0 ? [urlString copy] : @"about:blank";
@@ -3153,7 +3162,9 @@ void WatchClickModifiers();
   const bool accepted = CefBrowserHost::CreateBrowser(
       windowInfo, client, CefString(), CefBrowserSettings(), nullptr,
       _requestContext);
-  if (!accepted) {
+  if (accepted) {
+    [self watchBrowserCreationForTabID:tabID];
+  } else {
     auto failed = _tabRecords.find(tabKey);
     if (failed != _tabRecords.end() &&
         failed->second.creationState == BrowserTabEngineCreationStateCreating) {
@@ -3164,6 +3175,36 @@ void WatchClickModifiers();
     }
   }
   [self updateBrowserVisibilityFocusingActiveTab:[_activeTabID isEqualToString:tabID]];
+}
+
+/// CEF may accept a creation and never report the page. After a generous wait
+/// the tab shows the failure with Retry; a page that still arrives attaches.
+- (void)watchBrowserCreationForTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) {
+    return;
+  }
+  const int attempt = ++it->second.creationAttempt;
+  it->second.creationTimedOut = false;
+  __weak BrowserTabController *weakSelf = self;
+  NSString *watchedTabID = [tabID copy];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBrowserCreationTimeoutSeconds * NSEC_PER_SEC)),
+                 dispatch_get_main_queue(), ^{
+                   [weakSelf failStalledBrowserCreationForTabID:watchedTabID attempt:attempt];
+                 });
+}
+
+- (void)failStalledBrowserCreationForTabID:(NSString *)tabID attempt:(int)attempt {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing || it->second.creationAttempt != attempt ||
+      it->second.creationState != BrowserTabEngineCreationStateCreating) {
+    return;
+  }
+  it->second.creationState = BrowserTabEngineCreationStateFailed;
+  it->second.creationTimedOut = true;
+  [self.delegate browserTabController:self
+       didChangeCreationStateForTabWithID:tabID
+                                   state:BrowserTabEngineCreationStateFailed];
 }
 
 - (void)acknowledgeTabReadyWithID:(NSString *)tabID {
@@ -4223,14 +4264,25 @@ void WatchClickModifiers();
                      forTabID:(NSString *)tabID {
   std::string tabKey = ToStdString(tabID);
   auto it = _tabRecords.find(tabKey);
+  // A page the watchdog gave up on still attaches if nothing replaced it.
+  const bool lateAfterTimeout = it != _tabRecords.end() &&
+                                it->second.creationState == BrowserTabEngineCreationStateFailed &&
+                                it->second.creationTimedOut;
   if (it == _tabRecords.end() || it->second.isClosing ||
-      it->second.creationState != BrowserTabEngineCreationStateCreating) {
+      (it->second.creationState != BrowserTabEngineCreationStateCreating && !lateAfterTimeout)) {
     browser->GetHost()->CloseBrowser(false);
     return;
   }
 
+  if (lateAfterTimeout) {
+    // Like a Retry that succeeded: the model only leaves Failed through Creating.
+    [self.delegate browserTabController:self
+         didChangeCreationStateForTabWithID:tabID
+                                     state:BrowserTabEngineCreationStateCreating];
+  }
   it->second.browser = browser;
   it->second.creationState = BrowserTabEngineCreationStateReady;
+  it->second.creationTimedOut = false;
   if (it->second.audioMuted) {
     SetBrowserAudioMutedOnUI(browser, true);
   }
