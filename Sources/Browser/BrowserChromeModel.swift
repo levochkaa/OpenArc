@@ -1874,6 +1874,14 @@ enum BrowserWindowMode: Equatable {
         setZoomPercent(100)
     }
 
+    var canShowDeveloperTools: Bool { canCreateTab && selectedTabID != nil && !isWebApp }
+
+    @discardableResult func showDeveloperTools() -> Bool {
+        guard canShowDeveloperTools else { return false }
+        tabDriver.showDevToolsForActiveTab()
+        return true
+    }
+
     var canZoomIn: Bool { canCreateTab && selectedTabID != nil && zoomPercent < (Self.zoomPercentages.last ?? 100) }
     var canZoomOut: Bool { canCreateTab && selectedTabID != nil && zoomPercent > (Self.zoomPercentages.first ?? 100) }
     var canResetZoom: Bool { canCreateTab && selectedTabID != nil && zoomPercent != 100 }
@@ -3602,6 +3610,8 @@ enum BrowserWindowMode: Equatable {
             canResetZoom
         case .stopLoading:
             canStopLoading
+        case .developerTools:
+            canShowDeveloperTools
         case .restoreLastClosedTab:
             canRestoreLastClosedTab
         case .newIncognitoWindow:
@@ -6041,6 +6051,8 @@ extension BrowserCommandID {
             ["actual size", "reset zoom", "zoom 100"]
         case .stopLoading:
             ["stop", "stop loading"]
+        case .developerTools:
+            ["developer tools", "devtools", "inspect", "web inspector", "console"]
         case .newIncognitoWindow:
             ["incognito", "private window", "new private window"]
         case .openHistory:
@@ -6175,6 +6187,8 @@ extension BrowserCommandID {
             "1.magnifyingglass"
         case .stopLoading:
             "xmark"
+        case .developerTools:
+            "hammer"
         case .newIncognitoWindow:
             "eye.slash"
         case .openHistory:

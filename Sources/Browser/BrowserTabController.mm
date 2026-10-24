@@ -2026,6 +2026,37 @@ void PrintBrowser(CefRefPtr<CefBrowser> browser) {
   }
 }
 
+// DevTools open in their own CEF window without a client, so none of the
+// tab callbacks see that browser. Chrome-style pages (internal pages) are left
+// alone: their DevTools would open a Chrome window.
+void ShowBrowserDevTools(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (!host || host->GetRuntimeStyle() == CEF_RUNTIME_STYLE_CHROME) {
+    return;
+  }
+
+  CefWindowInfo windowInfo;
+  windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  host->ShowDevTools(windowInfo, nullptr, CefBrowserSettings(), CefPoint());
+}
+
+void ShowBrowserDevToolsOnUI(CefRefPtr<CefBrowser> browser) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    ShowBrowserDevTools(browser);
+    return;
+  }
+
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&ShowBrowserDevTools, browser)));
+}
+
 void PrintBrowserOnUI(CefRefPtr<CefBrowser> browser) {
   if (!browser) {
     return;
@@ -3331,6 +3362,15 @@ class BrowserTabNavigationTask final : public CefTask {
   PrintBrowserOnUI(it->second.browser);
 }
 
+- (void)showDevToolsForActiveTab {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
+    return;
+  }
+
+  ShowBrowserDevToolsOnUI(it->second.browser);
+}
+
 - (void)castActiveTab {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
@@ -3578,7 +3618,13 @@ class BrowserTabNavigationTask final : public CefTask {
   _hostView = nil;
   _activeTabID = nil;
   std::vector<std::string> tabIDs;
-  for (const auto &entry : _tabRecords) tabIDs.push_back(entry.first);
+  for (const auto &entry : _tabRecords) {
+    tabIDs.push_back(entry.first);
+    // DevTools browsers have no client of ours; close them before CEF shuts down.
+    if (entry.second.browser && entry.second.browser->GetHost()) {
+      entry.second.browser->GetHost()->CloseDevTools();
+    }
+  }
   for (const auto &tabID : tabIDs) {
     [self invalidateCloseRequestForTabID:ToNSString(tabID)];
   }

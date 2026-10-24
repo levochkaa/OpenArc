@@ -243,6 +243,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.stopLoadingCurrentTab()
     }
 
+    public func showDeveloperTools(_: Any?) {
+        activeChromeModel?.showDeveloperTools()
+    }
+
     public func zoomIn(_: Any?) {
         activeChromeModel?.zoomIn()
     }
@@ -507,6 +511,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCreateTab == true && activeChromeModel?.isWebApp != true
         case #selector(stopLoadingCurrentTab(_:)):
             return activeChromeModel?.canStopLoading ?? false
+        case #selector(showDeveloperTools(_:)):
+            return activeChromeModel?.canShowDeveloperTools ?? false
         case #selector(zoomIn(_:)):
             return activeChromeModel?.canZoomIn ?? false
         case #selector(zoomOut(_:)):
@@ -1210,6 +1216,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         ] {
             viewMenu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
         }
+        viewMenu.addItem(.separator())
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .developerTools),
+            action: #selector(showDeveloperTools(_:))
+        ))
 
         viewMenu.addItem(.separator())
 
@@ -1793,6 +1804,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard let model = activeChromeModel, model.canStopLoading else { return false }
             model.stopLoadingCurrentTab()
             return true
+        case .developerTools:
+            return activeChromeModel?.showDeveloperTools() ?? false
         case .zoomIn:
             guard let model = activeChromeModel, model.canZoomIn else { return false }
             model.zoomIn()

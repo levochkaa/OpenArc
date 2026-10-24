@@ -80,6 +80,7 @@ import Foundation
     private(set) var clearCookiesAndReloadCount = 0
     private(set) var stopLoadingCount = 0
     private(set) var printCount = 0
+    private(set) var devToolsCount = 0
     private(set) var castCount = 0
     var webAppManifestPayloadJSON: String?
     private(set) var webAppManifestRequestCount = 0
@@ -209,6 +210,10 @@ import Foundation
 
     func printActiveTab() {
         printCount += 1
+    }
+
+    func showDevToolsForActiveTab() {
+        devToolsCount += 1
     }
 
     func castActiveTab() {

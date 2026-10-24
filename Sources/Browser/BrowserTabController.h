@@ -131,6 +131,7 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)clearCacheAndReloadActiveTab;
 - (void)clearCookiesAndReloadActiveTab;
 - (void)stopLoadingActiveTab;
+- (void)showDevToolsForActiveTab;
 - (void)setAudioMuted:(BOOL)muted forTabWithID:(NSString *)tabID;
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
 - (void)captureFullPageActiveTabToPasteboard;

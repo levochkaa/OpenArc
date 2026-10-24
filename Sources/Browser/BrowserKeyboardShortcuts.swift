@@ -137,6 +137,13 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut(".")
     )
 
+    /// View menu: Developer Tools is Option-Command-I.
+    static let developerTools = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuDeveloperTools,
+        helpTitle: BrowserStrings.menuDeveloperTools,
+        shortcut: BrowserKeyboardShortcut("i", modifiers: [.command, .option])
+    )
+
     /// View menu: Zoom In, Zoom Out and Zoom to Actual Size are
     /// Command-+, Command-- and Command-0; Command-= is the unshifted + key.
     static let zoomIn = BrowserCommandDescriptor(
@@ -569,6 +576,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case openLocation
     case restoreLastClosedTab
     case stopLoading
+    case developerTools
     case zoomIn
     case zoomOut
     case resetZoom
@@ -790,6 +798,8 @@ enum BrowserKeyboardShortcutBridge {
             "9"
         case 29:
             "0"
+        case 34:
+            "i"
         case 47:
             "."
         case 123:

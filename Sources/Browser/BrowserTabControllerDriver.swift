@@ -130,6 +130,10 @@ import Foundation
         controller.pasteAndMatchStyleActiveTab()
     }
 
+    func showDevToolsForActiveTab() {
+        controller.showDevToolsForActiveTab()
+    }
+
     func printActiveTab() {
         controller.printActiveTab()
     }

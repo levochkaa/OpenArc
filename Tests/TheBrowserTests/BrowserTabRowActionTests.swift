@@ -164,6 +164,9 @@ import Testing
         #expect(BrowserCommands.zoomIn.shortcut == BrowserKeyboardShortcut("="))
         #expect(BrowserCommands.resetZoom.shortcut == BrowserKeyboardShortcut("0"))
         #expect(BrowserCommands.stopLoading.shortcut == BrowserKeyboardShortcut("."))
+        #expect(f.model.showDeveloperTools())
+        #expect(f.driver.devToolsCount == 1)
+        #expect(BrowserCommands.developerTools.shortcut == BrowserKeyboardShortcut("i", modifiers: [.command, .option]))
         // AZERTY types "à" on the 0 key.
         #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
             keyCode: 29,

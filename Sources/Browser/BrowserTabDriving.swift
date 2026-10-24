@@ -73,6 +73,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func captureFullPageActiveTabToPasteboard()
     func pasteAndMatchStyleActiveTab()
     func printActiveTab()
+    /// Opens the page's Developer Tools in their own window.
+    func showDevToolsForActiveTab()
     func castActiveTab()
     func requestActiveTabWebAppManifest() async -> String?
     func setActiveTabZoomLevel(_ zoomLevel: Double)
