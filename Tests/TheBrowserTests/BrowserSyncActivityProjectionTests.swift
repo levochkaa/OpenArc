@@ -208,6 +208,25 @@ private func syncActivityMutation(
     }
 }
 
+@Test(arguments: [false, true]) func projectionsKeepThisDevicesTitlesAndIcons(folderSyncEnabled: Bool) throws {
+    let local = BrowserTabSessionSnapshot(
+        spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
+        tabs: [.init(
+            id: "a",
+            urlString: "https://activity.example/a",
+            spaceID: "space",
+            pageTitle: "Inbox",
+            systemImageName: "leaf"
+        )]
+    )
+    let projected = try BrowserSyncOutboxProjection.snapshot(
+        baseline: syncActivityBaseline(activity: nil), pending: [BrowserSyncQueuedMutation](), local: local,
+        folderSyncEnabled: folderSyncEnabled
+    )
+    #expect(projected.tabs.first?.pageTitle == "Inbox")
+    #expect(projected.tabs.first?.systemImageName == "leaf", "Local icons survive a sync projection")
+}
+
 private func syncActivityBaseline(activity: String?) throws -> BrowserSyncOutboxBaseline {
     var baseline = BrowserSyncOutboxBaseline()
     try baseline.apply(syncActivityEvents([syncActivitySpace(), syncActivityTab(activity: activity)]))

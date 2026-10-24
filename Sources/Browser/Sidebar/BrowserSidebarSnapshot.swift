@@ -28,6 +28,8 @@ struct BrowserSidebarSnapshot: Equatable {
     var splitNames = [[String]: BrowserSidebarSplitName]()
     /// Runtime IDs of muted tabs; their rows show a speaker that unmutes.
     var mutedTabIDs = Set<String>()
+    /// Symbols chosen in place of favicons, by runtime tab ID.
+    var tabIcons = [String: String]()
 
     var selectedTab: BrowserChromeModel.Tab? {
         guard let selectedTabID else {

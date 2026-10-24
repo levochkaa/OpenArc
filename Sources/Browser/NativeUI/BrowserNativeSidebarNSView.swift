@@ -812,7 +812,8 @@ final class BrowserNativeSidebarNSView: NSView {
             isResizing: state.isSidebarResizing,
             resetID: state.tabRowInteractionResetID,
             closeDescriptor: model.shortcutStore.descriptor(for: .archiveTab),
-            muted: state.snapshot.mutedTabIDs.contains(tab.id)
+            muted: state.snapshot.mutedTabIDs.contains(tab.id),
+            icon: state.snapshot.tabIcons[tab.id]
         )
         row.onToggleMute = { model.setTabMuted(false, id: tab.id) }
         row.dragOpacity = state.draggedTabIDs.contains(tab.id) ? 0 : 1
@@ -1032,6 +1033,12 @@ final class BrowserNativeSidebarNSView: NSView {
             subject: tab.displayTitle,
             in: menu
         )
+        BrowserNativeMenus.addIconMenu(
+            BrowserStrings.tabChangeIconAction,
+            to: menu,
+            selected: model.icon(forTabID: tab.id),
+            noIconTitle: BrowserStrings.tabSiteIconAction
+        ) { model.setIcon($0, forTabID: tab.id) }
         let folderIDs = state.pinnedTabFolderCreationTabIDs(fromTabID: tab.id, in: section)
         if !folderIDs.isEmpty {
             BrowserNativeMenus

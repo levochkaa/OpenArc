@@ -932,6 +932,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             // The last page title of each tab, local only, so unloaded tabs keep it.
             try db.execute(sql: "ALTER TABLE browser_tabs ADD COLUMN page_title TEXT")
         }
+        migrator.registerMigration("addTabIcons") { db in
+            // The icon chosen for a tab, local only.
+            try db.execute(sql: "ALTER TABLE browser_tabs ADD COLUMN system_image_name TEXT")
+        }
         return migrator
     }
 
@@ -1307,13 +1311,18 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try db.columns(in: "browser_tabs").contains { $0.name == "page_title" }
     }
 
+    private func hasTabIconColumn(_ db: Database) throws -> Bool {
+        try db.columns(in: "browser_tabs").contains { $0.name == "system_image_name" }
+    }
+
     private func readSnapshot(_ db: Database) throws -> BrowserTabSessionSnapshot? {
         let pageTitleColumn = try hasPageTitleColumn(db) ? ", page_title" : ""
+        let iconColumn = try hasTabIconColumn(db) ? ", system_image_name" : ""
         let tabs = try Row.fetchAll(
             db,
             sql: """
             SELECT id, url_string, pinned_url_string, user_title_override, placement, space_id,
-                   pinned_folder_id, last_activity_timestamp, pinned_sibling_rank\(pageTitleColumn)
+                   pinned_folder_id, last_activity_timestamp, pinned_sibling_rank\(pageTitleColumn)\(iconColumn)
             FROM browser_tabs
             ORDER BY position ASC
             """
@@ -1374,7 +1383,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     pinnedFolderID: row["pinned_folder_id"],
                     lastActivityTimestamp: row["last_activity_timestamp"],
                     pinnedSiblingRank: row["pinned_sibling_rank"],
-                    pageTitle: pageTitleColumn.isEmpty ? nil : row["page_title"]
+                    pageTitle: pageTitleColumn.isEmpty ? nil : row["page_title"],
+                    systemImageName: iconColumn.isEmpty ? nil : row["system_image_name"]
                 )
             },
             splitGroups: splitGroups.isEmpty ? nil : splitGroups
@@ -1611,6 +1621,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
 
         let writesPageTitles = try hasPageTitleColumn(db)
+        let writesIcons = try hasTabIconColumn(db)
         for (index, tab) in snapshot.tabs.enumerated() {
             let id = tab.id ?? UUID().uuidString
             try db.execute(
@@ -1636,6 +1647,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             )
             if writesPageTitles, let pageTitle = tab.pageTitle {
                 try db.execute(sql: "UPDATE browser_tabs SET page_title = ? WHERE id = ?", arguments: [pageTitle, id])
+            }
+            if writesIcons, let icon = tab.systemImageName {
+                try db.execute(sql: "UPDATE browser_tabs SET system_image_name = ? WHERE id = ?", arguments: [icon, id])
             }
         }
         try writeSplitGroups(for: snapshot, to: db)

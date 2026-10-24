@@ -364,8 +364,9 @@ enum BrowserSyncFolderProjection {
                     data.lastActivityAt, local: oldTabs[change.entityID]?.lastActivityTimestamp
                 ),
                 pinnedSiblingRank: data.placement == .spacePinned ? data.rank : nil,
-                // Titles are local; keep this device's last one.
-                pageTitle: oldTabs[change.entityID]?.pageTitle
+                // Titles and icons are local; keep this device's.
+                pageTitle: oldTabs[change.entityID]?.pageTitle,
+                systemImageName: oldTabs[change.entityID]?.systemImageName
             )
         }
         let folders = ordered.compactMap { change -> BrowserPinnedTabFolderSessionSnapshot? in

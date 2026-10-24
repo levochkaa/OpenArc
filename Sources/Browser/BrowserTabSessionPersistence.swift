@@ -116,9 +116,11 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         pinnedFolderID: String? = nil,
         lastActivityTimestamp: TimeInterval? = nil,
         pinnedSiblingRank: Double? = nil,
-        pageTitle: String? = nil
+        pageTitle: String? = nil,
+        systemImageName: String? = nil
     ) {
         self.pageTitle = pageTitle
+        self.systemImageName = systemImageName
         self.id = id
         self.urlString = urlString
         self.pinnedURLString = pinnedURLString
@@ -147,6 +149,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         self.pinnedSiblingRank = try container.decodeIfPresent(Double.self, forKey: .pinnedSiblingRank)
         self.lastActivityTimestamp = try container.decodeIfPresent(TimeInterval.self, forKey: .lastActivityTimestamp)
         self.pageTitle = try container.decodeIfPresent(String.self, forKey: .pageTitle)
+        self.systemImageName = try container.decodeIfPresent(String.self, forKey: .systemImageName)
     }
 
     // MARK: Internal
@@ -164,6 +167,9 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
     /// never sends it, and equality ignores it: it is display data that may lag
     /// behind the page, while archive and sync checks compare stored tabs.
     let pageTitle: String?
+    /// The icon chosen for the tab in place of its favicon (Change Icon).
+    /// Local like the page title, and equality ignores it for the same reason.
+    let systemImageName: String?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.urlString == rhs.urlString && lhs.pinnedURLString == rhs.pinnedURLString
@@ -184,6 +190,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         try container.encodeIfPresent(pinnedSiblingRank, forKey: .pinnedSiblingRank)
         try container.encodeIfPresent(lastActivityTimestamp, forKey: .lastActivityTimestamp)
         try container.encodeIfPresent(pageTitle, forKey: .pageTitle)
+        try container.encodeIfPresent(systemImageName, forKey: .systemImageName)
     }
 
     // MARK: Private
@@ -200,6 +207,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         case isPinned
         case lastActivityTimestamp
         case pageTitle
+        case systemImageName
     }
 }
 

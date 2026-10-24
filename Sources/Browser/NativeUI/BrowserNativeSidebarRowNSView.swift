@@ -151,6 +151,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         if kind == .appTab {
             let size = BrowserChromeLayout.appTabIconSize
             favicon.frame = NSRect(x: (bounds.width - size) / 2, y: (height - size) / 2, width: size, height: size)
+            symbol.frame = favicon.frame
             return
         }
         if kind == .split {
@@ -334,9 +335,18 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         isResizing: Bool,
         resetID: Int = 0,
         closeDescriptor: BrowserCommandDescriptor,
-        muted: Bool = false
+        muted: Bool = false,
+        icon: String? = nil
     ) {
         kind = appTile ? .appTab : .tab
+        tabIcon = icon
+        if let icon {
+            symbol.image = Self.symbol(
+                icon,
+                size: appTile ? BrowserChromeLayout.appTabIconSize * 0.8 : BrowserChromeLayout.sidebarFaviconSize
+            )
+            symbol.contentTintColor = BrowserChromeColors.primaryText
+        }
         isMuted = muted && !appTile
         muteButton.setAccessibilityIdentifier("browser.sidebar.unmute-tab.\(tab.id)")
         self.selected = selected
@@ -533,6 +543,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private var pinnedURLRow = false
     private var splitPinnedControls = false
     private var pinnedIconHovered = false
+    /// Change Icon: a symbol in place of the favicon.
+    private var tabIcon: String?
     private var accessoryHovered = false
     private var hasPinnedTabs = false
     private let opacityAnimation = BrowserNativeAnimation()
@@ -695,8 +707,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private func refreshAppearance() {
         titleLabel.isHidden = kind == .appTab || (kind == .split && splitName == nil) || isRenaming
         renameField.isHidden = !isRenaming
-        favicon.isHidden = kind != .tab && kind != .appTab
-        symbol.isHidden = kind == .tab || kind == .appTab || (kind == .split && splitName == nil)
+        let isTab = kind == .tab || kind == .appTab
+        favicon.isHidden = !isTab || tabIcon != nil
+        symbol.isHidden = (isTab && tabIcon == nil) || (kind == .split && splitName == nil)
         for chip in splitChips {
             chip.isHidden = kind != .split
             chip.isInteractionEnabled = !isResizing

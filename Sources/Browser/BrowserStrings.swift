@@ -1489,6 +1489,16 @@ enum BrowserStrings {
         comment: "Prompt title for renaming an icon-only tab."
     )
 
+    static let tabChangeIconAction = NSLocalizedString(
+        "browser.tab.change_icon_action",
+        comment: "Tab menu submenu that shows a symbol in place of the tab's site icon."
+    )
+
+    static let tabSiteIconAction = NSLocalizedString(
+        "browser.tab.site_icon_action",
+        comment: "Change Icon submenu item that goes back to the tab's site icon."
+    )
+
     static let tabShareAction = NSLocalizedString(
         "browser.tab.share_action",
         comment: "Context menu title for sharing a tab."

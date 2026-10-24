@@ -351,6 +351,10 @@ enum BrowserWindowMode: Equatable {
     /// sidebar scrolls the selected row into view.
     @Published var sidebarRevealRequestID = 0
 
+    /// Change Icon: the symbol shown instead of a tab's favicon, by sync
+    /// ID so it survives a dormant tab reopening under a new runtime ID. Local.
+    private(set) var tabIconsBySyncID = [String: String]()
+
     /// Expand Current Split: this pane alone fills the window until focus
     /// moves. UI-only, never persisted.
     var expandedSplitPaneTabID: String? {
@@ -1329,6 +1333,20 @@ enum BrowserWindowMode: Equatable {
             persistCurrentSessionIfAllowed()
         }
         return changed
+    }
+
+    func icon(forTabID tabID: String) -> String? {
+        tabs.first { $0.id == tabID }.flatMap { tabIconsBySyncID[$0.syncID] }
+    }
+
+    /// Change Icon for a tab; nil goes back to the site's icon.
+    @discardableResult func setIcon(_ systemImageName: String?, forTabID tabID: String) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == tabID }), tabIconsBySyncID[tab.syncID] != systemImageName
+        else { return false }
+        tabIconsBySyncID[tab.syncID] = systemImageName
+        objectWillChange.send()
+        persistCurrentSessionIfAllowed()
+        return true
     }
 
     @discardableResult func replacePinnedURLWithCurrent(forTabID tabID: String) -> Bool {
@@ -3146,14 +3164,15 @@ enum BrowserWindowMode: Equatable {
                     id: original.id, urlString: original.urlString, pinnedURLString: original.pinnedURLString,
                     userTitleOverride: original.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: original.lastActivityTimestamp,
-                    pinnedSiblingRank: tab.pinnedSiblingRank
+                    pinnedSiblingRank: tab.pinnedSiblingRank, systemImageName: original.systemImageName
                 )
             }
             return BrowserTabSessionSnapshotTab(
                 id: tab.syncID, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                 userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                 pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
-                pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.title.isEmpty ? nil : tab.title
+                pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.title.isEmpty ? nil : tab.title,
+                systemImageName: tabIconsBySyncID[tab.syncID]
             )
         }
         for (tab, snapshot) in zip(logicalTabs, snapshots) {
@@ -3401,6 +3420,9 @@ enum BrowserWindowMode: Equatable {
                 closedPinnedTabIDs.insert(engineID)
                 lastPageRestoreTabIDs.insert(engineID)
             }
+            if let syncID = tabSnapshot.id, let icon = tabSnapshot.systemImageName {
+                tabIconsBySyncID[syncID] = icon
+            }
             tabs.append(Tab(
                 id: engineID,
                 syncID: tabSnapshot.id ?? tabSyncIDProvider(),
@@ -3637,7 +3659,8 @@ enum BrowserWindowMode: Equatable {
                     pinnedFolderID: tab.pinnedFolderID,
                     lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
                     pinnedSiblingRank: tab.pinnedSiblingRank,
-                    pageTitle: tab.title.isEmpty ? nil : tab.title
+                    pageTitle: tab.title.isEmpty ? nil : tab.title,
+                    systemImageName: tabIconsBySyncID[tab.syncID]
                 )
             },
             splitGroups: splitGroupSessionSnapshots()
@@ -4533,7 +4556,8 @@ enum BrowserWindowMode: Equatable {
                 pinnedSiblingRank: destination == original.spaceID && folderID == original.pinnedFolderID
                     ? original.pinnedSiblingRank
                     : nil,
-                pageTitle: archived?.tab.pageTitle ?? (original.title.isEmpty ? nil : original.title)
+                pageTitle: archived?.tab.pageTitle ?? (original.title.isEmpty ? nil : original.title),
+                systemImageName: archived?.tab.systemImageName ?? tabIconsBySyncID[original.syncID]
             )
             let shouldSelect = request.snapshot.wasSelectedTab || selectedTabID == nil
             let outgoing = shouldSelect && canRecordExplicitViewingActivity && selectedTab?.creationState == .ready
@@ -4547,7 +4571,8 @@ enum BrowserWindowMode: Equatable {
                     id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                     userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: outgoingDate.timeIntervalSince1970,
-                    pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.pageTitle
+                    pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.pageTitle,
+                    systemImageName: tab.systemImageName
                 )
             }
             let insertionIndex = min(max(request.snapshot.insertionIndex, 0), nextTabs.count)
@@ -4648,6 +4673,7 @@ enum BrowserWindowMode: Equatable {
             lastActivityAt: Date(timeIntervalSince1970: restored.lastActivityTimestamp ?? 0)
         )
         tabs.insert(tab, at: min(insertionIndex, tabs.count))
+        tabIconsBySyncID[request.syncID] = restored.systemImageName
         let reference = request.snapshot.creationUndoReference ?? TabCreationUndoReference(tabID: runtimeID)
         reference.currentTabID = runtimeID
         tabCreationUndoReferences[runtimeID] = reference
@@ -4766,7 +4792,8 @@ extension BrowserChromeModel {
             let outgoingDate = outgoing.map { advancedActivityDate(after: $0.lastActivityAt) }
             let restored = BrowserTabSessionSnapshotTab(
                 id: syncID, urlString: entry.tab.urlString, userTitleOverride: entry.tab.userTitleOverride,
-                placement: .temporary, spaceID: destination, lastActivityTimestamp: now, pageTitle: entry.tab.pageTitle
+                placement: .temporary, spaceID: destination, lastActivityTimestamp: now, pageTitle: entry.tab.pageTitle,
+                systemImageName: entry.tab.systemImageName
             )
             let nextTabs = snapshot.tabs.map { tab in
                 guard tab.id == outgoing?.syncID, let outgoingDate else { return tab }
@@ -4774,7 +4801,8 @@ extension BrowserChromeModel {
                     id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                     userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: outgoingDate.timeIntervalSince1970,
-                    pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.pageTitle
+                    pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.pageTitle,
+                    systemImageName: tab.systemImageName
                 )
             } + [restored]
             let next = BrowserTabSessionSnapshot(
@@ -4835,6 +4863,7 @@ extension BrowserChromeModel {
             userTitleOverride: restored.userTitleOverride, urlString: restored.urlString,
             placement: .temporary, lastActivityAt: Date(timeIntervalSince1970: activity)
         ))
+        tabIconsBySyncID[syncID] = restored.systemImageName
         selectedSpaceID = destination
         selectedTabID = runtimeID
         setSelectedTabID(runtimeID, forSpaceID: destination)

@@ -295,6 +295,8 @@
 "browser.extensions.inspect_popup" = "Inspect Popup";
 "browser.tab.rename_action" = "Rename...";
 "browser.tab.rename_prompt.title" = "Rename Tab";
+"browser.tab.change_icon_action" = "Change Icon";
+"browser.tab.site_icon_action" = "Use Site Icon";
 "browser.tab.share_action" = "Share";
 "browser.tab.rename_tooltip_caption" = "Double-click to rename";
 "browser.settings.window_title" = "Settings";
