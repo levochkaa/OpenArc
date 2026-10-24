@@ -992,7 +992,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         fileMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.webAppCloseWindowAction,
             action: #selector(NSWindow.performClose(_:)),
-            keyEquivalent: "w",
+            keyEquivalent: standardKey("w", [.command, .shift]),
             modifiers: [.command, .shift]
         ))
         fileMenu.addItem(.separator())
@@ -1578,6 +1578,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     /// Services and the Hide items every Mac app menu has, ending with the
     /// separator before Quit.
+    /// A standard item keeps its key unless a command already uses it.
+    private func standardKey(_ key: String, _ modifiers: NSEvent.ModifierFlags = [.command]) -> String {
+        shortcutStore.command(using: BrowserKeyboardShortcut(key, modifiers: modifiers)) == nil ? key : ""
+    }
+
     private func addStandardApplicationItems(to menu: NSMenu, app: NSApplication, appName: String) {
         menu.addItem(.separator())
         let servicesItem = NSMenuItem(title: BrowserStrings.menuServices, action: nil, keyEquivalent: "")
@@ -1589,12 +1594,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         menu.addItem(makeStandardMenuItem(
             title: BrowserStrings.hideMenuItem(appName: appName),
             action: #selector(NSApplication.hide(_:)),
-            keyEquivalent: "h"
+            keyEquivalent: standardKey("h")
         ))
         menu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuHideOthers,
             action: #selector(NSApplication.hideOtherApplications(_:)),
-            keyEquivalent: "h",
+            keyEquivalent: standardKey("h", [.command, .option]),
             modifiers: [.command, .option]
         ))
         menu.addItem(makeStandardMenuItem(
@@ -1615,7 +1620,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         windowMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuMinimize,
             action: #selector(NSWindow.performMiniaturize(_:)),
-            keyEquivalent: "m"
+            keyEquivalent: standardKey("m")
         ))
         windowMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuZoom,
@@ -1738,6 +1743,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 return true
             }
             candidate = window.sheetParent ?? window.parent
+        }
+        // A window of no browser session, such as Developer Tools, closes itself;
+        // Command-W must not archive a tab of a window behind it.
+        if let window = NSApp.keyWindow {
+            var root = window
+            while let parent = root.sheetParent ?? root.parent {
+                root = parent
+            }
+            let isBrowserWindow = profileWindowSessions.contains { $0.window === root }
+                || incognitoWindowSessions.contains { $0.window === root }
+                || webAppWindowSession?.window === root
+            if !isBrowserWindow {
+                window.performClose(nil)
+                return true
+            }
         }
         return false
     }

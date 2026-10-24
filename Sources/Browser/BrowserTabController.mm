@@ -2027,7 +2027,12 @@ void PrintBrowser(CefRefPtr<CefBrowser> browser) {
 }
 
 // Picture in Picture needs user activation, which Runtime.evaluate grants with
-// userGesture. Only the top document's playing video is considered.
+// userGesture. The gesture is only sent after a probe without one finds a
+// playing video, so other pages never gain activation from a tab switch. Only
+// the top document's videos are considered.
+constexpr char kHasPlayingVideoScript[] =
+    "!document.pictureInPictureElement && Array.from(document.querySelectorAll('video')).some("
+    "v => !v.paused && !v.ended && v.readyState > 2 && !v.disablePictureInPicture)";
 constexpr char kEnterPictureInPictureScript[] =
     "(() => { const video = Array.from(document.querySelectorAll('video')).find("
     "v => !v.paused && !v.ended && v.readyState > 2 && !v.disablePictureInPicture); "
@@ -2036,33 +2041,88 @@ constexpr char kEnterPictureInPictureScript[] =
 constexpr char kExitPictureInPictureScript[] =
     "document.pictureInPictureElement && document.exitPictureInPicture().catch(() => {})";
 
-void EvaluateWithUserGesture(CefRefPtr<CefBrowser> browser, std::string expression) {
-  if (!browser) {
-    return;
-  }
-
-  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+void EvaluateInPage(CefRefPtr<CefBrowser> browser, std::string expression, bool userGesture) {
+  CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
   if (!host) {
     return;
   }
 
   CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
   params->SetString("expression", expression);
-  params->SetBool("userGesture", true);
+  params->SetBool("userGesture", userGesture);
   host->ExecuteDevToolsMethod(NextDevToolsMessageID(), "Runtime.evaluate", params);
 }
 
-void EvaluateWithUserGestureOnUI(CefRefPtr<CefBrowser> browser, std::string expression) {
+/// Asks the page, without a gesture, whether a video is playing, and only then
+/// requests Picture in Picture with one.
+class PictureInPictureProbe final : public CefDevToolsMessageObserver {
+ public:
+  void Start(CefRefPtr<CefBrowserHost> host) {
+    registration_ = host->AddDevToolsMessageObserver(this);
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("expression", kHasPlayingVideoScript);
+    params->SetBool("returnByValue", true);
+    message_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(message_id_, "Runtime.evaluate", params) == 0) {
+      registration_ = nullptr;
+    }
+  }
+
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser> browser,
+                              int message_id,
+                              bool success,
+                              const void *result,
+                              size_t result_size) override {
+    if (message_id != message_id_) {
+      return;
+    }
+
+    CefRefPtr<CefDictionaryValue> dictionary =
+        success ? ParseDevToolsResultDictionary(result, result_size) : nullptr;
+    CefRefPtr<CefDictionaryValue> value = dictionary ? dictionary->GetDictionary("result") : nullptr;
+    const bool hasPlayingVideo = value && value->GetBool("value");
+    registration_ = nullptr;
+    if (hasPlayingVideo) {
+      EvaluateInPage(browser, kEnterPictureInPictureScript, true);
+    }
+  }
+
+  void OnDevToolsAgentDetached(CefRefPtr<CefBrowser>) override {
+    registration_ = nullptr;
+  }
+
+ private:
+  int message_id_ = 0;
+  CefRefPtr<CefRegistration> registration_;
+
+  IMPLEMENT_REFCOUNTING(PictureInPictureProbe);
+};
+
+void SetPictureInPicture(CefRefPtr<CefBrowser> browser, bool active) {
+  CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+  if (!host) {
+    return;
+  }
+
+  if (active) {
+    CefRefPtr<PictureInPictureProbe> probe = new PictureInPictureProbe();
+    probe->Start(host);
+  } else {
+    EvaluateInPage(browser, kExitPictureInPictureScript, false);
+  }
+}
+
+void SetPictureInPictureOnUI(CefRefPtr<CefBrowser> browser, bool active) {
   if (!browser) {
     return;
   }
 
   if (CefCurrentlyOn(TID_UI)) {
-    EvaluateWithUserGesture(browser, expression);
+    SetPictureInPicture(browser, active);
     return;
   }
 
-  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&EvaluateWithUserGesture, browser, expression)));
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&SetPictureInPicture, browser, active)));
 }
 
 // DevTools open in their own CEF window without a client, so none of the
@@ -3407,8 +3467,7 @@ class BrowserTabNavigationTask final : public CefTask {
     return;
   }
 
-  EvaluateWithUserGestureOnUI(
-      it->second.browser, active ? kEnterPictureInPictureScript : kExitPictureInPictureScript);
+  SetPictureInPictureOnUI(it->second.browser, active);
 }
 
 - (void)showDevToolsForActiveTab {
@@ -3453,6 +3512,16 @@ class BrowserTabNavigationTask final : public CefTask {
 
   it->second.audioMuted = muted;
   SetBrowserAudioMutedOnUI(it->second.browser, muted);
+}
+
+- (double)zoomLevelForTabWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser || !CefCurrentlyOn(TID_UI)) {
+    return NAN;
+  }
+
+  CefRefPtr<CefBrowserHost> host = it->second.browser->GetHost();
+  return host ? host->GetZoomLevel() : NAN;
 }
 
 - (void)setActiveTabZoomLevel:(double)zoomLevel {

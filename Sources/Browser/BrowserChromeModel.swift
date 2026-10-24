@@ -246,9 +246,6 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var profileDisplayName: String
     @Published private(set) var availableProfileCount: Int
     @Published private(set) var zoomPercent = 100
-    /// Zoom of every tab that is not at 100 %; the engine keeps each page's
-    /// level, and `zoomPercent` follows the selected tab.
-    private var zoomPercentByTabID = [String: Int]()
     /// Tabs whose video was sent to Picture in Picture on leaving them.
     private var pictureInPictureTabIDs = Set<String>()
     @Published private(set) var sessionPersistenceFailure: BrowserSessionPersistenceFailure?
@@ -378,10 +375,7 @@ enum BrowserWindowMode: Equatable {
         didSet {
             recordSplitFocus(tabID: selectedTabID)
             syncSplitLayout()
-            let zoom = selectedTabID.flatMap { zoomPercentByTabID[$0] } ?? 100
-            if zoomPercent != zoom {
-                zoomPercent = zoom
-            }
+            refreshZoomFromEngine()
             updatePictureInPicture(leaving: oldValue, entering: selectedTabID)
         }
     }
@@ -830,9 +824,24 @@ enum BrowserWindowMode: Equatable {
             )
         }
 
+        func pinnedURLs(_ urls: [String]) -> Set<String> {
+            Set(urls.map { comparablePinnedURLString(normalizedPinnedURLString(from: $0) ?? $0) })
+        }
+        // A Space imported before, with the same title and pinned pages, is skipped.
+        let existing = spaces.map { space in
+            (title: space.title, urls: pinnedURLs(tabs.filter { $0.spaceID == space.id && $0.placement == .spacePinned }
+                    .map { $0.pinnedURLString ?? $0.urlString }))
+        }
         for arcSpace in sidebar.spaces {
+            let title = sanitizedSpaceTitle(from: arcSpace.title)
+            let arcURLs = pinnedURLs(arcSpace.pinned.flatMap(\.tabs).compactMap { node in
+                if case .tab(_, _, let url) = node { url } else { nil }
+            })
+            if let title, existing.contains(where: { $0.title == title && arcURLs.isSubset(of: $0.urls) }) {
+                continue
+            }
             var space = makeSpace()
-            if let title = sanitizedSpaceTitle(from: arcSpace.title) {
+            if let title {
                 space.title = title
             }
             if let icon = arcSpace.icon, NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil {
@@ -1958,7 +1967,19 @@ enum BrowserWindowMode: Equatable {
         tabDriver.goForwardActiveTab()
     }
 
+    /// The engine keeps zoom per site, so the shown value is read back from the
+    /// selected page instead of being remembered per tab.
+    func refreshZoomFromEngine() {
+        let level = selectedTabID.flatMap { tabDriver.zoomLevel(forTabWithID: $0) } ?? 0
+        let exact = 100 * pow(1.2, level)
+        let percent = Self.zoomPercentages.min { abs(Double($0) - exact) < abs(Double($1) - exact) } ?? 100
+        if zoomPercent != percent {
+            zoomPercent = percent
+        }
+    }
+
     func zoomIn() {
+        refreshZoomFromEngine()
         guard let nextPercent = Self.zoomPercentages.first(where: { $0 > zoomPercent }) else {
             return
         }
@@ -1967,6 +1988,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func zoomOut() {
+        refreshZoomFromEngine()
         guard let previousPercent = Self.zoomPercentages.last(where: { $0 < zoomPercent }) else {
             return
         }
@@ -2015,9 +2037,6 @@ enum BrowserWindowMode: Equatable {
         }
 
         zoomPercent = percent
-        if let selectedTabID {
-            zoomPercentByTabID[selectedTabID] = percent == 100 ? nil : percent
-        }
         let zoomLevel = log(Double(percent) / 100) / log(1.2)
         tabDriver.setActiveTabZoomLevel(zoomLevel)
     }
@@ -5071,6 +5090,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             didChangePersistentURL = true
             if id == selectedTabID {
                 invalidateSelectedTabWebAppInstallMetadata()
+                // Another site may have its own zoom.
+                refreshZoomFromEngine()
             }
         }
 
@@ -5504,12 +5525,24 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
 
         let selectedTabIDForSpace = spaces.first { $0.id == selectedSpaceID }?.selectedTabID
-        let fallbackTabID = selectedTabIDForSpace.flatMap { tabID -> String? in
+        let candidate = selectedTabIDForSpace.flatMap { tabID -> String? in
             guard tabs.contains(where: { $0.id == tabID && $0.spaceID == selectedSpaceID }) else {
                 return nil
             }
             return tabID
         } ?? sidebarTabs(forSpaceID: selectedSpaceID).first?.id
+        // An unloaded pinned tab has no page to show. Prefer a loaded tab of
+        // the Space; when every tab is unloaded, load the one to show.
+        let isDormant = { (id: String) in self.closedPinnedTabIDs.contains(id) || self.closedAppTabIDs.contains(id) }
+        let loadedTabID = candidate.flatMap { isDormant($0) ? nil : $0 }
+            ?? sidebarTabs(forSpaceID: selectedSpaceID).first { !isDormant($0.id) }?.id
+        if loadedTabID == nil, let candidate {
+            selectTab(id: candidate)
+            if let selectedTabID, tabs.first(where: { $0.id == selectedTabID })?.spaceID == selectedSpaceID {
+                return
+            }
+        }
+        let fallbackTabID = loadedTabID ?? candidate
 
         if selectedTabID != fallbackTabID {
             captureSelectedTabPreviewIfNeeded()

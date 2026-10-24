@@ -78,10 +78,13 @@ import Testing
         #expect(saved.tabs.contains { $0.urlString == "https://docs.example" && $0.placement == .spacePinned })
         #expect(saved.spaces?.contains { $0.title == "Work" } == true)
 
+        #expect(f.model.importArcSidebar(sidebar).spaceCount == 1, "Work is already there; the untitled Space is not")
+
         // Selecting a dormant tab loads it.
+        let mail = try #require(f.model.tabs.first { $0.urlString == "https://mail.example" && $0.spaceID == work.id })
         f.model.selectSpace(id: work.id)
-        let mail = try #require(f.model.tabs.first { $0.urlString == "https://mail.example" })
-        f.model.selectTab(id: mail.id)
-        #expect(f.model.tabs.first { $0.urlString == "https://mail.example" }?.id != mail.id, "The page reopens with an engine")
+        #expect(f.model.tabs.first { $0.syncID == mail.syncID }?.id != mail.id,
+                "Opening a Space of unloaded tabs loads the one it shows")
+        #expect(f.model.selectedTabID == f.model.tabs.first { $0.syncID == mail.syncID }?.id)
     }
 }

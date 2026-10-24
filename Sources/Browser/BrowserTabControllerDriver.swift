@@ -158,6 +158,11 @@ import Foundation
         controller.setAudioMuted(muted, forTabWithID: tabID)
     }
 
+    func zoomLevel(forTabWithID tabID: String) -> Double? {
+        let level = controller.zoomLevel(forTabWithID: tabID)
+        return level.isNaN ? nil : level
+    }
+
     func setActiveTabZoomLevel(_ zoomLevel: Double) {
         controller.setActiveTabZoomLevel(zoomLevel)
     }

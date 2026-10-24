@@ -764,6 +764,13 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         )
     }
 
+    /// The command whose current shortcut is `shortcut`, if any.
+    func command(using shortcut: BrowserKeyboardShortcut) -> BrowserCommandID? {
+        let normalized = shortcut.normalizedForMatching
+        guard normalized.isAssigned else { return nil }
+        return commandIDs.first { self.shortcut(for: $0).normalizedForMatching == normalized }
+    }
+
     func isCustomized(_ commandID: BrowserCommandID) -> Bool {
         overrides[commandID] != nil
     }

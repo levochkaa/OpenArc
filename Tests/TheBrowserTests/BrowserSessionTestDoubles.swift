@@ -232,6 +232,16 @@ import Foundation
 
     func setActiveTabZoomLevel(_ zoomLevel: Double) {
         zoomLevels.append(zoomLevel)
+        if let activeTabID {
+            zoomLevelsByTabID[activeTabID] = zoomLevel
+        }
+    }
+
+    /// Engine zoom per tab; tests may share a value to mimic per-site zoom.
+    var zoomLevelsByTabID = [String: Double]()
+
+    func zoomLevel(forTabWithID tabID: String) -> Double? {
+        zoomLevelsByTabID[tabID]
     }
 
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String) {

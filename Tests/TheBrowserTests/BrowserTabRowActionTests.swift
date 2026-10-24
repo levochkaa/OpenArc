@@ -193,9 +193,14 @@ import Testing
         #expect(f.model.zoomPercent == 110)
         #expect(f.model.canResetZoom)
         f.model.selectTab(id: f.id("y"))
-        #expect(f.model.zoomPercent == 100, "Another tab keeps its own zoom")
+        #expect(f.model.zoomPercent == 100, "The shown zoom is the page's own")
         f.model.selectTab(id: f.id("x"))
         #expect(f.model.zoomPercent == 110)
+        // The engine zooms per site; a tab of the same site shows that zoom.
+        f.driver.zoomLevelsByTabID[f.id("y")] = f.driver.zoomLevelsByTabID[f.id("x")]
+        f.model.selectTab(id: f.id("y"))
+        #expect(f.model.zoomPercent == 110)
+        f.model.selectTab(id: f.id("x"))
         f.model.resetZoom()
         #expect(f.model.zoomPercent == 100)
 

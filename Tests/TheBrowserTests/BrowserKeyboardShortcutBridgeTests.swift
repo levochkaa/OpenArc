@@ -232,3 +232,20 @@ import Testing
     #expect(store.conflictDescription(for: BrowserKeyboardShortcut("m"), excluding: nil) == BrowserStrings.menuMinimize)
     #expect(!store.setShortcut(BrowserKeyboardShortcut("w", modifiers: [.command, .shift]), for: .openHistory))
 }
+
+@Test func aKeyTheUserGaveACommandBeatsALaterReservedWindowKey() throws {
+    let suiteName = "TheBrowserTests.\(UUID().uuidString)"
+    let userDefaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+    // Saved before Command-M became Minimize.
+    let saved = try JSONEncoder().encode(["openHistory": BrowserKeyboardShortcut("m")])
+    userDefaults.set(saved, forKey: "browser.settings.shortcutOverrides")
+    let store = BrowserShortcutStore(userDefaults: userDefaults)
+    #expect(store.command(using: BrowserKeyboardShortcut("m")) == .openHistory)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 46,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "ь",
+        shortcutResolver: store
+    ) == .openHistory)
+}

@@ -726,10 +726,6 @@ enum BrowserKeyboardShortcutBridge {
             ShortcutMatch(command: .pasteAndMatchStyle, keyEquivalent: "v", modifiers: [.command, .shift]),
             ShortcutMatch(command: .selectAll, keyEquivalent: "a", modifiers: [.command]),
             ShortcutMatch(command: .quit, keyEquivalent: "q", modifiers: [.command]),
-            ShortcutMatch(command: .hideApplication, keyEquivalent: "h", modifiers: [.command]),
-            ShortcutMatch(command: .hideOtherApplications, keyEquivalent: "h", modifiers: [.command, .option]),
-            ShortcutMatch(command: .minimizeWindow, keyEquivalent: "m", modifiers: [.command]),
-            ShortcutMatch(command: .closeWindow, keyEquivalent: "w", modifiers: [.command, .shift]),
         ]
 
         matches.append(
@@ -740,7 +736,21 @@ enum BrowserKeyboardShortcutBridge {
                 )
             }
         )
+        // The window keys added later come after commands, so a key the user
+        // gave a command before they were reserved keeps working.
+        matches += windowShortcutMatches
         return matches
+    }
+
+    static let windowShortcuts: [(command: BrowserLayoutIndependentShortcutCommand, shortcut: BrowserKeyboardShortcut)] = [
+        (.hideApplication, BrowserKeyboardShortcut("h")),
+        (.hideOtherApplications, BrowserKeyboardShortcut("h", modifiers: [.command, .option])),
+        (.minimizeWindow, BrowserKeyboardShortcut("m")),
+        (.closeWindow, BrowserKeyboardShortcut("w", modifiers: [.command, .shift])),
+    ]
+
+    private static var windowShortcutMatches: [ShortcutMatch] {
+        windowShortcuts.map { ShortcutMatch(command: $0.command, shortcut: $0.shortcut) }
     }
 
     private static func normalizedCharacters(from characters: String?) -> String? {

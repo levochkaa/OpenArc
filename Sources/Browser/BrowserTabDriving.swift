@@ -80,6 +80,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func castActiveTab()
     func requestActiveTabWebAppManifest() async -> String?
     func setActiveTabZoomLevel(_ zoomLevel: Double)
+    /// The page's current zoom level, or nil without an attached page.
+    func zoomLevel(forTabWithID tabID: String) -> Double?
     /// Mute Tab. The engine keeps the state for a tab whose page attaches later.
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String)
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)

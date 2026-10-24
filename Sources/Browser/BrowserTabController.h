@@ -143,6 +143,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     (void (^)(NSString * _Nullable payloadJSON))completion
     NS_SWIFT_NAME(requestActiveTabWebAppManifest(completion:));
 - (void)setActiveTabZoomLevel:(double)zoomLevel;
+/// NAN without an attached page or off the UI thread.
+- (double)zoomLevelForTabWithID:(NSString *)tabID NS_SWIFT_NAME(zoomLevel(forTabWithID:));
 - (void)findInActiveTabWithText:(NSString *)text
                         forward:(BOOL)forward
                       matchCase:(BOOL)matchCase
