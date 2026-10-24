@@ -852,6 +852,23 @@ enum BrowserStrings {
         )
     }
 
+    static let peekCloseAction = NSLocalizedString("browser.peek.close", comment: "Button that closes a Peek card.")
+
+    static let peekOpenInTabAction = NSLocalizedString(
+        "browser.peek.open_in_tab",
+        comment: "Button that moves a Peek card's page into a tab."
+    )
+
+    static let settingsPeek = NSLocalizedString(
+        "browser.settings.peek",
+        comment: "Settings toggle: Shift-clicked links open in a floating Peek card."
+    )
+
+    static let settingsPeekDetail = NSLocalizedString(
+        "browser.settings.peek.detail",
+        comment: "Settings detail for the Peek toggle."
+    )
+
     static let menuRestoreLastClosedTab = NSLocalizedString(
         "browser.menu.restore_last_closed_tab",
         comment: "File menu and command title that reopens the most recently closed tab."

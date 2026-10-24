@@ -2618,6 +2618,60 @@ class BrowserTabClient final : public CefClient,
   IMPLEMENT_REFCOUNTING(BrowserTabClient);
 };
 
+/// Peek: the page in the floating card. It reports its address and
+/// lifetime to the controller, routes new windows to tabs and closes on
+/// Escape. The client manager tracks it, so quitting waits for it like a tab.
+class BrowserPeekClient final : public CefClient,
+                                public CefDisplayHandler,
+                                public CefKeyboardHandler,
+                                public CefLifeSpanHandler,
+                                public CefRequestHandler {
+ public:
+  BrowserPeekClient(BrowserTabController *controller, int generation)
+      : controller_(controller), generation_(generation) {}
+
+  CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
+  CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+  CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+
+  void OnAddressChange(CefRefPtr<CefBrowser> browser,
+                       CefRefPtr<CefFrame> frame,
+                       const CefString &url) override;
+  bool OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
+                     const CefKeyEvent &event,
+                     CefEventHandle os_event,
+                     bool *is_keyboard_shortcut) override;
+  void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
+  bool DoClose(CefRefPtr<CefBrowser> browser) override;
+  void OnBeforeClose(CefRefPtr<CefBrowser> browser) override;
+  bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefFrame> frame,
+                        const CefString &target_url,
+                        WindowOpenDisposition target_disposition,
+                        bool user_gesture) override;
+  bool OnBeforePopup(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefFrame> frame,
+                     int popup_id,
+                     const CefString &target_url,
+                     const CefString &target_frame_name,
+                     WindowOpenDisposition target_disposition,
+                     bool user_gesture,
+                     const CefPopupFeatures &popupFeatures,
+                     CefWindowInfo &windowInfo,
+                     CefRefPtr<CefClient> &client,
+                     CefBrowserSettings &settings,
+                     CefRefPtr<CefDictionaryValue> &extra_info,
+                     bool *no_javascript_access) override;
+
+ private:
+  __weak BrowserTabController *controller_;
+  // Callbacks of a card that was closed or replaced are ignored.
+  const int generation_;
+
+  IMPLEMENT_REFCOUNTING(BrowserPeekClient);
+};
+
 struct TabRecord {
   CefRefPtr<CefClient> client;
   CefRefPtr<CefBrowser> browser;
@@ -2663,6 +2717,9 @@ struct TabRecord {
                         browser:(CefRefPtr<CefBrowser>)browser
                       confirmed:(BOOL)confirmed;
 - (void)invalidateCloseRequestForTabID:(NSString *)tabID;
+- (void)handlePeekCreated:(CefRefPtr<CefBrowser>)browser generation:(int)generation;
+- (void)handlePeekAddressChange:(NSString *)urlString generation:(int)generation;
+- (void)closePeek;
 - (void)notifyCloseRequestForTabID:(NSString *)tabID
                        requestID:(NSString *)requestID
                          outcome:(BrowserTabCloseRequestOutcome)outcome;
@@ -2840,6 +2897,10 @@ class BrowserTabNavigationTask final : public CefTask {
   BOOL _splitDividerMoved;
   NSArray<NSString *> *_reportedSplitPaneTabIDs;
   NSArray<NSValue *> *_reportedSplitPaneFrames;
+  BrowserPeekPanel *_peekPanel;
+  CefRefPtr<CefBrowser> _peekBrowser;
+  NSString *_peekURLString;
+  int _peekGeneration;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
@@ -3470,6 +3531,84 @@ class BrowserTabNavigationTask final : public CefTask {
   SetPictureInPictureOnUI(it->second.browser, active);
 }
 
+- (void)showPeekWithURLString:(NSString *)urlString {
+  NSString *resolved = urlString.length > 0 ? [urlString copy] : @"about:blank";
+  NSWindow *window = _hostView.window;
+  if (window == nil) {
+    [self createTabWithURLString:resolved makeActive:YES];
+    return;
+  }
+  if (_peekPanel != nil && _peekBrowser && _peekBrowser->GetMainFrame()) {
+    // Another Shift-click replaces the page in the open card.
+    _peekURLString = resolved;
+    [_peekPanel updateWithURLString:resolved];
+    _peekBrowser->GetMainFrame()->LoadURL(ToStdString(resolved));
+    return;
+  }
+  [self closePeek];
+
+  _peekGeneration += 1;
+  _peekURLString = resolved;
+  _peekPanel = [BrowserPeekPanel presentOverWindow:window];
+  [_peekPanel updateWithURLString:resolved];
+  __weak BrowserTabController *weakSelf = self;
+  _peekPanel.onClose = ^{
+    [weakSelf closePeek];
+  };
+  _peekPanel.onOpenInTab = ^{
+    BrowserTabController *strongSelf = weakSelf;
+    if (strongSelf == nil) {
+      return;
+    }
+    NSString *current = strongSelf->_peekURLString;
+    [strongSelf closePeek];
+    [strongSelf createTabWithURLString:current makeActive:YES];
+  };
+
+  NSView *hostView = _peekPanel.hostView;
+  CefWindowInfo windowInfo;
+  windowInfo.SetAsChild((__bridge CefWindowHandle)hostView, CefRectFromBounds(hostView.bounds));
+  if (shared::IsAlloyStyleEnabled()) {
+    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  }
+  const bool accepted = CefBrowserHost::CreateBrowser(
+      windowInfo, new BrowserPeekClient(self, _peekGeneration), ToStdString(resolved), CefBrowserSettings(),
+      nullptr, _requestContext);
+  if (!accepted) {
+    [self closePeek];
+    [self createTabWithURLString:resolved makeActive:YES];
+  }
+}
+
+/// Closes the card at once; its page closes in the background. A page still
+/// being created is closed when it arrives, because its generation is stale.
+- (void)closePeek {
+  [_peekPanel dismiss];
+  _peekPanel = nil;
+  _peekGeneration += 1;
+  CefRefPtr<CefBrowser> browser = _peekBrowser;
+  _peekBrowser = nullptr;
+  if (browser) {
+    browser->GetHost()->CloseBrowser(false);
+  }
+}
+
+- (void)handlePeekCreated:(CefRefPtr<CefBrowser>)browser generation:(int)generation {
+  if (generation != _peekGeneration || _peekPanel == nil) {
+    browser->GetHost()->CloseBrowser(true);
+    return;
+  }
+  _peekBrowser = browser;
+}
+
+- (void)handlePeekAddressChange:(NSString *)urlString generation:(int)generation {
+  if (generation != _peekGeneration || urlString.length == 0) {
+    return;
+  }
+  _peekURLString = [urlString copy];
+  [_peekPanel updateWithURLString:urlString];
+}
+
 - (void)showDevToolsForActiveTab {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
   if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
@@ -3728,6 +3867,13 @@ class BrowserTabNavigationTask final : public CefTask {
   self.delegate = nil;
   [_splitFocusRing removeFromSuperview];
   _splitFocusRing = nil;
+  [_peekPanel dismiss];
+  _peekPanel = nil;
+  _peekGeneration += 1;
+  if (_peekBrowser) {
+    _peekBrowser->GetHost()->CloseBrowser(true);
+    _peekBrowser = nullptr;
+  }
   for (BrowserSplitDividerView *divider in _splitDividers) {
     [divider removeFromSuperview];
   }
@@ -4179,6 +4325,11 @@ bool BrowserTabClient::OnOpenURLFromTab(
   }
 
   NSString *urlString = ToNSString(target_url.ToString());
+  // Shift-click asks for a new window; it opens in Peek.
+  if (target_disposition == CEF_WOD_NEW_WINDOW && user_gesture && BrowserPeekSettings.isEnabled) {
+    [controller showPeekWithURLString:urlString];
+    return true;
+  }
   return [controller openURLFromTabWithURLString:urlString
                                      sourceTabID:ToNSString(tab_id_)
                                targetDisposition:target_disposition];
@@ -4312,6 +4463,10 @@ bool BrowserTabClient::OnBeforePopup(
   }
 
   NSString *urlString = ToNSString(target_url.ToString());
+  if (target_disposition == CEF_WOD_NEW_WINDOW && user_gesture && BrowserPeekSettings.isEnabled) {
+    [controller showPeekWithURLString:urlString];
+    return true;
+  }
   return [controller openURLFromTabWithURLString:urlString
                                     sourceTabID:ToNSString(tab_id_)
                               targetDisposition:target_disposition];
@@ -4336,6 +4491,99 @@ bool BrowserTabClient::OnShowPermissionPrompt(
                                   granted ? CEF_PERMISSION_RESULT_ACCEPT
                                           : CEF_PERMISSION_RESULT_DENY);
   });
+  return true;
+}
+
+void BrowserPeekClient::OnAddressChange(CefRefPtr<CefBrowser>,
+                                        CefRefPtr<CefFrame> frame,
+                                        const CefString &url) {
+  CEF_REQUIRE_UI_THREAD();
+  if (frame && frame->IsMain()) {
+    [controller_ handlePeekAddressChange:ToNSString(url.ToString()) generation:generation_];
+  }
+}
+
+bool BrowserPeekClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
+                                      const CefKeyEvent &event,
+                                      CefEventHandle,
+                                      bool *) {
+  CEF_REQUIRE_UI_THREAD();
+  // Escape closes the card.
+  if (event.type == KEYEVENT_RAWKEYDOWN && event.windows_key_code == 0x1B) {
+    // Close after this key event returns, not inside the engine callback.
+    __weak BrowserTabController *controller = controller_;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [controller closePeek];
+    });
+    return true;
+  }
+  return false;
+}
+
+void BrowserPeekClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
+  CEF_REQUIRE_UI_THREAD();
+  shared::ClientManager::GetInstance()->OnAfterCreated(browser);
+  BrowserTabController *controller = controller_;
+  if (controller == nil) {
+    browser->GetHost()->CloseBrowser(true);
+    return;
+  }
+  [controller handlePeekCreated:browser generation:generation_];
+}
+
+bool BrowserPeekClient::DoClose(CefRefPtr<CefBrowser> browser) {
+  CEF_REQUIRE_UI_THREAD();
+  shared::ClientManager::GetInstance()->DoClose(browser);
+  // The card is an embedded child view, like a tab: tear the view down here
+  // instead of letting CEF close the parent window.
+  NSView *browserView = BrowserViewForBrowser(browser);
+  if (browserView != nil) {
+    [browserView removeFromSuperview];
+    return true;
+  }
+  return false;
+}
+
+void BrowserPeekClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
+  CEF_REQUIRE_UI_THREAD();
+  shared::ClientManager::GetInstance()->OnBeforeClose(browser);
+}
+
+bool BrowserPeekClient::OnOpenURLFromTab(CefRefPtr<CefBrowser>,
+                                         CefRefPtr<CefFrame>,
+                                         const CefString &target_url,
+                                         WindowOpenDisposition target_disposition,
+                                         bool) {
+  CEF_REQUIRE_UI_THREAD();
+  if (target_disposition == CEF_WOD_CURRENT_TAB) {
+    return false;
+  }
+  BrowserTabController *controller = controller_;
+  [controller openURLFromTabWithURLString:ToNSString(target_url.ToString())
+                              sourceTabID:@""
+                        targetDisposition:CEF_WOD_NEW_FOREGROUND_TAB];
+  return true;
+}
+
+bool BrowserPeekClient::OnBeforePopup(CefRefPtr<CefBrowser>,
+                                      CefRefPtr<CefFrame>,
+                                      int,
+                                      const CefString &target_url,
+                                      const CefString &,
+                                      WindowOpenDisposition,
+                                      bool,
+                                      const CefPopupFeatures &,
+                                      CefWindowInfo &,
+                                      CefRefPtr<CefClient> &,
+                                      CefBrowserSettings &,
+                                      CefRefPtr<CefDictionaryValue> &,
+                                      bool *) {
+  CEF_REQUIRE_UI_THREAD();
+  // A link that opens a new window from the card becomes a tab.
+  BrowserTabController *controller = controller_;
+  [controller openURLFromTabWithURLString:ToNSString(target_url.ToString())
+                              sourceTabID:@""
+                        targetDisposition:CEF_WOD_NEW_FOREGROUND_TAB];
   return true;
 }
 

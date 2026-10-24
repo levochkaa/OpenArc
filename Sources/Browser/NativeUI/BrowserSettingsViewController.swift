@@ -280,6 +280,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.sidebarPosition = $0 }
                 ),
                 toggle(
+                    "peek",
+                    BrowserStrings.settingsPeek,
+                    detail: BrowserStrings.settingsPeekDetail,
+                    get: { preferences.peekEnabled },
+                    set: { preferences.peekEnabled = $0 }
+                ),
+                toggle(
                     "warn-before-quitting",
                     BrowserStrings.settingsWarnBeforeQuitting,
                     get: { preferences.warnBeforeQuitting },

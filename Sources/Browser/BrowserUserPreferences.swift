@@ -207,10 +207,13 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.batterySaverEnabled = Self.loadBool(userDefaults, key: Key.batterySaverEnabled, defaultValue: true)
         self.pinnedExtensionIDs = Self.loadStringArray(userDefaults, key: Key.pinnedExtensionIDs)
         self.downloadDirectoryPath = userDefaults.string(forKey: Self.downloadDirectoryKey).flatMap { $0.isEmpty ? nil : $0 }
+        self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
     }
 
     /// Read by the engine through `BrowserDownloadLocation` on its own thread.
     static let downloadDirectoryKey = "browser.settings.downloadDirectoryPath"
+    /// Read by the engine through `BrowserPeekSettings`.
+    static let peekEnabledKey = "browser.settings.peekEnabled"
 
     // MARK: Internal
 
@@ -280,6 +283,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var pinnedExtensionIDs: [String] {
         didSet { userDefaults.set(pinnedExtensionIDs, forKey: Key.pinnedExtensionIDs) }
+    }
+
+    /// Peek: Shift-clicked links open in a floating card.
+    @Published var peekEnabled: Bool {
+        didSet { userDefaults.set(peekEnabled, forKey: Self.peekEnabledKey) }
     }
 
     /// Download location; nil saves to the user's Downloads folder.

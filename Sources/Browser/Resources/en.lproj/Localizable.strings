@@ -153,6 +153,10 @@
 "browser.menu.hide_toolbar" = "Hide Toolbar";
 "browser.menu.open_location" = "Open Location…";
 "browser.menu.restore_last_closed_tab" = "Restore Last Closed Tab";
+"browser.peek.close" = "Close Peek";
+"browser.peek.open_in_tab" = "Open as Tab";
+"browser.settings.peek" = "Open Shift-clicked links in Peek";
+"browser.settings.peek.detail" = "The link opens in a card over the page; Open as Tab keeps it.";
 "browser.settings.import_arc_sidebar" = "Arc Spaces, Pinned Tabs and Favorites";
 "browser.arc_import.missing" = "Arc's sidebar was not found on this Mac.";
 "browser.arc_import.unreadable" = "Arc's sidebar could not be read.";
