@@ -113,4 +113,54 @@ import Testing
         #expect(selected.syncID == "pinned", "The Space shows its remembered tab, now loaded")
         #expect(driver.createdTabRequests.last?.urlString == "https://pinned.example")
     }
+
+    private func lazyModel() -> (BrowserChromeModel, FakeBrowserTabDriver) {
+        let store = InMemorySessionSnapshotStore(loadedSnapshot: BrowserTabSessionSnapshot(
+            spaces: [.init(id: "s", title: "One", systemImageName: "star")],
+            tabs: [
+                .init(id: "p", urlString: "https://p.example/deep", pinnedURLString: "https://p.example",
+                      placement: .spacePinned, spaceID: "s"),
+                .init(id: "t", urlString: "https://t.example", spaceID: "s"),
+            ]
+        ))
+        let driver = FakeBrowserTabDriver()
+        let model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: store,
+            sessionPreferencesStore: InMemorySessionPreferencesStore(storedSelectedTabIndex: 1),
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        )
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        return (model, driver)
+    }
+
+    @Test func movingAnUnloadedPinnedTabToTemporaryTabsLoadsIt() throws {
+        let (model, driver) = lazyModel()
+        let pinned = try #require(model.tabs.first { $0.syncID == "p" })
+        model.moveTab(withID: pinned.id, toPlacement: .temporary, atSectionIndex: 0)
+        let moved = try #require(model.tabs.first { $0.syncID == "p" })
+        #expect(moved.placement == .temporary)
+        #expect(moved.id != pinned.id, "It got an engine")
+        #expect(driver.createdTabRequests.last?.urlString == "https://p.example/deep")
+        #expect(model.selectedTabID != moved.id, "Loading it does not select it")
+    }
+
+    @Test func backToPinnedURLOnAnUnloadedRestoredTabOpensThePinnedURL() throws {
+        let (model, driver) = lazyModel()
+        let pinned = try #require(model.tabs.first { $0.syncID == "p" })
+        #expect(model.resetPinnedTabToPinnedURL(id: pinned.id))
+        #expect(driver.createdTabRequests.last?.urlString == "https://p.example")
+    }
+
+    @Test func aPageClosingItselfFallsBackToAnUnloadedTabByLoadingIt() throws {
+        let (model, driver) = lazyModel()
+        let temporary = try #require(model.tabs.first { $0.syncID == "t" })
+        #expect(model.selectedTabID == temporary.id)
+        driver.emitClose(id: temporary.id)
+        let selected = try #require(model.tabs.first { $0.id == model.selectedTabID })
+        #expect(selected.syncID == "p")
+        #expect(driver.createdTabRequests.last?.urlString == "https://p.example/deep", "The fallback loads")
+    }
 }
+

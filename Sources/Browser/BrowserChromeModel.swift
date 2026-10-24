@@ -1213,6 +1213,7 @@ enum BrowserWindowMode: Equatable {
         }
 
         if closedPinnedTabIDs.contains(tabID) {
+            lastPageRestoreTabIDs.remove(tabID)
             selectTab(id: tabID)
             return true
         }
@@ -1312,8 +1313,10 @@ enum BrowserWindowMode: Equatable {
             }
             return tab
         }
+        let unloadedIDs = payload.tabIDs.filter { closedPinnedTabIDs.contains($0) || closedAppTabIDs.contains($0) }
         publishPlannedTabs(plannedTabs)
         pinnedTabFolders = plan.folders
+        var tabsToLoad = [String]()
         for id in payload.tabIDs {
             guard let moved = tabs.first(where: { $0.id == id }) else { continue }
             if moved.placement != .app {
@@ -1321,6 +1324,15 @@ enum BrowserWindowMode: Equatable {
             }
             if moved.placement != .spacePinned {
                 closedPinnedTabIDs.remove(id)
+            }
+            // An unloaded tab stays unloaded among pinned tabs and Favorites;
+            // anywhere else it needs a page.
+            if unloadedIDs.contains(id) {
+                switch moved.placement {
+                case .app: closedAppTabIDs.insert(id)
+                case .spacePinned: closedPinnedTabIDs.insert(id)
+                case .temporary: tabsToLoad.append(id)
+                }
             }
             if moved.placement != .app, let old = oldTabs.first(where: { $0.id == id }) {
                 let wasSourceSelection = spaces.first(where: { $0.id == old.spaceID })?.selectedTabID == id
@@ -1336,7 +1348,13 @@ enum BrowserWindowMode: Equatable {
             selectActiveTabForSelectedSpace()
         }
         updateWindowTitle()
-        persistCurrentSessionIfAllowed(syncMove: syncMoveIntent(for: payload))
+        // The move intent names tabs before loading gives them new runtime IDs;
+        // one write carries both.
+        let syncMove = syncMoveIntent(for: payload)
+        for id in tabsToLoad {
+            loadUnloadedTabInPlace(id: id, persists: false)
+        }
+        persistCurrentSessionIfAllowed(syncMove: syncMove)
         return true
     }
 
@@ -2624,6 +2642,9 @@ enum BrowserWindowMode: Equatable {
     private var historyRestoreFailure: BrowserSessionPersistenceFailure?
     private var closedAppTabIDs = Set<String>()
     private var closedPinnedTabIDs = Set<String>()
+    /// Unloaded pinned tabs restored at launch; they reopen at the page they
+    /// showed last. Tabs the user unloaded reopen at their pinned URL.
+    private var lastPageRestoreTabIDs = Set<String>()
     private var pendingReopenedAppTabCreations = [String: PendingReopenedTabCreation]()
     private var pendingReopenedPinnedTabCreations = [String: PendingReopenedTabCreation]()
     private var isPersistenceEnabled = true
@@ -3277,6 +3298,7 @@ enum BrowserWindowMode: Equatable {
             restoredTabCreationIDs.insert(engineID)
             if restoresUnloaded {
                 closedPinnedTabIDs.insert(engineID)
+                lastPageRestoreTabIDs.insert(engineID)
             }
             tabs.append(Tab(
                 id: engineID,
@@ -4100,9 +4122,9 @@ enum BrowserWindowMode: Equatable {
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
 
-        // A tab closed by the user was reset to its pinned URL; one restored
-        // unloaded keeps the page it showed last.
-        let urlString = tab.urlString.isEmpty ? pinnedURLString : tab.urlString
+        // A tab restored unloaded keeps the page it showed last; one the user
+        // unloaded opens its pinned URL.
+        let urlString = lastPageRestoreTabIDs.remove(id) != nil && !tab.urlString.isEmpty ? tab.urlString : pinnedURLString
         let newTabID = tabDriver.createTab(
             withURLString: resolvedBrowserURLString(urlString),
             makeActive: true
@@ -4124,6 +4146,30 @@ enum BrowserWindowMode: Equatable {
         recordSelectedTab(newTabID)
         updateWindowTitle()
         persistCurrentSessionIfAllowed()
+    }
+
+    /// Gives an unloaded tab that moved out of the pinned tabs or Favorites a
+    /// page at its last URL, keeping its row, identity and selection.
+    private func loadUnloadedTabInPlace(id: String, persists: Bool = true) {
+        guard canCreateTab, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let tab = tabs[index]
+        lastPageRestoreTabIDs.remove(id)
+        let isSelected = selectedTabID == id
+        let newTabID = tabDriver.createTab(withURLString: resolvedBrowserURLString(tab.urlString), makeActive: isSelected)
+        pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
+        tabs[index] = Tab(
+            id: newTabID, syncID: tab.syncID, spaceID: tab.spaceID, title: tab.title,
+            userTitleOverride: tab.userTitleOverride, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
+            faviconURLString: tab.faviconURLString, placement: tab.placement, pinnedFolderID: tab.pinnedFolderID,
+            pinnedSiblingRank: tab.pinnedSiblingRank, lastActivityAt: tab.lastActivityAt
+        )
+        replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID, selectsInSpace: false)
+        if isSelected {
+            tabDriver.selectTab(withID: newTabID)
+        }
+        if persists {
+            persistCurrentSessionIfAllowed()
+        }
     }
 
     private func handleReopenedPersistentTabCreated(id: String, title: String, urlString: String) {
@@ -4379,7 +4425,7 @@ enum BrowserWindowMode: Equatable {
                 pinnedSiblingRank: destination == original.spaceID && folderID == original.pinnedFolderID
                     ? original.pinnedSiblingRank
                     : nil,
-                pageTitle: archived?.tab.pageTitle ?? original.pageTitle
+                pageTitle: archived?.tab.pageTitle ?? (original.title.isEmpty ? nil : original.title)
             )
             let shouldSelect = request.snapshot.wasSelectedTab || selectedTabID == nil
             let outgoing = shouldSelect && canRecordExplicitViewingActivity && selectedTab?.creationState == .ready
@@ -5257,7 +5303,11 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
         if selectedTabID == id {
             selectedTabID = fallbackTabID(afterClosingTab: closedTab) ?? sidebarTabsForSelectedSpace().first?.id
-            if let selectedTabID {
+            if let fallback = selectedTabID, closedPinnedTabIDs.contains(fallback) || closedAppTabIDs.contains(fallback) {
+                // An unloaded fallback loads like a click instead of showing a blank page.
+                selectedTabID = nil
+                selectTab(id: fallback)
+            } else if let selectedTabID {
                 tabDriver.selectTab(withID: selectedTabID)
                 scheduleSelectedTabWebAppManifestLoad()
                 setSelectedTabID(selectedTabID, forSpaceID: selectedSpaceID)
@@ -5549,7 +5599,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         } ?? sidebarTabs(forSpaceID: selectedSpaceID).first?.id
         // An unloaded tab has no page to show: the Space's remembered tab, or
         // its first, loads through the same path as a click.
-        if let candidate, closedPinnedTabIDs.contains(candidate) || closedAppTabIDs.contains(candidate) {
+        if let candidate, closedPinnedTabIDs.contains(candidate) || closedAppTabIDs.contains(candidate),
+           !isApplyingRemoteSync, !isReconcilingRemoteProjection
+        {
             selectTab(id: candidate)
             if let selectedTabID, tabs.first(where: { $0.id == selectedTabID })?.spaceID == selectedSpaceID {
                 return
