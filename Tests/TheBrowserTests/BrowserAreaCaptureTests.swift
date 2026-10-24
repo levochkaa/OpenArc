@@ -82,15 +82,39 @@ import Testing
         #expect(content.areaCapture == nil, "A resize cancels it too")
     }
 
+    @Test func aPaneThatChangesSizeCancelsItsOutline() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        f.model.selectTab(id: f.id("x"))
+        let content = BrowserContentNSView(hostView: NSView())
+        content.frame = NSRect(x: 0, y: 0, width: 1000, height: 600)
+        content.bindTabCreation(to: f.model)
+        f.driver.simulateSplitPaneLayout([f.id("x"), f.id("y")], frames: [
+            CGRect(x: 0, y: 0, width: 496, height: 600),
+            CGRect(x: 504, y: 0, width: 496, height: 600),
+        ])
+        #expect(f.model.beginAreaCapture())
+        #expect(content.areaCapture?.pageFrame.width == 496)
+        f.driver.simulateSplitPaneLayout([f.id("x")], frames: [CGRect(x: 0, y: 0, width: 1000, height: 600)])
+        #expect(content.areaCapture == nil, "The pane grew, so the outline would copy the wrong part")
+    }
+
     @Test func selectionFindActionsGoToThePageItself() async throws {
         let f = SidebarDragFixture(temporary: ["x"])
         f.model.selectTab(id: f.id("x"))
         f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        var changeCount = 1
+        f.model.findPasteboardChangeCount = { changeCount }
         f.model.findPasteboardText = { "needle" }
         #expect(f.model.useSelectionForFind())
         #expect(f.driver.pageActions == [Selector(("copyToFindPboard:"))])
-        try await Task.sleep(for: .milliseconds(Int(BrowserChromeModel.findPasteboardDelay * 1000) + 150))
-        #expect(f.model.isFindBarPresented && f.model.findQuery == "needle")
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(!f.model.isFindBarPresented, "Without a new selection nothing is searched")
+        changeCount = 2
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(f.model.isFindBarPresented && f.model.findQuery == "needle", "A late answer still opens it")
 
         #expect(f.model.jumpToSelection())
         #expect(f.driver.pageActions.last == #selector(NSResponder.centerSelectionInVisibleArea(_:)))

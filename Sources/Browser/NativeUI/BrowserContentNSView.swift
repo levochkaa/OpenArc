@@ -119,7 +119,10 @@ final class BrowserContentNSView: NSView {
     func bindTabCreation(to model: BrowserChromeModel) {
         onRetryTabCreation = { [weak model] in model?.retrySelectedTabCreation() }
         splitPaneBars.model = model
-        model.onSplitPaneLayoutChange = { [weak self] in self?.splitPaneBars.refresh() }
+        model.onSplitPaneLayoutChange = { [weak self] in
+            self?.splitPaneBars.refresh()
+            self?.cancelAreaCaptureIfStale()
+        }
         captureModel = model
         model.onBeginAreaCapture = { [weak self, weak model] in
             guard let self, let model else { return false }
@@ -138,7 +141,9 @@ final class BrowserContentNSView: NSView {
     /// another selected tab cancels it.
     func cancelAreaCaptureIfStale() {
         guard let areaCapture else { return }
-        if areaCapture.frame != bounds || captureModel?.selectedTabID != areaCaptureTabID {
+        if areaCapture.frame != bounds || captureModel?.selectedTabID != areaCaptureTabID
+            || pageFrame(forTabID: areaCaptureTabID) != areaCapture.pageFrame
+        {
             areaCapture.onFinish(nil)
         }
     }
@@ -148,8 +153,7 @@ final class BrowserContentNSView: NSView {
     func beginAreaCapture(pageTabID: String?, onFinish: @escaping (CGRect?) -> Void) {
         areaCapture?.removeFromSuperview()
         areaCaptureTabID = pageTabID
-        let page = pageTabID.flatMap { splitPaneBars.pageFrame(forTabID: $0) }
-            .map { convert($0, from: splitPaneBars) } ?? bounds
+        let page = pageFrame(forTabID: pageTabID)
         let overlay = BrowserAreaCaptureOverlay(pageFrame: page)
         overlay.frame = bounds
         overlay.onFinish = { [weak self, weak overlay] fraction in
@@ -233,6 +237,11 @@ final class BrowserContentNSView: NSView {
         wraps: true
     )
     private let retry = BrowserActionButton(BrowserStrings.tabCreationRetry, action: {})
+
+    /// The page part of a split pane, or the whole content outside a split.
+    private func pageFrame(forTabID tabID: String?) -> CGRect {
+        tabID.flatMap { splitPaneBars.pageFrame(forTabID: $0) }.map { convert($0, from: splitPaneBars) } ?? bounds
+    }
 
     private func textHeight(_ label: NSTextField, width: CGFloat) -> CGFloat {
         ceil((label.stringValue as NSString)

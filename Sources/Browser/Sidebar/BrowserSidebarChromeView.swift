@@ -111,6 +111,8 @@ final class BrowserSidebarChromeView: NSView {
             .pinnedTabFolders)
         background.isHidden = !isOverlayPresentation
         background.mode = model.userPreferencesStore.blurredChromeBackgroundEnabled ? .blurred : .black
+        // The floating sidebar carries the Space's tint like the window behind it.
+        background.tint = model.selectedSpaceColor?.color
         layer?.cornerRadius = isOverlayPresentation ? BrowserChromeLayout.sidebarOverlayCornerRadius : 0
         layer?.borderWidth = isOverlayPresentation ? BrowserChromeLayout.sidebarOverlayBorderWidth : 0
         layer?.borderColor = BrowserChromeColors.sidebarOverlayBorder.cgColor

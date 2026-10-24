@@ -240,7 +240,10 @@ enum BrowserWindowMode: Equatable {
         500,
     ]
 
-    static let findPasteboardDelay: TimeInterval = 0.25
+    static let findPasteboardDelay: TimeInterval = 0.12
+
+    /// A busy page may answer late; give up after about a second.
+    static let findPasteboardAttempts = 8
 
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var spaces = [Space]()
@@ -271,6 +274,7 @@ enum BrowserWindowMode: Equatable {
     let userPreferencesStore: BrowserUserPreferencesStore
     /// The text Use Selection to Find reads; tests replace the system pasteboard.
     var findPasteboardText: () -> String? = { NSPasteboard(name: .find).string(forType: .string) }
+    var findPasteboardChangeCount: () -> Int = { NSPasteboard(name: .find).changeCount }
     let shortcutStore: BrowserShortcutStore
     let bookmarksModel: BrowserBookmarksModel
     let downloadsModel: BrowserDownloadsModel
@@ -367,7 +371,6 @@ enum BrowserWindowMode: Equatable {
     /// Change Icon: the symbol shown instead of a tab's favicon, by sync
     /// ID so it survives a dormant tab reopening under a new runtime ID. Local.
     private(set) var tabIconsBySyncID = [String: String]()
-
     /// Set by the window's content view, which outlines the area to capture.
     var onBeginAreaCapture: (() -> Bool)?
 
@@ -655,14 +658,11 @@ enum BrowserWindowMode: Equatable {
     /// pasteboard, read after a short round trip because Chromium writes it
     /// asynchronously and reports nothing when the text is unchanged.
     @discardableResult func useSelectionForFind() -> Bool {
-        guard canPresentFindInPage, tabDriver.sendActionToActivePage(Selector(("copyToFindPboard:"))) else {
-            return false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.findPasteboardDelay) { [weak self] in
-            guard let self, canPresentFindInPage, let text = findPasteboardText(), !text.isEmpty else { return }
-            findQuery = text
-            _ = presentFindInPage()
-        }
+        let before = findPasteboardChangeCount()
+        guard canPresentFindInPage, let tabID = selectedTabID,
+              tabDriver.sendActionToActivePage(Selector(("copyToFindPboard:")))
+        else { return false }
+        awaitSelectionForFind(changedFrom: before, tabID: tabID, attempts: Self.findPasteboardAttempts)
         return true
     }
 
@@ -1389,6 +1389,7 @@ enum BrowserWindowMode: Equatable {
             return false
         }
         spaceColorsByID[spaceID] = color?.rawValue
+        locallyColoredSpaceIDs.insert(spaceID)
         persistCurrentSessionIfAllowed()
         return true
     }
@@ -2327,8 +2328,9 @@ enum BrowserWindowMode: Equatable {
         } else {
             spaces = restoredSpaces
         }
-        // A deferred launch projection carries this device's stored colors.
-        for space in snapshot.spaces ?? [] where spaceColorsByID[space.id] == nil {
+        // A deferred launch projection carries this device's stored colors,
+        // except for Spaces whose color was chosen since, None included.
+        for space in snapshot.spaces ?? [] where !locallyColoredSpaceIDs.contains(space.id) {
             spaceColorsByID[space.id] = space.colorName
         }
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
@@ -2811,6 +2813,9 @@ enum BrowserWindowMode: Equatable {
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "AutomaticArchival"
     )
 
+    /// Spaces colored in this session; a stored projection never overrides them.
+    private var locallyColoredSpaceIDs = Set<String>()
+
     /// Tabs whose video was sent to Picture in Picture on leaving them.
     private var pictureInPictureTabIDs = Set<String>()
 
@@ -2921,6 +2926,23 @@ enum BrowserWindowMode: Equatable {
 
     private var canRegisterTabUndo: Bool {
         isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
+    }
+
+    /// Chromium writes the pasteboard only for a selection that differs from
+    /// the find text, so nothing happens without one, as in Chrome.
+    private func awaitSelectionForFind(changedFrom before: Int, tabID: String, attempts: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.findPasteboardDelay) { [weak self] in
+            guard let self, selectedTabID == tabID, canPresentFindInPage else { return }
+            guard findPasteboardChangeCount() != before else {
+                if attempts > 1 {
+                    awaitSelectionForFind(changedFrom: before, tabID: tabID, attempts: attempts - 1)
+                }
+                return
+            }
+            guard let text = findPasteboardText(), !text.isEmpty else { return }
+            findQuery = text
+            _ = presentFindInPage()
+        }
     }
 
     /// Picture in Picture on leaving a tab: a playing video follows the
