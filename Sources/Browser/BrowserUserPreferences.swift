@@ -430,6 +430,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case duplicateTab
     case renameTab
     case resetTabToPinnedURL
+    case resetSpaceTabs
     case collapseAllFolders
     case expandAllFolders
     case newFolder
@@ -590,6 +591,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.renameTab
         case .resetTabToPinnedURL:
             BrowserCommands.resetTabToPinnedURL
+        case .resetSpaceTabs:
+            BrowserCommands.resetSpaceTabs
         case .collapseAllFolders:
             BrowserCommands.collapseAllFolders
         case .expandAllFolders:
@@ -734,6 +737,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .renameTab
         case .resetTabToPinnedURL:
             .resetTabToPinnedURL
+        case .resetSpaceTabs:
+            .resetSpaceTabs
         case .collapseAllFolders:
             .setAllFoldersExpanded(false)
         case .expandAllFolders:

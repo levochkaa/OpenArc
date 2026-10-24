@@ -298,6 +298,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.resetSelectedTabToPinnedURL()
     }
 
+    public func resetSpaceTabs(_: Any?) {
+        activeChromeModel?.resetSpaceTabs()
+    }
+
     public func collapseAllFolders(_: Any?) {
         activeChromeModel?.setActiveSpaceFoldersExpanded(false)
     }
@@ -628,6 +632,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canRenameSelectedTab ?? false
         case #selector(resetTabToPinnedURL(_:)):
             return activeChromeModel?.canResetSelectedTabToPinnedURL ?? false
+        case #selector(resetSpaceTabs(_:)):
+            return activeChromeModel?.canResetSpaceTabs() ?? false
         case #selector(collapseAllFolders(_:)):
             return activeChromeModel?.canSetActiveSpaceFoldersExpanded(false) ?? false
         case #selector(expandAllFolders(_:)):
@@ -1378,6 +1384,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         ))
         spacesMenu.addItem(.separator())
         spacesMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .resetSpaceTabs),
+            action: #selector(resetSpaceTabs(_:))
+        ))
+        spacesMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newSpace),
             action: #selector(createNewSpace(_:))
         ))
@@ -2104,6 +2114,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.resetSelectedTabToPinnedURL() ?? false
         case .setAllFoldersExpanded(let expanded):
             return activeChromeModel?.setActiveSpaceFoldersExpanded(expanded) ?? false
+        case .resetSpaceTabs:
+            return activeChromeModel?.resetSpaceTabs() ?? false
         case .newSpace:
             guard let model = activeChromeModel, model.supportsSpaces, !model.isWebApp else { return false }
             model.createNewSpace()

@@ -80,14 +80,18 @@ import AppKit
     static func space(
         _ space: BrowserChromeModel.Space,
         canDelete: Bool,
+        canResetTabs: Bool = false,
         onRename: @escaping () -> Void,
         onChangeIcon: @escaping (String) -> Void,
+        onResetTabs: @escaping () -> Void = {},
         onDelete: @escaping () -> Void
     ) -> NSMenu {
         let menu = menu()
         add(BrowserStrings.spaceRenameAction, to: menu, action: onRename)
         let icons = submenu(BrowserStrings.spaceChangeIconAction, in: menu)
         addIcons(to: icons, selected: space.systemImageName, action: onChangeIcon)
+        menu.addItem(.separator())
+        add(BrowserStrings.menuResetSpaceTabs, to: menu, enabled: canResetTabs, action: onResetTabs)
         menu.addItem(.separator())
         add(BrowserStrings.spaceDeleteAction, to: menu, enabled: canDelete, action: onDelete)
         return menu

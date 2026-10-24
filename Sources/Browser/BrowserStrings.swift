@@ -994,6 +994,11 @@ enum BrowserStrings {
         comment: "Tabs menu and command title that returns a pinned tab to its pinned URL."
     )
 
+    static let menuResetSpaceTabs = NSLocalizedString(
+        "browser.menu.reset_space_tabs",
+        comment: "Spaces menu, Space menu and command title that returns every pinned tab of the Space to its pinned page."
+    )
+
     static let menuCollapseAllFolders = NSLocalizedString(
         "browser.menu.collapse_all_folders",
         comment: "Tabs menu and command title that collapses every folder of the Space."

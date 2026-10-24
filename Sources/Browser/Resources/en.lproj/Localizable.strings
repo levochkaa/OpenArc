@@ -118,6 +118,7 @@
 "browser.menu.new_tab" = "New Tab";
 "browser.menu.new_incognito_window" = "New Incognito Window";
 "browser.menu.new_little_window" = "New Small Window";
+"browser.menu.reset_space_tabs" = "Reset All Tabs in This Space";
 "browser.peek.address_placeholder" = "Search or enter address";
 "browser.peek.open_in" = "Open In";
 "browser.incognito.banner.title" = "Incognito";

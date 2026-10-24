@@ -261,3 +261,28 @@ import Testing
         #expect(f.model.sidebarSnapshot.splitNames.isEmpty, "An empty name brings the pane chips back")
     }
 }
+
+// MARK: - BrowserResetSpaceTabsTests
+
+@MainActor struct BrowserResetSpaceTabsTests {
+    @Test func resetAllTabsInThisSpaceReturnsPinnedTabsToTheirPages() {
+        let f = SidebarDragFixture(pinned: [("a", nil), ("b", nil)], temporary: ["x"])
+        #expect(!f.model.canResetSpaceTabs(), "Nothing has left its pinned page")
+        f.model.selectTab(id: f.id("b"))
+        let a = f.id("a")
+        let b = f.id("b")
+        f.driver.emitUpdate(id: a, urlString: "https://a.example/deep")
+        f.driver.emitUpdate(id: b, urlString: "https://b.example/deep")
+        #expect(f.model.canResetSpaceTabs() && !f.model.canResetSpaceTabs(spaceID: "t"))
+
+        #expect(f.model.resetSpaceTabs())
+        #expect(f.driver.targetedNavigationRequests.last?.id == b, "The shown tab reloads its pinned page")
+        #expect(f.driver.targetedNavigationRequests.last?.urlString.hasPrefix("https://b.example") == true)
+        #expect(f.driver.confirmedCloseRequests.contains { $0.id == a }, "A hidden pinned tab unloads")
+        #expect(f.model
+            .tabs
+            .first { $0.userTitleOverride == "a" }?
+            .urlString
+            .hasPrefix("https://a.example/deep") == false)
+    }
+}

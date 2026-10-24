@@ -1282,6 +1282,49 @@ enum BrowserWindowMode: Equatable {
         return navigateSelectedTab(toURLString: pinnedURLString)
     }
 
+    /// Reset all tabs in this Space: whether a pinned tab of the Space has
+    /// left its pinned page.
+    func canResetSpaceTabs(spaceID: String? = nil) -> Bool {
+        guard let spaceID = spaceID ?? selectedSpaceID else { return false }
+        return tabs.contains { $0.spaceID == spaceID && $0.canResetToPinnedURL }
+    }
+
+    /// Every pinned tab of the Space goes back to its pinned page. The shown tab
+    /// reloads there; the others unload, so they open there next time.
+    @discardableResult func resetSpaceTabs(spaceID: String? = nil) -> Bool {
+        guard let spaceID = spaceID ?? selectedSpaceID, canResetSpaceTabs(spaceID: spaceID) else { return false }
+        let shown = Set(selectedTabID.map(splitPaneTabIDs(forTabID:)) ?? [])
+        var changed = false
+        for tab in tabs where tab.spaceID == spaceID && tab.placement == .spacePinned {
+            guard tab.canResetToPinnedURL else { continue }
+            if closedPinnedTabIDs.contains(tab.id) {
+                // An unloaded tab restored at its last page opens at the pinned one.
+                lastPageRestoreTabIDs.remove(tab.id)
+                guard let pinned = effectivePinnedURLString(forPinnedTab: tab),
+                      let index = tabs.firstIndex(where: { $0.id == tab.id })
+                else { continue }
+                tabs[index].title = ""
+                tabs[index].urlString = pinned
+                tabs[index].faviconURLString = nil
+                changed = true
+            } else {
+                // A shown page, or a pane of the shown split, reloads in place.
+                if tab.id == selectedTabID {
+                    resetPinnedTabToPinnedURL(id: tab.id)
+                } else if shown.contains(tab.id), let pinned = effectivePinnedURLString(forPinnedTab: tab) {
+                    tabDriver.navigateTab(withID: tab.id, toURLString: pinned)
+                } else {
+                    closePinnedTabProcessOrReset(id: tab.id)
+                }
+                changed = true
+            }
+        }
+        if changed {
+            persistCurrentSessionIfAllowed()
+        }
+        return changed
+    }
+
     @discardableResult func replacePinnedURLWithCurrent(forTabID tabID: String) -> Bool {
         guard let tab = tabs.first(where: { $0.id == tabID }) else {
             return false
@@ -3869,6 +3912,8 @@ enum BrowserWindowMode: Equatable {
             canRenameSelectedTab
         case .resetTabToPinnedURL:
             canResetSelectedTabToPinnedURL
+        case .resetSpaceTabs:
+            canResetSpaceTabs()
         case .collapseAllFolders:
             canSetActiveSpaceFoldersExpanded(false)
         case .expandAllFolders:
@@ -6366,6 +6411,8 @@ extension BrowserCommandID {
             ["rename tab", "rename"]
         case .resetTabToPinnedURL:
             ["reset tab", "original url", "pinned url", "back to pinned url"]
+        case .resetSpaceTabs:
+            ["reset tabs", "reset all tabs", "reset space", "original urls"]
         case .collapseAllFolders:
             ["collapse folders", "collapse all folders", "close folders"]
         case .expandAllFolders:
@@ -6506,6 +6553,8 @@ extension BrowserCommandID {
             "pencil"
         case .resetTabToPinnedURL:
             "arrow.uturn.backward"
+        case .resetSpaceTabs:
+            "arrow.counterclockwise"
         case .collapseAllFolders:
             "folder"
         case .expandAllFolders:

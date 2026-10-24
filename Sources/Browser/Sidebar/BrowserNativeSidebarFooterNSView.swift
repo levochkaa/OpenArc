@@ -135,10 +135,12 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             button.menu = BrowserNativeMenus.space(
                 space,
                 canDelete: spaces.count > 1,
+                canResetTabs: model.canResetSpaceTabs(spaceID: space.id),
                 onRename: { [weak state] in state?.clearSidebarTabSelection()
                     state?.beginRenamingSpace(id: space.id)
                 },
                 onChangeIcon: { model.setIcon($0, forSpaceID: space.id) },
+                onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },
                 onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
                     state?.clearSidebarTabSelection()
                     model.deleteSpace(id: space.id)

@@ -430,6 +430,13 @@ enum BrowserCommands {
         shortcut: .unassigned
     )
 
+    /// Reset all tabs in this Space, unbound by default.
+    static let resetSpaceTabs = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuResetSpaceTabs,
+        helpTitle: BrowserStrings.menuResetSpaceTabs,
+        shortcut: .unassigned
+    )
+
     static let collapseAllFolders = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCollapseAllFolders,
         helpTitle: BrowserStrings.menuCollapseAllFolders,
@@ -650,6 +657,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case renameTab
     case resetTabToPinnedURL
     case setAllFoldersExpanded(Bool)
+    case resetSpaceTabs
     case newSpace
     case newFolder
     case captureFullPage
