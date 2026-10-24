@@ -1746,7 +1746,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             title: String(localized: "New Space", table: "Mobile"),
             image: UIImage(systemName: "plus"),
             attributes: disabled
-        ) { [weak self] _ in
+        ) { [weak self, weak document] _ in
             self?.prompt(title: String(localized: "New Space", table: "Mobile"), value: "") { [
                 weak self,
                 weak document
