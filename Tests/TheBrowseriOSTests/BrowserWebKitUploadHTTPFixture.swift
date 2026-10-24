@@ -185,7 +185,8 @@ import Network
                 }
             }
             listener.newConnectionHandler = { [weak self] connection in
-                Task { @MainActor [weak self] in
+                // The connection stays strong until it is registered; only the timeout holds it weakly.
+                Task { @MainActor [weak self, connection] in
                     guard let self, !stopped else { connection.cancel()
                         return
                     }
