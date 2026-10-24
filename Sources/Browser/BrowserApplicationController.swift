@@ -184,6 +184,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         appearancePreferenceCancellable = nil
         littleWindowHotKeyCancellable = nil
         littleWindowHotKey = nil
+        if let findPasteboardObserver {
+            NotificationCenter.default.removeObserver(findPasteboardObserver)
+        }
+        findPasteboardObserver = nil
+        selectionFindRequest = nil
         profileStore = nil
         updateController = nil
         batterySaverController = nil
@@ -488,9 +493,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.findPreviousInPage()
     }
 
-    public func useSelectionToFind(_: Any?) {}
+    /// The page copies its selection to the find pasteboard; the find bar opens
+    /// with it when Chromium reports the change.
+    public func useSelectionToFind(_: Any?) {
+        guard let model = activeChromeModel, model.canPresentFindInPage else { return }
+        observeFindPasteboardIfNeeded()
+        selectionFindRequest = SelectionFindRequest(model: model, date: Date())
+        NSApp.sendAction(Selector(("copyToFindPboard:")), to: nil, from: self)
+    }
 
-    public func jumpToSelection(_: Any?) {}
+    /// Scrolls the page's selection into view (Chromium's
+    /// `centerSelectionInVisibleArea:`).
+    public func jumpToSelection(_: Any?) {
+        guard activeChromeModel?.canFindInPage == true else { return }
+        NSApp.sendAction(#selector(NSResponder.centerSelectionInVisibleArea(_:)), to: nil, from: self)
+    }
 
     public func clearTemporaryTabs(_: Any?) {
         activeChromeModel?.clearTemporaryTabs()
@@ -605,8 +622,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return focusedArchiveWindowController != nil || activeChromeModel?.canPresentFindInPage == true
         case #selector(findNextInPage(_:)), #selector(findPreviousInPage(_:)):
             return activeChromeModel?.canStepThroughFindMatches ?? false
-        case #selector(findAndReplace(_:)), #selector(jumpToSelection(_:)), #selector(useSelectionToFind(_:)):
+        case #selector(findAndReplace(_:)):
             return false
+        case #selector(jumpToSelection(_:)):
+            return activeChromeModel?.canFindInPage ?? false
+        case #selector(useSelectionToFind(_:)):
+            return activeChromeModel?.canPresentFindInPage ?? false
         case #selector(clearTemporaryTabs(_:)):
             return activeChromeModel?.canClearTemporaryTabs ?? false
         case #selector(installCurrentSiteAsApp(_:)):
@@ -721,6 +742,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var shortcutStoreCancellable: AnyCancellable?
     private var appearancePreferenceCancellable: AnyCancellable?
     private var littleWindowHotKeyCancellable: AnyCancellable?
+    private var findPasteboardObserver: NSObjectProtocol?
+    /// Use Selection to Find waits for the page to fill the find pasteboard.
+    private var selectionFindRequest: SelectionFindRequest?
     private weak var lastKeyProfileWindow: NSWindow?
     /// Option-Command-N from any app, when turned on in Settings.
     private var littleWindowHotKey: BrowserGlobalHotKey?
@@ -2014,7 +2038,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             findPreviousInPage(nil)
             return true
         case .jumpToSelection:
-            return false
+            guard activeChromeModel?.canFindInPage == true else { return false }
+            jumpToSelection(nil)
+            return true
         case .clearTemporaryTabs:
             guard activeChromeModel?.canClearTemporaryTabs ?? false else {
                 return false
@@ -2644,6 +2670,29 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
+    /// Chromium posts this after the page writes its selection to the find
+    /// pasteboard (`ui/base/cocoa/find_pasteboard.mm`).
+    private func observeFindPasteboardIfNeeded() {
+        guard findPasteboardObserver == nil else { return }
+        findPasteboardObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("kFindPasteboardChangedNotification_Chrome"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finishSelectionFind() }
+        }
+    }
+
+    private func finishSelectionFind() {
+        guard let request = selectionFindRequest else { return }
+        selectionFindRequest = nil
+        guard let model = request.model, Date().timeIntervalSince(request.date) < 2,
+              let text = NSPasteboard(name: .find).string(forType: .string), !text.isEmpty
+        else { return }
+        model.findQuery = text
+        _ = model.presentFindInPage()
+    }
+
     /// New Small Window's shortcut, as customized, from any app.
     private func refreshLittleWindowHotKey(enabled: Bool) {
         littleWindowHotKey = nil
@@ -3107,4 +3156,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private func refreshSetAsDefaultBrowserMenuItem() {
         setAsDefaultBrowserMenuItem?.isEnabled = updateSetAsDefaultBrowserMenuItem(setAsDefaultBrowserMenuItem)
     }
+}
+
+// MARK: - SelectionFindRequest
+
+/// A pending Use Selection to Find; the window may close before the page answers.
+private struct SelectionFindRequest {
+    weak var model: BrowserChromeModel?
+    let date: Date
 }
