@@ -206,7 +206,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         )
         self.batterySaverEnabled = Self.loadBool(userDefaults, key: Key.batterySaverEnabled, defaultValue: true)
         self.pinnedExtensionIDs = Self.loadStringArray(userDefaults, key: Key.pinnedExtensionIDs)
+        self.downloadDirectoryPath = userDefaults.string(forKey: Self.downloadDirectoryKey).flatMap { $0.isEmpty ? nil : $0 }
     }
+
+    /// Read by the engine through `BrowserDownloadLocation` on its own thread.
+    static let downloadDirectoryKey = "browser.settings.downloadDirectoryPath"
 
     // MARK: Internal
 
@@ -276,6 +280,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var pinnedExtensionIDs: [String] {
         didSet { userDefaults.set(pinnedExtensionIDs, forKey: Key.pinnedExtensionIDs) }
+    }
+
+    /// Download location; nil saves to the user's Downloads folder.
+    @Published var downloadDirectoryPath: String? {
+        didSet { userDefaults.set(downloadDirectoryPath, forKey: Self.downloadDirectoryKey) }
     }
 
     // MARK: Private

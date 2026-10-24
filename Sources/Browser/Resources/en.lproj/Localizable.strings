@@ -153,6 +153,10 @@
 "browser.menu.select_previous_space" = "Previous Space";
 "browser.menu.copy_link_as_markdown" = "Copy URL as Markdown";
 "browser.menu.reveal_current_tab" = "Reveal Current Tab";
+"browser.settings.downloads" = "Downloads";
+"browser.settings.download_location" = "Download location";
+"browser.settings.download_location.choose" = "Choose…";
+"browser.settings.download_location.reset" = "Use Downloads";
 "browser.menu.select_previous_tab" = "Previous Tab";
 "browser.menu.go_to_sidebar_item" = "Go to Sidebar Item %d";
 "browser.menu.go_to_last_sidebar_item" = "Go to Last Sidebar Item";

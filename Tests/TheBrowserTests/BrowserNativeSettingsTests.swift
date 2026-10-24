@@ -74,6 +74,32 @@ import Testing
         try await waitUntil { popup.titleOfSelectedItem == BrowserSearchEngine.duckDuckGo.title }
     }
 
+    @Test func downloadLocationShowsTheChosenFolderAndFallsBackToDownloads() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let preferences = fixture.model.userPreferencesStore
+        preferences.downloadDirectoryPath = nil
+        let controller = fixture.controller(.general)
+        _ = controller.view
+        controller.viewWillAppear()
+        let path = try #require(find("browser.settings.download-location.path", in: controller.view) as? NSTextField)
+        let reset = try #require(find("browser.settings.download-location.reset", in: controller.view) as? BrowserActionButton)
+        let downloads = BrowserDownloadLocation.defaultDirectory()
+        #expect(path.stringValue == (downloads.path as NSString).abbreviatingWithTildeInPath)
+        #expect(reset.isHidden)
+
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TheBrowserDownloads-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        preferences.downloadDirectoryPath = folder.path
+        try await waitUntil { !reset.isHidden }
+        #expect(path.stringValue == (folder.path as NSString).abbreviatingWithTildeInPath)
+        #expect(BrowserDownloadLocation.directory(customPath: folder.path) == URL(fileURLWithPath: folder.path, isDirectory: true))
+        #expect(BrowserDownloadLocation.directory(customPath: folder.path + "-missing") == downloads, "A missing folder falls back")
+        reset.performClick(nil)
+        #expect(preferences.downloadDirectoryPath == nil)
+    }
+
     @Test func everyPaneLaysOutNativeContentWithinTheViewport() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

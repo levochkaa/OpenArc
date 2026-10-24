@@ -224,11 +224,9 @@ NSString *SuggestedDownloadFileName(CefRefPtr<CefDownloadItem> download_item,
 }
 
 NSString *DownloadsDirectoryPath() {
-  NSArray<NSURL *> *urls =
-      [NSFileManager.defaultManager URLsForDirectory:NSDownloadsDirectory
-                                           inDomains:NSUserDomainMask];
-  NSURL *downloadsURL = urls.firstObject;
-  return downloadsURL.path.length > 0 ? downloadsURL.path : NSTemporaryDirectory();
+  // The folder chosen in Settings, or the user's Downloads folder.
+  NSString *path = [BrowserDownloadLocation directoryPath];
+  return path.length > 0 ? path : NSTemporaryDirectory();
 }
 
 NSString *UniqueDownloadPathForFileName(NSString *fileName) {

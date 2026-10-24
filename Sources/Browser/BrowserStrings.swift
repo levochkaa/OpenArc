@@ -838,6 +838,26 @@ enum BrowserStrings {
         comment: "View menu and command title that switches to the previous Space."
     )
 
+    static let settingsDownloadsTitle = NSLocalizedString(
+        "browser.settings.downloads",
+        comment: "Settings section title for downloads."
+    )
+
+    static let settingsDownloadLocation = NSLocalizedString(
+        "browser.settings.download_location",
+        comment: "Settings row title for the folder that receives downloads."
+    )
+
+    static let settingsDownloadLocationChoose = NSLocalizedString(
+        "browser.settings.download_location.choose",
+        comment: "Button that picks another folder for downloads."
+    )
+
+    static let settingsDownloadLocationReset = NSLocalizedString(
+        "browser.settings.download_location.reset",
+        comment: "Button that saves downloads to the Downloads folder again."
+    )
+
     static let menuRevealCurrentTab = NSLocalizedString(
         "browser.menu.reveal_current_tab",
         comment: "View menu and command title that scrolls the sidebar to the selected tab and shows it."

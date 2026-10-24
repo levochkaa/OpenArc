@@ -30,6 +30,22 @@ enum BrowserSettingsLayout {
     }
 }
 
+// MARK: - BrowserDownloadLocationPanel
+
+@MainActor private enum BrowserDownloadLocationPanel {
+    static func chooseDirectory(startingAt directory: URL) -> URL? {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = directory
+        panel.prompt = BrowserStrings.settingsDownloadLocationChoose
+        panel.title = BrowserStrings.settingsDownloadLocation
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+}
+
 // MARK: - BrowserSettingsPane
 
 enum BrowserSettingsPane: String, CaseIterable, Hashable {
@@ -309,7 +325,38 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 link(BrowserStrings.settingsManageSearch, url: BrowserSettingsRoute.searchEnginesURL),
             ]),
             section(BrowserStrings.settingsTemporaryTabsTitle, rows: automaticArchivalRows()),
+            section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
         ])
+    }
+
+    /// The chosen folder, abbreviated, with Choose… and, for a custom folder,
+    /// Use Downloads. A folder that no longer exists shows the fallback.
+    private func downloadLocationRow() -> NSView {
+        let preferences = preferences
+        let path = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor)
+        path.lineBreakMode = .byTruncatingMiddle
+        path.setAccessibilityIdentifier("browser.settings.download-location.path")
+        let choose = BrowserActionButton(BrowserStrings.settingsDownloadLocationChoose) {
+            let current = BrowserDownloadLocation.directory(customPath: preferences.downloadDirectoryPath)
+            if let url = BrowserDownloadLocationPanel.chooseDirectory(startingAt: current) {
+                preferences.downloadDirectoryPath = url.path
+            }
+        }
+        choose.setAccessibilityIdentifier("browser.settings.download-location.choose")
+        let reset = BrowserActionButton(BrowserStrings.settingsDownloadLocationReset) {
+            preferences.downloadDirectoryPath = nil
+        }
+        reset.setAccessibilityIdentifier("browser.settings.download-location.reset")
+        updateBindings.append { [weak path, weak reset] in
+            let directory = BrowserDownloadLocation.directory(customPath: preferences.downloadDirectoryPath)
+            path?.stringValue = (directory.path as NSString).abbreviatingWithTildeInPath
+            reset?.isHidden = preferences.downloadDirectoryPath == nil
+        }
+        let label = BrowserNativeControls.stack([
+            BrowserNativeControls.label(BrowserStrings.settingsDownloadLocation, wraps: true),
+            path,
+        ], spacing: 2)
+        return row(label: label, control: BrowserNativeControls.stack([reset, choose], orientation: .horizontal, spacing: 8))
     }
 
     private func automaticArchivalRows() -> [NSView] {
