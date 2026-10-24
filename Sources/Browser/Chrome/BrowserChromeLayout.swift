@@ -110,6 +110,10 @@ enum BrowserChromeLayout {
     static let commandBarSuggestionRowHeight: CGFloat = 42
     static let commandBarSuggestionSpacing: CGFloat = 4
     static let commandBarSuggestionVerticalInset: CGFloat = commandBarOuterPadding * 2
+    /// Scroll inset around the suggestion table. Table row rects include half the row spacing above and below,
+    /// so this inset plus that half equals the visible vertical inset.
+    static let commandBarSuggestionScrollInset: CGFloat = commandBarSuggestionVerticalInset
+        - commandBarSuggestionSpacing / 2
     static let commandBarSuggestionViewportAllowance: CGFloat = commandBarOuterPadding
     static let bookmarksBarHeight: CGFloat = chromeButtonSize
     static let bookmarksBarHorizontalPadding: CGFloat = 6

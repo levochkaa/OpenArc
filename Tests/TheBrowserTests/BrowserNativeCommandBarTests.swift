@@ -286,6 +286,38 @@ import Testing
         #expect(viewport.maxY - last.maxY <= BrowserChromeLayout.commandBarSuggestionVerticalInset + 1)
     }
 
+    @Test(arguments: [0, 1, 3])
+    func keyboardSelectionKeepsFullyVisibleSuggestionsInPlace(providerSuggestionCount: Int) async throws {
+        let suggestions = (0..<providerSuggestionCount).map { "browser suggestion \($0)" }
+        let model = BrowserCommandBarModel(
+            suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["browser": suggestions]),
+            suggestionDebounceNanoseconds: 0, submitHandler: { _ in }
+        )
+        let view = BrowserCommandBarNSView(model: model, faviconCache: BrowserFaviconCache(dataLoader: { _ in nil }))
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        model.present(initialQuery: "browser")
+        await model.waitForPendingSuggestionLoad()
+        try await waitUntil { view.displayedSuggestions == model.suggestions }
+        try #require((2...BrowserCommandBarModel.maximumVisibleSuggestions).contains(model.suggestions.count))
+        view.layoutSubtreeIfNeeded()
+        func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+        let scroll = try #require(descendants(view).compactMap { $0 as? NSScrollView }.first)
+        let table = try #require(scroll.documentView as? NSTableView)
+        let initialOrigin = scroll.contentView.bounds.minY
+        for _ in 1..<model.suggestions.count {
+            model.moveSelection(by: 1)
+            try await waitUntil { table.selectedRow == model.selectedSuggestionIndex }
+            view.layoutSubtreeIfNeeded()
+            #expect(scroll.contentView.bounds.minY == initialOrigin)
+        }
+        let first = table.rect(ofRow: 0).insetBy(dx: 0, dy: BrowserChromeLayout.commandBarSuggestionSpacing / 2)
+        let last = table.rect(ofRow: table.numberOfRows - 1)
+            .insetBy(dx: 0, dy: BrowserChromeLayout.commandBarSuggestionSpacing / 2)
+        let viewport = scroll.contentView.bounds
+        #expect(first.minY - viewport.minY == BrowserChromeLayout.commandBarSuggestionVerticalInset)
+        #expect(viewport.maxY - last.maxY == BrowserChromeLayout.commandBarSuggestionVerticalInset)
+    }
+
     // MARK: Private
 
     private func waitUntil(_ predicate: () -> Bool) async throws {

@@ -31,9 +31,9 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         scrollView.hasHorizontalScroller = false
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets = NSEdgeInsets(
-            top: BrowserChromeLayout.commandBarSuggestionVerticalInset,
+            top: BrowserChromeLayout.commandBarSuggestionScrollInset,
             left: 0,
-            bottom: BrowserChromeLayout.commandBarSuggestionVerticalInset,
+            bottom: BrowserChromeLayout.commandBarSuggestionScrollInset,
             right: 0
         )
         table.addTableColumn(NSTableColumn(identifier: .init("suggestions")))
@@ -289,7 +289,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         let rect = table.rect(ofRow: row)
         let clip = scrollView.contentView
         let visible = clip.bounds
-        let inset = BrowserChromeLayout.commandBarSuggestionVerticalInset
+        let inset = BrowserChromeLayout.commandBarSuggestionScrollInset
         var y = visible.minY
         if rect.minY < visible.minY + inset {
             y = rect.minY - inset
