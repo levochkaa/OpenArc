@@ -155,7 +155,10 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
     }
 
     private func dismissIfNeeded(for locationInWindow: NSPoint) {
-        guard isPresented, !bounds.isEmpty, locationInWindow.x > sidebarFrameInWindow.maxX else {
+        // The sidebar sits on either window edge; leaving it sideways dismisses.
+        let sidebar = sidebarFrameInWindow
+        guard isPresented, !bounds.isEmpty, locationInWindow.x > sidebar.maxX || locationInWindow.x < sidebar.minX
+        else {
             return
         }
 

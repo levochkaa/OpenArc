@@ -44,10 +44,16 @@ extension BrowserChromeModel {
         return moveToTopOfSpace(tabIDs: Set(panes), primaryID: tabID, spaceID: spaceID)
     }
 
-    /// Archive Item on a Split View row closes every pane.
+    /// Archive Item on a Split View row: temporary panes archive, pinned
+    /// panes unload and keep their rows, like Close Tab on each.
     func closeSplit(containingTabID tabID: String) {
         for id in splitPaneTabIDs(forTabID: tabID) {
-            closeTab(id: id)
+            guard let tab = tabs.first(where: { $0.id == id }) else { continue }
+            if tab.placement == .spacePinned {
+                closePinnedTabProcessOrReset(id: id)
+            } else {
+                closeTab(id: id)
+            }
         }
     }
 

@@ -114,6 +114,27 @@ import Testing
     #expect(reloadedStore.shortcut(for: .toggleBookmarksBar) == BrowserCommands.toggleBookmarksBar.shortcut)
 }
 
+@Test func aNewDefaultYieldsToAKeyTheUserAlreadyAssigned() throws {
+    let suiteName = "TheBrowserTests.\(UUID().uuidString)"
+    let userDefaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+    // Saved before Open Extensions took Command-E as its default.
+    let saved = try JSONEncoder().encode(["openHistory": BrowserKeyboardShortcut("e")])
+    userDefaults.set(saved, forKey: "browser.settings.shortcutOverrides")
+
+    let store = BrowserShortcutStore(userDefaults: userDefaults)
+    #expect(store.shortcut(for: .openHistory) == BrowserKeyboardShortcut("e"))
+    #expect(store.shortcut(for: .openExtensions) == .unassigned)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 14,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "у",
+        shortcutResolver: store
+    ) == .openHistory)
+    store.resetShortcut(for: .openHistory)
+    #expect(store.shortcut(for: .openExtensions) == BrowserKeyboardShortcut("e"))
+}
+
 @Test func unassignedCommandShortcutsDoNotConflict() throws {
     let suiteName = "TheBrowserTests.\(UUID().uuidString)"
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))

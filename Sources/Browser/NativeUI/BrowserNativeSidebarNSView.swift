@@ -953,6 +953,10 @@ final class BrowserNativeSidebarNSView: NSView {
             BrowserNativeMenus.add(model.shortcutStore.descriptor(for: .copyLink).menuTitle, to: submenu) {
                 _ = model.copyTabLink(forTabID: member.id)
             }
+            let muted = model.isTabMuted(id: member.id)
+            BrowserNativeMenus.add(muted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction, to: submenu) {
+                model.setTabMuted(!muted, id: member.id)
+            }
             BrowserNativeMenus.add(BrowserStrings.tabCloseAction, to: submenu) { [weak state] in
                 state?.withSidebarAnimation { _ = model.closeTab(id: member.id) }
             }

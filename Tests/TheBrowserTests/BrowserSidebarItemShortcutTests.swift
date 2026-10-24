@@ -14,6 +14,9 @@ import Testing
         )
         // App tiles first; a collapsed folder hides its tabs.
         #expect(f.model.sidebarItemTabIDs == ["app", "a", "b", "x", "y"].map(f.id))
+        // A tab the sidebar keeps visible in its collapsed folder counts too.
+        f.model.sidebarRevealedPinnedTabIDsByFolderID = ["folder": [f.id("hidden")]]
+        #expect(f.model.sidebarItemTabIDs == ["app", "a", "hidden", "b", "x", "y"].map(f.id))
         f.model.toggleActiveSpacePinnedSectionCollapsed()
         #expect(f.model.sidebarItemTabIDs == ["app", "x", "y"].map(f.id))
     }

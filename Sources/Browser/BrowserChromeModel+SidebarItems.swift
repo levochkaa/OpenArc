@@ -13,7 +13,10 @@ extension BrowserChromeModel {
         let snapshot = sidebarSnapshot
         var pinnedIDs = [String]()
         if let spaceID = activeSpace?.id, !(supportsSpaces && snapshot.isPinnedSectionCollapsed(in: spaceID)) {
-            pinnedIDs = snapshot.visiblePinnedRows(in: spaceID).compactMap { row in
+            pinnedIDs = snapshot.visiblePinnedRows(
+                in: spaceID,
+                revealedTabIDsByFolderID: sidebarRevealedPinnedTabIDsByFolderID
+            ).compactMap { row in
                 if case .tab(let tabRow) = row {
                     tabRow.tab.id
                 } else {

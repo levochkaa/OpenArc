@@ -44,7 +44,12 @@ import AppKit
     var renamingSpaceID: String? { didSet { invalidate() } }
     var renamingTabID: String? { didSet { invalidate() } }
     var renamingPinnedTabFolderID: String? { didSet { invalidate() } }
-    var revealedPinnedFolderTabIDsByFolderID = [String: Set<String>]() { didSet { invalidate() } }
+    var revealedPinnedFolderTabIDsByFolderID = [String: Set<String>]() {
+        didSet {
+            invalidate()
+            model.sidebarRevealedPinnedTabIDsByFolderID = revealedPinnedFolderTabIDsByFolderID
+        }
+    }
     var tabRowInteractionResetID = 0 { didSet { invalidate() } }
     var topChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }
     var bottomChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }

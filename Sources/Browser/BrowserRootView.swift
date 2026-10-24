@@ -496,11 +496,14 @@ final class BrowserRootView: NSView {
         controls.showControlCenter(anchor: popoverAnchor, preferredEdge: .maxY)
     }
 
-    /// View Downloads opens the sidebar footer's list. With the sidebar hidden,
-    /// the list points at the page's bottom corner on the sidebar side instead.
+    /// View Downloads opens the sidebar footer's list. With the sidebar hidden or
+    /// without the footer button, the list points at the page's bottom corner on
+    /// the sidebar side instead.
     private func toggleDownloads() {
         let footer = sidebar.footer
-        guard !model.isSidebarVisible, !isSidebarHoverOverlayActive, !footer.isDownloadsPresented else {
+        // Without Spaces, as in an incognito window, the footer has no Downloads button.
+        let showsButton = (model.isSidebarVisible || isSidebarHoverOverlayActive) && model.supportsSpaces
+        guard !showsButton, !footer.isDownloadsPresented else {
             footer.toggleDownloads()
             return
         }

@@ -666,8 +666,18 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         BrowserCommandID.allCases
     }
 
+    /// A default added in a later version yields to a key the user already
+    /// gave another command, so their own binding keeps working.
     func shortcut(for commandID: BrowserCommandID) -> BrowserKeyboardShortcut {
-        overrides[commandID] ?? commandID.defaultDescriptor.shortcut
+        if let override = overrides[commandID] {
+            return override
+        }
+        let fallback = commandID.defaultDescriptor.shortcut
+        let normalized = fallback.normalizedForMatching
+        let isTaken = normalized.isAssigned && overrides.contains { key, value in
+            key != commandID && value.normalizedForMatching == normalized
+        }
+        return isTaken ? .unassigned : fallback
     }
 
     func descriptor(for commandID: BrowserCommandID) -> BrowserCommandDescriptor {

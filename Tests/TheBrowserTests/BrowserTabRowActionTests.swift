@@ -73,6 +73,15 @@ import Testing
         #expect(f.names(f.model.tabs.filter { $0.placement == .temporary }) == ["z"])
     }
 
+    @Test func archivingASplitUnloadsPinnedPanesInsteadOfRemovingThem() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        let (a, b) = (f.id("a"), f.id("b"))
+        f.model.selectTab(id: a)
+        #expect(f.model.openInSplitView(tabID: b))
+        f.model.closeSplit(containingTabID: a)
+        #expect(f.pinnedNames() == ["a", "b"], "Pinned panes keep their rows")
+    }
+
     @Test func archivingOthersOrAboveClosesOnlyTemporaryTabs() {
         let f = SidebarDragFixture(temporary: ["x", "y", "z", "w"])
         #expect(f.model.temporaryTabIDsAbove(id: f.id("z")) == [f.id("x"), f.id("y")])

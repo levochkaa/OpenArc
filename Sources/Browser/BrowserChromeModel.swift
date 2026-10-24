@@ -343,6 +343,9 @@ enum BrowserWindowMode: Equatable {
     var onSplitPaneLayoutChange: (() -> Void)?
     /// UI-only: the window's downloads list, toggled by View Downloads.
     var onToggleDownloads: (() -> Void)?
+    /// UI-only mirror of the sidebar's tabs that stay visible in collapsed
+    /// folders, so keyboard navigation counts the rows the sidebar shows.
+    var sidebarRevealedPinnedTabIDsByFolderID = [String: Set<String>]()
     /// Muted tabs by sync ID, for this run only; a reopened dormant tab keeps it.
     /// Only `setTabMuted(_:id:)` writes it.
     @Published var mutedTabSyncIDs = Set<String>()
