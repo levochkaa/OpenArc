@@ -52,7 +52,8 @@ struct BrowserLinkRoute: Codable, Equatable, Identifiable {
         guard !pattern.isEmpty else { return false }
         switch match {
         case .contains:
-            return url.absoluteString.lowercased().contains(pattern)
+            let address = url.absoluteString
+            return [address, address.removingPercentEncoding ?? address].contains { $0.lowercased().contains(pattern) }
         case .site:
             return Self.site(pattern, contains: url)
         }
@@ -68,10 +69,12 @@ struct BrowserLinkRoute: Codable, Equatable, Identifiable {
         let slash = pattern.firstIndex(of: "/") ?? pattern.endIndex
         let site = withoutWWW(String(pattern[..<slash]))
         let path = pattern[slash...].trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard !site.isEmpty, var host = url.host?.lowercased() else { return false }
+        guard !site.isEmpty, var host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        else { return false }
         host = withoutWWW(host)
         if site.contains(":") {
-            guard let port = url.port else { return false }
+            let defaultPort = ["http": 80, "https": 443][url.scheme?.lowercased() ?? ""]
+            guard let port = url.port ?? defaultPort else { return false }
             host += ":\(port)"
         }
         guard host == site || host.hasSuffix("." + site) else { return false }

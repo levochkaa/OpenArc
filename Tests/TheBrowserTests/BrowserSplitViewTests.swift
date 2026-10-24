@@ -516,6 +516,20 @@ import Testing
         ])
     }
 
+    @Test func anUnloadedPinnedTabReplacingAPaneIsFocusedUnderItsNewID() throws {
+        // The first pinned tab restores selected; the second restores unloaded.
+        let f = SidebarDragFixture(pinned: [("a", nil), ("b", nil)], temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        let unloadedID = f.id("b")
+        #expect(!f.driver.createdTabRequests.contains { $0.id == unloadedID })
+        #expect(f.model.replaceSplitPane(anchorTabID: f.id("y"), with: unloadedID))
+        #expect(f.id("b") != unloadedID, "Moving among temporary tabs loads it with a new ID")
+        let group = try #require(f.model.selectedSplitGroup, "The split stays shown")
+        #expect(f.model.splitPaneTabIDs(of: group) == [f.id("x"), f.id("b")])
+        #expect(f.model.selectedTabID == f.id("b"))
+    }
+
     @Test func expandCurrentSplitShowsTheFocusedPaneUntilFocusMoves() {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
         f.model.selectTab(id: f.id("x"))

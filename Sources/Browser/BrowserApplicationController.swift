@@ -3029,6 +3029,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         pendingNavigationURLs.removeAll()
 
         for url in urls {
+            // A link that arrived before the window was ready still follows its rule.
+            if let route = BrowserLinkRouter.route(for: url, in: userPreferencesStore.linkRoutes),
+               openRoutedLink(url, to: route.destination)
+            {
+                continue
+            }
             targetSession?.chromeModel.openURLInNewTab(url)
         }
 

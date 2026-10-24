@@ -610,14 +610,17 @@ enum BrowserWindowMode: Equatable {
     var canResetZoom: Bool { canCreateTab && selectedTabID != nil && zoomPercent != 100 }
 
     /// Peek for pinned tabs and Favorites, when turned on in Settings: a
-    /// clicked link to another site opens in Peek and the tab keeps its page.
+    /// clicked link, or its redirect, to another site opens in Peek and the tab
+    /// keeps its page. The site shown and the pinned site both count as the
+    /// tab's own, so a link back home stays in the tab.
     func peeksNavigation(fromTabWithID tabID: String, toURLString urlString: String) -> Bool {
         guard userPreferencesStore.peeksLinksToOtherSites, !isWebApp,
               let tab = tabs.first(where: { $0.id == tabID }), tab.placement != .temporary,
               let current = URL(string: tab.urlString), let target = URL(string: urlString),
               [current, target].allSatisfy({ ["http", "https"].contains($0.scheme?.lowercased() ?? "") })
         else { return false }
-        return !BrowserSite.isSameSite(current, target)
+        let home = tab.pinnedURLString.flatMap(URL.init(string:))
+        return !BrowserSite.isSameSite(current, target) && !(home.map { BrowserSite.isSameSite($0, target) } ?? false)
     }
 
     @discardableResult func retrySessionPersistence() -> Bool {

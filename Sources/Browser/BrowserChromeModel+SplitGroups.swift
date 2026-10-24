@@ -232,6 +232,8 @@ extension BrowserChromeModel {
         else { return false }
         removeFromSplitGroups(syncID: added.syncID)
         guard placeTab(tabID, after: lastPaneID) else { return false }
+        // An unloaded pinned tab moved among temporary tabs loads with a new ID.
+        let tabID = runtimeTabID(syncID: added.syncID) ?? tabID
         if let existing, let index = splitGroups.firstIndex(where: { $0.id == existing.id }) {
             var members = existing.tabSyncIDs
             let anchorIndex = members.firstIndex(of: anchor.syncID) ?? members.count - 1
@@ -287,6 +289,8 @@ extension BrowserChromeModel {
         guard placeTab(tabID, after: anchorTabID),
               let groupIndex = splitGroups.firstIndex(where: { $0.id == group.id })
         else { return false }
+        // An unloaded pinned tab moved among temporary tabs loads with a new ID.
+        let tabID = runtimeTabID(syncID: added.syncID) ?? tabID
         var members = group.tabSyncIDs
         members[index] = added.syncID
         splitGroups[groupIndex].tabSyncIDs = members
@@ -526,6 +530,10 @@ extension BrowserChromeModel {
             return preferred
         }
         return keys.first { counts[$0] == best }
+    }
+
+    private func runtimeTabID(syncID: String) -> String? {
+        tabs.first { $0.syncID == syncID }?.id
     }
 
     private func removeFromSplitGroups(syncID: String) {

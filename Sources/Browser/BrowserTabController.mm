@@ -2921,6 +2921,10 @@ class BrowserTabNavigationTask final : public CefTask {
 
 @end
 
+namespace {
+void WatchClickModifiers();
+}  // namespace
+
 @implementation BrowserTabController {
   __weak BrowserTabHostView *_hostView;
   std::map<std::string, TabRecord> _tabRecords;
@@ -2952,6 +2956,7 @@ class BrowserTabNavigationTask final : public CefTask {
   if (self == nil) {
     return nil;
   }
+  WatchClickModifiers();
 
   _hostView = hostView;
   _hostView.controller = self;
@@ -4310,6 +4315,22 @@ void BrowserTabClient::OnFaviconURLChange(
                             forTabID:ToNSString(tab_id_)];
 }
 
+NSEventModifierFlags gLastClickModifierFlags = 0;
+NSTimeInterval gLastClickUptime = -1;
+
+/// Records the keys held at each click in the app's windows.
+void WatchClickModifiers() {
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseUp | NSEventMaskOtherMouseUp
+                                          handler:^NSEvent *(NSEvent *event) {
+                                            gLastClickModifierFlags = event.modifierFlags;
+                                            gLastClickUptime = event.timestamp;
+                                            return event;
+                                          }];
+  });
+}
+
 /// Option-Command-click into the small window, when turned on. Chromium reports
 /// the click as a Command-click, so the held keys decide.
 bool IsOptionCommandClick(cef_window_open_disposition_t disposition, bool user_gesture) {
@@ -4318,7 +4339,11 @@ bool IsOptionCommandClick(cef_window_open_disposition_t disposition, bool user_g
       !BrowserPeekSettings.opensOptionCommandClicksInLittleWindow) {
     return false;
   }
-  const NSEventModifierFlags flags = NSEvent.modifierFlags;
+  // The keys held at the click, which the page may act on later; a link opened
+  // from the keyboard uses the keys held now.
+  const NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+  const NSEventModifierFlags flags =
+      now - gLastClickUptime < 1 ? gLastClickModifierFlags : NSEvent.modifierFlags;
   return (flags & NSEventModifierFlagOption) != 0 && (flags & NSEventModifierFlagCommand) != 0;
 }
 
@@ -4454,11 +4479,12 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     return true;
   }
 
-  // A clicked link, not typed, restored, redirected or a form post.
+  // A clicked link or its server redirect, such as a site's outbound link
+  // page; not typed, restored, scripted or a form post.
   const int transition = request->GetTransitionType();
-  const int qualifiers = TT_FORWARD_BACK_FLAG | TT_DIRECT_LOAD_FLAG | TT_IS_REDIRECT_MASK;
-  if (user_gesture && !is_redirect && (transition & TT_SOURCE_MASK) == TT_LINK &&
-      (transition & qualifiers) == 0 && request->GetMethod() == "GET") {
+  const int qualifiers = TT_FORWARD_BACK_FLAG | TT_DIRECT_LOAD_FLAG | TT_CLIENT_REDIRECT_FLAG;
+  if (user_gesture && (transition & TT_SOURCE_MASK) == TT_LINK && (transition & qualifiers) == 0 &&
+      request->GetMethod() == "GET") {
     BrowserTabController *controller = controller_;
     NSString *urlString = ToNSString(request->GetURL().ToString());
     if (controller != nil && [controller shouldPeekNavigationFromTabID:ToNSString(tab_id_) toURLString:urlString]) {

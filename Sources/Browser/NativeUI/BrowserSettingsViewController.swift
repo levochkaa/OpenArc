@@ -447,8 +447,9 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             guard destinations.indices.contains(index) else { return }
             let chosen = destinations[index]
             self?.updateLinkRoute(id) { route in
+                guard chosen.destination != route.destination else { return }
                 route.destination = chosen.destination
-                if case .space = chosen.destination, chosen.destination != route.destination {
+                if case .space = chosen.destination {
                     route.spaceTitle = chosen.title
                 }
             }
