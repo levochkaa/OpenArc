@@ -207,6 +207,7 @@
 "browser.tab.archive_tabs_below_action" = "Archive Tabs Below";
 "browser.tab.duplicate_action" = "Duplicate";
 "browser.tab.mute_action" = "Mute Tab";
+"browser.split.archive_action" = "Archive Split View";
 "browser.tab.unmute_action" = "Unmute Tab";
 "browser.tab.move_to_space_action" = "Move to";
 "browser.tab.archive_other_tabs_action" = "Archive Other Tabs";

@@ -58,6 +58,21 @@ import Testing
         #expect(f.driver.audioMuteRequests.last?.muted == false)
     }
 
+    @Test func aSplitMovesToAnotherSpaceWholeAndArchivesAsOneItem() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        let (x, y) = (f.id("x"), f.id("y"))
+        f.model.selectTab(id: x)
+        #expect(f.model.openInSplitView(tabID: y))
+        #expect(f.model.moveSplitToSpace(containingTabID: x, spaceID: "t"))
+        let group = try #require(f.model.splitGroup(containingTabID: x))
+        #expect(f.model.splitPaneTabIDs(of: group) == [x, y], "The split survives the move")
+        #expect(f.model.tabs.filter { $0.spaceID == "t" }.map(\.id) == [x, y])
+        #expect(!f.model.moveSplitToSpace(containingTabID: f.id("z"), spaceID: "t"), "A single tab is not a split")
+        f.model.closeSplit(containingTabID: y)
+        #expect(!f.model.tabs.contains { $0.id == x || $0.id == y })
+        #expect(f.names(f.model.tabs.filter { $0.placement == .temporary }) == ["z"])
+    }
+
     @Test func archivingOthersOrAboveClosesOnlyTemporaryTabs() {
         let f = SidebarDragFixture(temporary: ["x", "y", "z", "w"])
         #expect(f.model.temporaryTabIDsAbove(id: f.id("z")) == [f.id("x"), f.id("y")])

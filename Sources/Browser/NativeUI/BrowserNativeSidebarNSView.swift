@@ -930,6 +930,19 @@ final class BrowserNativeSidebarNSView: NSView {
         ) {
             _ = model.setSplitOrientation(vertical ? .horizontal : .vertical, groupID: group.id)
         }
+        let spaces = model.spacesForMovingTab(id: first.id)
+        if !spaces.isEmpty {
+            let submenu = BrowserNativeMenus.submenu(BrowserStrings.tabMoveToSpaceAction, in: menu)
+            for space in spaces {
+                let item = BrowserNativeMenus.add(space.title, to: submenu) { [weak state] in
+                    state?.withSidebarAnimation { _ = model.moveSplitToSpace(containingTabID: first.id, spaceID: space.id) }
+                }
+                item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
+            }
+        }
+        BrowserNativeMenus.add(BrowserStrings.splitArchiveAction, to: menu) { [weak state] in
+            state?.withSidebarAnimation { model.closeSplit(containingTabID: first.id) }
+        }
         menu.addItem(.separator())
         for member in members {
             let item = NSMenuItem(title: member.displayTitle, action: nil, keyEquivalent: "")

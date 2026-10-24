@@ -1098,6 +1098,11 @@ enum BrowserStrings {
         comment: "Context menu title for archiving a tab."
     )
 
+    static let splitArchiveAction = NSLocalizedString(
+        "browser.split.archive_action",
+        comment: "Split View row menu item that archives every pane of the split."
+    )
+
     static let tabMuteAction = NSLocalizedString(
         "browser.tab.mute_action",
         comment: "Context menu title that silences a tab."

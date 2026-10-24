@@ -33,11 +33,22 @@ extension BrowserChromeModel {
 
     /// Move to: the tab goes to the top of the same section in another Space.
     @discardableResult func moveTabToSpace(id: String, spaceID: String) -> Bool {
-        guard let tab = tabs.first(where: { $0.id == id }),
-              spacesForMovingTab(id: id).contains(where: { $0.id == spaceID })
-        else { return false }
-        moveTab(withID: id, toPlacement: tab.placement, atSectionIndex: 0, targetSpaceID: spaceID)
-        return tabs.first { $0.id == id }?.spaceID == spaceID
+        moveToTopOfSpace(tabIDs: [id], primaryID: id, spaceID: spaceID)
+    }
+
+    /// Move to on a Split View row: every pane moves together, so the
+    /// split stays whole in the other Space.
+    @discardableResult func moveSplitToSpace(containingTabID tabID: String, spaceID: String) -> Bool {
+        let panes = splitPaneTabIDs(forTabID: tabID)
+        guard panes.count > 1 else { return false }
+        return moveToTopOfSpace(tabIDs: Set(panes), primaryID: tabID, spaceID: spaceID)
+    }
+
+    /// Archive Item on a Split View row closes every pane.
+    func closeSplit(containingTabID tabID: String) {
+        for id in splitPaneTabIDs(forTabID: tabID) {
+            closeTab(id: id)
+        }
     }
 
     /// Temporary tabs of the row's Space above it; its own split counts as itself.
@@ -64,6 +75,22 @@ extension BrowserChromeModel {
         for tabID in otherTemporaryTabIDs(id: id) {
             closeTab(id: tabID)
         }
+    }
+
+    /// Moves tabs through the sidebar drop path, which keeps their order, a
+    /// split's grouping, persistence and sync, to the top of their section.
+    private func moveToTopOfSpace(tabIDs: Set<String>, primaryID: String, spaceID: String) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == primaryID }),
+              spacesForMovingTab(id: primaryID).contains(where: { $0.id == spaceID })
+        else { return false }
+        let container: BrowserSidebarDropContainer = tab.placement == .spacePinned
+            ? .pinned(spaceID)
+            : .temporary(spaceID)
+        let first = BrowserSidebarTabTree(snapshot: sidebarSnapshot).items(in: container).first
+        return commitSidebarDrop(
+            payload: .init(primary: .tab(primaryID), tabIDs: tabIDs),
+            destination: .init(container: container, beforeItem: first)
+        )
     }
 
     private func temporaryTabIDs(inSpaceOf id: String) -> [String] {
