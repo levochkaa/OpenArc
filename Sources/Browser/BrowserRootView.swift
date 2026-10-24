@@ -117,7 +117,9 @@ final class BrowserRootView: NSView {
     override func layout() {
         super.layout()
         let animate = animateNextLayout && window != nil && !isWindowFullscreenTransitioning
+        let curve = nextLayoutCurve
         animateNextLayout = false
+        nextLayoutCurve = .sidebar
         background.frame = bounds
         margins.frame = bounds
         margins.configure(
@@ -214,7 +216,7 @@ final class BrowserRootView: NSView {
             }
         }
         if animate {
-            frameAnimation.start(.sidebar, updates: updates) { [weak self] in
+            frameAnimation.start(curve, updates: updates) { [weak self] in
                 self?.finishPresentationAnimation()
             }
         } else {
@@ -253,6 +255,7 @@ final class BrowserRootView: NSView {
     private var revealTask: Task<Void, Never>?
     private var previousLayoutState: [Bool]?
     private var animateNextLayout = false
+    private var nextLayoutCurve = BrowserNativeAnimation.Curve.sidebar
     private let frameAnimation = BrowserNativeAnimation()
     private var isAnimatingFrames = false
     private var lastFrameTargets = [ObjectIdentifier: CGRect]()
@@ -361,6 +364,10 @@ final class BrowserRootView: NSView {
         ]
         if let previousLayoutState, previousLayoutState != state {
             animateNextLayout = true
+            // Only the floating sidebar slides with its own spring; everything else
+            // moves the page and keeps the shared ease.
+            let changed = zip(previousLayoutState, state).enumerated().filter { $0.element.0 != $0.element.1 }
+            nextLayoutCurve = changed.map(\.offset) == [1] ? .floatingSidebar : .sidebar
             if model.isSidebarVisible,!previousLayoutState[0] {
                 finishSidebarHoverOverlayPromotionIfNeeded()
             }

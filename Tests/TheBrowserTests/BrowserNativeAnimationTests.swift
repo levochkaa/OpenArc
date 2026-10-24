@@ -14,6 +14,30 @@ import Testing
         #expect(sidebar.value(at: 0.135) > 0.75)
     }
 
+    @Test func arcSpringsMatchTheirStiffnessAndDamping() {
+        // The springs have unit mass: stiffness = ω², damping = 2ζω.
+        for (curve, stiffness, damping) in [
+            (BrowserNativeAnimation.Curve.rowPress, 986.96, 31.42),
+            (.floatingSidebar, 1218.47, 55.85),
+        ] {
+            guard case .spring(let response, let ratio) = curve else {
+                Issue.record("expected a spring")
+                continue
+            }
+            let omega = 2 * Double.pi / response
+            #expect(abs(omega * omega - stiffness) / stiffness < 0.002)
+            #expect(abs(2 * ratio * omega - damping) / damping < 0.002)
+        }
+        // The row press bounces visibly; the floating sidebar barely overshoots.
+        let rowPeak = stride(from: 0.0, to: 0.2, by: 0.005).map(BrowserNativeAnimation.Curve.rowPress.value).max() ?? 0
+        let sidebarPeak = stride(from: 0.0, to: 0.2, by: 0.005).map(BrowserNativeAnimation.Curve.floatingSidebar.value)
+            .max() ?? 0
+        #expect(rowPeak > 1.1)
+        #expect(sidebarPeak > 1 && sidebarPeak < 1.03)
+        #expect(BrowserNativeSidebarRowNSView().pressCurve.duration == BrowserNativeAnimation.Curve.rowPress.duration)
+        #expect(BrowserNativePressableView().pressCurve.duration == BrowserNativeAnimation.Curve.press.duration)
+    }
+
     @Test func synchronousFramesKeepPageAndSidebarTogether() {
         let openSidebar = CGRect(x: 0, y: 0, width: 240, height: 700)
         let closedSidebar = openSidebar.offsetBy(dx: -240, dy: 0)

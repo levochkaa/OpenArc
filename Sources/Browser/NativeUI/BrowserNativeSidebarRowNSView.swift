@@ -10,6 +10,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        pressCurve = .rowPress
         for view in [favicon, symbol, badge, titleLabel, captionLabel, renameField, closeButton] {
             addSubview(view)
         }

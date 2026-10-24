@@ -56,6 +56,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
     var permitsTooltip = true
     var pressedScale = BrowserChromeLayout.sidebarButtonPressedScale
+    var pressCurve = BrowserNativeAnimation.Curve.press
 
     var isInteractionEnabled = true {
         didSet {
@@ -276,7 +277,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
         isPressed = value
         let scale = value ? pressedScale : 1
         let from = displayedScale
-        pressAnimation.start(.press) { [weak self] progress in
+        pressAnimation.start(pressCurve) { [weak self] progress in
             guard let self else { return }
             displayedScale = from + (scale - from) * progress
             CATransaction.begin()
