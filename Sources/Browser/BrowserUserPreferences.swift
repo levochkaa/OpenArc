@@ -218,6 +218,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.peeksLinksToOtherSites = Self.loadBool(userDefaults, key: Key.peeksLinksToOtherSites, defaultValue: false)
         self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)
             .flatMap { try? JSONDecoder().decode([BrowserLinkRoute].self, from: $0) } ?? []
+        self.siteSearches = userDefaults.data(forKey: Key.siteSearches)
+            .flatMap { try? JSONDecoder().decode([BrowserSiteSearch].self, from: $0) } ?? BrowserSiteSearch.arcDefaults
     }
 
     // MARK: Internal
@@ -337,6 +339,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(try? JSONEncoder().encode(linkRoutes), forKey: Key.linkRoutes) }
     }
 
+    /// Site searches for the command bar, in order; the default set until edited.
+    @Published var siteSearches: [BrowserSiteSearch] {
+        didSet { userDefaults.set(try? JSONEncoder().encode(siteSearches), forKey: Key.siteSearches) }
+    }
+
     /// Download location; nil saves to the user's Downloads folder.
     @Published var downloadDirectoryPath: String? {
         didSet { userDefaults.set(downloadDirectoryPath, forKey: Self.downloadDirectoryKey) }
@@ -364,6 +371,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let pinnedExtensionIDs = "browser.extensions.pinnedExtensionIDs"
         static let littleArcEnabled = "browser.settings.littleArcEnabled"
         static let linkRoutes = "browser.settings.linkRoutes"
+        static let siteSearches = "browser.settings.siteSearches"
         static let peeksLinksToOtherSites = "browser.settings.peeksLinksToOtherSites"
         static let folderPreviewsEnabled = "browser.settings.folderPreviewsEnabled"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"

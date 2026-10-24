@@ -185,6 +185,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         localSuggestionProvider: @escaping (String, Int) -> [BrowserCommandSuggestion] = { _, _ in [] },
         remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
         aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
+        siteSearchesProvider: @escaping () -> [BrowserSiteSearch] = { [] },
         submitHandler: @escaping (String) -> Void,
         openTabHandler: @escaping ([String]) -> Void = { _ in },
         commandHandler: @escaping (BrowserCommandID) -> Void = { _ in }
@@ -198,6 +199,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         self.localSuggestionProvider = localSuggestionProvider
         self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
         self.aiSearchProviderProvider = aiSearchProviderProvider
+        self.siteSearchesProvider = siteSearchesProvider
     }
 
     // MARK: Internal
@@ -209,6 +211,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     @Published private(set) var focusRequestID = 0
     @Published private(set) var suggestions = [BrowserCommandSuggestion]()
     @Published private(set) var selectedSuggestionIndex: Int?
+    /// The site the bar searches after Tab, shown as a chip before the query.
+    @Published private(set) var activeSiteSearch: BrowserSiteSearch?
 
     @Published var query = "" {
         didSet {
@@ -229,6 +233,12 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
 
     var selectedSuggestionID: String? {
         selectedSuggestion?.id
+    }
+
+    /// The site Tab would search, offered at the end of the field.
+    var siteSearchCandidate: BrowserSiteSearch? {
+        guard isPresented, activeSiteSearch == nil else { return nil }
+        return BrowserSiteSearch.match(for: query, in: siteSearchesProvider())
     }
 
     var inlineCompletionSuffix: String? {
@@ -252,6 +262,27 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         return previewDisplayText
     }
 
+    /// Tab scopes the bar to the offered site; the typed keyword comes back
+    /// if the scope is removed with Delete.
+    @discardableResult func beginSiteSearch() -> Bool {
+        guard let site = siteSearchCandidate else { return false }
+        suggestionLoadTask?.cancel()
+        siteSearchTriggerQuery = query
+        activeSiteSearch = site
+        query = ""
+        return true
+    }
+
+    /// Delete in an empty field restores the keyword; Escape clears both.
+    @discardableResult func endSiteSearch(restoringQuery: Bool) -> Bool {
+        guard activeSiteSearch != nil else { return false }
+        let trigger = siteSearchTriggerQuery ?? ""
+        activeSiteSearch = nil
+        siteSearchTriggerQuery = nil
+        query = restoringQuery ? trigger : ""
+        return true
+    }
+
     @discardableResult func acceptSelectedSuggestion() -> Bool {
         guard let selectedSuggestion, selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
             return false
@@ -273,6 +304,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
 
     func present(initialQuery: String = "") {
         suggestionLoadTask?.cancel()
+        activeSiteSearch = nil
+        siteSearchTriggerQuery = nil
         focusRequestID += 1
         isPresented = true
         query = initialQuery
@@ -282,6 +315,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         suggestionLoadTask?.cancel()
         suggestionLoadTask = nil
         isPresented = false
+        activeSiteSearch = nil
+        siteSearchTriggerQuery = nil
         query = ""
         suggestions = []
         selectedSuggestionIndex = nil
@@ -341,8 +376,10 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     private let localSuggestionProvider: (String, Int) -> [BrowserCommandSuggestion]
     private let remoteSuggestionsEnabledProvider: () -> Bool
     private let aiSearchProviderProvider: () -> BrowserAISearchProvider
+    private let siteSearchesProvider: () -> [BrowserSiteSearch]
 
     private var suggestionLoadTask: Task<Void, Never>?
+    private var siteSearchTriggerQuery: String?
 }
 
 @MainActor private extension BrowserCommandBarModel {
@@ -357,6 +394,20 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         }
 
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let site = activeSiteSearch {
+            // Lists only the query, which opens the site's results.
+            suggestions = site.searchURLString(for: trimmedQuery).flatMap { urlString in
+                trimmedQuery.isEmpty
+                    ? nil
+                    : [BrowserCommandSuggestion(
+                        kind: .search,
+                        displayText: trimmedQuery,
+                        resolvedURLString: urlString
+                    )]
+            } ?? []
+            selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
+            return
+        }
         let localSuggestionLimit = max(Self.maximumSuggestions - 2, 0)
         let localSuggestions = localSuggestionProvider(trimmedQuery, localSuggestionLimit)
         suggestions = assembledSuggestions(
@@ -399,7 +450,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             }
 
             let trimmedLiveQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard isPresented, trimmedLiveQuery == currentQuery else {
+            guard isPresented, activeSiteSearch == nil, trimmedLiveQuery == currentQuery else {
                 return
             }
 

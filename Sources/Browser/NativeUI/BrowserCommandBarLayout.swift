@@ -134,6 +134,8 @@ struct BrowserCommandBarLayout {
     let style: BrowserCommandBarOverlayStyle
     let displayText: String
     let suggestionCount: Int
+    /// Room for a site search chip or offer beside the text.
+    var extraWidth: CGFloat = 0
 
     var panelWidth: CGFloat {
         switch style {
@@ -162,7 +164,7 @@ struct BrowserCommandBarLayout {
                 maximum
             )
             let measured = BrowserCommandBarTextWidthMeasurer.width(for: displayText, fontSize: style.fontSize)
-                + BrowserChromeLayout.compactCommandBarTextWidthBuffer
+                + BrowserChromeLayout.compactCommandBarTextWidthBuffer + extraWidth
             return max(min(max(measured, minimum), maximum), 0)
         }
     }

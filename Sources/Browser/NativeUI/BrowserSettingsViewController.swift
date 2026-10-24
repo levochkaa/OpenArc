@@ -183,6 +183,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         {
             updateLinkRoute(id) { $0.pattern = field.stringValue }
         }
+        if let field = notification.object as? NSTextField,
+           let entry = siteSearchFields.first(where: { $0.field === field }),
+           let index = preferences.siteSearches.firstIndex(where: { $0.id == entry.id })
+        {
+            preferences.siteSearches[index][keyPath: entry.keyPath] = field.stringValue
+        }
     }
 
     // MARK: Private
@@ -208,6 +214,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let accountsBody = NSStackView()
     private let linkRoutesBody = NSStackView()
     private var linkRouteFields = [UUID: NSTextField]()
+    private let siteSearchesBody = NSStackView()
+    private var siteSearchFields = [(
+        field: NSTextField,
+        id: UUID,
+        keyPath: WritableKeyPath<BrowserSiteSearch, String>
+    )]()
     private let shortcutMessage = BrowserNativeControls.label("", size: 12, color: .systemRed, wraps: true)
     private let backupMessage = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
     private var recordingCommandID: BrowserCommandID?
@@ -347,9 +359,148 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 ),
                 link(BrowserStrings.settingsManageSearch, url: BrowserSettingsRoute.searchEnginesURL),
             ]),
+            section(BrowserStrings.settingsSiteSearchTitle, body: siteSearchesBody),
             section(BrowserStrings.settingsTemporaryTabsTitle, rows: automaticArchivalRows()),
             section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
         ])
+        refreshSiteSearches()
+    }
+
+    // MARK: Site search
+
+    /// Site searches: one editable row each, then Add, Restore and Import.
+    private func refreshSiteSearches() {
+        siteSearchFields.removeAll()
+        let detail = BrowserNativeControls.label(
+            BrowserStrings.settingsSiteSearchDetail,
+            size: 12,
+            color: .secondaryLabelColor,
+            wraps: true
+        )
+        let add = BrowserActionButton(BrowserStrings.settingsSiteSearchAdd) { [weak self] in self?.addSiteSearch() }
+        add.setAccessibilityIdentifier("browser.settings.site-search.add")
+        let restore = BrowserActionButton(BrowserStrings.settingsSiteSearchRestoreDefaults) { [weak self] in
+            guard let self else { return }
+            let current = preferences.siteSearches
+            preferences.siteSearches = current + BrowserSiteSearch.arcDefaults.filter { site in
+                !current
+                    .contains { $0.normalizedKeyword == site.normalizedKeyword || $0.sameSite(as: site.urlTemplate) }
+            }
+            refreshSiteSearches()
+        }
+        restore.setAccessibilityIdentifier("browser.settings.site-search.restore")
+        let importButton = NSPopUpButton(frame: .zero, pullsDown: true)
+        importButton.addItem(withTitle: BrowserStrings.settingsSiteSearchImport)
+        for source in BrowserBookmarkImportSource.allCases where source != .safari {
+            importButton.addItem(withTitle: source.browserName)
+            importButton.lastItem?.representedObject = source.rawValue
+            importButton.lastItem?.target = self
+            importButton.lastItem?.action = #selector(importSiteSearches(_:))
+        }
+        importButton.setAccessibilityIdentifier("browser.settings.site-search.import")
+        replaceRows(
+            [BrowserNativeControls.padded(detail, vertical: 8)]
+                + preferences.siteSearches.map(siteSearchRow)
+                + [BrowserNativeControls.padded(
+                    BrowserNativeControls.stack([add, restore, importButton], orientation: .horizontal, spacing: 8),
+                    vertical: 8
+                )],
+            in: siteSearchesBody
+        )
+    }
+
+    private func addSiteSearch() {
+        preferences.siteSearches.append(BrowserSiteSearch(name: "", keyword: "", urlTemplate: ""))
+        refreshSiteSearches()
+        if let id = preferences.siteSearches.last?.id,
+           let field = siteSearchFields.first(where: { $0.id == id })?.field
+        {
+            view.window?.makeFirstResponder(field)
+        }
+    }
+
+    @objc private func importSiteSearches(_ sender: NSMenuItem) {
+        guard let source = (sender.representedObject as? String).flatMap(BrowserBookmarkImportSource.init) else {
+            return
+        }
+        let message: String
+        if let imported = BrowserSiteSearchImport.load(from: source) {
+            preferences.siteSearches = BrowserSiteSearchImport.merge(imported, into: preferences.siteSearches)
+            refreshSiteSearches()
+            message = imported.isEmpty
+                ? BrowserStrings.settingsSiteSearchImportNothing
+                : BrowserStrings.settingsSiteSearchImportResult(imported.count)
+        } else {
+            message = BrowserStrings.settingsSiteSearchImportMissing
+        }
+        let alert = NSAlert()
+        alert.messageText = BrowserStrings.settingsSiteSearchTitle
+        alert.informativeText = message
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    private func siteSearchRow(_ site: BrowserSiteSearch) -> NSView {
+        let id = site.id
+        func field(
+            _ value: String,
+            placeholder: String,
+            width: CGFloat,
+            keyPath: WritableKeyPath<BrowserSiteSearch, String>,
+            identifier: String
+        ) -> NSTextField {
+            let field = NSTextField(string: value)
+            field.placeholderString = placeholder
+            field.delegate = self
+            field.lineBreakMode = .byTruncatingTail
+            field.cell?.usesSingleLineMode = true
+            field.widthAnchor.constraint(greaterThanOrEqualToConstant: width).isActive = true
+            field.setAccessibilityIdentifier("browser.settings.site-search.\(identifier)")
+            siteSearchFields.append((field, id, keyPath))
+            return field
+        }
+        let name = field(
+            site.name,
+            placeholder: BrowserStrings.settingsSiteSearchName,
+            width: 110,
+            keyPath: \.name,
+            identifier: "name"
+        )
+        let keyword = field(
+            site.keyword,
+            placeholder: BrowserStrings.settingsSiteSearchKeyword,
+            width: 100,
+            keyPath: \.keyword,
+            identifier: "keyword"
+        )
+        let url = field(
+            site.urlTemplate,
+            placeholder: BrowserStrings.settingsSiteSearchURL,
+            width: 200,
+            keyPath: \.urlTemplate,
+            identifier: "url"
+        )
+        name.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        keyword.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        url.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let remove = BrowserActionButton("") { [weak self] in
+            self?.preferences.siteSearches.removeAll { $0.id == id }
+            self?.refreshSiteSearches()
+        }
+        remove.image = NSImage(
+            systemSymbolName: "minus.circle",
+            accessibilityDescription: BrowserStrings.settingsSiteSearchRemove
+        )
+        remove.isBordered = false
+        remove.toolTip = BrowserStrings.settingsSiteSearchRemove
+        remove.setAccessibilityIdentifier("browser.settings.site-search.remove")
+        return BrowserNativeControls.padded(
+            BrowserNativeControls.stack([name, keyword, url, remove], orientation: .horizontal, spacing: 8),
+            vertical: 4
+        )
     }
 
     /// Links pane: the small window, Peek and link rules.

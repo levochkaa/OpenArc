@@ -803,7 +803,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
     }
 
     private func loadChromiumImportItems(from source: BrowserBookmarkImportSource) -> ImportItems {
-        let bookmarkURLs = chromiumSourceBookmarkURLs(for: source)
+        let bookmarkURLs = source.chromiumProfileFiles(named: "Bookmarks", fileManager: fileManager)
         guard !bookmarkURLs.isEmpty else {
             return ImportItems(sourceWasAvailable: false, items: [])
         }
@@ -812,55 +812,6 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
             chromiumImportItems(fromBookmarksURL: bookmarkURL)
         }
         return ImportItems(sourceWasAvailable: true, items: items)
-    }
-
-    private func chromiumSourceBookmarkURLs(for source: BrowserBookmarkImportSource) -> [URL] {
-        guard let applicationSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first
-        else {
-            return []
-        }
-
-        let userDataURL: URL
-        switch source {
-        case .arc:
-            userDataURL = applicationSupportURL
-                .appendingPathComponent("Arc", isDirectory: true)
-                .appendingPathComponent("User Data", isDirectory: true)
-        case .dia:
-            userDataURL = applicationSupportURL
-                .appendingPathComponent("Dia", isDirectory: true)
-                .appendingPathComponent("User Data", isDirectory: true)
-        case .chrome:
-            userDataURL = applicationSupportURL
-                .appendingPathComponent("Google", isDirectory: true)
-                .appendingPathComponent("Chrome", isDirectory: true)
-        case .safari:
-            return []
-        }
-
-        guard let profileURLs = try? fileManager.contentsOfDirectory(
-            at: userDataURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-
-        return profileURLs
-            .filter { profileURL in
-                guard
-                    let values = try? profileURL.resourceValues(forKeys: [.isDirectoryKey]),
-                    values.isDirectory == true
-                else {
-                    return false
-                }
-
-                let name = profileURL.lastPathComponent
-                return name == "Default" || name.hasPrefix("Profile ") || name == "Guest Profile"
-            }
-            .map { $0.appendingPathComponent("Bookmarks", isDirectory: false) }
-            .filter { fileManager.fileExists(atPath: $0.path) }
     }
 
     private func chromiumImportItems(fromBookmarksURL bookmarkURL: URL) -> [BrowserBookmarkImportItem] {
@@ -1199,5 +1150,60 @@ private extension Data {
                 append(contentsOf: buffer)
             }
         }
+    }
+}
+
+// MARK: - BrowserBookmarkImportSource + Chromium profiles
+
+extension BrowserBookmarkImportSource {
+    /// A file of each Chromium profile of the browser (`Default`, `Profile N`,
+    /// `Guest Profile`) that exists; Safari has none.
+    func chromiumProfileFiles(named fileName: String, fileManager: FileManager = .default) -> [URL] {
+        guard let applicationSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first
+        else {
+            return []
+        }
+
+        let userDataURL: URL
+        switch self {
+        case .arc:
+            userDataURL = applicationSupportURL
+                .appendingPathComponent("Arc", isDirectory: true)
+                .appendingPathComponent("User Data", isDirectory: true)
+        case .dia:
+            userDataURL = applicationSupportURL
+                .appendingPathComponent("Dia", isDirectory: true)
+                .appendingPathComponent("User Data", isDirectory: true)
+        case .chrome:
+            userDataURL = applicationSupportURL
+                .appendingPathComponent("Google", isDirectory: true)
+                .appendingPathComponent("Chrome", isDirectory: true)
+        case .safari:
+            return []
+        }
+
+        guard let profileURLs = try? fileManager.contentsOfDirectory(
+            at: userDataURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return profileURLs
+            .filter { profileURL in
+                guard
+                    let values = try? profileURL.resourceValues(forKeys: [.isDirectoryKey]),
+                    values.isDirectory == true
+                else {
+                    return false
+                }
+
+                let name = profileURL.lastPathComponent
+                return name == "Default" || name.hasPrefix("Profile ") || name == "Guest Profile"
+            }
+            .map { $0.appendingPathComponent(fileName, isDirectory: false) }
+            .filter { fileManager.fileExists(atPath: $0.path) }
     }
 }

@@ -293,6 +293,9 @@ enum BrowserWindowMode: Equatable {
         aiSearchProviderProvider: { [weak self] in
             self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
         },
+        siteSearchesProvider: { [weak self] in
+            self?.userPreferencesStore.siteSearches ?? []
+        },
         submitHandler: { [weak self] resolvedURLString in
             self?.openResolvedSelectionInNewTab(resolvedURLString)
         },
@@ -315,6 +318,9 @@ enum BrowserWindowMode: Equatable {
         },
         aiSearchProviderProvider: { [weak self] in
             self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
+        },
+        siteSearchesProvider: { [weak self] in
+            self?.userPreferencesStore.siteSearches ?? []
         },
         submitHandler: { [weak self] resolvedURLString in
             self?.navigateSelectedTab(toURLString: resolvedURLString)

@@ -13,6 +13,9 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         addSubview(panel)
         panel.contentView.addSubview(symbol)
         panel.contentView.addSubview(queryField)
+        panel.contentView.addSubview(siteChip)
+        panel.contentView.addSubview(siteHint)
+        panel.contentView.addSubview(siteHintKey)
         panel.contentView.addSubview(divider)
         panel.contentView.addSubview(scrollView)
         symbol.imageScaling = .scaleProportionallyUpOrDown
@@ -22,6 +25,25 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         queryField.placeholderString = BrowserStrings.commandBarPlaceholder
         queryField.setAccessibilityLabel(BrowserStrings.commandBarPlaceholder)
         queryField.setAccessibilityIdentifier("browser.command.query")
+        siteChipLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        siteChipLabel.textColor = .white
+        siteChipLabel.alignment = .center
+        siteChip.addSubview(siteChipLabel)
+        siteChip.setAccessibilityElement(true)
+        siteChip.setAccessibilityRole(.staticText)
+        siteChip.setAccessibilityIdentifier("browser.command.site-search")
+        siteHint.font = .systemFont(ofSize: 13, weight: .medium)
+        siteHint.textColor = BrowserChromeColors.secondaryText
+        siteHint.alignment = .right
+        siteHint.lineBreakMode = .byTruncatingTail
+        siteHint.setAccessibilityIdentifier("browser.command.site-search-hint")
+        siteHintKeyLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        siteHintKeyLabel.textColor = BrowserChromeColors.secondaryText
+        siteHintKeyLabel.alignment = .center
+        siteHintKey.cornerRadius = 5
+        siteHintKey.fillColor = BrowserCommandSuggestionNSView.badgeFill
+        siteHintKey.addSubview(siteHintKeyLabel)
+        siteHintKey.setAccessibilityElement(false)
         divider.fillColor = BrowserChromeColors.commandBarPanelBorder
         divider.strokeWidth = 0
         scrollView.drawsBackground = false
@@ -99,7 +121,8 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             availableSize: bounds.size,
             style: style,
             displayText: model.previewDisplayText ?? model.query,
-            suggestionCount: displayedSuggestions.count
+            suggestionCount: displayedSuggestions.count,
+            extraWidth: siteSearchWidth()
         )
         panel.frame = geometry.panelFrame
         let outer = BrowserChromeLayout.commandBarOuterPadding
@@ -111,11 +134,39 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             width: BrowserChromeLayout.commandBarSymbolWidth,
             height: style.symbolSize
         )
-        let queryX = symbol.frame.maxX + BrowserChromeLayout.commandBarRowContentSpacing
+        let spacing = BrowserChromeLayout.commandBarRowContentSpacing
+        var queryX = symbol.frame.maxX + spacing
+        if !siteChip.isHidden {
+            let height = style.fontSize > 16 ? 24.0 : 20.0
+            let width = ceil(siteChipLabel.attributedStringValue.size().width) + 20
+            siteChip.frame = NSRect(x: queryX, y: outer + (fieldHeight - height) / 2, width: width, height: height)
+            siteChip.cornerRadius = height / 2
+            siteChipLabel.frame = NSRect(x: 0, y: (height - 17) / 2, width: width, height: 17)
+            queryX = siteChip.frame.maxX + 6
+        }
+        var queryMaxX = geometry.panelWidth - horizontal
+        if !siteHint.isHidden {
+            let keyWidth = ceil(siteHintKeyLabel.attributedStringValue.size().width) + 12
+            siteHintKey.frame = NSRect(
+                x: queryMaxX - keyWidth,
+                y: outer + (fieldHeight - 20) / 2,
+                width: keyWidth,
+                height: 20
+            )
+            siteHintKeyLabel.frame = NSRect(x: 0, y: 3, width: keyWidth, height: 14)
+            let hintWidth = min(ceil(siteHint.attributedStringValue.size().width) + 4, geometry.panelWidth / 3)
+            siteHint.frame = NSRect(
+                x: siteHintKey.frame.minX - 6 - hintWidth,
+                y: outer + (fieldHeight - 17) / 2,
+                width: hintWidth,
+                height: 17
+            )
+            queryMaxX = siteHint.frame.minX - spacing
+        }
         queryField.frame = NSRect(
             x: queryX,
             y: outer + (fieldHeight - 28) / 2 + style.textFieldVerticalOffset,
-            width: max(geometry.panelWidth - queryX - horizontal, 0),
+            width: max(queryMaxX - queryX, 0),
             height: 28
         )
         divider.frame = NSRect(
@@ -186,6 +237,12 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
 
     func control(_: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
+        case #selector(NSResponder.insertTab(_:)):
+            // Site search; otherwise Tab keeps its usual meaning.
+            return model.beginSiteSearch()
+        case #selector(NSResponder.deleteBackward(_:)):
+            guard textView.string.isEmpty, model.activeSiteSearch != nil else { return false }
+            return model.endSiteSearch(restoringQuery: true)
         case #selector(NSResponder.moveUp(_:)): model.moveSelection(by: -1)
             return true
         case #selector(NSResponder.moveDown(_:)): model.moveSelection(by: 1)
@@ -199,7 +256,10 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
             model.submitSelection()
             return true
-        case #selector(NSResponder.cancelOperation(_:)): model.dismiss()
+        case #selector(NSResponder.cancelOperation(_:)):
+            if !model.endSiteSearch(restoringQuery: false) {
+                model.dismiss()
+            }
             return true
         default: return false
         }
@@ -212,6 +272,11 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     private var observations = Set<AnyCancellable>()
     private let panel = BrowserNativeMaterialPanel()
     private let symbol = NSImageView()
+    private let siteChip = BrowserNativeSurface()
+    private let siteChipLabel = NSTextField(labelWithString: "")
+    private let siteHint = NSTextField(labelWithString: "")
+    private let siteHintKey = BrowserNativeSurface()
+    private let siteHintKeyLabel = NSTextField(labelWithString: "Tab")
     private let divider = BrowserNativeSurface()
     private let scrollView = NSScrollView()
     private let table = BrowserCommandSuggestionTableView()
@@ -229,6 +294,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         panel.cornerRadius = style.cornerRadius
         divider.isHidden = displayedSuggestions.isEmpty
         scrollView.isHidden = displayedSuggestions.isEmpty
+        refreshSiteSearch()
         queryField.syncCommandPresentation(
             text: model.query,
             previewDisplayText: model.previewDisplayText,
@@ -276,12 +342,49 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         }
     }
 
+    /// The chip of the searched site, or the offer to search one with Tab.
+    private func refreshSiteSearch() {
+        let site = model.activeSiteSearch
+        siteChip.isHidden = site == nil
+        if let site {
+            siteChipLabel.stringValue = site.displayName
+            siteChipLabel.font = .systemFont(ofSize: style.fontSize > 16 ? 13 : 11, weight: .semibold)
+            siteChip.fillColor = site.chipColor
+            siteChip.setAccessibilityLabel(BrowserStrings.commandBarSiteSearchScope(site.displayName))
+        }
+        let placeholder = site == nil
+            ? BrowserStrings.commandBarPlaceholder
+            : BrowserStrings.commandBarSiteSearchPlaceholder
+        if queryField.placeholderString != placeholder {
+            queryField.placeholderString = placeholder
+            queryField.setAccessibilityLabel(placeholder)
+        }
+        let candidate = model.siteSearchCandidate
+        siteHint.isHidden = candidate == nil
+        siteHintKey.isHidden = candidate == nil
+        if let candidate {
+            siteHint.stringValue = BrowserStrings.commandBarSiteSearchOffer(candidate.displayName)
+        }
+    }
+
+    private func siteSearchWidth() -> CGFloat {
+        if let site = model.activeSiteSearch {
+            return BrowserCommandBarTextWidthMeasurer.width(for: site.displayName, fontSize: 13) + 26
+        }
+        if let candidate = model.siteSearchCandidate {
+            let offer = BrowserStrings.commandBarSiteSearchOffer(candidate.displayName)
+            return BrowserCommandBarTextWidthMeasurer.width(for: offer, fontSize: 13) + 56
+        }
+        return 0
+    }
+
     private func configureRow(_ view: BrowserCommandSuggestionNSView, at index: Int) {
         let suggestion = displayedSuggestions[index]
         view.update(
             suggestion: suggestion,
             selected: model.selectedSuggestionID == suggestion.id,
-            favicon: faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion))
+            favicon: faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion)),
+            selectionColor: model.activeSiteSearch?.chipColor
         )
         view.onPress = { [weak model] in model?.submitSuggestion(id: suggestion.id) }
     }
@@ -323,4 +426,21 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
 /// Arrow keys and typing stay with the command field, including after clicking row spacing.
 private final class BrowserCommandSuggestionTableView: NSTableView {
     override var acceptsFirstResponder: Bool { false }
+}
+
+// MARK: - BrowserSiteSearch + chip color
+
+extension BrowserSiteSearch {
+    /// The site's color, or the accent color for a site without one.
+    var chipColor: NSColor {
+        guard let colorHex, colorHex.count == 6, let value = UInt32(colorHex, radix: 16) else {
+            return .controlAccentColor
+        }
+        return NSColor(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
+        )
+    }
 }

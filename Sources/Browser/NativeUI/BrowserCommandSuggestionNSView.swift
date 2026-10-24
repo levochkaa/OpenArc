@@ -16,14 +16,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         badgeLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         badgeLabel.textColor = BrowserChromeColors.secondaryText
         badge.cornerRadius = 10
-        badge.fillColor = NSColor(name: nil) { appearance in
-            var resolved = NSColor.clear
-            appearance.performAsCurrentDrawingAppearance {
-                let color = BrowserChromeColors.commandBarPanelBorder.usingColorSpace(.sRGB) ?? .clear
-                resolved = color.withAlphaComponent(color.alphaComponent * 0.55)
-            }
-            return resolved
-        }
+        badge.fillColor = Self.badgeFill
         badge.addSubview(badgeLabel)
         icon.imageScaling = .scaleProportionallyUpOrDown
         for view in [icon, primary, detail, badge] {
@@ -38,6 +31,16 @@ final class BrowserCommandSuggestionNSView: NSButton {
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     // MARK: Internal
+
+    /// The fill of shortcut badges and key caps in the command bar.
+    static let badgeFill = NSColor(name: nil) { appearance in
+        var resolved = NSColor.clear
+        appearance.performAsCurrentDrawingAppearance {
+            let color = BrowserChromeColors.commandBarPanelBorder.usingColorSpace(.sRGB) ?? .clear
+            resolved = color.withAlphaComponent(color.alphaComponent * 0.55)
+        }
+        return resolved
+    }
 
     override var isFlipped: Bool { true }
 
@@ -71,7 +74,10 @@ final class BrowserCommandSuggestionNSView: NSButton {
     }
 
     override func draw(_: NSRect) {
-        if isSelectedSuggestion || hovered {
+        if isSelectedSuggestion, let selectionColor {
+            selectionColor.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12).fill()
+        } else if isSelectedSuggestion || hovered {
             BrowserChromeColors.commandBarSuggestionSelected.setFill()
             NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12).fill()
         }
@@ -109,8 +115,19 @@ final class BrowserCommandSuggestionNSView: NSButton {
         detail.isHidden = !hasDetail
     }
 
-    func update(suggestion: BrowserCommandSuggestion, selected: Bool, favicon: NSImage?) {
+    /// `selectionColor` fills the selected row, white on it, for
+    /// a site search.
+    func update(
+        suggestion: BrowserCommandSuggestion,
+        selected: Bool,
+        favicon: NSImage?,
+        selectionColor: NSColor? = nil
+    ) {
         isSelectedSuggestion = selected
+        self.selectionColor = selectionColor
+        let tinted = selected && selectionColor != nil
+        primary.textColor = tinted ? .white : BrowserChromeColors.primaryText
+        detail.textColor = tinted ? NSColor.white.withAlphaComponent(0.75) : BrowserChromeColors.secondaryText
         title = suggestion.displayText
         primary.stringValue = suggestion.displayText
         detail.stringValue = suggestion.detailText ?? ""
@@ -122,7 +139,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         } else {
             icon.image = NSImage(systemSymbolName: suggestion.systemImageName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: BrowserChromeLayout.commandBarSymbolSize, weight: .semibold))
-            icon.contentTintColor = BrowserChromeColors.primaryText
+            icon.contentTintColor = tinted ? .white : BrowserChromeColors.primaryText
         }
         setAccessibilityLabel(suggestion.displayText)
         setAccessibilityHelp(suggestion.detailText)
@@ -140,6 +157,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
     private let badgeLabel = NSTextField(labelWithString: "")
     private var hovered = false
     private var isSelectedSuggestion = false
+    private var selectionColor: NSColor?
     private var tracking: NSTrackingArea?
 
     private func textWidth(_ label: NSTextField) -> CGFloat {

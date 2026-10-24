@@ -303,6 +303,66 @@ enum BrowserStrings {
         comment: "Placeholder shown in the command bar search field."
     )
 
+    static let commandBarSiteSearchPlaceholder = NSLocalizedString(
+        "browser.command_bar.site_search.placeholder",
+        comment: "Placeholder of the command bar field while it searches one site."
+    )
+
+    static let settingsSiteSearchTitle = NSLocalizedString(
+        "browser.settings.site_search",
+        comment: "Settings section of sites the command bar can search with Tab."
+    )
+
+    static let settingsSiteSearchDetail = NSLocalizedString(
+        "browser.settings.site_search.detail",
+        comment: "Settings detail explaining site search shortcuts in the command bar."
+    )
+
+    static let settingsSiteSearchName = NSLocalizedString(
+        "browser.settings.site_search.name",
+        comment: "Placeholder of a site search's name field."
+    )
+
+    static let settingsSiteSearchKeyword = NSLocalizedString(
+        "browser.settings.site_search.keyword",
+        comment: "Placeholder of a site search's shortcut field."
+    )
+
+    static let settingsSiteSearchURL = NSLocalizedString(
+        "browser.settings.site_search.url",
+        comment: "Placeholder of a site search's address field; %s stands for the query."
+    )
+
+    static let settingsSiteSearchAdd = NSLocalizedString(
+        "browser.settings.site_search.add",
+        comment: "Button that adds a site search."
+    )
+
+    static let settingsSiteSearchRemove = NSLocalizedString(
+        "browser.settings.site_search.remove",
+        comment: "Accessibility label of the button that removes a site search."
+    )
+
+    static let settingsSiteSearchRestoreDefaults = NSLocalizedString(
+        "browser.settings.site_search.restore_defaults",
+        comment: "Button that adds back the built-in site searches that were removed."
+    )
+
+    static let settingsSiteSearchImport = NSLocalizedString(
+        "browser.settings.site_search.import",
+        comment: "Menu button that imports site searches from another browser."
+    )
+
+    static let settingsSiteSearchImportNothing = NSLocalizedString(
+        "browser.settings.site_search.import.nothing",
+        comment: "Alert after a site search import that found no site searches."
+    )
+
+    static let settingsSiteSearchImportMissing = NSLocalizedString(
+        "browser.settings.site_search.import.missing",
+        comment: "Alert when the browser to import site searches from has no profile on this Mac."
+    )
+
     static let bookmarksAddCurrentPage = NSLocalizedString(
         "browser.bookmarks.add_current_page",
         comment: "Tooltip for adding the selected page to bookmarks."
@@ -2137,6 +2197,36 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front."
     )
+
+    static func commandBarSiteSearchOffer(_ siteName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.command_bar.site_search.offer",
+                comment: "Hint at the end of the command bar field, before a Tab key cap. %@ is a site name."
+            ),
+            siteName
+        )
+    }
+
+    static func commandBarSiteSearchScope(_ siteName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.command_bar.site_search.scope",
+                comment: "Accessibility label of the chip of the site the command bar searches. %@ is a site name."
+            ),
+            siteName
+        )
+    }
+
+    static func settingsSiteSearchImportResult(_ count: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.settings.site_search.import.result",
+                comment: "Alert after importing site searches. %d is how many were imported."
+            ),
+            count
+        )
+    }
 
     /// A rule's Space that this window does not have: closed in another profile or deleted.
     static func settingsLinkRouteUnavailableSpace(_ title: String?, profileName: String?) -> String {

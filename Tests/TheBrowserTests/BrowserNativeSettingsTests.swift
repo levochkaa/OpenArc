@@ -255,6 +255,56 @@ import Testing
         #expect(find("browser.settings.link-routes.remove", in: controller.view) == nil)
     }
 
+    @Test func siteSearchesAreAddedEditedRestoredAndRemovedInGeneral() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let preferences = fixture.model.userPreferencesStore
+        preferences.siteSearches = []
+        let controller = fixture.controller(.general)
+        let add = try #require(find("browser.settings.site-search.add", in: controller.view) as? BrowserActionButton)
+        add.performClick(nil)
+        let added = try #require(preferences.siteSearches.first)
+        for (identifier, value) in [
+            ("name", "Google Translate"),
+            ("keyword", "@t"),
+            ("url", "https://translate.google.com/?q=%s"),
+        ] {
+            let field = try #require(find(
+                "browser.settings.site-search.\(identifier)",
+                in: controller.view
+            ) as? NSTextField)
+            field.stringValue = value
+            controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        }
+        #expect(preferences.siteSearches == [BrowserSiteSearch(
+            id: added.id,
+            name: "Google Translate",
+            keyword: "@t",
+            urlTemplate: "https://translate.google.com/?q=%s"
+        )])
+
+        let restore = try #require(find(
+            "browser.settings.site-search.restore",
+            in: controller.view
+        ) as? BrowserActionButton)
+        restore.performClick(nil)
+        #expect(preferences.siteSearches.count == BrowserSiteSearch.arcDefaults.count + 1)
+        restore.performClick(nil)
+        #expect(preferences.siteSearches.count == BrowserSiteSearch.arcDefaults.count + 1)
+
+        let remove = try #require(find(
+            "browser.settings.site-search.remove",
+            in: controller.view
+        ) as? BrowserActionButton)
+        remove.performClick(nil)
+        #expect(preferences.siteSearches == BrowserSiteSearch.arcDefaults)
+        let importMenu = try #require(find(
+            "browser.settings.site-search.import",
+            in: controller.view
+        ) as? NSPopUpButton)
+        #expect(importMenu.itemTitles.dropFirst() == ["Arc", "Dia", "Google Chrome"])
+    }
+
     // MARK: Private
 
     @MainActor private struct Fixture {

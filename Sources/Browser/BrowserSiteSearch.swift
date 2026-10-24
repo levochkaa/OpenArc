@@ -1,0 +1,324 @@
+import Foundation
+import GRDB
+
+// MARK: - BrowserSiteSearch
+
+/// Site search: typing the start of a keyword in the command bar offers
+/// "Search <name>", Tab scopes the bar to that site and Return opens the
+/// site's own results. Keywords are Chromium's (`github.com`, or a shortcut
+/// such as `@y`), and the address uses `%s` for the query, as in Chrome's
+/// search engine settings.
+struct BrowserSiteSearch: Codable, Equatable, Identifiable, Sendable {
+    // MARK: Lifecycle
+
+    init(id: UUID = UUID(), name: String, keyword: String, urlTemplate: String, colorHex: String? = nil) {
+        self.id = id
+        self.name = name
+        self.keyword = keyword
+        self.urlTemplate = urlTemplate
+        self.colorHex = colorHex
+    }
+
+    // MARK: Internal
+
+    static let queryPlaceholder = "%s"
+
+    /// The site searches seeded into a new profile, with the chip
+    /// colors shown for them.
+    static let arcDefaults: [BrowserSiteSearch] = [
+        .init(
+            name: "Google Drive",
+            keyword: "drive.google.com",
+            urlTemplate: "https://drive.google.com/drive/search?q=%s",
+            colorHex: "00A96B"
+        ),
+        .init(
+            name: "Gmail",
+            keyword: "mail.google.com",
+            urlTemplate: "https://mail.google.com/mail/ca/u/0/#apps/%s",
+            colorHex: "DE5C47"
+        ),
+        .init(
+            name: "Google Maps",
+            keyword: "maps.google.com",
+            urlTemplate: "https://www.google.com/maps/search/%s",
+            colorHex: "FCC600"
+        ),
+        .init(
+            name: "Google Calendar",
+            keyword: "calendar.google.com",
+            urlTemplate: "https://calendar.google.com/calendar/u/0/r/search?q=%s",
+            colorHex: "AD43BD"
+        ),
+        .init(
+            name: "Google Docs",
+            keyword: "docs.google.com",
+            urlTemplate: "https://docs.google.com/document/u/0/?q=%s",
+            colorHex: "519AF6"
+        ),
+        .init(
+            name: "Dropbox",
+            keyword: "dropbox.com",
+            urlTemplate: "https://www.dropbox.com/search/personal?&query=%s",
+            colorHex: "0061FE"
+        ),
+        .init(
+            name: "Amazon",
+            keyword: "amazon.com",
+            urlTemplate: "https://www.amazon.com/s?k=%s",
+            colorHex: "FFA900"
+        ),
+        .init(
+            name: "GitHub",
+            keyword: "github.com",
+            urlTemplate: "https://github.com/search?q=%s",
+            colorHex: "8859D1"
+        ),
+        .init(
+            name: "Figma",
+            keyword: "figma.com",
+            urlTemplate: "https://www.figma.com/files/search?q=%s",
+            colorHex: "F66526"
+        ),
+        .init(name: "X", keyword: "x.com", urlTemplate: "https://x.com/search?q=%s", colorHex: "000000"),
+        .init(
+            name: "YouTube",
+            keyword: "youtube.com",
+            urlTemplate: "https://www.youtube.com/results?search_query=%s",
+            colorHex: "FF2600"
+        ),
+        .init(
+            name: "Wikipedia",
+            keyword: "wikipedia.org",
+            urlTemplate: "https://wikipedia.org/w/index.php?search=%s",
+            colorHex: "FFB300"
+        ),
+        .init(
+            name: "Reddit",
+            keyword: "reddit.com",
+            urlTemplate: "https://www.reddit.com/search/?q=%s",
+            colorHex: "FF5D00"
+        ),
+        .init(
+            name: "SoundCloud",
+            keyword: "soundcloud.com",
+            urlTemplate: "https://soundcloud.com/search?q=%s",
+            colorHex: "FB6919"
+        ),
+        .init(
+            name: "Asana",
+            keyword: "asana.com",
+            urlTemplate: "https://app.asana.com/0/search?q=%s",
+            colorHex: "F06A6A"
+        ),
+        .init(
+            name: "LinkedIn",
+            keyword: "linkedin.com",
+            urlTemplate: "https://linkedin.com/search/results/all/?keywords=%s",
+            colorHex: "007CCD"
+        ),
+        .init(
+            name: "Apple Music",
+            keyword: "music.apple.com",
+            urlTemplate: "https://music.apple.com/us/search?term=%s",
+            colorHex: "FD4455"
+        ),
+        .init(
+            name: "Spotify",
+            keyword: "spotify.com",
+            urlTemplate: "https://open.spotify.com/search/%s",
+            colorHex: "1DB954"
+        ),
+    ]
+
+    var id: UUID
+    var name: String
+    var keyword: String
+    var urlTemplate: String
+    /// Six hex digits; nil uses the accent color.
+    var colorHex: String?
+
+    var normalizedKeyword: String {
+        keyword.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    var displayName: String {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? normalizedKeyword : name
+    }
+
+    /// A keyword without spaces and an http(s) address with the placeholder.
+    var isUsable: Bool {
+        let keyword = normalizedKeyword
+        return !keyword.isEmpty && !keyword.contains(where: \.isWhitespace)
+            && searchURLString(for: "test") != nil
+    }
+
+    /// The first site whose keyword is the typed text, else the shortest
+    /// keyword that starts with at least two typed characters (`git` offers
+    /// GitHub). Text with spaces never matches: Tab is the only trigger.
+    static func match(for query: String, in searches: [BrowserSiteSearch]) -> BrowserSiteSearch? {
+        let typed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !typed.isEmpty, !typed.contains(where: \.isWhitespace) else { return nil }
+        let usable = searches.filter(\.isUsable)
+        if let exact = usable.first(where: { $0.normalizedKeyword == typed }) {
+            return exact
+        }
+        guard typed.count >= 2 else { return nil }
+        return usable
+            .filter { $0.normalizedKeyword.hasPrefix(typed) }
+            .min { $0.normalizedKeyword.count < $1.normalizedKeyword.count }
+    }
+
+    /// Chromium's encoding: `+` for spaces in the query string, `%20` in the
+    /// path or fragment (Gmail's `#apps/%s`).
+    func searchURLString(for query: String) -> String? {
+        let template = urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = template.range(of: Self.queryPlaceholder) else { return nil }
+        let prefix = template[..<range.lowerBound]
+        let isInQuery = prefix.contains("?") && !prefix.contains("#")
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        allowed.formIntersection(CharacterSet(charactersIn: Unicode.Scalar(0)...Unicode.Scalar(127)))
+        let spaceless = query.split(separator: " ", omittingEmptySubsequences: false).map {
+            String($0).addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+        }
+        let encoded = spaceless.joined(separator: isInQuery ? "+" : "%20")
+        let urlString = template.replacingOccurrences(of: Self.queryPlaceholder, with: encoded)
+        guard let url = URL(string: urlString), let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http", url.host?.isEmpty == false
+        else { return nil }
+        return urlString
+    }
+}
+
+// MARK: - BrowserSiteSearchImport
+
+/// Site searches from another Chromium browser's `Web Data`: the active
+/// entries the user or the browser added, without the default search engines
+/// and Chrome's `@tabs` / `@history` / `@bookmarks` shortcuts.
+enum BrowserSiteSearchImport {
+    /// Every profile of the source, Default first. The database is copied
+    /// first, since a running Chromium keeps it locked.
+    static func load(
+        from source: BrowserBookmarkImportSource,
+        fileManager: FileManager = .default
+    ) -> [BrowserSiteSearch]? {
+        func rank(_ file: URL) -> Int {
+            file.deletingLastPathComponent().lastPathComponent == "Default" ? 0 : 1
+        }
+        let files = source.chromiumProfileFiles(named: "Web Data", fileManager: fileManager)
+            .sorted { rank($0) < rank($1) }
+        guard !files.isEmpty else { return nil }
+        var result = [BrowserSiteSearch]()
+        for file in files {
+            for search in (try? load(webDataURL: file, fileManager: fileManager)) ?? []
+                where !result.contains(where: { $0.normalizedKeyword == search.normalizedKeyword })
+            {
+                result.append(search)
+            }
+        }
+        return result
+    }
+
+    static func load(webDataURL: URL, fileManager: FileManager = .default) throws -> [BrowserSiteSearch] {
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("site-search-import-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: directory) }
+        let copy = directory.appendingPathComponent("Web Data")
+        try fileManager.copyItem(at: webDataURL, to: copy)
+        var configuration = Configuration()
+        configuration.readonly = true
+        let queue = try DatabaseQueue(path: copy.path, configuration: configuration)
+        defer { try? queue.close() }
+        return try queue.read { db in
+            let columns = try Set(db.columns(in: "keywords").map(\.name))
+            var conditions = ["prepopulate_id = 0"]
+            if columns.contains("is_active") {
+                conditions.append("is_active = 1")
+            }
+            if columns.contains("starter_pack_id") {
+                conditions.append("starter_pack_id = 0")
+            }
+            return try Row.fetchAll(db, sql: """
+            SELECT short_name, keyword, url FROM keywords
+            WHERE \(conditions.joined(separator: " AND "))
+            ORDER BY id
+            """)
+            .compactMap { row in
+                siteSearch(name: row["short_name"], keyword: row["keyword"], url: row["url"])
+            }
+        }
+    }
+
+    /// Chromium's `{searchTerms}` becomes `%s`; its encoding and Google
+    /// parameters are filled or dropped; any other parameter skips the entry.
+    static func siteSearch(name: String?, keyword: String?, url: String?) -> BrowserSiteSearch? {
+        guard let keyword, let url, url.contains("{searchTerms}") else { return nil }
+        var template = url
+            .replacingOccurrences(of: "{searchTerms}", with: BrowserSiteSearch.queryPlaceholder)
+            .replacingOccurrences(of: "{inputEncoding}", with: "UTF-8")
+            .replacingOccurrences(of: "{outputEncoding}", with: "UTF-8")
+            .replacingOccurrences(of: "{google:baseURL}", with: "https://www.google.com/")
+        template = template.replacingOccurrences(
+            of: #"\{google:[^}]*\}"#,
+            with: "",
+            options: .regularExpression
+        )
+        guard !template.contains("{") else { return nil }
+        let search = BrowserSiteSearch(
+            name: name ?? keyword,
+            keyword: keyword,
+            urlTemplate: template,
+            colorHex: BrowserSiteSearch.arcDefaults.first { $0.sameSite(as: template) }?.colorHex
+        )
+        return search.isUsable ? search : nil
+    }
+
+    /// Imported entries replace ones with the same address or keyword, so a
+    /// renamed keyword (`@y` for YouTube) does not leave the old one behind.
+    static func merge(_ imported: [BrowserSiteSearch], into current: [BrowserSiteSearch]) -> [BrowserSiteSearch] {
+        var result = current
+        for search in imported {
+            if let index = result.firstIndex(where: {
+                $0.normalizedKeyword == search.normalizedKeyword || $0.sameSite(as: search.urlTemplate)
+            }) {
+                result[index].name = search.name
+                result[index].keyword = search.keyword
+                result[index].urlTemplate = search.urlTemplate
+                result[index].colorHex = result[index].colorHex ?? search.colorHex
+            } else {
+                result.append(search)
+            }
+        }
+        return result
+    }
+}
+
+extension BrowserSiteSearch {
+    /// The same host without `www.` and the same path, ignoring the query.
+    func sameSite(as template: String) -> Bool {
+        func key(_ string: String) -> String? {
+            guard let components = URLComponents(
+                string: string.replacingOccurrences(of: Self.queryPlaceholder, with: "q")
+            ), let host = components.host?.lowercased() else { return nil }
+            let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            return bareHost + components.path.lowercased()
+        }
+        guard let lhs = key(urlTemplate) else { return false }
+        return lhs == key(template)
+    }
+}
+
+extension BrowserBookmarkImportSource {
+    /// The product name, as listed in Import From.
+    var browserName: String {
+        switch self {
+        case .arc: "Arc"
+        case .dia: "Dia"
+        case .chrome: "Google Chrome"
+        case .safari: "Safari"
+        }
+    }
+}
