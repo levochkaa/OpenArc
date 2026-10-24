@@ -59,6 +59,8 @@ import Foundation
     var peekSpaces: (() -> [BrowserPeekSpace])?
     var onOpenPeekInSpace: ((String, String) -> Void)?
     var onOpenPeekInSplitView: ((String) -> Void)?
+    var onPeekClosedByUser: ((String, Bool) -> Void)?
+    private(set) var peekURLs = [String]()
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
     private(set) var retryCreationRequests = [RetryCreationRequest]()
@@ -105,6 +107,10 @@ import Foundation
     var zoomLevelsByTabID = [String: Double]()
 
     private(set) var regionCaptures = [CGRect]()
+
+    func showPeek(withURLString urlString: String) {
+        peekURLs.append(urlString)
+    }
 
     func showNewLittleWindow() {
         newLittleWindowCount += 1

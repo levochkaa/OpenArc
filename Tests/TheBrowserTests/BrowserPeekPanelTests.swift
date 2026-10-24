@@ -140,6 +140,21 @@ import Testing
         #expect(f.driver.createdTabRequests.last?.urlString == "https://figma.com/file")
     }
 
+    @Test func aClosedPeekReopensWithRestoreLastClosedTab() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.onPeekClosedByUser?("https://peek.example/a", false)
+        #expect(f.model.canRestoreLastClosedTab)
+        #expect(f.model.restoreLastClosedTab())
+        #expect(f.driver.peekURLs == ["https://peek.example/a"])
+
+        f.driver.onPeekClosedByUser?("https://small.example", true)
+        #expect(f.model.restoreLastClosedTab())
+        #expect(f.driver.littleWindowURLs == ["https://small.example"], "A small window reopens as one")
+        f.driver.onPeekClosedByUser?("about:blank", true)
+        #expect(!f.model.canRestoreLastClosedTab, "An empty small window leaves nothing to reopen")
+    }
+
     @Test func newSmallWindowOpensFromTheWindow() {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(f.model.canOpenLittleWindow)

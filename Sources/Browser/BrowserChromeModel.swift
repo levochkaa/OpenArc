@@ -155,6 +155,9 @@ enum BrowserWindowMode: Equatable {
             guard let self, supportsSpaces, canCreateTab else { return [] }
             return spaces.map { BrowserPeekSpace(id: $0.id, title: $0.title, systemImageName: $0.systemImageName) }
         }
+        tabDriver.onPeekClosedByUser = { [weak self] urlString, standalone in
+            self?.registerPeekReopenUndo(urlString: urlString, standalone: standalone)
+        }
         tabDriver.onOpenPeekInSplitView = { [weak self] urlString in
             guard let self, let url = URL(string: urlString), !openURLInSplitView(url) else { return }
             openURLInNewTab(url)
@@ -4431,6 +4434,23 @@ enum BrowserWindowMode: Equatable {
             wasSelectedInSpace: spaces.first { $0.id == tab.spaceID }?.selectedTabID == tab.id,
             creationUndoReference: tabCreationUndoReferences[tab.id]
         )
+    }
+
+    /// Undo for a closed Peek: Undo, or Restore Last Closed Tab, reopens it.
+    private func registerPeekReopenUndo(urlString: String, standalone: Bool) {
+        guard canRegisterTabUndo, !urlString.isEmpty, urlString != "about:blank" else { return }
+        undoManager.registerTabAction(.init(name: BrowserStrings.peekCloseAction) { [weak self] completion in
+            guard let self, canCreateTab else {
+                completion(.cancelled)
+                return
+            }
+            if standalone {
+                tabDriver.showLittleWindow(withURLString: urlString)
+            } else {
+                tabDriver.showPeek(withURLString: urlString)
+            }
+            completion(.committed(inverse: nil))
+        })
     }
 
     private func registerTabCreationUndo(_ reference: TabCreationUndoReference, actionName: String) {

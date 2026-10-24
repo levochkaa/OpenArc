@@ -98,8 +98,10 @@ extension BrowserChromeModel {
 
     /// Restore Last Closed Tab: Undo, when the latest undoable action is
     /// closing a tab, so the restore keeps Undo's fresh sync identity.
+    /// The latest closed tab, or a closed Peek card or small window.
     var canRestoreLastClosedTab: Bool {
-        undoManager.canUndo && undoManager.undoTabActionName == BrowserStrings.tabArchiveAction
+        undoManager.canUndo
+            && [BrowserStrings.tabArchiveAction, BrowserStrings.peekCloseAction].contains(undoManager.undoTabActionName)
     }
 
     @discardableResult func restoreLastClosedTab() -> Bool {

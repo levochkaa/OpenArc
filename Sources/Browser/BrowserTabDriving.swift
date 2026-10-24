@@ -52,6 +52,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     var shouldPeekNavigation: ((String, String) -> Bool)? { get set }
     /// The Spaces a Peek card or small window can open in.
     var peekSpaces: (() -> [BrowserPeekSpace])? { get set }
+    /// The user closed a Peek card, or a small window when true, at this URL.
+    var onPeekClosedByUser: ((String, Bool) -> Void)? { get set }
     /// Open in Split View from a Peek card, with its URL.
     var onOpenPeekInSplitView: ((String) -> Void)? { get set }
     /// Open In from a card or small window: the URL and the chosen Space.
@@ -88,6 +90,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func showDevToolsForActiveTab()
     /// The page in a small window of its own.
     func showLittleWindow(withURLString urlString: String)
+    /// Peek card over the window.
+    func showPeek(withURLString urlString: String)
     /// An empty small window with its address field focused.
     func showNewLittleWindow()
     /// Closes the window's Peek cards and small windows with it.

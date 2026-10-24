@@ -57,6 +57,7 @@ import Foundation
     var peekSpaces: (() -> [BrowserPeekSpace])?
     var onOpenPeekInSpace: ((String, String) -> Void)?
     var onOpenPeekInSplitView: ((String) -> Void)?
+    var onPeekClosedByUser: ((String, Bool) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -150,6 +151,10 @@ import Foundation
         controller.showNewLittleWindow()
     }
 
+    func showPeek(withURLString urlString: String) {
+        controller.showPeek(withURLString: urlString)
+    }
+
     func closePeeks() {
         controller.closeAllPeeks()
     }
@@ -235,6 +240,14 @@ import Foundation
 extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func peekSpaces(for _: BrowserTabController) -> [BrowserPeekSpace] {
         MainActor.assumeIsolated { peekSpaces?() ?? [] }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didClosePeekWithURLString urlString: String,
+        standalone: Bool
+    ) {
+        MainActor.assumeIsolated { onPeekClosedByUser?(urlString, standalone) }
     }
 
     nonisolated func browserTabController(_: BrowserTabController, openPeekURLStringInSplitView urlString: String) {

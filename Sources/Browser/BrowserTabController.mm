@@ -2836,6 +2836,7 @@ struct TabRecord {
 - (void)handlePeekClosed:(CefRefPtr<CefBrowser>)browser session:(int)sessionID;
 - (void)handlePeekAddressChange:(NSString *)urlString session:(int)sessionID;
 - (void)closePeekSession:(int)sessionID;
+- (void)closePeekSessionByUser:(int)sessionID;
 - (BOOL)isPeekSessionStandalone:(int)sessionID;
 - (BOOL)isPeekSessionEditingAddress:(int)sessionID;
 - (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone;
@@ -3763,7 +3764,7 @@ void WatchClickModifiers();
   }
   __weak BrowserTabController *weakSelf = self;
   session.panel.onClose = ^{
-    [weakSelf closePeekSession:sessionID];
+    [weakSelf closePeekSessionByUser:sessionID];
   };
   session.panel.onNavigate = ^(NSString *target) {
     [weakSelf navigatePeekSession:sessionID toURLString:target];
@@ -3858,6 +3859,21 @@ void WatchClickModifiers();
   }
   if (session->_browser) {
     session->_browser->GetHost()->CloseBrowser(true);
+  }
+}
+
+/// Close, Escape, Command-W or a click behind: the window can reopen it.
+- (void)closePeekSessionByUser:(int)sessionID {
+  BrowserPeekSession *session = _peekSessions[@(sessionID)];
+  if (session == nil || session.closing) {
+    return;
+  }
+  NSString *urlString = session.urlString;
+  const BOOL standalone = session.panel.isStandalone;
+  [self closePeekSession:sessionID];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didClosePeekWithURLString:standalone:)]) {
+    [delegate browserTabController:self didClosePeekWithURLString:urlString standalone:standalone];
   }
 }
 
@@ -4901,7 +4917,7 @@ bool BrowserPeekClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
     __weak BrowserTabController *weakController = controller;
     const int sessionID = session_id_;
     dispatch_async(dispatch_get_main_queue(), ^{
-      [weakController closePeekSession:sessionID];
+      [weakController closePeekSessionByUser:sessionID];
     });
     return true;
   }
