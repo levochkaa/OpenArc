@@ -129,6 +129,10 @@ import Foundation
         controller.captureFullPageActiveTabToPasteboard()
     }
 
+    func captureActiveTabRegionToPasteboard(fraction: CGRect) {
+        controller.captureActiveTabRegionToPasteboard(fraction: fraction)
+    }
+
     func pasteAndMatchStyleActiveTab() {
         controller.pasteAndMatchStyleActiveTab()
     }

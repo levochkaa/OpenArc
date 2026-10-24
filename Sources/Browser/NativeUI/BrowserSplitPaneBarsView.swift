@@ -104,6 +104,11 @@ final class BrowserSplitPaneBarsView: NSView {
         }
     }
 
+    /// The page part of a shown pane, below its bar, or nil outside a split.
+    func pageFrame(forTabID tabID: String) -> CGRect? {
+        paneRects[tabID].map { BrowserSplitPaneLayout.webContentFrame(forPaneFrame: $0, flipped: isFlipped) }
+    }
+
     /// The pane that a pane dragged by its grip lands on at `point`, in this
     /// view's coordinates, or nil over the dragged pane itself.
     func paneDropTarget(for tabID: String, at point: NSPoint) -> String? {

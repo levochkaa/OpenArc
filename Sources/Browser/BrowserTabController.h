@@ -158,6 +158,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)setAudioMuted:(BOOL)muted forTabWithID:(NSString *)tabID;
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
 - (void)captureFullPageActiveTabToPasteboard;
+/// Capture: `fraction` is the outlined part of the active page view,
+/// each coordinate from 0 to 1 with y growing downward.
+- (void)captureActiveTabRegionToPasteboard:(CGRect)fraction
+    NS_SWIFT_NAME(captureActiveTabRegionToPasteboard(fraction:));
 - (void)pasteAndMatchStyleActiveTab;
 - (void)printActiveTab;
 - (void)castActiveTab;

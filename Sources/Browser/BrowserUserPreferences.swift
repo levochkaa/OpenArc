@@ -437,6 +437,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case newFolder
     case newSpace
     case captureFullPage
+    case captureArea
     case viewDownloads
     case selectNextTab
     case selectPreviousTab
@@ -606,6 +607,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.newFolder
         case .captureFullPage:
             BrowserCommands.captureFullPage
+        case .captureArea:
+            BrowserCommands.captureArea
         case .selectNextTab:
             BrowserCommands.selectNextTab
         case .selectPreviousTab:
@@ -754,6 +757,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .newFolder
         case .captureFullPage:
             .captureFullPage
+        case .captureArea:
+            .captureArea
         case .selectNextTab:
             .selectNextTab
         case .selectPreviousTab, .selectPreviousTabAlternate:

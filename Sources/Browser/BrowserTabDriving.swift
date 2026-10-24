@@ -78,6 +78,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func stopLoadingActiveTab()
     func saveActiveTab(withSuggestedName suggestedName: String?)
     func captureFullPageActiveTabToPasteboard()
+    /// The outlined part of the page as fractions of its view, y downward.
+    func captureActiveTabRegionToPasteboard(fraction: CGRect)
     func pasteAndMatchStyleActiveTab()
     func printActiveTab()
     /// Opens the page's Developer Tools in their own window.

@@ -273,6 +273,8 @@
 "browser.tab.copy_link_action" = "Copy Link";
 "browser.tab.copy_url_action" = "Copy URL";
 "browser.site_control_center.action" = "Site Control Center";
+"browser.menu.capture_area" = "Capture Area…";
+"browser.capture_area.accessibility" = "Drag to outline the part of the page to copy";
 "browser.site.capture_full_page" = "Capture Full Page";
 "browser.site.show_as_toolbar" = "Show as Toolbar";
 "browser.site.show_in_sidebar" = "Show in Sidebar";

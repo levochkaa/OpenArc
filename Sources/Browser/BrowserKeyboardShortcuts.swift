@@ -465,6 +465,13 @@ enum BrowserCommands {
     )
 
     /// Capture Full Page has no default.
+    /// Capture… is Shift-Command-2.
+    static let captureArea = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuCaptureArea,
+        helpTitle: BrowserStrings.menuCaptureArea,
+        shortcut: BrowserKeyboardShortcut("2", modifiers: [.command, .shift])
+    )
+
     static let captureFullPage = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.siteCaptureFullPageAction,
         helpTitle: BrowserStrings.siteCaptureFullPageAction,
@@ -669,6 +676,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case newSpace
     case newFolder
     case captureFullPage
+    case captureArea
     case viewDownloads
     case selectNextTab
     case selectPreviousTab

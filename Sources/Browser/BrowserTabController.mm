@@ -1472,6 +1472,104 @@ class FullPageScreenshotObserver final : public CefDevToolsMessageObserver {
   IMPLEMENT_REFCOUNTING(FullPageScreenshotObserver);
 };
 
+/// Capture: the part of the visible page the user outlined, as a PNG on
+/// the pasteboard. The outline arrives as fractions of the page view, which
+/// the visual viewport turns into page CSS pixels.
+class RegionScreenshotObserver final : public CefDevToolsMessageObserver {
+ public:
+  explicit RegionScreenshotObserver(CGRect fraction) : fraction_(fraction) {}
+
+  void Start(CefRefPtr<CefBrowserHost> host) {
+    if (!host) {
+      return;
+    }
+
+    registration_ = host->AddDevToolsMessageObserver(this);
+    message_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(message_id_, kPageLayoutMetricsMethod,
+                                    nullptr) == 0) {
+      registration_ = nullptr;
+    }
+  }
+
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser> browser,
+                              int message_id,
+                              bool success,
+                              const void *result,
+                              size_t result_size) override {
+    if (message_id != message_id_) {
+      return;
+    }
+
+    CefRefPtr<CefDictionaryValue> dictionary =
+        success ? ParseDevToolsResultDictionary(result, result_size) : nullptr;
+    if (!dictionary) {
+      registration_ = nullptr;
+      return;
+    }
+
+    if (!captured_) {
+      captured_ = true;
+      CaptureRegion(browser, dictionary);
+      return;
+    }
+
+    registration_ = nullptr;
+    std::string pngData = dictionary->GetString("data").ToString();
+    if (!pngData.empty()) {
+      CopyBase64PNGToPasteboardOnMain(pngData);
+    }
+  }
+
+  void OnDevToolsAgentDetached(CefRefPtr<CefBrowser>) override {
+    registration_ = nullptr;
+  }
+
+ private:
+  void CaptureRegion(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefDictionaryValue> metrics) {
+    CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+    CefRefPtr<CefDictionaryValue> viewport =
+        metrics->GetDictionary("cssVisualViewport");
+    if (!host || !viewport) {
+      registration_ = nullptr;
+      return;
+    }
+
+    const double width = viewport->GetDouble("clientWidth");
+    const double height = viewport->GetDouble("clientHeight");
+    if (width <= 0 || height <= 0) {
+      registration_ = nullptr;
+      return;
+    }
+
+    CefRefPtr<CefDictionaryValue> clip = CefDictionaryValue::Create();
+    clip->SetDouble("x", viewport->GetDouble("pageX") + fraction_.origin.x * width);
+    clip->SetDouble("y", viewport->GetDouble("pageY") + fraction_.origin.y * height);
+    clip->SetDouble("width", std::max(fraction_.size.width * width, 1.0));
+    clip->SetDouble("height", std::max(fraction_.size.height * height, 1.0));
+    clip->SetDouble("scale", 1);
+
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("format", "png");
+    params->SetBool("fromSurface", true);
+    params->SetDictionary("clip", clip);
+
+    message_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(message_id_, kPageCaptureScreenshotMethod,
+                                    params) == 0) {
+      registration_ = nullptr;
+    }
+  }
+
+  const CGRect fraction_;
+  bool captured_ = false;
+  int message_id_ = 0;
+  CefRefPtr<CefRegistration> registration_;
+
+  IMPLEMENT_REFCOUNTING(RegionScreenshotObserver);
+};
+
 class WebAppManifestObserver final : public CefDevToolsMessageObserver {
  public:
   explicit WebAppManifestObserver(void (^completion)(NSString *))
@@ -3545,6 +3643,23 @@ void WatchClickModifiers();
                             observer->Start(host);
                           },
                           host)));
+}
+
+- (void)captureActiveTabRegionToPasteboard:(CGRect)fraction {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = it->second.browser->GetHost();
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(
+                          [](CefRefPtr<CefBrowserHost> host, CGRect fraction) {
+                            CefRefPtr<RegionScreenshotObserver> observer =
+                                new RegionScreenshotObserver(fraction);
+                            observer->Start(host);
+                          },
+                          host, fraction)));
 }
 
 - (void)pasteAndMatchStyleActiveTab {

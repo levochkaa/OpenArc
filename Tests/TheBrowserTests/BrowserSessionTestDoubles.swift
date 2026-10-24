@@ -103,6 +103,8 @@ import Foundation
     /// Engine zoom per tab; tests may share a value to mimic per-site zoom.
     var zoomLevelsByTabID = [String: Double]()
 
+    private(set) var regionCaptures = [CGRect]()
+
     func showNewLittleWindow() {
         newLittleWindowCount += 1
     }
@@ -219,6 +221,10 @@ import Foundation
 
     func captureFullPageActiveTabToPasteboard() {
         captureFullPageToPasteboardCount += 1
+    }
+
+    func captureActiveTabRegionToPasteboard(fraction: CGRect) {
+        regionCaptures.append(fraction)
     }
 
     func pasteAndMatchStyleActiveTab() {

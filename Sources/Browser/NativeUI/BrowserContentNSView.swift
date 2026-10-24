@@ -84,6 +84,8 @@ final class BrowserContentNSView: NSView {
     let splitPaneBars = BrowserSplitPaneBarsView()
     var onRetryTabCreation: () -> Void = {}
 
+    private(set) var areaCapture: BrowserAreaCaptureOverlay?
+
     override func layout() {
         super.layout()
         viewport.frame = bounds
@@ -117,6 +119,31 @@ final class BrowserContentNSView: NSView {
         onRetryTabCreation = { [weak model] in model?.retrySelectedTabCreation() }
         splitPaneBars.model = model
         model.onSplitPaneLayoutChange = { [weak self] in self?.splitPaneBars.refresh() }
+        model.onBeginAreaCapture = { [weak self, weak model] in
+            guard let self, let model else { return false }
+            beginAreaCapture(pageTabID: model.selectedTabID) { model.captureArea(fraction: $0) }
+            return true
+        }
+    }
+
+    /// Capture…: outlines part of the selected page, or of the focused
+    /// pane in a split.
+    func beginAreaCapture(pageTabID: String?, onCapture: @escaping (CGRect) -> Void) {
+        areaCapture?.removeFromSuperview()
+        let page = pageTabID.flatMap { splitPaneBars.pageFrame(forTabID: $0) }
+            .map { convert($0, from: splitPaneBars) } ?? bounds
+        let overlay = BrowserAreaCaptureOverlay(pageFrame: page)
+        overlay.frame = bounds
+        overlay.onFinish = { [weak self, weak overlay] fraction in
+            overlay?.removeFromSuperview()
+            self?.areaCapture = nil
+            if let fraction {
+                onCapture(fraction)
+            }
+        }
+        addSubview(overlay)
+        window?.makeFirstResponder(overlay)
+        areaCapture = overlay
     }
 
     func update(

@@ -1379,6 +1379,16 @@ enum BrowserStrings {
         comment: "Tooltip title for opening the current site's controls."
     )
 
+    static let menuCaptureArea = NSLocalizedString(
+        "browser.menu.capture_area",
+        comment: "File menu and command title that lets the user outline part of the page to copy as an image."
+    )
+
+    static let captureAreaAccessibilityLabel = NSLocalizedString(
+        "browser.capture_area.accessibility",
+        comment: "Accessibility label of the overlay where the user outlines part of the page to capture."
+    )
+
     static let siteCaptureFullPageAction = NSLocalizedString(
         "browser.site.capture_full_page",
         comment: "Context menu item for capturing the full current page to the pasteboard."

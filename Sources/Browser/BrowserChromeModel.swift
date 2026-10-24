@@ -355,6 +355,9 @@ enum BrowserWindowMode: Equatable {
     /// ID so it survives a dormant tab reopening under a new runtime ID. Local.
     private(set) var tabIconsBySyncID = [String: String]()
 
+    /// Set by the window's content view, which outlines the area to capture.
+    var onBeginAreaCapture: (() -> Bool)?
+
     /// Expand Current Split: this pane alone fills the window until focus
     /// moves. UI-only, never persisted.
     var expandedSplitPaneTabID: String? {
@@ -626,6 +629,8 @@ enum BrowserWindowMode: Equatable {
         guard canShowDeveloperTools, let url = selectedTab.flatMap({ URL(string: $0.urlString) }) else { return false }
         return ["http", "https"].contains(url.scheme?.lowercased() ?? "")
     }
+
+    var canCaptureArea: Bool { canCreateTab && selectedTab?.creationState == .ready && onBeginAreaCapture != nil }
 
     /// Peek for pinned tabs and Favorites, when turned on in Settings: a
     /// clicked link, or its redirect, to another site opens in Peek and the tab
@@ -1898,6 +1903,18 @@ enum BrowserWindowMode: Equatable {
         }
 
         return copyTabLink(forTabID: selectedTabID)
+    }
+
+    /// Capture…: the user outlines part of the page, which is copied as an image.
+    @discardableResult func beginAreaCapture() -> Bool {
+        guard canCaptureArea else { return false }
+        return onBeginAreaCapture?() ?? false
+    }
+
+    @discardableResult func captureArea(fraction: CGRect) -> Bool {
+        guard canCreateTab, selectedTabID != nil, fraction.width > 0, fraction.height > 0 else { return false }
+        tabDriver.captureActiveTabRegionToPasteboard(fraction: fraction)
+        return true
     }
 
     @discardableResult func captureFullPageSelectedTabToPasteboard() -> Bool {
@@ -3962,6 +3979,8 @@ enum BrowserWindowMode: Equatable {
             canCreateFolderFromSelectedTab
         case .captureFullPage:
             canCreateTab && selectedTabID != nil
+        case .captureArea:
+            canCaptureArea
         case .goToLastSidebarItem, .selectNextTab, .selectPreviousTab:
             !sidebarItemTabIDs.isEmpty
         case .selectNextTabAlternate, .selectPreviousTabAlternate:
@@ -6469,6 +6488,8 @@ extension BrowserCommandID {
             ["new folder", "create folder", "folder"]
         case .captureFullPage:
             ["capture", "screenshot", "capture full page", "full page screenshot"]
+        case .captureArea:
+            ["capture area", "screenshot area", "capture part", "snip"]
         case .selectNextTab:
             ["next tab", "select next tab"]
         case .selectPreviousTab:
@@ -6613,6 +6634,8 @@ extension BrowserCommandID {
             "folder.badge.plus"
         case .captureFullPage:
             "camera.viewfinder"
+        case .captureArea:
+            "crop"
         case .selectNextTab:
             "arrow.down.square"
         case .selectPreviousTab, .selectPreviousTabAlternate:

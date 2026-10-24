@@ -334,6 +334,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.captureFullPageSelectedTabToPasteboard()
     }
 
+    public func captureArea(_: Any?) {
+        activeChromeModel?.beginAreaCapture()
+    }
+
     public func createNewSpace(_: Any?) {
         activeChromeModel?.createNewSpace()
     }
@@ -676,6 +680,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCreateFolderFromSelectedTab ?? false
         case #selector(captureFullPage(_:)):
             return activeChromeModel.map { $0.canCreateTab && $0.selectedTabID != nil } ?? false
+        case #selector(captureArea(_:)):
+            return activeChromeModel?.canCaptureArea ?? false
         case #selector(createNewSpace(_:)):
             return activeChromeModel.map { $0.supportsSpaces && !$0.isWebApp } ?? false
         case #selector(selectSpaceFromMenu(_:)):
@@ -1090,6 +1096,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(saveCurrentPage(_:))
         )
         fileMenu.addItem(savePageItem)
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .captureArea),
+            action: #selector(captureArea(_:))
+        ))
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .captureFullPage),
             action: #selector(captureFullPage(_:))
@@ -2172,6 +2182,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.createFolderFromSelectedTab() ?? false
         case .captureFullPage:
             return activeChromeModel?.captureFullPageSelectedTabToPasteboard() ?? false
+        case .captureArea:
+            return activeChromeModel?.beginAreaCapture() ?? false
         case .selectNextTab:
             guard activeChromeModel?.isWebApp == false else { return false }
             return activeChromeModel?.selectAdjacentSidebarItem(offset: 1) ?? false
