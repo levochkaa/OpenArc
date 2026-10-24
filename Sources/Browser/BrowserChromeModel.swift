@@ -1180,6 +1180,18 @@ enum BrowserWindowMode: Equatable {
         persistCurrentSessionIfAllowed()
     }
 
+    /// Dock reorder: the Space takes `index` among the Spaces. Sync
+    /// sends the move from the new order.
+    @discardableResult func moveSpace(id: String, toIndex index: Int) -> Bool {
+        guard supportsSpaces, let from = spaces.firstIndex(where: { $0.id == id }) else { return false }
+        let target = min(max(index, 0), spaces.count - 1)
+        guard from != target else { return false }
+        let space = spaces.remove(at: from)
+        spaces.insert(space, at: target)
+        persistCurrentSessionIfAllowed()
+        return true
+    }
+
     @discardableResult func createPinnedTabFolder(containingTabIDs tabIDs: Set<String>) -> String? {
         guard let selectedSpaceID else {
             return nil

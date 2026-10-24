@@ -74,14 +74,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             .chromeButtonSpacing
         let width = max(contentWidth, scroll.contentSize.width)
         spacesContainer.frame = NSRect(x: 0, y: 0, width: width, height: size)
-        for (index, space) in spaces.enumerated() {
-            buttons[space.id]?.frame = NSRect(
-                x: (width - contentWidth) / 2 + CGFloat(index) * (size + BrowserChromeLayout.chromeButtonSpacing),
-                y: 0,
-                width: size,
-                height: size
-            )
-        }
+        spacesContainer.itemSize = size
+        spacesContainer.needsLayout = true
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -149,6 +143,12 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
                 }
             )
         }
+        spacesContainer.items = spaces.compactMap { space in buttons[space.id].map { (space.id, $0) } }
+        spacesContainer.isReorderingEnabled = !isResizing
+        let model = state.model
+        spacesContainer.onMove = { id, index in
+            model.moveSpace(id: id, toIndex: index)
+        }
         let hidden = !state.model.supportsSpaces
         downloadsButton.isHidden = hidden
         createButton.isHidden = hidden
@@ -194,7 +194,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private var toastTarget = false
     private var toastProgress = 0.0
     private let scroll = NSScrollView()
-    private let spacesContainer = BrowserNativeSurface()
+    private let spacesContainer = BrowserSpaceDockNSView()
     private let downloadsButton = BrowserNativeChromeButton(
         symbol: "arrow.down.circle",
         title: BrowserStrings.downloadsTitle,
