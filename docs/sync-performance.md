@@ -45,5 +45,16 @@ Same probe on Xcode 27.1 / Swift 6.4, Debug, code at `88abd3f`; all 26 applicabl
 | drain | 1,000 | 10 | 434.4 |
 | drain | 1,000 | 100 | 7,571.2 |
 
-The drain stays quadratic: each ACK replays the remaining queue and rewrites every snapshot row (about 75 ms per ACK at 1,000 tabs). Tried and reverted: skipping the snapshot rewrite when the projection equals the stored snapshot, including local titles, icons and colors. It broke two rollback tests (`syncOutboxAckAndPullRollbackBaselineQueueProjectionAndCursorOnFailure`, `folderBootstrapRollsBackAdoptionVersionCursorAndProjectionOnDatabaseFailure`); the first only injects its failure into the rewrite, the second's cause was not established. Next step: explain the folder bootstrap interaction before changing the write path.
+The drain stays quadratic: each ACK replays the remaining queue and rewrote every snapshot row (about 75 ms per ACK at 1,000 tabs).
 
+The next commit skips that rewrite when the projection equals the stored snapshot, including the local titles, icons and colors that snapshot equality ignores; an ACK of a change already shown locally is the usual case. Two rollback tests injected their failure into that rewrite, so they now inject it into the baseline write in the same transaction (`syncOutboxAckAndPullRollbackBaselineQueueProjectionAndCursorOnFailure`, `folderBootstrapRollsBackAdoptionVersionCursorAndProjectionOnDatabaseFailure`), and a new test proves an ACK of a shown change writes no tab rows. Medians after the change (same probe, raw report `/tmp/thebrowser-sync-perf-2026-10-25-skip.json`):
+
+| Operation | Tabs | Pending rows | Before, ms | After, ms |
+| --- | ---: | ---: | ---: | ---: |
+| empty_pull | 5,000 | 0 | 192.5 | 129.1 |
+| first_ack | 5,000 | 10 | 228.8 | 160.6 |
+| first_ack | 5,000 | 100 | 615.5 | 562.4 |
+| drain | 1,000 | 10 | 434.4 | 305.6 |
+| drain | 1,000 | 100 | 7,571.2 | 6,310.4 |
+
+Capture is unchanged (it always writes a new snapshot). The remaining drain cost is replaying the queue tail on every ACK; that needs an incremental projection, not attempted.

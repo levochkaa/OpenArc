@@ -282,7 +282,7 @@ import Testing
     let database = try DatabaseQueue(path: harness.databaseURL.path)
     try database.write { db in
         try db.execute(sql: """
-        CREATE TRIGGER fail_projection BEFORE INSERT ON browser_tabs
+        CREATE TRIGGER fail_projection BEFORE INSERT ON browser_sync_baseline
         BEGIN SELECT RAISE(ABORT, 'injected projection failure'); END
         """)
     }
@@ -732,4 +732,29 @@ private func outboxEvents(_ changes: [BrowserSyncChange], startingAt sequence: I
             createdAt: "2026-10-03T00:00:00Z"
         )
     }
+}
+
+@Test func syncOutboxAckOfAShownChangeLeavesTheStoredRowsAlone() throws {
+    let harness = try SyncOutboxHarness()
+    defer { harness.cleanup() }
+    let store = try harness.store()
+    let original = outboxSnapshot(ids: ["a"])
+    store.saveSnapshot(original)
+    try store.bindSyncOwner(harness.owner)
+    let mutation = try #require(store.pendingSyncMutations(for: harness.owner).first)
+    let database = try DatabaseQueue(path: harness.databaseURL.path)
+    try database.write { db in
+        try db.execute(sql: """
+        CREATE TRIGGER no_tab_rewrite BEFORE INSERT ON browser_tabs
+        BEGIN SELECT RAISE(ABORT, 'unexpected rewrite'); END
+        """)
+    }
+    // The ACK projects the snapshot already stored, so no tab row is written.
+    _ = try store.acknowledgeSyncMutation(
+        id: mutation.id,
+        events: outboxEvents(mutation.changes, startingAt: 1),
+        for: harness.owner
+    )
+    #expect(store.loadSnapshot() == original)
+    #expect(try store.pendingSyncMutations(for: harness.owner).isEmpty)
 }

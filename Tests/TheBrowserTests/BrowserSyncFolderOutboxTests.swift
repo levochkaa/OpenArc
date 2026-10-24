@@ -230,7 +230,9 @@ import Testing
     try database.write { db in
         try db
             .execute(
-                sql: "CREATE TRIGGER fail_folder_projection BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                // The projection is unchanged here and is not rewritten; the
+                // baseline write fails inside the same transaction instead.
+                sql: "CREATE TRIGGER fail_folder_projection BEFORE INSERT ON browser_sync_baseline BEGIN SELECT RAISE(ABORT, 'injected'); END"
             )
     }
     #expect(throws: DatabaseError.self) { try store.completeFolderSyncBootstrap(

@@ -1064,6 +1064,17 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try db.execute(sql: "DROP TABLE browser_tab_archive_legacy")
     }
 
+    /// Equality ignores local display fields, so they are compared too.
+    private static func isStoredUnchanged(
+        _ stored: BrowserTabSessionSnapshot,
+        by next: BrowserTabSessionSnapshot
+    ) -> Bool {
+        stored == next
+            && stored.tabs.map(\.pageTitle) == next.tabs.map(\.pageTitle)
+            && stored.tabs.map(\.systemImageName) == next.tabs.map(\.systemImageName)
+            && (stored.spaces ?? []).map(\.colorName) == (next.spaces ?? []).map(\.colorName)
+    }
+
     private func completeSyncBootstrap(
         events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, expiryRecovery: Bool
     ) throws -> BrowserTabSessionSnapshot {
@@ -1556,11 +1567,17 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         _ baseline: BrowserSyncOutboxBaseline,
         in db: Database
     ) throws -> BrowserTabSessionSnapshot {
+        let local = try readSnapshot(db)
         let snapshot = try BrowserSyncOutboxProjection.snapshot(
-            baseline: baseline, pending: readSyncQueue(db), local: readSnapshot(db),
+            baseline: baseline, pending: readSyncQueue(db), local: local,
             folderSyncEnabled: folderSyncEnabled(in: db)
         )
         try writeSyncBaseline(baseline, to: db)
+        // An ACK of a change already shown locally projects the stored snapshot
+        // again; rewriting every row then costs the most of a queue drain.
+        if let local, Self.isStoredUnchanged(local, by: snapshot) {
+            return local
+        }
         try writeSnapshot(snapshot, to: db)
         return snapshot
     }
