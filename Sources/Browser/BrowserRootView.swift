@@ -57,7 +57,7 @@ final class BrowserRootView: NSView {
         toolbar.onURLFrameChange = { [weak self] frame in self?.updateURLFrame(frame) }
         revealEdge.onHoverChange = { [weak self] in self?.handleSidebarRevealEdgeHoverChange($0) }
         fullscreenReader.onFullscreenStateChange = { [weak self] in self?.handleWindowFullscreenStateChange($0) }
-        margins.menuProvider = { [weak self] in
+        margins.menuProvider = { [weak self, weak model] in
             guard let self,!preferences.bookmarksBarVisible else { return nil }
             let menu = BrowserNativeMenus.menu()
             BrowserNativeMenus.add(

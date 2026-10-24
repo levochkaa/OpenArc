@@ -689,7 +689,7 @@ final class BrowserNativeSidebarNSView: NSView {
                     state?.renamingPinnedTabFolderID = nil
                 }
                 row.onCancelRename = { [weak state] in state?.renamingPinnedTabFolderID = nil }
-                row.menuProvider = { [weak row] in BrowserNativeMenus.folder(
+                row.menuProvider = { [weak row, weak state] in BrowserNativeMenus.folder(
                     folder,
                     onRename: { row?.onBeginRename() },
                     onChangeIcon: { model.setIcon($0, forPinnedTabFolderID: folder.id) },
