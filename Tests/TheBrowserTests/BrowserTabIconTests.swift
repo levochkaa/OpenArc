@@ -66,4 +66,17 @@ import Testing
         #expect(accepted == [true, true, true])
         #expect(buffer.writes.map { $0.snapshot.tabs.first?.systemImageName } == [nil, "leaf"])
     }
+
+    @Test func splitChipsShowATabsIconInsteadOfItsFavicon() {
+        let tab = BrowserChromeModel.Tab(id: "a", syncID: "a", spaceID: "s", title: "A", urlString: "https://a.example")
+        let chip = BrowserNativeSidebarSplitChipView()
+        chip.update(tab: tab, focused: false, icon: "leaf")
+        let images = chip.subviews.compactMap { $0 as? NSImageView }.filter { !$0.isHidden }
+        #expect(images.count == 1 && !(images[0] is BrowserFaviconNSView) && images[0].image != nil)
+        chip.update(tab: tab, focused: false)
+        #expect(chip.subviews
+            .compactMap { $0 as? NSImageView }
+            .filter { !$0.isHidden }
+            .allSatisfy { $0 is BrowserFaviconNSView })
+    }
 }

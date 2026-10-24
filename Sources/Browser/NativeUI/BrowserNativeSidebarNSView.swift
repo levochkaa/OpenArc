@@ -896,6 +896,7 @@ final class BrowserNativeSidebarNSView: NSView {
             multiSelected: memberIDs.contains(where: state.selectedSidebarTabIDs.contains),
             indentLevel: indent,
             name: state.snapshot.splitNames[memberIDs],
+            icons: state.snapshot.tabIcons,
             isResizing: state.isSidebarResizing,
             resetID: state.tabRowInteractionResetID
         )
@@ -1740,7 +1741,13 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
                 renderedTab = nil
                 renderedFolder = nil
                 renderedAsApp = false
-                row.update(split: members, focusedTabID: snapshot.selectedTabID, selected: true, isResizing: false)
+                row.update(
+                    split: members,
+                    focusedTabID: snapshot.selectedTabID,
+                    selected: true,
+                    icons: snapshot.tabIcons,
+                    isResizing: false
+                )
             } else if let tab = snapshot.tab(withID: id) {
                 guard renderedTab != tab || renderedAsApp != appTile else { return }
                 renderedTab = tab

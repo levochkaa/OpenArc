@@ -432,6 +432,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         multiSelected: Bool = false,
         indentLevel: Int = 0,
         name: BrowserSidebarSplitName? = nil,
+        icons: [String: String] = [:],
         isResizing: Bool,
         resetID: Int = 0
     ) {
@@ -467,7 +468,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             splitChips.removeLast().removeFromSuperview()
         }
         for (chip, tab) in zip(splitChips, members) {
-            chip.update(tab: tab, focused: selected && tab.id == focusedTabID)
+            chip.update(tab: tab, focused: selected && tab.id == focusedTabID, icon: icons[tab.id])
             chip.isCompact = name != nil
         }
         setAccessibilityIdentifier("browser.sidebar.split.\(members.first?.id ?? "")")
@@ -764,9 +765,10 @@ final class BrowserNativeSidebarSplitChipView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        for view in [favicon, titleLabel, closeButton] {
+        for view in [favicon, symbol, titleLabel, closeButton] {
             addSubview(view)
         }
+        symbol.isHidden = true
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         titleLabel.cell?.wraps = false
@@ -821,10 +823,12 @@ final class BrowserNativeSidebarSplitChipView: NSView {
                 width: icon,
                 height: icon
             )
+            symbol.frame = favicon.frame
             return
         }
         let padding: CGFloat = 7
         favicon.frame = NSRect(x: padding, y: (bounds.height - icon) / 2, width: icon, height: icon)
+        symbol.frame = favicon.frame
         let closeSize: CGFloat = 20
         closeButton.frame = NSRect(
             x: bounds.width - closeSize - 4,
@@ -851,13 +855,21 @@ final class BrowserNativeSidebarSplitChipView: NSView {
         return true
     }
 
-    func update(tab: BrowserChromeModel.Tab, focused: Bool) {
+    /// `icon` is the tab's chosen symbol, shown instead of its favicon.
+    func update(tab: BrowserChromeModel.Tab, focused: Bool, icon: String? = nil) {
         tabID = tab.id
         if isFocused != focused {
             isFocused = focused
             needsDisplay = true
         }
         favicon.update(url: tab.faviconURL, pageURLString: tab.urlString)
+        favicon.isHidden = icon != nil
+        symbol.isHidden = icon == nil
+        symbol.image = icon.flatMap {
+            NSImage(systemSymbolName: $0, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
+        }
+        symbol.contentTintColor = BrowserChromeColors.primaryText
         titleLabel.stringValue = tab.displayTitle
         titleLabel.textColor = BrowserChromeColors.primaryText
         closeButton.setAccessibilityLabel(BrowserStrings.tabCloseAction)
@@ -869,5 +881,6 @@ final class BrowserNativeSidebarSplitChipView: NSView {
     // MARK: Private
 
     private let favicon = BrowserFaviconNSView()
+    private let symbol = NSImageView()
     private let titleLabel = BrowserNativeControls.label("", size: 12.5, weight: .medium)
 }
