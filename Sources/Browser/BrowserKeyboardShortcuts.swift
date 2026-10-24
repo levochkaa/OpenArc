@@ -430,6 +430,21 @@ enum BrowserCommands {
         shortcut: .unassigned
     )
 
+    /// New Folder…; folders hold at least one tab, so the new
+    /// folder takes the selected tab.
+    static let newFolder = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.pinnedTabFolderNewAction,
+        helpTitle: BrowserStrings.pinnedTabFolderNewAction,
+        shortcut: .unassigned
+    )
+
+    /// Capture Full Page has no default.
+    static let captureFullPage = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.siteCaptureFullPageAction,
+        helpTitle: BrowserStrings.siteCaptureFullPageAction,
+        shortcut: .unassigned
+    )
+
     static let newSpace = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.spaceNewAction,
         helpTitle: BrowserStrings.spaceNewAction,
@@ -623,6 +638,8 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case resetTabToPinnedURL
     case setAllFoldersExpanded(Bool)
     case newSpace
+    case newFolder
+    case captureFullPage
     case viewDownloads
     case selectNextTab
     case selectPreviousTab

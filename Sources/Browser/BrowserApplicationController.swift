@@ -304,6 +304,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.setActiveSpaceFoldersExpanded(true)
     }
 
+    public func createFolderFromSelectedTab(_: Any?) {
+        activeChromeModel?.createFolderFromSelectedTab()
+    }
+
+    public func captureFullPage(_: Any?) {
+        activeChromeModel?.captureFullPageSelectedTabToPasteboard()
+    }
+
     public func createNewSpace(_: Any?) {
         activeChromeModel?.createNewSpace()
     }
@@ -616,6 +624,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canSetActiveSpaceFoldersExpanded(false) ?? false
         case #selector(expandAllFolders(_:)):
             return activeChromeModel?.canSetActiveSpaceFoldersExpanded(true) ?? false
+        case #selector(createFolderFromSelectedTab(_:)):
+            return activeChromeModel?.canCreateFolderFromSelectedTab ?? false
+        case #selector(captureFullPage(_:)):
+            return activeChromeModel.map { $0.canCreateTab && $0.selectedTabID != nil } ?? false
         case #selector(createNewSpace(_:)):
             return activeChromeModel.map { $0.supportsSpaces && !$0.isWebApp } ?? false
         case #selector(selectSpaceFromMenu(_:)):
@@ -1011,6 +1023,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(saveCurrentPage(_:))
         )
         fileMenu.addItem(savePageItem)
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .captureFullPage),
+            action: #selector(captureFullPage(_:))
+        ))
 
         let installWebAppItem = NSMenuItem(
             title: BrowserStrings.webAppInstallAction,
@@ -1307,6 +1323,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         lastSidebarItem.allowsKeyEquivalentWhenHidden = true
         tabsMenu.addItem(lastSidebarItem)
         tabsMenu.addItem(.separator())
+        tabsMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newFolder),
+            action: #selector(createFolderFromSelectedTab(_:))
+        ))
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .collapseAllFolders),
             action: #selector(collapseAllFolders(_:))
@@ -2035,6 +2055,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard let model = activeChromeModel, model.supportsSpaces, !model.isWebApp else { return false }
             model.createNewSpace()
             return true
+        case .newFolder:
+            return activeChromeModel?.createFolderFromSelectedTab() ?? false
+        case .captureFullPage:
+            return activeChromeModel?.captureFullPageSelectedTabToPasteboard() ?? false
         case .selectNextTab:
             guard activeChromeModel?.isWebApp == false else { return false }
             return activeChromeModel?.selectAdjacentSidebarItem(offset: 1) ?? false

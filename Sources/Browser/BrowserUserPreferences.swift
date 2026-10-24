@@ -371,7 +371,9 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case resetTabToPinnedURL
     case collapseAllFolders
     case expandAllFolders
+    case newFolder
     case newSpace
+    case captureFullPage
     case viewDownloads
     case selectNextTab
     case selectPreviousTab
@@ -531,6 +533,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.expandAllFolders
         case .newSpace:
             BrowserCommands.newSpace
+        case .newFolder:
+            BrowserCommands.newFolder
+        case .captureFullPage:
+            BrowserCommands.captureFullPage
         case .selectNextTab:
             BrowserCommands.selectNextTab
         case .selectPreviousTab:
@@ -669,6 +675,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .setAllFoldersExpanded(true)
         case .newSpace:
             .newSpace
+        case .newFolder:
+            .newFolder
+        case .captureFullPage:
+            .captureFullPage
         case .selectNextTab:
             .selectNextTab
         case .selectPreviousTab, .selectPreviousTabAlternate:

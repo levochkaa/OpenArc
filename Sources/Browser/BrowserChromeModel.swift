@@ -3656,6 +3656,10 @@ enum BrowserWindowMode: Equatable {
             canSetActiveSpaceFoldersExpanded(true)
         case .newSpace:
             supportsSpaces && !isShuttingDown
+        case .newFolder:
+            canCreateFolderFromSelectedTab
+        case .captureFullPage:
+            canCreateTab && selectedTabID != nil
         case .selectNextTab, .selectPreviousTab, .goToLastSidebarItem:
             !sidebarItemTabIDs.isEmpty
         case .selectNextTabAlternate, .selectPreviousTabAlternate:
@@ -6101,6 +6105,10 @@ extension BrowserCommandID {
             ["expand folders", "expand all folders", "open folders"]
         case .newSpace:
             ["new space", "create space", "add space"]
+        case .newFolder:
+            ["new folder", "create folder", "folder"]
+        case .captureFullPage:
+            ["capture", "screenshot", "capture full page", "full page screenshot"]
         case .selectNextTab:
             ["next tab", "select next tab"]
         case .selectPreviousTab:
@@ -6235,6 +6243,10 @@ extension BrowserCommandID {
             "folder.fill"
         case .newSpace:
             "plus.rectangle.on.rectangle"
+        case .newFolder:
+            "folder.badge.plus"
+        case .captureFullPage:
+            "camera.viewfinder"
         case .selectNextTab:
             "arrow.down.square"
         case .selectPreviousTab, .selectPreviousTabAlternate:

@@ -128,6 +128,17 @@ import Testing
         #expect(f.model.pinnedTabFolders.allSatisfy { !$0.isExpanded })
     }
 
+    @Test func newFolderTakesTheSelectedTab() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.createFolderFromSelectedTab())
+        let tab = f.model.tabs.first { $0.id == f.id("x") }
+        #expect(tab?.placement == .spacePinned && tab?.pinnedFolderID != nil)
+        f.model.selectTab(id: f.id("y"))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        #expect(!f.model.canCreateFolderFromSelectedTab, "Split panes stay in their split")
+    }
+
     @Test func renameTabRevealsTheRowAndAsksTheSidebarToEditIt() {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         f.model.selectTab(id: f.id("x"))
