@@ -838,16 +838,17 @@ enum BrowserStrings {
         comment: "Alert shown when the window cannot take an import right now."
     )
 
-    static func arcImportResult(_ result: BrowserArcSidebarImportResult) -> String {
+    /// Shared with iOS, so it takes counts rather than the macOS import result.
+    static func arcImportResult(spaces: Int, pinnedTabs: Int, folders: Int, favorites: Int) -> String {
         String(
             format: NSLocalizedString(
                 "browser.arc_import.result",
                 comment: "Alert after importing from Arc: Spaces, pinned tabs, folders, Favorites."
             ),
-            result.spaceCount,
-            result.pinnedTabCount,
-            result.folderCount,
-            result.favoriteCount
+            spaces,
+            pinnedTabs,
+            folders,
+            favorites
         )
     }
 

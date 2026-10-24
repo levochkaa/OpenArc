@@ -535,7 +535,14 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             } else if let url = BrowserArcSidebar.defaultFileURL {
                 do {
                     let result = try model.importArcSidebar(BrowserArcSidebar.load(from: url))
-                    message = result.isEmpty ? BrowserStrings.arcImportNothing : BrowserStrings.arcImportResult(result)
+                    message = result.isEmpty
+                        ? BrowserStrings.arcImportNothing
+                        : BrowserStrings.arcImportResult(
+                            spaces: result.spaceCount,
+                            pinnedTabs: result.pinnedTabCount,
+                            folders: result.folderCount,
+                            favorites: result.favoriteCount
+                        )
                 } catch BrowserArcSidebar.ImportError.missing {
                     message = BrowserStrings.arcImportMissing
                 } catch {
