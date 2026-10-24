@@ -325,6 +325,11 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case forceReload
     case clearCacheAndRefresh
     case clearCookiesAndRefresh
+    case addSplitView
+    case closeSplitPane
+    case separateTabFromSplit
+    case separateSplitView
+    case toggleSplitOrientation
     case toggleSidebar
     case toggleBookmarksBar
 
@@ -384,6 +389,16 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.clearCacheAndRefresh
         case .clearCookiesAndRefresh:
             BrowserCommands.clearCookiesAndRefresh
+        case .addSplitView:
+            BrowserCommands.addSplitView
+        case .closeSplitPane:
+            BrowserCommands.closeSplitPane
+        case .separateTabFromSplit:
+            BrowserCommands.separateTabFromSplit
+        case .separateSplitView:
+            BrowserCommands.separateSplitView
+        case .toggleSplitOrientation:
+            BrowserCommands.toggleSplitOrientation
         case .toggleSidebar:
             BrowserCommands.toggleSidebar
         case .toggleBookmarksBar:
@@ -441,6 +456,16 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .clearCacheAndRefresh
         case .clearCookiesAndRefresh:
             .clearCookiesAndRefresh
+        case .addSplitView:
+            .addSplitView
+        case .closeSplitPane:
+            .closeSplitPane
+        case .separateTabFromSplit:
+            .separateTabFromSplit
+        case .separateSplitView:
+            .separateSplitView
+        case .toggleSplitOrientation:
+            .toggleSplitOrientation
         case .toggleSidebar:
             .toggleSidebar
         case .toggleBookmarksBar:

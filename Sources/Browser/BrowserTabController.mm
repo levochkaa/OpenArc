@@ -2599,6 +2599,40 @@ class BrowserTabNavigationTask final : public CefTask {
 
 @end
 
+// Accent border inside the focused Split View pane. It stays above the pane
+// views and never takes mouse events, so clicks still reach the page.
+@interface BrowserSplitFocusRingView : NSView
+@end
+
+@implementation BrowserSplitFocusRingView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+  self = [super initWithFrame:frameRect];
+  if (self == nil) {
+    return nil;
+  }
+  self.wantsLayer = YES;
+  self.layer.borderWidth = BrowserSplitPaneLayout.focusRingWidth;
+  self.layer.cornerRadius = BrowserSplitPaneLayout.focusRingCornerRadius;
+  self.layer.borderColor = BrowserSplitPaneLayout.focusRingColor.CGColor;
+  [self setAccessibilityElement:NO];
+  return self;
+}
+
+- (NSView *)hitTest:(NSPoint)point {
+  return nil;
+}
+
+- (BOOL)wantsUpdateLayer {
+  return YES;
+}
+
+- (void)updateLayer {
+  self.layer.borderColor = BrowserSplitPaneLayout.focusRingColor.CGColor;
+}
+
+@end
+
 @implementation BrowserTabController {
   __weak BrowserTabHostView *_hostView;
   std::map<std::string, TabRecord> _tabRecords;
@@ -2607,6 +2641,7 @@ class BrowserTabNavigationTask final : public CefTask {
   NSArray<NSString *> *_visibleLayoutTabIDs;
   BOOL _visibleLayoutVertical;
   NSArray<NSNumber *> *_visibleLayoutFractions;
+  BrowserSplitFocusRingView *_splitFocusRing;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
@@ -2801,6 +2836,9 @@ class BrowserTabNavigationTask final : public CefTask {
 
 - (void)layoutVisiblePanes:(const std::vector<std::string> &)keys {
   BrowserTabHostView *hostView = _hostView;
+  if (hostView == nil || keys.size() < 2) {
+    _splitFocusRing.hidden = YES;
+  }
   if (hostView == nil || keys.empty()) {
     return;
   }
@@ -2826,12 +2864,39 @@ class BrowserTabNavigationTask final : public CefTask {
                                         vertical:_visibleLayoutVertical
                                        fractions:fractions
                                          flipped:hostView.isFlipped];
+  const std::string activeKey = ToStdString(_activeTabID);
+  BOOL showsFocusRing = NO;
   for (size_t index = 0; index < keys.size() && index < frames.count; index++) {
     auto it = _tabRecords.find(keys[index]);
     if (it != _tabRecords.end()) {
       SyncBrowserViewPaneFrame(it->second.browser, frames[index].rectValue);
     }
+    if (keys[index] == activeKey) {
+      [self showSplitFocusRingInHostView:hostView frame:frames[index].rectValue];
+      showsFocusRing = YES;
+    }
   }
+  if (!showsFocusRing) {
+    _splitFocusRing.hidden = YES;
+  }
+}
+
+- (void)showSplitFocusRingInHostView:(BrowserTabHostView *)hostView
+                               frame:(NSRect)frame {
+  if (_splitFocusRing == nil) {
+    _splitFocusRing = [[BrowserSplitFocusRingView alloc] initWithFrame:frame];
+  }
+  // Browser views created later are added above it, so keep it on top.
+  if (_splitFocusRing.superview != hostView ||
+      hostView.subviews.lastObject != _splitFocusRing) {
+    [hostView addSubview:_splitFocusRing
+              positioned:NSWindowAbove
+              relativeTo:nil];
+  }
+  if (!NSEqualRects(_splitFocusRing.frame, frame)) {
+    _splitFocusRing.frame = frame;
+  }
+  _splitFocusRing.hidden = NO;
 }
 
 - (void)handleFocusForTabID:(NSString *)tabID {
@@ -3275,6 +3340,8 @@ class BrowserTabNavigationTask final : public CefTask {
 
 - (void)prepareForCefShutdown {
   self.delegate = nil;
+  [_splitFocusRing removeFromSuperview];
+  _splitFocusRing = nil;
   _hostView.controller = nil;
   _hostView = nil;
   _activeTabID = nil;

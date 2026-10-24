@@ -9,6 +9,7 @@ enum BrowserChromeColors {
     static let contentBackground = adaptive(light: rgb(255, 255, 255), dark: rgb(20, 20, 22))
     static let rowHover = adaptive(light: rgba(0, 0, 0, 0.06), dark: rgba(255, 255, 255, 0.08))
     static let rowSelected = adaptive(light: rgba(0, 0, 0, 0.11), dark: rgba(255, 255, 255, 0.14))
+    static let splitFocusedPaneBorder = NSColor.controlAccentColor
     static let currentURLRow = adaptive(light: rgba(0, 0, 0, 0.06), dark: rgba(255, 255, 255, 0.1))
     static let currentURLRowHover = adaptive(light: rgba(0, 0, 0, 0.08), dark: rgba(255, 255, 255, 0.12))
     static let currentURLButtonHover = adaptive(light: rgba(0, 0, 0, 0.1), dark: rgba(255, 255, 255, 0.16))

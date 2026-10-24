@@ -9,6 +9,12 @@ import AppKit
 @objc final class BrowserSplitPaneLayout: NSObject {
     static let paneGap: CGFloat = 6
 
+    /// Accent border drawn inside the focused pane while a split is shown.
+    @objc static let focusRingWidth: CGFloat = 2
+
+    @objc static var focusRingCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
+    @objc static var focusRingColor: NSColor { BrowserChromeColors.splitFocusedPaneBorder }
+
     static func frames(
         in bounds: CGRect,
         count: Int,

@@ -158,6 +158,141 @@ import Testing
         f.driver.simulateTabFocus(f.id("z"))
         #expect(f.model.selectedTabID == f.id("y"), "Panes of an unselected split are hidden")
     }
+
+    @Test func addSplitViewOpensTheCommandBarResultAsTheNextPane() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        let existing = Set(f.model.tabs.map(\.id))
+        f.model.presentSplitViewCommandBar()
+        #expect(f.model.commandBarModel.isPresented)
+        f.model.commandBarModel.query = "https://new.example"
+        f.model.commandBarModel.submitSelection()
+        let added = try #require(f.model.tabs.first { !existing.contains($0.id) })
+        #expect(f.model.selectedTabID == added.id)
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: group) == [f.id("x"), added.id])
+        #expect(f.model.temporaryTabs.map(\.id).firstIndex(of: added.id)
+            == f.model.temporaryTabs.map(\.id).firstIndex(of: f.id("x")).map { $0 + 1 })
+        #expect(!f.model.commandBarModel.isPresented)
+        #expect(f.model.pendingSplitAnchorTabID == nil)
+        #expect(f.store.savedSnapshots.last?.splitGroups?.first?.tabIDs == [f.syncID("x"), added.syncID])
+    }
+
+    @Test func addSplitViewWithAnOpenTabSuggestionJoinsThatTab() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        f.model.presentSplitViewCommandBar()
+        f.model.commandBarModel.query = "z.example"
+        let suggestion = try #require(f.model.commandBarModel.suggestions.first {
+            $0.kind == .openTab && $0.tabIDs == [f.id("z")]
+        })
+        f.model.commandBarModel.submitSuggestion(id: suggestion.id)
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: group) == [f.id("x"), f.id("z")])
+        #expect(f.model.selectedTabID == f.id("z"))
+        #expect(f.names(f.model.temporaryTabs) == ["x", "z", "y"])
+    }
+
+    @Test func anOrdinaryNewTabAfterACancelledSplitStaysOutOfTheSplit() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        f.model.presentSplitViewCommandBar()
+        f.model.commandBarModel.dismiss()
+        f.model.toggleCommandBar()
+        #expect(f.model.pendingSplitAnchorTabID == nil)
+        f.model.commandBarModel.query = "https://new.example"
+        f.model.commandBarModel.submitSelection()
+        #expect(f.model.selectedSplitGroup == nil)
+        #expect(f.model.splitGroups.isEmpty)
+    }
+
+    @Test func addSplitViewIsUnavailableForFavoritesAndFullSplits() {
+        let f = SidebarDragFixture(pinned: [], temporary: ["a", "b", "c", "d"], apps: ["app"])
+        f.model.selectTab(id: f.id("app"))
+        #expect(!f.model.canAddSplitView)
+        f.model.presentSplitViewCommandBar()
+        #expect(f.model.pendingSplitAnchorTabID == nil)
+        f.model.selectTab(id: f.id("a"))
+        #expect(f.model.canAddSplitView)
+        for name in ["b", "c", "d"] {
+            #expect(f.model.openInSplitView(tabID: f.id(name)))
+        }
+        #expect(!f.model.canAddSplitView, "A split holds at most four panes")
+    }
+
+    @Test func closingTheFocusedPaneFocusesTheNextPaneThenThePreviousOne() throws {
+        let f = SidebarDragFixture(pinned: [], temporary: ["a", "b", "c", "d"])
+        f.model.selectTab(id: f.id("a"))
+        #expect(f.model.openInSplitView(tabID: f.id("b")))
+        #expect(f.model.openInSplitView(tabID: f.id("c")))
+        let (a, c) = (f.id("a"), f.id("c"))
+        f.model.selectTab(id: f.id("b"))
+        #expect(f.model.closeFocusedSplitPane())
+        #expect(f.model.selectedTabID == c)
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: group) == [a, c])
+        #expect(f.model.closeFocusedSplitPane())
+        #expect(f.model.selectedTabID == a, "The last pane hands focus to the previous one")
+        #expect(f.model.selectedSplitGroup == nil, "One pane left is not a split")
+        #expect(f.names(f.model.temporaryTabs) == ["a", "d"])
+        #expect(!f.model.closeFocusedSplitPane(), "Outside a split the command does nothing")
+    }
+
+    @Test func closingAPinnedPaneUnloadsItAndKeepsItsRow() {
+        let f = SidebarDragFixture()
+        f.model.selectTab(id: f.id("a"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        let y = f.id("y")
+        f.model.selectTab(id: f.id("a"))
+        #expect(f.model.closeFocusedSplitPane())
+        #expect(f.model.selectedTabID == y)
+        #expect(f.pinnedNames() == ["a", "y", "b"])
+        #expect(f.model.splitGroups.isEmpty)
+    }
+
+    @Test func closeTabOnAPaneSelectsAnotherPaneOfTheSplit() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        #expect(f.names(f.model.temporaryTabs) == ["x", "z", "y"])
+        let x = f.id("x")
+        #expect(f.model.archiveSelectedTab())
+        #expect(f.model.selectedTabID == x, "The row below the closed pane is outside the split")
+    }
+
+    @Test func selectedSplitCommandsSeparateAndConvert() throws {
+        let f = SidebarDragFixture(pinned: [], temporary: ["a", "b", "c"])
+        f.model.selectTab(id: f.id("a"))
+        #expect(f.model.openInSplitView(tabID: f.id("b")))
+        #expect(f.model.openInSplitView(tabID: f.id("c")))
+        #expect(f.model.splitOrientationToggleTitle == BrowserStrings.splitConvertToVerticalAction)
+        #expect(f.model.toggleSelectedSplitOrientation())
+        #expect(f.model.selectedSplitGroup?.orientation == .vertical)
+        #expect(f.model.splitOrientationToggleTitle == BrowserStrings.splitConvertToHorizontalAction)
+        #expect(f.model.separateSelectedTabFromSplit())
+        #expect(f.model.selectedSplitGroup == nil)
+        let group = try #require(f.model.splitGroup(containingTabID: f.id("a")))
+        #expect(f.model.splitPaneTabIDs(of: group) == [f.id("a"), f.id("b")])
+        f.model.selectTab(id: f.id("b"))
+        #expect(f.model.separateSelectedSplitGroup())
+        #expect(f.model.splitGroups.isEmpty)
+        #expect(!f.model.toggleSelectedSplitOrientation())
+    }
+
+    @Test func splitCommandsAppearInTheCommandBarOnlyWhenTheyApply() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        func commands(_ query: String) -> [BrowserCommandID] {
+            f.model.presentCommandBar()
+            f.model.commandBarModel.query = query
+            return f.model.commandBarModel.suggestions.compactMap(\.commandID)
+        }
+        #expect(commands("split view").contains(.addSplitView))
+        #expect(!commands("close split pane").contains(.closeSplitPane))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        #expect(commands("close split pane").contains(.closeSplitPane))
+        #expect(commands("vertical split").contains(.toggleSplitOrientation))
+    }
 }
 
 // MARK: - BrowserSplitPaneLayoutTests

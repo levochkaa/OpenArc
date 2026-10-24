@@ -693,6 +693,56 @@ enum BrowserStrings {
         comment: "Clear Cookies and Refresh menu item title."
     )
 
+    static let menuAddSplitView = NSLocalizedString(
+        "browser.menu.add_split_view",
+        comment: "Add Split View menu item title."
+    )
+
+    static let menuCloseSplitPane = NSLocalizedString(
+        "browser.menu.close_split_pane",
+        comment: "Close this Split Pane menu item title."
+    )
+
+    static let menuSeparatePageFromSplitView = NSLocalizedString(
+        "browser.menu.separate_page_from_split_view",
+        comment: "Separate Page from Split View menu item title."
+    )
+
+    static let menuToggleSplitOrientation = NSLocalizedString(
+        "browser.menu.toggle_split_orientation",
+        comment: "Settings and command title for switching a split between side by side and stacked panes."
+    )
+
+    static let splitViewButtonTitle = NSLocalizedString(
+        "browser.split.button",
+        comment: "Toolbar button and menu title for Split View."
+    )
+
+    static let splitOpenInSplitViewAction = NSLocalizedString(
+        "browser.split.open_in_split_view",
+        comment: "Tab context menu action that opens the tab as a new Split View pane."
+    )
+
+    static let splitSeparateTabAction = NSLocalizedString(
+        "browser.split.separate_tab",
+        comment: "Removes one tab from its Split View."
+    )
+
+    static let splitSeparateAllTabsAction = NSLocalizedString(
+        "browser.split.separate_all_tabs",
+        comment: "Ends a Split View and keeps its tabs as separate tabs."
+    )
+
+    static let splitConvertToVerticalAction = NSLocalizedString(
+        "browser.split.convert_to_vertical",
+        comment: "Stacks Split View panes top to bottom."
+    )
+
+    static let splitConvertToHorizontalAction = NSLocalizedString(
+        "browser.split.convert_to_horizontal",
+        comment: "Places Split View panes side by side."
+    )
+
     static let menuToggleSidebar = NSLocalizedString(
         "browser.menu.toggle_sidebar",
         comment: "Toggle Sidebar menu item title."

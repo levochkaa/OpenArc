@@ -135,11 +135,12 @@ extension BrowserChromeModel {
         selectTab(id: tabID)
     }
 
-    /// "Open in Split View": the selected tab keeps its pane and sidebar
-    /// position, `tabID` becomes the next pane and is focused. Its own row joins
-    /// the group, moving into the selected tab's Space, section and folder.
-    @discardableResult func openInSplitView(tabID: String) -> Bool {
-        guard let anchorID = selectedTabID, anchorID != tabID,
+    /// "Open in Split View": the anchor (by default the selected tab)
+    /// keeps its pane and sidebar position, `tabID` becomes the next pane and is
+    /// focused. Its own row joins the group, moving into the anchor's Space,
+    /// section and folder.
+    @discardableResult func openInSplitView(tabID: String, anchorTabID: String? = nil) -> Bool {
+        guard let anchorID = anchorTabID ?? selectedTabID, anchorID != tabID,
               let anchor = tabs.first(where: { $0.id == anchorID }), anchor.placement != .app,
               let added = tabs.first(where: { $0.id == tabID }), added.placement != .app
         else { return false }
@@ -153,14 +154,104 @@ extension BrowserChromeModel {
         if let existing, let index = splitGroups.firstIndex(where: { $0.id == existing.id }) {
             splitGroups[index].tabSyncIDs = existing.tabSyncIDs + [added.syncID]
             splitGroups[index].fractions = nil
+            splitGroups[index].focusedTabSyncID = added.syncID
         } else {
-            splitGroups.append(SplitGroup(id: UUID().uuidString, tabSyncIDs: [anchor.syncID, added.syncID]))
+            splitGroups.append(SplitGroup(
+                id: UUID().uuidString,
+                tabSyncIDs: [anchor.syncID, added.syncID],
+                focusedTabSyncID: added.syncID
+            ))
         }
+        let wasSelected = selectedTabID == tabID
         selectTab(id: tabID)
-        if selectedTabID != tabID {
+        if wasSelected || selectedTabID != tabID {
             persistSplitGroupChange()
         }
         return true
+    }
+
+    /// "Add Split View": the selected tab, or the selected split, can take
+    /// another pane.
+    var canAddSplitView: Bool {
+        guard canCreateTab, let selectedTabID,
+              let selected = tabs.first(where: { $0.id == selectedTabID }), selected.placement != .app
+        else { return false }
+        return splitPaneTabIDs(forTabID: selectedTabID).count < Self.maximumSplitPaneCount
+    }
+
+    /// Opens the command bar; the page or tab chosen there becomes a new pane
+    /// after the selected split's last pane.
+    func presentSplitViewCommandBar() {
+        guard canAddSplitView, let selectedTabID else { return }
+        presentCommandBar()
+        pendingSplitAnchorTabID = commandBarModel.isPresented ? selectedTabID : nil
+    }
+
+    /// Consumes the split anchor left by `presentSplitViewCommandBar()`.
+    func takePendingSplitAnchorTabID() -> String? {
+        defer { pendingSplitAnchorTabID = nil }
+        guard let anchorID = pendingSplitAnchorTabID, tabs.contains(where: { $0.id == anchorID }) else { return nil }
+        return anchorID
+    }
+
+    /// "Close this Split Pane": the focused pane leaves the split, the
+    /// next pane (or the previous one at the end) takes focus, and the pane's
+    /// tab closes like Close Tab: a temporary tab archives, a pinned tab with a
+    /// pinned URL unloads and keeps its row.
+    @discardableResult func closeFocusedSplitPane() -> Bool {
+        guard !isShuttingDown, let closingID = selectedTabID, let group = selectedSplitGroup,
+              let closing = tabs.first(where: { $0.id == closingID })
+        else { return false }
+        let panes = splitPaneTabIDs(of: group)
+        guard let index = panes.firstIndex(of: closingID) else { return false }
+        let siblingID = panes.indices.contains(index + 1) ? panes[index + 1] : panes[index - 1]
+        removeFromSplitGroups(syncID: closing.syncID)
+        selectTab(id: siblingID)
+        persistSplitGroupChange()
+        // Without a pinned URL this declines, and the pinned row is removed
+        // like Close Tab does.
+        if closing.placement == .spacePinned, closePinnedTabProcessOrReset(id: closingID) {
+            return true
+        }
+        return closeTab(id: closingID)
+    }
+
+    @discardableResult func separateSelectedTabFromSplit() -> Bool {
+        guard let selectedTabID else { return false }
+        return separateTabFromSplit(tabID: selectedTabID)
+    }
+
+    @discardableResult func separateSelectedSplitGroup() -> Bool {
+        guard let group = selectedSplitGroup else { return false }
+        return separateSplitGroup(id: group.id)
+    }
+
+    /// Convert title for the selected split; outside a split, the
+    /// horizontal default converts to vertical.
+    var splitOrientationToggleTitle: String {
+        selectedSplitGroup?.orientation == .vertical
+            ? BrowserStrings.splitConvertToHorizontalAction
+            : BrowserStrings.splitConvertToVerticalAction
+    }
+
+    /// Converts the selected split between side by side and stacked panes.
+    @discardableResult func toggleSelectedSplitOrientation() -> Bool {
+        guard let group = selectedSplitGroup else { return false }
+        return setSplitOrientation(group.orientation == .horizontal ? .vertical : .horizontal, groupID: group.id)
+    }
+
+    /// The pane that takes focus when `closingTab` leaves its split: the next
+    /// pane, else the previous one. Nil outside a split.
+    func splitSiblingTabID(afterClosing closingTab: Tab, excluding excludedTabIDs: Set<String>) -> String? {
+        guard let group = splitGroups.first(where: { $0.tabSyncIDs.contains(closingTab.syncID) }),
+              let index = group.tabSyncIDs.firstIndex(of: closingTab.syncID)
+        else { return nil }
+        let tabsBySyncID = Dictionary(tabs.map { ($0.syncID, $0) }, uniquingKeysWith: { first, _ in first })
+        let candidates = group.tabSyncIDs[(index + 1)...] + group.tabSyncIDs[..<index].reversed()
+        return candidates.lazy
+            .compactMap { tabsBySyncID[$0] }
+            .first { $0.id != closingTab.id && $0.spaceID == closingTab.spaceID && !excludedTabIDs.contains($0.id) }?
+            .id
     }
 
     /// "Separate All Tabs": members stay in pane order at the group's

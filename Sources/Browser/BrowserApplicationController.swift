@@ -290,6 +290,26 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.saveCurrentPage()
     }
 
+    public func addSplitView(_: Any?) {
+        activeChromeModel?.presentSplitViewCommandBar()
+    }
+
+    public func closeSplitPane(_: Any?) {
+        activeChromeModel?.closeFocusedSplitPane()
+    }
+
+    public func separateTabFromSplit(_: Any?) {
+        activeChromeModel?.separateSelectedTabFromSplit()
+    }
+
+    public func separateSplitView(_: Any?) {
+        activeChromeModel?.separateSelectedSplitGroup()
+    }
+
+    public func toggleSplitOrientation(_: Any?) {
+        activeChromeModel?.toggleSelectedSplitOrientation()
+    }
+
     public func pasteAndMatchStyle(_ sender: Any?) {
         _ = performPasteAndMatchStyle(sender)
     }
@@ -392,6 +412,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canReload ?? false
         case #selector(saveCurrentPage(_:)):
             return activeChromeModel?.canSavePage ?? false
+        case #selector(addSplitView(_:)):
+            return activeChromeModel?.isWebApp != true && activeChromeModel?.canAddSplitView == true
+        case #selector(closeSplitPane(_:)), #selector(separateSplitView(_:)), #selector(separateTabFromSplit(_:)):
+            return activeChromeModel?.selectedSplitGroup != nil
+        case #selector(toggleSplitOrientation(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = activeChromeModel?.splitOrientationToggleTitle
+                    ?? BrowserStrings.splitConvertToVerticalAction
+            }
+            return activeChromeModel?.selectedSplitGroup != nil
         case #selector(pasteAndMatchStyle(_:)):
             return activeChromeModel?.canPasteAndMatchStyle ?? true
         case #selector(printCurrentPage(_:)):
@@ -939,6 +969,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         viewMenu.addItem(.separator())
 
+        for (commandID, action) in [
+            (BrowserCommandID.addSplitView, #selector(addSplitView(_:))),
+            (.closeSplitPane, #selector(closeSplitPane(_:))),
+            (.separateTabFromSplit, #selector(separateTabFromSplit(_:))),
+            (.separateSplitView, #selector(separateSplitView(_:))),
+            (.toggleSplitOrientation, #selector(toggleSplitOrientation(_:))),
+        ] {
+            viewMenu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
+        }
+
+        viewMenu.addItem(.separator())
+
         let toggleSidebarItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .toggleSidebar),
             action: #selector(toggleSidebar(_:))
@@ -1446,6 +1488,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
             clearCookiesAndRefreshCurrentTab(nil)
             return true
+        case .addSplitView:
+            guard activeChromeModel?.isWebApp != true, activeChromeModel?.canAddSplitView == true else {
+                return false
+            }
+
+            addSplitView(nil)
+            return true
+        case .closeSplitPane:
+            return activeChromeModel?.closeFocusedSplitPane() ?? false
+        case .separateTabFromSplit:
+            return activeChromeModel?.separateSelectedTabFromSplit() ?? false
+        case .separateSplitView:
+            return activeChromeModel?.separateSelectedSplitGroup() ?? false
+        case .toggleSplitOrientation:
+            return activeChromeModel?.toggleSelectedSplitOrientation() ?? false
         case .toggleSidebar:
             guard activeChromeModel != nil else {
                 return false

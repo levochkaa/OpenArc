@@ -867,6 +867,9 @@ final class BrowserNativeSidebarNSView: NSView {
                 }
             }
         }
+        if section != .app {
+            addSplitItems(for: tab, to: menu)
+        }
         menu.addItem(.separator())
         BrowserNativeMenus.add(
             section == .app ? BrowserStrings.tabCloseAction : close.menuTitle,
@@ -892,6 +895,38 @@ final class BrowserNativeSidebarNSView: NSView {
             }
         }
         return menu
+    }
+
+    /// Open in Split View joins the row to the selected tab's split; a
+    /// split member also offers the split row actions.
+    private func addSplitItems(for tab: BrowserChromeModel.Tab, to menu: NSMenu) {
+        let model = state.model
+        let state = state
+        let group = model.splitGroup(containingTabID: tab.id)
+        let canOpen = model.selectedTabID.map { selected in
+            selected != tab.id && model.canAddSplitView && !model.splitPaneTabIDs(forTabID: selected).contains(tab.id)
+        } ?? false
+        guard canOpen || group != nil else { return }
+        menu.addItem(.separator())
+        if canOpen {
+            BrowserNativeMenus.add(BrowserStrings.splitOpenInSplitViewAction, to: menu) { [weak state] in
+                state?.withSidebarAnimation { _ = model.openInSplitView(tabID: tab.id) }
+            }
+        }
+        guard let group else { return }
+        BrowserNativeMenus.add(BrowserStrings.splitSeparateTabAction, to: menu) { [weak state] in
+            state?.withSidebarAnimation { _ = model.separateTabFromSplit(tabID: tab.id) }
+        }
+        BrowserNativeMenus.add(BrowserStrings.splitSeparateAllTabsAction, to: menu) {
+            _ = model.separateSplitGroup(id: group.id)
+        }
+        let vertical = group.orientation == .vertical
+        BrowserNativeMenus.add(
+            vertical ? BrowserStrings.splitConvertToHorizontalAction : BrowserStrings.splitConvertToVerticalAction,
+            to: menu
+        ) {
+            _ = model.setSplitOrientation(vertical ? .horizontal : .vertical, groupID: group.id)
+        }
     }
 
     private func spaceMenu(_ space: BrowserChromeModel.Space) -> NSMenu {

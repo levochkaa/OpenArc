@@ -144,3 +144,29 @@ import Testing
     #expect(BrowserSpaceShortcuts.shortcut(forSpaceIndex: 0) == BrowserKeyboardShortcut("1", modifiers: [.control]))
     #expect(BrowserSpaceShortcuts.shortcut(forSpaceIndex: 4) == nil)
 }
+
+@Test func splitViewShortcutsUseArcDefaultsAndDispatchFromPhysicalKeys() {
+    #expect(BrowserCommands.addSplitView.shortcut == BrowserKeyboardShortcut("=", modifiers: [.control, .shift]))
+    #expect(BrowserCommands.closeSplitPane.shortcut == BrowserKeyboardShortcut("-", modifiers: [.control, .shift]))
+    // Shift turns the keys into "+" and "_", so menu key equivalents alone do not match them.
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 24,
+        modifierFlags: [.control, .shift],
+        charactersIgnoringModifiers: "+"
+    ) == .addSplitView)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 27,
+        modifierFlags: [.control, .shift],
+        charactersIgnoringModifiers: "_"
+    ) == .closeSplitPane)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 24,
+        modifierFlags: [.shift],
+        charactersIgnoringModifiers: "+"
+    ) == nil, "Typing + is not a command")
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 24,
+        modifierFlags: [.command, .shift],
+        charactersIgnoringModifiers: "+"
+    ) == nil, "Cmd-Shift-= is Zoom In, not a split command")
+}

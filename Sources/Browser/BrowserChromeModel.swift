@@ -301,6 +301,11 @@ enum BrowserWindowMode: Equatable {
     /// changes it, so repeated selection inside one split sends nothing.
     var appliedSplitLayout: BrowserTabVisibleLayout?
 
+    /// Tab that the next command bar result joins as a new Split View pane.
+    /// `presentSplitViewCommandBar()` sets it; any other presentation or
+    /// dismissal through the model clears it.
+    var pendingSplitAnchorTabID: String?
+
     /// Raw local Split View state. Only `BrowserChromeModel+SplitGroups.swift`
     /// mutates it; readers use `splitGroup(containingTabID:)`, which validates
     /// members against the current tabs.
@@ -1391,6 +1396,7 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        pendingSplitAnchorTabID = nil
         bookmarksModel.reload()
         dismissFindBar()
         currentPageCommandBarModel.dismiss()
@@ -1403,6 +1409,7 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        pendingSplitAnchorTabID = nil
         if commandBarModel.isPresented {
             commandBarModel.dismiss()
         } else {
@@ -1415,6 +1422,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func dismissCommandBar() {
+        pendingSplitAnchorTabID = nil
         commandBarModel.dismiss()
         currentPageCommandBarModel.dismiss()
     }
@@ -3314,7 +3322,11 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func openResolvedSelectionInNewTab(_ resolvedURLString: String) {
+        let splitAnchorID = takePendingSplitAnchorTabID()
         createTab(withURLString: resolvedURLString)
+        if let splitAnchorID, let tabID = selectedTabID, tabID != splitAnchorID {
+            openInSplitView(tabID: tabID, anchorTabID: splitAnchorID)
+        }
     }
 
     private func openCommandBarTabSelection(tabIDs: [String]) {
@@ -3329,6 +3341,12 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        if let splitAnchorID = takePendingSplitAnchorTabID(), openInSplitView(
+            tabID: tab.id,
+            anchorTabID: splitAnchorID
+        ) {
+            return
+        }
         selectTab(id: tab.id)
     }
 
@@ -3457,6 +3475,8 @@ enum BrowserWindowMode: Equatable {
             userPreferencesStore.bookmarksBarVisible
                 ? BrowserStrings.bookmarksHideBarAction
                 : BrowserStrings.settingsShowBookmarksBar
+        case .toggleSplitOrientation:
+            splitOrientationToggleTitle
         default:
             descriptor.menuTitle
         }
@@ -3511,6 +3531,10 @@ enum BrowserWindowMode: Equatable {
             canGoForward
         case .clearCacheAndRefresh, .clearCookiesAndRefresh, .forceReload, .reload:
             canReload
+        case .addSplitView:
+            canAddSplitView
+        case .closeSplitPane, .separateSplitView, .separateTabFromSplit, .toggleSplitOrientation:
+            selectedSplitGroup != nil && !isShuttingDown
         case .toggleSidebar:
             true
         case .toggleBookmarksBar:
@@ -4523,6 +4547,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         guard let closingTab else {
             return sidebarTabsForSelectedSpace().first?.id
         }
+        if let splitSiblingID = splitSiblingTabID(afterClosing: closingTab, excluding: []) {
+            return splitSiblingID
+        }
 
         let visibleTabs = sidebarTabs(forSpaceID: closingTab.spaceID)
         let previousSidebarOrder = sidebarTabs(
@@ -4546,6 +4573,12 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     }
 
     func fallbackTabID(afterClosingDormantTab closingTab: Tab, excluding excludedTabIDs: Set<String>) -> String? {
+        if let splitSiblingID = splitSiblingTabID(
+            afterClosing: closingTab,
+            excluding: excludedTabIDs.union(closedPinnedTabIDs)
+        ) {
+            return splitSiblingID
+        }
         let visibleTabs = sidebarTabs(forSpaceID: closingTab.spaceID)
             .filter { !excludedTabIDs.contains($0.id) && !closedPinnedTabIDs.contains($0.id) }
         let previousSidebarOrder = sidebarTabs(forSpaceID: closingTab.spaceID, including: closingTab)
@@ -5888,6 +5921,16 @@ extension BrowserCommandID {
                 "delete cookies",
                 "delete cookies and refresh",
             ]
+        case .addSplitView:
+            ["split view", "add split view", "new split", "split screen", "side by side"]
+        case .closeSplitPane:
+            ["close split pane", "close pane", "close split"]
+        case .separateTabFromSplit:
+            ["separate page", "separate tab", "remove from split", "unsplit tab"]
+        case .separateSplitView:
+            ["separate all tabs", "exit split view", "end split view", "unsplit"]
+        case .toggleSplitOrientation:
+            ["convert split", "vertical split", "horizontal split", "rotate split", "split orientation"]
         case .toggleSidebar:
             ["sidebar", "toggle sidebar", "show sidebar", "hide sidebar"]
         case .toggleBookmarksBar:
@@ -5943,6 +5986,14 @@ extension BrowserCommandID {
             "externaldrive"
         case .clearCookiesAndRefresh:
             "trash"
+        case .addSplitView:
+            "rectangle.split.2x1"
+        case .closeSplitPane:
+            "xmark.rectangle"
+        case .separateSplitView, .separateTabFromSplit:
+            "rectangle.on.rectangle"
+        case .toggleSplitOrientation:
+            "rectangle.split.1x2"
         case .toggleSidebar:
             "sidebar.left"
         case .toggleBookmarksBar:
@@ -6006,6 +6057,10 @@ extension BrowserKeyboardShortcut {
             ["]", "right bracket", "close bracket"]
         case "♡":
             ["heart"]
+        case "=":
+            ["=", "equals", "plus"]
+        case "-":
+            ["-", "minus", "hyphen"]
         default:
             [keyEquivalent.lowercased()]
         }

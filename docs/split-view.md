@@ -21,6 +21,8 @@ The selected tab is the focused pane, so the toolbar, Find and active-tab comman
 
 `CefFocusHandler::OnGotFocus` in a visible non-active pane reports `didFocusTabWithID`; the model selects that tab, so the toolbar follows the clicked pane. Hidden tabs and panes of an unselected split cannot take selection this way. Navigation focus stealing stays blocked for inactive panes.
 
+While two or more panes are shown, the controller draws a 2 pt accent ring (`BrowserSplitFocusRingView`, rounded like the content corners) inside the active pane's frame. It sits above the pane views, ignores mouse events and hides outside a split.
+
 ## Actions
 
 | Action | Behavior |
@@ -30,8 +32,30 @@ The selected tab is the focused pane, so the toolbar, Find and active-tab comman
 | `separateTabFromSplit(tabID:)` | Separate Tab from Split: the tab leaves and its row moves after the remaining panes |
 | `setSplitOrientation(_:groupID:)` | Convert between horizontal and vertical |
 | `setSplitFractions(_:groupID:)` | Commit pane sizes once, for example when a divider drag ends |
+| `presentSplitViewCommandBar()` | Add Split View: opens the command bar with the selected tab as anchor. A submitted URL opens a new tab and an open-tab result reuses that tab; either becomes the next pane through `openInSplitView`. Any other command bar presentation or model dismissal clears the anchor |
+| `closeFocusedSplitPane()` | Close this Split Pane: the focused tab leaves the group, the next pane (the previous one at the end) is selected, then the tab closes like Close Tab. A pinned tab with a pinned URL unloads and keeps its row |
+| `separateSelectedTabFromSplit()`, `separateSelectedSplitGroup()`, `toggleSelectedSplitOrientation()` | The row actions for the selected split |
 
-Closing a member or moving it to another Space or section removes it through validation.
+Closing a member or moving it to another Space or section removes it through validation. Close Tab (`Cmd+W`) on a pane selects the next pane, else the previous one, instead of the row below the split.
+
+## Commands and controls
+
+TheBrowser adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Shift+-`) and Separate Page from Split View as `BrowserCommandID`s, plus Separate All Tabs and Convert from the split menus, so they appear in the View menu, the command bar and the Settings shortcut list. Expand Current Split is not implemented yet:
+
+| Command | Default | Available |
+| --- | --- | --- |
+| Add Split View | `Ctrl+Shift+=` | A selected non-Favorite tab whose split has fewer than four panes |
+| Close this Split Pane | `Ctrl+Shift+-` | A split is selected |
+| Separate Page from Split View | none | A split is selected |
+| Separate All Tabs | none | A split is selected |
+| Convert to Vertical/Horizontal Split View | none | A split is selected; the title follows the current orientation |
+
+The physical-key monitor also dispatches Control shortcuts and the `=`/`-` keys, because Shift changes their characters (`+`, `_`) and menu key equivalents do not match them reliably.
+
+Controls:
+
+- The tab context menu offers Open in Split View on rows other than the selected tab (when the selected split can take a pane) and, on split members, Separate Tab from Split, Separate All Tabs and Convert.
+- A Split View button (`rectangle.split.2x1`) sits left of the site controls in the toolbar and among the hover actions of the sidebar URL row. Outside a split it starts Add Split View; inside one it opens the Split View Menu (Add Split View, Separate Tab from Split, Convert, Separate All Tabs, Close this Split Pane). It is highlighted while a split is selected.
 
 ## Persistence and sync
 
@@ -41,9 +65,9 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 ## Status and next slices
 
-Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout and click focus, with tests. CEF layout is compile-verified and covered through the fake driver; it has not run in a launched TheBrowser. Not implemented yet:
+Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, commands with shortcuts, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
-1. Divider drag to resize panes (commit with `setSplitFractions` on drag end) and the focused-pane border.
-2. Sidebar: one row with member chips at the first member, hidden member rows, split context menu (Separate All Tabs, Add Tab, Convert, Tab Options) and the tab menu's Open in Split View.
-3. Pane chrome and commands: per-pane back/forward/host/close strip, Split View Menu, Cmd-L for the focused pane, Add Left/Right/Top/Bottom Split in the command bar, Cmd-Shift-Plus and drag into the center.
+1. Divider drag to resize panes (commit with `setSplitFractions` on drag end).
+2. Sidebar: one row with member chips at the first member, hidden member rows and the split row menu (Add Tab, Tab Options).
+3. Pane chrome: per-pane back/forward/host/close strip, Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane and drag into the center.
 4. iPad browser split in UIKit/WebKit.

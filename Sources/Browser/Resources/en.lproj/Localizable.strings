@@ -118,6 +118,16 @@
 "browser.menu.clear_cache_and_refresh" = "Clear Cache and Refresh";
 "browser.menu.clear_cookies_and_refresh" = "Clear Cookies and Refresh";
 "browser.menu.toggle_sidebar" = "Toggle Sidebar";
+"browser.menu.add_split_view" = "Add Split View";
+"browser.menu.close_split_pane" = "Close this Split Pane";
+"browser.menu.separate_page_from_split_view" = "Separate Page from Split View";
+"browser.menu.toggle_split_orientation" = "Toggle Split View Orientation";
+"browser.split.button" = "Split View";
+"browser.split.open_in_split_view" = "Open in Split View";
+"browser.split.separate_tab" = "Separate Tab from Split";
+"browser.split.separate_all_tabs" = "Separate All Tabs";
+"browser.split.convert_to_vertical" = "Convert to Vertical Split View";
+"browser.split.convert_to_horizontal" = "Convert to Horizontal Split View";
 "browser.menu.clear_temporary_tabs" = "Clear Temporary Tabs";
 "browser.menu.quit_shortcut_title" = "Quit";
 "browser.action.cancel" = "Cancel";

@@ -230,6 +230,38 @@ enum BrowserCommands {
         shortcut: .unassigned
     )
 
+    /// Add Split View is Control-Shift-=.
+    static let addSplitView = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuAddSplitView,
+        helpTitle: BrowserStrings.menuAddSplitView,
+        shortcut: BrowserKeyboardShortcut("=", modifiers: [.control, .shift])
+    )
+
+    /// View menu: Close this Split Pane is Control-Shift--.
+    static let closeSplitPane = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuCloseSplitPane,
+        helpTitle: BrowserStrings.menuCloseSplitPane,
+        shortcut: BrowserKeyboardShortcut("-", modifiers: [.control, .shift])
+    )
+
+    static let separateTabFromSplit = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuSeparatePageFromSplitView,
+        helpTitle: BrowserStrings.menuSeparatePageFromSplitView,
+        shortcut: .unassigned
+    )
+
+    static let separateSplitView = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitSeparateAllTabsAction,
+        helpTitle: BrowserStrings.splitSeparateAllTabsAction,
+        shortcut: .unassigned
+    )
+
+    static let toggleSplitOrientation = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuToggleSplitOrientation,
+        helpTitle: BrowserStrings.menuToggleSplitOrientation,
+        shortcut: .unassigned
+    )
+
     static let toggleSidebar = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuToggleSidebar,
         helpTitle: BrowserStrings.sidebarHide,
@@ -311,6 +343,11 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case forceReload
     case clearCacheAndRefresh
     case clearCookiesAndRefresh
+    case addSplitView
+    case closeSplitPane
+    case separateTabFromSplit
+    case separateSplitView
+    case toggleSplitOrientation
     case toggleSidebar
     case toggleBookmarksBar
 }
@@ -327,7 +364,7 @@ enum BrowserKeyboardShortcutBridge {
         shortcutResolver: BrowserShortcutResolving? = nil
     ) -> BrowserLayoutIndependentShortcutCommand? {
         let normalizedModifiers = modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard normalizedModifiers.contains(.command) else {
+        guard !normalizedModifiers.isDisjoint(with: [.command, .control]) else {
             return nil
         }
 
@@ -451,6 +488,10 @@ enum BrowserKeyboardShortcutBridge {
             "["
         case 43:
             ","
+        case 24:
+            "="
+        case 27:
+            "-"
         default:
             nil
         }
