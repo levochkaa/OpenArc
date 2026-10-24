@@ -318,6 +318,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.opensOptionCommandClicksInLittleWindow = $0 }
                 ),
                 toggle(
+                    "folder-previews",
+                    BrowserStrings.settingsFolderPreviews,
+                    get: { preferences.folderPreviewsEnabled },
+                    set: { preferences.folderPreviewsEnabled = $0 }
+                ),
+                toggle(
                     "warn-before-quitting",
                     BrowserStrings.settingsWarnBeforeQuitting,
                     get: { preferences.warnBeforeQuitting },

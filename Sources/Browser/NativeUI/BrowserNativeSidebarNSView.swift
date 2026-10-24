@@ -52,6 +52,13 @@ final class BrowserNativeSidebarNSView: NSView {
         appGrid.onEmptyClick = content.onEmptyClick
         appGrid.permitsWindowDrag = content.permitsWindowDrag
         state.onChange = { [weak self] animated in self?.refresh(animated: animated) }
+        folderPreview.isEnabled = { [weak state] in
+            guard let state else { return false }
+            return state.model.userPreferencesStore.folderPreviewsEnabled && !state.isDraggingSidebarItem
+                && !state.isSidebarResizing
+        }
+        folderPreview.items = { [weak state] folderID in state?.folderPreviewItems(folderID: folderID) ?? [] }
+        folderPreview.onSelect = { [weak state] tabID in state?.model.selectTab(id: tabID) }
         state.drag.onPresentationChange = { [weak self] in self?.updateDragPresentation() }
         state.drag.onLayoutChange = { [weak self] in self?.handleDragLayoutChange() }
         state.drag.onTargetChange = { [weak state] in
@@ -95,6 +102,9 @@ final class BrowserNativeSidebarNSView: NSView {
     var headerHeightProvider: (() -> CGFloat)?
     var footerHeightProvider: ((CGFloat) -> CGFloat)?
 
+    /// Folder preview beside a collapsed folder row.
+    let folderPreview = BrowserFolderPreviewCoordinator()
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let clickMonitor {
@@ -102,6 +112,7 @@ final class BrowserNativeSidebarNSView: NSView {
             self.clickMonitor = nil
         }
         if window == nil {
+            folderPreview.dismiss()
             dragEvents.stop()
             landingAnimation.cancel()
             dragPreviewAnimation.cancel()
@@ -164,6 +175,12 @@ final class BrowserNativeSidebarNSView: NSView {
             renameSelectedRowIfRequested()
         }
         let snapshot = renderedSnapshot
+        if let shown = folderPreview.shownFolderID,
+           snapshot.pinnedTabFolder(withID: shown).map({ $0.isExpanded || $0.spaceID != snapshot.selectedSpaceID })
+           ?? true
+        {
+            folderPreview.dismiss()
+        }
         let selectedIndex = state.selectedSpaceIndex(in: snapshot) ?? 0
         let wantedPages = Set(snapshot.spaces
             .enumerated()
@@ -291,6 +308,7 @@ final class BrowserNativeSidebarNSView: NSView {
         sourceFrame: CGRect,
         value: BrowserNativeDragValue
     ) -> Bool {
+        folderPreview.dismiss()
         landingAnimation.cancel()
         dragPreviewAnimation.cancel()
         dragEvents.stop()
@@ -697,8 +715,13 @@ final class BrowserNativeSidebarNSView: NSView {
                     resetID: state.tabRowInteractionResetID
                 )
                 row.dragOpacity = state.drag.hiddenFolderIDs.contains(folder.id) ? 0 : 1
-                row.onToggle = { [weak state] in
+                row.onHoverChanged = { [weak self, weak row] hovered in
+                    guard let self, let row else { return }
+                    folderPreview.rowHoverChanged(folderID: folder.id, row: row, hovered: hovered && !folder.isExpanded)
+                }
+                row.onToggle = { [weak self, weak state] in
                     guard let state else { return }
+                    self?.folderPreview.dismiss()
                     state.dismissRenamingIfNeeded()
                     state.withSidebarAnimation {
                         if folder.isExpanded {

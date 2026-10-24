@@ -880,6 +880,16 @@ enum BrowserStrings {
         comment: "Settings toggle: Option-Command-clicked links open in a small window of their own."
     )
 
+    static let settingsFolderPreviews = NSLocalizedString(
+        "browser.settings.folder_previews",
+        comment: "Settings toggle: resting the pointer on a collapsed sidebar folder lists its tabs."
+    )
+
+    static let folderPreviewSearchPlaceholder = NSLocalizedString(
+        "browser.folder_preview.search_placeholder",
+        comment: "Placeholder of the search field in a sidebar folder's preview."
+    )
+
     static let settingsPeekOtherSites = NSLocalizedString(
         "browser.settings.peek_other_sites",
         comment: "Settings toggle: links to other sites from pinned tabs and Favorites open in Peek."

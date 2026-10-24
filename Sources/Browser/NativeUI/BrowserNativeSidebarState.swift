@@ -1,5 +1,7 @@
 import AppKit
 
+// MARK: - BrowserNativeSidebarState
+
 /// Selection, editing and space paging stay separate from the owned drag session.
 @MainActor final class BrowserNativeSidebarState {
     // MARK: Lifecycle
@@ -712,5 +714,25 @@ import AppKit
                 return nil
             }
         return pinnedIDs + snapshot.temporaryTabs.map(\.id)
+    }
+}
+
+// MARK: - Folder preview
+
+extension BrowserNativeSidebarState {
+    /// Every tab in a folder and its subfolders, in sidebar order.
+    func folderPreviewItems(folderID: String) -> [BrowserFolderPreviewItem] {
+        guard let folder = snapshot.pinnedTabFolder(withID: folderID) else { return [] }
+        let tree = BrowserSidebarTabTree(snapshot: snapshot)
+        return tree.tabIDs(in: .pinned(folder.spaceID, folderID: folderID)).compactMap { id in
+            snapshot.tab(withID: id).map {
+                BrowserFolderPreviewItem(
+                    id: $0.id,
+                    title: $0.displayTitle,
+                    urlString: $0.urlString,
+                    faviconURL: $0.faviconURL
+                )
+            }
+        }
     }
 }
