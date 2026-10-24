@@ -15,6 +15,23 @@
       "name": "Run iPad",
       "command": "./script/run_ios_simulator.sh ipad",
       "icon": "play"
+    },
+    {
+      "name": "Build",
+      "command": "./build.sh build",
+      "icon": "build"
+    },
+    {
+      "name": "Test",
+      "command": "./build.sh test",
+      "icon": "test"
+    },
+    {
+      "name": "Setup worktree",
+      "command": "./build.sh prepare-worktree",
+      "icon": "configure",
+      "runOnWorktreeCreate": true,
+      "async": false
     }
   ]
 }
