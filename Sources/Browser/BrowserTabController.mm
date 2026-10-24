@@ -1,6 +1,7 @@
 #import "Browser/BrowserTabController.h"
 
 #import <AuthenticationServices/AuthenticationServices.h>
+#import <QuartzCore/QuartzCore.h>
 #import <Sparkle/Sparkle.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -293,6 +294,7 @@ CefRect CefRectFromBounds(NSRect bounds) {
 }
 
 NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser);
+void SetBrowserViewCornerRadius(NSView *browserView, CGFloat radius);
 
 void PresentSavePageError(NSString *message) {
   dispatch_async(dispatch_get_main_queue(), ^{
@@ -1555,6 +1557,27 @@ void SyncBrowserViewFrame(BrowserTabHostView *hostView,
   const NSRect targetFrame =
       NSMakeRect(0, 0, NSWidth(hostBounds), NSHeight(hostBounds));
   browserView.frame = targetFrame;
+  // The viewport rounds the outer corners of a single page.
+  SetBrowserViewCornerRadius(browserView, 0);
+}
+
+// Split View panes round every corner, including the inner ones the
+// viewport cannot reach.
+void SetBrowserViewCornerRadius(NSView *browserView, CGFloat radius) {
+  if (radius <= 0 && !browserView.wantsLayer) {
+    return;
+  }
+  browserView.wantsLayer = YES;
+  CALayer *layer = browserView.layer;
+  if (layer.cornerRadius == radius && layer.masksToBounds == (radius > 0)) {
+    return;
+  }
+  [CATransaction begin];
+  [CATransaction setDisableActions:YES];
+  layer.cornerRadius = radius;
+  layer.cornerCurve = kCACornerCurveContinuous;
+  layer.masksToBounds = radius > 0;
+  [CATransaction commit];
 }
 
 // A Split View pane is laid out on every host layout, so it must not also
@@ -1568,6 +1591,7 @@ void SyncBrowserViewPaneFrame(CefRefPtr<CefBrowser> browser, NSRect frame) {
   if (!NSEqualRects(browserView.frame, frame)) {
     browserView.frame = frame;
   }
+  SetBrowserViewCornerRadius(browserView, BrowserSplitPaneLayout.paneCornerRadius);
 }
 
 NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser) {

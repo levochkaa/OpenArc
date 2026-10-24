@@ -13,6 +13,10 @@ import AppKit
     @objc static let focusRingWidth: CGFloat = 2
 
     @objc static var focusRingCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
+
+    /// Every pane corner is rounded like the outer content corners.
+    @objc static var paneCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
+
     @objc static var focusRingColor: NSColor { BrowserChromeColors.splitFocusedPaneBorder }
 
     static func frames(
