@@ -502,7 +502,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.bookmarksBarVisible = $0 }
                 ),
             ]),
-            section(BrowserStrings.bookmarksImport, rows: BrowserBookmarkImportSource.allCases.map { source in
+            section(BrowserStrings.bookmarksImport, rows: [arcSidebarImportRow()] + BrowserBookmarkImportSource.allCases.map { source in
                 let button = BrowserActionButton(source.title) { [weak self] in
                     guard let self else { return }
                     if source == .safari {
@@ -523,6 +523,42 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 link(BrowserStrings.settingsTranslateSitePrompts, url: BrowserSettingsRoute.languageURL),
             ]),
         ])
+    }
+
+    /// Arc's sidebar import, reported in an alert because it adds Spaces.
+    private func arcSidebarImportRow() -> NSView {
+        let model = model
+        let button = BrowserActionButton(BrowserStrings.settingsImportArcSidebar) { [weak self] in
+            let message: String
+            if !model.canImportArcSidebar {
+                message = BrowserStrings.arcImportUnavailable
+            } else if let url = BrowserArcSidebar.defaultFileURL {
+                do {
+                    let result = try model.importArcSidebar(BrowserArcSidebar.load(from: url))
+                    message = result.isEmpty ? BrowserStrings.arcImportNothing : BrowserStrings.arcImportResult(result)
+                } catch BrowserArcSidebar.ImportError.missing {
+                    message = BrowserStrings.arcImportMissing
+                } catch {
+                    message = BrowserStrings.arcImportUnreadable
+                }
+            } else {
+                message = BrowserStrings.arcImportMissing
+            }
+            let alert = NSAlert()
+            alert.messageText = BrowserStrings.settingsImportArcSidebar
+            alert.informativeText = message
+            if let window = self?.view.window {
+                alert.beginSheetModal(for: window)
+            } else {
+                alert.runModal()
+            }
+        }
+        button.setAccessibilityIdentifier("browser.settings.import-arc-sidebar")
+        button.isBordered = false
+        button.alignment = .left
+        button.image = NSImage(systemSymbolName: "square.and.arrow.down.on.square", accessibilityDescription: nil)
+        button.imagePosition = .imageLeading
+        return BrowserNativeControls.padded(button, vertical: 8)
     }
 
     private func refreshAccounts() {

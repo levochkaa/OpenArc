@@ -153,6 +153,12 @@
 "browser.menu.hide_toolbar" = "Hide Toolbar";
 "browser.menu.open_location" = "Open Location…";
 "browser.menu.restore_last_closed_tab" = "Restore Last Closed Tab";
+"browser.settings.import_arc_sidebar" = "Arc Spaces, Pinned Tabs and Favorites";
+"browser.arc_import.missing" = "Arc's sidebar was not found on this Mac.";
+"browser.arc_import.unreadable" = "Arc's sidebar could not be read.";
+"browser.arc_import.nothing" = "Arc's sidebar has no Spaces or Favorites to import.";
+"browser.arc_import.unavailable" = "Try again when the window has finished loading.";
+"browser.arc_import.result" = "Imported %d Spaces with %d pinned tabs and %d folders, and %d Favorites.";
 "browser.menu.developer_tools" = "Developer Tools";
 "browser.split.pane_grip" = "Move Split Pane";
 "browser.menu.view_downloads" = "View Downloads";

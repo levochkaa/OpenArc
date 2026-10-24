@@ -794,6 +794,107 @@ enum BrowserWindowMode: Equatable {
         bookmarksModel.containsBookmark(urlString: urlString)
     }
 
+    /// Arc's sidebar can only join a persistent window that is not busy with
+    /// restore or sync.
+    var canImportArcSidebar: Bool {
+        supportsSpaces && windowMode.persistsSession && !isShuttingDown && !isRestoringSession
+            && !isApplyingRemoteSync && !isReconcilingRemoteProjection
+    }
+
+    /// Adds Arc's Spaces with their pinned tabs and folders, and its Favorites
+    /// up to the app tile capacity. Imported tabs are dormant, like pinned tabs
+    /// closed earlier: their pages load when first selected. The current Space
+    /// and selection stay as they are.
+    @discardableResult func importArcSidebar(_ sidebar: BrowserArcSidebar) -> BrowserArcSidebarImportResult {
+        guard canImportArcSidebar else { return .init() }
+        var result = BrowserArcSidebarImportResult()
+        let now = dateProvider()
+
+        func dormantTab(_ node: BrowserArcSidebar.Node, spaceID: String, folderID: String?, placement: BrowserTabPlacement)
+            -> Tab?
+        {
+            guard case .tab(let title, let savedTitle, let urlString) = node else { return nil }
+            let id = UUID().uuidString
+            restoredTabCreationIDs.insert(id)
+            return Tab(
+                id: id,
+                syncID: tabSyncIDProvider(),
+                spaceID: spaceID,
+                title: savedTitle ?? "",
+                userTitleOverride: sanitizedUserTitleOverride(from: title),
+                urlString: urlString,
+                pinnedURLString: placement == .spacePinned ? normalizedPinnedURLString(from: urlString) : nil,
+                placement: placement,
+                pinnedFolderID: folderID,
+                lastActivityAt: now
+            )
+        }
+
+        for arcSpace in sidebar.spaces {
+            var space = makeSpace()
+            if let title = sanitizedSpaceTitle(from: arcSpace.title) {
+                space.title = title
+            }
+            if let icon = arcSpace.icon, NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil {
+                space.systemImageName = icon
+            }
+            spaces.append(space)
+            var folderChildren = [String: [BrowserSidebarItemID]]()
+            func add(_ nodes: [BrowserArcSidebar.Node], folderID: String?) -> [BrowserSidebarItemID] {
+                nodes.compactMap { node in
+                    switch node {
+                    case .tab:
+                        guard let tab = dormantTab(node, spaceID: space.id, folderID: folderID, placement: .spacePinned)
+                        else { return nil }
+                        tabs.append(tab)
+                        closedPinnedTabIDs.insert(tab.id)
+                        result.pinnedTabCount += 1
+                        return .tab(tab.id)
+                    case .folder(let title, let icon, let children):
+                        let id = uniquePinnedTabFolderID()
+                        pinnedTabFolders.append(PinnedTabFolder(
+                            id: id,
+                            spaceID: space.id,
+                            parentFolderID: folderID,
+                            title: sanitizedPinnedTabFolderTitle(from: title) ?? BrowserStrings.pinnedTabFolderDefaultTitle,
+                            systemImageName: icon.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil ? nil : $0 },
+                            isExpanded: false
+                        ))
+                        result.folderCount += 1
+                        folderChildren[id] = add(children, folderID: id)
+                        return .folder(id)
+                    }
+                }
+            }
+            let roots = add(arcSpace.pinned, folderID: nil)
+            var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+            tree.children[.pinned(space.id)] = roots
+            for (folderID, children) in folderChildren {
+                tree.children[.pinned(space.id, folderID: folderID)] = children
+            }
+            applyPinnedTree(tree)
+            result.spaceCount += 1
+        }
+
+        if supportsAppTabs, let spaceID = selectedSpaceID ?? spaces.first?.id {
+            var known = Set(appTabs.map { comparablePinnedURLString($0.urlString) })
+            for node in sidebar.favorites where appTabs.count < Self.appTabCapacity {
+                guard case .tab(_, _, let urlString) = node,
+                      known.insert(comparablePinnedURLString(urlString)).inserted,
+                      let tab = dormantTab(node, spaceID: spaceID, folderID: nil, placement: .app)
+                else { continue }
+                tabs.insert(tab, at: tabs.lastIndex { $0.placement == .app }.map { $0 + 1 } ?? 0)
+                closedAppTabIDs.insert(tab.id)
+                result.favoriteCount += 1
+            }
+        }
+
+        if !result.isEmpty {
+            persistCurrentSessionIfAllowed()
+        }
+        return result
+    }
+
     func createNewSpace() {
         guard supportsSpaces else {
             return

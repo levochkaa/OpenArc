@@ -813,6 +813,44 @@ enum BrowserStrings {
         comment: "View menu and command title that opens the page's developer tools."
     )
 
+    static let settingsImportArcSidebar = NSLocalizedString(
+        "browser.settings.import_arc_sidebar",
+        comment: "Settings import button that adds Arc's Spaces, pinned tabs, folders and Favorites."
+    )
+
+    static let arcImportMissing = NSLocalizedString(
+        "browser.arc_import.missing",
+        comment: "Alert shown when Arc's sidebar file does not exist."
+    )
+
+    static let arcImportUnreadable = NSLocalizedString(
+        "browser.arc_import.unreadable",
+        comment: "Alert shown when Arc's sidebar file cannot be parsed."
+    )
+
+    static let arcImportNothing = NSLocalizedString(
+        "browser.arc_import.nothing",
+        comment: "Alert shown when Arc's sidebar has nothing to import."
+    )
+
+    static let arcImportUnavailable = NSLocalizedString(
+        "browser.arc_import.unavailable",
+        comment: "Alert shown when the window cannot take an import right now."
+    )
+
+    static func arcImportResult(_ result: BrowserArcSidebarImportResult) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.arc_import.result",
+                comment: "Alert after importing from Arc: Spaces, pinned tabs, folders, Favorites."
+            ),
+            result.spaceCount,
+            result.pinnedTabCount,
+            result.folderCount,
+            result.favoriteCount
+        )
+    }
+
     static let menuRestoreLastClosedTab = NSLocalizedString(
         "browser.menu.restore_last_closed_tab",
         comment: "File menu and command title that reopens the most recently closed tab."
