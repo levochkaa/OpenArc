@@ -295,6 +295,46 @@ import Testing
         #expect(h.rows.allSatisfy { $0.dragOpacity == 1 && !$0.isDragging })
     }
 
+    /// A Split View shows as one row with a chip per pane at its first
+    /// member; dragging that row moves the whole split.
+    @Test func splitRowShowsPanesAsChipsAndDragsAsOneGroup() async throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        #expect(f.names(f.model.temporaryTabs) == ["x", "z", "y"])
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        let row = try #require(h.named("browser.sidebar.split.\(f.id("x"))") as? BrowserNativeSidebarRowNSView)
+        #expect(row.kind == .split)
+        #expect(row.splitMemberIDs == [f.id("x"), f.id("z")])
+        #expect(h.named("browser.sidebar.tab.\(f.id("z"))") == nil, "Other panes have no row of their own")
+        #expect(h.named("browser.sidebar.tab.\(f.id("y"))") != nil)
+        try h.snapshot("/tmp/thebrowser-split-row.png")
+
+        let chip = try #require(h.named("browser.sidebar.split-member.\(f.id("x"))"))
+        #expect(chip.accessibilityPerformPress())
+        #expect(f.model.selectedTabID == f.id("x"))
+
+        let point = row.convert(row.bounds.center, to: row.dragCoordinateView)
+        #expect(h.view.beginDragging(
+            item: .tab(f.id("x")),
+            from: row,
+            value: .init(startLocation: point, location: point, translation: .zero, predictedEndTranslation: .zero)
+        ))
+        #expect(h.state.drag.payload?.tabIDs == Set([f.id("x"), f.id("z")]))
+        #expect(f.model.selectedTabID == f.id("x"), "Dragging a selected split keeps its focused pane")
+        let geometry = try #require(h.state.drag.geometry)
+        let target = try #require(geometry.slots.first {
+            $0.proposal.destination == .init(container: .temporary("s"))
+        })
+        h.move(target.hitFrame.center)
+        h.release(target.hitFrame.center)
+        #expect(f.names(f.model.temporaryTabs) == ["y", "x", "z"])
+        #expect(f.model.sidebarSnapshot.splitGroups == [[f.id("x"), f.id("z")]], "The split survives the move")
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(h.state.drag.phase == .idle)
+    }
+
     /// A single dragged tab activates at drag start and stays active even
     /// when the drop is a no-op. Order changes only on an accepted drop.
     @Test func singleTabDragActivatesTheDraggedTabEvenWhenCancelled() async throws {

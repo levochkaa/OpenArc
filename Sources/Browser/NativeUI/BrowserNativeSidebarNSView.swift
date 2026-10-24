@@ -302,7 +302,8 @@ final class BrowserNativeSidebarNSView: NSView {
                 ids = state.selectedSidebarTabIDs
             } else {
                 state.clearSidebarTabSelection()
-                ids = [id]
+                // A Split View row carries every pane, so the split moves as one group.
+                ids = Set(state.snapshot.splitMembers(ofTabID: id) ?? [id])
             }
         case .folder(let id):
             guard let folder = tree.folders[id] else { return false }
@@ -457,6 +458,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private func activateSingleDraggedTab(_ item: BrowserSidebarItemID) {
         guard case .tab(let id) = item, !state.selectedSidebarTabIDs.contains(id),
               state.model.selectedTabID != id,
+              state.snapshot.splitMembers(ofTabID: id)?.contains(state.model.selectedTabID ?? "") != true,
               let tab = state.model.tabs.first(where: { $0.id == id }),
               tab.placement == .app || tab.spaceID == state.model.selectedSpaceID
         else { return }
@@ -624,11 +626,19 @@ final class BrowserNativeSidebarNSView: NSView {
             revealedTabIDsByFolderID: state.revealedPinnedFolderTabIDsByFolderID
         )
         var entries = [BrowserNativeSidebarPage.Entry]()
+        // A Split View is one row in place of its first member; the other
+        // members have no row of their own.
+        var renderedSplits = Set<[String]>()
+        func showsRow(for tab: BrowserChromeModel.Tab) -> Bool {
+            guard let members = snapshot.splitMembers(ofTabID: tab.id) else { return true }
+            return renderedSplits.insert(members).inserted
+        }
         let collapsed = model.supportsSpaces && snapshot.isPinnedSectionCollapsed(in: space.id)
         if !collapsed {
             for row in pinnedRows where !pinned.isEmpty {
                 switch row {
                 case .tab(let tabRow):
+                    guard showsRow(for: tabRow.tab) else { continue }
                     entries.append(.tab(
                         tabRow.tab,
                         section: .spacePinned,
@@ -648,7 +658,7 @@ final class BrowserNativeSidebarNSView: NSView {
             entries.append(.incognito)
         }
         entries.append(.newTab)
-        entries += temporary.enumerated().map { .tab(
+        entries += temporary.enumerated().filter { showsRow(for: $0.element) }.map { .tab(
             $0.element,
             section: .temporary,
             index: $0.offset,
@@ -752,6 +762,10 @@ final class BrowserNativeSidebarNSView: NSView {
         section: BrowserSidebarTabSection,
         indent: Int
     ) {
+        if section != .app, let members = state.snapshot.splitMembers(ofTabID: tab.id) {
+            configureSplit(row: row, representative: tab, memberIDs: members, section: section, indent: indent)
+            return
+        }
         let state = state
         let model = state.model
         let isApp = section == .app
@@ -827,6 +841,105 @@ final class BrowserNativeSidebarNSView: NSView {
             guard let self, let row else { return false }
             return beginDragging(item: .tab(tab.id), from: row, value: value)
         }
+    }
+
+    private func configureSplit(
+        row: BrowserNativeSidebarRowNSView,
+        representative tab: BrowserChromeModel.Tab,
+        memberIDs: [String],
+        section: BrowserSidebarTabSection,
+        indent: Int
+    ) {
+        let state = state
+        let model = state.model
+        let members = memberIDs.compactMap { state.snapshot.tab(withID: $0) }
+        let selectedID = state.snapshot.selectedTabID
+        row.update(
+            split: members,
+            focusedTabID: selectedID,
+            selected: selectedID.map(memberIDs.contains) == true && !isCommandBarPresented,
+            multiSelected: memberIDs.contains(where: state.selectedSidebarTabIDs.contains),
+            indentLevel: indent,
+            isResizing: state.isSidebarResizing,
+            resetID: state.tabRowInteractionResetID
+        )
+        row.dragOpacity = !state.draggedTabIDs.isEmpty && memberIDs.allSatisfy(state.draggedTabIDs.contains) ? 0 : 1
+        row.onSelectSplitMember = { [weak state] id in
+            guard let state, let member = state.snapshot.tab(withID: id) else { return }
+            state.dismissRenamingIfNeeded()
+            state.handleSidebarTabSelection(member, in: section)
+        }
+        row.onModifiedSelect = { [weak state] modifiers in
+            guard let state else { return }
+            state.dismissRenamingIfNeeded()
+            state.handleSidebarTabSelection(tab, in: section, modifiers: modifiers)
+        }
+        row.onCloseSplitMember = { [weak state] id in
+            guard let state, let member = state.snapshot.tab(withID: id) else { return }
+            state.dismissRenamingIfNeeded()
+            state.withSidebarAnimation {
+                _ =
+                    if member.placement == .spacePinned, member.pinnedURLString != nil,
+                    state.snapshot.selectedTabID == id {
+                        model.closePinnedTabProcessOrReset(id: id)
+                    } else {
+                        model.closeTab(id: id)
+                    }
+            }
+        }
+        row.menuProvider = { [weak self] in self?.splitMenu(members) ?? NSMenu() }
+        row.dragCoordinateView = content
+        row.onBeginDragSession = { [weak self, weak row] value in
+            guard let self, let row else { return false }
+            return beginDragging(item: .tab(tab.id), from: row, value: value)
+        }
+    }
+
+    /// Split View row menu: whole-split actions, then options per pane.
+    private func splitMenu(_ members: [BrowserChromeModel.Tab]) -> NSMenu {
+        let state = state
+        let model = state.model
+        let menu = BrowserNativeMenus.menu()
+        guard let first = members.first, let group = model.splitGroup(containingTabID: first.id) else { return menu }
+        BrowserNativeMenus.add(BrowserStrings.splitSeparateAllTabsAction, to: menu) { [weak state] in
+            state?.withSidebarAnimation { _ = model.separateSplitGroup(id: group.id) }
+        }
+        BrowserNativeMenus.add(
+            BrowserStrings.menuAddSplitView,
+            to: menu,
+            enabled: members.count < BrowserChromeModel.maximumSplitPaneCount
+        ) {
+            if !members.contains(where: { $0.id == model.selectedTabID }) {
+                model.selectTab(id: model.splitPaneTabIDs(of: group).first { id in
+                    model.tabs.first { $0.id == id }?.syncID == group.focusedTabSyncID
+                } ?? first.id)
+            }
+            model.presentSplitViewCommandBar()
+        }
+        let vertical = group.orientation == .vertical
+        BrowserNativeMenus.add(
+            vertical ? BrowserStrings.splitConvertToHorizontalAction : BrowserStrings.splitConvertToVerticalAction,
+            to: menu
+        ) {
+            _ = model.setSplitOrientation(vertical ? .horizontal : .vertical, groupID: group.id)
+        }
+        menu.addItem(.separator())
+        for member in members {
+            let item = NSMenuItem(title: member.displayTitle, action: nil, keyEquivalent: "")
+            let submenu = BrowserNativeMenus.menu()
+            BrowserNativeMenus.add(BrowserStrings.splitSeparateTabAction, to: submenu) { [weak state] in
+                state?.withSidebarAnimation { _ = model.separateTabFromSplit(tabID: member.id) }
+            }
+            BrowserNativeMenus.add(model.shortcutStore.descriptor(for: .copyLink).menuTitle, to: submenu) {
+                _ = model.copyTabLink(forTabID: member.id)
+            }
+            BrowserNativeMenus.add(BrowserStrings.tabCloseAction, to: submenu) { [weak state] in
+                state?.withSidebarAnimation { _ = model.closeTab(id: member.id) }
+            }
+            item.submenu = submenu
+            menu.addItem(item)
+        }
+        return menu
     }
 
     private func tabMenu(
@@ -1464,9 +1577,18 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
     func update(payload: BrowserSidebarDragPayload, snapshot: BrowserSidebarSnapshot, appTile: Bool) {
         switch payload.primary {
         case .tab(let id):
-            if let tab = snapshot.tab(withID: id) {
+            if !appTile, let memberIDs = snapshot.splitMembers(ofTabID: id) {
+                let members = memberIDs.compactMap { snapshot.tab(withID: $0) }
+                guard renderedSplit != members else { return }
+                renderedSplit = members
+                renderedTab = nil
+                renderedFolder = nil
+                renderedAsApp = false
+                row.update(split: members, focusedTabID: snapshot.selectedTabID, selected: true, isResizing: false)
+            } else if let tab = snapshot.tab(withID: id) {
                 guard renderedTab != tab || renderedAsApp != appTile else { return }
                 renderedTab = tab
+                renderedSplit = nil
                 renderedFolder = nil
                 renderedAsApp = appTile
                 row.update(
@@ -1482,6 +1604,7 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
                 guard renderedFolder != folder else { return }
                 renderedFolder = folder
                 renderedTab = nil
+                renderedSplit = nil
                 row.update(
                     folder: folder,
                     renaming: false,
@@ -1504,5 +1627,6 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
     private let row = BrowserNativeSidebarRowNSView()
     private var renderedTab: BrowserChromeModel.Tab?
     private var renderedFolder: BrowserChromeModel.PinnedTabFolder?
+    private var renderedSplit: [BrowserChromeModel.Tab]?
     private var renderedAsApp = false
 }

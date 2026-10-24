@@ -17,7 +17,8 @@ extension BrowserChromeModel {
             canGoBack: canGoBack,
             canGoForward: canGoForward,
             canStopLoading: canStopLoading,
-            canReload: canReload
+            canReload: canReload,
+            splitGroups: validatedSplitGroups().map { splitPaneTabIDs(of: $0) }.filter { $0.count > 1 }
         )
     }
 }

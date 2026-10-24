@@ -51,6 +51,12 @@ While two or more panes are shown, the controller draws a 2 pt accent ring (`Bro
 
 Closing a member or moving it to another Space or section removes it through validation. Close Tab (`Cmd+W`) on a pane selects the next pane, else the previous one, instead of the row below the split.
 
+## Sidebar row
+
+A split is one sidebar row in place of its first member (in sidebar order); the other members have no row of their own. `BrowserSidebarSnapshot.splitGroups` carries the runtime tab IDs of each split in pane order, and the page builds entries from it. The row (`BrowserNativeSidebarRowNSView`, kind `.split`) shows a chip per pane in pane order: 28 pt tall, equal widths, 4 pt apart and 4 pt inside the row, radius 8, with the focused pane's chip filled more strongly. A click on a chip selects that pane, a click elsewhere selects the focused pane, and a chip shows a close button on hover. The row menu offers Separate All Tabs, Add Split View, Convert and a submenu per pane (Separate from Split View, Copy Link, Close).
+
+Dragging the row carries every pane as one group through the existing sidebar drop path, so the split moves as a block and stays valid. Drop slots exist only before and after the row, never between panes. Starting a drag on a split that is already selected keeps its focused pane.
+
 ## Commands and controls
 
 TheBrowser adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Shift+-`) and Separate Page from Split View as `BrowserCommandID`s, plus Separate All Tabs and Convert from the split menus, so they appear in the View menu, the command bar and the Settings shortcut list. Expand Current Split is not implemented yet:
@@ -80,6 +86,6 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, commands with shortcuts, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
-1. Sidebar: one row with member chips at the first member, hidden member rows and the split row menu (Add Tab, Tab Options).
-2. Pane chrome: per-pane back/forward/host/close strip, Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane and drag into the center.
-3. iPad browser split in UIKit/WebKit.
+1. Pane chrome: per-pane back/forward/host/close strip, Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane and drag into the center.
+2. iPad browser split in UIKit/WebKit.
+3. Split pane shortcuts (`⌃⇧1…4`, `⌃⇧]` / `⌃⇧[`), drop on a row's left or right half to create a split, and a custom split title.

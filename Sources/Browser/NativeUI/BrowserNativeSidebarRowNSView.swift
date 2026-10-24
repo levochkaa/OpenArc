@@ -1,7 +1,10 @@
 import AppKit
 import QuartzCore
 
-/// One reusable native row for tabs, favorites, folders, space headers and New Tab.
+// MARK: - BrowserNativeSidebarRowNSView
+
+/// One reusable native row for tabs, favorites, folders, space headers, Split
+/// Views and New Tab.
 final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFieldDelegate {
     // MARK: Lifecycle
 
@@ -48,6 +51,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                     onSelect()
                 }
                 onBeginRename()
+            } else if kind == .split {
+                selectSplitMember(at: event)
             } else {
                 primaryClick(event)
             }
@@ -58,7 +63,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     // MARK: Internal
 
-    enum Kind { case tab, appTab, folder, space, newTab }
+    enum Kind { case tab, appTab, folder, space, newTab, split }
 
     override var dragContentBounds: CGRect { CGRect(
         x: indent,
@@ -77,6 +82,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     var onBackToPinnedURL: () -> Void = {}
     var onToggle: () -> Void = {}
     var onClose: () -> Void = {}
+    var onSelectSplitMember: (String) -> Void = { _ in }
+    var onCloseSplitMember: (String) -> Void = { _ in }
     let titleLabel = BrowserNativeControls.label("", size: 12.5, weight: .medium)
     let captionLabel = BrowserNativeControls.label(
         "",
@@ -87,12 +94,18 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     let renameField = BrowserSidebarRenameNSTextField()
     let closeButton = BrowserNativeChromeButton(symbol: "xmark", title: "", style: .sidebarClose, action: {})
 
+    /// Tab IDs of the split shown by this row, in pane order.
+    private(set) var splitMemberIDs = [String]()
+
     var contentIndent: CGFloat { indent }
 
     var dragOpacity: CGFloat = 1 { didSet { alphaValue = dragOpacity * appearanceProgress } }
 
     override func pointerMoved(_ event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        for chip in splitChips {
+            chip.isHovered = isHovered && !isResizing && chip.frame.contains(point)
+        }
         pinnedIconHovered = isHovered && !isRenaming && splitPinnedControls
             && point.x >= indent && point.x < indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize
         accessoryHovered = isHovered && !closeButton.isHidden && closeButton.frame.contains(point)
@@ -104,6 +117,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         if !isHovered {
             pinnedIconHovered = false
             accessoryHovered = false
+            for chip in splitChips {
+                chip.isHovered = false
+            }
         }
         refreshAppearance()
     }
@@ -121,6 +137,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         if kind == .appTab {
             let size = BrowserChromeLayout.appTabIconSize
             favicon.frame = NSRect(x: (bounds.width - size) / 2, y: (height - size) / 2, width: size, height: size)
+            return
+        }
+        if kind == .split {
+            layoutSplitChips()
             return
         }
         let iconWidth: CGFloat = kind == .folder
@@ -183,7 +203,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             return
         }
         let background: NSColor =
-            if kind == .tab {
+            if kind == .tab || kind == .split {
                 selected
                     ? BrowserChromeColors.rowSelected
                     : multiSelected
@@ -349,6 +369,57 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         updateCommon(renaming: renaming, renameTitle: title, isResizing: isResizing, resetID: resetID)
     }
 
+    /// A Split View shows as one row with a chip per pane, in pane order,
+    /// at the position of its first member.
+    func update(
+        split members: [BrowserChromeModel.Tab],
+        focusedTabID: String?,
+        selected: Bool,
+        multiSelected: Bool = false,
+        indentLevel: Int = 0,
+        isResizing: Bool,
+        resetID: Int = 0
+    ) {
+        kind = .split
+        self.selected = selected
+        self.multiSelected = multiSelected
+        pinnedURLRow = false
+        splitPinnedControls = false
+        indent = CGFloat(max(indentLevel, 0)) * BrowserChromeLayout.sidebarPinnedFolderTabIndent
+        splitMemberIDs = members.map(\.id)
+        title = members.map(\.displayTitle).joined(separator: ", ")
+        tooltipTitle = nil
+        tooltipCaption = nil
+        tooltipShortcut = nil
+        while splitChips.count < members.count {
+            let chip = BrowserNativeSidebarSplitChipView()
+            chip.closeButton.onAction = { [weak self, weak chip] in
+                guard let self, let id = chip?.tabID else { return }
+                onCloseSplitMember(id)
+            }
+            chip.onPress = { [weak self, weak chip] in
+                guard let self, let id = chip?.tabID else { return }
+                onSelectSplitMember(id)
+            }
+            addSubview(chip)
+            splitChips.append(chip)
+        }
+        while splitChips.count > members.count {
+            splitChips.removeLast().removeFromSuperview()
+        }
+        for (chip, tab) in zip(splitChips, members) {
+            chip.update(tab: tab, focused: selected && tab.id == focusedTabID)
+        }
+        setAccessibilityIdentifier("browser.sidebar.split.\(members.first?.id ?? "")")
+        updateCommon(
+            renaming: false,
+            renameTitle: title,
+            isResizing: isResizing,
+            resetID: resetID
+        )
+        setAccessibilityLabel("\(BrowserStrings.splitViewButtonTitle): \(title)")
+    }
+
     func updateNewTab(isPresented: Bool, isResizing: Bool, descriptor: BrowserCommandDescriptor) {
         let wasSelected = selected
         kind = .newTab
@@ -401,6 +472,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     // MARK: Private
 
     private let favicon = BrowserFaviconNSView()
+    private var splitChips = [BrowserNativeSidebarSplitChipView]()
     private let symbol = NSImageView()
     private let badge = NSImageView()
     private var selected = false
@@ -462,6 +534,31 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         CATransaction.commit()
     }
 
+    /// Chips: 28 pt tall, equal widths, 4 pt apart and 4 pt inside the
+    /// row's own rounded surface.
+    private func layoutSplitChips() {
+        let inset: CGFloat = 4
+        let spacing: CGFloat = 4
+        let height = min(BrowserNativeSidebarSplitChipView.height, max(bounds.height - inset * 2, 0))
+        let count = CGFloat(splitChips.count)
+        guard count > 0 else { return }
+        let available = max(bounds.width - indent - inset * 2 - spacing * (count - 1), 0)
+        let width = (available / count).rounded(.down)
+        var x = indent + inset
+        for chip in splitChips {
+            chip.frame = NSRect(x: x, y: ((bounds.height - height) / 2).rounded(), width: width, height: height)
+            x += width + spacing
+        }
+    }
+
+    private func selectSplitMember(at event: NSEvent?) {
+        let point = event.map { convert($0.locationInWindow, from: nil) }
+        let chip = point.flatMap { point in splitChips.first { $0.frame.contains(point) } }
+        if let id = chip?.tabID ?? splitChips.first(where: \.isFocused)?.tabID ?? splitMemberIDs.first {
+            onSelectSplitMember(id)
+        }
+    }
+
     private func primaryClick(_ event: NSEvent?) {
         guard !isRenaming else { return }
         switch kind {
@@ -489,6 +586,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                 onBeginRename()
             }
         case .appTab, .newTab: onSelect()
+        case .split: selectSplitMember(at: event)
         }
     }
 
@@ -520,10 +618,14 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     }
 
     private func refreshAppearance() {
-        titleLabel.isHidden = kind == .appTab || isRenaming
+        titleLabel.isHidden = kind == .appTab || kind == .split || isRenaming
         renameField.isHidden = !isRenaming
         favicon.isHidden = kind != .tab && kind != .appTab
-        symbol.isHidden = kind == .tab || kind == .appTab
+        symbol.isHidden = kind == .tab || kind == .appTab || kind == .split
+        for chip in splitChips {
+            chip.isHidden = kind != .split
+            chip.isInteractionEnabled = !isResizing
+        }
         badge.isHidden = kind != .folder || badge.image == nil
         let showCaption = kind == .tab && pinnedIconHovered && !isRenaming
         if showCaption != captionTarget {
@@ -563,4 +665,101 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         needsLayout = true
         needsDisplay = true
     }
+}
+
+// MARK: - BrowserNativeSidebarSplitChipView
+
+/// One pane of a Split View row: favicon, title and a close button on hover.
+final class BrowserNativeSidebarSplitChipView: NSView {
+    // MARK: Lifecycle
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        for view in [favicon, titleLabel, closeButton] {
+            addSubview(view)
+        }
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.maximumNumberOfLines = 1
+        titleLabel.cell?.wraps = false
+        closeButton.isHidden = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // MARK: Internal
+
+    static let height: CGFloat = 28
+
+    override var isFlipped: Bool { true }
+
+    let closeButton = BrowserNativeChromeButton(symbol: "xmark", title: "", style: .sidebarClose, action: {})
+    private(set) var tabID: String?
+    private(set) var isFocused = false
+    var onPress: () -> Void = {}
+
+    var isHovered = false {
+        didSet {
+            guard oldValue != isHovered else { return }
+            closeButton.isHidden = !isHovered || !isInteractionEnabled
+            needsLayout = true
+            needsDisplay = true
+        }
+    }
+
+    var isInteractionEnabled = true {
+        didSet { closeButton.isHidden = !isHovered || !isInteractionEnabled }
+    }
+
+    override func layout() {
+        super.layout()
+        let icon = BrowserChromeLayout.sidebarFaviconSize
+        let padding: CGFloat = 7
+        favicon.frame = NSRect(x: padding, y: (bounds.height - icon) / 2, width: icon, height: icon)
+        let closeSize: CGFloat = 20
+        closeButton.frame = NSRect(
+            x: bounds.width - closeSize - 4,
+            y: (bounds.height - closeSize) / 2,
+            width: closeSize,
+            height: closeSize
+        )
+        let titleX = favicon.frame.maxX + 6
+        let trailing = closeButton.isHidden ? bounds.width - padding : closeButton.frame.minX - 2
+        titleLabel.frame = NSRect(x: titleX, y: (bounds.height - 17) / 2, width: max(trailing - titleX, 0), height: 17)
+    }
+
+    override func draw(_: NSRect) {
+        (isFocused ? BrowserChromeColors.splitChipFocused : BrowserChromeColors.splitChip).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+        if isHovered, !isFocused {
+            BrowserChromeColors.rowHover.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+        }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onPress()
+        return true
+    }
+
+    func update(tab: BrowserChromeModel.Tab, focused: Bool) {
+        tabID = tab.id
+        if isFocused != focused {
+            isFocused = focused
+            needsDisplay = true
+        }
+        favicon.update(url: tab.faviconURL, pageURLString: tab.urlString)
+        titleLabel.stringValue = tab.displayTitle
+        titleLabel.textColor = BrowserChromeColors.primaryText
+        closeButton.setAccessibilityLabel(BrowserStrings.tabCloseAction)
+        closeButton.setAccessibilityIdentifier("browser.sidebar.split-member.close.\(tab.id)")
+        setAccessibilityLabel(tab.displayTitle)
+        setAccessibilityIdentifier("browser.sidebar.split-member.\(tab.id)")
+    }
+
+    // MARK: Private
+
+    private let favicon = BrowserFaviconNSView()
+    private let titleLabel = BrowserNativeControls.label("", size: 12.5, weight: .medium)
 }

@@ -21,6 +21,9 @@ struct BrowserSidebarSnapshot: Equatable {
     let canGoForward: Bool
     let canStopLoading: Bool
     let canReload: Bool
+    /// Runtime tab IDs of each Split View in pane order. The sidebar shows a
+    /// split as one row in place of its first member.
+    var splitGroups = [[String]]()
 
     var selectedTab: BrowserChromeModel.Tab? {
         guard let selectedTabID else {
@@ -28,6 +31,11 @@ struct BrowserSidebarSnapshot: Equatable {
         }
 
         return tab(withID: selectedTabID)
+    }
+
+    /// The panes of the split that contains a tab, in pane order.
+    func splitMembers(ofTabID tabID: String) -> [String]? {
+        splitGroups.first { $0.contains(tabID) }
     }
 
     func containsTab(withID tabID: String) -> Bool {
@@ -140,7 +148,8 @@ struct BrowserSidebarSnapshot: Equatable {
         _ tabs: [BrowserChromeModel.Tab],
         pinnedTabFolders folders: [BrowserChromeModel.PinnedTabFolder]? = nil
     ) -> BrowserSidebarSnapshot {
-        BrowserSidebarSnapshot(
+        let tabIDs = Set(tabs.map(\.id))
+        return BrowserSidebarSnapshot(
             spaces: spaces,
             selectedSpaceID: selectedSpaceID,
             activeSpace: activeSpace,
@@ -155,7 +164,8 @@ struct BrowserSidebarSnapshot: Equatable {
             canGoBack: canGoBack,
             canGoForward: canGoForward,
             canStopLoading: canStopLoading,
-            canReload: canReload
+            canReload: canReload,
+            splitGroups: splitGroups.map { $0.filter(tabIDs.contains) }.filter { $0.count > 1 }
         )
     }
 
