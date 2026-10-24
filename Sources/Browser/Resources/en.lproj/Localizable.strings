@@ -159,6 +159,7 @@
 "browser.menu.restore_last_closed_tab" = "Restore Last Closed Tab";
 "browser.peek.close" = "Close Peek";
 "browser.peek.open_in_tab" = "Open as Tab";
+"browser.peek.open_in_split_view" = "Open in Split View";
 "browser.settings.peek" = "Open Shift-clicked links in Peek";
 "browser.settings.little_arc" = "Open links from other apps in a small window";
 "browser.settings.little_arc.detail" = "Open as Tab moves the page into this window.";

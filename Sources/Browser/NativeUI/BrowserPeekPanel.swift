@@ -45,7 +45,7 @@ import AppKit
         card.autoresizingMask = [.width, .height]
         card.frame = NSRect(origin: .zero, size: contentRect.size)
         contentView = card
-        for view in [closeButton, hostLabel, openButton, hostView] {
+        for view in [closeButton, hostLabel, splitButton, openButton, hostView] {
             card.addSubview(view)
         }
         hostLabel.alignment = .center
@@ -65,6 +65,9 @@ import AppKit
         hostLabel.setAccessibilityIdentifier("browser.peek.address")
         closeButton.onAction = { [weak self] in self?.onClose?() }
         openButton.onAction = { [weak self] in self?.onOpenInTab?() }
+        splitButton.onAction = { [weak self] in self?.onOpenInSplitView?() }
+        splitButton.isHidden = standalone
+        splitButton.setAccessibilityIdentifier("browser.peek.open-in-split")
         closeButton.setAccessibilityIdentifier("browser.peek.close")
         openButton.setAccessibilityIdentifier("browser.peek.open-in-tab")
         openInMenu.delegate = self
@@ -92,6 +95,8 @@ import AppKit
     @objc var onOpenInTab: (() -> Void)?
     /// A typed address or search, resolved to the URL the page should load.
     @objc var onNavigate: ((String) -> Void)?
+    /// The card's page joins the page behind it in a Split View.
+    @objc var onOpenInSplitView: (() -> Void)?
     /// Gives the keyboard to the page through the engine.
     @objc var onFocusPage: (() -> Void)?
     /// The window's Spaces for Open In, in sidebar order.
@@ -110,6 +115,13 @@ import AppKit
     let openButton = BrowserNativeChromeButton(
         symbol: "arrow.up.left.and.arrow.down.right",
         title: BrowserStrings.peekOpenInTabAction,
+        style: .currentURL,
+        action: {}
+    )
+    /// Peek can also open beside the page; the small window has no page beside it.
+    let splitButton = BrowserNativeChromeButton(
+        symbol: "rectangle.split.2x1",
+        title: BrowserStrings.peekOpenInSplitViewAction,
         style: .currentURL,
         action: {}
     )
@@ -302,16 +314,19 @@ import AppKit
         let y = bounds.height - Self.barHeight + ((Self.barHeight - size) / 2).rounded()
         closeButton.frame = NSRect(x: 6, y: y, width: size, height: size)
         openButton.frame = NSRect(x: bounds.width - 6 - size, y: y, width: size, height: size)
+        splitButton.frame = NSRect(x: openButton.frame.minX - 2 - size, y: y, width: size, height: size)
         let labelX = isStandalone ? 78 : closeButton.frame.maxX + 8
+        let trailing = isStandalone ? openButton.frame.minX : splitButton.frame.minX
         hostLabel.frame = NSRect(
             x: labelX,
             y: bounds.height - Self.barHeight + (Self.barHeight - 16) / 2,
-            width: max(openButton.frame.minX - 8 - labelX, 0),
+            width: max(trailing - 8 - labelX, 0),
             height: 16
         )
         hostView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(bounds.height - Self.barHeight, 0))
         closeButton.autoresizingMask = [.maxXMargin, .minYMargin]
         openButton.autoresizingMask = [.minXMargin, .minYMargin]
+        splitButton.autoresizingMask = [.minXMargin, .minYMargin]
         hostLabel.autoresizingMask = [.width, .minYMargin]
         hostView.autoresizingMask = [.width, .height]
     }

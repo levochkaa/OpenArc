@@ -56,6 +56,7 @@ import Foundation
     var shouldPeekNavigation: ((String, String) -> Bool)?
     var peekSpaces: (() -> [BrowserPeekSpace])?
     var onOpenPeekInSpace: ((String, String) -> Void)?
+    var onOpenPeekInSplitView: ((String) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -234,6 +235,10 @@ import Foundation
 extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func peekSpaces(for _: BrowserTabController) -> [BrowserPeekSpace] {
         MainActor.assumeIsolated { peekSpaces?() ?? [] }
+    }
+
+    nonisolated func browserTabController(_: BrowserTabController, openPeekURLStringInSplitView urlString: String) {
+        MainActor.assumeIsolated { onOpenPeekInSplitView?(urlString) }
     }
 
     nonisolated func browserTabController(

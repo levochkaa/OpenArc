@@ -111,6 +111,35 @@ import Testing
         #expect(f.driver.createdTabRequests.last?.urlString == "https://figma.com/file")
     }
 
+    @Test func aCardOpensBesideThePageInASplitView() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let card = BrowserPeekPanel.present(over: window)
+        defer { card.dismiss() }
+        var splits = 0
+        card.onOpenInSplitView = { splits += 1 }
+        #expect(!card.splitButton.isHidden)
+        card.splitButton.performClick(nil)
+        #expect(splits == 1)
+        let small = BrowserPeekPanel.presentStandalone()
+        defer { small.dismiss() }
+        #expect(small.splitButton.isHidden, "A small window has no page beside it")
+
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.onOpenPeekInSplitView?("https://figma.com/file")
+        let group = try #require(f.model.selectedSplitGroup)
+        let panes = f.model.splitPaneTabIDs(of: group)
+        #expect(panes.first == f.id("x") && panes.count == 2)
+        #expect(f.driver.createdTabRequests.last?.urlString == "https://figma.com/file")
+    }
+
     @Test func newSmallWindowOpensFromTheWindow() {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(f.model.canOpenLittleWindow)

@@ -58,6 +58,7 @@ import Foundation
     var shouldPeekNavigation: ((String, String) -> Bool)?
     var peekSpaces: (() -> [BrowserPeekSpace])?
     var onOpenPeekInSpace: ((String, String) -> Void)?
+    var onOpenPeekInSplitView: ((String) -> Void)?
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
     private(set) var retryCreationRequests = [RetryCreationRequest]()

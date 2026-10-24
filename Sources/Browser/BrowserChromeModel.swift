@@ -155,6 +155,10 @@ enum BrowserWindowMode: Equatable {
             guard let self, supportsSpaces, canCreateTab else { return [] }
             return spaces.map { BrowserPeekSpace(id: $0.id, title: $0.title, systemImageName: $0.systemImageName) }
         }
+        tabDriver.onOpenPeekInSplitView = { [weak self] urlString in
+            guard let self, let url = URL(string: urlString), !openURLInSplitView(url) else { return }
+            openURLInNewTab(url)
+        }
         tabDriver.onOpenPeekInSpace = { [weak self] urlString, spaceID in
             guard let self, let url = URL(string: urlString), !openURL(url, inSpaceWithID: spaceID) else { return }
             openURLInNewTab(url)
@@ -2636,6 +2640,15 @@ enum BrowserWindowMode: Equatable {
 
     func sendVisibleTabLayout(_ layout: BrowserTabVisibleLayout?) {
         tabDriver.setVisibleTabLayout(layout)
+    }
+
+    /// Peek's Open in Split View: the page becomes a pane beside the shown tab.
+    /// False when the shown tab cannot take another pane.
+    @discardableResult func openURLInSplitView(_ url: URL) -> Bool {
+        guard canAddSplitView, let anchor = selectedTabID else { return false }
+        createTab(withURLString: url.absoluteString)
+        guard let tabID = selectedTabID, tabID != anchor else { return false }
+        return openInSplitView(tabID: tabID, anchorTabID: anchor)
     }
 
     // MARK: Private

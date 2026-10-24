@@ -860,6 +860,11 @@ enum BrowserStrings {
 
     static let peekCloseAction = NSLocalizedString("browser.peek.close", comment: "Button that closes a Peek card.")
 
+    static let peekOpenInSplitViewAction = NSLocalizedString(
+        "browser.peek.open_in_split_view",
+        comment: "Button that moves a Peek card's page into a Split View beside the page behind it."
+    )
+
     static let peekOpenInTabAction = NSLocalizedString(
         "browser.peek.open_in_tab",
         comment: "Button that moves a Peek card's page into a tab."

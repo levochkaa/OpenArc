@@ -74,6 +74,9 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                              outcome:(BrowserTabCloseRequestOutcome)outcome;
 // The window's Spaces for a Peek card's or small window's Open In menu.
 - (NSArray<BrowserPeekSpace *> *)peekSpacesForBrowserTabController:(BrowserTabController *)controller;
+// A Peek card's page joins the shown page in a Split View.
+- (void)browserTabController:(BrowserTabController *)controller
+    openPeekURLStringInSplitView:(NSString *)urlString;
 // Open In: a card's or small window's page becomes a tab of that Space.
 - (void)browserTabController:(BrowserTabController *)controller
            openPeekURLString:(NSString *)urlString

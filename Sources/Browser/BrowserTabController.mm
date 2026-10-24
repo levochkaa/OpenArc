@@ -3776,6 +3776,20 @@ void WatchClickModifiers();
     }
     return [delegate peekSpacesForBrowserTabController:strongSelf];
   };
+  session.panel.onOpenInSplitView = ^{
+    BrowserTabController *strongSelf = weakSelf;
+    if (strongSelf == nil) {
+      return;
+    }
+    id<BrowserTabControllerDelegate> delegate = strongSelf.delegate;
+    NSString *current = strongSelf->_peekSessions[@(sessionID)].urlString;
+    if (current.length == 0 || [current isEqualToString:@"about:blank"] ||
+        ![delegate respondsToSelector:@selector(browserTabController:openPeekURLStringInSplitView:)]) {
+      return;
+    }
+    [strongSelf closePeekSession:sessionID];
+    [delegate browserTabController:strongSelf openPeekURLStringInSplitView:current];
+  };
   session.panel.onOpenInSpace = ^(NSString *spaceID) {
     BrowserTabController *strongSelf = weakSelf;
     if (strongSelf == nil) {
