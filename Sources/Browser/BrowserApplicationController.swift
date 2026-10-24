@@ -239,6 +239,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         userPreferencesStore.siteURLToolbarEnabled.toggle()
     }
 
+    public func restoreLastClosedTab(_: Any?) {
+        activeChromeModel?.restoreLastClosedTab()
+    }
+
     public func openLocation(_: Any?) {
         guard activeChromeModel?.canOpenLocation == true else { return }
         activeChromeModel?.presentCurrentPageCommandBar()
@@ -485,6 +489,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
         switch action {
         case #selector(createNewTab(_:)):
             return activeChromeModel?.canCreateTab == true && activeChromeModel?.isWebApp != true
+        case #selector(restoreLastClosedTab(_:)):
+            return activeChromeModel?.canRestoreLastClosedTab ?? false
         case #selector(openLocation(_:)):
             return activeChromeModel?.canOpenLocation ?? false
         case #selector(createNewIncognitoWindow(_:)):
@@ -929,6 +935,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .openLocation),
             action: #selector(openLocation(_:))
+        ))
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .restoreLastClosedTab),
+            action: #selector(restoreLastClosedTab(_:))
         ))
 
         let newIncognitoWindowItem = makeMenuItem(
@@ -1740,6 +1750,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
             createNewTab(nil)
             return true
+        case .restoreLastClosedTab:
+            return activeChromeModel?.restoreLastClosedTab() ?? false
         case .openLocation:
             guard let model = activeChromeModel, model.canOpenLocation else {
                 return false

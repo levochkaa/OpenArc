@@ -123,6 +123,13 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("l")
     )
 
+    /// Restore Last Closed Tab is Shift-Command-T.
+    static let restoreLastClosedTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuRestoreLastClosedTab,
+        helpTitle: BrowserStrings.menuRestoreLastClosedTab,
+        shortcut: BrowserKeyboardShortcut("t", modifiers: [.command, .shift])
+    )
+
     static let newIncognitoWindow = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNewIncognitoWindow,
         helpTitle: BrowserStrings.menuNewIncognitoWindow,
@@ -533,6 +540,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case setAsDefaultBrowser
     case newTab
     case openLocation
+    case restoreLastClosedTab
     case newIncognitoWindow
     case openHistory
     case toggleBookmark

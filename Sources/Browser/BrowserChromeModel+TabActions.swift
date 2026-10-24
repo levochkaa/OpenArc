@@ -84,6 +84,18 @@ extension BrowserChromeModel {
         return !ids.isEmpty
     }
 
+    /// Restore Last Closed Tab: Undo, when the latest undoable action is
+    /// closing a tab, so the restore keeps Undo's fresh sync identity.
+    var canRestoreLastClosedTab: Bool {
+        undoManager.canUndo && undoManager.undoTabActionName == BrowserStrings.tabArchiveAction
+    }
+
+    @discardableResult func restoreLastClosedTab() -> Bool {
+        guard canRestoreLastClosedTab else { return false }
+        undoManager.undo()
+        return true
+    }
+
     func isTabMuted(id: String) -> Bool {
         tabs.first { $0.id == id }.map { mutedTabSyncIDs.contains($0.syncID) } ?? false
     }

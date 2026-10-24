@@ -40,6 +40,10 @@ import Foundation
 
     var isTabTransitionPending: Bool { pending != nil }
 
+    /// Name of the tab action Undo would perform next, or nil when the top of
+    /// the stack is text editing or another transition is running.
+    var undoTabActionName: String? { pending == nil ? marker(on: .undo)?.action.name : nil }
+
     override func undo() { perform(.undo) }
     override func redo() { perform(.redo) }
 

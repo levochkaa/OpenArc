@@ -343,6 +343,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case setAsDefaultBrowser
     case newTab
     case openLocation
+    case restoreLastClosedTab
     case newIncognitoWindow
     case openHistory
     case toggleBookmark
@@ -423,6 +424,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.newTab
         case .openLocation:
             BrowserCommands.openLocation
+        case .restoreLastClosedTab:
+            BrowserCommands.restoreLastClosedTab
         case .newIncognitoWindow:
             BrowserCommands.newIncognitoWindow
         case .openHistory:
@@ -549,6 +552,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .newTab
         case .openLocation:
             .openLocation
+        case .restoreLastClosedTab:
+            .restoreLastClosedTab
         case .newIncognitoWindow:
             .newIncognitoWindow
         case .openHistory:

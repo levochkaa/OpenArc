@@ -29,6 +29,21 @@ import Testing
         #expect(try f.store.loadArchivePage().entries.isEmpty)
     }
 
+    @Test func restoreLastClosedTabUndoesOnlyATabClose() throws {
+        let f = try ConfirmedCloseFixture()
+        defer { f.close() }
+        #expect(BrowserCommands.restoreLastClosedTab.shortcut == BrowserKeyboardShortcut("t", modifiers: [.command, .shift]))
+        let created = try createHistoryTab(in: f, path: "restore")
+        #expect(!f.model.canRestoreLastClosedTab, "The latest action opened a tab")
+        try confirmHistoryClose(in: f, id: created.id)
+        #expect(f.model.canRestoreLastClosedTab)
+        #expect(f.model.restoreLastClosedTab())
+        f.flushReady()
+        let restored = try historyTab(in: f, path: "restore")
+        #expect(restored.syncID != created.syncID, "Undo gives the restored tab a fresh identity")
+        #expect(!f.model.canRestoreLastClosedTab)
+    }
+
     @Test func undoCloseConsumesArchiveAndOriginalCreationUndoFollowsTheFreshIdentity() throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }

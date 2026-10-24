@@ -808,6 +808,11 @@ enum BrowserStrings {
         comment: "Accessibility label of the handle that reorders a Split View pane by dragging."
     )
 
+    static let menuRestoreLastClosedTab = NSLocalizedString(
+        "browser.menu.restore_last_closed_tab",
+        comment: "File menu and command title that reopens the most recently closed tab."
+    )
+
     static let menuOpenLocation = NSLocalizedString(
         "browser.menu.open_location",
         comment: "File menu and command title that edits the current page's URL in the command bar."

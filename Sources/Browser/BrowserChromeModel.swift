@@ -3580,6 +3580,8 @@ enum BrowserWindowMode: Equatable {
             canCreateTab
         case .openLocation:
             canOpenLocation
+        case .restoreLastClosedTab:
+            canRestoreLastClosedTab
         case .newIncognitoWindow:
             !isShuttingDown
         case .openHistory:
@@ -6007,6 +6009,8 @@ extension BrowserCommandID {
             ["new tab", "open tab", "create tab"]
         case .openLocation:
             ["open location", "edit url", "edit address", "current url", "address bar"]
+        case .restoreLastClosedTab:
+            ["restore tab", "reopen tab", "reopen closed tab", "last closed tab", "undo close tab"]
         case .newIncognitoWindow:
             ["incognito", "private window", "new private window"]
         case .openHistory:
@@ -6131,6 +6135,8 @@ extension BrowserCommandID {
             "plus"
         case .openLocation:
             "link"
+        case .restoreLastClosedTab:
+            "arrow.uturn.backward.circle"
         case .newIncognitoWindow:
             "eye.slash"
         case .openHistory:

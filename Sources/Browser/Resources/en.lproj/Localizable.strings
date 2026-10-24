@@ -152,6 +152,7 @@
 "browser.menu.show_toolbar" = "Show Toolbar";
 "browser.menu.hide_toolbar" = "Hide Toolbar";
 "browser.menu.open_location" = "Open Location…";
+"browser.menu.restore_last_closed_tab" = "Restore Last Closed Tab";
 "browser.split.pane_grip" = "Move Split Pane";
 "browser.menu.view_downloads" = "View Downloads";
 "browser.menu.tabs" = "Tabs";
