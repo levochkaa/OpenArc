@@ -104,6 +104,14 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("t")
     )
 
+    /// Open Location is Command-L and starts from the
+    /// current URL; the compact current-page bar does the same here.
+    static let openLocation = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuOpenLocation,
+        helpTitle: BrowserStrings.menuOpenLocation,
+        shortcut: BrowserKeyboardShortcut("l")
+    )
+
     static let newIncognitoWindow = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNewIncognitoWindow,
         helpTitle: BrowserStrings.menuNewIncognitoWindow,
@@ -417,6 +425,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case openSettings
     case setAsDefaultBrowser
     case newTab
+    case openLocation
     case newIncognitoWindow
     case openHistory
     case toggleBookmark
@@ -592,6 +601,8 @@ enum BrowserKeyboardShortcutBridge {
             "j"
         case 40:
             "k"
+        case 37:
+            "l"
         case 18:
             "1"
         case 19:

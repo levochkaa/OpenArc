@@ -96,8 +96,10 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 ## Status and next slices
 
+Open Location (`⌘L`) edits the focused pane's URL, because the focused pane is the selected tab.
+
 Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, pane bars, dividers, the one-row sidebar entry, drop-to-split, commands with shortcuts, pane moves and expansion, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
-1. Pane chrome: Cmd-L for the focused pane, reorder by a top grip and drag into the center. The bars do not show window controls when the sidebar is hidden yet.
+1. Pane chrome: reorder by a top grip and drag into the center. The bars do not show window controls when the sidebar is hidden yet.
 2. iPad browser split in UIKit/WebKit.
 3. A custom split title and icon.

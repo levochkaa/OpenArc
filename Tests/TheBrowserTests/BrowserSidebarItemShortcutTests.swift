@@ -49,6 +49,18 @@ import Testing
         #expect(f.model.selectedTabID == f.id("y"), "Selecting the split it is already in keeps the pane")
     }
 
+    @Test func openLocationEditsTheFocusedPaneURL() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        #expect(BrowserCommands.openLocation.shortcut == BrowserKeyboardShortcut("l"))
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.canOpenLocation)
+        f.model.presentCurrentPageCommandBar()
+        #expect(f.model.currentPageCommandBarModel.isPresented)
+        #expect(f.model.currentPageCommandBarModel.query == "https://x.example")
+    }
+
     @Test func commandsUseArcDefaultsAndAreOfferedOnlyForExistingItems() {
         #expect(BrowserCommandID.goToSidebarItem1.defaultDescriptor.shortcut == BrowserKeyboardShortcut("1"))
         #expect(BrowserCommandID.goToSidebarItem8.defaultDescriptor.shortcut == BrowserKeyboardShortcut("8"))

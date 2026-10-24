@@ -1456,6 +1456,9 @@ enum BrowserWindowMode: Equatable {
         currentPageCommandBarModel.dismiss()
     }
 
+    /// Open Location edits the selected tab's URL, which is the focused pane in a split.
+    var canOpenLocation: Bool { canCreateTab && selectedTab != nil && !isWebApp }
+
     func presentCurrentPageCommandBar() {
         guard
             canCreateTab,
@@ -3535,6 +3538,8 @@ enum BrowserWindowMode: Equatable {
             true
         case .newTab:
             canCreateTab
+        case .openLocation:
+            canOpenLocation
         case .newIncognitoWindow:
             !isShuttingDown
         case .openHistory:
@@ -5934,6 +5939,8 @@ extension BrowserCommandID {
             ["default browser", "set default browser", "make default browser"]
         case .newTab:
             ["new tab", "open tab", "create tab"]
+        case .openLocation:
+            ["open location", "edit url", "edit address", "current url", "address bar"]
         case .newIncognitoWindow:
             ["incognito", "private window", "new private window"]
         case .openHistory:
@@ -6030,6 +6037,8 @@ extension BrowserCommandID {
             "globe"
         case .newTab:
             "plus"
+        case .openLocation:
+            "link"
         case .newIncognitoWindow:
             "eye.slash"
         case .openHistory:
