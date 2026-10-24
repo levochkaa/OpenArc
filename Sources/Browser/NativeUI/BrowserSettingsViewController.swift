@@ -318,6 +318,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.opensOptionCommandClicksInLittleWindow = $0 }
                 ),
                 toggle(
+                    "little-window-any-app",
+                    BrowserStrings.settingsLittleWindowFromAnyApp,
+                    get: { preferences.opensLittleWindowFromAnyApp },
+                    set: { preferences.opensLittleWindowFromAnyApp = $0 }
+                ),
+                toggle(
                     "folder-previews",
                     BrowserStrings.settingsFolderPreviews,
                     get: { preferences.folderPreviewsEnabled },

@@ -885,6 +885,11 @@ enum BrowserStrings {
         comment: "Settings toggle: Option-Command-clicked links open in a small window of their own."
     )
 
+    static let settingsLittleWindowFromAnyApp = NSLocalizedString(
+        "browser.settings.little_window_any_app",
+        comment: "Settings toggle: Option-Command-N opens a small window even while another app is active."
+    )
+
     static let settingsFolderPreviews = NSLocalizedString(
         "browser.settings.folder_previews",
         comment: "Settings toggle: resting the pointer on a collapsed sidebar folder lists its tabs."

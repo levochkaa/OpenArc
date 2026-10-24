@@ -213,6 +213,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
         self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
         self.opensOptionCommandClicksInLittleWindow = userDefaults.bool(forKey: Self.littleWindowOptionCommandClickKey)
+        self.opensLittleWindowFromAnyApp = userDefaults.bool(forKey: Key.opensLittleWindowFromAnyApp)
         self.folderPreviewsEnabled = Self.loadBool(userDefaults, key: Key.folderPreviewsEnabled, defaultValue: true)
         self.peeksLinksToOtherSites = Self.loadBool(userDefaults, key: Key.peeksLinksToOtherSites, defaultValue: false)
         self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)
@@ -314,6 +315,12 @@ final class BrowserUserPreferencesStore: ObservableObject {
         }
     }
 
+    /// Option-Command-N in any app opens a small window. Off by default:
+    /// it takes the key combination from every other app.
+    @Published var opensLittleWindowFromAnyApp: Bool {
+        didSet { userDefaults.set(opensLittleWindowFromAnyApp, forKey: Key.opensLittleWindowFromAnyApp) }
+    }
+
     /// Folder preview: resting on a collapsed folder lists its tabs.
     @Published var folderPreviewsEnabled: Bool {
         didSet { userDefaults.set(folderPreviewsEnabled, forKey: Key.folderPreviewsEnabled) }
@@ -359,6 +366,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let linkRoutes = "browser.settings.linkRoutes"
         static let peeksLinksToOtherSites = "browser.settings.peeksLinksToOtherSites"
         static let folderPreviewsEnabled = "browser.settings.folderPreviewsEnabled"
+        static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
     }
 
     private let userDefaults: UserDefaults

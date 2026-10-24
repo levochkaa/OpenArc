@@ -126,6 +126,7 @@ import Testing
         store.opensOptionCommandClicksInLittleWindow = true
         #expect(defaults.bool(forKey: BrowserUserPreferencesStore.littleWindowOptionCommandClickKey))
         #expect(BrowserUserPreferencesStore(userDefaults: defaults).opensOptionCommandClicksInLittleWindow)
+        #expect(!store.opensLittleWindowFromAnyApp, "The any-app shortcut is off until turned on")
     }
 
     @Test func closingTheWindowClosesItsPeeks() {

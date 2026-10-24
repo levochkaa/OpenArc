@@ -163,6 +163,7 @@
 "browser.settings.little_arc.detail" = "Open as Tab moves the page into this window.";
 "browser.settings.peek.detail" = "The link opens in a card over the page; Open as Tab keeps it.";
 "browser.settings.little_window_option_command_click" = "Open ⌥⌘-clicked links in a small window";
+"browser.settings.little_window_any_app" = "Open a small window with ⌥⌘N in any app";
 "browser.settings.folder_previews" = "Preview folders on hover";
 "browser.folder_preview.search_placeholder" = "Search folder";
 "browser.settings.peek_other_sites" = "Open links to other sites from pinned tabs in Peek";

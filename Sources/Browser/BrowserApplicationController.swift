@@ -175,6 +175,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
         profileStoreCancellable = nil
         shortcutStoreCancellable = nil
         appearancePreferenceCancellable = nil
+        littleWindowHotKeyCancellable = nil
+        littleWindowHotKey = nil
         profileStore = nil
         updateController = nil
         batterySaverController = nil
@@ -699,6 +701,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var layoutIndependentKeyMonitor: Any?
     private var shortcutStoreCancellable: AnyCancellable?
     private var appearancePreferenceCancellable: AnyCancellable?
+    private var littleWindowHotKeyCancellable: AnyCancellable?
+    /// Option-Command-N from any app, when turned on in Settings.
+    private var littleWindowHotKey: BrowserGlobalHotKey?
     private var profileStoreCancellable: AnyCancellable?
     private let webAppConfiguration: BrowserWebAppConfiguration?
 
@@ -2597,6 +2602,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private func observeAppearancePreference() {
         appearancePreferenceCancellable = userPreferencesStore.$appearancePreference.sink { [weak self] preference in
             self?.applyAppearancePreference(preference)
+        }
+        guard webAppConfiguration == nil else { return }
+        littleWindowHotKeyCancellable = userPreferencesStore.$opensLittleWindowFromAnyApp.sink { [weak self] enabled in
+            self?.littleWindowHotKey = enabled
+                ? BrowserGlobalHotKey.newLittleWindow { [weak self] in
+                    guard let self, !isTerminationRequested,
+                          littleWindowModel?.openNewLittleWindow() == true else { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                : nil
         }
     }
 
