@@ -94,10 +94,16 @@ import Foundation
 
     private(set) var littleWindowURLs = [String]()
 
+    private(set) var newLittleWindowCount = 0
+
     private(set) var closePeeksCount = 0
 
     /// Engine zoom per tab; tests may share a value to mimic per-site zoom.
     var zoomLevelsByTabID = [String: Double]()
+
+    func showNewLittleWindow() {
+        newLittleWindowCount += 1
+    }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {
         nextTabNumber += 1

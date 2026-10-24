@@ -395,6 +395,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case zoomOut
     case resetZoom
     case newIncognitoWindow
+    case newLittleWindow
     case openHistory
     case toggleBookmark
     case archiveTab
@@ -490,6 +491,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.resetZoom
         case .newIncognitoWindow:
             BrowserCommands.newIncognitoWindow
+        case .newLittleWindow:
+            BrowserCommands.newLittleWindow
         case .openHistory:
             BrowserCommands.openHistory
         case .toggleBookmark:
@@ -632,6 +635,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .resetZoom
         case .newIncognitoWindow:
             .newIncognitoWindow
+        case .newLittleWindow:
+            .newLittleWindow
         case .openHistory:
             .openHistory
         case .toggleBookmark:

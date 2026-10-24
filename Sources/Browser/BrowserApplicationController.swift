@@ -362,6 +362,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow)
     }
 
+    public func createNewLittleWindow(_: Any?) {
+        littleWindowModel?.openNewLittleWindow()
+    }
+
     public func openHistory(_: Any?) {
         openBrowserInternalPage(BrowserInternalPageRouting.historyURL)
     }
@@ -533,6 +537,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canOpenLocation ?? false
         case #selector(createNewIncognitoWindow(_:)):
             return !isTerminationRequested
+        case #selector(createNewLittleWindow(_:)):
+            return !isTerminationRequested && littleWindowModel?.canOpenLittleWindow == true
         case #selector(openHistory(_:)):
             return activeChromeModel != nil && !isTerminationRequested
         case #selector(archiveCurrentTab(_:)):
@@ -731,6 +737,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private var archiveContextModel: BrowserChromeModel? {
         focusedArchiveWindowController?.model ?? activeChromeModel
+    }
+
+    /// The small window opens from the window behind a card or small window too,
+    /// where page commands are off.
+    private var littleWindowModel: BrowserChromeModel? {
+        (activeProfileWindowSession ?? profileWindowSessions.first)?.chromeModel
     }
 
     private var focusedArchiveWindowController: BrowserArchiveWindowController? {
@@ -988,6 +1000,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(createNewIncognitoWindow(_:))
         )
         fileMenu.addItem(newIncognitoWindowItem)
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newLittleWindow),
+            action: #selector(createNewLittleWindow(_:))
+        ))
         // Command-W archives the tab, so the window closes with Shift-Command-W.
         fileMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.webAppCloseWindowAction,
@@ -1696,6 +1712,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         if BrowserShortcutCaptureNSView.handleRecordingEvent(event) {
             return true
         }
+        if let panel = NSApp.keyWindow as? BrowserPeekPanel, panel.handleShortcut(event) {
+            return true
+        }
 
         if let spaceIndex = BrowserSpaceShortcuts.spaceIndex(
             forPhysicalKeyCode: event.keyCode,
@@ -1878,6 +1897,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
             createNewIncognitoWindow(nil)
             return true
+        case .newLittleWindow:
+            guard !isTerminationRequested else { return false }
+            return littleWindowModel?.openNewLittleWindow() ?? false
         case .openHistory:
             guard webAppWindowSession == nil, activeChromeModel != nil, !isTerminationRequested else {
                 return false

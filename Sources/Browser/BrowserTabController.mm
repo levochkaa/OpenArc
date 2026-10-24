@@ -2737,6 +2737,7 @@ struct TabRecord {
 - (void)closePeekSession:(int)sessionID;
 - (BOOL)isPeekSessionStandalone:(int)sessionID;
 - (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone;
+- (void)navigatePeekSession:(int)sessionID toURLString:(NSString *)urlString;
 - (BOOL)shouldPeekNavigationFromTabID:(NSString *)tabID toURLString:(NSString *)urlString;
 - (void)notifyCloseRequestForTabID:(NSString *)tabID
                        requestID:(NSString *)requestID
@@ -2778,6 +2779,9 @@ struct TabRecord {
 @interface BrowserPeekSession : NSObject
 @property(nonatomic, strong) BrowserPeekPanel *panel;
 @property(nonatomic, copy) NSString *urlString;
+/// The address the page was created with; a later one typed before the page
+/// attached loads when it does.
+@property(nonatomic, copy) NSString *initialURLString;
 @property(nonatomic) BOOL closing;
 @end
 
@@ -3571,6 +3575,23 @@ class BrowserTabNavigationTask final : public CefTask {
   [self presentPeekWithURLString:urlString standalone:YES];
 }
 
+- (void)showNewLittleWindow {
+  [self presentPeekWithURLString:@"about:blank" standalone:YES];
+  [_peekSessions[@(_nextPeekSessionID)].panel focusAddressField];
+}
+
+- (void)navigatePeekSession:(int)sessionID toURLString:(NSString *)urlString {
+  BrowserPeekSession *session = _peekSessions[@(sessionID)];
+  if (session == nil || session.closing || urlString.length == 0) {
+    return;
+  }
+  session.urlString = urlString;
+  [session.panel updateWithURLString:urlString];
+  if (session->_browser && session->_browser->GetMainFrame()) {
+    session->_browser->GetMainFrame()->LoadURL(ToStdString(urlString));
+  }
+}
+
 - (BOOL)shouldPeekNavigationFromTabID:(NSString *)tabID toURLString:(NSString *)urlString {
   id<BrowserTabControllerDelegate> delegate = self.delegate;
   if (_hostView.window == nil ||
@@ -3609,6 +3630,7 @@ class BrowserTabNavigationTask final : public CefTask {
   const int sessionID = ++_nextPeekSessionID;
   BrowserPeekSession *session = [[BrowserPeekSession alloc] init];
   session.urlString = resolved;
+  session.initialURLString = resolved;
   session.panel = standalone ? [BrowserPeekPanel presentStandalone] : [BrowserPeekPanel presentOverWindow:window];
   [session.panel updateWithURLString:resolved];
   _peekSessions[@(sessionID)] = session;
@@ -3618,6 +3640,9 @@ class BrowserTabNavigationTask final : public CefTask {
   __weak BrowserTabController *weakSelf = self;
   session.panel.onClose = ^{
     [weakSelf closePeekSession:sessionID];
+  };
+  session.panel.onNavigate = ^(NSString *target) {
+    [weakSelf navigatePeekSession:sessionID toURLString:target];
   };
   session.panel.onOpenInTab = ^{
     BrowserTabController *strongSelf = weakSelf;
@@ -3685,6 +3710,9 @@ class BrowserTabNavigationTask final : public CefTask {
   NSView *browserView = BrowserViewForBrowser(browser);
   browserView.frame = session.panel.hostView.bounds;
   browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  if (![session.urlString isEqualToString:session.initialURLString] && browser->GetMainFrame()) {
+    browser->GetMainFrame()->LoadURL(ToStdString(session.urlString));
+  }
 }
 
 /// Also reached when the page closes itself or its renderer is gone.

@@ -653,6 +653,16 @@ enum BrowserStrings {
         comment: "New Incognito Window menu item title."
     )
 
+    static let menuNewLittleWindow = NSLocalizedString(
+        "browser.menu.new_little_window",
+        comment: "File menu item and command that opens a small window of its own."
+    )
+
+    static let peekAddressPlaceholder = NSLocalizedString(
+        "browser.peek.address_placeholder",
+        comment: "Placeholder of the small window's address field."
+    )
+
     static let incognitoBannerTitle = NSLocalizedString(
         "browser.incognito.banner.title",
         comment: "Banner title shown above web content in incognito windows."

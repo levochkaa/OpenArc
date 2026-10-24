@@ -142,6 +142,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)showPeekWithURLString:(NSString *)urlString;
 /// Opens the page in a small window of its own.
 - (void)showLittleWindowWithURLString:(NSString *)urlString;
+/// An empty small window with its address field focused.
+- (void)showNewLittleWindow;
 /// Closes every Peek card and small window of this window's pages.
 - (void)closeAllPeeks;
 - (void)setPictureInPicture:(BOOL)active forTabWithID:(NSString *)tabID;

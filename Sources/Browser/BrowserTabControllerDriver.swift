@@ -139,6 +139,10 @@ import Foundation
         controller.showLittleWindow(withURLString: urlString)
     }
 
+    func showNewLittleWindow() {
+        controller.showNewLittleWindow()
+    }
+
     func closePeeks() {
         controller.closeAllPeeks()
     }

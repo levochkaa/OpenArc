@@ -175,6 +175,13 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("n", modifiers: [.command, .shift])
     )
 
+    /// New Small Window is Option-Command-N.
+    static let newLittleWindow = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuNewLittleWindow,
+        helpTitle: BrowserStrings.menuNewLittleWindow,
+        shortcut: BrowserKeyboardShortcut("n", modifiers: [.command, .option])
+    )
+
     static let openHistory = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuHistory,
         helpTitle: BrowserStrings.menuHistory,
@@ -601,6 +608,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case zoomOut
     case resetZoom
     case newIncognitoWindow
+    case newLittleWindow
     case openHistory
     case toggleBookmark
     case archiveTab

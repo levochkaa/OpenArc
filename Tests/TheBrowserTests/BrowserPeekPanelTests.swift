@@ -61,6 +61,44 @@ import Testing
         #expect(closes == 1)
     }
 
+    @Test func theSmallWindowsAddressFieldEditsAndLoadsTheAddress() throws {
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        panel.update(urlString: "https://www.example.com/a")
+        #expect(panel.hostLabel.stringValue == "example.com" && panel.hostLabel.isEditable)
+        var loaded = [String]()
+        var opens = 0
+        panel.onNavigate = { loaded.append($0) }
+        panel.onOpenInTab = { opens += 1 }
+
+        let commandL = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: panel.windowNumber,
+            context: nil, characters: "l", charactersIgnoringModifiers: "l", isARepeat: false, keyCode: 37
+        ))
+        #expect(panel.handleShortcut(commandL))
+        let editor = try #require(panel.hostLabel.currentEditor() as? NSTextView)
+        #expect(editor.string == "https://www.example.com/a", "Editing shows the full address")
+        editor.string = "example.org"
+        #expect(panel.control(panel.hostLabel, textView: editor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        #expect(loaded.count == 1 && loaded[0].hasPrefix("https://example.org"))
+        #expect(panel.hostLabel.currentEditor() == nil && panel.hostLabel.stringValue == "example.org")
+
+        let commandO = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: panel.windowNumber,
+            context: nil, characters: "o", charactersIgnoringModifiers: "o", isARepeat: false, keyCode: 31
+        ))
+        #expect(panel.handleShortcut(commandO) && opens == 1, "Command-O opens the page as a tab")
+    }
+
+    @Test func newSmallWindowOpensFromTheWindow() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        #expect(f.model.canOpenLittleWindow)
+        #expect(f.model.openNewLittleWindow())
+        #expect(f.driver.newLittleWindowCount == 1)
+        #expect(BrowserCommandID.newLittleWindow.defaultDescriptor.shortcut
+            == BrowserKeyboardShortcut("n", modifiers: [.command, .option]))
+    }
+
     @Test func optionCommandClicksIntoTheSmallWindowAreOptIn() throws {
         let defaults = try #require(UserDefaults(suiteName: "BrowserPeekPanelTests.\(UUID().uuidString)"))
         let store = BrowserUserPreferencesStore(userDefaults: defaults)

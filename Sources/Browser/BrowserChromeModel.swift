@@ -2055,6 +2055,14 @@ enum BrowserWindowMode: Equatable {
         tabDriver.showLittleWindow(withURLString: url.absoluteString)
     }
 
+    /// New Small Window: an empty small window with its address
+    /// field focused.
+    @discardableResult func openNewLittleWindow() -> Bool {
+        guard canOpenLittleWindow else { return false }
+        tabDriver.showNewLittleWindow()
+        return true
+    }
+
     @discardableResult func showDeveloperTools() -> Bool {
         guard canShowDeveloperTools else { return false }
         tabDriver.showDevToolsForActiveTab()
@@ -3814,6 +3822,8 @@ enum BrowserWindowMode: Equatable {
             canRestoreLastClosedTab
         case .newIncognitoWindow:
             !isShuttingDown
+        case .newLittleWindow:
+            canOpenLittleWindow
         case .openHistory:
             canCreateTab && !isShuttingDown
         case .toggleBookmark:
@@ -6303,6 +6313,8 @@ extension BrowserCommandID {
             ["developer tools", "devtools", "inspect", "web inspector", "console"]
         case .newIncognitoWindow:
             ["incognito", "private window", "new private window"]
+        case .newLittleWindow:
+            ["small window", "mini window", "new little window"]
         case .openHistory:
             ["history", "open history", "browser history"]
         case .toggleBookmark:
@@ -6443,6 +6455,8 @@ extension BrowserCommandID {
             "hammer"
         case .newIncognitoWindow:
             "eye.slash"
+        case .newLittleWindow:
+            "macwindow.badge.plus"
         case .openHistory:
             "clock.arrow.circlepath"
         case .toggleBookmark:

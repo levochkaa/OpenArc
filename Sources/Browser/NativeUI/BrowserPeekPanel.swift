@@ -5,9 +5,10 @@ import AppKit
 /// Peek: a Shift-clicked link opens in a floating card over the window.
 /// The card has the page's host, Open as Tab and Close; Escape, Close or a
 /// click on the window behind closes it. Standalone, it is a
-/// small window of its own for links from other apps. The engine puts its page
-/// in `hostView`.
-@objc final class BrowserPeekPanel: NSPanel {
+/// small window of its own for links from other apps, whose host is an address
+/// field (`⌘L`). `⌘O` opens either as a tab. The engine puts its page in
+/// `hostView`.
+@objc final class BrowserPeekPanel: NSPanel, NSTextFieldDelegate {
     // MARK: Lifecycle
 
     private init(contentRect: NSRect, standalone: Bool) {
@@ -49,6 +50,19 @@ import AppKit
         }
         hostLabel.alignment = .center
         hostLabel.lineBreakMode = .byTruncatingMiddle
+        hostLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        hostLabel.textColor = BrowserChromeColors.secondaryText
+        hostLabel.isBordered = false
+        hostLabel.drawsBackground = false
+        hostLabel.focusRingType = .none
+        hostLabel.cell?.usesSingleLineMode = true
+        hostLabel.cell?.isScrollable = true
+        hostLabel.isEditable = standalone
+        hostLabel.isSelectable = standalone
+        hostLabel.placeholderString = standalone ? BrowserStrings.peekAddressPlaceholder : nil
+        hostLabel.delegate = self
+        hostLabel.onFocus = { [weak self] in self?.beginEditingAddress() }
+        hostLabel.setAccessibilityIdentifier("browser.peek.address")
         closeButton.onAction = { [weak self] in self?.onClose?() }
         openButton.onAction = { [weak self] in self?.onOpenInTab?() }
         closeButton.setAccessibilityIdentifier("browser.peek.close")
@@ -73,6 +87,8 @@ import AppKit
     @objc let hostView = NSView()
     @objc var onClose: (() -> Void)?
     @objc var onOpenInTab: (() -> Void)?
+    /// A typed address or search, resolved to the URL the page should load.
+    @objc var onNavigate: ((String) -> Void)?
 
     let closeButton = BrowserNativeChromeButton(
         symbol: "xmark",
@@ -86,7 +102,7 @@ import AppKit
         style: .currentURL,
         action: {}
     )
-    let hostLabel = BrowserNativeControls.label("", size: 12, weight: .medium, color: BrowserChromeColors.secondaryText)
+    let hostLabel = BrowserPeekAddressField(string: "")
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53, !isStandalone {
@@ -128,6 +144,8 @@ import AppKit
         .integral
         let panel = BrowserPeekPanel(contentRect: frame, standalone: true)
         panel.makeKeyAndOrderFront(nil)
+        // The window would focus the address field; the page takes the keys.
+        panel.focusPage()
         NSApp.activate(ignoringOtherApps: true)
         return panel
     }
@@ -142,10 +160,74 @@ import AppKit
         return panel
     }
 
+    /// Typed text becomes a URL or a search with the chosen search engine.
+    static func resolvedURLString(for input: String) -> String? {
+        let resolver = BrowserNavigationResolver(searchEngineProvider: { BrowserUserPreferencesStore().searchEngine })
+        return resolver.resolve(input).map { resolution in
+            BrowserInternalURLNormalizer.canonicalURLString(for: resolution.resolvedURLString)
+                ?? resolution.resolvedURLString
+        }
+    }
+
     @objc(updateWithURLString:) func update(urlString: String) {
+        currentURLString = urlString
         let host = URL(string: urlString)?.host.map(BrowserURLDisplayFormatter.hostDisplayString(forHost:))
-        hostLabel.stringValue = host ?? BrowserURLDisplayFormatter.displayString(for: urlString)
-        hostView.setAccessibilityLabel(hostLabel.stringValue)
+        let display = urlString == "about:blank" ? "" : host ?? BrowserURLDisplayFormatter.displayString(for: urlString)
+        hostView.setAccessibilityLabel(display)
+        if hostLabel.currentEditor() == nil {
+            hostLabel.stringValue = display
+        }
+    }
+
+    /// The small window's address field takes the keyboard with the address selected.
+    @objc func focusAddressField() {
+        guard isStandalone else { return }
+        makeFirstResponder(hostLabel)
+    }
+
+    /// `⌘L` edits the small window's address and `⌘O` opens the page as a tab.
+    /// The app asks before its own shortcuts.
+    @objc func handleShortcut(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([
+                  .capsLock,
+                  .numericPad,
+                  .function,
+              ])
+              == .command
+        else { return false }
+        switch event.keyCode {
+        case 37 where isStandalone:
+            focusAddressField()
+            return true
+        case 31:
+            onOpenInTab?()
+            return true
+        default:
+            return false
+        }
+    }
+
+    func control(_: NSControl, textView _: NSTextView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.insertNewline(_:)):
+            let input = hostLabel.stringValue
+            endEditingAddress()
+            if let urlString = Self.resolvedURLString(for: input) {
+                update(urlString: urlString)
+                onNavigate?(urlString)
+            }
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            endEditingAddress()
+            return true
+        default:
+            return false
+        }
+    }
+
+    func controlTextDidEndEditing(_: Notification) {
+        update(urlString: currentURLString)
     }
 
     @objc func dismiss() {
@@ -157,6 +239,28 @@ import AppKit
     // MARK: Private
 
     private var parentMonitor: Any?
+    private var currentURLString = ""
+
+    private func beginEditingAddress() {
+        guard isStandalone else { return }
+        let address = currentURLString == "about:blank" ? "" : currentURLString
+        if let editor = hostLabel.currentEditor() {
+            editor.string = address
+            editor.selectAll(nil)
+        } else {
+            hostLabel.stringValue = address
+        }
+    }
+
+    private func endEditingAddress() {
+        focusPage()
+        update(urlString: currentURLString)
+    }
+
+    /// The engine's page view, or the window until the page attaches.
+    private func focusPage() {
+        makeFirstResponder(hostView.subviews.first)
+    }
 
     /// The bar keeps its place on resize; the small window leaves room for the
     /// traffic lights instead of a Close button.
@@ -198,6 +302,21 @@ import AppKit
             NSEvent.removeMonitor(parentMonitor)
         }
         parentMonitor = nil
+    }
+}
+
+// MARK: - BrowserPeekAddressField
+
+/// The small window's address: the host until it is clicked, then the full address.
+final class BrowserPeekAddressField: NSTextField {
+    var onFocus: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became, isEditable {
+            onFocus?()
+        }
+        return became
     }
 }
 

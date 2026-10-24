@@ -80,6 +80,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func showDevToolsForActiveTab()
     /// The page in a small window of its own.
     func showLittleWindow(withURLString urlString: String)
+    /// An empty small window with its address field focused.
+    func showNewLittleWindow()
     /// Closes the window's Peek cards and small windows with it.
     func closePeeks()
     /// Moves the page's playing video into Picture in Picture, or back.

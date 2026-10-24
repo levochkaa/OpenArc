@@ -117,6 +117,8 @@
 "browser.menu.jump_to_selection" = "Jump to Selection";
 "browser.menu.new_tab" = "New Tab";
 "browser.menu.new_incognito_window" = "New Incognito Window";
+"browser.menu.new_little_window" = "New Small Window";
+"browser.peek.address_placeholder" = "Search or enter address";
 "browser.incognito.banner.title" = "Incognito";
 "browser.incognito.tabs.title" = "Incognito Tabs";
 "browser.menu.history" = "History";
