@@ -361,8 +361,6 @@ run_with_xcode_output() {
 }
 
 resolve_swift_packages() {
-  run_with_xcode_output xcrun swift package --package-path "$ROOT_DIR" --disable-keychain resolve
-
   run_with_xcode_output xcodebuild \
     -resolvePackageDependencies \
     -project "$ROOT_DIR/$PROJECT_NAME.xcodeproj" \
