@@ -369,10 +369,8 @@ import Testing
         defer { h.close() }
         try h.begin("z")
         let row = try #require(h.row(f.item("x")))
-        let trailing = try row.convert(
-            CGPoint(x: row.bounds.width * 0.75, y: row.bounds.midY),
-            to: #require(h.coordinateView)
-        )
+        let coordinates = try #require(h.coordinateView)
+        let trailing = row.convert(CGPoint(x: row.bounds.width * 0.75, y: row.bounds.midY), to: coordinates)
         h.move(trailing)
         h.release(trailing)
         #expect(f.model.selectedSplitGroup == nil)
