@@ -806,6 +806,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         menubar.addItem(fileMenuItem)
         menubar.addItem(editMenuItem)
         menubar.addItem(viewMenuItem)
+        addWindowMenu(to: menubar, app: app)
         app.mainMenu = menubar
 
         let appMenu = NSMenu()
@@ -840,7 +841,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         setAsDefaultBrowserMenuItem = setAsDefaultBrowserItem
         updateSetAsDefaultBrowserMenuItem(setAsDefaultBrowserItem)
         appMenu.addItem(setAsDefaultBrowserItem)
-        appMenu.addItem(.separator())
+        addStandardApplicationItems(to: appMenu, app: app, appName: appName)
         let quitItem = NSMenuItem(
             title: BrowserStrings.quitMenuItem(appName: appName),
             action: #selector(quitApplication(_:)),
@@ -867,6 +868,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(createNewIncognitoWindow(_:))
         )
         fileMenu.addItem(newIncognitoWindowItem)
+        // Command-W archives the tab, so the window closes with Shift-Command-W.
+        fileMenu.addItem(makeStandardMenuItem(
+            title: BrowserStrings.webAppCloseWindowAction,
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w",
+            modifiers: [.command, .shift]
+        ))
         fileMenu.addItem(.separator())
 
         let toggleBookmarkItem = makeMenuItem(
@@ -1193,6 +1201,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         menubar.addItem(editMenuItem)
         menubar.addItem(viewMenuItem)
         menubar.addItem(historyMenuItem)
+        addWindowMenu(to: menubar, app: app)
         app.mainMenu = menubar
 
         let appMenu = NSMenu()
@@ -1203,7 +1212,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         appInfoItem.target = self
         appMenu.addItem(appInfoItem)
-        appMenu.addItem(.separator())
+        addStandardApplicationItems(to: appMenu, app: app, appName: session.configuration.name)
         let quitItem = NSMenuItem(
             title: BrowserStrings.quitMenuItem(appName: session.configuration.name),
             action: #selector(quitApplication(_:)),
@@ -1359,6 +1368,65 @@ NSMenuDelegate, NSUserInterfaceValidations {
         historyMenuItem.submenu = historyMenu
     }
 
+    /// Services and the Hide items every Mac app menu has, ending with the
+    /// separator before Quit.
+    private func addStandardApplicationItems(to menu: NSMenu, app: NSApplication, appName: String) {
+        menu.addItem(.separator())
+        let servicesItem = NSMenuItem(title: BrowserStrings.menuServices, action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: BrowserStrings.menuServices)
+        servicesItem.submenu = servicesMenu
+        app.servicesMenu = servicesMenu
+        menu.addItem(servicesItem)
+        menu.addItem(.separator())
+        menu.addItem(makeStandardMenuItem(
+            title: BrowserStrings.hideMenuItem(appName: appName),
+            action: #selector(NSApplication.hide(_:)),
+            keyEquivalent: "h"
+        ))
+        menu.addItem(makeStandardMenuItem(
+            title: BrowserStrings.menuHideOthers,
+            action: #selector(NSApplication.hideOtherApplications(_:)),
+            keyEquivalent: "h",
+            modifiers: [.command, .option]
+        ))
+        menu.addItem(makeStandardMenuItem(
+            title: BrowserStrings.menuShowAll,
+            action: #selector(NSApplication.unhideAllApplications(_:)),
+            keyEquivalent: "",
+            modifiers: []
+        ))
+        menu.addItem(.separator())
+    }
+
+    /// The system Window menu: Minimize, Zoom and Bring All to Front. As the
+    /// app's windows menu, AppKit adds the window list and tiling items.
+    private func addWindowMenu(to menubar: NSMenu, app: NSApplication) {
+        let windowMenuItem = NSMenuItem()
+        windowMenuItem.title = BrowserStrings.menuWindow
+        let windowMenu = NSMenu(title: BrowserStrings.menuWindow)
+        windowMenu.addItem(makeStandardMenuItem(
+            title: BrowserStrings.menuMinimize,
+            action: #selector(NSWindow.performMiniaturize(_:)),
+            keyEquivalent: "m"
+        ))
+        windowMenu.addItem(makeStandardMenuItem(
+            title: BrowserStrings.menuZoom,
+            action: #selector(NSWindow.performZoom(_:)),
+            keyEquivalent: "",
+            modifiers: []
+        ))
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(makeStandardMenuItem(
+            title: BrowserStrings.menuBringAllToFront,
+            action: #selector(NSApplication.arrangeInFront(_:)),
+            keyEquivalent: "",
+            modifiers: []
+        ))
+        windowMenuItem.submenu = windowMenu
+        menubar.addItem(windowMenuItem)
+        app.windowsMenu = windowMenu
+    }
+
     private func makeMenuItem(descriptor: BrowserCommandDescriptor, action: Selector) -> NSMenuItem {
         let item = NSMenuItem(
             title: descriptor.menuTitle,
@@ -1506,6 +1574,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: self)
         case .quit:
             quitApplication(nil)
+            return true
+        case .hideApplication:
+            NSApp.hide(nil)
+            return true
+        case .hideOtherApplications:
+            NSApp.hideOtherApplications(nil)
+            return true
+        case .minimizeWindow:
+            guard let window = NSApp.keyWindow, window.styleMask.contains(.miniaturizable) else { return false }
+            window.performMiniaturize(nil)
+            return true
+        case .closeWindow:
+            guard let window = NSApp.keyWindow else { return false }
+            window.performClose(nil)
             return true
         case .openSettings:
             guard webAppWindowSession == nil else {

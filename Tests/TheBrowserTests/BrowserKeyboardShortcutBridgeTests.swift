@@ -197,3 +197,38 @@ import Testing
     ) == .focusPreviousSplitPane)
     #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 18, modifierFlags: [.control, .shift]) == nil)
 }
+
+@Test func standardWindowShortcutsWorkFromPhysicalKeysAndStayReserved() throws {
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 4,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "р"
+    ) == .hideApplication)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 4,
+        modifierFlags: [.command, .option],
+        charactersIgnoringModifiers: "р"
+    ) == .hideOtherApplications)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 46,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "ь"
+    ) == .minimizeWindow)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 13,
+        modifierFlags: [.command, .shift],
+        charactersIgnoringModifiers: "Ц"
+    ) == .closeWindow)
+    #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+        keyCode: 13,
+        modifierFlags: [.command],
+        charactersIgnoringModifiers: "ц"
+    ) == .archiveTab, "Command-W still archives the tab")
+
+    let suiteName = "TheBrowserTests.\(UUID().uuidString)"
+    let userDefaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+    let store = BrowserShortcutStore(userDefaults: userDefaults)
+    #expect(store.conflictDescription(for: BrowserKeyboardShortcut("m"), excluding: nil) == BrowserStrings.menuMinimize)
+    #expect(!store.setShortcut(BrowserKeyboardShortcut("w", modifiers: [.command, .shift]), for: .openHistory))
+}

@@ -481,6 +481,10 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case pasteAndMatchStyle
     case selectAll
     case quit
+    case hideApplication
+    case hideOtherApplications
+    case minimizeWindow
+    case closeWindow
     case openSettings
     case setAsDefaultBrowser
     case newTab
@@ -608,6 +612,10 @@ enum BrowserKeyboardShortcutBridge {
             ShortcutMatch(command: .pasteAndMatchStyle, keyEquivalent: "v", modifiers: [.command, .shift]),
             ShortcutMatch(command: .selectAll, keyEquivalent: "a", modifiers: [.command]),
             ShortcutMatch(command: .quit, keyEquivalent: "q", modifiers: [.command]),
+            ShortcutMatch(command: .hideApplication, keyEquivalent: "h", modifiers: [.command]),
+            ShortcutMatch(command: .hideOtherApplications, keyEquivalent: "h", modifiers: [.command, .option]),
+            ShortcutMatch(command: .minimizeWindow, keyEquivalent: "m", modifiers: [.command]),
+            ShortcutMatch(command: .closeWindow, keyEquivalent: "w", modifiers: [.command, .shift]),
         ]
 
         matches.append(
@@ -637,6 +645,10 @@ enum BrowserKeyboardShortcutBridge {
             "f"
         case 14:
             "e"
+        case 4:
+            "h"
+        case 46:
+            "m"
         case 5:
             "g"
         case 6:

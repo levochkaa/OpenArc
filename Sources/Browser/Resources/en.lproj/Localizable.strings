@@ -83,6 +83,14 @@
 "browser.menu.check_for_updates" = "Check for Updates...";
 "browser.menu.set_as_default_browser" = "Set as Default Browser";
 "browser.menu.quit" = "Quit %@";
+"browser.menu.hide" = "Hide %@";
+"browser.menu.hide_others" = "Hide Others";
+"browser.menu.show_all" = "Show All";
+"browser.menu.services" = "Services";
+"browser.menu.window" = "Window";
+"browser.menu.minimize" = "Minimize";
+"browser.menu.zoom" = "Zoom";
+"browser.menu.bring_all_to_front" = "Bring All to Front";
 "browser.about.window_title" = "About %@";
 "browser.about.application_version" = "Version %@ (%@)";
 "browser.about.chromium_version" = "Chromium %@";

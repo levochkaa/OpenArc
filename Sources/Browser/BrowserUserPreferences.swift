@@ -748,6 +748,10 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         BrowserKeyboardShortcut("v", modifiers: [.command, .shift]): BrowserStrings.menuPasteAndMatchStyle,
         BrowserKeyboardShortcut("a"): BrowserStrings.menuSelectAll,
         BrowserKeyboardShortcut("q"): BrowserStrings.quitShortcutTitle,
+        BrowserKeyboardShortcut("h"): BrowserStrings.hideMenuItem(appName: ProcessInfo.processInfo.processName),
+        BrowserKeyboardShortcut("h", modifiers: [.command, .option]): BrowserStrings.menuHideOthers,
+        BrowserKeyboardShortcut("m"): BrowserStrings.menuMinimize,
+        BrowserKeyboardShortcut("w", modifiers: [.command, .shift]): BrowserStrings.webAppCloseWindowAction,
     ].reduce(into: [:]) { result, item in
         result[item.key.normalizedForMatching] = item.value
     }

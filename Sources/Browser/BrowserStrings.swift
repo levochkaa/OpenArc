@@ -1963,6 +1963,51 @@ enum BrowserStrings {
         )
     }
 
+    static func hideMenuItem(appName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.menu.hide",
+                comment: "Hide menu item title with the app name placeholder."
+            ),
+            appName
+        )
+    }
+
+    static let menuHideOthers = NSLocalizedString(
+        "browser.menu.hide_others",
+        comment: "App menu item that hides the other apps."
+    )
+
+    static let menuShowAll = NSLocalizedString(
+        "browser.menu.show_all",
+        comment: "App menu item that shows every hidden app."
+    )
+
+    static let menuServices = NSLocalizedString(
+        "browser.menu.services",
+        comment: "App menu title of the system Services submenu."
+    )
+
+    static let menuWindow = NSLocalizedString(
+        "browser.menu.window",
+        comment: "Title of the Window menu."
+    )
+
+    static let menuMinimize = NSLocalizedString(
+        "browser.menu.minimize",
+        comment: "Window menu item that minimizes the front window."
+    )
+
+    static let menuZoom = NSLocalizedString(
+        "browser.menu.zoom",
+        comment: "Window menu item that zooms the front window."
+    )
+
+    static let menuBringAllToFront = NSLocalizedString(
+        "browser.menu.bring_all_to_front",
+        comment: "Window menu item that brings every app window to the front."
+    )
+
     static func quitMenuItem(appName: String) -> String {
         String(
             format: NSLocalizedString(
