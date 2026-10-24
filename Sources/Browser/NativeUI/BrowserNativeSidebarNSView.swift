@@ -538,21 +538,35 @@ final class BrowserNativeSidebarNSView: NSView {
             width: width,
             height: 1
         )
+        // Spaces slide across the outer padding, so a swipe is clipped only by
+        // the window edge and the browser content. Pages sit one sidebar width
+        // apart, keeping neighbors out of the padding at rest.
+        let pageStride = width + inset * 2
         setFrame(
-            NSRect(x: 0, y: top, width: width, height: max(bottomDivider.frame.minY - top, 0)),
+            NSRect(x: -inset, y: top, width: pageStride, height: max(bottomDivider.frame.minY - top, 0)),
             of: pagerClip,
             animated: animated
         )
         scrollObserver.frame = pagerClip.frame
         let index = state.selectedSpaceIndex(in: state.snapshot) ?? 0
-        let x = state.spacePagerOffset(selectedIndex: index, pageWidth: width)
+        let x = state.spacePagerOffset(selectedIndex: index, pageWidth: pageStride)
         setFrame(
-            NSRect(x: x, y: 0, width: width * CGFloat(state.snapshot.spaces.count), height: pagerClip.bounds.height),
+            NSRect(
+                x: x,
+                y: 0,
+                width: pageStride * CGFloat(state.snapshot.spaces.count),
+                height: pagerClip.bounds.height
+            ),
             of: pagesContainer,
             animated: animated
         )
         for page in pages.values {
-            page.frame = NSRect(x: CGFloat(page.index) * width, y: 0, width: width, height: pagerClip.bounds.height)
+            page.frame = NSRect(
+                x: CGFloat(page.index) * pageStride + inset,
+                y: 0,
+                width: width,
+                height: pagerClip.bounds.height
+            )
             page.layoutRows(animated: animated)
         }
     }
