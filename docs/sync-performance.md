@@ -31,3 +31,19 @@ Capture improved consistently for 1,000/5,000 tabs across both optimized runs. P
 Remaining costs include full snapshot writes and baseline coding, sorting/scanning entities per pending semantic operation, and replaying the queue tail after each ACK. No queue/receipt compaction or background persistence was introduced. Preserve FIFO ordering, account isolation, failed-write recovery and immutable payloads in the next architectural step.
 
 Raw reports: `/tmp/thebrowser-sync-perf-before.json`, `/tmp/thebrowser-sync-perf-after.json`, `/tmp/thebrowser-sync-perf-after-repeat.json`; matching `.log` files contain wrapper/test output. They are local artifacts, not committed fixtures. Test results: `.build/xcode/Logs/Test/Test-TheBrowser-2026.10.03_04-28-29-+0400.xcresult`, `04-34-49` and `04-37-12` with the same filename prefix/suffix. Normal Test skips this probe; timing is never a pass/fail threshold.
+
+## Re-measured 2026-10-25
+
+Same probe on Xcode 27.1 / Swift 6.4, Debug, code at `88abd3f`; all 26 applicable cells completed (raw report `/tmp/thebrowser-sync-perf-2026-10-25.json`, local only). Medians in milliseconds:
+
+| Operation | Tabs | Pending rows | ms |
+| --- | ---: | ---: | ---: |
+| capture | 1,000 | 0 | 50.3 |
+| capture | 5,000 | 0 | 233.3 |
+| empty_pull | 5,000 | 100 | 611.8 |
+| first_ack | 5,000 | 100 | 615.5 |
+| drain | 1,000 | 10 | 434.4 |
+| drain | 1,000 | 100 | 7,571.2 |
+
+The drain stays quadratic: each ACK replays the remaining queue and rewrites every snapshot row (about 75 ms per ACK at 1,000 tabs). Tried and reverted: skipping the snapshot rewrite when the projection equals the stored snapshot, including local titles, icons and colors. It broke two rollback tests (`syncOutboxAckAndPullRollbackBaselineQueueProjectionAndCursorOnFailure`, `folderBootstrapRollsBackAdoptionVersionCursorAndProjectionOnDatabaseFailure`); the first only injects its failure into the rewrite, the second's cause was not established. Next step: explain the folder bootstrap interaction before changing the write path.
+
