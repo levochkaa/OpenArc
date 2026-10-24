@@ -49,6 +49,9 @@ While two or more panes are shown, the controller draws a 2 pt accent ring (`Bro
 | `separateTabFromSplit(tabID:)` | Separate Tab from Split: the tab leaves and its row moves after the remaining panes |
 | `setSplitOrientation(_:groupID:)` | Convert between horizontal and vertical |
 | `setSplitFractions(_:groupID:)` | Commit pane sizes once, for example when a divider drag ends |
+| `moveSelectedSplitPane(by:)` | Move Left/Right (Up/Down for stacked panes): the focused pane trades places and size with its neighbor |
+| `presentSplitViewCommandBar(insertion:)` | `.end` appends after the last pane; Add Right/Left Split (Bottom/Top when stacked) use `.after`/`.before` the focused pane |
+| `toggleExpandedSplitPane()` | Expand Current Split: only the focused pane is shown until focus moves or the command runs again; the split stays |
 | `presentSplitViewCommandBar()` | Add Split View: opens the command bar with the selected tab as anchor. A submitted URL opens a new tab and an open-tab result reuses that tab; either becomes the next pane through `openInSplitView`. Any other command bar presentation or model dismissal clears the anchor |
 | `closeFocusedSplitPane()` | Close this Split Pane: the focused tab leaves the group, the next pane (the previous one at the end) is selected, then the tab closes like Close Tab. A pinned tab with a pinned URL unloads and keeps its row |
 | `separateSelectedTabFromSplit()`, `separateSelectedSplitGroup()`, `toggleSelectedSplitOrientation()` | The row actions for the selected split |
@@ -72,6 +75,7 @@ TheBrowser adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Sh
 | Separate Page from Split View | none | A split is selected |
 | Separate All Tabs | none | A split is selected |
 | Convert to Vertical/Horizontal Split View | none | A split is selected; the title follows the current orientation |
+| Expand Current Split / Show All Split Panes | none | A split is selected |
 | Switch to Split Pane 1–4 | `⌃⇧1` … `⌃⇧4` | The selected split has that pane |
 | Switch to Next/Previous Split Pane | `⌃⇧]` / `⌃⇧[` | A split is selected; focus wraps around |
 
@@ -80,7 +84,7 @@ The physical-key monitor also dispatches Control shortcuts and the `=`/`-` keys,
 Controls:
 
 - The tab context menu offers Open in Split View on rows other than the selected tab (when the selected split can take a pane) and, on split members, Separate Tab from Split, Separate All Tabs and Convert.
-- A Split View button (`rectangle.split.2x1`) sits left of the site controls in the toolbar and among the hover actions of the sidebar URL row. Outside a split it starts Add Split View; inside one it opens the Split View Menu (Add Split View, Separate Tab from Split, Convert, Separate All Tabs, Close this Split Pane). It is highlighted while a split is selected.
+- A Split View button (`rectangle.split.2x1`) sits left of the site controls in the toolbar and among the hover actions of the sidebar URL row. Outside a split it starts Add Split View; inside one it opens the Split View Menu (Add Split View, Move Left/Right, Add Right/Left Split, Expand Current Split, Separate Tab from Split, Convert, Separate All Tabs, Close this Split Pane). It is highlighted while a split is selected.
 
 ## Persistence and sync
 
@@ -92,6 +96,6 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, commands with shortcuts, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
-1. Pane chrome: Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane, reorder by a top grip and drag into the center. The bars do not show window controls when the sidebar is hidden yet.
+1. Pane chrome: Cmd-L for the focused pane, reorder by a top grip and drag into the center. The bars do not show window controls when the sidebar is hidden yet.
 2. iPad browser split in UIKit/WebKit.
 3. Drop on a row's left or right half to create a split, and a custom split title.

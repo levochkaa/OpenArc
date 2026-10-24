@@ -9,6 +9,9 @@ import Foundation
 /// moving a member elsewhere removes it, and a group left with one member
 /// dissolves. Favorites cannot join a split.
 extension BrowserChromeModel {
+    /// Where a new pane joins a split relative to its anchor pane.
+    enum SplitInsertion: Equatable { case end, before, after }
+
     static let maximumSplitPaneCount = BrowserTabSplitGroupSessionSnapshot.maximumTabCount
 
     var selectedSplitGroup: SplitGroup? {
@@ -114,19 +117,25 @@ extension BrowserChromeModel {
     /// The window shows every pane of the selected tab's split, or only the
     /// selected tab. Identical layouts are not resent to the engine.
     func syncSplitLayout() {
-        let layout = selectedSplitGroup.map { group in
-            BrowserTabVisibleLayout(
-                tabIDs: splitPaneTabIDs(of: group),
-                orientation: group.orientation,
-                fractions: group.fractions
-            )
+        if expandedSplitPaneTabID != nil, expandedSplitPaneTabID != selectedTabID || selectedSplitGroup == nil {
+            // Expansion lasts until focus moves; resetting it syncs again.
+            expandedSplitPaneTabID = nil
+            return
         }
+        let layout = expandedSplitPaneTabID == nil
+            ? selectedSplitGroup.map { group in
+                BrowserTabVisibleLayout(
+                    tabIDs: splitPaneTabIDs(of: group),
+                    orientation: group.orientation,
+                    fractions: group.fractions
+                )
+            }
+            : nil
         guard layout != appliedSplitLayout else { return }
         appliedSplitLayout = layout
         sendVisibleTabLayout(layout)
     }
 
-    /// A click in another visible pane focuses that pane's tab.
     /// Switch to Split View N: focuses the pane at a position, counted from 0.
     @discardableResult func focusSplitPane(at index: Int) -> Bool {
         guard let group = selectedSplitGroup else { return false }
@@ -167,6 +176,7 @@ extension BrowserChromeModel {
         setSplitFractions(fractions, groupID: group.id)
     }
 
+    /// A click in another visible pane focuses that pane's tab.
     func handleSplitPaneFocused(_ tabID: String) {
         guard tabID != selectedTabID,
               let group = selectedSplitGroup,
@@ -179,7 +189,11 @@ extension BrowserChromeModel {
     /// keeps its pane and sidebar position, `tabID` becomes the next pane and is
     /// focused. Its own row joins the group, moving into the anchor's Space,
     /// section and folder.
-    @discardableResult func openInSplitView(tabID: String, anchorTabID: String? = nil) -> Bool {
+    @discardableResult func openInSplitView(
+        tabID: String,
+        anchorTabID: String? = nil,
+        insertion: SplitInsertion = .end
+    ) -> Bool {
         guard let anchorID = anchorTabID ?? selectedTabID, anchorID != tabID,
               let anchor = tabs.first(where: { $0.id == anchorID }), anchor.placement != .app,
               let added = tabs.first(where: { $0.id == tabID }), added.placement != .app
@@ -192,13 +206,20 @@ extension BrowserChromeModel {
         removeFromSplitGroups(syncID: added.syncID)
         guard placeTab(tabID, after: lastPaneID) else { return false }
         if let existing, let index = splitGroups.firstIndex(where: { $0.id == existing.id }) {
-            splitGroups[index].tabSyncIDs = existing.tabSyncIDs + [added.syncID]
+            var members = existing.tabSyncIDs
+            let anchorIndex = members.firstIndex(of: anchor.syncID) ?? members.count - 1
+            switch insertion {
+            case .end: members.append(added.syncID)
+            case .before: members.insert(added.syncID, at: anchorIndex)
+            case .after: members.insert(added.syncID, at: anchorIndex + 1)
+            }
+            splitGroups[index].tabSyncIDs = members
             splitGroups[index].fractions = nil
             splitGroups[index].focusedTabSyncID = added.syncID
         } else {
             splitGroups.append(SplitGroup(
                 id: UUID().uuidString,
-                tabSyncIDs: [anchor.syncID, added.syncID],
+                tabSyncIDs: insertion == .before ? [added.syncID, anchor.syncID] : [anchor.syncID, added.syncID],
                 focusedTabSyncID: added.syncID
             ))
         }
@@ -219,20 +240,61 @@ extension BrowserChromeModel {
         return splitPaneTabIDs(forTabID: selectedTabID).count < Self.maximumSplitPaneCount
     }
 
-    /// Opens the command bar; the page or tab chosen there becomes a new pane
-    /// after the selected split's last pane.
-    func presentSplitViewCommandBar() {
+    /// Opens the command bar; the page or tab chosen there becomes a new pane,
+    /// after the selected split's last pane or, for Add Left/Right Split,
+    /// next to the focused pane.
+    func presentSplitViewCommandBar(insertion: SplitInsertion = .end) {
         guard canAddSplitView, let selectedTabID else { return }
         presentCommandBar()
         pendingSplitAnchorTabID = commandBarModel.isPresented ? selectedTabID : nil
+        pendingSplitInsertion = insertion
     }
 
     /// Consumes the split anchor left by `presentSplitViewCommandBar()`.
-    func takePendingSplitAnchorTabID() -> String? {
-        defer { pendingSplitAnchorTabID = nil }
+    func takePendingSplitAnchor() -> (anchorID: String, insertion: SplitInsertion)? {
+        defer {
+            pendingSplitAnchorTabID = nil
+            pendingSplitInsertion = .end
+        }
         guard let anchorID = pendingSplitAnchorTabID, tabs.contains(where: { $0.id == anchorID }) else { return nil }
-        return anchorID
+        return (anchorID, pendingSplitInsertion)
     }
+
+    /// Move Left/Right in the Split View Menu: the focused pane trades
+    /// places, and sizes, with its neighbor.
+    @discardableResult func moveSelectedSplitPane(by offset: Int) -> Bool {
+        guard let group = selectedSplitGroup, let selectedTabID,
+              let syncID = tabs.first(where: { $0.id == selectedTabID })?.syncID,
+              let index = group.tabSyncIDs.firstIndex(of: syncID),
+              group.tabSyncIDs.indices.contains(index + offset), offset != 0,
+              let groupIndex = splitGroups.firstIndex(where: { $0.id == group.id })
+        else { return false }
+        var members = group.tabSyncIDs
+        members.swapAt(index, index + offset)
+        var fractions = group.fractions
+        fractions?.swapAt(index, index + offset)
+        splitGroups[groupIndex].tabSyncIDs = members
+        splitGroups[groupIndex].fractions = fractions
+        persistSplitGroupChange()
+        return true
+    }
+
+    func canMoveSelectedSplitPane(by offset: Int) -> Bool {
+        guard let group = selectedSplitGroup, let selectedTabID,
+              let index = splitPaneTabIDs(of: group).firstIndex(of: selectedTabID)
+        else { return false }
+        return group.tabSyncIDs.indices.contains(index + offset)
+    }
+
+    /// Expand Current Split: the focused pane fills the window until
+    /// focus moves or the command runs again.
+    @discardableResult func toggleExpandedSplitPane() -> Bool {
+        guard selectedSplitGroup != nil, let selectedTabID else { return false }
+        expandedSplitPaneTabID = expandedSplitPaneTabID == selectedTabID ? nil : selectedTabID
+        return true
+    }
+
+    var isSelectedSplitPaneExpanded: Bool { expandedSplitPaneTabID != nil && expandedSplitPaneTabID == selectedTabID }
 
     /// "Close this Split Pane": the focused pane leaves the split, the
     /// next pane (or the previous one at the end) takes focus, and the pane's

@@ -359,6 +359,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case separateTabFromSplit
     case separateSplitView
     case toggleSplitOrientation
+    case expandCurrentSplit
     case focusSplitPane1
     case focusSplitPane2
     case focusSplitPane3
@@ -435,6 +436,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.separateSplitView
         case .toggleSplitOrientation:
             BrowserCommands.toggleSplitOrientation
+        case .expandCurrentSplit:
+            BrowserCommands.expandCurrentSplit
         case .toggleSidebar:
             BrowserCommands.toggleSidebar
         case .toggleSidebarPosition:
@@ -516,6 +519,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .separateSplitView
         case .toggleSplitOrientation:
             .toggleSplitOrientation
+        case .expandCurrentSplit:
+            .expandCurrentSplit
         case .toggleSidebar:
             .toggleSidebar
         case .toggleSidebarPosition:

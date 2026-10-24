@@ -314,6 +314,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.toggleSelectedSplitOrientation()
     }
 
+    public func expandCurrentSplit(_: Any?) {
+        activeChromeModel?.toggleExpandedSplitPane()
+    }
+
     public func pasteAndMatchStyle(_ sender: Any?) {
         _ = performPasteAndMatchStyle(sender)
     }
@@ -424,6 +428,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
             if let menuItem = item as? NSMenuItem {
                 menuItem.title = activeChromeModel?.splitOrientationToggleTitle
                     ?? BrowserStrings.splitConvertToVerticalAction
+            }
+            return activeChromeModel?.selectedSplitGroup != nil
+        case #selector(expandCurrentSplit(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = activeChromeModel?.isSelectedSplitPaneExpanded == true
+                    ? BrowserStrings.menuShowAllSplitPanes
+                    : BrowserStrings.menuExpandCurrentSplit
             }
             return activeChromeModel?.selectedSplitGroup != nil
         case #selector(pasteAndMatchStyle(_:)):
@@ -986,6 +997,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             (.separateTabFromSplit, #selector(separateTabFromSplit(_:))),
             (.separateSplitView, #selector(separateSplitView(_:))),
             (.toggleSplitOrientation, #selector(toggleSplitOrientation(_:))),
+            (.expandCurrentSplit, #selector(expandCurrentSplit(_:))),
         ] {
             viewMenu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
         }
@@ -1518,6 +1530,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.separateSelectedSplitGroup() ?? false
         case .toggleSplitOrientation:
             return activeChromeModel?.toggleSelectedSplitOrientation() ?? false
+        case .expandCurrentSplit:
+            return activeChromeModel?.toggleExpandedSplitPane() ?? false
         case .focusSplitPane1:
             return activeChromeModel?.focusSplitPane(at: 0) ?? false
         case .focusSplitPane2:

@@ -124,6 +124,16 @@
 "browser.menu.toggle_split_orientation" = "Toggle Split View Orientation";
 "browser.split.button" = "Split View";
 "browser.settings.sidebar_position" = "Sidebar position";
+"browser.split.move_left" = "Move Left";
+"browser.split.move_right" = "Move Right";
+"browser.split.move_up" = "Move Up";
+"browser.split.move_down" = "Move Down";
+"browser.split.add_left" = "Add Left Split";
+"browser.split.add_right" = "Add Right Split";
+"browser.split.add_top" = "Add Top Split";
+"browser.split.add_bottom" = "Add Bottom Split";
+"browser.menu.expand_current_split" = "Expand Current Split";
+"browser.menu.show_all_split_panes" = "Show All Split Panes";
 "browser.menu.focus_split_pane" = "Switch to Split Pane %d";
 "browser.menu.focus_next_split_pane" = "Switch to Next Split Pane";
 "browser.menu.focus_previous_split_pane" = "Switch to Previous Split Pane";

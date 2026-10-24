@@ -723,6 +723,56 @@ enum BrowserStrings {
         comment: "Command title that focuses the previous Split View pane."
     )
 
+    static let splitMovePaneLeft = NSLocalizedString(
+        "browser.split.move_left",
+        comment: "Split View Menu action that moves the focused pane one place to the left."
+    )
+
+    static let splitMovePaneRight = NSLocalizedString(
+        "browser.split.move_right",
+        comment: "Split View Menu action that moves the focused pane one place to the right."
+    )
+
+    static let splitMovePaneUp = NSLocalizedString(
+        "browser.split.move_up",
+        comment: "Split View Menu action that moves the focused pane of a stacked split up."
+    )
+
+    static let splitMovePaneDown = NSLocalizedString(
+        "browser.split.move_down",
+        comment: "Split View Menu action that moves the focused pane of a stacked split down."
+    )
+
+    static let splitAddLeft = NSLocalizedString(
+        "browser.split.add_left",
+        comment: "Split View Menu action that adds a pane left of the focused pane."
+    )
+
+    static let splitAddRight = NSLocalizedString(
+        "browser.split.add_right",
+        comment: "Split View Menu action that adds a pane right of the focused pane."
+    )
+
+    static let splitAddTop = NSLocalizedString(
+        "browser.split.add_top",
+        comment: "Split View Menu action that adds a pane above the focused pane of a stacked split."
+    )
+
+    static let splitAddBottom = NSLocalizedString(
+        "browser.split.add_bottom",
+        comment: "Split View Menu action that adds a pane below the focused pane of a stacked split."
+    )
+
+    static let menuExpandCurrentSplit = NSLocalizedString(
+        "browser.menu.expand_current_split",
+        comment: "View menu and command title that shows only the focused Split View pane."
+    )
+
+    static let menuShowAllSplitPanes = NSLocalizedString(
+        "browser.menu.show_all_split_panes",
+        comment: "View menu and command title that restores every pane after Expand Current Split."
+    )
+
     static let settingsSidebarPosition = NSLocalizedString(
         "browser.settings.sidebar_position",
         comment: "Settings title for the window edge that shows the sidebar."

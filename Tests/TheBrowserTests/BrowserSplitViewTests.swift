@@ -298,6 +298,60 @@ import Testing
         #expect(f.names(f.model.temporaryTabs) == ["x", "z", "y"])
     }
 
+    @Test func addLeftAndRightSplitPlaceTheNewPaneNextToTheFocusedPane() throws {
+        let f = SidebarDragFixture(temporary: ["w", "x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        f.model.presentSplitViewCommandBar(insertion: .before)
+        f.model.commandBarModel.query = "y.example"
+        let suggestion = try #require(f.model.commandBarModel.suggestions.first {
+            $0.kind == .openTab && $0.tabIDs == [f.id("y")]
+        })
+        f.model.commandBarModel.submitSuggestion(id: suggestion.id)
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: group) == [f.id("x"), f.id("y"), f.id("z")], "Add Left Split")
+        #expect(f.model.selectedTabID == f.id("y"))
+        #expect(f.model.openInSplitView(tabID: f.id("w"), insertion: .after))
+        let after = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: after) == [f.id("x"), f.id("y"), f.id("w"), f.id("z")], "Add Right Split")
+        #expect(f.model.pendingSplitInsertion == .end, "The insertion is consumed with the anchor")
+    }
+
+    @Test func movingTheFocusedPaneSwapsItsPlaceAndSize() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.setSplitFractions([0.7, 0.3], groupID: group.id))
+        #expect(!f.model.canMoveSelectedSplitPane(by: 1))
+        #expect(f.model.moveSelectedSplitPane(by: -1))
+        let moved = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.splitPaneTabIDs(of: moved) == [f.id("y"), f.id("x")])
+        #expect(moved.fractions == [0.3, 0.7], "The pane keeps its size")
+        #expect(f.model.selectedTabID == f.id("y"))
+        #expect(!f.model.moveSelectedSplitPane(by: -1))
+    }
+
+    @Test func expandCurrentSplitShowsTheFocusedPaneUntilFocusMoves() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        let split = BrowserTabVisibleLayout(tabIDs: [f.id("x"), f.id("y")], orientation: .horizontal, fractions: nil)
+        #expect(f.driver.visibleTabLayouts.last == split)
+        #expect(f.model.toggleExpandedSplitPane())
+        #expect(f.model.isSelectedSplitPaneExpanded)
+        #expect(f.driver.visibleTabLayouts.last == .some(nil), "Only the focused pane is shown")
+        #expect(f.model.selectedSplitGroup != nil, "The split itself stays")
+        #expect(f.model.toggleExpandedSplitPane())
+        #expect(f.driver.visibleTabLayouts.last == split)
+        #expect(f.model.toggleExpandedSplitPane())
+        f.model.selectTab(id: f.id("x"))
+        #expect(!f.model.isSelectedSplitPaneExpanded, "Moving focus ends the expansion")
+        #expect(f.driver.visibleTabLayouts.last == split)
+        f.model.selectTab(id: f.id("z"))
+        #expect(!f.model.toggleExpandedSplitPane(), "Expansion needs a split")
+    }
+
     @Test func anOrdinaryNewTabAfterACancelledSplitStaysOutOfTheSplit() {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         f.model.selectTab(id: f.id("x"))

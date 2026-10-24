@@ -366,7 +366,36 @@ final class BrowserSiteControlsNSView: NSView {
             shortcut: shortcuts.shortcut(for: .addSplitView),
             enabled: model.canAddSplitView
         ) { model.presentSplitViewCommandBar() }
-        guard model.selectedSplitGroup != nil else { return menu }
+        guard let group = model.selectedSplitGroup else { return menu }
+        let vertical = group.orientation == .vertical
+        BrowserNativeMenus.add(
+            vertical ? BrowserStrings.splitMovePaneUp : BrowserStrings.splitMovePaneLeft,
+            to: menu,
+            enabled: model.canMoveSelectedSplitPane(by: -1)
+        ) { _ = model.moveSelectedSplitPane(by: -1) }
+        BrowserNativeMenus.add(
+            vertical ? BrowserStrings.splitMovePaneDown : BrowserStrings.splitMovePaneRight,
+            to: menu,
+            enabled: model.canMoveSelectedSplitPane(by: 1)
+        ) { _ = model.moveSelectedSplitPane(by: 1) }
+        BrowserNativeMenus.add(
+            vertical ? BrowserStrings.splitAddBottom : BrowserStrings.splitAddRight,
+            to: menu,
+            enabled: model.canAddSplitView
+        ) { model.presentSplitViewCommandBar(insertion: .after) }
+        BrowserNativeMenus.add(
+            vertical ? BrowserStrings.splitAddTop : BrowserStrings.splitAddLeft,
+            to: menu,
+            enabled: model.canAddSplitView
+        ) { model.presentSplitViewCommandBar(insertion: .before) }
+        BrowserNativeMenus.add(
+            model.isSelectedSplitPaneExpanded
+                ? BrowserStrings.menuShowAllSplitPanes
+                : BrowserStrings.menuExpandCurrentSplit,
+            to: menu,
+            shortcut: shortcuts.shortcut(for: .expandCurrentSplit)
+        ) { _ = model.toggleExpandedSplitPane() }
+        menu.addItem(.separator())
         BrowserNativeMenus.add(
             BrowserStrings.splitSeparateTabAction,
             to: menu,

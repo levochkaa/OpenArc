@@ -262,6 +262,13 @@ enum BrowserCommands {
         shortcut: .unassigned
     )
 
+    /// Expand Current Split has no default shortcut.
+    static let expandCurrentSplit = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuExpandCurrentSplit,
+        helpTitle: BrowserStrings.menuExpandCurrentSplit,
+        shortcut: .unassigned
+    )
+
     /// Switch to Split View 1–4 is Control-Shift-1…4
     /// and next/previous is Control-Shift-]/[.
     static let focusSplitPane1 = BrowserCommandDescriptor(
@@ -392,6 +399,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case separateTabFromSplit
     case separateSplitView
     case toggleSplitOrientation
+    case expandCurrentSplit
     case focusSplitPane1
     case focusSplitPane2
     case focusSplitPane3

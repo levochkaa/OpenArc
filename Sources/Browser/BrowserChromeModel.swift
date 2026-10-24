@@ -311,6 +311,17 @@ enum BrowserWindowMode: Equatable {
     /// `presentSplitViewCommandBar()` sets it; any other presentation or
     /// dismissal through the model clears it.
     var pendingSplitAnchorTabID: String?
+    /// Where the pending pane goes relative to its anchor (Add Left/Right Split).
+    var pendingSplitInsertion = SplitInsertion.end
+    /// Expand Current Split: this pane alone fills the window until focus
+    /// moves. UI-only, never persisted.
+    var expandedSplitPaneTabID: String? {
+        didSet {
+            if oldValue != expandedSplitPaneTabID {
+                syncSplitLayout()
+            }
+        }
+    }
 
     /// Raw local Split View state. Only `BrowserChromeModel+SplitGroups.swift`
     /// mutates it; readers use `splitGroup(containingTabID:)`, which validates
@@ -3336,10 +3347,10 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func openResolvedSelectionInNewTab(_ resolvedURLString: String) {
-        let splitAnchorID = takePendingSplitAnchorTabID()
+        let pending = takePendingSplitAnchor()
         createTab(withURLString: resolvedURLString)
-        if let splitAnchorID, let tabID = selectedTabID, tabID != splitAnchorID {
-            openInSplitView(tabID: tabID, anchorTabID: splitAnchorID)
+        if let pending, let tabID = selectedTabID, tabID != pending.anchorID {
+            openInSplitView(tabID: tabID, anchorTabID: pending.anchorID, insertion: pending.insertion)
         }
     }
 
@@ -3355,9 +3366,10 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
-        if let splitAnchorID = takePendingSplitAnchorTabID(), openInSplitView(
+        if let pending = takePendingSplitAnchor(), openInSplitView(
             tabID: tab.id,
-            anchorTabID: splitAnchorID
+            anchorTabID: pending.anchorID,
+            insertion: pending.insertion
         ) {
             return
         }
@@ -3493,6 +3505,8 @@ enum BrowserWindowMode: Equatable {
             splitOrientationToggleTitle
         case .toggleSidebarPosition:
             sidebarPositionToggleTitle
+        case .expandCurrentSplit:
+            isSelectedSplitPaneExpanded ? BrowserStrings.menuShowAllSplitPanes : BrowserStrings.menuExpandCurrentSplit
         default:
             descriptor.menuTitle
         }
@@ -3553,7 +3567,7 @@ enum BrowserWindowMode: Equatable {
             selectedSplitGroup != nil && !isShuttingDown
         case .focusSplitPane1, .focusSplitPane2, .focusSplitPane3, .focusSplitPane4:
             selectedSplitGroup.map { splitPaneTabIDs(of: $0).count > commandID.splitPaneIndex } == true
-        case .focusNextSplitPane, .focusPreviousSplitPane:
+        case .focusNextSplitPane, .focusPreviousSplitPane, .expandCurrentSplit:
             selectedSplitGroup != nil
         case .toggleSidebar:
             true
@@ -5967,6 +5981,8 @@ extension BrowserCommandID {
             ["split pane \(splitPaneIndex + 1)", "switch split pane", "focus pane"]
         case .focusNextSplitPane:
             ["next split pane", "next pane"]
+        case .expandCurrentSplit:
+            ["expand split", "maximize pane", "expand pane", "show all split panes"]
         case .focusPreviousSplitPane:
             ["previous split pane", "previous pane"]
         case .toggleSidebar:
@@ -6038,6 +6054,8 @@ extension BrowserCommandID {
             "\(splitPaneIndex + 1).square"
         case .focusNextSplitPane:
             "arrow.right.square"
+        case .expandCurrentSplit:
+            "arrow.up.left.and.arrow.down.right"
         case .focusPreviousSplitPane:
             "arrow.left.square"
         case .toggleSidebar:
