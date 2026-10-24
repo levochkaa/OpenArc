@@ -49,7 +49,13 @@ extension BrowserSyncHTTPIntegrationTests {
         await second.activate()
         let live = try PersistentRemovalHTTPModel(profile: first, now: now)
         defer { live.close() }
+        // Pinned tabs restore unloaded. Show this one first so it has a page
+        // whose close needs the engine's confirmation.
+        let unloaded = try #require(live.model.tabs.first { $0.syncID == "pinned" })
+        live.model.selectTab(id: unloaded.id)
+        live.driver.flushPendingCreateEvents()
         let pinned = try #require(live.model.tabs.first { $0.syncID == "pinned" })
+        live.driver.emitTabCreationState(id: pinned.id, state: .ready)
         let anchor = try #require(live.model.tabs.first { $0.syncID == "anchor" })
         live.model.selectTab(id: anchor.id)
         live.driver.emitNavigationStateChange(id: anchor.id, canGoBack: true, canGoForward: true)
