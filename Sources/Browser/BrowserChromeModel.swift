@@ -3260,13 +3260,24 @@ enum BrowserWindowMode: Equatable {
             tabCount: snapshot.tabs.count
         )
         pendingRestoredSpaces = snapshot.spaces ?? []
+        let splitMemberSyncIDs = Set((snapshot.splitGroups ?? []).flatMap(\.tabIDs))
         for (index, tabSnapshot) in snapshot.tabs.enumerated() {
-            let engineID = tabDriver.createTab(
-                withURLString: tabSnapshot.urlString,
-                makeActive: index == pendingRestoredSelectedTabIndex
-            )
-            restoredTabCreationIDs.insert(engineID)
             let placement = tabSnapshot.placement
+            // Pinned tabs come back unloaded, with their last title,
+            // and load when first shown. The shown tab and split panes load now;
+            // Favorites, a handful of app tiles that often notify, stay loaded.
+            let restoresUnloaded = placement == .spacePinned && index != pendingRestoredSelectedTabIndex
+                && !(tabSnapshot.id.map(splitMemberSyncIDs.contains) ?? false)
+            let engineID = restoresUnloaded
+                ? UUID().uuidString
+                : tabDriver.createTab(
+                    withURLString: tabSnapshot.urlString,
+                    makeActive: index == pendingRestoredSelectedTabIndex
+                )
+            restoredTabCreationIDs.insert(engineID)
+            if restoresUnloaded {
+                closedPinnedTabIDs.insert(engineID)
+            }
             tabs.append(Tab(
                 id: engineID,
                 syncID: tabSnapshot.id ?? tabSyncIDProvider(),
@@ -4089,15 +4100,18 @@ enum BrowserWindowMode: Equatable {
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
 
+        // A tab closed by the user was reset to its pinned URL; one restored
+        // unloaded keeps the page it showed last.
+        let urlString = tab.urlString.isEmpty ? pinnedURLString : tab.urlString
         let newTabID = tabDriver.createTab(
-            withURLString: resolvedBrowserURLString(pinnedURLString),
+            withURLString: resolvedBrowserURLString(urlString),
             makeActive: true
         )
         pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = reidentifiedPinnedTab(
             from: tab,
             id: newTabID,
-            urlString: pinnedURLString,
+            urlString: urlString,
             lastActivityAt: advancedActivityDate(after: tab.lastActivityAt)
         )
         closedPinnedTabIDs.remove(id)
@@ -5533,18 +5547,15 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             }
             return tabID
         } ?? sidebarTabs(forSpaceID: selectedSpaceID).first?.id
-        // An unloaded pinned tab has no page to show. Prefer a loaded tab of
-        // the Space; when every tab is unloaded, load the one to show.
-        let isDormant = { (id: String) in self.closedPinnedTabIDs.contains(id) || self.closedAppTabIDs.contains(id) }
-        let loadedTabID = candidate.flatMap { isDormant($0) ? nil : $0 }
-            ?? sidebarTabs(forSpaceID: selectedSpaceID).first { !isDormant($0.id) }?.id
-        if loadedTabID == nil, let candidate {
+        // An unloaded tab has no page to show: the Space's remembered tab, or
+        // its first, loads through the same path as a click.
+        if let candidate, closedPinnedTabIDs.contains(candidate) || closedAppTabIDs.contains(candidate) {
             selectTab(id: candidate)
             if let selectedTabID, tabs.first(where: { $0.id == selectedTabID })?.spaceID == selectedSpaceID {
                 return
             }
         }
-        let fallbackTabID = loadedTabID ?? candidate
+        let fallbackTabID = candidate
 
         if selectedTabID != fallbackTabID {
             captureSelectedTabPreviewIfNeeded()

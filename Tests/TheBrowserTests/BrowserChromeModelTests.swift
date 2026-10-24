@@ -2034,7 +2034,8 @@ import Testing
     ])
     #expect(model.spacePinnedTabs.map(\.urlString) == ["https://pinned.example"])
     #expect(model.temporaryTabs.map(\.urlString) == ["https://selected.example"])
-    #expect(driver.closedTabRequests.map(\.id) == ["tab-2"])
+    // The pinned tab restores unloaded and takes no engine ID.
+    #expect(driver.closedTabRequests.map(\.id) == ["tab-1"])
 }
 
 @Test

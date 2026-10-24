@@ -283,8 +283,10 @@ import Testing
     @Test func moveIntentKeepsStableIdentityAfterDormantTabReopens() {
         let f = SidebarDragFixture()
         let oldEngineID = f.id("a")
-        #expect(f.model.closePinnedTabProcessOrReset(id: oldEngineID))
-        f.driver.emitClose(id: oldEngineID)
+        // Pinned tabs restore unloaded unless shown; close "a" only if it loaded.
+        if f.model.closePinnedTabProcessOrReset(id: oldEngineID) {
+            f.driver.emitClose(id: oldEngineID)
+        }
         f.model.selectTab(id: oldEngineID)
         f.driver.flushPendingCreateEvents()
         let newEngineID = f.id("a")

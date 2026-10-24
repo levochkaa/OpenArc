@@ -85,7 +85,8 @@ import Testing
         #expect(try store.syncOwner() == nil)
         #expect(model.tabs.map(\.syncID) == ["favorite", "pinned", "selected", "other-space"])
         #expect(model.tabs.first { $0.id == model.selectedTabID }?.syncID == "selected")
-        #expect(driver.closedTabRequests.map(\.id) == ["tab-3"])
+        // The pinned tab restores unloaded, so the expired tab took the second engine ID.
+        #expect(driver.closedTabRequests.map(\.id) == ["tab-2"])
         #expect(store.loadSnapshot()?.tabs.compactMap(\.id) == model.tabs.map(\.syncID))
         #expect(try fixture.outboxRows().isEmpty)
         model.archiveExpiredTemporaryTabs()
@@ -154,7 +155,8 @@ import Testing
         model.archiveExpiredTemporaryTabs()
         #expect(failing.readAttempts > failedReads)
         #expect(model.tabs.map(\.syncID) == ["favorite", "pinned", "selected", "other-space"])
-        #expect(driver.closedTabRequests.map(\.id) == ["tab-3"])
+        // The pinned tab restores unloaded, so the expired tab took the second engine ID.
+        #expect(driver.closedTabRequests.map(\.id) == ["tab-2"])
         #expect(store.loadSnapshot()?.tabs.compactMap(\.id) == model.tabs.map(\.syncID))
     }
 }
