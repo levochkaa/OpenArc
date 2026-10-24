@@ -145,6 +145,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onSplitResized = { [weak self] tabIDs, fractions in
             self?.handleSplitResize(tabIDs: tabIDs, fractions: fractions)
         }
+        tabDriver.onSplitPaneLayout = { [weak self] tabIDs, frames in
+            self?.handleSplitPaneLayout(tabIDs: tabIDs, frames: frames)
+        }
         tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
             self?.handleNavigationStateChange(
                 id: tabID,
@@ -317,6 +320,14 @@ enum BrowserWindowMode: Equatable {
             syncSplitLayout()
         }
     }
+
+    /// UI-only: the visible split's pane frames in the engine host view, in pane
+    /// order, as the engine last laid them out. Not published: it changes on
+    /// every frame of a divider drag, and pane bars listen through
+    /// `onSplitPaneLayoutChange` instead. Only `handleSplitPaneLayout` sets them.
+    var splitPaneLayoutTabIDs = [String]()
+    var splitPaneLayoutFrames = [CGRect]()
+    var onSplitPaneLayoutChange: (() -> Void)?
 
     @Published private(set) var selectedTabID: String? {
         willSet {

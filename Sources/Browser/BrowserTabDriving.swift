@@ -43,6 +43,10 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     /// A divider drag or reset ended in the visible split: every pane's tab ID
     /// in pane order with its new size fraction.
     var onSplitResized: (([String], [Double]) -> Void)? { get set }
+    /// Pane frames of the visible split in the host view, in pane order, after
+    /// each layout that changes them; empty outside a split. Synchronous, so
+    /// pane bars follow a live divider drag.
+    var onSplitPaneLayout: (([String], [CGRect]) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     /// True admits another attempt for a synchronously refused creation.

@@ -35,6 +35,8 @@ final class BrowserContentNSView: NSView {
         self.viewport = BrowserViewportClipView(hostView: hostView)
         super.init(frame: .zero)
         addSubview(viewport)
+        addSubview(splitPaneBars)
+        splitPaneBars.hostView = hostView
         for overlay in [loading, failure] {
             overlay.fillColor = BrowserChromeColors.contentBackground
             overlay.wantsLayer = true
@@ -79,11 +81,14 @@ final class BrowserContentNSView: NSView {
     override var isFlipped: Bool { true }
 
     let viewport: BrowserViewportClipView
+    let splitPaneBars = BrowserSplitPaneBarsView()
     var onRetryTabCreation: () -> Void = {}
 
     override func layout() {
         super.layout()
         viewport.frame = bounds
+        splitPaneBars.frame = bounds
+        splitPaneBars.refresh()
         loading.frame = bounds
         failure.frame = bounds
 
@@ -110,6 +115,8 @@ final class BrowserContentNSView: NSView {
 
     func bindTabCreation(to model: BrowserChromeModel) {
         onRetryTabCreation = { [weak model] in model?.retrySelectedTabCreation() }
+        splitPaneBars.model = model
+        model.onSplitPaneLayoutChange = { [weak self] in self?.splitPaneBars.refresh() }
     }
 
     func update(
@@ -122,9 +129,12 @@ final class BrowserContentNSView: NSView {
         selectedTabCreationState: BrowserTabCreationState? = nil
     ) {
         viewport.update(hostView: hostView)
+        splitPaneBars.hostView = hostView
         let isCreatingTab = hasSelectedTab && selectedTabCreationState == .creating
         let didFailToCreateTab = hasSelectedTab && selectedTabCreationState == .failed
         viewport.isHidden = !isContextReady || !hasSelectedTab || isCreatingTab || didFailToCreateTab
+        splitPaneBars.isHidden = viewport.isHidden
+        splitPaneBars.refresh()
         let clipping = BrowserContentClipping(
             isSidebarVisible: isSidebarVisible,
             usesWindowContentInsets: usesWindowContentInsets,

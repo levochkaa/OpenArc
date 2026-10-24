@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import GRDB
 import Testing
 
@@ -200,6 +200,68 @@ import Testing
         _ = f.model.separateSelectedSplitGroup()
         #expect(!commands("next split pane").contains(.focusNextSplitPane))
         #expect(!f.model.focusAdjacentSplitPane(offset: 1))
+    }
+
+    @Test func paneBarsSitOnEachPaneAndActOnTheirOwnPane() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("z")))
+        f.driver.emitNavigationStateChange(id: f.id("x"), canGoBack: true, canGoForward: false)
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let content = BrowserContentNSView(hostView: NSView())
+        content.frame = NSRect(x: 0, y: 0, width: 1000, height: 600)
+        window.contentView = content
+        content.bindTabCreation(to: f.model)
+        content.update(
+            hostView: content.viewport.hostedView,
+            isContextReady: true,
+            hasSelectedTab: true,
+            isSidebarVisible: true,
+            usesWindowContentInsets: true
+        )
+        content.layoutSubtreeIfNeeded()
+        let host = content.viewport.hostedView
+        let left = CGRect(x: 0, y: 0, width: 496, height: 600)
+        let right = CGRect(x: 504, y: 0, width: 496, height: 600)
+        f.driver.simulateSplitPaneLayout([f.id("x"), f.id("z")], frames: [left, right])
+        f.driver.simulateSplitPaneLayout([f.id("x"), f.id("z")], frames: [left, right])
+        let bars = content.splitPaneBars
+        #expect(bars.paneTabIDs == [f.id("x"), f.id("z")])
+        let focused = try #require(bars.bar(forTabID: f.id("z")))
+        let other = try #require(bars.bar(forTabID: f.id("x")))
+        let leftPane = bars.convert(left, from: host)
+        #expect(other.frame == CGRect(
+            x: leftPane.minX,
+            y: leftPane.minY,
+            width: leftPane.width,
+            height: BrowserSplitPaneLayout.paneBarHeight
+        ), "The bar covers the top of its pane")
+        #expect(focused.isFocused && !other.isFocused)
+        #expect(!focused.reloadButton.isHidden && other.reloadButton.isHidden, "Only the focused pane reloads")
+        #expect(other.backButton.isEnabled)
+        content.appearance = NSAppearance(named: .darkAqua)
+        bars.layoutSubtreeIfNeeded()
+        let bitmap = try #require(bars.bitmapImageRepForCachingDisplay(in: CGRect(x: 0, y: 0, width: 1000, height: 60)))
+        bars.cacheDisplay(in: CGRect(x: 0, y: 0, width: 1000, height: 60), to: bitmap)
+        try bitmap.representation(using: .png, properties: [:])?
+            .write(to: URL(fileURLWithPath: "/tmp/thebrowser-split-pane-bars.png"))
+
+        other.backButton.performClick(nil)
+        #expect(f.model.selectedTabID == f.id("x"), "The bar focuses its pane first")
+        #expect(f.driver.goBackCount == 1)
+
+        let close = try #require(bars.bar(forTabID: f.id("z")))
+        close.closeButton.performClick(nil)
+        #expect(f.model.selectedSplitGroup == nil, "Closing a pane of two dissolves the split")
+        f.driver.simulateSplitPaneLayout([], frames: [])
+        #expect(bars.paneTabIDs.isEmpty)
     }
 
     @Test func addSplitViewOpensTheCommandBarResultAsTheNextPane() throws {
@@ -431,6 +493,15 @@ import Testing
     #expect(BrowserSplitPaneLayout.axisPosition(
         of: CGPoint(x: 10, y: 100), in: bounds, orientation: .vertical, flipped: true
     ) == 100)
+}
+
+@Test func thePagePartOfAPaneSitsBelowItsBar() {
+    let bar = BrowserSplitPaneLayout.paneBarHeight
+    let pane = CGRect(x: 10, y: 20, width: 400, height: 300)
+    #expect(BrowserSplitPaneLayout.webContentFrame(forPaneFrame: pane, flipped: true)
+        == CGRect(x: 10, y: 20 + bar, width: 400, height: 300 - bar))
+    #expect(BrowserSplitPaneLayout.webContentFrame(forPaneFrame: pane, flipped: false)
+        == CGRect(x: 10, y: 20, width: 400, height: 300 - bar))
 }
 
 @Test func dividerSnapsToEqualNeighborsAndDoubleClickEqualizesThem() throws {

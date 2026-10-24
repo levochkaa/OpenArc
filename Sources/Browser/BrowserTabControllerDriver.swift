@@ -52,6 +52,7 @@ import Foundation
     var onDownloadUpdated: ((BrowserDownloadUpdate) -> Void)?
     var onTabFocused: ((String) -> Void)?
     var onSplitResized: (([String], [Double]) -> Void)?
+    var onSplitPaneLayout: (([String], [CGRect]) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -182,6 +183,7 @@ import Foundation
         onDownloadUpdated = nil
         onTabFocused = nil
         onSplitResized = nil
+        onSplitPaneLayout = nil
         controller.prepareForCefShutdown()
     }
 
@@ -197,6 +199,19 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(_: BrowserTabController, didFocusTabWithID tabID: String) {
         DispatchQueue.main.async { [weak self] in
             self?.onTabFocused?(tabID)
+        }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didLayoutSplitPanesWithTabIDs tabIDs: [String],
+        frames: [NSValue]
+    ) {
+        let rects = frames.map(\.rectValue)
+        // Layout runs on the main thread; reporting synchronously keeps the bars
+        // on the same frame as the panes during a divider drag.
+        MainActor.assumeIsolated {
+            onSplitPaneLayout?(tabIDs, rects)
         }
     }
 

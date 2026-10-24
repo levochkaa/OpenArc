@@ -23,6 +23,10 @@ The selected tab is the focused pane, so the toolbar, Find and active-tab comman
 
 Panes sit `BrowserWindowGeometry.browserContentEdgeInset` (8 pt) apart, the same distance as the content from the window edge. Every pane view rounds all four corners with the content corner radius while a split is shown, so the inner corners match the outer ones.
 
+### Pane bars
+
+Every pane of a visible split has its own 32 pt bar above the page (`BrowserSplitPaneLayout.paneBarHeight`). The engine lays each page out below its pane's bar and rounds only the page's bottom corners; it reports the pane frames synchronously through `didLayoutSplitPanesWithTabIDs:frames:` → `BrowserTabDriving.onSplitPaneLayout` → `BrowserChromeModel.splitPaneLayoutTabIDs/Frames` (not published, so a divider drag does not refresh the whole window). `BrowserSplitPaneBarsView`, a transparent layer above the engine host in `BrowserContentNSView`, puts a `BrowserSplitPaneBarView` on each pane: back, forward, reload or stop on the focused pane, the page host with a link icon (click copies the URL) and Close this Split Pane. A bar acts on its own pane: an unfocused pane is focused first, then the active-tab command runs. The bar draws the pane's top corners and stays inside the focus ring.
+
 ### Divider
 
 A `BrowserSplitDividerView` fills each gap above the pane views. Dragging resizes the two neighbors live in the controller; the sizes reach the model once, on release, through `BrowserTabControllerDelegate.didResizeSplitWithTabIDs:fractions:` → `BrowserTabDriving.onSplitResized` → `setSplitFractions`, so the session store sees one change per drag. The model ignores a report whose tab IDs are no longer the selected split's panes. Rules:
@@ -88,6 +92,6 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, commands with shortcuts, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
-1. Pane chrome: per-pane back/forward/host/close strip, Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane and drag into the center.
+1. Pane chrome: Move Left/Right, Add Left/Top split positions, Expand Current Split, Cmd-L for the focused pane, reorder by a top grip and drag into the center. The bars do not show window controls when the sidebar is hidden yet.
 2. iPad browser split in UIKit/WebKit.
 3. Drop on a row's left or right half to create a split, and a custom split title.

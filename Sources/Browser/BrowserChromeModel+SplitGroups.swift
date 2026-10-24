@@ -145,6 +145,21 @@ extension BrowserChromeModel {
         return true
     }
 
+    func handleSplitPaneLayout(tabIDs: [String], frames: [CGRect]) {
+        guard tabIDs != splitPaneLayoutTabIDs || frames != splitPaneLayoutFrames else { return }
+        splitPaneLayoutTabIDs = tabIDs
+        splitPaneLayoutFrames = frames
+        onSplitPaneLayoutChange?()
+    }
+
+    /// A pane bar acts on its own pane: an unfocused pane is focused first, so
+    /// the active-tab engine commands reach it.
+    func focusSplitPaneForBarAction(tabID: String) {
+        if selectedTabID != tabID, splitPaneTabIDs(forTabID: tabID).count > 1 {
+            selectTab(id: tabID)
+        }
+    }
+
     /// A divider drag ended in the engine. The sizes apply only while the
     /// visible panes are still exactly the selected split's panes.
     func handleSplitResize(tabIDs: [String], fractions: [Double]) {

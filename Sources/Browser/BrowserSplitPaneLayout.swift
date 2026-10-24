@@ -14,6 +14,12 @@ import AppKit
     /// Accent border drawn inside the focused pane while a split is shown.
     @objc static let focusRingWidth: CGFloat = 2
 
+    // MARK: Pane bar
+
+    /// Each pane shows its own bar above the page while a split is visible, as
+    /// Per-pane top bar (32 pt).
+    @objc static let paneBarHeight: CGFloat = 32
+
     // MARK: Dividers
 
     /// A divider drag never shrinks a pane below this length, unless the two
@@ -35,6 +41,20 @@ import AppKit
     @objc static var paneCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
 
     @objc static var focusRingColor: NSColor { BrowserChromeColors.splitFocusedPaneBorder }
+
+    /// The page part of a pane, below its bar, in the host's coordinates.
+    @objc(webContentFrameForPaneFrame:flipped:) static func webContentFrame(
+        forPaneFrame pane: CGRect,
+        flipped: Bool
+    ) -> CGRect {
+        let bar = min(paneBarHeight, pane.height)
+        return CGRect(
+            x: pane.minX,
+            y: flipped ? pane.minY + bar : pane.minY,
+            width: pane.width,
+            height: pane.height - bar
+        )
+    }
 
     static func frames(
         in bounds: CGRect,

@@ -73,6 +73,11 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 // A visible Split View pane other than the active tab received focus.
 - (void)browserTabController:(BrowserTabController *)controller
              didFocusTabWithID:(NSString *)tabID;
+// Pane frames of the visible Split View in host view coordinates, in pane
+// order, after every layout that changes them; empty when no split is shown.
+- (void)browserTabController:(BrowserTabController *)controller
+    didLayoutSplitPanesWithTabIDs:(NSArray<NSString *> *)tabIDs
+                           frames:(NSArray<NSValue *> *)frames;
 // A divider drag or reset in the visible Split View ended. Fractions follow
 // tabIDs, which are every pane of the split in pane order.
 - (void)browserTabController:(BrowserTabController *)controller

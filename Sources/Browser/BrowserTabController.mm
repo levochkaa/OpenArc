@@ -294,7 +294,8 @@ CefRect CefRectFromBounds(NSRect bounds) {
 }
 
 NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser);
-void SetBrowserViewCornerRadius(NSView *browserView, CGFloat radius);
+void SetBrowserViewCornerRadius(NSView *browserView, CGFloat radius,
+                                CACornerMask corners);
 
 void PresentSavePageError(NSString *message) {
   dispatch_async(dispatch_get_main_queue(), ^{
@@ -1558,18 +1559,20 @@ void SyncBrowserViewFrame(BrowserTabHostView *hostView,
       NSMakeRect(0, 0, NSWidth(hostBounds), NSHeight(hostBounds));
   browserView.frame = targetFrame;
   // The viewport rounds the outer corners of a single page.
-  SetBrowserViewCornerRadius(browserView, 0);
+  SetBrowserViewCornerRadius(browserView, 0, 0);
 }
 
-// Split View panes round every corner, including the inner ones the
-// viewport cannot reach.
-void SetBrowserViewCornerRadius(NSView *browserView, CGFloat radius) {
+// A Split View pane's page rounds its bottom corners; the pane bar above it
+// draws the top ones, so pane edges match the outer content corners.
+void SetBrowserViewCornerRadius(NSView *browserView, CGFloat radius,
+                                CACornerMask corners) {
   if (radius <= 0 && !browserView.wantsLayer) {
     return;
   }
   browserView.wantsLayer = YES;
   CALayer *layer = browserView.layer;
-  if (layer.cornerRadius == radius && layer.masksToBounds == (radius > 0)) {
+  if (layer.cornerRadius == radius && layer.masksToBounds == (radius > 0) &&
+      (radius <= 0 || layer.maskedCorners == corners)) {
     return;
   }
   [CATransaction begin];
@@ -1577,7 +1580,18 @@ void SetBrowserViewCornerRadius(NSView *browserView, CGFloat radius) {
   layer.cornerRadius = radius;
   layer.cornerCurve = kCACornerCurveContinuous;
   layer.masksToBounds = radius > 0;
+  if (radius > 0) {
+    layer.maskedCorners = corners;
+  }
   [CATransaction commit];
+}
+
+// Visual bottom corners of a layer: MinY is the bottom unless the layer
+// renders flipped.
+CACornerMask BottomCornersOfLayer(CALayer *layer) {
+  return layer.contentsAreFlipped
+             ? (kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner)
+             : (kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner);
 }
 
 // A Split View pane is laid out on every host layout, so it must not also
@@ -1591,7 +1605,9 @@ void SyncBrowserViewPaneFrame(CefRefPtr<CefBrowser> browser, NSRect frame) {
   if (!NSEqualRects(browserView.frame, frame)) {
     browserView.frame = frame;
   }
-  SetBrowserViewCornerRadius(browserView, BrowserSplitPaneLayout.paneCornerRadius);
+  browserView.wantsLayer = YES;
+  SetBrowserViewCornerRadius(browserView, BrowserSplitPaneLayout.paneCornerRadius,
+                             BottomCornersOfLayer(browserView.layer));
 }
 
 NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser) {
@@ -2668,6 +2684,8 @@ class BrowserTabNavigationTask final : public CefTask {
   BrowserSplitFocusRingView *_splitFocusRing;
   NSMutableArray<BrowserSplitDividerView *> *_splitDividers;
   BOOL _splitDividerMoved;
+  NSArray<NSString *> *_reportedSplitPaneTabIDs;
+  NSArray<NSValue *> *_reportedSplitPaneFrames;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
@@ -2865,6 +2883,7 @@ class BrowserTabNavigationTask final : public CefTask {
   if (hostView == nil || keys.size() < 2) {
     _splitFocusRing.hidden = YES;
     [self hideSplitDividersFromIndex:0];
+    [self reportSplitPaneTabIDs:@[] frames:@[]];
   }
   if (hostView == nil || keys.empty()) {
     return;
@@ -2896,10 +2915,15 @@ class BrowserTabNavigationTask final : public CefTask {
                                 keys:keys];
   const std::string activeKey = ToStdString(_activeTabID);
   BOOL showsFocusRing = NO;
+  NSMutableArray<NSString *> *paneTabIDs = [NSMutableArray array];
   for (size_t index = 0; index < keys.size() && index < frames.count; index++) {
+    [paneTabIDs addObject:ToNSString(keys[index])];
     auto it = _tabRecords.find(keys[index]);
     if (it != _tabRecords.end()) {
-      SyncBrowserViewPaneFrame(it->second.browser, frames[index].rectValue);
+      SyncBrowserViewPaneFrame(
+          it->second.browser,
+          [BrowserSplitPaneLayout webContentFrameForPaneFrame:frames[index].rectValue
+                                                      flipped:hostView.isFlipped]);
     }
     if (keys[index] == activeKey) {
       [self showSplitFocusRingInHostView:hostView frame:frames[index].rectValue];
@@ -2908,6 +2932,23 @@ class BrowserTabNavigationTask final : public CefTask {
   }
   if (!showsFocusRing) {
     _splitFocusRing.hidden = YES;
+  }
+  [self reportSplitPaneTabIDs:paneTabIDs frames:frames];
+}
+
+// The pane bars follow every layout, including a live divider drag, so the
+// delegate hears frames synchronously and only when they change.
+- (void)reportSplitPaneTabIDs:(NSArray<NSString *> *)tabIDs
+                       frames:(NSArray<NSValue *> *)frames {
+  if ([_reportedSplitPaneTabIDs isEqualToArray:tabIDs] &&
+      [_reportedSplitPaneFrames isEqualToArray:frames]) {
+    return;
+  }
+  _reportedSplitPaneTabIDs = [tabIDs copy];
+  _reportedSplitPaneFrames = [frames copy];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didLayoutSplitPanesWithTabIDs:frames:)]) {
+    [delegate browserTabController:self didLayoutSplitPanesWithTabIDs:tabIDs frames:frames];
   }
 }
 
