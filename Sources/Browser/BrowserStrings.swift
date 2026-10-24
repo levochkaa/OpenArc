@@ -865,6 +865,16 @@ enum BrowserStrings {
         comment: "Settings detail for the Peek toggle."
     )
 
+    static let settingsPeekOtherSites = NSLocalizedString(
+        "browser.settings.peek_other_sites",
+        comment: "Settings toggle: links to other sites from pinned tabs and Favorites open in Peek."
+    )
+
+    static let settingsPeekOtherSitesDetail = NSLocalizedString(
+        "browser.settings.peek_other_sites.detail",
+        comment: "Settings detail for opening links to other sites from pinned tabs in Peek."
+    )
+
     static let settingsLinkRoutesTitle = NSLocalizedString(
         "browser.settings.link_routes",
         comment: "Settings section of rules that choose where links from other apps open."

@@ -94,3 +94,36 @@ enum BrowserLinkRouter {
         return routes.first { $0.matches(url) }
     }
 }
+
+// MARK: - BrowserSite
+
+enum BrowserSite {
+    // MARK: Internal
+
+    /// Whether two web addresses belong to one site: the same registrable
+    /// domain, such as `mail.google.com` and `docs.google.com`. Without the
+    /// public suffix list, a two-letter country domain keeps its common
+    /// second level (`bbc.co.uk`).
+    static func isSameSite(_ first: URL, _ second: URL) -> Bool {
+        guard let first = site(of: first), let second = site(of: second) else { return false }
+        return first == second
+    }
+
+    // MARK: Private
+
+    private static let countrySecondLevels: Set = ["ac", "co", "com", "edu", "gov", "ne", "net", "or", "org"]
+
+    private static func site(of url: URL) -> String? {
+        guard let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+              !host.isEmpty
+        else { return nil }
+        let labels = host.split(separator: ".").map(String.init)
+        // An IP address is its own site.
+        if host.contains(":") || labels.allSatisfy({ Int($0) != nil }) {
+            return host
+        }
+        let keepsThree = labels.count >= 3 && labels[labels.count - 1].count == 2
+            && countrySecondLevels.contains(labels[labels.count - 2])
+        return labels.suffix(keepsThree ? 3 : 2).joined(separator: ".")
+    }
+}

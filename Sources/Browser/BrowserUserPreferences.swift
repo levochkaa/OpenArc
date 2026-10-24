@@ -212,6 +212,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         }
         self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
         self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
+        self.peeksLinksToOtherSites = Self.loadBool(userDefaults, key: Key.peeksLinksToOtherSites, defaultValue: false)
         self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)
             .flatMap { try? JSONDecoder().decode([BrowserLinkRoute].self, from: $0) } ?? []
     }
@@ -302,6 +303,12 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(littleArcEnabled, forKey: Key.littleArcEnabled) }
     }
 
+    /// Peek for links to other sites from pinned tabs and Favorites. Off
+    /// by default: sign-in flows that leave the site would open in a card.
+    @Published var peeksLinksToOtherSites: Bool {
+        didSet { userDefaults.set(peeksLinksToOtherSites, forKey: Key.peeksLinksToOtherSites) }
+    }
+
     /// Rules for links from other apps, in order.
     @Published var linkRoutes: [BrowserLinkRoute] {
         didSet { userDefaults.set(try? JSONEncoder().encode(linkRoutes), forKey: Key.linkRoutes) }
@@ -334,6 +341,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let pinnedExtensionIDs = "browser.extensions.pinnedExtensionIDs"
         static let littleArcEnabled = "browser.settings.littleArcEnabled"
         static let linkRoutes = "browser.settings.linkRoutes"
+        static let peeksLinksToOtherSites = "browser.settings.peeksLinksToOtherSites"
     }
 
     private let userDefaults: UserDefaults

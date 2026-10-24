@@ -148,6 +148,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onSplitPaneLayout = { [weak self] tabIDs, frames in
             self?.handleSplitPaneLayout(tabIDs: tabIDs, frames: frames)
         }
+        tabDriver.shouldPeekNavigation = { [weak self] tabID, urlString in
+            self?.peeksNavigation(fromTabWithID: tabID, toURLString: urlString) ?? false
+        }
         tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
             self?.handleNavigationStateChange(
                 id: tabID,
@@ -605,6 +608,17 @@ enum BrowserWindowMode: Equatable {
     var canZoomIn: Bool { canCreateTab && selectedTabID != nil && zoomPercent < (Self.zoomPercentages.last ?? 100) }
     var canZoomOut: Bool { canCreateTab && selectedTabID != nil && zoomPercent > (Self.zoomPercentages.first ?? 100) }
     var canResetZoom: Bool { canCreateTab && selectedTabID != nil && zoomPercent != 100 }
+
+    /// Peek for pinned tabs and Favorites, when turned on in Settings: a
+    /// clicked link to another site opens in Peek and the tab keeps its page.
+    func peeksNavigation(fromTabWithID tabID: String, toURLString urlString: String) -> Bool {
+        guard userPreferencesStore.peeksLinksToOtherSites, !isWebApp,
+              let tab = tabs.first(where: { $0.id == tabID }), tab.placement != .temporary,
+              let current = URL(string: tab.urlString), let target = URL(string: urlString),
+              [current, target].allSatisfy({ ["http", "https"].contains($0.scheme?.lowercased() ?? "") })
+        else { return false }
+        return !BrowserSite.isSameSite(current, target)
+    }
 
     @discardableResult func retrySessionPersistence() -> Bool {
         guard !hasDiscardedSessionForClosure, !sessionWriteBuffer.isTerminal else { return false }

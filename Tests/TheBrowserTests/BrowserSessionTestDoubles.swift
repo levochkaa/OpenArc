@@ -55,6 +55,7 @@ import Foundation
     var onTabFocused: ((String) -> Void)?
     var onSplitResized: (([String], [Double]) -> Void)?
     var onSplitPaneLayout: (([String], [CGRect]) -> Void)?
+    var shouldPeekNavigation: ((String, String) -> Bool)?
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
     private(set) var retryCreationRequests = [RetryCreationRequest]()

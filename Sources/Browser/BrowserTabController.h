@@ -70,6 +70,12 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     didFinishCloseRequestForTabWithID:(NSString *)tabID
                            requestID:(NSString *)requestID
                              outcome:(BrowserTabCloseRequestOutcome)outcome;
+// Asked on the main thread before a link click in a tab's page; YES cancels
+// the navigation and opens the link in Peek instead (the Peek setting for links to
+// other sites from pinned tabs).
+- (BOOL)browserTabController:(BrowserTabController *)controller
+    shouldPeekNavigationFromTabWithID:(NSString *)tabID
+                          toURLString:(NSString *)urlString;
 // A visible Split View pane other than the active tab received focus.
 - (void)browserTabController:(BrowserTabController *)controller
              didFocusTabWithID:(NSString *)tabID;

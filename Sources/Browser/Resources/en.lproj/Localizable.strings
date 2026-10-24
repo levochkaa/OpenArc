@@ -159,6 +159,8 @@
 "browser.settings.little_arc" = "Open links from other apps in a small window";
 "browser.settings.little_arc.detail" = "Open as Tab moves the page into this window.";
 "browser.settings.peek.detail" = "The link opens in a card over the page; Open as Tab keeps it.";
+"browser.settings.peek_other_sites" = "Open links to other sites from pinned tabs in Peek";
+"browser.settings.peek_other_sites.detail" = "Pinned tabs and Favorites stay on their page. Sign-in pages on another site open in Peek too.";
 "browser.settings.link_routes" = "Links from Other Apps";
 "browser.settings.link_routes.detail" = "A link from another app that matches a rule opens in its Space or in a small window. The first matching rule wins; other links follow the small-window setting above.";
 "browser.settings.link_routes.site" = "Site is";

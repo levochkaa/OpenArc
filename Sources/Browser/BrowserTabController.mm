@@ -2737,6 +2737,7 @@ struct TabRecord {
 - (void)closePeekSession:(int)sessionID;
 - (BOOL)isPeekSessionStandalone:(int)sessionID;
 - (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone;
+- (BOOL)shouldPeekNavigationFromTabID:(NSString *)tabID toURLString:(NSString *)urlString;
 - (void)notifyCloseRequestForTabID:(NSString *)tabID
                        requestID:(NSString *)requestID
                          outcome:(BrowserTabCloseRequestOutcome)outcome;
@@ -3568,6 +3569,15 @@ class BrowserTabNavigationTask final : public CefTask {
 
 - (void)showLittleWindowWithURLString:(NSString *)urlString {
   [self presentPeekWithURLString:urlString standalone:YES];
+}
+
+- (BOOL)shouldPeekNavigationFromTabID:(NSString *)tabID toURLString:(NSString *)urlString {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if (_hostView.window == nil ||
+      ![delegate respondsToSelector:@selector(browserTabController:shouldPeekNavigationFromTabWithID:toURLString:)]) {
+    return NO;
+  }
+  return [delegate browserTabController:self shouldPeekNavigationFromTabWithID:tabID toURLString:urlString];
 }
 
 /// A window has one Peek card; each link from another app gets its own
@@ -4402,6 +4412,23 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     allow_next_chromium_internal_navigation_ = true;
     frame->LoadURL(chromiumInternalURL);
     return true;
+  }
+
+  // A clicked link, not typed, restored, redirected or a form post.
+  const int transition = request->GetTransitionType();
+  const int qualifiers = TT_FORWARD_BACK_FLAG | TT_DIRECT_LOAD_FLAG | TT_IS_REDIRECT_MASK;
+  if (user_gesture && !is_redirect && (transition & TT_SOURCE_MASK) == TT_LINK &&
+      (transition & qualifiers) == 0 && request->GetMethod() == "GET") {
+    BrowserTabController *controller = controller_;
+    NSString *urlString = ToNSString(request->GetURL().ToString());
+    if (controller != nil && [controller shouldPeekNavigationFromTabID:ToNSString(tab_id_) toURLString:urlString]) {
+      // After the engine has cancelled this navigation.
+      __weak BrowserTabController *weakController = controller;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [weakController showPeekWithURLString:urlString];
+      });
+      return true;
+    }
   }
 
   return false;

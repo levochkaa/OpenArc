@@ -47,6 +47,9 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     /// each layout that changes them; empty outside a split. Synchronous, so
     /// pane bars follow a live divider drag.
     var onSplitPaneLayout: (([String], [CGRect]) -> Void)? { get set }
+    /// Asked before a link click in a tab's page leaves it, with the tab ID and
+    /// target; true opens the link in Peek and keeps the tab on its page.
+    var shouldPeekNavigation: ((String, String) -> Bool)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     /// True admits another attempt for a synchronously refused creation.

@@ -298,6 +298,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.peekEnabled = $0 }
                 ),
                 toggle(
+                    "peek-other-sites",
+                    BrowserStrings.settingsPeekOtherSites,
+                    detail: BrowserStrings.settingsPeekOtherSitesDetail,
+                    get: { preferences.peeksLinksToOtherSites },
+                    set: { preferences.peeksLinksToOtherSites = $0 }
+                ),
+                toggle(
                     "little-arc",
                     BrowserStrings.settingsLittleArc,
                     detail: BrowserStrings.settingsLittleArcDetail,

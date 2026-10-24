@@ -65,3 +65,38 @@ import Testing
         #expect(f.driver.createdTabRequests.count == created && f.model.selectedSpaceID == "t")
     }
 }
+
+// MARK: - BrowserPeekOtherSitesTests
+
+@MainActor struct BrowserPeekOtherSitesTests {
+    @Test func sitesCompareByRegistrableDomain() throws {
+        let pairs: [(String, String, Bool)] = [
+            ("https://mail.google.com", "https://docs.google.com/a", true),
+            ("https://github.com", "https://gist.github.com", true),
+            ("https://news.bbc.co.uk", "https://www.bbc.co.uk", true),
+            ("https://example.co.uk", "https://other.co.uk", false),
+            ("https://example.com", "https://example.org", false),
+            ("http://127.0.0.1:3000", "http://127.0.0.2:3000", false),
+        ]
+        for (first, second, same) in pairs {
+            #expect(
+                try BrowserSite.isSameSite(#require(URL(string: first)), #require(URL(string: second))) == same,
+                "\(first) \(second)"
+            )
+        }
+    }
+
+    @Test func onlyPinnedTabsAndFavoritesPeekLinksToOtherSitesWhenTurnedOn() {
+        let f = SidebarDragFixture(pinned: [("a", nil)], temporary: ["x"], apps: ["m"])
+        let pinned = f.id("a")
+        #expect(!f.model.peeksNavigation(fromTabWithID: pinned, toURLString: "https://other.com"), "Off by default")
+
+        f.model.userPreferencesStore.peeksLinksToOtherSites = true
+        #expect(f.model.peeksNavigation(fromTabWithID: pinned, toURLString: "https://other.com/page"))
+        #expect(f.model.peeksNavigation(fromTabWithID: f.id("m"), toURLString: "https://other.com"))
+        #expect(!f.model.peeksNavigation(fromTabWithID: pinned, toURLString: "https://www.a.example/inbox"))
+        #expect(!f.model.peeksNavigation(fromTabWithID: f.id("x"), toURLString: "https://other.com"))
+        #expect(!f.model.peeksNavigation(fromTabWithID: pinned, toURLString: "mailto:me@other.com"))
+        #expect(f.driver.shouldPeekNavigation?(pinned, "https://other.com") == true)
+    }
+}

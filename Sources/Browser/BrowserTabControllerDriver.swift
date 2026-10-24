@@ -53,6 +53,7 @@ import Foundation
     var onTabFocused: ((String) -> Void)?
     var onSplitResized: (([String], [Double]) -> Void)?
     var onSplitPaneLayout: (([String], [CGRect]) -> Void)?
+    var shouldPeekNavigation: ((String, String) -> Bool)?
 
     var hostView: NSView {
         browserHostView
@@ -221,6 +222,17 @@ import Foundation
 // MARK: BrowserTabControllerDelegate
 
 extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        shouldPeekNavigationFromTabWithID tabID: String,
+        toURLString urlString: String
+    ) -> Bool {
+        // The engine asks on the main thread and needs the answer now.
+        MainActor.assumeIsolated {
+            shouldPeekNavigation?(tabID, urlString) ?? false
+        }
+    }
+
     nonisolated func browserTabController(_: BrowserTabController, didFocusTabWithID tabID: String) {
         DispatchQueue.main.async { [weak self] in
             self?.onTabFocused?(tabID)
