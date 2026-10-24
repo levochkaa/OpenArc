@@ -753,6 +753,22 @@ void UpdateSavePanelSelection(NSSavePanel *panel,
   panel.allowedContentTypes = @[ ContentTypeForSavePageFormat(format) ];
 }
 
+/// DevTools JSON writes whole numbers as integers, which CEF parses as ints;
+/// `GetDouble` reads those as 0.
+double DevToolsNumber(CefRefPtr<CefDictionaryValue> dictionary, const char *key, double fallback = 0) {
+  if (!dictionary || !dictionary->HasKey(key)) {
+    return fallback;
+  }
+  switch (dictionary->GetType(key)) {
+    case VTYPE_INT:
+      return dictionary->GetInt(key);
+    case VTYPE_DOUBLE:
+      return dictionary->GetDouble(key);
+    default:
+      return fallback;
+  }
+}
+
 CefRefPtr<CefDictionaryValue> ParseDevToolsResultDictionary(const void *result,
                                                             size_t result_size) {
   if (result == nullptr || result_size == 0) {
@@ -1439,8 +1455,11 @@ class FullPageScreenshotObserver final : public CefDevToolsMessageObserver {
       return;
     }
 
-    double width = contentSize->GetDouble("width");
-    double height = contentSize->GetDouble("height");
+    // The clip is in device-independent pixels: CSS pixels times page zoom.
+    const double zoom =
+        DevToolsNumber(metrics->GetDictionary("cssVisualViewport"), "zoom", 1);
+    const double width = DevToolsNumber(contentSize, "width") * zoom;
+    const double height = DevToolsNumber(contentSize, "height") * zoom;
     if (width <= 0 || height <= 0) {
       registration_ = nullptr;
       return;
@@ -1538,18 +1557,20 @@ class RegionScreenshotObserver final : public CefDevToolsMessageObserver {
       return;
     }
 
-    const double width = viewport->GetDouble("clientWidth");
-    const double height = viewport->GetDouble("clientHeight");
+    const double width = DevToolsNumber(viewport, "clientWidth");
+    const double height = DevToolsNumber(viewport, "clientHeight");
     if (width <= 0 || height <= 0) {
       registration_ = nullptr;
       return;
     }
 
+    // The clip is in device-independent pixels: CSS pixels times page zoom.
+    const double zoom = DevToolsNumber(viewport, "zoom", 1);
     CefRefPtr<CefDictionaryValue> clip = CefDictionaryValue::Create();
-    clip->SetDouble("x", viewport->GetDouble("pageX") + fraction_.origin.x * width);
-    clip->SetDouble("y", viewport->GetDouble("pageY") + fraction_.origin.y * height);
-    clip->SetDouble("width", std::max(fraction_.size.width * width, 1.0));
-    clip->SetDouble("height", std::max(fraction_.size.height * height, 1.0));
+    clip->SetDouble("x", (DevToolsNumber(viewport, "pageX") + fraction_.origin.x * width) * zoom);
+    clip->SetDouble("y", (DevToolsNumber(viewport, "pageY") + fraction_.origin.y * height) * zoom);
+    clip->SetDouble("width", std::max(fraction_.size.width * width * zoom, 1.0));
+    clip->SetDouble("height", std::max(fraction_.size.height * height * zoom, 1.0));
     clip->SetDouble("scale", 1);
 
     CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
