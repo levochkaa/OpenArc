@@ -1750,7 +1750,8 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
                     appTile: appTile,
                     selected: true,
                     isResizing: false,
-                    closeDescriptor: BrowserCommands.archiveTab
+                    closeDescriptor: BrowserCommands.archiveTab,
+                    icon: snapshot.tabIcons[tab.id]
                 )
             }
         case .folder(let id):

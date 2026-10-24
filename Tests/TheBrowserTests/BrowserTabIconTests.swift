@@ -53,4 +53,17 @@ import Testing
         #expect(f.model.setIcon(nil, forTabID: f.id("b")))
         #expect(f.model.sidebarSnapshot.tabIcons.isEmpty)
     }
+
+    @Test func anIconOnlyChangeIsNotDroppedAsADuplicateWrite() {
+        func write(_ icon: String?) -> BrowserSessionWrite {
+            BrowserSessionWrite(
+                snapshot: .init(tabs: [.init(id: "a", urlString: "https://a.example", systemImageName: icon)]),
+                origin: .local(syncMove: nil)
+            )
+        }
+        var buffer = BrowserSessionWriteBuffer()
+        let accepted = [buffer.append(write(nil)), buffer.append(write("leaf")), buffer.append(write("leaf"))]
+        #expect(accepted == [true, true, true])
+        #expect(buffer.writes.map { $0.snapshot.tabs.first?.systemImageName } == [nil, "leaf"])
+    }
 }

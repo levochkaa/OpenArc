@@ -39,7 +39,9 @@ struct BrowserSessionWriteBuffer {
     @discardableResult mutating func append(_ write: BrowserSessionWrite) -> Bool {
         guard !isTerminal else { return false }
         // Callback/closure retries of the exact same write add no new action.
-        guard writes.last != write else { return true }
+        // Equality ignores tab icons, a user choice that must not be dropped.
+        guard writes.last != write || writes.last.map({ Self.icons(of: $0) != Self.icons(of: write) }) == true
+        else { return true }
         guard writes.count < maximumCount else {
             failure = .init(reason: .bufferLimitExceeded)
             return false
@@ -85,4 +87,8 @@ struct BrowserSessionWriteBuffer {
 
     private let maximumCount: Int
     private let maximumBytes: Int
+
+    private static func icons(of write: BrowserSessionWrite) -> [String?] {
+        write.snapshot.tabs.map(\.systemImageName)
+    }
 }

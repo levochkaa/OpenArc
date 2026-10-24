@@ -285,12 +285,26 @@ import Testing
             .urlString
             .hasPrefix("https://a.example/deep") == false)
     }
+
+    @Test func resettingKeepsTheSplitPanesOfAHiddenSplitLoaded() {
+        let f = SidebarDragFixture(pinned: [("a", nil), ("b", nil)], temporary: ["x"])
+        f.model.selectTab(id: f.id("a"))
+        #expect(f.model.openInSplitView(tabID: f.id("b")))
+        f.model.selectTab(id: f.id("x"))
+        let a = f.id("a")
+        let b = f.id("b")
+        f.driver.emitUpdate(id: a, urlString: "https://a.example/deep")
+        f.driver.emitUpdate(id: b, urlString: "https://b.example/deep")
+        #expect(f.model.resetSpaceTabs())
+        #expect(!f.driver.confirmedCloseRequests.contains { $0.id == a || $0.id == b }, "The hidden split stays whole")
+        #expect(Set(f.driver.targetedNavigationRequests.suffix(2).map(\.id)) == [a, b])
+    }
 }
 
 // MARK: - BrowserViewSourceTests
 
 @MainActor struct BrowserViewSourceTests {
-    @Test func viewSourceOpensThePagesSourceAsATab() {
+    @Test func viewSourceOpensThePagesSourceAsATab() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         f.model.selectTab(id: f.id("x"))
         #expect(f.model.canViewSource)
@@ -298,5 +312,11 @@ import Testing
         #expect(f.driver.createdTabRequests.last?.urlString == "view-source:https://x.example")
         #expect(BrowserCommandID.viewSource.defaultDescriptor.shortcut
             == BrowserKeyboardShortcut("u", modifiers: [.command, .option]))
+
+        // Chromium reports the source view by its inner URL; the tab keeps its own.
+        let source = try #require(f.model.selectedTabID)
+        f.driver.emitUpdate(id: source, urlString: "https://x.example")
+        #expect(f.model.tabs.first { $0.id == source }?.urlString == "view-source:https://x.example")
+        #expect(!f.model.canViewSource, "A source view has no source of its own")
     }
 }

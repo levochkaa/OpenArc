@@ -1328,9 +1328,12 @@ enum BrowserWindowMode: Equatable {
                 changed = true
             } else {
                 // A shown page, or a pane of the shown split, reloads in place.
+                // Split panes stay loaded, as at launch, so their split shows whole.
                 if tab.id == selectedTabID {
                     resetPinnedTabToPinnedURL(id: tab.id)
-                } else if shown.contains(tab.id), let pinned = effectivePinnedURLString(forPinnedTab: tab) {
+                } else if shown.contains(tab.id) || splitGroup(containingTabID: tab.id) != nil,
+                          let pinned = effectivePinnedURLString(forPinnedTab: tab)
+                {
                     tabDriver.navigateTab(withID: tab.id, toURLString: pinned)
                 } else {
                     closePinnedTabProcessOrReset(id: tab.id)
@@ -3320,6 +3323,10 @@ enum BrowserWindowMode: Equatable {
             lastActivityAt: lastActivityDate(from: binding.snapshot) ?? dateProvider()
         )
         applyRemoteTabMetadata(binding.snapshot, to: &tab)
+        if let icon = binding.snapshot.systemImageName {
+            // A deferred launch projection creates every tab this way.
+            tabIconsBySyncID[syncID] = icon
+        }
         tabs.append(tab)
         finishRemoteSyncProjectionIfReady()
         return true
@@ -5315,6 +5322,14 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             tabs[index].title = title
         }
 
+        // Chromium reports a view-source page by its inner URL; keep the
+        // source view's own address so it reopens as source.
+        let viewSource = "view-source:"
+        let urlString = urlString.map { reported in
+            tabs[index].urlString.hasPrefix(viewSource) && tabs[index].urlString.dropFirst(viewSource.count) == reported
+                ? tabs[index].urlString
+                : reported
+        }
         if let urlString, tabs[index].urlString != urlString {
             tabs[index].urlString = urlString
             tabs[index].lastActivityAt = advancedActivityDate(after: tabs[index].lastActivityAt)
