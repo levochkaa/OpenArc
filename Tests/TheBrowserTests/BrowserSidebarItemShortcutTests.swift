@@ -1,0 +1,86 @@
+import AppKit
+import Testing
+
+// MARK: - BrowserSidebarItemShortcutTests
+
+@Suite(.serialized)
+@MainActor struct BrowserSidebarItemShortcutTests {
+    @Test func sidebarItemsFollowTheVisibleSidebarOrder() {
+        let f = SidebarDragFixture(
+            pinned: [("a", nil), ("hidden", "folder"), ("b", nil)],
+            temporary: ["x", "y"],
+            apps: ["app"],
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)]
+        )
+        // App tiles first; a collapsed folder hides its tabs.
+        #expect(f.model.sidebarItemTabIDs == ["app", "a", "b", "x", "y"].map(f.id))
+        f.model.toggleActiveSpacePinnedSectionCollapsed()
+        #expect(f.model.sidebarItemTabIDs == ["app", "x", "y"].map(f.id))
+    }
+
+    @Test func goToSidebarItemSelectsByPositionAndNextTabWraps() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        func selectedName() -> String? { f.model.tabs.first { $0.id == f.model.selectedTabID }?.userTitleOverride }
+        #expect(f.model.selectSidebarItem(at: 1))
+        #expect(selectedName() == "b")
+        #expect(!f.model.selectSidebarItem(at: 4), "There is no fifth item")
+        #expect(selectedName() == "b")
+        #expect(f.model.selectLastSidebarItem())
+        #expect(selectedName() == "y")
+        #expect(f.model.selectAdjacentSidebarItem(offset: 1))
+        #expect(selectedName() == "a", "Next Tab wraps to the first item")
+        #expect(f.model.selectAdjacentSidebarItem(offset: -1))
+        #expect(selectedName() == "y", "Previous Tab wraps to the last item")
+        #expect(f.model.selectAdjacentSidebarItem(offset: -1))
+        #expect(selectedName() == "x")
+    }
+
+    @Test func aSplitIsOneItemThatReturnsToItsFocusedPane() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        #expect(f.model.selectedTabID == f.id("y"))
+        #expect(f.model.sidebarItemTabIDs == ["a", "b", "x", "z"].map(f.id))
+        #expect(f.model.selectAdjacentSidebarItem(offset: 1))
+        #expect(f.model.selectedTabID == f.id("z"), "Next Tab leaves the split as one item")
+        #expect(f.model.selectAdjacentSidebarItem(offset: -1))
+        #expect(f.model.selectedTabID == f.id("y"), "The split comes back at its focused pane")
+        #expect(f.model.selectSidebarItem(at: 2))
+        #expect(f.model.selectedTabID == f.id("y"), "Selecting the split it is already in keeps the pane")
+    }
+
+    @Test func commandsUseArcDefaultsAndAreOfferedOnlyForExistingItems() {
+        #expect(BrowserCommandID.goToSidebarItem1.defaultDescriptor.shortcut == BrowserKeyboardShortcut("1"))
+        #expect(BrowserCommandID.goToSidebarItem8.defaultDescriptor.shortcut == BrowserKeyboardShortcut("8"))
+        #expect(BrowserCommandID.goToLastSidebarItem.defaultDescriptor.shortcut == BrowserKeyboardShortcut("9"))
+        #expect(BrowserCommands.selectNextTab.shortcut == BrowserKeyboardShortcut("]", modifiers: [.command, .shift]))
+        #expect(BrowserCommands.toggleSiteToolbar.shortcut == BrowserKeyboardShortcut("d", modifiers: [.command, .shift]))
+        // Shift turns ] into }, so the physical-key monitor dispatches Next Tab.
+        #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+            keyCode: 30,
+            modifierFlags: [.command, .shift],
+            charactersIgnoringModifiers: "}"
+        ) == .selectNextTab)
+        // A layout that types another character on the 7 key still reaches item 7.
+        #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+            keyCode: 26,
+            modifierFlags: [.command],
+            charactersIgnoringModifiers: "è"
+        ) == .goToSidebarItem(6))
+        let defaults = BrowserCommandID.allCases.map(\.defaultDescriptor.shortcut).filter(\.isAssigned)
+        #expect(Set(defaults).count == defaults.count, "Default shortcuts stay unique")
+
+        let f = SidebarDragFixture(temporary: ["x"])
+        func commands(_ query: String) -> [BrowserCommandID] {
+            f.model.presentCommandBar()
+            f.model.commandBarModel.query = query
+            defer { f.model.dismissCommandBar() }
+            return f.model.commandBarModel.suggestions.compactMap(\.commandID)
+        }
+        #expect(commands("sidebar item 3").contains(.goToSidebarItem3))
+        #expect(!commands("sidebar item 4").contains(.goToSidebarItem4), "Only existing items are offered")
+        #expect(f.model.siteToolbarToggleTitle == BrowserStrings.menuShowToolbar)
+        f.model.userPreferencesStore.siteURLToolbarEnabled = true
+        #expect(f.model.siteToolbarToggleTitle == BrowserStrings.menuHideToolbar)
+    }
+}

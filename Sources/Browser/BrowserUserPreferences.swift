@@ -348,6 +348,17 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case findPrevious
     case jumpToSelection
     case clearTemporaryTabs
+    case selectNextTab
+    case selectPreviousTab
+    case goToSidebarItem1
+    case goToSidebarItem2
+    case goToSidebarItem3
+    case goToSidebarItem4
+    case goToSidebarItem5
+    case goToSidebarItem6
+    case goToSidebarItem7
+    case goToSidebarItem8
+    case goToLastSidebarItem
     case goBack
     case goForward
     case reload
@@ -369,6 +380,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case toggleSidebar
     case toggleSidebarPosition
     case toggleBookmarksBar
+    case toggleSiteToolbar
 
     // MARK: Internal
 
@@ -456,6 +468,17 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.focusPreviousSplitPane
         case .toggleBookmarksBar:
             BrowserCommands.toggleBookmarksBar
+        case .toggleSiteToolbar:
+            BrowserCommands.toggleSiteToolbar
+        case .selectNextTab:
+            BrowserCommands.selectNextTab
+        case .selectPreviousTab:
+            BrowserCommands.selectPreviousTab
+        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
+             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+            BrowserCommands.goToSidebarItem(sidebarItemIndex)
+        case .goToLastSidebarItem:
+            BrowserCommands.goToLastSidebarItem
         }
     }
 
@@ -539,6 +562,31 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .focusPreviousSplitPane
         case .toggleBookmarksBar:
             .toggleBookmarksBar
+        case .toggleSiteToolbar:
+            .toggleSiteToolbar
+        case .selectNextTab:
+            .selectNextTab
+        case .selectPreviousTab:
+            .selectPreviousTab
+        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
+             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+            .goToSidebarItem(sidebarItemIndex)
+        case .goToLastSidebarItem:
+            .goToLastSidebarItem
+        }
+    }
+
+    /// Position of a Go to Sidebar Item command, counted from 0.
+    var sidebarItemIndex: Int {
+        switch self {
+        case .goToSidebarItem2: 1
+        case .goToSidebarItem3: 2
+        case .goToSidebarItem4: 3
+        case .goToSidebarItem5: 4
+        case .goToSidebarItem6: 5
+        case .goToSidebarItem7: 6
+        case .goToSidebarItem8: 7
+        default: 0
         }
     }
 }

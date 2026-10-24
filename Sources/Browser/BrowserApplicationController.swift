@@ -231,6 +231,27 @@ NSMenuDelegate, NSUserInterfaceValidations {
         userPreferencesStore.sidebarPosition = userPreferencesStore.sidebarPosition.opposite
     }
 
+    public func toggleSiteToolbar(_: Any?) {
+        userPreferencesStore.siteURLToolbarEnabled.toggle()
+    }
+
+    public func selectNextTab(_: Any?) {
+        activeChromeModel?.selectAdjacentSidebarItem(offset: 1)
+    }
+
+    public func selectPreviousTab(_: Any?) {
+        activeChromeModel?.selectAdjacentSidebarItem(offset: -1)
+    }
+
+    /// The menu item's tag is the sidebar position, counted from 0.
+    public func goToSidebarItem(_ sender: Any?) {
+        activeChromeModel?.selectSidebarItem(at: (sender as? NSMenuItem)?.tag ?? 0)
+    }
+
+    public func goToLastSidebarItem(_: Any?) {
+        activeChromeModel?.selectLastSidebarItem()
+    }
+
     public func createNewTab(_: Any?) {
         guard activeChromeModel?.isWebApp != true else {
             return
@@ -467,6 +488,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 menuItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
             }
             return true
+        case #selector(toggleSiteToolbar(_:)):
+            if let menuItem = item as? NSMenuItem, let model = activeChromeModel {
+                menuItem.title = model.siteToolbarToggleTitle
+            }
+            return activeChromeModel?.isWebApp == false
+        case #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)), #selector(goToLastSidebarItem(_:)):
+            return activeChromeModel.map { !$0.isWebApp && !$0.sidebarItemTabIDs.isEmpty } ?? false
+        case #selector(goToSidebarItem(_:)):
+            let index = (item as? NSMenuItem)?.tag ?? 0
+            return activeChromeModel.map { !$0.isWebApp && $0.sidebarItemTabIDs.count > index } ?? false
         case #selector(toggleSidebarPosition(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.title = userPreferencesStore.sidebarPosition == .left
@@ -1020,7 +1051,43 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         toggleBookmarksBarItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
         viewMenu.addItem(toggleBookmarksBarItem)
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .toggleSiteToolbar),
+            action: #selector(toggleSiteToolbar(_:))
+        ))
         viewMenu.addItem(.separator())
+
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .selectNextTab),
+            action: #selector(selectNextTab(_:))
+        ))
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .selectPreviousTab),
+            action: #selector(selectPreviousTab(_:))
+        ))
+        // Go to Sidebar Item has no visible menu entry; the hidden
+        // items keep their key equivalents ahead of the page.
+        let sidebarItemCommands: [BrowserCommandID] = [
+            .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
+            .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8,
+        ]
+        for commandID in sidebarItemCommands {
+            let item = makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: commandID),
+                action: #selector(goToSidebarItem(_:))
+            )
+            item.tag = commandID.sidebarItemIndex
+            item.isHidden = true
+            item.allowsKeyEquivalentWhenHidden = true
+            viewMenu.addItem(item)
+        }
+        let lastSidebarItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .goToLastSidebarItem),
+            action: #selector(goToLastSidebarItem(_:))
+        )
+        lastSidebarItem.isHidden = true
+        lastSidebarItem.allowsKeyEquivalentWhenHidden = true
+        viewMenu.addItem(lastSidebarItem)
 
         let clearTemporaryTabsItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .clearTemporaryTabs),
@@ -1558,6 +1625,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case .toggleBookmarksBar:
             toggleBookmarksBar(nil)
             return true
+        case .toggleSiteToolbar:
+            guard activeChromeModel?.isWebApp == false else { return false }
+            toggleSiteToolbar(nil)
+            return true
+        case .selectNextTab:
+            guard activeChromeModel?.isWebApp == false else { return false }
+            return activeChromeModel?.selectAdjacentSidebarItem(offset: 1) ?? false
+        case .selectPreviousTab:
+            guard activeChromeModel?.isWebApp == false else { return false }
+            return activeChromeModel?.selectAdjacentSidebarItem(offset: -1) ?? false
+        case .goToSidebarItem(let index):
+            guard activeChromeModel?.isWebApp == false else { return false }
+            return activeChromeModel?.selectSidebarItem(at: index) ?? false
+        case .goToLastSidebarItem:
+            guard activeChromeModel?.isWebApp == false else { return false }
+            return activeChromeModel?.selectLastSidebarItem() ?? false
         }
     }
 

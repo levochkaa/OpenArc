@@ -3509,6 +3509,8 @@ enum BrowserWindowMode: Equatable {
             sidebarPositionToggleTitle
         case .expandCurrentSplit:
             isSelectedSplitPaneExpanded ? BrowserStrings.menuShowAllSplitPanes : BrowserStrings.menuExpandCurrentSplit
+        case .toggleSiteToolbar:
+            siteToolbarToggleTitle
         default:
             descriptor.menuTitle
         }
@@ -3557,6 +3559,11 @@ enum BrowserWindowMode: Equatable {
             canStepThroughFindMatches
         case .clearTemporaryTabs:
             canClearTemporaryTabs
+        case .selectNextTab, .selectPreviousTab, .goToLastSidebarItem:
+            !sidebarItemTabIDs.isEmpty
+        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
+             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+            sidebarItemTabIDs.count > commandID.sidebarItemIndex
         case .goBack:
             canGoBack
         case .goForward:
@@ -3577,6 +3584,8 @@ enum BrowserWindowMode: Equatable {
             !isWebApp
         case .toggleBookmarksBar:
             true
+        case .toggleSiteToolbar:
+            !isWebApp
         }
     }
 
@@ -5951,6 +5960,15 @@ extension BrowserCommandID {
             ["jump selection", "jump to selection"]
         case .clearTemporaryTabs:
             ["clear temporary tabs", "clear temp tabs", "temporary tabs"]
+        case .selectNextTab:
+            ["next tab", "select next tab"]
+        case .selectPreviousTab:
+            ["previous tab", "select previous tab"]
+        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
+             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+            ["tab \(sidebarItemIndex + 1)", "sidebar item \(sidebarItemIndex + 1)", "go to tab"]
+        case .goToLastSidebarItem:
+            ["last tab", "last sidebar item"]
         case .goBack:
             ["back", "go back", "previous page"]
         case .goForward:
@@ -5993,6 +6011,8 @@ extension BrowserCommandID {
             ["sidebar right", "sidebar left", "move sidebar", "sidebar position", "right sidebar"]
         case .toggleBookmarksBar:
             ["bookmarks bar", "bookmark bar", "toggle bookmarks bar", "show bookmarks bar", "hide bookmarks bar"]
+        case .toggleSiteToolbar:
+            ["toolbar", "url bar", "address bar", "show toolbar", "hide toolbar"]
         }
     }
 
@@ -6032,6 +6052,15 @@ extension BrowserCommandID {
             "text.cursor"
         case .clearTemporaryTabs:
             "xmark.circle"
+        case .selectNextTab:
+            "arrow.down.square"
+        case .selectPreviousTab:
+            "arrow.up.square"
+        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
+             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+            "\(sidebarItemIndex + 1).circle"
+        case .goToLastSidebarItem:
+            "9.circle"
         case .goBack:
             "chevron.left"
         case .goForward:
@@ -6066,6 +6095,8 @@ extension BrowserCommandID {
             "sidebar.right"
         case .toggleBookmarksBar:
             "book"
+        case .toggleSiteToolbar:
+            "menubar.rectangle"
         }
     }
 }

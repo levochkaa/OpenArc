@@ -793,6 +793,31 @@ enum BrowserStrings {
         comment: "View menu and command title that moves the sidebar to the right window edge."
     )
 
+    static let menuShowToolbar = NSLocalizedString(
+        "browser.menu.show_toolbar",
+        comment: "View menu and command title that shows the page URL as a toolbar above the page."
+    )
+
+    static let menuHideToolbar = NSLocalizedString(
+        "browser.menu.hide_toolbar",
+        comment: "View menu and command title that moves the page URL from the toolbar back into the sidebar."
+    )
+
+    static let menuSelectNextTab = NSLocalizedString(
+        "browser.menu.select_next_tab",
+        comment: "View menu and command title that selects the next item in the sidebar."
+    )
+
+    static let menuSelectPreviousTab = NSLocalizedString(
+        "browser.menu.select_previous_tab",
+        comment: "View menu and command title that selects the previous item in the sidebar."
+    )
+
+    static let menuGoToLastSidebarItem = NSLocalizedString(
+        "browser.menu.go_to_last_sidebar_item",
+        comment: "Command title that selects the last tab in the sidebar."
+    )
+
     static let menuMoveSidebarLeft = NSLocalizedString(
         "browser.menu.move_sidebar_left",
         comment: "View menu and command title that moves the sidebar to the left window edge."
@@ -1666,6 +1691,16 @@ enum BrowserStrings {
         "browser.permissions.dont_allow",
         comment: "Don't Allow button title for notification permissions."
     )
+
+    static func menuGoToSidebarItem(_ number: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.menu.go_to_sidebar_item",
+                comment: "Command title that selects a sidebar tab by its position. %d is 1 to 8."
+            ),
+            number
+        )
+    }
 
     static func splitFocusPaneTitle(_ number: Int) -> String {
         String(

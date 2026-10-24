@@ -324,6 +324,43 @@ enum BrowserCommands {
         helpTitle: BrowserStrings.settingsShowBookmarksBar,
         shortcut: BrowserKeyboardShortcut("b", modifiers: [.command, .shift])
     )
+
+    /// View menu: Show/Hide Toolbar is Command-Shift-D.
+    static let toggleSiteToolbar = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuShowToolbar,
+        helpTitle: BrowserStrings.menuShowToolbar,
+        shortcut: BrowserKeyboardShortcut("d", modifiers: [.command, .shift])
+    )
+
+    /// Next/Previous Tab are
+    /// Command-}/{; the primary Option-Command-arrow keys are not mapped.
+    static let selectNextTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuSelectNextTab,
+        helpTitle: BrowserStrings.menuSelectNextTab,
+        shortcut: BrowserKeyboardShortcut("]", modifiers: [.command, .shift])
+    )
+
+    static let selectPreviousTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuSelectPreviousTab,
+        helpTitle: BrowserStrings.menuSelectPreviousTab,
+        shortcut: BrowserKeyboardShortcut("[", modifiers: [.command, .shift])
+    )
+
+    /// Go to Sidebar Item 1–8 is Command-1…8.
+    static func goToSidebarItem(_ index: Int) -> BrowserCommandDescriptor {
+        BrowserCommandDescriptor(
+            menuTitle: BrowserStrings.menuGoToSidebarItem(index + 1),
+            helpTitle: BrowserStrings.menuGoToSidebarItem(index + 1),
+            shortcut: BrowserKeyboardShortcut("\(index + 1)")
+        )
+    }
+
+    /// Go to last Sidebar Item is Command-9.
+    static let goToLastSidebarItem = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuGoToLastSidebarItem,
+        helpTitle: BrowserStrings.menuGoToLastSidebarItem,
+        shortcut: BrowserKeyboardShortcut("9")
+    )
 }
 
 // MARK: - BrowserSpaceShortcuts
@@ -409,6 +446,12 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case toggleSidebar
     case toggleSidebarPosition
     case toggleBookmarksBar
+    case toggleSiteToolbar
+    case selectNextTab
+    case selectPreviousTab
+    /// Go to Sidebar Item N, counted from 0.
+    case goToSidebarItem(Int)
+    case goToLastSidebarItem
 }
 
 // MARK: - BrowserKeyboardShortcutBridge
@@ -549,6 +592,16 @@ enum BrowserKeyboardShortcutBridge {
             "3"
         case 21:
             "4"
+        case 23:
+            "5"
+        case 22:
+            "6"
+        case 26:
+            "7"
+        case 28:
+            "8"
+        case 25:
+            "9"
         case 30:
             "]"
         case 33:
