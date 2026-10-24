@@ -138,6 +138,10 @@ import Foundation
         controller.showLittleWindow(withURLString: urlString)
     }
 
+    func closePeeks() {
+        controller.closeAllPeeks()
+    }
+
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String) {
         controller.setPictureInPicture(active, forTabWithID: tabID)
     }

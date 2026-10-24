@@ -186,8 +186,8 @@ import AppKit
         parentMonitor = NSEvent.addLocalMonitorForEvents(matching: [
             .leftMouseDown,
             .rightMouseDown,
-        ]) { [weak self] event in
-            guard let self, event.window === window else { return event }
+        ]) { [weak self, weak window] event in
+            guard let self, let window, event.window === window else { return event }
             onClose?()
             return event
         }

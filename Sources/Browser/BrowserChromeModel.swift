@@ -717,6 +717,7 @@ enum BrowserWindowMode: Equatable {
         extensionSidePanelDriver?.closeAllPanels()
         extensionActionPopupDriver?.closeAllPopups()
         extensionSidePanel = nil
+        tabDriver.closePeeks()
         persistSidebarWidthPreferenceIfAllowed()
         isShuttingDown = true
         isPersistenceEnabled = false

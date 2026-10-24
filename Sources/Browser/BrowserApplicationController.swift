@@ -713,9 +713,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private var activeChromeModel: BrowserChromeModel? {
-        // An Archive is an auxiliary document surface. Page commands must not
-        // target an unrelated browser window behind it.
-        if focusedArchiveWindowController != nil {
+        // An Archive is an auxiliary document surface, and Peek shows its own
+        // page. Page commands must not target an unrelated browser window behind it.
+        if focusedArchiveWindowController != nil || NSApp.keyWindow is BrowserPeekPanel {
             return nil
         }
         if let webAppWindowSession {
@@ -1730,6 +1730,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private func closeActiveAuxiliaryWindow() -> Bool {
+        // A Peek card is a child of its browser window; Command-W closes the
+        // card, not the tab behind it.
+        if let panel = NSApp.keyWindow as? BrowserPeekPanel {
+            panel.performClose(nil)
+            return true
+        }
         var candidate = NSApp.keyWindow
         while let window = candidate {
             if archiveWindowControllers.values.contains(where: { $0.window === window }) {

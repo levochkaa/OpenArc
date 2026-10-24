@@ -2618,19 +2618,22 @@ class BrowserTabClient final : public CefClient,
   IMPLEMENT_REFCOUNTING(BrowserTabClient);
 };
 
-/// Peek: the page in the floating card. It reports its address and
-/// lifetime to the controller, routes new windows to tabs and closes on
-/// Escape. The client manager tracks it, so quitting waits for it like a tab.
+/// Peek and the small window: the page in a floating card or small window.
+/// It reports its address, lifetime and downloads to the controller, routes
+/// new windows to tabs and closes cards on Escape. The client manager tracks
+/// it, so quitting waits for it like a tab.
 class BrowserPeekClient final : public CefClient,
                                 public CefDisplayHandler,
+                                public CefDownloadHandler,
                                 public CefKeyboardHandler,
                                 public CefLifeSpanHandler,
                                 public CefRequestHandler {
  public:
-  BrowserPeekClient(BrowserTabController *controller, int generation)
-      : controller_(controller), generation_(generation) {}
+  BrowserPeekClient(BrowserTabController *controller, int sessionID)
+      : controller_(controller), session_id_(sessionID) {}
 
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
@@ -2638,6 +2641,13 @@ class BrowserPeekClient final : public CefClient,
   void OnAddressChange(CefRefPtr<CefBrowser> browser,
                        CefRefPtr<CefFrame> frame,
                        const CefString &url) override;
+  bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefDownloadItem> download_item,
+                        const CefString &suggested_name,
+                        CefRefPtr<CefBeforeDownloadCallback> callback) override;
+  void OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
+                         CefRefPtr<CefDownloadItem> download_item,
+                         CefRefPtr<CefDownloadItemCallback> callback) override;
   bool OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                      const CefKeyEvent &event,
                      CefEventHandle os_event,
@@ -2663,11 +2673,15 @@ class BrowserPeekClient final : public CefClient,
                      CefBrowserSettings &settings,
                      CefRefPtr<CefDictionaryValue> &extra_info,
                      bool *no_javascript_access) override;
+  void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
+                                 TerminationStatus status,
+                                 int error_code,
+                                 const CefString &error_string) override;
 
  private:
   __weak BrowserTabController *controller_;
-  // Callbacks of a card that was closed or replaced are ignored.
-  const int generation_;
+  // The controller looks the session up; callbacks of a finished one are dropped.
+  const int session_id_;
 
   IMPLEMENT_REFCOUNTING(BrowserPeekClient);
 };
@@ -2717,11 +2731,11 @@ struct TabRecord {
                         browser:(CefRefPtr<CefBrowser>)browser
                       confirmed:(BOOL)confirmed;
 - (void)invalidateCloseRequestForTabID:(NSString *)tabID;
-- (void)handlePeekCreated:(CefRefPtr<CefBrowser>)browser generation:(int)generation;
-- (void)handlePeekAddressChange:(NSString *)urlString generation:(int)generation;
-- (void)closePeek;
-- (void)closePeekFromEscape;
-@property(nonatomic, readonly) BOOL isPeekStandalone;
+- (void)handlePeekCreated:(CefRefPtr<CefBrowser>)browser session:(int)sessionID;
+- (void)handlePeekClosed:(CefRefPtr<CefBrowser>)browser session:(int)sessionID;
+- (void)handlePeekAddressChange:(NSString *)urlString session:(int)sessionID;
+- (void)closePeekSession:(int)sessionID;
+- (BOOL)isPeekSessionStandalone:(int)sessionID;
 - (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone;
 - (void)notifyCloseRequestForTabID:(NSString *)tabID
                        requestID:(NSString *)requestID
@@ -2755,6 +2769,21 @@ struct TabRecord {
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
 - (void)handleFocusForTabID:(NSString *)tabID;
 
+@end
+
+/// One Peek card or small window. The session owns its panel until the
+/// page has closed, because CEF keeps a pointer to the panel's host view while
+/// the page is created or torn down.
+@interface BrowserPeekSession : NSObject
+@property(nonatomic, strong) BrowserPeekPanel *panel;
+@property(nonatomic, copy) NSString *urlString;
+@property(nonatomic) BOOL closing;
+@end
+
+@implementation BrowserPeekSession {
+ @public
+  CefRefPtr<CefBrowser> _browser;
+}
 @end
 
 namespace {
@@ -2900,10 +2929,9 @@ class BrowserTabNavigationTask final : public CefTask {
   BOOL _splitDividerMoved;
   NSArray<NSString *> *_reportedSplitPaneTabIDs;
   NSArray<NSValue *> *_reportedSplitPaneFrames;
-  BrowserPeekPanel *_peekPanel;
-  CefRefPtr<CefBrowser> _peekBrowser;
-  NSString *_peekURLString;
-  int _peekGeneration;
+  NSMutableDictionary<NSNumber *, BrowserPeekSession *> *_peekSessions;
+  int _nextPeekSessionID;
+  int _peekCardSessionID;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
@@ -3542,96 +3570,138 @@ class BrowserTabNavigationTask final : public CefTask {
   [self presentPeekWithURLString:urlString standalone:YES];
 }
 
+/// A window has one Peek card; each link from another app gets its own
+/// small window.
 - (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone {
   NSString *resolved = urlString.length > 0 ? [urlString copy] : @"about:blank";
   NSWindow *window = _hostView.window;
-  if (window == nil && !standalone) {
-    [self createTabWithURLString:resolved makeActive:YES];
-    return;
+  if (!standalone) {
+    if (window == nil) {
+      [self createTabWithURLString:resolved makeActive:YES];
+      return;
+    }
+    BrowserPeekSession *card = _peekSessions[@(_peekCardSessionID)];
+    if (card != nil && !card.closing && card->_browser && card->_browser->GetMainFrame()) {
+      // Another Shift-click replaces the page in the open card.
+      card.urlString = resolved;
+      [card.panel updateWithURLString:resolved];
+      card->_browser->GetMainFrame()->LoadURL(ToStdString(resolved));
+      return;
+    }
+    if (card != nil) {
+      [self closePeekSession:_peekCardSessionID];
+    }
   }
-  if (_peekPanel != nil && _peekPanel.isStandalone == standalone && _peekBrowser && _peekBrowser->GetMainFrame()) {
-    // Another Shift-click replaces the page in the open card.
-    _peekURLString = resolved;
-    [_peekPanel updateWithURLString:resolved];
-    _peekBrowser->GetMainFrame()->LoadURL(ToStdString(resolved));
-    return;
-  }
-  [self closePeek];
 
-  _peekGeneration += 1;
-  _peekURLString = resolved;
-  _peekPanel = standalone ? [BrowserPeekPanel presentStandalone] : [BrowserPeekPanel presentOverWindow:window];
-  [_peekPanel updateWithURLString:resolved];
+  if (_peekSessions == nil) {
+    _peekSessions = [NSMutableDictionary dictionary];
+  }
+  const int sessionID = ++_nextPeekSessionID;
+  BrowserPeekSession *session = [[BrowserPeekSession alloc] init];
+  session.urlString = resolved;
+  session.panel = standalone ? [BrowserPeekPanel presentStandalone] : [BrowserPeekPanel presentOverWindow:window];
+  [session.panel updateWithURLString:resolved];
+  _peekSessions[@(sessionID)] = session;
+  if (!standalone) {
+    _peekCardSessionID = sessionID;
+  }
   __weak BrowserTabController *weakSelf = self;
-  _peekPanel.onClose = ^{
-    [weakSelf closePeek];
+  session.panel.onClose = ^{
+    [weakSelf closePeekSession:sessionID];
   };
-  _peekPanel.onOpenInTab = ^{
+  session.panel.onOpenInTab = ^{
     BrowserTabController *strongSelf = weakSelf;
     if (strongSelf == nil) {
       return;
     }
-    NSString *current = strongSelf->_peekURLString;
-    [strongSelf closePeek];
-    [strongSelf createTabWithURLString:current makeActive:YES];
+    NSString *current = strongSelf->_peekSessions[@(sessionID)].urlString;
+    [strongSelf closePeekSession:sessionID];
+    if (current.length > 0) {
+      [strongSelf createTabWithURLString:current makeActive:YES];
+    }
   };
 
-  NSView *hostView = _peekPanel.hostView;
+  NSView *hostView = session.panel.hostView;
   CefWindowInfo windowInfo;
   windowInfo.SetAsChild((__bridge CefWindowHandle)hostView, CefRectFromBounds(hostView.bounds));
   if (shared::IsAlloyStyleEnabled()) {
     windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   }
   const bool accepted = CefBrowserHost::CreateBrowser(
-      windowInfo, new BrowserPeekClient(self, _peekGeneration), ToStdString(resolved), CefBrowserSettings(),
-      nullptr, _requestContext);
+      windowInfo, new BrowserPeekClient(self, sessionID), ToStdString(resolved), CefBrowserSettings(), nullptr,
+      _requestContext);
   if (!accepted) {
-    [self closePeek];
+    [session.panel dismiss];
+    [_peekSessions removeObjectForKey:@(sessionID)];
+    if (_peekCardSessionID == sessionID) {
+      _peekCardSessionID = 0;
+    }
     [self createTabWithURLString:resolved makeActive:YES];
   }
 }
 
-/// Closes the card at once; its page closes in the background. A page still
-/// being created is closed when it arrives, because its generation is stale.
-- (void)closePeek {
-  [_peekPanel dismiss];
-  _peekPanel = nil;
-  _peekGeneration += 1;
-  CefRefPtr<CefBrowser> browser = _peekBrowser;
-  _peekBrowser = nullptr;
-  if (browser) {
-    browser->GetHost()->CloseBrowser(false);
+/// Hides the card or window at once and closes its page without a
+/// beforeunload prompt; a page still being created closes when it arrives.
+/// The session, and with it the panel, goes away in OnBeforeClose.
+- (void)closePeekSession:(int)sessionID {
+  BrowserPeekSession *session = _peekSessions[@(sessionID)];
+  if (session == nil || session.closing) {
+    return;
+  }
+  session.closing = YES;
+  [session.panel dismiss];
+  if (_peekCardSessionID == sessionID) {
+    _peekCardSessionID = 0;
+  }
+  if (session->_browser) {
+    session->_browser->GetHost()->CloseBrowser(true);
   }
 }
 
-- (void)handlePeekCreated:(CefRefPtr<CefBrowser>)browser generation:(int)generation {
-  if (generation != _peekGeneration || _peekPanel == nil) {
+- (void)closeAllPeeks {
+  for (NSNumber *sessionID in _peekSessions.allKeys) {
+    [self closePeekSession:sessionID.intValue];
+  }
+}
+
+- (void)handlePeekCreated:(CefRefPtr<CefBrowser>)browser session:(int)sessionID {
+  BrowserPeekSession *session = _peekSessions[@(sessionID)];
+  if (session == nil || session.closing) {
     browser->GetHost()->CloseBrowser(true);
     return;
   }
-  _peekBrowser = browser;
+  session->_browser = browser;
   // The small window resizes; the page follows its host view.
   NSView *browserView = BrowserViewForBrowser(browser);
-  browserView.frame = _peekPanel.hostView.bounds;
+  browserView.frame = session.panel.hostView.bounds;
   browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 }
 
-- (BOOL)isPeekStandalone {
-  return _peekPanel.isStandalone;
-}
-
-- (void)closePeekFromEscape {
-  if (!_peekPanel.isStandalone) {
-    [self closePeek];
-  }
-}
-
-- (void)handlePeekAddressChange:(NSString *)urlString generation:(int)generation {
-  if (generation != _peekGeneration || urlString.length == 0) {
+/// Also reached when the page closes itself or its renderer is gone.
+- (void)handlePeekClosed:(CefRefPtr<CefBrowser>)browser session:(int)sessionID {
+  BrowserPeekSession *session = _peekSessions[@(sessionID)];
+  if (session == nil) {
     return;
   }
-  _peekURLString = [urlString copy];
-  [_peekPanel updateWithURLString:urlString];
+  [session.panel dismiss];
+  session->_browser = nullptr;
+  [_peekSessions removeObjectForKey:@(sessionID)];
+  if (_peekCardSessionID == sessionID) {
+    _peekCardSessionID = 0;
+  }
+}
+
+- (BOOL)isPeekSessionStandalone:(int)sessionID {
+  return _peekSessions[@(sessionID)].panel.isStandalone;
+}
+
+- (void)handlePeekAddressChange:(NSString *)urlString session:(int)sessionID {
+  BrowserPeekSession *session = _peekSessions[@(sessionID)];
+  if (session == nil || session.closing || urlString.length == 0) {
+    return;
+  }
+  session.urlString = urlString;
+  [session.panel updateWithURLString:urlString];
 }
 
 - (void)showDevToolsForActiveTab {
@@ -3892,13 +3962,7 @@ class BrowserTabNavigationTask final : public CefTask {
   self.delegate = nil;
   [_splitFocusRing removeFromSuperview];
   _splitFocusRing = nil;
-  [_peekPanel dismiss];
-  _peekPanel = nil;
-  _peekGeneration += 1;
-  if (_peekBrowser) {
-    _peekBrowser->GetHost()->CloseBrowser(true);
-    _peekBrowser = nullptr;
-  }
+  [self closeAllPeeks];
   for (BrowserSplitDividerView *divider in _splitDividers) {
     [divider removeFromSuperview];
   }
@@ -4208,13 +4272,12 @@ void BrowserTabClient::OnFaviconURLChange(
                             forTabID:ToNSString(tab_id_)];
 }
 
-bool BrowserTabClient::OnBeforeDownload(
-    CefRefPtr<CefBrowser> browser,
-    CefRefPtr<CefDownloadItem> download_item,
-    const CefString &suggested_name,
-    CefRefPtr<CefBeforeDownloadCallback> callback) {
-  CEF_REQUIRE_UI_THREAD();
-
+/// Shared by tabs and Peek: saves into the download folder and reports to the
+/// window's download list.
+bool HandleBeforeDownload(BrowserTabController *controller,
+                          CefRefPtr<CefDownloadItem> download_item,
+                          const CefString &suggested_name,
+                          CefRefPtr<CefBeforeDownloadCallback> callback) {
   if (!download_item || !download_item->IsValid() || !callback) {
     return false;
   }
@@ -4223,7 +4286,6 @@ bool BrowserTabClient::OnBeforeDownload(
   NSString *downloadPath = UniqueDownloadPathForFileName(fileName);
   callback->Continue(ToStdString(downloadPath), false);
 
-  BrowserTabController *controller = controller_;
   if (controller == nil) {
     return true;
   }
@@ -4239,18 +4301,8 @@ bool BrowserTabClient::OnBeforeDownload(
   return true;
 }
 
-void BrowserTabClient::OnDownloadUpdated(
-    CefRefPtr<CefBrowser> browser,
-    CefRefPtr<CefDownloadItem> download_item,
-    CefRefPtr<CefDownloadItemCallback> callback) {
-  CEF_REQUIRE_UI_THREAD();
-
-  if (!download_item || !download_item->IsValid()) {
-    return;
-  }
-
-  BrowserTabController *controller = controller_;
-  if (controller == nil) {
+void HandleDownloadUpdated(BrowserTabController *controller, CefRefPtr<CefDownloadItem> download_item) {
+  if (!download_item || !download_item->IsValid() || controller == nil) {
     return;
   }
 
@@ -4267,6 +4319,25 @@ void BrowserTabClient::OnDownloadUpdated(
                               totalBytes:download_item->GetTotalBytes()
               currentSpeedBytesPerSecond:download_item->GetCurrentSpeed()
                            stateRawValue:DownloadStateRawValue(download_item)];
+}
+
+bool BrowserTabClient::OnBeforeDownload(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefDownloadItem> download_item,
+    const CefString &suggested_name,
+    CefRefPtr<CefBeforeDownloadCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+
+  return HandleBeforeDownload(controller_, download_item, suggested_name, callback);
+}
+
+void BrowserTabClient::OnDownloadUpdated(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefDownloadItem> download_item,
+    CefRefPtr<CefDownloadItemCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+
+  HandleDownloadUpdated(controller_, download_item);
 }
 
 void BrowserTabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
@@ -4524,8 +4595,23 @@ void BrowserPeekClient::OnAddressChange(CefRefPtr<CefBrowser>,
                                         const CefString &url) {
   CEF_REQUIRE_UI_THREAD();
   if (frame && frame->IsMain()) {
-    [controller_ handlePeekAddressChange:ToNSString(url.ToString()) generation:generation_];
+    [controller_ handlePeekAddressChange:ToNSString(url.ToString()) session:session_id_];
   }
+}
+
+bool BrowserPeekClient::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
+                                         CefRefPtr<CefDownloadItem> download_item,
+                                         const CefString &suggested_name,
+                                         CefRefPtr<CefBeforeDownloadCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  return HandleBeforeDownload(controller_, download_item, suggested_name, callback);
+}
+
+void BrowserPeekClient::OnDownloadUpdated(CefRefPtr<CefBrowser>,
+                                          CefRefPtr<CefDownloadItem> download_item,
+                                          CefRefPtr<CefDownloadItemCallback>) {
+  CEF_REQUIRE_UI_THREAD();
+  HandleDownloadUpdated(controller_, download_item);
 }
 
 bool BrowserPeekClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
@@ -4536,11 +4622,12 @@ bool BrowserPeekClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
   // Escape closes a Peek card; the small window leaves it to the page.
   BrowserTabController *controller = controller_;
   if (event.type == KEYEVENT_RAWKEYDOWN && event.windows_key_code == 0x1B && controller != nil &&
-      !controller.isPeekStandalone) {
+      ![controller isPeekSessionStandalone:session_id_]) {
     // Close after this key event returns, not inside the engine callback.
     __weak BrowserTabController *weakController = controller;
+    const int sessionID = session_id_;
     dispatch_async(dispatch_get_main_queue(), ^{
-      [weakController closePeekFromEscape];
+      [weakController closePeekSession:sessionID];
     });
     return true;
   }
@@ -4555,13 +4642,13 @@ void BrowserPeekClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     browser->GetHost()->CloseBrowser(true);
     return;
   }
-  [controller handlePeekCreated:browser generation:generation_];
+  [controller handlePeekCreated:browser session:session_id_];
 }
 
 bool BrowserPeekClient::DoClose(CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UI_THREAD();
   shared::ClientManager::GetInstance()->DoClose(browser);
-  // The card is an embedded child view, like a tab: tear the view down here
+  // The page is an embedded child view, like a tab: tear the view down here
   // instead of letting CEF close the parent window.
   NSView *browserView = BrowserViewForBrowser(browser);
   if (browserView != nil) {
@@ -4574,6 +4661,20 @@ bool BrowserPeekClient::DoClose(CefRefPtr<CefBrowser> browser) {
 void BrowserPeekClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UI_THREAD();
   shared::ClientManager::GetInstance()->OnBeforeClose(browser);
+  [controller_ handlePeekClosed:browser session:session_id_];
+}
+
+void BrowserPeekClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser>,
+                                                  TerminationStatus,
+                                                  int,
+                                                  const CefString &) {
+  CEF_REQUIRE_UI_THREAD();
+  // A crashed page would leave an empty card.
+  __weak BrowserTabController *controller = controller_;
+  const int sessionID = session_id_;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [controller closePeekSession:sessionID];
+  });
 }
 
 bool BrowserPeekClient::OnOpenURLFromTab(CefRefPtr<CefBrowser>,

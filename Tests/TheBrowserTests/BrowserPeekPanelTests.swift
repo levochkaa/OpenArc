@@ -60,4 +60,11 @@ import Testing
         panel.performClose(nil)
         #expect(closes == 1)
     }
+
+    @Test func closingTheWindowClosesItsPeeks() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.prepareForTermination()
+        f.model.prepareForTermination()
+        #expect(f.driver.closePeeksCount == 1, "Cards and small windows close once with their window")
+    }
 }

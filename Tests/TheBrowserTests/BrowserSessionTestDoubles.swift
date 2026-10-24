@@ -93,6 +93,8 @@ import Foundation
 
     private(set) var littleWindowURLs = [String]()
 
+    private(set) var closePeeksCount = 0
+
     /// Engine zoom per tab; tests may share a value to mimic per-site zoom.
     var zoomLevelsByTabID = [String: Double]()
 
@@ -224,6 +226,10 @@ import Foundation
 
     func showLittleWindow(withURLString urlString: String) {
         littleWindowURLs.append(urlString)
+    }
+
+    func closePeeks() {
+        closePeeksCount += 1
     }
 
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String) {
