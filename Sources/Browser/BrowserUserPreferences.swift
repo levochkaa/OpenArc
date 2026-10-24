@@ -367,6 +367,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case selectNextSpace
     case selectPreviousSpace
     case revealCurrentTab
+    case openExtensions
     case goToSidebarItem1
     case goToSidebarItem2
     case goToSidebarItem3
@@ -503,6 +504,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.selectNextSpace
         case .revealCurrentTab:
             BrowserCommands.revealCurrentTab
+        case .openExtensions:
+            BrowserCommands.openExtensions
         case .selectPreviousSpace:
             BrowserCommands.selectPreviousSpace
         case .copyLinkAsMarkdown:
@@ -611,6 +614,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .selectNextSpace
         case .revealCurrentTab:
             .revealCurrentTab
+        case .openExtensions:
+            .openExtensions
         case .selectPreviousSpace:
             .selectPreviousSpace
         case .copyLinkAsMarkdown:

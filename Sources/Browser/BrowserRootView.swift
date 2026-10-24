@@ -39,6 +39,7 @@ final class BrowserRootView: NSView {
             tabSwitcher,
             fullscreenReader,
             sessionRecovery,
+            popoverAnchor,
         ] {
             addSubview(view)
         }
@@ -52,6 +53,7 @@ final class BrowserRootView: NSView {
         sidebar.onToggleSidebar = { [weak model] in model?.toggleSidebar() }
         model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
         model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
+        model.onOpenExtensions = { [weak self] in self?.openExtensions() }
         sidebar.sidebar.state.drag.pageSplitDropResolver = { [weak content] point, tabID in
             content?.splitPaneBars.pageSplitDrop(atWindowPoint: point, draggedTabID: tabID)
         }
@@ -251,6 +253,8 @@ final class BrowserRootView: NSView {
     private let tabSwitcherVisibility = BrowserNativeVisibilityAnimation()
     private let fullscreenReader = BrowserWindowFullscreenReaderNSView()
     private let sessionRecovery = BrowserSessionPersistenceStatusView()
+    /// Positions popovers whose own button is off screen.
+    private let popoverAnchor = NSView()
     private let extensionResize = BrowserNativeResizeHandle()
     private var extensionPanel: BrowserExtensionSidePanelNSView?
     private let toolbarVisibility = BrowserNativeVisibilityAnimation()
@@ -470,6 +474,26 @@ final class BrowserRootView: NSView {
             restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded()
         }
         refresh()
+    }
+
+    /// Open Extensions opens the control center of the visible URL controls.
+    /// With the sidebar hidden and no toolbar it points at the page's top
+    /// corner on the sidebar side.
+    private func openExtensions() {
+        if showsSiteToolbar {
+            toolbar.showControlCenter()
+            return
+        }
+        let controls = sidebar.header.urlControls
+        guard !model.isSidebarVisible, !isSidebarHoverOverlayActive else {
+            controls.showControlCenter()
+            return
+        }
+        let page = windowGeometry.contentFrame
+        let inset = BrowserChromeLayout.sidebarCurrentURLButtonSize
+        let x = preferences.sidebarPosition == .right ? page.maxX - inset : page.minX + inset
+        popoverAnchor.frame = CGRect(x: x, y: page.minY + inset, width: 1, height: 1)
+        controls.showControlCenter(anchor: popoverAnchor, preferredEdge: .maxY)
     }
 
     /// View Downloads opens the sidebar footer's list. With the sidebar hidden,

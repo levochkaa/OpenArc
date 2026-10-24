@@ -343,6 +343,8 @@ enum BrowserWindowMode: Equatable {
     var onSplitPaneLayoutChange: (() -> Void)?
     /// UI-only: the window's downloads list, toggled by View Downloads.
     var onToggleDownloads: (() -> Void)?
+    /// UI-only: the window's site control center, opened by Open Extensions.
+    var onOpenExtensions: (() -> Void)?
     /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.
     var onRevealSidebar: (() -> Void)?
     /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
@@ -3593,6 +3595,8 @@ enum BrowserWindowMode: Equatable {
             supportsSpaces && spaces.count > 1
         case .revealCurrentTab:
             canRevealSelectedTab
+        case .openExtensions:
+            canOpenExtensions
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             sidebarItemTabIDs.count > commandID.sidebarItemIndex
@@ -6006,6 +6010,8 @@ extension BrowserCommandID {
             []
         case .revealCurrentTab:
             ["reveal current tab", "reveal tab", "show tab in sidebar", "find tab in sidebar"]
+        case .openExtensions:
+            ["extensions", "open extensions", "site controls", "control center"]
         case .selectNextSpace:
             ["next space", "switch space"]
         case .selectPreviousSpace:
@@ -6112,6 +6118,8 @@ extension BrowserCommandID {
             "arrow.down.square"
         case .revealCurrentTab:
             "scope"
+        case .openExtensions:
+            "puzzlepiece.extension"
         case .selectNextSpace:
             "arrow.right.square"
         case .selectPreviousSpace:

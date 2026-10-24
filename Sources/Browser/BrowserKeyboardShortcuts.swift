@@ -406,6 +406,13 @@ enum BrowserCommands {
         shortcut: .unassigned
     )
 
+    /// Open Extensions is Command-E.
+    static let openExtensions = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuOpenExtensions,
+        helpTitle: BrowserStrings.menuOpenExtensions,
+        shortcut: BrowserKeyboardShortcut("e")
+    )
+
     /// Edit menu: Copy URL as Markdown is Option-Shift-Command-C.
     static let copyLinkAsMarkdown = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCopyLinkAsMarkdown,
@@ -521,6 +528,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case selectNextSpace
     case selectPreviousSpace
     case revealCurrentTab
+    case openExtensions
     case copyLinkAsMarkdown
     /// Go to Sidebar Item N, counted from 0.
     case goToSidebarItem(Int)
@@ -627,6 +635,8 @@ enum BrowserKeyboardShortcutBridge {
             "d"
         case 3:
             "f"
+        case 14:
+            "e"
         case 5:
             "g"
         case 6:

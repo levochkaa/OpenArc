@@ -82,6 +82,24 @@ import Testing
         #expect(f.model.sidebarRevealRequestID == request + 1)
     }
 
+    @Test func openExtensionsUsesTheWindowControlCenter() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(BrowserCommands.openExtensions.shortcut == BrowserKeyboardShortcut("e"))
+        #expect(!f.model.canOpenExtensions, "Only a window with URL controls offers it")
+        #expect(!f.model.openExtensionsControlCenter())
+        var opens = 0
+        f.model.onOpenExtensions = { opens += 1 }
+        #expect(f.model.openExtensionsControlCenter())
+        #expect(opens == 1)
+        // A layout that types another character on the E key still opens them.
+        #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+            keyCode: 14,
+            modifierFlags: [.command],
+            charactersIgnoringModifiers: "у"
+        ) == .openExtensions)
+    }
+
     @Test func markdownLinksEscapeTheTitleAndURL() {
         #expect(BrowserMarkdownLink.text(title: "Example", urlString: "https://example.com") == "[Example](https://example.com)")
         #expect(

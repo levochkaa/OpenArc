@@ -82,6 +82,15 @@ extension BrowserChromeModel {
 
     var canRevealSelectedTab: Bool { selectedTabID != nil && !isWebApp }
 
+    /// Open Extensions: the site control center with its extension list.
+    var canOpenExtensions: Bool { selectedTabID != nil && onOpenExtensions != nil }
+
+    @discardableResult func openExtensionsControlCenter() -> Bool {
+        guard canOpenExtensions else { return false }
+        onOpenExtensions?()
+        return true
+    }
+
     /// View Downloads: opens or closes the downloads list of this window.
     @discardableResult func toggleDownloads() -> Bool {
         guard let onToggleDownloads else { return false }

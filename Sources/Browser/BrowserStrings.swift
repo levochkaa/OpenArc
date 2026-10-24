@@ -858,6 +858,11 @@ enum BrowserStrings {
         comment: "Button that saves downloads to the Downloads folder again."
     )
 
+    static let menuOpenExtensions = NSLocalizedString(
+        "browser.menu.open_extensions",
+        comment: "View menu and command title that opens the site control center with the extensions."
+    )
+
     static let menuRevealCurrentTab = NSLocalizedString(
         "browser.menu.reveal_current_tab",
         comment: "View menu and command title that scrolls the sidebar to the selected tab and shows it."
