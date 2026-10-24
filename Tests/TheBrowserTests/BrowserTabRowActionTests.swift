@@ -153,6 +153,33 @@ import Testing
     }
 }
 
+// MARK: - BrowserPictureInPictureTests
+
+@Suite(.serialized)
+@MainActor struct BrowserPictureInPictureTests {
+    @Test func leavingATabSendsItsVideoToPictureInPictureUntilTheUserReturns() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        let (x, y, z) = (f.id("x"), f.id("y"), f.id("z"))
+        f.model.selectTab(id: x)
+        let start = f.driver.pictureInPictureRequests.count
+        f.model.selectTab(id: y)
+        #expect(f.driver.pictureInPictureRequests.dropFirst(start).map(\.tabID) == [x])
+        #expect(f.driver.pictureInPictureRequests.last?.active == true)
+        f.model.selectTab(id: x)
+        #expect(f.driver.pictureInPictureRequests.dropFirst(start).map(\.active) == [true, false, true],
+                "Returning to x brings its video back and y's goes to Picture in Picture")
+        // Moving focus between panes of a split keeps both on screen.
+        #expect(f.model.openInSplitView(tabID: z))
+        let beforeFocus = f.driver.pictureInPictureRequests.filter(\.active).count
+        f.model.selectTab(id: x)
+        #expect(f.driver.pictureInPictureRequests.filter(\.active).count == beforeFocus)
+        f.model.userPreferencesStore.pictureInPictureEnabled = false
+        let beforeDisabled = f.driver.pictureInPictureRequests.filter(\.active).count
+        f.model.selectTab(id: y)
+        #expect(f.driver.pictureInPictureRequests.filter(\.active).count == beforeDisabled)
+    }
+}
+
 // MARK: - BrowserZoomCommandTests
 
 @Suite(.serialized)

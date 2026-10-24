@@ -249,6 +249,8 @@ enum BrowserWindowMode: Equatable {
     /// Zoom of every tab that is not at 100 %; the engine keeps each page's
     /// level, and `zoomPercent` follows the selected tab.
     private var zoomPercentByTabID = [String: Int]()
+    /// Tabs whose video was sent to Picture in Picture on leaving them.
+    private var pictureInPictureTabIDs = Set<String>()
     @Published private(set) var sessionPersistenceFailure: BrowserSessionPersistenceFailure?
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
@@ -380,6 +382,7 @@ enum BrowserWindowMode: Equatable {
             if zoomPercent != zoom {
                 zoomPercent = zoom
             }
+            updatePictureInPicture(leaving: oldValue, entering: selectedTabID)
         }
     }
 
@@ -1872,6 +1875,25 @@ enum BrowserWindowMode: Equatable {
 
     func resetZoom() {
         setZoomPercent(100)
+    }
+
+    /// Picture in Picture on leaving a tab: a playing video follows the
+    /// user out of its tab and returns when they come back. Panes that stay on
+    /// screen in a split and closing tabs are left alone.
+    private func updatePictureInPicture(leaving oldID: String?, entering newID: String?) {
+        guard oldID != newID else { return }
+        if let newID, pictureInPictureTabIDs.remove(newID) != nil {
+            tabDriver.setPictureInPicture(false, forTabWithID: newID)
+        }
+        guard userPreferencesStore.pictureInPictureEnabled, let oldID,
+              tabs.contains(where: { $0.id == oldID }), !closingTabIDs.contains(oldID),
+              !closedAppTabIDs.contains(oldID), !closedPinnedTabIDs.contains(oldID),
+              !(newID.map { splitPaneTabIDs(forTabID: $0).contains(oldID) } ?? false)
+        else { return }
+        // Forget tabs that have closed since.
+        pictureInPictureTabIDs.formIntersection(tabs.map(\.id))
+        pictureInPictureTabIDs.insert(oldID)
+        tabDriver.setPictureInPicture(true, forTabWithID: oldID)
     }
 
     var canShowDeveloperTools: Bool { canCreateTab && selectedTabID != nil && !isWebApp }

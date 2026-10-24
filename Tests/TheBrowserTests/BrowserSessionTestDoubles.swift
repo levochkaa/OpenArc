@@ -81,6 +81,7 @@ import Foundation
     private(set) var stopLoadingCount = 0
     private(set) var printCount = 0
     private(set) var devToolsCount = 0
+    private(set) var pictureInPictureRequests = [(tabID: String, active: Bool)]()
     private(set) var castCount = 0
     var webAppManifestPayloadJSON: String?
     private(set) var webAppManifestRequestCount = 0
@@ -214,6 +215,10 @@ import Foundation
 
     func showDevToolsForActiveTab() {
         devToolsCount += 1
+    }
+
+    func setPictureInPicture(_ active: Bool, forTabWithID tabID: String) {
+        pictureInPictureRequests.append((tabID, active))
     }
 
     func castActiveTab() {

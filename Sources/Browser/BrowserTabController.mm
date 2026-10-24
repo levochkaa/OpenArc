@@ -2026,6 +2026,45 @@ void PrintBrowser(CefRefPtr<CefBrowser> browser) {
   }
 }
 
+// Picture in Picture needs user activation, which Runtime.evaluate grants with
+// userGesture. Only the top document's playing video is considered.
+constexpr char kEnterPictureInPictureScript[] =
+    "(() => { const video = Array.from(document.querySelectorAll('video')).find("
+    "v => !v.paused && !v.ended && v.readyState > 2 && !v.disablePictureInPicture); "
+    "if (video && !document.pictureInPictureElement) "
+    "video.requestPictureInPicture().catch(() => {}); })()";
+constexpr char kExitPictureInPictureScript[] =
+    "document.pictureInPictureElement && document.exitPictureInPicture().catch(() => {})";
+
+void EvaluateWithUserGesture(CefRefPtr<CefBrowser> browser, std::string expression) {
+  if (!browser) {
+    return;
+  }
+
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (!host) {
+    return;
+  }
+
+  CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+  params->SetString("expression", expression);
+  params->SetBool("userGesture", true);
+  host->ExecuteDevToolsMethod(NextDevToolsMessageID(), "Runtime.evaluate", params);
+}
+
+void EvaluateWithUserGestureOnUI(CefRefPtr<CefBrowser> browser, std::string expression) {
+  if (!browser) {
+    return;
+  }
+
+  if (CefCurrentlyOn(TID_UI)) {
+    EvaluateWithUserGesture(browser, expression);
+    return;
+  }
+
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&EvaluateWithUserGesture, browser, expression)));
+}
+
 // DevTools open in their own CEF window without a client, so none of the
 // tab callbacks see that browser. Chrome-style pages (internal pages) are left
 // alone: their DevTools would open a Chrome window.
@@ -3360,6 +3399,16 @@ class BrowserTabNavigationTask final : public CefTask {
   }
 
   PrintBrowserOnUI(it->second.browser);
+}
+
+- (void)setPictureInPicture:(BOOL)active forTabWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
+    return;
+  }
+
+  EvaluateWithUserGestureOnUI(
+      it->second.browser, active ? kEnterPictureInPictureScript : kExitPictureInPictureScript);
 }
 
 - (void)showDevToolsForActiveTab {

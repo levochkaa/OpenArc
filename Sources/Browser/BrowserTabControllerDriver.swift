@@ -134,6 +134,10 @@ import Foundation
         controller.showDevToolsForActiveTab()
     }
 
+    func setPictureInPicture(_ active: Bool, forTabWithID tabID: String) {
+        controller.setPictureInPicture(active, forTabWithID: tabID)
+    }
+
     func printActiveTab() {
         controller.printActiveTab()
     }
