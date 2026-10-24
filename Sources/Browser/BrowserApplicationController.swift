@@ -239,6 +239,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
         userPreferencesStore.siteURLToolbarEnabled.toggle()
     }
 
+    public func stopLoadingCurrentTab(_: Any?) {
+        activeChromeModel?.stopLoadingCurrentTab()
+    }
+
+    public func zoomIn(_: Any?) {
+        activeChromeModel?.zoomIn()
+    }
+
+    public func zoomOut(_: Any?) {
+        activeChromeModel?.zoomOut()
+    }
+
+    public func resetZoom(_: Any?) {
+        activeChromeModel?.resetZoom()
+    }
+
     public func restoreLastClosedTab(_: Any?) {
         activeChromeModel?.restoreLastClosedTab()
     }
@@ -489,6 +505,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         switch action {
         case #selector(createNewTab(_:)):
             return activeChromeModel?.canCreateTab == true && activeChromeModel?.isWebApp != true
+        case #selector(stopLoadingCurrentTab(_:)):
+            return activeChromeModel?.canStopLoading ?? false
+        case #selector(zoomIn(_:)):
+            return activeChromeModel?.canZoomIn ?? false
+        case #selector(zoomOut(_:)):
+            return activeChromeModel?.canZoomOut ?? false
+        case #selector(resetZoom(_:)):
+            return activeChromeModel?.canResetZoom ?? false
         case #selector(restoreLastClosedTab(_:)):
             return activeChromeModel?.canRestoreLastClosedTab ?? false
         case #selector(openLocation(_:)):
@@ -1137,6 +1161,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         viewMenu.addItem(.separator())
 
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .stopLoading),
+            action: #selector(stopLoadingCurrentTab(_:))
+        ))
         let refreshItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .reload),
             action: #selector(reloadCurrentTab(_:))
@@ -1170,6 +1198,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
             (.separateSplitView, #selector(separateSplitView(_:))),
             (.toggleSplitOrientation, #selector(toggleSplitOrientation(_:))),
             (.expandCurrentSplit, #selector(expandCurrentSplit(_:))),
+        ] {
+            viewMenu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
+        }
+
+        viewMenu.addItem(.separator())
+        for (commandID, action) in [
+            (BrowserCommandID.resetZoom, #selector(resetZoom(_:))),
+            (.zoomIn, #selector(zoomIn(_:))),
+            (.zoomOut, #selector(zoomOut(_:))),
         ] {
             viewMenu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
         }
@@ -1752,6 +1789,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return true
         case .restoreLastClosedTab:
             return activeChromeModel?.restoreLastClosedTab() ?? false
+        case .stopLoading:
+            guard let model = activeChromeModel, model.canStopLoading else { return false }
+            model.stopLoadingCurrentTab()
+            return true
+        case .zoomIn:
+            guard let model = activeChromeModel, model.canZoomIn else { return false }
+            model.zoomIn()
+            return true
+        case .zoomOut:
+            guard let model = activeChromeModel, model.canZoomOut else { return false }
+            model.zoomOut()
+            return true
+        case .resetZoom:
+            guard let model = activeChromeModel, model.canResetZoom else { return false }
+            model.resetZoom()
+            return true
         case .openLocation:
             guard let model = activeChromeModel, model.canOpenLocation else {
                 return false

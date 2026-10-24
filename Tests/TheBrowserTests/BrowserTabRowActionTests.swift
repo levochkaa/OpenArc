@@ -141,3 +141,34 @@ import Testing
         #expect(!f.model.canRenameSelectedTab, "A split row has no title field")
     }
 }
+
+// MARK: - BrowserZoomCommandTests
+
+@Suite(.serialized)
+@MainActor struct BrowserZoomCommandTests {
+    @Test func zoomFollowsTheSelectedTabAndUsesArcKeys() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(!f.model.canResetZoom)
+        #expect(f.model.canZoomIn && f.model.canZoomOut)
+        f.model.zoomIn()
+        #expect(f.model.zoomPercent == 110)
+        #expect(f.model.canResetZoom)
+        f.model.selectTab(id: f.id("y"))
+        #expect(f.model.zoomPercent == 100, "Another tab keeps its own zoom")
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.zoomPercent == 110)
+        f.model.resetZoom()
+        #expect(f.model.zoomPercent == 100)
+
+        #expect(BrowserCommands.zoomIn.shortcut == BrowserKeyboardShortcut("="))
+        #expect(BrowserCommands.resetZoom.shortcut == BrowserKeyboardShortcut("0"))
+        #expect(BrowserCommands.stopLoading.shortcut == BrowserKeyboardShortcut("."))
+        // AZERTY types "à" on the 0 key.
+        #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+            keyCode: 29,
+            modifierFlags: [.command],
+            charactersIgnoringModifiers: "à"
+        ) == .resetZoom)
+    }
+}

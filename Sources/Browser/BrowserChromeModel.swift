@@ -246,6 +246,9 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var profileDisplayName: String
     @Published private(set) var availableProfileCount: Int
     @Published private(set) var zoomPercent = 100
+    /// Zoom of every tab that is not at 100 %; the engine keeps each page's
+    /// level, and `zoomPercent` follows the selected tab.
+    private var zoomPercentByTabID = [String: Int]()
     @Published private(set) var sessionPersistenceFailure: BrowserSessionPersistenceFailure?
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
@@ -373,6 +376,10 @@ enum BrowserWindowMode: Equatable {
         didSet {
             recordSplitFocus(tabID: selectedTabID)
             syncSplitLayout()
+            let zoom = selectedTabID.flatMap { zoomPercentByTabID[$0] } ?? 100
+            if zoomPercent != zoom {
+                zoomPercent = zoom
+            }
         }
     }
 
@@ -1867,12 +1874,19 @@ enum BrowserWindowMode: Equatable {
         setZoomPercent(100)
     }
 
+    var canZoomIn: Bool { canCreateTab && selectedTabID != nil && zoomPercent < (Self.zoomPercentages.last ?? 100) }
+    var canZoomOut: Bool { canCreateTab && selectedTabID != nil && zoomPercent > (Self.zoomPercentages.first ?? 100) }
+    var canResetZoom: Bool { canCreateTab && selectedTabID != nil && zoomPercent != 100 }
+
     func setZoomPercent(_ percent: Int) {
         guard canCreateTab, selectedTabID != nil, Self.zoomPercentages.contains(percent) else {
             return
         }
 
         zoomPercent = percent
+        if let selectedTabID {
+            zoomPercentByTabID[selectedTabID] = percent == 100 ? nil : percent
+        }
         let zoomLevel = log(Double(percent) / 100) / log(1.2)
         tabDriver.setActiveTabZoomLevel(zoomLevel)
     }
@@ -3580,6 +3594,14 @@ enum BrowserWindowMode: Equatable {
             canCreateTab
         case .openLocation:
             canOpenLocation
+        case .zoomIn:
+            canZoomIn
+        case .zoomOut:
+            canZoomOut
+        case .resetZoom:
+            canResetZoom
+        case .stopLoading:
+            canStopLoading
         case .restoreLastClosedTab:
             canRestoreLastClosedTab
         case .newIncognitoWindow:
@@ -6011,6 +6033,14 @@ extension BrowserCommandID {
             ["open location", "edit url", "edit address", "current url", "address bar"]
         case .restoreLastClosedTab:
             ["restore tab", "reopen tab", "reopen closed tab", "last closed tab", "undo close tab"]
+        case .zoomIn:
+            ["zoom in", "bigger", "larger text"]
+        case .zoomOut:
+            ["zoom out", "smaller", "smaller text"]
+        case .resetZoom:
+            ["actual size", "reset zoom", "zoom 100"]
+        case .stopLoading:
+            ["stop", "stop loading"]
         case .newIncognitoWindow:
             ["incognito", "private window", "new private window"]
         case .openHistory:
@@ -6137,6 +6167,14 @@ extension BrowserCommandID {
             "link"
         case .restoreLastClosedTab:
             "arrow.uturn.backward.circle"
+        case .zoomIn:
+            "plus.magnifyingglass"
+        case .zoomOut:
+            "minus.magnifyingglass"
+        case .resetZoom:
+            "1.magnifyingglass"
+        case .stopLoading:
+            "xmark"
         case .newIncognitoWindow:
             "eye.slash"
         case .openHistory:

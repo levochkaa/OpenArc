@@ -130,6 +130,33 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("t", modifiers: [.command, .shift])
     )
 
+    /// View menu: Stop Loading is Command-period.
+    static let stopLoading = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.navigationStopLoading,
+        helpTitle: BrowserStrings.navigationStopLoading,
+        shortcut: BrowserKeyboardShortcut(".")
+    )
+
+    /// View menu: Zoom In, Zoom Out and Zoom to Actual Size are
+    /// Command-+, Command-- and Command-0; Command-= is the unshifted + key.
+    static let zoomIn = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.webAppZoomInAction,
+        helpTitle: BrowserStrings.webAppZoomInAction,
+        shortcut: BrowserKeyboardShortcut("=")
+    )
+
+    static let zoomOut = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.webAppZoomOutAction,
+        helpTitle: BrowserStrings.webAppZoomOutAction,
+        shortcut: BrowserKeyboardShortcut("-")
+    )
+
+    static let resetZoom = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.webAppZoomResetAction,
+        helpTitle: BrowserStrings.webAppZoomResetAction,
+        shortcut: BrowserKeyboardShortcut("0")
+    )
+
     static let newIncognitoWindow = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNewIncognitoWindow,
         helpTitle: BrowserStrings.menuNewIncognitoWindow,
@@ -541,6 +568,10 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case newTab
     case openLocation
     case restoreLastClosedTab
+    case stopLoading
+    case zoomIn
+    case zoomOut
+    case resetZoom
     case newIncognitoWindow
     case openHistory
     case toggleBookmark
@@ -757,6 +788,10 @@ enum BrowserKeyboardShortcutBridge {
             "8"
         case 25:
             "9"
+        case 29:
+            "0"
+        case 47:
+            "."
         case 123:
             BrowserKeyboardShortcut.leftArrow
         case 124:
