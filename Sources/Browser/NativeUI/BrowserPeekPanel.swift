@@ -8,7 +8,7 @@ import AppKit
 /// small window of its own for links from other apps, whose host is an address
 /// field (`⌘L`). `⌘O` opens either as a tab. The engine puts its page in
 /// `hostView`.
-@objc final class BrowserPeekPanel: NSPanel, NSTextFieldDelegate {
+@objc final class BrowserPeekPanel: NSPanel, NSTextFieldDelegate, NSMenuDelegate {
     // MARK: Lifecycle
 
     private init(contentRect: NSRect, standalone: Bool) {
@@ -67,6 +67,9 @@ import AppKit
         openButton.onAction = { [weak self] in self?.onOpenInTab?() }
         closeButton.setAccessibilityIdentifier("browser.peek.close")
         openButton.setAccessibilityIdentifier("browser.peek.open-in-tab")
+        openInMenu.delegate = self
+        openInMenu.autoenablesItems = false
+        openButton.menu = openInMenu
         hostView.setAccessibilityIdentifier("browser.peek.page")
         setAccessibilityIdentifier("browser.peek")
         layoutCard()
@@ -89,6 +92,12 @@ import AppKit
     @objc var onOpenInTab: (() -> Void)?
     /// A typed address or search, resolved to the URL the page should load.
     @objc var onNavigate: ((String) -> Void)?
+    /// The window's Spaces for Open In, in sidebar order.
+    @objc var spacesProvider: (() -> [BrowserPeekSpace])?
+    /// Open In: the page becomes a tab of the chosen Space.
+    @objc var onOpenInSpace: ((String) -> Void)?
+    /// Open as Tab's right-click menu and `⇧⌘O`.
+    let openInMenu = NSMenu()
 
     let closeButton = BrowserNativeChromeButton(
         symbol: "xmark",
@@ -185,26 +194,42 @@ import AppKit
         makeFirstResponder(hostLabel)
     }
 
-    /// `⌘L` edits the small window's address and `⌘O` opens the page as a tab.
-    /// The app asks before its own shortcuts.
+    /// `⌘L` edits the small window's address, `⌘O` opens the page as a tab and `⇧⌘O`
+    /// shows Open In. The app asks before its own shortcuts.
     @objc func handleShortcut(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown,
-              event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([
-                  .capsLock,
-                  .numericPad,
-                  .function,
-              ])
-              == .command
-        else { return false }
-        switch event.keyCode {
-        case 37 where isStandalone:
+        let modifiers = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad, .function])
+        guard event.type == .keyDown, modifiers == .command || modifiers == [.command, .shift] else { return false }
+        switch (event.keyCode, modifiers == .command) {
+        case (37, true) where isStandalone:
             focusAddressField()
             return true
-        case 31:
+        case (31, true):
             onOpenInTab?()
+            return true
+        case (31, false):
+            showOpenInMenu()
             return true
         default:
             return false
+        }
+    }
+
+    func showOpenInMenu() {
+        openInMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: openButton.bounds.height + 4), in: openButton)
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === openInMenu else { return }
+        menu.removeAllItems()
+        let header = NSMenuItem(title: BrowserStrings.peekOpenInMenuTitle, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        for space in spacesProvider?() ?? [] {
+            let item = BrowserNativeMenuItem(space.title) { [weak self] in self?.onOpenInSpace?(space.id) }
+            item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
+            menu.addItem(item)
         }
     }
 
@@ -303,6 +328,25 @@ import AppKit
         }
         parentMonitor = nil
     }
+}
+
+// MARK: - BrowserPeekSpace
+
+/// A Space offered by Open In.
+@objc final class BrowserPeekSpace: NSObject, Sendable {
+    // MARK: Lifecycle
+
+    init(id: String, title: String, systemImageName: String) {
+        self.id = id
+        self.title = title
+        self.systemImageName = systemImageName
+    }
+
+    // MARK: Internal
+
+    @objc let id: String
+    @objc let title: String
+    @objc let systemImageName: String
 }
 
 // MARK: - BrowserPeekAddressField

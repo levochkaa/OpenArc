@@ -50,6 +50,10 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     /// Asked before a link click in a tab's page leaves it, with the tab ID and
     /// target; true opens the link in Peek and keeps the tab on its page.
     var shouldPeekNavigation: ((String, String) -> Bool)? { get set }
+    /// The Spaces a Peek card or small window can open in.
+    var peekSpaces: (() -> [BrowserPeekSpace])? { get set }
+    /// Open In from a card or small window: the URL and the chosen Space.
+    var onOpenPeekInSpace: ((String, String) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     /// True admits another attempt for a synchronously refused creation.

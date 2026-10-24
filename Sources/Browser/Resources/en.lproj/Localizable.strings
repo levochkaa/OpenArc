@@ -119,6 +119,7 @@
 "browser.menu.new_incognito_window" = "New Incognito Window";
 "browser.menu.new_little_window" = "New Small Window";
 "browser.peek.address_placeholder" = "Search or enter address";
+"browser.peek.open_in" = "Open In";
 "browser.incognito.banner.title" = "Incognito";
 "browser.incognito.tabs.title" = "Incognito Tabs";
 "browser.menu.history" = "History";

@@ -90,6 +90,26 @@ import Testing
         #expect(panel.handleShortcut(commandO) && opens == 1, "Command-O opens the page as a tab")
     }
 
+    @Test func openInListsTheWindowsSpacesAndOpensThePageThere() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        let spaces = try #require(f.driver.peekSpaces?())
+        #expect(spaces.map(\.id) == ["s", "t"] && spaces.map(\.title) == ["Space", "Other"])
+
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        var chosen = [String]()
+        panel.spacesProvider = { spaces }
+        panel.onOpenInSpace = { chosen.append($0) }
+        panel.menuNeedsUpdate(panel.openInMenu)
+        #expect(panel.openInMenu.items.map(\.title) == [BrowserStrings.peekOpenInMenuTitle, "Space", "Other"])
+        panel.openInMenu.performActionForItem(at: 2)
+        #expect(chosen == ["t"])
+
+        f.driver.onOpenPeekInSpace?("https://figma.com/file", "t")
+        #expect(f.model.selectedSpaceID == "t")
+        #expect(f.driver.createdTabRequests.last?.urlString == "https://figma.com/file")
+    }
+
     @Test func newSmallWindowOpensFromTheWindow() {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(f.model.canOpenLittleWindow)

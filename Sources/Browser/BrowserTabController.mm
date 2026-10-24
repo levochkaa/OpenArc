@@ -3649,6 +3649,28 @@ void WatchClickModifiers();
   session.panel.onNavigate = ^(NSString *target) {
     [weakSelf navigatePeekSession:sessionID toURLString:target];
   };
+  session.panel.spacesProvider = ^NSArray<BrowserPeekSpace *> * {
+    BrowserTabController *strongSelf = weakSelf;
+    id<BrowserTabControllerDelegate> delegate = strongSelf.delegate;
+    if (![delegate respondsToSelector:@selector(peekSpacesForBrowserTabController:)]) {
+      return @[];
+    }
+    return [delegate peekSpacesForBrowserTabController:strongSelf];
+  };
+  session.panel.onOpenInSpace = ^(NSString *spaceID) {
+    BrowserTabController *strongSelf = weakSelf;
+    if (strongSelf == nil) {
+      return;
+    }
+    id<BrowserTabControllerDelegate> delegate = strongSelf.delegate;
+    NSString *current = strongSelf->_peekSessions[@(sessionID)].urlString;
+    if (current.length == 0 ||
+        ![delegate respondsToSelector:@selector(browserTabController:openPeekURLString:inSpaceWithID:)]) {
+      return;
+    }
+    [strongSelf closePeekSession:sessionID];
+    [delegate browserTabController:strongSelf openPeekURLString:current inSpaceWithID:spaceID];
+  };
   session.panel.onOpenInTab = ^{
     BrowserTabController *strongSelf = weakSelf;
     if (strongSelf == nil) {

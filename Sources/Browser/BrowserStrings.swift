@@ -658,6 +658,11 @@ enum BrowserStrings {
         comment: "File menu item and command that opens a small window of its own."
     )
 
+    static let peekOpenInMenuTitle = NSLocalizedString(
+        "browser.peek.open_in",
+        comment: "Header of the menu that moves a Peek card or small window into a Space as a tab."
+    )
+
     static let peekAddressPlaceholder = NSLocalizedString(
         "browser.peek.address_placeholder",
         comment: "Placeholder of the small window's address field."

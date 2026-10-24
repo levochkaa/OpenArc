@@ -18,6 +18,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
   BrowserTabCloseRequestOutcomeCancelled,
 };
 
+@class BrowserPeekSpace;
+
 @protocol BrowserTabControllerDelegate <NSObject>
 
 - (void)browserTabController:(BrowserTabController *)controller
@@ -70,6 +72,12 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     didFinishCloseRequestForTabWithID:(NSString *)tabID
                            requestID:(NSString *)requestID
                              outcome:(BrowserTabCloseRequestOutcome)outcome;
+// The window's Spaces for a Peek card's or small window's Open In menu.
+- (NSArray<BrowserPeekSpace *> *)peekSpacesForBrowserTabController:(BrowserTabController *)controller;
+// Open In: a card's or small window's page becomes a tab of that Space.
+- (void)browserTabController:(BrowserTabController *)controller
+           openPeekURLString:(NSString *)urlString
+               inSpaceWithID:(NSString *)spaceID;
 // Asked on the main thread before a link click in a tab's page; YES cancels
 // the navigation and opens the link in Peek instead (the Peek setting for links to
 // other sites from pinned tabs).

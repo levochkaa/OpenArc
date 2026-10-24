@@ -56,6 +56,8 @@ import Foundation
     var onSplitResized: (([String], [Double]) -> Void)?
     var onSplitPaneLayout: (([String], [CGRect]) -> Void)?
     var shouldPeekNavigation: ((String, String) -> Bool)?
+    var peekSpaces: (() -> [BrowserPeekSpace])?
+    var onOpenPeekInSpace: ((String, String) -> Void)?
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
     private(set) var retryCreationRequests = [RetryCreationRequest]()

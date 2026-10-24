@@ -151,6 +151,14 @@ enum BrowserWindowMode: Equatable {
         tabDriver.shouldPeekNavigation = { [weak self] tabID, urlString in
             self?.peeksNavigation(fromTabWithID: tabID, toURLString: urlString) ?? false
         }
+        tabDriver.peekSpaces = { [weak self] in
+            guard let self, supportsSpaces, canCreateTab else { return [] }
+            return spaces.map { BrowserPeekSpace(id: $0.id, title: $0.title, systemImageName: $0.systemImageName) }
+        }
+        tabDriver.onOpenPeekInSpace = { [weak self] urlString, spaceID in
+            guard let self, let url = URL(string: urlString), !openURL(url, inSpaceWithID: spaceID) else { return }
+            openURLInNewTab(url)
+        }
         tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
             self?.handleNavigationStateChange(
                 id: tabID,
