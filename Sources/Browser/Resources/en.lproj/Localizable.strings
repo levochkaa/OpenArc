@@ -170,8 +170,11 @@
 "browser.folder_preview.search_placeholder" = "Search folder";
 "browser.settings.peek_other_sites" = "Open links to other sites from pinned tabs in Peek";
 "browser.settings.peek_other_sites.detail" = "Pinned tabs and Favorites stay on their page. Sign-in pages on another site open in Peek too.";
+"browser.settings.links_tab" = "Links";
+"browser.settings.small_window_section" = "Small Window";
+"browser.settings.peek_section" = "Peek";
 "browser.settings.link_routes" = "Links from Other Apps";
-"browser.settings.link_routes.detail" = "A link from another app that matches a rule opens in its Space or in a small window. The first matching rule wins; other links follow the small-window setting above.";
+"browser.settings.link_routes.detail" = "A link from another app that matches a rule opens in its Space or in a small window. The first matching rule wins; other links follow the Small Window setting above.";
 "browser.settings.link_routes.site" = "Site is";
 "browser.settings.link_routes.contains" = "Address contains";
 "browser.settings.link_routes.pattern_placeholder" = "example.com";

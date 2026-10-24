@@ -213,11 +213,11 @@ import Testing
         #expect(!BrowserShortcutCaptureNSView.handleRecordingEvent(reload))
     }
 
-    @Test func linkRulesAreAddedEditedAndRemovedInGeneral() throws {
+    @Test func linkRulesAreAddedEditedAndRemovedInLinks() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let preferences = fixture.model.userPreferencesStore
-        let controller = fixture.controller(.general)
+        let controller = fixture.controller(.links)
         let add = try #require(find("browser.settings.link-routes.add", in: controller.view) as? BrowserActionButton)
         add.performClick(nil)
         let route = try #require(preferences.linkRoutes.first)

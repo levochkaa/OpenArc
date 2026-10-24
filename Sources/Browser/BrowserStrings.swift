@@ -1901,6 +1901,21 @@ enum BrowserStrings {
         comment: "Button title for opening extension shortcut settings."
     )
 
+    static let settingsLinksTab = NSLocalizedString(
+        "browser.settings.links_tab",
+        comment: "Settings pane for the small window, Peek and rules for links from other apps."
+    )
+
+    static let settingsSmallWindowSection = NSLocalizedString(
+        "browser.settings.small_window_section",
+        comment: "Settings section title for the small window of its own."
+    )
+
+    static let settingsPeekSection = NSLocalizedString(
+        "browser.settings.peek_section",
+        comment: "Settings section title for Peek, the floating card for links."
+    )
+
     static let settingsContentTab = NSLocalizedString(
         "browser.settings.content",
         comment: "Title for the content settings tab."

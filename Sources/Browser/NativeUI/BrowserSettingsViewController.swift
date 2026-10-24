@@ -51,6 +51,7 @@ enum BrowserSettingsLayout {
 enum BrowserSettingsPane: String, CaseIterable, Hashable {
     case accounts
     case general
+    case links
     case profiles
     case shortcuts
     case content
@@ -63,6 +64,8 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
             BrowserStrings.settingsAccountsTab
         case .general:
             BrowserStrings.settingsGeneralTab
+        case .links:
+            BrowserStrings.settingsLinksTab
         case .profiles:
             BrowserStrings.settingsProfilesTab
         case .shortcuts:
@@ -78,6 +81,8 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
             "person.crop.circle"
         case .general:
             "gearshape"
+        case .links:
+            "link"
         case .profiles:
             "person.2"
         case .shortcuts:
@@ -162,7 +167,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        if pane == .general {
+        if pane == .links {
             // Spaces may have changed since the pane was built.
             refreshLinkRoutes()
         }
@@ -225,6 +230,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         switch pane {
         case .accounts: configureAccounts()
         case .general: configureGeneral()
+        case .links: configureLinks()
         case .profiles: configureProfiles()
         case .shortcuts: configureShortcuts()
         case .content: configureContentSettings()
@@ -291,39 +297,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.sidebarPosition = $0 }
                 ),
                 toggle(
-                    "peek",
-                    BrowserStrings.settingsPeek,
-                    detail: BrowserStrings.settingsPeekDetail,
-                    get: { preferences.peekEnabled },
-                    set: { preferences.peekEnabled = $0 }
-                ),
-                toggle(
-                    "peek-other-sites",
-                    BrowserStrings.settingsPeekOtherSites,
-                    detail: BrowserStrings.settingsPeekOtherSitesDetail,
-                    get: { preferences.peeksLinksToOtherSites },
-                    set: { preferences.peeksLinksToOtherSites = $0 }
-                ),
-                toggle(
-                    "little-arc",
-                    BrowserStrings.settingsLittleArc,
-                    detail: BrowserStrings.settingsLittleArcDetail,
-                    get: { preferences.littleArcEnabled },
-                    set: { preferences.littleArcEnabled = $0 }
-                ),
-                toggle(
-                    "little-window-option-command-click",
-                    BrowserStrings.settingsLittleWindowOptionCommandClick,
-                    get: { preferences.opensOptionCommandClicksInLittleWindow },
-                    set: { preferences.opensOptionCommandClicksInLittleWindow = $0 }
-                ),
-                toggle(
-                    "little-window-any-app",
-                    BrowserStrings.settingsLittleWindowFromAnyApp,
-                    get: { preferences.opensLittleWindowFromAnyApp },
-                    set: { preferences.opensLittleWindowFromAnyApp = $0 }
-                ),
-                toggle(
                     "folder-previews",
                     BrowserStrings.settingsFolderPreviews,
                     get: { preferences.folderPreviewsEnabled },
@@ -349,7 +322,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.batterySaverEnabled = $0 }
                 ),
             ]),
-            section(BrowserStrings.settingsLinkRoutesTitle, body: linkRoutesBody),
             section(BrowserStrings.settingsSearch, rows: [
                 picker(
                     "search-engine",
@@ -377,6 +349,51 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             ]),
             section(BrowserStrings.settingsTemporaryTabsTitle, rows: automaticArchivalRows()),
             section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
+        ])
+    }
+
+    /// Links pane: the small window, Peek and link rules.
+    private func configureLinks() {
+        let preferences = preferences
+        scrollView.setViews([
+            section(BrowserStrings.settingsSmallWindowSection, rows: [
+                toggle(
+                    "little-arc",
+                    BrowserStrings.settingsLittleArc,
+                    detail: BrowserStrings.settingsLittleArcDetail,
+                    get: { preferences.littleArcEnabled },
+                    set: { preferences.littleArcEnabled = $0 }
+                ),
+                toggle(
+                    "little-window-option-command-click",
+                    BrowserStrings.settingsLittleWindowOptionCommandClick,
+                    get: { preferences.opensOptionCommandClicksInLittleWindow },
+                    set: { preferences.opensOptionCommandClicksInLittleWindow = $0 }
+                ),
+                toggle(
+                    "little-window-any-app",
+                    BrowserStrings.settingsLittleWindowFromAnyApp,
+                    get: { preferences.opensLittleWindowFromAnyApp },
+                    set: { preferences.opensLittleWindowFromAnyApp = $0 }
+                ),
+            ]),
+            section(BrowserStrings.settingsPeekSection, rows: [
+                toggle(
+                    "peek",
+                    BrowserStrings.settingsPeek,
+                    detail: BrowserStrings.settingsPeekDetail,
+                    get: { preferences.peekEnabled },
+                    set: { preferences.peekEnabled = $0 }
+                ),
+                toggle(
+                    "peek-other-sites",
+                    BrowserStrings.settingsPeekOtherSites,
+                    detail: BrowserStrings.settingsPeekOtherSitesDetail,
+                    get: { preferences.peeksLinksToOtherSites },
+                    set: { preferences.peeksLinksToOtherSites = $0 }
+                ),
+            ]),
+            section(BrowserStrings.settingsLinkRoutesTitle, body: linkRoutesBody),
         ])
         refreshLinkRoutes()
     }
