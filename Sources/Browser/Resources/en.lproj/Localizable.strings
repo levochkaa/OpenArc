@@ -143,6 +143,7 @@
 "browser.menu.move_sidebar_left" = "Move Sidebar to the Left";
 "browser.menu.show_toolbar" = "Show Toolbar";
 "browser.menu.hide_toolbar" = "Hide Toolbar";
+"browser.menu.view_downloads" = "View Downloads";
 "browser.menu.select_next_tab" = "Next Tab";
 "browser.menu.select_previous_tab" = "Previous Tab";
 "browser.menu.go_to_sidebar_item" = "Go to Sidebar Item %d";

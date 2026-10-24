@@ -228,7 +228,11 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         downloadDot.isHidden = !active || !state.model.supportsSpaces
     }
 
-    private func toggleDownloads() {
+    var isDownloadsPresented: Bool { popover.isShown }
+
+    /// Opens the list from the Downloads button, or from `anchor` while the
+    /// sidebar is off screen; closes it if it is open.
+    func toggleDownloads(anchor: (rect: CGRect, view: NSView, edge: NSRectEdge)? = nil) {
         guard !isResizing else { return }
         if popover.isShown {
             popover.performClose(nil)
@@ -236,7 +240,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             _ = downloadsController.view
             downloadsController.refresh()
             popover.contentSize = downloadsController.preferredContentSize
-            popover.show(relativeTo: downloadsButton.bounds, of: downloadsButton, preferredEdge: .maxY)
+            let anchor = anchor ?? (downloadsButton.bounds, downloadsButton, .maxY)
+            popover.show(relativeTo: anchor.rect, of: anchor.view, preferredEdge: anchor.edge)
         }
         refreshDownloadsButton()
     }

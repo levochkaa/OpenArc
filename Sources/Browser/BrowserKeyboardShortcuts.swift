@@ -332,6 +332,13 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("d", modifiers: [.command, .shift])
     )
 
+    /// Window menu: View Downloads is Command-Shift-J.
+    static let viewDownloads = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuViewDownloads,
+        helpTitle: BrowserStrings.menuViewDownloads,
+        shortcut: BrowserKeyboardShortcut("j", modifiers: [.command, .shift])
+    )
+
     /// Next/Previous Tab are
     /// Command-}/{; the primary Option-Command-arrow keys are not mapped.
     static let selectNextTab = BrowserCommandDescriptor(
@@ -447,6 +454,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case toggleSidebarPosition
     case toggleBookmarksBar
     case toggleSiteToolbar
+    case viewDownloads
     case selectNextTab
     case selectPreviousTab
     /// Go to Sidebar Item N, counted from 0.

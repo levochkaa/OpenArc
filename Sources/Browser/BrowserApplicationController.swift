@@ -235,6 +235,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         userPreferencesStore.siteURLToolbarEnabled.toggle()
     }
 
+    public func viewDownloads(_: Any?) {
+        activeChromeModel?.toggleDownloads()
+    }
+
     public func selectNextTab(_: Any?) {
         activeChromeModel?.selectAdjacentSidebarItem(offset: 1)
     }
@@ -493,6 +497,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 menuItem.title = model.siteToolbarToggleTitle
             }
             return activeChromeModel?.isWebApp == false
+        case #selector(viewDownloads(_:)):
+            return activeChromeModel?.onToggleDownloads != nil
         case #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)), #selector(goToLastSidebarItem(_:)):
             return activeChromeModel.map { !$0.isWebApp && !$0.sidebarItemTabIDs.isEmpty } ?? false
         case #selector(goToSidebarItem(_:)):
@@ -993,6 +999,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(openHistory(_:))
         )
         viewMenu.addItem(historyItem)
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .viewDownloads),
+            action: #selector(viewDownloads(_:))
+        ))
 
         viewMenu.addItem(.separator())
 
@@ -1629,6 +1639,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard activeChromeModel?.isWebApp == false else { return false }
             toggleSiteToolbar(nil)
             return true
+        case .viewDownloads:
+            return activeChromeModel?.toggleDownloads() ?? false
         case .selectNextTab:
             guard activeChromeModel?.isWebApp == false else { return false }
             return activeChromeModel?.selectAdjacentSidebarItem(offset: 1) ?? false

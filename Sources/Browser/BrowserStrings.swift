@@ -803,6 +803,11 @@ enum BrowserStrings {
         comment: "View menu and command title that moves the page URL from the toolbar back into the sidebar."
     )
 
+    static let menuViewDownloads = NSLocalizedString(
+        "browser.menu.view_downloads",
+        comment: "View menu and command title that opens the downloads list."
+    )
+
     static let menuSelectNextTab = NSLocalizedString(
         "browser.menu.select_next_tab",
         comment: "View menu and command title that selects the next item in the sidebar."

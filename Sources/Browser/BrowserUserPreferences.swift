@@ -348,6 +348,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case findPrevious
     case jumpToSelection
     case clearTemporaryTabs
+    case viewDownloads
     case selectNextTab
     case selectPreviousTab
     case goToSidebarItem1
@@ -470,6 +471,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.toggleBookmarksBar
         case .toggleSiteToolbar:
             BrowserCommands.toggleSiteToolbar
+        case .viewDownloads:
+            BrowserCommands.viewDownloads
         case .selectNextTab:
             BrowserCommands.selectNextTab
         case .selectPreviousTab:
@@ -564,6 +567,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .toggleBookmarksBar
         case .toggleSiteToolbar:
             .toggleSiteToolbar
+        case .viewDownloads:
+            .viewDownloads
         case .selectNextTab:
             .selectNextTab
         case .selectPreviousTab:

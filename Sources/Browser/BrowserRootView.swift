@@ -50,6 +50,7 @@ final class BrowserRootView: NSView {
             BrowserSessionRecoveryExporter.present(model: model, window: window)
         }
         sidebar.onToggleSidebar = { [weak model] in model?.toggleSidebar() }
+        model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
         sidebar.onDragInteractionChange = { [weak self] in
             DispatchQueue.main.async { [weak self] in self?.refresh() }
         }
@@ -465,6 +466,20 @@ final class BrowserRootView: NSView {
             restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded()
         }
         refresh()
+    }
+
+    /// View Downloads opens the sidebar footer's list. With the sidebar hidden,
+    /// the list points at the page's bottom corner on the sidebar side instead.
+    private func toggleDownloads() {
+        let footer = sidebar.footer
+        guard !model.isSidebarVisible, !isSidebarHoverOverlayActive, !footer.isDownloadsPresented else {
+            footer.toggleDownloads()
+            return
+        }
+        let page = windowGeometry.contentFrame
+        let inset = BrowserChromeLayout.sidebarCurrentURLButtonSize
+        let x = preferences.sidebarPosition == .right ? page.maxX - inset : page.minX + inset
+        footer.toggleDownloads(anchor: (CGRect(x: x, y: page.maxY - inset, width: 1, height: 1), self, .minY))
     }
 
     private func finishSidebarHoverOverlayPromotionIfNeeded() {

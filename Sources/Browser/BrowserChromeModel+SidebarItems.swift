@@ -67,6 +67,13 @@ extension BrowserChromeModel {
         return true
     }
 
+    /// View Downloads: opens or closes the downloads list of this window.
+    @discardableResult func toggleDownloads() -> Bool {
+        guard let onToggleDownloads else { return false }
+        onToggleDownloads()
+        return true
+    }
+
     /// View menu and command bar title for the site toolbar toggle.
     var siteToolbarToggleTitle: String {
         userPreferencesStore.siteURLToolbarEnabled ? BrowserStrings.menuHideToolbar : BrowserStrings.menuShowToolbar

@@ -79,6 +79,14 @@ import Testing
         }
         #expect(commands("sidebar item 3").contains(.goToSidebarItem3))
         #expect(!commands("sidebar item 4").contains(.goToSidebarItem4), "Only existing items are offered")
+        #expect(!commands("downloads").contains(.viewDownloads), "Only a window with a downloads list offers it")
+        #expect(!f.model.toggleDownloads())
+        var toggles = 0
+        f.model.onToggleDownloads = { toggles += 1 }
+        #expect(commands("downloads").contains(.viewDownloads))
+        #expect(f.model.toggleDownloads())
+        #expect(toggles == 1)
+        #expect(BrowserCommands.viewDownloads.shortcut == BrowserKeyboardShortcut("j", modifiers: [.command, .shift]))
         #expect(f.model.siteToolbarToggleTitle == BrowserStrings.menuShowToolbar)
         f.model.userPreferencesStore.siteURLToolbarEnabled = true
         #expect(f.model.siteToolbarToggleTitle == BrowserStrings.menuHideToolbar)

@@ -341,6 +341,8 @@ enum BrowserWindowMode: Equatable {
     var splitPaneLayoutTabIDs = [String]()
     var splitPaneLayoutFrames = [CGRect]()
     var onSplitPaneLayoutChange: (() -> Void)?
+    /// UI-only: the window's downloads list, toggled by View Downloads.
+    var onToggleDownloads: (() -> Void)?
 
     @Published private(set) var selectedTabID: String? {
         willSet {
@@ -3559,6 +3561,8 @@ enum BrowserWindowMode: Equatable {
             canStepThroughFindMatches
         case .clearTemporaryTabs:
             canClearTemporaryTabs
+        case .viewDownloads:
+            onToggleDownloads != nil
         case .selectNextTab, .selectPreviousTab, .goToLastSidebarItem:
             !sidebarItemTabIDs.isEmpty
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
@@ -5960,6 +5964,8 @@ extension BrowserCommandID {
             ["jump selection", "jump to selection"]
         case .clearTemporaryTabs:
             ["clear temporary tabs", "clear temp tabs", "temporary tabs"]
+        case .viewDownloads:
+            ["downloads", "view downloads", "show downloads", "downloaded files"]
         case .selectNextTab:
             ["next tab", "select next tab"]
         case .selectPreviousTab:
@@ -6052,6 +6058,8 @@ extension BrowserCommandID {
             "text.cursor"
         case .clearTemporaryTabs:
             "xmark.circle"
+        case .viewDownloads:
+            "arrow.down.circle"
         case .selectNextTab:
             "arrow.down.square"
         case .selectPreviousTab:
