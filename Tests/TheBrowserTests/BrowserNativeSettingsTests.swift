@@ -297,7 +297,9 @@ import Testing
             in: controller.view
         ) as? BrowserActionButton)
         remove.performClick(nil)
-        #expect(preferences.siteSearches == BrowserSiteSearch.arcDefaults)
+        // Restored entries get identities of their own.
+        #expect(preferences.siteSearches.map(\.keyword) == BrowserSiteSearch.arcDefaults.map(\.keyword))
+        #expect(Set(preferences.siteSearches.map(\.id)).isDisjoint(with: BrowserSiteSearch.arcDefaults.map(\.id)))
         let importMenu = try #require(find(
             "browser.settings.site-search.import",
             in: controller.view

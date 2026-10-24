@@ -117,6 +117,16 @@ private let gitLab = BrowserSiteSearch(
     #expect(merged.last?.keyword == "@t")
     // Importing again changes nothing.
     #expect(BrowserSiteSearchImport.merge([youTube, translate], into: merged) == merged)
+    // Two searches of one site with different queries stay apart, and an
+    // import never replaces another imported entry.
+    let duckDuckGo = BrowserSiteSearch(name: "DuckDuckGo", keyword: "d", urlTemplate: "https://duckduckgo.com/?q=%s")
+    let wikipediaBang = BrowserSiteSearch(
+        name: "Wikipedia",
+        keyword: "w",
+        urlTemplate: "https://duckduckgo.com/?q=!w+%s"
+    )
+    #expect(BrowserSiteSearchImport.merge([duckDuckGo, wikipediaBang], into: []).map(\.keyword) == ["d", "w"])
+    #expect(BrowserSiteSearchImport.merge([wikipediaBang], into: [duckDuckGo]).map(\.keyword) == ["d", "w"])
 }
 
 @Test func siteSearchesStartWithArcsSetAndPersist() throws {
@@ -227,7 +237,9 @@ private let gitLab = BrowserSiteSearch(
     #expect(hint.stringValue == BrowserStrings.commandBarSiteSearchOffer("YouTube"))
     #expect(hint.frame.minX > view.queryField.frame.maxX)
     #expect(view.control(view.queryField, textView: editor, doCommandBy: #selector(NSResponder.insertTab(_:))))
-    try await siteSearchWait { !chip.isHidden }
+    // The field follows at once, before a quickly typed next key.
+    #expect(!chip.isHidden)
+    #expect(view.queryField.stringValue.isEmpty)
     view.layoutSubtreeIfNeeded()
     #expect(hint.isHidden)
     #expect(view.queryField.frame.minX > chip.frame.maxX)
@@ -240,8 +252,20 @@ private let gitLab = BrowserSiteSearch(
     #expect(view.control(view.queryField, textView: editor, doCommandBy: #selector(NSResponder.deleteBackward(_:))))
     #expect(model.activeSiteSearch == nil)
     #expect(model.query == "@y")
-    try await siteSearchWait { chip.isHidden }
+    #expect(chip.isHidden)
+    #expect(view.queryField.stringValue == "@y")
     #expect(view.queryField.placeholderString == BrowserStrings.commandBarPlaceholder)
+
+    // Tab and Delete leave text that an input method is composing alone.
+    let composing = NSTextView()
+    composing.setMarkedText(
+        "か",
+        selectedRange: NSRange(location: 1, length: 0),
+        replacementRange: NSRange(location: NSNotFound, length: 0)
+    )
+    #expect(composing.hasMarkedText())
+    #expect(!view.control(view.queryField, textView: composing, doCommandBy: #selector(NSResponder.insertTab(_:))))
+    #expect(model.activeSiteSearch == nil)
 
     // Escape leaves the scope first, then closes the bar.
     #expect(view.control(view.queryField, textView: editor, doCommandBy: #selector(NSResponder.insertTab(_:))))

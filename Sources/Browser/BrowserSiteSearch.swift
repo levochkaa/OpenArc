@@ -271,18 +271,20 @@ enum BrowserSiteSearchImport {
             name: name ?? keyword,
             keyword: keyword,
             urlTemplate: template,
-            colorHex: BrowserSiteSearch.arcDefaults.first { $0.sameSite(as: template) }?.colorHex
+            colorHex: BrowserSiteSearch.arcDefaults.first { $0.hasSameAddress(as: template) }?.colorHex
         )
         return search.isUsable ? search : nil
     }
 
-    /// Imported entries replace ones with the same address or keyword, so a
-    /// renamed keyword (`@y` for YouTube) does not leave the old one behind.
+    /// Imported entries replace existing ones with the same address or
+    /// keyword, so a renamed keyword (`@y` for YouTube) does not leave the old
+    /// one behind.
     static func merge(_ imported: [BrowserSiteSearch], into current: [BrowserSiteSearch]) -> [BrowserSiteSearch] {
         var result = current
         for search in imported {
-            if let index = result.firstIndex(where: {
-                $0.normalizedKeyword == search.normalizedKeyword || $0.sameSite(as: search.urlTemplate)
+            // Only entries that were there before the import are replaced.
+            if let index = result.prefix(current.count).firstIndex(where: {
+                $0.normalizedKeyword == search.normalizedKeyword || $0.hasSameAddress(as: search.urlTemplate)
             }) {
                 result[index].name = search.name
                 result[index].keyword = search.keyword
@@ -297,17 +299,24 @@ enum BrowserSiteSearchImport {
 }
 
 extension BrowserSiteSearch {
-    /// The same host without `www.` and the same path, ignoring the query.
-    func sameSite(as template: String) -> Bool {
+    /// The same search address: host without `www.`, path and query. Two
+    /// searches of one site with different queries (`!w` on DuckDuckGo) differ.
+    func hasSameAddress(as template: String) -> Bool {
         func key(_ string: String) -> String? {
-            guard let components = URLComponents(
-                string: string.replacingOccurrences(of: Self.queryPlaceholder, with: "q")
-            ), let host = components.host?.lowercased() else { return nil }
+            guard let components = URLComponents(string: string.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  let host = components.host?.lowercased() else { return nil }
             let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-            return bareHost + components.path.lowercased()
+            return bareHost + components.path.lowercased() + "?" + (components.query ?? "") + "#"
+                + (components.fragment ?? "")
         }
         guard let lhs = key(urlTemplate) else { return false }
         return lhs == key(template)
+    }
+
+    /// The same search under a new identity, so a restored built-in entry
+    /// never shares an ID with the edited one it came from.
+    var withNewID: BrowserSiteSearch {
+        BrowserSiteSearch(name: name, keyword: keyword, urlTemplate: urlTemplate, colorHex: colorHex)
     }
 }
 

@@ -382,10 +382,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let restore = BrowserActionButton(BrowserStrings.settingsSiteSearchRestoreDefaults) { [weak self] in
             guard let self else { return }
             let current = preferences.siteSearches
-            preferences.siteSearches = current + BrowserSiteSearch.arcDefaults.filter { site in
-                !current
-                    .contains { $0.normalizedKeyword == site.normalizedKeyword || $0.sameSite(as: site.urlTemplate) }
-            }
+            preferences.siteSearches = current + BrowserSiteSearch.arcDefaults
+                .filter { site in
+                    !current.contains {
+                        $0.normalizedKeyword == site.normalizedKeyword || $0.hasSameAddress(as: site.urlTemplate)
+                    }
+                }
+                .map(\.withNewID)
             refreshSiteSearches()
         }
         restore.setAccessibilityIdentifier("browser.settings.site-search.restore")

@@ -239,10 +239,15 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         switch selector {
         case #selector(NSResponder.insertTab(_:)):
             // Site search; otherwise Tab keeps its usual meaning.
-            return model.beginSiteSearch()
+            guard !textView.hasMarkedText(), model.beginSiteSearch() else { return false }
+            // The next key may arrive before the deferred refresh.
+            refresh()
+            return true
         case #selector(NSResponder.deleteBackward(_:)):
-            guard textView.string.isEmpty, model.activeSiteSearch != nil else { return false }
-            return model.endSiteSearch(restoringQuery: true)
+            guard !textView.hasMarkedText(), textView.string.isEmpty,
+                  model.endSiteSearch(restoringQuery: true) else { return false }
+            refresh()
+            return true
         case #selector(NSResponder.moveUp(_:)): model.moveSelection(by: -1)
             return true
         case #selector(NSResponder.moveDown(_:)): model.moveSelection(by: 1)
@@ -257,7 +262,9 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             model.submitSelection()
             return true
         case #selector(NSResponder.cancelOperation(_:)):
-            if !model.endSiteSearch(restoringQuery: false) {
+            if model.endSiteSearch(restoringQuery: false) {
+                refresh()
+            } else {
                 model.dismiss()
             }
             return true
