@@ -3025,7 +3025,7 @@ enum BrowserWindowMode: Equatable {
                 id: tab.syncID, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                 userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                 pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
-                pinnedSiblingRank: tab.pinnedSiblingRank
+                pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.title.isEmpty ? nil : tab.title
             )
         }
         for (tab, snapshot) in zip(logicalTabs, snapshots) {
@@ -3271,7 +3271,7 @@ enum BrowserWindowMode: Equatable {
                 id: engineID,
                 syncID: tabSnapshot.id ?? tabSyncIDProvider(),
                 spaceID: tabSnapshot.spaceID ?? selectedSpaceID ?? Self.defaultSpaceID,
-                title: "",
+                title: tabSnapshot.pageTitle ?? "",
                 userTitleOverride: tabSnapshot.userTitleOverride,
                 urlString: tabSnapshot.urlString,
                 pinnedURLString: placement == .spacePinned
@@ -3506,7 +3506,8 @@ enum BrowserWindowMode: Equatable {
                     spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID,
                     lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
-                    pinnedSiblingRank: tab.pinnedSiblingRank
+                    pinnedSiblingRank: tab.pinnedSiblingRank,
+                    pageTitle: tab.title.isEmpty ? nil : tab.title
                 )
             },
             splitGroups: splitGroupSessionSnapshots()
@@ -4363,7 +4364,8 @@ enum BrowserWindowMode: Equatable {
                 lastActivityTimestamp: now,
                 pinnedSiblingRank: destination == original.spaceID && folderID == original.pinnedFolderID
                     ? original.pinnedSiblingRank
-                    : nil
+                    : nil,
+                pageTitle: archived?.tab.pageTitle ?? original.pageTitle
             )
             let shouldSelect = request.snapshot.wasSelectedTab || selectedTabID == nil
             let outgoing = shouldSelect && canRecordExplicitViewingActivity && selectedTab?.creationState == .ready
@@ -4377,7 +4379,7 @@ enum BrowserWindowMode: Equatable {
                     id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                     userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: outgoingDate.timeIntervalSince1970,
-                    pinnedSiblingRank: tab.pinnedSiblingRank
+                    pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.pageTitle
                 )
             }
             let insertionIndex = min(max(request.snapshot.insertionIndex, 0), nextTabs.count)
@@ -4596,7 +4598,7 @@ extension BrowserChromeModel {
             let outgoingDate = outgoing.map { advancedActivityDate(after: $0.lastActivityAt) }
             let restored = BrowserTabSessionSnapshotTab(
                 id: syncID, urlString: entry.tab.urlString, userTitleOverride: entry.tab.userTitleOverride,
-                placement: .temporary, spaceID: destination, lastActivityTimestamp: now
+                placement: .temporary, spaceID: destination, lastActivityTimestamp: now, pageTitle: entry.tab.pageTitle
             )
             let nextTabs = snapshot.tabs.map { tab in
                 guard tab.id == outgoing?.syncID, let outgoingDate else { return tab }
@@ -4604,7 +4606,7 @@ extension BrowserChromeModel {
                     id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                     userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: outgoingDate.timeIntervalSince1970,
-                    pinnedSiblingRank: tab.pinnedSiblingRank
+                    pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.pageTitle
                 )
             } + [restored]
             let next = BrowserTabSessionSnapshot(

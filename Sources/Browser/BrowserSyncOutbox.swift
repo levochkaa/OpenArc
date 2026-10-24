@@ -317,7 +317,9 @@ enum BrowserSyncOutboxProjection {
                 ),
                 pinnedSiblingRank: data.placement == .spacePinned && previous?.spaceID == data.spaceID
                     ? previous?.pinnedSiblingRank
-                    : nil
+                    : nil,
+                // Titles are local; keep this device's last one.
+                pageTitle: previous?.pageTitle
             )
         }
         let localSpaces = Dictionary((local?.spaces ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

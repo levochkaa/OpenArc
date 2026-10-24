@@ -928,6 +928,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             );
             """)
         }
+        migrator.registerMigration("addTabPageTitles") { db in
+            // The last page title of each tab, local only, so unloaded tabs keep it.
+            try db.execute(sql: "ALTER TABLE browser_tabs ADD COLUMN page_title TEXT")
+        }
         return migrator
     }
 
@@ -1298,12 +1302,18 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try writeSyncBaseline(baseline, to: db)
     }
 
+    /// Earlier migrations read and write snapshots before the title column exists.
+    private func hasPageTitleColumn(_ db: Database) throws -> Bool {
+        try db.columns(in: "browser_tabs").contains { $0.name == "page_title" }
+    }
+
     private func readSnapshot(_ db: Database) throws -> BrowserTabSessionSnapshot? {
+        let pageTitleColumn = try hasPageTitleColumn(db) ? ", page_title" : ""
         let tabs = try Row.fetchAll(
             db,
             sql: """
             SELECT id, url_string, pinned_url_string, user_title_override, placement, space_id,
-                   pinned_folder_id, last_activity_timestamp, pinned_sibling_rank
+                   pinned_folder_id, last_activity_timestamp, pinned_sibling_rank\(pageTitleColumn)
             FROM browser_tabs
             ORDER BY position ASC
             """
@@ -1362,7 +1372,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     placement: BrowserTabPlacement(rawValue: row["placement"] as String) ?? .temporary,
                     spaceID: row["space_id"],
                     pinnedFolderID: row["pinned_folder_id"],
-                    lastActivityTimestamp: row["last_activity_timestamp"], pinnedSiblingRank: row["pinned_sibling_rank"]
+                    lastActivityTimestamp: row["last_activity_timestamp"], pinnedSiblingRank: row["pinned_sibling_rank"],
+                    pageTitle: pageTitleColumn.isEmpty ? nil : row["page_title"]
                 )
             },
             splitGroups: splitGroups.isEmpty ? nil : splitGroups
@@ -1598,7 +1609,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             )
         }
 
+        let writesPageTitles = try hasPageTitleColumn(db)
         for (index, tab) in snapshot.tabs.enumerated() {
+            let id = tab.id ?? UUID().uuidString
             try db.execute(
                 sql: """
                 INSERT INTO browser_tabs (
@@ -1608,7 +1621,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
-                    tab.id ?? UUID().uuidString,
+                    id,
                     tab.urlString,
                     tab.pinnedURLString,
                     tab.userTitleOverride,
@@ -1620,6 +1633,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     tab.pinnedSiblingRank,
                 ]
             )
+            if writesPageTitles, let pageTitle = tab.pageTitle {
+                try db.execute(sql: "UPDATE browser_tabs SET page_title = ? WHERE id = ?", arguments: [pageTitle, id])
+            }
         }
         try writeSplitGroups(for: snapshot, to: db)
     }

@@ -115,8 +115,10 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         spaceID: String? = nil,
         pinnedFolderID: String? = nil,
         lastActivityTimestamp: TimeInterval? = nil,
-        pinnedSiblingRank: Double? = nil
+        pinnedSiblingRank: Double? = nil,
+        pageTitle: String? = nil
     ) {
+        self.pageTitle = pageTitle
         self.id = id
         self.urlString = urlString
         self.pinnedURLString = pinnedURLString
@@ -144,6 +146,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         self.pinnedFolderID = try container.decodeIfPresent(String.self, forKey: .pinnedFolderID)
         self.pinnedSiblingRank = try container.decodeIfPresent(Double.self, forKey: .pinnedSiblingRank)
         self.lastActivityTimestamp = try container.decodeIfPresent(TimeInterval.self, forKey: .lastActivityTimestamp)
+        self.pageTitle = try container.decodeIfPresent(String.self, forKey: .pageTitle)
     }
 
     // MARK: Internal
@@ -157,6 +160,17 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
     let pinnedFolderID: String?
     let pinnedSiblingRank: Double?
     let lastActivityTimestamp: TimeInterval?
+    /// The page's last title, kept locally so an unloaded tab shows it. Sync
+    /// never sends it, and equality ignores it: it is display data that may lag
+    /// behind the page, while archive and sync checks compare stored tabs.
+    let pageTitle: String?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.urlString == rhs.urlString && lhs.pinnedURLString == rhs.pinnedURLString
+            && lhs.userTitleOverride == rhs.userTitleOverride && lhs.placement == rhs.placement
+            && lhs.spaceID == rhs.spaceID && lhs.pinnedFolderID == rhs.pinnedFolderID
+            && lhs.pinnedSiblingRank == rhs.pinnedSiblingRank && lhs.lastActivityTimestamp == rhs.lastActivityTimestamp
+    }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -169,6 +183,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         try container.encodeIfPresent(pinnedFolderID, forKey: .pinnedFolderID)
         try container.encodeIfPresent(pinnedSiblingRank, forKey: .pinnedSiblingRank)
         try container.encodeIfPresent(lastActivityTimestamp, forKey: .lastActivityTimestamp)
+        try container.encodeIfPresent(pageTitle, forKey: .pageTitle)
     }
 
     // MARK: Private
@@ -184,6 +199,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         case pinnedSiblingRank
         case isPinned
         case lastActivityTimestamp
+        case pageTitle
     }
 }
 
