@@ -252,6 +252,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.selectPreviousSpace()
     }
 
+    public func revealCurrentTab(_: Any?) {
+        activeChromeModel?.revealSelectedTabInSidebar()
+    }
+
     public func copySelectedTabLinkAsMarkdown(_: Any?) {
         activeChromeModel?.copySelectedTabLinkAsMarkdown()
     }
@@ -518,6 +522,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.isWebApp == false
         case #selector(selectNextSpace(_:)), #selector(selectPreviousSpace(_:)):
             return activeChromeModel.map { !$0.isWebApp && $0.supportsSpaces && $0.spaces.count > 1 } ?? false
+        case #selector(revealCurrentTab(_:)):
+            return activeChromeModel?.canRevealSelectedTab ?? false
         case #selector(copySelectedTabLinkAsMarkdown(_:)):
             return activeChromeModel?.canCopySelectedTabLink ?? false
         case #selector(viewDownloads(_:)):
@@ -1125,6 +1131,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .selectPreviousSpace),
             action: #selector(selectPreviousSpace(_:))
         ))
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .revealCurrentTab),
+            action: #selector(revealCurrentTab(_:))
+        ))
         // Go to Sidebar Item has no visible menu entry; the hidden
         // items keep their key equivalents ahead of the page.
         let sidebarItemCommands: [BrowserCommandID] = [
@@ -1707,6 +1717,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return true
         case .copyLinkAsMarkdown:
             return activeChromeModel?.copySelectedTabLinkAsMarkdown() ?? false
+        case .revealCurrentTab:
+            return activeChromeModel?.revealSelectedTabInSidebar() ?? false
         case .selectNextTab:
             guard activeChromeModel?.isWebApp == false else { return false }
             return activeChromeModel?.selectAdjacentSidebarItem(offset: 1) ?? false

@@ -159,6 +159,7 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     func refresh(animated: Bool = false) {
+        defer { revealSelectedRowIfRequested() }
         let snapshot = renderedSnapshot
         let selectedIndex = state.selectedSpaceIndex(in: snapshot) ?? 0
         let wantedPages = Set(snapshot.spaces
@@ -439,6 +440,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private let landingAnimation = BrowserNativeAnimation()
     private let dragPreviewAnimation = BrowserNativeAnimation()
     private var dragPreviewTargetSize: CGSize?
+    private lazy var handledRevealRequestID = state.model.sidebarRevealRequestID
     private var lastWindowDragPoint = CGPoint.zero
     private var reportedDragging = false
     private var highlightedDropRow: BrowserNativeSidebarRowNSView?
@@ -1131,6 +1133,22 @@ final class BrowserNativeSidebarNSView: NSView {
             return true
         }
         return state.snapshot.selectedSpaceID.flatMap { pages[$0]?.frames[itemKey(item)] } != nil
+    }
+
+    /// Scrolls the selected row into view once per Reveal Current Tab request,
+    /// after the refresh that may have opened its pinned section has laid out.
+    private func revealSelectedRowIfRequested() {
+        let request = state.model.sidebarRevealRequestID
+        guard request != handledRevealRequestID else { return }
+        handledRevealRequestID = request
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let selectedID = state.snapshot.selectedTabID else { return }
+            layoutSubtreeIfNeeded()
+            // A split's row belongs to whichever member comes first in the sidebar.
+            for id in state.snapshot.splitMembers(ofTabID: selectedID) ?? [selectedID] {
+                ensureDestinationVisible(.tab(id))
+            }
+        }
     }
 
     private func ensureDestinationVisible(_ item: BrowserSidebarItemID) {

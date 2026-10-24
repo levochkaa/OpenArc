@@ -838,6 +838,11 @@ enum BrowserStrings {
         comment: "View menu and command title that switches to the previous Space."
     )
 
+    static let menuRevealCurrentTab = NSLocalizedString(
+        "browser.menu.reveal_current_tab",
+        comment: "View menu and command title that scrolls the sidebar to the selected tab and shows it."
+    )
+
     static let menuCopyLinkAsMarkdown = NSLocalizedString(
         "browser.menu.copy_link_as_markdown",
         comment: "Edit menu and command title that copies the page as a Markdown link."

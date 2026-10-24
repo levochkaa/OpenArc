@@ -398,6 +398,14 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.leftArrow, modifiers: [.command, .option])
     )
 
+    /// Reveal Current Tab leaves out Control-Space, which macOS uses to switch
+    /// input sources, so it has no default here.
+    static let revealCurrentTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuRevealCurrentTab,
+        helpTitle: BrowserStrings.menuRevealCurrentTab,
+        shortcut: .unassigned
+    )
+
     /// Edit menu: Copy URL as Markdown is Option-Shift-Command-C.
     static let copyLinkAsMarkdown = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCopyLinkAsMarkdown,
@@ -512,6 +520,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case selectPreviousTab
     case selectNextSpace
     case selectPreviousSpace
+    case revealCurrentTab
     case copyLinkAsMarkdown
     /// Go to Sidebar Item N, counted from 0.
     case goToSidebarItem(Int)

@@ -67,6 +67,21 @@ import Testing
         #expect(f.model.selectedSpaceID == "t")
     }
 
+    @Test func revealCurrentTabOpensItsPinnedSectionAndAsksForTheSidebar() {
+        let f = SidebarDragFixture()
+        f.model.selectTab(id: f.id("a"))
+        f.model.toggleActiveSpacePinnedSectionCollapsed()
+        #expect(f.model.isActiveSpacePinnedSectionCollapsed)
+        var reveals = 0
+        f.model.onRevealSidebar = { reveals += 1 }
+        let request = f.model.sidebarRevealRequestID
+        #expect(BrowserCommands.revealCurrentTab.shortcut == .unassigned, "Control-Space switches input sources")
+        #expect(f.model.revealSelectedTabInSidebar())
+        #expect(!f.model.isActiveSpacePinnedSectionCollapsed)
+        #expect(reveals == 1)
+        #expect(f.model.sidebarRevealRequestID == request + 1)
+    }
+
     @Test func markdownLinksEscapeTheTitleAndURL() {
         #expect(BrowserMarkdownLink.text(title: "Example", urlString: "https://example.com") == "[Example](https://example.com)")
         #expect(

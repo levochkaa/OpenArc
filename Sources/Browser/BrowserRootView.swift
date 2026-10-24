@@ -51,6 +51,7 @@ final class BrowserRootView: NSView {
         }
         sidebar.onToggleSidebar = { [weak model] in model?.toggleSidebar() }
         model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
+        model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
         sidebar.sidebar.state.drag.pageSplitDropResolver = { [weak content] point, tabID in
             content?.splitPaneBars.pageSplitDrop(atWindowPoint: point, draggedTabID: tabID)
         }
@@ -509,6 +510,15 @@ final class BrowserRootView: NSView {
         sidebar.frame = windowGeometry.sidebarFrame
         sidebar.layoutSubtreeIfNeeded()
         isSidebarHoverOverlayPresented = true
+        refresh()
+    }
+
+    /// Reveal Current Tab shows a hidden sidebar as the hover overlay. It stays
+    /// until the pointer moves, then follows the pointer like a hover reveal.
+    private func revealSidebarFromKeyboard() {
+        guard !model.isSidebarVisible, !isSidebarHoverOverlayPresented else { return }
+        presentSidebarHoverOverlay()
+        isSidebarHoverOverlayPointerSyncSuspended = true
         refresh()
     }
 

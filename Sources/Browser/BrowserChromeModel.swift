@@ -343,6 +343,11 @@ enum BrowserWindowMode: Equatable {
     var onSplitPaneLayoutChange: (() -> Void)?
     /// UI-only: the window's downloads list, toggled by View Downloads.
     var onToggleDownloads: (() -> Void)?
+    /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.
+    var onRevealSidebar: (() -> Void)?
+    /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
+    /// sidebar scrolls the selected row into view.
+    @Published var sidebarRevealRequestID = 0
 
     @Published private(set) var selectedTabID: String? {
         willSet {
@@ -3586,6 +3591,8 @@ enum BrowserWindowMode: Equatable {
             false
         case .selectNextSpace, .selectPreviousSpace:
             supportsSpaces && spaces.count > 1
+        case .revealCurrentTab:
+            canRevealSelectedTab
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             sidebarItemTabIDs.count > commandID.sidebarItemIndex
@@ -5997,6 +6004,8 @@ extension BrowserCommandID {
             ["previous tab", "select previous tab"]
         case .selectNextTabAlternate, .selectPreviousTabAlternate:
             []
+        case .revealCurrentTab:
+            ["reveal current tab", "reveal tab", "show tab in sidebar", "find tab in sidebar"]
         case .selectNextSpace:
             ["next space", "switch space"]
         case .selectPreviousSpace:
@@ -6101,6 +6110,8 @@ extension BrowserCommandID {
             "arrow.up.square"
         case .selectNextTabAlternate:
             "arrow.down.square"
+        case .revealCurrentTab:
+            "scope"
         case .selectNextSpace:
             "arrow.right.square"
         case .selectPreviousSpace:

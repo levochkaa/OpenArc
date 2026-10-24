@@ -67,6 +67,21 @@ extension BrowserChromeModel {
         return true
     }
 
+    /// Reveal Current Tab: the selected row comes into view, with a
+    /// collapsed pinned section opened and a hidden sidebar shown over the page.
+    /// A tab in a collapsed folder already has its own row.
+    @discardableResult func revealSelectedTabInSidebar() -> Bool {
+        guard canRevealSelectedTab, let tab = tabs.first(where: { $0.id == selectedTabID }) else { return false }
+        if tab.placement == .spacePinned, supportsSpaces, isActiveSpacePinnedSectionCollapsed {
+            toggleActiveSpacePinnedSectionCollapsed()
+        }
+        onRevealSidebar?()
+        sidebarRevealRequestID &+= 1
+        return true
+    }
+
+    var canRevealSelectedTab: Bool { selectedTabID != nil && !isWebApp }
+
     /// View Downloads: opens or closes the downloads list of this window.
     @discardableResult func toggleDownloads() -> Bool {
         guard let onToggleDownloads else { return false }
