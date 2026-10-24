@@ -1,6 +1,6 @@
 # More than one window per profile
 
-Status: design only, not started. A New Window command (`⌘N`) would open another window of
+Status: decided against for now (2026-10-25); design kept for later. A New Window command (`⌘N`) would open another window of
 the same profile with the same sidebar: Spaces, pinned tabs, folders and
 Favorites are shared, while each window has its own selected Space and tab.
 TheBrowser keeps one window per profile; `openProfile` focuses the open one.
