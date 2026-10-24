@@ -406,6 +406,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case restoreLastClosedTab
     case stopLoading
     case developerTools
+    case viewSource
     case zoomIn
     case zoomOut
     case resetZoom
@@ -499,6 +500,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.stopLoading
         case .developerTools:
             BrowserCommands.developerTools
+        case .viewSource:
+            BrowserCommands.viewSource
         case .zoomIn:
             BrowserCommands.zoomIn
         case .zoomOut:
@@ -645,6 +648,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .stopLoading
         case .developerTools:
             .developerTools
+        case .viewSource:
+            .viewSource
         case .zoomIn:
             .zoomIn
         case .zoomOut:

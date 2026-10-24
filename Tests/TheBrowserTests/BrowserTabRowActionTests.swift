@@ -286,3 +286,17 @@ import Testing
             .hasPrefix("https://a.example/deep") == false)
     }
 }
+
+// MARK: - BrowserViewSourceTests
+
+@MainActor struct BrowserViewSourceTests {
+    @Test func viewSourceOpensThePagesSourceAsATab() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.canViewSource)
+        #expect(f.model.viewSourceOfSelectedTab())
+        #expect(f.driver.createdTabRequests.last?.urlString == "view-source:https://x.example")
+        #expect(BrowserCommandID.viewSource.defaultDescriptor.shortcut
+            == BrowserKeyboardShortcut("u", modifiers: [.command, .option]))
+    }
+}

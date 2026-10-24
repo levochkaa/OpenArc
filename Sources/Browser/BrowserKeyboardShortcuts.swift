@@ -149,6 +149,13 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("i", modifiers: [.command, .option])
     )
 
+    /// View Source is Option-Command-U.
+    static let viewSource = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuViewSource,
+        helpTitle: BrowserStrings.menuViewSource,
+        shortcut: BrowserKeyboardShortcut("u", modifiers: [.command, .option])
+    )
+
     /// View menu: Zoom In, Zoom Out and Zoom to Actual Size are
     /// Command-+, Command-- and Command-0; Command-= is the unshifted + key.
     static let zoomIn = BrowserCommandDescriptor(
@@ -611,6 +618,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case restoreLastClosedTab
     case stopLoading
     case developerTools
+    case viewSource
     case zoomIn
     case zoomOut
     case resetZoom
@@ -846,6 +854,8 @@ enum BrowserKeyboardShortcutBridge {
             "0"
         case 34:
             "i"
+        case 32:
+            "u"
         case 47:
             "."
         case 123:

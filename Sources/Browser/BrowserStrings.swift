@@ -828,6 +828,11 @@ enum BrowserStrings {
         comment: "View menu and command title that opens the page's developer tools."
     )
 
+    static let menuViewSource = NSLocalizedString(
+        "browser.menu.view_source",
+        comment: "View menu and command title that opens the page's HTML source in a new tab."
+    )
+
     static let settingsImportArcSidebar = NSLocalizedString(
         "browser.settings.import_arc_sidebar",
         comment: "Settings import button that adds Arc's Spaces, pinned tabs, folders and Favorites."

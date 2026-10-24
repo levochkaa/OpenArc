@@ -617,6 +617,12 @@ enum BrowserWindowMode: Equatable {
     var canZoomOut: Bool { canCreateTab && selectedTabID != nil && zoomPercent > (Self.zoomPercentages.first ?? 100) }
     var canResetZoom: Bool { canCreateTab && selectedTabID != nil && zoomPercent != 100 }
 
+    /// The selected web page's HTML, as Chromium's view-source page.
+    var canViewSource: Bool {
+        guard canShowDeveloperTools, let url = selectedTab.flatMap({ URL(string: $0.urlString) }) else { return false }
+        return ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+    }
+
     /// Peek for pinned tabs and Favorites, when turned on in Settings: a
     /// clicked link, or its redirect, to another site opens in Peek and the tab
     /// keeps its page. The site shown and the pinned site both count as the
@@ -2120,6 +2126,13 @@ enum BrowserWindowMode: Equatable {
     @discardableResult func showDeveloperTools() -> Bool {
         guard canShowDeveloperTools else { return false }
         tabDriver.showDevToolsForActiveTab()
+        return true
+    }
+
+    /// View Source opens the page's source as a new tab.
+    @discardableResult func viewSourceOfSelectedTab() -> Bool {
+        guard canViewSource, let selectedTab else { return false }
+        createTab(withURLString: "view-source:" + selectedTab.urlString)
         return true
     }
 
@@ -3872,6 +3885,8 @@ enum BrowserWindowMode: Equatable {
             canStopLoading
         case .developerTools:
             canShowDeveloperTools
+        case .viewSource:
+            canViewSource
         case .restoreLastClosedTab:
             canRestoreLastClosedTab
         case .newIncognitoWindow:
@@ -6367,6 +6382,8 @@ extension BrowserCommandID {
             ["stop", "stop loading"]
         case .developerTools:
             ["developer tools", "devtools", "inspect", "web inspector", "console"]
+        case .viewSource:
+            ["view source", "page source", "source code", "html"]
         case .newIncognitoWindow:
             ["incognito", "private window", "new private window"]
         case .newLittleWindow:
@@ -6511,6 +6528,8 @@ extension BrowserCommandID {
             "xmark"
         case .developerTools:
             "hammer"
+        case .viewSource:
+            "chevron.left.forwardslash.chevron.right"
         case .newIncognitoWindow:
             "eye.slash"
         case .newLittleWindow:
