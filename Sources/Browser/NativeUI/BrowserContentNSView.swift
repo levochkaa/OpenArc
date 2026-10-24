@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import QuartzCore
 
 // MARK: - BrowserContentClipping
@@ -69,6 +70,8 @@ final class BrowserContentNSView: NSView {
         failureTitle.setAccessibilityIdentifier("browser.content.creation-failure.title")
         failureMessage.setAccessibilityIdentifier("browser.content.creation-failure.message")
         retry.setAccessibilityIdentifier("browser.content.creation-failure.retry")
+        permissionPrompt.isHidden = true
+        addSubview(permissionPrompt)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("browser.content")
@@ -85,6 +88,7 @@ final class BrowserContentNSView: NSView {
     var onRetryTabCreation: () -> Void = {}
 
     private(set) var areaCapture: BrowserAreaCaptureOverlay?
+    let permissionPrompt = BrowserSitePermissionPromptView()
 
     override func layout() {
         super.layout()
@@ -114,6 +118,16 @@ final class BrowserContentNSView: NSView {
             width: retryWidth,
             height: 32
         )
+        if let request = permissionPrompt.request, !permissionPrompt.isHidden {
+            // Over the top of the asking page, or of its pane in a split.
+            let page = pageFrame(forTabID: request.tabID)
+            permissionPrompt.frame = NSRect(
+                x: page.minX + 12,
+                y: page.minY + 12,
+                width: min(BrowserSitePermissionPromptView.width, max(page.width - 24, 0)),
+                height: permissionPrompt.fittingHeight
+            )
+        }
     }
 
     func bindTabCreation(to model: BrowserChromeModel) {
@@ -124,6 +138,14 @@ final class BrowserContentNSView: NSView {
             self?.cancelAreaCaptureIfStale()
         }
         captureModel = model
+        permissionPrompt.onAnswer = { [weak model] id, allowed in
+            model?.answerSitePermissionRequest(id: id, allowed: allowed)
+        }
+        permissionPrompt.onDismiss = { [weak model] id in model?.dismissSitePermissionRequest(id: id) }
+        permissionObservation = model.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.refreshPermissionPrompt() }
+        refreshPermissionPrompt()
         model.onBeginAreaCapture = { [weak self, weak model] in
             guard let self, let model else { return false }
             let tabID = model.selectedTabID
@@ -206,6 +228,18 @@ final class BrowserContentNSView: NSView {
         } else {
             spinner.startAnimation(nil)
         }
+        refreshPermissionPrompt()
+        needsLayout = true
+    }
+
+    /// The window's prompt shows the request of a page on screen, if any.
+    func refreshPermissionPrompt() {
+        guard let request = captureModel?.visibleSitePermissionRequest, !viewport.isHidden else {
+            permissionPrompt.isHidden = true
+            return
+        }
+        permissionPrompt.update(request: request)
+        permissionPrompt.isHidden = false
         needsLayout = true
     }
 
@@ -213,6 +247,7 @@ final class BrowserContentNSView: NSView {
 
     private var areaCaptureTabID: String?
     private weak var captureModel: BrowserChromeModel?
+    private var permissionObservation: AnyCancellable?
 
     private let loading = BrowserNativeSurface()
     private let spinner = NSProgressIndicator()

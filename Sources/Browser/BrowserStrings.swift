@@ -303,6 +303,111 @@ enum BrowserStrings {
         comment: "Placeholder shown in the command bar search field."
     )
 
+    static let sitePermissionCamera = NSLocalizedString(
+        "browser.site_permission.camera",
+        comment: "Site permission prompt line: the page wants the camera."
+    )
+
+    static let sitePermissionMicrophone = NSLocalizedString(
+        "browser.site_permission.microphone",
+        comment: "Site permission prompt line: the page wants the microphone."
+    )
+
+    static let sitePermissionLocation = NSLocalizedString(
+        "browser.site_permission.location",
+        comment: "Site permission prompt line: the page wants the location."
+    )
+
+    static let sitePermissionNotifications = NSLocalizedString(
+        "browser.site_permission.notifications",
+        comment: "Site permission prompt line: the page wants to show notifications."
+    )
+
+    static let sitePermissionClipboard = NSLocalizedString(
+        "browser.site_permission.clipboard",
+        comment: "Site permission prompt line: the page wants to read the clipboard."
+    )
+
+    static let sitePermissionMIDI = NSLocalizedString(
+        "browser.site_permission.midi",
+        comment: "Site permission prompt line: the page wants full MIDI access."
+    )
+
+    static let sitePermissionWindowManagement = NSLocalizedString(
+        "browser.site_permission.window_management",
+        comment: "Site permission prompt line: the page wants to place windows."
+    )
+
+    static let sitePermissionLocalFonts = NSLocalizedString(
+        "browser.site_permission.local_fonts",
+        comment: "Site permission prompt line: the page wants the installed fonts."
+    )
+
+    static let sitePermissionIdleDetection = NSLocalizedString(
+        "browser.site_permission.idle_detection",
+        comment: "Site permission prompt line: the page wants idle detection."
+    )
+
+    static let sitePermissionStorageAccess = NSLocalizedString(
+        "browser.site_permission.storage_access",
+        comment: "Site permission prompt line: embedded content wants its cookies."
+    )
+
+    static let sitePermissionMultipleDownloads = NSLocalizedString(
+        "browser.site_permission.multiple_downloads",
+        comment: "Site permission prompt line: the page wants to download more than one file."
+    )
+
+    static let sitePermissionOther = NSLocalizedString(
+        "browser.site_permission.other",
+        comment: "Site permission prompt line for a request without its own name."
+    )
+
+    static let sitePermissionAllow = NSLocalizedString(
+        "browser.site_permission.allow",
+        comment: "Button that grants a site permission request."
+    )
+
+    static let sitePermissionBlock = NSLocalizedString(
+        "browser.site_permission.block",
+        comment: "Button that refuses a site permission request."
+    )
+
+    static let sitePermissionDismiss = NSLocalizedString(
+        "browser.site_permission.dismiss",
+        comment: "Accessibility label of the button that closes a site permission prompt without an answer."
+    )
+
+    static let settingsSitePermissionsTitle = NSLocalizedString(
+        "browser.settings.site_permissions",
+        comment: "Settings section of sites with a remembered camera or microphone answer."
+    )
+
+    static let settingsSitePermissionsDetail = NSLocalizedString(
+        "browser.settings.site_permissions.detail",
+        comment: "Settings detail of the remembered camera and microphone answers."
+    )
+
+    static let settingsSitePermissionsEmpty = NSLocalizedString(
+        "browser.settings.site_permissions.empty",
+        comment: "Settings text when no site has a remembered camera or microphone answer."
+    )
+
+    static let settingsSitePermissionsForget = NSLocalizedString(
+        "browser.settings.site_permissions.forget",
+        comment: "Button that forgets a site's camera and microphone answers."
+    )
+
+    static let sitePermissionAllowedState = NSLocalizedString(
+        "browser.settings.site_permissions.allowed",
+        comment: "A remembered site permission answer: allowed."
+    )
+
+    static let sitePermissionBlockedState = NSLocalizedString(
+        "browser.settings.site_permissions.blocked",
+        comment: "A remembered site permission answer: blocked."
+    )
+
     static let commandBarSiteSearchPlaceholder = NSLocalizedString(
         "browser.command_bar.site_search.placeholder",
         comment: "Placeholder of the command bar field while it searches one site."
@@ -2197,6 +2302,34 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front."
     )
+
+    static func sitePermissionPromptTitle(_ origin: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.site_permission.title",
+                comment: "Site permission prompt title before the list of requests. %@ is the site."
+            ),
+            origin
+        )
+    }
+
+    static func settingsSitePermissionsState(camera: Bool?, microphone: Bool?) -> String {
+        func state(_ format: String, _ allowed: Bool?) -> String? {
+            allowed.map { String(format: format, $0 ? sitePermissionAllowedState : sitePermissionBlockedState) }
+        }
+        return [
+            state(NSLocalizedString(
+                "browser.settings.site_permissions.camera_state",
+                comment: "A site's remembered camera answer in Settings. %@ is Allowed or Blocked."
+            ), camera),
+            state(NSLocalizedString(
+                "browser.settings.site_permissions.microphone_state",
+                comment: "A site's remembered microphone answer in Settings. %@ is Allowed or Blocked."
+            ), microphone),
+        ]
+            .compactMap(\.self)
+            .joined(separator: ", ")
+    }
 
     static func commandBarSiteSearchOffer(_ siteName: String) -> String {
         String(

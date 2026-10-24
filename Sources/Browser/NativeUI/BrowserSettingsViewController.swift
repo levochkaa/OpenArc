@@ -215,6 +215,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let linkRoutesBody = NSStackView()
     private var linkRouteFields = [UUID: NSTextField]()
     private let siteSearchesBody = NSStackView()
+    private let sitePermissionsBody = NSStackView()
+    private var shownSitePermissions = [BrowserSitePermissionDecision]()
     private var siteSearchFields = [(
         field: NSTextField,
         id: UUID,
@@ -231,6 +233,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     private func syncControls() {
         updateBindings.forEach { $0() }
+        refreshSitePermissions()
         for (profile, button) in profileDeleteButtons {
             let isClosed = canDeleteProfile(profile)
             button.isEnabled = profile.id != currentProfileID && !profile.isDefault && isClosed
@@ -364,6 +367,50 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
         ])
         refreshSiteSearches()
+    }
+
+    // MARK: Site permissions
+
+    /// This profile's remembered camera and microphone answers, one row per
+    /// site with Forget. Rebuilt only when the answers change.
+    private func refreshSitePermissions() {
+        guard pane == .content else { return }
+        let decisions = model.rememberedSitePermissions
+        guard decisions != shownSitePermissions || sitePermissionsBody.arrangedSubviews.isEmpty else { return }
+        shownSitePermissions = decisions
+        let detail = BrowserNativeControls.label(
+            BrowserStrings.settingsSitePermissionsDetail,
+            size: 12,
+            color: .secondaryLabelColor,
+            wraps: true
+        )
+        var origins = [String]()
+        for decision in decisions where !origins.contains(decision.origin) {
+            origins.append(decision.origin)
+        }
+        let rows = origins.map { origin -> NSView in
+            let kinds = decisions.filter { $0.origin == origin }
+            let state = BrowserStrings.settingsSitePermissionsState(
+                camera: kinds.last { $0.kind == .camera }?.allowed,
+                microphone: kinds.last { $0.kind == .microphone }?.allowed
+            )
+            let host = URLComponents(string: origin)?.host ?? origin
+            let forget = BrowserActionButton(BrowserStrings.settingsSitePermissionsForget) { [weak self] in
+                self?.model.forgetSitePermissions(forOrigin: origin)
+            }
+            forget.setAccessibilityIdentifier("browser.settings.site-permissions.forget")
+            return row(label: titleDetail(host, detail: state), control: forget)
+        }
+        let empty = BrowserNativeControls.label(
+            BrowserStrings.settingsSitePermissionsEmpty,
+            size: 12,
+            color: .secondaryLabelColor
+        )
+        replaceRows(
+            [BrowserNativeControls.padded(detail, vertical: 8)]
+                + (rows.isEmpty ? [BrowserNativeControls.padded(empty, vertical: 8)] : rows),
+            in: sitePermissionsBody
+        )
     }
 
     // MARK: Site search
@@ -853,6 +900,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.bookmarksBarVisible = $0 }
                 ),
             ]),
+            section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),
             section(
                 BrowserStrings.bookmarksImport,
                 rows: [arcSidebarImportRow()] + BrowserBookmarkImportSource.allCases.map { source in

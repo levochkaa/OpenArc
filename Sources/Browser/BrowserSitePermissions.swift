@@ -1,0 +1,169 @@
+import Foundation
+@preconcurrency import UserNotifications
+
+// MARK: - BrowserSitePermissionKind
+
+/// What a page asks for, as Chrome names it in its prompts.
+enum BrowserSitePermissionKind: String, Codable, CaseIterable, Sendable {
+    case camera
+    case microphone
+    case location
+    case notifications
+    case clipboard
+    case midi
+    case windowManagement
+    case localFonts
+    case idleDetection
+    case storageAccess
+    case multipleDownloads
+    case other
+
+    // MARK: Internal
+
+    /// Camera and microphone: Alloy-style CEF leaves them to the app, so
+    /// TheBrowser remembers the answer. Chromium remembers the others.
+    var isMediaCapture: Bool {
+        self == .camera || self == .microphone
+    }
+
+    var title: String {
+        switch self {
+        case .camera: BrowserStrings.sitePermissionCamera
+        case .microphone: BrowserStrings.sitePermissionMicrophone
+        case .location: BrowserStrings.sitePermissionLocation
+        case .notifications: BrowserStrings.sitePermissionNotifications
+        case .clipboard: BrowserStrings.sitePermissionClipboard
+        case .midi: BrowserStrings.sitePermissionMIDI
+        case .windowManagement: BrowserStrings.sitePermissionWindowManagement
+        case .localFonts: BrowserStrings.sitePermissionLocalFonts
+        case .idleDetection: BrowserStrings.sitePermissionIdleDetection
+        case .storageAccess: BrowserStrings.sitePermissionStorageAccess
+        case .multipleDownloads: BrowserStrings.sitePermissionMultipleDownloads
+        case .other: BrowserStrings.sitePermissionOther
+        }
+    }
+
+    var systemImageName: String {
+        switch self {
+        case .camera: "video"
+        case .microphone: "mic"
+        case .location: "location"
+        case .notifications: "bell"
+        case .clipboard: "doc.on.clipboard"
+        case .midi: "pianokeys"
+        case .windowManagement: "macwindow.on.rectangle"
+        case .localFonts: "textformat"
+        case .idleDetection: "moon.zzz"
+        case .storageAccess: "externaldrive"
+        case .multipleDownloads: "square.and.arrow.down.on.square"
+        case .other: "hand.raised"
+        }
+    }
+}
+
+// MARK: - BrowserSitePermissionRequest
+
+/// A page's pending request, identified by the engine's request number.
+struct BrowserSitePermissionRequest: Identifiable, Equatable, Sendable {
+    let id: Int
+    let tabID: String
+    let origin: String
+    let kinds: [BrowserSitePermissionKind]
+    /// Camera or microphone through CEF's media access callback, which
+    /// TheBrowser answers from its remembered decisions.
+    let isMediaAccess: Bool
+
+    /// The origin without its scheme, as prompts show it.
+    var displayOrigin: String {
+        guard let components = URLComponents(string: origin), let host = components.host else { return origin }
+        return components.port.map { "\(host):\($0)" } ?? host
+    }
+
+    /// The origin of a page address, for comparing it with a request's.
+    static func origin(ofURLString urlString: String) -> String? {
+        guard let components = URLComponents(string: urlString), let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased(), !host.isEmpty
+        else { return nil }
+        let defaultPort = scheme == "https" ? 443 : scheme == "http" ? 80 : nil
+        let port = components.port.flatMap { $0 == defaultPort ? nil : $0 }
+        return "\(scheme)://\(host)" + (port.map { ":\($0)" } ?? "")
+    }
+}
+
+// MARK: - BrowserSitePermissionDecision
+
+/// A remembered camera or microphone answer for one origin of one profile.
+struct BrowserSitePermissionDecision: Codable, Equatable, Sendable {
+    let profileID: String
+    let origin: String
+    let kind: BrowserSitePermissionKind
+    let allowed: Bool
+
+    /// The remembered answer: false when a requested kind is blocked, true
+    /// when every one is allowed, nil while one has no answer. CEF grants a
+    /// camera and microphone request whole or not at all.
+    static func remembered(
+        for request: BrowserSitePermissionRequest,
+        profileID: String,
+        in decisions: [BrowserSitePermissionDecision]
+    ) -> Bool? {
+        guard let origin = BrowserSitePermissionRequest.origin(ofURLString: request.origin) else { return nil }
+        var isComplete = true
+        for kind in request.kinds {
+            guard let decision = decisions.last(where: {
+                $0.profileID == profileID && $0.origin == origin && $0.kind == kind
+            }) else {
+                isComplete = false
+                continue
+            }
+            if !decision.allowed {
+                return false
+            }
+        }
+        return isComplete ? true : nil
+    }
+
+    /// `decisions` with the answer to every kind of the request replacing
+    /// earlier answers for the same origin.
+    static func recording(
+        _ allowed: Bool,
+        for request: BrowserSitePermissionRequest,
+        profileID: String,
+        in decisions: [BrowserSitePermissionDecision]
+    ) -> [BrowserSitePermissionDecision] {
+        guard let origin = BrowserSitePermissionRequest.origin(ofURLString: request.origin) else { return decisions }
+        let kinds = Set(request.kinds.filter(\.isMediaCapture))
+        return decisions.filter { !($0.profileID == profileID && $0.origin == origin && kinds.contains($0.kind)) }
+            + request.kinds.filter(\.isMediaCapture).map {
+                BrowserSitePermissionDecision(profileID: profileID, origin: origin, kind: $0, allowed: allowed)
+            }
+    }
+}
+
+// MARK: - BrowserNotificationAuthorization
+
+/// macOS's own permission for TheBrowser to show notifications, asked once
+/// when the first site is allowed to.
+enum BrowserNotificationAuthorization {
+    static func request(completion: @escaping @Sendable (Bool) -> Void) {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            switch settings.authorizationStatus {
+            case .authorized, .provisional:
+                completion(true)
+            case .denied:
+                completion(false)
+            case .notDetermined:
+                do {
+                    let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+                    completion(granted)
+                } catch {
+                    completion(false)
+                }
+            @unknown default:
+                completion(false)
+            }
+        }
+    }
+}

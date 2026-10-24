@@ -58,6 +58,10 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     var onOpenPeekInSplitView: ((String) -> Void)? { get set }
     /// Open In from a card or small window: the URL and the chosen Space.
     var onOpenPeekInSpace: ((String, String) -> Void)? { get set }
+    /// A page asks for permissions; the answer goes to resolveSitePermissionRequest.
+    var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)? { get set }
+    /// The engine withdrew a request because its page navigated or closed.
+    var onSitePermissionRequestDismissed: ((Int) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     /// True admits another attempt for a synchronously refused creation.
@@ -108,6 +112,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func zoomLevel(forTabWithID tabID: String) -> Double?
     /// Mute Tab. The engine keeps the state for a tab whose page attaches later.
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String)
+    /// true allows, false blocks, nil dismisses the request without an answer.
+    func resolveSitePermissionRequest(_ id: Int, allowed: Bool?)
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool)
     func stopFindingInActiveTab(clearSelection: Bool)
     /// Admits a manual close. Completion carries the same nonce; only `.closed`

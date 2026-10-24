@@ -60,6 +60,9 @@ import Foundation
     var onOpenPeekInSpace: ((String, String) -> Void)?
     var onOpenPeekInSplitView: ((String) -> Void)?
     var onPeekClosedByUser: ((String, Bool) -> Void)?
+    var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
+    var onSitePermissionRequestDismissed: ((Int) -> Void)?
+    private(set) var sitePermissionResolutions = [(id: Int, allowed: Bool?)]()
     private(set) var peekURLs = [String]()
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
@@ -292,6 +295,10 @@ import Foundation
 
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String) {
         audioMuteRequests.append((tabID, muted))
+    }
+
+    func resolveSitePermissionRequest(_ id: Int, allowed: Bool?) {
+        sitePermissionResolutions.append((id, allowed))
     }
 
     func findInActiveTab(text: String, forward: Bool, matchCase: Bool, findNext: Bool) {

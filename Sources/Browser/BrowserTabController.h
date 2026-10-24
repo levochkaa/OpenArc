@@ -104,6 +104,19 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)browserTabController:(BrowserTabController *)controller
     didResizeSplitWithTabIDs:(NSArray<NSString *> *)tabIDs
                    fractions:(NSArray<NSNumber *> *)fractions;
+// A tab's page asks for permissions: `kinds` are BrowserSitePermissionKind raw
+// values. `mediaAccess` marks camera and microphone, which CEF leaves to the
+// app; Chromium remembers the answers to the others. Answer with
+// resolveSitePermissionRequest:allowed:.
+- (void)browserTabController:(BrowserTabController *)controller
+    didRequestSitePermission:(NSInteger)requestID
+                forTabWithID:(NSString *)tabID
+                      origin:(NSString *)origin
+                       kinds:(NSArray<NSString *> *)kinds
+                 mediaAccess:(BOOL)mediaAccess;
+// The engine withdrew a request: its page navigated or closed.
+- (void)browserTabController:(BrowserTabController *)controller
+    didDismissSitePermissionRequest:(NSInteger)requestID;
 
 @end
 
@@ -163,6 +176,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)closeAllPeeks;
 - (void)setPictureInPicture:(BOOL)active forTabWithID:(NSString *)tabID;
 - (void)setAudioMuted:(BOOL)muted forTabWithID:(NSString *)tabID;
+/// Answers a site permission request: YES allows, NO blocks and nil
+/// dismisses it without an answer. Unknown or withdrawn requests are ignored.
+- (void)resolveSitePermissionRequest:(NSInteger)requestID allowed:(nullable NSNumber *)allowed
+    NS_SWIFT_NAME(resolveSitePermissionRequest(_:allowed:));
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
 - (void)captureFullPageActiveTabToPasteboard;
 /// Sends a Cocoa action such as `copyToFindPboard:` to the active page's

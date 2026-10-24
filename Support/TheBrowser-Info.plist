@@ -20,6 +20,14 @@
   <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
   <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Websites you allow can use your camera.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Websites you allow can use your microphone.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>Websites you allow can know your location.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Websites you allow can know your location.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

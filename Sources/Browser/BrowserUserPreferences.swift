@@ -220,6 +220,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
             .flatMap { try? JSONDecoder().decode([BrowserLinkRoute].self, from: $0) } ?? []
         self.siteSearches = userDefaults.data(forKey: Key.siteSearches)
             .flatMap { try? JSONDecoder().decode([BrowserSiteSearch].self, from: $0) } ?? BrowserSiteSearch.arcDefaults
+        self.sitePermissionDecisions = userDefaults.data(forKey: Key.sitePermissionDecisions)
+            .flatMap { try? JSONDecoder().decode([BrowserSitePermissionDecision].self, from: $0) } ?? []
     }
 
     // MARK: Internal
@@ -344,6 +346,13 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(try? JSONEncoder().encode(siteSearches), forKey: Key.siteSearches) }
     }
 
+    /// Remembered camera and microphone answers of every profile.
+    @Published var sitePermissionDecisions: [BrowserSitePermissionDecision] {
+        didSet {
+            userDefaults.set(try? JSONEncoder().encode(sitePermissionDecisions), forKey: Key.sitePermissionDecisions)
+        }
+    }
+
     /// Download location; nil saves to the user's Downloads folder.
     @Published var downloadDirectoryPath: String? {
         didSet { userDefaults.set(downloadDirectoryPath, forKey: Self.downloadDirectoryKey) }
@@ -372,6 +381,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let littleArcEnabled = "browser.settings.littleArcEnabled"
         static let linkRoutes = "browser.settings.linkRoutes"
         static let siteSearches = "browser.settings.siteSearches"
+        static let sitePermissionDecisions = "browser.settings.sitePermissionDecisions"
         static let peeksLinksToOtherSites = "browser.settings.peeksLinksToOtherSites"
         static let folderPreviewsEnabled = "browser.settings.folderPreviewsEnabled"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"

@@ -2479,8 +2479,59 @@ void ContinuePermissionRequestOnUI(
           base::BindOnce(&ContinuePermissionRequest, callback, result)));
 }
 
-bool IsNotificationsOnlyRequest(uint32_t requestedPermissions) {
-  return requestedPermissions == CEF_PERMISSION_TYPE_NOTIFICATIONS;
+constexpr uint32_t kDeviceMediaPermissions =
+    CEF_MEDIA_PERMISSION_DEVICE_AUDIO_CAPTURE | CEF_MEDIA_PERMISSION_DEVICE_VIDEO_CAPTURE;
+
+/// A site permission request waiting for the user: a camera and microphone
+/// request from getUserMedia, or one of Chromium's permission prompts.
+struct PendingSitePermission {
+  std::string tabID;
+  CefRefPtr<CefMediaAccessCallback> mediaCallback;
+  uint32_t mediaPermissions = 0;
+  CefRefPtr<CefPermissionPromptCallback> promptCallback;
+  uint64_t promptID = 0;
+};
+
+/// BrowserSitePermissionKind raw values for getUserMedia devices.
+NSArray<NSString *> *SitePermissionKindsForMedia(uint32_t permissions) {
+  NSMutableArray<NSString *> *kinds = [NSMutableArray array];
+  if (permissions & CEF_MEDIA_PERMISSION_DEVICE_VIDEO_CAPTURE) {
+    [kinds addObject:@"camera"];
+  }
+  if (permissions & CEF_MEDIA_PERMISSION_DEVICE_AUDIO_CAPTURE) {
+    [kinds addObject:@"microphone"];
+  }
+  return kinds;
+}
+
+/// BrowserSitePermissionKind raw values for a Chromium permission prompt, in
+/// prompt order; types without a name of their own share "other".
+NSArray<NSString *> *SitePermissionKindsForPrompt(uint32_t permissions) {
+  static const std::pair<uint32_t, NSString *> kKinds[] = {
+      {CEF_PERMISSION_TYPE_CAMERA_STREAM | CEF_PERMISSION_TYPE_CAMERA_PAN_TILT_ZOOM, @"camera"},
+      {CEF_PERMISSION_TYPE_MIC_STREAM, @"microphone"},
+      {CEF_PERMISSION_TYPE_GEOLOCATION, @"location"},
+      {CEF_PERMISSION_TYPE_NOTIFICATIONS, @"notifications"},
+      {CEF_PERMISSION_TYPE_CLIPBOARD, @"clipboard"},
+      {CEF_PERMISSION_TYPE_MIDI_SYSEX, @"midi"},
+      {CEF_PERMISSION_TYPE_WINDOW_MANAGEMENT, @"windowManagement"},
+      {CEF_PERMISSION_TYPE_LOCAL_FONTS, @"localFonts"},
+      {CEF_PERMISSION_TYPE_IDLE_DETECTION, @"idleDetection"},
+      {CEF_PERMISSION_TYPE_STORAGE_ACCESS | CEF_PERMISSION_TYPE_TOP_LEVEL_STORAGE_ACCESS, @"storageAccess"},
+      {CEF_PERMISSION_TYPE_MULTIPLE_DOWNLOADS, @"multipleDownloads"},
+  };
+  NSMutableArray<NSString *> *kinds = [NSMutableArray array];
+  uint32_t named = 0;
+  for (const auto &kind : kKinds) {
+    named |= kind.first;
+    if (permissions & kind.first) {
+      [kinds addObject:kind.second];
+    }
+  }
+  if (permissions & ~named) {
+    [kinds addObject:@"other"];
+  }
+  return kinds;
 }
 
 std::string URLPartToString(const cef_string_t &value) {
@@ -2748,6 +2799,15 @@ class BrowserTabClient final : public CefClient,
       const CefString &requesting_origin,
       uint32_t requested_permissions,
       CefRefPtr<CefPermissionPromptCallback> callback) override;
+  void OnDismissPermissionPrompt(CefRefPtr<CefBrowser> browser,
+                                 uint64_t prompt_id,
+                                 cef_permission_request_result_t result) override;
+  bool OnRequestMediaAccessPermission(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefFrame> frame,
+      const CefString &requesting_origin,
+      uint32_t requested_permissions,
+      CefRefPtr<CefMediaAccessCallback> callback) override;
 
  private:
   __weak BrowserTabController *controller_;
@@ -2920,6 +2980,13 @@ struct TabRecord {
 - (void)updateBrowserVisibility;
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
 - (void)handleFocusForTabID:(NSString *)tabID;
+- (void)requestSitePermissionForTabID:(NSString *)tabID
+                               origin:(NSString *)origin
+                                kinds:(NSArray<NSString *> *)kinds
+                              pending:(PendingSitePermission)pending;
+- (void)dismissSitePermissionPromptWithID:(uint64_t)promptID;
+- (void)cancelSitePermissionsForTabID:(NSString *)tabID;
+- (void)notifySitePermissionDismissed:(NSInteger)requestID;
 
 @end
 
@@ -3091,6 +3158,8 @@ void WatchClickModifiers();
   NSMutableDictionary<NSNumber *, BrowserPeekSession *> *_peekSessions;
   int _nextPeekSessionID;
   int _peekCardSessionID;
+  std::map<int, PendingSitePermission> _sitePermissions;
+  int _nextSitePermissionID;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
@@ -4070,6 +4139,83 @@ void WatchClickModifiers();
   SetBrowserAudioMutedOnUI(it->second.browser, muted);
 }
 
+- (void)requestSitePermissionForTabID:(NSString *)tabID
+                               origin:(NSString *)origin
+                                kinds:(NSArray<NSString *> *)kinds
+                              pending:(PendingSitePermission)pending {
+  const int requestID = ++_nextSitePermissionID;
+  const BOOL mediaAccess = pending.mediaCallback != nullptr;
+  pending.tabID = ToStdString(tabID);
+  _sitePermissions[requestID] = pending;
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  SEL selector = @selector(browserTabController:didRequestSitePermission:forTabWithID:origin:kinds:mediaAccess:);
+  if (![delegate respondsToSelector:selector]) {
+    [self resolveSitePermissionRequest:requestID allowed:nil];
+    return;
+  }
+  [delegate browserTabController:self
+        didRequestSitePermission:requestID
+                    forTabWithID:tabID
+                          origin:origin
+                           kinds:kinds
+                     mediaAccess:mediaAccess];
+}
+
+- (void)resolveSitePermissionRequest:(NSInteger)requestID allowed:(NSNumber *)allowed {
+  auto it = _sitePermissions.find(static_cast<int>(requestID));
+  if (it == _sitePermissions.end()) {
+    return;
+  }
+  PendingSitePermission pending = it->second;
+  _sitePermissions.erase(it);
+  if (pending.mediaCallback) {
+    // getUserMedia takes the devices it asked for or nothing.
+    if (allowed.boolValue) {
+      pending.mediaCallback->Continue(pending.mediaPermissions);
+    } else {
+      pending.mediaCallback->Cancel();
+    }
+  } else if (pending.promptCallback) {
+    ContinuePermissionRequestOnUI(pending.promptCallback,
+                                  allowed == nil      ? CEF_PERMISSION_RESULT_IGNORE
+                                  : allowed.boolValue ? CEF_PERMISSION_RESULT_ACCEPT
+                                                      : CEF_PERMISSION_RESULT_DENY);
+  }
+}
+
+- (void)dismissSitePermissionPromptWithID:(uint64_t)promptID {
+  for (auto it = _sitePermissions.begin(); it != _sitePermissions.end(); ++it) {
+    if (it->second.promptCallback && it->second.promptID == promptID) {
+      const NSInteger requestID = it->first;
+      _sitePermissions.erase(it);
+      [self notifySitePermissionDismissed:requestID];
+      return;
+    }
+  }
+}
+
+/// A closing page withdraws its requests.
+- (void)cancelSitePermissionsForTabID:(NSString *)tabID {
+  const std::string tabKey = ToStdString(tabID);
+  std::vector<int> requestIDs;
+  for (const auto &entry : _sitePermissions) {
+    if (entry.second.tabID == tabKey) {
+      requestIDs.push_back(entry.first);
+    }
+  }
+  for (int requestID : requestIDs) {
+    [self resolveSitePermissionRequest:requestID allowed:nil];
+    [self notifySitePermissionDismissed:requestID];
+  }
+}
+
+- (void)notifySitePermissionDismissed:(NSInteger)requestID {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didDismissSitePermissionRequest:)]) {
+    [delegate browserTabController:self didDismissSitePermissionRequest:requestID];
+  }
+}
+
 - (double)zoomLevelForTabWithID:(NSString *)tabID {
   auto it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end() || !it->second.browser || !CefCurrentlyOn(TID_UI)) {
@@ -4365,6 +4511,7 @@ void WatchClickModifiers();
   const BOOL wasActive = [_activeTabID isEqualToString:tabID];
   _tabRecords.erase(it);
   [confirmation cancel];
+  [self cancelSitePermissionsForTabID:tabID];
 
   if (wasActive) {
     if (_tabRecords.empty()) {
@@ -4959,6 +5106,8 @@ bool BrowserTabClient::OnBeforePopup(
                               targetDisposition:target_disposition];
 }
 
+/// Chromium's permission prompts (location, notifications, clipboard and
+/// others) go to the window's prompt; Chromium remembers the answer.
 bool BrowserTabClient::OnShowPermissionPrompt(
     CefRefPtr<CefBrowser> browser,
     uint64_t prompt_id,
@@ -4966,18 +5115,50 @@ bool BrowserTabClient::OnShowPermissionPrompt(
     uint32_t requested_permissions,
     CefRefPtr<CefPermissionPromptCallback> callback) {
   CEF_REQUIRE_UI_THREAD();
-
-  if (!IsNotificationsOnlyRequest(requested_permissions)) {
+  BrowserTabController *controller = controller_;
+  NSArray<NSString *> *kinds = SitePermissionKindsForPrompt(requested_permissions);
+  if (controller == nil || kinds.count == 0) {
     return false;
   }
+  PendingSitePermission pending;
+  pending.promptCallback = callback;
+  pending.promptID = prompt_id;
+  [controller requestSitePermissionForTabID:ToNSString(tab_id_)
+                                     origin:ToNSString(requesting_origin.ToString())
+                                      kinds:kinds
+                                    pending:pending];
+  return true;
+}
 
-  NSString *origin =
-      [NSString stringWithUTF8String:requesting_origin.ToString().c_str()];
-  BrowserRequestNotificationPermission(origin, ^(BOOL granted) {
-    ContinuePermissionRequestOnUI(callback,
-                                  granted ? CEF_PERMISSION_RESULT_ACCEPT
-                                          : CEF_PERMISSION_RESULT_DENY);
-  });
+void BrowserTabClient::OnDismissPermissionPrompt(CefRefPtr<CefBrowser>,
+                                                 uint64_t prompt_id,
+                                                 cef_permission_request_result_t) {
+  CEF_REQUIRE_UI_THREAD();
+  [controller_ dismissSitePermissionPromptWithID:prompt_id];
+}
+
+/// Camera and microphone from getUserMedia. Alloy-style CEF denies them by
+/// default, so they go to the window's prompt. Screen sharing needs a source
+/// picker TheBrowser does not have and keeps the default denial.
+bool BrowserTabClient::OnRequestMediaAccessPermission(
+    CefRefPtr<CefBrowser>,
+    CefRefPtr<CefFrame>,
+    const CefString &requesting_origin,
+    uint32_t requested_permissions,
+    CefRefPtr<CefMediaAccessCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  BrowserTabController *controller = controller_;
+  if (controller == nil || requested_permissions == 0 ||
+      (requested_permissions & ~kDeviceMediaPermissions) != 0) {
+    return false;
+  }
+  PendingSitePermission pending;
+  pending.mediaCallback = callback;
+  pending.mediaPermissions = requested_permissions;
+  [controller requestSitePermissionForTabID:ToNSString(tab_id_)
+                                     origin:ToNSString(requesting_origin.ToString())
+                                      kinds:SitePermissionKindsForMedia(requested_permissions)
+                                    pending:pending];
   return true;
 }
 

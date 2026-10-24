@@ -162,6 +162,12 @@ enum BrowserWindowMode: Equatable {
             guard let self, let url = URL(string: urlString), !openURLInSplitView(url) else { return }
             openURLInNewTab(url)
         }
+        tabDriver.onSitePermissionRequested = { [weak self] request in
+            self?.handleSitePermissionRequest(request)
+        }
+        tabDriver.onSitePermissionRequestDismissed = { [weak self] id in
+            self?.handleSitePermissionRequestDismissed(id: id)
+        }
         tabDriver.onOpenPeekInSpace = { [weak self] urlString, spaceID in
             guard let self, let url = URL(string: urlString), !openURL(url, inSpaceWithID: spaceID) else { return }
             openURLInNewTab(url)
@@ -361,6 +367,12 @@ enum BrowserWindowMode: Equatable {
     /// Muted tabs by sync ID, for this run only; a reopened dormant tab keeps it.
     /// Only `setTabMuted(_:id:)` writes it.
     @Published var mutedTabSyncIDs = Set<String>()
+    /// Pages' pending permission requests in arrival order. Only the methods
+    /// in `BrowserChromeModel+SitePermissions.swift` write it.
+    @Published var sitePermissionRequests = [BrowserSitePermissionRequest]()
+    /// Asks macOS to let TheBrowser show notifications; tests replace it.
+    var requestSystemNotificationAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void =
+        BrowserNotificationAuthorization.request
     /// UI-only: the window's site control center, opened by Open Extensions.
     var onOpenExtensions: (() -> Void)?
     /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.
@@ -1995,6 +2007,11 @@ enum BrowserWindowMode: Equatable {
     }
 
     /// Mute Tab / Unmute Tab.
+    /// The engine side of an answer to a site permission request.
+    func resolveSitePermissionInEngine(_ id: Int, allowed: Bool?) {
+        tabDriver.resolveSitePermissionRequest(id, allowed: allowed)
+    }
+
     func setTabMuted(_ muted: Bool, id: String) {
         guard let tab = tabs.first(where: { $0.id == id }),
               mutedTabSyncIDs.contains(tab.syncID) != muted else { return }
@@ -5449,6 +5466,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             tabs[index].urlString = urlString
             tabs[index].lastActivityAt = advancedActivityDate(after: tabs[index].lastActivityAt)
             didChangePersistentURL = true
+            withdrawSitePermissionRequests(forTabID: id, urlString: urlString)
             if id == selectedTabID {
                 invalidateSelectedTabWebAppInstallMetadata()
                 // Another site may have its own zoom.

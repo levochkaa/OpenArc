@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-@preconcurrency import UserNotifications
 
 @objcMembers public final class BrowserPermissionController: NSObject {
     // MARK: Public
@@ -46,24 +45,6 @@ import Foundation
     }
 
     private static func requestSystemNotificationAuthorization(completion: @escaping @Sendable (Bool) -> Void) {
-        Task {
-            let center = UNUserNotificationCenter.current()
-            let settings = await center.notificationSettings()
-            switch settings.authorizationStatus {
-            case .authorized, .provisional:
-                completion(true)
-            case .denied:
-                completion(false)
-            case .notDetermined:
-                do {
-                    let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
-                    completion(granted)
-                } catch {
-                    completion(false)
-                }
-            @unknown default:
-                completion(false)
-            }
-        }
+        BrowserNotificationAuthorization.request(completion: completion)
     }
 }

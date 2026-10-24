@@ -58,6 +58,8 @@ import Foundation
     var onOpenPeekInSpace: ((String, String) -> Void)?
     var onOpenPeekInSplitView: ((String) -> Void)?
     var onPeekClosedByUser: ((String, Bool) -> Void)?
+    var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
+    var onSitePermissionRequestDismissed: ((Int) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -187,6 +189,10 @@ import Foundation
         }
     }
 
+    func resolveSitePermissionRequest(_ id: Int, allowed: Bool?) {
+        controller.resolveSitePermissionRequest(id, allowed: allowed.map { NSNumber(value: $0) })
+    }
+
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String) {
         controller.setAudioMuted(muted, forTabWithID: tabID)
     }
@@ -309,6 +315,28 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.onSplitResized?(tabIDs, sizes)
         }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didRequestSitePermission requestID: Int,
+        forTabWithID tabID: String,
+        origin: String,
+        kinds: [String],
+        mediaAccess: Bool
+    ) {
+        let request = BrowserSitePermissionRequest(
+            id: requestID,
+            tabID: tabID,
+            origin: origin,
+            kinds: kinds.compactMap(BrowserSitePermissionKind.init(rawValue:)),
+            isMediaAccess: mediaAccess
+        )
+        MainActor.assumeIsolated { onSitePermissionRequested?(request) }
+    }
+
+    nonisolated func browserTabController(_: BrowserTabController, didDismissSitePermissionRequest requestID: Int) {
+        MainActor.assumeIsolated { onSitePermissionRequestDismissed?(requestID) }
     }
 
     nonisolated func browserTabController(
