@@ -11,3 +11,6 @@ Website/node_modules/
 TheBrowser.xcodeproj/
 ThirdParty/cef/*
 !ThirdParty/cef/.gitkeep
+
+# Local notes, kept out of the repository
+research/
