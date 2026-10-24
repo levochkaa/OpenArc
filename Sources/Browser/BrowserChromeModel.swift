@@ -594,8 +594,11 @@ enum BrowserWindowMode: Equatable {
 
     /// The small window for links from other apps, when turned on in Settings.
     var opensExternalLinksInLittleWindow: Bool {
-        userPreferencesStore.littleArcEnabled && canCreateTab && !isWebApp && !isIncognito
+        userPreferencesStore.littleArcEnabled && canOpenLittleWindow
     }
+
+    /// The small window can open from this window, for a link rule or the setting.
+    var canOpenLittleWindow: Bool { canCreateTab && !isWebApp && !isIncognito }
 
     var canShowDeveloperTools: Bool { canCreateTab && selectedTabID != nil && !isWebApp }
 
@@ -736,6 +739,15 @@ enum BrowserWindowMode: Equatable {
 
     func openURLInNewTab(_ url: URL) {
         createTab(withURLString: url.absoluteString)
+    }
+
+    /// A link rule's match: shows the Space and opens the link as its tab.
+    /// False when the Space is gone, so the link can open as usual.
+    @discardableResult func openURL(_ url: URL, inSpaceWithID spaceID: String) -> Bool {
+        guard canCreateTab, supportsSpaces, spaces.contains(where: { $0.id == spaceID }) else { return false }
+        selectSpace(id: spaceID)
+        openURLInNewTab(url)
+        return true
     }
 
     func openBookmark(urlString: String) {

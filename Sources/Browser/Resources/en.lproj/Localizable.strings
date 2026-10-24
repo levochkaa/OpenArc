@@ -159,6 +159,17 @@
 "browser.settings.little_arc" = "Open links from other apps in a small window";
 "browser.settings.little_arc.detail" = "Open as Tab moves the page into this window.";
 "browser.settings.peek.detail" = "The link opens in a card over the page; Open as Tab keeps it.";
+"browser.settings.link_routes" = "Links from Other Apps";
+"browser.settings.link_routes.detail" = "A link from another app that matches a rule opens in its Space or in a small window. The first matching rule wins; other links follow the small-window setting above.";
+"browser.settings.link_routes.site" = "Site is";
+"browser.settings.link_routes.contains" = "Address contains";
+"browser.settings.link_routes.pattern_placeholder" = "example.com";
+"browser.settings.link_routes.opens_in" = "opens in";
+"browser.settings.link_routes.little_window" = "Small window";
+"browser.settings.link_routes.add" = "Add Rule";
+"browser.settings.link_routes.remove" = "Remove Rule";
+"browser.settings.link_routes.missing_space" = "Deleted Space";
+"browser.settings.link_routes.other_profile_space" = "%1$@ (%2$@)";
 "browser.settings.import_arc_sidebar" = "Arc Spaces, Pinned Tabs and Favorites";
 "browser.arc_import.missing" = "Arc's sidebar was not found on this Mac.";
 "browser.arc_import.unreadable" = "Arc's sidebar could not be read.";

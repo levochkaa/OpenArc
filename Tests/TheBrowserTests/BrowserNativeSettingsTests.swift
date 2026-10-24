@@ -213,6 +213,48 @@ import Testing
         #expect(!BrowserShortcutCaptureNSView.handleRecordingEvent(reload))
     }
 
+    @Test func linkRulesAreAddedEditedAndRemovedInGeneral() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let preferences = fixture.model.userPreferencesStore
+        let controller = fixture.controller(.general)
+        let add = try #require(find("browser.settings.link-routes.add", in: controller.view) as? BrowserActionButton)
+        add.performClick(nil)
+        let route = try #require(preferences.linkRoutes.first)
+        let firstSpace = fixture.model.spaces.first
+        #expect(route.destination == firstSpace.map {
+            .space(profileID: BrowserProfile.defaultProfile.id, spaceID: $0.id)
+        } ?? .littleWindow)
+
+        let field = try #require(find("browser.settings.link-routes.pattern", in: controller.view) as? NSTextField)
+        field.stringValue = "figma.com"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        let match = try #require(find(
+            "browser.settings.link-routes.match",
+            in: controller.view
+        ) as? BrowserActionPopUpButton)
+        match.onChange(1)
+        let destination = try #require(
+            find("browser.settings.link-routes.destination", in: controller.view) as? BrowserActionPopUpButton
+        )
+        destination.onChange(destination.numberOfItems - 1)
+        #expect(preferences.linkRoutes == [BrowserLinkRoute(
+            id: route.id,
+            match: .contains,
+            pattern: "figma.com",
+            destination: .littleWindow,
+            spaceTitle: route.spaceTitle
+        )])
+
+        let remove = try #require(find(
+            "browser.settings.link-routes.remove",
+            in: controller.view
+        ) as? BrowserActionButton)
+        remove.performClick(nil)
+        #expect(preferences.linkRoutes.isEmpty)
+        #expect(find("browser.settings.link-routes.remove", in: controller.view) == nil)
+    }
+
     // MARK: Private
 
     @MainActor private struct Fixture {

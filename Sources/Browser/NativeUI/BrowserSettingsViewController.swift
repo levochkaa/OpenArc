@@ -162,12 +162,21 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     override func viewWillAppear() {
         super.viewWillAppear()
+        if pane == .general {
+            // Spaces may have changed since the pane was built.
+            refreshLinkRoutes()
+        }
         syncControls()
     }
 
     func controlTextDidChange(_ notification: Notification) {
         if notification.object as? NSSearchField === searchField {
             refreshShortcuts()
+        }
+        if let field = notification.object as? NSTextField,
+           let id = linkRouteFields.first(where: { $0.value === field })?.key
+        {
+            updateLinkRoute(id) { $0.pattern = field.stringValue }
         }
     }
 
@@ -192,6 +201,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let shortcutsBody = NSStackView()
     private let profilesBody = NSStackView()
     private let accountsBody = NSStackView()
+    private let linkRoutesBody = NSStackView()
+    private var linkRouteFields = [UUID: NSTextField]()
     private let shortcutMessage = BrowserNativeControls.label("", size: 12, color: .systemRed, wraps: true)
     private let backupMessage = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
     private var recordingCommandID: BrowserCommandID?
@@ -313,6 +324,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.batterySaverEnabled = $0 }
                 ),
             ]),
+            section(BrowserStrings.settingsLinkRoutesTitle, body: linkRoutesBody),
             section(BrowserStrings.settingsSearch, rows: [
                 picker(
                     "search-engine",
@@ -341,6 +353,131 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             section(BrowserStrings.settingsTemporaryTabsTitle, rows: automaticArchivalRows()),
             section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
         ])
+        refreshLinkRoutes()
+    }
+
+    // MARK: Link routes
+
+    /// Link rules: one row per rule, in order, then Add Rule.
+    private func refreshLinkRoutes() {
+        linkRouteFields.removeAll()
+        let detail = BrowserNativeControls.label(
+            BrowserStrings.settingsLinkRoutesDetail,
+            size: 12,
+            color: .secondaryLabelColor,
+            wraps: true
+        )
+        let add = BrowserActionButton(BrowserStrings.settingsLinkRouteAdd) { [weak self] in self?.addLinkRoute() }
+        add.setAccessibilityIdentifier("browser.settings.link-routes.add")
+        replaceRows(
+            [BrowserNativeControls.padded(detail, vertical: 8)]
+                + preferences.linkRoutes.map(linkRouteRow)
+                + [BrowserNativeControls.padded(add, vertical: 8)],
+            in: linkRoutesBody
+        )
+    }
+
+    /// This profile's Spaces, then the small window.
+    private func linkRouteDestinations() -> [(title: String, destination: BrowserLinkRoute.Destination)] {
+        model.spaces.map { ($0.title, .space(profileID: currentProfileID, spaceID: $0.id)) }
+            + [(BrowserStrings.settingsLinkRouteLittleWindow, .littleWindow)]
+    }
+
+    private func addLinkRoute() {
+        let space = model.spaces.first { $0.id == model.selectedSpaceID } ?? model.spaces.first
+        preferences.linkRoutes.append(BrowserLinkRoute(
+            destination: space.map { .space(profileID: currentProfileID, spaceID: $0.id) } ?? .littleWindow,
+            spaceTitle: space?.title
+        ))
+        refreshLinkRoutes()
+        if let id = preferences.linkRoutes.last?.id, let field = linkRouteFields[id] {
+            view.window?.makeFirstResponder(field)
+        }
+    }
+
+    private func updateLinkRoute(_ id: UUID, _ change: (inout BrowserLinkRoute) -> Void) {
+        guard let index = preferences.linkRoutes.firstIndex(where: { $0.id == id }) else { return }
+        change(&preferences.linkRoutes[index])
+    }
+
+    private func linkRouteRow(_ route: BrowserLinkRoute) -> NSView {
+        let id = route.id
+        let matches = BrowserLinkRoute.Match.allCases
+        let match = BrowserActionPopUpButton(titles: matches.map { match in
+            switch match {
+            case .site: BrowserStrings.settingsLinkRouteSite
+            case .contains: BrowserStrings.settingsLinkRouteContains
+            }
+        })
+        match.selectItem(at: matches.firstIndex(of: route.match) ?? 0)
+        match.onChange = { [weak self] index in
+            guard matches.indices.contains(index) else { return }
+            self?.updateLinkRoute(id) { $0.match = matches[index] }
+        }
+        match.setAccessibilityIdentifier("browser.settings.link-routes.match")
+
+        let field = NSTextField(string: route.pattern)
+        field.placeholderString = BrowserStrings.settingsLinkRoutePatternPlaceholder
+        field.delegate = self
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
+        field.setAccessibilityIdentifier("browser.settings.link-routes.pattern")
+        linkRouteFields[id] = field
+
+        var destinations = linkRouteDestinations()
+        if !destinations.contains(where: { $0.destination == route.destination }) {
+            destinations.insert((unavailableSpaceTitle(route), route.destination), at: 0)
+        }
+        let destination = BrowserActionPopUpButton(titles: destinations.map(\.title))
+        destination.selectItem(at: destinations.firstIndex { $0.destination == route.destination } ?? 0)
+        destination.onChange = { [weak self] index in
+            guard destinations.indices.contains(index) else { return }
+            let chosen = destinations[index]
+            self?.updateLinkRoute(id) { route in
+                route.destination = chosen.destination
+                if case .space = chosen.destination, chosen.destination != route.destination {
+                    route.spaceTitle = chosen.title
+                }
+            }
+        }
+        destination.setAccessibilityIdentifier("browser.settings.link-routes.destination")
+
+        let remove = BrowserActionButton("") { [weak self] in
+            self?.preferences.linkRoutes.removeAll { $0.id == id }
+            self?.refreshLinkRoutes()
+        }
+        remove.image = NSImage(
+            systemSymbolName: "minus.circle",
+            accessibilityDescription: BrowserStrings.settingsLinkRouteRemove
+        )
+        remove.isBordered = false
+        remove.toolTip = BrowserStrings.settingsLinkRouteRemove
+        remove.setAccessibilityIdentifier("browser.settings.link-routes.remove")
+
+        let opensIn = BrowserNativeControls.label(
+            BrowserStrings.settingsLinkRouteOpensIn,
+            size: 12,
+            color: .secondaryLabelColor
+        )
+        return BrowserNativeControls.padded(
+            BrowserNativeControls.stack(
+                [match, field, opensIn, destination, remove],
+                orientation: .horizontal,
+                spacing: 8
+            ),
+            vertical: 6
+        )
+    }
+
+    private func unavailableSpaceTitle(_ route: BrowserLinkRoute) -> String {
+        guard case .space(let profileID, _) = route.destination, profileID != currentProfileID else {
+            return BrowserStrings.settingsLinkRouteUnavailableSpace(route.spaceTitle, profileName: nil)
+        }
+        let profile = profileStore.profiles.first { $0.id == profileID }
+        return BrowserStrings.settingsLinkRouteUnavailableSpace(
+            route.spaceTitle,
+            profileName: profile?.displayName ?? profileID
+        )
     }
 
     /// The chosen folder, abbreviated, with Choose… and, for a custom folder,

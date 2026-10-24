@@ -212,6 +212,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         }
         self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
         self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
+        self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)
+            .flatMap { try? JSONDecoder().decode([BrowserLinkRoute].self, from: $0) } ?? []
     }
 
     // MARK: Internal
@@ -300,6 +302,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(littleArcEnabled, forKey: Key.littleArcEnabled) }
     }
 
+    /// Rules for links from other apps, in order.
+    @Published var linkRoutes: [BrowserLinkRoute] {
+        didSet { userDefaults.set(try? JSONEncoder().encode(linkRoutes), forKey: Key.linkRoutes) }
+    }
+
     /// Download location; nil saves to the user's Downloads folder.
     @Published var downloadDirectoryPath: String? {
         didSet { userDefaults.set(downloadDirectoryPath, forKey: Self.downloadDirectoryKey) }
@@ -326,6 +333,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let batterySaverEnabled = "browser.settings.batterySaverEnabled"
         static let pinnedExtensionIDs = "browser.extensions.pinnedExtensionIDs"
         static let littleArcEnabled = "browser.settings.littleArcEnabled"
+        static let linkRoutes = "browser.settings.linkRoutes"
     }
 
     private let userDefaults: UserDefaults

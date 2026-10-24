@@ -865,6 +865,51 @@ enum BrowserStrings {
         comment: "Settings detail for the Peek toggle."
     )
 
+    static let settingsLinkRoutesTitle = NSLocalizedString(
+        "browser.settings.link_routes",
+        comment: "Settings section of rules that choose where links from other apps open."
+    )
+
+    static let settingsLinkRoutesDetail = NSLocalizedString(
+        "browser.settings.link_routes.detail",
+        comment: "Settings detail explaining the rules for links from other apps."
+    )
+
+    static let settingsLinkRouteSite = NSLocalizedString(
+        "browser.settings.link_routes.site",
+        comment: "Link rule condition: the link is on this site."
+    )
+
+    static let settingsLinkRouteContains = NSLocalizedString(
+        "browser.settings.link_routes.contains",
+        comment: "Link rule condition: the link's address contains this text."
+    )
+
+    static let settingsLinkRoutePatternPlaceholder = NSLocalizedString(
+        "browser.settings.link_routes.pattern_placeholder",
+        comment: "Placeholder of a link rule's site or text field."
+    )
+
+    static let settingsLinkRouteOpensIn = NSLocalizedString(
+        "browser.settings.link_routes.opens_in",
+        comment: "Label between a link rule's condition and its destination."
+    )
+
+    static let settingsLinkRouteLittleWindow = NSLocalizedString(
+        "browser.settings.link_routes.little_window",
+        comment: "Link rule destination: a small window of its own."
+    )
+
+    static let settingsLinkRouteAdd = NSLocalizedString(
+        "browser.settings.link_routes.add",
+        comment: "Button that adds a rule for links from other apps."
+    )
+
+    static let settingsLinkRouteRemove = NSLocalizedString(
+        "browser.settings.link_routes.remove",
+        comment: "Accessibility label of the button that removes a link rule."
+    )
+
     static let menuRestoreLastClosedTab = NSLocalizedString(
         "browser.menu.restore_last_closed_tab",
         comment: "File menu and command title that reopens the most recently closed tab."
@@ -1942,6 +1987,23 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front."
     )
+
+    /// A rule's Space that this window does not have: closed in another profile or deleted.
+    static func settingsLinkRouteUnavailableSpace(_ title: String?, profileName: String?) -> String {
+        let space = title ?? NSLocalizedString(
+            "browser.settings.link_routes.missing_space",
+            comment: "Link rule destination whose Space no longer exists."
+        )
+        guard let profileName else { return space }
+        return String(
+            format: NSLocalizedString(
+                "browser.settings.link_routes.other_profile_space",
+                comment: "Link rule destination in another profile. The arguments are the Space and profile names."
+            ),
+            space,
+            profileName
+        )
+    }
 
     /// Shared with iOS, so it takes counts rather than the macOS import result.
     static func arcImportResult(spaces: Int, pinnedTabs: Int, folders: Int, favorites: Int) -> String {

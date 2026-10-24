@@ -2933,6 +2933,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private func openAboutLink(_ url: URL) {
+        if let route = BrowserLinkRouter.route(for: url, in: userPreferencesStore.linkRoutes),
+           openRoutedLink(url, to: route.destination)
+        {
+            return
+        }
         let targetSession = activeProfileWindowSession ?? profileWindowSessions.first
         if let model = targetSession?.chromeModel, model.opensExternalLinksInLittleWindow,
            ["http", "https"].contains(url.scheme?.lowercased() ?? "")
@@ -2954,6 +2959,26 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
 
         NSWorkspace.shared.open(url)
+    }
+
+    /// Opens the link by its link rule. False when the Space's window is closed or cannot
+    /// take the link, which then opens as usual.
+    private func openRoutedLink(_ url: URL, to destination: BrowserLinkRoute.Destination) -> Bool {
+        guard !isTerminationRequested else { return false }
+        switch destination {
+        case .space(let profileID, let spaceID):
+            guard let session = profileWindowSessions.first(where: { $0.profile.id == profileID }),
+                  session.chromeModel.openURL(url, inSpaceWithID: spaceID)
+            else { return false }
+            session.window.makeKeyAndOrderFront(nil)
+        case .littleWindow:
+            guard let model = (activeProfileWindowSession ?? profileWindowSessions.first)?.chromeModel,
+                  model.canOpenLittleWindow
+            else { return false }
+            model.openInLittleWindow(url)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        return true
     }
 
     private func openBrowserInternalPage(_ url: URL) {
