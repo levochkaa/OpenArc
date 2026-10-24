@@ -287,6 +287,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.peekEnabled = $0 }
                 ),
                 toggle(
+                    "little-arc",
+                    BrowserStrings.settingsLittleArc,
+                    detail: BrowserStrings.settingsLittleArcDetail,
+                    get: { preferences.littleArcEnabled },
+                    set: { preferences.littleArcEnabled = $0 }
+                ),
+                toggle(
                     "warn-before-quitting",
                     BrowserStrings.settingsWarnBeforeQuitting,
                     get: { preferences.warnBeforeQuitting },

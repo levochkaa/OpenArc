@@ -217,6 +217,12 @@ import Foundation
         devToolsCount += 1
     }
 
+    private(set) var littleWindowURLs = [String]()
+
+    func showLittleWindow(withURLString urlString: String) {
+        littleWindowURLs.append(urlString)
+    }
+
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String) {
         pictureInPictureRequests.append((tabID, active))
     }

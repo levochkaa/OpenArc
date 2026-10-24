@@ -864,6 +864,16 @@ enum BrowserStrings {
         comment: "Settings toggle: Shift-clicked links open in a floating Peek card."
     )
 
+    static let settingsLittleArc = NSLocalizedString(
+        "browser.settings.little_arc",
+        comment: "Settings toggle: links from other apps open in a small window of their own."
+    )
+
+    static let settingsLittleArcDetail = NSLocalizedString(
+        "browser.settings.little_arc.detail",
+        comment: "Settings detail for the small window for links from other apps."
+    )
+
     static let settingsPeekDetail = NSLocalizedString(
         "browser.settings.peek.detail",
         comment: "Settings detail for the Peek toggle."

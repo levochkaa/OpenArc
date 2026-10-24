@@ -2037,6 +2037,15 @@ enum BrowserWindowMode: Equatable {
         tabDriver.setPictureInPicture(true, forTabWithID: oldID)
     }
 
+    /// The small window for links from other apps, when turned on in Settings.
+    var opensExternalLinksInLittleWindow: Bool {
+        userPreferencesStore.littleArcEnabled && canCreateTab && !isWebApp && !isIncognito
+    }
+
+    func openInLittleWindow(_ url: URL) {
+        tabDriver.showLittleWindow(withURLString: url.absoluteString)
+    }
+
     var canShowDeveloperTools: Bool { canCreateTab && selectedTabID != nil && !isWebApp }
 
     @discardableResult func showDeveloperTools() -> Bool {

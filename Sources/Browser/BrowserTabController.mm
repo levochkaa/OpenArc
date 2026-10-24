@@ -2720,6 +2720,9 @@ struct TabRecord {
 - (void)handlePeekCreated:(CefRefPtr<CefBrowser>)browser generation:(int)generation;
 - (void)handlePeekAddressChange:(NSString *)urlString generation:(int)generation;
 - (void)closePeek;
+- (void)closePeekFromEscape;
+@property(nonatomic, readonly) BOOL isPeekStandalone;
+- (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone;
 - (void)notifyCloseRequestForTabID:(NSString *)tabID
                        requestID:(NSString *)requestID
                          outcome:(BrowserTabCloseRequestOutcome)outcome;
@@ -3532,13 +3535,21 @@ class BrowserTabNavigationTask final : public CefTask {
 }
 
 - (void)showPeekWithURLString:(NSString *)urlString {
+  [self presentPeekWithURLString:urlString standalone:NO];
+}
+
+- (void)showLittleWindowWithURLString:(NSString *)urlString {
+  [self presentPeekWithURLString:urlString standalone:YES];
+}
+
+- (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone {
   NSString *resolved = urlString.length > 0 ? [urlString copy] : @"about:blank";
   NSWindow *window = _hostView.window;
-  if (window == nil) {
+  if (window == nil && !standalone) {
     [self createTabWithURLString:resolved makeActive:YES];
     return;
   }
-  if (_peekPanel != nil && _peekBrowser && _peekBrowser->GetMainFrame()) {
+  if (_peekPanel != nil && _peekPanel.isStandalone == standalone && _peekBrowser && _peekBrowser->GetMainFrame()) {
     // Another Shift-click replaces the page in the open card.
     _peekURLString = resolved;
     [_peekPanel updateWithURLString:resolved];
@@ -3549,7 +3560,7 @@ class BrowserTabNavigationTask final : public CefTask {
 
   _peekGeneration += 1;
   _peekURLString = resolved;
-  _peekPanel = [BrowserPeekPanel presentOverWindow:window];
+  _peekPanel = standalone ? [BrowserPeekPanel presentStandalone] : [BrowserPeekPanel presentOverWindow:window];
   [_peekPanel updateWithURLString:resolved];
   __weak BrowserTabController *weakSelf = self;
   _peekPanel.onClose = ^{
@@ -3599,6 +3610,20 @@ class BrowserTabNavigationTask final : public CefTask {
     return;
   }
   _peekBrowser = browser;
+  // The small window resizes; the page follows its host view.
+  NSView *browserView = BrowserViewForBrowser(browser);
+  browserView.frame = _peekPanel.hostView.bounds;
+  browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+}
+
+- (BOOL)isPeekStandalone {
+  return _peekPanel.isStandalone;
+}
+
+- (void)closePeekFromEscape {
+  if (!_peekPanel.isStandalone) {
+    [self closePeek];
+  }
 }
 
 - (void)handlePeekAddressChange:(NSString *)urlString generation:(int)generation {
@@ -4508,12 +4533,14 @@ bool BrowserPeekClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
                                       CefEventHandle,
                                       bool *) {
   CEF_REQUIRE_UI_THREAD();
-  // Escape closes the card.
-  if (event.type == KEYEVENT_RAWKEYDOWN && event.windows_key_code == 0x1B) {
+  // Escape closes a Peek card; the small window leaves it to the page.
+  BrowserTabController *controller = controller_;
+  if (event.type == KEYEVENT_RAWKEYDOWN && event.windows_key_code == 0x1B && controller != nil &&
+      !controller.isPeekStandalone) {
     // Close after this key event returns, not inside the engine callback.
-    __weak BrowserTabController *controller = controller_;
+    __weak BrowserTabController *weakController = controller;
     dispatch_async(dispatch_get_main_queue(), ^{
-      [controller closePeek];
+      [weakController closePeekFromEscape];
     });
     return true;
   }

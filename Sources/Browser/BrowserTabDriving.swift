@@ -75,6 +75,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func printActiveTab()
     /// Opens the page's Developer Tools in their own window.
     func showDevToolsForActiveTab()
+    /// The page in a small window of its own.
+    func showLittleWindow(withURLString urlString: String)
     /// Moves the page's playing video into Picture in Picture, or back.
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String)
     func castActiveTab()

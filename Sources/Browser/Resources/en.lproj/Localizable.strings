@@ -156,6 +156,8 @@
 "browser.peek.close" = "Close Peek";
 "browser.peek.open_in_tab" = "Open as Tab";
 "browser.settings.peek" = "Open Shift-clicked links in Peek";
+"browser.settings.little_arc" = "Open links from other apps in a small window";
+"browser.settings.little_arc.detail" = "Open as Tab moves the page into this window.";
 "browser.settings.peek.detail" = "The link opens in a card over the page; Open as Tab keeps it.";
 "browser.settings.import_arc_sidebar" = "Arc Spaces, Pinned Tabs and Favorites";
 "browser.arc_import.missing" = "Arc's sidebar was not found on this Mac.";

@@ -134,6 +134,10 @@ import Foundation
         controller.showDevToolsForActiveTab()
     }
 
+    func showLittleWindow(withURLString urlString: String) {
+        controller.showLittleWindow(withURLString: urlString)
+    }
+
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String) {
         controller.setPictureInPicture(active, forTabWithID: tabID)
     }

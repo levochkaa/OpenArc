@@ -39,4 +39,25 @@ import Testing
         #expect(panel.parent == nil)
         #expect(BrowserPeekSettings.isEnabled || UserDefaults.standard.object(forKey: BrowserUserPreferencesStore.peekEnabledKey) != nil)
     }
+
+    @Test func littleArcIsOptInAndOpensAStandaloneWindow() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")
+        f.model.userPreferencesStore.littleArcEnabled = true
+        #expect(f.model.opensExternalLinksInLittleWindow)
+        f.model.openInLittleWindow(try #require(URL(string: "https://example.com/a")))
+        #expect(f.driver.littleWindowURLs == ["https://example.com/a"])
+
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        #expect(panel.isStandalone && panel.parent == nil)
+        #expect(panel.styleMask.contains(.resizable) && panel.closeButton.isHidden)
+        var closes = 0
+        panel.onClose = { closes += 1 }
+        panel.cancelOperation(nil)
+        #expect(closes == 0, "Escape stays with the page in the small window")
+        panel.performClose(nil)
+        #expect(closes == 1)
+    }
 }
+

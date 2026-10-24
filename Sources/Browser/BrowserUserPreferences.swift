@@ -208,6 +208,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.pinnedExtensionIDs = Self.loadStringArray(userDefaults, key: Key.pinnedExtensionIDs)
         self.downloadDirectoryPath = userDefaults.string(forKey: Self.downloadDirectoryKey).flatMap { $0.isEmpty ? nil : $0 }
         self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
+        self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
     }
 
     /// Read by the engine through `BrowserDownloadLocation` on its own thread.
@@ -290,6 +291,12 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(peekEnabled, forKey: Self.peekEnabledKey) }
     }
 
+    /// Links from other apps open in a small window. Off by
+    /// default here, so links keep opening as tabs unless the user opts in.
+    @Published var littleArcEnabled: Bool {
+        didSet { userDefaults.set(littleArcEnabled, forKey: Key.littleArcEnabled) }
+    }
+
     /// Download location; nil saves to the user's Downloads folder.
     @Published var downloadDirectoryPath: String? {
         didSet { userDefaults.set(downloadDirectoryPath, forKey: Self.downloadDirectoryKey) }
@@ -315,6 +322,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let blurredChromeBackgroundEnabled = "browser.settings.blurredChromeBackgroundEnabled"
         static let batterySaverEnabled = "browser.settings.batterySaverEnabled"
         static let pinnedExtensionIDs = "browser.extensions.pinnedExtensionIDs"
+        static let littleArcEnabled = "browser.settings.littleArcEnabled"
     }
 
     private let userDefaults: UserDefaults

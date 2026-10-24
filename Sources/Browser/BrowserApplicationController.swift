@@ -2928,6 +2928,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private func openAboutLink(_ url: URL) {
         let targetSession = activeProfileWindowSession ?? profileWindowSessions.first
+        if let model = targetSession?.chromeModel, model.opensExternalLinksInLittleWindow,
+           ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        {
+            model.openInLittleWindow(url)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
         if targetSession?.chromeModel.canCreateTab == true {
             targetSession?.chromeModel.openURLInNewTab(url)
             targetSession?.window.makeKeyAndOrderFront(nil)
