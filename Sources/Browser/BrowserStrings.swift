@@ -2311,6 +2311,11 @@ enum BrowserStrings {
         comment: "Picture in Picture setting title."
     )
 
+    static let settingsWindowDraggingFromPageTop = NSLocalizedString(
+        "browser.settings.content.window_dragging_from_page_top",
+        comment: "Setting that lets the top of web pages move the window when dragged."
+    )
+
     static let settingsShowBookmarksBar = NSLocalizedString(
         "browser.settings.content.show_bookmarks_bar",
         comment: "Show bookmarks bar setting title."

@@ -45,6 +45,8 @@ final class BrowserRootView: NSView {
         }
         find.bind(to: model)
         content.bindTabCreation(to: model)
+        pageTopDrag.pageView = { [weak content] in content?.viewport }
+        pageTopDrag.region = { [weak self] in self?.pageTopDragRegion }
         sessionRecovery.onRetry = { [weak model] in model?.retrySessionPersistence() }
         sessionRecovery.onSaveCopy = { [weak self] in
             guard let self, let window else { return }
@@ -120,6 +122,15 @@ final class BrowserRootView: NSView {
     // MARK: Internal
 
     override var isFlipped: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            pageTopDrag.stop()
+        } else {
+            pageTopDrag.start(in: window)
+        }
+    }
 
     override func layout() {
         super.layout()
@@ -252,6 +263,7 @@ final class BrowserRootView: NSView {
     private let tabSwitcher = BrowserTabSwitcherNSView()
     private let tabSwitcherVisibility = BrowserNativeVisibilityAnimation()
     private let fullscreenReader = BrowserWindowFullscreenReaderNSView()
+    private let pageTopDrag = BrowserPageTopWindowDrag()
     private let sessionRecovery = BrowserSessionPersistenceStatusView()
     /// Positions popovers whose own button is off screen.
     private let popoverAnchor = NSView()
@@ -299,6 +311,18 @@ final class BrowserRootView: NSView {
     }
 
     private var sidebarLayoutWidth: CGFloat { windowGeometry.sidebarReservedWidth }
+
+    /// Drag strip at the top of the page, while nothing sits above it:
+    /// no toolbar, bookmarks bar or split pane bars, and not in full screen.
+    private var pageTopDragRegion: NSRect? {
+        guard preferences.windowDraggingFromPageTopEnabled, !isWindowFullscreen, !showsSiteToolbar,
+              !showsBookmarksBar, let selected = model.selectedTabID,
+              model.splitPaneTabIDs(forTabID: selected).count <= 1
+        else { return nil }
+        let strip = NSRect(x: 0, y: 0, width: content.bounds.width, height: BrowserPageTopWindowDrag.regionHeight)
+        return content.convert(strip, to: nil)
+    }
+
     private var showsBookmarksBar: Bool { model.isContextReady && preferences.bookmarksBarVisible }
     private var showsSiteToolbar: Bool { model.isContextReady && preferences.siteURLToolbarEnabled }
     private var isExtensionSidePanelPresented: Bool {

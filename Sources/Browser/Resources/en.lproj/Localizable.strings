@@ -472,6 +472,7 @@
 "browser.settings.content.haptic_feedback" = "Haptic Feedback";
 "browser.settings.content.restore_windows" = "Restore windows from previous session when opening the browser";
 "browser.settings.content.picture_in_picture" = "Picture in Picture when leaving a tab";
+"browser.settings.content.window_dragging_from_page_top" = "Allow window dragging from the top of websites";
 "browser.settings.content.show_bookmarks_bar" = "Show Bookmarks Bar";
 "browser.settings.content.more_settings" = "More Settings";
 "browser.settings.content.translate_site_prompts" = "Translate Site Prompts";

@@ -188,6 +188,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.hapticFeedbackEnabled = Self.loadBool(userDefaults, key: Key.hapticFeedbackEnabled, defaultValue: true)
         self.restoreWindowsOnLaunch = Self.loadBool(userDefaults, key: Key.restoreWindowsOnLaunch, defaultValue: true)
         self.pictureInPictureEnabled = Self.loadBool(userDefaults, key: Key.pictureInPictureEnabled, defaultValue: true)
+        self.windowDraggingFromPageTopEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.windowDraggingFromPageTopEnabled,
+            defaultValue: true
+        )
         self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: true)
         self.siteURLToolbarEnabled = Self.loadBool(
             userDefaults,
@@ -274,6 +279,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var pictureInPictureEnabled: Bool {
         didSet { userDefaults.set(pictureInPictureEnabled, forKey: Key.pictureInPictureEnabled) }
+    }
+
+    /// "Allow window dragging from the top of websites", on by default.
+    @Published var windowDraggingFromPageTopEnabled: Bool {
+        didSet { userDefaults.set(windowDraggingFromPageTopEnabled, forKey: Key.windowDraggingFromPageTopEnabled) }
     }
 
     @Published var bookmarksBarVisible: Bool {
@@ -372,6 +382,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let hapticFeedbackEnabled = "browser.settings.hapticFeedbackEnabled"
         static let restoreWindowsOnLaunch = "browser.settings.restoreWindowsOnLaunch"
         static let pictureInPictureEnabled = "browser.settings.pictureInPictureEnabled"
+        static let windowDraggingFromPageTopEnabled = "browser.settings.windowDraggingFromPageTopEnabled"
         static let bookmarksBarVisible = "browser.settings.bookmarksBarVisible"
         static let siteURLToolbarEnabled = "browser.settings.siteURLToolbarEnabled"
         static let siteToolbarShowsFullURL = "browser.settings.siteToolbarShowsFullURL"

@@ -894,6 +894,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.pictureInPictureEnabled = $0 }
                 ),
                 toggle(
+                    "window-dragging-from-page-top",
+                    BrowserStrings.settingsWindowDraggingFromPageTop,
+                    get: { preferences.windowDraggingFromPageTopEnabled },
+                    set: { preferences.windowDraggingFromPageTopEnabled = $0 }
+                ),
+                toggle(
                     "bookmarks-bar",
                     BrowserStrings.settingsShowBookmarksBar,
                     get: { preferences.bookmarksBarVisible },
