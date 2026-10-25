@@ -39,6 +39,8 @@ Then:
 
 `./build.sh --help` lists every action. Sync needs a server: `Backend/README.md` explains how to run one locally, and the Mac app connects to the one in `OPENARC_SYNC_BASE_URL`.
 
+[docs/releasing.md](docs/releasing.md) covers signing, notarization and the Stable and Beta update channels.
+
 ## Contributing
 
 Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, conventions and pull requests.

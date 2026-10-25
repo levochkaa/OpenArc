@@ -6,5 +6,18 @@
   <array>
     <string>Default</string>
   </array>
+  <!-- Resource access under the hardened runtime, as in Chromium's app-entitlements.plist. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <key>com.apple.security.device.print</key>
+  <true/>
+  <key>com.apple.security.device.usb</key>
+  <true/>
+  <key>com.apple.security.personal-information.location</key>
+  <true/>
+  <key>com.apple.security.personal-information.photos-library</key>
+  <true/>
 </dict>
 </plist>

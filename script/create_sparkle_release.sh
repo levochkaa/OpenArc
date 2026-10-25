@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/script/sparkle_tools.sh"
 
 usage() {
-  printf 'Usage: %s --repo OWNER/REPO [--tag TAG] [--notes FILE] [--app PATH] [--prerelease] [--no-build] [--no-publish]\n' "$0" >&2
+  printf 'Usage: %s --repo OWNER/REPO [--tag TAG] [--notes FILE] [--app PATH] [--prerelease] [--no-build] [--no-publish] [--no-notarize]\n' "$0" >&2
   exit 2
 }
 
@@ -16,6 +16,7 @@ app_bundle="${APP_BUNDLE:-}"
 build_app=true
 publish=true
 prerelease="${PRERELEASE:-false}"
+notarize=true
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -46,6 +47,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --prerelease)
       prerelease=true
+      shift
+      ;;
+    --no-notarize)
+      notarize=false
       shift
       ;;
     -h|--help)
@@ -109,6 +114,14 @@ release_notes_for_github="$work_dir/release-notes.md"
 rm -rf "$work_dir"
 mkdir -p "$updates_dir" "$work_dir"
 rm -f "$archive_path" "$generated_notes_path"
+
+# Developer ID signing and notarization act on a copy, so the build output
+# keeps its development signature.
+if [[ "$notarize" == true ]]; then
+  ditto "$app_bundle" "$work_dir/OpenArc.app"
+  app_bundle="$work_dir/OpenArc.app"
+  "$ROOT_DIR/script/sign_release_app.sh" "$app_bundle" --notarize
+fi
 
 ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$archive_path"
 
