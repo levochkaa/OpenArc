@@ -129,6 +129,13 @@ import Testing
             == "https://example.com/a?b=1#:~:text=One%20two%20three%20four,six%20seven")
         #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: long)?
             .hasSuffix("#:~:text=word%20word%20word%20word,word%20the%20very%20end") == true)
+        // Text without spaces splits into words too, and long ends keep whole words.
+        let japanese = String(repeating: "日本語のテキスト", count: 60)
+        let cjk = BrowserQuoteLink.urlString(pageURLString: page, quote: japanese)
+        #expect(cjk?.contains(",") == true && (cjk?.count ?? 1000) < 400)
+        let longWords = (1...6).map { index in String(repeating: "x", count: 25) + "\(index)" }.joined(separator: " ")
+        #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: longWords + "\nend")
+            == "\(page)#:~:text=\(String(repeating: "x", count: 25))1%20\(String(repeating: "x", count: 25))2,end")
         #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: " \n ") == nil)
         #expect(BrowserQuoteLink.urlString(pageURLString: "tb://settings", quote: "x") == nil)
         #expect(BrowserCommands.copyLinkAsQuote.shortcut == BrowserKeyboardShortcut(

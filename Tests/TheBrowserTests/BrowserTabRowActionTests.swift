@@ -80,6 +80,21 @@ import Testing
         #expect(row.muteButton.accessibilityIdentifier() == "browser.sidebar.mute-tab.\(x)")
         f.driver.onMediaStateChanged?(x, nil)
         #expect(f.model.sidebarSnapshot.audibleTabIDs.isEmpty)
+
+        // Pinned rows show it too, after the pinned icon.
+        var pinned = try #require(f.model.tabs.first { $0.placement == .spacePinned })
+        pinned.pinnedURLString = pinned.urlString
+        let pinnedRow = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        pinnedRow.update(
+            tab: pinned,
+            selected: false,
+            isResizing: false,
+            closeDescriptor: BrowserCommands.archiveTab,
+            audible: true
+        )
+        pinnedRow.layoutSubtreeIfNeeded()
+        #expect(!pinnedRow.muteButton.isHidden)
+        #expect(pinnedRow.muteButton.frame.maxX <= pinnedRow.titleLabel.frame.minX)
         row.update(tab: tab, selected: false, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
         #expect(row.muteButton.isHidden)
     }

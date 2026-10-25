@@ -751,7 +751,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
         captionLabel.stringValue = BrowserStrings.pinnedTabBackToPinnedURL
         closeButton.isHidden = !(kind == .space || kind == .tab) || !isHovered || isRenaming || isResizing
-        muteButton.isHidden = kind != .tab || !(isMuted || isAudible) || isRenaming || isResizing || pinnedURLRow
+        muteButton.isHidden = kind != .tab || !(isMuted || isAudible) || isRenaming || isResizing
         if kind == .space {
             let disclosure = hasPinnedTabs && isHovered && !isRenaming
             symbol.image = Self.symbol(

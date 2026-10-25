@@ -12,42 +12,56 @@ namespace shared {
 namespace {
 
 // Watches the frame's media elements and Media Session for the sidebar's
-// audio indicator and mini player. It runs
-// before the page's scripts and keeps the native functions it wraps, so a
-// page cannot silence it. It reports only changes, and polls once a second
-// while something plays, since decoded audio and metadata change without
-// events. It returns the control function the browser's commands call.
+// audio indicator and mini player. It runs in
+// the page's main world before the page's scripts: detached `Audio` objects
+// and Media Session handlers live there. Its two hooks are proxies of the
+// native methods, so they keep their native names and source text. It
+// reports only changes, and polls once a second while something plays,
+// since decoded audio and metadata change without events. It returns the
+// control function the browser's commands call.
 constexpr char kMediaObserverScript[] = R"JS(
 (function (report) {
   'use strict';
-  const proto = HTMLMediaElement.prototype;
-  const nativePlay = proto.play;
-  const nativePause = proto.pause;
+  const NativeProxy = Proxy;
+  const apply = Reflect.apply;
+  const stringify = JSON.stringify;
   const setTimer = window.setTimeout.bind(window);
   const clearTimer = window.clearTimeout.bind(window);
   const microtask = window.queueMicrotask.bind(window);
+  const MediaElement = HTMLMediaElement;
+  const VideoElement = HTMLVideoElement;
+  const proto = MediaElement.prototype;
+  const nativePlay = proto.play;
+  const nativePause = proto.pause;
+  const eventTypes = ['play', 'playing', 'pause', 'ended', 'volumechange', 'emptied'];
   const tracked = new Set();
-  const pausedByBrowser = new Set();
+  const listening = new WeakSet();
   const actions = new Map();
-  const session = navigator.mediaSession;
-  if (session && typeof session.setActionHandler === 'function') {
-    const nativeSetActionHandler = session.setActionHandler;
-    session.setActionHandler = function (action, handler) {
-      if (handler) {
-        actions.set(action, handler);
-      } else {
-        actions.delete(action);
-      }
-      schedule();
-      return nativeSetActionHandler.apply(this, arguments);
-    };
-  }
-  let last = JSON.stringify([false, false, false, false, false, false, '']);
+  let pausedByBrowser = new Set();
+  let lastPaused = null;
+  let last = stringify([false, false, false, false, false, false, '']);
   let timer = 0;
   let queued = false;
+  const sessionProto = typeof MediaSession === 'function' ? MediaSession.prototype : null;
+  if (sessionProto && typeof sessionProto.setActionHandler === 'function') {
+    sessionProto.setActionHandler = new NativeProxy(sessionProto.setActionHandler, {
+      apply(target, session, args) {
+        const result = apply(target, session, args);
+        if (args[1]) {
+          actions.set(args[0], args[1]);
+        } else {
+          actions.delete(args[0]);
+        }
+        schedule();
+        return result;
+      },
+    });
+  }
   const hasAudio = (media) => media.webkitAudioDecodedByteCount > 0 ||
     (media.srcObject && typeof media.srcObject.getAudioTracks === 'function' &&
       media.srcObject.getAudioTracks().length > 0);
+  const resumable = (media) => media.paused && !media.ended && media.currentTime > 0 &&
+    (media.isConnected || pausedByBrowser.has(media) || media === lastPaused);
   function evaluate() {
     queued = false;
     let playing = false;
@@ -58,20 +72,29 @@ constexpr char kMediaObserverScript[] = R"JS(
       if (!media.paused && !media.ended) {
         playing = true;
         audible = audible || (!media.muted && media.volume > 0 && hasAudio(media));
-        video = video || (media instanceof HTMLVideoElement && media.videoWidth > 0);
-      } else if (media.isConnected || pausedByBrowser.has(media)) {
-        paused = paused || (!media.ended && media.currentTime > 0);
-      } else {
+        video = video || (media instanceof VideoElement && media.videoWidth > 0);
+      } else if (resumable(media)) {
+        paused = true;
+      } else if (!media.isConnected) {
         tracked.delete(media);
       }
     }
-    const metadata = session && session.metadata;
+    // Pages that make many short sounds keep only their newest elements.
+    for (const media of tracked) {
+      if (tracked.size <= 64) {
+        break;
+      }
+      if (media.paused && media !== lastPaused && !pausedByBrowser.has(media)) {
+        tracked.delete(media);
+      }
+    }
+    const metadata = navigator.mediaSession && navigator.mediaSession.metadata;
     const state = [audible, playing, paused && !playing, video, actions.has('previoustrack'),
       actions.has('nexttrack'), metadata && metadata.title ? String(metadata.title) : ''];
-    const key = JSON.stringify(state);
+    const key = stringify(state);
     if (key !== last) {
       last = key;
-      report(...state);
+      apply(report, null, state);
     }
     clearTimer(timer);
     timer = playing ? setTimer(evaluate, 1000) : 0;
@@ -82,24 +105,45 @@ constexpr char kMediaObserverScript[] = R"JS(
       microtask(evaluate);
     }
   }
-  function track(media) {
-    if (media instanceof HTMLMediaElement && !tracked.has(media)) {
-      tracked.add(media);
-      for (const type of ['play', 'playing', 'pause', 'ended', 'volumechange', 'emptied']) {
-        media.addEventListener(type, schedule);
+  function changed(event) {
+    const media = event.target;
+    if (event.type === 'play' || event.type === 'playing') {
+      pausedByBrowser.delete(media);
+    } else if (event.type === 'pause' && !media.ended) {
+      lastPaused = media;
+    } else if (event.type === 'ended' || event.type === 'emptied') {
+      pausedByBrowser.delete(media);
+      if (lastPaused === media) {
+        lastPaused = null;
       }
     }
     schedule();
   }
-  proto.play = function () {
-    track(this);
-    return nativePlay.apply(this, arguments);
-  };
+  function track(media) {
+    if (!(media instanceof MediaElement)) {
+      return;
+    }
+    tracked.add(media);
+    if (!listening.has(media)) {
+      listening.add(media);
+      for (const type of eventTypes) {
+        media.addEventListener(type, changed);
+      }
+    }
+    schedule();
+  }
+  proto.play = new NativeProxy(nativePlay, {
+    apply(target, media, args) {
+      track(media);
+      return apply(target, media, args);
+    },
+  });
   window.addEventListener('play', (event) => track(event.target), true);
   window.addEventListener('playing', (event) => track(event.target), true);
   return function control(action) {
     const handler = actions.get(action);
     if (action === 'pause') {
+      pausedByBrowser = new Set();
       for (const media of tracked) {
         if (!media.paused) {
           pausedByBrowser.add(media);
@@ -109,18 +153,22 @@ constexpr char kMediaObserverScript[] = R"JS(
         handler({ action });
       } else {
         for (const media of pausedByBrowser) {
-          nativePause.call(media);
+          apply(nativePause, media, []);
         }
       }
     } else if (action === 'play') {
       if (handler) {
         handler({ action });
       } else {
-        for (const media of pausedByBrowser) {
-          nativePlay.call(media).catch(() => {});
+        const targets = pausedByBrowser.size > 0 ? Array.from(pausedByBrowser) : lastPaused ? [lastPaused] : [];
+        for (const media of targets) {
+          const started = apply(nativePlay, media, []);
+          if (started && typeof started.catch === 'function') {
+            started.catch(() => {});
+          }
         }
       }
-      pausedByBrowser.clear();
+      pausedByBrowser = new Set();
     } else if (handler) {
       handler({ action });
     }
@@ -187,7 +235,9 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
   void OnContextCreated(CefRefPtr<CefBrowser>,
                         CefRefPtr<CefFrame> frame,
                         CefRefPtr<CefV8Context> context) override {
-    if (!frame || !ObservesMedia(frame->GetURL().ToString())) {
+    // CEF reports every world; extensions' content scripts get their own,
+    // which must not replace the page's observer.
+    if (!frame || !ObservesMedia(frame->GetURL().ToString()) || !context->IsSame(frame->GetV8Context())) {
       return;
     }
     CefRefPtr<CefV8Value> factory;

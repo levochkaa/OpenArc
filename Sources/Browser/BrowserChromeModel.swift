@@ -899,7 +899,10 @@ enum BrowserWindowMode: Equatable {
         else { return false }
         let ids = urls.compactMap { url in createTab(withURLString: url.absoluteString, makeActive: false) }
         guard let first = ids.first else { return false }
-        return commitSidebarDrop(payload: .init(primary: .tab(first), tabIDs: Set(ids)), destination: destination)
+        // The tabs are open even if their place went away during the drag;
+        // they stay at the end of Today then.
+        commitSidebarDrop(payload: .init(primary: .tab(first), tabIDs: Set(ids)), destination: destination)
+        return true
     }
 
     /// A link rule's match: shows the Space and opens the link as its tab.
@@ -2127,11 +2130,13 @@ enum BrowserWindowMode: Equatable {
     /// Safari follow.
     @discardableResult func copySelectedTextAsQuoteLink() async -> Bool {
         guard let tab = selectedTab else { return false }
+        let pasteboard = NSPasteboard.general
+        let changeCount = pasteboard.changeCount
         let text = await tabDriver.requestActiveTabSelectedText() ?? ""
-        guard selectedTabID == tab.id,
+        // A late answer must not replace what was copied or selected since.
+        guard selectedTabID == tab.id, pasteboard.changeCount == changeCount,
               let link = BrowserQuoteLink.urlString(pageURLString: tab.urlString, quote: text)
         else { return false }
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(link, forType: .URL)
         return pasteboard.setString(link, forType: .string)
@@ -7124,14 +7129,17 @@ enum BrowserQuoteLink {
               ["http", "https"].contains(components.scheme?.lowercased() ?? "")
         else { return nil }
         let text = lines.joined(separator: " ")
-        let directive: String
-        if lines.count == 1, text.count <= exactTextLimit {
-            directive = encoded(text)
-        } else {
-            let start = first.split(separator: " ").prefix(4).joined(separator: " ")
-            let end = last.split(separator: " ").suffix(4).joined(separator: " ")
-            directive = encoded(start) + "," + encoded(end)
-        }
+        let directive: String =
+            if lines.count == 1, text.count <= exactTextLimit {
+                encoded(text)
+            } else if let start = edgeWords(of: first, fromStart: true),
+                      let end = edgeWords(of: last, fromStart: false),
+                      lines.count > 1 || start.upperBound <= end.lowerBound
+            {
+                encoded(String(first[start])) + "," + encoded(String(last[end]))
+            } else {
+                encoded(text)
+            }
         // The page's own fragment stays; an earlier highlight does not.
         let fragment = components.percentEncodedFragment?.components(separatedBy: ":~:").first ?? ""
         components.percentEncodedFragment = fragment + ":~:text=" + directive
@@ -7139,6 +7147,32 @@ enum BrowserQuoteLink {
     }
 
     // MARK: Private
+
+    /// Words at each end of a long quote; words, not spaces, so text without
+    /// spaces such as Chinese or Japanese splits too.
+    private static let edgeWordCount = 4
+    /// Each end stays short even when its words are long.
+    private static let edgeCharacterLimit = 60
+
+    private static func edgeWords(of line: String, fromStart: Bool) -> Range<String.Index>? {
+        var words = [Range<String.Index>]()
+        line.enumerateSubstrings(in: line.startIndex..<line.endIndex, options: .byWords) { _, range, _, _ in
+            words.append(range)
+        }
+        var edge = fromStart ? Array(words.prefix(edgeWordCount)) : Array(words.suffix(edgeWordCount))
+        // Whole words only: a single long word stays.
+        while edge.count > 1, let first = edge.first, let last = edge.last,
+              line[first.lowerBound..<last.upperBound].count > edgeCharacterLimit
+        {
+            if fromStart {
+                edge.removeLast()
+            } else {
+                edge.removeFirst()
+            }
+        }
+        guard let first = edge.first, let last = edge.last else { return nil }
+        return first.lowerBound..<last.upperBound
+    }
 
     /// Percent-encodes the characters that separate text fragment parts.
     private static func encoded(_ text: String) -> String {

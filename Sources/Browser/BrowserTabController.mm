@@ -62,7 +62,43 @@ constexpr char kPageCaptureScreenshotMethod[] = "Page.captureScreenshot";
 // CEF creates a page in well under a second; a page missing this long is lost.
 constexpr double kBrowserCreationTimeoutSeconds = 30;
 constexpr char kRuntimeEvaluateMethod[] = "Runtime.evaluate";
-constexpr char kSelectedTextExpression[] = "String(window.getSelection())";
+// The selected text, widened to whole words at its ends as a text fragment
+// needs (Chromium's own link to highlight does the same). The widened range
+// is selected for one synchronous step to read it with line breaks between
+// blocks, and the user's selection is put back before anything paints.
+constexpr char kSelectedTextExpression[] = R"JS((() => {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return '';
+  }
+  const original = selection.getRangeAt(0);
+  const range = original.cloneRange();
+  if (typeof Intl.Segmenter === 'function') {
+    const words = new Intl.Segmenter(undefined, { granularity: 'word' });
+    const snap = (node, offset, toStart) => {
+      if (node.nodeType !== Node.TEXT_NODE) {
+        return offset;
+      }
+      for (const part of words.segment(node.data)) {
+        const end = part.index + part.segment.length;
+        if (part.isWordLike && part.index < offset && offset < end) {
+          return toStart ? part.index : end;
+        }
+      }
+      return offset;
+    };
+    range.setStart(range.startContainer, snap(range.startContainer, range.startOffset, true));
+    range.setEnd(range.endContainer, snap(range.endContainer, range.endOffset, false));
+  }
+  selection.removeAllRanges();
+  selection.addRange(range);
+  const text = String(selection);
+  selection.removeAllRanges();
+  selection.addRange(original);
+  return text;
+})())JS";
+// A page that never answers gives up after this long.
+constexpr int64_t kRuntimeEvaluateTimeoutMs = 2000;
 
 constexpr char kWebAppManifestExpression[] = R"JS(
 (async () => {
@@ -1635,7 +1671,14 @@ class RuntimeEvaluateObserver final : public CefDevToolsMessageObserver {
     if (host->ExecuteDevToolsMethod(message_id_, kRuntimeEvaluateMethod,
                                     params) == 0) {
       Finish(nil);
+      return;
     }
+    // A busy or hung page, or one whose answer never resolves, gives nil.
+    CefRefPtr<RuntimeEvaluateObserver> observer(this);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, kRuntimeEvaluateTimeoutMs * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+                     observer->Finish(nil);
+                   });
   }
 
   void OnDevToolsMethodResult(CefRefPtr<CefBrowser>,
@@ -2749,6 +2792,7 @@ class BrowserTabClient final : public CefClient,
                                public CefDisplayHandler,
                                public CefDownloadHandler,
                                public CefFocusHandler,
+                               public CefFrameHandler,
                                public CefKeyboardHandler,
                                public CefJSDialogHandler,
                                public CefLifeSpanHandler,
@@ -2763,6 +2807,7 @@ class BrowserTabClient final : public CefClient,
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
+  CefRefPtr<CefFrameHandler> GetFrameHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -2811,6 +2856,7 @@ class BrowserTabClient final : public CefClient,
                                 CefRefPtr<CefFrame> frame,
                                 CefProcessId source_process,
                                 CefRefPtr<CefProcessMessage> message) override;
+  void OnFrameDetached(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame) override;
   bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
                         CefRefPtr<CefFrame> frame,
                         const CefString &target_url,
@@ -3008,6 +3054,8 @@ struct TabRecord {
   // state last sent to the delegate.
   std::map<std::string, MediaFrameState> mediaFrames;
   std::string mediaControlFrameID;
+  // The frame that last had sound keeps the controls while all are paused.
+  std::string lastAudibleMediaFrameID;
   MediaFrameState reportedMedia;
   std::string closeRequestID;
   CefRefPtr<CefJSDialogCallback> closeDialogCallback;
@@ -3096,8 +3144,10 @@ struct TabRecord {
                  frameID:(const std::string &)frameID
                 forTabID:(NSString *)tabID;
 - (void)resetMediaForTabID:(NSString *)tabID;
+- (void)forgetMediaFrame:(const std::string &)frameID forTabID:(NSString *)tabID;
 - (void)handleRenderProcessTerminatedForTabID:(NSString *)tabID errorCode:(int)errorCode;
 - (void)reportMedia:(const MediaFrameState &)state forTabID:(NSString *)tabID record:(TabRecord &)record;
+- (void)combineMediaForTabID:(NSString *)tabID record:(TabRecord &)record;
 - (void)notifySitePermissionDismissed:(NSInteger)requestID;
 
 @end
@@ -4259,8 +4309,8 @@ void WatchClickModifiers();
 }
 
 /// Combines the frames' reports: the tab plays when a frame does and is
-/// paused when one can resume; the controls reach the frame with sound, or
-/// else the first one.
+/// paused when one can resume. The controls reach the frame with sound, else
+/// a playing one, else the frame that last had sound, else any.
 - (void)handleMediaState:(const MediaFrameState &)state
                  frameID:(const std::string &)frameID
                 forTabID:(NSString *)tabID {
@@ -4274,12 +4324,38 @@ void WatchClickModifiers();
   } else {
     record.mediaFrames.erase(frameID);
   }
+  if (state.audible && state.playing) {
+    record.lastAudibleMediaFrameID = frameID;
+  }
+  [self combineMediaForTabID:tabID record:record];
+}
+
+- (void)forgetMediaFrame:(const std::string &)frameID forTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.mediaFrames.erase(frameID) == 0) {
+    return;
+  }
+  [self combineMediaForTabID:tabID record:it->second];
+}
+
+- (void)combineMediaForTabID:(NSString *)tabID record:(TabRecord &)record {
+  // Frames that are gone without a word, such as crashed embeds, drop out.
+  if (record.browser) {
+    for (auto entry = record.mediaFrames.begin(); entry != record.mediaFrames.end();) {
+      CefRefPtr<CefFrame> frame = record.browser->GetFrameByIdentifier(entry->first);
+      entry = frame && frame->IsValid() ? std::next(entry) : record.mediaFrames.erase(entry);
+    }
+  }
+  auto rank = [&record](const std::string &id, const MediaFrameState &state) {
+    return state.audible && state.playing ? 3 : state.playing ? 2 : id == record.lastAudibleMediaFrameID ? 1 : 0;
+  };
   MediaFrameState combined;
+  int best = -1;
   record.mediaControlFrameID.clear();
   for (const auto &entry : record.mediaFrames) {
-    const bool preferred = (entry.second.audible && !combined.audible) ||
-                           (entry.second.playing && !combined.playing && !combined.audible);
-    if (record.mediaControlFrameID.empty() || preferred) {
+    const int score = rank(entry.first, entry.second);
+    if (score > best) {
+      best = score;
       record.mediaControlFrameID = entry.first;
       combined.hasPreviousTrack = entry.second.hasPreviousTrack;
       combined.hasNextTrack = entry.second.hasNextTrack;
@@ -4300,6 +4376,7 @@ void WatchClickModifiers();
   }
   it->second.mediaFrames.clear();
   it->second.mediaControlFrameID.clear();
+  it->second.lastAudibleMediaFrameID.clear();
   [self reportMedia:MediaFrameState() forTabID:tabID record:it->second];
 }
 
@@ -5158,6 +5235,14 @@ void BrowserTabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser>,
   [controller_ cancelMediaSitePermissionsForTabID:ToNSString(tab_id_)];
   [controller_ resetMediaForTabID:ToNSString(tab_id_)];
   [controller_ handleRenderProcessTerminatedForTabID:ToNSString(tab_id_) errorCode:error_code];
+}
+
+/// A detached frame, such as an embed whose own process crashed, stops playing.
+void BrowserTabClient::OnFrameDetached(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame) {
+  CEF_REQUIRE_UI_THREAD();
+  if (frame) {
+    [controller_ forgetMediaFrame:frame->GetIdentifier().ToString() forTabID:ToNSString(tab_id_)];
+  }
 }
 
 bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
