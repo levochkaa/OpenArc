@@ -234,6 +234,9 @@ targets:
       - name: Stage CEF Runtime
         shell: /bin/bash
         basedOnDependencyAnalysis: false
+        # The script signs the app, so it must run after Xcode writes Info.plist.
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
         script: |
           "$SRCROOT/script/stage_cef_bundle.sh" \
             "${CEF_RUNTIME_CONFIGURATION:-Release}" \
