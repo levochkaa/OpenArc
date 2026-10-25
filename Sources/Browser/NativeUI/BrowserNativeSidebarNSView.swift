@@ -47,6 +47,7 @@ final class BrowserNativeSidebarNSView: NSView {
         dragPreview.setAccessibilityIdentifier("browser.sidebar.drag-preview")
         dragPreview.setAccessibilityElement(false)
         dragPreview.isHidden = true
+        registerForDraggedTypes([.URL, .fileURL, .string])
         content.onEmptyClick = { [weak state] in state?.dismissRenamingIfNeeded() }
         content.permitsWindowDrag = { [weak state] in state?.isDraggingSidebarItem == false }
         appGrid.onEmptyClick = content.onEmptyClick
@@ -106,6 +107,8 @@ final class BrowserNativeSidebarNSView: NSView {
 
     /// Folder preview beside a collapsed folder row.
     let folderPreview = BrowserFolderPreviewCoordinator()
+
+    private(set) var linkDropProposal: BrowserSidebarDropProposal?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -171,6 +174,33 @@ final class BrowserNativeSidebarNSView: NSView {
         synchronizeGeometry()
     }
 
+    // MARK: Links dropped from pages and other apps
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        beginLinkDrop(from: sender.draggingPasteboard)
+        return updateLinkDrop(at: sender.draggingLocation)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        updateLinkDrop(at: sender.draggingLocation)
+    }
+
+    override func draggingExited(_: NSDraggingInfo?) {
+        endLinkDrop()
+    }
+
+    override func draggingEnded(_: NSDraggingInfo) {
+        endLinkDrop()
+    }
+
+    override func prepareForDragOperation(_: NSDraggingInfo) -> Bool {
+        linkDropProposal != nil
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        dropLinks(from: sender.draggingPasteboard)
+    }
+
     func refresh(animated: Bool = false) {
         defer {
             revealSelectedRowIfRequested()
@@ -232,8 +262,11 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     func makeDragGeometry() -> BrowserSidebarDragGeometry? {
-        guard let payload = state.drag.payload, let id = state.snapshot.selectedSpaceID,
-              let page = pages[id] else { return nil }
+        state.drag.payload.flatMap { makeDragGeometry(payload: $0) }
+    }
+
+    func makeDragGeometry(payload: BrowserSidebarDragPayload) -> BrowserSidebarDragGeometry? {
+        guard let id = state.snapshot.selectedSpaceID, let page = pages[id] else { return nil }
         let tree = BrowserSidebarTabTree(snapshot: state.snapshot)
         var rows = [BrowserSidebarDragRowGeometry]()
         for entry in page.entries {
@@ -447,6 +480,38 @@ final class BrowserNativeSidebarNSView: NSView {
         synchronizeGeometry()
     }
 
+    func beginLinkDrop(from pasteboard: NSPasteboard) {
+        acceptsLinkDrop = !BrowserSidebarLinkDrop.urls(from: pasteboard).isEmpty
+    }
+
+    /// A link dropped on the sidebar opens as a background tab at the
+    /// insertion line, pinned in a pinned section or folder.
+    @discardableResult func dropLinks(from pasteboard: NSPasteboard) -> Bool {
+        let urls = BrowserSidebarLinkDrop.urls(from: pasteboard)
+        let destination = linkDropProposal?.destination
+        endLinkDrop()
+        guard let destination, !urls.isEmpty else { return false }
+        return state.withSidebarAnimation { state.model.openURLs(urls, at: destination) }
+    }
+
+    /// The insertion a link dropped at a window point would take, as for a
+    /// dragged tab; Favorites take no links.
+    @discardableResult func updateLinkDrop(at windowPoint: CGPoint) -> NSDragOperation {
+        guard acceptsLinkDrop, !state.drag.isDragging, !state.isSidebarResizing, state.model.canCreateTab,
+              let geometry = makeDragGeometry(payload: .init(primary: .tab(""), tabIDs: []))
+        else {
+            endLinkDrop()
+            return []
+        }
+        let proposal = geometry.proposal(at: content.convert(windowPoint, from: nil), previous: linkDropProposal)
+        let next = proposal?.destination.container.section == .app ? nil : proposal
+        if next != linkDropProposal {
+            linkDropProposal = next
+            updateDragPresentation()
+        }
+        return next == nil ? [] : .copy
+    }
+
     // MARK: Private
 
     private let content = BrowserNativeSidebarBackground()
@@ -468,6 +533,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private lazy var handledRevealRequestID = state.model.sidebarRevealRequestID
     private lazy var handledRenameRequestID = state.model.sidebarRenameRequestID
     private var lastWindowDragPoint = CGPoint.zero
+    private var acceptsLinkDrop = false
     private var reportedDragging = false
     private var highlightedDropRow: BrowserNativeSidebarRowNSView?
     private var splitPreviewRow: BrowserNativeSidebarRowNSView?
@@ -1218,6 +1284,13 @@ final class BrowserNativeSidebarNSView: NSView {
         }
     }
 
+    private func endLinkDrop() {
+        acceptsLinkDrop = false
+        guard linkDropProposal != nil else { return }
+        linkDropProposal = nil
+        updateDragPresentation()
+    }
+
     private func endDragging(at point: CGPoint, cancelled: Bool) {
         dragEvents.stop()
         dragPreviewAnimation.cancel()
@@ -1347,8 +1420,9 @@ final class BrowserNativeSidebarNSView: NSView {
             splitPreviewRow?.setSplitDropSide(target.side)
         }
         dragIndicator.update(line: nil, occluding: nil)
-        if let proposal = state.drag.proposal {
-            switch proposal.feedback {
+        if let feedback = state.drag.proposal?.feedback ?? linkDropProposal?.feedback {
+            switch feedback {
+            case .line(let line) where state.drag.payload == nil: dragIndicator.update(line: line, occluding: nil)
             case .line: break
             case .folder(let id): highlightedDropRow = pages.values.compactMap { $0.rows["folder:\(id)"] }.first
             case .space(let id): highlightedDropRow = pages[id]?.header
@@ -1798,4 +1872,25 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
     private var renderedFolder: BrowserChromeModel.PinnedTabFolder?
     private var renderedSplit: [BrowserChromeModel.Tab]?
     private var renderedAsApp = false
+}
+
+// MARK: - BrowserSidebarLinkDrop
+
+/// Links a drag carries for the sidebar: web addresses and files, or a
+/// dragged text that is a web address.
+enum BrowserSidebarLinkDrop {
+    static func urls(from pasteboard: NSPasteboard) -> [URL] {
+        let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] ?? []
+        let urls = objects.filter { url in
+            ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "")
+        }
+        if !urls.isEmpty {
+            return urls
+        }
+        guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host?.isEmpty == false
+        else { return [] }
+        return [url]
+    }
 }

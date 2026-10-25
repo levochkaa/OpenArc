@@ -17,6 +17,7 @@ The drag implementation uses AppKit events and a shared tab tree. A drop destina
 - An insertion cue has a small hollow ring in the row margin. The line starts at the ring's edge and avoids the floating preview, so the destination remains visible without drawing a line through preview text. The ring stays in the margin because the opaque preview usually covers the gap.
 - Edge autoscroll updates both the viewport and drop geometry. Offscreen rows and other cached space pages cannot advertise a drop in the active page.
 - Escape, release outside a valid destination, loss of window/application activity, closure and removal of the source clean up the session. Cancelled gestures do not change tab order. No system copy/plus badge is involved.
+- Links dragged from a page or another app use the same insertion line and highlights (AppKit dragging destination on `BrowserNativeSidebarNSView`). Each link opens as a background tab at the line: pinned in a pinned section, folder or on the Space header, temporary in Today; the selection stays. Web addresses, files and dragged text that is a web address count as links; Favorites take none.
 
 ## Owners
 

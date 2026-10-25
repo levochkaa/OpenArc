@@ -466,6 +466,72 @@ import Testing
         #expect(starts == 1 && clicks == 0 && legacyDrops == 0)
         #expect(!row.isDragging && !row.isPressed)
     }
+
+    @Test func aLinkDroppedOnTheSidebarOpensInTheBackgroundAtTheInsertionLine() throws {
+        let f = SidebarDragFixture()
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        let selected = f.model.selectedTabID
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("TheBrowserTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        try pasteboard.writeObjects([#require(URL(string: "https://drop.example/page")) as NSURL])
+
+        let geometry = try #require(h.view.makeDragGeometry(payload: .init(primary: .tab(""), tabIDs: [])))
+        let destination = BrowserSidebarDropDestination(container: .pinned("s"), beforeItem: f.item("b"))
+        let slot = try #require(geometry.slots.first { $0.proposal.destination == destination })
+        let point = try #require(h.coordinateView).convert(slot.hitFrame.center, to: nil)
+        h.view.beginLinkDrop(from: pasteboard)
+        #expect(h.view.updateLinkDrop(at: point) == .copy)
+        #expect(h.view.linkDropProposal?.destination == destination)
+        let indicator = try #require(h.named("browser.sidebar.drop-indicator") as? BrowserSidebarInsertionIndicator)
+        #expect(!indicator.isHidden)
+
+        #expect(h.view.dropLinks(from: pasteboard))
+        #expect(indicator.isHidden && h.view.linkDropProposal == nil)
+        #expect(f.model.spacePinnedTabs.map(\.urlString) == [
+            "https://a.example",
+            "https://drop.example/page",
+            "https://b.example",
+        ])
+        #expect(f.model.selectedTabID == selected, "A dropped link opens in the background")
+
+        // Text that is no web address is not a link.
+        pasteboard.clearContents()
+        pasteboard.setString("just words", forType: .string)
+        h.view.beginLinkDrop(from: pasteboard)
+        #expect(h.view.updateLinkDrop(at: point) == [])
+    }
+
+    @Test func linkDropsTakeWebAddressesAndFilesOnly() {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("TheBrowserTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        func urls(_ write: () -> Void) -> [String] {
+            pasteboard.clearContents()
+            write()
+            return BrowserSidebarLinkDrop.urls(from: pasteboard).map(\.absoluteString)
+        }
+        #expect(urls { pasteboard.setString("  https://text.example/a  ", forType: .string) } ==
+            ["https://text.example/a"])
+        #expect(urls { pasteboard.setString("javascript:alert(1)", forType: .string) }.isEmpty)
+        #expect(urls { pasteboard.setString("https://", forType: .string) }.isEmpty)
+        #expect(urls {
+            pasteboard.writeObjects([
+                URL(fileURLWithPath: "/tmp/page.html") as NSURL,
+                URL(string: "mailto:a@example.com")! as NSURL,
+            ])
+        } == ["file:///tmp/page.html"])
+    }
+
+    @Test func droppedLinksStayInTheSelectedSpaceAndOutOfFavorites() throws {
+        let f = SidebarDragFixture()
+        let urls = try [#require(URL(string: "https://one.example")), #require(URL(string: "https://two.example"))]
+        #expect(!f.model.openURLs(urls, at: .init(container: .app)))
+        #expect(!f.model.openURLs(urls, at: .init(container: .temporary("t"))))
+        #expect(f.model.openURLs(urls, at: .init(container: .temporary("s"), beforeItem: f.item("y"))))
+        #expect(f.model.temporaryTabs.map(\.urlString)
+            == ["https://x.example", "https://one.example", "https://two.example", "https://y.example"])
+    }
 }
 
 // MARK: - SidebarDragHarness

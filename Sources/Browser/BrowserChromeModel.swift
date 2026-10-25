@@ -866,6 +866,18 @@ enum BrowserWindowMode: Equatable {
         createTab(withURLString: url.absoluteString)
     }
 
+    /// Link drop on the sidebar: each link opens as a background tab at
+    /// the drop's place in the selected Space, pinned in a pinned section or
+    /// folder. Favorites take no links.
+    @discardableResult func openURLs(_ urls: [URL], at destination: BrowserSidebarDropDestination) -> Bool {
+        guard canCreateTab, !urls.isEmpty, destination.container.section != .app,
+              destination.container.spaceID == selectedSpaceID
+        else { return false }
+        let ids = urls.compactMap { url in createTab(withURLString: url.absoluteString, makeActive: false) }
+        guard let first = ids.first else { return false }
+        return commitSidebarDrop(payload: .init(primary: .tab(first), tabIDs: Set(ids)), destination: destination)
+    }
+
     /// A link rule's match: shows the Space and opens the link as its tab.
     /// False when the Space is gone, so the link can open as usual.
     @discardableResult func openURL(_ url: URL, inSpaceWithID spaceID: String) -> Bool {
@@ -3877,23 +3889,28 @@ enum BrowserWindowMode: Equatable {
         windowTitleHandler(title)
     }
 
-    private func createTab(
+    /// A new temporary tab of the selected Space; a background one keeps the
+    /// selection.
+    @discardableResult private func createTab(
         withURLString urlString: String,
         registersUndo: Bool = true,
-        undoActionName: String = BrowserStrings.menuNewTab
-    ) {
+        undoActionName: String = BrowserStrings.menuNewTab,
+        makeActive: Bool = true
+    ) -> String? {
         guard canCreateTab else {
-            return
+            return nil
         }
 
         ensureDefaultSpace()
         guard let selectedSpaceID else {
-            return
+            return nil
         }
 
-        captureSelectedTabPreviewIfNeeded()
+        if makeActive {
+            captureSelectedTabPreviewIfNeeded()
+        }
         let resolvedURLString = resolvedBrowserURLString(urlString)
-        let tabID = tabDriver.createTab(withURLString: resolvedURLString, makeActive: true)
+        let tabID = tabDriver.createTab(withURLString: resolvedURLString, makeActive: makeActive)
         let context = PendingCreatedTabContext(
             spaceID: selectedSpaceID,
             placement: .temporary,
@@ -3905,13 +3922,16 @@ enum BrowserWindowMode: Equatable {
             tabCreationUndoReferences[tabID] = creationUndoReference
             registerTabCreationUndo(creationUndoReference, actionName: undoActionName)
         }
-        selectedTabID = tabID
-        setSelectedTabID(tabID, forSpaceID: selectedSpaceID)
-        findResultMatchCount = nil
+        if makeActive {
+            selectedTabID = tabID
+            setSelectedTabID(tabID, forSpaceID: selectedSpaceID)
+            findResultMatchCount = nil
+        }
         // The returned ID already identifies a logical tab. Persist it before
         // another user action can target it, independently of the allocation callback.
-        handleCreatedTab(id: tabID, title: "", urlString: resolvedURLString, isActive: true)
+        handleCreatedTab(id: tabID, title: "", urlString: resolvedURLString, isActive: makeActive)
         pendingHydratedTabCreationIDs.insert(tabID)
+        return tabID
     }
 
     private func openResolvedSelectionInNewTab(_ resolvedURLString: String) {
