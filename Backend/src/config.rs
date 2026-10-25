@@ -21,6 +21,40 @@ pub struct Config {
     pub github_release_token: String,
     pub public_base_url: Option<String>,
     pub update_appcast_asset: String,
+    pub sign_in: SignInConfig,
+}
+
+/// Sign-in methods besides native Sign in with Apple. A method is offered
+/// only when it is configured.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SignInConfig {
+    /// The Services ID of Sign in with Apple on the web.
+    pub apple_services_id: Option<String>,
+    pub google: Option<OAuthClient>,
+    pub github: Option<OAuthClient>,
+    /// Sign-in codes are emailed through Resend.
+    pub resend_api_key: Option<String>,
+    pub email_from: String,
+    pub endpoints: ProviderEndpoints,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OAuthClient {
+    pub id: String,
+    pub secret: String,
+}
+
+/// The providers' endpoints. Only tests override them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProviderEndpoints {
+    pub apple_keys: String,
+    pub apple_authorize: String,
+    pub google_authorize: String,
+    pub google_token: String,
+    pub github_authorize: String,
+    pub github_token: String,
+    pub github_api: String,
+    pub resend_emails: String,
 }
 
 static APPLE_CLIENT_ID: LazyLock<Regex> =
@@ -87,6 +121,8 @@ impl Config {
             issues.push("OPENARC_UPDATE_APPCAST_ASSET: must not be empty".to_string());
         }
 
+        let sign_in = sign_in_config(&value, public_base_url.is_some(), &mut issues);
+
         if !issues.is_empty() {
             return Err(issues.join("; "));
         }
@@ -103,7 +139,52 @@ impl Config {
             github_release_token: value("GITHUB_RELEASE_TOKEN").unwrap_or_default(),
             public_base_url,
             update_appcast_asset,
+            sign_in,
         })
+    }
+}
+
+fn sign_in_config(
+    value: &dyn Fn(&str) -> Option<String>,
+    has_public_base_url: bool,
+    issues: &mut Vec<String>,
+) -> SignInConfig {
+    let present = |key: &str| value(key).filter(|text| !text.trim().is_empty());
+    let mut client = |name: &str| {
+        let id = present(&format!("OPENARC_{name}_CLIENT_ID"));
+        let secret = present(&format!("OPENARC_{name}_CLIENT_SECRET"));
+        match (id, secret) {
+            (Some(id), Some(secret)) => Some(OAuthClient { id, secret }),
+            (None, None) => None,
+            _ => {
+                issues.push(format!("OPENARC_{name}_CLIENT_ID and OPENARC_{name}_CLIENT_SECRET: set both or neither"));
+                None
+            }
+        }
+    };
+    let google = client("GOOGLE");
+    let github = client("GITHUB");
+    let apple_services_id = present("OPENARC_APPLE_SERVICES_ID");
+    if (apple_services_id.is_some() || google.is_some() || github.is_some()) && !has_public_base_url {
+        issues.push("OPENARC_PUBLIC_BASE_URL: required for web sign-in, whose redirects return to it".to_string());
+    }
+    let endpoint = |key: &str, default: &str| present(key).unwrap_or_else(|| default.to_string());
+    SignInConfig {
+        apple_services_id,
+        google,
+        github,
+        resend_api_key: present("OPENARC_RESEND_API_KEY"),
+        email_from: endpoint("OPENARC_EMAIL_FROM", "OpenArc <login@openarc.su>"),
+        endpoints: ProviderEndpoints {
+            apple_keys: endpoint("OPENARC_APPLE_KEYS_URL", crate::auth::APPLE_KEYS_URL),
+            apple_authorize: endpoint("OPENARC_APPLE_AUTHORIZE_URL", "https://appleid.apple.com/auth/authorize"),
+            google_authorize: endpoint("OPENARC_GOOGLE_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
+            google_token: endpoint("OPENARC_GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token"),
+            github_authorize: endpoint("OPENARC_GITHUB_AUTHORIZE_URL", "https://github.com/login/oauth/authorize"),
+            github_token: endpoint("OPENARC_GITHUB_TOKEN_URL", "https://github.com/login/oauth/access_token"),
+            github_api: endpoint("OPENARC_GITHUB_API_URL", "https://api.github.com"),
+            resend_emails: endpoint("OPENARC_RESEND_API_URL", "https://api.resend.com/emails"),
+        },
     }
 }
 

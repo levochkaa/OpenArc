@@ -24,6 +24,8 @@ const KEY_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct AppleIdentity {
     pub apple_subject: String,
     pub email: Option<String>,
+    pub email_verified: bool,
+    pub nonce: Option<String>,
 }
 
 #[derive(Clone)]
@@ -61,14 +63,18 @@ struct AppleClaims {
     sub: Option<String>,
     exp: Option<u64>,
     email: Option<serde_json::Value>,
+    /// A boolean, or "true" and "false" as strings in older tokens.
+    email_verified: Option<serde_json::Value>,
+    nonce: Option<String>,
 }
 
 impl AuthService {
+    #[cfg(test)]
     pub fn new(config: &Config, http: reqwest::Client) -> Self {
         Self::with_apple_keys_url(config, http, APPLE_KEYS_URL)
     }
 
-    /// Tests serve their own keys; production always uses Apple's.
+    /// Apple's published keys, unless tests serve their own.
     pub fn with_apple_keys_url(config: &Config, http: reqwest::Client, apple_keys_url: &str) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -119,6 +125,16 @@ impl AuthService {
     /// Verifies signature, issuer, audience and lifetime. A token that fails
     /// is a server error, as it was before the Rust rewrite.
     pub async fn verify_apple_identity_token(&self, token: &str) -> ApiResult<AppleIdentity> {
+        let audiences = self.inner.apple_client_ids.clone();
+        self.verify_apple_token(token, &audiences).await
+    }
+
+    /// A token from Sign in with Apple on the web, issued to the Services ID.
+    pub async fn verify_apple_web_token(&self, token: &str, services_id: &str) -> ApiResult<AppleIdentity> {
+        self.verify_apple_token(token, &[services_id.to_string()]).await
+    }
+
+    async fn verify_apple_token(&self, token: &str, audiences: &[String]) -> ApiResult<AppleIdentity> {
         let header = decode_header(token).map_err(|error| ApiError::Internal(error.into()))?;
         let jwk = self.apple_key(header.kid.as_deref()).await?;
         let algorithm =
@@ -146,7 +162,7 @@ impl AuthService {
         validation.validate_nbf = true;
         validation.required_spec_claims = ["iss", "aud"].into_iter().map(str::to_string).collect();
         validation.set_issuer(&[APPLE_ISSUER]);
-        validation.set_audience(&self.inner.apple_client_ids);
+        validation.set_audience(audiences);
         let key = DecodingKey::from_jwk(&jwk).map_err(|error| ApiError::Internal(error.into()))?;
         let claims =
             decode::<AppleClaims>(token, &key, &validation).map_err(|error| ApiError::Internal(error.into()))?.claims;
@@ -164,7 +180,12 @@ impl AuthService {
             }
             _ => None,
         };
-        Ok(AppleIdentity { apple_subject, email })
+        let email_verified = match claims.email_verified {
+            Some(serde_json::Value::Bool(verified)) => verified,
+            Some(serde_json::Value::String(verified)) => verified == "true",
+            _ => false,
+        };
+        Ok(AppleIdentity { apple_subject, email, email_verified, nonce: claims.nonce })
     }
 
     /// The key with this ID from a cached key set, refetched when it is old
@@ -214,7 +235,7 @@ fn expired_at_now(exp: Option<u64>) -> anyhow::Result<()> {
 }
 
 /// Zod's practical email check.
-fn is_email(email: &str) -> bool {
+pub fn is_email(email: &str) -> bool {
     static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^([A-Za-z0-9_'+\-.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$")
             .expect("valid regex")

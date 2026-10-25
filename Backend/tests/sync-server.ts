@@ -22,16 +22,16 @@ export const integrationEnvironment = {
 
 export type SyncServer = { url: string; stop: () => Promise<void> };
 
-function environment(databaseURL: string): NodeJS.ProcessEnv {
-  return { ...process.env, ...integrationEnvironment, DATABASE_URL: databaseURL, HOST: "127.0.0.1", PORT: "0", RUST_LOG: "warn" };
+function environment(databaseURL: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return { ...process.env, ...integrationEnvironment, ...extra, DATABASE_URL: databaseURL, HOST: "127.0.0.1", PORT: "0", RUST_LOG: "warn" };
 }
 
 export async function migrate(databaseURL: string): Promise<void> {
   await promisify(execFile)(serverBinary, ["migrate"], { env: environment(databaseURL), timeout: 15_000 });
 }
 
-export async function startSyncServer(databaseURL: string): Promise<SyncServer> {
-  const child = spawn(serverBinary, ["serve"], { env: environment(databaseURL), stdio: ["ignore", "pipe", "pipe"] });
+export async function startSyncServer(databaseURL: string, extra: NodeJS.ProcessEnv = {}): Promise<SyncServer> {
+  const child = spawn(serverBinary, ["serve"], { env: environment(databaseURL, extra), stdio: ["ignore", "pipe", "pipe"] });
   let errors = "";
   child.stderr.on("data", (data: Buffer) => { errors += data.toString(); });
   const lines = createInterface({ input: child.stdout });

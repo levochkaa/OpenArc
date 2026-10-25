@@ -9,6 +9,7 @@ import { issueAccessToken, migrate, startSyncServer, type SyncServer } from "./s
 import { registerFolderSyncTests } from "./sync-folders.js";
 import { registerActivitySyncTests } from "./sync-activity.js";
 import { registerExpirySyncTests } from "./sync-expiry.js";
+import { registerSignInTests } from "./sign-in.js";
 
 type SyncEvent = {
   serverSeq: number;
@@ -118,6 +119,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
   registerFolderSyncTests({ pool: () => pool, account, register, post, startServerProcess });
   registerActivitySyncTests({ pool: () => pool, account, post, startServerProcess });
   registerExpirySyncTests({ pool: () => pool, account, post, startServerProcess });
+  registerSignInTests({ pool: () => pool, startServer: (extra) => startSyncServer(testDatabaseURL!, extra) });
 
   async function storedTabs(userID: string): Promise<StoredTab[]> {
     const result = await pool.query<StoredTab>(`

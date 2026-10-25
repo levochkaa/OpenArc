@@ -5,8 +5,12 @@ use crate::auth::AuthService;
 use crate::body::JsonBody;
 use crate::config::Config;
 use crate::error::{ApiError, ApiResult, json_response};
-use crate::requests::{AUTH_APPLE_REQUEST, REGISTER_DEVICE_REQUEST, SYNC_PULL_REQUEST, SYNC_PUSH_REQUEST};
+use crate::requests::{
+    AUTH_APPLE_REQUEST, AUTH_EMAIL_START_REQUEST, AUTH_EMAIL_VERIFY_REQUEST, AUTH_WEB_EXCHANGE_REQUEST,
+    REGISTER_DEVICE_REQUEST, SYNC_PULL_REQUEST, SYNC_PUSH_REQUEST,
+};
 use crate::schema::{Schema, format_issues};
+use crate::signin::{SignInService, WebProvider};
 use crate::sync::{SyncService, parse_uuid};
 use crate::updates::{Channel, Download, UpdatesService, content_disposition, parse_channel};
 use axum::Router;
@@ -33,6 +37,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub auth: AuthService,
     pub sync: Arc<SyncService>,
+    pub sign_in: SignInService,
     pub updates: UpdatesService,
 }
 
@@ -45,6 +50,14 @@ pub fn router(state: AppState) -> Router {
         .route("/docs", get(docs))
         .route("/docs-yaml", get(openapi_yaml))
         .route("/v1/auth/apple", post(authenticate_with_apple))
+        .route("/v1/auth/providers", get(auth_providers))
+        .route("/v1/auth/web/{provider}/start", get(start_web_sign_in))
+        .route("/v1/auth/apple/callback", post(apple_callback))
+        .route("/v1/auth/google/callback", get(google_callback))
+        .route("/v1/auth/github/callback", get(github_callback))
+        .route("/v1/auth/web/exchange", post(exchange_web_sign_in))
+        .route("/v1/auth/email/start", post(start_email_sign_in))
+        .route("/v1/auth/email/verify", post(verify_email_sign_in))
         .route("/v1/devices", post(register_device))
         .route("/v1/sync/push", post(push))
         .route("/v1/sync/pull", post(pull))
@@ -98,6 +111,73 @@ fn created(body: &Value) -> Response {
 async fn authenticate_with_apple(State(state): State<AppState>, JsonBody(body): JsonBody) -> ApiResult<Response> {
     let request = parse(&AUTH_APPLE_REQUEST, body)?;
     Ok(created(&state.sync.authenticate_with_apple(&request).await?))
+}
+
+async fn auth_providers(State(state): State<AppState>) -> Response {
+    no_store(json_response(StatusCode::OK, &state.sign_in.providers()))
+}
+
+async fn start_web_sign_in(
+    State(state): State<AppState>,
+    provider: Result<Path<String>, PathRejection>,
+    request: Request,
+) -> ApiResult<Response> {
+    let provider = path_value(provider)?;
+    let query = query_values(&request);
+    let challenge = single(&query, "code_challenge", "code_challenge must appear once")?;
+    Ok(see_other(&state.sign_in.start_web(&provider, challenge).await?))
+}
+
+/// Apple posts its result as a form, so its name and email can come along.
+async fn apple_callback(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+    let params: HashMap<String, String> = url::form_urlencoded::parse(&body).into_owned().collect();
+    see_other(&state.sign_in.finish_web(WebProvider::Apple, &params).await)
+}
+
+async fn google_callback(State(state): State<AppState>, request: Request) -> Response {
+    let params = first_query_values(&request);
+    see_other(&state.sign_in.finish_web(WebProvider::Google, &params).await)
+}
+
+async fn github_callback(State(state): State<AppState>, request: Request) -> Response {
+    let params = first_query_values(&request);
+    see_other(&state.sign_in.finish_web(WebProvider::Github, &params).await)
+}
+
+async fn exchange_web_sign_in(State(state): State<AppState>, JsonBody(body): JsonBody) -> ApiResult<Response> {
+    let request = parse(&AUTH_WEB_EXCHANGE_REQUEST, body)?;
+    Ok(no_store(created(&state.sign_in.exchange_web(&request).await?)))
+}
+
+async fn start_email_sign_in(State(state): State<AppState>, JsonBody(body): JsonBody) -> ApiResult<Response> {
+    let request = parse(&AUTH_EMAIL_START_REQUEST, body)?;
+    Ok(json_response(StatusCode::ACCEPTED, &state.sign_in.start_email(&request).await?))
+}
+
+async fn verify_email_sign_in(State(state): State<AppState>, JsonBody(body): JsonBody) -> ApiResult<Response> {
+    let request = parse(&AUTH_EMAIL_VERIFY_REQUEST, body)?;
+    Ok(no_store(created(&state.sign_in.verify_email(&request).await?)))
+}
+
+/// The first value of each query parameter; providers send each once.
+fn first_query_values(request: &Request) -> HashMap<String, String> {
+    query_values(request)
+        .into_iter()
+        .filter_map(|(key, values)| values.into_iter().next().map(|value| (key, value)))
+        .collect()
+}
+
+fn see_other(location: &str) -> Response {
+    let mut response = StatusCode::SEE_OTHER.into_response();
+    if let Ok(value) = HeaderValue::from_str(location) {
+        response.headers_mut().insert(header::LOCATION, value);
+    }
+    no_store(response)
+}
+
+fn no_store(mut response: Response) -> Response {
+    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 async fn register_device(
@@ -270,6 +350,13 @@ const STATIC_ROUTES: &[&str] = &[
     "/docs",
     "/docs-yaml",
     "/v1/auth/apple",
+    "/v1/auth/providers",
+    "/v1/auth/apple/callback",
+    "/v1/auth/google/callback",
+    "/v1/auth/github/callback",
+    "/v1/auth/web/exchange",
+    "/v1/auth/email/start",
+    "/v1/auth/email/verify",
     "/v1/devices",
     "/v1/sync/push",
     "/v1/sync/pull",
@@ -279,7 +366,8 @@ const STATIC_ROUTES: &[&str] = &[
     "/updates/appcast-beta.xml",
     "/v1/releases",
 ];
-const PARAMETER_ROUTE_PREFIXES: &[&str] = &["/downloads/", "/updates/downloads/", "/v1/releases/assets/"];
+const PARAMETER_ROUTE_PREFIXES: &[&str] =
+    &["/downloads/", "/updates/downloads/", "/v1/releases/assets/", "/v1/auth/web/"];
 
 /// Express routes match without regard to case and with one optional
 /// trailing slash; parameters keep their case.

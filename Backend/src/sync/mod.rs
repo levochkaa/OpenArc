@@ -13,6 +13,7 @@ pub use store::SyncStore;
 use crate::auth::AuthService;
 use crate::error::{ApiError, ApiResult};
 use crate::js_json;
+use crate::signin::{Identity, create_session, resolve_user};
 use crate::time::js_iso;
 use deadpool_postgres::Pool;
 use serde_json::{Map, Value, json};
@@ -48,38 +49,23 @@ impl SyncService {
         Self { pool, auth }
     }
 
+    /// Native Sign in with Apple. The account is the Apple identity's, as for
+    /// every other sign-in method.
     pub async fn authenticate_with_apple(&self, body: &Value) -> ApiResult<Value> {
-        let identity = self.auth.verify_apple_identity_token(text(body, "identityToken")).await?;
+        let apple = self.auth.verify_apple_identity_token(text(body, "identityToken")).await?;
+        let identity = Identity {
+            provider: "apple",
+            subject: apple.apple_subject,
+            email: apple.email,
+            email_verified: apple.email_verified,
+        };
         let mut client = self.pool.get().await?;
         let tx = client.transaction().await?;
-        let user = tx
-            .query_one(
-                "INSERT INTO app_users (apple_subject, email, updated_at)
-                 VALUES ($1, $2, now())
-                 ON CONFLICT (apple_subject)
-                 DO UPDATE SET email = COALESCE(EXCLUDED.email, app_users.email), updated_at = now()
-                 RETURNING id, email",
-                &[&identity.apple_subject, &identity.email],
-            )
-            .await?;
-        let user_id: Uuid = user.get("id");
-        let device = tx
-            .query_one(
-                "INSERT INTO devices (user_id, name, platform)
-                 VALUES ($1, $2, $3)
-                 RETURNING id, name, platform, public_key, last_seen_at",
-                &[&user_id, &text(body, "deviceName"), &text(body, "devicePlatform")],
-            )
-            .await?;
+        let user_id = resolve_user(&tx, &identity).await?;
+        let session =
+            create_session(&tx, &self.auth, user_id, text(body, "deviceName"), text(body, "devicePlatform")).await?;
         tx.commit().await?;
-        let email: Option<String> = user.get("email");
-        Ok(json!({
-            "accessToken": self.auth.issue_access_token(&user_id.to_string())?,
-            "tokenType": "Bearer",
-            "expiresIn": 60 * 60 * 24 * 30,
-            "user": {"id": user_id.to_string(), "email": email},
-            "device": serialize_device(&device),
-        }))
+        Ok(session)
     }
 
     pub async fn register_device(&self, user_id: Uuid, body: &Value) -> ApiResult<Value> {
@@ -362,7 +348,7 @@ impl ExpiryBudget {
     }
 }
 
-fn serialize_device(row: &Row) -> Value {
+pub(crate) fn serialize_device(row: &Row) -> Value {
     let mut device = Map::new();
     device.insert("id".to_string(), json!(row.get::<_, Uuid>("id").to_string()));
     device.insert("name".to_string(), json!(row.get::<_, String>("name")));

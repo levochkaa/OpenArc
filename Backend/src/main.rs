@@ -12,6 +12,7 @@ mod error;
 mod js_json;
 mod requests;
 mod schema;
+mod signin;
 mod sync;
 mod time;
 mod updates;
@@ -19,6 +20,7 @@ mod updates;
 use crate::app::{AppState, router};
 use crate::auth::AuthService;
 use crate::config::Config;
+use crate::signin::SignInService;
 use crate::sync::SyncService;
 use crate::updates::{GITHUB_API_URL, UpdatesService};
 use std::process::ExitCode;
@@ -85,9 +87,10 @@ async fn serve() -> anyhow::Result<()> {
         .connect_timeout(std::time::Duration::from_secs(30))
         .read_timeout(std::time::Duration::from_secs(300))
         .build()?;
-    let auth = AuthService::new(&config, http.clone());
+    let auth = AuthService::with_apple_keys_url(&config, http.clone(), &config.sign_in.endpoints.apple_keys);
     let state = AppState {
         sync: Arc::new(SyncService::new(pool.clone(), auth.clone())),
+        sign_in: SignInService::new(pool.clone(), auth.clone(), config.clone(), http.clone()),
         updates: UpdatesService::new(config.clone(), http, GITHUB_API_URL),
         auth,
         config: config.clone(),

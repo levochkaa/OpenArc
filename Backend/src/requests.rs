@@ -22,6 +22,29 @@ pub static AUTH_APPLE_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
     ])
 });
 
+fn device_fields() -> Vec<(&'static str, Schema)> {
+    vec![
+        ("deviceName", with_default(string_between(Some(1), Some(120)), json!("Mac"))),
+        ("devicePlatform", with_default(string_between(Some(1), Some(60)), json!("macOS"))),
+    ]
+}
+
+pub static AUTH_WEB_EXCHANGE_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
+    let mut fields =
+        vec![("code", string_between(Some(1), Some(200))), ("codeVerifier", string_between(Some(43), Some(128)))];
+    fields.extend(device_fields());
+    object(fields)
+});
+
+pub static AUTH_EMAIL_START_REQUEST: LazyLock<Schema> =
+    LazyLock::new(|| object(vec![("email", string_between(Some(3), Some(254)))]));
+
+pub static AUTH_EMAIL_VERIFY_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
+    let mut fields = vec![("email", string_between(Some(3), Some(254))), ("code", string_between(Some(6), Some(6)))];
+    fields.extend(device_fields());
+    object(fields)
+});
+
 pub static REGISTER_DEVICE_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
     object(vec![
         ("name", string_between(Some(1), Some(120))),

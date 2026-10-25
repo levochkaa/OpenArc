@@ -4,6 +4,7 @@
 use crate::app::{AppState, router};
 use crate::auth::AuthService;
 use crate::config::Config;
+use crate::signin::SignInService;
 use crate::sync::SyncService;
 use crate::updates::UpdatesService;
 use axum::Router;
@@ -50,7 +51,8 @@ fn app_with(github_api: &str, extra: &[(&str, &str)]) -> Router {
     let auth = AuthService::new(&config, http.clone());
     let pool = crate::db::pool(&config.database_url).unwrap();
     router(AppState {
-        sync: Arc::new(SyncService::new(pool, auth.clone())),
+        sync: Arc::new(SyncService::new(pool.clone(), auth.clone())),
+        sign_in: SignInService::new(pool, auth.clone(), config.clone(), http.clone()),
         updates: UpdatesService::new(config.clone(), http, github_api),
         auth,
         config,
