@@ -147,9 +147,7 @@ impl UpdatesService {
     }
 
     async fn latest_release(&self, channel: Channel) -> ApiResult<Release> {
-        public_releases(self.fetch_releases().await?)
-            .into_iter()
-            .find(|release| release_channel(release) == channel)
+        newest_release(public_releases(self.fetch_releases().await?), channel)
             .ok_or_else(|| ApiError::status(404, format!("No {} release was found", channel.name())))
     }
 
@@ -244,6 +242,13 @@ fn release_channel(release: &Release) -> Channel {
     if release.prerelease { Channel::Beta } else { Channel::Stable }
 }
 
+/// The release whose appcast a channel serves. Beta follows the newest
+/// release of either kind, so a stable release newer than the last
+/// pre-release reaches beta users too.
+fn newest_release(releases: Vec<Release>, channel: Channel) -> Option<Release> {
+    releases.into_iter().find(|release| channel == Channel::Beta || release_channel(release) == Channel::Stable)
+}
+
 /// Published releases, newest first.
 fn public_releases(releases: Vec<Release>) -> Vec<Release> {
     let mut releases: Vec<Release> = releases.into_iter().filter(|release| !release.draft).collect();
@@ -321,6 +326,37 @@ mod tests {
         let header = content_disposition("OpenArc\r\nX-Injected: yes \"Beta\".dmg");
         assert_eq!(header, "attachment; filename=\"OpenArcX-Injected: yes Beta.dmg\"");
         assert!(!header.contains(['\r', '\n']));
+    }
+
+    fn release(id: i64, prerelease: bool, published_at: &str) -> Release {
+        Release {
+            id,
+            tag_name: format!("v{id}"),
+            name: None,
+            body: None,
+            html_url: String::new(),
+            draft: false,
+            prerelease,
+            created_at: published_at.to_string(),
+            published_at: Some(published_at.to_string()),
+            assets: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn beta_follows_the_newest_release_and_stable_skips_pre_releases() {
+        let stable = release(1, false, "2026-10-01T00:00:00Z");
+        let beta = release(2, true, "2026-10-02T00:00:00Z");
+        let newer_stable = release(3, false, "2026-10-03T00:00:00Z");
+        let newest = |releases: &[&Release], channel| {
+            newest_release(public_releases(releases.iter().map(|release| (*release).clone()).collect()), channel)
+                .map(|release| release.id)
+        };
+
+        assert_eq!(newest(&[&stable, &beta], Channel::Stable), Some(1));
+        assert_eq!(newest(&[&stable, &beta], Channel::Beta), Some(2));
+        assert_eq!(newest(&[&stable, &beta, &newer_stable], Channel::Beta), Some(3));
+        assert_eq!(newest(&[&beta], Channel::Stable), None);
     }
 
     #[test]
