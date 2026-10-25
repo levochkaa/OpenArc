@@ -176,6 +176,15 @@ final class BrowserNativeChromeButton: NSButton {
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
 
     var isSelected = false { didSet { needsDisplay = true } }
+    /// A drag rests on the button, as on a Space's dock icon; it shows the
+    /// hover background, since a drag sends no mouse-entered events.
+    var isDropTarget = false {
+        didSet {
+            if oldValue != isDropTarget {
+                hovered = isDropTarget
+            }
+        }
+    }
 
     override func highlight(_ flag: Bool) {
         super.highlight(flag)

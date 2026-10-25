@@ -101,6 +101,8 @@ final class BrowserNativeSidebarNSView: NSView {
     var onDragInteractionChange: (Bool) -> Void = { _ in }
     var headerHeightProvider: (() -> CGFloat)?
     var footerHeightProvider: ((CGFloat) -> CGFloat)?
+    /// The footer's Space icons, which accept dragged tabs.
+    weak var spaceDock: BrowserSpaceDockNSView?
 
     /// Folder preview beside a collapsed folder row.
     let folderPreview = BrowserFolderPreviewCoordinator()
@@ -357,12 +359,14 @@ final class BrowserNativeSidebarNSView: NSView {
     func updateDrag(atWindowPoint point: CGPoint) {
         guard state.drag.isDragging else { return }
         lastWindowDragPoint = point
+        state.drag.updateDockTarget(spaceDock?.spaceID(atWindowPoint: point))
         state.drag.updatePointer(content.convert(point, from: nil))
         state.drag.updatePageDrop(atWindowPoint: point)
     }
 
     func finishDragging(atWindowPoint point: CGPoint) {
         guard state.drag.isDragging else { return }
+        state.drag.updateDockTarget(spaceDock?.spaceID(atWindowPoint: point))
         state.drag.updatePageDrop(atWindowPoint: point)
         endDragging(at: content.convert(point, from: nil), cancelled: false)
     }
@@ -1352,6 +1356,7 @@ final class BrowserNativeSidebarNSView: NSView {
             }
         }
         highlightedDropRow?.setDropHighlighted(true)
+        spaceDock?.dropTargetID = state.drag.dockSpaceID
         guard let payload = state.drag.payload else {
             dragEvents.stop()
             landingAnimation.cancel()

@@ -92,5 +92,87 @@ import Testing
         // Clicks beside the icons fall through; menus are the icons' own.
         #expect(dock.hitTest(NSPoint(x: 10, y: 20)) == nil)
         #expect(try dock.menu(for: event(.rightMouseDown, 130))?.title == "menu c")
+
+        // A sidebar drag finds the icon under the pointer, gaps included, and
+        // shows the one it rests on.
+        #expect(dock.spaceID(atWindowPoint: NSPoint(x: 41, y: 20)) == "a")
+        #expect(dock.spaceID(atWindowPoint: NSPoint(x: 120, y: 20)) == "c")
+        #expect(dock.spaceID(atWindowPoint: NSPoint(x: 20, y: 20)) == nil)
+        dock.dropTargetID = "b"
+        #expect(items.map { item in item.button.isDropTarget } == [false, true, false])
+        dock.dropTargetID = nil
+        #expect(items.allSatisfy { item in !item.button.isDropTarget })
+    }
+
+    @Test func restingOnASpaceIconSwitchesToItAfterAPause() async throws {
+        let f = SidebarDragFixture()
+        let drag = BrowserSidebarDragState(model: f.model)
+        drag.begin(
+            payload: f.payload("x"),
+            sourceFrame: CGRect(x: 0, y: 200, width: 220, height: 36),
+            start: CGPoint(x: 20, y: 210),
+            pointer: CGPoint(x: 20, y: 500)
+        )
+        // Passing over an icon does not switch.
+        drag.updateDockTarget("t")
+        drag.updateDockTarget(nil)
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(f.model.selectedSpaceID == "s")
+
+        drag.updateDockTarget("t")
+        #expect(drag.dockSpaceID == "t" && drag.proposal == nil)
+        for _ in 0..<50 where f.model.selectedSpaceID != "t" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(f.model.selectedSpaceID == "t")
+        #expect(drag.isDragging)
+        _ = drag.release(at: CGPoint(x: 20, y: 500), cancel: true)
+    }
+
+    @Test func droppingOnASpaceIconMovesItemsToTheTopOfTheirSectionThere() throws {
+        let f = SidebarDragFixture()
+        f.model.selectSpace(id: "t")
+        f.model.createNewTab()
+        f.driver.flushPendingCreateEvents()
+        let existing = try #require(f.model
+            .tabs
+            .first { tab in
+                tab.spaceID == "t" && tab.placement == .temporary
+            }?.id)
+        f.model.selectSpace(id: "s")
+
+        func drop(_ payload: BrowserSidebarDragPayload, on spaceID: String) -> Bool {
+            let drag = BrowserSidebarDragState(model: f.model)
+            drag.begin(
+                payload: payload,
+                sourceFrame: CGRect(x: 0, y: 200, width: 220, height: 36),
+                start: CGPoint(x: 20, y: 210),
+                pointer: CGPoint(x: 20, y: 500)
+            )
+            drag.updateDockTarget(spaceID)
+            return drag.release(at: CGPoint(x: 20, y: 500))
+        }
+
+        func tab(_ name: String) -> BrowserChromeModel.Tab? {
+            let id = f.id(name)
+            return f.model.tabs.first { tab in tab.id == id }
+        }
+
+        // A temporary tab goes above the Space's temporary tabs; a pinned one
+        // to the top of its pinned tabs.
+        #expect(drop(f.payload("x"), on: "t"))
+        let temporary: [String] = f.model
+            .tabs
+            .filter { tab in
+                tab.spaceID == "t" && tab.placement == .temporary
+            }
+            .map { tab in tab.id }
+        #expect(temporary == [f.id("x"), existing])
+        #expect(drop(f.payload("b"), on: "t"))
+        #expect(tab("b")?.spaceID == "t")
+        #expect(tab("b")?.placement == .spacePinned)
+        // Items already in the Space stay put.
+        #expect(!drop(f.payload("y"), on: "s"))
+        #expect(tab("y")?.spaceID == "s")
     }
 }

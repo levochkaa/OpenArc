@@ -172,20 +172,33 @@ extension BrowserChromeModel {
         }
     }
 
+    /// Drop on a Space's dock icon, like Move to: dragged tabs or a
+    /// pinned folder go to the top of the same section in that Space. Favorites
+    /// belong to no Space, and items already in it stay where they are.
+    @discardableResult func moveSidebarItems(
+        _ payload: BrowserSidebarDragPayload,
+        toTopOfSpace spaceID: String
+    ) -> Bool {
+        guard supportsSpaces, spaces.contains(where: { $0.id == spaceID }) else { return false }
+        let container: BrowserSidebarDropContainer
+        switch payload.primary {
+        case .tab(let id):
+            guard let tab = tabs.first(where: { $0.id == id }), tab.placement != .app, tab.spaceID != spaceID
+            else { return false }
+            container = tab.placement == .spacePinned ? .pinned(spaceID) : .temporary(spaceID)
+        case .folder(let id):
+            guard let folder = pinnedTabFolders.first(where: { $0.id == id }), folder.spaceID != spaceID
+            else { return false }
+            container = .pinned(spaceID)
+        }
+        let first = BrowserSidebarTabTree(snapshot: sidebarSnapshot).items(in: container).first
+        return commitSidebarDrop(payload: payload, destination: .init(container: container, beforeItem: first))
+    }
+
     /// Moves tabs through the sidebar drop path, which keeps their order, a
     /// split's grouping, persistence and sync, to the top of their section.
     private func moveToTopOfSpace(tabIDs: Set<String>, primaryID: String, spaceID: String) -> Bool {
-        guard let tab = tabs.first(where: { $0.id == primaryID }),
-              spacesForMovingTab(id: primaryID).contains(where: { $0.id == spaceID })
-        else { return false }
-        let container: BrowserSidebarDropContainer = tab.placement == .spacePinned
-            ? .pinned(spaceID)
-            : .temporary(spaceID)
-        let first = BrowserSidebarTabTree(snapshot: sidebarSnapshot).items(in: container).first
-        return commitSidebarDrop(
-            payload: .init(primary: .tab(primaryID), tabIDs: tabIDs),
-            destination: .init(container: container, beforeItem: first)
-        )
+        moveSidebarItems(.init(primary: .tab(primaryID), tabIDs: tabIDs), toTopOfSpace: spaceID)
     }
 
     private func temporaryTabIDs(inSpaceOf id: String) -> [String] {

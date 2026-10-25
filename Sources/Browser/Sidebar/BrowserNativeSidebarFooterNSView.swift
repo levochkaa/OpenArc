@@ -59,6 +59,9 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
 
     var isDownloadsPresented: Bool { popover.isShown }
 
+    /// The Space icons, for drops from the sidebar.
+    var spaceDock: BrowserSpaceDockNSView { spacesContainer }
+
     override func layout() {
         super.layout()
         let toastHeight = toast.height(for: max(bounds.width - 4, 0)) * toastProgress

@@ -8,6 +8,7 @@ The drag implementation uses AppKit events and a shared tab tree. A drop destina
 - The pointer chooses the destination. A list shows one insertion cue in the real gap; list items do not reorder during hover.
 - Starting to drag a single tab activates it. The tab stays active after a cancelled or no-op drop. An explicit multi-selection or a folder keeps the current tab. A tab from another Space is not activated, so starting a drag never switches Spaces.
 - Dropping on a space header inserts at the start of its pinned section. Dropping on a folder body inserts at the start of that folder. Both use a stronger row highlight, not an insertion line.
+- The Space icons in the sidebar footer accept drags (`acceptSidebarDockDrop`). Resting on another Space's icon for 0.1 s switches to that Space, so the drop can land anywhere in its list. A drop on an icon moves the items to the top of their section there, like Move to: temporary tabs above its temporary tabs, pinned tabs and folders above its pinned items. Favorites and items already in that Space stay put. The icon under the pointer shows its hover background.
 - Expanded folder children support insertion between siblings. An outside insertion follows the entire visible subtree, not the folder header. A collapsed folder's visible gap has one destination even when hidden children lie between the visible siblings.
 - The app grid previews the actual planned order. Preview dimensions match the future cell, including stretched partial rows. An empty app target uses existing chrome spacing instead of moving the list when the gesture begins.
 - After the app grid expands, leaving it holds the actual allocated height until release. A neutral empty cell marks the available space. The list therefore does not move away from the pointer when the projected app item is removed.
@@ -29,6 +30,7 @@ The drag implementation uses AppKit events and a shared tab tree. A drop destina
 | `BrowserSidebarDragState` | Payload, proposal, grab point and `idle → dragging → settling → idle` lifecycle |
 | `BrowserSidebarDragEventSession` | Scoped native event ownership, cancellation and autoscroll clock |
 | `BrowserNativeSidebarNSView` | Layout, input conversion, preview/indicator rendering and landing animation |
+| `BrowserSpaceDockNSView` | Space icon under a window point and the drop target's highlight |
 
 Pointer motion updates the preview and feedback, not every sidebar row. Move validity is cached by semantic destination for the current model state. Only app-grid projections retain complete planned arrays. Model changes invalidate validation; an anchor that disappeared is rejected rather than silently becoming an append operation.
 

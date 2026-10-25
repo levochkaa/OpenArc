@@ -22,6 +22,7 @@ final class BrowserSidebarChromeView: NSView {
         sidebar.headerHeightProvider = { [weak header] in header?.preferredHeight ?? 0 }
         sidebar.footerHeightProvider = { [weak footer] width in footer?.height(for: width) ?? 0 }
         footer.onSizeChanged = { [weak sidebar] in sidebar?.refresh(animated: true) }
+        sidebar.spaceDock = footer.spaceDock
         sidebar.onDragInteractionChange = { [weak self] _ in self?.onDragInteractionChange() }
         resize.setAccessibilityIdentifier("browser.sidebar.resize")
         resize.defaultWidth = BrowserChromeModel.defaultSidebarWidth

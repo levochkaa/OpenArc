@@ -44,6 +44,11 @@ import AppKit
     /// The middle of a row, away from the insertion edges, offers the split.
     static let splitDropBandFraction: CGFloat = 0.5
 
+    /// A drag resting on a Space's dock icon switches to that Space; the sidebar
+    /// started sliding within 0.1 s in a live probe. The pause keeps a drag
+    /// passing over the dock from switching Spaces.
+    static let dockSpringDelay: TimeInterval = 0.1
+
     private(set) var phase = Phase.idle
     private(set) var payload: BrowserSidebarDragPayload?
     private(set) var proposal: BrowserSidebarDropProposal?
@@ -54,6 +59,9 @@ import AppKit
     private(set) var projectedPlan: BrowserSidebarMovePlan?
     private(set) var splitTarget: SplitDropTarget?
     private(set) var pageSplitTarget: PageSplitDropTarget?
+    /// The Space whose dock icon is under the pointer. A drop there moves the
+    /// items to the top of their section in that Space.
+    private(set) var dockSpaceID: String?
     /// Finds the page drop for a window point and the dragged tab and shows its
     /// preview; a nil point clears the preview. Set by the window root.
     var pageSplitDropResolver: ((CGPoint?, String) -> PageSplitDropTarget?)?
@@ -140,10 +148,31 @@ import AppKit
         }
     }
 
+    /// Follows the pointer over the dock: resting on another Space's icon
+    /// switches to that Space.
+    func updateDockTarget(_ spaceID: String?) {
+        guard isDragging, spaceID != dockSpaceID else { return }
+        dockSpaceID = spaceID
+        dockSpringWork?.cancel()
+        dockSpringWork = nil
+        if spaceID != nil {
+            resetSplitDrop()
+        }
+        if let spaceID, spaceID != model.selectedSpaceID {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, isDragging, dockSpaceID == spaceID else { return }
+                model.selectSpace(id: spaceID)
+            }
+            dockSpringWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.dockSpringDelay, execute: work)
+        }
+        updatePointer(pointer)
+    }
+
     func updatePointer(_ pointer: CGPoint) {
         guard isDragging, let payload else { return }
         self.pointer = pointer
-        if updateSplitDrop(payload: payload) {
+        if dockSpaceID != nil || updateSplitDrop(payload: payload) {
             let hadProposal = proposal != nil || projectedPlan != nil
             proposal = nil
             geometricProposal = nil
@@ -176,7 +205,7 @@ import AppKit
     /// sidebar target can split the page.
     func updatePageDrop(atWindowPoint point: CGPoint) {
         guard isDragging, let payload, payload.tabIDs.count == 1, case .tab(let id) = payload.primary,
-              proposal == nil, splitTarget == nil
+              proposal == nil, splitTarget == nil, dockSpaceID == nil
         else {
             clearPageDrop()
             return
@@ -193,7 +222,9 @@ import AppKit
             updatePointer(pointer)
         }
         let committed: Bool =
-            if !cancel, let target = splitTarget, case .tab(let id) = payload.primary {
+            if !cancel, let dockSpaceID {
+                model.moveSidebarItems(payload, toTopOfSpace: dockSpaceID)
+            } else if !cancel, let target = splitTarget, case .tab(let id) = payload.primary {
                 model.openInSplitView(
                     tabID: id,
                     anchorTabID: target.tabID,
@@ -216,6 +247,7 @@ import AppKit
                 } == true
             }
         resetSplitDrop()
+        resetDockTarget()
         clearPageDrop()
         phase = .settling
         proposal = nil
@@ -227,6 +259,7 @@ import AppKit
 
     func complete() {
         resetSplitDrop()
+        resetDockTarget()
         clearPageDrop()
         phase = .idle
         payload = nil
@@ -254,6 +287,7 @@ import AppKit
     private var splitCandidateTabID: String?
     private var splitCandidateSince = Date.distantFuture
     private var splitDelayWork: DispatchWorkItem?
+    private var dockSpringWork: DispatchWorkItem?
 
     private func clearPageDrop() {
         let hadTarget = pageSplitTarget != nil
@@ -262,6 +296,12 @@ import AppKit
         if hadTarget {
             onPresentationChange()
         }
+    }
+
+    private func resetDockTarget() {
+        dockSpringWork?.cancel()
+        dockSpringWork = nil
+        dockSpaceID = nil
     }
 
     private func resetSplitDrop() {

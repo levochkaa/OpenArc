@@ -3,8 +3,9 @@ import AppKit
 // MARK: - BrowserSpaceDockNSView
 
 /// The Space switcher at the bottom of the sidebar. A click selects a Space;
-/// dragging an icon sideways reorders the Spaces. The dock
-/// takes the mouse itself because its buttons track clicks on their own.
+/// dragging an icon sideways reorders the Spaces, and a
+/// sidebar drag can drop tabs on an icon. The dock takes the mouse itself
+/// because its buttons track clicks on their own.
 final class BrowserSpaceDockNSView: BrowserNativeSurface {
     // MARK: Internal
 
@@ -22,6 +23,15 @@ final class BrowserSpaceDockNSView: BrowserNativeSurface {
     /// Buttons in Space order.
     var items = [(id: String, button: BrowserNativeChromeButton)]() {
         didSet { needsLayout = true }
+    }
+
+    /// The Space whose icon a sidebar drag rests on, shown like a hover.
+    var dropTargetID: String? {
+        didSet {
+            for item in items {
+                item.button.isDropTarget = item.id == dropTargetID
+            }
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -95,6 +105,17 @@ final class BrowserSpaceDockNSView: BrowserNativeSurface {
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         return item(at: point).flatMap { items[$0].button.menu }
+    }
+
+    /// The Space whose icon, with half the gap on each side, is under a
+    /// window point; nil while the dock is hidden.
+    func spaceID(atWindowPoint point: NSPoint) -> String? {
+        guard window != nil, !isHiddenOrHasHiddenAncestor else { return nil }
+        let local = convert(point, from: nil)
+        guard visibleRect.contains(local) else { return nil }
+        return items.first { item in
+            item.button.frame.insetBy(dx: -itemSpacing / 2, dy: 0).contains(local)
+        }?.id
     }
 
     // MARK: Private
