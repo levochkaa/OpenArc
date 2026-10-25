@@ -19,6 +19,7 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 };
 
 @class BrowserPeekSpace;
+@class BrowserPeekPanel;
 
 @protocol BrowserTabControllerDelegate <NSObject>
 
@@ -180,6 +181,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 /// dismisses it without an answer. Unknown or withdrawn requests are ignored.
 - (void)resolveSitePermissionRequest:(NSInteger)requestID allowed:(nullable NSNumber *)allowed
     NS_SWIFT_NAME(resolveSitePermissionRequest(_:allowed:));
+/// The open Peek card or small window of a session; its pages ask for
+/// permissions as the tab "peek:<session>".
+- (nullable BrowserPeekPanel *)peekPanelForSessionID:(NSInteger)sessionID
+    NS_SWIFT_NAME(peekPanel(forSessionID:));
 /// Chromium's content settings for a page that differ from the profile
 /// default, by BrowserSiteSettingKind raw value: "allow", "block" or "ask".
 - (NSDictionary<NSString *, NSString *> *)siteSettingsForURLString:(NSString *)urlString

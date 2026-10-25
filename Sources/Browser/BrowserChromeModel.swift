@@ -168,6 +168,22 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onSitePermissionRequestDismissed = { [weak self] id in
             self?.handleSitePermissionRequestDismissed(id: id)
         }
+        tabDriver.onPeekSitePermissionAnswered = { [weak self] id, allowed in
+            if let allowed {
+                self?.answerSitePermissionRequest(id: id, allowed: allowed)
+            } else {
+                self?.dismissSitePermissionRequest(id: id)
+            }
+        }
+        self.sitePermissionDecisionsObservation = userPreferencesStore.$sitePermissionDecisions
+            .dropFirst()
+            .sink { [weak self] decisions in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    guard !windowMode.isIncognito else { return }
+                    resolveSitePermissionRequests(coveredBy: decisions)
+                }
+            }
         tabDriver.onOpenPeekInSpace = { [weak self] urlString, spaceID in
             guard let self, let url = URL(string: urlString), !openURL(url, inSpaceWithID: spaceID) else { return }
             openURLInNewTab(url)
@@ -367,9 +383,9 @@ enum BrowserWindowMode: Equatable {
     /// Muted tabs by sync ID, for this run only; a reopened dormant tab keeps it.
     /// Only `setTabMuted(_:id:)` writes it.
     @Published var mutedTabSyncIDs = Set<String>()
-    /// Pages' pending permission requests in arrival order. Only the methods
-    /// in `BrowserChromeModel+SitePermissions.swift` write it.
-    @Published var sitePermissionRequests = [BrowserSitePermissionRequest]()
+    /// An incognito window's camera and microphone answers, kept until it
+    /// closes. Only `sitePermissionDecisions` writes it.
+    var incognitoSitePermissionDecisions = [BrowserSitePermissionDecision]()
     /// Asks macOS to let TheBrowser show notifications; tests replace it.
     var requestSystemNotificationAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void =
         BrowserNotificationAuthorization.request
@@ -383,7 +399,6 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
     /// sidebar scrolls the selected row into view.
     @Published var sidebarRevealRequestID = 0
-
     /// Space themes as a light window tint, by Space ID. Local.
     @Published private(set) var spaceColorsByID = [String: String]()
     /// Change Icon: the symbol shown instead of a tab's favicon, by sync
@@ -391,6 +406,18 @@ enum BrowserWindowMode: Equatable {
     private(set) var tabIconsBySyncID = [String: String]()
     /// Set by the window's content view, which outlines the area to capture.
     var onBeginAreaCapture: (() -> Bool)?
+
+    /// Pages' pending permission requests in arrival order. Only the methods
+    /// in `BrowserChromeModel+SitePermissions.swift` write it.
+    @Published var sitePermissionRequests = [BrowserSitePermissionRequest]() {
+        didSet {
+            // Peek cards and small windows show their own prompt.
+            let peek = sitePermissionRequests.filter { $0.peekSessionID != nil }
+            if peek != oldValue.filter({ $0.peekSessionID != nil }) {
+                tabDriver.showPeekSitePermissionRequests(peek)
+            }
+        }
+    }
 
     /// Expand Current Split: this pane alone fills the window until focus
     /// moves. UI-only, never persisted.
@@ -2860,6 +2887,9 @@ enum BrowserWindowMode: Equatable {
     private static let automaticArchivalLogger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "AutomaticArchival"
     )
+
+    /// Answers this window's waiting requests that another window's answer covers.
+    private var sitePermissionDecisionsObservation: AnyCancellable?
 
     /// Spaces colored in this session; a stored projection never overrides them.
     private var locallyColoredSpaceIDs = Set<String>()
@@ -5491,7 +5521,6 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             tabs[index].urlString = urlString
             tabs[index].lastActivityAt = advancedActivityDate(after: tabs[index].lastActivityAt)
             didChangePersistentURL = true
-            withdrawSitePermissionRequests(forTabID: id, urlString: urlString)
             if id == selectedTabID {
                 invalidateSelectedTabWebAppInstallMetadata()
                 // Another site may have its own zoom.

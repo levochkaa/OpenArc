@@ -45,9 +45,13 @@ import AppKit
         card.autoresizingMask = [.width, .height]
         card.frame = NSRect(origin: .zero, size: contentRect.size)
         contentView = card
-        for view in [closeButton, hostLabel, splitButton, openButton, hostView] {
+        for view in [closeButton, hostLabel, splitButton, openButton, hostView, permissionPrompt] {
             card.addSubview(view)
         }
+        permissionPrompt.isHidden = true
+        permissionPrompt.autoresizingMask = [.maxXMargin, .minYMargin]
+        permissionPrompt.onAnswer = { [weak self] id, allowed in self?.onSitePermissionAnswer?(id, allowed) }
+        permissionPrompt.onDismiss = { [weak self] id in self?.onSitePermissionAnswer?(id, nil) }
         hostLabel.alignment = .center
         hostLabel.lineBreakMode = .byTruncatingMiddle
         hostLabel.font = .systemFont(ofSize: 12, weight: .medium)
@@ -105,6 +109,10 @@ import AppKit
     @objc var onOpenInSpace: ((String) -> Void)?
     /// Open as Tab's right-click menu and `⇧⌘O`.
     let openInMenu = NSMenu()
+    /// The page's permission request over the top of the page, as in a tab.
+    let permissionPrompt = BrowserSitePermissionPromptView()
+    /// Allow (true), Block (false) or Close (nil) in the prompt.
+    var onSitePermissionAnswer: ((Int, Bool?) -> Void)?
 
     let closeButton = BrowserNativeChromeButton(
         symbol: "xmark",
@@ -270,6 +278,24 @@ import AppKit
 
     func controlTextDidEndEditing(_: Notification) {
         update(urlString: currentURLString)
+    }
+
+    /// Shows the page's oldest waiting request, or hides the prompt for nil.
+    func showSitePermissionRequest(_ request: BrowserSitePermissionRequest?) {
+        guard let request else {
+            permissionPrompt.isHidden = true
+            return
+        }
+        permissionPrompt.update(request: request)
+        permissionPrompt.isHidden = false
+        let page = hostView.frame
+        let height = permissionPrompt.fittingHeight
+        permissionPrompt.frame = NSRect(
+            x: page.minX + 12,
+            y: page.maxY - 12 - height,
+            width: min(BrowserSitePermissionPromptView.width, max(page.width - 24, 0)),
+            height: height
+        )
     }
 
     @objc func dismiss() {

@@ -7,7 +7,12 @@ import Testing
 @MainActor private final class SitePermissionFixture {
     // MARK: Lifecycle
 
-    init(mode: BrowserWindowMode = .normal, defaults existing: UserDefaults? = nil) throws {
+    /// Windows of one app share `store`, as they share the app's.
+    init(
+        mode: BrowserWindowMode = .normal,
+        defaults existing: UserDefaults? = nil,
+        store: BrowserUserPreferencesStore? = nil
+    ) throws {
         let suite = "BrowserSitePermissionTests.\(UUID().uuidString)"
         self.suite = suite
         let defaults = try existing ?? #require(UserDefaults(suiteName: suite))
@@ -19,7 +24,7 @@ import Testing
             sessionSnapshotStore: InMemorySessionSnapshotStore(),
             sessionPreferencesStore: InMemorySessionPreferencesStore(),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
-            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            userPreferencesStore: store ?? BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(),
             windowMode: mode,
@@ -121,19 +126,48 @@ import Testing
     #expect(other == nil)
 }
 
-@MainActor @Test func incognitoWindowsNeitherUseNorRememberAnswers() throws {
+@MainActor @Test func incognitoWindowsKeepTheirOwnAnswersUntilTheyClose() throws {
     let normal = try SitePermissionFixture()
     defer { normal.cleanup() }
     normal.request(1)
     normal.model.answerSitePermissionRequest(id: 1, allowed: true)
 
-    let incognito = try SitePermissionFixture(mode: .incognito, defaults: normal.defaults)
+    let incognito = try SitePermissionFixture(
+        mode: .incognito,
+        defaults: normal.defaults,
+        store: normal.model.userPreferencesStore
+    )
     defer { incognito.cleanup(removingDefaults: false) }
     incognito.request(1)
     #expect(incognito.model.visibleSitePermissionRequest?.id == 1)
     incognito.model.answerSitePermissionRequest(id: 1, allowed: false)
-    #expect(incognito.resolutions() == ["1:block"])
+    // The window's answer covers its next request without touching the profile's.
+    incognito.request(2, kinds: [.microphone])
+    #expect(incognito.resolutions() == ["1:block", "2:block"])
+    #expect(incognito.model.rememberedSitePermissions.map(\.allowed) == [false, false])
     #expect(normal.model.userPreferencesStore.sitePermissionDecisions.map(\.allowed) == [true, true])
+}
+
+@MainActor @Test func anAnswerCoversTheOriginsOtherWaitingRequestsInEveryWindow() throws {
+    let first = try SitePermissionFixture()
+    defer { first.cleanup() }
+    let second = try SitePermissionFixture(defaults: first.defaults, store: first.model.userPreferencesStore)
+    defer { second.cleanup(removingDefaults: false) }
+    let other = first.selectedTabID
+    first.model.createNewTab()
+    first.driver.flushPendingCreateEvents()
+
+    first.request(1)
+    first.request(2, tabID: other, kinds: [.camera])
+    first.request(3, origin: "https://zoom.us")
+    second.request(4, kinds: [.microphone])
+    // Another origin and Chromium's own prompts still ask.
+    second.request(5, kinds: [.location], media: false)
+    first.model.answerSitePermissionRequest(id: 1, allowed: true)
+    #expect(first.resolutions() == ["1:allow", "2:allow"])
+    #expect(first.model.sitePermissionRequests.map(\.id) == [3])
+    #expect(second.resolutions() == ["4:allow"])
+    #expect(second.model.sitePermissionRequests.map(\.id) == [5])
 }
 
 @MainActor @Test func chromiumPromptsAreNotRememberedAndCanBeDismissed() throws {
@@ -171,7 +205,8 @@ import Testing
     for _ in 0..<100 where fixture.resolutions().isEmpty {
         try await Task.sleep(for: .milliseconds(10))
     }
-    #expect(fixture.resolutions() == ["1:block"])
+    // A system refusal leaves the site unanswered, so it can ask again later.
+    #expect(fixture.resolutions() == ["1:dismiss"])
 
     // Block does not ask the system.
     systemAnswer = nil
@@ -181,7 +216,7 @@ import Testing
     #expect(fixture.resolutions().last == "2:block")
 }
 
-@MainActor @Test func onlyRequestsOfPagesOnScreenAreShownAndLeavingTheOriginWithdrawsThem() throws {
+@MainActor @Test func onlyRequestsOfPagesOnScreenAreShownAndTheEngineWithdrawsThem() throws {
     let fixture = try SitePermissionFixture()
     defer { fixture.cleanup() }
     let first = fixture.selectedTabID
@@ -195,12 +230,35 @@ import Testing
     fixture.model.selectTab(id: first)
     #expect(fixture.model.visibleSitePermissionRequest?.id == 1)
 
-    // Same origin keeps the request; another origin withdraws it.
-    fixture.driver.emitUpdate(id: first, urlString: "https://meet.google.com/abc-defg-hij")
+    // An address change alone keeps it: the request may come from a frame of
+    // another origin, and only a new document withdraws it, in the engine.
+    fixture.driver.emitUpdate(id: first, urlString: "https://example.com/#call")
     #expect(fixture.model.sitePermissionRequests.map(\.id) == [1])
-    fixture.driver.emitUpdate(id: first, urlString: "https://example.com/")
+    fixture.driver.onSitePermissionRequestDismissed?(1)
     #expect(fixture.model.sitePermissionRequests.isEmpty)
-    #expect(fixture.resolutions() == ["1:dismiss"])
+    #expect(fixture.resolutions().isEmpty)
+}
+
+@MainActor @Test func peekCardsShowTheirOwnRequestsAndUseRememberedAnswers() throws {
+    let fixture = try SitePermissionFixture()
+    defer { fixture.cleanup() }
+    fixture.request(1)
+    fixture.request(2, tabID: "peek:7", origin: "https://zoom.us")
+    fixture.request(3, tabID: "peek:7", origin: "https://zoom.us", kinds: [.location], media: false)
+    // The window's prompt keeps to its tabs; the card gets its own requests.
+    #expect(fixture.model.visibleSitePermissionRequest?.id == 1)
+    #expect(fixture.driver.peekSitePermissionRequests.map(\.id) == [2, 3])
+    #expect(fixture.driver.peekSitePermissionRequests.first?.peekSessionID == 7)
+
+    fixture.driver.onPeekSitePermissionAnswered?(2, true)
+    fixture.driver.onPeekSitePermissionAnswered?(3, nil)
+    #expect(fixture.resolutions() == ["2:allow", "3:dismiss"])
+    #expect(fixture.driver.peekSitePermissionRequests.isEmpty)
+
+    // A remembered answer applies in a card without a prompt.
+    fixture.request(4, tabID: "peek:8", origin: "https://zoom.us", kinds: [.camera])
+    #expect(fixture.resolutions().last == "4:allow")
+    #expect(fixture.driver.peekSitePermissionRequests.isEmpty)
 }
 
 @Test func sitePermissionOriginsCompareWithoutDefaultPortsOrCase() {
@@ -247,6 +305,14 @@ import Testing
     #expect(fixture.resolutions() == ["1:allow"])
     content.refreshPermissionPrompt()
     #expect(content.permissionPrompt.isHidden)
+
+    // A new request ignores input for half a second, so a double click on
+    // one prompt cannot answer the next.
+    fixture.request(2, origin: "https://zoom.us")
+    content.refreshPermissionPrompt()
+    let now = ProcessInfo.processInfo.systemUptime
+    #expect(!content.permissionPrompt.acceptsInput(at: now))
+    #expect(content.permissionPrompt.acceptsInput(at: now + BrowserSitePermissionPromptView.inputDelay))
 }
 
 @MainActor private func sitePermissionView(_ identifier: String, in view: NSView) -> NSView? {

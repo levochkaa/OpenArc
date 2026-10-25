@@ -62,6 +62,9 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)? { get set }
     /// The engine withdrew a request because its page navigated or closed.
     var onSitePermissionRequestDismissed: ((Int) -> Void)? { get set }
+    /// The prompt of a Peek card or small window was answered: true
+    /// allows, false blocks, nil closes it without an answer.
+    var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)? { get set }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String
     /// True admits another attempt for a synchronously refused creation.
@@ -114,6 +117,9 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String)
     /// true allows, false blocks, nil dismisses the request without an answer.
     func resolveSitePermissionRequest(_ id: Int, allowed: Bool?)
+    /// The waiting requests of Peek cards and small windows, in arrival
+    /// order; each card shows its oldest.
+    func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest])
     /// Chromium's settings for a page that differ from the profile default.
     func siteSettings(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue]
     func setSiteSetting(_ kind: BrowserSiteSettingKind, value: BrowserSiteSettingValue, forURLString urlString: String)

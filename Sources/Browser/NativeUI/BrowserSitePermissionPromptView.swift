@@ -41,6 +41,9 @@ final class BrowserSitePermissionPromptView: NSView {
     // MARK: Internal
 
     static let width: CGFloat = 320
+    /// Chrome ignores input this soon after a prompt appears, so a double
+    /// click on one prompt's Allow cannot answer the next one.
+    static let inputDelay: TimeInterval = 0.5
 
     override var isFlipped: Bool { true }
 
@@ -73,8 +76,17 @@ final class BrowserSitePermissionPromptView: NSView {
         block.frame = NSRect(x: allow.frame.minX - 8 - blockWidth, y: buttonY, width: blockWidth, height: 30)
     }
 
+    /// Whether input at `timestamp`, on the system uptime clock events use,
+    /// may answer the current request.
+    func acceptsInput(at timestamp: TimeInterval) -> Bool {
+        timestamp - shownAt >= Self.inputDelay
+    }
+
     func update(request: BrowserSitePermissionRequest) {
         guard request != self.request else { return }
+        if request.id != self.request?.id {
+            shownAt = ProcessInfo.processInfo.systemUptime
+        }
         self.request = request
         title.stringValue = BrowserStrings.sitePermissionPromptTitle(request.displayOrigin)
         setAccessibilityLabel(title.stringValue)
@@ -104,6 +116,8 @@ final class BrowserSitePermissionPromptView: NSView {
 
     private static let padding: CGFloat = 16
 
+    private var shownAt: TimeInterval = 0
+
     private let panel = BrowserNativeMaterialPanel()
     private let title = BrowserNativeControls.label(
         "",
@@ -113,17 +127,26 @@ final class BrowserSitePermissionPromptView: NSView {
     )
     private let rows = NSStackView()
     private lazy var close = BrowserActionButton("") { [weak self] in
-        guard let id = self?.request?.id else { return }
+        guard let id = self?.answerableID else { return }
         self?.onDismiss(id)
     }
 
     private lazy var block = BrowserActionButton(BrowserStrings.sitePermissionBlock) { [weak self] in
-        guard let id = self?.request?.id else { return }
+        guard let id = self?.answerableID else { return }
         self?.onAnswer(id, false)
     }
 
     private lazy var allow = BrowserActionButton(BrowserStrings.sitePermissionAllow) { [weak self] in
-        guard let id = self?.request?.id else { return }
+        guard let id = self?.answerableID else { return }
         self?.onAnswer(id, true)
+    }
+
+    /// The request an event may answer: none while the prompt is new. A
+    /// click without an event, from accessibility or a test, is accepted.
+    private var answerableID: Int? {
+        if let event = NSApp.currentEvent, !acceptsInput(at: event.timestamp) {
+            return nil
+        }
+        return request?.id
     }
 }

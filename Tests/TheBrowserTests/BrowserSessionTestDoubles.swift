@@ -62,7 +62,9 @@ import Foundation
     var onPeekClosedByUser: ((String, Bool) -> Void)?
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
+    var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     private(set) var sitePermissionResolutions = [(id: Int, allowed: Bool?)]()
+    private(set) var peekSitePermissionRequests = [BrowserSitePermissionRequest]()
     private(set) var peekURLs = [String]()
 
     private(set) var createdTabRequests = [CreatedTabRequest]()
@@ -302,6 +304,10 @@ import Foundation
 
     func resolveSitePermissionRequest(_ id: Int, allowed: Bool?) {
         sitePermissionResolutions.append((id, allowed))
+    }
+
+    func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest]) {
+        peekSitePermissionRequests = requests
     }
 
     func siteSettings(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue] {

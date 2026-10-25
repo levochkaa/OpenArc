@@ -80,13 +80,18 @@ import Testing
     #expect(fixture.model.siteSettingRows(forURLString: "tb://settings").isEmpty)
 }
 
-@MainActor @Test func incognitoSiteSettingsLeaveRememberedAnswersAlone() throws {
+@MainActor @Test func incognitoSiteSettingsStayInTheWindow() throws {
     let fixture = try SiteControlFixture(mode: .incognito)
     defer { fixture.cleanup() }
     let url = "https://meet.example/"
     fixture.model.setSiteSetting(.camera, value: .allow, forURLString: url)
     #expect(fixture.model.userPreferencesStore.sitePermissionDecisions.isEmpty)
-    #expect(fixture.model.siteSettingRows(forURLString: url).isEmpty)
+    #expect(fixture.model.siteSettingRows(forURLString: url) == [.init(kind: .camera, value: .allow)])
+}
+
+@MainActor @Test func pictureInPictureCanGoBackToAsk() {
+    #expect(BrowserSiteSettingKind.autoPictureInPicture.choices == [.allow, .block, .ask])
+    #expect(BrowserSiteSettingKind.popups.choices == [.allow, .block])
 }
 
 @MainActor @Test func allSiteSettingsOpensChromiumsPageForTheOrigin() throws {
@@ -134,9 +139,10 @@ import Testing
     copy.onClick(nil)
     #expect(actions == [.copyURL])
 
-    // A plain HTTP page is not secure; settings disappear for a page without any.
+    // A page that moves to another origin while the popover is open shows that
+    // site's settings: a plain HTTP page without any, and not secure.
     try fixture.show("http://plain.example/")
-    controller.reloadSiteSettings()
+    controller.refresh()
     #expect(security.accessibilityLabel() == BrowserStrings.siteControlNotSecure)
     #expect(siteControlView("browser.site-control.setting.camera", in: view)?.isHidden ?? true)
 }

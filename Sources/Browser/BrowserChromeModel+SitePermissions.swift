@@ -5,7 +5,8 @@ import Foundation
 /// Pages ask for the camera, microphone, location and other permissions
 /// through the engine; the window shows one prompt at a time for the tabs on
 /// screen. Camera and microphone answers are remembered per
-/// profile, outside incognito windows; Chromium remembers the others.
+/// profile, or by an incognito window until it closes; Chromium remembers
+/// the others. The engine withdraws a page's requests when the page goes.
 extension BrowserChromeModel {
     /// The oldest request of the selected tab or a pane shown beside it.
     var visibleSitePermissionRequest: BrowserSitePermissionRequest? {
@@ -19,11 +20,11 @@ extension BrowserChromeModel {
             resolveSitePermissionInEngine(request.id, allowed: nil)
             return
         }
-        if request.isMediaAccess, !windowMode.isIncognito,
+        if request.isMediaAccess,
            let remembered = BrowserSitePermissionDecision.remembered(
                for: request,
                profileID: profile.id,
-               in: userPreferencesStore.sitePermissionDecisions
+               in: sitePermissionDecisions
            )
         {
             resolveSitePermissionInEngine(request.id, allowed: remembered)
@@ -36,22 +37,25 @@ extension BrowserChromeModel {
     func answerSitePermissionRequest(id: Int, allowed: Bool) {
         guard let index = sitePermissionRequests.firstIndex(where: { $0.id == id }) else { return }
         let request = sitePermissionRequests.remove(at: index)
-        if request.isMediaAccess, !windowMode.isIncognito {
-            userPreferencesStore.sitePermissionDecisions = BrowserSitePermissionDecision.recording(
-                allowed,
-                for: request,
-                profileID: profile.id,
-                in: userPreferencesStore.sitePermissionDecisions
-            )
-        }
         guard allowed, request.kinds.contains(.notifications) else {
             resolveSitePermissionInEngine(id, allowed: allowed)
+            if request.isMediaAccess {
+                // Also answers the origin's other waiting requests.
+                sitePermissionDecisions = BrowserSitePermissionDecision.recording(
+                    allowed,
+                    for: request,
+                    profileID: profile.id,
+                    in: sitePermissionDecisions
+                )
+            }
             return
         }
-        // Notifications also need the system's permission for TheBrowser.
+        // Notifications also need the system's permission for TheBrowser. A
+        // system refusal leaves the site unanswered: Chromium would keep a
+        // Block after the user turns notifications on in System Settings.
         requestSystemNotificationAuthorization { [weak self] granted in
             DispatchQueue.main.async {
-                self?.resolveSitePermissionInEngine(id, allowed: granted)
+                self?.resolveSitePermissionInEngine(id, allowed: granted ? true : nil)
             }
         }
     }
@@ -68,25 +72,50 @@ extension BrowserChromeModel {
         sitePermissionRequests.removeAll { $0.id == id }
     }
 
-    /// A page that leaves the origin it asked for withdraws its camera and
-    /// microphone requests; Chromium withdraws its own prompts.
-    func withdrawSitePermissionRequests(forTabID tabID: String, urlString: String) {
-        let origin = BrowserSitePermissionRequest.origin(ofURLString: urlString)
-        let stale = sitePermissionRequests.filter {
-            $0.tabID == tabID && $0.isMediaAccess
-                && BrowserSitePermissionRequest.origin(ofURLString: $0.origin) != origin
+    /// Camera and microphone answers this window uses: the profile's, or an
+    /// incognito window's own, which close with it. Setting them answers the
+    /// waiting requests they now cover; the profile's do so in every window.
+    var sitePermissionDecisions: [BrowserSitePermissionDecision] {
+        get {
+            windowMode.isIncognito ? incognitoSitePermissionDecisions : userPreferencesStore.sitePermissionDecisions
         }
-        for request in stale {
-            dismissSitePermissionRequest(id: request.id)
+        set {
+            if windowMode.isIncognito {
+                incognitoSitePermissionDecisions = newValue
+                resolveSitePermissionRequests(coveredBy: newValue)
+            } else {
+                userPreferencesStore.sitePermissionDecisions = newValue
+            }
         }
     }
 
     /// Camera and microphone answers this profile remembers, by origin.
     var rememberedSitePermissions: [BrowserSitePermissionDecision] {
-        userPreferencesStore.sitePermissionDecisions.filter { $0.profileID == profile.id }
+        sitePermissionDecisions.filter { $0.profileID == profile.id }
     }
 
     func forgetSitePermissions(forOrigin origin: String) {
-        userPreferencesStore.sitePermissionDecisions.removeAll { $0.profileID == profile.id && $0.origin == origin }
+        sitePermissionDecisions.removeAll { $0.profileID == profile.id && $0.origin == origin }
+    }
+
+    /// Answers the waiting camera and microphone requests that `decisions`
+    /// cover, for example another tab's request to the origin just allowed.
+    func resolveSitePermissionRequests(coveredBy decisions: [BrowserSitePermissionDecision]) {
+        let covered = sitePermissionRequests.compactMap { request -> (id: Int, allowed: Bool)? in
+            guard request.isMediaAccess,
+                  let allowed = BrowserSitePermissionDecision.remembered(
+                      for: request,
+                      profileID: profile.id,
+                      in: decisions
+                  )
+            else { return nil }
+            return (request.id, allowed)
+        }
+        guard !covered.isEmpty else { return }
+        let ids = Set(covered.map(\.id))
+        sitePermissionRequests.removeAll { ids.contains($0.id) }
+        for answer in covered {
+            resolveSitePermissionInEngine(answer.id, allowed: answer.allowed)
+        }
     }
 }

@@ -71,11 +71,11 @@ enum BrowserSiteSettingKind: String, CaseIterable, Sendable {
         }
     }
 
-    /// The values the setting's menu offers; Chromium has no Ask for pop-ups,
-    /// sound and Picture in Picture.
+    /// The values the setting's menu offers; Chromium has no Ask for pop-ups
+    /// and sound.
     var choices: [BrowserSiteSettingValue] {
         switch self {
-        case .autoPictureInPicture, .popups, .sound: [.allow, .block]
+        case .popups, .sound: [.allow, .block]
         default: [.allow, .block, .ask]
         }
     }
@@ -125,7 +125,7 @@ extension BrowserChromeModel {
     func siteSettingRows(forURLString urlString: String) -> [BrowserSiteSettingRow] {
         guard let origin = BrowserSitePermissionRequest.origin(ofURLString: urlString),
               origin.hasPrefix("http") else { return [] }
-        let remembered = windowMode.isIncognito ? [] : rememberedSitePermissions.filter { $0.origin == origin }
+        let remembered = rememberedSitePermissions.filter { $0.origin == origin }
         let chromium = siteSettingsInEngine(forURLString: urlString)
         return BrowserSiteSettingKind.allCases.compactMap { kind in
             if let permission = kind.permissionKind {
@@ -150,8 +150,7 @@ extension BrowserChromeModel {
             objectWillChange.send()
             return
         }
-        guard !windowMode.isIncognito else { return }
-        var decisions = userPreferencesStore.sitePermissionDecisions.filter {
+        var decisions = sitePermissionDecisions.filter {
             !($0.profileID == profile.id && $0.origin == origin && $0.kind == permission)
         }
         if value == .allow || value == .block {
@@ -162,7 +161,7 @@ extension BrowserChromeModel {
                 allowed: value == .allow
             ))
         }
-        userPreferencesStore.sitePermissionDecisions = decisions
+        sitePermissionDecisions = decisions
     }
 
     /// Chromium's page for every setting of the site.

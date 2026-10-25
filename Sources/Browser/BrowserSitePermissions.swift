@@ -65,6 +65,8 @@ enum BrowserSitePermissionKind: String, Codable, CaseIterable, Sendable {
 
 /// A page's pending request, identified by the engine's request number.
 struct BrowserSitePermissionRequest: Identifiable, Equatable, Sendable {
+    static let peekTabIDPrefix = "peek:"
+
     let id: Int
     let tabID: String
     let origin: String
@@ -72,6 +74,12 @@ struct BrowserSitePermissionRequest: Identifiable, Equatable, Sendable {
     /// Camera or microphone through CEF's media access callback, which
     /// TheBrowser answers from its remembered decisions.
     let isMediaAccess: Bool
+
+    /// The Peek card or small window that asks, whose tab ID is
+    /// "peek:<session>"; nil for a tab.
+    var peekSessionID: Int? {
+        tabID.hasPrefix(Self.peekTabIDPrefix) ? Int(tabID.dropFirst(Self.peekTabIDPrefix.count)) : nil
+    }
 
     /// The origin without its scheme, as prompts show it.
     var displayOrigin: String {

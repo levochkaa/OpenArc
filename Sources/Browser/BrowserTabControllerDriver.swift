@@ -60,6 +60,7 @@ import Foundation
     var onPeekClosedByUser: ((String, Bool) -> Void)?
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
+    var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -193,6 +194,24 @@ import Foundation
         controller.resolveSitePermissionRequest(id, allowed: allowed.map { NSNumber(value: $0) })
     }
 
+    func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest]) {
+        var oldest = [Int: BrowserSitePermissionRequest]()
+        for request in requests {
+            if let session = request.peekSessionID, oldest[session] == nil {
+                oldest[session] = request
+            }
+        }
+        // Cards whose requests are gone hide their prompt.
+        for session in promptingPeekSessions.union(oldest.keys) {
+            guard let panel = controller.peekPanel(forSessionID: session) else { continue }
+            panel.onSitePermissionAnswer = { [weak self] id, allowed in
+                self?.onPeekSitePermissionAnswered?(id, allowed)
+            }
+            panel.showSitePermissionRequest(oldest[session])
+        }
+        promptingPeekSessions = Set(oldest.keys)
+    }
+
     func siteSettings(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue] {
         var settings = [BrowserSiteSettingKind: BrowserSiteSettingValue]()
         for (kind, value) in controller.siteSettings(forURLString: urlString) {
@@ -265,6 +284,8 @@ import Foundation
 
     private let browserHostView: BrowserTabHostView
     private let controller: BrowserTabController
+    /// Peek sessions showing a prompt.
+    private var promptingPeekSessions = Set<Int>()
 }
 
 // MARK: BrowserTabControllerDelegate

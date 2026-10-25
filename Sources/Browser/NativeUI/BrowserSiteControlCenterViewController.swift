@@ -83,8 +83,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
     /// Reads the site's settings again, as the popover opens or after a change.
     func reloadSiteSettings() {
         guard isViewLoaded else { return }
-        let urlString = model.currentTab?.urlString ?? ""
-        siteSettings = model.siteSettingRows(forURLString: urlString)
+        loadSiteSettings()
         refresh()
     }
 
@@ -152,8 +151,15 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         y += CGFloat(rows) * tileSize + CGFloat(max(rows - 1, 0)) * tileGap
 
         // The site's settings that differ from the defaults.
+        // The rows and their menus belong to one site; a page that moves to
+        // another origin while the popover is open shows that site's own.
+        if BrowserSitePermissionRequest.origin(ofURLString: tab?.urlString ?? "")
+            != BrowserSitePermissionRequest.origin(ofURLString: siteSettingsURLString)
+        {
+            loadSiteSettings()
+        }
         settingsHeading.isHidden = siteSettings.isEmpty
-        let rowViews = settingRows(for: siteSettings, urlString: tab?.urlString ?? "")
+        let rowViews = settingRows(for: siteSettings, urlString: siteSettingsURLString)
         if !siteSettings.isEmpty {
             y += spacing
             settingsHeading.frame = NSRect(x: padding, y: y, width: content, height: 18)
@@ -223,6 +229,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
     private var tiles = [String: BrowserNativeExtensionButton]()
     private var settingViews = [BrowserSiteSettingRowView]()
     private var siteSettings = [BrowserSiteSettingRow]()
+    private var siteSettingsURLString = ""
     private var observation: AnyCancellable?
 
     private let pageActions: [PageAction] = [
@@ -275,6 +282,11 @@ final class BrowserSiteControlCenterViewController: NSViewController {
             }
         }
         return Array(settingViews.prefix(rows.count))
+    }
+
+    private func loadSiteSettings() {
+        siteSettingsURLString = model.currentTab?.urlString ?? ""
+        siteSettings = model.siteSettingRows(forURLString: siteSettingsURLString)
     }
 
     private func settingMenu(for row: BrowserSiteSettingRow, urlString: String) -> NSMenu {
