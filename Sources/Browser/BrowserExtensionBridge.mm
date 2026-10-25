@@ -56,21 +56,19 @@ ExtensionBridgeSymbols LoadExtensionBridgeSymbols() {
     return symbols;
   }
 
-  // The CEF build exports these under the project's former name until it is
-  // rebuilt with the renamed Chromium overrides.
   symbols.copy_installed_extensions_json =
       reinterpret_cast<CopyInstalledExtensionsJSONFunction>(
-          dlsym(handle, "TheBrowserCopyInstalledExtensionsJSON"));
+          dlsym(handle, "OpenArcCopyInstalledExtensionsJSON"));
   symbols.set_extension_enabled =
       reinterpret_cast<SetExtensionEnabledFunction>(
-          dlsym(handle, "TheBrowserSetExtensionEnabled"));
+          dlsym(handle, "OpenArcSetExtensionEnabled"));
   symbols.run_extension_action =
       reinterpret_cast<RunExtensionActionFunction>(
-          dlsym(handle, "TheBrowserRunExtensionAction"));
+          dlsym(handle, "OpenArcRunExtensionAction"));
   symbols.remove_extension = reinterpret_cast<RemoveExtensionFunction>(
-      dlsym(handle, "TheBrowserRemoveExtension"));
+      dlsym(handle, "OpenArcRemoveExtension"));
   symbols.free_string = reinterpret_cast<FreeStringFunction>(
-      dlsym(handle, "TheBrowserFreeString"));
+      dlsym(handle, "OpenArcFreeString"));
   return symbols;
 }
 

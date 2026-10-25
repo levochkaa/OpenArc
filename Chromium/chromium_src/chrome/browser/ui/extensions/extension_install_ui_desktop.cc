@@ -116,7 +116,7 @@ void ExtensionInstallUIDesktop::OnInstallSuccess(
 
 #if BUILDFLAG(ENABLE_CEF)
   // The Chromium post-install UI is implemented with Chrome BrowserWindow
-  // surfaces. In TheBrowser/CEF Alloy, extension-created onboarding tabs are
+  // surfaces. In OpenArc/CEF Alloy, extension-created onboarding tabs are
   // routed through the tabs API bridge instead.
   return;
 #else

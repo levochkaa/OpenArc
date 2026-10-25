@@ -48,7 +48,7 @@ char* CopyCString(const std::string& value) {
   return result;
 }
 
-Profile* TheBrowserProfileForPath(const char* profile_path) {
+Profile* OpenArcProfileForPath(const char* profile_path) {
   if (!profile_path || !g_browser_process ||
       !g_browser_process->profile_manager()) {
     return nullptr;
@@ -246,8 +246,8 @@ bool OpenURLInAlloyBrowser(Profile* profile,
 }  // namespace cef
 
 extern "C" __attribute__((visibility("default"))) char*
-TheBrowserCopyInstalledExtensionsJSON(const char* profile_path) {
-  Profile* profile = TheBrowserProfileForPath(profile_path);
+OpenArcCopyInstalledExtensionsJSON(const char* profile_path) {
+  Profile* profile = OpenArcProfileForPath(profile_path);
   if (!profile) {
     return nullptr;
   }
@@ -295,14 +295,14 @@ TheBrowserCopyInstalledExtensionsJSON(const char* profile_path) {
 }
 
 extern "C" __attribute__((visibility("default"))) int
-TheBrowserSetExtensionEnabled(const char* profile_path,
+OpenArcSetExtensionEnabled(const char* profile_path,
                               const char* extension_id,
                               int is_enabled) {
   if (!extension_id || extension_id[0] == '\0') {
     return 0;
   }
 
-  Profile* profile = TheBrowserProfileForPath(profile_path);
+  Profile* profile = OpenArcProfileForPath(profile_path);
   if (!profile) {
     return 0;
   }
@@ -340,13 +340,13 @@ TheBrowserSetExtensionEnabled(const char* profile_path,
 }
 
 extern "C" __attribute__((visibility("default"))) char*
-TheBrowserRunExtensionAction(const char* profile_path,
+OpenArcRunExtensionAction(const char* profile_path,
                              const char* extension_id) {
   if (!extension_id || extension_id[0] == '\0') {
     return nullptr;
   }
 
-  Profile* profile = TheBrowserProfileForPath(profile_path);
+  Profile* profile = OpenArcProfileForPath(profile_path);
   if (!profile) {
     return nullptr;
   }
@@ -416,12 +416,12 @@ TheBrowserRunExtensionAction(const char* profile_path,
 }
 
 extern "C" __attribute__((visibility("default"))) int
-TheBrowserRemoveExtension(const char* profile_path, const char* extension_id) {
+OpenArcRemoveExtension(const char* profile_path, const char* extension_id) {
   if (!extension_id || extension_id[0] == '\0') {
     return 0;
   }
 
-  Profile* profile = TheBrowserProfileForPath(profile_path);
+  Profile* profile = OpenArcProfileForPath(profile_path);
   if (!profile) {
     return 0;
   }
@@ -450,7 +450,7 @@ TheBrowserRemoveExtension(const char* profile_path, const char* extension_id) {
              : 0;
 }
 
-extern "C" __attribute__((visibility("default"))) void TheBrowserFreeString(
+extern "C" __attribute__((visibility("default"))) void OpenArcFreeString(
     char* value) {
   std::free(value);
 }
