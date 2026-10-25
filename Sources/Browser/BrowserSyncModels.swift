@@ -70,28 +70,6 @@ struct BrowserSyncDevice: Codable, Equatable {
     let lastSeenAt: String?
 }
 
-// MARK: - BrowserAppleAuthRequest
-
-struct BrowserAppleAuthRequest: Encodable {
-    let identityToken: String
-    let deviceName: String
-    let devicePlatform: String
-}
-
-// MARK: - BrowserAppleAuthResponse
-
-struct BrowserAppleAuthResponse: Decodable {
-    struct User: Decodable, Equatable {
-        let id: String
-        let email: String?
-    }
-
-    let accessToken: String
-    let expiresIn: Int
-    let user: User
-    let device: BrowserSyncDevice
-}
-
 // MARK: - BrowserSyncSpacePayload
 
 struct BrowserSyncSpacePayload: Codable, Equatable {

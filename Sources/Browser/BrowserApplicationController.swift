@@ -2567,7 +2567,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             syncClient: syncClient,
             authSessionStore: authSessionStore,
             syncCoordinator: syncCoordinator,
-            appleSignInService: BrowserAppleSignInService(),
+            webSignInService: BrowserWebSignInService(),
             deviceIdentity: .init(name: Host.current().localizedName ?? "Mac", platform: "macOS"),
         )
         let chromeModel = BrowserChromeModel(

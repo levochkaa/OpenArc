@@ -226,7 +226,7 @@ import UIKit
 
 // MARK: - BrowserMobileSyncRemoteServing
 
-@MainActor protocol BrowserMobileSyncRemoteServing: BrowserSyncRemoteServing, BrowserAppleAuthenticating {}
+@MainActor protocol BrowserMobileSyncRemoteServing: BrowserSyncRemoteServing, BrowserAccountAuthenticating {}
 
 // MARK: - BrowserRemoteSyncClient + BrowserMobileSyncRemoteServing
 

@@ -452,7 +452,7 @@ private struct AccountPersistenceEvidence: Equatable {
 
 // MARK: - AccountPersistenceRemote
 
-@MainActor private final class AccountPersistenceRemote: BrowserSyncRemoteServing, BrowserAppleAuthenticating {
+@MainActor private final class AccountPersistenceRemote: BrowserSyncRemoteServing, BrowserAccountAuthenticating {
     let baseURL = URL(string: "https://sync.example")!
     var response = accountPersistenceSession()
     var authenticationRequests = 0

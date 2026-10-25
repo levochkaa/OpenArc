@@ -340,7 +340,7 @@ import UIKit
 
 // MARK: - MobileAccountAuthenticator
 
-@MainActor private final class MobileAccountAuthenticator: BrowserAppleAuthenticating {
+@MainActor private final class MobileAccountAuthenticator: BrowserAccountAuthenticating {
     let baseURL = URL(string: "https://sync.example.com")!
     var requests = 0
 

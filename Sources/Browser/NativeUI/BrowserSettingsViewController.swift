@@ -119,6 +119,10 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let shortcutsBody = NSStackView()
     private let profilesBody = NSStackView()
     private let accountsBody = NSStackView()
+    /// Kept across refreshes, so typing survives the account store's updates.
+    private let accountEmailField = NSTextField()
+    private let accountCodeField = NSTextField()
+    private var isShowingEmailCodeEntry = false
     private let linkRoutesBody = NSStackView()
     private var linkRouteFields = [UUID: NSTextField]()
     private let siteSearchesBody = NSStackView()
@@ -188,6 +192,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         searchField.placeholderString = BrowserStrings.settingsShortcutsSearchPlaceholder
         searchField.setAccessibilityIdentifier("browser.settings.shortcut-search")
         searchField.delegate = self
+        configureAccountFields()
         configureContent()
         observe(preferences.objectWillChange) { [weak self] in self?.syncControls() }
         observe(model.objectWillChange) { [weak self] in self?.syncControls() }
@@ -207,7 +212,19 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             // Spaces may have changed since the pane was built.
             refreshLinkRoutes()
         }
+        if pane == .accounts, let accountStore, !accountStore.isAuthenticated, accountStore.providers == nil {
+            Task { await accountStore.loadProviders() }
+        }
         syncControls()
+    }
+
+    private static func signInTitle(for provider: BrowserAccountProvider) -> String {
+        switch provider {
+        case .apple: BrowserStrings.syncAccountContinueWithApple
+        case .google: BrowserStrings.syncAccountContinueWithGoogle
+        case .github: BrowserStrings.syncAccountContinueWithGitHub
+        case .email: BrowserStrings.syncAccountSendCode
+        }
     }
 
     func controlTextDidChange(_ notification: Notification) {
@@ -1011,11 +1028,9 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     color: .secondaryLabelColor,
                     wraps: true,
                 ))
-                let signIn = BrowserActionButton(BrowserStrings.syncAccountSignInWithApple) {
-                    Task { await accountStore.signInWithApple() }
+                if accountStore.isConfigured {
+                    rows.append(contentsOf: signInRows(accountStore))
                 }
-                signIn.isEnabled = accountStore.isConfigured && !accountStore.isSigningIn
-                rows.append(signIn)
             }
             if let error = accountStore.lastError {
                 rows.append(BrowserNativeControls.label(
@@ -1034,6 +1049,96 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         accountsBody.spacing = 10
         BrowserNativeControls.replaceViews(rows, in: accountsBody)
         scrollView.needsLayout = true
+        let showsCodeEntry = accountStore?.emailSignIn != nil
+        if showsCodeEntry, !isShowingEmailCodeEntry {
+            view.window?.makeFirstResponder(accountCodeField)
+        }
+        isShowingEmailCodeEntry = showsCodeEntry
+    }
+
+    private func configureAccountFields() {
+        for (field, placeholder, identifier) in [
+            (accountEmailField, BrowserStrings.syncAccountEmailPlaceholder, "email"),
+            (accountCodeField, BrowserStrings.syncAccountCodePlaceholder, "code"),
+        ] {
+            field.placeholderString = placeholder
+            field.cell?.usesSingleLineMode = true
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            field.target = self
+            field.setAccessibilityIdentifier("browser.settings.account.\(identifier)")
+        }
+        accountEmailField.contentType = .emailAddress
+        accountCodeField.contentType = .oneTimeCode
+        accountEmailField.action = #selector(requestEmailCode)
+        accountCodeField.action = #selector(signInWithEmailCode)
+    }
+
+    /// The server's sign-in methods: a button per web provider, then a code
+    /// sent by email.
+    private func signInRows(_ accountStore: BrowserAccountStore) -> [NSView] {
+        guard let providers = accountStore.providers else {
+            guard accountStore.lastError != nil else { return [] }
+            return [BrowserActionButton(BrowserStrings.syncAccountLoadProviders) {
+                Task { await accountStore.loadProviders() }
+            }]
+        }
+        let isEnabled = !accountStore.isSigningIn
+        var rows = [NSView]()
+        for provider in providers where provider.isWeb {
+            let button = BrowserActionButton(Self.signInTitle(for: provider)) {
+                Task { await accountStore.signIn(with: provider) }
+            }
+            button.isEnabled = isEnabled
+            button.setAccessibilityIdentifier("browser.settings.account.continue-with-\(provider.rawValue)")
+            rows.append(button)
+        }
+        guard providers.contains(.email) else { return rows }
+        accountEmailField.isEnabled = isEnabled
+        accountCodeField.isEnabled = isEnabled
+        guard let request = accountStore.emailSignIn else {
+            let send = BrowserActionButton(BrowserStrings.syncAccountSendCode) { [weak self] in
+                self?.requestEmailCode()
+            }
+            send.isEnabled = isEnabled
+            send.setAccessibilityIdentifier("browser.settings.account.send-code")
+            rows.append(BrowserNativeControls.stack([accountEmailField, send], orientation: .horizontal, spacing: 8))
+            return rows
+        }
+        rows.append(BrowserNativeControls.label(
+            BrowserStrings.syncAccountCodeSent(to: request.email),
+            color: .secondaryLabelColor,
+            wraps: true,
+        ))
+        let signIn = BrowserActionButton(BrowserStrings.syncAccountSignInWithCode) { [weak self] in
+            self?.signInWithEmailCode()
+        }
+        signIn.isEnabled = isEnabled
+        signIn.setAccessibilityIdentifier("browser.settings.account.sign-in-with-code")
+        rows.append(BrowserNativeControls.stack([accountCodeField, signIn], orientation: .horizontal, spacing: 8))
+        let sendAgain = BrowserActionButton(BrowserStrings.syncAccountSendAgain) {
+            Task { await accountStore.requestEmailCode(email: request.email) }
+        }
+        sendAgain.isEnabled = isEnabled && accountStore.canResendEmailCode
+        sendAgain.setAccessibilityIdentifier("browser.settings.account.send-again")
+        let differentEmail = BrowserActionButton(BrowserStrings.syncAccountUseDifferentEmail) { [weak self] in
+            self?.accountCodeField.stringValue = ""
+            accountStore.cancelEmailSignIn()
+        }
+        rows.append(BrowserNativeControls.stack([sendAgain, differentEmail], orientation: .horizontal, spacing: 8))
+        return rows
+    }
+
+    @objc private func requestEmailCode() {
+        guard let accountStore, accountStore.emailSignIn == nil else { return }
+        let email = accountEmailField.stringValue
+        accountCodeField.stringValue = ""
+        Task { await accountStore.requestEmailCode(email: email) }
+    }
+
+    @objc private func signInWithEmailCode() {
+        guard let accountStore, let request = accountStore.emailSignIn else { return }
+        let code = accountCodeField.stringValue
+        Task { await accountStore.signIn(email: request.email, code: code) }
     }
 
     private func refreshProfiles() {

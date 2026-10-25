@@ -246,7 +246,7 @@ private struct SyncAdoptionEvidence: Equatable {
 
 // MARK: - SyncAdoptionRemote
 
-@MainActor private final class SyncAdoptionRemote: BrowserSyncRemoteServing, BrowserAppleAuthenticating {
+@MainActor private final class SyncAdoptionRemote: BrowserSyncRemoteServing, BrowserAccountAuthenticating {
     let baseURL = URL(string: "https://sync-adoption.example")!
     var pulls = 0
     var pushes = [BrowserSyncMutation]()

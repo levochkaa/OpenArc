@@ -309,7 +309,7 @@ import Testing
 
 // MARK: - AccountTestAuthenticator
 
-@MainActor private final class AccountTestAuthenticator: BrowserAppleAuthenticating {
+@MainActor private final class AccountTestAuthenticator: BrowserAccountAuthenticating {
     let baseURL = URL(string: "https://sync.example")!
     var response = accountSession()
     var tokens = [String]()

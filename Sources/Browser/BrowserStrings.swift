@@ -1946,11 +1946,6 @@ enum BrowserStrings {
         comment: "Empty state text for accounts.",
     )
 
-    static let syncAccountSignInWithApple = NSLocalizedString(
-        "browser.sync.account.sign_in_with_apple",
-        comment: "Button title for signing into sync with Apple.",
-    )
-
     static let syncAccountSignOut = NSLocalizedString(
         "browser.sync.account.sign_out",
         comment: "Button title for signing out of sync.",
@@ -1986,6 +1981,86 @@ enum BrowserStrings {
     static let syncAccountUnavailable = NSLocalizedString(
         "browser.sync.account.unavailable",
         comment: "Durable sync store unavailable.",
+    )
+
+    static let syncAccountContinueWithApple = NSLocalizedString(
+        "browser.sync.account.continue_with_apple",
+        comment: "Button title for signing into sync with Apple on the web.",
+    )
+
+    static let syncAccountContinueWithGoogle = NSLocalizedString(
+        "browser.sync.account.continue_with_google",
+        comment: "Button title for signing into sync with Google.",
+    )
+
+    static let syncAccountContinueWithGitHub = NSLocalizedString(
+        "browser.sync.account.continue_with_github",
+        comment: "Button title for signing into sync with GitHub.",
+    )
+
+    static let syncAccountEmailPlaceholder = NSLocalizedString(
+        "browser.sync.account.email_placeholder",
+        comment: "Placeholder of the email field for signing in with a code.",
+    )
+
+    static let syncAccountSendCode = NSLocalizedString(
+        "browser.sync.account.send_code",
+        comment: "Button title that emails a sign-in code.",
+    )
+
+    static let syncAccountCodePlaceholder = NSLocalizedString(
+        "browser.sync.account.code_placeholder",
+        comment: "Placeholder of the sign-in code field.",
+    )
+
+    static let syncAccountSignInWithCode = NSLocalizedString(
+        "browser.sync.account.sign_in_with_code",
+        comment: "Button title that signs in with the emailed code.",
+    )
+
+    static let syncAccountSendAgain = NSLocalizedString(
+        "browser.sync.account.send_again",
+        comment: "Button title that emails another sign-in code.",
+    )
+
+    static let syncAccountUseDifferentEmail = NSLocalizedString(
+        "browser.sync.account.use_different_email",
+        comment: "Button title that goes back to entering an email.",
+    )
+
+    static let syncAccountLoadProviders = NSLocalizedString(
+        "browser.sync.account.load_providers",
+        comment: "Button title that asks the server for its sign-in methods again.",
+    )
+
+    static let syncAccountMethodUnavailable = NSLocalizedString(
+        "browser.sync.account.method_unavailable",
+        comment: "Error when the server is not configured for a sign-in method.",
+    )
+
+    static let syncAccountTooManyRequests = NSLocalizedString(
+        "browser.sync.account.too_many_requests",
+        comment: "Error when the server rate-limits sign-in.",
+    )
+
+    static let syncAccountInvalidEmail = NSLocalizedString(
+        "browser.sync.account.invalid_email",
+        comment: "Error for an email the server cannot send a code to.",
+    )
+
+    static let syncAccountInvalidCode = NSLocalizedString(
+        "browser.sync.account.invalid_code",
+        comment: "Error for a wrong or expired emailed sign-in code.",
+    )
+
+    static let syncAccountSignInExpired = NSLocalizedString(
+        "browser.sync.account.sign_in_expired",
+        comment: "Error when a web sign-in took too long.",
+    )
+
+    static let syncAccountProviderFailed = NSLocalizedString(
+        "browser.sync.account.provider_failed",
+        comment: "Error when a sign-in provider failed.",
     )
 
     static let settingsAutomaticUpdates = NSLocalizedString(
@@ -2479,6 +2554,16 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front.",
     )
+
+    static func syncAccountCodeSent(to email: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.sync.account.code_sent",
+                comment: "Instruction after a sign-in code was emailed, with the email placeholder.",
+            ),
+            email,
+        )
+    }
 
     static func sitePermissionPromptTitle(_ origin: String) -> String {
         String(

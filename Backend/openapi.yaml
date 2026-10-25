@@ -27,6 +27,7 @@ paths:
   /v1/auth/apple:
     post:
       operationId: authenticateWithApple
+      description: Native Sign in with Apple, from an app the identity token's audience lists.
       tags: [Authentication]
       requestBody:
         required: true
@@ -35,12 +36,116 @@ paths:
             schema:
               $ref: "#/components/schemas/AuthAppleRequest"
       responses:
-        "200":
+        "201":
           description: Sync access token and registered device.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthAppleResponse"
+                $ref: "#/components/schemas/AuthSessionResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/auth/providers:
+    get:
+      operationId: listAuthProviders
+      description: The sign-in methods this server is configured for.
+      tags: [Authentication]
+      responses:
+        "200":
+          description: Configured sign-in methods.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthProvidersResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/auth/web/{provider}/start:
+    get:
+      operationId: startWebSignIn
+      description: >-
+        Opened in a web authentication session, never called directly. Redirects
+        to the provider; once the user signs in, the server redirects to
+        `openarc-auth://callback?code=CODE`, or `openarc-auth://callback?error=REASON`
+        (`access_denied`, `provider_error` or `expired`). The code is single use,
+        expires after five minutes and is exchanged with the verifier whose
+        challenge started the sign-in.
+      tags: [Authentication]
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [apple, google, github]
+        - name: code_challenge
+          in: query
+          required: true
+          description: Base64url SHA-256 of the client's code verifier, without padding.
+          schema:
+            type: string
+            minLength: 43
+            maxLength: 43
+      responses:
+        "303":
+          description: Redirect to the provider's sign-in page.
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/auth/web/exchange:
+    post:
+      operationId: exchangeWebSignIn
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthWebExchangeRequest"
+      responses:
+        "201":
+          description: Sync access token and registered device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/auth/email/start:
+    post:
+      operationId: startEmailSignIn
+      description: Emails a six-digit sign-in code. Asking again within `resendIn` seconds returns 429.
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthEmailStartRequest"
+      responses:
+        "202":
+          description: The code was sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEmailStartResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/auth/email/verify:
+    post:
+      operationId: verifyEmailSignIn
+      description: A wrong code counts toward five attempts, after which the code expires.
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthEmailVerifyRequest"
+      responses:
+        "201":
+          description: Sync access token and registered device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
         default:
           $ref: "#/components/responses/Error"
   /v1/devices:
@@ -227,7 +332,80 @@ components:
           type: string
           minLength: 1
           maxLength: 60
-    AuthAppleResponse:
+    AuthProvidersResponse:
+      type: object
+      required: [providers]
+      additionalProperties: false
+      properties:
+        providers:
+          type: array
+          description: >-
+            Currently apple, google, github and email. Clients skip values they
+            do not know, so a server can add methods.
+          items:
+            type: string
+    AuthWebExchangeRequest:
+      type: object
+      required: [code, codeVerifier, deviceName, devicePlatform]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 200
+        codeVerifier:
+          type: string
+          minLength: 43
+          maxLength: 128
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        devicePlatform:
+          type: string
+          minLength: 1
+          maxLength: 60
+    AuthEmailStartRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          minLength: 3
+          maxLength: 254
+    AuthEmailStartResponse:
+      type: object
+      required: [expiresIn, resendIn]
+      additionalProperties: false
+      properties:
+        expiresIn:
+          type: integer
+          description: Seconds the code stays valid.
+        resendIn:
+          type: integer
+          description: Seconds before another code can be sent.
+    AuthEmailVerifyRequest:
+      type: object
+      required: [email, code, deviceName, devicePlatform]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          minLength: 3
+          maxLength: 254
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        devicePlatform:
+          type: string
+          minLength: 1
+          maxLength: 60
+    AuthSessionResponse:
       type: object
       required: [accessToken, tokenType, expiresIn, user, device]
       additionalProperties: false

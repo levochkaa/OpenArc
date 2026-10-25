@@ -40,38 +40,35 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         BrowserSyncOutboxProjection.changes(from: previousSnapshot, to: snapshot)
     }
 
-    private static func iso8601String(from timeInterval: TimeInterval) -> String {
-        iso8601String(from: Date(timeIntervalSince1970: timeInterval))
+    /// A session response, or the server's error mapped for sign-in.
+    private static func authSession(
+        _ body: Components.Schemas.AuthSessionResponse,
+        serverURL: URL,
+    ) -> BrowserAuthSession {
+        BrowserAuthSession(
+            accessToken: body.accessToken,
+            userID: body.user.id,
+            userEmail: body.user.email,
+            deviceID: body.device.id,
+            serverURL: serverURL,
+        )
     }
 
-    private static func iso8601String(from date: Date) -> String {
-        ISO8601DateFormatter().string(from: date)
-    }
-
-    private static func authResponse(
-        from output: Operations.authenticateWithApple.Output,
-    ) throws -> BrowserAppleAuthResponse {
-        switch output {
-        case .ok(let response):
-            switch response.body {
-            case .json(let body):
-                return BrowserAppleAuthResponse(
-                    accessToken: body.accessToken,
-                    expiresIn: body.expiresIn,
-                    user: BrowserAppleAuthResponse.User(
-                        id: body.user.id,
-                        email: body.user.email,
-                    ),
-                    device: BrowserSyncDevice(
-                        id: body.device.id,
-                        name: body.device.name,
-                        platform: body.device.platform,
-                        lastSeenAt: body.device.lastSeenAt.map { Self.iso8601String(from: $0) },
-                    ),
-                )
-            }
+    private static func signInError(
+        statusCode: Int,
+        body: Components.Responses._Error.Body,
+        rejectedCode: BrowserAccountSignInError,
+    ) -> BrowserAccountSignInError {
+        switch statusCode {
+        case 401: rejectedCode
+        case 404,
+             501,
+             503: .notConfigured
+        case 429: .tooManyRequests
         default:
-            throw BrowserRemoteSyncError.unexpectedOpenAPIResponse
+            switch body {
+            case .json(let error): .server(statusCode: statusCode, message: error.message)
+            }
         }
     }
 
@@ -80,31 +77,87 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         deviceName: String,
         devicePlatform: String,
     ) async throws -> BrowserAuthSession {
-        let request = BrowserAppleAuthRequest(
+        let output = try await openAPIClient(accessToken: nil).authenticateWithApple(.init(body: .json(.init(
             identityToken: identityToken,
             deviceName: deviceName,
             devicePlatform: devicePlatform,
-        )
-        let response = try await Self.authResponse(
-            from: openAPIClient(accessToken: nil).authenticateWithApple(
-                .init(
-                    body: .json(
-                        Components.Schemas.AuthAppleRequest(
-                            identityToken: request.identityToken,
-                            deviceName: request.deviceName,
-                            devicePlatform: request.devicePlatform,
-                        ),
-                    ),
-                ),
-            ),
-        )
-        return BrowserAuthSession(
-            accessToken: response.accessToken,
-            userID: response.user.id,
-            userEmail: response.user.email,
-            deviceID: response.device.id,
-            serverURL: configuration.baseURL,
-        )
+        ))))
+        switch output {
+        // The server has always answered 201 Created.
+        case .created(let response):
+            switch response.body {
+            case .json(let body): return Self.authSession(body, serverURL: configuration.baseURL)
+            }
+        case .default(let statusCode, let response):
+            throw Self.signInError(statusCode: statusCode, body: response.body, rejectedCode: .signInExpired)
+        }
+    }
+
+    /// The sign-in methods the server is configured for, in its order.
+    func signInProviders() async throws -> [BrowserAccountProvider] {
+        switch try await openAPIClient(accessToken: nil).listAuthProviders() {
+        case .ok(let response):
+            switch response.body {
+            case .json(let body): return body.providers.compactMap(BrowserAccountProvider.init(rawValue:))
+            }
+        case .default(let statusCode, let response):
+            throw Self.signInError(statusCode: statusCode, body: response.body, rejectedCode: .signInExpired)
+        }
+    }
+
+    func exchangeWebSignIn(
+        code: String,
+        codeVerifier: String,
+        deviceName: String,
+        devicePlatform: String,
+    ) async throws -> BrowserAuthSession {
+        let output = try await openAPIClient(accessToken: nil).exchangeWebSignIn(.init(body: .json(.init(
+            code: code,
+            codeVerifier: codeVerifier,
+            deviceName: deviceName,
+            devicePlatform: devicePlatform,
+        ))))
+        switch output {
+        case .created(let response):
+            switch response.body {
+            case .json(let body): return Self.authSession(body, serverURL: configuration.baseURL)
+            }
+        case .default(let statusCode, let response):
+            throw Self.signInError(statusCode: statusCode, body: response.body, rejectedCode: .signInExpired)
+        }
+    }
+
+    func startEmailSignIn(email: String) async throws -> BrowserEmailSignInCode {
+        switch try await openAPIClient(accessToken: nil).startEmailSignIn(.init(body: .json(.init(email: email)))) {
+        case .accepted(let response):
+            switch response.body {
+            case .json(let body): return BrowserEmailSignInCode(expiresIn: body.expiresIn, resendIn: body.resendIn)
+            }
+        case .default(let statusCode, let response):
+            throw Self.signInError(statusCode: statusCode, body: response.body, rejectedCode: .invalidEmail)
+        }
+    }
+
+    func verifyEmailSignIn(
+        email: String,
+        code: String,
+        deviceName: String,
+        devicePlatform: String,
+    ) async throws -> BrowserAuthSession {
+        let output = try await openAPIClient(accessToken: nil).verifyEmailSignIn(.init(body: .json(.init(
+            email: email,
+            code: code,
+            deviceName: deviceName,
+            devicePlatform: devicePlatform,
+        ))))
+        switch output {
+        case .created(let response):
+            switch response.body {
+            case .json(let body): return Self.authSession(body, serverURL: configuration.baseURL)
+            }
+        case .default(let statusCode, let response):
+            throw Self.signInError(statusCode: statusCode, body: response.body, rejectedCode: .invalidCode)
+        }
     }
 
     func push(
@@ -202,6 +255,8 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
     private func openAPIClient(accessToken: String?) -> Client {
         Client(
             serverURL: configuration.baseURL,
+            // The server writes JavaScript timestamps, with milliseconds.
+            configuration: Configuration(dateTranscoder: .iso8601WithFractionalSeconds),
             transport: openAPITransport,
             middlewares: [
                 BrowserOpenAPIRequestMiddleware(accessToken: accessToken),
