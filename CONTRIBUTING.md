@@ -30,6 +30,6 @@ Follow [Building](README.md#building) in the README. The CEF build is a one-time
 
 ## License
 
-OpenArc is licensed under the [Apache License 2.0](LICENSE). By contributing, you agree that your contribution is licensed under it too (section 5 of the license). You keep the copyright to your work, and no separate agreement is needed.
+OpenArc is released under the [MIT License](LICENSE). Your contributions are released under it too, and you keep the copyright to them.
 
-Forks are welcome, including private and commercial ones. Keep [LICENSE](LICENSE) and [NOTICE](NOTICE) in what you distribute.
+Forks are welcome, including private and commercial ones. Keep [LICENSE](LICENSE) with its copyright line in what you distribute.

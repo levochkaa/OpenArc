@@ -45,6 +45,6 @@ Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, conv
 
 ## License
 
-OpenArc is licensed under the [Apache License 2.0](LICENSE). You may use, change and sell it, in open or closed-source products, as long as you keep the [LICENSE](LICENSE) and [NOTICE](NOTICE) files with your copies. NOTICE credits the project's creator.
+OpenArc is released under the [MIT License](LICENSE). You may use, change and sell it, in open or closed-source products, as long as copies keep the license with its copyright line naming the project's creator.
 
 OpenArc is an independent project. It is not affiliated with, endorsed by or sponsored by The Browser Company of New York, Inc. Arc is a trademark of its owner.
