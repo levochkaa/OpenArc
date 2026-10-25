@@ -79,6 +79,8 @@
   <true/>
   <key>SUEnableAutomaticChecks</key>
   <true/>
+  <key>OpenArcSyncBaseURL</key>
+  <string>$(OPENARC_SYNC_BASE_URL)</string>
   <key>SUFeedURL</key>
   <string>$(OPENARC_SPARKLE_FEED_URL)</string>
   <key>SUPublicEDKey</key>

@@ -40,9 +40,21 @@ import Testing
     #expect(BrowserSyncConfiguration.current(environment: ["OPENARC_SYNC_BASE_URL": input]) == nil)
 }
 
-@Test func syncConfigurationRequiresAnEnvironmentEndpoint() {
-    #expect(BrowserSyncConfiguration.current(environment: [:]) == nil)
-    #expect(BrowserSyncConfiguration.current(environment: ["OPENARC_SYNC_BASE_URL": ""]) == nil)
+@Test func syncConfigurationUsesThePackagedServerUnlessTheEnvironmentNamesAnother() {
+    let packaged = "https://api.openarc.su"
+    #expect(BrowserSyncConfiguration.current(environment: [:], packagedBaseURL: packaged)?
+        .baseURL
+        .absoluteString == packaged)
+    #expect(BrowserSyncConfiguration.current(
+        environment: ["OPENARC_SYNC_BASE_URL": "http://127.0.0.1:8080"],
+        packagedBaseURL: packaged,
+    )?.baseURL
+        .absoluteString == "http://127.0.0.1:8080")
+    // An empty override turns sync off, and so does a build without a server.
+    #expect(BrowserSyncConfiguration
+        .current(environment: ["OPENARC_SYNC_BASE_URL": ""], packagedBaseURL: packaged) == nil)
+    #expect(BrowserSyncConfiguration.current(environment: [:], packagedBaseURL: "") == nil)
+    #expect(BrowserSyncConfiguration.current(environment: [:], packagedBaseURL: nil) == nil)
 }
 
 @Test func legacyAuthSessionDecodesWithoutIssuerButCannotAuthorizeSync() throws {

@@ -20,11 +20,14 @@ struct BrowserSyncConfiguration {
         self.baseURL = BrowserSyncOwner(baseURL: baseURL, userID: "").baseURL
     }
 
-    static func current(environment: [String: String] = ProcessInfo.processInfo
-        .environment) -> BrowserSyncConfiguration?
-    {
+    /// The server the build ships with, unless `OPENARC_SYNC_BASE_URL`
+    /// names another; an empty value turns sync off.
+    static func current(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        packagedBaseURL: String? = Bundle.main.object(forInfoDictionaryKey: "OpenArcSyncBaseURL") as? String,
+    ) -> BrowserSyncConfiguration? {
         guard
-            let rawBaseURL = environment["OPENARC_SYNC_BASE_URL"],
+            let rawBaseURL = environment["OPENARC_SYNC_BASE_URL"] ?? packagedBaseURL,
             let baseURL = URL(string: rawBaseURL)
         else {
             return nil

@@ -37,7 +37,7 @@ Then:
 ./build.sh ios-build   # build the iOS app for the simulator
 ```
 
-`./build.sh --help` lists every action. Sync needs a server: `Backend/README.md` explains how to run one locally, and the Mac app connects to the one in `OPENARC_SYNC_BASE_URL`.
+`./build.sh --help` lists every action. Builds sync with `https://api.openarc.su`, the `OPENARC_SYNC_BASE_URL` build setting. Setting `OPENARC_SYNC_BASE_URL` in the environment points the app at another server, for example one from `Backend/README.md` running locally; an empty value turns sync off.
 
 [docs/releasing.md](docs/releasing.md) covers signing, notarization and the Stable and Beta update channels.
 
