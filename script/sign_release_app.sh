@@ -28,11 +28,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 identity="${OPENARC_SIGNING_IDENTITY:-Developer ID Application}"
-# A Developer ID provisioning profile for the app's identifier; Sign in with
-# Apple is a restricted entitlement that macOS only honors with one.
+# A provisioning profile, needed only when the entitlements include
+# Sign in with Apple, which Apple does not offer to Developer ID builds.
 profile="${OPENARC_PROVISIONING_PROFILE:-}"
 notary_profile="${OPENARC_NOTARY_PROFILE:-openarc-notary}"
-app_entitlements="${OPENARC_APP_ENTITLEMENTS:-$ROOT_DIR/Support/OpenArc.entitlements}"
+app_entitlements="${OPENARC_APP_ENTITLEMENTS:-$ROOT_DIR/Support/OpenArc-Distribution.entitlements}"
 frameworks="$app/Contents/Frameworks"
 
 if [[ ! -d "$app" ]]; then
@@ -41,7 +41,7 @@ if [[ ! -d "$app" ]]; then
 fi
 if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.applesignin' "$app_entitlements" >/dev/null 2>&1 \
   && [[ -z "$profile" || ! -f "$profile" ]]; then
-  echo "error: set OPENARC_PROVISIONING_PROFILE to the app's Developer ID provisioning profile" >&2
+  echo "error: set OPENARC_PROVISIONING_PROFILE to a profile that allows Sign in with Apple" >&2
   exit 1
 fi
 
