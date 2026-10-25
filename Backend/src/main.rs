@@ -95,6 +95,7 @@ async fn serve() -> anyhow::Result<()> {
         auth,
         config: config.clone(),
     };
+    tokio::spawn(signin::clean_up_periodically(pool.clone()));
     let listener = TcpListener::bind((config.host.as_str(), config.port)).await?;
     let address = listener.local_addr()?;
     // Test harnesses read this line to find an ephemeral port.

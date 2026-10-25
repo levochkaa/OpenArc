@@ -146,14 +146,6 @@ impl SignInService {
         let client = self.pool.get().await?;
         client
             .execute(
-                "DELETE FROM auth_web_sign_ins
-                 WHERE expires_at < now() - interval '1 day'
-                   AND (code_expires_at IS NULL OR code_expires_at < now() - interval '1 day')",
-                &[],
-            )
-            .await?;
-        client
-            .execute(
                 "INSERT INTO auth_web_sign_ins (provider, state_hash, nonce, code_challenge, expires_at)
                  VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",
                 &[&provider.name(), &digest(&state), &nonce, &challenge, &SIGN_IN_SECONDS],
@@ -498,6 +490,34 @@ impl SignInService {
     fn email_code_hash(&self, email: &str, code: &str) -> String {
         digest(&format!("{}:{email}:{code}", self.config.jwt_secret))
     }
+}
+
+// MARK: Cleanup
+
+/// Deletes finished and expired sign-in records every hour, so none outlives
+/// its use by more than two hours.
+pub async fn clean_up_periodically(pool: Pool) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+    loop {
+        interval.tick().await;
+        if let Err(error) = clean_up(&pool).await {
+            tracing::warn!(error = format!("{error:#}"), "sign-in cleanup failed");
+        }
+    }
+}
+
+pub async fn clean_up(pool: &Pool) -> anyhow::Result<()> {
+    pool.get()
+        .await?
+        .batch_execute(
+            "DELETE FROM auth_web_sign_ins
+             WHERE expires_at < now() - interval '1 hour'
+               AND (code_expires_at IS NULL OR code_expires_at < now() - interval '1 hour');
+             DELETE FROM auth_email_codes
+             WHERE expires_at < now() AND window_started_at < now() - interval '1 hour';",
+        )
+        .await?;
+    Ok(())
 }
 
 // MARK: Accounts and sessions

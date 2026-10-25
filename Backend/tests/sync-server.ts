@@ -22,8 +22,12 @@ export const integrationEnvironment = {
 
 export type SyncServer = { url: string; stop: () => Promise<void> };
 
+/** The developer's own server settings never reach the server under test. */
+const inheritedEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+  !/^(OPENARC_|APPLE_|JWT_|GITHUB_RELEASE_|CORS_ORIGIN$)/.test(key) || key === "OPENARC_SYNC_SERVER_BINARY"));
+
 function environment(databaseURL: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  return { ...process.env, ...integrationEnvironment, ...extra, DATABASE_URL: databaseURL, HOST: "127.0.0.1", PORT: "0", RUST_LOG: "warn" };
+  return { ...inheritedEnvironment, ...integrationEnvironment, ...extra, DATABASE_URL: databaseURL, HOST: "127.0.0.1", PORT: "0", RUST_LOG: "warn" };
 }
 
 export async function migrate(databaseURL: string): Promise<void> {

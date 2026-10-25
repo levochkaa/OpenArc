@@ -260,6 +260,33 @@ export function registerSignInTests(context: Context) {
       assert.equal(((await native.json()) as Session).user.id, web.user.id);
     });
 
+    it("deletes expired sign-in records when the server starts and every hour after", async () => {
+      const pool = context.pool();
+      await pool.query(`
+        INSERT INTO auth_email_codes (email, code_hash, sent_at, expires_at, window_started_at)
+        VALUES ('stale@example.test', 'x', now() - interval '3 hours', now() - interval '3 hours', now() - interval '3 hours'),
+               ('fresh@example.test', 'x', now(), now() + interval '10 minutes', now())`);
+      await pool.query(`
+        INSERT INTO auth_web_sign_ins (provider, state_hash, nonce, code_challenge, expires_at)
+        VALUES ('google', 'stale-state', 'n', 'c', now() - interval '2 hours'),
+               ('google', 'fresh-state', 'n', 'c', now() + interval '10 minutes')`);
+      const restarted = await context.startServer({});
+      try {
+        let remaining: string[] = [];
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const rows = await pool.query(`
+            SELECT email AS key FROM auth_email_codes WHERE email IN ('stale@example.test', 'fresh@example.test')
+            UNION ALL SELECT state_hash FROM auth_web_sign_ins WHERE state_hash IN ('stale-state', 'fresh-state')`);
+          remaining = rows.rows.map((row) => row.key).sort();
+          if (!remaining.some((key) => key.startsWith("stale"))) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.deepEqual(remaining, ["fresh-state", "fresh@example.test"]);
+      } finally {
+        await restarted.stop();
+      }
+    });
+
     it("limits email codes: a resend wait, five tries and expiry", async () => {
       const address = "grace@example.test";
       assert.equal((await postJSON("/v1/auth/email/start", { email: address })).status, 202);
