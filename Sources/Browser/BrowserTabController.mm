@@ -3096,6 +3096,7 @@ struct TabRecord {
                  frameID:(const std::string &)frameID
                 forTabID:(NSString *)tabID;
 - (void)resetMediaForTabID:(NSString *)tabID;
+- (void)handleRenderProcessTerminatedForTabID:(NSString *)tabID errorCode:(int)errorCode;
 - (void)reportMedia:(const MediaFrameState &)state forTabID:(NSString *)tabID record:(TabRecord &)record;
 - (void)notifySitePermissionDismissed:(NSInteger)requestID;
 
@@ -4323,6 +4324,13 @@ void WatchClickModifiers();
   }
 }
 
+- (void)handleRenderProcessTerminatedForTabID:(NSString *)tabID errorCode:(int)errorCode {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:renderProcessTerminatedForTabWithID:errorCode:)]) {
+    [delegate browserTabController:self renderProcessTerminatedForTabWithID:tabID errorCode:errorCode];
+  }
+}
+
 - (void)controlMediaInTabWithID:(NSString *)tabID action:(NSString *)action {
   auto it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end() || !it->second.browser || it->second.mediaControlFrameID.empty() ||
@@ -5144,11 +5152,12 @@ void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
 
 void BrowserTabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser>,
                                                  TerminationStatus,
-                                                 int,
+                                                 int error_code,
                                                  const CefString &) {
   CEF_REQUIRE_UI_THREAD();
   [controller_ cancelMediaSitePermissionsForTabID:ToNSString(tab_id_)];
   [controller_ resetMediaForTabID:ToNSString(tab_id_)];
+  [controller_ handleRenderProcessTerminatedForTabID:ToNSString(tab_id_) errorCode:error_code];
 }
 
 bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,

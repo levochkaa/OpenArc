@@ -118,6 +118,11 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 // The engine withdrew a request: its page navigated or closed.
 - (void)browserTabController:(BrowserTabController *)controller
     didDismissSitePermissionRequest:(NSInteger)requestID;
+// The tab's renderer crashed or was killed; the page is gone until it
+// loads again. errorCode is Chromium's.
+- (void)browserTabController:(BrowserTabController *)controller
+    renderProcessTerminatedForTabWithID:(NSString *)tabID
+                              errorCode:(NSInteger)errorCode;
 // The tab's pages started, paused or stopped playing media. The renderer
 // reports it, since CEF has no audible signal: audible media has sound,
 // paused media can resume, video is visible; the tracks and title come

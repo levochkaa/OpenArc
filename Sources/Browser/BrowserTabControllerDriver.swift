@@ -62,6 +62,7 @@ import Foundation
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
+    var onRenderProcessTerminated: ((String, Int) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -389,6 +390,14 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
 
     nonisolated func browserTabController(_: BrowserTabController, didDismissSitePermissionRequest requestID: Int) {
         MainActor.assumeIsolated { onSitePermissionRequestDismissed?(requestID) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        renderProcessTerminatedForTabWithID tabID: String,
+        errorCode: Int
+    ) {
+        MainActor.assumeIsolated { onRenderProcessTerminated?(tabID, errorCode) }
     }
 
     nonisolated func browserTabController(

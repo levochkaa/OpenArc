@@ -1669,6 +1669,21 @@ enum BrowserStrings {
         comment: "Context menu title that silences a tab."
     )
 
+    static let sadTabMessage = NSLocalizedString(
+        "browser.sad_tab.message",
+        comment: "Shown over a page whose renderer crashed. %@ is the link that reloads it, browser.sad_tab.reload."
+    )
+
+    static let sadTabReloadLink = NSLocalizedString(
+        "browser.sad_tab.reload",
+        comment: "The link in browser.sad_tab.message that reloads the crashed page."
+    )
+
+    static let sadTabErrorCode = NSLocalizedString(
+        "browser.sad_tab.error_code",
+        comment: "Below the crash message: Chromium's error code for the crash."
+    )
+
     static let miniPlayerBackToTab = NSLocalizedString(
         "browser.mini_player.back_to_tab",
         comment: "Tooltip of the mini player's tab icon, which shows the tab playing the media."

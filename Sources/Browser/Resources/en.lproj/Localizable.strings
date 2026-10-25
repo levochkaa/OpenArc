@@ -343,6 +343,9 @@
 "browser.split.rename_action" = "Rename Split View…";
 "browser.split.change_icon_action" = "Change Icon";
 "browser.tab.unmute_action" = "Unmute Tab";
+"browser.sad_tab.message" = "Tab crashed. Maybe %@ the page?";
+"browser.sad_tab.reload" = "reload";
+"browser.sad_tab.error_code" = "Error code: %d";
 "browser.mini_player.back_to_tab" = "Back to Tab";
 "browser.mini_player.previous_track" = "Previous Track";
 "browser.mini_player.next_track" = "Next Track";

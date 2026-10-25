@@ -62,6 +62,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)? { get set }
     /// The engine withdrew a request because its page navigated or closed.
     var onSitePermissionRequestDismissed: ((Int) -> Void)? { get set }
+    /// A tab's renderer crashed or was killed, with Chromium's error code.
+    var onRenderProcessTerminated: ((String, Int) -> Void)? { get set }
     /// A tab's pages started playing media or changed it; nil when they stop.
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)? { get set }
     /// The prompt of a Peek card or small window was answered: true

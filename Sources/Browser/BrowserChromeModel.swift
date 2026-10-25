@@ -171,6 +171,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onMediaStateChanged = { [weak self] tabID, state in
             self?.handleMediaStateChange(tabID: tabID, state: state)
         }
+        tabDriver.onRenderProcessTerminated = { [weak self] tabID, errorCode in
+            self?.handleRenderProcessTerminated(tabID: tabID, errorCode: errorCode)
+        }
         tabDriver.onPeekSitePermissionAnswered = { [weak self] id, allowed in
             if let allowed {
                 self?.answerSitePermissionRequest(id: id, allowed: allowed)
@@ -392,6 +395,11 @@ enum BrowserWindowMode: Equatable {
     var tabMediaStartOrder = [String: Int]()
     var nextTabMediaStartOrder = 0
     @Published var dismissedMiniPlayerTabIDs = Set<String>()
+    /// Tabs on screen whose renderer crashed, with Chromium's error code, and
+    /// tabs whose renderer went away in the background, which reload when
+    /// shown. Only `BrowserChromeModel+CrashedTabs.swift` writes them.
+    @Published var crashedTabErrorCodes = [String: Int]()
+    var tabsNeedingReloadAfterCrash = Set<String>()
     /// An incognito window's camera and microphone answers, kept until it
     /// closes. Only `sitePermissionDecisions` writes it.
     var incognitoSitePermissionDecisions = [BrowserSitePermissionDecision]()
@@ -462,6 +470,7 @@ enum BrowserWindowMode: Equatable {
             syncSplitLayout()
             refreshZoomFromEngine()
             updatePictureInPicture(leaving: oldValue, entering: selectedTabID)
+            revealCrashedTabs()
         }
     }
 
@@ -5708,6 +5717,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             return
         }
         handleMediaStateChange(tabID: id, state: nil)
+        crashedTabErrorCodes.removeValue(forKey: id)
+        tabsNeedingReloadAfterCrash.remove(id)
         closingTabIDs.remove(id)
         let closedTab = tabs.first { $0.id == id }
         // An already-removed or unknown identity has no model change to save.
@@ -5815,6 +5826,11 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             return
         }
 
+        if isLoading {
+            // A crashed page that loads again is back.
+            crashedTabErrorCodes.removeValue(forKey: id)
+            tabsNeedingReloadAfterCrash.remove(id)
+        }
         tabs[index].isLoading = isLoading
         guard id == selectedTabID else {
             return

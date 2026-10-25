@@ -90,6 +90,8 @@ final class BrowserContentNSView: NSView {
     private(set) var areaCapture: BrowserAreaCaptureOverlay?
     let permissionPrompt = BrowserSitePermissionPromptView()
 
+    private(set) var crashPages = [String: BrowserSadTabView]()
+
     override func layout() {
         super.layout()
         cancelAreaCaptureIfStale()
@@ -118,6 +120,9 @@ final class BrowserContentNSView: NSView {
             width: retryWidth,
             height: 32
         )
+        for (id, page) in crashPages {
+            page.frame = pageFrame(forTabID: id)
+        }
         if let request = permissionPrompt.request, !permissionPrompt.isHidden {
             // Over the top of the asking page, or of its pane in a split.
             let page = pageFrame(forTabID: request.tabID)
@@ -144,8 +149,12 @@ final class BrowserContentNSView: NSView {
         permissionPrompt.onDismiss = { [weak model] id in model?.dismissSitePermissionRequest(id: id) }
         permissionObservation = model.objectWillChange
             .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.refreshPermissionPrompt() }
+            .sink { [weak self] in
+                self?.refreshPermissionPrompt()
+                self?.refreshCrashPages()
+            }
         refreshPermissionPrompt()
+        refreshCrashPages()
         model.onBeginAreaCapture = { [weak self, weak model] in
             guard let self, let model else { return false }
             let tabID = model.selectedTabID
@@ -229,6 +238,32 @@ final class BrowserContentNSView: NSView {
             spinner.startAnimation(nil)
         }
         refreshPermissionPrompt()
+        refreshCrashPages()
+        needsLayout = true
+    }
+
+    /// The crash page over each page on screen whose renderer crashed.
+    func refreshCrashPages() {
+        guard let model = captureModel else { return }
+        let codes = model.crashedTabErrorCodes
+        let visible = Set(model.selectedTabID.map { model.splitPaneTabIDs(forTabID: $0) } ?? [])
+        for (id, page) in crashPages where codes[id] == nil {
+            page.removeFromSuperview()
+            crashPages.removeValue(forKey: id)
+        }
+        for (id, code) in codes {
+            let page = crashPages[id] ?? {
+                let page = BrowserSadTabView()
+                page.onReload = { [weak model] in model?.reloadCrashedTab(id: id) }
+                addSubview(page, positioned: .below, relativeTo: permissionPrompt)
+                crashPages[id] = page
+                return page
+            }()
+            if page.errorCode != code || page.accessibilityLabel() == nil {
+                page.update(errorCode: code)
+            }
+            page.isHidden = viewport.isHidden || !visible.contains(id)
+        }
         needsLayout = true
     }
 
