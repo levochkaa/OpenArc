@@ -48,13 +48,33 @@ extension BrowserChromeModel {
             )
             return
         }
-        guard allowed, request.kinds.contains(.notifications) else {
-            resolveSitePermissionInEngine(id, allowed: allowed)
+        guard allowed else {
+            resolveSitePermissionInEngine(id, allowed: false)
             return
         }
-        // Notifications also need the system's permission for OpenArc. A
-        // system refusal leaves the site unanswered: Chromium would keep a
-        // Block after the user turns notifications on in System Settings.
+        // Location and notifications also need macOS's permission for OpenArc,
+        // asked after the first Allow. A system refusal leaves the
+        // site unanswered: Chromium would keep a Block after the user turns
+        // access on in System Settings.
+        guard request.kinds.contains(.location) else {
+            resolveAfterSystemNotificationAuthorization(request)
+            return
+        }
+        requestSystemLocationAuthorization { [weak self] granted in
+            if granted {
+                self?.resolveAfterSystemNotificationAuthorization(request)
+            } else {
+                self?.resolveSitePermissionInEngine(id, allowed: nil)
+            }
+        }
+    }
+
+    private func resolveAfterSystemNotificationAuthorization(_ request: BrowserSitePermissionRequest) {
+        let id = request.id
+        guard request.kinds.contains(.notifications) else {
+            resolveSitePermissionInEngine(id, allowed: true)
+            return
+        }
         requestSystemNotificationAuthorization { [weak self] granted in
             DispatchQueue.main.async {
                 self?.resolveSitePermissionInEngine(id, allowed: granted ? true : nil)

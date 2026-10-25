@@ -406,6 +406,9 @@ enum BrowserWindowMode: Equatable {
     /// Asks macOS to let OpenArc show notifications; tests replace it.
     var requestSystemNotificationAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void =
         BrowserNotificationAuthorization.request
+    /// Asks macOS to let OpenArc use the location; tests replace it.
+    var requestSystemLocationAuthorization: @MainActor (@escaping @MainActor (Bool) -> Void) -> Void =
+        BrowserLocationAuthorization.request
     /// Asks macOS to let OpenArc use the camera or microphone; tests replace it.
     var requestSystemMediaCaptureAuthorization: @MainActor (
         [BrowserSitePermissionKind],

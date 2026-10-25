@@ -31,8 +31,9 @@ import Testing
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
         )
-        // macOS has already let OpenArc use the camera and microphone.
+        // macOS has already let OpenArc use the camera, microphone and location.
         model.requestSystemMediaCaptureAuthorization = { _, completion in completion(true) }
+        model.requestSystemLocationAuthorization = { completion in completion(true) }
         model.handleContextReady()
         driver.flushPendingCreateEvents()
         model.createNewTab()
@@ -249,6 +250,32 @@ import Testing
     fixture.model.answerSitePermissionRequest(id: 3, allowed: false)
     #expect(asked.isEmpty)
     #expect(fixture.resolutions().last == "3:block")
+}
+
+@MainActor @Test func locationAsksMacOSOnlyAfterTheFirstAllow() throws {
+    let fixture = try SitePermissionFixture()
+    defer { fixture.cleanup() }
+    var systemAnswers = [@MainActor (Bool) -> Void]()
+    fixture.model.requestSystemLocationAuthorization = { systemAnswers.append($0) }
+
+    // Block does not ask macOS.
+    fixture.request(1, origin: "https://maps.example", kinds: [.location], media: false)
+    fixture.model.answerSitePermissionRequest(id: 1, allowed: false)
+    #expect(systemAnswers.isEmpty)
+    #expect(fixture.resolutions() == ["1:block"])
+
+    // Allow asks macOS, whose refusal leaves the site unanswered.
+    fixture.request(2, origin: "https://maps.example", kinds: [.location], media: false)
+    fixture.model.answerSitePermissionRequest(id: 2, allowed: true)
+    #expect(systemAnswers.count == 1)
+    #expect(fixture.resolutions().last == "1:block")
+    systemAnswers[0](false)
+    #expect(fixture.resolutions().last == "2:dismiss")
+
+    fixture.request(3, origin: "https://maps.example", kinds: [.location], media: false)
+    fixture.model.answerSitePermissionRequest(id: 3, allowed: true)
+    systemAnswers[1](true)
+    #expect(fixture.resolutions().last == "3:allow")
 }
 
 @MainActor @Test func onlyRequestsOfPagesOnScreenAreShownAndTheEngineWithdrawsThem() throws {

@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreLocation
 import Foundation
 @preconcurrency import UserNotifications
 
@@ -224,6 +225,71 @@ enum BrowserMediaCaptureAuthorization {
             }
         default:
             completion(false)
+        }
+    }
+}
+
+// MARK: - BrowserLocationAuthorization
+
+/// macOS's own permission for OpenArc to use the location, asked when a site
+/// is first allowed it. Chrome asks from its permission prompt,
+/// which CEF does not run, so a page would otherwise never get a position.
+enum BrowserLocationAuthorization {
+    @MainActor static func request(completion: @escaping @MainActor (Bool) -> Void) {
+        LocationAuthorizationRequester.shared.request(completion: completion)
+    }
+}
+
+// MARK: - LocationAuthorizationRequester
+
+/// Private, so the Objective-C header that imports no CoreLocation never
+/// sees it.
+@MainActor private final class LocationAuthorizationRequester: NSObject, CLLocationManagerDelegate {
+    // MARK: Internal
+
+    static let shared = LocationAuthorizationRequester()
+
+    func request(completion: @escaping @MainActor (Bool) -> Void) {
+        if let granted {
+            completion(granted)
+            return
+        }
+        waitingRequests.append(completion)
+        if waitingRequests.count == 1 {
+            manager.requestWhenInUseAuthorization()
+        }
+    }
+
+    /// Also called once when the manager starts, with the current status.
+    nonisolated func locationManagerDidChangeAuthorization(_: CLLocationManager) {
+        MainActor.assumeIsolated { answerWaitingRequests() }
+    }
+
+    // MARK: Private
+
+    private lazy var manager: CLLocationManager = {
+        let manager = CLLocationManager()
+        manager.delegate = self
+        return manager
+    }()
+
+    private var waitingRequests = [@MainActor (Bool) -> Void]()
+
+    /// Nil until the user answers macOS.
+    private var granted: Bool? {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse: true
+        case .notDetermined: nil
+        default: false
+        }
+    }
+
+    private func answerWaitingRequests() {
+        guard let granted, !waitingRequests.isEmpty else { return }
+        let requests = waitingRequests
+        waitingRequests = []
+        for request in requests {
+            request(granted)
         }
     }
 }

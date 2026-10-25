@@ -26,8 +26,9 @@ import Testing
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
         )
-        // macOS has already let OpenArc use the camera and microphone.
+        // macOS has already let OpenArc use the camera, microphone and location.
         model.requestSystemMediaCaptureAuthorization = { _, completion in completion(true) }
+        model.requestSystemLocationAuthorization = { completion in completion(true) }
         model.handleContextReady()
         driver.flushPendingCreateEvents()
         model.createNewTab()
