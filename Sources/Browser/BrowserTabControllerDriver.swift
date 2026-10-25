@@ -61,6 +61,7 @@ import Foundation
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
+    var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
 
     var hostView: NSView {
         browserHostView
@@ -200,6 +201,10 @@ import Foundation
 
     func resolveSitePermissionRequest(_ id: Int, allowed: Bool?) {
         controller.resolveSitePermissionRequest(id, allowed: allowed.map { NSNumber(value: $0) })
+    }
+
+    func controlMedia(_ action: BrowserMediaAction, inTabWithID tabID: String) {
+        controller.controlMedia(inTabWithID: tabID, action: action.rawValue)
     }
 
     func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest]) {
@@ -384,6 +389,30 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
 
     nonisolated func browserTabController(_: BrowserTabController, didDismissSitePermissionRequest requestID: Int) {
         MainActor.assumeIsolated { onSitePermissionRequestDismissed?(requestID) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didChangeMediaStateForTabWithID tabID: String,
+        audible: Bool,
+        playing: Bool,
+        paused: Bool,
+        video: Bool,
+        hasPreviousTrack: Bool,
+        hasNextTrack: Bool,
+        title: String
+    ) {
+        let state = playing || paused
+            ? BrowserTabMediaState(
+                isPlaying: playing,
+                audible: audible,
+                video: video,
+                hasPreviousTrack: hasPreviousTrack,
+                hasNextTrack: hasNextTrack,
+                title: title
+            )
+            : nil
+        MainActor.assumeIsolated { onMediaStateChanged?(tabID, state) }
     }
 
     nonisolated func browserTabController(

@@ -1669,6 +1669,36 @@ enum BrowserStrings {
         comment: "Context menu title that silences a tab."
     )
 
+    static let miniPlayerBackToTab = NSLocalizedString(
+        "browser.mini_player.back_to_tab",
+        comment: "Tooltip of the mini player's tab icon, which shows the tab playing the media."
+    )
+
+    static let miniPlayerPreviousTrack = NSLocalizedString(
+        "browser.mini_player.previous_track",
+        comment: "Mini player button that plays the previous track."
+    )
+
+    static let miniPlayerNextTrack = NSLocalizedString(
+        "browser.mini_player.next_track",
+        comment: "Mini player button that plays the next track."
+    )
+
+    static let miniPlayerPlay = NSLocalizedString(
+        "browser.mini_player.play",
+        comment: "Mini player button that resumes paused media."
+    )
+
+    static let miniPlayerPause = NSLocalizedString(
+        "browser.mini_player.pause",
+        comment: "Mini player button that pauses the media."
+    )
+
+    static let miniPlayerClose = NSLocalizedString(
+        "browser.mini_player.close",
+        comment: "Mini player button that hides it; the media keeps playing."
+    )
+
     static let tabUnmuteAction = NSLocalizedString(
         "browser.tab.unmute_action",
         comment: "Context menu and button title that lets a muted tab play sound again."

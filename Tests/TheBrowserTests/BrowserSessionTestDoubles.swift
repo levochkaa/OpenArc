@@ -63,6 +63,8 @@ import Foundation
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
+    var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
+    private(set) var mediaControls = [(tabID: String, action: BrowserMediaAction)]()
     private(set) var sitePermissionResolutions = [(id: Int, allowed: Bool?)]()
     private(set) var peekSitePermissionRequests = [BrowserSitePermissionRequest]()
     private(set) var peekURLs = [String]()
@@ -309,6 +311,10 @@ import Foundation
 
     func resolveSitePermissionRequest(_ id: Int, allowed: Bool?) {
         sitePermissionResolutions.append((id, allowed))
+    }
+
+    func controlMedia(_ action: BrowserMediaAction, inTabWithID tabID: String) {
+        mediaControls.append((tabID, action))
     }
 
     func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest]) {

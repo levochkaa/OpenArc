@@ -21,6 +21,8 @@ extension BrowserChromeModel {
             splitGroups: validatedSplitGroups().map { splitPaneTabIDs(of: $0) }.filter { $0.count > 1 },
             mutedTabIDs: Set(tabs.filter { mutedTabSyncIDs.contains($0.syncID) }.map(\.id))
         )
+        snapshot.audibleTabIDs = audibleTabIDs
+        snapshot.miniPlayers = miniPlayerItems
         snapshot.tabIcons = Dictionary(
             tabs.compactMap { tab in tabIconsBySyncID[tab.syncID].map { (tab.id, $0) } },
             uniquingKeysWith: { first, _ in first }

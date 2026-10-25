@@ -26,6 +26,7 @@ final class BrowserNativeSidebarNSView: NSView {
             pagerClip,
             footer,
             bottomDivider,
+            miniPlayers,
             dragPreview,
             dragIndicator,
             scrollObserver,
@@ -48,6 +49,20 @@ final class BrowserNativeSidebarNSView: NSView {
         dragPreview.setAccessibilityElement(false)
         dragPreview.isHidden = true
         registerForDraggedTypes([.URL, .fileURL, .string])
+        miniPlayers.onHeightChange = { [weak self] in self?.needsLayout = true }
+        miniPlayers.onAction = { [weak state] tabID, action in
+            guard let model = state?.model else { return }
+            switch action {
+            case .backToTab: model.selectTab(id: tabID)
+            case .previousTrack: model.controlMedia(.previousTrack, tabID: tabID)
+            case .nextTrack: model.controlMedia(.nextTrack, tabID: tabID)
+            case .playPause:
+                let playing = model.tabMediaStates[tabID]?.isPlaying == true
+                model.controlMedia(playing ? .pause : .play, tabID: tabID)
+            case .toggleMute: model.setTabMuted(!model.isTabMuted(id: tabID), id: tabID)
+            case .close: model.dismissMiniPlayer(tabID: tabID)
+            }
+        }
         content.onEmptyClick = { [weak state] in state?.dismissRenamingIfNeeded() }
         content.permitsWindowDrag = { [weak state] in state?.isDraggingSidebarItem == false }
         appGrid.onEmptyClick = content.onEmptyClick
@@ -109,6 +124,8 @@ final class BrowserNativeSidebarNSView: NSView {
     let folderPreview = BrowserFolderPreviewCoordinator()
 
     private(set) var linkDropProposal: BrowserSidebarDropProposal?
+
+    let miniPlayers = BrowserMiniPlayerStackNSView()
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -207,6 +224,7 @@ final class BrowserNativeSidebarNSView: NSView {
             renameSelectedRowIfRequested()
         }
         let snapshot = renderedSnapshot
+        miniPlayers.update(items: snapshot.miniPlayers)
         if let shown = folderPreview.shownFolderID,
            snapshot.pinnedTabFolder(withID: shown).map({ $0.isExpanded || $0.spaceID != snapshot.selectedSpaceID })
            ?? true
@@ -631,9 +649,20 @@ final class BrowserNativeSidebarNSView: NSView {
             width: width,
             height: footerHeight
         )
+        // Mini players sit above the dock; the list keeps room for their
+        // collapsed rows, and a player growing on hover covers its bottom.
+        let playersBottom = footer.frame.minY - BrowserChromeLayout.sidebarBottomChromeTopSpacing
+        let reservedPlayers = miniPlayers.reservedHeight
+        miniPlayers.frame = NSRect(
+            x: 0,
+            y: playersBottom - miniPlayers.currentHeight,
+            width: width,
+            height: miniPlayers.currentHeight
+        )
+        let listBottom = reservedPlayers > 0 ? playersBottom - reservedPlayers : footer.frame.minY
         bottomDivider.frame = NSRect(
             x: 0,
-            y: footer.frame.minY - BrowserChromeLayout.sidebarBottomChromeTopSpacing - 1,
+            y: listBottom - BrowserChromeLayout.sidebarBottomChromeTopSpacing - 1,
             width: width,
             height: 1
         )
@@ -883,9 +912,11 @@ final class BrowserNativeSidebarNSView: NSView {
             resetID: state.tabRowInteractionResetID,
             closeDescriptor: model.shortcutStore.descriptor(for: .archiveTab),
             muted: state.snapshot.mutedTabIDs.contains(tab.id),
+            audible: state.snapshot.audibleTabIDs.contains(tab.id),
             icon: state.snapshot.tabIcons[tab.id]
         )
-        row.onToggleMute = { model.setTabMuted(false, id: tab.id) }
+        let muted = state.snapshot.mutedTabIDs.contains(tab.id)
+        row.onToggleMute = { model.setTabMuted(!muted, id: tab.id) }
         row.dragOpacity = state.draggedTabIDs.contains(tab.id) ? 0 : 1
         row.onSelect = { [weak state] in
             guard let state else { return }

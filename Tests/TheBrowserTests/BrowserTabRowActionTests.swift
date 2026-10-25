@@ -51,7 +51,10 @@ import Testing
         )
         row.layoutSubtreeIfNeeded()
         #expect(!row.muteButton.isHidden)
-        #expect(row.titleLabel.frame.maxX <= row.muteButton.frame.minX, "The title stops before the speaker")
+        #expect(
+            row.muteButton.frame.maxX <= row.titleLabel.frame.minX,
+            "The speaker sits between the icon and the title"
+        )
         var unmutes = 0
         row.onToggleMute = { unmutes += 1 }
         row.muteButton.performClick(nil)
@@ -59,6 +62,26 @@ import Testing
         f.model.setTabMuted(false, id: x)
         #expect(!f.model.isTabMuted(id: x))
         #expect(f.driver.audioMuteRequests.last?.muted == false)
+
+        // A tab with sound shows a speaker that mutes it.
+        f.driver.onMediaStateChanged?(x, BrowserTabMediaState(
+            isPlaying: true, audible: true, video: false, hasPreviousTrack: false, hasNextTrack: false, title: ""
+        ))
+        #expect(f.model.sidebarSnapshot.audibleTabIDs == [x])
+        row.update(
+            tab: tab,
+            selected: false,
+            isResizing: false,
+            closeDescriptor: BrowserCommands.archiveTab,
+            audible: true
+        )
+        row.layoutSubtreeIfNeeded()
+        #expect(!row.muteButton.isHidden)
+        #expect(row.muteButton.accessibilityIdentifier() == "browser.sidebar.mute-tab.\(x)")
+        f.driver.onMediaStateChanged?(x, nil)
+        #expect(f.model.sidebarSnapshot.audibleTabIDs.isEmpty)
+        row.update(tab: tab, selected: false, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        #expect(row.muteButton.isHidden)
     }
 
     @Test func aSplitMovesToAnotherSpaceWholeAndArchivesAsOneItem() throws {

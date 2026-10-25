@@ -92,6 +92,15 @@ struct BrowserNativeChromeButtonStyle {
         hoverBackground: BrowserChromeColors.rowCloseHover,
         pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale
     )
+    static let miniPlayer = BrowserNativeChromeButtonStyle(
+        size: BrowserChromeLayout.sidebarMiniPlayerButtonSize,
+        cornerRadius: BrowserChromeLayout.sidebarCloseCornerRadius,
+        symbolSize: 13,
+        symbolWeight: .semibold,
+        foreground: BrowserChromeColors.primaryText,
+        hoverBackground: BrowserChromeColors.rowHover,
+        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale
+    )
     static let extensionClose = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.extensionSidePanelCloseButtonSize,
         cornerRadius: BrowserChromeLayout.sidebarCloseCornerRadius,

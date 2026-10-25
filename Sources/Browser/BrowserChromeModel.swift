@@ -168,6 +168,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onSitePermissionRequestDismissed = { [weak self] id in
             self?.handleSitePermissionRequestDismissed(id: id)
         }
+        tabDriver.onMediaStateChanged = { [weak self] tabID, state in
+            self?.handleMediaStateChange(tabID: tabID, state: state)
+        }
         tabDriver.onPeekSitePermissionAnswered = { [weak self] id, allowed in
             if let allowed {
                 self?.answerSitePermissionRequest(id: id, allowed: allowed)
@@ -383,6 +386,12 @@ enum BrowserWindowMode: Equatable {
     /// Muted tabs by sync ID, for this run only; a reopened dormant tab keeps it.
     /// Only `setTabMuted(_:id:)` writes it.
     @Published var mutedTabSyncIDs = Set<String>()
+    /// Tabs whose pages play media, by runtime ID, with the order they began
+    /// and the mini players closed since. Only `BrowserTabMedia.swift` writes them.
+    @Published var tabMediaStates = [String: BrowserTabMediaState]()
+    var tabMediaStartOrder = [String: Int]()
+    var nextTabMediaStartOrder = 0
+    @Published var dismissedMiniPlayerTabIDs = Set<String>()
     /// An incognito window's camera and microphone answers, kept until it
     /// closes. Only `sitePermissionDecisions` writes it.
     var incognitoSitePermissionDecisions = [BrowserSitePermissionDecision]()
@@ -2826,6 +2835,19 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// Picture in Picture on leaving a tab: a playing video follows the
+    /// user out of its tab and returns when they come back. Panes that stay on
+    /// screen in a split and closing tabs are left alone.
+    /// The engine side of a media control.
+    func controlMediaInEngine(_ action: BrowserMediaAction, tabID: String) {
+        tabDriver.controlMedia(action, inTabWithID: tabID)
+    }
+
+    /// Whether leaving the tab moved its video to Picture in Picture.
+    func isInPictureInPicture(tabID: String) -> Bool {
+        pictureInPictureTabIDs.contains(tabID)
+    }
+
     // MARK: Private
 
     private struct LocalAutomaticArchiveCandidate {
@@ -3056,9 +3078,6 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
-    /// Picture in Picture on leaving a tab: a playing video follows the
-    /// user out of its tab and returns when they come back. Panes that stay on
-    /// screen in a split and closing tabs are left alone.
     private func updatePictureInPicture(leaving oldID: String?, entering newID: String?) {
         guard oldID != newID else { return }
         if let newID, pictureInPictureTabIDs.remove(newID) != nil {
@@ -5688,6 +5707,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         if discardedRemoteTabCreationIDs.contains(id) {
             return
         }
+        handleMediaStateChange(tabID: id, state: nil)
         closingTabIDs.remove(id)
         let closedTab = tabs.first { $0.id == id }
         // An already-removed or unknown identity has no model change to save.

@@ -96,7 +96,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     )
     let renameField = BrowserSidebarRenameNSTextField()
     let closeButton = BrowserNativeChromeButton(symbol: "xmark", title: "", style: .sidebarClose, action: {})
-    /// A muted tab shows a crossed-out speaker that unmutes it.
+    /// A tab with sound shows a speaker after its icon that mutes
+    /// it, and a muted tab a crossed-out one that unmutes it.
     let muteButton = BrowserNativeChromeButton(
         symbol: "speaker.slash.fill",
         title: BrowserStrings.tabUnmuteAction,
@@ -104,6 +105,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         action: {}
     )
     private(set) var isMuted = false
+    private(set) var isAudible = false
 
     /// Tab IDs of the split shown by this row, in pane order.
     private(set) var splitMemberIDs = [String]()
@@ -181,13 +183,15 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             width: badgeSize,
             height: badgeSize
         )
-        let titleX = pinnedURLRow
+        var titleX = pinnedURLRow
             ? indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize
             : iconFrame.maxX + BrowserChromeLayout.sidebarRowContentSpacing - (kind == .newTab ? 2 : 0)
-        muteButton.frame = closeButton.isHidden
-            ? closeButton.frame
-            : closeButton.frame.offsetBy(dx: -(closeSize + 2), dy: 0)
-        let trailingControl = [muteButton, closeButton].filter { !$0.isHidden }.map(\.frame.minX).min()
+        if !muteButton.isHidden {
+            // The speaker sits between the icon and the title.
+            muteButton.frame = NSRect(x: titleX - 2, y: (height - closeSize) / 2, width: closeSize, height: closeSize)
+            titleX = muteButton.frame.maxX + 2
+        }
+        let trailingControl = closeButton.isHidden ? nil : closeButton.frame.minX
         let trailing = trailingControl.map { $0 - BrowserChromeLayout.sidebarCloseButtonLeadingSpacing }
             ?? bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
         let titleWidth = max(trailing - titleX, 0)
@@ -336,6 +340,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         resetID: Int = 0,
         closeDescriptor: BrowserCommandDescriptor,
         muted: Bool = false,
+        audible: Bool = false,
         icon: String? = nil
     ) {
         kind = appTile ? .appTab : .tab
@@ -348,7 +353,14 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             symbol.contentTintColor = BrowserChromeColors.primaryText
         }
         isMuted = muted && !appTile
-        muteButton.setAccessibilityIdentifier("browser.sidebar.unmute-tab.\(tab.id)")
+        isAudible = audible && !appTile
+        muteButton.configureSymbol(
+            isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+            title: isMuted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction
+        )
+        muteButton.setAccessibilityIdentifier(
+            isMuted ? "browser.sidebar.unmute-tab.\(tab.id)" : "browser.sidebar.mute-tab.\(tab.id)"
+        )
         self.selected = selected
         self.multiSelected = multiSelected
         pinnedURLRow = !appTile && tab.placement == .spacePinned && tab.pinnedURLString != nil
@@ -739,7 +751,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
         captionLabel.stringValue = BrowserStrings.pinnedTabBackToPinnedURL
         closeButton.isHidden = !(kind == .space || kind == .tab) || !isHovered || isRenaming || isResizing
-        muteButton.isHidden = kind != .tab || !isMuted || isRenaming || isResizing
+        muteButton.isHidden = kind != .tab || !(isMuted || isAudible) || isRenaming || isResizing || pinnedURLRow
         if kind == .space {
             let disclosure = hasPinnedTabs && isHovered && !isRenaming
             symbol.image = Self.symbol(

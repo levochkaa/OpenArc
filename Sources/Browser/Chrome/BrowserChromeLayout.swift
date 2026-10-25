@@ -52,6 +52,13 @@ enum BrowserChromeLayout {
     static let appTabGridSpacing: CGFloat = 5
     static let appTabIconSize: CGFloat = 18
     static let sidebarCloseButtonSize: CGFloat = 22
+    /// Mini player: a 32 pt row of 24 pt controls, 66 pt with the
+    /// title row it shows on hover.
+    static let sidebarMiniPlayerHeight: CGFloat = 32
+    static let sidebarMiniPlayerExpandedHeight: CGFloat = 66
+    static let sidebarMiniPlayerButtonSize: CGFloat = 24
+    static let sidebarMiniPlayerInset: CGFloat = 10
+    static let sidebarMiniPlayerSpacing: CGFloat = 6
     static let sidebarCloseButtonLeadingSpacing: CGFloat = 4
     static let sidebarCloseCornerRadius: CGFloat = 7
     static let sidebarCloseSymbolSize: CGFloat = 11

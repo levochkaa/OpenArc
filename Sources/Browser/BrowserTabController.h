@@ -118,6 +118,19 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 // The engine withdrew a request: its page navigated or closed.
 - (void)browserTabController:(BrowserTabController *)controller
     didDismissSitePermissionRequest:(NSInteger)requestID;
+// The tab's pages started, paused or stopped playing media. The renderer
+// reports it, since CEF has no audible signal: audible media has sound,
+// paused media can resume, video is visible; the tracks and title come
+// from the page's Media Session.
+- (void)browserTabController:(BrowserTabController *)controller
+    didChangeMediaStateForTabWithID:(NSString *)tabID
+                            audible:(BOOL)audible
+                            playing:(BOOL)playing
+                             paused:(BOOL)paused
+                              video:(BOOL)video
+                   hasPreviousTrack:(BOOL)hasPreviousTrack
+                       hasNextTrack:(BOOL)hasNextTrack
+                              title:(NSString *)title;
 
 @end
 
@@ -181,6 +194,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 /// dismisses it without an answer. Unknown or withdrawn requests are ignored.
 - (void)resolveSitePermissionRequest:(NSInteger)requestID allowed:(nullable NSNumber *)allowed
     NS_SWIFT_NAME(resolveSitePermissionRequest(_:allowed:));
+/// Sends "play", "pause", "previoustrack" or "nexttrack" to the frame playing
+/// the tab's media.
+- (void)controlMediaInTabWithID:(NSString *)tabID action:(NSString *)action
+    NS_SWIFT_NAME(controlMedia(inTabWithID:action:));
 /// The open Peek card or small window of a session; its pages ask for
 /// permissions as the tab "peek:<session>".
 - (nullable BrowserPeekPanel *)peekPanelForSessionID:(NSInteger)sessionID

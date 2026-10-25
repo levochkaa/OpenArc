@@ -62,6 +62,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)? { get set }
     /// The engine withdrew a request because its page navigated or closed.
     var onSitePermissionRequestDismissed: ((Int) -> Void)? { get set }
+    /// A tab's pages started playing media or changed it; nil when they stop.
+    var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)? { get set }
     /// The prompt of a Peek card or small window was answered: true
     /// allows, false blocks, nil closes it without an answer.
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)? { get set }
@@ -119,6 +121,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func setAudioMuted(_ muted: Bool, forTabWithID tabID: String)
     /// true allows, false blocks, nil dismisses the request without an answer.
     func resolveSitePermissionRequest(_ id: Int, allowed: Bool?)
+    /// Plays, pauses or skips the media a tab is playing.
+    func controlMedia(_ action: BrowserMediaAction, inTabWithID tabID: String)
     /// The waiting requests of Peek cards and small windows, in arrival
     /// order; each card shows its oldest.
     func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest])

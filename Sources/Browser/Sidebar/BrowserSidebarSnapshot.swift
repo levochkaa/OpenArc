@@ -28,6 +28,10 @@ struct BrowserSidebarSnapshot: Equatable {
     var splitNames = [[String]: BrowserSidebarSplitName]()
     /// Runtime IDs of muted tabs; their rows show a speaker that unmutes.
     var mutedTabIDs = Set<String>()
+    /// Runtime IDs of tabs with sound; their rows show a speaker that mutes.
+    var audibleTabIDs = Set<String>()
+    /// Mini players for media in tabs off screen, newest first.
+    var miniPlayers = [BrowserMiniPlayerItem]()
     /// Symbols chosen in place of favicons, by runtime tab ID.
     var tabIcons = [String: String]()
 

@@ -7,6 +7,7 @@
 
 #import "Browser/SwiftBridge.h"
 #import "TheBrowser-Swift.h"
+#include "Shared/BrowserMediaMessages.h"
 #include "Shared/BrowserSchemes.h"
 #include "Shared/ClientManager.h"
 #include "Shared/ClientUtil.h"
@@ -2806,6 +2807,10 @@ class BrowserTabClient final : public CefClient,
                                  TerminationStatus status,
                                  int error_code,
                                  const CefString &error_string) override;
+  bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame,
+                                CefProcessId source_process,
+                                CefRefPtr<CefProcessMessage> message) override;
   bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
                         CefRefPtr<CefFrame> frame,
                         const CefString &target_url,
@@ -2964,6 +2969,24 @@ class BrowserPeekClient final : public CefClient,
   IMPLEMENT_REFCOUNTING(BrowserPeekClient);
 };
 
+/// One frame's media, as its renderer last reported it.
+struct MediaFrameState {
+  bool audible = false;
+  bool playing = false;
+  bool paused = false;
+  bool video = false;
+  bool hasPreviousTrack = false;
+  bool hasNextTrack = false;
+  std::string title;
+
+  bool operator==(const MediaFrameState &other) const {
+    return audible == other.audible && playing == other.playing && paused == other.paused &&
+           video == other.video &&
+           hasPreviousTrack == other.hasPreviousTrack && hasNextTrack == other.hasNextTrack &&
+           title == other.title;
+  }
+};
+
 struct TabRecord {
   CefRefPtr<CefClient> client;
   CefRefPtr<CefBrowser> browser;
@@ -2981,6 +3004,11 @@ struct TabRecord {
   bool isClosing = false;
   // Applied again when the engine attaches, so a mute set early survives.
   bool audioMuted = false;
+  // Playing frames by identifier, the frame the controls reach, and the
+  // state last sent to the delegate.
+  std::map<std::string, MediaFrameState> mediaFrames;
+  std::string mediaControlFrameID;
+  MediaFrameState reportedMedia;
   std::string closeRequestID;
   CefRefPtr<CefJSDialogCallback> closeDialogCallback;
   __strong BrowserBeforeUnloadConfirmation *closeConfirmation = nil;
@@ -3064,6 +3092,11 @@ struct TabRecord {
 - (CefRefPtr<CefRequestContext>)siteSettingsContext;
 - (void)cancelSitePermissionsForTabID:(NSString *)tabID;
 - (void)cancelMediaSitePermissionsForTabID:(NSString *)tabID;
+- (void)handleMediaState:(const MediaFrameState &)state
+                 frameID:(const std::string &)frameID
+                forTabID:(NSString *)tabID;
+- (void)resetMediaForTabID:(NSString *)tabID;
+- (void)reportMedia:(const MediaFrameState &)state forTabID:(NSString *)tabID record:(TabRecord &)record;
 - (void)notifySitePermissionDismissed:(NSInteger)requestID;
 
 @end
@@ -4224,6 +4257,87 @@ void WatchClickModifiers();
   observer->Start(it->second.browser->GetHost());
 }
 
+/// Combines the frames' reports: the tab plays when a frame does and is
+/// paused when one can resume; the controls reach the frame with sound, or
+/// else the first one.
+- (void)handleMediaState:(const MediaFrameState &)state
+                 frameID:(const std::string &)frameID
+                forTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) {
+    return;
+  }
+  TabRecord &record = it->second;
+  if (state.playing || state.paused) {
+    record.mediaFrames[frameID] = state;
+  } else {
+    record.mediaFrames.erase(frameID);
+  }
+  MediaFrameState combined;
+  record.mediaControlFrameID.clear();
+  for (const auto &entry : record.mediaFrames) {
+    const bool preferred = (entry.second.audible && !combined.audible) ||
+                           (entry.second.playing && !combined.playing && !combined.audible);
+    if (record.mediaControlFrameID.empty() || preferred) {
+      record.mediaControlFrameID = entry.first;
+      combined.hasPreviousTrack = entry.second.hasPreviousTrack;
+      combined.hasNextTrack = entry.second.hasNextTrack;
+      combined.title = entry.second.title;
+    }
+    combined.audible = combined.audible || entry.second.audible;
+    combined.playing = combined.playing || entry.second.playing;
+    combined.video = combined.video || entry.second.video;
+  }
+  combined.paused = !combined.playing && !record.mediaFrames.empty();
+  [self reportMedia:combined forTabID:tabID record:record];
+}
+
+- (void)resetMediaForTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) {
+    return;
+  }
+  it->second.mediaFrames.clear();
+  it->second.mediaControlFrameID.clear();
+  [self reportMedia:MediaFrameState() forTabID:tabID record:it->second];
+}
+
+- (void)reportMedia:(const MediaFrameState &)state forTabID:(NSString *)tabID record:(TabRecord &)record {
+  if (state == record.reportedMedia) {
+    return;
+  }
+  record.reportedMedia = state;
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  SEL selector = @selector(browserTabController:
+                     didChangeMediaStateForTabWithID:audible:playing:paused:video:hasPreviousTrack:hasNextTrack:title:);
+  if ([delegate respondsToSelector:selector]) {
+    [delegate browserTabController:self
+        didChangeMediaStateForTabWithID:tabID
+                                audible:state.audible
+                                playing:state.playing
+                                 paused:state.paused
+                                  video:state.video
+                       hasPreviousTrack:state.hasPreviousTrack
+                           hasNextTrack:state.hasNextTrack
+                                  title:ToNSString(state.title)];
+  }
+}
+
+- (void)controlMediaInTabWithID:(NSString *)tabID action:(NSString *)action {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser || it->second.mediaControlFrameID.empty() ||
+      !CefCurrentlyOn(TID_UI)) {
+    return;
+  }
+  CefRefPtr<CefFrame> frame = it->second.browser->GetFrameByIdentifier(it->second.mediaControlFrameID);
+  if (!frame) {
+    return;
+  }
+  CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(shared::kMediaControlMessage);
+  message->GetArgumentList()->SetString(0, ToStdString(action));
+  frame->SendProcessMessage(PID_RENDERER, message);
+}
+
 - (void)setAudioMuted:(BOOL)muted forTabWithID:(NSString *)tabID {
   auto it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end()) {
@@ -5024,6 +5138,7 @@ void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
   CEF_REQUIRE_UI_THREAD();
   if (frame && frame->IsMain()) {
     [controller_ cancelMediaSitePermissionsForTabID:ToNSString(tab_id_)];
+    [controller_ resetMediaForTabID:ToNSString(tab_id_)];
   }
 }
 
@@ -5033,6 +5148,31 @@ void BrowserTabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser>,
                                                  const CefString &) {
   CEF_REQUIRE_UI_THREAD();
   [controller_ cancelMediaSitePermissionsForTabID:ToNSString(tab_id_)];
+  [controller_ resetMediaForTabID:ToNSString(tab_id_)];
+}
+
+bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
+                                                CefRefPtr<CefFrame> frame,
+                                                CefProcessId source_process,
+                                                CefRefPtr<CefProcessMessage> message) {
+  CEF_REQUIRE_UI_THREAD();
+  if (source_process != PID_RENDERER || !frame || message->GetName() != shared::kMediaStateMessage) {
+    return false;
+  }
+  CefRefPtr<CefListValue> values = message->GetArgumentList();
+  if (values->GetSize() != static_cast<size_t>(shared::kMediaStateArgumentCount)) {
+    return true;
+  }
+  MediaFrameState state;
+  state.audible = values->GetBool(0);
+  state.playing = values->GetBool(1);
+  state.paused = values->GetBool(2);
+  state.video = values->GetBool(3);
+  state.hasPreviousTrack = values->GetBool(4);
+  state.hasNextTrack = values->GetBool(5);
+  state.title = values->GetString(6).ToString();
+  [controller_ handleMediaState:state frameID:frame->GetIdentifier().ToString() forTabID:ToNSString(tab_id_)];
+  return true;
 }
 
 bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,

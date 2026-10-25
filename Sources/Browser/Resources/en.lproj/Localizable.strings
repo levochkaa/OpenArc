@@ -343,6 +343,12 @@
 "browser.split.rename_action" = "Rename Split View…";
 "browser.split.change_icon_action" = "Change Icon";
 "browser.tab.unmute_action" = "Unmute Tab";
+"browser.mini_player.back_to_tab" = "Back to Tab";
+"browser.mini_player.previous_track" = "Previous Track";
+"browser.mini_player.next_track" = "Next Track";
+"browser.mini_player.play" = "Play";
+"browser.mini_player.pause" = "Pause";
+"browser.mini_player.close" = "Close";
 "browser.tab.move_to_space_action" = "Move to";
 "browser.tab.archive_other_tabs_action" = "Archive Other Tabs";
 "browser.tab.archive_tabs_above_action" = "Archive Tabs Above";
