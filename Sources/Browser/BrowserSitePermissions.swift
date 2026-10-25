@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 @preconcurrency import UserNotifications
 
@@ -172,6 +173,57 @@ enum BrowserNotificationAuthorization {
             @unknown default:
                 completion(false)
             }
+        }
+    }
+}
+
+// MARK: - BrowserMediaCaptureAuthorization
+
+/// macOS's own permission for OpenArc to use the camera and microphone, asked
+/// when a site is first allowed one. Chrome asks from its permission bubble,
+/// which CEF does not run, so a page would otherwise race the system prompt.
+enum BrowserMediaCaptureAuthorization {
+    // MARK: Internal
+
+    @MainActor static func request(
+        _ kinds: [BrowserSitePermissionKind],
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        var mediaTypes = [AVMediaType]()
+        if kinds.contains(.camera) {
+            mediaTypes.append(.video)
+        }
+        if kinds.contains(.microphone) {
+            mediaTypes.append(.audio)
+        }
+        request(mediaTypes[...], completion: completion)
+    }
+
+    // MARK: Private
+
+    @MainActor private static func request(
+        _ mediaTypes: ArraySlice<AVMediaType>,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        guard let mediaType = mediaTypes.first else {
+            completion(true)
+            return
+        }
+        switch AVCaptureDevice.authorizationStatus(for: mediaType) {
+        case .authorized:
+            request(mediaTypes.dropFirst(), completion: completion)
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: mediaType) { granted in
+                Task { @MainActor in
+                    if granted {
+                        request(mediaTypes.dropFirst(), completion: completion)
+                    } else {
+                        completion(false)
+                    }
+                }
+            }
+        default:
+            completion(false)
         }
     }
 }

@@ -406,6 +406,11 @@ enum BrowserWindowMode: Equatable {
     /// Asks macOS to let OpenArc show notifications; tests replace it.
     var requestSystemNotificationAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void =
         BrowserNotificationAuthorization.request
+    /// Asks macOS to let OpenArc use the camera or microphone; tests replace it.
+    var requestSystemMediaCaptureAuthorization: @MainActor (
+        [BrowserSitePermissionKind],
+        @escaping @MainActor (Bool) -> Void
+    ) -> Void = BrowserMediaCaptureAuthorization.request
     /// UI-only: the window's site control center, opened by Open Extensions.
     var onOpenExtensions: (() -> Void)?
     /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.

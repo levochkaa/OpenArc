@@ -31,6 +31,8 @@ import Testing
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {}
         )
+        // macOS has already let OpenArc use the camera and microphone.
+        model.requestSystemMediaCaptureAuthorization = { _, completion in completion(true) }
         model.handleContextReady()
         driver.flushPendingCreateEvents()
         model.createNewTab()
@@ -214,6 +216,39 @@ import Testing
     fixture.model.answerSitePermissionRequest(id: 2, allowed: false)
     #expect(systemAnswer == nil)
     #expect(fixture.resolutions().last == "2:block")
+}
+
+@MainActor @Test func cameraAndMicrophoneWaitForMacOSWhoseRefusalLeavesTheSiteUnanswered() throws {
+    let fixture = try SitePermissionFixture()
+    defer { fixture.cleanup() }
+    var asked = [[BrowserSitePermissionKind]]()
+    var systemAnswer: (@MainActor (Bool) -> Void)?
+    fixture.model
+        .requestSystemMediaCaptureAuthorization = { kinds, completion in
+            asked.append(kinds)
+            systemAnswer = completion
+        }
+    fixture.request(1)
+    fixture.model.answerSitePermissionRequest(id: 1, allowed: true)
+    #expect(asked == [[.camera, .microphone]])
+    #expect(fixture.resolutions().isEmpty)
+    // macOS refused: the site stays allowed, and the page gets no answer.
+    systemAnswer?(false)
+    #expect(fixture.resolutions() == ["1:dismiss"])
+    #expect(fixture.model.rememberedSitePermissions.map(\.allowed) == [true, true])
+
+    // The remembered answer also waits for macOS, which now allows.
+    fixture.request(2)
+    #expect(asked.count == 2)
+    systemAnswer?(true)
+    #expect(fixture.resolutions().last == "2:allow")
+
+    // Block does not ask macOS.
+    asked = []
+    fixture.request(3, origin: "https://other.example", kinds: [.microphone])
+    fixture.model.answerSitePermissionRequest(id: 3, allowed: false)
+    #expect(asked.isEmpty)
+    #expect(fixture.resolutions().last == "3:block")
 }
 
 @MainActor @Test func onlyRequestsOfPagesOnScreenAreShownAndTheEngineWithdrawsThem() throws {

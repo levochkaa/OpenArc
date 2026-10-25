@@ -27,7 +27,7 @@ extension BrowserChromeModel {
                in: sitePermissionDecisions
            )
         {
-            resolveSitePermissionInEngine(request.id, allowed: remembered)
+            resolveMediaAccessInEngine(request, allowed: remembered)
             return
         }
         sitePermissionRequests.append(request)
@@ -37,17 +37,19 @@ extension BrowserChromeModel {
     func answerSitePermissionRequest(id: Int, allowed: Bool) {
         guard let index = sitePermissionRequests.firstIndex(where: { $0.id == id }) else { return }
         let request = sitePermissionRequests.remove(at: index)
+        if request.isMediaAccess {
+            resolveMediaAccessInEngine(request, allowed: allowed)
+            // Also answers the origin's other waiting requests.
+            sitePermissionDecisions = BrowserSitePermissionDecision.recording(
+                allowed,
+                for: request,
+                profileID: profile.id,
+                in: sitePermissionDecisions
+            )
+            return
+        }
         guard allowed, request.kinds.contains(.notifications) else {
             resolveSitePermissionInEngine(id, allowed: allowed)
-            if request.isMediaAccess {
-                // Also answers the origin's other waiting requests.
-                sitePermissionDecisions = BrowserSitePermissionDecision.recording(
-                    allowed,
-                    for: request,
-                    profileID: profile.id,
-                    in: sitePermissionDecisions
-                )
-            }
             return
         }
         // Notifications also need the system's permission for OpenArc. A
@@ -101,7 +103,10 @@ extension BrowserChromeModel {
     /// Answers the waiting camera and microphone requests that `decisions`
     /// cover, for example another tab's request to the origin just allowed.
     func resolveSitePermissionRequests(coveredBy decisions: [BrowserSitePermissionDecision]) {
-        let covered = sitePermissionRequests.compactMap { request -> (id: Int, allowed: Bool)? in
+        let covered = sitePermissionRequests.compactMap { request -> (
+            request: BrowserSitePermissionRequest,
+            allowed: Bool
+        )? in
             guard request.isMediaAccess,
                   let allowed = BrowserSitePermissionDecision.remembered(
                       for: request,
@@ -109,13 +114,28 @@ extension BrowserChromeModel {
                       in: decisions
                   )
             else { return nil }
-            return (request.id, allowed)
+            return (request, allowed)
         }
         guard !covered.isEmpty else { return }
-        let ids = Set(covered.map(\.id))
+        let ids = Set(covered.map(\.request.id))
         sitePermissionRequests.removeAll { ids.contains($0.id) }
         for answer in covered {
-            resolveSitePermissionInEngine(answer.id, allowed: answer.allowed)
+            resolveMediaAccessInEngine(answer.request, allowed: answer.allowed)
+        }
+    }
+
+    /// Camera and microphone also need macOS's permission for OpenArc, asked
+    /// the first time a site is allowed one. A system refusal leaves the site
+    /// unanswered, as for notifications, so turning access on in System
+    /// Settings is enough for the next request.
+    func resolveMediaAccessInEngine(_ request: BrowserSitePermissionRequest, allowed: Bool) {
+        let kinds = request.kinds.filter(\.isMediaCapture)
+        guard allowed, !kinds.isEmpty else {
+            resolveSitePermissionInEngine(request.id, allowed: allowed)
+            return
+        }
+        requestSystemMediaCaptureAuthorization(kinds) { [weak self] granted in
+            self?.resolveSitePermissionInEngine(request.id, allowed: granted ? true : nil)
         }
     }
 }
