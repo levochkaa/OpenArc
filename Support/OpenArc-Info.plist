@@ -62,7 +62,7 @@
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright © 2026 OpenArc. All rights reserved.</string>
+  <string>Copyright © 2026 Lev Poznyakov and the OpenArc contributors</string>
   <key>OpenArcSentryDSN</key>
   <string>$(OPENARC_SENTRY_DSN)</string>
   <key>OpenArcSentryEnvironment</key>

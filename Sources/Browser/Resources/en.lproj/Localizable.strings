@@ -146,7 +146,7 @@
 "browser.about.application_version" = "Version %@ (%@)";
 "browser.about.chromium_version" = "Chromium %@";
 "browser.about.unknown_version" = "Unknown";
-"browser.about.copyright" = "Copyright © 2026 OpenArc. All rights reserved.";
+"browser.about.copyright" = "Copyright © 2026 Lev Poznyakov and the OpenArc contributors";
 "browser.about.made_possible.prefix" = "OpenArc is made possible by the ";
 "browser.about.chromium_project_link" = "Chromium";
 "browser.about.made_possible.chromium_project_suffix" = " open source project, Chromium's ";
