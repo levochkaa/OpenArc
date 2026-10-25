@@ -1,3 +1,5 @@
+// BrowserSQLiteSessionStore.swift
+
 import CoreGraphics
 import CryptoKit
 import Foundation
@@ -6,7 +8,7 @@ import OSLog
 
 // MARK: - BrowserSyncExpiryCandidateCursor
 
-struct BrowserSyncExpiryCandidateCursor: Hashable, Sendable {
+struct BrowserSyncExpiryCandidateCursor: Hashable {
     let serverSeq: Int
     let entityID: String
 }
@@ -16,696 +18,6 @@ struct BrowserSyncExpiryCandidateCursor: Hashable, Sendable {
 final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, BrowserSessionPreferencesStoring,
     BrowserTabArchiveStoring, BrowserSyncOwnershipReading
 {
-    // MARK: Lifecycle
-
-    init(databaseURL: URL) throws {
-        try FileManager.default.createDirectory(
-            at: databaseURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        self.dbQueue = try DatabaseQueue(path: databaseURL.path)
-        try Self.migrator.migrate(dbQueue)
-        try dbQueue.write { db in
-            if try storedSyncOwner(db) != nil {
-                try initializeSyncOutbox(in: db)
-            }
-        }
-    }
-
-    // MARK: Internal
-
-    static let databaseFileName = "OpenArc.sqlite"
-
-    /// New profile owners must distinguish an empty database from a failed read.
-    func loadSnapshotStrict() throws -> BrowserTabSessionSnapshot? {
-        try dbQueue.read { try readSnapshot($0) }
-    }
-
-    func hasCompletedSessionImport(_ identifier: String) throws -> Bool {
-        try dbQueue.read { db in
-            try String.fetchOne(
-                db,
-                sql: "SELECT value FROM browser_preferences WHERE key = ?",
-                arguments: ["session_import:" + identifier]
-            ) == "1"
-        }
-    }
-
-    /// The marker and imported logical state commit together. Retrying after a
-    /// crash cannot reintroduce imported tabs that the user has since deleted.
-    @discardableResult func importSessionOnce(
-        _ identifier: String,
-        makeSnapshot: (BrowserTabSessionSnapshot?) throws -> BrowserTabSessionSnapshot
-    ) throws -> Bool {
-        try dbQueue.write { db in
-            let key = "session_import:" + identifier
-            guard try String.fetchOne(
-                db,
-                sql: "SELECT value FROM browser_preferences WHERE key = ?",
-                arguments: [key]
-            ) != "1" else { return false }
-            // Import precedes account binding. A separate explicit merge policy
-            // is required for identities that may already have tombstones.
-            guard try storedSyncOwner(db) == nil else { throw BrowserSessionImportError.syncedProfile }
-            let snapshot = try makeSnapshot(readSnapshot(db))
-            try saveLocalSnapshot(snapshot, syncMove: nil, in: db)
-            try db.execute(
-                sql: "INSERT OR REPLACE INTO browser_preferences (key, value) VALUES (?, '1')",
-                arguments: [key]
-            )
-            return true
-        }
-    }
-
-    func loadSnapshot() -> BrowserTabSessionSnapshot? {
-        do {
-            return try dbQueue.read { db in
-                try readSnapshot(db)
-            }
-        } catch {
-            Self.logger.error("Failed to load SQLite session snapshot: \(error.localizedDescription, privacy: .public)")
-            return nil
-        }
-    }
-
-    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
-        saveCompatibility(BrowserSessionWrite(snapshot: snapshot, origin: .local(syncMove: nil)))
-    }
-
-    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent) {
-        saveCompatibility(BrowserSessionWrite(snapshot: snapshot, origin: .local(syncMove: syncMove)))
-    }
-
-    func saveRemoteProjectionSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
-        saveCompatibility(BrowserSessionWrite(snapshot: snapshot, origin: .remoteProjection))
-    }
-
-    func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws {
-        guard !writes.isEmpty else { return }
-        for write in writes {
-            try write.validate()
-        }
-        try dbQueue.write { db in
-            for write in writes {
-                if let archiveAction = write.archiveAction,
-                   try !applyArchiveAction(
-                       archiveAction, snapshot: write.snapshot,
-                       archiveProjectionSnapshot: write.archiveProjectionSnapshot, in: db
-                   )
-                {
-                    // A receipt retry must not replay an old full snapshot over
-                    // edits committed after the original archive operation.
-                    continue
-                }
-                switch write.origin {
-                case .local(let syncMove): try saveLocalSnapshot(write.snapshot, syncMove: syncMove, in: db)
-                case .remoteProjection: try writeSnapshot(write.snapshot, to: db)
-                }
-                if let archiveAction = write.archiveAction, case .restore(_, let tabID) = archiveAction {
-                    // Permanent remote parent tombstones may filter a proposed
-                    // destination. Never consume an entry without its new tab.
-                    guard try readSnapshot(db)?.tabs.contains(where: { $0.id == tabID }) == true else {
-                        throw BrowserTabArchiveError.invalidTransition
-                    }
-                }
-            }
-        }
-    }
-
-    func loadArchiveEntry(id: String) throws -> BrowserTabArchiveEntry? {
-        try dbQueue.read { db in
-            guard let row = try Row.fetchOne(
-                db,
-                sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ?",
-                arguments: [id]
-            ) else { return nil }
-            return try Self.decodeArchiveEntry(row)
-        }
-    }
-
-    func loadArchivePage(
-        before cursor: BrowserTabArchiveCursor? = nil, limit: Int = 50
-    ) throws -> BrowserTabArchivePage {
-        try dbQueue.read { db in
-            try Self.readArchivePage(query: "", before: cursor, limit: limit, in: db)
-        }
-    }
-
-    nonisolated(nonsending) func searchArchivePage(
-        query: String, before cursor: BrowserTabArchiveCursor? = nil, limit: Int = 50
-    ) async throws -> BrowserTabArchivePage {
-        try await dbQueue.read { db in
-            try Self.readArchivePage(query: query, before: cursor, limit: limit, in: db)
-        }
-    }
-
-    nonisolated(nonsending) func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary {
-        try await dbQueue.read { db in
-            try .init(insertionSequence: Int64.fetchOne(
-                db, sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_tab_archive'"
-            ) ?? 0)
-        }
-    }
-
-    nonisolated(nonsending) func removeArchiveEntry(id: String) async throws -> Bool {
-        guard !id.isEmpty else { throw BrowserTabArchiveError.invalidEntry }
-        return try await dbQueue.write { db in
-            try db.execute(sql: "DELETE FROM browser_tab_archive WHERE id = ?", arguments: [id])
-            return db.changesCount > 0
-        }
-    }
-
-    nonisolated(nonsending) func clearArchive(through boundary: BrowserTabArchiveBoundary) async throws -> Int {
-        guard boundary.insertionSequence >= 0 else { throw BrowserTabArchiveError.invalidBoundary }
-        return try await dbQueue.write { db in
-            try db.execute(
-                sql: "DELETE FROM browser_tab_archive WHERE insertion_sequence <= ?",
-                arguments: [boundary.insertionSequence]
-            )
-            return db.changesCount
-        }
-    }
-
-    func loadSnapshotForSync(for owner: BrowserSyncOwner) throws -> BrowserTabSessionSnapshot? {
-        try dbQueue.read { db in
-            try requireSyncOwner(owner, in: db)
-            return try readSnapshot(db)
-        }
-    }
-
-    func pendingSyncMutations(for owner: BrowserSyncOwner, limit: Int = 100) throws -> [BrowserSyncMutation] {
-        try pendingSyncQueue(for: owner, limit: limit).map { mutation in
-            guard case .legacy(let legacy) = mutation else { throw BrowserSyncQueueError.protocolVersionMismatch }
-            return legacy
-        }
-    }
-
-    func pendingSyncQueue(for owner: BrowserSyncOwner, limit: Int = 100) throws -> [BrowserSyncQueuedMutation] {
-        guard limit > 0 else { throw BrowserSyncOutboxError.invalidLimit }
-        return try dbQueue.read { db in
-            try requireSyncOwner(owner, in: db)
-            return try readSyncQueue(db, limit: limit)
-        }
-    }
-
-    /// Persist a conditional intent without hiding its tab or changing the
-    /// canonical baseline. Ordinary local edits continue to use the v4 codec.
-    /// Retries reuse a queued row unchanged. Once ACK removes it, the server's
-    /// permanent receipt owns replay identity; each new sweep needs a fresh UUID.
-    func enqueueSyncExpiry(
-        _ mutation: BrowserSyncExpiryMutation, for owner: BrowserSyncOwner, automaticBaseline: Data? = nil
-    ) throws {
-        try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            guard try folderSyncEnabled(in: db),
-                  try Bool
-                    .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
-            else { throw BrowserSyncQueueError.expiryBootstrapRequired }
-            try mutation.validate()
-            if let automaticBaseline {
-                guard try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM browser_sync_outbox") == 0,
-                      try Data
-                        .fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1") ==
-                        automaticBaseline
-                else { throw BrowserSyncExpiryError.candidatesChanged }
-            }
-            if let row = try Row.fetchOne(
-                db, sql: "SELECT protocol_version, payload FROM browser_sync_outbox WHERE mutation_id = ?",
-                arguments: [mutation.id]
-            ) {
-                guard row["protocol_version"] as Int == 5,
-                      try JSONDecoder().decode(BrowserSyncExpiryMutation.self, from: row["payload"] as Data) == mutation
-                else { throw BrowserSyncQueueError.mutationIdentityConflict }
-                return
-            }
-            // Match the transport's default JSONEncoder, including escaped slashes.
-            // Stored rows use a different representation and can be much smaller.
-            let wirePayload = try JSONEncoder().encode(BrowserSyncExpiryPushRequest(
-                mutationID: mutation.id,
-                deviceID: "00000000-0000-4000-8000-000000000000",
-                operations: mutation.operations
-            ))
-            guard wirePayload.count <= 8 * 1024 * 1024 else { throw BrowserSyncQueueError.mutationTooLarge }
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            let payload = try encoder.encode(mutation)
-            try db.execute(
-                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 5)",
-                arguments: [mutation.id, payload]
-            )
-            if automaticBaseline != nil {
-                try db.execute(
-                    sql: "INSERT INTO browser_sync_automatic_expiry (mutation_id, attempted) VALUES (?, 0)",
-                    arguments: [mutation.id]
-                )
-            }
-        }
-    }
-
-    /// The potentially large baseline scan runs on GRDB's reader, not MainActor.
-    nonisolated(nonsending) func syncExpiryCandidates(
-        for owner: BrowserSyncOwner, state: BrowserSyncExpirySchedulingState, now: Date,
-        ignoringMutationID: String? = nil, after: BrowserSyncExpiryCandidateCursor? = nil,
-        excluding: Set<BrowserSyncExpiryCandidateCursor> = [], validatingEntityIDs: Set<String>? = nil
-    ) async throws -> BrowserSyncExpiryCandidateBatch {
-        try await dbQueue.read { db in
-            guard let ownerRow = try Row.fetchOne(
-                db,
-                sql: "SELECT base_url,user_id FROM browser_sync_state WHERE id=1"
-            ),
-                let url = URL(string: ownerRow["base_url"] as String),
-                BrowserSyncOwner(baseURL: url, userID: ownerRow["user_id"]) == owner
-            else { throw BrowserSyncStoreError.ownerMismatch }
-            let payload = try Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id=1") ?? Data()
-            let empty = BrowserSyncExpiryCandidateBatch(baseline: payload, operations: [])
-            guard let seconds = state.inactiveForSeconds, now.timeIntervalSince1970.isFinite,
-                  [43200, 86400, 259_200, 604_800, 2_592_000].contains(seconds),
-                  validatingEntityIDs.map({ $0.count <= 100 }) ?? true,
-                  try Int.fetchOne(
-                      db,
-                      sql: "SELECT COUNT(*) FROM browser_sync_outbox WHERE mutation_id != ?",
-                      arguments: [ignoringMutationID ?? ""]
-                  ) == 0
-            else { return empty }
-            let baseline = try JSONDecoder().decode(BrowserSyncOutboxBaseline.self, from: payload)
-            let rows = try Row.fetchAll(db, sql: "SELECT id, placement, last_activity_timestamp FROM browser_tabs")
-            let local = Dictionary(uniqueKeysWithValues: rows.compactMap { row -> (String, Row)? in
-                guard let id = row["id"] as String? else { return nil }
-                return (id, row)
-            })
-            let cutoff = now.timeIntervalSince1970 - Double(seconds)
-            let dates = BrowserSyncActivityDates()
-            let candidates = baseline.entities
-                .filter { key, entity in
-                    guard !baseline.deletedKeys.contains(key), entity.serverSeq > 0,
-                          entity.change.entityType == .tab, entity.change.op == .upsert,
-                          validatingEntityIDs?.contains(entity.change.entityID) ?? true,
-                          !excluding.contains(.init(serverSeq: entity.serverSeq, entityID: entity.change.entityID)),
-                          !state.protectedTabIDs.contains(entity.change.entityID),
-                          let tab = entity.change.tabData, tab.placement == .temporary,
-                          let activity = dates.projectedTimestamp(tab.lastActivityAt, local: nil), activity.isFinite,
-                          activity <= cutoff, let row = local[entity.change.entityID],
-                          row["placement"] as String == BrowserTabPlacement.temporary.rawValue,
-                          let localActivity = row["last_activity_timestamp"] as Double?,
-                          localActivity.isFinite, localActivity <= cutoff
-                    else { return false }
-                    return true
-                }
-                .values
-                .sorted {
-                    $0.serverSeq == $1.serverSeq ? $0.change.entityID < $1.change.entityID : $0.serverSeq < $1.serverSeq
-                }
-            // Rotate before limiting the batch. Rejected unchanged candidates
-            // cannot permanently monopolize the first hundred positions.
-            let start = after.flatMap { cursor in
-                candidates.firstIndex {
-                    $0.serverSeq > cursor.serverSeq ||
-                        ($0.serverSeq == cursor.serverSeq && $0.change.entityID > cursor.entityID)
-                }
-            } ?? 0
-            let ordered = candidates[start...] + candidates[..<start]
-            return BrowserSyncExpiryCandidateBatch(baseline: payload, operations: ordered.prefix(100).map {
-                BrowserSyncExpiryOperation(
-                    id: $0.change.entityID,
-                    expectedServerSeq: $0.serverSeq,
-                    inactiveForSeconds: seconds
-                )
-            })
-        }
-    }
-
-    func automaticExpiryNeedsValidation(id: String, for owner: BrowserSyncOwner) throws -> Bool {
-        try dbQueue.read { db in
-            try requireSyncOwner(owner, in: db)
-            return try Bool.fetchOne(
-                db,
-                sql: "SELECT attempted FROM browser_sync_automatic_expiry WHERE mutation_id=?",
-                arguments: [id]
-            ) == false
-        }
-    }
-
-    /// Only never-attempted automatic intents can be consumed without an ACK.
-    /// The exact body stays immutable; invalidating any member cancels the batch.
-    @discardableResult func prepareAutomaticExpiry(
-        id: String, baseline: Data?, for owner: BrowserSyncOwner
-    ) throws -> Bool {
-        try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            guard try Bool.fetchOne(
-                db,
-                sql: "SELECT attempted FROM browser_sync_automatic_expiry WHERE mutation_id=?",
-                arguments: [id]
-            ) == false
-            else { return true }
-            if let baseline,
-               try Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id=1") == baseline,
-               try Int.fetchOne(
-                   db,
-                   sql: "SELECT COUNT(*) FROM browser_sync_outbox WHERE mutation_id != ?",
-                   arguments: [id]
-               ) == 0
-            {
-                try db.execute(
-                    sql: "UPDATE browser_sync_automatic_expiry SET attempted=1 WHERE mutation_id=?",
-                    arguments: [id]
-                )
-                return true
-            }
-            try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id=?", arguments: [id])
-            try db.execute(sql: "DELETE FROM browser_sync_automatic_expiry WHERE mutation_id=?", arguments: [id])
-            return false
-        }
-    }
-
-    func enableSemanticSyncMutations(for owner: BrowserSyncOwner) throws {
-        try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            try db
-                .execute(
-                    sql: "UPDATE browser_sync_state SET new_mutation_version = MAX(new_mutation_version, 3) WHERE id = 1"
-                )
-        }
-    }
-
-    func syncPullProtocolVersion(for owner: BrowserSyncOwner) throws -> Int {
-        try dbQueue.read { db in
-            try requireSyncOwner(owner, in: db)
-            if try Bool
-                .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
-            {
-                return 5
-            }
-            return try folderSyncEnabled(in: db) ? 4 : 2
-        }
-    }
-
-    func syncArchiveRevision(for owner: BrowserSyncOwner) throws -> Int64 {
-        try dbQueue.read { db in
-            try requireSyncOwner(owner, in: db)
-            return try Int64.fetchOne(db, sql: "SELECT archive_revision FROM browser_sync_state WHERE id = 1") ?? 0
-        }
-    }
-
-    func completeExpirySyncBootstrap(
-        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner
-    ) throws -> BrowserTabSessionSnapshot {
-        try completeSyncBootstrap(events: events, cursor: cursor, for: owner, expiryRecovery: true)
-    }
-
-    /// Call only after every page of an explicit v4 pull starting at cursor zero.
-    /// Re-registering a device can require the same bootstrap again; adoption is
-    /// tied to the profile's durable version and never repeats on that path.
-    func completeFolderSyncBootstrap(
-        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner
-    ) throws -> BrowserTabSessionSnapshot {
-        try completeSyncBootstrap(events: events, cursor: cursor, for: owner, expiryRecovery: false)
-    }
-
-    func acknowledgeSyncMutation(
-        id: String, protocolVersion: Int = 2, events: [BrowserSyncEvent], for owner: BrowserSyncOwner
-    ) throws -> BrowserTabSessionSnapshot {
-        try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            guard let storedVersion = try Int.fetchOne(
-                db, sql: "SELECT protocol_version FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id]
-            ) else {
-                // Duplicate ACKs cannot introduce unproven events after their row is gone.
-                return try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
-            }
-            guard storedVersion == protocolVersion else { throw BrowserSyncQueueError.protocolVersionMismatch }
-            try importExpiryRecovery(events, owner: owner, in: db)
-            var baseline = try readSyncBaseline(db)
-            try baseline.apply(events)
-            try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id])
-            try db.execute(sql: "DELETE FROM browser_sync_automatic_expiry WHERE mutation_id = ?", arguments: [id])
-            return try writeSyncProjection(baseline, in: db)
-        }
-    }
-
-    func applyRemoteSyncEvents(
-        _ events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, enableSemanticMutations: Bool = false
-    ) throws -> BrowserTabSessionSnapshot {
-        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
-        return try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            try importExpiryRecovery(events, owner: owner, in: db)
-            var baseline = try readSyncBaseline(db)
-            try baseline.apply(events)
-            let snapshot = try writeSyncProjection(baseline, in: db)
-            try db.execute(
-                sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1", arguments: [cursor]
-            )
-            if enableSemanticMutations {
-                try db
-                    .execute(
-                        sql: "UPDATE browser_sync_state SET new_mutation_version = MAX(new_mutation_version, 3) WHERE id = 1"
-                    )
-            }
-            return snapshot
-        }
-    }
-
-    func saveSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot, cursor: Int?, for owner: BrowserSyncOwner) throws {
-        if let cursor, cursor < 0 {
-            throw BrowserSyncStoreError.invalidCursor
-        }
-        try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            try writeSnapshot(snapshot, to: db)
-            if let cursor {
-                try db.execute(
-                    sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1",
-                    arguments: [cursor]
-                )
-            }
-        }
-    }
-
-    func loadSelectedTabIndex(tabCount: Int) -> Int? {
-        guard tabCount > 0, let storedIndex = integerPreference(for: Key.selectedTabIndex) else {
-            return nil
-        }
-
-        return min(max(storedIndex, 0), tabCount - 1)
-    }
-
-    func saveSelectedTabIndex(_ index: Int?) {
-        setPreference(index.map(String.init), for: Key.selectedTabIndex)
-    }
-
-    func loadSelectedSpaceIndex(spaceCount: Int) -> Int? {
-        guard spaceCount > 0, let storedIndex = integerPreference(for: Key.selectedSpaceIndex) else {
-            return nil
-        }
-
-        return min(max(storedIndex, 0), spaceCount - 1)
-    }
-
-    func saveSelectedSpaceIndex(_ index: Int?) {
-        setPreference(index.map(String.init), for: Key.selectedSpaceIndex)
-    }
-
-    func loadSidebarWidth(minimum: CGFloat, maximum: CGFloat) -> CGFloat? {
-        guard let value = doublePreference(for: Key.sidebarWidth), value.isFinite else {
-            return nil
-        }
-
-        return min(max(CGFloat(value), minimum), maximum)
-    }
-
-    func saveSidebarWidth(_ width: CGFloat) {
-        guard width.isFinite else {
-            return
-        }
-
-        setPreference(String(Double(width)), for: Key.sidebarWidth)
-    }
-
-    func loadTemporaryTabLifetime() -> BrowserTemporaryTabLifetime {
-        guard
-            let rawValue = stringPreference(for: Key.temporaryTabLifetime),
-            let lifetime = BrowserTemporaryTabLifetime(rawValue: rawValue)
-        else {
-            return .defaultValue
-        }
-
-        return lifetime
-    }
-
-    func saveTemporaryTabLifetime(_ lifetime: BrowserTemporaryTabLifetime) {
-        setPreference(lifetime.rawValue, for: Key.temporaryTabLifetime)
-    }
-
-    func loadAutomaticTabArchivalSettings() throws -> (enabled: Bool, lifetime: BrowserTemporaryTabLifetime) {
-        try dbQueue.read { db in
-            let enabled = try String.fetchOne(
-                db,
-                sql: "SELECT value FROM browser_preferences WHERE key=?",
-                arguments: [Key.automaticTabArchivalEnabled]
-            )
-            let raw = try String.fetchOne(
-                db,
-                sql: "SELECT value FROM browser_preferences WHERE key=?",
-                arguments: [Key.temporaryTabLifetime]
-            )
-            let lifetime = raw.flatMap(BrowserTemporaryTabLifetime.init(rawValue:))
-            guard enabled == nil || enabled == "0" || enabled == "1",
-                  raw == nil || lifetime != nil
-            else {
-                throw BrowserAutomaticArchivalSettingsError.invalidValue
-            }
-            return (enabled == "1", lifetime ?? .defaultValue)
-        }
-    }
-
-    func loadAutomaticTabArchivalEnabled() -> Bool {
-        (try? loadAutomaticTabArchivalSettings().enabled) ?? false
-    }
-
-    func saveAutomaticTabArchival(enabled: Bool, lifetime: BrowserTemporaryTabLifetime) throws {
-        try dbQueue.write { db in
-            for (key, value) in [
-                (Key.automaticTabArchivalEnabled, enabled ? "1" : "0"),
-                (Key.temporaryTabLifetime, lifetime.rawValue),
-            ] {
-                try db.execute(
-                    sql: "INSERT INTO browser_preferences(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                    arguments: [key, value]
-                )
-            }
-        }
-    }
-
-    func saveTemporaryTabLifetimeStrict(_ lifetime: BrowserTemporaryTabLifetime) throws {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: "INSERT INTO browser_preferences(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                arguments: [Key.temporaryTabLifetime, lifetime.rawValue]
-            )
-        }
-    }
-
-    func syncCursor() -> Int {
-        integerPreference(for: Key.syncCursor) ?? 0
-    }
-
-    func saveSyncCursor(_ cursor: Int) {
-        do {
-            try dbQueue.write { db in
-                // Compatibility for pre-owner callers only. Once bound, every cursor
-                // mutation must prove which account the response belongs to.
-                guard try storedSyncOwner(db) == nil else { return }
-                try db.execute(
-                    sql: """
-                    INSERT INTO browser_preferences (key, value) VALUES (?, ?)
-                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                    """,
-                    arguments: [Key.syncCursor, String(cursor)]
-                )
-            }
-        } catch {
-            Self.logger.error("Failed to save legacy sync cursor: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    func syncOwner() throws -> BrowserSyncOwner? {
-        try dbQueue.read { db in try storedSyncOwner(db) }
-    }
-
-    func bindSyncOwner(_ owner: BrowserSyncOwner) throws {
-        try dbQueue.write { db in
-            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
-            if let existingOwner = try storedSyncOwner(db) {
-                guard existingOwner == owner else { throw BrowserSyncStoreError.ownerMismatch }
-                try initializeSyncOutbox(in: db)
-                return
-            }
-            try db.execute(
-                sql: "INSERT INTO browser_sync_state (id, base_url, user_id, cursor, paused) VALUES (1, ?, ?, 0, 0)",
-                arguments: [owner.baseURL.absoluteString, owner.userID]
-            )
-            // A v1 cursor has no proven server/account. Never assign it to a new owner.
-            try db.execute(
-                sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
-                arguments: [Key.syncCursor]
-            )
-            try initializeSyncOutbox(in: db)
-        }
-    }
-
-    func syncCursor(for owner: BrowserSyncOwner) throws -> Int {
-        try dbQueue.read { db in
-            try requireSyncOwner(owner, in: db)
-            return try Int.fetchOne(db, sql: "SELECT cursor FROM browser_sync_state WHERE id = 1") ?? 0
-        }
-    }
-
-    func saveSyncCursor(_ cursor: Int, for owner: BrowserSyncOwner) throws {
-        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
-        try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            try db.execute(
-                sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1",
-                arguments: [cursor]
-            )
-        }
-    }
-
-    func pauseSync() throws {
-        try dbQueue.write { db in
-            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
-            try db.execute(sql: "UPDATE browser_sync_state SET paused = 1 WHERE id = 1")
-        }
-    }
-
-    /// Independent of ownership: logout before adoption must also quarantine
-    /// credentials that Keychain failed to remove.
-    func requiresSyncSignIn() throws -> Bool {
-        try dbQueue.read { try requiresSyncSignIn(in: $0) }
-    }
-
-    func requireSyncSignIn() throws {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: "INSERT OR REPLACE INTO browser_preferences (key, value) VALUES (?, '1')",
-                arguments: [Key.syncRequiresSignIn]
-            )
-            try db.execute(sql: "UPDATE browser_sync_state SET paused = 1 WHERE id = 1")
-        }
-    }
-
-    /// Only a newly authenticated, durably saved credential may clear logout.
-    /// Completing authentication never adopts an unbound local profile.
-    func completeSyncAuthentication(for owner: BrowserSyncOwner) throws {
-        try dbQueue.write { db in
-            _ = try requiresSyncSignIn(in: db)
-            if let existing = try storedSyncOwner(db) {
-                guard existing == owner else { throw BrowserSyncStoreError.ownerMismatch }
-                try db.execute(sql: "UPDATE browser_sync_state SET paused = 0 WHERE id = 1")
-            }
-            try db.execute(
-                sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
-                arguments: [Key.syncRequiresSignIn]
-            )
-        }
-    }
-
-    func isSyncPaused(for owner: BrowserSyncOwner) throws -> Bool {
-        try dbQueue.read { db in
-            try requireSyncOwner(owner, in: db)
-            return try Bool.fetchOne(db, sql: "SELECT paused FROM browser_sync_state WHERE id = 1") ?? false
-        }
-    }
-
-    func resumeSync(for owner: BrowserSyncOwner) throws {
-        try dbQueue.write { db in
-            try requireSyncOwner(owner, in: db)
-            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
-            try db.execute(sql: "UPDATE browser_sync_state SET paused = 0 WHERE id = 1")
-        }
-    }
-
     // MARK: Private
 
     private enum Key {
@@ -718,9 +30,13 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         static let syncRequiresSignIn = "browser.sync.requiresSignIn"
     }
 
+    // MARK: Internal
+
+    static let databaseFileName = "OpenArc.sqlite"
+
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc",
-        category: "SQLiteSession"
+        category: "SQLiteSession",
     )
 
     private static let splitGroupsTable = "browser_tab_split_groups"
@@ -799,11 +115,11 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             // ALTER leaves existing UUIDs, FIFO positions and immutable BLOBs untouched.
             try db
                 .execute(
-                    sql: "ALTER TABLE browser_sync_outbox ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 2 CHECK (protocol_version IN (2, 3))"
+                    sql: "ALTER TABLE browser_sync_outbox ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 2 CHECK (protocol_version IN (2, 3))",
                 )
             try db
                 .execute(
-                    sql: "ALTER TABLE browser_sync_state ADD COLUMN new_mutation_version INTEGER NOT NULL DEFAULT 2 CHECK (new_mutation_version IN (2, 3))"
+                    sql: "ALTER TABLE browser_sync_state ADD COLUMN new_mutation_version INTEGER NOT NULL DEFAULT 2 CHECK (new_mutation_version IN (2, 3))",
                 )
         }
         migrator.registerMigration("addFolderSyncOutbox") { db in
@@ -814,7 +130,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             // sequence history, without decoding any existing mutation.
             let sequence = try Int64.fetchOne(
                 db,
-                sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_sync_outbox'"
+                sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_sync_outbox'",
             )
             try db.execute(sql: """
             CREATE TABLE browser_sync_outbox_v4 (
@@ -841,7 +157,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 try db.execute(sql: "DELETE FROM sqlite_sequence WHERE name = 'browser_sync_outbox'")
                 try db.execute(
                     sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_sync_outbox', ?)",
-                    arguments: [sequence]
+                    arguments: [sequence],
                 )
             }
         }
@@ -853,7 +169,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 INSERT INTO browser_preferences (key, value)
                 VALUES (?, CASE WHEN EXISTS (SELECT 1 FROM browser_sync_state WHERE paused = 1) THEN '1' ELSE '0' END)
                 """,
-                arguments: [Key.syncRequiresSignIn]
+                arguments: [Key.syncRequiresSignIn],
             )
         }
         migrator.registerMigration("addLocalTabArchive") { db in
@@ -884,7 +200,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
         migrator.registerMigration("addExpirySyncOutbox") { db in
             let sequence = try Int64.fetchOne(
-                db, sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_sync_outbox'"
+                db, sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_sync_outbox'",
             )
             // Preserve original request bytes and consumed-row high-water marks.
             // The ordinary-write version CHECK remains 2/3/4 on sync_state.
@@ -904,7 +220,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 try db.execute(sql: "DELETE FROM sqlite_sequence WHERE name = 'browser_sync_outbox'")
                 try db.execute(
                     sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_sync_outbox', ?)",
-                    arguments: [sequence]
+                    arguments: [sequence],
                 )
             }
         }
@@ -945,6 +261,20 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     private let dbQueue: DatabaseQueue
 
+    init(databaseURL: URL) throws {
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        self.dbQueue = try DatabaseQueue(path: databaseURL.path)
+        try Self.migrator.migrate(dbQueue)
+        try dbQueue.write { db in
+            if try storedSyncOwner(db) != nil {
+                try initializeSyncOutbox(in: db)
+            }
+        }
+    }
+
     private static func decodeArchiveEntry(_ row: Row) throws -> BrowserTabArchiveEntry {
         let entry = try JSONDecoder().decode(BrowserTabArchiveEntry.self, from: row["payload"] as Data)
         try entry.validate()
@@ -965,7 +295,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     private static func readArchivePage(
-        query: String, before cursor: BrowserTabArchiveCursor?, limit: Int, in db: Database
+        query: String, before cursor: BrowserTabArchiveCursor?, limit: Int, in db: Database,
     ) throws -> BrowserTabArchivePage {
         guard (1...100).contains(limit) else { throw BrowserTabArchiveError.invalidLimit }
         guard query.utf8.count <= 4096, query.count <= 256 else { throw BrowserTabArchiveError.invalidQuery }
@@ -990,7 +320,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             db,
             sql: "SELECT id, payload, archived_at FROM browser_tab_archive" + filter +
                 " ORDER BY archived_at DESC, id DESC LIMIT ?",
-            arguments: arguments
+            arguments: arguments,
         )
         let entries = try rows.prefix(limit).map(decodeArchiveEntry)
         let nextCursor = rows.count > limit
@@ -1002,7 +332,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     private static func insertArchiveContent(
-        _ entry: BrowserTabArchiveEntry, sequence: Int64? = nil, in db: Database
+        _ entry: BrowserTabArchiveEntry, sequence: Int64? = nil, in db: Database,
     ) throws {
         try db.execute(
             sql: """
@@ -1014,7 +344,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 sequence, entry.id, JSONEncoder().encode(entry), entry.archivedAt,
                 foldArchiveSearch(entry.tab.urlString), foldArchiveSearch(entry.tab.userTitleOverride ?? ""),
                 foldArchiveSearch(entry.title ?? ""),
-            ]
+            ],
         )
     }
 
@@ -1042,14 +372,14 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         do {
             let rows = try Row.fetchCursor(
                 db,
-                sql: "SELECT rowid, id, payload, archived_at, restored_tab_id FROM browser_tab_archive_legacy ORDER BY rowid"
+                sql: "SELECT rowid, id, payload, archived_at, restored_tab_id FROM browser_tab_archive_legacy ORDER BY rowid",
             )
             while let row = try rows.next() {
                 let entry = try decodeArchiveEntry(row)
                 let restoredID: String? = row["restored_tab_id"]
                 try db.execute(
                     sql: "INSERT INTO browser_tab_archive_receipts (id, entry_digest, restored_tab_id) VALUES (?, ?, ?)",
-                    arguments: [entry.id, archiveFingerprint(entry), restoredID]
+                    arguments: [entry.id, archiveFingerprint(entry), restoredID],
                 )
                 if restoredID == nil {
                     try insertArchiveContent(entry, sequence: row["rowid"], in: db)
@@ -1059,7 +389,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         // Preserve the high-water mark even if the last legacy rows were consumed.
         try db.execute(sql: "DELETE FROM sqlite_sequence WHERE name = 'browser_tab_archive'")
         try db.execute(
-            sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_tab_archive', ?)", arguments: [highWater]
+            sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_tab_archive', ?)", arguments: [highWater],
         )
         try db.execute(sql: "DROP TABLE browser_tab_archive_legacy")
     }
@@ -1067,7 +397,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     /// Equality ignores local display fields, so they are compared too.
     private static func isStoredUnchanged(
         _ stored: BrowserTabSessionSnapshot,
-        by next: BrowserTabSessionSnapshot
+        by next: BrowserTabSessionSnapshot,
     ) -> Bool {
         stored == next
             && stored.tabs.map(\.pageTitle) == next.tabs.map(\.pageTitle)
@@ -1075,8 +405,678 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             && (stored.spaces ?? []).map(\.colorName) == (next.spaces ?? []).map(\.colorName)
     }
 
+    /// New profile owners must distinguish an empty database from a failed read.
+    func loadSnapshotStrict() throws -> BrowserTabSessionSnapshot? {
+        try dbQueue.read { try readSnapshot($0) }
+    }
+
+    func hasCompletedSessionImport(_ identifier: String) throws -> Bool {
+        try dbQueue.read { db in
+            try String.fetchOne(
+                db,
+                sql: "SELECT value FROM browser_preferences WHERE key = ?",
+                arguments: ["session_import:" + identifier],
+            ) == "1"
+        }
+    }
+
+    /// The marker and imported logical state commit together. Retrying after a
+    /// crash cannot reintroduce imported tabs that the user has since deleted.
+    @discardableResult func importSessionOnce(
+        _ identifier: String,
+        makeSnapshot: (BrowserTabSessionSnapshot?) throws -> BrowserTabSessionSnapshot,
+    ) throws -> Bool {
+        try dbQueue.write { db in
+            let key = "session_import:" + identifier
+            guard try String.fetchOne(
+                db,
+                sql: "SELECT value FROM browser_preferences WHERE key = ?",
+                arguments: [key],
+            ) != "1" else { return false }
+            // Import precedes account binding. A separate explicit merge policy
+            // is required for identities that may already have tombstones.
+            guard try storedSyncOwner(db) == nil else { throw BrowserSessionImportError.syncedProfile }
+            let snapshot = try makeSnapshot(readSnapshot(db))
+            try saveLocalSnapshot(snapshot, syncMove: nil, in: db)
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO browser_preferences (key, value) VALUES (?, '1')",
+                arguments: [key],
+            )
+            return true
+        }
+    }
+
+    func loadSnapshot() -> BrowserTabSessionSnapshot? {
+        do {
+            return try dbQueue.read { db in
+                try readSnapshot(db)
+            }
+        } catch {
+            Self.logger.error("Failed to load SQLite session snapshot: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
+        saveCompatibility(BrowserSessionWrite(snapshot: snapshot, origin: .local(syncMove: nil)))
+    }
+
+    func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent) {
+        saveCompatibility(BrowserSessionWrite(snapshot: snapshot, origin: .local(syncMove: syncMove)))
+    }
+
+    func saveRemoteProjectionSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
+        saveCompatibility(BrowserSessionWrite(snapshot: snapshot, origin: .remoteProjection))
+    }
+
+    func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws {
+        guard !writes.isEmpty else { return }
+        for write in writes {
+            try write.validate()
+        }
+        try dbQueue.write { db in
+            for write in writes {
+                if let archiveAction = write.archiveAction,
+                   try !applyArchiveAction(
+                       archiveAction, snapshot: write.snapshot,
+                       archiveProjectionSnapshot: write.archiveProjectionSnapshot, in: db,
+                   )
+                {
+                    // A receipt retry must not replay an old full snapshot over
+                    // edits committed after the original archive operation.
+                    continue
+                }
+                switch write.origin {
+                case .local(let syncMove): try saveLocalSnapshot(write.snapshot, syncMove: syncMove, in: db)
+                case .remoteProjection: try writeSnapshot(write.snapshot, to: db)
+                }
+                if let archiveAction = write.archiveAction, case .restore(_, let tabID) = archiveAction {
+                    // Permanent remote parent tombstones may filter a proposed
+                    // destination. Never consume an entry without its new tab.
+                    guard try readSnapshot(db)?.tabs.contains(where: { $0.id == tabID }) == true else {
+                        throw BrowserTabArchiveError.invalidTransition
+                    }
+                }
+            }
+        }
+    }
+
+    func loadArchiveEntry(id: String) throws -> BrowserTabArchiveEntry? {
+        try dbQueue.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ?",
+                arguments: [id],
+            ) else { return nil }
+            return try Self.decodeArchiveEntry(row)
+        }
+    }
+
+    func loadArchivePage(
+        before cursor: BrowserTabArchiveCursor? = nil, limit: Int = 50,
+    ) throws -> BrowserTabArchivePage {
+        try dbQueue.read { db in
+            try Self.readArchivePage(query: "", before: cursor, limit: limit, in: db)
+        }
+    }
+
+    nonisolated(nonsending) func searchArchivePage(
+        query: String, before cursor: BrowserTabArchiveCursor? = nil, limit: Int = 50,
+    ) async throws -> BrowserTabArchivePage {
+        try await dbQueue.read { db in
+            try Self.readArchivePage(query: query, before: cursor, limit: limit, in: db)
+        }
+    }
+
+    nonisolated(nonsending) func archiveClearBoundary() async throws -> BrowserTabArchiveBoundary {
+        try await dbQueue.read { db in
+            try .init(insertionSequence: Int64.fetchOne(
+                db, sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_tab_archive'",
+            ) ?? 0)
+        }
+    }
+
+    nonisolated(nonsending) func removeArchiveEntry(id: String) async throws -> Bool {
+        guard !id.isEmpty else { throw BrowserTabArchiveError.invalidEntry }
+        return try await dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM browser_tab_archive WHERE id = ?", arguments: [id])
+            return db.changesCount > 0
+        }
+    }
+
+    nonisolated(nonsending) func clearArchive(through boundary: BrowserTabArchiveBoundary) async throws -> Int {
+        guard boundary.insertionSequence >= 0 else { throw BrowserTabArchiveError.invalidBoundary }
+        return try await dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM browser_tab_archive WHERE insertion_sequence <= ?",
+                arguments: [boundary.insertionSequence],
+            )
+            return db.changesCount
+        }
+    }
+
+    func loadSnapshotForSync(for owner: BrowserSyncOwner) throws -> BrowserTabSessionSnapshot? {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try readSnapshot(db)
+        }
+    }
+
+    func pendingSyncMutations(for owner: BrowserSyncOwner, limit: Int = 100) throws -> [BrowserSyncMutation] {
+        try pendingSyncQueue(for: owner, limit: limit).map { mutation in
+            guard case .legacy(let legacy) = mutation else { throw BrowserSyncQueueError.protocolVersionMismatch }
+            return legacy
+        }
+    }
+
+    func pendingSyncQueue(for owner: BrowserSyncOwner, limit: Int = 100) throws -> [BrowserSyncQueuedMutation] {
+        guard limit > 0 else { throw BrowserSyncOutboxError.invalidLimit }
+        return try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try readSyncQueue(db, limit: limit)
+        }
+    }
+
+    /// Persist a conditional intent without hiding its tab or changing the
+    /// canonical baseline. Ordinary local edits continue to use the v4 codec.
+    /// Retries reuse a queued row unchanged. Once ACK removes it, the server's
+    /// permanent receipt owns replay identity; each new sweep needs a fresh UUID.
+    func enqueueSyncExpiry(
+        _ mutation: BrowserSyncExpiryMutation, for owner: BrowserSyncOwner, automaticBaseline: Data? = nil,
+    ) throws {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            guard try folderSyncEnabled(in: db),
+                  try Bool
+                    .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
+            else { throw BrowserSyncQueueError.expiryBootstrapRequired }
+            try mutation.validate()
+            if let automaticBaseline {
+                guard try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM browser_sync_outbox") == 0,
+                      try Data
+                        .fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1") ==
+                        automaticBaseline
+                else { throw BrowserSyncExpiryError.candidatesChanged }
+            }
+            if let row = try Row.fetchOne(
+                db, sql: "SELECT protocol_version, payload FROM browser_sync_outbox WHERE mutation_id = ?",
+                arguments: [mutation.id],
+            ) {
+                guard row["protocol_version"] as Int == 5,
+                      try JSONDecoder().decode(BrowserSyncExpiryMutation.self, from: row["payload"] as Data) == mutation
+                else { throw BrowserSyncQueueError.mutationIdentityConflict }
+                return
+            }
+            // Match the transport's default JSONEncoder, including escaped slashes.
+            // Stored rows use a different representation and can be much smaller.
+            let wirePayload = try JSONEncoder().encode(BrowserSyncExpiryPushRequest(
+                mutationID: mutation.id,
+                deviceID: "00000000-0000-4000-8000-000000000000",
+                operations: mutation.operations,
+            ))
+            guard wirePayload.count <= 8 * 1024 * 1024 else { throw BrowserSyncQueueError.mutationTooLarge }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            let payload = try encoder.encode(mutation)
+            try db.execute(
+                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 5)",
+                arguments: [mutation.id, payload],
+            )
+            if automaticBaseline != nil {
+                try db.execute(
+                    sql: "INSERT INTO browser_sync_automatic_expiry (mutation_id, attempted) VALUES (?, 0)",
+                    arguments: [mutation.id],
+                )
+            }
+        }
+    }
+
+    /// The potentially large baseline scan runs on GRDB's reader, not MainActor.
+    nonisolated(nonsending) func syncExpiryCandidates(
+        for owner: BrowserSyncOwner, state: BrowserSyncExpirySchedulingState, now: Date,
+        ignoringMutationID: String? = nil, after: BrowserSyncExpiryCandidateCursor? = nil,
+        excluding: Set<BrowserSyncExpiryCandidateCursor> = [], validatingEntityIDs: Set<String>? = nil,
+    ) async throws -> BrowserSyncExpiryCandidateBatch {
+        try await dbQueue.read { db in
+            guard let ownerRow = try Row.fetchOne(
+                db,
+                sql: "SELECT base_url,user_id FROM browser_sync_state WHERE id=1",
+            ),
+                  let url = URL(string: ownerRow["base_url"] as String),
+                  BrowserSyncOwner(baseURL: url, userID: ownerRow["user_id"]) == owner
+            else { throw BrowserSyncStoreError.ownerMismatch }
+            let payload = try Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id=1") ?? Data()
+            let empty = BrowserSyncExpiryCandidateBatch(baseline: payload, operations: [])
+            guard let seconds = state.inactiveForSeconds, now.timeIntervalSince1970.isFinite,
+                  [43200, 86400, 259_200, 604_800, 2_592_000].contains(seconds),
+                  validatingEntityIDs.map({ $0.count <= 100 }) ?? true,
+                  try Int.fetchOne(
+                      db,
+                      sql: "SELECT COUNT(*) FROM browser_sync_outbox WHERE mutation_id != ?",
+                      arguments: [ignoringMutationID ?? ""],
+                  ) == 0
+            else { return empty }
+            let baseline = try JSONDecoder().decode(BrowserSyncOutboxBaseline.self, from: payload)
+            let rows = try Row.fetchAll(db, sql: "SELECT id, placement, last_activity_timestamp FROM browser_tabs")
+            let local = Dictionary(uniqueKeysWithValues: rows.compactMap { row -> (String, Row)? in
+                guard let id = row["id"] as String? else { return nil }
+                return (id, row)
+            })
+            let cutoff = now.timeIntervalSince1970 - Double(seconds)
+            let dates = BrowserSyncActivityDates()
+            let candidates = baseline.entities
+                .filter { key, entity in
+                    guard !baseline.deletedKeys.contains(key), entity.serverSeq > 0,
+                          entity.change.entityType == .tab, entity.change.op == .upsert,
+                          validatingEntityIDs?.contains(entity.change.entityID) ?? true,
+                          !excluding.contains(.init(serverSeq: entity.serverSeq, entityID: entity.change.entityID)),
+                          !state.protectedTabIDs.contains(entity.change.entityID),
+                          let tab = entity.change.tabData, tab.placement == .temporary,
+                          let activity = dates.projectedTimestamp(tab.lastActivityAt, local: nil), activity.isFinite,
+                          activity <= cutoff, let row = local[entity.change.entityID],
+                          row["placement"] as String == BrowserTabPlacement.temporary.rawValue,
+                          let localActivity = row["last_activity_timestamp"] as Double?,
+                          localActivity.isFinite, localActivity <= cutoff
+                    else { return false }
+                    return true
+                }
+                .values
+                .sorted {
+                    $0.serverSeq == $1.serverSeq ? $0.change.entityID < $1.change.entityID : $0.serverSeq < $1.serverSeq
+                }
+            // Rotate before limiting the batch. Rejected unchanged candidates
+            // cannot permanently monopolize the first hundred positions.
+            let start = after.flatMap { cursor in
+                candidates.firstIndex {
+                    $0.serverSeq > cursor.serverSeq ||
+                        ($0.serverSeq == cursor.serverSeq && $0.change.entityID > cursor.entityID)
+                }
+            } ?? 0
+            let ordered = candidates[start...] + candidates[..<start]
+            return BrowserSyncExpiryCandidateBatch(baseline: payload, operations: ordered.prefix(100).map {
+                BrowserSyncExpiryOperation(
+                    id: $0.change.entityID,
+                    expectedServerSeq: $0.serverSeq,
+                    inactiveForSeconds: seconds,
+                )
+            })
+        }
+    }
+
+    func automaticExpiryNeedsValidation(id: String, for owner: BrowserSyncOwner) throws -> Bool {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Bool.fetchOne(
+                db,
+                sql: "SELECT attempted FROM browser_sync_automatic_expiry WHERE mutation_id=?",
+                arguments: [id],
+            ) == false
+        }
+    }
+
+    /// Only never-attempted automatic intents can be consumed without an ACK.
+    /// The exact body stays immutable; invalidating any member cancels the batch.
+    @discardableResult func prepareAutomaticExpiry(
+        id: String, baseline: Data?, for owner: BrowserSyncOwner,
+    ) throws -> Bool {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            guard try Bool.fetchOne(
+                db,
+                sql: "SELECT attempted FROM browser_sync_automatic_expiry WHERE mutation_id=?",
+                arguments: [id],
+            ) == false
+            else { return true }
+            if let baseline,
+               try Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id=1") == baseline,
+               try Int.fetchOne(
+                   db,
+                   sql: "SELECT COUNT(*) FROM browser_sync_outbox WHERE mutation_id != ?",
+                   arguments: [id],
+               ) == 0
+            {
+                try db.execute(
+                    sql: "UPDATE browser_sync_automatic_expiry SET attempted=1 WHERE mutation_id=?",
+                    arguments: [id],
+                )
+                return true
+            }
+            try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id=?", arguments: [id])
+            try db.execute(sql: "DELETE FROM browser_sync_automatic_expiry WHERE mutation_id=?", arguments: [id])
+            return false
+        }
+    }
+
+    func enableSemanticSyncMutations(for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try db
+                .execute(
+                    sql: "UPDATE browser_sync_state SET new_mutation_version = MAX(new_mutation_version, 3) WHERE id = 1",
+                )
+        }
+    }
+
+    func syncPullProtocolVersion(for owner: BrowserSyncOwner) throws -> Int {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            if try Bool
+                .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
+            {
+                return 5
+            }
+            return try folderSyncEnabled(in: db) ? 4 : 2
+        }
+    }
+
+    func syncArchiveRevision(for owner: BrowserSyncOwner) throws -> Int64 {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Int64.fetchOne(db, sql: "SELECT archive_revision FROM browser_sync_state WHERE id = 1") ?? 0
+        }
+    }
+
+    func completeExpirySyncBootstrap(
+        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner,
+    ) throws -> BrowserTabSessionSnapshot {
+        try completeSyncBootstrap(events: events, cursor: cursor, for: owner, expiryRecovery: true)
+    }
+
+    /// Call only after every page of an explicit v4 pull starting at cursor zero.
+    /// Re-registering a device can require the same bootstrap again; adoption is
+    /// tied to the profile's durable version and never repeats on that path.
+    func completeFolderSyncBootstrap(
+        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner,
+    ) throws -> BrowserTabSessionSnapshot {
+        try completeSyncBootstrap(events: events, cursor: cursor, for: owner, expiryRecovery: false)
+    }
+
+    func acknowledgeSyncMutation(
+        id: String, protocolVersion: Int = 2, events: [BrowserSyncEvent], for owner: BrowserSyncOwner,
+    ) throws -> BrowserTabSessionSnapshot {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            guard let storedVersion = try Int.fetchOne(
+                db, sql: "SELECT protocol_version FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id],
+            ) else {
+                // Duplicate ACKs cannot introduce unproven events after their row is gone.
+                return try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
+            }
+            guard storedVersion == protocolVersion else { throw BrowserSyncQueueError.protocolVersionMismatch }
+            try importExpiryRecovery(events, owner: owner, in: db)
+            var baseline = try readSyncBaseline(db)
+            try baseline.apply(events)
+            try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM browser_sync_automatic_expiry WHERE mutation_id = ?", arguments: [id])
+            return try writeSyncProjection(baseline, in: db)
+        }
+    }
+
+    func applyRemoteSyncEvents(
+        _ events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, enableSemanticMutations: Bool = false,
+    ) throws -> BrowserTabSessionSnapshot {
+        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
+        return try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try importExpiryRecovery(events, owner: owner, in: db)
+            var baseline = try readSyncBaseline(db)
+            try baseline.apply(events)
+            let snapshot = try writeSyncProjection(baseline, in: db)
+            try db.execute(
+                sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1", arguments: [cursor],
+            )
+            if enableSemanticMutations {
+                try db
+                    .execute(
+                        sql: "UPDATE browser_sync_state SET new_mutation_version = MAX(new_mutation_version, 3) WHERE id = 1",
+                    )
+            }
+            return snapshot
+        }
+    }
+
+    func saveSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot, cursor: Int?, for owner: BrowserSyncOwner) throws {
+        if let cursor, cursor < 0 {
+            throw BrowserSyncStoreError.invalidCursor
+        }
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try writeSnapshot(snapshot, to: db)
+            if let cursor {
+                try db.execute(
+                    sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1",
+                    arguments: [cursor],
+                )
+            }
+        }
+    }
+
+    func loadSelectedTabIndex(tabCount: Int) -> Int? {
+        guard tabCount > 0, let storedIndex = integerPreference(for: Key.selectedTabIndex) else {
+            return nil
+        }
+
+        return min(max(storedIndex, 0), tabCount - 1)
+    }
+
+    func saveSelectedTabIndex(_ index: Int?) {
+        setPreference(index.map(String.init), for: Key.selectedTabIndex)
+    }
+
+    func loadSelectedSpaceIndex(spaceCount: Int) -> Int? {
+        guard spaceCount > 0, let storedIndex = integerPreference(for: Key.selectedSpaceIndex) else {
+            return nil
+        }
+
+        return min(max(storedIndex, 0), spaceCount - 1)
+    }
+
+    func saveSelectedSpaceIndex(_ index: Int?) {
+        setPreference(index.map(String.init), for: Key.selectedSpaceIndex)
+    }
+
+    func loadSidebarWidth(minimum: CGFloat, maximum: CGFloat) -> CGFloat? {
+        guard let value = doublePreference(for: Key.sidebarWidth), value.isFinite else {
+            return nil
+        }
+
+        return min(max(CGFloat(value), minimum), maximum)
+    }
+
+    func saveSidebarWidth(_ width: CGFloat) {
+        guard width.isFinite else {
+            return
+        }
+
+        setPreference(String(Double(width)), for: Key.sidebarWidth)
+    }
+
+    func loadTemporaryTabLifetime() -> BrowserTemporaryTabLifetime {
+        guard
+            let rawValue = stringPreference(for: Key.temporaryTabLifetime),
+            let lifetime = BrowserTemporaryTabLifetime(rawValue: rawValue)
+        else {
+            return .defaultValue
+        }
+
+        return lifetime
+    }
+
+    func saveTemporaryTabLifetime(_ lifetime: BrowserTemporaryTabLifetime) {
+        setPreference(lifetime.rawValue, for: Key.temporaryTabLifetime)
+    }
+
+    func loadAutomaticTabArchivalSettings() throws -> (enabled: Bool, lifetime: BrowserTemporaryTabLifetime) {
+        try dbQueue.read { db in
+            let enabled = try String.fetchOne(
+                db,
+                sql: "SELECT value FROM browser_preferences WHERE key=?",
+                arguments: [Key.automaticTabArchivalEnabled],
+            )
+            let raw = try String.fetchOne(
+                db,
+                sql: "SELECT value FROM browser_preferences WHERE key=?",
+                arguments: [Key.temporaryTabLifetime],
+            )
+            let lifetime = raw.flatMap(BrowserTemporaryTabLifetime.init(rawValue:))
+            guard enabled == nil || enabled == "0" || enabled == "1",
+                  raw == nil || lifetime != nil
+            else {
+                throw BrowserAutomaticArchivalSettingsError.invalidValue
+            }
+            return (enabled == "1", lifetime ?? .defaultValue)
+        }
+    }
+
+    func loadAutomaticTabArchivalEnabled() -> Bool {
+        (try? loadAutomaticTabArchivalSettings().enabled) ?? false
+    }
+
+    func saveAutomaticTabArchival(enabled: Bool, lifetime: BrowserTemporaryTabLifetime) throws {
+        try dbQueue.write { db in
+            for (key, value) in [
+                (Key.automaticTabArchivalEnabled, enabled ? "1" : "0"),
+                (Key.temporaryTabLifetime, lifetime.rawValue),
+            ] {
+                try db.execute(
+                    sql: "INSERT INTO browser_preferences(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    arguments: [key, value],
+                )
+            }
+        }
+    }
+
+    func saveTemporaryTabLifetimeStrict(_ lifetime: BrowserTemporaryTabLifetime) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "INSERT INTO browser_preferences(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                arguments: [Key.temporaryTabLifetime, lifetime.rawValue],
+            )
+        }
+    }
+
+    func syncCursor() -> Int {
+        integerPreference(for: Key.syncCursor) ?? 0
+    }
+
+    func saveSyncCursor(_ cursor: Int) {
+        do {
+            try dbQueue.write { db in
+                // Compatibility for pre-owner callers only. Once bound, every cursor
+                // mutation must prove which account the response belongs to.
+                guard try storedSyncOwner(db) == nil else { return }
+                try db.execute(
+                    sql: """
+                    INSERT INTO browser_preferences (key, value) VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """,
+                    arguments: [Key.syncCursor, String(cursor)],
+                )
+            }
+        } catch {
+            Self.logger.error("Failed to save legacy sync cursor: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func syncOwner() throws -> BrowserSyncOwner? {
+        try dbQueue.read { db in try storedSyncOwner(db) }
+    }
+
+    func bindSyncOwner(_ owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
+            if let existingOwner = try storedSyncOwner(db) {
+                guard existingOwner == owner else { throw BrowserSyncStoreError.ownerMismatch }
+                try initializeSyncOutbox(in: db)
+                return
+            }
+            try db.execute(
+                sql: "INSERT INTO browser_sync_state (id, base_url, user_id, cursor, paused) VALUES (1, ?, ?, 0, 0)",
+                arguments: [owner.baseURL.absoluteString, owner.userID],
+            )
+            // A v1 cursor has no proven server/account. Never assign it to a new owner.
+            try db.execute(
+                sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
+                arguments: [Key.syncCursor],
+            )
+            try initializeSyncOutbox(in: db)
+        }
+    }
+
+    func syncCursor(for owner: BrowserSyncOwner) throws -> Int {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Int.fetchOne(db, sql: "SELECT cursor FROM browser_sync_state WHERE id = 1") ?? 0
+        }
+    }
+
+    func saveSyncCursor(_ cursor: Int, for owner: BrowserSyncOwner) throws {
+        guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try db.execute(
+                sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1",
+                arguments: [cursor],
+            )
+        }
+    }
+
+    func pauseSync() throws {
+        try dbQueue.write { db in
+            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
+            try db.execute(sql: "UPDATE browser_sync_state SET paused = 1 WHERE id = 1")
+        }
+    }
+
+    /// Independent of ownership: logout before adoption must also quarantine
+    /// credentials that Keychain failed to remove.
+    func requiresSyncSignIn() throws -> Bool {
+        try dbQueue.read { try requiresSyncSignIn(in: $0) }
+    }
+
+    func requireSyncSignIn() throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO browser_preferences (key, value) VALUES (?, '1')",
+                arguments: [Key.syncRequiresSignIn],
+            )
+            try db.execute(sql: "UPDATE browser_sync_state SET paused = 1 WHERE id = 1")
+        }
+    }
+
+    /// Only a newly authenticated, durably saved credential may clear logout.
+    /// Completing authentication never adopts an unbound local profile.
+    func completeSyncAuthentication(for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            _ = try requiresSyncSignIn(in: db)
+            if let existing = try storedSyncOwner(db) {
+                guard existing == owner else { throw BrowserSyncStoreError.ownerMismatch }
+                try db.execute(sql: "UPDATE browser_sync_state SET paused = 0 WHERE id = 1")
+            }
+            try db.execute(
+                sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
+                arguments: [Key.syncRequiresSignIn],
+            )
+        }
+    }
+
+    func isSyncPaused(for owner: BrowserSyncOwner) throws -> Bool {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Bool.fetchOne(db, sql: "SELECT paused FROM browser_sync_state WHERE id = 1") ?? false
+        }
+    }
+
+    func resumeSync(for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            guard try !requiresSyncSignIn(in: db) else { throw BrowserSyncStoreError.authenticationRequired }
+            try db.execute(sql: "UPDATE browser_sync_state SET paused = 0 WHERE id = 1")
+        }
+    }
+
     private func completeSyncBootstrap(
-        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, expiryRecovery: Bool
+        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, expiryRecovery: Bool,
     ) throws -> BrowserTabSessionSnapshot {
         guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
         return try dbQueue.write { db in
@@ -1094,17 +1094,17 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             if try !folderSyncEnabled(in: db) {
                 let values = BrowserSyncOutboxProjection.effectiveChanges(baseline: baseline, pending: pending)
                 let adoption = BrowserSyncFolderProjection.adoptionOperations(
-                    local: local, values: values, deleted: baseline.deletedKeys
+                    local: local, values: values, deleted: baseline.deletedKeys,
                 )
                 try appendFolderSyncMutations(adoption, to: db)
             }
             try db.execute(
                 sql: "UPDATE browser_sync_state SET new_mutation_version = 4, cursor = ? WHERE id = 1",
-                arguments: [cursor]
+                arguments: [cursor],
             )
             try db.execute(
                 sql: "UPDATE browser_sync_state SET expiry_recovery_enabled = ? WHERE id = 1",
-                arguments: [expiryRecovery]
+                arguments: [expiryRecovery],
             )
             return try writeSyncProjection(baseline, in: db)
         }
@@ -1114,13 +1114,13 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     /// and the following snapshot/outbox write share the surrounding transaction.
     private func applyArchiveAction(
         _ action: BrowserTabArchiveAction, snapshot: BrowserTabSessionSnapshot,
-        archiveProjectionSnapshot: BrowserTabSessionSnapshot?, in db: Database
+        archiveProjectionSnapshot: BrowserTabSessionSnapshot?, in db: Database,
     ) throws -> Bool {
         switch action {
         case .insert(let entry):
             let fingerprint = try Self.archiveFingerprint(entry)
             if let existing = try Data.fetchOne(
-                db, sql: "SELECT entry_digest FROM browser_tab_archive_receipts WHERE id = ?", arguments: [entry.id]
+                db, sql: "SELECT entry_digest FROM browser_tab_archive_receipts WHERE id = ?", arguments: [entry.id],
             ) {
                 guard existing == fingerprint else { throw BrowserTabArchiveError.archiveIDConflict }
                 return false
@@ -1136,14 +1136,14 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             else { throw BrowserTabArchiveError.invalidTransition }
             try db.execute(
                 sql: "INSERT INTO browser_tab_archive_receipts (id, entry_digest) VALUES (?, ?)",
-                arguments: [entry.id, fingerprint]
+                arguments: [entry.id, fingerprint],
             )
             try Self.insertArchiveContent(entry, in: db)
             return true
         case .restore(let archiveID, let tabID):
             guard let receipt = try Row.fetchOne(
                 db, sql: "SELECT restored_tab_id FROM browser_tab_archive_receipts WHERE id = ?",
-                arguments: [archiveID]
+                arguments: [archiveID],
             ) else { throw BrowserTabArchiveError.entryMissing }
             if let restoredID: String = receipt["restored_tab_id"] {
                 guard restoredID == tabID else { throw BrowserTabArchiveError.archiveAlreadyRestored }
@@ -1151,7 +1151,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             }
             guard let row = try Row.fetchOne(
                 db, sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ?",
-                arguments: [archiveID]
+                arguments: [archiveID],
             ) else { throw BrowserTabArchiveError.entryMissing }
             let entry = try Self.decodeArchiveEntry(row)
             guard tabID != entry.tab.id,
@@ -1170,7 +1170,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             else { throw BrowserTabArchiveError.invalidTransition }
             try db.execute(
                 sql: "UPDATE browser_tab_archive_receipts SET restored_tab_id = ? WHERE id = ? AND restored_tab_id IS NULL",
-                arguments: [tabID, archiveID]
+                arguments: [tabID, archiveID],
             )
             try db.execute(sql: "DELETE FROM browser_tab_archive WHERE id = ?", arguments: [archiveID])
             return true
@@ -1179,7 +1179,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     private func requiresSyncSignIn(in db: Database) throws -> Bool {
         let value = try String.fetchOne(
-            db, sql: "SELECT value FROM browser_preferences WHERE key = ?", arguments: [Key.syncRequiresSignIn]
+            db, sql: "SELECT value FROM browser_preferences WHERE key = ?", arguments: [Key.syncRequiresSignIn],
         )
         switch value {
         case "0": return false
@@ -1199,7 +1199,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     /// Must precede baseline deletion and queue removal in the same transaction.
     /// The event receipt survives local Clear/Restore and historical rebootstrap.
     private func importExpiryRecovery(
-        _ events: [BrowserSyncEvent], owner: BrowserSyncOwner, in db: Database
+        _ events: [BrowserSyncEvent], owner: BrowserSyncOwner, in db: Database,
     ) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -1219,7 +1219,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             if let previous = try Data.fetchOne(
                 db,
                 sql: "SELECT payload_digest FROM browser_sync_expiry_imports WHERE event_id = ?",
-                arguments: [eventID]
+                arguments: [eventID],
             ) {
                 guard previous == digest else { throw BrowserSyncOutboxError.invalidEvent }
                 continue
@@ -1229,26 +1229,26 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 pending = try readSyncQueue(db)
             }
             let entries = [canonical] + BrowserSyncExpiryRecovery.localEntries(
-                canonical: canonical, pending: pending ?? [], local: local
+                canonical: canonical, pending: pending ?? [], local: local,
             )
             for entry in entries {
                 try entry.validate()
                 try db.execute(
                     sql: "INSERT INTO browser_tab_archive_receipts (id, entry_digest) VALUES (?, ?)",
-                    arguments: [entry.id, Self.archiveFingerprint(entry)]
+                    arguments: [entry.id, Self.archiveFingerprint(entry)],
                 )
                 try Self.insertArchiveContent(entry, in: db)
             }
             try db.execute(
                 sql: "INSERT INTO browser_sync_expiry_imports (event_id, payload_digest) VALUES (?, ?)",
-                arguments: [eventID, digest]
+                arguments: [eventID, digest],
             )
             try db.execute(sql: "UPDATE browser_sync_state SET archive_revision = archive_revision + 1 WHERE id = 1")
         }
     }
 
     private func saveLocalSnapshot(
-        _ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent?, in db: Database
+        _ snapshot: BrowserTabSessionSnapshot, syncMove: BrowserSyncMoveIntent?, in db: Database,
     ) throws {
         let previous = try readSnapshot(db)
         guard try storedSyncOwner(db) != nil else {
@@ -1262,12 +1262,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         let normalized = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
         let version = try Int.fetchOne(
             db,
-            sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id = 1"
+            sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id = 1",
         ) ?? 2
         switch version {
         case 2:
             let changes = try BrowserSyncOutboxProjection.changes(
-                from: previous, to: normalized, baseline: baseline, pending: readSyncQueue(db)
+                from: previous, to: normalized, baseline: baseline, pending: readSyncQueue(db),
             )
             baseline.recordLocalDeletes(changes)
             try appendSyncMutations(changes, to: db)
@@ -1278,17 +1278,17 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 !move.tabIDs.isEmpty && move.items.allSatisfy { $0.entityType == .tab } ? move : nil
             }
             let operations = BrowserSyncSemanticProjection.operations(
-                from: previous ?? BrowserTabSessionSnapshot(tabs: []), to: normalized, syncMove: legacyMove
+                from: previous ?? BrowserTabSessionSnapshot(tabs: []), to: normalized, syncMove: legacyMove,
             )
             for operation in operations {
                 switch operation {
                 case .deleteSpace(let id): baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
                         type: .space,
-                        id: id
+                        id: id,
                     ))
                 case .deleteTab(let id): baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
                         type: .tab,
-                        id: id
+                        id: id,
                     ))
                 default: break
                 }
@@ -1298,7 +1298,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             let operations = BrowserSyncFolderProjection.operations(
                 from: previous,
                 to: normalized,
-                moveIntent: syncMove
+                moveIntent: syncMove,
             )
             for operation in operations {
                 let reference: BrowserSyncEntityReference? =
@@ -1311,7 +1311,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 if let reference {
                     baseline.deletedKeys.insert(BrowserSyncOutboxProjection.key(
                         type: reference.entityType,
-                        id: reference.entityID
+                        id: reference.entityID,
                     ))
                 }
             }
@@ -1344,7 +1344,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                    pinned_folder_id, last_activity_timestamp, pinned_sibling_rank\(pageTitleColumn)\(iconColumn)
             FROM browser_tabs
             ORDER BY position ASC
-            """
+            """,
         )
         let hasSpaces = try hasStoredSpaces(db)
         guard !tabs.isEmpty || hasSpaces else {
@@ -1358,7 +1358,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             SELECT id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index\(spaceColorColumn)
             FROM browser_spaces
             ORDER BY position ASC
-            """
+            """,
         )
         .map { row in
             BrowserSpaceSessionSnapshot(
@@ -1367,7 +1367,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 systemImageName: row["system_image_name"],
                 isPinnedSectionCollapsed: row["is_pinned_section_collapsed"],
                 selectedTabIndex: row["selected_tab_index"],
-                colorName: spaceColorColumn.isEmpty ? nil : row["color_name"]
+                colorName: spaceColorColumn.isEmpty ? nil : row["color_name"],
             )
         }
         let pinnedTabFolders = try Row.fetchAll(
@@ -1376,7 +1376,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             SELECT id, space_id, parent_folder_id, title, system_image_name, is_expanded, pinned_sibling_rank
             FROM browser_pinned_tab_folders
             ORDER BY position ASC
-            """
+            """,
         )
         .map { row in
             BrowserPinnedTabFolderSessionSnapshot(
@@ -1385,7 +1385,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 parentFolderID: row["parent_folder_id"],
                 title: row["title"],
                 systemImageName: row["system_image_name"],
-                isExpanded: row["is_expanded"], pinnedSiblingRank: row["pinned_sibling_rank"]
+                isExpanded: row["is_expanded"], pinnedSiblingRank: row["pinned_sibling_rank"],
             )
         }
         let splitGroups = try readSplitGroups(db)
@@ -1405,10 +1405,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     lastActivityTimestamp: row["last_activity_timestamp"],
                     pinnedSiblingRank: row["pinned_sibling_rank"],
                     pageTitle: pageTitleColumn.isEmpty ? nil : row["page_title"],
-                    systemImageName: iconColumn.isEmpty ? nil : row["system_image_name"]
+                    systemImageName: iconColumn.isEmpty ? nil : row["system_image_name"],
                 )
             },
-            splitGroups: splitGroups.isEmpty ? nil : splitGroups
+            splitGroups: splitGroups.isEmpty ? nil : splitGroups,
         )
     }
 
@@ -1418,12 +1418,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         guard try db.tableExists(Self.splitGroupsTable) else { return [] }
         return try Row.fetchAll(
             db,
-            sql: "SELECT id, payload FROM \(Self.splitGroupsTable) ORDER BY position ASC"
+            sql: "SELECT id, payload FROM \(Self.splitGroupsTable) ORDER BY position ASC",
         )
         .compactMap { row in
             guard let group = try? JSONDecoder().decode(
                 BrowserTabSplitGroupSessionSnapshot.self,
-                from: row["payload"] as Data
+                from: row["payload"] as Data,
             ), group.id == row["id"] as String else { return nil }
             return group
         }
@@ -1447,7 +1447,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             claimedTabIDs.formUnion(kept.tabIDs)
             try db.execute(
                 sql: "INSERT INTO \(Self.splitGroupsTable) (id, position, payload) VALUES (?, ?, ?)",
-                arguments: [kept.id, position, JSONEncoder().encode(kept)]
+                arguments: [kept.id, position, JSONEncoder().encode(kept)],
             )
             position += 1
         }
@@ -1473,7 +1473,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     private func writeSyncBaseline(_ baseline: BrowserSyncOutboxBaseline, to db: Database) throws {
         try db.execute(
             sql: "INSERT INTO browser_sync_baseline (id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
-            arguments: [JSONEncoder().encode(baseline)]
+            arguments: [JSONEncoder().encode(baseline)],
         )
     }
 
@@ -1482,7 +1482,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             let mutation = BrowserSyncMutation(id: UUID().uuidString, changes: chunk)
             try db.execute(
                 sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 2)",
-                arguments: [mutation.id, JSONEncoder().encode(mutation)]
+                arguments: [mutation.id, JSONEncoder().encode(mutation)],
             )
         }
     }
@@ -1492,7 +1492,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             let mutation = BrowserSyncSemanticMutation(id: UUID().uuidString, operations: chunk)
             try db.execute(
                 sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 3)",
-                arguments: [mutation.id, JSONEncoder().encode(mutation)]
+                arguments: [mutation.id, JSONEncoder().encode(mutation)],
             )
         }
     }
@@ -1502,7 +1502,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             let mutation = BrowserSyncFolderMutation(id: UUID().uuidString, operations: chunk)
             try db.execute(
                 sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 4)",
-                arguments: [mutation.id, JSONEncoder().encode(mutation)]
+                arguments: [mutation.id, JSONEncoder().encode(mutation)],
             )
         }
     }
@@ -1536,7 +1536,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         let rows = try Row.fetchAll(
             db,
             sql: "SELECT mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position ASC LIMIT ?",
-            arguments: [limit ?? -1]
+            arguments: [limit ?? -1],
         )
         return try rows.map { row in
             let version: Int = row["protocol_version"]
@@ -1545,11 +1545,11 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             case 2: mutation = try .legacy(JSONDecoder().decode(BrowserSyncMutation.self, from: row["payload"] as Data))
             case 3: mutation = try .semantic(JSONDecoder().decode(
                     BrowserSyncSemanticMutation.self,
-                    from: row["payload"] as Data
+                    from: row["payload"] as Data,
                 ))
             case 4: mutation = try .folders(JSONDecoder().decode(
                     BrowserSyncFolderMutation.self,
-                    from: row["payload"] as Data
+                    from: row["payload"] as Data,
                 ))
             case 5:
                 let expiry = try JSONDecoder().decode(BrowserSyncExpiryMutation.self, from: row["payload"] as Data)
@@ -1565,12 +1565,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     private func writeSyncProjection(
         _ baseline: BrowserSyncOutboxBaseline,
-        in db: Database
+        in db: Database,
     ) throws -> BrowserTabSessionSnapshot {
         let local = try readSnapshot(db)
         let snapshot = try BrowserSyncOutboxProjection.snapshot(
             baseline: baseline, pending: readSyncQueue(db), local: local,
-            folderSyncEnabled: folderSyncEnabled(in: db)
+            folderSyncEnabled: folderSyncEnabled(in: db),
         )
         try writeSyncBaseline(baseline, to: db)
         // An ACK of a change already shown locally projects the stored snapshot
@@ -1623,12 +1623,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     space.isPinnedSectionCollapsed,
                     space.selectedTabIndex,
                     index,
-                ]
+                ],
             )
             if writesSpaceColors, let color = space.colorName {
                 try db.execute(
                     sql: "UPDATE browser_spaces SET color_name = ? WHERE id = ?",
-                    arguments: [color, space.id]
+                    arguments: [color, space.id],
                 )
             }
         }
@@ -1650,7 +1650,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     folder.isExpanded,
                     index,
                     folder.pinnedSiblingRank,
-                ]
+                ],
             )
         }
 
@@ -1677,7 +1677,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     tab.lastActivityTimestamp,
                     index,
                     tab.pinnedSiblingRank,
-                ]
+                ],
             )
             if writesPageTitles, let pageTitle = tab.pageTitle {
                 try db.execute(sql: "UPDATE browser_tabs SET page_title = ? WHERE id = ?", arguments: [pageTitle, id])
@@ -1721,7 +1721,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                     VALUES (?, ?)
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value
                     """,
-                    arguments: [key, value]
+                    arguments: [key, value],
                 )
             }
         } catch {

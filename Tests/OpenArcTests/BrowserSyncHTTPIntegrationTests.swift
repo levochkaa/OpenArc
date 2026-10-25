@@ -1,3 +1,5 @@
+// BrowserSyncHTTPIntegrationTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -6,7 +8,7 @@ import Testing
 
 @Suite(
     .serialized,
-    .enabled(if: SyncHTTPFixture.environmentPath != nil, "Run ./script/test_swift_sync.sh for localhost integration")
+    .enabled(if: SyncHTTPFixture.environmentPath != nil, "Run ./script/test_swift_sync.sh for localhost integration"),
 )
 @MainActor struct BrowserSyncHTTPIntegrationTests {
     @Test(arguments: [false, true])
@@ -26,7 +28,7 @@ import Testing
         func credentials(_ device: SyncHTTPFixture.Device) -> BrowserAuthSession {
             BrowserAuthSession(
                 accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-                deviceID: device.deviceID, serverURL: fixture.baseURL
+                deviceID: device.deviceID, serverURL: fixture.baseURL,
             )
         }
         let firstAuth = credentials(account.devices[0])
@@ -39,15 +41,15 @@ import Testing
             .createSpace(id: "target", data: .init(title: "Target", systemImageName: "star")),
             .createTab(
                 id: "moving",
-                data: .init(spaceID: "source", placement: .temporary, urlString: "https://moving.example")
+                data: .init(spaceID: "source", placement: .temporary, urlString: "https://moving.example"),
             ),
             .createTab(
                 id: "source-sentinel",
-                data: .init(spaceID: "source", placement: .temporary, urlString: "https://source.example")
+                data: .init(spaceID: "source", placement: .temporary, urlString: "https://source.example"),
             ),
             .createTab(
                 id: "anchor",
-                data: .init(spaceID: "target", placement: .temporary, urlString: "https://anchor.example")
+                data: .init(spaceID: "target", placement: .temporary, urlString: "https://anchor.example"),
             ),
         ])
         let seeded = try await first.push(mutation: seed, authSession: firstAuth)
@@ -63,7 +65,7 @@ import Testing
                 ids: ["moving"],
                 destination: .init(spaceID: "target", placement: .temporary),
                 beforeID: "anchor",
-                afterID: nil
+                afterID: nil,
             ),
         ])
         let moveReceipt: BrowserSyncSemanticPushResponse
@@ -87,7 +89,7 @@ import Testing
                 ids: ["moving"],
                 destination: .init(spaceID: "source", placement: .temporary),
                 beforeID: "source-sentinel",
-                afterID: nil
+                afterID: nil,
             ),
         ])
         _ = try await first.push(mutation: later, authSession: firstAuth)
@@ -187,7 +189,7 @@ import Testing
         let directory = SyncHTTPProfile.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         var first: SyncHTTPProfile? = try SyncHTTPProfile(
-            fixture: fixture, device: account.devices[0], directory: directory
+            fixture: fixture, device: account.devices[0], directory: directory,
         )
         let owner = try #require(first?.owner)
         await first?.activate()
@@ -220,7 +222,7 @@ import Testing
         await second.pull()
         let afterRetry = try await fixture.inspect(account)
         let retries = afterRetry.attempts.filter { $0.mutationID == committed.mutationID }
-        let earlierAttempts = beforeRetry.attempts.filter { $0.mutationID == committed.mutationID }.count
+        let earlierAttempts = beforeRetry.attempts.count(where: { $0.mutationID == committed.mutationID })
         #expect(retries.count > earlierAttempts, "Reopened coordinator must send the persisted mutation again")
         #expect(Set(retries.map(\.digest)) == [committed.digest])
         #expect(retries.allSatisfy { $0.protocolVersion == 3 && $0.status == 201 })
@@ -270,7 +272,7 @@ import Testing
         #expect(deleted.deleted && deleted.tombstoned)
         #expect(
             finalState.eventCount == beforeReconnect.eventCount,
-            "Stale patch and move must only echo the tombstone"
+            "Stale patch and move must only echo the tombstone",
         )
         for mutation in pending {
             #expect(finalState.attempts.contains {
@@ -300,7 +302,7 @@ import Testing
         // deletion is user intent; its cascade must inspect canonical membership.
         let locallyDeleted = BrowserTabSessionSnapshot(
             spaces: initial.spaces?.filter { $0.id != "source" },
-            tabs: initial.tabs.filter { $0.spaceID != "source" }
+            tabs: initial.tabs.filter { $0.spaceID != "source" },
         )
         first.store.saveSnapshot(locallyDeleted)
         let pending = try first.store.pendingSyncQueue(for: first.owner)
@@ -361,7 +363,7 @@ import Testing
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: first.service,
-            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         defer {
             first.service.setSnapshotApplier(nil)
@@ -378,14 +380,14 @@ import Testing
         await first.service.waitForPendingOperations()
 
         let ordinary = syncHTTPExplicitSnapshot(
-            source: ["child"], target: ["anchor"], titles: ["child": "Remote child"]
+            source: ["child"], target: ["anchor"], titles: ["child": "Remote child"],
         )
         let favorite = BrowserTabSessionSnapshotTab(
             id: "favorite", urlString: "https://favorite.example", userTitleOverride: "Global Favorite",
-            placement: .app, spaceID: "source", lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970
+            placement: .app, spaceID: "source", lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970,
         )
         await second.saveAndSend(BrowserTabSessionSnapshot(
-            spaces: ordinary.spaces, tabs: [favorite] + ordinary.tabs
+            spaces: ordinary.spaces, tabs: [favorite] + ordinary.tabs,
         ))
         await first.pull()
         let childRequest = try #require(driver.createdTabRequests.last { $0.urlString == "https://child.example" })
@@ -453,13 +455,13 @@ import Testing
         let localURL = "https://example.com/pending-navigation/local"
         func snapshot(url: String?, includesChild: Bool = false) -> BrowserTabSessionSnapshot {
             let layout = syncHTTPExplicitSnapshot(
-                source: url == nil ? [] : includesChild ? ["pending", "child"] : ["pending"], target: ["anchor"]
+                source: url == nil ? [] : includesChild ? ["pending", "child"] : ["pending"], target: ["anchor"],
             )
             return BrowserTabSessionSnapshot(spaces: layout.spaces, tabs: layout.tabs.map { tab in
                 guard tab.id == "pending", let url else { return tab }
                 return .init(
                     id: "pending", urlString: url, spaceID: "source",
-                    lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970
+                    lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970,
                 )
             })
         }
@@ -478,7 +480,7 @@ import Testing
             commandBarSuggestionProvider: FakeSuggestionProvider(), userPreferencesStore: preferences,
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: first.service,
-            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         defer {
             first.service.setSnapshotApplier(nil)
@@ -559,7 +561,7 @@ import Testing
         let rename = try syncHTTPSemanticMutation(queue[1])
         #expect(rename.operations == [.patchTab(
             id: "pending",
-            fields: .init(userTitleOverride: .set("Locally renamed"))
+            fields: .init(userTitleOverride: .set("Locally renamed")),
         )])
         driver.emitCreatedTab(id: pending.id, urlString: firstURL, isActive: false)
         driver.emitTabCreationState(id: pending.id, state: .ready)
@@ -615,7 +617,7 @@ import Testing
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: first.service,
-            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         defer {
             first.service.setSnapshotApplier(nil)
@@ -648,7 +650,7 @@ import Testing
         let selectedBefore = model.selectedTabID
         #expect(model.commitSidebarDrop(
             payload: BrowserSidebarDragPayload(primary: .tab(a.id), tabIDs: [a.id]),
-            destination: BrowserSidebarDropDestination(container: .temporary("source"), beforeItem: .tab(c.id))
+            destination: BrowserSidebarDropDestination(container: .temporary("source"), beforeItem: .tab(c.id)),
         ))
         #expect(model.sessionPersistenceFailure?.isRetryable == true)
         model.setUserTitleOverride("renamed while blocked", forTabID: a.id)
@@ -684,7 +686,7 @@ import Testing
         // The offline peer edits the soon-to-be-deleted identity. Its later
         // replay must receive the tombstone instead of bringing that tab back.
         second.store.saveSnapshot(syncHTTPExplicitSnapshot(
-            source: ["a", "b", "c"], target: ["anchor"], titles: ["c": "stale offline rename"]
+            source: ["a", "b", "c"], target: ["anchor"], titles: ["c": "stale offline rename"],
         ))
         let staleQueue = try second.store.pendingSyncQueue(for: second.owner)
         try #require(staleQueue.count == 1)
@@ -700,11 +702,11 @@ import Testing
         let rename = try syncHTTPSemanticMutation(queue[1])
         let deletion = try syncHTTPSemanticMutation(queue[2])
         #expect(moves.operations == [.moveTabs(
-            ids: ["a"], destination: .init(spaceID: "source", placement: .temporary), beforeID: "c", afterID: "b"
+            ids: ["a"], destination: .init(spaceID: "source", placement: .temporary), beforeID: "c", afterID: "b",
         )])
         #expect(rename.operations == [.patchTab(
             id: "a",
-            fields: .init(userTitleOverride: .set("renamed while blocked"))
+            fields: .init(userTitleOverride: .set("renamed while blocked")),
         )])
         #expect(deletion.operations == [.deleteTab(id: "c")])
         let frozenPayloads = try payloads()
@@ -724,7 +726,7 @@ import Testing
         await second.pull()
         driver.flushPendingCreateEvents()
         let expected = syncHTTPExplicitSnapshot(
-            source: ["b", "a"], target: ["anchor"], titles: ["a": "renamed while blocked"]
+            source: ["b", "a"], target: ["anchor"], titles: ["a": "renamed while blocked"],
         )
         #expect(first.store.loadSnapshot()?.tabs == expected.tabs)
         #expect(second.store.loadSnapshot()?.tabs == expected.tabs)
@@ -779,13 +781,13 @@ import Testing
                 ids: ["a"],
                 destination: .init(spaceID: "source", placement: .temporary),
                 beforeID: "c",
-                afterID: "b"
+                afterID: "b",
             ),
         ])
         #expect(first.store.loadSnapshot()?.tabs.compactMap(\.id) == ["b", "a", "c", "anchor"])
 
         let remotelyMoved = syncHTTPExplicitSnapshot(
-            source: ["b", "c"], target: ["a", "anchor"], titles: ["a": "remote metadata survives"]
+            source: ["b", "c"], target: ["a", "anchor"], titles: ["a": "remote metadata survives"],
         )
         second.store.saveSnapshot(remotelyMoved, syncMove: BrowserSyncMoveIntent(tabIDs: ["a"]))
         let remoteQueue = try second.store.pendingSyncQueue(for: second.owner)
@@ -802,7 +804,7 @@ import Testing
         let expected = localFirst
             ? remotelyMoved
             : syncHTTPExplicitSnapshot(
-                source: ["b", "a", "c"], target: ["anchor"], titles: ["a": "remote metadata survives"]
+                source: ["b", "a", "c"], target: ["anchor"], titles: ["a": "remote metadata survives"],
             )
         #expect(first.store.loadSnapshot()?.tabs == expected.tabs)
         #expect(second.store.loadSnapshot()?.tabs == expected.tabs)
@@ -829,7 +831,7 @@ import Testing
         let directory = SyncHTTPProfile.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         var first: SyncHTTPProfile? = try SyncHTTPProfile(
-            fixture: fixture, device: account.devices[0], directory: directory
+            fixture: fixture, device: account.devices[0], directory: directory,
         )
         let owner = try #require(first?.owner)
         await first?.activate()
@@ -849,13 +851,13 @@ import Testing
                 ids: ["g1", "g2", "g3"],
                 destination: .init(spaceID: "target", placement: .temporary),
                 beforeID: "anchor",
-                afterID: "left"
+                afterID: "left",
             ),
         ])
         // The canonical member and preferred anchor disappear before replay.
         // The surviving group must use its captured after-anchor and metadata.
         let remoteDeletion = syncHTTPExplicitSnapshot(
-            source: ["g1", "g3"], target: ["left", "tail"], titles: ["g3": "remote survivor title"]
+            source: ["g1", "g3"], target: ["left", "tail"], titles: ["g3": "remote survivor title"],
         )
         await second.saveAndSend(remoteDeletion)
         try await fixture.command("drop", deviceID: account.devices[0].deviceID)
@@ -878,7 +880,7 @@ import Testing
         await second.pull()
         // Make an older receipt observably stale: a surviving member moves again.
         let latest = syncHTTPExplicitSnapshot(
-            source: ["g3"], target: ["left", "g1", "tail"], titles: ["g3": "newer after committed group"]
+            source: ["g3"], target: ["left", "g1", "tail"], titles: ["g3": "newer after committed group"],
         )
         second.store.saveSnapshot(latest, syncMove: BrowserSyncMoveIntent(tabIDs: ["g3"]))
         try await second.sendSavedChanges()
@@ -887,14 +889,14 @@ import Testing
         first = try SyncHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
         #expect(
             try first?.store.pendingSyncQueue(for: owner) == pending,
-            "Deleted IDs remain frozen in the durable row"
+            "Deleted IDs remain frozen in the durable row",
         )
         await first?.activate()
         await first?.pull()
         await second.pull()
         let afterRetry = try await fixture.inspect(account)
         let retries = afterRetry.attempts.filter { $0.mutationID == group.id }
-        #expect(retries.count > beforeRetry.attempts.filter { $0.mutationID == group.id }.count)
+        #expect(retries.count > beforeRetry.attempts.count(where: { $0.mutationID == group.id }))
         #expect(Set(retries.map(\.digest)) == [committed.digest])
         #expect(retries.allSatisfy { $0.protocolVersion == 3 && $0.status == 201 })
         #expect(afterRetry.eventCount == beforeRetry.eventCount && afterRetry.receiptCount == beforeRetry.receiptCount)
@@ -923,7 +925,7 @@ import Testing
         var second: SyncHTTPProfile? = try SyncHTTPProfile(
             fixture: fixture,
             device: account.devices[1],
-            directory: directory
+            directory: directory,
         )
         await second?.activate()
         #expect(second?.store.loadSnapshot()?.tabs.map(\.id) == initial.tabs.map(\.id))
@@ -938,7 +940,7 @@ import Testing
         // Another device edits the deleted identity while this SQLite profile is offline.
         let stale = try syncHTTPSnapshot(
             spaceID: #require(initial.spaces?.first?.id),
-            tabs: [syncHTTPTab(copying: initial.tabs[0], title: "remote edit while offline"), initial.tabs[1]]
+            tabs: [syncHTTPTab(copying: initial.tabs[0], title: "remote edit while offline"), initial.tabs[1]],
         )
         await first.saveAndSend(stale)
         second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
@@ -964,7 +966,7 @@ import Testing
         var first: SyncHTTPProfile? = try SyncHTTPProfile(
             fixture: fixture,
             device: account.devices[0],
-            directory: directory
+            directory: directory,
         )
         let initial = syncHTTPSnapshot()
         first?.store.saveSnapshot(initial)
@@ -977,7 +979,7 @@ import Testing
             tabs: [
                 syncHTTPTab(copying: initial.tabs[0], title: String(repeating: "lost-ack-", count: 200)),
                 initial.tabs[1],
-            ]
+            ],
         )
         try await fixture.command("drop", deviceID: account.devices[0].deviceID)
         await first?.saveAndSend(oldEdit)
@@ -991,7 +993,7 @@ import Testing
         await second.pull()
         let newer = syncHTTPSnapshot(
             spaceID: spaceID,
-            tabs: [initial.tabs[1], syncHTTPTab(copying: initial.tabs[0], title: "newer remote title")]
+            tabs: [initial.tabs[1], syncHTTPTab(copying: initial.tabs[0], title: "newer remote title")],
         )
         await second.saveAndSend(newer)
         let beforeRetry = try await fixture.inspect(account)
@@ -1002,7 +1004,7 @@ import Testing
         await second.pull()
         let afterRetry = try await fixture.inspect(account)
         let retries = afterRetry.attempts.filter { $0.mutationID == lostAttempt.mutationID }
-        let attemptsBeforeReopen = beforeRetry.attempts.filter { $0.mutationID == lostAttempt.mutationID }.count
+        let attemptsBeforeReopen = beforeRetry.attempts.count(where: { $0.mutationID == lostAttempt.mutationID })
 
         #expect(retries.count > attemptsBeforeReopen, "Reopened SQLite outbox must retry the committed mutation")
         #expect(Set(retries.map(\.digest)) == [lostAttempt.digest])
@@ -1030,13 +1032,13 @@ import Testing
         await second.activate()
         let spaceID = try #require(initial.spaces?.first?.id)
         let intermediate = syncHTTPSnapshot(
-            spaceID: spaceID, tabs: [syncHTTPTab(copying: initial.tabs[0], title: "in flight"), initial.tabs[1]]
+            spaceID: spaceID, tabs: [syncHTTPTab(copying: initial.tabs[0], title: "in flight"), initial.tabs[1]],
         )
         let latest = syncHTTPSnapshot(
             spaceID: spaceID, tabs: [
                 initial.tabs[1],
                 syncHTTPTab(copying: initial.tabs[0], title: "edited while ACK held"),
-            ]
+            ],
         )
         try await fixture.command("hold", deviceID: account.devices[0].deviceID)
         first.store.saveSnapshot(intermediate)
@@ -1073,25 +1075,25 @@ import Testing
         let historicalSpace = BrowserSpaceSessionSnapshot(
             id: UUID().uuidString,
             title: "Historical",
-            systemImageName: "clock"
+            systemImageName: "clock",
         )
         let remainingSpace = BrowserSpaceSessionSnapshot(
             id: UUID().uuidString,
             title: "Remaining",
-            systemImageName: "globe"
+            systemImageName: "globe",
         )
         let favorite = BrowserTabSessionSnapshotTab(
             id: UUID().uuidString, urlString: "https://favorite.example", userTitleOverride: "Favorite",
-            placement: .app, spaceID: historicalSpace.id
+            placement: .app, spaceID: historicalSpace.id,
         )
         let ordinaryChild = BrowserTabSessionSnapshotTab(
-            id: UUID().uuidString, urlString: "https://ordinary.example", spaceID: historicalSpace.id
+            id: UUID().uuidString, urlString: "https://ordinary.example", spaceID: historicalSpace.id,
         )
         let survivor = BrowserTabSessionSnapshotTab(
-            id: UUID().uuidString, urlString: "https://survivor.example", spaceID: remainingSpace.id
+            id: UUID().uuidString, urlString: "https://survivor.example", spaceID: remainingSpace.id,
         )
         let initial = BrowserTabSessionSnapshot(
-            spaces: [historicalSpace, remainingSpace], tabs: [favorite, ordinaryChild, survivor]
+            spaces: [historicalSpace, remainingSpace], tabs: [favorite, ordinaryChild, survivor],
         )
         first.store.saveSnapshot(initial)
         await first.activate()
@@ -1114,7 +1116,7 @@ import Testing
         try #require(remoteFavorite.spaceID == historicalSpace.id)
         let renamedFavorite = BrowserTabSessionSnapshotTab(
             id: remoteFavorite.id, urlString: remoteFavorite.urlString, userTitleOverride: "Renamed global Favorite",
-            placement: .app, spaceID: remoteFavorite.spaceID
+            placement: .app, spaceID: remoteFavorite.spaceID,
         )
         let renamed = BrowserTabSessionSnapshot(spaces: [remainingSpace], tabs: [renamedFavorite, survivor])
         await second.saveAndSend(renamed)
@@ -1133,7 +1135,7 @@ import Testing
         let finalState = try await fixture.inspect(account)
         let deletedFavorite = try #require(finalState.tabs.first { $0.id == favorite.id })
         #expect(deletedFavorite.deleted && deletedFavorite.tombstoned)
-        #expect(finalState.tabs.filter { !$0.deleted }.map(\.id) == [survivor.id].compactMap { $0 })
+        #expect(finalState.tabs.filter { !$0.deleted }.map(\.id) == [survivor.id].compactMap(\.self))
         await first.disconnect()
         await second.disconnect()
         try await fixture.complete(account)
@@ -1297,11 +1299,20 @@ struct SyncHTTPFixture: Decodable {
 // MARK: - SyncHTTPProfile
 
 @MainActor final class SyncHTTPProfile {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let store: BrowserSQLiteSessionStore
+    let service: BrowserSyncService
+    let owner: BrowserSyncOwner
+
+    // MARK: Private
+
+    private let auth: SyncHTTPAuth
+    private let urlSession: URLSession
 
     init(fixture: SyncHTTPFixture, device: SyncHTTPFixture.Device, directory: URL, databaseID: String? = nil) throws {
         let store = try BrowserSQLiteSessionStore(
-            databaseURL: directory.appendingPathComponent("\(databaseID ?? device.deviceID).sqlite")
+            databaseURL: directory.appendingPathComponent("\(databaseID ?? device.deviceID).sqlite"),
         )
         let configuration = try #require(BrowserSyncConfiguration(baseURL: fixture.baseURL))
         let urlConfiguration = URLSessionConfiguration.ephemeral
@@ -1310,7 +1321,7 @@ struct SyncHTTPFixture: Decodable {
         let urlSession = URLSession(configuration: urlConfiguration)
         let auth = SyncHTTPAuth(session: BrowserAuthSession(
             accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-            deviceID: device.deviceID, serverURL: fixture.baseURL
+            deviceID: device.deviceID, serverURL: fixture.baseURL,
         ))
         let owner = BrowserSyncOwner(baseURL: fixture.baseURL, userID: device.userID)
         try store.bindSyncOwner(owner)
@@ -1320,20 +1331,14 @@ struct SyncHTTPFixture: Decodable {
         self.auth = auth
         self.service = BrowserSyncService(
             localStore: store, remoteClient: BrowserRemoteSyncClient(configuration: configuration, session: urlSession),
-            authSessionStore: auth, pushDebounce: .zero, pollInterval: nil, retryDelay: nil
+            authSessionStore: auth, pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
         )
     }
-
-    // MARK: Internal
-
-    let store: BrowserSQLiteSessionStore
-    let service: BrowserSyncService
-    let owner: BrowserSyncOwner
 
     static func directory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent(
             "BrowserSyncHTTPTests-\(UUID().uuidString)",
-            isDirectory: true
+            isDirectory: true,
         )
     }
 
@@ -1368,23 +1373,16 @@ struct SyncHTTPFixture: Decodable {
         await suspend()
         urlSession.invalidateAndCancel()
     }
-
-    // MARK: Private
-
-    private let auth: SyncHTTPAuth
-    private let urlSession: URLSession
 }
 
 // MARK: - SyncHTTPAuth
 
 @MainActor private final class SyncHTTPAuth: BrowserSyncAuthSessionReading {
-    // MARK: Lifecycle
-
-    init(session: BrowserAuthSession) { self.session = session }
-
     // MARK: Internal
 
     let session: BrowserAuthSession
+
+    init(session: BrowserAuthSession) { self.session = session }
 
     func loadSession() -> BrowserAuthSession? { session }
 }
@@ -1399,7 +1397,7 @@ private enum SyncHTTPError: Error {
 
 private func syncHTTPSnapshot(
     spaceID: String = UUID().uuidString,
-    tabs: [BrowserTabSessionSnapshotTab]? = nil
+    tabs: [BrowserTabSessionSnapshotTab]? = nil,
 ) -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(
         spaces: [BrowserSpaceSessionSnapshot(id: spaceID, title: "HTTP integration", systemImageName: "globe")],
@@ -1407,14 +1405,14 @@ private func syncHTTPSnapshot(
             BrowserTabSessionSnapshotTab(
                 id: UUID().uuidString,
                 urlString: "https://example.test/first",
-                spaceID: spaceID
+                spaceID: spaceID,
             ),
             BrowserTabSessionSnapshotTab(
                 id: UUID().uuidString,
                 urlString: "https://example.test/second",
-                spaceID: spaceID
+                spaceID: spaceID,
             ),
-        ]
+        ],
     )
 }
 
@@ -1425,14 +1423,14 @@ private func syncHTTPTab(copying tab: BrowserTabSessionSnapshotTab, title: Strin
 private func syncHTTPSemanticSnapshot(
     title: String? = nil,
     moved: Bool = false,
-    deleted: Bool = false
+    deleted: Bool = false,
 ) -> BrowserTabSessionSnapshot {
     let moving = BrowserTabSessionSnapshotTab(
         id: "moving", urlString: "https://moving.example", userTitleOverride: title,
-        spaceID: moved ? "target" : "source"
+        spaceID: moved ? "target" : "source",
     )
     let sentinel = BrowserTabSessionSnapshotTab(
-        id: "source-sentinel", urlString: "https://source.example", spaceID: "source"
+        id: "source-sentinel", urlString: "https://source.example", spaceID: "source",
     )
     let anchor = BrowserTabSessionSnapshotTab(id: "anchor", urlString: "https://anchor.example", spaceID: "target")
     return BrowserTabSessionSnapshot(
@@ -1440,14 +1438,14 @@ private func syncHTTPSemanticSnapshot(
             BrowserSpaceSessionSnapshot(id: "source", title: "Source", systemImageName: "globe"),
             BrowserSpaceSessionSnapshot(id: "target", title: "Target", systemImageName: "star"),
         ],
-        tabs: deleted ? [sentinel, anchor] : (moved ? [sentinel, moving, anchor] : [moving, sentinel, anchor])
+        tabs: deleted ? [sentinel, anchor] : (moved ? [sentinel, moving, anchor] : [moving, sentinel, anchor]),
     )
 }
 
 private let syncHTTPModelDate = Date(timeIntervalSince1970: 1_800_000_000)
 
 private func syncHTTPExplicitSnapshot(
-    source: [String], target: [String], titles: [String: String] = [:]
+    source: [String], target: [String], titles: [String: String] = [:],
 ) -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(
         spaces: [
@@ -1457,7 +1455,7 @@ private func syncHTTPExplicitSnapshot(
                 systemImageName: "globe",
                 selectedTabIndex: source.isEmpty
                     ? nil
-                    : 0
+                    : 0,
             ),
             BrowserSpaceSessionSnapshot(
                 id: "target",
@@ -1465,15 +1463,15 @@ private func syncHTTPExplicitSnapshot(
                 systemImageName: "star",
                 selectedTabIndex: target.isEmpty
                     ? nil
-                    : 0
+                    : 0,
             ),
         ],
         tabs: [("source", source), ("target", target)].flatMap { space, ids in
             ids.map { id in BrowserTabSessionSnapshotTab(
                 id: id, urlString: "https://\(id).example", userTitleOverride: titles[id], spaceID: space,
-                lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970
+                lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970,
             ) }
-        }
+        },
     )
 }
 
@@ -1486,7 +1484,7 @@ private func syncHTTPSemanticMutation(_ queued: BrowserSyncQueuedMutation) throw
 }
 
 @MainActor private func syncHTTPCaptureActualModelDrop(
-    profile: SyncHTTPProfile, movedID: String, beforeID: String
+    profile: SyncHTTPProfile, movedID: String, beforeID: String,
 ) throws {
     let suite = "BrowserSyncHTTPModel.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
@@ -1498,7 +1496,7 @@ private func syncHTTPSemanticMutation(_ queued: BrowserSyncQueuedMutation) throw
         userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
         shortcutStore: BrowserShortcutStore(userDefaults: defaults),
         extensionManager: FakeBrowserExtensionManager(), syncCoordinator: profile.service,
-        dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {},
     )
     defer { model.prepareForTermination() }
     model.handleContextReady()
@@ -1508,11 +1506,11 @@ private func syncHTTPSemanticMutation(_ queued: BrowserSyncQueuedMutation) throw
     let selectedBefore = model.tabs.first { $0.id == model.selectedTabID }?.syncID
     #expect(model.commitSidebarDrop(
         payload: BrowserSidebarDragPayload(primary: .tab(moved.id), tabIDs: [moved.id]),
-        destination: BrowserSidebarDropDestination(container: .temporary("source"), beforeItem: .tab(anchor.id))
+        destination: BrowserSidebarDropDestination(container: .temporary("source"), beforeItem: .tab(anchor.id)),
     ))
     #expect(
         model.tabs.first { $0.id == model.selectedTabID }?.syncID == selectedBefore,
-        "The real model retains selection across a local drop"
+        "The real model retains selection across a local drop",
     )
     #expect(model.tabs.filter { $0.spaceID == "source" }.map(\.syncID) == ["b", "a", "c"])
 }
@@ -1528,7 +1526,9 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 4)
         await first.saveAndSend(syncHTTPFolderSeed())
         await first.suspend()
-        var rootID = "", nestedID = "", emptyID = ""
+        var rootID = ""
+        var nestedID = ""
+        var emptyID = ""
         try syncHTTPWithModel(first) { model in
             @MainActor func id(_ stable: String) throws
             -> String { try #require(model.tabs.first { $0.syncID == stable }?.id) }
@@ -1538,11 +1538,11 @@ extension BrowserSyncHTTPIntegrationTests {
             emptyID = try #require(model.createPinnedTabFolder(containingTabIDs: [id("d")]))
             let d = try id("d")
             #expect(model.commitSidebarDrop(
-                payload: .init(primary: .tab(d), tabIDs: [d]), destination: .init(container: .pinned("source"))
+                payload: .init(primary: .tab(d), tabIDs: [d]), destination: .init(container: .pinned("source")),
             ))
             #expect(try model.commitSidebarDrop(
                 payload: .init(primary: .folder(emptyID), tabIDs: []),
-                destination: .init(container: .pinned("source"), beforeItem: .tab(id("a")))
+                destination: .init(container: .pinned("source"), beforeItem: .tab(id("a"))),
             ))
             model.setTitle("Research", forPinnedTabFolderID: rootID)
             model.setIcon("book", forPinnedTabFolderID: rootID)
@@ -1616,7 +1616,7 @@ extension BrowserSyncHTTPIntegrationTests {
             let escaped = try #require(model.tabs.first { $0.syncID == "b" }?.id)
             #expect(model.commitSidebarDrop(
                 payload: .init(primary: .tab(escaped), tabIDs: [escaped]),
-                destination: .init(container: .pinned("source"))
+                destination: .init(container: .pinned("source")),
             ))
         }
         await second.activate()
@@ -1688,7 +1688,7 @@ private func syncHTTPFolderSeed(folder: Bool = false) -> BrowserTabSessionSnapsh
             id: id, urlString: "https://\(id).example", pinnedURLString: "https://\(id).example",
             placement: .spacePinned, spaceID: "source",
             pinnedFolderID: folder && ["b", "c"].contains(id) ? "root" : nil,
-            lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970
+            lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970,
         )
     }
     return BrowserTabSessionSnapshot(
@@ -1702,14 +1702,14 @@ private func syncHTTPFolderSeed(folder: Bool = false) -> BrowserTabSessionSnapsh
             urlString: "https://favorite.example",
             placement: .app,
             spaceID: "source",
-            lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970
-        )] + urls
+            lastActivityTimestamp: syncHTTPModelDate.timeIntervalSince1970,
+        )] + urls,
     )
 }
 
 @MainActor private func syncHTTPWithModel(
     _ profile: SyncHTTPProfile,
-    body: (BrowserChromeModel) throws -> Void
+    body: (BrowserChromeModel) throws -> Void,
 ) throws {
     let suite = "BrowserSyncHTTPFolderModel.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
@@ -1721,7 +1721,7 @@ private func syncHTTPFolderSeed(folder: Bool = false) -> BrowserTabSessionSnapsh
         userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
         shortcutStore: BrowserShortcutStore(userDefaults: defaults), extensionManager: FakeBrowserExtensionManager(),
         syncCoordinator: profile.service, dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in },
-        allTabsClosedHandler: {}
+        allTabsClosedHandler: {},
     )
     defer { model.prepareForTermination() }
     model.handleContextReady()
@@ -1754,11 +1754,13 @@ extension BrowserSyncHTTPIntegrationTests {
         func queueBytes() throws -> [Data] {
             try firstDatabase.read { try Data.fetchAll(
                 $0,
-                sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"
+                sql: "SELECT payload FROM browser_sync_outbox ORDER BY position",
             ) }
         }
         let initialTime: TimeInterval = 1_800_000_000
-        let oldTime = initialTime + 100, remoteTime = initialTime + 200, newestTime = initialTime + 300
+        let oldTime = initialTime + 100
+        let remoteTime = initialTime + 200
+        let newestTime = initialTime + 300
         await first.activate()
         await first.saveAndSend(syncHTTPActivitySnapshot(activity: initialTime))
         let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
@@ -1770,8 +1772,8 @@ extension BrowserSyncHTTPIntegrationTests {
         let oldMutation = try syncHTTPFolderMutation(frozen[0])
         #expect(oldMutation.operations == [.patchTab(
             id: "moving", fields: .init(lastActivityAt: .set(
-                ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: oldTime))
-            ))
+                ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: oldTime)),
+            )),
         )])
         let frozenBytes = try queueBytes()
         try #require(frozenBytes.count == 1)
@@ -1799,7 +1801,7 @@ extension BrowserSyncHTTPIntegrationTests {
         await second.pull()
         #expect(
             second.store.loadSnapshot()?.tabs.first { $0.id == "moving" }?.lastActivityTimestamp == remoteTime,
-            "The event for the older committed patch must publish the SQL maximum, not its input"
+            "The event for the older committed patch must publish the SQL maximum, not its input",
         )
         let newest = syncHTTPActivitySnapshot(activity: newestTime, title: "After lost ACK", moved: false)
         await second.saveAndSend(newest)
@@ -1813,7 +1815,7 @@ extension BrowserSyncHTTPIntegrationTests {
         await second.pull()
         let afterRetry = try await fixture.inspect(account)
         let attempts = afterRetry.attempts.filter { $0.mutationID == oldMutation.id }
-        #expect(attempts.count > beforeRetry.attempts.filter { $0.mutationID == oldMutation.id }.count)
+        #expect(attempts.count > beforeRetry.attempts.count(where: { $0.mutationID == oldMutation.id }))
         #expect(Set(attempts.map(\.digest)) == [originalAttempt.digest])
         #expect(attempts.allSatisfy { $0.protocolVersion == 4 && $0.status == 201 })
         #expect(afterRetry.eventCount == beforeRetry.eventCount && afterRetry.receiptCount == beforeRetry.receiptCount)
@@ -1884,7 +1886,7 @@ extension BrowserSyncHTTPIntegrationTests {
             userID: device.userID,
             userEmail: nil,
             deviceID: device.deviceID,
-            serverURL: fixture.baseURL
+            serverURL: fixture.baseURL,
         )
         // A long genuine history, rather than fabricated pages, forces the
         // production server and coordinator across their 500-event boundary.
@@ -1992,7 +1994,7 @@ extension BrowserSyncHTTPIntegrationTests {
             fixture: fixture,
             device: rotated,
             directory: directory,
-            databaseID: account.devices[0].deviceID
+            databaseID: account.devices[0].deviceID,
         )
         #expect(try reopened.store.syncPullProtocolVersion(for: reopened.owner) == 4)
         #expect(try reopened.store.pendingSyncQueue(for: reopened.owner) == frozen)
@@ -2046,13 +2048,13 @@ extension BrowserSyncHTTPIntegrationTests {
         let moved = try syncHTTPFolderMutation(movedQueue[0])
         #expect(moved.operations == [.move(
             items: [.init(entityType: .folder, entityID: "root")],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         )])
         let movedSnapshot = try #require(second.store.loadSnapshot())
         #expect(movedSnapshot.tabs
             .filter { ["b", "c"].contains($0.id ?? "") }
             .allSatisfy { $0.spaceID == "target" && $0.pinnedFolderID == "root" })
-        #expect(movedSnapshot.tabs.filter { ["b", "c"].contains($0.id ?? "") }.count == 2)
+        #expect(movedSnapshot.tabs.count(where: { ["b", "c"].contains($0.id ?? "") }) == 2)
         #expect(model.model.deletePinnedTabFolder(id: "root"))
         let frozen = try second.store.pendingSyncQueue(for: second.owner)
         try #require(frozen.count == 2)
@@ -2068,7 +2070,7 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(model.model.tabs.contains { $0.syncID == "favorite" })
         #expect(try second.store.pendingSyncQueue(for: second.owner) == frozen)
         #expect(childRequests.allSatisfy { request in
-            model.driver.closedTabRequests.filter { $0.id == request.id && $0.forceClose }.count >= 2
+            model.driver.closedTabRequests.count(where: { $0.id == request.id && $0.forceClose }) >= 2
         })
         await second.activate()
         await first.pull()
@@ -2097,14 +2099,14 @@ extension BrowserSyncHTTPIntegrationTests {
 }
 
 private func syncHTTPActivitySnapshot(
-    activity: TimeInterval, title: String? = nil, moved: Bool = false, deleted: Bool = false
+    activity: TimeInterval, title: String? = nil, moved: Bool = false, deleted: Bool = false,
 ) -> BrowserTabSessionSnapshot {
     let snapshot = syncHTTPSemanticSnapshot(title: title, moved: moved, deleted: deleted)
     return BrowserTabSessionSnapshot(spaces: snapshot.spaces, tabs: snapshot.tabs.map { tab in
         guard tab.id == "moving" else { return tab }
         return BrowserTabSessionSnapshotTab(
             id: tab.id, urlString: tab.urlString, userTitleOverride: tab.userTitleOverride,
-            placement: tab.placement, spaceID: tab.spaceID, lastActivityTimestamp: activity
+            placement: tab.placement, spaceID: tab.spaceID, lastActivityTimestamp: activity,
         )
     })
 }
@@ -2118,7 +2120,16 @@ private func syncHTTPActivityDate(_ timestamp: TimeInterval) -> String {
 // MARK: - SyncHTTPModelHarness
 
 @MainActor private final class SyncHTTPModelHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let driver = FakeBrowserTabDriver()
+    let model: BrowserChromeModel
+
+    // MARK: Private
+
+    private let defaults: UserDefaults
+    private let suite = "BrowserSyncHTTPModelHarness.\(UUID())"
+    private var closed = false
 
     init(profile: SyncHTTPProfile) throws {
         self.defaults = try #require(UserDefaults(suiteName: suite))
@@ -2129,17 +2140,12 @@ private func syncHTTPActivityDate(_ timestamp: TimeInterval) -> String {
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(),
             syncCoordinator: profile.service, dateProvider: { syncHTTPModelDate }, windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
         model.selectSpace(id: "source")
     }
-
-    // MARK: Internal
-
-    let driver = FakeBrowserTabDriver()
-    let model: BrowserChromeModel
 
     func close() {
         guard !closed else { return }
@@ -2147,12 +2153,6 @@ private func syncHTTPActivityDate(_ timestamp: TimeInterval) -> String {
         model.prepareForTermination()
         defaults.removePersistentDomain(forName: suite)
     }
-
-    // MARK: Private
-
-    private let defaults: UserDefaults
-    private let suite = "BrowserSyncHTTPModelHarness.\(UUID())"
-    private var closed = false
 }
 
 // MARK: - SyncHTTPProjectionRecorder

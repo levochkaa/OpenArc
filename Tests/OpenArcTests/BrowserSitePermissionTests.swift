@@ -1,3 +1,5 @@
+// BrowserSitePermissionTests.swift
+
 import AppKit
 import Foundation
 import Testing
@@ -5,13 +7,22 @@ import Testing
 // MARK: - SitePermissionFixture
 
 @MainActor private final class SitePermissionFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let suite: String
+    let defaults: UserDefaults
+    let driver: FakeBrowserTabDriver
+    let model: BrowserChromeModel
+
+    var selectedTabID: String {
+        model.selectedTabID ?? ""
+    }
 
     /// Windows of one app share `store`, as they share the app's.
     init(
         mode: BrowserWindowMode = .normal,
         defaults existing: UserDefaults? = nil,
-        store: BrowserUserPreferencesStore? = nil
+        store: BrowserUserPreferencesStore? = nil,
     ) throws {
         let suite = "BrowserSitePermissionTests.\(UUID().uuidString)"
         self.suite = suite
@@ -29,7 +40,7 @@ import Testing
             extensionManager: FakeBrowserExtensionManager(),
             windowMode: mode,
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         // macOS has already let OpenArc use the camera, microphone and location.
         model.requestSystemMediaCaptureAuthorization = { _, completion in completion(true) }
@@ -40,30 +51,19 @@ import Testing
         driver.flushPendingCreateEvents()
     }
 
-    // MARK: Internal
-
-    let suite: String
-    let defaults: UserDefaults
-    let driver: FakeBrowserTabDriver
-    let model: BrowserChromeModel
-
-    var selectedTabID: String {
-        model.selectedTabID ?? ""
-    }
-
     func request(
         _ id: Int,
         tabID: String? = nil,
         origin: String = "https://meet.google.com",
         kinds: [BrowserSitePermissionKind] = [.camera, .microphone],
-        media: Bool = true
+        media: Bool = true,
     ) {
         driver.onSitePermissionRequested?(BrowserSitePermissionRequest(
             id: id,
             tabID: tabID ?? selectedTabID,
             origin: origin,
             kinds: kinds,
-            isMediaAccess: media
+            isMediaAccess: media,
         ))
     }
 
@@ -121,10 +121,10 @@ import Testing
             tabID: "t",
             origin: "https://zoom.us",
             kinds: [.camera],
-            isMediaAccess: true
+            isMediaAccess: true,
         ),
         profileID: "another-profile",
-        in: fixture.model.userPreferencesStore.sitePermissionDecisions
+        in: fixture.model.userPreferencesStore.sitePermissionDecisions,
     )
     #expect(other == nil)
 }
@@ -138,7 +138,7 @@ import Testing
     let incognito = try SitePermissionFixture(
         mode: .incognito,
         defaults: normal.defaults,
-        store: normal.model.userPreferencesStore
+        store: normal.model.userPreferencesStore,
     )
     defer { incognito.cleanup(removingDefaults: false) }
     incognito.request(1)
@@ -333,7 +333,7 @@ import Testing
         tabID: "t",
         origin: "https://meet.google.com:8443/",
         kinds: [.camera],
-        isMediaAccess: true
+        isMediaAccess: true,
     )
     #expect(request.displayOrigin == "meet.google.com:8443")
 }
@@ -349,7 +349,7 @@ import Testing
         isContextReady: true,
         hasSelectedTab: true,
         isSidebarVisible: true,
-        usesWindowContentInsets: true
+        usesWindowContentInsets: true,
     )
     #expect(content.permissionPrompt.isHidden)
 

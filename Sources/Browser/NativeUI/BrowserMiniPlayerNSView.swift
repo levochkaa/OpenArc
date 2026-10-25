@@ -1,3 +1,5 @@
+// BrowserMiniPlayerNSView.swift
+
 import AppKit
 
 // MARK: - BrowserMiniPlayerNSView
@@ -7,7 +9,71 @@ import AppKit
 /// next track and mute. On hover it grows upward by a row with the title and
 /// Close.
 final class BrowserMiniPlayerNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    enum Action: Equatable { case backToTab, previousTrack, playPause, nextTrack, toggleMute, close }
+
+    override var isFlipped: Bool { true }
+
+    var onAction: (Action) -> Void = { _ in }
+    /// The pointer entered or left; the stack grows the player upward.
+    var onExpansionChange: () -> Void = {}
+
+    private(set) var item: BrowserMiniPlayerItem?
+    private(set) var isExpanded = false
+
+    // MARK: Private
+
+    private let material = NSVisualEffectView()
+    private let outline = BrowserNativeSurface()
+    private let titleLabel = BrowserNativeControls.label(
+        "",
+        size: 12,
+        weight: .medium,
+        color: BrowserChromeColors.primaryText,
+    )
+    private let tabButton = BrowserNativePressableView()
+    private let favicon = BrowserFaviconNSView()
+    private let previousButton = BrowserNativeChromeButton(
+        symbol: "backward.end.fill",
+        title: BrowserStrings.miniPlayerPreviousTrack,
+        style: .miniPlayer,
+        pressEffect: .left,
+        action: {},
+    )
+    private let playButton = BrowserNativeChromeButton(
+        symbol: "pause.fill",
+        title: BrowserStrings.miniPlayerPause,
+        style: .miniPlayer,
+        pressEffect: .compress,
+        action: {},
+    )
+    private let nextButton = BrowserNativeChromeButton(
+        symbol: "forward.end.fill",
+        title: BrowserStrings.miniPlayerNextTrack,
+        style: .miniPlayer,
+        pressEffect: .right,
+        action: {},
+    )
+    private let muteButton = BrowserNativeChromeButton(
+        symbol: "speaker.wave.2.fill",
+        title: BrowserStrings.tabMuteAction,
+        style: .miniPlayer,
+        pressEffect: .compress,
+        action: {},
+    )
+    private let closeButton = BrowserNativeChromeButton(
+        symbol: "xmark",
+        title: BrowserStrings.miniPlayerClose,
+        style: .sidebarClose,
+        action: {},
+    )
+    private var tracking: NSTrackingArea?
+    private var collapseWork: DispatchWorkItem?
+
+    var preferredHeight: CGFloat {
+        isExpanded ? BrowserChromeLayout.sidebarMiniPlayerExpandedHeight : BrowserChromeLayout.sidebarMiniPlayerHeight
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -67,23 +133,6 @@ final class BrowserMiniPlayerNSView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    enum Action: Equatable { case backToTab, previousTrack, playPause, nextTrack, toggleMute, close }
-
-    override var isFlipped: Bool { true }
-
-    var onAction: (Action) -> Void = { _ in }
-    /// The pointer entered or left; the stack grows the player upward.
-    var onExpansionChange: () -> Void = {}
-
-    private(set) var item: BrowserMiniPlayerItem?
-    private(set) var isExpanded = false
-
-    var preferredHeight: CGFloat {
-        isExpanded ? BrowserChromeLayout.sidebarMiniPlayerExpandedHeight : BrowserChromeLayout.sidebarMiniPlayerHeight
-    }
-
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking {
@@ -92,7 +141,7 @@ final class BrowserMiniPlayerNSView: NSView {
         let area = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self
+            owner: self,
         )
         addTrackingArea(area)
         tracking = area
@@ -129,7 +178,7 @@ final class BrowserMiniPlayerNSView: NSView {
             x: inset + 4,
             y: titleRowY + (size - 16) / 2,
             width: max(closeButton.frame.minX - inset - 8, 0),
-            height: 16
+            height: 16,
         )
     }
 
@@ -142,11 +191,11 @@ final class BrowserMiniPlayerNSView: NSView {
         favicon.update(url: item.faviconURL, pageURLString: item.pageURLString)
         playButton.configureSymbol(
             item.isPlaying ? "pause.fill" : "play.fill",
-            title: item.isPlaying ? BrowserStrings.miniPlayerPause : BrowserStrings.miniPlayerPlay
+            title: item.isPlaying ? BrowserStrings.miniPlayerPause : BrowserStrings.miniPlayerPlay,
         )
         muteButton.configureSymbol(
             item.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-            title: item.isMuted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction
+            title: item.isMuted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction,
         )
         previousButton.isEnabled = item.hasPreviousTrack
         nextButton.isEnabled = item.hasNextTrack
@@ -162,55 +211,6 @@ final class BrowserMiniPlayerNSView: NSView {
         needsLayout = true
         onExpansionChange()
     }
-
-    // MARK: Private
-
-    private let material = NSVisualEffectView()
-    private let outline = BrowserNativeSurface()
-    private let titleLabel = BrowserNativeControls.label(
-        "",
-        size: 12,
-        weight: .medium,
-        color: BrowserChromeColors.primaryText
-    )
-    private let tabButton = BrowserNativePressableView()
-    private let favicon = BrowserFaviconNSView()
-    private let previousButton = BrowserNativeChromeButton(
-        symbol: "backward.end.fill",
-        title: BrowserStrings.miniPlayerPreviousTrack,
-        style: .miniPlayer,
-        pressEffect: .left,
-        action: {}
-    )
-    private let playButton = BrowserNativeChromeButton(
-        symbol: "pause.fill",
-        title: BrowserStrings.miniPlayerPause,
-        style: .miniPlayer,
-        pressEffect: .compress,
-        action: {}
-    )
-    private let nextButton = BrowserNativeChromeButton(
-        symbol: "forward.end.fill",
-        title: BrowserStrings.miniPlayerNextTrack,
-        style: .miniPlayer,
-        pressEffect: .right,
-        action: {}
-    )
-    private let muteButton = BrowserNativeChromeButton(
-        symbol: "speaker.wave.2.fill",
-        title: BrowserStrings.tabMuteAction,
-        style: .miniPlayer,
-        pressEffect: .compress,
-        action: {}
-    )
-    private let closeButton = BrowserNativeChromeButton(
-        symbol: "xmark",
-        title: BrowserStrings.miniPlayerClose,
-        style: .sidebarClose,
-        action: {}
-    )
-    private var tracking: NSTrackingArea?
-    private var collapseWork: DispatchWorkItem?
 }
 
 // MARK: - BrowserMiniPlayerStackNSView
@@ -228,6 +228,10 @@ final class BrowserMiniPlayerStackNSView: NSView {
     var onHeightChange: () -> Void = {}
 
     private(set) var players = [BrowserMiniPlayerNSView]()
+
+    // MARK: Private
+
+    private var items = [BrowserMiniPlayerItem]()
 
     /// Room the list leaves, from the collapsed players.
     var reservedHeight: CGFloat {
@@ -276,10 +280,6 @@ final class BrowserMiniPlayerStackNSView: NSView {
         needsLayout = true
         onHeightChange()
     }
-
-    // MARK: Private
-
-    private var items = [BrowserMiniPlayerItem]()
 
     private func makePlayer() -> BrowserMiniPlayerNSView {
         let player = BrowserMiniPlayerNSView()

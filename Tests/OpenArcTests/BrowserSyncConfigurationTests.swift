@@ -1,3 +1,5 @@
+// BrowserSyncConfigurationTests.swift
+
 import Foundation
 import Testing
 
@@ -46,7 +48,7 @@ import Testing
 @Test func legacyAuthSessionDecodesWithoutIssuerButCannotAuthorizeSync() throws {
     let legacy = Data(
         #"{"accessToken":"legacy-token","userID":"user-1","deviceID":"device-1","userEmail":"user@example.test"}"#
-            .utf8
+            .utf8,
     )
     let session = try JSONDecoder().decode(BrowserAuthSession.self, from: legacy)
     #expect(session.accessToken == "legacy-token")
@@ -62,7 +64,7 @@ import Testing
         userID: "user-1",
         userEmail: nil,
         deviceID: "device-1",
-        serverURL: syncConfigurationFixtureURL("HTTPS://SYNC.EXAMPLE:443/")
+        serverURL: syncConfigurationFixtureURL("HTTPS://SYNC.EXAMPLE:443/"),
     )
     let restored = try JSONDecoder().decode(BrowserAuthSession.self, from: JSONEncoder().encode(session))
     #expect(restored == session)
@@ -81,7 +83,7 @@ import Testing
         userID: "user-1",
         userEmail: nil,
         deviceID: "device-1",
-        serverURL: syncConfigurationFixtureURL("https://sync.example")
+        serverURL: syncConfigurationFixtureURL("https://sync.example"),
     )
     #expect(!session.belongs(to: syncConfigurationFixtureURL(endpoint)))
 }

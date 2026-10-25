@@ -1,3 +1,5 @@
+// BrowserMobileAutomaticArchivalTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import GRDB
@@ -50,7 +52,7 @@ import UIKit
             scenes.setActive(true, for: second)
             #expect(
                 f.document.expirySchedulingState()?.protectedTabIDs == ["a"],
-                "Stale connections cannot restore a lease"
+                "Stale connections cannot restore a lease",
             )
             scenes.disconnect(first)
             #expect(f.document.expirySchedulingState() == nil)
@@ -60,10 +62,11 @@ import UIKit
 
     @Test(arguments: [AutomaticArchiveBinding.local, .bound, .paused, .signedOut])
     func localSweepNeverBypassesDurableBindingAndProtectsUnknownFutureAndSelectedTabs(
-        binding: AutomaticArchiveBinding
+        binding: AutomaticArchiveBinding,
     ) async throws {
         try await withAutomaticArchiveFixture(binding: binding) { f in
-            let firstEngine = AutomaticArchiveEngine(), secondEngine = AutomaticArchiveEngine()
+            let firstEngine = AutomaticArchiveEngine()
+            let secondEngine = AutomaticArchiveEngine()
             let first = await f.workspace("first", engine: firstEngine)
             let second = await f.workspace("second", engine: secondEngine)
             first.selectTab(id: "a")
@@ -117,7 +120,7 @@ import UIKit
             #expect(f.document.setAutomaticTabArchival(lifetime: .twelveHours))
             try f
                 .sql(
-                    "CREATE TRIGGER fail_auto_archive BEFORE INSERT ON browser_tab_archive BEGIN SELECT RAISE(ABORT,'injected'); END"
+                    "CREATE TRIGGER fail_auto_archive BEFORE INSERT ON browser_tab_archive BEGIN SELECT RAISE(ABORT,'injected'); END",
                 )
             f.document.performAutomaticTabArchivalCheck()
             #expect(f.document.hasUncommittedWrites && f.document.expirySchedulingState() == nil)
@@ -145,7 +148,7 @@ import UIKit
             f.clock.now += 600
             try f
                 .sql(
-                    "CREATE TRIGGER fail_auto_activity BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT,'injected'); END"
+                    "CREATE TRIGGER fail_auto_activity BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT,'injected'); END",
                 )
             #expect(!f.document.refreshExpiryActivity())
             #expect(f.document.hasUncommittedWrites && f.document.expirySchedulingState() == nil)
@@ -189,7 +192,7 @@ extension BrowserMobileUITests {
             #expect(automaticArchiveSelectedMenuID(button) == "browser.archive.timing.3d")
             try f
                 .sql(
-                    "CREATE TRIGGER fail_auto_settings BEFORE INSERT ON browser_preferences BEGIN SELECT RAISE(ABORT,'injected'); END"
+                    "CREATE TRIGGER fail_auto_settings BEFORE INSERT ON browser_preferences BEGIN SELECT RAISE(ABORT,'injected'); END",
                 )
             archive.chooseAutomaticArchival(.twelveHours)
             #expect(workspace.automaticTabArchivalError != nil)
@@ -223,7 +226,16 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
 // MARK: - AutomaticArchiveFixture
 
 @MainActor private final class AutomaticArchiveFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let store: BrowserSQLiteSessionStore
+    let document: BrowserMobileProfileDocument
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://autoarchive.example")!, userID: "user")
+    let preferencesName = "AutomaticArchive." + UUID().uuidString
+    let preferences: UserDefaults
+    let clock = AutomaticArchiveClock()
+    var workspaces = [BrowserMobileWorkspace]()
 
     init(directory: URL, binding: AutomaticArchiveBinding) throws {
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
@@ -235,7 +247,7 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
                 Self.tab("a"), Self.tab("b"), Self.tab("c"), Self.tab("unknown", activity: nil),
                 Self.tab("future", activity: 2_000_000), Self.tab("pin", placement: .spacePinned),
                 Self.tab("favorite", placement: .app),
-            ]
+            ],
         )
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
         if binding != .local {
@@ -252,7 +264,7 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
                 object["createdAt"] = "2026-10-03T00:00:00Z"
                 return try JSONDecoder().decode(
                     BrowserSyncEvent.self,
-                    from: JSONSerialization.data(withJSONObject: object)
+                    from: JSONSerialization.data(withJSONObject: object),
                 )
             }
             _ = try store.completeExpirySyncBootstrap(events: events, cursor: events.count, for: owner)
@@ -267,45 +279,34 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
         self.document = try BrowserMobileProfileDocument(
             store: store, initialSnapshot: store.loadSnapshotStrict(),
             dateProvider: { Date(timeIntervalSince1970: clock.now) },
-            automaticArchivalCheckInterval: nil
+            automaticArchivalCheckInterval: nil,
         )
     }
-
-    // MARK: Internal
-
-    let databaseURL: URL
-    let store: BrowserSQLiteSessionStore
-    let document: BrowserMobileProfileDocument
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://autoarchive.example")!, userID: "user")
-    let preferencesName = "AutomaticArchive." + UUID().uuidString
-    let preferences: UserDefaults
-    let clock = AutomaticArchiveClock()
-    var workspaces = [BrowserMobileWorkspace]()
 
     static func tab(
         _ id: String,
         activity: TimeInterval? = 0,
-        placement: BrowserTabPlacement = .temporary
+        placement: BrowserTabPlacement = .temporary,
     ) -> BrowserTabSessionSnapshotTab {
         .init(
             id: id,
             urlString: "https://autoarchive.example/" + id,
             placement: placement,
             spaceID: "work",
-            lastActivityTimestamp: activity
+            lastActivityTimestamp: activity,
         )
     }
 
     func makeWorkspace(
         _ id: String, engine: AutomaticArchiveEngine,
-        loader: (@MainActor () async throws -> BrowserMobileProfileDocument)? = nil
+        loader: (@MainActor () async throws -> BrowserMobileProfileDocument)? = nil,
     ) -> BrowserMobileWorkspace {
         let document = document
         let workspace = BrowserMobileWorkspace(
             engine: engine,
             sceneID: id,
             profileLoader: loader ?? { document },
-            preferences: preferences
+            preferences: preferences,
         )
         workspaces.append(workspace)
         return workspace
@@ -321,7 +322,7 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
     func rows() throws -> [Data] {
         try DatabaseQueue(path: databaseURL.path).read { try Data.fetchAll(
             $0,
-            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"
+            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position",
         ) }
     }
 
@@ -366,16 +367,16 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
 
     var isWaiting = false
 
+    // MARK: Private
+
+    private var continuation: CheckedContinuation<Void, Never>?
+
     func wait() async { await withCheckedContinuation { continuation = $0
         isWaiting = true
     } }
     func release() { continuation?.resume()
         continuation = nil
     }
-
-    // MARK: Private
-
-    private var continuation: CheckedContinuation<Void, Never>?
 }
 
 @MainActor private func automaticArchiveSelectedMenuID(_ button: UIBarButtonItem) -> String? {
@@ -398,7 +399,7 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
 }
 
 @MainActor private func withAutomaticArchiveFixture(
-    binding: AutomaticArchiveBinding = .local, _ body: (AutomaticArchiveFixture) async throws -> Void
+    binding: AutomaticArchiveBinding = .local, _ body: (AutomaticArchiveFixture) async throws -> Void,
 ) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("AutomaticArchive-\(UUID())")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -406,12 +407,14 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
 }
 
 @MainActor private func runAutomaticArchiveFixture(
-    directory: URL, binding: AutomaticArchiveBinding, _ body: (AutomaticArchiveFixture) async throws -> Void
+    directory: URL, binding: AutomaticArchiveBinding, _ body: (AutomaticArchiveFixture) async throws -> Void,
 ) async throws {
     let fixture = try AutomaticArchiveFixture(directory: directory, binding: binding)
-    do { try await body(fixture)
+    do {
+        try await body(fixture)
         await fixture.stop()
-    } catch { await fixture.stop()
+    } catch {
+        await fixture.stop()
         throw error
     }
 }

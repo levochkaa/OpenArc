@@ -1,3 +1,5 @@
+// BrowserAccountStoreTests.swift
+
 import Foundation
 import Testing
 
@@ -8,7 +10,8 @@ import Testing
     @Test(arguments: [false, true])
     func cancellingOldSignInDoesNotFinishOrPublishOverTheNextAttempt(serverDispatched: Bool) async {
         let f = AccountStoreFixture()
-        let oldGate = AccountTestGate(), newGate = AccountTestGate()
+        let oldGate = AccountTestGate()
+        let newGate = AccountTestGate()
         if serverDispatched {
             f.remote.release = oldGate
         } else {
@@ -199,7 +202,7 @@ import Testing
         #expect(f.store.bindingState == .paused)
         #expect(f.sync.resumedSessions.isEmpty)
         #expect(f.sync.enabledSessions.isEmpty)
-        #expect(f.sync.sessionChanges.compactMap { $0 }.isEmpty)
+        #expect(f.sync.sessionChanges.compactMap(\.self).isEmpty)
         #expect(f.identity.requests == 0 && f.remote.tokens.isEmpty)
     }
 
@@ -213,7 +216,7 @@ import Testing
             #expect(f.store.session == nil)
             #expect(f.sync.enabledSessions.isEmpty)
             #expect(f.sync.resumedSessions.isEmpty)
-            #expect(f.sync.sessionChanges.compactMap { $0 }.isEmpty)
+            #expect(f.sync.sessionChanges.compactMap(\.self).isEmpty)
             #expect(f.auth.saved.isEmpty)
         }
     }
@@ -226,7 +229,7 @@ import Testing
             authSessionStore: AccountTestAuthStorage(),
             syncCoordinator: nil,
             appleSignInService: identity,
-            deviceIdentity: .init(name: "Test Mac", platform: "macOS")
+            deviceIdentity: .init(name: "Test Mac", platform: "macOS"),
         )
 
         #expect(!store.isConfigured)
@@ -245,7 +248,7 @@ import Testing
         #expect(f.store.session == nil)
         #expect(f.auth.session == nil)
         #expect(f.store.lastError != nil)
-        #expect(f.sync.sessionChanges.compactMap { $0 }.isEmpty)
+        #expect(f.sync.sessionChanges.compactMap(\.self).isEmpty)
         #expect(f.sync.enabledSessions.isEmpty)
     }
 
@@ -256,7 +259,7 @@ import Testing
 
         #expect(f.store.session == nil)
         #expect(f.auth.saved.isEmpty)
-        #expect(f.sync.sessionChanges.compactMap { $0 }.isEmpty)
+        #expect(f.sync.sessionChanges.compactMap(\.self).isEmpty)
         #expect(f.store.lastError != nil)
     }
 }
@@ -264,12 +267,18 @@ import Testing
 // MARK: - AccountStoreFixture
 
 @MainActor private final class AccountStoreFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let identity = AccountTestIdentity()
+    let remote = AccountTestAuthenticator()
+    let auth = AccountTestAuthStorage()
+    let sync = AccountTestSyncController()
+    let store: BrowserAccountStore
 
     init(
         binding: BrowserSyncBindingState = .needsConsent,
         cachedSession: BrowserAuthSession? = nil,
-        deviceIdentity: BrowserSyncDeviceIdentity = .init(name: "Test Mac", platform: "macOS")
+        deviceIdentity: BrowserSyncDeviceIdentity = .init(name: "Test Mac", platform: "macOS"),
     ) {
         auth.session = cachedSession
         sync.state = binding
@@ -278,17 +287,9 @@ import Testing
             authSessionStore: auth,
             syncCoordinator: sync,
             appleSignInService: identity,
-            deviceIdentity: deviceIdentity
+            deviceIdentity: deviceIdentity,
         )
     }
-
-    // MARK: Internal
-
-    let identity = AccountTestIdentity()
-    let remote = AccountTestAuthenticator()
-    let auth = AccountTestAuthStorage()
-    let sync = AccountTestSyncController()
-    let store: BrowserAccountStore
 }
 
 // MARK: - AccountTestIdentity
@@ -319,7 +320,7 @@ import Testing
     func authenticateWithApple(
         identityToken: String,
         deviceName: String,
-        devicePlatform: String
+        devicePlatform: String,
     ) async -> BrowserAuthSession {
         tokens.append(identityToken)
         deviceIdentities.append(.init(name: deviceName, platform: devicePlatform))
@@ -420,6 +421,11 @@ import Testing
 // MARK: - AccountTestGate
 
 @MainActor private final class AccountTestGate {
+    // MARK: Private
+
+    private var isOpen = false
+    private var waiters = [CheckedContinuation<Void, Never>]()
+
     // MARK: Internal
 
     func wait() async {
@@ -435,11 +441,6 @@ import Testing
             waiter.resume()
         }
     }
-
-    // MARK: Private
-
-    private var isOpen = false
-    private var waiters = [CheckedContinuation<Void, Never>]()
 }
 
 // MARK: - AccountTestError
@@ -452,7 +453,7 @@ private func accountSession(serverURL: URL? = URL(string: "https://sync.example"
         userID: "account-a",
         userEmail: "a@example.test",
         deviceID: "device-a",
-        serverURL: serverURL
+        serverURL: serverURL,
     )
 }
 

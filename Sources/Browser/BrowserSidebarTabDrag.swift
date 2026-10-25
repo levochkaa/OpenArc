@@ -1,3 +1,5 @@
+// BrowserSidebarTabDrag.swift
+
 import CoreGraphics
 
 // MARK: - BrowserSidebarTabSection
@@ -67,8 +69,8 @@ struct BrowserSidebarAppTabGridLayout: Equatable {
                         x: CGFloat(columnIndex) * (itemWidth + spacing),
                         y: y,
                         width: itemWidth,
-                        height: baseTileSide
-                    )
+                        height: baseTileSide,
+                    ),
                 )
             }
 

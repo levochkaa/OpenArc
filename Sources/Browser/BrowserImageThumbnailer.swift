@@ -1,3 +1,5 @@
+// BrowserImageThumbnailer.swift
+
 import AppKit
 import ImageIO
 
@@ -91,7 +93,7 @@ enum BrowserImageThumbnailer {
 
         let targetSize = CGSize(
             width: floor(image.size.width * scale),
-            height: floor(image.size.height * scale)
+            height: floor(image.size.height * scale),
         )
         return renderedImage(image, canvasSize: targetSize, drawRect: CGRect(origin: .zero, size: targetSize))
     }
@@ -111,7 +113,7 @@ enum BrowserImageThumbnailer {
             x: (targetSize.width - drawSize.width) / 2,
             y: (targetSize.height - drawSize.height) / 2,
             width: drawSize.width,
-            height: drawSize.height
+            height: drawSize.height,
         )
 
         return renderedImage(image, canvasSize: targetSize, drawRect: drawRect)
@@ -129,7 +131,7 @@ enum BrowserImageThumbnailer {
 
         let targetSize = CGSize(
             width: floor(image.size.width * scale),
-            height: floor(image.size.height * scale)
+            height: floor(image.size.height * scale),
         )
         return renderedImage(image, canvasSize: targetSize, drawRect: CGRect(origin: .zero, size: targetSize))
     }
@@ -149,7 +151,7 @@ enum BrowserImageThumbnailer {
                 isPlanar: false,
                 colorSpaceName: .deviceRGB,
                 bytesPerRow: 0,
-                bitsPerPixel: 0
+                bitsPerPixel: 0,
             ),
             let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap)
         else {
@@ -207,7 +209,7 @@ enum BrowserImageThumbnailer {
             return CGImageSourceCreateImageAtIndex(
                 imageSource,
                 0,
-                [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+                [kCGImageSourceShouldCacheImmediately: true] as CFDictionary,
             )
         }
 
@@ -227,7 +229,7 @@ enum BrowserImageThumbnailer {
 
         return NSImage(
             cgImage: cgImage,
-            size: CGSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+            size: CGSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height)),
         )
     }
 
@@ -249,7 +251,7 @@ enum BrowserImageThumbnailer {
                 in: drawRect,
                 from: CGRect(origin: .zero, size: image.size),
                 operation: .copy,
-                fraction: 1
+                fraction: 1,
             )
             return true
         }

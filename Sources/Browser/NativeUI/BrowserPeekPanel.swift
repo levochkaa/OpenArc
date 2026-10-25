@@ -1,3 +1,5 @@
+// BrowserPeekPanel.swift
+
 import AppKit
 
 // MARK: - BrowserPeekPanel
@@ -9,7 +11,66 @@ import AppKit
 /// field (`⌘L`). `⌘O` opens either as a tab. The engine puts its page in
 /// `hostView`.
 @objc final class BrowserPeekPanel: NSPanel, NSTextFieldDelegate, NSMenuDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    static let barHeight: CGFloat = 36
+    static let cornerRadius: CGFloat = 12
+    /// The card covers this share of the window and leaves the page
+    /// visible around it.
+    static let windowFraction: CGFloat = 0.84
+
+    override var canBecomeKey: Bool { true }
+
+    /// A small window rather than a Peek card.
+    @objc let isStandalone: Bool
+    @objc let hostView = NSView()
+    @objc var onClose: (() -> Void)?
+    @objc var onOpenInTab: (() -> Void)?
+    /// A typed address or search, resolved to the URL the page should load.
+    @objc var onNavigate: ((String) -> Void)?
+    /// The card's page joins the page behind it in a Split View.
+    @objc var onOpenInSplitView: (() -> Void)?
+    /// Gives the keyboard to the page through the engine.
+    @objc var onFocusPage: (() -> Void)?
+    /// The window's Spaces for Open In, in sidebar order.
+    @objc var spacesProvider: (() -> [BrowserPeekSpace])?
+    /// Open In: the page becomes a tab of the chosen Space.
+    @objc var onOpenInSpace: ((String) -> Void)?
+    /// Open as Tab's right-click menu and `⇧⌘O`.
+    let openInMenu = NSMenu()
+    /// The page's permission request over the top of the page, as in a tab.
+    let permissionPrompt = BrowserSitePermissionPromptView()
+    /// Allow (true), Block (false) or Close (nil) in the prompt.
+    var onSitePermissionAnswer: ((Int, Bool?) -> Void)?
+
+    let closeButton = BrowserNativeChromeButton(
+        symbol: "xmark",
+        title: BrowserStrings.peekCloseAction,
+        style: .currentURL,
+        action: {},
+    )
+    let openButton = BrowserNativeChromeButton(
+        symbol: "arrow.up.left.and.arrow.down.right",
+        title: BrowserStrings.peekOpenInTabAction,
+        style: .currentURL,
+        action: {},
+    )
+    /// Peek can also open beside the page; the small window has no page beside it.
+    let splitButton = BrowserNativeChromeButton(
+        symbol: "rectangle.split.2x1",
+        title: BrowserStrings.peekOpenInSplitViewAction,
+        style: .currentURL,
+        action: {},
+    )
+    let hostLabel = BrowserPeekAddressField(string: "")
+
+    // MARK: Private
+
+    private var parentMonitor: Any?
+    private var currentURLString = ""
+
+    /// The engine keeps a loading page from taking the keys meanwhile.
+    @objc var isEditingAddress: Bool { hostLabel.currentEditor() != nil }
 
     private init(contentRect: NSRect, standalone: Bool) {
         self.isStandalone = standalone
@@ -19,7 +80,7 @@ import AppKit
                 ? [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
                 : [.borderless, .nonactivatingPanel],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         isReleasedWhenClosed = false
         if standalone {
@@ -82,62 +143,6 @@ import AppKit
         layoutCard()
     }
 
-    // MARK: Internal
-
-    static let barHeight: CGFloat = 36
-    static let cornerRadius: CGFloat = 12
-    /// The card covers this share of the window and leaves the page
-    /// visible around it.
-    static let windowFraction: CGFloat = 0.84
-
-    override var canBecomeKey: Bool { true }
-
-    /// A small window rather than a Peek card.
-    @objc let isStandalone: Bool
-    @objc let hostView = NSView()
-    @objc var onClose: (() -> Void)?
-    @objc var onOpenInTab: (() -> Void)?
-    /// A typed address or search, resolved to the URL the page should load.
-    @objc var onNavigate: ((String) -> Void)?
-    /// The card's page joins the page behind it in a Split View.
-    @objc var onOpenInSplitView: (() -> Void)?
-    /// Gives the keyboard to the page through the engine.
-    @objc var onFocusPage: (() -> Void)?
-    /// The window's Spaces for Open In, in sidebar order.
-    @objc var spacesProvider: (() -> [BrowserPeekSpace])?
-    /// Open In: the page becomes a tab of the chosen Space.
-    @objc var onOpenInSpace: ((String) -> Void)?
-    /// Open as Tab's right-click menu and `⇧⌘O`.
-    let openInMenu = NSMenu()
-    /// The page's permission request over the top of the page, as in a tab.
-    let permissionPrompt = BrowserSitePermissionPromptView()
-    /// Allow (true), Block (false) or Close (nil) in the prompt.
-    var onSitePermissionAnswer: ((Int, Bool?) -> Void)?
-
-    let closeButton = BrowserNativeChromeButton(
-        symbol: "xmark",
-        title: BrowserStrings.peekCloseAction,
-        style: .currentURL,
-        action: {}
-    )
-    let openButton = BrowserNativeChromeButton(
-        symbol: "arrow.up.left.and.arrow.down.right",
-        title: BrowserStrings.peekOpenInTabAction,
-        style: .currentURL,
-        action: {}
-    )
-    /// Peek can also open beside the page; the small window has no page beside it.
-    let splitButton = BrowserNativeChromeButton(
-        symbol: "rectangle.split.2x1",
-        title: BrowserStrings.peekOpenInSplitViewAction,
-        style: .currentURL,
-        action: {}
-    )
-    let hostLabel = BrowserPeekAddressField(string: "")
-
-    /// The engine keeps a loading page from taking the keys meanwhile.
-    @objc var isEditingAddress: Bool { hostLabel.currentEditor() != nil }
-
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53, !isStandalone {
             onClose?()
@@ -173,7 +178,7 @@ import AppKit
             x: screen.midX - size.width / 2,
             y: screen.midY - size.height / 2,
             width: size.width,
-            height: size.height
+            height: size.height,
         )
         .integral
         let panel = BrowserPeekPanel(contentRect: frame, standalone: true)
@@ -294,7 +299,7 @@ import AppKit
             x: page.minX + 12,
             y: page.maxY - 12 - height,
             width: min(BrowserSitePermissionPromptView.width, max(page.width - 24, 0)),
-            height: height
+            height: height,
         )
     }
 
@@ -303,11 +308,6 @@ import AppKit
         parent?.removeChildWindow(self)
         orderOut(nil)
     }
-
-    // MARK: Private
-
-    private var parentMonitor: Any?
-    private var currentURLString = ""
 
     private func beginEditingAddress() {
         guard isStandalone else { return }
@@ -347,7 +347,7 @@ import AppKit
             x: labelX,
             y: bounds.height - Self.barHeight + (Self.barHeight - 16) / 2,
             width: max(trailing - 8 - labelX, 0),
-            height: 16
+            height: 16,
         )
         hostView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(bounds.height - Self.barHeight, 0))
         closeButton.autoresizingMask = [.maxXMargin, .minYMargin]
@@ -381,19 +381,17 @@ import AppKit
 
 /// A Space offered by Open In.
 @objc final class BrowserPeekSpace: NSObject, Sendable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    @objc let id: String
+    @objc let title: String
+    @objc let systemImageName: String
 
     init(id: String, title: String, systemImageName: String) {
         self.id = id
         self.title = title
         self.systemImageName = systemImageName
     }
-
-    // MARK: Internal
-
-    @objc let id: String
-    @objc let title: String
-    @objc let systemImageName: String
 }
 
 // MARK: - BrowserPeekAddressField

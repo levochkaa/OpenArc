@@ -1,3 +1,5 @@
+// BrowserTabUndoManagerTests.swift
+
 import Foundation
 import Testing
 
@@ -214,6 +216,10 @@ import Testing
 
     private(set) var calls = 0
 
+    // MARK: Private
+
+    private var completion: (@MainActor (BrowserTabUndoManager.Outcome) -> Void)?
+
     var reply: (@MainActor (BrowserTabUndoManager.Outcome) -> Void)? { completion }
 
     func perform(_ completion: @escaping @MainActor (BrowserTabUndoManager.Outcome) -> Void) {
@@ -226,10 +232,6 @@ import Testing
         completion = nil
         reply?(outcome)
     }
-
-    // MARK: Private
-
-    private var completion: (@MainActor (BrowserTabUndoManager.Outcome) -> Void)?
 }
 
 // MARK: - NativeUndoValue

@@ -1,3 +1,5 @@
+// BrowserNativeExtensionControls.swift
+
 import AppKit
 import Combine
 
@@ -11,7 +13,7 @@ import Combine
         onOpenStore: @escaping () -> Void,
         onOpenDetails: @escaping () -> Void,
         onRemove: @escaping () -> Void,
-        onTogglePinned: @escaping () -> Void
+        onTogglePinned: @escaping () -> Void,
     ) -> NSMenu {
         let menu = BrowserNativeMenus.menu()
         BrowserNativeMenus.add(browserExtension.name, to: menu, action: onOpenStore)
@@ -22,7 +24,7 @@ import Combine
             BrowserNativeMenus.add(
                 String(format: BrowserStrings.extensionsSiteAccessCurrentSite, currentHost),
                 to: access,
-                action: {}
+                action: {},
             )
         }
         let allSites = BrowserNativeMenus.add(BrowserStrings.extensionsSiteAccessAllSites, to: access, action: {})
@@ -34,7 +36,7 @@ import Combine
         BrowserNativeMenus.add(
             isPinned ? BrowserStrings.extensionsUnpinAction : BrowserStrings.extensionsPinAction,
             to: menu,
-            action: onTogglePinned
+            action: onTogglePinned,
         )
         menu.addItem(.separator())
         BrowserNativeMenus.add(BrowserStrings.extensionsManageExtension, to: menu, action: onOpenDetails)
@@ -48,7 +50,11 @@ import Combine
 // MARK: - BrowserNativeExtensionButton
 
 final class BrowserNativeExtensionButton: BrowserNativePressableView {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let tile: Bool
+    private let sidebar: Bool
+    private let icon = NSImageView()
 
     init(tile: Bool, sidebar: Bool = false) {
         self.tile = tile
@@ -89,7 +95,7 @@ final class BrowserNativeExtensionButton: BrowserNativePressableView {
             let decodedIcon = browserExtension.iconImage
             icon.image = decodedIcon ?? NSImage(
                 systemSymbolName: "puzzlepiece.extension",
-                accessibilityDescription: nil
+                accessibilityDescription: nil,
             )
             icon.contentTintColor = decodedIcon == nil
                 ? (sidebar ? BrowserChromeColors.currentURLText : BrowserChromeColors.secondaryText)
@@ -102,7 +108,7 @@ final class BrowserNativeExtensionButton: BrowserNativePressableView {
             icon.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(
                     pointSize: BrowserChromeLayout.extensionTileIconSize,
-                    weight: .semibold
+                    weight: .semibold,
                 ))
             icon.contentTintColor = .labelColor
             icon.alphaValue = 1
@@ -111,19 +117,16 @@ final class BrowserNativeExtensionButton: BrowserNativePressableView {
         }
         interactionChanged()
     }
-
-    // MARK: Private
-
-    private let tile: Bool
-    private let sidebar: Bool
-    private let icon = NSImageView()
 }
 
 // MARK: - BrowserExtensionActionPopupViewController
 
 /// The popover controller owns exactly one engine popup lifetime.
 final class BrowserExtensionActionPopupViewController: NSViewController {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let popup: BrowserExtensionActionPopup
+    private var closed = false
 
     init(popup: BrowserExtensionActionPopup) { self.popup = popup
         super.init(nibName: nil, bundle: nil)
@@ -147,11 +150,11 @@ final class BrowserExtensionActionPopupViewController: NSViewController {
                 .layerMaxXMinYCorner,
                 .layerMinXMaxYCorner,
                 .layerMaxXMaxYCorner,
-            ]
+            ],
         )
         preferredContentSize = NSSize(
             width: BrowserChromeLayout.extensionActionPopupWidth,
-            height: BrowserChromeLayout.extensionActionPopupHeight
+            height: BrowserChromeLayout.extensionActionPopupHeight,
         )
         clip.frame = NSRect(origin: .zero, size: preferredContentSize)
         clip.setAccessibilityIdentifier("browser.extensions.action-popup")
@@ -166,9 +169,4 @@ final class BrowserExtensionActionPopupViewController: NSViewController {
         closed = true
         popup.close()
     }
-
-    // MARK: Private
-
-    private let popup: BrowserExtensionActionPopup
-    private var closed = false
 }

@@ -1,3 +1,5 @@
+// BrowserMobileSidebarDrop.swift
+
 import Foundation
 
 /// A drag captures identities and containers from the rendered tree. Planning
@@ -37,8 +39,18 @@ enum BrowserMobileSidebarDrop {
         let after: BrowserSyncEntityReference?
     }
 
+    // MARK: Fileprivate
+
+    /// Favorites form one global list. Their historical spaceID is bookkeeping,
+    /// so changing only that field does not invalidate a source or anchor.
+    fileprivate enum Container: Hashable {
+        case favorites
+        case pinned(space: String, parent: String?)
+        case today(space: String)
+    }
+
     static func source(
-        item: BrowserSyncEntityReference, in snapshot: BrowserTabSessionSnapshot
+        item: BrowserSyncEntityReference, in snapshot: BrowserTabSessionSnapshot,
     ) -> Source? {
         source(items: [item], in: snapshot)
     }
@@ -47,7 +59,7 @@ enum BrowserMobileSidebarDrop {
     /// sequence in which checkboxes were selected. Descendants of a selected
     /// folder travel with that root and do not become independent move items.
     static func source(
-        items: [BrowserSyncEntityReference], in snapshot: BrowserTabSessionSnapshot
+        items: [BrowserSyncEntityReference], in snapshot: BrowserTabSessionSnapshot,
     ) -> Source? {
         guard !items.isEmpty, Set(items).count == items.count else { return nil }
         let values = canonical(snapshot)
@@ -67,7 +79,7 @@ enum BrowserMobileSidebarDrop {
     /// all captured containers and reject any normalization that removes a root.
     static func extending(
         source: Source, adding: Source, orderedItems: [BrowserSyncEntityReference],
-        in snapshot: BrowserTabSessionSnapshot
+        in snapshot: BrowserTabSessionSnapshot,
     ) -> Source? {
         let existing = Set(source.items)
         let additions = Set(adding.items)
@@ -84,7 +96,7 @@ enum BrowserMobileSidebarDrop {
     }
 
     static func target(
-        relativeTo item: BrowserSyncEntityReference, position: Position, in snapshot: BrowserTabSessionSnapshot
+        relativeTo item: BrowserSyncEntityReference, position: Position, in snapshot: BrowserTabSessionSnapshot,
     ) -> Target? {
         guard let value = canonical(snapshot)[key(item)], let container = container(value),
               let rowDestination = destination(value) else { return nil }
@@ -101,24 +113,24 @@ enum BrowserMobileSidebarDrop {
     static func rootTarget(spaceID: String, placement: BrowserTabPlacement) -> Target {
         Target(
             destination: .tabs(spaceID: spaceID, placement: placement, pinnedFolderID: nil),
-            reference: nil, referenceContainer: nil, position: nil
+            reference: nil, referenceContainer: nil, position: nil,
         )
     }
 
     static func canExpandFolder(
-        source: Source, target: Target, in snapshot: BrowserTabSessionSnapshot
+        source: Source, target: Target, in snapshot: BrowserTabSessionSnapshot,
     ) -> Bool {
         guard target.position == .inside, target.reference?.entityType == .folder,
               let values = validatedValues(source: source, target: target, snapshot: snapshot) else { return false }
         return BrowserSyncFolderProjection.canMove(
             items: source.items,
             destination: target.destination,
-            values: values
+            values: values,
         )
     }
 
     static func plan(
-        source: Source, target: Target, in snapshot: BrowserTabSessionSnapshot
+        source: Source, target: Target, in snapshot: BrowserTabSessionSnapshot,
     ) -> Plan? {
         guard var values = validatedValues(source: source, target: target, snapshot: snapshot) else { return nil }
         let before = target.position == .before ? target.reference : nil
@@ -137,20 +149,10 @@ enum BrowserMobileSidebarDrop {
         return plan
     }
 
-    // MARK: Fileprivate
-
-    /// Favorites form one global list. Their historical spaceID is bookkeeping,
-    /// so changing only that field does not invalidate a source or anchor.
-    fileprivate enum Container: Hashable {
-        case favorites
-        case pinned(space: String, parent: String?)
-        case today(space: String)
-    }
-
     // MARK: Private
 
     private static func validatedValues(
-        source: Source, target: Target, snapshot: BrowserTabSessionSnapshot
+        source: Source, target: Target, snapshot: BrowserTabSessionSnapshot,
     ) -> [String: BrowserSyncChange]? {
         let values = canonical(snapshot)
         for item in source.items {
@@ -168,7 +170,7 @@ enum BrowserMobileSidebarDrop {
     private static func canonical(_ snapshot: BrowserTabSessionSnapshot) -> [String: BrowserSyncChange] {
         Dictionary(
             BrowserSyncFolderProjection.canonicalChanges(snapshot).map { (BrowserSyncOutboxProjection.key($0), $0) },
-            uniquingKeysWith: { first, _ in first }
+            uniquingKeysWith: { first, _ in first },
         )
     }
 
@@ -179,7 +181,7 @@ enum BrowserMobileSidebarDrop {
     private static func hasAncestor(
         _ item: BrowserSyncEntityReference,
         in selectedFolders: Set<String>,
-        values: [String: BrowserSyncChange]
+        values: [String: BrowserSyncChange],
     ) -> Bool {
         guard let value = values[key(item)] else { return false }
         var parent = value.folderData?.parentFolderID ?? value.tabData?.pinnedFolderID

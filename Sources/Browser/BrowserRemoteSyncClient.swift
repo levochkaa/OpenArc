@@ -1,3 +1,5 @@
+// BrowserRemoteSyncClient.swift
+
 import Foundation
 import Gzip
 import HTTPTypes
@@ -9,149 +11,6 @@ import Security
 // MARK: - BrowserRemoteSyncClient
 
 final class BrowserRemoteSyncClient: @unchecked Sendable {
-    // MARK: Lifecycle
-
-    init(configuration: BrowserSyncConfiguration, session: URLSession = .shared) {
-        self.configuration = configuration
-        self.session = session
-        self.openAPITransport = URLSessionTransport(configuration: .init(session: session))
-    }
-
-    // MARK: Internal
-
-    var baseURL: URL { configuration.baseURL }
-
-    static func changes(
-        from previousSnapshot: BrowserTabSessionSnapshot?,
-        to snapshot: BrowserTabSessionSnapshot
-    ) -> [BrowserSyncChange] {
-        BrowserSyncOutboxProjection.changes(from: previousSnapshot, to: snapshot)
-    }
-
-    func authenticateWithApple(
-        identityToken: String,
-        deviceName: String,
-        devicePlatform: String
-    ) async throws -> BrowserAuthSession {
-        let request = BrowserAppleAuthRequest(
-            identityToken: identityToken,
-            deviceName: deviceName,
-            devicePlatform: devicePlatform
-        )
-        let response = try await Self.authResponse(
-            from: openAPIClient(accessToken: nil).authenticateWithApple(
-                .init(
-                    body: .json(
-                        Components.Schemas.AuthAppleRequest(
-                            identityToken: request.identityToken,
-                            deviceName: request.deviceName,
-                            devicePlatform: request.devicePlatform
-                        )
-                    )
-                )
-            )
-        )
-        return BrowserAuthSession(
-            accessToken: response.accessToken,
-            userID: response.user.id,
-            userEmail: response.user.email,
-            deviceID: response.device.id,
-            serverURL: configuration.baseURL
-        )
-    }
-
-    func push(
-        mutation: BrowserSyncMutation,
-        authSession: BrowserAuthSession
-    ) async throws -> BrowserSyncPushResponse {
-        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
-        let request = BrowserSyncPushRequest(
-            mutationID: mutation.id,
-            deviceID: authSession.deviceID,
-            changes: mutation.changes
-        )
-        return try await send(
-            path: "/v1/sync/push",
-            method: "POST",
-            body: request,
-            accessToken: authSession.accessToken
-        )
-    }
-
-    func pull(cursor: Int, authSession: BrowserAuthSession) async throws -> BrowserSyncPullResponse {
-        try await pull(cursor: cursor, protocolVersion: 2, authSession: authSession)
-    }
-
-    func pull(
-        cursor: Int,
-        protocolVersion: Int,
-        authSession: BrowserAuthSession
-    ) async throws -> BrowserSyncPullResponse {
-        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
-        guard [2, 4, 5].contains(protocolVersion) else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
-        return try await send(
-            path: "/v1/sync/pull",
-            method: "POST",
-            body: BrowserSyncPullRequest(
-                deviceID: authSession.deviceID, cursor: cursor, limit: 500,
-                protocolVersion: protocolVersion == 2 ? nil : protocolVersion
-            ),
-            accessToken: authSession.accessToken
-        )
-    }
-
-    func push(
-        mutation: BrowserSyncSemanticMutation,
-        authSession: BrowserAuthSession
-    ) async throws -> BrowserSyncSemanticPushResponse {
-        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
-        let response: BrowserSyncSemanticPushResponse = try await send(
-            path: "/v1/sync/push", method: "POST",
-            body: BrowserSyncSemanticPushRequest(
-                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations
-            ), accessToken: authSession.accessToken
-        )
-        guard response.protocolVersion == 3, response.mutationID == mutation.id,
-              response.cursor >= 0, response.outcomes.count == mutation.operations.count,
-              Set(response.outcomes.map(\.operationIndex)) == Set(mutation.operations.indices)
-        else { throw BrowserRemoteSyncError.invalidMutationReceipt }
-        return response
-    }
-
-    func push(
-        mutation: BrowserSyncFolderMutation,
-        authSession: BrowserAuthSession
-    ) async throws -> BrowserSyncFolderPushResponse {
-        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
-        let response: BrowserSyncFolderPushResponse = try await send(
-            path: "/v1/sync/push", method: "POST",
-            body: BrowserSyncFolderPushRequest(
-                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations
-            ), accessToken: authSession.accessToken
-        )
-        guard response.protocolVersion == 4, response.mutationID == mutation.id,
-              response.cursor >= 0, response.outcomes.count == mutation.operations.count,
-              Set(response.outcomes.map(\.operationIndex)) == Set(mutation.operations.indices)
-        else { throw BrowserRemoteSyncError.invalidMutationReceipt }
-        return response
-    }
-
-    func push(
-        mutation: BrowserSyncExpiryMutation,
-        authSession: BrowserAuthSession
-    ) async throws -> BrowserSyncExpiryPushResponse {
-        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
-        try mutation.validate()
-        let response: BrowserSyncExpiryPushResponse = try await send(
-            path: "/v1/sync/push", method: "POST",
-            body: BrowserSyncExpiryPushRequest(
-                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations
-            ), accessToken: authSession.accessToken
-        )
-        try response.validate(for: mutation)
-        return response
-    }
-
     // MARK: Private
 
     private struct SyncServerError: Decodable { let message: String }
@@ -164,6 +23,23 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
     private let session: URLSession
     private let openAPITransport: URLSessionTransport
 
+    // MARK: Internal
+
+    var baseURL: URL { configuration.baseURL }
+
+    init(configuration: BrowserSyncConfiguration, session: URLSession = .shared) {
+        self.configuration = configuration
+        self.session = session
+        self.openAPITransport = URLSessionTransport(configuration: .init(session: session))
+    }
+
+    static func changes(
+        from previousSnapshot: BrowserTabSessionSnapshot?,
+        to snapshot: BrowserTabSessionSnapshot,
+    ) -> [BrowserSyncChange] {
+        BrowserSyncOutboxProjection.changes(from: previousSnapshot, to: snapshot)
+    }
+
     private static func iso8601String(from timeInterval: TimeInterval) -> String {
         iso8601String(from: Date(timeIntervalSince1970: timeInterval))
     }
@@ -173,7 +49,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
     }
 
     private static func authResponse(
-        from output: Operations.authenticateWithApple.Output
+        from output: Operations.authenticateWithApple.Output,
     ) throws -> BrowserAppleAuthResponse {
         switch output {
         case .ok(let response):
@@ -184,19 +60,143 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
                     expiresIn: body.expiresIn,
                     user: BrowserAppleAuthResponse.User(
                         id: body.user.id,
-                        email: body.user.email
+                        email: body.user.email,
                     ),
                     device: BrowserSyncDevice(
                         id: body.device.id,
                         name: body.device.name,
                         platform: body.device.platform,
-                        lastSeenAt: body.device.lastSeenAt.map { Self.iso8601String(from: $0) }
-                    )
+                        lastSeenAt: body.device.lastSeenAt.map { Self.iso8601String(from: $0) },
+                    ),
                 )
             }
         default:
             throw BrowserRemoteSyncError.unexpectedOpenAPIResponse
         }
+    }
+
+    func authenticateWithApple(
+        identityToken: String,
+        deviceName: String,
+        devicePlatform: String,
+    ) async throws -> BrowserAuthSession {
+        let request = BrowserAppleAuthRequest(
+            identityToken: identityToken,
+            deviceName: deviceName,
+            devicePlatform: devicePlatform,
+        )
+        let response = try await Self.authResponse(
+            from: openAPIClient(accessToken: nil).authenticateWithApple(
+                .init(
+                    body: .json(
+                        Components.Schemas.AuthAppleRequest(
+                            identityToken: request.identityToken,
+                            deviceName: request.deviceName,
+                            devicePlatform: request.devicePlatform,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        return BrowserAuthSession(
+            accessToken: response.accessToken,
+            userID: response.user.id,
+            userEmail: response.user.email,
+            deviceID: response.device.id,
+            serverURL: configuration.baseURL,
+        )
+    }
+
+    func push(
+        mutation: BrowserSyncMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        let request = BrowserSyncPushRequest(
+            mutationID: mutation.id,
+            deviceID: authSession.deviceID,
+            changes: mutation.changes,
+        )
+        return try await send(
+            path: "/v1/sync/push",
+            method: "POST",
+            body: request,
+            accessToken: authSession.accessToken,
+        )
+    }
+
+    func pull(cursor: Int, authSession: BrowserAuthSession) async throws -> BrowserSyncPullResponse {
+        try await pull(cursor: cursor, protocolVersion: 2, authSession: authSession)
+    }
+
+    func pull(
+        cursor: Int,
+        protocolVersion: Int,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncPullResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        guard [2, 4, 5].contains(protocolVersion) else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
+        return try await send(
+            path: "/v1/sync/pull",
+            method: "POST",
+            body: BrowserSyncPullRequest(
+                deviceID: authSession.deviceID, cursor: cursor, limit: 500,
+                protocolVersion: protocolVersion == 2 ? nil : protocolVersion,
+            ),
+            accessToken: authSession.accessToken,
+        )
+    }
+
+    func push(
+        mutation: BrowserSyncSemanticMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncSemanticPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        let response: BrowserSyncSemanticPushResponse = try await send(
+            path: "/v1/sync/push", method: "POST",
+            body: BrowserSyncSemanticPushRequest(
+                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations,
+            ), accessToken: authSession.accessToken,
+        )
+        guard response.protocolVersion == 3, response.mutationID == mutation.id,
+              response.cursor >= 0, response.outcomes.count == mutation.operations.count,
+              Set(response.outcomes.map(\.operationIndex)) == Set(mutation.operations.indices)
+        else { throw BrowserRemoteSyncError.invalidMutationReceipt }
+        return response
+    }
+
+    func push(
+        mutation: BrowserSyncFolderMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncFolderPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        let response: BrowserSyncFolderPushResponse = try await send(
+            path: "/v1/sync/push", method: "POST",
+            body: BrowserSyncFolderPushRequest(
+                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations,
+            ), accessToken: authSession.accessToken,
+        )
+        guard response.protocolVersion == 4, response.mutationID == mutation.id,
+              response.cursor >= 0, response.outcomes.count == mutation.operations.count,
+              Set(response.outcomes.map(\.operationIndex)) == Set(mutation.operations.indices)
+        else { throw BrowserRemoteSyncError.invalidMutationReceipt }
+        return response
+    }
+
+    func push(
+        mutation: BrowserSyncExpiryMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncExpiryPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        try mutation.validate()
+        let response: BrowserSyncExpiryPushResponse = try await send(
+            path: "/v1/sync/push", method: "POST",
+            body: BrowserSyncExpiryPushRequest(
+                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations,
+            ), accessToken: authSession.accessToken,
+        )
+        try response.validate(for: mutation)
+        return response
     }
 
     private func openAPIClient(accessToken: String?) -> Client {
@@ -205,7 +205,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
             transport: openAPITransport,
             middlewares: [
                 BrowserOpenAPIRequestMiddleware(accessToken: accessToken),
-            ]
+            ],
         )
     }
 
@@ -213,7 +213,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         path: String,
         method: String,
         body: some Encodable,
-        accessToken: String?
+        accessToken: String?,
     ) async throws -> Response {
         guard let url = URL(string: path, relativeTo: configuration.baseURL)?.absoluteURL else {
             throw BrowserRemoteSyncError.invalidURL
@@ -291,7 +291,7 @@ private struct BrowserOpenAPIRequestMiddleware: ClientMiddleware {
         body: HTTPBody?,
         baseURL: URL,
         operationID _: String,
-        next: @Sendable (HTTPRequest, HTTPBody?, URL) async throws -> (HTTPResponse, HTTPBody?)
+        next: @Sendable (HTTPRequest, HTTPBody?, URL) async throws -> (HTTPResponse, HTTPBody?),
     ) async throws -> (HTTPResponse, HTTPBody?) {
         var request = request
         request.headerFields[.acceptEncoding] = "gzip"
@@ -305,11 +305,14 @@ private struct BrowserOpenAPIRequestMiddleware: ClientMiddleware {
 // MARK: - BrowserAuthSessionStore
 
 final class BrowserAuthSessionStore {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let service: String
+    private let sessionAccount: String
 
     init(
         service: String = Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc",
-        namespace: BrowserAuthSessionNamespace = .defaultProfile
+        namespace: BrowserAuthSessionNamespace = .defaultProfile,
     ) {
         self.service = "\(service).sync"
         self.sessionAccount = namespace.keychainAccount
@@ -339,11 +342,6 @@ final class BrowserAuthSessionStore {
             throw BrowserAuthSessionStoreError.keychain(status)
         }
     }
-
-    // MARK: Private
-
-    private let service: String
-    private let sessionAccount: String
 
     private func keychainData(account: String) -> Data? {
         var query = keychainQuery(account: account)
@@ -396,12 +394,12 @@ enum BrowserAuthSessionStoreError: Error {
     var baseURL: URL { get }
     func push(
         mutation: BrowserSyncMutation,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncPushResponse
 
     func push(
         mutation: BrowserSyncSemanticMutation,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncSemanticPushResponse
 
     func pull(cursor: Int, authSession: BrowserAuthSession) async throws -> BrowserSyncPullResponse
@@ -409,19 +407,19 @@ enum BrowserAuthSessionStoreError: Error {
         -> BrowserSyncPullResponse
     func push(
         mutation: BrowserSyncFolderMutation,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncFolderPushResponse
 
     func push(
         mutation: BrowserSyncExpiryMutation,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncExpiryPushResponse
 }
 
 extension BrowserSyncRemoteServing {
     func push(
         mutation _: BrowserSyncExpiryMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncExpiryPushResponse {
         throw BrowserRemoteSyncError.unsupportedSyncProtocol
     }
@@ -429,7 +427,7 @@ extension BrowserSyncRemoteServing {
     func pull(
         cursor: Int,
         protocolVersion: Int,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncPullResponse {
         guard protocolVersion == 2 else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
         return try await pull(cursor: cursor, authSession: authSession)
@@ -437,14 +435,14 @@ extension BrowserSyncRemoteServing {
 
     func push(
         mutation _: BrowserSyncFolderMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncFolderPushResponse {
         throw BrowserRemoteSyncError.unsupportedSyncProtocol
     }
 
     func push(
         mutation _: BrowserSyncSemanticMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncSemanticPushResponse {
         throw BrowserRemoteSyncError.unsupportedSyncProtocol
     }
@@ -515,7 +513,60 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
 // MARK: - BrowserSyncService
 
 @MainActor final class BrowserSyncService: BrowserSyncCoordinating, BrowserAccountSyncControlling {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private struct RequestContext {
+        let session: BrowserAuthSession
+        let owner: BrowserSyncOwner
+        let generation: UInt64
+    }
+
+    private struct EntityKey: Hashable {
+        let type: String
+        let id: String
+    }
+
+    private struct ExpiryResponseLimit {
+        let failures: Int
+        var recordedAt: Date
+        var retryAt: Date
+
+        var delay: TimeInterval { min(3600, 60 * pow(2, Double(failures - 1))) }
+    }
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "Sync",
+    )
+
+    private let localStore: BrowserSQLiteSessionStore
+    private let remoteClient: any BrowserSyncRemoteServing
+    private let authSessionStore: any BrowserSyncAuthSessionReading
+    private let pushDebounce: Duration
+    private let pollInterval: Duration?
+    private let retryDelay: Duration?
+    private let expirySweepInterval: TimeInterval
+    private let expiryActivityRefreshInterval: TimeInterval
+    private let dateProvider: @MainActor () -> Date
+    private weak var expiryScheduler: (any BrowserSyncExpiryScheduling)?
+    private var lastExpirySweep: Date?
+    private var lastExpiryActivityRefresh: Date?
+    private var expiryCandidateCursor: BrowserSyncExpiryCandidateCursor?
+    private var expiryResponseLimits = [BrowserSyncExpiryCandidateCursor: ExpiryResponseLimit]()
+    private var activeSession: BrowserAuthSession?
+    private var isRuntimeActive: Bool
+    private var isLocalPersistenceBlocked = false
+    private var generation: UInt64 = 0
+    private let errorReporter: BrowserSyncErrorReporter
+    private let operationDidSucceed: @MainActor (BrowserSyncFailurePhase) -> Void
+    private var supportedPushVersions = Set<Int>()
+    private var pendingPushTask: Task<Void, Never>?
+    private var processingTask: Task<Void, Never>?
+    private var pollTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
+    private var retryAttempt = 0
+    private var pendingPushContext: RequestContext?
+    private var pendingPullContext: RequestContext?
+    private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
 
     init(
         localStore: BrowserSQLiteSessionStore,
@@ -529,7 +580,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         expiryActivityRefreshInterval: TimeInterval = 300,
         dateProvider: @escaping @MainActor () -> Date = Date.init,
         errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in },
-        operationDidSucceed: @escaping @MainActor (BrowserSyncFailurePhase) -> Void = { _ in }
+        operationDidSucceed: @escaping @MainActor (BrowserSyncFailurePhase) -> Void = { _ in },
     ) {
         self.localStore = localStore
         self.remoteClient = remoteClient
@@ -654,9 +705,12 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         guard let context = currentContext() else { return }
         let debounce = pushDebounce
         pendingPushTask = Task { [weak self] in
-            do { try await Task.sleep(for: debounce)
+            do {
+                try await Task.sleep(for: debounce)
                 try Task.checkCancellation()
-            } catch { return }
+            } catch {
+                return
+            }
             guard let self else { return }
             pendingPushTask = nil
             guard isCurrent(context) else { return }
@@ -714,61 +768,6 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         }
     }
 
-    // MARK: Private
-
-    private struct RequestContext {
-        let session: BrowserAuthSession
-        let owner: BrowserSyncOwner
-        let generation: UInt64
-    }
-
-    private struct EntityKey: Hashable {
-        let type: String
-        let id: String
-    }
-
-    private struct ExpiryResponseLimit {
-        let failures: Int
-        var recordedAt: Date
-        var retryAt: Date
-
-        var delay: TimeInterval { min(3600, 60 * pow(2, Double(failures - 1))) }
-    }
-
-    private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "Sync"
-    )
-
-    private let localStore: BrowserSQLiteSessionStore
-    private let remoteClient: any BrowserSyncRemoteServing
-    private let authSessionStore: any BrowserSyncAuthSessionReading
-    private let pushDebounce: Duration
-    private let pollInterval: Duration?
-    private let retryDelay: Duration?
-    private let expirySweepInterval: TimeInterval
-    private let expiryActivityRefreshInterval: TimeInterval
-    private let dateProvider: @MainActor () -> Date
-    private weak var expiryScheduler: (any BrowserSyncExpiryScheduling)?
-    private var lastExpirySweep: Date?
-    private var lastExpiryActivityRefresh: Date?
-    private var expiryCandidateCursor: BrowserSyncExpiryCandidateCursor?
-    private var expiryResponseLimits = [BrowserSyncExpiryCandidateCursor: ExpiryResponseLimit]()
-    private var activeSession: BrowserAuthSession?
-    private var isRuntimeActive: Bool
-    private var isLocalPersistenceBlocked = false
-    private var generation: UInt64 = 0
-    private let errorReporter: BrowserSyncErrorReporter
-    private let operationDidSucceed: @MainActor (BrowserSyncFailurePhase) -> Void
-    private var supportedPushVersions = Set<Int>()
-    private var pendingPushTask: Task<Void, Never>?
-    private var processingTask: Task<Void, Never>?
-    private var pollTask: Task<Void, Never>?
-    private var retryTask: Task<Void, Never>?
-    private var retryAttempt = 0
-    private var pendingPushContext: RequestContext?
-    private var pendingPullContext: RequestContext?
-    private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
-
     private func invalidatePendingRequests() {
         generation &+= 1
         pendingPushTask?.cancel()
@@ -815,9 +814,12 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         guard pollTask == nil, let interval = pollInterval, let context = currentContext() else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: interval)
+                do {
+                    try await Task.sleep(for: interval)
                     try Task.checkCancellation()
-                } catch { return }
+                } catch {
+                    return
+                }
                 guard let self, isCurrent(context) else { return }
                 guard retryTask == nil else { continue }
                 schedulePull()
@@ -830,9 +832,12 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         let delay = retryDelay * (1 << min(retryAttempt, 5))
         retryAttempt = min(retryAttempt + 1, 5)
         retryTask = Task { [weak self] in
-            do { try await Task.sleep(for: delay)
+            do {
+                try await Task.sleep(for: delay)
                 try Task.checkCancellation()
-            } catch { return }
+            } catch {
+                return
+            }
             guard let self else { return }
             retryTask = nil
             guard isCurrent(context) else { return }
@@ -912,7 +917,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                         if let state = expiryScheduler?.expirySchedulingState(), state.inactiveForSeconds != nil {
                             let candidates = try await localStore.syncExpiryCandidates(
                                 for: context.owner, state: state, now: dateProvider(), ignoringMutationID: payload.id,
-                                validatingEntityIDs: Set(payload.operations.map(\.entityID))
+                                validatingEntityIDs: Set(payload.operations.map(\.entityID)),
                             )
                             guard isCurrent(context), !Task.isCancelled else { return }
                             if let current = expiryScheduler?.expirySchedulingState(),
@@ -928,7 +933,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                         if try !localStore.prepareAutomaticExpiry(
                             id: payload.id,
                             baseline: baseline,
-                            for: context.owner
+                            for: context.owner,
                         ) {
                             // No network attempt occurred. Its inert overlay needs
                             // no projection; later ordinary rows may now drain.
@@ -951,7 +956,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     id: mutation.id,
                     protocolVersion: mutation.protocolVersion,
                     events: events,
-                    for: context.owner
+                    for: context.owner,
                 )
                 if case .expiry(let payload) = mutation, let expiryResponse {
                     recordExpiryResponseLimits(expiryResponse, mutation: payload)
@@ -1014,7 +1019,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         lastExpirySweep = now
         let excluded = excludedExpiryCandidates(at: now)
         let batch = try await localStore.syncExpiryCandidates(
-            for: context.owner, state: state, now: now, after: expiryCandidateCursor, excluding: excluded
+            for: context.owner, state: state, now: now, after: expiryCandidateCursor, excluding: excluded,
         )
         guard isCurrent(context), !Task.isCancelled,
               let current = scheduler.expirySchedulingState(), current.inactiveForSeconds == state.inactiveForSeconds
@@ -1024,7 +1029,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         do {
             try localStore.enqueueSyncExpiry(
                 .init(id: UUID().uuidString, operations: operations), for: context.owner,
-                automaticBaseline: batch.baseline
+                automaticBaseline: batch.baseline,
             )
             if let last = operations.last {
                 expiryCandidateCursor = .init(serverSeq: last.expectedServerSeq, entityID: last.entityID)
@@ -1037,7 +1042,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     private func recordExpiryResponseLimits(
-        _ response: BrowserSyncExpiryPushResponse, mutation: BrowserSyncExpiryMutation
+        _ response: BrowserSyncExpiryPushResponse, mutation: BrowserSyncExpiryMutation,
     ) {
         let now = dateProvider()
         guard now.timeIntervalSince1970.isFinite else { return }
@@ -1045,7 +1050,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             let operation = mutation.operations[outcome.operationIndex]
             let key = BrowserSyncExpiryCandidateCursor(
                 serverSeq: operation.expectedServerSeq,
-                entityID: operation.entityID
+                entityID: operation.entityID,
             )
             guard outcome.reason == .responseLimit else {
                 expiryResponseLimits.removeValue(forKey: key)
@@ -1106,7 +1111,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 let response: BrowserSyncPullResponse
                 do {
                     response = try await remoteClient.pull(
-                        cursor: cursor, protocolVersion: protocolVersion, authSession: context.session
+                        cursor: cursor, protocolVersion: protocolVersion, authSession: context.session,
                     )
                 } catch let error as BrowserRemoteSyncError where !bootstrap &&
                     ((protocolVersion == 4 && error.isFolderBootstrapRequired) ||
@@ -1181,7 +1186,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                         : localStore.completeFolderSyncBootstrap(events: events, cursor: cursor, for: context.owner)
                 } else {
                     try localStore.applyRemoteSyncEvents(
-                        events, cursor: cursor, for: context.owner, enableSemanticMutations: versions.contains(3)
+                        events, cursor: cursor, for: context.owner, enableSemanticMutations: versions.contains(3),
                     )
                 }
             if previous != projected {
@@ -1214,11 +1219,34 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
 // MARK: - BrowserSyncSnapshotMerger
 
 enum BrowserSyncSnapshotMerger {
+    // MARK: Private
+
+    private struct SpaceRecord {
+        let id: String
+        var title: String
+        var systemImageName: String
+        var rank: Double
+        var isPinnedSectionCollapsed: Bool
+        var selectedTabID: String?
+    }
+
+    private struct TabRecord {
+        let id: String
+        var spaceID: String
+        var placement: BrowserTabPlacement
+        var pinnedFolderID: String?
+        var rank: Double
+        var urlString: String
+        var pinnedURLString: String?
+        var userTitleOverride: String?
+        var lastActivityTimestamp: TimeInterval?
+    }
+
     // MARK: Internal
 
     static func snapshot(
         removing events: [BrowserSyncEvent],
-        from snapshot: BrowserTabSessionSnapshot
+        from snapshot: BrowserTabSessionSnapshot,
     ) -> BrowserTabSessionSnapshot {
         let deletedSpaceIDs = Set(events.filter { $0.entityType == "space" && $0.op == "delete" }.map(\.entityID))
         let deletedTabIDs = Set(events.filter { $0.entityType == "tab" && $0.op == "delete" }.map(\.entityID))
@@ -1243,19 +1271,19 @@ enum BrowserSyncSnapshotMerger {
                 isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                 selectedTabIndex: selectedTabID.flatMap { selectedID in
                     currentTabs.firstIndex { $0.id == selectedID }
-                }
+                },
             )
         }
         return BrowserTabSessionSnapshot(
             spaces: spaces,
             pinnedTabFolders: snapshot.pinnedTabFolders?.filter { !deletedSpaceIDs.contains($0.spaceID) },
-            tabs: tabs
+            tabs: tabs,
         )
     }
 
     static func snapshot(
         applying events: [BrowserSyncEvent],
-        to snapshot: BrowserTabSessionSnapshot?
+        to snapshot: BrowserTabSessionSnapshot?,
     ) -> BrowserTabSessionSnapshot {
         var spaces = [String: SpaceRecord]()
         var tabs = [String: TabRecord]()
@@ -1277,7 +1305,7 @@ enum BrowserSyncSnapshotMerger {
                 systemImageName: space.systemImageName,
                 rank: Double(index),
                 isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                selectedTabID: selectedTabID
+                selectedTabID: selectedTabID,
             )
         }
 
@@ -1295,7 +1323,7 @@ enum BrowserSyncSnapshotMerger {
                 urlString: tab.urlString,
                 pinnedURLString: tab.placement == .spacePinned ? tab.pinnedURLString : nil,
                 userTitleOverride: tab.userTitleOverride,
-                lastActivityTimestamp: tab.lastActivityTimestamp
+                lastActivityTimestamp: tab.lastActivityTimestamp,
             )
         }
 
@@ -1314,7 +1342,7 @@ enum BrowserSyncSnapshotMerger {
                     rank: data.rank ?? existing?.rank ?? Double(spaces.count),
                     isPinnedSectionCollapsed: data.isPinnedSectionCollapsed ?? existing?
                         .isPinnedSectionCollapsed ?? false,
-                    selectedTabID: data.selectedTabID ?? existing?.selectedTabID
+                    selectedTabID: data.selectedTabID ?? existing?.selectedTabID,
                 )
             case ("tab", "delete", _):
                 tabs.removeValue(forKey: event.entityID)
@@ -1340,8 +1368,8 @@ enum BrowserSyncSnapshotMerger {
                     pinnedURLString: pinnedURLString,
                     userTitleOverride: data.userTitleOverride ?? existing?.userTitleOverride,
                     lastActivityTimestamp: activityDates.projectedTimestamp(
-                        data.lastActivityAt, local: existing?.lastActivityTimestamp
-                    )
+                        data.lastActivityAt, local: existing?.lastActivityTimestamp,
+                    ),
                 )
             default:
                 continue
@@ -1355,7 +1383,7 @@ enum BrowserSyncSnapshotMerger {
                 systemImageName: BrowserSessionDefaults.defaultSpaceIconName,
                 rank: 0,
                 isPinnedSectionCollapsed: false,
-                selectedTabID: nil
+                selectedTabID: nil,
             )
         }
 
@@ -1379,7 +1407,7 @@ enum BrowserSyncSnapshotMerger {
                     ? tab.spaceID
                     : BrowserSessionDefaults.defaultSpaceID,
                 pinnedFolderID: tab.pinnedFolderID,
-                lastActivityTimestamp: tab.lastActivityTimestamp
+                lastActivityTimestamp: tab.lastActivityTimestamp,
             )
         }
         let tabIDsByPinnedFolderID = Dictionary(grouping: tabSnapshots.compactMap { tab -> (String, String)? in
@@ -1417,38 +1445,15 @@ enum BrowserSyncSnapshotMerger {
                     title: space.title,
                     systemImageName: space.systemImageName,
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                    selectedTabIndex: selectedTabIndex
+                    selectedTabIndex: selectedTabIndex,
                 )
             }
 
         return BrowserTabSessionSnapshot(
             spaces: spaceSnapshots.isEmpty ? nil : spaceSnapshots,
             pinnedTabFolders: pinnedTabFolderSnapshots.isEmpty ? nil : pinnedTabFolderSnapshots,
-            tabs: tabSnapshots
+            tabs: tabSnapshots,
         )
-    }
-
-    // MARK: Private
-
-    private struct SpaceRecord {
-        let id: String
-        var title: String
-        var systemImageName: String
-        var rank: Double
-        var isPinnedSectionCollapsed: Bool
-        var selectedTabID: String?
-    }
-
-    private struct TabRecord {
-        let id: String
-        var spaceID: String
-        var placement: BrowserTabPlacement
-        var pinnedFolderID: String?
-        var rank: Double
-        var urlString: String
-        var pinnedURLString: String?
-        var userTitleOverride: String?
-        var lastActivityTimestamp: TimeInterval?
     }
 
     private static func sanitizedRequiredString(_ value: String?) -> String? {

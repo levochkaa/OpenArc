@@ -1,3 +1,5 @@
+// BrowserChromeModel+TabActions.swift
+
 import Foundation
 
 // MARK: - Tab row actions
@@ -177,7 +179,7 @@ extension BrowserChromeModel {
     /// belong to no Space, and items already in it stay where they are.
     @discardableResult func moveSidebarItems(
         _ payload: BrowserSidebarDragPayload,
-        toTopOfSpace spaceID: String
+        toTopOfSpace spaceID: String,
     ) -> Bool {
         guard supportsSpaces, spaces.contains(where: { $0.id == spaceID }) else { return false }
         let container: BrowserSidebarDropContainer

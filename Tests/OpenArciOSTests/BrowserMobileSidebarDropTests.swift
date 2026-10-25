@@ -1,9 +1,15 @@
+// BrowserMobileSidebarDropTests.swift
+
 import Foundation
 import Testing
 
 // MARK: - BrowserMobileSidebarDropTests
 
 struct BrowserMobileSidebarDropTests {
+    // MARK: Private
+
+    private typealias Drop = BrowserMobileSidebarDrop
+
     // MARK: Internal
 
     @Test func extendingSourceKeepsOldAndNewCapturedContainersAndFrozenOrder() throws {
@@ -17,23 +23,23 @@ struct BrowserMobileSidebarDropTests {
             .move(
                 items: [tab("a")],
                 destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
-                after: tab("d")
+                after: tab("d"),
             ),
         ], to: snapshot)
         let extended = try #require(Drop.extending(
             source: source,
             adding: addition,
             orderedItems: [tab("a"), tab("b")],
-            in: changed
+            in: changed,
         ))
         #expect(extended.items == [tab("a"), tab("b")])
         for id in ["a", "b"] {
             let moved = apply(
                 [.move(
                     items: [tab(id)],
-                    destination: .tabs(spaceID: "target", placement: .temporary, pinnedFolderID: nil)
+                    destination: .tabs(spaceID: "target", placement: .temporary, pinnedFolderID: nil),
                 )],
-                to: snapshot
+                to: snapshot,
             )
             #expect(Drop
                 .extending(source: source, adding: addition, orderedItems: [tab("a"), tab("b")], in: moved) == nil)
@@ -47,7 +53,7 @@ struct BrowserMobileSidebarDropTests {
             source: firstPair,
             adding: last,
             orderedItems: [tab("b"), tab("a"), tab("c")],
-            in: snapshot
+            in: snapshot,
         ) == nil)
     }
 
@@ -59,18 +65,18 @@ struct BrowserMobileSidebarDropTests {
             source: parent,
             adding: child,
             orderedItems: [folder("folder"), tab("child")],
-            in: snapshot
+            in: snapshot,
         ) == nil)
         #expect(Drop.extending(
             source: child,
             adding: parent,
             orderedItems: [folder("folder"), tab("child")],
-            in: snapshot
+            in: snapshot,
         ) == nil)
         let rows = (0...1000).map { BrowserTabSessionSnapshotTab(
             id: "tab-\($0)",
             urlString: "about:blank",
-            spaceID: "source"
+            spaceID: "source",
         ) }
         let large = BrowserTabSessionSnapshot(spaces: snapshot.spaces, tabs: rows)
         let references = rows.compactMap(\.id).map(tab)
@@ -80,7 +86,7 @@ struct BrowserMobileSidebarDropTests {
             source: initial,
             adding: thousandth,
             orderedItems: Array(references.prefix(1000)),
-            in: large
+            in: large,
         ))
         #expect(full.items.count == 1000)
         let overflow = try #require(Drop.source(item: references[1000], in: large))
@@ -152,9 +158,9 @@ struct BrowserMobileSidebarDropTests {
                     spaceID: "source",
                     placement: .spacePinned,
                     pinnedFolderID: nil,
-                    urlString: "about:blank"
+                    urlString: "about:blank",
                 ),
-                before: folder("empty")
+                before: folder("empty"),
             ),
         ], to: snapshot)
         let plan = try #require(Drop.plan(source: source, target: target, in: renamed))
@@ -165,7 +171,7 @@ struct BrowserMobileSidebarDropTests {
         let deleted = apply([.deleteFolder(id: "empty")], to: snapshot)
         #expect(Drop.plan(source: source, target: target, in: deleted) == nil)
         let moved = apply([.move(items: [folder("empty")], destination: .tabs(
-            spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder"
+            spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder",
         ))], to: snapshot)
         #expect(Drop.plan(source: source, target: target, in: moved) == nil)
         let inside = try #require(Drop.target(relativeTo: folder("empty"), position: .inside, in: snapshot))
@@ -177,22 +183,22 @@ struct BrowserMobileSidebarDropTests {
         let source = try #require(Drop.source(item: folder("folder"), in: snapshot))
         let target = Drop.rootTarget(spaceID: "target", placement: .spacePinned)
         let relocated = apply([.move(items: source.items, destination: .tabs(
-            spaceID: "source", placement: .spacePinned, pinnedFolderID: "empty"
+            spaceID: "source", placement: .spacePinned, pinnedFolderID: "empty",
         ))], to: snapshot)
         #expect(Drop.plan(source: source, target: target, in: relocated) == nil)
         let changed = apply([
             .move(
                 items: [tab("child")],
-                destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil)
+                destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil),
             ),
             .move(
                 items: [tab("today")],
-                destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder")
+                destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder"),
             ),
             .move(
                 items: [folder("folder")],
                 destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil),
-                after: folder("empty")
+                after: folder("empty"),
             ),
         ], to: snapshot)
         let plan = try #require(Drop.plan(source: source, target: target, in: changed))
@@ -235,7 +241,7 @@ struct BrowserMobileSidebarDropTests {
         #expect(Drop.plan(
             source: alreadyLast,
             target: Drop.rootTarget(spaceID: "another-deleted-space", placement: .app),
-            in: moved
+            in: moved,
         ) == nil)
     }
 
@@ -278,10 +284,10 @@ struct BrowserMobileSidebarDropTests {
         let invalidSnapshots = [
             apply([.deleteTab(id: "c")], to: snapshot),
             apply([.move(items: [tab("c")], destination: .tabs(
-                spaceID: "target", placement: .temporary, pinnedFolderID: nil
+                spaceID: "target", placement: .temporary, pinnedFolderID: nil,
             ))], to: snapshot),
             apply([.move(items: [tab("a")], destination: .tabs(
-                spaceID: "source", placement: .spacePinned, pinnedFolderID: nil
+                spaceID: "source", placement: .spacePinned, pinnedFolderID: nil,
             ))], to: snapshot),
         ]
         for latest in invalidSnapshots {
@@ -290,7 +296,7 @@ struct BrowserMobileSidebarDropTests {
         let latest = apply([
             .patchTab(id: "c", fields: .init(userTitleOverride: .set("Remote title"))),
             .createTab(id: "inserted", data: .init(
-                spaceID: "source", placement: .temporary, pinnedFolderID: nil, urlString: "about:blank"
+                spaceID: "source", placement: .temporary, pinnedFolderID: nil, urlString: "about:blank",
             ), before: tab("d")),
         ], to: snapshot)
         let plan = try #require(Drop.plan(source: source, target: target, in: latest))
@@ -315,14 +321,14 @@ struct BrowserMobileSidebarDropTests {
         }
         let latest = apply([
             .move(items: [tab("child")], destination: .tabs(
-                spaceID: "source", placement: .spacePinned, pinnedFolderID: nil
+                spaceID: "source", placement: .spacePinned, pinnedFolderID: nil,
             )),
             .move(items: [tab("today")], destination: .tabs(
-                spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder"
+                spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder",
             )),
         ], to: snapshot)
         let plan = try #require(Drop.plan(
-            source: source, target: Drop.rootTarget(spaceID: "target", placement: .spacePinned), in: latest
+            source: source, target: Drop.rootTarget(spaceID: "target", placement: .spacePinned), in: latest,
         ))
         let moved = apply(plan, to: latest)
         #expect(plan.items == [folder("folder"), tab("loose")])
@@ -339,7 +345,7 @@ struct BrowserMobileSidebarDropTests {
         #expect(Drop.plan(source: source, target: target, in: snapshot) == nil)
         let allRoots = try #require(Drop.source(items: [folder("folder"), tab("loose"), folder("empty")], in: snapshot))
         #expect(Drop.plan(
-            source: allRoots, target: Drop.rootTarget(spaceID: "source", placement: .spacePinned), in: snapshot
+            source: allRoots, target: Drop.rootTarget(spaceID: "source", placement: .spacePinned), in: snapshot,
         ) == nil)
     }
 
@@ -355,7 +361,7 @@ struct BrowserMobileSidebarDropTests {
         let source = try #require(Drop.source(items: Array(references.prefix(1000)), in: snapshot))
         #expect(source.items.count == 1000)
         let plan = try #require(Drop.plan(
-            source: source, target: Drop.rootTarget(spaceID: "target", placement: .temporary), in: snapshot
+            source: source, target: Drop.rootTarget(spaceID: "target", placement: .temporary), in: snapshot,
         ))
         #expect(plan.items == source.items)
         #expect(Drop.source(items: references, in: snapshot) == nil)
@@ -363,15 +369,11 @@ struct BrowserMobileSidebarDropTests {
         let descendants = BrowserTabSessionSnapshot(spaces: snapshot.spaces, pinnedTabFolders: [
             .init(id: "parent", spaceID: "source", title: "Parent"),
         ], tabs: tabs.map { .init(
-            id: $0.id, urlString: $0.urlString, placement: .spacePinned, spaceID: "source", pinnedFolderID: "parent"
+            id: $0.id, urlString: $0.urlString, placement: .spacePinned, spaceID: "source", pinnedFolderID: "parent",
         ) })
         let collapsed = try #require(Drop.source(items: references + [folder("parent")], in: descendants))
         #expect(collapsed.items == [folder("parent")])
     }
-
-    // MARK: Private
-
-    private typealias Drop = BrowserMobileSidebarDrop
 }
 
 private func tab(_ id: String) -> BrowserSyncEntityReference { .init(entityType: .tab, entityID: id) }
@@ -379,17 +381,17 @@ private func folder(_ id: String) -> BrowserSyncEntityReference { .init(entityTy
 
 private func apply(
     _ plan: BrowserMobileSidebarDrop.Plan,
-    to snapshot: BrowserTabSessionSnapshot
+    to snapshot: BrowserTabSessionSnapshot,
 ) -> BrowserTabSessionSnapshot {
     apply(
         [.move(items: plan.items, destination: plan.destination, before: plan.before, after: plan.after)],
-        to: snapshot
+        to: snapshot,
     )
 }
 
 private func apply(
     _ operations: [BrowserSyncFolderOperation],
-    to snapshot: BrowserTabSessionSnapshot
+    to snapshot: BrowserTabSessionSnapshot,
 ) -> BrowserTabSessionSnapshot {
     var values = Dictionary(uniqueKeysWithValues: BrowserSyncFolderProjection.canonicalChanges(snapshot).map {
         (BrowserSyncOutboxProjection.key($0), $0)
@@ -426,7 +428,7 @@ private func dropSnapshot() -> BrowserTabSessionSnapshot {
             parentFolderID: "folder",
             title: "Nested",
             isExpanded: false,
-            pinnedSiblingRank: 200.25
+            pinnedSiblingRank: 200.25,
         ),
         .init(id: "empty", spaceID: "source", title: "Empty", isExpanded: false, pinnedSiblingRank: 300.75),
     ], tabs: [
@@ -437,14 +439,14 @@ private func dropSnapshot() -> BrowserTabSessionSnapshot {
             placement: .spacePinned,
             spaceID: "source",
             pinnedFolderID: "folder",
-            pinnedSiblingRank: 100.5
+            pinnedSiblingRank: 100.5,
         ),
         .init(
             id: "loose",
             urlString: "https://example.com/loose",
             placement: .spacePinned,
             spaceID: "source",
-            pinnedSiblingRank: 200.25
+            pinnedSiblingRank: 200.25,
         ),
         .init(id: "today", urlString: "https://example.com/today", spaceID: "source"),
         .init(id: "folder", urlString: "https://example.com/same-raw-id", spaceID: "source"),

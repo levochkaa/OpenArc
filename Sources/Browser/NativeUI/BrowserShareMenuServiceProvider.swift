@@ -1,3 +1,5 @@
+// BrowserShareMenuServiceProvider.swift
+
 import AppKit
 
 // MARK: - BrowserShareMenuServiceProvider

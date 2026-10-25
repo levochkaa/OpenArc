@@ -1,3 +1,5 @@
+// BrowserMobileFindTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -67,7 +69,7 @@ extension BrowserMobileUITests {
             }
             for pair in zip(
                 frames.sorted(by: { $0.minX < $1.minX }),
-                frames.sorted(by: { $0.minX < $1.minX }).dropFirst()
+                frames.sorted(by: { $0.minX < $1.minX }).dropFirst(),
             ) {
                 #expect(pair.0.maxX <= pair.1.minX + 0.5)
             }
@@ -149,7 +151,7 @@ extension BrowserMobileUITests {
                 let runtimeID = try #require(f.workspace.selectedTab?.runtimeID)
                 f.engine.loadHTMLString(
                     "<title>Replacement</title><p>new document</p>",
-                    baseURL: URL(string: "https://find.example/replacement"), id: runtimeID
+                    baseURL: URL(string: "https://find.example/replacement"), id: runtimeID,
                 )
                 #expect(!f.workspace.canFindInPage)
                 #expect(!f.workspace.presentFindInPage())
@@ -182,14 +184,14 @@ extension BrowserMobileUITests {
             #expect(!f.workspace.presentFindInPage())
             let inactiveButton = try #require(mobileFindView(
                 "browser.findInPage",
-                in: f.root.pageController.view
+                in: f.root.pageController.view,
             ) as? UIButton)
             #expect(!inactiveButton.isEnabled)
             #expect(try f.durableState() == saved)
             f.workspace.setJavaScriptDialogPresentationActive(true)
             let restoredButton = try #require(mobileFindView(
                 "browser.findInPage",
-                in: f.root.pageController.view
+                in: f.root.pageController.view,
             ) as? UIButton)
             #expect(restoredButton.isEnabled)
 
@@ -256,29 +258,6 @@ extension BrowserMobileUITests {
 // MARK: - MobileFindFixture
 
 @MainActor private final class MobileFindFixture {
-    // MARK: Lifecycle
-
-    init(directory: URL) throws {
-        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
-        let snapshot = BrowserTabSessionSnapshot(
-            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
-            tabs: [
-                .init(id: "a", urlString: "about:blank", spaceID: "space"),
-                .init(id: "b", urlString: "about:blank", spaceID: "space"),
-            ]
-        )
-        try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
-        try store.bindSyncOwner(owner)
-        self.document = try BrowserMobileProfileDocument(store: store, initialSnapshot: store.loadSnapshotStrict())
-        self.preferences = try #require(UserDefaults(suiteName: preferencesName))
-        let document = document
-        self.workspace = BrowserMobileWorkspace(
-            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences
-        )
-        self.root = BrowserMobileViewController(workspace: workspace, contentView: engine.hostView)
-        self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
-    }
-
     // MARK: Internal
 
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "find-owner")
@@ -290,6 +269,27 @@ extension BrowserMobileUITests {
     let workspace: BrowserMobileWorkspace
     let root: BrowserMobileViewController
     let window: UIWindow
+
+    init(directory: URL) throws {
+        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
+        let snapshot = BrowserTabSessionSnapshot(
+            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
+            tabs: [
+                .init(id: "a", urlString: "about:blank", spaceID: "space"),
+                .init(id: "b", urlString: "about:blank", spaceID: "space"),
+            ],
+        )
+        try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
+        try store.bindSyncOwner(owner)
+        self.document = try BrowserMobileProfileDocument(store: store, initialSnapshot: store.loadSnapshotStrict())
+        self.preferences = try #require(UserDefaults(suiteName: preferencesName))
+        let document = document
+        self.workspace = BrowserMobileWorkspace(
+            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences,
+        )
+        self.root = BrowserMobileViewController(workspace: workspace, contentView: engine.hostView)
+        self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
+    }
 
     func start() async throws {
         await workspace.restore()
@@ -316,13 +316,13 @@ extension BrowserMobileUITests {
 
     func load(
         tabID: String = "a", title: String = "Find fixture",
-        body: String = "<p>needle first</p><p>needle second</p><p>needle third</p>"
+        body: String = "<p>needle first</p><p>needle second</p><p>needle third</p>",
     ) async throws -> WKWebView {
         workspace.selectTab(id: tabID)
         let runtimeID = try #require(workspace.selectedTab?.runtimeID)
         engine.loadHTMLString(
             "<meta name='viewport' content='width=device-width'><title>\(title)</title><main>\(body)</main>",
-            baseURL: URL(string: "https://find.example/\(tabID)"), id: runtimeID
+            baseURL: URL(string: "https://find.example/\(tabID)"), id: runtimeID,
         )
         try #require(await mobileFindEventually {
             self.workspace.selectedTab?.title == title && self.workspace.selectedTab?.state.isLoading == false
@@ -369,7 +369,7 @@ extension BrowserMobileUITests {
 }
 
 @MainActor private func runMobileFindFixture(
-    directory: URL, _ body: (MobileFindFixture) async throws -> Void
+    directory: URL, _ body: (MobileFindFixture) async throws -> Void,
 ) async throws {
     let fixture = try MobileFindFixture(directory: directory)
     defer { fixture.close() }
@@ -383,7 +383,8 @@ extension BrowserMobileUITests {
 }
 
 @MainActor private func mobileFindEventually(_ condition: () -> Bool) async -> Bool {
-    let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(8))
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(8))
     while clock.now < deadline {
         if condition() {
             return true

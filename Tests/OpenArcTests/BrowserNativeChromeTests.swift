@@ -1,3 +1,5 @@
+// BrowserNativeChromeTests.swift
+
 import AppKit
 import Testing
 
@@ -40,7 +42,7 @@ import Testing
         #expect(view.control(
             view.queryField,
             textView: editor,
-            doCommandBy: #selector(NSResponder.cancelOperation(_:))
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)),
         ))
         #expect(!view.control(view.queryField, textView: editor, doCommandBy: #selector(NSResponder.moveLeft(_:))))
         #expect(submitted == 1)
@@ -121,7 +123,7 @@ import Testing
             applicationVersionText: "1.0",
             chromiumVersionText: "Chromium",
             copyrightText: "Copyright",
-            icon: NSImage()
+            icon: NSImage(),
         )) {
             opened.append($0)
         }
@@ -162,9 +164,9 @@ import Testing
                 syncID: id,
                 spaceID: "space",
                 title: "Tab \(id)",
-                urlString: "https://example.com/\(id)"
+                urlString: "https://example.com/\(id)",
             ),
-            previewImage: nil
+            previewImage: nil,
         )
     }
 }

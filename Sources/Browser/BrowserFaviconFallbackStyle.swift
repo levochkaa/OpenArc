@@ -1,3 +1,5 @@
+// BrowserFaviconFallbackStyle.swift
+
 import Foundation
 
 enum BrowserFaviconFallbackStyle: Equatable {

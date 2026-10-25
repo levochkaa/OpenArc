@@ -1,3 +1,5 @@
+// BrowserWindowControlsLayout.swift
+
 import CoreGraphics
 
 enum BrowserWindowControlsLayout {

@@ -1,3 +1,5 @@
+// BrowserPendingNavigationTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -30,7 +32,7 @@ import Testing
     h.driver.flushPendingCreateEvents()
     #expect(
         h.selectedTab?.urlString == "https://example.com/pending-navigation/c",
-        "Old allocation URL cannot replace intent"
+        "Old allocation URL cannot replace intent",
     )
     #expect(try h.outboxBytes() == bytes)
     let reopened = try BrowserSQLiteSessionStore(databaseURL: h.databaseURL)
@@ -71,7 +73,7 @@ import Testing
 
 @Test(arguments: [BrowserTabPlacement.spacePinned, .app])
 @MainActor func reopenedPersistentTabKeepsExplicitNavigationWhenOldPlaceholderArrives(
-    placement: BrowserTabPlacement
+    placement: BrowserTabPlacement,
 ) throws {
     let h = try PendingNavigationHarness(placement: placement)
     defer { h.cleanup() }
@@ -97,7 +99,7 @@ import Testing
 
 @Test(arguments: [false, true])
 @MainActor func latestRemotePendingURLTargetsBackgroundIdentityWithoutEchoOrChangingReadyPage(
-    placeholderDelivered: Bool
+    placeholderDelivered: Bool,
 ) throws {
     let h = try PendingNavigationHarness()
     defer { h.cleanup() }
@@ -182,7 +184,18 @@ import Testing
 // MARK: - PendingNavigationHarness
 
 @MainActor private final class PendingNavigationHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pending-navigation-\(UUID())")
+    let suiteName = "BrowserPendingNavigationTests.\(UUID())"
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://pending-navigation.example")!, userID: "owner")
+    let defaults: UserDefaults
+    let store: BrowserSQLiteSessionStore
+    let driver = FakeBrowserTabDriver()
+    private(set) var model: BrowserChromeModel!
+
+    var databaseURL: URL { directory.appendingPathComponent("session.sqlite") }
+    var selectedTab: BrowserChromeModel.Tab? { model.tabs.first { $0.id == model.selectedTabID } }
 
     init(placement: BrowserTabPlacement = .spacePinned) throws {
         self.defaults = UserDefaults(suiteName: suiteName)!
@@ -197,15 +210,15 @@ import Testing
                     systemImageName: "globe",
                     rank: 0,
                     isPinnedSectionCollapsed: false,
-                    selectedTabID: nil
+                    selectedTabID: nil,
                 )),
-                createdAt: "2027-01-15T08:00:00Z"
+                createdAt: "2027-01-15T08:00:00Z",
             ),
             pendingNavigationTabEvent(
                 id: "pinned",
                 url: "https://pinned.example/current",
                 sequence: 2,
-                placement: placement
+                placement: placement,
             ),
         ], cursor: 2, for: owner, enableSemanticMutations: true)
         self.model = makeModel(store: store, driver: driver)
@@ -213,22 +226,9 @@ import Testing
         try #require(store.pendingSyncQueue(for: owner).isEmpty)
     }
 
-    // MARK: Internal
-
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pending-navigation-\(UUID())")
-    let suiteName = "BrowserPendingNavigationTests.\(UUID())"
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://pending-navigation.example")!, userID: "owner")
-    let defaults: UserDefaults
-    let store: BrowserSQLiteSessionStore
-    let driver = FakeBrowserTabDriver()
-    private(set) var model: BrowserChromeModel!
-
-    var databaseURL: URL { directory.appendingPathComponent("session.sqlite") }
-    var selectedTab: BrowserChromeModel.Tab? { model.tabs.first { $0.id == model.selectedTabID } }
-
     func receiveRemote(url: String, sequence: Int) throws -> BrowserTabSessionSnapshot {
         try store.applyRemoteSyncEvents(
-            [pendingNavigationTabEvent(id: "remote", url: url, sequence: sequence)], cursor: sequence, for: owner
+            [pendingNavigationTabEvent(id: "remote", url: url, sequence: sequence)], cursor: sequence, for: owner,
         )
     }
 
@@ -255,7 +255,7 @@ import Testing
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(),
             dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
     }
 
@@ -276,7 +276,7 @@ import Testing
 private enum PendingNavigationTestError: Error { case expectedSemanticMutation }
 
 private func pendingNavigationTabEvent(
-    id: String, url: String, sequence: Int, placement: BrowserTabPlacement = .temporary
+    id: String, url: String, sequence: Int, placement: BrowserTabPlacement = .temporary,
 ) -> BrowserSyncEvent {
     BrowserSyncEvent(
         serverSeq: sequence, deviceID: "remote", entityType: "tab", entityID: id, op: "upsert",
@@ -284,7 +284,7 @@ private func pendingNavigationTabEvent(
             id: id, spaceID: "space", placement: placement, rank: 0, urlString: url,
             pinnedURLString: placement == .spacePinned ? "https://pinned.example/home" : nil,
             title: nil, userTitleOverride: id == "pinned" ? "Pinned label" : "Remote label", faviconURLString: nil,
-            lastActivityAt: "2027-01-15T08:00:00Z"
-        )), createdAt: "2027-01-15T08:00:00Z"
+            lastActivityAt: "2027-01-15T08:00:00Z",
+        )), createdAt: "2027-01-15T08:00:00Z",
     )
 }

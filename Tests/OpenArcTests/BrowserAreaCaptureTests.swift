@@ -1,3 +1,5 @@
+// BrowserAreaCaptureTests.swift
+
 import AppKit
 import Testing
 
@@ -10,7 +12,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 600, height: 400),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -24,7 +26,7 @@ import Testing
             // The overlay is flipped; window coordinates grow upward.
             try #require(NSEvent.mouseEvent(
                 with: type, location: NSPoint(x: x, y: 400 - y), modifierFlags: [], timestamp: 0,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1,
             ))
         }
         try overlay.mouseDown(with: event(.leftMouseDown, 200, 125))
@@ -38,7 +40,7 @@ import Testing
         overlay.cancelOperation(nil)
         #expect(
             results.count == 4 && results.dropFirst().allSatisfy { $0 == nil },
-            "A click, a click beside the page and Escape cancel"
+            "A click, a click beside the page and Escape cancel",
         )
     }
 

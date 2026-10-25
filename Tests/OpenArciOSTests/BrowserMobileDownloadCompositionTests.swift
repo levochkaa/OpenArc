@@ -1,3 +1,5 @@
+// BrowserMobileDownloadCompositionTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -10,17 +12,18 @@ extension BrowserMobileUITests {
             let document = try await registry.document()
             let downloads = try #require(document.downloads)
             #expect(downloads.error == nil && !downloads.isLoading)
-            let firstEngine = DownloadCompositionEngine(), secondEngine = DownloadCompositionEngine()
+            let firstEngine = DownloadCompositionEngine()
+            let secondEngine = DownloadCompositionEngine()
             let preferencesName = "DownloadsComposition.\(UUID())"
             let preferences = try #require(UserDefaults(suiteName: preferencesName))
             defer { preferences.removePersistentDomain(forName: preferencesName) }
             let first = BrowserMobileWorkspace(
                 engine: firstEngine, sceneID: "first", profileLoader: { try await registry.document() },
-                preferences: preferences
+                preferences: preferences,
             )
             let second = BrowserMobileWorkspace(
                 engine: secondEngine, sceneID: "second", profileLoader: { try await registry.document() },
-                preferences: preferences
+                preferences: preferences,
             )
             await first.restore()
             await second.restore()
@@ -66,7 +69,7 @@ extension BrowserMobileUITests {
             let registry = BrowserMobileProfileRegistry(directory: directory)
             let engine = DownloadCompositionEngine()
             let workspace = BrowserMobileWorkspace(
-                engine: engine, sceneID: UUID().uuidString, profileLoader: { try await registry.document() }
+                engine: engine, sceneID: UUID().uuidString, profileLoader: { try await registry.document() },
             )
             await workspace.restore()
             let page = BrowserMobilePageViewController(workspace: workspace, contentView: engine.hostView)

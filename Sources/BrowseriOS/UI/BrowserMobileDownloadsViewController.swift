@@ -1,3 +1,5 @@
+// BrowserMobileDownloadsViewController.swift
+
 import UIKit
 
 // MARK: - BrowserMobileDownloadsPresenting
@@ -31,11 +33,57 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 @MainActor final class BrowserMobileDownloadsViewController: UITableViewController,
     UIAdaptivePresentationControllerDelegate
 {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var keyCommands: [UIKeyCommand]? {
+        [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(close))]
+    }
+
+    // MARK: Private
+
+    private let downloads: any BrowserMobileDownloadsPresenting
+    private let exportPresenter: @MainActor (UIViewController, UIDocumentPickerViewController) -> Void
+    private var entries = [BrowserMobileDownload]()
+    private var observation: UUID?
+    private var loadTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
+    private var exportTask: Task<Void, Never>?
+    private var deleteTask: Task<Void, Never>?
+    private var clearTask: Task<Void, Never>?
+    private var confirmation: DownloadConfirmation?
+    private var exportAttempt: UUID?
+    private var exportingID: UUID?
+    private weak var exportPicker: UIDocumentPickerViewController?
+    private var isClosing = false
+    private var presentationGeneration = UUID()
+    private var sceneAllowsPresentation = true
+    private var interactionError: String?
+    private var interactionErrorItemIDs: Set<UUID>?
+    private let statusLabel = UILabel()
+    private let retryButton = UIButton(type: .system)
+    private let statusStack = UIStackView()
+
+    private var hasPendingAction: Bool {
+        deleteTask != nil || clearTask != nil || retryTask != nil || exportingID != nil
+    }
+
+    private var canStartAction: Bool { canPresent && !hasPendingAction && confirmation == nil }
+
+    private var canPresent: Bool {
+        guard !isClosing, sceneAllowsPresentation, let window = viewIfLoaded?.window, !window.isHidden,
+              window.windowScene?.activationState == .foregroundActive,
+              !isBeingDismissed, navigationController?.isBeingDismissed != true else { return false }
+        var ancestor: UIViewController? = self
+        while let controller = ancestor {
+            guard controller.presentedViewController == nil else { return false }
+            ancestor = controller.parent
+        }
+        return true
+    }
 
     init(
         downloads: any BrowserMobileDownloadsPresenting,
-        exportPresenter: (@MainActor (UIViewController, UIDocumentPickerViewController) -> Void)? = nil
+        exportPresenter: (@MainActor (UIViewController, UIDocumentPickerViewController) -> Void)? = nil,
     ) {
         self.downloads = downloads
         self.exportPresenter = exportPresenter ?? { owner, picker in owner.present(picker, animated: true) }
@@ -54,12 +102,6 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         NotificationCenter.default.removeObserver(self)
     }
 
-    // MARK: Internal
-
-    override var keyCommands: [UIKeyCommand]? {
-        [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(close))]
-    }
-
     override func viewDidLoad() {
         super.viewDidLoad()
         title = Self.localized("Downloads")
@@ -72,7 +114,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         navigationItem.rightBarButtonItem = done
         let clear = UIBarButtonItem(
             title: Self.localized("Clear Completed…"), style: .plain,
-            target: self, action: #selector(requestClearCompleted)
+            target: self, action: #selector(requestClearCompleted),
         )
         clear.accessibilityIdentifier = "browser.downloads.clear-completed"
         navigationItem.leftBarButtonItem = clear
@@ -145,7 +187,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     }
 
     override func tableView(
-        _: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+        _: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath,
     ) -> UISwipeActionsConfiguration? {
         guard entries.indices.contains(indexPath.row), downloads.canDelete(id: entries[indexPath.row].id) else {
             return nil
@@ -163,7 +205,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     }
 
     override func tableView(
-        _: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point _: CGPoint
+        _: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point _: CGPoint,
     ) -> UIContextMenuConfiguration? {
         guard entries.indices.contains(indexPath.row) else { return nil }
         let entry = entries[indexPath.row]
@@ -176,11 +218,15 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             return UIMenu(children: [UIAction(
                 title: Self.localized("Delete"),
                 image: UIImage(systemName: "trash"),
-                attributes: attributes
+                attributes: attributes,
             ) { [weak self] _ in
                 _ = self?.requestDeletion(id: entry.id)
             }])
         }
+    }
+
+    private static func localized(_ key: String) -> String {
+        NSLocalizedString(key, tableName: "Mobile", comment: "Downloads")
     }
 
     func confirmDeletion(id: UUID, dismissing alert: UIAlertController) {
@@ -240,13 +286,14 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
                 owner.clearTask = nil
                 owner.interactionError =
                     switch result {
-                    case .failed, .removed:
+                    case .failed,
+                         .removed:
                         // Persistence failures belong to the shared coordinator so
                         // Retry in another window clears the same visible error.
                         nil
                     case .busy:
                         Self.localized(
-                            "Finish any Save to Files actions or retry pending deletions, then try Clear Completed again."
+                            "Finish any Save to Files actions or retry pending deletions, then try Clear Completed again.",
                         )
                     case .invalidScope:
                         Self.localized("This Clear Completed request is no longer available.")
@@ -287,52 +334,6 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         NotificationCenter.default.removeObserver(self)
     }
 
-    // MARK: Private
-
-    private let downloads: any BrowserMobileDownloadsPresenting
-    private let exportPresenter: @MainActor (UIViewController, UIDocumentPickerViewController) -> Void
-    private var entries = [BrowserMobileDownload]()
-    private var observation: UUID?
-    private var loadTask: Task<Void, Never>?
-    private var retryTask: Task<Void, Never>?
-    private var exportTask: Task<Void, Never>?
-    private var deleteTask: Task<Void, Never>?
-    private var clearTask: Task<Void, Never>?
-    private var confirmation: DownloadConfirmation?
-    private var exportAttempt: UUID?
-    private var exportingID: UUID?
-    private weak var exportPicker: UIDocumentPickerViewController?
-    private var isClosing = false
-    private var presentationGeneration = UUID()
-    private var sceneAllowsPresentation = true
-    private var interactionError: String?
-    private var interactionErrorItemIDs: Set<UUID>?
-    private let statusLabel = UILabel()
-    private let retryButton = UIButton(type: .system)
-    private let statusStack = UIStackView()
-
-    private var hasPendingAction: Bool {
-        deleteTask != nil || clearTask != nil || retryTask != nil || exportingID != nil
-    }
-
-    private var canStartAction: Bool { canPresent && !hasPendingAction && confirmation == nil }
-
-    private var canPresent: Bool {
-        guard !isClosing, sceneAllowsPresentation, let window = viewIfLoaded?.window, !window.isHidden,
-              window.windowScene?.activationState == .foregroundActive,
-              !isBeingDismissed, navigationController?.isBeingDismissed != true else { return false }
-        var ancestor: UIViewController? = self
-        while let controller = ancestor {
-            guard controller.presentedViewController == nil else { return false }
-            ancestor = controller.parent
-        }
-        return true
-    }
-
-    private static func localized(_ key: String) -> String {
-        NSLocalizedString(key, tableName: "Mobile", comment: "Downloads")
-    }
-
     private func canAdmitAction(in window: UIWindow?, generation: UUID) -> Bool {
         guard let window else { return false }
         return presentationGeneration == generation && viewIfLoaded?.window === window && canPresent
@@ -371,7 +372,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             entry: entry,
             exportPending: exportingID == entry.id,
             exportAvailable: exportingID == nil,
-            deleting: downloads.isDeleting(id: entry.id)
+            deleting: downloads.isDeleting(id: entry.id),
         )
         let id = entry.id
         cell.action = { [weak self] in self?.performAction(id: id) }
@@ -387,7 +388,9 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             downloads.cancel(id: id)
         case .completed:
             beginExport(id: id)
-        case .cancelled, .failed, .saving:
+        case .cancelled,
+             .failed,
+             .saving:
             break
         }
     }
@@ -400,8 +403,8 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             title: Self.localized("Delete Download?"),
             message: String(
                 format: Self.localized("Delete “%@” from this browser? Copies saved to Files will remain."),
-                entry.filename
-            ), preferredStyle: .alert
+                entry.filename,
+            ), preferredStyle: .alert,
         )
         alert.view.accessibilityIdentifier = "browser.downloads.delete-confirmation"
         confirmation = DownloadConfirmation(alert: alert, window: window, action: .delete(id))
@@ -426,11 +429,11 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
             ? Self.localized("Remove this completed download from this browser? Copies saved to Files will remain.")
             : String(
                 format: Self.localized(
-                    "Remove %d completed downloads from this browser? Copies saved to Files will remain."
-                ), scope.count
+                    "Remove %d completed downloads from this browser? Copies saved to Files will remain.",
+                ), scope.count,
             )
         let alert = UIAlertController(
-            title: Self.localized("Clear Completed Downloads?"), message: message, preferredStyle: .alert
+            title: Self.localized("Clear Completed Downloads?"), message: message, preferredStyle: .alert,
         )
         alert.view.accessibilityIdentifier = "browser.downloads.clear-confirmation"
         confirmation = DownloadConfirmation(alert: alert, window: window, action: .clear(scope))
@@ -451,7 +454,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 
     private func dismissConfirmation(
         _ alert: UIAlertController,
-        perform: @escaping @MainActor (BrowserMobileDownloadsViewController, UIWindow) -> Void
+        perform: @escaping @MainActor (BrowserMobileDownloadsViewController, UIWindow) -> Void,
     ) {
         guard let captured = confirmation, captured.alert === alert, !captured.isDismissing else { return }
         captured.isDismissing = true
@@ -577,7 +580,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         let width = tableView.bounds.width
         let size = statusStack.systemLayoutSizeFitting(
             CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
-            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel
+            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel,
         )
         if statusStack.frame.size != size || tableView.tableHeaderView !== statusStack {
             statusStack.frame = CGRect(origin: .zero, size: size)
@@ -589,14 +592,6 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 // MARK: - DownloadConfirmation
 
 @MainActor private final class DownloadConfirmation {
-    // MARK: Lifecycle
-
-    init(alert: UIAlertController, window: UIWindow, action: Action) {
-        self.alert = alert
-        self.window = window
-        self.action = action
-    }
-
     // MARK: Internal
 
     enum Action {
@@ -608,6 +603,12 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     weak var window: UIWindow?
     let action: Action
     var isDismissing = false
+
+    init(alert: UIAlertController, window: UIWindow, action: Action) {
+        self.alert = alert
+        self.window = window
+        self.action = action
+    }
 }
 
 // MARK: - BrowserMobileDownloadExportPicker
@@ -615,11 +616,14 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 @MainActor private final class BrowserMobileDownloadExportPicker: UIDocumentPickerViewController,
     UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate
 {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private var lease: BrowserMobileDownloadExportLease?
+    private var onFinish: (@MainActor (UIDocumentPickerViewController) -> Void)?
 
     init(
         lease: BrowserMobileDownloadExportLease,
-        onFinish: @escaping @MainActor (UIDocumentPickerViewController) -> Void
+        onFinish: @escaping @MainActor (UIDocumentPickerViewController) -> Void,
     ) {
         self.lease = lease
         self.onFinish = onFinish
@@ -660,11 +664,6 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         }
     }
 
-    // MARK: Private
-
-    private var lease: BrowserMobileDownloadExportLease?
-    private var onFinish: (@MainActor (UIDocumentPickerViewController) -> Void)?
-
     private func finish() {
         guard let lease else { return }
         self.lease = nil
@@ -678,7 +677,28 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 // MARK: - BrowserMobileDownloadCell
 
 @MainActor private final class BrowserMobileDownloadCell: UITableViewCell {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var action: (() -> Void)?
+
+    var deleteAction: (() -> Bool)? {
+        didSet {
+            filenameLabel.accessibilityCustomActions = deleteAction == nil
+                ? nil
+                : [
+                    UIAccessibilityCustomAction(name: Self.localized("Delete")) { [deleteAction] _ in
+                        deleteAction?() ?? false
+                    },
+                ]
+        }
+    }
+
+    // MARK: Private
+
+    private let filenameLabel = UILabel()
+    private let statusLabel = UILabel()
+    private let progress = UIProgressView(progressViewStyle: .default)
+    private let actionButton = UIButton(type: .system)
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -723,20 +743,8 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    // MARK: Internal
-
-    var action: (() -> Void)?
-
-    var deleteAction: (() -> Bool)? {
-        didSet {
-            filenameLabel.accessibilityCustomActions = deleteAction == nil
-                ? nil
-                : [
-                    UIAccessibilityCustomAction(name: Self.localized("Delete")) { [deleteAction] _ in
-                        deleteAction?() ?? false
-                    },
-                ]
-        }
+    private static func localized(_ key: String) -> String {
+        NSLocalizedString(key, tableName: "Mobile", comment: "Downloads")
     }
 
     func configure(entry: BrowserMobileDownload, exportPending: Bool, exportAvailable: Bool, deleting: Bool) {
@@ -777,17 +785,6 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         case .failed:
             statusLabel.text = Self.localized("Failed") + (entry.error.map { "\n" + $0 } ?? "")
         }
-    }
-
-    // MARK: Private
-
-    private let filenameLabel = UILabel()
-    private let statusLabel = UILabel()
-    private let progress = UIProgressView(progressViewStyle: .default)
-    private let actionButton = UIButton(type: .system)
-
-    private static func localized(_ key: String) -> String {
-        NSLocalizedString(key, tableName: "Mobile", comment: "Downloads")
     }
 
     @objc private func activate() { action?() }

@@ -1,3 +1,5 @@
+// BrowserMobileSyncArchiveObservationTests.swift
+
 import Foundation
 import Testing
 import UIKit
@@ -24,16 +26,17 @@ import UIKit
     // client. The v5 bootstrap must add Archive content without changing tabs.
     let knownDelete = BrowserSyncEvent(
         serverSeq: 20, deviceID: "remote", entityType: "tab", entityID: "expired", op: "delete",
-        data: .deleted(id: "expired"), createdAt: "2026-10-03T12:00:00Z"
+        data: .deleted(id: "expired"), createdAt: "2026-10-03T12:00:00Z",
     )
     _ = try store.completeFolderSyncBootstrap(events: remote.seed + [knownDelete], cursor: 20, for: owner)
     let document = try BrowserMobileProfileDocument(store: store, loadSnapshot: { try store.loadSnapshotStrict() })
-    let firstEngine = MobileArchiveObservationEngine(), secondEngine = MobileArchiveObservationEngine()
+    let firstEngine = MobileArchiveObservationEngine()
+    let secondEngine = MobileArchiveObservationEngine()
     let first = BrowserMobileWorkspace(
-        engine: firstEngine, sceneID: "first", profileLoader: { document }, preferences: preferences
+        engine: firstEngine, sceneID: "first", profileLoader: { document }, preferences: preferences,
     )
     let second = BrowserMobileWorkspace(
-        engine: secondEngine, sceneID: "second", profileLoader: { document }, preferences: preferences
+        engine: secondEngine, sceneID: "second", profileLoader: { document }, preferences: preferences,
     )
     await first.restore()
     await second.restore()
@@ -42,15 +45,20 @@ import UIKit
     first.selectTab(id: "live-a")
     second.selectTab(id: "live-b")
     let before = document.snapshot
-    let firstTabs = first.tabs, secondTabs = second.tabs
-    let firstCreated = firstEngine.created, secondCreated = secondEngine.created
-    let firstNavigated = firstEngine.navigated, secondNavigated = secondEngine.navigated
-    let firstClosed = firstEngine.closed, secondClosed = secondEngine.closed
+    let firstTabs = first.tabs
+    let secondTabs = second.tabs
+    let firstCreated = firstEngine.created
+    let secondCreated = secondEngine.created
+    let firstNavigated = firstEngine.navigated
+    let secondNavigated = secondEngine.navigated
+    let firstClosed = firstEngine.closed
+    let secondClosed = secondEngine.closed
     #expect(first.selectedTabID == "live-a" && second.selectedTabID == "live-b")
     #expect(Set(firstTabs.map(\.runtimeID)).isDisjoint(with: secondTabs.map(\.runtimeID)))
     #expect(try store.loadArchivePage().entries.isEmpty)
 
-    var firstRevisions = [Int](), secondRevisions = [Int]()
+    var firstRevisions = [Int]()
+    var secondRevisions = [Int]()
     first.onChange = { [weak first] in firstRevisions.append(first?.archiveRevision ?? -1) }
     second.onChange = { [weak second] in secondRevisions.append(second?.archiveRevision ?? -1) }
     var observedSnapshots = [BrowserTabSessionSnapshot]()
@@ -60,7 +68,7 @@ import UIKit
     let service = BrowserSyncService(
         localStore: store, remoteClient: remote, authSessionStore: auth,
         pushDebounce: .zero, pollInterval: nil, retryDelay: nil, runtimeActive: false,
-        errorReporter: { _, phase in failures.append(phase) }
+        errorReporter: { _, phase in failures.append(phase) },
     )
     defer {
         service.setSnapshotApplier(nil)
@@ -151,7 +159,7 @@ import UIKit
             id: "expired", spaceID: "work", placement: .temporary, rank: 0,
             urlString: "https://example.com/recovery", pinnedURLString: nil, title: "Loaded recovery title",
             userTitleOverride: "Recoverable name", faviconURLString: nil,
-            lastActivityAt: "2000-01-01T00:00:00.123456Z", pinnedFolderID: nil
+            lastActivityAt: "2000-01-01T00:00:00.123456Z", pinnedFolderID: nil,
         )
     }
 
@@ -159,14 +167,14 @@ import UIKit
         [
             event(sequence: 1, type: "space", id: "work", data: .space(.init(
                 id: "work", title: "Work", systemImageName: "globe", rank: 0,
-                isPinnedSectionCollapsed: false, selectedTabID: nil
+                isPinnedSectionCollapsed: false, selectedTabID: nil,
             ))),
             event(sequence: 2, type: "tab", id: "expired", data: .tab(recoveryTab)),
         ] + ["live-a", "live-b"].enumerated().map { index, id in
             event(sequence: index + 3, type: "tab", id: id, data: .tab(.init(
                 id: id, spaceID: "work", placement: .temporary, rank: Double(index + 1),
                 urlString: "https://example.com/\(id)", pinnedURLString: nil, title: id,
-                userTitleOverride: nil, faviconURLString: nil, lastActivityAt: "2026-10-03T11:00:00Z"
+                userTitleOverride: nil, faviconURLString: nil, lastActivityAt: "2026-10-03T11:00:00Z",
             )))
         }
     }
@@ -184,12 +192,12 @@ import UIKit
         let expiry = BrowserSyncEvent(
             serverSeq: 20, deviceID: "remote", entityType: "tab", entityID: "expired", op: "delete",
             data: .deleted(id: "expired", autoArchive: .init(
-                archivedAt: "2026-10-03T12:00:00.654321Z", sourceServerSeq: 2, tab: recoveryTab
-            )), createdAt: "2026-10-03T12:00:00Z"
+                archivedAt: "2026-10-03T12:00:00.654321Z", sourceServerSeq: 2, tab: recoveryTab,
+            )), createdAt: "2026-10-03T12:00:00Z",
         )
         return .init(
             cursor: 20, events: (seed + [expiry]).filter { $0.serverSeq > cursor },
-            protocolVersion: protocolVersion, supportedPushVersions: [2, 3, 4, 5]
+            protocolVersion: protocolVersion, supportedPushVersions: [2, 3, 4, 5],
         )
     }
 
@@ -200,7 +208,7 @@ import UIKit
 
     func push(
         mutation _: BrowserSyncSemanticMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncSemanticPushResponse {
         pushes += 1
         throw UnexpectedPush.request
@@ -208,7 +216,7 @@ import UIKit
 
     func push(
         mutation _: BrowserSyncFolderMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncFolderPushResponse {
         pushes += 1
         throw UnexpectedPush.request
@@ -224,7 +232,7 @@ import UIKit
             entityID: id,
             op: "upsert",
             data: data,
-            createdAt: "2026-10-03T11:00:00Z"
+            createdAt: "2026-10-03T11:00:00Z",
         )
     }
 }
@@ -234,7 +242,7 @@ import UIKit
 @MainActor private final class MobileArchiveObservationAuth: BrowserSyncAuthSessionReading {
     let session = BrowserAuthSession(
         accessToken: "fixture-only", userID: "owner", userEmail: nil, deviceID: "mobile",
-        serverURL: URL(string: "https://mobile-archive-observation.example")!
+        serverURL: URL(string: "https://mobile-archive-observation.example")!,
     )
 
     func loadSession() -> BrowserAuthSession? { session }
@@ -246,7 +254,9 @@ import UIKit
     let hostView = UIView()
     var onEvent: ((BrowserMobileEngineEvent) -> Void)?
     var onPopupCreated: ((String, URL?) -> Void)?
-    var created = [String](), navigated = [String](), closed = [String]()
+    var created = [String]()
+    var navigated = [String]()
+    var closed = [String]()
 
     func createTab(id: String, url _: URL) { created.append(id) }
     func selectTab(id _: String?) {}

@@ -1,3 +1,5 @@
+// BrowserWebAppRootView.swift
+
 import AppKit
 import Combine
 import QuartzCore
@@ -13,13 +15,36 @@ struct BrowserWebAppViewActions {
 // MARK: - BrowserWebAppRootView
 
 final class BrowserWebAppRootView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    // MARK: Private
+
+    private let model: BrowserChromeModel
+    private let preferences: BrowserWebAppPreferences
+    private let background = BrowserChromeBackgroundNSView()
+    private let content: BrowserContentNSView
+    private let toolbar: BrowserWebAppToolbarNSView
+    private let margins = BrowserNativeWindowMargins()
+    private let find = BrowserFindBarNSView()
+    private let fullscreen = BrowserWindowFullscreenReaderNSView()
+    private var isFullscreen = false
+    private var previousShowsToolbar: Bool?
+    private var animateNextLayout = false
+    private let frameTransitions = BrowserNativeFrameTransitions()
+    private let toolbarVisibility = BrowserNativeVisibilityAnimation()
+    private var observations = Set<AnyCancellable>()
+
+    private var showsToolbar: Bool { !isFullscreen || preferences.alwaysShowsToolbarInFullscreen }
+    private var windowLayout: BrowserWebAppWindowLayout { .init(isFullscreen: isFullscreen, showsToolbar: showsToolbar)
+    }
 
     init(
         model: BrowserChromeModel,
         configuration: BrowserWebAppConfiguration,
         preferences: BrowserWebAppPreferences,
-        actions: BrowserWebAppViewActions
+        actions: BrowserWebAppViewActions,
     ) {
         self.model = model
         self.preferences = preferences
@@ -28,7 +53,7 @@ final class BrowserWebAppRootView: NSView {
             model: model,
             preferences: preferences,
             configuration: configuration,
-            actions: actions
+            actions: actions,
         )
         super.init(frame: .zero)
         wantsLayer = true
@@ -57,10 +82,6 @@ final class BrowserWebAppRootView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
     override func layout() {
         super.layout()
         let geometry = windowLayout
@@ -71,14 +92,14 @@ final class BrowserWebAppRootView: NSView {
             width: max(bounds.width - geometry.contentHorizontalInset * 2, 0),
             height: max(
                 bounds.height - geometry.contentMinY - geometry.contentBottomInset,
-                0
-            )
+                0,
+            ),
         )
         let toolbarFrame = NSRect(
             x: geometry.toolbarHorizontalInset,
             y: geometry.toolbarTopInset,
             width: max(bounds.width - geometry.toolbarHorizontalInset * 2, 0),
-            height: BrowserWebAppLayout.toolbarHeight
+            height: BrowserWebAppLayout.toolbarHeight,
         )
         frameTransitions.setFrame(contentFrame, of: content, animated: animateNextLayout, curve: .sidebar)
         frameTransitions.setFrame(toolbarFrame, of: toolbar, animated: animateNextLayout, curve: .sidebar)
@@ -90,29 +111,8 @@ final class BrowserWebAppRootView: NSView {
             leading: geometry.edgeDragInset,
             top: geometry.edgeDragInset,
             trailing: geometry.edgeDragInset,
-            bottom: geometry.edgeDragInset
+            bottom: geometry.edgeDragInset,
         )
-    }
-
-    // MARK: Private
-
-    private let model: BrowserChromeModel
-    private let preferences: BrowserWebAppPreferences
-    private let background = BrowserChromeBackgroundNSView()
-    private let content: BrowserContentNSView
-    private let toolbar: BrowserWebAppToolbarNSView
-    private let margins = BrowserNativeWindowMargins()
-    private let find = BrowserFindBarNSView()
-    private let fullscreen = BrowserWindowFullscreenReaderNSView()
-    private var isFullscreen = false
-    private var previousShowsToolbar: Bool?
-    private var animateNextLayout = false
-    private let frameTransitions = BrowserNativeFrameTransitions()
-    private let toolbarVisibility = BrowserNativeVisibilityAnimation()
-    private var observations = Set<AnyCancellable>()
-
-    private var showsToolbar: Bool { !isFullscreen || preferences.alwaysShowsToolbarInFullscreen }
-    private var windowLayout: BrowserWebAppWindowLayout { .init(isFullscreen: isFullscreen, showsToolbar: showsToolbar)
     }
 
     private func refresh() {
@@ -123,7 +123,7 @@ final class BrowserWebAppRootView: NSView {
             hasSelectedTab: model.selectedTabID != nil,
             isSidebarVisible: false,
             usesWindowContentInsets: windowLayout.usesWindowContentInsets,
-            selectedTabCreationState: model.selectedTabCreationState
+            selectedTabCreationState: model.selectedTabCreationState,
         )
         if let previousShowsToolbar, previousShowsToolbar != showsToolbar {
             animateNextLayout = true

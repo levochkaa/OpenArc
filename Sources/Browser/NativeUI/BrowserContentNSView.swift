@@ -1,3 +1,5 @@
+// BrowserContentNSView.swift
+
 import AppKit
 import Combine
 import QuartzCore
@@ -9,9 +11,12 @@ struct BrowserContentClipping: Equatable {
     let usesWindowContentInsets: Bool
     var sidebarPosition = BrowserSidebarPosition.left
 
-    var radius: CGFloat { isSidebarVisible || usesWindowContentInsets
-        ? BrowserChromeLayout.leadingContentCornerRadius
-        : 0
+    var radius: CGFloat {
+        if isSidebarVisible || usesWindowContentInsets {
+            BrowserChromeLayout.leadingContentCornerRadius
+        } else {
+            0
+        }
     }
 
     var corners: CACornerMask {
@@ -30,7 +35,48 @@ struct BrowserContentClipping: Equatable {
 // MARK: - BrowserContentNSView
 
 final class BrowserContentNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    let viewport: BrowserViewportClipView
+    let splitPaneBars = BrowserSplitPaneBarsView()
+    var onRetryTabCreation: () -> Void = {}
+
+    private(set) var areaCapture: BrowserAreaCaptureOverlay?
+    let permissionPrompt = BrowserSitePermissionPromptView()
+
+    private(set) var crashPages = [String: BrowserSadTabView]()
+
+    // MARK: Private
+
+    private var areaCaptureTabID: String?
+    private weak var captureModel: BrowserChromeModel?
+    private var permissionObservation: AnyCancellable?
+
+    private let loading = BrowserNativeSurface()
+    private let spinner = NSProgressIndicator()
+    private let loadingLabel = BrowserNativeControls.label(
+        BrowserStrings.loadingLaunchingBrowser,
+        size: 12,
+        color: BrowserChromeColors.secondaryText,
+        wraps: true,
+    )
+    private let failure = BrowserNativeSurface()
+    private let failureTitle = BrowserNativeControls.label(
+        BrowserStrings.tabCreationFailedTitle,
+        size: 16,
+        weight: .semibold,
+        color: BrowserChromeColors.primaryText,
+        wraps: true,
+    )
+    private let failureMessage = BrowserNativeControls.label(
+        BrowserStrings.tabCreationFailedMessage,
+        size: 13,
+        color: BrowserChromeColors.secondaryText,
+        wraps: true,
+    )
+    private let retry = BrowserActionButton(BrowserStrings.tabCreationRetry, action: {})
 
     init(hostView: NSView) {
         self.viewport = BrowserViewportClipView(hostView: hostView)
@@ -79,19 +125,6 @@ final class BrowserContentNSView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    let viewport: BrowserViewportClipView
-    let splitPaneBars = BrowserSplitPaneBarsView()
-    var onRetryTabCreation: () -> Void = {}
-
-    private(set) var areaCapture: BrowserAreaCaptureOverlay?
-    let permissionPrompt = BrowserSitePermissionPromptView()
-
-    private(set) var crashPages = [String: BrowserSadTabView]()
-
     override func layout() {
         super.layout()
         cancelAreaCaptureIfStale()
@@ -118,7 +151,7 @@ final class BrowserContentNSView: NSView {
             x: (bounds.width - retryWidth) / 2,
             y: failureMessage.frame.maxY + 20,
             width: retryWidth,
-            height: 32
+            height: 32,
         )
         for (id, page) in crashPages {
             page.frame = pageFrame(forTabID: id)
@@ -130,7 +163,7 @@ final class BrowserContentNSView: NSView {
                 x: page.minX + 12,
                 y: page.minY + 12,
                 width: min(BrowserSitePermissionPromptView.width, max(page.width - 24, 0)),
-                height: permissionPrompt.fittingHeight
+                height: permissionPrompt.fittingHeight,
             )
         }
     }
@@ -205,7 +238,7 @@ final class BrowserContentNSView: NSView {
         isSidebarVisible: Bool,
         usesWindowContentInsets: Bool,
         sidebarPosition: BrowserSidebarPosition = .left,
-        selectedTabCreationState: BrowserTabCreationState? = nil
+        selectedTabCreationState: BrowserTabCreationState? = nil,
     ) {
         cancelAreaCaptureIfStale()
         viewport.update(hostView: hostView)
@@ -219,7 +252,7 @@ final class BrowserContentNSView: NSView {
         let clipping = BrowserContentClipping(
             isSidebarVisible: isSidebarVisible,
             usesWindowContentInsets: usesWindowContentInsets,
-            sidebarPosition: sidebarPosition
+            sidebarPosition: sidebarPosition,
         )
         viewport.updateClipping(cornerRadius: clipping.radius, maskedCorners: clipping.corners)
         for overlay in [loading, failure] {
@@ -278,36 +311,6 @@ final class BrowserContentNSView: NSView {
         needsLayout = true
     }
 
-    // MARK: Private
-
-    private var areaCaptureTabID: String?
-    private weak var captureModel: BrowserChromeModel?
-    private var permissionObservation: AnyCancellable?
-
-    private let loading = BrowserNativeSurface()
-    private let spinner = NSProgressIndicator()
-    private let loadingLabel = BrowserNativeControls.label(
-        BrowserStrings.loadingLaunchingBrowser,
-        size: 12,
-        color: BrowserChromeColors.secondaryText,
-        wraps: true
-    )
-    private let failure = BrowserNativeSurface()
-    private let failureTitle = BrowserNativeControls.label(
-        BrowserStrings.tabCreationFailedTitle,
-        size: 16,
-        weight: .semibold,
-        color: BrowserChromeColors.primaryText,
-        wraps: true
-    )
-    private let failureMessage = BrowserNativeControls.label(
-        BrowserStrings.tabCreationFailedMessage,
-        size: 13,
-        color: BrowserChromeColors.secondaryText,
-        wraps: true
-    )
-    private let retry = BrowserActionButton(BrowserStrings.tabCreationRetry, action: {})
-
     /// The page part of a split pane, or the whole content outside a split.
     private func pageFrame(forTabID tabID: String?) -> CGRect {
         tabID.flatMap { splitPaneBars.pageFrame(forTabID: $0) }.map { convert($0, from: splitPaneBars) } ?? bounds
@@ -318,7 +321,7 @@ final class BrowserContentNSView: NSView {
             .boundingRect(
                 with: NSSize(width: max(width, 1), height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: label.font ?? NSFont.systemFont(ofSize: 13)]
+                attributes: [.font: label.font ?? NSFont.systemFont(ofSize: 13)],
             )
             .height)
     }

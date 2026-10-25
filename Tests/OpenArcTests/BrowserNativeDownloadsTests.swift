@@ -1,3 +1,5 @@
+// BrowserNativeDownloadsTests.swift
+
 import AppKit
 import Testing
 
@@ -67,7 +69,7 @@ import Testing
         view.update(.init(
             title: "Update available",
             message: "A new version is ready to install.",
-            actionTitle: "Relaunch"
+            actionTitle: "Relaunch",
         ))
         view.frame = NSRect(x: 0, y: 0, width: 240, height: view.height(for: 240))
         view.layoutSubtreeIfNeeded()
@@ -90,7 +92,7 @@ import Testing
         _ id: String,
         state: BrowserDownloadState,
         total: Int64,
-        received: Int64
+        received: Int64,
     ) -> BrowserDownloadUpdate {
         .init(
             id: id,
@@ -100,7 +102,7 @@ import Testing
             receivedBytes: received,
             totalBytes: total,
             currentSpeedBytesPerSecond: 5,
-            state: state
+            state: state,
         )
     }
 }

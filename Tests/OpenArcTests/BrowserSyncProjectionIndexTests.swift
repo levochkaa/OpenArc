@@ -1,3 +1,5 @@
+// BrowserSyncProjectionIndexTests.swift
+
 import Foundation
 import Testing
 
@@ -63,7 +65,7 @@ import Testing
         indexTab("target", space: "t", rank: 1),
     ]
     let deleted = indexProject(common + [.init(
-        entityType: .tab, entityID: "selected", op: .delete, spaceData: nil, tabData: nil
+        entityType: .tab, entityID: "selected", op: .delete, spaceData: nil, tabData: nil,
     )], local: local)
     #expect(try #require(deleted.spaces?.first).selectedTabIndex == nil)
     let moved = indexProject(common + [indexTab("selected", space: "t", rank: 0)], local: local)
@@ -142,28 +144,28 @@ import Testing
 }
 
 private func indexLocalTab(
-    _ id: String?, space: String?, placement: BrowserTabPlacement = .temporary
+    _ id: String?, space: String?, placement: BrowserTabPlacement = .temporary,
 ) -> BrowserTabSessionSnapshotTab {
     .init(id: id, urlString: "https://example.com/", placement: placement, spaceID: space)
 }
 
 private func indexSpace(_ id: String, rank: Double = 0) -> BrowserSyncChange {
     .init(entityType: .space, entityID: id, op: .upsert, spaceData: .init(
-        title: id, systemImageName: "circle", rank: rank, isPinnedSectionCollapsed: false, selectedTabID: nil
+        title: id, systemImageName: "circle", rank: rank, isPinnedSectionCollapsed: false, selectedTabID: nil,
     ), tabData: nil)
 }
 
 private func indexTab(
-    _ id: String, space: String, placement: BrowserTabPlacement = .temporary, rank: Double = 0, activity: String? = nil
+    _ id: String, space: String, placement: BrowserTabPlacement = .temporary, rank: Double = 0, activity: String? = nil,
 ) -> BrowserSyncChange {
     .init(entityType: .tab, entityID: id, op: .upsert, spaceData: nil, tabData: .init(
         spaceID: space, placement: placement, rank: rank, urlString: "https://example.com/",
-        pinnedURLString: nil, title: nil, userTitleOverride: nil, faviconURLString: nil, lastActivityAt: activity
+        pinnedURLString: nil, title: nil, userTitleOverride: nil, faviconURLString: nil, lastActivityAt: activity,
     ))
 }
 
 private func indexProject(
-    _ changes: [BrowserSyncChange], local: BrowserTabSessionSnapshot
+    _ changes: [BrowserSyncChange], local: BrowserTabSessionSnapshot,
 ) -> BrowserTabSessionSnapshot {
     var baseline = BrowserSyncOutboxBaseline()
     for (sequence, change) in changes.enumerated() {
@@ -172,6 +174,6 @@ private func indexProject(
     return BrowserSyncOutboxProjection.snapshot(
         baseline: baseline,
         pending: [BrowserSyncQueuedMutation](),
-        local: local
+        local: local,
     )
 }

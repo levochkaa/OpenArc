@@ -1,3 +1,5 @@
+// BrowserNativeMessagingHostInstallerTests.swift
+
 import Foundation
 import Testing
 
@@ -38,7 +40,7 @@ import Testing
         .appendingPathComponent("com.apple.passwordmanager.json", isDirectory: false)
     try FileManager.default.createDirectory(
         at: installedManifestURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true
+        withIntermediateDirectories: true,
     )
     try "stale".write(to: installedManifestURL, atomically: true, encoding: .utf8)
 
@@ -63,7 +65,7 @@ import Testing
         .installApplePasswordManagerHostIfAvailable(in: rootURL)
 
     #expect(!FileManager.default.fileExists(
-        atPath: rootURL.appendingPathComponent("NativeMessagingHosts", isDirectory: true).path
+        atPath: rootURL.appendingPathComponent("NativeMessagingHosts", isDirectory: true).path,
     ))
 }
 

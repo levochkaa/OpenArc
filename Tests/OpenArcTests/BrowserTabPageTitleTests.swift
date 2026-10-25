@@ -1,3 +1,5 @@
+// BrowserTabPageTitleTests.swift
+
 import AppKit
 import Testing
 
@@ -18,10 +20,10 @@ import Testing
                     urlString: "https://a.example",
                     placement: .spacePinned,
                     spaceID: "s",
-                    pageTitle: "Inbox"
+                    pageTitle: "Inbox",
                 ),
                 .init(id: "b", urlString: "https://b.example", spaceID: "s"),
-            ]
+            ],
         )
         do {
             let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
@@ -33,7 +35,7 @@ import Testing
         #expect(
             BrowserTabSessionSnapshotTab(id: "a", urlString: "https://a.example", pageTitle: "Old")
                 == BrowserTabSessionSnapshotTab(id: "a", urlString: "https://a.example", pageTitle: "New"),
-            "Titles lag behind pages, so stored-tab checks ignore them"
+            "Titles lag behind pages, so stored-tab checks ignore them",
         )
     }
 
@@ -48,20 +50,20 @@ import Testing
                     pinnedURLString: "https://p1.example",
                     placement: .spacePinned,
                     spaceID: "s",
-                    pageTitle: "Inbox"
+                    pageTitle: "Inbox",
                 ),
                 .init(id: "p2", urlString: "https://p2.example", placement: .spacePinned, spaceID: "s"),
                 .init(id: "p3", urlString: "https://p3.example", placement: .spacePinned, spaceID: "s"),
                 .init(id: "t", urlString: "https://t.example", spaceID: "s"),
             ],
-            splitGroups: [.init(id: "g", tabIDs: ["p3", "t"])]
+            splitGroups: [.init(id: "g", tabIDs: ["p3", "t"])],
         ))
         let driver = FakeBrowserTabDriver()
         let model = BrowserChromeModel(
             tabDriver: driver, sessionSnapshotStore: store,
             sessionPreferencesStore: InMemorySessionPreferencesStore(storedSelectedTabIndex: 4),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
-            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
@@ -75,7 +77,7 @@ import Testing
         model.selectTab(id: p1.id)
         #expect(
             driver.createdTabRequests.last?.urlString == "https://p1.example/inbox",
-            "It reopens at the page it showed"
+            "It reopens at the page it showed",
         )
     }
 
@@ -87,15 +89,15 @@ import Testing
                 urlString: "https://a.example",
                 placement: .spacePinned,
                 spaceID: "s",
-                pageTitle: "Inbox"
-            )]
+                pageTitle: "Inbox",
+            )],
         ))
         let driver = FakeBrowserTabDriver()
         let model = BrowserChromeModel(
             tabDriver: driver, sessionSnapshotStore: store,
             sessionPreferencesStore: InMemorySessionPreferencesStore(),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
-            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         #expect(model.tabs.first?.displayTitle == "Inbox")
@@ -123,14 +125,14 @@ import Testing
                 .init(id: "a", urlString: "https://a.example", spaceID: "s"),
                 .init(id: "pinned", urlString: "https://pinned.example", placement: .spacePinned, spaceID: "t"),
                 .init(id: "today", urlString: "https://today.example", spaceID: "t"),
-            ]
+            ],
         ))
         let driver = FakeBrowserTabDriver()
         let model = BrowserChromeModel(
             tabDriver: driver, sessionSnapshotStore: store,
             sessionPreferencesStore: InMemorySessionPreferencesStore(storedSelectedTabIndex: 0),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
-            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
@@ -180,17 +182,17 @@ import Testing
                     urlString: "https://p.example/deep",
                     pinnedURLString: "https://p.example",
                     placement: .spacePinned,
-                    spaceID: "s"
+                    spaceID: "s",
                 ),
                 .init(id: "t", urlString: "https://t.example", spaceID: "s"),
-            ]
+            ],
         ))
         let driver = FakeBrowserTabDriver()
         let model = BrowserChromeModel(
             tabDriver: driver, sessionSnapshotStore: store,
             sessionPreferencesStore: InMemorySessionPreferencesStore(storedSelectedTabIndex: 1),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
-            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()

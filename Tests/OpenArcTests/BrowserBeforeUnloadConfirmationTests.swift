@@ -1,3 +1,5 @@
+// BrowserBeforeUnloadConfirmationTests.swift
+
 import AppKit
 import Testing
 
@@ -10,7 +12,7 @@ import Testing
             contentRect: .init(x: 0, y: 0, width: 500, height: 400),
             styleMask: [.titled],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         let presenter = BeforeUnloadPresenter()
         var results = [Bool]()
@@ -38,7 +40,7 @@ import Testing
             contentRect: .init(x: 0, y: 0, width: 500, height: 400),
             styleMask: [.titled],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         let presenter = BeforeUnloadPresenter()
         var results = [Bool]()
@@ -57,7 +59,7 @@ import Testing
             contentRect: .init(x: 0, y: 0, width: 500, height: 400),
             styleMask: [.titled],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         let presenter = BeforeUnloadPresenter()
         var results = [Bool]()
@@ -77,7 +79,7 @@ import Testing
             contentRect: .init(x: 0, y: 0, width: 500, height: 400),
             styleMask: [.titled],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         let presenter = BeforeUnloadPresenter()
         var results = [Bool]()
@@ -135,19 +137,6 @@ import Testing
 /// The production monitor reads these public NSEvent properties. Overriding
 /// `window` avoids WindowServer lookup for the deliberately unpresented sheet.
 private final class BeforeUnloadKeyEvent: NSEvent {
-    // MARK: Lifecycle
-
-    init(window: NSWindow, code: UInt16, modifiers: NSEvent.ModifierFlags = []) {
-        self.ownerWindow = window
-        self.code = code
-        self.modifiers = modifiers
-        super.init()
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
     // MARK: Internal
 
     override var window: NSWindow? { ownerWindow }
@@ -160,4 +149,15 @@ private final class BeforeUnloadKeyEvent: NSEvent {
     private let ownerWindow: NSWindow
     private let code: UInt16
     private let modifiers: NSEvent.ModifierFlags
+
+    init(window: NSWindow, code: UInt16, modifiers: NSEvent.ModifierFlags = []) {
+        self.ownerWindow = window
+        self.code = code
+        self.modifiers = modifiers
+        super.init()
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 }

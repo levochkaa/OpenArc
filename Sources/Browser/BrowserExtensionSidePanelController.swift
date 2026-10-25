@@ -1,28 +1,34 @@
+// BrowserExtensionSidePanelController.swift
+
 import AppKit
 import Foundation
 
 // MARK: - BrowserExtensionSidePanelController
 
 @MainActor final class BrowserExtensionSidePanelController: NSObject, BrowserExtensionSidePanelDriving {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onPanelClosed: ((String) -> Void)?
+
+    // MARK: Private
+
+    private let browserHostView: BrowserTabHostView
+    private let controller: BrowserTabController
+    private var activePanelID: String?
+
+    var hostView: NSView {
+        browserHostView
+    }
 
     init(profileCachePath: String? = nil) {
         self.browserHostView = BrowserTabHostView(frame: .zero)
         self.controller = BrowserTabController(
             hostView: browserHostView,
             usesEphemeralRequestContext: false,
-            profileCachePath: profileCachePath
+            profileCachePath: profileCachePath,
         )
         super.init()
         controller.delegate = self
-    }
-
-    // MARK: Internal
-
-    var onPanelClosed: ((String) -> Void)?
-
-    var hostView: NSView {
-        browserHostView
     }
 
     func openPanel(urlString: String) -> String {
@@ -50,34 +56,32 @@ import Foundation
         activePanelID = nil
         controller.closeAllTabs()
     }
-
-    // MARK: Private
-
-    private let browserHostView: BrowserTabHostView
-    private let controller: BrowserTabController
-    private var activePanelID: String?
 }
 
 // MARK: - BrowserExtensionActionPopupController
 
 @MainActor final class BrowserExtensionActionPopupController: NSObject, BrowserExtensionActionPopupDriving {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let browserHostView: BrowserTabHostView
+    private let controller: BrowserTabController
+    private var activePopupID: String?
+
+    // MARK: Internal
+
+    var hostView: NSView {
+        browserHostView
+    }
 
     init(profileCachePath: String? = nil) {
         self.browserHostView = BrowserTabHostView(frame: .zero)
         self.controller = BrowserTabController(
             hostView: browserHostView,
             usesEphemeralRequestContext: false,
-            profileCachePath: profileCachePath
+            profileCachePath: profileCachePath,
         )
         super.init()
         controller.delegate = self
-    }
-
-    // MARK: Internal
-
-    var hostView: NSView {
-        browserHostView
     }
 
     func openPopup(urlString: String) -> String {
@@ -105,12 +109,6 @@ import Foundation
         activePopupID = nil
         controller.closeAllTabs()
     }
-
-    // MARK: Private
-
-    private let browserHostView: BrowserTabHostView
-    private let controller: BrowserTabController
-    private var activePopupID: String?
 }
 
 // MARK: BrowserTabControllerDelegate
@@ -121,7 +119,7 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         didChangeCreationStateForTabWithID tabID: String,
-        state: BrowserTabEngineCreationState
+        state: BrowserTabEngineCreationState,
     ) {
         guard state == .ready else { return }
         DispatchQueue.main.async { [weak self] in
@@ -135,7 +133,7 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
         didCreateTabWithID _: String,
         title _: String,
         urlString _: String,
-        isActive _: Bool
+        isActive _: Bool,
     ) {}
 
     nonisolated func browserTabController(
@@ -143,7 +141,7 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
         didUpdateTabWithID _: String,
         title _: String?,
         urlString _: String?,
-        faviconURLString _: String?
+        faviconURLString _: String?,
     ) {}
 
     nonisolated func browserTabController(_: BrowserTabController, didCloseTabWithID tabID: String) {
@@ -158,13 +156,13 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
         _: BrowserTabController,
         didUpdateNavigationStateForTabWithID _: String,
         canGoBack _: Bool,
-        canGoForward _: Bool
+        canGoForward _: Bool,
     ) {}
 
     nonisolated func browserTabController(
         _: BrowserTabController,
         didUpdateLoadingStateForTabWithID _: String,
-        isLoading _: Bool
+        isLoading _: Bool,
     ) {}
 
     nonisolated func browserTabController(
@@ -172,7 +170,7 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
         didUpdateFindResultForTabWithID _: String,
         matchCount _: Int,
         activeMatchOrdinal _: Int,
-        finalUpdate _: Bool
+        finalUpdate _: Bool,
     ) {}
 
     nonisolated func browserTabController(
@@ -184,7 +182,7 @@ extension BrowserExtensionActionPopupController: BrowserTabControllerDelegate {
         receivedBytes _: Int64,
         totalBytes _: Int64,
         currentSpeedBytesPerSecond _: Int64,
-        stateRawValue _: String
+        stateRawValue _: String,
     ) {}
 }
 
@@ -195,7 +193,7 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         didChangeCreationStateForTabWithID tabID: String,
-        state: BrowserTabEngineCreationState
+        state: BrowserTabEngineCreationState,
     ) {
         guard state == .ready else { return }
         DispatchQueue.main.async { [weak self] in
@@ -209,7 +207,7 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
         didCreateTabWithID _: String,
         title _: String,
         urlString _: String,
-        isActive _: Bool
+        isActive _: Bool,
     ) {}
 
     nonisolated func browserTabController(
@@ -217,7 +215,7 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
         didUpdateTabWithID _: String,
         title _: String?,
         urlString _: String?,
-        faviconURLString _: String?
+        faviconURLString _: String?,
     ) {}
 
     nonisolated func browserTabController(_: BrowserTabController, didCloseTabWithID tabID: String) {
@@ -233,13 +231,13 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
         _: BrowserTabController,
         didUpdateNavigationStateForTabWithID _: String,
         canGoBack _: Bool,
-        canGoForward _: Bool
+        canGoForward _: Bool,
     ) {}
 
     nonisolated func browserTabController(
         _: BrowserTabController,
         didUpdateLoadingStateForTabWithID _: String,
-        isLoading _: Bool
+        isLoading _: Bool,
     ) {}
 
     nonisolated func browserTabController(
@@ -247,7 +245,7 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
         didUpdateFindResultForTabWithID _: String,
         matchCount _: Int,
         activeMatchOrdinal _: Int,
-        finalUpdate _: Bool
+        finalUpdate _: Bool,
     ) {}
 
     nonisolated func browserTabController(
@@ -259,6 +257,6 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
         receivedBytes _: Int64,
         totalBytes _: Int64,
         currentSpeedBytesPerSecond _: Int64,
-        stateRawValue _: String
+        stateRawValue _: String,
     ) {}
 }

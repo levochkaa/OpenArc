@@ -1,3 +1,5 @@
+// BrowserChromiumBookmarks.swift
+
 import CryptoKit
 import Foundation
 import ZIPFoundation
@@ -5,11 +7,122 @@ import ZIPFoundation
 // MARK: - BrowserChromiumBookmarkStore
 
 final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private typealias BookmarkDocument = [String: Any]
+
+    private enum Key {
+        static let bookmarkBar = "bookmark_bar"
+        static let checksum = "checksum"
+        static let checksumSHA256 = "checksum_sha256"
+        static let children = "children"
+        static let dateAdded = "date_added"
+        static let dateLastUsed = "date_last_used"
+        static let dateModified = "date_modified"
+        static let guid = "guid"
+        static let id = "id"
+        static let name = "name"
+        static let other = "other"
+        static let roots = "roots"
+        static let synced = "synced"
+        static let type = "type"
+        static let url = "url"
+        static let version = "version"
+    }
+
+    private enum NodeType {
+        static let folder = "folder"
+        static let url = "url"
+    }
+
+    private struct ImportItems {
+        let sourceWasAvailable: Bool
+        let items: [BrowserBookmarkImportItem]
+    }
+
+    private static let maximumSafariBookmarksFileSize = 50 * 1024 * 1024
+
+    private let profileDirectoryCandidates: [URL]
+    private let fileManager: FileManager
+
+    private var bookmarkFileCandidates: [URL] {
+        profileDirectoryCandidates.map {
+            $0.appendingPathComponent("Bookmarks", isDirectory: false)
+        }
+    }
+
+    private var existingBookmarkFileURL: URL? {
+        newestExistingFileURL(in: bookmarkFileCandidates)
+    }
+
+    private var writableBookmarkFileURL: URL? {
+        existingBookmarkFileURL ?? bookmarkFileCandidates.first
+    }
 
     init(profileDirectoryCandidates: [URL], fileManager: FileManager = .default) {
         self.profileDirectoryCandidates = profileDirectoryCandidates
         self.fileManager = fileManager
+    }
+
+    private static func bookmarkItem(from node: BookmarkDocument) -> BrowserBookmarkItem? {
+        guard
+            let id = node[Key.id] as? String,
+            let type = node[Key.type] as? String
+        else {
+            return nil
+        }
+
+        let title = node[Key.name] as? String ?? ""
+
+        if type == NodeType.url {
+            guard let urlString = node[Key.url] as? String else {
+                return nil
+            }
+
+            return BrowserBookmarkItem(
+                id: id,
+                kind: .bookmark,
+                title: title,
+                urlString: urlString,
+                children: [],
+            )
+        }
+
+        guard type == NodeType.folder else {
+            return nil
+        }
+
+        let children = (node[Key.children] as? [BookmarkDocument])?
+            .compactMap(bookmarkItem(from:)) ?? []
+        return BrowserBookmarkItem(
+            id: id,
+            kind: .folder,
+            title: title,
+            urlString: nil,
+            children: children,
+        )
+    }
+
+    private static func normalizedURLString(_ urlString: String) -> String {
+        guard var components = URLComponents(string: urlString) else {
+            return urlString.lowercased()
+        }
+
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        if components.path == "/" {
+            components.path = ""
+        }
+        components.fragment = nil
+        return components.url?.absoluteString ?? urlString.lowercased()
+    }
+
+    private static func md5Hex(for data: Data) -> String {
+        Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func sha256Hex(for data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: Internal
@@ -49,7 +162,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         let node = makeURLNode(
             title: title,
             urlString: urlString,
-            id: nextAvailableID(&nextID)
+            id: nextAvailableID(&nextID),
         )
         appendNodes([node], toBookmarkBarIn: &document)
         return writeDocument(document)
@@ -126,7 +239,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
 
                 root[Key.children] = children
                 return true
-            }
+            },
         ) else {
             return false
         }
@@ -182,122 +295,9 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         importBookmarkItems(loadSafariExportImportItems(from: sourceURL), from: .safari)
     }
 
-    // MARK: Private
-
-    private typealias BookmarkDocument = [String: Any]
-
-    private enum Key {
-        static let bookmarkBar = "bookmark_bar"
-        static let checksum = "checksum"
-        static let checksumSHA256 = "checksum_sha256"
-        static let children = "children"
-        static let dateAdded = "date_added"
-        static let dateLastUsed = "date_last_used"
-        static let dateModified = "date_modified"
-        static let guid = "guid"
-        static let id = "id"
-        static let name = "name"
-        static let other = "other"
-        static let roots = "roots"
-        static let synced = "synced"
-        static let type = "type"
-        static let url = "url"
-        static let version = "version"
-    }
-
-    private enum NodeType {
-        static let folder = "folder"
-        static let url = "url"
-    }
-
-    private struct ImportItems {
-        let sourceWasAvailable: Bool
-        let items: [BrowserBookmarkImportItem]
-    }
-
-    private static let maximumSafariBookmarksFileSize = 50 * 1024 * 1024
-
-    private let profileDirectoryCandidates: [URL]
-    private let fileManager: FileManager
-
-    private var bookmarkFileCandidates: [URL] {
-        profileDirectoryCandidates.map {
-            $0.appendingPathComponent("Bookmarks", isDirectory: false)
-        }
-    }
-
-    private var existingBookmarkFileURL: URL? {
-        newestExistingFileURL(in: bookmarkFileCandidates)
-    }
-
-    private var writableBookmarkFileURL: URL? {
-        existingBookmarkFileURL ?? bookmarkFileCandidates.first
-    }
-
-    private static func bookmarkItem(from node: BookmarkDocument) -> BrowserBookmarkItem? {
-        guard
-            let id = node[Key.id] as? String,
-            let type = node[Key.type] as? String
-        else {
-            return nil
-        }
-
-        let title = node[Key.name] as? String ?? ""
-
-        if type == NodeType.url {
-            guard let urlString = node[Key.url] as? String else {
-                return nil
-            }
-
-            return BrowserBookmarkItem(
-                id: id,
-                kind: .bookmark,
-                title: title,
-                urlString: urlString,
-                children: []
-            )
-        }
-
-        guard type == NodeType.folder else {
-            return nil
-        }
-
-        let children = (node[Key.children] as? [BookmarkDocument])?
-            .compactMap(bookmarkItem(from:)) ?? []
-        return BrowserBookmarkItem(
-            id: id,
-            kind: .folder,
-            title: title,
-            urlString: nil,
-            children: children
-        )
-    }
-
-    private static func normalizedURLString(_ urlString: String) -> String {
-        guard var components = URLComponents(string: urlString) else {
-            return urlString.lowercased()
-        }
-
-        components.scheme = components.scheme?.lowercased()
-        components.host = components.host?.lowercased()
-        if components.path == "/" {
-            components.path = ""
-        }
-        components.fragment = nil
-        return components.url?.absoluteString ?? urlString.lowercased()
-    }
-
-    private static func md5Hex(for data: Data) -> String {
-        Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
-    private static func sha256Hex(for data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
     private func importBookmarkItems(
         _ importItems: ImportItems,
-        from source: BrowserBookmarkImportSource
+        from source: BrowserBookmarkImportSource,
     ) -> BrowserBookmarkImportResult {
         guard importItems.sourceWasAvailable else {
             return BrowserBookmarkImportResult(source: source, importedCount: 0, sourceWasAvailable: false)
@@ -311,7 +311,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
             from: importItems.items,
             existingURLs: &existingURLs,
             nextID: &nextID,
-            importedCount: &importedCount
+            importedCount: &importedCount,
         )
         guard importedCount > 0, !importedNodes.isEmpty else {
             return BrowserBookmarkImportResult(source: source, importedCount: 0, sourceWasAvailable: true)
@@ -320,7 +320,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         let folder = makeFolderNode(
             title: source.importedFolderTitle,
             children: importedNodes,
-            id: nextAvailableID(&nextID)
+            id: nextAvailableID(&nextID),
         )
         appendNodes([folder], toBookmarkBarIn: &document)
         _ = writeDocument(document)
@@ -355,11 +355,11 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         do {
             try fileManager.createDirectory(
                 at: bookmarkFileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+                withIntermediateDirectories: true,
             )
             let data = try JSONSerialization.data(
                 withJSONObject: document,
-                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes],
             )
             try data.write(to: bookmarkFileURL, options: .atomic)
             return true
@@ -376,19 +376,19 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
                     id: "1",
                     guid: "0bc5d13f-2cba-5d74-951f-3f233fe6c908",
                     title: "Bookmarks Bar",
-                    now: now
+                    now: now,
                 ),
                 Key.other: makePermanentFolderNode(
                     id: "2",
                     guid: "82b081ec-3dd3-529c-8475-ab6c344590dd",
                     title: "Other Bookmarks",
-                    now: now
+                    now: now,
                 ),
                 Key.synced: makePermanentFolderNode(
                     id: "3",
                     guid: "4cf2e351-0e85-532b-bb37-df045d8f8d0f",
                     title: "Mobile Bookmarks",
-                    now: now
+                    now: now,
                 ),
             ],
             Key.version: 1,
@@ -441,7 +441,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
 
     private func mutateBookmarkBar(
         in document: inout BookmarkDocument,
-        mutation: (inout [BookmarkDocument]) -> Bool
+        mutation: (inout [BookmarkDocument]) -> Bool,
     ) -> Bool {
         var roots = document[Key.roots] as? [String: Any] ?? [:]
         var bookmarkBar = roots[Key.bookmarkBar] as? BookmarkDocument ?? makeEmptyBookmarkBarRoot()
@@ -459,7 +459,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
 
     private func mutateRoots(
         in document: inout BookmarkDocument,
-        mutation: (inout BookmarkDocument) -> Bool
+        mutation: (inout BookmarkDocument) -> Bool,
     ) -> Bool {
         var roots = document[Key.roots] as? [String: Any] ?? [:]
         var didChange = false
@@ -565,7 +565,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
     private func updateBookmarkURL(
         withID id: String,
         urlString: String,
-        in children: inout [BookmarkDocument]
+        in children: inout [BookmarkDocument],
     ) -> Bool {
         for index in children.indices {
             var child = children[index]
@@ -596,7 +596,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
     private func appendNode(
         _ node: BookmarkDocument,
         toFolderID folderID: String?,
-        in children: inout [BookmarkDocument]
+        in children: inout [BookmarkDocument],
     )
         -> Bool
     {
@@ -644,7 +644,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
             id: "1",
             guid: "0bc5d13f-2cba-5d74-951f-3f233fe6c908",
             title: "Bookmarks Bar",
-            now: chromiumTimestamp()
+            now: chromiumTimestamp(),
         )
     }
 
@@ -757,7 +757,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         from items: [BrowserBookmarkImportItem],
         existingURLs: inout Set<String>,
         nextID: inout Int,
-        importedCount: inout Int
+        importedCount: inout Int,
     ) -> [BookmarkDocument] {
         items.compactMap { item in
             if let urlString = item.urlString {
@@ -771,7 +771,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
                 return makeURLNode(
                     title: item.title,
                     urlString: urlString,
-                    id: nextAvailableID(&nextID)
+                    id: nextAvailableID(&nextID),
                 )
             }
 
@@ -779,7 +779,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
                 from: item.children,
                 existingURLs: &existingURLs,
                 nextID: &nextID,
-                importedCount: &importedCount
+                importedCount: &importedCount,
             )
             guard !children.isEmpty else {
                 return nil
@@ -788,14 +788,16 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
             return makeFolderNode(
                 title: item.title,
                 children: children,
-                id: nextAvailableID(&nextID)
+                id: nextAvailableID(&nextID),
             )
         }
     }
 
     private func loadImportItems(from source: BrowserBookmarkImportSource) -> ImportItems {
         switch source {
-        case .arc, .chrome, .dia:
+        case .arc,
+             .chrome,
+             .dia:
             loadChromiumImportItems(from: source)
         case .safari:
             ImportItems(sourceWasAvailable: false, items: [])
@@ -871,7 +873,8 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         }
 
         switch sourceURL.pathExtension.lowercased() {
-        case "htm", "html":
+        case "htm",
+             "html":
             guard let data = safariBookmarksHTMLData(from: sourceURL) else {
                 return ImportItems(sourceWasAvailable: true, items: [])
             }
@@ -925,7 +928,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         guard data.count <= Self.maximumSafariBookmarksFileSize,
               let document = try? XMLDocument(
                   data: data,
-                  options: [.documentTidyHTML, .nodeLoadExternalEntitiesNever]
+                  options: [.documentTidyHTML, .nodeLoadExternalEntitiesNever],
               ),
               let rootElement = document.rootElement(),
               let rootList = firstSafariElement(named: "dl", in: rootElement)
@@ -951,7 +954,7 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
                 return BrowserBookmarkImportItem(
                     title: displayTitle,
                     urlString: urlString,
-                    children: []
+                    children: [],
                 )
             }
 
@@ -1186,7 +1189,7 @@ extension BrowserBookmarkImportSource {
         guard let profileURLs = try? fileManager.contentsOfDirectory(
             at: userDataURL,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
+            options: [.skipsHiddenFiles],
         ) else {
             return []
         }

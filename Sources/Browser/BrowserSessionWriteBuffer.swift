@@ -1,3 +1,5 @@
+// BrowserSessionWriteBuffer.swift
+
 import Foundation
 
 // MARK: - BrowserSessionPersistenceFailure
@@ -21,20 +23,28 @@ struct BrowserSessionPersistenceFailure: Equatable {
 /// Only failed writes are retained. A terminal limit never evicts an earlier
 /// action or pretends the uncaptured tail can be recovered by retrying the FIFO.
 struct BrowserSessionWriteBuffer {
-    // MARK: Lifecycle
-
-    init(maximumCount: Int = 32, maximumBytes: Int = 32 * 1024 * 1024) {
-        self.maximumCount = maximumCount
-        self.maximumBytes = maximumBytes
-    }
-
     // MARK: Internal
 
     private(set) var writes = [BrowserSessionWrite]()
     private(set) var failure: BrowserSessionPersistenceFailure?
     private(set) var encodedBytes = 0
 
+    // MARK: Private
+
+    private let maximumCount: Int
+    private let maximumBytes: Int
+
     var isTerminal: Bool { failure?.isRetryable == false }
+
+    init(maximumCount: Int = 32, maximumBytes: Int = 32 * 1024 * 1024) {
+        self.maximumCount = maximumCount
+        self.maximumBytes = maximumBytes
+    }
+
+    /// Tab icons and Space colors, which snapshot equality ignores.
+    private static func icons(of write: BrowserSessionWrite) -> [String?] {
+        write.snapshot.tabs.map(\.systemImageName) + (write.snapshot.spaces ?? []).map(\.colorName)
+    }
 
     @discardableResult mutating func append(_ write: BrowserSessionWrite) -> Bool {
         guard !isTerminal else { return false }
@@ -81,15 +91,5 @@ struct BrowserSessionWriteBuffer {
         writes.removeAll()
         encodedBytes = 0
         failure = nil
-    }
-
-    // MARK: Private
-
-    private let maximumCount: Int
-    private let maximumBytes: Int
-
-    /// Tab icons and Space colors, which snapshot equality ignores.
-    private static func icons(of write: BrowserSessionWrite) -> [String?] {
-        write.snapshot.tabs.map(\.systemImageName) + (write.snapshot.spaces ?? []).map(\.colorName)
     }
 }

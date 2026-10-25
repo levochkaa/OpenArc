@@ -1,3 +1,5 @@
+// BrowserTabSwitcherNSView.swift
+
 import AppKit
 
 // MARK: - BrowserTabSwitcherLayout
@@ -13,7 +15,7 @@ struct BrowserTabSwitcherLayout {
         guard entryCount > 0 else { return 0 }
         return max(
             floor((panelWidth - panelPadding * 2 - cardSpacing * CGFloat(entryCount - 1)) / CGFloat(entryCount)),
-            92
+            92,
         )
     }
 
@@ -24,7 +26,19 @@ struct BrowserTabSwitcherLayout {
 // MARK: - BrowserTabSwitcherNSView
 
 final class BrowserTabSwitcherNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    private(set) var selectedTabID: String?
+    private(set) var cards = [BrowserTabSwitcherCardNSView]()
+
+    // MARK: Private
+
+    private let panel = NSVisualEffectView()
+    private let tint = BrowserNativeSurface()
+    private let scrollView = NSScrollView()
+    private let cardsContainer = BrowserNativeSurface()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -49,13 +63,6 @@ final class BrowserTabSwitcherNSView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    private(set) var selectedTabID: String?
-    private(set) var cards = [BrowserTabSwitcherCardNSView]()
-
     override func hitTest(_: NSPoint) -> NSView? { nil }
 
     override func layout() {
@@ -65,7 +72,7 @@ final class BrowserTabSwitcherNSView: NSView {
             x: (bounds.width - layout.panelWidth) / 2,
             y: bounds.height * 0.45 - layout.panelHeight / 2,
             width: layout.panelWidth,
-            height: layout.panelHeight
+            height: layout.panelHeight,
         )
         tint.frame = panel.bounds
         scrollView.frame = panel.bounds.insetBy(dx: layout.panelPadding, dy: layout.panelPadding)
@@ -76,7 +83,7 @@ final class BrowserTabSwitcherNSView: NSView {
                 x: CGFloat(index) * (layout.cardWidth + layout.cardSpacing),
                 y: 0,
                 width: layout.cardWidth,
-                height: layout.cardHeight
+                height: layout.cardHeight,
             )
         }
         if let card = cards.first(where: { $0.tabID == selectedTabID }) {
@@ -102,19 +109,22 @@ final class BrowserTabSwitcherNSView: NSView {
         cards = nextCards
         needsLayout = true
     }
-
-    // MARK: Private
-
-    private let panel = NSVisualEffectView()
-    private let tint = BrowserNativeSurface()
-    private let scrollView = NSScrollView()
-    private let cardsContainer = BrowserNativeSurface()
 }
 
 // MARK: - BrowserTabSwitcherCardNSView
 
 final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let tabID: String
+    private(set) var isSelected = false
+
+    // MARK: Private
+
+    private let selectionAnimation = BrowserNativeAnimation()
+    private let title = NSTextField(labelWithString: "")
+    private let url = NSTextField(labelWithString: "")
+    private let preview = BrowserTabPreviewNSView()
 
     init(entry: BrowserChromeModel.TabSwitcherEntry) {
         self.tabID = entry.id
@@ -137,11 +147,6 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    let tabID: String
-    private(set) var isSelected = false
 
     override func layout() {
         super.layout()
@@ -177,13 +182,6 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
         setAccessibilityValue(selected ? "selected" : "")
         setAccessibilityIdentifier("browser.tab-switcher.card.\(tabID)")
     }
-
-    // MARK: Private
-
-    private let selectionAnimation = BrowserNativeAnimation()
-    private let title = NSTextField(labelWithString: "")
-    private let url = NSTextField(labelWithString: "")
-    private let preview = BrowserTabPreviewNSView()
 }
 
 // MARK: - BrowserTabPreviewNSView
@@ -209,6 +207,10 @@ private final class BrowserTabPreviewNSView: NSView {
 
     var title = "" { didSet { needsDisplay = true } }
 
+    // MARK: Private
+
+    private let previewLayer = CALayer()
+
     override func layout() {
         super.layout()
         previewLayer.frame = bounds
@@ -226,7 +228,7 @@ private final class BrowserTabPreviewNSView: NSView {
                 NSBezierPath(
                     roundedRect: NSRect(x: 12, y: 28 + CGFloat(index) * 16, width: width, height: 8),
                     xRadius: 4,
-                    yRadius: 4
+                    yRadius: 4,
                 ).fill()
             }
             let paragraph = NSMutableParagraphStyle()
@@ -237,7 +239,7 @@ private final class BrowserTabPreviewNSView: NSView {
                     .font: NSFont.systemFont(ofSize: 11, weight: .medium),
                     .foregroundColor: BrowserChromeColors.secondaryText,
                     .paragraphStyle: paragraph,
-                ]
+                ],
             )
         }
         BrowserChromeColors.commandBarPanelBorder.setStroke()
@@ -245,8 +247,4 @@ private final class BrowserTabPreviewNSView: NSView {
         border.lineWidth = 0.5
         border.stroke()
     }
-
-    // MARK: Private
-
-    private let previewLayer = CALayer()
 }

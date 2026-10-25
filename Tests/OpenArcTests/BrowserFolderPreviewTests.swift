@@ -1,3 +1,5 @@
+// BrowserFolderPreviewTests.swift
+
 import AppKit
 import Testing
 
@@ -12,7 +14,7 @@ import Testing
             folders: [
                 .init(id: "outer", spaceID: "s", title: "Outer", isExpanded: false),
                 .init(id: "inner", spaceID: "s", parentFolderID: "outer", title: "Inner", isExpanded: false),
-            ]
+            ],
         )
         let state = BrowserNativeSidebarState(model: f.model, snapshot: f.model.sidebarSnapshot, sidebarWidth: 240)
         let items = state.folderPreviewItems(folderID: "outer")
@@ -26,7 +28,7 @@ import Testing
                 id: $0,
                 title: $0,
                 urlString: "https://\($0.lowercased()).example",
-                faviconURL: nil
+                faviconURL: nil,
             )
         }
         let panel = BrowserFolderPreviewPanel(items: items)
@@ -41,7 +43,7 @@ import Testing
         #expect(panel.control(
             panel.searchField,
             textView: editor,
-            doCommandBy: #selector(NSResponder.insertNewline(_:))
+            doCommandBy: #selector(NSResponder.insertNewline(_:)),
         ))
         #expect(selected == ["Calendar"])
 
@@ -60,7 +62,7 @@ import Testing
             contentRect: NSRect(x: 200, y: 200, width: 1000, height: 700),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -77,7 +79,7 @@ import Testing
             id: "t",
             title: "T",
             urlString: "https://t.example",
-            faviconURL: nil
+            faviconURL: nil,
         )] }
         coordinator.show(folderID: "f", beside: row)
         let panel = try #require(coordinator.panel)
@@ -94,7 +96,7 @@ import Testing
             contentRect: NSRect(x: 200, y: 200, width: 1000, height: 700),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }

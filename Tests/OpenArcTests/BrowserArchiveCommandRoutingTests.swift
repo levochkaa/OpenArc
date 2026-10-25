@@ -1,3 +1,5 @@
+// BrowserArchiveCommandRoutingTests.swift
+
 import AppKit
 import Testing
 
@@ -30,7 +32,7 @@ import Testing
                 present: { _ in
                     presented += 1
                     return nil
-                }
+                },
             )
             #expect(!handled && presented == 0)
             #expect(try f.store.loadSnapshotStrict() == before)
@@ -55,7 +57,7 @@ import Testing
                 present: { owner in
                     #expect(owner === f.model)
                     return wrong
-                }
+                },
             )
             await Task.yield()
             #expect(!handled && alerts == 0 && wrong.pendingClearBoundary == nil)
@@ -69,7 +71,7 @@ import Testing
             let controller = BrowserArchiveViewController(model: f.model)
             let window = NSWindow(
                 contentRect: NSRect(x: -20000, y: -20000, width: 740, height: 480),
-                styleMask: [.titled], backing: .buffered, defer: true
+                styleMask: [.titled], backing: .buffered, defer: true,
             )
             window.contentViewController = controller
             defer {
@@ -88,7 +90,7 @@ import Testing
                     present: { owner in
                         owners.append(ObjectIdentifier(owner))
                         return controller
-                    }
+                    },
                 )
                 #expect(handled)
             }
@@ -111,7 +113,7 @@ import Testing
             shortcutResolver: shortcuts,
             viewAction: #selector(ArchiveRoutingMenuTarget.viewArchive(_:)),
             clearAction: #selector(ArchiveRoutingMenuTarget.clearArchive(_:)),
-            target: target
+            target: target,
         )
         let noDefaultShortcuts = initial.allSatisfy(\.keyEquivalent.isEmpty)
         #expect(initial.count == 2 && noDefaultShortcuts)
@@ -128,7 +130,7 @@ import Testing
             shortcutResolver: shortcuts,
             viewAction: #selector(ArchiveRoutingMenuTarget.viewArchive(_:)),
             clearAction: #selector(ArchiveRoutingMenuTarget.clearArchive(_:)),
-            target: target
+            target: target,
         )
         for item in items {
             menu.addItem(item)
@@ -140,20 +142,20 @@ import Testing
                 with: .keyDown, location: .zero, modifierFlags: modifiers,
                 timestamp: 0, windowNumber: 0, context: nil,
                 characters: key, charactersIgnoringModifiers: key,
-                isARepeat: false, keyCode: code
+                isARepeat: false, keyCode: code,
             ))
             #expect(menu.performKeyEquivalent(with: event))
             #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
                 keyCode: code, modifierFlags: modifiers, charactersIgnoringModifiers: key,
-                shortcutResolver: shortcuts
+                shortcutResolver: shortcuts,
             ) == nil)
         }
         #expect(target.commands == [.viewArchive, .clearArchive])
         #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
-            keyCode: 38, modifierFlags: modifiers, charactersIgnoringModifiers: "о", shortcutResolver: shortcuts
+            keyCode: 38, modifierFlags: modifiers, charactersIgnoringModifiers: "о", shortcutResolver: shortcuts,
         ) == .viewArchive)
         #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
-            keyCode: 40, modifierFlags: modifiers, charactersIgnoringModifiers: "л", shortcutResolver: shortcuts
+            keyCode: 40, modifierFlags: modifiers, charactersIgnoringModifiers: "л", shortcutResolver: shortcuts,
         ) == .clearArchive)
     }
 }
@@ -168,7 +170,7 @@ import Testing
 }
 
 @MainActor private func withArchiveRoutingFixture(
-    _ body: (ArchiveRoutingFixture) async throws -> Void
+    _ body: (ArchiveRoutingFixture) async throws -> Void,
 ) async throws {
     _ = NSApplication.shared
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -177,7 +179,7 @@ import Testing
 }
 
 @MainActor private func runArchiveRoutingFixture(
-    directory: URL, _ body: (ArchiveRoutingFixture) async throws -> Void
+    directory: URL, _ body: (ArchiveRoutingFixture) async throws -> Void,
 ) async throws {
     let fixture = try ArchiveRoutingFixture(directory: directory)
     defer { fixture.stop() }
@@ -187,22 +189,6 @@ import Testing
 // MARK: - ArchiveRoutingFixture
 
 @MainActor private final class ArchiveRoutingFixture {
-    // MARK: Lifecycle
-
-    init(directory: URL) throws {
-        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
-        self.preferences = try #require(UserDefaults(suiteName: suite))
-        let space = BrowserSpaceSessionSnapshot(id: "work", title: "Work", systemImageName: "globe")
-        let tab = BrowserTabSessionSnapshotTab(id: "old", urlString: "https://old.example", spaceID: "work")
-        try store.writeSessionBatch([.init(
-            snapshot: .init(spaces: [space], tabs: [tab]), origin: .local(syncMove: nil)
-        ), .init(
-            snapshot: .init(spaces: [space], tabs: []), origin: .local(syncMove: nil),
-            archiveAction: .insert(.init(id: "archived", tab: tab, archivedAt: 100))
-        )])
-        self.model = makeModel()
-    }
-
     // MARK: Internal
 
     let store: BrowserSQLiteSessionStore
@@ -212,6 +198,20 @@ import Testing
     private(set) var models = [BrowserChromeModel]()
     private(set) var drivers = [FakeBrowserTabDriver]()
 
+    init(directory: URL) throws {
+        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
+        self.preferences = try #require(UserDefaults(suiteName: suite))
+        let space = BrowserSpaceSessionSnapshot(id: "work", title: "Work", systemImageName: "globe")
+        let tab = BrowserTabSessionSnapshotTab(id: "old", urlString: "https://old.example", spaceID: "work")
+        try store.writeSessionBatch([.init(
+            snapshot: .init(spaces: [space], tabs: [tab]), origin: .local(syncMove: nil),
+        ), .init(
+            snapshot: .init(spaces: [space], tabs: []), origin: .local(syncMove: nil),
+            archiveAction: .insert(.init(id: "archived", tab: tab, archivedAt: 100)),
+        )])
+        self.model = makeModel()
+    }
+
     func makeModel(mode: BrowserWindowMode = .normal) -> BrowserChromeModel {
         let driver = FakeBrowserTabDriver()
         let model = BrowserChromeModel(
@@ -220,7 +220,7 @@ import Testing
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: preferences),
             shortcutStore: BrowserShortcutStore(userDefaults: preferences),
             extensionManager: FakeBrowserExtensionManager(), windowMode: mode,
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         models.append(model)
         drivers.append(driver)
@@ -240,6 +240,6 @@ private func archiveRoutingWebApp() -> BrowserWebAppConfiguration {
     .init(
         identifier: "test.archive", name: "Test", startURL: URL(string: "https://example.com")!,
         scopeURL: URL(string: "https://example.com")!, profileDirectoryName: "web-app", profileName: "Test",
-        hostBundleURL: URL(fileURLWithPath: "/tmp/Browser.app"), bundleURL: URL(fileURLWithPath: "/tmp/Test.app")
+        hostBundleURL: URL(fileURLWithPath: "/tmp/Browser.app"), bundleURL: URL(fileURLWithPath: "/tmp/Test.app"),
     )
 }

@@ -1,3 +1,5 @@
+// BrowserSidebarItemShortcutTests.swift
+
 import AppKit
 import Testing
 
@@ -10,7 +12,7 @@ import Testing
             pinned: [("a", nil), ("hidden", "folder"), ("b", nil)],
             temporary: ["x", "y"],
             apps: ["app"],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)],
         )
         // App tiles first; a collapsed folder hides its tabs.
         #expect(f.model.sidebarItemTabIDs == ["app", "a", "b", "x", "y"].map(f.id))
@@ -99,7 +101,7 @@ import Testing
         #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
             keyCode: 14,
             modifierFlags: [.command],
-            charactersIgnoringModifiers: "у"
+            charactersIgnoringModifiers: "у",
         ) == .openExtensions)
     }
 
@@ -107,12 +109,13 @@ import Testing
         #expect(BrowserMarkdownLink
             .text(title: "Example", urlString: "https://example.com") == "[Example](https://example.com)")
         #expect(
-            BrowserMarkdownLink.text(title: "A [b] c", urlString: "https://e.com/a_(b)") == "[A \\[b\\] c](https://e.com/a_%28b%29)"
+            BrowserMarkdownLink
+                .text(title: "A [b] c", urlString: "https://e.com/a_(b)") == "[A \\[b\\] c](https://e.com/a_%28b%29)",
         )
         #expect(BrowserMarkdownLink.text(title: "  ", urlString: "https://e.com") == "[https://e.com](https://e.com)")
         #expect(BrowserCommands.copyLinkAsMarkdown.shortcut == BrowserKeyboardShortcut(
             "c",
-            modifiers: [.command, .option, .shift]
+            modifiers: [.command, .option, .shift],
         ))
     }
 
@@ -133,14 +136,17 @@ import Testing
         let japanese = String(repeating: "日本語のテキスト", count: 60)
         let cjk = BrowserQuoteLink.urlString(pageURLString: page, quote: japanese)
         #expect(cjk?.contains(",") == true && (cjk?.count ?? 1000) < 400)
-        let longWords = (1...6).map { index in String(repeating: "x", count: 25) + "\(index)" }.joined(separator: " ")
+        let longWords = (1...6)
+            .lazy
+            .map { index in String(repeating: "x", count: 25) + "\(index)" }
+            .joined(separator: " ")
         #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: longWords + "\nend")
             == "\(page)#:~:text=\(String(repeating: "x", count: 25))1%20\(String(repeating: "x", count: 25))2,end")
         #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: " \n ") == nil)
         #expect(BrowserQuoteLink.urlString(pageURLString: "openarc://settings", quote: "x") == nil)
         #expect(BrowserCommands.copyLinkAsQuote.shortcut == BrowserKeyboardShortcut(
             "c",
-            modifiers: [.command, .control, .shift]
+            modifiers: [.command, .control, .shift],
         ))
     }
 
@@ -191,19 +197,19 @@ import Testing
         #expect(BrowserCommands.selectNextTab.shortcut == BrowserKeyboardShortcut("]", modifiers: [.command, .shift]))
         #expect(BrowserCommands.toggleSiteToolbar.shortcut == BrowserKeyboardShortcut(
             "d",
-            modifiers: [.command, .shift]
+            modifiers: [.command, .shift],
         ))
         // Shift turns ] into }, so the physical-key monitor dispatches Next Tab.
         #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
             keyCode: 30,
             modifierFlags: [.command, .shift],
-            charactersIgnoringModifiers: "}"
+            charactersIgnoringModifiers: "}",
         ) == .selectNextTab)
         // A layout that types another character on the 7 key still reaches item 7.
         #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
             keyCode: 26,
             modifierFlags: [.command],
-            charactersIgnoringModifiers: "è"
+            charactersIgnoringModifiers: "è",
         ) == .goToSidebarItem(6))
         let defaults = BrowserCommandID.allCases.map(\.defaultDescriptor.shortcut).filter(\.isAssigned)
         #expect(Set(defaults).count == defaults.count, "Default shortcuts stay unique")

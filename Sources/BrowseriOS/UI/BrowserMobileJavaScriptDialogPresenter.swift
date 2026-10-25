@@ -1,22 +1,32 @@
+// BrowserMobileJavaScriptDialogPresenter.swift
+
 import UIKit
 
 /// Owns only this window's page alert. WebKit owns the response token.
 @MainActor final class BrowserMobileJavaScriptDialogPresenter {
-    // MARK: Lifecycle
-
-    init(
-        host: UIViewController,
-        respond: @escaping (UUID, BrowserMobileJavaScriptDialogResponse) -> Void
-    ) {
-        self.host = host
-        self.respond = respond
-    }
-
     // MARK: Internal
 
     private(set) var presentedAlert: UIAlertController?
     private(set) var presentedID: UUID?
     private(set) var isTransitioning = false
+
+    // MARK: Private
+
+    private weak var host: UIViewController?
+    private let respond: (UUID, BrowserMobileJavaScriptDialogResponse) -> Void
+    private var desiredRequest: BrowserMobileJavaScriptDialog?
+
+    init(
+        host: UIViewController,
+        respond: @escaping (UUID, BrowserMobileJavaScriptDialogResponse) -> Void,
+    ) {
+        self.host = host
+        self.respond = respond
+    }
+
+    private static func hasPresentedController(_ controller: UIViewController) -> Bool {
+        controller.presentedViewController != nil || controller.children.contains(where: hasPresentedController)
+    }
 
     func update(_ request: BrowserMobileJavaScriptDialog?) {
         desiredRequest = request
@@ -32,16 +42,6 @@ import UIKit
     func cancel(id: UUID) {
         guard presentedID == id, !isTransitioning else { return }
         finish(id: id, response: .cancel)
-    }
-
-    // MARK: Private
-
-    private weak var host: UIViewController?
-    private let respond: (UUID, BrowserMobileJavaScriptDialogResponse) -> Void
-    private var desiredRequest: BrowserMobileJavaScriptDialog?
-
-    private static func hasPresentedController(_ controller: UIViewController) -> Bool {
-        controller.presentedViewController != nil || controller.children.contains(where: hasPresentedController)
     }
 
     private func reconcile() {

@@ -1,3 +1,5 @@
+// BrowserArchiveViewController.swift
+
 import AppKit
 import Combine
 
@@ -7,23 +9,24 @@ import Combine
 /// search and page responses may arrive out of order without changing that intent.
 @MainActor final class BrowserArchiveViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate,
 NSSearchFieldDelegate {
-    // MARK: Lifecycle
-
-    init(model: BrowserChromeModel, pageLoader: PageLoader? = nil, alertPresenter: AlertPresenter? = nil) {
-        self.model = model
-        self.pageLoader = pageLoader ?? { query, cursor, limit in
-            try await model.loadArchivedTabs(query: query, before: cursor, limit: limit)
-        }
-        self.alertPresenter = alertPresenter
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
     // MARK: Internal
 
     typealias PageLoader = @MainActor (String, BrowserTabArchiveCursor?, Int) async throws -> BrowserTabArchivePage
     typealias AlertPresenter = @MainActor (NSAlert, @escaping @MainActor (NSApplication.ModalResponse) -> Void) -> Void
+
+    // MARK: Private
+
+    private enum Intent {
+        case restore(String, String?)
+        case remove(String)
+        case captureClear
+        case clear(BrowserTabArchiveBoundary)
+    }
+
+    private struct Failure {
+        let message: String
+        let intent: Intent?
+    }
 
     let model: BrowserChromeModel
     let searchField = NSSearchField()
@@ -40,6 +43,47 @@ NSSearchFieldDelegate {
     private(set) var isLoading = false
     private(set) var pendingClearBoundary: BrowserTabArchiveBoundary?
     var onRestore: () -> Void = {}
+
+    private let pageLoader: PageLoader
+    private let alertPresenter: AlertPresenter?
+    private let scroll = NSScrollView()
+    private var observation: AnyCancellable?
+    private var loadTask: Task<Void, Never>?
+    private var actionTask: Task<Void, Never>?
+    private var loadGeneration = 0
+    private var lastArchiveRevision = 0
+    private var cursors: [BrowserTabArchiveCursor?] = [nil]
+    private var pageIndex = 0
+    private var nextCursor: BrowserTabArchiveCursor?
+    private var failure: Failure?
+    private var isWorking = false
+    private var isClosed = false
+    private var hasCurrentPage = false
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private var canManage: Bool {
+        !isClosed && !isWorking && pendingClearBoundary == nil && model.canBrowseArchive && !model
+            .isArchiveOperationInFlight
+    }
+
+    private var canAct: Bool { canManage && !isLoading && hasCurrentPage }
+    private var selectedEntry: BrowserTabArchiveEntry? { entries.first { $0.id == selectedArchiveID } }
+
+    init(model: BrowserChromeModel, pageLoader: PageLoader? = nil, alertPresenter: AlertPresenter? = nil) {
+        self.model = model
+        self.pageLoader = pageLoader ?? { query, cursor, limit in
+            try await model.loadArchivedTabs(query: query, before: cursor, limit: limit)
+        }
+        self.alertPresenter = alertPresenter
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func loadView() {
         let root = BrowserNativeSurface()
@@ -95,7 +139,7 @@ NSSearchFieldDelegate {
         statusLabel.setAccessibilityIdentifier("browser.archive.status")
         let actions = BrowserNativeControls.stack(
             [restoreButton, removeButton, clearButton, NSView(), newerButton, olderButton],
-            orientation: .horizontal, spacing: 8
+            orientation: .horizontal, spacing: 8,
         )
         let status = BrowserNativeControls.stack([statusLabel, retryButton], orientation: .horizontal, spacing: 8)
         for subview in [searchField, scroll, status, actions] {
@@ -234,50 +278,6 @@ NSSearchFieldDelegate {
         }
     }
 
-    // MARK: Private
-
-    private enum Intent {
-        case restore(String, String?)
-        case remove(String)
-        case captureClear
-        case clear(BrowserTabArchiveBoundary)
-    }
-
-    private struct Failure {
-        let message: String
-        let intent: Intent?
-    }
-
-    private let pageLoader: PageLoader
-    private let alertPresenter: AlertPresenter?
-    private let scroll = NSScrollView()
-    private var observation: AnyCancellable?
-    private var loadTask: Task<Void, Never>?
-    private var actionTask: Task<Void, Never>?
-    private var loadGeneration = 0
-    private var lastArchiveRevision = 0
-    private var cursors: [BrowserTabArchiveCursor?] = [nil]
-    private var pageIndex = 0
-    private var nextCursor: BrowserTabArchiveCursor?
-    private var failure: Failure?
-    private var isWorking = false
-    private var isClosed = false
-    private var hasCurrentPage = false
-    private let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
-    private var canManage: Bool {
-        !isClosed && !isWorking && pendingClearBoundary == nil && model.canBrowseArchive && !model
-            .isArchiveOperationInFlight
-    }
-
-    private var canAct: Bool { canManage && !isLoading && hasCurrentPage }
-    private var selectedEntry: BrowserTabArchiveEntry? { entries.first { $0.id == selectedArchiveID } }
-
     private func isAdmitted(_ intent: Intent) -> Bool {
         guard canManage else { return false }
         if case .restore = intent {
@@ -338,7 +338,7 @@ NSSearchFieldDelegate {
                 let invalid = error as? BrowserTabArchiveError == .invalidQuery
                 failure = .init(
                     message: invalid ? BrowserStrings.archiveSearchInvalid : BrowserStrings.archiveActionFailed,
-                    intent: nil
+                    intent: nil,
                 )
                 updateControls()
             }
@@ -454,7 +454,7 @@ NSSearchFieldDelegate {
                 finishAction(
                     restored != nil,
                     intent: intent,
-                    message: model.archiveError ?? BrowserStrings.archiveRestoreFailed
+                    message: model.archiveError ?? BrowserStrings.archiveRestoreFailed,
                 )
                 if restored != nil {
                     onRestore()
@@ -505,7 +505,7 @@ NSSearchFieldDelegate {
         } else {
             failure = .init(
                 message: message ?? model.archiveError ?? BrowserStrings.archiveActionFailed,
-                intent: intent
+                intent: intent,
             )
             updateControls()
         }
@@ -534,8 +534,10 @@ NSSearchFieldDelegate {
             return
         }
         switch event.keyCode {
-        case 36, 76: onRestore()
-        case 51, 117: onRemove()
+        case 36,
+             76: onRestore()
+        case 51,
+             117: onRemove()
         default: super.keyDown(with: event)
         }
     }
@@ -544,7 +546,13 @@ NSSearchFieldDelegate {
 // MARK: - BrowserArchiveWindowController
 
 @MainActor final class BrowserArchiveWindowController: NSWindowController, NSWindowDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let archiveController: BrowserArchiveViewController
+    var onClose: () -> Void = {}
+    var onRestore: () -> Void = {}
+
+    var model: BrowserChromeModel { archiveController.model }
 
     init(model: BrowserChromeModel) {
         self.archiveController = BrowserArchiveViewController(model: model)
@@ -560,14 +568,6 @@ NSSearchFieldDelegate {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    let archiveController: BrowserArchiveViewController
-    var onClose: () -> Void = {}
-    var onRestore: () -> Void = {}
-
-    var model: BrowserChromeModel { archiveController.model }
 
     func windowWillClose(_: Notification) {
         archiveController.invalidate()

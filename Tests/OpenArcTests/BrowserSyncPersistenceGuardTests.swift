@@ -1,10 +1,12 @@
+// BrowserSyncPersistenceGuardTests.swift
+
 import Foundation
 import GRDB
 import Testing
 
 @Test(arguments: [2, 3], [false, true])
 @MainActor func syncPersistenceGuardRetainsHeldReceiptAcrossFailureAndRecovery(
-    version: Int, recoverBeforeResponse: Bool
+    version: Int, recoverBeforeResponse: Bool,
 ) async throws {
     let h = try await PersistenceGuardHarness(version: version)
     defer { h.cleanup() }
@@ -66,14 +68,14 @@ import Testing
         cursor: pageBoundary,
         events: (1...500).map { offset in
             try persistenceGuardEvent(
-                persistenceGuardTab(title: "history \(offset)"), sequence: before.cursor + offset
+                persistenceGuardTab(title: "history \(offset)"), sequence: before.cursor + offset,
             )
-        }, supportedPushVersions: [2, 3]
+        }, supportedPushVersions: [2, 3],
     )
     h.remote.pages[pageBoundary] = try .init(
         cursor: pageBoundary + 1,
         events: [persistenceGuardEvent(persistenceGuardTab(title: "latest remote"), sequence: pageBoundary + 1)],
-        supportedPushVersions: [2, 3]
+        supportedPushVersions: [2, 3],
     )
     let hold = PersistenceGuardHold()
     h.remote.pullHolds[pageBoundary] = hold
@@ -207,29 +209,6 @@ import Testing
 // MARK: - PersistenceGuardHarness
 
 @MainActor private final class PersistenceGuardHarness {
-    // MARK: Lifecycle
-
-    init(version: Int) async throws {
-        self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
-        try write(persistenceGuardSnapshot(title: "original"))
-        try store.bindSyncOwner(owner)
-        let seed = try #require(store.pendingSyncMutations(for: owner).first)
-        try remote.seed(seed.changes)
-        _ = try store.acknowledgeSyncMutation(id: seed.id, events: remote.events, for: owner)
-        remote.supportedVersions = version == 3 ? [2, 3] : [2]
-        self.service = BrowserSyncService(
-            localStore: store, remoteClient: remote, authSessionStore: auth,
-            pushDebounce: .zero, pollInterval: nil, retryDelay: nil
-        )
-        service.setSnapshotApplier(applier)
-        service.accountSessionDidChange(auth.session)
-        await service.waitForPendingOperations()
-        remote.requests.removeAll()
-        remote.requestUsers.removeAll()
-        remote.pullCursors.removeAll()
-        applier.snapshots.removeAll()
-    }
-
     // MARK: Internal
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("sync-persistence-\(UUID())")
@@ -242,9 +221,30 @@ import Testing
 
     var databaseURL: URL { directory.appendingPathComponent("Browser.sqlite") }
 
+    init(version: Int) async throws {
+        self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+        try write(persistenceGuardSnapshot(title: "original"))
+        try store.bindSyncOwner(owner)
+        let seed = try #require(store.pendingSyncMutations(for: owner).first)
+        try remote.seed(seed.changes)
+        _ = try store.acknowledgeSyncMutation(id: seed.id, events: remote.events, for: owner)
+        remote.supportedVersions = version == 3 ? [2, 3] : [2]
+        self.service = BrowserSyncService(
+            localStore: store, remoteClient: remote, authSessionStore: auth,
+            pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
+        )
+        service.setSnapshotApplier(applier)
+        service.accountSessionDidChange(auth.session)
+        await service.waitForPendingOperations()
+        remote.requests.removeAll()
+        remote.requestUsers.removeAll()
+        remote.pullCursors.removeAll()
+        applier.snapshots.removeAll()
+    }
+
     func write(
         _ snapshot: BrowserTabSessionSnapshot,
-        origin: BrowserSessionWrite.Origin = .local(syncMove: nil)
+        origin: BrowserSessionWrite.Origin = .local(syncMove: nil),
     ) throws {
         try store.writeSessionBatch([BrowserSessionWrite(snapshot: snapshot, origin: origin)])
     }
@@ -289,7 +289,7 @@ import Testing
             .map { row in
                 PersistenceGuardRow(
                     position: row["position"], id: row["mutation_id"], version: row["protocol_version"],
-                    payload: row["payload"]
+                    payload: row["payload"],
                 )
             }
             return try PersistenceGuardDiskState(
@@ -298,8 +298,8 @@ import Testing
                 rows: rows,
                 cursor: Int.fetchOne(db, sql: "SELECT cursor FROM browser_sync_state WHERE id = 1") ?? 0,
                 newMutationVersion: Int.fetchOne(
-                    db, sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id = 1"
-                ) ?? 2
+                    db, sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id = 1",
+                ) ?? 2,
             )
         }
     }
@@ -350,6 +350,13 @@ private struct PersistenceGuardDiskState: Equatable {
     var pullCursors = [Int]()
     private(set) var maximumConcurrentRequests = 0
 
+    // MARK: Private
+
+    private var activeRequests = 0
+    private var values = [String: BrowserSyncChange]()
+    private var deleted = Set<String>()
+    private var receipts = [String: [BrowserSyncEvent]]()
+
     var receiptCount: Int { receipts.count }
 
     func seed(_ changes: [BrowserSyncChange]) throws {
@@ -365,12 +372,12 @@ private struct PersistenceGuardDiskState: Equatable {
     }
 
     func push(
-        mutation: BrowserSyncSemanticMutation, authSession: BrowserAuthSession
+        mutation: BrowserSyncSemanticMutation, authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncSemanticPushResponse {
         let events = try await push(.semantic(mutation), session: authSession)
         return .init(
             protocolVersion: 3, mutationID: mutation.id, cursor: events.last?.serverSeq ?? 0, events: events,
-            outcomes: mutation.operations.indices.map { .init(operationIndex: $0, status: .applied, reason: nil) }
+            outcomes: mutation.operations.indices.map { .init(operationIndex: $0, status: .applied, reason: nil) },
         )
     }
 
@@ -381,7 +388,7 @@ private struct PersistenceGuardDiskState: Equatable {
         pullCursors.append(cursor)
         let page = Array(events.filter { $0.serverSeq > cursor }.prefix(500))
         let response = pages[cursor] ?? .init(
-            cursor: page.last?.serverSeq ?? cursor, events: page, supportedPushVersions: supportedVersions
+            cursor: page.last?.serverSeq ?? cursor, events: page, supportedPushVersions: supportedVersions,
         )
         let hold = pullHolds[cursor]
         hold?.started.open()
@@ -389,15 +396,8 @@ private struct PersistenceGuardDiskState: Equatable {
         return response
     }
 
-    // MARK: Private
-
-    private var activeRequests = 0
-    private var values = [String: BrowserSyncChange]()
-    private var deleted = Set<String>()
-    private var receipts = [String: [BrowserSyncEvent]]()
-
     private func push(
-        _ mutation: BrowserSyncQueuedMutation, session: BrowserAuthSession
+        _ mutation: BrowserSyncQueuedMutation, session: BrowserAuthSession,
     ) async throws -> [BrowserSyncEvent] {
         beginRequest("push", session: session)
         defer { activeRequests -= 1 }
@@ -464,7 +464,11 @@ private struct PersistenceGuardDiskState: Equatable {
 
     func applyRemoteSyncSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
         snapshots.append(snapshot)
-        do { try onApply?(snapshot) } catch { Issue.record(error) }
+        do {
+            try onApply?(snapshot)
+        } catch {
+            Issue.record(error)
+        }
     }
 }
 
@@ -478,6 +482,11 @@ private struct PersistenceGuardDiskState: Equatable {
 // MARK: - PersistenceGuardGate
 
 @MainActor private final class PersistenceGuardGate {
+    // MARK: Private
+
+    private var isOpen = false
+    private var waiters = [CheckedContinuation<Void, Never>]()
+
     // MARK: Internal
 
     func wait() async {
@@ -491,11 +500,6 @@ private struct PersistenceGuardDiskState: Equatable {
         waiters.removeAll()
         pending.forEach { $0.resume() }
     }
-
-    // MARK: Private
-
-    private var isOpen = false
-    private var waiters = [CheckedContinuation<Void, Never>]()
 }
 
 private let persistenceGuardURL = URL(string: "https://sync.example")!
@@ -503,14 +507,14 @@ private let persistenceGuardURL = URL(string: "https://sync.example")!
 private func persistenceGuardSession(userID: String) -> BrowserAuthSession {
     .init(
         accessToken: "token-\(userID)", userID: userID, userEmail: nil, deviceID: "device-\(userID)",
-        serverURL: persistenceGuardURL
+        serverURL: persistenceGuardURL,
     )
 }
 
 private func persistenceGuardSnapshot(title: String) -> BrowserTabSessionSnapshot {
     .init(
         spaces: [.init(id: "space", title: "Work", systemImageName: "briefcase")],
-        tabs: [.init(id: "tab", urlString: "https://example.com/", userTitleOverride: title, spaceID: "space")]
+        tabs: [.init(id: "tab", urlString: "https://example.com/", userTitleOverride: title, spaceID: "space")],
     )
 }
 
@@ -518,7 +522,7 @@ private func persistenceGuardTab(id: String = "tab", title: String) -> BrowserSy
     .init(entityType: .tab, entityID: id, op: .upsert, spaceData: nil, tabData: .init(
         spaceID: "space", placement: .temporary, rank: id == "tab" ? 0 : 1,
         urlString: "https://example.com/", pinnedURLString: nil, title: nil, userTitleOverride: title,
-        faviconURLString: nil, lastActivityAt: nil
+        faviconURLString: nil, lastActivityAt: nil,
     ))
 }
 
@@ -529,20 +533,20 @@ private func persistenceGuardEvent(_ change: BrowserSyncChange, sequence: Int) t
     } else if let value = change.spaceData {
         data = .space(.init(
             id: change.entityID, title: value.title, systemImageName: value.systemImageName, rank: value.rank,
-            isPinnedSectionCollapsed: value.isPinnedSectionCollapsed, selectedTabID: value.selectedTabID
+            isPinnedSectionCollapsed: value.isPinnedSectionCollapsed, selectedTabID: value.selectedTabID,
         ))
     } else if let value = change.tabData {
         data = .tab(.init(
             id: change.entityID, spaceID: value.spaceID, placement: value.placement, rank: value.rank,
             urlString: value.urlString, pinnedURLString: value.pinnedURLString, title: value.title,
             userTitleOverride: value.userTitleOverride, faviconURLString: value.faviconURLString,
-            lastActivityAt: value.lastActivityAt
+            lastActivityAt: value.lastActivityAt,
         ))
     } else {
         throw BrowserRemoteSyncError.invalidMutationReceipt
     }
     return .init(
         serverSeq: sequence, deviceID: "remote", entityType: change.entityType.rawValue, entityID: change.entityID,
-        op: change.op.rawValue, data: data, createdAt: "2026-10-03T00:00:00Z"
+        op: change.op.rawValue, data: data, createdAt: "2026-10-03T00:00:00Z",
     )
 }

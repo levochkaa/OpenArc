@@ -1,3 +1,5 @@
+// BrowserGlobalHotKeyTests.swift
+
 import Carbon.HIToolbox
 import Testing
 
@@ -11,7 +13,7 @@ import Testing
         #expect(first != nil)
         #expect(
             BrowserGlobalHotKey(keyCode: UInt32(kVK_F19), carbonModifiers: modifiers) {} == nil,
-            "A held combination cannot be taken twice"
+            "A held combination cannot be taken twice",
         )
         first = nil
         #expect(BrowserGlobalHotKey(keyCode: UInt32(kVK_F19), carbonModifiers: modifiers) {} != nil)

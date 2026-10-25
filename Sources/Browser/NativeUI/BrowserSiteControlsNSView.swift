@@ -1,3 +1,5 @@
+// BrowserSiteControlsNSView.swift
+
 import AppKit
 import Combine
 import QuartzCore
@@ -5,7 +7,88 @@ import QuartzCore
 // MARK: - BrowserSiteControlsNSView
 
 final class BrowserSiteControlsNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    enum Mode { case sidebar, toolbar }
+
+    override var isFlipped: Bool { true }
+    override var isHidden: Bool {
+        didSet {
+            if isHidden {
+                closePopovers()
+                resetCopyFeedback()
+                publishURLFrame()
+            }
+        }
+    }
+
+    let model: BrowserChromeModel
+    let mode: Mode
+    let urlButton = BrowserNativeURLButton()
+    let copyButton: BrowserNativeChromeButton
+    let splitButton: BrowserNativeChromeButton
+    let siteButton: BrowserNativeChromeButton
+    var onURLFrameChange: (CGRect?) -> Void = { _ in }
+
+    var isSidebarResizing = false {
+        didSet {
+            if isSidebarResizing {
+                hovered = false
+                closePopovers()
+                urlButton.resetInteraction()
+            }
+            refreshHover()
+        }
+    }
+
+    // MARK: Private
+
+    private let backButton = BrowserNativeChromeButton(
+        symbol: "arrow.backward",
+        title: BrowserStrings.navigationBack,
+        pressEffect: .left,
+        action: {},
+    )
+    private let forwardButton = BrowserNativeChromeButton(
+        symbol: "arrow.forward",
+        title: BrowserStrings.navigationForward,
+        pressEffect: .right,
+        action: {},
+    )
+    private let reloadButton = BrowserNativeChromeButton(
+        symbol: "arrow.clockwise",
+        title: BrowserStrings.navigationRefresh,
+        pressEffect: .rotateClockwise,
+        action: {},
+    )
+    private let extensionPopovers: BrowserNativeExtensionPopoverPresenter
+    private var extensionButtons = [String: BrowserNativeExtensionButton]()
+    private var extensionVisibilities = [String: BrowserNativeVisibilityAnimation]()
+    private var pinned = [BrowserExtension]()
+    private var observations = Set<AnyCancellable>()
+    private var copyTask: Task<Void, Never>?
+    private let copyVisibility = BrowserNativeVisibilityAnimation()
+    private let siteVisibility = BrowserNativeVisibilityAnimation()
+    private let splitVisibility = BrowserNativeVisibilityAnimation()
+    private let actionAnimation = BrowserNativeAnimation()
+    private var actionWidthTarget: CGFloat = 0
+    private var didCopy = false
+    private var hovered = false
+    private var tracking: NSTrackingArea?
+    private var lastReportedFrame: CGRect?
+    private var frameUpdateScheduled = false
+
+    private var showsSidebarActions: Bool {
+        (hovered || extensionPopovers.isPresented) && !isSidebarResizing && model
+            .currentTab != nil
+    }
+
+    private var sidebarActionWidth: CGFloat {
+        let count = CGFloat(pinned.count + 3)
+        return count * BrowserChromeLayout.sidebarCurrentURLButtonSize + (count - 1) * BrowserChromeLayout
+            .sidebarCurrentURLButtonSpacing
+            + BrowserChromeLayout.sidebarTabTrailingPadding + BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
+    }
 
     init(model: BrowserChromeModel, mode: Mode) {
         self.model = model
@@ -15,21 +98,21 @@ final class BrowserSiteControlsNSView: NSView {
             title: BrowserStrings.tabCopyURLAction,
             style: mode == .sidebar ? .currentURL : .chrome,
             pressEffect: .compress,
-            action: {}
+            action: {},
         )
         self.siteButton = BrowserNativeChromeButton(
             symbol: "slider.horizontal.3",
             title: BrowserStrings.siteControlCenterAction,
             style: mode == .sidebar ? .currentURL : .chrome,
             pressEffect: .compress,
-            action: {}
+            action: {},
         )
         self.splitButton = BrowserNativeChromeButton(
             symbol: "rectangle.split.2x1",
             title: BrowserStrings.splitViewButtonTitle,
             style: mode == .sidebar ? .currentURL : .chrome,
             pressEffect: .compress,
-            action: {}
+            action: {},
         )
         self.extensionPopovers = BrowserNativeExtensionPopoverPresenter(model: model)
         super.init(frame: .zero)
@@ -69,40 +152,6 @@ final class BrowserSiteControlsNSView: NSView {
     isolated deinit { copyTask?.cancel()
     }
 
-    // MARK: Internal
-
-    enum Mode { case sidebar, toolbar }
-
-    override var isFlipped: Bool { true }
-    override var isHidden: Bool {
-        didSet {
-            if isHidden {
-                closePopovers()
-                resetCopyFeedback()
-                publishURLFrame()
-            }
-        }
-    }
-
-    let model: BrowserChromeModel
-    let mode: Mode
-    let urlButton = BrowserNativeURLButton()
-    let copyButton: BrowserNativeChromeButton
-    let splitButton: BrowserNativeChromeButton
-    let siteButton: BrowserNativeChromeButton
-    var onURLFrameChange: (CGRect?) -> Void = { _ in }
-
-    var isSidebarResizing = false {
-        didSet {
-            if isSidebarResizing {
-                hovered = false
-                closePopovers()
-                urlButton.resetInteraction()
-            }
-            refreshHover()
-        }
-    }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil {
@@ -129,7 +178,7 @@ final class BrowserSiteControlsNSView: NSView {
         tracking = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
-            owner: self
+            owner: self,
         )
         addTrackingArea(tracking!)
     }
@@ -164,14 +213,14 @@ final class BrowserSiteControlsNSView: NSView {
                 x: bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding - size,
                 y: (bounds.height - size) / 2,
                 width: size,
-                height: size
+                height: size,
             )
             copyButton.frame = siteButton.frame.offsetBy(dx: -(size + spacing), dy: 0)
             splitButton.frame = copyButton.frame.offsetBy(dx: -(size + spacing), dy: 0)
             for (index, browserExtension) in pinned.enumerated() {
                 extensionButtons[browserExtension.id]?.frame = splitButton.frame.offsetBy(
                     dx: -CGFloat(pinned.count - index) * (size + spacing),
-                    dy: 0
+                    dy: 0,
                 )
             }
         } else {
@@ -183,7 +232,7 @@ final class BrowserSiteControlsNSView: NSView {
             let rightWidth = CGFloat(pinned.count + 2) * size + CGFloat(pinned.count + 1) * spacing
             let clusterWidth = min(
                 BrowserChromeLayout.siteToolbarURLButtonMaximumWidth + size + spacing,
-                max(available - leftWidth - rightWidth - spacing * 2, 0)
+                max(available - leftWidth - rightWidth - spacing * 2, 0),
             )
             let remainder = max(available - clusterWidth - spacing * 2, 0)
             let leftArea = max(leftWidth, min(remainder / 2, remainder - rightWidth))
@@ -196,14 +245,14 @@ final class BrowserSiteControlsNSView: NSView {
                 x: copyButton.frame.maxX + spacing,
                 y: y,
                 width: max(clusterWidth - size - spacing, 0),
-                height: size
+                height: size,
             )
             siteButton.frame = NSRect(x: bounds.width - padding - size, y: y, width: size, height: size)
             splitButton.frame = siteButton.frame.offsetBy(dx: -(size + spacing), dy: 0)
             for (index, browserExtension) in pinned.enumerated() {
                 extensionButtons[browserExtension.id]?.frame = splitButton.frame.offsetBy(
                     dx: -CGFloat(pinned.count - index) * (size + spacing),
-                    dy: 0
+                    dy: 0,
                 )
             }
         }
@@ -237,7 +286,7 @@ final class BrowserSiteControlsNSView: NSView {
             model.canStopLoading ? "xmark" : "arrow.clockwise",
             title: model.canStopLoading
                 ? BrowserStrings.navigationStopLoading
-                : BrowserStrings.navigationRefresh
+                : BrowserStrings.navigationRefresh,
         )
         reloadButton.tooltipShortcut = model.canStopLoading ? nil : model.shortcutStore.shortcut(for: .reload)
         reloadButton.pressEffect = model.canStopLoading ? .compress : .rotateClockwise
@@ -259,7 +308,7 @@ final class BrowserSiteControlsNSView: NSView {
         for browserExtension in pinned {
             let button = extensionButtons[browserExtension.id] ?? BrowserNativeExtensionButton(
                 tile: false,
-                sidebar: mode == .sidebar
+                sidebar: mode == .sidebar,
             )
             if extensionButtons[browserExtension.id] == nil {
                 extensionButtons[browserExtension.id] = button
@@ -295,7 +344,11 @@ final class BrowserSiteControlsNSView: NSView {
         copyButton.configureSymbol("checkmark", title: BrowserStrings.tabCopyURLAction)
         copyTask?.cancel()
         copyTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            } catch {
+                return
+            }
             guard let self else { return }
             didCopy = false
             copyButton.configureSymbol("link", title: BrowserStrings.tabCopyURLAction)
@@ -310,13 +363,13 @@ final class BrowserSiteControlsNSView: NSView {
             BrowserStrings.tabCopyURLAction,
             to: menu,
             shortcut: model.shortcutStore.shortcut(for: .copyLink),
-            enabled: model.currentTab != nil
+            enabled: model.currentTab != nil,
         ) { _ = model.copySelectedTabLink() }
         let tab = model.currentTab
         BrowserNativeMenus.share(
             items: tab?.pageURL.map { [$0] } ?? tab.map { [NSString(string: $0.urlString)] } ?? [],
             subject: tab?.displayTitle ?? BrowserStrings.newTabTitle,
-            in: menu
+            in: menu,
         )
         menu.items.last?.isEnabled = tab != nil
         BrowserNativeMenus
@@ -328,7 +381,7 @@ final class BrowserSiteControlsNSView: NSView {
             preferences.siteURLToolbarEnabled
                 ? BrowserStrings.siteShowInSidebarAction
                 : BrowserStrings.siteShowAsToolbarAction,
-            to: menu
+            to: menu,
         ) { preferences.siteURLToolbarEnabled.toggle() }
         if preferences.siteURLToolbarEnabled {
             BrowserNativeMenus.add(
@@ -336,7 +389,7 @@ final class BrowserSiteControlsNSView: NSView {
                     ? BrowserStrings.siteHideFullURLAction
                     : BrowserStrings.siteShowFullURLAction,
                 to: menu,
-                enabled: tab != nil
+                enabled: tab != nil,
             ) {
                 preferences.siteToolbarShowsFullURL.toggle()
             }
@@ -347,7 +400,7 @@ final class BrowserSiteControlsNSView: NSView {
                 ? BrowserStrings.bookmarksHideBarAction
                 : BrowserStrings.settingsShowBookmarksBar,
             to: menu,
-            shortcut: model.shortcutStore.shortcut(for: .toggleBookmarksBar)
+            shortcut: model.shortcutStore.shortcut(for: .toggleBookmarksBar),
         ) {
             preferences.bookmarksBarVisible.toggle()
         }
@@ -364,58 +417,58 @@ final class BrowserSiteControlsNSView: NSView {
             BrowserStrings.menuAddSplitView,
             to: menu,
             shortcut: shortcuts.shortcut(for: .addSplitView),
-            enabled: model.canAddSplitView
+            enabled: model.canAddSplitView,
         ) { model.presentSplitViewCommandBar() }
         guard let group = model.selectedSplitGroup else { return menu }
         let vertical = group.orientation == .vertical
         BrowserNativeMenus.add(
             vertical ? BrowserStrings.splitMovePaneUp : BrowserStrings.splitMovePaneLeft,
             to: menu,
-            enabled: model.canMoveSelectedSplitPane(by: -1)
+            enabled: model.canMoveSelectedSplitPane(by: -1),
         ) { _ = model.moveSelectedSplitPane(by: -1) }
         BrowserNativeMenus.add(
             vertical ? BrowserStrings.splitMovePaneDown : BrowserStrings.splitMovePaneRight,
             to: menu,
-            enabled: model.canMoveSelectedSplitPane(by: 1)
+            enabled: model.canMoveSelectedSplitPane(by: 1),
         ) { _ = model.moveSelectedSplitPane(by: 1) }
         BrowserNativeMenus.add(
             vertical ? BrowserStrings.splitAddBottom : BrowserStrings.splitAddRight,
             to: menu,
-            enabled: model.canAddSplitView
+            enabled: model.canAddSplitView,
         ) { model.presentSplitViewCommandBar(insertion: .after) }
         BrowserNativeMenus.add(
             vertical ? BrowserStrings.splitAddTop : BrowserStrings.splitAddLeft,
             to: menu,
-            enabled: model.canAddSplitView
+            enabled: model.canAddSplitView,
         ) { model.presentSplitViewCommandBar(insertion: .before) }
         BrowserNativeMenus.add(
             model.isSelectedSplitPaneExpanded
                 ? BrowserStrings.menuShowAllSplitPanes
                 : BrowserStrings.menuExpandCurrentSplit,
             to: menu,
-            shortcut: shortcuts.shortcut(for: .expandCurrentSplit)
+            shortcut: shortcuts.shortcut(for: .expandCurrentSplit),
         ) { _ = model.toggleExpandedSplitPane() }
         menu.addItem(.separator())
         BrowserNativeMenus.add(
             BrowserStrings.splitSeparateTabAction,
             to: menu,
-            shortcut: shortcuts.shortcut(for: .separateTabFromSplit)
+            shortcut: shortcuts.shortcut(for: .separateTabFromSplit),
         ) { _ = model.separateSelectedTabFromSplit() }
         BrowserNativeMenus.add(
             model.splitOrientationToggleTitle,
             to: menu,
-            shortcut: shortcuts.shortcut(for: .toggleSplitOrientation)
+            shortcut: shortcuts.shortcut(for: .toggleSplitOrientation),
         ) { _ = model.toggleSelectedSplitOrientation() }
         BrowserNativeMenus.add(
             BrowserStrings.splitSeparateAllTabsAction,
             to: menu,
-            shortcut: shortcuts.shortcut(for: .separateSplitView)
+            shortcut: shortcuts.shortcut(for: .separateSplitView),
         ) { _ = model.separateSelectedSplitGroup() }
         menu.addItem(.separator())
         BrowserNativeMenus.add(
             BrowserStrings.menuCloseSplitPane,
             to: menu,
-            shortcut: shortcuts.shortcut(for: .closeSplitPane)
+            shortcut: shortcuts.shortcut(for: .closeSplitPane),
         ) { _ = model.closeFocusedSplitPane() }
         return menu
     }
@@ -428,57 +481,8 @@ final class BrowserSiteControlsNSView: NSView {
         guard model.currentTab != nil, !isSidebarResizing else { return }
         extensionPopovers.showControlCenter(
             relativeTo: anchor ?? siteButton,
-            preferredEdge: preferredEdge ?? (mode == .toolbar ? .minY : .minX)
+            preferredEdge: preferredEdge ?? (mode == .toolbar ? .minY : .minX),
         )
-    }
-
-    // MARK: Private
-
-    private let backButton = BrowserNativeChromeButton(
-        symbol: "arrow.backward",
-        title: BrowserStrings.navigationBack,
-        pressEffect: .left,
-        action: {}
-    )
-    private let forwardButton = BrowserNativeChromeButton(
-        symbol: "arrow.forward",
-        title: BrowserStrings.navigationForward,
-        pressEffect: .right,
-        action: {}
-    )
-    private let reloadButton = BrowserNativeChromeButton(
-        symbol: "arrow.clockwise",
-        title: BrowserStrings.navigationRefresh,
-        pressEffect: .rotateClockwise,
-        action: {}
-    )
-    private let extensionPopovers: BrowserNativeExtensionPopoverPresenter
-    private var extensionButtons = [String: BrowserNativeExtensionButton]()
-    private var extensionVisibilities = [String: BrowserNativeVisibilityAnimation]()
-    private var pinned = [BrowserExtension]()
-    private var observations = Set<AnyCancellable>()
-    private var copyTask: Task<Void, Never>?
-    private let copyVisibility = BrowserNativeVisibilityAnimation()
-    private let siteVisibility = BrowserNativeVisibilityAnimation()
-    private let splitVisibility = BrowserNativeVisibilityAnimation()
-    private let actionAnimation = BrowserNativeAnimation()
-    private var actionWidthTarget: CGFloat = 0
-    private var didCopy = false
-    private var hovered = false
-    private var tracking: NSTrackingArea?
-    private var lastReportedFrame: CGRect?
-    private var frameUpdateScheduled = false
-
-    private var showsSidebarActions: Bool {
-        (hovered || extensionPopovers.isPresented) && !isSidebarResizing && model
-            .currentTab != nil
-    }
-
-    private var sidebarActionWidth: CGFloat {
-        let count = CGFloat(pinned.count + 3)
-        return count * BrowserChromeLayout.sidebarCurrentURLButtonSize + (count - 1) * BrowserChromeLayout
-            .sidebarCurrentURLButtonSpacing
-            + BrowserChromeLayout.sidebarTabTrailingPadding + BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
     }
 
     private func refreshHover() {
@@ -555,7 +559,7 @@ final class BrowserSiteControlsNSView: NSView {
         extensionPopovers.openExtension(
             id: id,
             relativeTo: extensionButtons[id] ?? siteButton,
-            preferredEdge: mode == .toolbar ? .minY : .minX
+            preferredEdge: mode == .toolbar ? .minY : .minX,
         )
     }
 
@@ -567,7 +571,24 @@ final class BrowserSiteControlsNSView: NSView {
 // MARK: - BrowserNativeURLButton
 
 final class BrowserNativeURLButton: BrowserNativePressableView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var isToolbar = false
+    var isSearchPresented = false
+    var externalHover = false
+
+    var maskedTrailingWidth: CGFloat = 0 { didSet { needsLayout = true } }
+
+    // MARK: Private
+
+    private let textContainer = NSView()
+    private let label = BrowserNativeControls.label(
+        "",
+        size: 12.5,
+        weight: .medium,
+        color: BrowserChromeColors.currentURLText,
+    )
+    private let textMask = CAGradientLayer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -579,14 +600,6 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    var isToolbar = false
-    var isSearchPresented = false
-    var externalHover = false
-
-    var maskedTrailingWidth: CGFloat = 0 { didSet { needsLayout = true } }
 
     override func interactionChanged() {
         super.interactionChanged()
@@ -602,7 +615,7 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
             x: BrowserChromeLayout.sidebarRowHorizontalPadding,
             y: (bounds.height - 17) / 2,
             width: max(bounds.width - BrowserChromeLayout.sidebarRowHorizontalPadding * 2, 0),
-            height: 17
+            height: 17,
         )
         if maskedTrailingWidth > 0, bounds.width > 0 {
             let fade = BrowserChromeLayout.sidebarCurrentURLOverlayFadeWidth
@@ -630,15 +643,4 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
         label.alignment = isToolbar ? .center : .left
         label.lineBreakMode = isToolbar ? .byTruncatingMiddle : .byTruncatingTail
     }
-
-    // MARK: Private
-
-    private let textContainer = NSView()
-    private let label = BrowserNativeControls.label(
-        "",
-        size: 12.5,
-        weight: .medium,
-        color: BrowserChromeColors.currentURLText
-    )
-    private let textMask = CAGradientLayer()
 }

@@ -1,3 +1,5 @@
+// BrowserPeekPanelTests.swift
+
 import AppKit
 import Testing
 
@@ -10,7 +12,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -73,7 +75,7 @@ import Testing
 
         let commandL = try #require(NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: panel.windowNumber,
-            context: nil, characters: "l", charactersIgnoringModifiers: "l", isARepeat: false, keyCode: 37
+            context: nil, characters: "l", charactersIgnoringModifiers: "l", isARepeat: false, keyCode: 37,
         ))
         #expect(panel.handleShortcut(commandL))
         #expect(panel.isEditingAddress, "The engine keeps a loading page from taking these keys")
@@ -86,7 +88,7 @@ import Testing
 
         let commandO = try #require(NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: panel.windowNumber,
-            context: nil, characters: "o", charactersIgnoringModifiers: "o", isARepeat: false, keyCode: 31
+            context: nil, characters: "o", charactersIgnoringModifiers: "o", isARepeat: false, keyCode: 31,
         ))
         #expect(panel.handleShortcut(commandO) && opens == 1, "Command-O opens the page as a tab")
     }
@@ -116,7 +118,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }

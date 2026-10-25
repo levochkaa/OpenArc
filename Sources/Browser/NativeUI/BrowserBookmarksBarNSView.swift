@@ -1,3 +1,5 @@
+// BrowserBookmarksBarNSView.swift
+
 import AppKit
 import Combine
 
@@ -20,7 +22,28 @@ struct BrowserBookmarkFolderDestination: Equatable {
 // MARK: - BrowserBookmarksBarNSView
 
 final class BrowserBookmarksBarNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    let star = BrowserNativeChromeButton(
+        symbol: "star",
+        title: BrowserStrings.bookmarksAddCurrentPage,
+        style: .bookmark,
+        pressEffect: .compress,
+        action: {},
+    )
+    private(set) var buttons = [String: BrowserNativeBookmarkButton]()
+
+    // MARK: Private
+
+    private let model: BrowserChromeModel
+    private let cache: BrowserFaviconCache
+    private let scroll = NSScrollView()
+    private let document = BrowserNativeBookmarksDocument()
+    private var items = [BrowserBookmarkItem]()
+    private var observations = Set<AnyCancellable>()
+    private var menuIconTask: Task<Void, Never>?
 
     init(model: BrowserChromeModel, cache: BrowserFaviconCache = .shared) {
         self.model = model
@@ -54,19 +77,6 @@ final class BrowserBookmarksBarNSView: NSView {
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
     isolated deinit { menuIconTask?.cancel() }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    let star = BrowserNativeChromeButton(
-        symbol: "star",
-        title: BrowserStrings.bookmarksAddCurrentPage,
-        style: .bookmark,
-        pressEffect: .compress,
-        action: {}
-    )
-    private(set) var buttons = [String: BrowserNativeBookmarkButton]()
-
     override func layout() {
         super.layout()
         let size = BrowserChromeLayout.bookmarksBarControlSize
@@ -75,13 +85,13 @@ final class BrowserBookmarksBarNSView: NSView {
             x: max(bounds.width - padding - size, 0),
             y: (bounds.height - size) / 2,
             width: size,
-            height: size
+            height: size,
         )
         scroll.frame = NSRect(
             x: 0,
             y: 0,
             width: max(star.frame.minX - BrowserChromeLayout.bookmarksBarControlSpacing * 2, 0),
-            height: bounds.height
+            height: bounds.height,
         )
         var x = padding
         for item in items {
@@ -91,7 +101,7 @@ final class BrowserBookmarksBarNSView: NSView {
                 x: x,
                 y: (bounds.height - BrowserChromeLayout.bookmarksBarItemHeight) / 2,
                 width: width,
-                height: BrowserChromeLayout.bookmarksBarItemHeight
+                height: BrowserChromeLayout.bookmarksBarItemHeight,
             )
             x += width + BrowserChromeLayout.bookmarksBarItemSpacing
         }
@@ -99,7 +109,7 @@ final class BrowserBookmarksBarNSView: NSView {
             x: 0,
             y: 0,
             width: max(x - BrowserChromeLayout.bookmarksBarItemSpacing + padding, scroll.contentSize.width),
-            height: bounds.height
+            height: bounds.height,
         )
     }
 
@@ -136,7 +146,7 @@ final class BrowserBookmarksBarNSView: NSView {
             bookmarked ? "star.fill" : "star",
             title: bookmarked
                 ? BrowserStrings.bookmarksRemoveCurrentPage
-                : BrowserStrings.bookmarksAddCurrentPage
+                : BrowserStrings.bookmarksAddCurrentPage,
         )
         star.tooltipShortcut = model.shortcutStore.shortcut(for: .toggleBookmark)
         star.isSelected = bookmarked
@@ -151,7 +161,7 @@ final class BrowserBookmarksBarNSView: NSView {
         BrowserNativeMenus.add(BrowserStrings.bookmarksNewFolderAction, to: menu) {
             if let title = BrowserNativeMenus.prompt(
                 title: BrowserStrings.bookmarksNewFolderPromptTitle,
-                defaultValue: BrowserStrings.bookmarksUntitledFolder
+                defaultValue: BrowserStrings.bookmarksUntitledFolder,
             ) {
                 _ = model.createBookmarkFolder(title: title)
             }
@@ -161,7 +171,7 @@ final class BrowserBookmarksBarNSView: NSView {
         BrowserNativeMenus.add(
             BrowserStrings.bookmarksHideBarAction,
             to: menu,
-            shortcut: model.shortcutStore.shortcut(for: .toggleBookmarksBar)
+            shortcut: model.shortcutStore.shortcut(for: .toggleBookmarksBar),
         ) { model.userPreferencesStore.bookmarksBarVisible = false }
         return menu
     }
@@ -172,7 +182,7 @@ final class BrowserBookmarksBarNSView: NSView {
         BrowserNativeMenus.add(BrowserStrings.bookmarksRenameAction, to: menu) {
             if let title = BrowserNativeMenus.prompt(
                 title: BrowserStrings.bookmarksRenamePromptTitle,
-                defaultValue: item.displayTitle
+                defaultValue: item.displayTitle,
             ) {
                 _ = model.renameBookmark(id: item.id, title: title)
             }
@@ -182,7 +192,7 @@ final class BrowserBookmarksBarNSView: NSView {
                 .add(
                     BrowserStrings.bookmarksOpenAllAction(count: item.flattenedBookmarkURLStrings.count),
                     to: menu,
-                    enabled:!item.flattenedBookmarkURLStrings.isEmpty
+                    enabled:!item.flattenedBookmarkURLStrings.isEmpty,
                 ) {
                     model.openBookmarks(item.flattenedBookmarkURLStrings)
                 }
@@ -191,7 +201,7 @@ final class BrowserBookmarksBarNSView: NSView {
                 guard let url = item.urlString,
                       let updated = BrowserNativeMenus.prompt(
                           title: BrowserStrings.bookmarksEditAddressPromptTitle,
-                          defaultValue: url
+                          defaultValue: url,
                       ) else { return }
                 _ = model.updateBookmarkAddress(id: item.id, urlString: updated)
             }
@@ -199,7 +209,7 @@ final class BrowserBookmarksBarNSView: NSView {
             if !items.contains(where: { $0.id == item.id }) {
                 BrowserNativeMenus.add(BrowserStrings.bookmarksBarDestination, to: move) { _ = model.moveBookmark(
                     id: item.id,
-                    toFolderID: nil
+                    toFolderID: nil,
                 ) }
             }
             for destination in BrowserBookmarkFolderDestination.destinations(in: items)
@@ -207,14 +217,14 @@ final class BrowserBookmarksBarNSView: NSView {
             {
                 BrowserNativeMenus.add(destination.title, to: move) { _ = model.moveBookmark(
                     id: item.id,
-                    toFolderID: destination.id
+                    toFolderID: destination.id,
                 ) }
             }
             move.addItem(.separator())
             BrowserNativeMenus.add(BrowserStrings.bookmarksNewFolderAction, to: move) {
                 if let title = BrowserNativeMenus.prompt(
                     title: BrowserStrings.bookmarksNewFolderPromptTitle,
-                    defaultValue: BrowserStrings.bookmarksUntitledFolder
+                    defaultValue: BrowserStrings.bookmarksUntitledFolder,
                 ) {
                     _ = model.createBookmarkFolderAndMoveBookmark(title: title, bookmarkID: item.id)
                 }
@@ -261,26 +271,16 @@ final class BrowserBookmarksBarNSView: NSView {
         return menu
     }
 
-    // MARK: Private
-
-    private let model: BrowserChromeModel
-    private let cache: BrowserFaviconCache
-    private let scroll = NSScrollView()
-    private let document = BrowserNativeBookmarksDocument()
-    private var items = [BrowserBookmarkItem]()
-    private var observations = Set<AnyCancellable>()
-    private var menuIconTask: Task<Void, Never>?
-
     private func menuIcon(for item: BrowserBookmarkItem) -> NSImage? {
         if let image = cache.image(for: item.faviconURL) {
             return BrowserImageThumbnailer.resizedImage(
                 image,
-                fitting: BrowserChromeLayout.bookmarksFolderMenuSiteIconSize
+                fitting: BrowserChromeLayout.bookmarksFolderMenuSiteIconSize,
             )
         }
         return NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?.withSymbolConfiguration(.init(
             pointSize: BrowserChromeLayout.bookmarksFolderMenuSiteIconSize,
-            weight: .medium
+            weight: .medium,
         ))
     }
 }
@@ -288,7 +288,29 @@ final class BrowserBookmarksBarNSView: NSView {
 // MARK: - BrowserNativeBookmarkButton
 
 final class BrowserNativeBookmarkButton: BrowserNativePressableView {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let hoverAnimation = BrowserNativeAnimation()
+    private var lastHover = false
+    private let favicon: BrowserFaviconNSView
+    private let folder = NSImageView()
+    private let label = BrowserNativeControls.label(
+        "",
+        size: 12.5,
+        weight: .medium,
+        color: BrowserChromeColors.primaryText,
+    )
+
+    // MARK: Internal
+
+    var preferredWidth: CGFloat {
+        min(
+            BrowserChromeLayout.bookmarksBarItemMaximumWidth,
+            ceil(label.intrinsicContentSize.width) + BrowserChromeLayout.bookmarksBarIconSize
+                + BrowserChromeLayout.bookmarksBarLabelSpacing + BrowserChromeLayout
+                .bookmarksBarItemHorizontalPadding * 2,
+        )
+    }
 
     init(cache: BrowserFaviconCache) {
         self.favicon = BrowserFaviconNSView(cache: cache)
@@ -301,24 +323,13 @@ final class BrowserNativeBookmarkButton: BrowserNativePressableView {
         folder.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(
                 pointSize: BrowserChromeLayout.bookmarksBarIconSize,
-                weight: .semibold
+                weight: .semibold,
             ))
         folder.contentTintColor = BrowserChromeColors.secondaryText
         folder.imageScaling = .scaleProportionallyUpOrDown
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    var preferredWidth: CGFloat {
-        min(
-            BrowserChromeLayout.bookmarksBarItemMaximumWidth,
-            ceil(label.intrinsicContentSize.width) + BrowserChromeLayout.bookmarksBarIconSize
-                + BrowserChromeLayout.bookmarksBarLabelSpacing + BrowserChromeLayout
-                .bookmarksBarItemHorizontalPadding * 2
-        )
-    }
 
     override func interactionChanged() { super.interactionChanged()
         guard lastHover != isHovered else { return }
@@ -340,7 +351,7 @@ final class BrowserNativeBookmarkButton: BrowserNativePressableView {
             x: x + size + BrowserChromeLayout.bookmarksBarLabelSpacing,
             y: (bounds.height - 17) / 2,
             width: max(bounds.width - x * 2 - size - BrowserChromeLayout.bookmarksBarLabelSpacing, 0),
-            height: 17
+            height: 17,
         )
     }
 
@@ -358,19 +369,6 @@ final class BrowserNativeBookmarkButton: BrowserNativePressableView {
         setAccessibilityIdentifier("browser.bookmarks.item.\(item.id)")
         needsLayout = true
     }
-
-    // MARK: Private
-
-    private let hoverAnimation = BrowserNativeAnimation()
-    private var lastHover = false
-    private let favicon: BrowserFaviconNSView
-    private let folder = NSImageView()
-    private let label = BrowserNativeControls.label(
-        "",
-        size: 12.5,
-        weight: .medium,
-        color: BrowserChromeColors.primaryText
-    )
 }
 
 // MARK: - BrowserNativeBookmarksDocument

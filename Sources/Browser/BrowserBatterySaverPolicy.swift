@@ -1,3 +1,5 @@
+// BrowserBatterySaverPolicy.swift
+
 import Foundation
 
 // MARK: - BrowserBatteryState
@@ -15,7 +17,7 @@ enum BrowserBatterySaverPolicy {
 
     static func shouldActivate(
         for state: BrowserBatteryState,
-        isEnabledInPreferences: Bool
+        isEnabledInPreferences: Bool,
     ) -> Bool {
         guard
             isEnabledInPreferences,

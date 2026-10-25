@@ -1,3 +1,5 @@
+// BrowserNativeTabCreationTests.swift
+
 import AppKit
 import Testing
 
@@ -82,7 +84,7 @@ import Testing
         let model = BrowserChromeModel(
             tabDriver: driver,
             sessionSnapshotStore: InMemorySessionSnapshotStore(
-                loadedSnapshot: .init(tabURLStrings: ["https://first.example", "https://second.example"])
+                loadedSnapshot: .init(tabURLStrings: ["https://first.example", "https://second.example"]),
             ),
             sessionPreferencesStore: InMemorySessionPreferencesStore(storedSelectedTabIndex: 0),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
@@ -90,7 +92,7 @@ import Testing
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(),
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         defer { model.prepareForTermination() }
         model.handleContextReady()
@@ -150,7 +152,7 @@ import Testing
         host: NSView,
         state: BrowserTabCreationState,
         contextReady: Bool = true,
-        hasSelectedTab: Bool = true
+        hasSelectedTab: Bool = true,
     ) {
         view.update(
             hostView: host,
@@ -158,7 +160,7 @@ import Testing
             hasSelectedTab: hasSelectedTab,
             isSidebarVisible: true,
             usesWindowContentInsets: true,
-            selectedTabCreationState: state
+            selectedTabCreationState: state,
         )
     }
 
@@ -180,7 +182,7 @@ import Testing
             hasSelectedTab: model.selectedTabID != nil,
             isSidebarVisible: true,
             usesWindowContentInsets: true,
-            selectedTabCreationState: model.selectedTabCreationState
+            selectedTabCreationState: model.selectedTabCreationState,
         )
     }
 }

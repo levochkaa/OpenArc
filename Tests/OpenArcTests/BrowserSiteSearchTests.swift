@@ -1,3 +1,5 @@
+// BrowserSiteSearchTests.swift
+
 import AppKit
 import Foundation
 import GRDB
@@ -7,22 +9,22 @@ private let youTube = BrowserSiteSearch(
     name: "YouTube",
     keyword: "@y",
     urlTemplate: "https://www.youtube.com/results?search_query=%s",
-    colorHex: "FF2600"
+    colorHex: "FF2600",
 )
 private let translate = BrowserSiteSearch(
     name: "Google Translate",
     keyword: "@t",
-    urlTemplate: "https://translate.google.com/?q=%s"
+    urlTemplate: "https://translate.google.com/?q=%s",
 )
 private let gitHub = BrowserSiteSearch(
     name: "GitHub",
     keyword: "github.com",
-    urlTemplate: "https://github.com/search?q=%s"
+    urlTemplate: "https://github.com/search?q=%s",
 )
 private let gitLab = BrowserSiteSearch(
     name: "GitLab",
     keyword: "gitlab.example.com",
-    urlTemplate: "https://gitlab.example.com/search?search=%s"
+    urlTemplate: "https://gitlab.example.com/search?search=%s",
 )
 
 @Test func siteSearchMatchesAKeywordOrTheShortestKeywordStartingWithTheText() {
@@ -53,13 +55,13 @@ private let gitLab = BrowserSiteSearch(
     let spotify = BrowserSiteSearch(
         name: "Spotify",
         keyword: "spotify.com",
-        urlTemplate: "https://open.spotify.com/search/%s"
+        urlTemplate: "https://open.spotify.com/search/%s",
     )
     #expect(spotify.searchURLString(for: "daft punk") == "https://open.spotify.com/search/daft%20punk")
     let gmail = BrowserSiteSearch(
         name: "Gmail",
         keyword: "mail.google.com",
-        urlTemplate: "https://mail.google.com/mail/#apps/%s"
+        urlTemplate: "https://mail.google.com/mail/#apps/%s",
     )
     #expect(gmail.searchURLString(for: "a b") == "https://mail.google.com/mail/#apps/a%20b")
     #expect(BrowserSiteSearch(name: "", keyword: "x", urlTemplate: "https://example.com/")
@@ -123,7 +125,7 @@ private let gitLab = BrowserSiteSearch(
     let wikipediaBang = BrowserSiteSearch(
         name: "Wikipedia",
         keyword: "w",
-        urlTemplate: "https://duckduckgo.com/?q=!w+%s"
+        urlTemplate: "https://duckduckgo.com/?q=!w+%s",
     )
     #expect(BrowserSiteSearchImport.merge([duckDuckGo, wikipediaBang], into: []).map(\.keyword) == ["d", "w"])
     #expect(BrowserSiteSearchImport.merge([wikipediaBang], into: [duckDuckGo]).map(\.keyword) == ["d", "w"])
@@ -148,7 +150,7 @@ private let gitLab = BrowserSiteSearch(
         suggestionDebounceNanoseconds: 0,
         remoteSuggestionsEnabledProvider: { false },
         siteSearchesProvider: { [gitHub, youTube, translate] },
-        submitHandler: { submitted.append($0) }
+        submitHandler: { submitted.append($0) },
     )
     model.present()
     model.query = "lofi"
@@ -181,7 +183,7 @@ private let gitLab = BrowserSiteSearch(
         suggestionDebounceNanoseconds: 0,
         remoteSuggestionsEnabledProvider: { false },
         siteSearchesProvider: { [gitHub, translate] },
-        submitHandler: { submitted.append($0) }
+        submitHandler: { submitted.append($0) },
     )
     model.present()
     model.query = "git"
@@ -217,7 +219,7 @@ private let gitLab = BrowserSiteSearch(
         suggestionDebounceNanoseconds: 0,
         remoteSuggestionsEnabledProvider: { false },
         siteSearchesProvider: { [youTube] },
-        submitHandler: { _ in }
+        submitHandler: { _ in },
     )
     let view = BrowserCommandBarNSView(model: model, faviconCache: BrowserFaviconCache(dataLoader: { _ in nil }))
     view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
@@ -261,7 +263,7 @@ private let gitLab = BrowserSiteSearch(
     composing.setMarkedText(
         "か",
         selectedRange: NSRange(location: 1, length: 0),
-        replacementRange: NSRange(location: NSNotFound, length: 0)
+        replacementRange: NSRange(location: NSNotFound, length: 0),
     )
     #expect(composing.hasMarkedText())
     #expect(!view.control(view.queryField, textView: composing, doCommandBy: #selector(NSResponder.insertTab(_:))))

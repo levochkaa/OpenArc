@@ -1,3 +1,5 @@
+// BrowserDesktopPersistentCloseTests.swift
+
 import Foundation
 import Testing
 
@@ -37,7 +39,7 @@ import Testing
         let retry = try #require(f.driver.confirmedCloseRequests.last)
         #expect(retry.requestID != request.requestID)
         f.driver.emitCloseRequestOutcome(
-            id: id, requestID: request.requestID, outcome: .closed, emitsClosedEvent: false
+            id: id, requestID: request.requestID, outcome: .closed, emitsClosedEvent: false,
         )
         #expect(try f.evidence() == before)
         f.finish(retry, .cancelled)
@@ -47,7 +49,7 @@ import Testing
 
     @Test(arguments: [BrowserTabPlacement.app, .spacePinned])
     func confirmedUnloadUsesLatestMetadataPreservesSelectionAndReopensTheSameIdentity(
-        placement: BrowserTabPlacement
+        placement: BrowserTabPlacement,
     ) throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
@@ -106,7 +108,7 @@ import Testing
         #expect(f.driver.createdTabRequests.last?.urlString == expectedURL)
         #expect(try f.store.loadArchivePage().entries.isEmpty)
         f.driver.emitClose(id: id)
-        #expect(f.model.tabs.filter { $0.syncID == "a" }.count == 1)
+        #expect(f.model.tabs.count(where: { $0.syncID == "a" }) == 1)
     }
 
     @Test(arguments: ["app-to-pin", "pin-to-app", "app-to-today", "pin-to-today"])
@@ -150,7 +152,7 @@ import Testing
             f.driver.flushPendingCreateEvents()
             f.driver.emitCreatedTab(id: id, urlString: "https://example.com/stale", isActive: true)
             f.finish(request, .closed)
-            #expect(f.model.selectedTabID == retained.id && f.model.tabs.filter { $0.syncID == "a" }.count == 1)
+            #expect(f.model.selectedTabID == retained.id && f.model.tabs.count(where: { $0.syncID == "a" }) == 1)
             #expect(try f.evidence() == before)
             #expect(f.model.canRestoreArchivedTab, "Retired reopen bookkeeping must not block future Archive actions")
         } else {
@@ -216,7 +218,7 @@ import Testing
             let projected = try f.store.applyRemoteSyncEvents([
                 .init(
                     serverSeq: 100, deviceID: "remote", entityType: "tab", entityID: "a", op: "delete",
-                    data: .deleted(id: "a"), createdAt: "2026-10-03T00:00:00Z"
+                    data: .deleted(id: "a"), createdAt: "2026-10-03T00:00:00Z",
                 ),
             ], cursor: 100, for: f.owner)
             f.model.applyRemoteSyncSnapshot(projected)
@@ -240,7 +242,7 @@ import Testing
 
     @Test(arguments: [BrowserTabPlacement.app, .spacePinned], [false, true])
     func forcedAndAlreadyClosedPathsBypassManualConfirmation(
-        placement: BrowserTabPlacement, engineAlreadyClosed: Bool
+        placement: BrowserTabPlacement, engineAlreadyClosed: Bool,
     ) throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
@@ -249,10 +251,10 @@ import Testing
             ? f.model.closeAppTabProcess(
                 id: id,
                 forceClose: !engineAlreadyClosed,
-                engineAlreadyClosed: engineAlreadyClosed
+                engineAlreadyClosed: engineAlreadyClosed,
             )
             : f.model.closePinnedTabProcessOrReset(
-                id: id, forceClose: !engineAlreadyClosed, engineAlreadyClosed: engineAlreadyClosed
+                id: id, forceClose: !engineAlreadyClosed, engineAlreadyClosed: engineAlreadyClosed,
             )
         #expect(handled && f.driver.confirmedCloseRequests.isEmpty)
         #expect(f.driver.closedTabRequests == (engineAlreadyClosed ? [] : [.init(id: id, forceClose: true)]))
@@ -303,7 +305,7 @@ import Testing
         let destinationSpace = try #require(f.model.selectedSpaceID)
         #expect(destinationSpace != "work")
         f.model.moveTab(
-            withID: reopenedID, toPlacement: destination, atSectionIndex: 0, targetSpaceID: destinationSpace
+            withID: reopenedID, toPlacement: destination, atSectionIndex: 0, targetSpaceID: destinationSpace,
         )
         if destination == .spacePinned {
             _ = try #require(f.model.createPinnedTabFolder(containingTabIDs: [reopenedID]))
@@ -336,7 +338,7 @@ import Testing
 
     @Test(arguments: [BrowserTabPlacement.app, .spacePinned])
     func repeatedUnloadBeforeAllocationStaysDormantAndRetiredPlaceholdersCannotCreateAnotherTab(
-        placement: BrowserTabPlacement
+        placement: BrowserTabPlacement,
     ) throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
@@ -431,7 +433,7 @@ import Testing
 
     @Test(arguments: [BrowserTabPlacement.app, .spacePinned])
     func cancelledReopenedUnloadKeepsItsRuntimeAndLaterAllocationPreservesNewerSelection(
-        placement: BrowserTabPlacement
+        placement: BrowserTabPlacement,
     ) throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
@@ -475,7 +477,7 @@ import Testing
 }
 
 @MainActor private func preparePersistentClose(
-    _ f: ConfirmedCloseFixture, placement: BrowserTabPlacement
+    _ f: ConfirmedCloseFixture, placement: BrowserTabPlacement,
 ) throws -> String {
     let id = try f.runtimeID("a")
     if placement == .spacePinned {

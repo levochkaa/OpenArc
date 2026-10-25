@@ -1,3 +1,5 @@
+// BrowserSyncOutbox.swift
+
 import Foundation
 
 // MARK: - BrowserSyncOutboxError
@@ -12,6 +14,11 @@ enum BrowserSyncOutboxError: Error, Equatable {
 /// Pending activity never decreases a known canonical value. Keep this policy
 /// in projections: canonical events and immutable queued requests retain their bytes.
 struct BrowserSyncActivityDates {
+    // MARK: Private
+
+    private let seconds = Date.ISO8601FormatStyle()
+    private let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+
     // MARK: Internal
 
     func latest(_ current: String?, _ incoming: String?) -> String? {
@@ -32,11 +39,6 @@ struct BrowserSyncActivityDates {
         }
         return candidate
     }
-
-    // MARK: Private
-
-    private let seconds = Date.ISO8601FormatStyle()
-    private let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
 
     private func timestamp(_ value: String?) -> TimeInterval? {
         guard let value else { return nil }
@@ -79,8 +81,8 @@ struct BrowserSyncOutboxBaseline: Codable {
                         entityID: event.entityID,
                         op: .delete,
                         spaceData: nil,
-                        tabData: nil
-                    )
+                        tabData: nil,
+                    ),
                 )
                 continue
             }
@@ -102,9 +104,9 @@ struct BrowserSyncOutboxBaseline: Codable {
                         systemImageName: icon,
                         rank: rank,
                         isPinnedSectionCollapsed: collapsed,
-                        selectedTabID: data.selectedTabID
+                        selectedTabID: data.selectedTabID,
                     ),
-                    tabData: nil
+                    tabData: nil,
                 )
             case (.tab, .tab(let data)):
                 guard let spaceID = data.spaceID, let placement = data.placement,
@@ -117,8 +119,8 @@ struct BrowserSyncOutboxBaseline: Codable {
                         pinnedURLString: data.pinnedURLString, title: data.title,
                         userTitleOverride: data.userTitleOverride,
                         faviconURLString: data.faviconURLString, lastActivityAt: data.lastActivityAt,
-                        pinnedFolderID: data.pinnedFolderID
-                    )
+                        pinnedFolderID: data.pinnedFolderID,
+                    ),
                 )
             case (.folder, .folder(let data)):
                 guard let spaceID = data.spaceID, let title = data.title, let rank = data.rank else {
@@ -132,8 +134,8 @@ struct BrowserSyncOutboxBaseline: Codable {
                         parentFolderID: data.parentFolderID,
                         title: title,
                         systemImageName: data.systemImageName,
-                        rank: rank
-                    )
+                        rank: rank,
+                    ),
                 )
             default: throw BrowserSyncOutboxError.invalidEvent
             }
@@ -152,11 +154,11 @@ enum BrowserSyncOutboxProjection {
 
     static func changes(
         from previous: BrowserTabSessionSnapshot?,
-        to snapshot: BrowserTabSessionSnapshot
+        to snapshot: BrowserTabSessionSnapshot,
     ) -> [BrowserSyncChange] {
         delta(
             before: canonicalChanges(previous ?? BrowserTabSessionSnapshot(tabs: [])),
-            after: canonicalChanges(snapshot)
+            after: canonicalChanges(snapshot),
         )
     }
 
@@ -164,13 +166,13 @@ enum BrowserSyncOutboxProjection {
         from previous: BrowserTabSessionSnapshot?,
         to snapshot: BrowserTabSessionSnapshot,
         baseline: BrowserSyncOutboxBaseline,
-        pending: [BrowserSyncMutation]
+        pending: [BrowserSyncMutation],
     ) -> [BrowserSyncChange] {
         changes(
             from: previous,
             to: snapshot,
             baseline: baseline,
-            pending: pending.map(BrowserSyncQueuedMutation.legacy)
+            pending: pending.map(BrowserSyncQueuedMutation.legacy),
         )
     }
 
@@ -178,7 +180,7 @@ enum BrowserSyncOutboxProjection {
         from previous: BrowserTabSessionSnapshot?,
         to snapshot: BrowserTabSessionSnapshot,
         baseline: BrowserSyncOutboxBaseline,
-        pending: [BrowserSyncQueuedMutation]
+        pending: [BrowserSyncQueuedMutation],
     ) -> [BrowserSyncChange] {
         let before = canonicalChanges(previous ?? BrowserTabSessionSnapshot(tabs: []))
         let after = canonicalChanges(snapshot)
@@ -204,12 +206,12 @@ enum BrowserSyncOutboxProjection {
                 normalizedTypes.contains(change.entityType.rawValue)
                     ? change
                     : replacingRank(of: change, with: ranks[key(change)])
-            }
+            },
         )
     }
 
     static func removingDeletedEntities(
-        from snapshot: BrowserTabSessionSnapshot, baseline: BrowserSyncOutboxBaseline
+        from snapshot: BrowserTabSessionSnapshot, baseline: BrowserSyncOutboxBaseline,
     ) -> BrowserTabSessionSnapshot {
         let deleted = baseline.deletedKeys
         var deletedFolderIDs = Set((snapshot.pinnedTabFolders ?? [])
@@ -248,14 +250,14 @@ enum BrowserSyncOutboxProjection {
             },
             // Local split state follows the local writer; the store prunes
             // members that this filter removed.
-            splitGroups: snapshot.splitGroups
+            splitGroups: snapshot.splitGroups,
         )
     }
 
     static func snapshot(
         baseline: BrowserSyncOutboxBaseline,
         pending: [BrowserSyncMutation],
-        local: BrowserTabSessionSnapshot?
+        local: BrowserTabSessionSnapshot?,
     ) -> BrowserTabSessionSnapshot {
         snapshot(baseline: baseline, pending: pending.map(BrowserSyncQueuedMutation.legacy), local: local)
     }
@@ -264,7 +266,7 @@ enum BrowserSyncOutboxProjection {
         baseline: BrowserSyncOutboxBaseline,
         pending: [BrowserSyncQueuedMutation],
         local: BrowserTabSessionSnapshot?,
-        folderSyncEnabled: Bool = false
+        folderSyncEnabled: Bool = false,
     ) -> BrowserTabSessionSnapshot {
         let values = effectiveChanges(baseline: baseline, pending: pending)
         if folderSyncEnabled {
@@ -272,7 +274,8 @@ enum BrowserSyncOutboxProjection {
         }
         let live = values.values
         let spaceChanges = live.filter { $0.entityType == .space && $0.spaceData != nil }.sorted {
-            let left = $0.spaceData!.rank, right = $1.spaceData!.rank
+            let left = $0.spaceData!.rank
+            let right = $1.spaceData!.rank
             return left == right ? $0.entityID < $1.entityID : left < right
         }
         let spaceIDs = Set(spaceChanges.map(\.entityID))
@@ -286,12 +289,14 @@ enum BrowserSyncOutboxProjection {
         }
         .sorted {
             // v3 ranks belong to one sidebar list, never to the flattened tab array.
-            let leftData = $0.tabData!, rightData = $1.tabData!
+            let leftData = $0.tabData!
+            let rightData = $1.tabData!
             if (leftData.placement == .app) != (rightData.placement == .app) {
                 return leftData.placement == .app
             }
             if leftData.placement != .app {
-                let leftSpace = spaceOrder[leftData.spaceID]!, rightSpace = spaceOrder[rightData.spaceID]!
+                let leftSpace = spaceOrder[leftData.spaceID]!
+                let rightSpace = spaceOrder[rightData.spaceID]!
                 if leftSpace != rightSpace {
                     return leftSpace < rightSpace
                 }
@@ -299,7 +304,8 @@ enum BrowserSyncOutboxProjection {
                     return leftData.placement == .spacePinned
                 }
             }
-            let left = $0.tabData!.rank, right = $1.tabData!.rank
+            let left = $0.tabData!.rank
+            let right = $1.tabData!.rank
             return left == right ? $0.entityID < $1.entityID : left < right
         }
         .map { change in
@@ -313,14 +319,14 @@ enum BrowserSyncOutboxProjection {
                     ? previous?.pinnedFolderID
                     : nil,
                 lastActivityTimestamp: activityDates.projectedTimestamp(
-                    data.lastActivityAt, local: previous?.lastActivityTimestamp
+                    data.lastActivityAt, local: previous?.lastActivityTimestamp,
                 ),
                 pinnedSiblingRank: data.placement == .spacePinned && previous?.spaceID == data.spaceID
                     ? previous?.pinnedSiblingRank
                     : nil,
                 // Titles and icons are local; keep this device's.
                 pageTitle: previous?.pageTitle,
-                systemImageName: previous?.systemImageName
+                systemImageName: previous?.systemImageName,
             )
         }
         let localSpaces = Dictionary((local?.spaces ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -339,18 +345,18 @@ enum BrowserSyncOutboxProjection {
                 isPinnedSectionCollapsed: data.isPinnedSectionCollapsed,
                 selectedTabIndex: selectedID.flatMap { id in currentTabs.firstIndex { $0 == id } },
                 // Colors are local; keep this device's.
-                colorName: previousSpace?.colorName
+                colorName: previousSpace?.colorName,
             )
         }
         return BrowserTabSessionSnapshot(
             spaces: projectedSpaces.isEmpty ? nil : projectedSpaces,
             pinnedTabFolders: local?.pinnedTabFolders?.filter { spaceIDs.contains($0.spaceID) },
-            tabs: projectedTabs
+            tabs: projectedTabs,
         )
     }
 
     static func effectiveChanges(
-        baseline: BrowserSyncOutboxBaseline, pending: [BrowserSyncQueuedMutation]
+        baseline: BrowserSyncOutboxBaseline, pending: [BrowserSyncQueuedMutation],
     ) -> [String: BrowserSyncChange] {
         var values = baseline.entities.mapValues(\.change)
         let activityDates = BrowserSyncActivityDates()
@@ -400,7 +406,7 @@ enum BrowserSyncOutboxProjection {
                         continue
                     }
                     values[key(change)] = preservingActivity(
-                        of: change, from: values[key(change)], dates: activityDates
+                        of: change, from: values[key(change)], dates: activityDates,
                     )
                 }
                 // The v2 server applies upserts first, then deletions, without
@@ -436,8 +442,8 @@ enum BrowserSyncOutboxProjection {
                 entityType: change.entityType, entityID: change.entityID, op: change.op,
                 spaceData: BrowserSyncSpacePayload(
                     title: data.title, systemImageName: data.systemImageName, rank: rank,
-                    isPinnedSectionCollapsed: data.isPinnedSectionCollapsed, selectedTabID: data.selectedTabID
-                ), tabData: nil
+                    isPinnedSectionCollapsed: data.isPinnedSectionCollapsed, selectedTabID: data.selectedTabID,
+                ), tabData: nil,
             )
         }
         guard let data = change.tabData else { return change }
@@ -447,8 +453,8 @@ enum BrowserSyncOutboxProjection {
                 spaceID: data.spaceID, placement: data.placement, rank: rank, urlString: data.urlString,
                 pinnedURLString: data.pinnedURLString, title: data.title, userTitleOverride: data.userTitleOverride,
                 faviconURLString: data.faviconURLString, lastActivityAt: data.lastActivityAt,
-                pinnedFolderID: data.pinnedFolderID
-            )
+                pinnedFolderID: data.pinnedFolderID,
+            ),
         )
     }
 
@@ -468,7 +474,7 @@ enum BrowserSyncOutboxProjection {
         {
             spaces.append(BrowserSpaceSessionSnapshot(
                 id: BrowserSessionDefaults.defaultSpaceID, title: BrowserStrings.defaultSpaceTitle(index: 1),
-                systemImageName: BrowserSessionDefaults.defaultSpaceIconName
+                systemImageName: BrowserSessionDefaults.defaultSpaceIconName,
             ))
         }
         for (index, space) in spaces.enumerated() {
@@ -479,8 +485,8 @@ enum BrowserSyncOutboxProjection {
                     systemImageName: space.systemImageName,
                     rank: Double(index),
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                    selectedTabID: nil
-                ), tabData: nil
+                    selectedTabID: nil,
+                ), tabData: nil,
             ))
         }
         for (index, tab) in snapshot.tabs.enumerated() {
@@ -492,8 +498,8 @@ enum BrowserSyncOutboxProjection {
                     rank: Double(index), urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                     title: nil, userTitleOverride: tab.userTitleOverride, faviconURLString: nil,
                     lastActivityAt: tab.lastActivityTimestamp
-                        .map { dateFormatter.string(from: Date(timeIntervalSince1970: $0)) }
-                )
+                        .map { dateFormatter.string(from: Date(timeIntervalSince1970: $0)) },
+                ),
             ))
         }
         return result
@@ -502,7 +508,7 @@ enum BrowserSyncOutboxProjection {
     // MARK: Private
 
     private static func preservingActivity(
-        of change: BrowserSyncChange, from previous: BrowserSyncChange?, dates: BrowserSyncActivityDates
+        of change: BrowserSyncChange, from previous: BrowserSyncChange?, dates: BrowserSyncActivityDates,
     ) -> BrowserSyncChange {
         guard let data = change.tabData else { return change }
         let activity = dates.latest(previous?.tabData?.lastActivityAt, data.lastActivityAt)
@@ -513,8 +519,8 @@ enum BrowserSyncOutboxProjection {
                 spaceID: data.spaceID, placement: data.placement, rank: data.rank, urlString: data.urlString,
                 pinnedURLString: data.pinnedURLString, title: data.title, userTitleOverride: data.userTitleOverride,
                 faviconURLString: data.faviconURLString, lastActivityAt: activity,
-                pinnedFolderID: data.pinnedFolderID
-            )
+                pinnedFolderID: data.pinnedFolderID,
+            ),
         )
     }
 
@@ -528,7 +534,7 @@ enum BrowserSyncOutboxProjection {
                 entityID: $0.entityID,
                 op: .delete,
                 spaceData: nil,
-                tabData: nil
+                tabData: nil,
             )
         }
         return upserts + deletes

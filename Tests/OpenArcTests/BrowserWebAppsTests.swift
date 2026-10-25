@@ -1,3 +1,5 @@
+// BrowserWebAppsTests.swift
+
 import Foundation
 import Testing
 
@@ -53,7 +55,7 @@ import Testing
 
     let configuration = try #require(BrowserWebAppConfiguration.configuration(
         infoDictionary: infoDictionary,
-        bundleURL: bundleURL
+        bundleURL: bundleURL,
     ))
     #expect(configuration.name == "SoundCloud")
     #expect(configuration.startURL.absoluteString == "https://soundcloud.com/discover")
@@ -65,14 +67,14 @@ import Testing
     mismatchedOrigin[BrowserWebAppConfiguration.scopeURLInfoKey] = "https://example.com/"
     #expect(BrowserWebAppConfiguration.configuration(
         infoDictionary: mismatchedOrigin,
-        bundleURL: bundleURL
+        bundleURL: bundleURL,
     ) == nil)
 
     var unsupportedStartURL = infoDictionary
     unsupportedStartURL[BrowserWebAppConfiguration.startURLInfoKey] = "file:///tmp/index.html"
     #expect(BrowserWebAppConfiguration.configuration(
         infoDictionary: unsupportedStartURL,
-        bundleURL: bundleURL
+        bundleURL: bundleURL,
     ) == nil)
 }
 
@@ -100,7 +102,7 @@ import Testing
     let infoData = try PropertyListSerialization.data(
         fromPropertyList: infoDictionary,
         format: .binary,
-        options: 0
+        options: 0,
     )
     try infoData.write(to: contentsURL.appendingPathComponent("Info.plist", isDirectory: false))
 
@@ -116,16 +118,16 @@ import Testing
     let pageURL = try #require(URL(string: "https://soundcloud.com/discover?ref=home"))
     let defaultIdentifier = try #require(BrowserWebAppConfiguration.stableIdentifier(
         for: pageURL,
-        profileDirectoryName: "Default"
+        profileDirectoryName: "Default",
     ))
 
     #expect(try defaultIdentifier == BrowserWebAppConfiguration.stableIdentifier(
         for: #require(URL(string: "https://soundcloud.com/you/likes")),
-        profileDirectoryName: "Default"
+        profileDirectoryName: "Default",
     ))
     #expect(defaultIdentifier != BrowserWebAppConfiguration.stableIdentifier(
         for: pageURL,
-        profileDirectoryName: "Profile 1"
+        profileDirectoryName: "Profile 1",
     ))
     #expect(BrowserWebAppConfiguration.scopeURL(for: pageURL)?.absoluteString == "https://soundcloud.com/")
 }
@@ -134,7 +136,7 @@ import Testing
     let pageURL = try #require(URL(string: "https://soundcloud.com/discover"))
     #expect(BrowserWebAppBundleInstaller.suggestedName(
         pageTitle: "SoundCloud — Listen to music online",
-        pageURL: pageURL
+        pageURL: pageURL,
     ) == "SoundCloud")
 }
 
@@ -170,7 +172,7 @@ import Testing
         payloadJSON: payloadJSON,
         fallbackPageURL: pageURL,
         fallbackTitle: "Likes on SoundCloud",
-        fallbackIconURL: URL(string: "https://soundcloud.com/favicon.ico")
+        fallbackIconURL: URL(string: "https://soundcloud.com/favicon.ico"),
     )
 
     #expect(metadata.preferredName(fallbackTitle: "Likes on SoundCloud") == "SoundCloud")
@@ -206,7 +208,7 @@ import Testing
         payloadJSON: payloadJSON,
         fallbackPageURL: pageURL,
         fallbackTitle: "Example",
-        fallbackIconURL: nil
+        fallbackIconURL: nil,
     )
 
     #expect(metadata.applicationIDURL.absoluteString == "https://example.com/music-app")
@@ -229,12 +231,12 @@ import Testing
         hostBundleURL: hostBundleURL,
         applicationsDirectoryURL: applicationsDirectoryURL,
         fileManager: fileManager,
-        bundleSigner: { _, _ in }
+        bundleSigner: { _, _ in },
     ).install(BrowserWebAppInstallRequest(
         name: "SoundCloud",
         metadata: fallbackWebAppMetadata(pageURL: pageURL),
         profile: .defaultProfile,
-        bundleIconData: bundleIconData
+        bundleIconData: bundleIconData,
     ))
 
     #expect(installedApp.bundleURL.lastPathComponent == "SoundCloud.app")
@@ -251,7 +253,7 @@ import Testing
     let infoData = try Data(contentsOf: installedApp.bundleURL
         .appendingPathComponent("Contents/Info.plist", isDirectory: false))
     let infoDictionary = try #require(
-        PropertyListSerialization.propertyList(from: infoData, format: nil) as? [String: Any]
+        PropertyListSerialization.propertyList(from: infoData, format: nil) as? [String: Any],
     )
     #expect(infoDictionary["CFBundleDisplayName"] as? String == "SoundCloud")
     #expect(infoDictionary["CFBundleIconFile"] as? String == "app.icns")
@@ -271,11 +273,11 @@ private func createFakeHostBundle(at bundleURL: URL, fileManager: FileManager) t
     try fileManager.createDirectory(at: macOSURL, withIntermediateDirectories: true)
     try fileManager.createDirectory(
         at: contentsURL.appendingPathComponent("Frameworks", isDirectory: true),
-        withIntermediateDirectories: true
+        withIntermediateDirectories: true,
     )
     try fileManager.createDirectory(
         at: contentsURL.appendingPathComponent("Resources", isDirectory: true),
-        withIntermediateDirectories: true
+        withIntermediateDirectories: true,
     )
 
     let executableURL = macOSURL.appendingPathComponent("OpenArc", isDirectory: false)
@@ -299,7 +301,7 @@ private func createFakeHostBundle(at bundleURL: URL, fileManager: FileManager) t
     let infoData = try PropertyListSerialization.data(
         fromPropertyList: infoDictionary,
         format: .binary,
-        options: 0
+        options: 0,
     )
     try infoData.write(to: contentsURL.appendingPathComponent("Info.plist", isDirectory: false))
 }
@@ -318,6 +320,6 @@ private func fallbackWebAppMetadata(pageURL: URL) -> BrowserWebAppInstallMetadat
         displayMode: nil,
         themeColor: nil,
         backgroundColor: nil,
-        iconURL: nil
+        iconURL: nil,
     )
 }

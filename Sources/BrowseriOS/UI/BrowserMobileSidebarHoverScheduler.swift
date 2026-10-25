@@ -1,3 +1,5 @@
+// BrowserMobileSidebarHoverScheduler.swift
+
 import Foundation
 
 // MARK: - BrowserMobileSidebarHoverScheduling
@@ -10,12 +12,20 @@ import Foundation
 // MARK: - BrowserMobileSidebarHoverScheduler
 
 @MainActor final class BrowserMobileSidebarHoverScheduler: BrowserMobileSidebarHoverScheduling {
+    // MARK: Private
+
+    private var task: Task<Void, Never>?
+
     // MARK: Internal
 
     func schedule(after delay: Duration, action: @escaping @MainActor () -> Void) {
         cancel()
         task = Task { @MainActor in
-            do { try await Task.sleep(for: delay) } catch { return }
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
             guard !Task.isCancelled else { return }
             action()
         }
@@ -25,8 +35,4 @@ import Foundation
         task?.cancel()
         task = nil
     }
-
-    // MARK: Private
-
-    private var task: Task<Void, Never>?
 }

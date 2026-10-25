@@ -1,3 +1,5 @@
+// BrowserSearchEngine.swift
+
 import Foundation
 
 // MARK: - BrowserSearchEngine

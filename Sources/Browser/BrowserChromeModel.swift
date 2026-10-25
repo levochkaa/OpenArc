@@ -1,3 +1,5 @@
+// BrowserChromeModel.swift
+
 import AppKit
 import Combine
 import Foundation
@@ -51,178 +53,6 @@ enum BrowserWindowMode: Equatable {
 // MARK: - BrowserChromeModel
 
 @MainActor final class BrowserChromeModel: NSObject, ObservableObject, BrowserSyncSnapshotApplying {
-    // MARK: Lifecycle
-
-    init(
-        tabDriver: BrowserTabDriving,
-        sessionSnapshotStore: BrowserTabSessionSnapshotStoring,
-        sessionPreferencesStore: BrowserSessionPreferencesStoring,
-        newTabURLString: String = BrowserChromeModel.defaultNewTabURLString,
-        commandBarSuggestionProvider: BrowserSuggestionProviding = BrowserGoogleSuggestionService(),
-        navigationResolver: BrowserNavigationResolver? = nil,
-        userPreferencesStore: BrowserUserPreferencesStore = BrowserUserPreferencesStore(),
-        shortcutStore: BrowserShortcutStore = BrowserShortcutStore(),
-        bookmarksModel: BrowserBookmarksModel? = nil,
-        historyStore: BrowserHistorySearching = BrowserEmptyHistoryStore(),
-        downloadsModel: BrowserDownloadsModel? = nil,
-        extensionManager: any BrowserExtensionManaging,
-        extensionSidePanelDriver: (any BrowserExtensionSidePanelDriving)? = nil,
-        extensionActionPopupDriver: (any BrowserExtensionActionPopupDriving)? = nil,
-        syncCoordinator: BrowserSyncCoordinating? = nil,
-        windowMode: BrowserWindowMode = .normal,
-        profile: BrowserProfile = .defaultProfile,
-        availableProfileCount: Int = 1,
-        dateProvider: @escaping () -> Date = Date.init,
-        spaceIDProvider: @escaping () -> String = { UUID().uuidString },
-        tabSyncIDProvider: @escaping () -> String = { UUID().uuidString },
-        commandHandler: @escaping (BrowserCommandID, BrowserChromeModel) -> Void = { _, _ in },
-        windowTitleHandler: @escaping (String) -> Void,
-        allTabsClosedHandler: @escaping () -> Void
-    ) {
-        self.tabDriver = tabDriver
-        self.sessionSnapshotStore = sessionSnapshotStore
-        self.sessionPreferencesStore = sessionPreferencesStore
-        self.newTabURLString = newTabURLString
-        self.commandBarSuggestionProvider = commandBarSuggestionProvider
-        self.userPreferencesStore = userPreferencesStore
-        self.shortcutStore = shortcutStore
-        self.bookmarksModel = bookmarksModel ?? BrowserBookmarksModel()
-        self.historyStore = historyStore
-        self.downloadsModel = downloadsModel ?? BrowserDownloadsModel()
-        self.navigationResolver = navigationResolver ?? BrowserNavigationResolver(
-            searchEngineProvider: { userPreferencesStore.searchEngine }
-        )
-        self.extensionManager = extensionManager
-        self.extensionSidePanelDriver = extensionSidePanelDriver
-        self.extensionActionPopupDriver = extensionActionPopupDriver
-        self.syncCoordinator = syncCoordinator
-        self.windowMode = windowMode
-        self.profile = profile
-        self.profileDisplayName = profile.displayName
-        self.availableProfileCount = availableProfileCount
-        self.isPersistenceEnabled = windowMode.persistsSession
-        self.temporaryTabLifetime = sessionPreferencesStore.loadTemporaryTabLifetime()
-        self.pinnedExtensionIDs = userPreferencesStore.pinnedExtensionIDs
-        self.dateProvider = dateProvider
-        self.spaceIDProvider = spaceIDProvider
-        self.tabSyncIDProvider = tabSyncIDProvider
-        self.commandHandler = commandHandler
-        self.windowTitleHandler = windowTitleHandler
-        self.allTabsClosedHandler = allTabsClosedHandler
-        self.hostView = tabDriver.hostView
-
-        super.init()
-        undoManager.groupsByEvent = false
-        undoManager.canPerformTabAction = { [weak self] in
-            guard let self else { return false }
-            return canRegisterTabUndo && !isCompletingTabClose && !hasUncommittedSessionWrites &&
-                !isApplyingRemoteSync &&
-                !isArchiveOperationInFlight && pendingRemoteTabCreations.isEmpty
-        }
-        tabDriver.onTabCreated = { [weak self] tabID, title, urlString, isActive in
-            self?.handleCreatedTab(id: tabID, title: title, urlString: urlString, isActive: isActive)
-        }
-        tabDriver.onTabCreationStateChanged = { [weak self] tabID, state in
-            self?.handleTabCreationStateChange(id: tabID, state: state)
-        }
-        tabDriver.onTabUpdated = { [weak self] tabID, title, urlString, faviconURLString in
-            self?.handleUpdatedTab(
-                id: tabID,
-                title: title,
-                urlString: urlString,
-                faviconURLString: faviconURLString
-            )
-        }
-        tabDriver.onTabCloseRequestFinished = { [weak self] tabID, requestID, outcome in
-            self?.handleTabCloseRequestFinished(id: tabID, requestID: requestID, outcome: outcome)
-        }
-        tabDriver.onTabClosed = { [weak self] tabID in
-            self?.handleClosedTab(id: tabID)
-        }
-        tabDriver.onTabFocused = { [weak self] tabID in
-            self?.handleSplitPaneFocused(tabID)
-        }
-        tabDriver.onSplitResized = { [weak self] tabIDs, fractions in
-            self?.handleSplitResize(tabIDs: tabIDs, fractions: fractions)
-        }
-        tabDriver.onSplitPaneLayout = { [weak self] tabIDs, frames in
-            self?.handleSplitPaneLayout(tabIDs: tabIDs, frames: frames)
-        }
-        tabDriver.shouldPeekNavigation = { [weak self] tabID, urlString in
-            self?.peeksNavigation(fromTabWithID: tabID, toURLString: urlString) ?? false
-        }
-        tabDriver.peekSpaces = { [weak self] in
-            guard let self, supportsSpaces, canCreateTab else { return [] }
-            return spaces.map { BrowserPeekSpace(id: $0.id, title: $0.title, systemImageName: $0.systemImageName) }
-        }
-        tabDriver.onPeekClosedByUser = { [weak self] urlString, standalone in
-            self?.registerPeekReopenUndo(urlString: urlString, standalone: standalone)
-        }
-        tabDriver.onOpenPeekInSplitView = { [weak self] urlString in
-            guard let self, let url = URL(string: urlString), !openURLInSplitView(url) else { return }
-            openURLInNewTab(url)
-        }
-        tabDriver.onSitePermissionRequested = { [weak self] request in
-            self?.handleSitePermissionRequest(request)
-        }
-        tabDriver.onSitePermissionRequestDismissed = { [weak self] id in
-            self?.handleSitePermissionRequestDismissed(id: id)
-        }
-        tabDriver.onMediaStateChanged = { [weak self] tabID, state in
-            self?.handleMediaStateChange(tabID: tabID, state: state)
-        }
-        tabDriver.onRenderProcessTerminated = { [weak self] tabID, errorCode in
-            self?.handleRenderProcessTerminated(tabID: tabID, errorCode: errorCode)
-        }
-        tabDriver.onPeekSitePermissionAnswered = { [weak self] id, allowed in
-            if let allowed {
-                self?.answerSitePermissionRequest(id: id, allowed: allowed)
-            } else {
-                self?.dismissSitePermissionRequest(id: id)
-            }
-        }
-        self.sitePermissionDecisionsObservation = userPreferencesStore.$sitePermissionDecisions
-            .dropFirst()
-            .sink { [weak self] decisions in
-                guard let self else { return }
-                MainActor.assumeIsolated {
-                    guard !windowMode.isIncognito else { return }
-                    resolveSitePermissionRequests(coveredBy: decisions)
-                }
-            }
-        tabDriver.onOpenPeekInSpace = { [weak self] urlString, spaceID in
-            guard let self, let url = URL(string: urlString), !openURL(url, inSpaceWithID: spaceID) else { return }
-            openURLInNewTab(url)
-        }
-        tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
-            self?.handleNavigationStateChange(
-                id: tabID,
-                canGoBack: canGoBack,
-                canGoForward: canGoForward
-            )
-        }
-        tabDriver.onLoadingStateChanged = { [weak self] tabID, isLoading in
-            self?.handleLoadingStateChange(id: tabID, isLoading: isLoading)
-        }
-        tabDriver.onFindResultChanged = { [weak self] tabID, matchCount, activeMatchOrdinal, finalUpdate in
-            self?.handleFindResult(
-                id: tabID,
-                matchCount: matchCount,
-                activeMatchOrdinal: activeMatchOrdinal,
-                finalUpdate: finalUpdate
-            )
-        }
-        tabDriver.onDownloadUpdated = { [weak self] update in
-            self?.handleDownloadUpdate(update)
-        }
-        extensionSidePanelDriver?.onPanelClosed = { [weak self] panelID in
-            self?.handleExtensionSidePanelClosed(panelID: panelID)
-        }
-        reloadAutomaticTabArchivalSettings()
-        syncCoordinator?.setExpiryScheduler(self)
-        updateWindowTitle()
-    }
-
     // MARK: Internal
 
     enum TabCloseReason {
@@ -231,6 +61,95 @@ enum BrowserWindowMode: Equatable {
         case structuralRemoval
         case remoteProjection
         case undoRedo
+    }
+
+    // MARK: Private
+
+    private struct LocalAutomaticArchiveCandidate {
+        let id: String
+        let syncID: String
+        let spaceID: String
+        let lastActivityAt: Date
+    }
+
+    private struct PendingTabCloseRequest {
+        let requestID: String
+        let syncID: String
+        let registersUndo: Bool
+        let undoActionName: String
+        let createsArchive: Bool
+        let preservesPersistentTab: Bool
+        let unloadsPersistentTab: Bool
+        let historyKind: TabHistoryKind
+        let localAutomaticCandidate: LocalAutomaticArchiveCandidate?
+        var invalidatedAutomaticClose = false
+        let completion: ((HistoryCloseResult) -> Void)?
+    }
+
+    private enum HistoryCloseResult {
+        case closed(TabUndoSnapshot, archiveID: String?)
+        case cancelled
+        case removed
+    }
+
+    private enum TabHistoryKind: Equatable {
+        case creation
+        case archive
+        case logicalRemoval
+    }
+
+    private struct PendingSessionCompletion {
+        let write: BrowserSessionWrite
+        let completion: () -> Void
+    }
+
+    private struct PendingHistoryRestore {
+        let archiveID: String?
+        let syncID: String
+        let snapshot: TabUndoSnapshot
+        let kind: TabHistoryKind
+        let actionName: String
+        let completion: (BrowserTabUndoManager.Outcome) -> Void
+    }
+
+    private struct PendingReopenedTabCreation {
+        let previousID: String
+        let titleAtRequest: String
+    }
+
+    private struct PendingCreatedTabContext {
+        let spaceID: String
+        let placement: BrowserTabPlacement
+        let undoSnapshot: TabUndoSnapshot?
+    }
+
+    private final class TabCreationUndoReference {
+        // MARK: Internal
+
+        var currentTabID: String?
+
+        init(tabID: String) {
+            self.currentTabID = tabID
+        }
+    }
+
+    private struct TabUndoSnapshot {
+        let tab: Tab
+        let insertionIndex: Int
+        let wasSelectedTab: Bool
+        let wasSelectedInSpace: Bool
+        let creationUndoReference: TabCreationUndoReference?
+    }
+
+    private struct RemoteTabCreation {
+        let snapshot: BrowserTabSessionSnapshotTab
+        let generation: Int
+    }
+
+    private enum AutomaticArchivalSettingsRetry {
+        case reload
+        case synchronized(BrowserTemporaryTabLifetime?)
+        case localLifetime(BrowserTemporaryTabLifetime)
     }
 
     nonisolated static let defaultSidebarWidth: CGFloat = 224
@@ -272,6 +191,10 @@ enum BrowserWindowMode: Equatable {
 
     /// A busy page may answer late; give up after about a second.
     static let findPasteboardAttempts = 8
+
+    private static let automaticArchivalLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "AutomaticArchival",
+    )
 
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var spaces = [Space]()
@@ -333,7 +256,7 @@ enum BrowserWindowMode: Equatable {
         commandHandler: { [weak self] commandID in
             guard let self else { return }
             commandHandler(commandID, self)
-        }
+        },
     )
     lazy var currentPageCommandBarModel = BrowserCommandBarModel(
         suggestionProvider: commandBarSuggestionProvider,
@@ -359,7 +282,7 @@ enum BrowserWindowMode: Equatable {
         commandHandler: { [weak self] commandID in
             guard let self else { return }
             commandHandler(commandID, self)
-        }
+        },
     )
     private(set) var isContextReady = false
     var isShuttingDown = false
@@ -412,7 +335,7 @@ enum BrowserWindowMode: Equatable {
     /// Asks macOS to let OpenArc use the camera or microphone; tests replace it.
     var requestSystemMediaCaptureAuthorization: @MainActor (
         [BrowserSitePermissionKind],
-        @escaping @MainActor (Bool) -> Void
+        @escaping @MainActor (Bool) -> Void,
     ) -> Void = BrowserMediaCaptureAuthorization.request
     /// UI-only: the window's site control center, opened by Open Extensions.
     var onOpenExtensions: (() -> Void)?
@@ -467,7 +390,7 @@ enum BrowserWindowMode: Equatable {
         willSet {
             guard selectedTabID != newValue, canRecordViewingActivity else { return }
             // Every pane of a split is on screen while one member is focused.
-            let ids = [selectedTabID, newValue].compactMap { $0 }.flatMap { splitPaneTabIDs(forTabID: $0) }
+            let ids = [selectedTabID, newValue].compactMap(\.self).flatMap { splitPaneTabIDs(forTabID: $0) }
             for id in Set(ids) {
                 guard tabs.first(where: { $0.id == id })?.creationState == .ready else { continue }
                 touchTab(id: id)
@@ -482,6 +405,90 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
+    @Published var findQuery = "" {
+        didSet {
+            guard findQuery != oldValue else {
+                return
+            }
+
+            handleFindQueryChange()
+        }
+    }
+
+    /// Answers this window's waiting requests that another window's answer covers.
+    private var sitePermissionDecisionsObservation: AnyCancellable?
+
+    /// Spaces colored in this session; a stored projection never overrides them.
+    private var locallyColoredSpaceIDs = Set<String>()
+
+    /// Tabs whose video was sent to Picture in Picture on leaving them.
+    private var pictureInPictureTabIDs = Set<String>()
+
+    private let tabDriver: BrowserTabDriving
+    private let sessionSnapshotStore: BrowserTabSessionSnapshotStoring
+    private let sessionPreferencesStore: BrowserSessionPreferencesStoring
+    private let newTabURLString: String
+    private let commandBarSuggestionProvider: BrowserSuggestionProviding
+    private let navigationResolver: BrowserNavigationResolver
+    private let historyStore: BrowserHistorySearching
+    private let extensionManager: any BrowserExtensionManaging
+    private let extensionSidePanelDriver: (any BrowserExtensionSidePanelDriving)?
+    private let extensionActionPopupDriver: (any BrowserExtensionActionPopupDriving)?
+    private let syncCoordinator: BrowserSyncCoordinating?
+    private let windowTitleHandler: (String) -> Void
+    private let allTabsClosedHandler: () -> Void
+    private let dateProvider: () -> Date
+    private let spaceIDProvider: () -> String
+    private let tabSyncIDProvider: () -> String
+    private let commandHandler: (BrowserCommandID, BrowserChromeModel) -> Void
+
+    private var hasCreatedInitialTab = false
+    private var closingTabIDs = Set<String>()
+    private var pendingTabCloseRequests = [String: PendingTabCloseRequest]()
+    private var isCompletingTabClose = false
+    private var localAutomaticArchiveCandidates = [LocalAutomaticArchiveCandidate]()
+    private var isProcessingLocalAutomaticArchiveCandidates = false
+    private var pendingSessionCompletions = [PendingSessionCompletion]()
+    private var pendingHistoryRestore: PendingHistoryRestore?
+    private var historyRestoreFailure: BrowserSessionPersistenceFailure?
+    private var closedAppTabIDs = Set<String>()
+    private var closedPinnedTabIDs = Set<String>()
+    /// Unloaded pinned tabs restored at launch; they reopen at the page they
+    /// showed last. Tabs the user unloaded reopen at their pinned URL.
+    private var lastPageRestoreTabIDs = Set<String>()
+    private var pendingReopenedAppTabCreations = [String: PendingReopenedTabCreation]()
+    private var pendingReopenedPinnedTabCreations = [String: PendingReopenedTabCreation]()
+    private var isPersistenceEnabled = true
+    private var sessionWriteBuffer = BrowserSessionWriteBuffer()
+    private var hasDiscardedSessionForClosure = false
+    private var isSessionClosurePrepared = false
+    private var isRestoringSession = false
+    private var isApplyingRemoteSync = false
+    private var deferredRemoteSyncSnapshot: BrowserTabSessionSnapshot?
+    private var remoteProjectionSnapshot: BrowserTabSessionSnapshot?
+    private var remoteProjectionGeneration = 0
+    private var isReconcilingRemoteProjection = false
+    private var hasLocalChangesDuringRemoteProjection = false
+    private var needsRemoteFallbackPublication = false
+    private var pendingRemoteTabCreations = [String: RemoteTabCreation]()
+    private var discardedRemoteTabCreationIDs = Set<String>()
+    private var pendingRestoredSelectedTabIndex: Int?
+    private var restoredTabCreationIDs = Set<String>()
+    private var pendingRestoredSpaces = [BrowserSpaceSessionSnapshot]()
+    private var pendingCreatedTabContexts = [String: PendingCreatedTabContext]()
+    private var pendingHydratedTabCreationIDs = Set<String>()
+    private var tabCreationUndoReferences = [String: TabCreationUndoReference]()
+    private var automaticArchivalTimer: Timer?
+    private var automaticArchivalSettingsLoaded = false
+    private var pendingAutomaticArchivalSettingsRetry: AutomaticArchivalSettingsRetry?
+
+    private var isViewingActivityActive = true
+    private var recentlySelectedTabIDs = [String]()
+    private var tabPreviewImagesByID = [String: NSImage]()
+    private var tabSwitcherPresentationTask: Task<Void, Never>?
+    private var tabSwitcherSessionID = UUID()
+    private var webAppManifestLoadTask: Task<Void, Never>?
+
     var hasUncommittedSessionWrites: Bool {
         !hasDiscardedSessionForClosure && (!sessionWriteBuffer.writes.isEmpty || sessionPersistenceFailure != nil)
     }
@@ -492,16 +499,6 @@ enum BrowserWindowMode: Equatable {
 
     var extensionActionPopupHostView: NSView? {
         extensionActionPopupDriver?.hostView
-    }
-
-    @Published var findQuery = "" {
-        didSet {
-            guard findQuery != oldValue else {
-                return
-            }
-
-            handleFindQueryChange()
-        }
     }
 
     var canCreateTab: Bool {
@@ -678,7 +675,11 @@ enum BrowserWindowMode: Equatable {
 
     var usesSynchronizedAutomaticArchival: Bool {
         guard let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading else { return false }
-        do { return try ownership.syncOwner() != nil } catch { return true }
+        do {
+            return try ownership.syncOwner() != nil
+        } catch {
+            return true
+        }
     }
 
     var canConfigureAutomaticTabArchival: Bool {
@@ -729,6 +730,220 @@ enum BrowserWindowMode: Equatable {
     var selectedSpaceColor: BrowserSpaceColor? {
         guard supportsSpaces, let selectedSpaceID else { return nil }
         return spaceColorsByID[selectedSpaceID].flatMap(BrowserSpaceColor.init(rawValue:))
+    }
+
+    private var canAdmitLocalAutomaticArchive: Bool {
+        isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
+            !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
+            !isApplyingRemoteSync && !isReconcilingRemoteProjection && !isArchiveOperationInFlight &&
+            !isCompletingTabClose && !undoManager.isTabTransitionPending && pendingTabCloseRequests.isEmpty
+    }
+
+    private var selectedTab: Tab? {
+        guard let selectedTabID else {
+            return nil
+        }
+
+        return tabs.first(where: { $0.id == selectedTabID })
+    }
+
+    private var selectedTabIndex: Int? {
+        guard let selectedTabID else {
+            return nil
+        }
+
+        return tabs.firstIndex(where: { $0.id == selectedTabID })
+    }
+
+    private var selectedSpaceIndex: Int? {
+        guard let selectedSpaceID else {
+            return nil
+        }
+
+        return spaces.firstIndex(where: { $0.id == selectedSpaceID })
+    }
+
+    private var telemetryProperties: [String: String] {
+        [
+            "profile": profile.isDefault ? "default" : "custom",
+            "window_mode": windowMode.telemetryValue,
+            "space_count": "\(spaces.count)",
+            "tab_count": "\(tabs.count)",
+        ]
+    }
+
+    private var canRegisterTabUndo: Bool {
+        isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
+    }
+
+    init(
+        tabDriver: BrowserTabDriving,
+        sessionSnapshotStore: BrowserTabSessionSnapshotStoring,
+        sessionPreferencesStore: BrowserSessionPreferencesStoring,
+        newTabURLString: String = BrowserChromeModel.defaultNewTabURLString,
+        commandBarSuggestionProvider: BrowserSuggestionProviding = BrowserGoogleSuggestionService(),
+        navigationResolver: BrowserNavigationResolver? = nil,
+        userPreferencesStore: BrowserUserPreferencesStore = BrowserUserPreferencesStore(),
+        shortcutStore: BrowserShortcutStore = BrowserShortcutStore(),
+        bookmarksModel: BrowserBookmarksModel? = nil,
+        historyStore: BrowserHistorySearching = BrowserEmptyHistoryStore(),
+        downloadsModel: BrowserDownloadsModel? = nil,
+        extensionManager: any BrowserExtensionManaging,
+        extensionSidePanelDriver: (any BrowserExtensionSidePanelDriving)? = nil,
+        extensionActionPopupDriver: (any BrowserExtensionActionPopupDriving)? = nil,
+        syncCoordinator: BrowserSyncCoordinating? = nil,
+        windowMode: BrowserWindowMode = .normal,
+        profile: BrowserProfile = .defaultProfile,
+        availableProfileCount: Int = 1,
+        dateProvider: @escaping () -> Date = Date.init,
+        spaceIDProvider: @escaping () -> String = { UUID().uuidString },
+        tabSyncIDProvider: @escaping () -> String = { UUID().uuidString },
+        commandHandler: @escaping (BrowserCommandID, BrowserChromeModel) -> Void = { _, _ in },
+        windowTitleHandler: @escaping (String) -> Void,
+        allTabsClosedHandler: @escaping () -> Void,
+    ) {
+        self.tabDriver = tabDriver
+        self.sessionSnapshotStore = sessionSnapshotStore
+        self.sessionPreferencesStore = sessionPreferencesStore
+        self.newTabURLString = newTabURLString
+        self.commandBarSuggestionProvider = commandBarSuggestionProvider
+        self.userPreferencesStore = userPreferencesStore
+        self.shortcutStore = shortcutStore
+        self.bookmarksModel = bookmarksModel ?? BrowserBookmarksModel()
+        self.historyStore = historyStore
+        self.downloadsModel = downloadsModel ?? BrowserDownloadsModel()
+        self.navigationResolver = navigationResolver ?? BrowserNavigationResolver(
+            searchEngineProvider: { userPreferencesStore.searchEngine },
+        )
+        self.extensionManager = extensionManager
+        self.extensionSidePanelDriver = extensionSidePanelDriver
+        self.extensionActionPopupDriver = extensionActionPopupDriver
+        self.syncCoordinator = syncCoordinator
+        self.windowMode = windowMode
+        self.profile = profile
+        self.profileDisplayName = profile.displayName
+        self.availableProfileCount = availableProfileCount
+        self.isPersistenceEnabled = windowMode.persistsSession
+        self.temporaryTabLifetime = sessionPreferencesStore.loadTemporaryTabLifetime()
+        self.pinnedExtensionIDs = userPreferencesStore.pinnedExtensionIDs
+        self.dateProvider = dateProvider
+        self.spaceIDProvider = spaceIDProvider
+        self.tabSyncIDProvider = tabSyncIDProvider
+        self.commandHandler = commandHandler
+        self.windowTitleHandler = windowTitleHandler
+        self.allTabsClosedHandler = allTabsClosedHandler
+        self.hostView = tabDriver.hostView
+
+        super.init()
+        undoManager.groupsByEvent = false
+        undoManager.canPerformTabAction = { [weak self] in
+            guard let self else { return false }
+            return canRegisterTabUndo && !isCompletingTabClose && !hasUncommittedSessionWrites &&
+                !isApplyingRemoteSync &&
+                !isArchiveOperationInFlight && pendingRemoteTabCreations.isEmpty
+        }
+        tabDriver.onTabCreated = { [weak self] tabID, title, urlString, isActive in
+            self?.handleCreatedTab(id: tabID, title: title, urlString: urlString, isActive: isActive)
+        }
+        tabDriver.onTabCreationStateChanged = { [weak self] tabID, state in
+            self?.handleTabCreationStateChange(id: tabID, state: state)
+        }
+        tabDriver.onTabUpdated = { [weak self] tabID, title, urlString, faviconURLString in
+            self?.handleUpdatedTab(
+                id: tabID,
+                title: title,
+                urlString: urlString,
+                faviconURLString: faviconURLString,
+            )
+        }
+        tabDriver.onTabCloseRequestFinished = { [weak self] tabID, requestID, outcome in
+            self?.handleTabCloseRequestFinished(id: tabID, requestID: requestID, outcome: outcome)
+        }
+        tabDriver.onTabClosed = { [weak self] tabID in
+            self?.handleClosedTab(id: tabID)
+        }
+        tabDriver.onTabFocused = { [weak self] tabID in
+            self?.handleSplitPaneFocused(tabID)
+        }
+        tabDriver.onSplitResized = { [weak self] tabIDs, fractions in
+            self?.handleSplitResize(tabIDs: tabIDs, fractions: fractions)
+        }
+        tabDriver.onSplitPaneLayout = { [weak self] tabIDs, frames in
+            self?.handleSplitPaneLayout(tabIDs: tabIDs, frames: frames)
+        }
+        tabDriver.shouldPeekNavigation = { [weak self] tabID, urlString in
+            self?.peeksNavigation(fromTabWithID: tabID, toURLString: urlString) ?? false
+        }
+        tabDriver.peekSpaces = { [weak self] in
+            guard let self, supportsSpaces, canCreateTab else { return [] }
+            return spaces.map { BrowserPeekSpace(id: $0.id, title: $0.title, systemImageName: $0.systemImageName) }
+        }
+        tabDriver.onPeekClosedByUser = { [weak self] urlString, standalone in
+            self?.registerPeekReopenUndo(urlString: urlString, standalone: standalone)
+        }
+        tabDriver.onOpenPeekInSplitView = { [weak self] urlString in
+            guard let self, let url = URL(string: urlString), !openURLInSplitView(url) else { return }
+            openURLInNewTab(url)
+        }
+        tabDriver.onSitePermissionRequested = { [weak self] request in
+            self?.handleSitePermissionRequest(request)
+        }
+        tabDriver.onSitePermissionRequestDismissed = { [weak self] id in
+            self?.handleSitePermissionRequestDismissed(id: id)
+        }
+        tabDriver.onMediaStateChanged = { [weak self] tabID, state in
+            self?.handleMediaStateChange(tabID: tabID, state: state)
+        }
+        tabDriver.onRenderProcessTerminated = { [weak self] tabID, errorCode in
+            self?.handleRenderProcessTerminated(tabID: tabID, errorCode: errorCode)
+        }
+        tabDriver.onPeekSitePermissionAnswered = { [weak self] id, allowed in
+            if let allowed {
+                self?.answerSitePermissionRequest(id: id, allowed: allowed)
+            } else {
+                self?.dismissSitePermissionRequest(id: id)
+            }
+        }
+        self.sitePermissionDecisionsObservation = userPreferencesStore.$sitePermissionDecisions
+            .dropFirst()
+            .sink { [weak self] decisions in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    guard !windowMode.isIncognito else { return }
+                    resolveSitePermissionRequests(coveredBy: decisions)
+                }
+            }
+        tabDriver.onOpenPeekInSpace = { [weak self] urlString, spaceID in
+            guard let self, let url = URL(string: urlString), !openURL(url, inSpaceWithID: spaceID) else { return }
+            openURLInNewTab(url)
+        }
+        tabDriver.onNavigationStateChanged = { [weak self] tabID, canGoBack, canGoForward in
+            self?.handleNavigationStateChange(
+                id: tabID,
+                canGoBack: canGoBack,
+                canGoForward: canGoForward,
+            )
+        }
+        tabDriver.onLoadingStateChanged = { [weak self] tabID, isLoading in
+            self?.handleLoadingStateChange(id: tabID, isLoading: isLoading)
+        }
+        tabDriver.onFindResultChanged = { [weak self] tabID, matchCount, activeMatchOrdinal, finalUpdate in
+            self?.handleFindResult(
+                id: tabID,
+                matchCount: matchCount,
+                activeMatchOrdinal: activeMatchOrdinal,
+                finalUpdate: finalUpdate,
+            )
+        }
+        tabDriver.onDownloadUpdated = { [weak self] update in
+            self?.handleDownloadUpdate(update)
+        }
+        extensionSidePanelDriver?.onPanelClosed = { [weak self] panelID in
+            self?.handleExtensionSidePanelClosed(panelID: panelID)
+        }
+        reloadAutomaticTabArchivalSettings()
+        syncCoordinator?.setExpiryScheduler(self)
+        updateWindowTitle()
     }
 
     /// Use Selection to Find: the page copies its selection to the find
@@ -934,7 +1149,7 @@ enum BrowserWindowMode: Equatable {
 
         return bookmarksModel.addBookmark(
             title: selectedTab.displayTitle,
-            urlString: selectedTab.urlString
+            urlString: selectedTab.urlString,
         )
     }
 
@@ -945,7 +1160,7 @@ enum BrowserWindowMode: Equatable {
 
         return bookmarksModel.toggleBookmark(
             title: selectedTab.displayTitle,
-            urlString: selectedTab.urlString
+            urlString: selectedTab.urlString,
         )
     }
 
@@ -1004,7 +1219,7 @@ enum BrowserWindowMode: Equatable {
             _ node: BrowserArcSidebar.Node,
             spaceID: String,
             folderID: String?,
-            placement: BrowserTabPlacement
+            placement: BrowserTabPlacement,
         )
             -> Tab?
         {
@@ -1021,7 +1236,7 @@ enum BrowserWindowMode: Equatable {
                 pinnedURLString: placement == .spacePinned ? normalizedPinnedURLString(from: urlString) : nil,
                 placement: placement,
                 pinnedFolderID: folderID,
-                lastActivityAt: now
+                lastActivityAt: now,
             )
         }
 
@@ -1074,12 +1289,12 @@ enum BrowserWindowMode: Equatable {
                                 .pinnedTabFolderDefaultTitle,
                             systemImageName: icon.flatMap { NSImage(
                                 systemSymbolName: $0,
-                                accessibilityDescription: nil
+                                accessibilityDescription: nil,
                             ) == nil
                                 ? nil
                                 : $0
                             },
-                            isExpanded: false
+                            isExpanded: false,
                         ))
                         result.folderCount += 1
                         folderChildren[id] = add(children, folderID: id)
@@ -1284,7 +1499,7 @@ enum BrowserWindowMode: Equatable {
             case .tab(let id): selectedTabIDs.contains(id)
             case .folder(let id): !selectedTabIDs.isDisjoint(with: originalTree.tabIDs(in: .pinned(
                     selectedSpaceID,
-                    folderID: id
+                    folderID: id,
                 )))
             }
         } ?? originalRoots.count
@@ -1296,7 +1511,7 @@ enum BrowserWindowMode: Equatable {
             parentFolderID: nil,
             title: BrowserStrings.pinnedTabFolderDefaultTitle,
             systemImageName: nil,
-            isExpanded: true
+            isExpanded: true,
         )
 
         var updatedPinnedTabs = spacePinnedTabs.filter { !selectedTabIDs.contains($0.id) }
@@ -1317,15 +1532,15 @@ enum BrowserWindowMode: Equatable {
             spacePinnedTabsBySpaceID: tabsBySpaceID(
                 replacing: updatedPinnedTabs,
                 for: .spacePinned,
-                inSpaceID: selectedSpaceID
+                inSpaceID: selectedSpaceID,
             ),
             temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: selectedTabIDs),
-            appTabs: appTabs
+            appTabs: appTabs,
         )
         var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
         let moving = Set(selectedTabIDs.map(BrowserSidebarItemID.tab))
         var roots = originalRoots.filter { !moving.contains($0) }
-        let rootIndex = originalRoots.prefix(insertion).filter { !moving.contains($0) }.count
+        let rootIndex = originalRoots.prefix(insertion).count(where: { !moving.contains($0) })
         roots.insert(.folder(folderID), at: min(rootIndex, roots.count))
         tree.children[rootContainer] = roots
         tree.children[.pinned(selectedSpaceID, folderID: folderID)] = orderedTabs.map { .tab($0.id) }
@@ -1537,7 +1752,7 @@ enum BrowserWindowMode: Equatable {
 
     func sidebarMovePlan(
         payload: BrowserSidebarDragPayload,
-        destination: BrowserSidebarDropDestination
+        destination: BrowserSidebarDropDestination,
     ) -> BrowserSidebarMovePlan? {
         guard supportsAppTabs || destination.container.section != .app else { return nil }
         let snapshot = sidebarPlanningSnapshot()
@@ -1571,7 +1786,7 @@ enum BrowserWindowMode: Equatable {
     /// Revalidate by stable IDs at release, then publish one final order.
     @discardableResult func commitSidebarDrop(
         payload: BrowserSidebarDragPayload,
-        destination: BrowserSidebarDropDestination
+        destination: BrowserSidebarDropDestination,
     ) -> Bool {
         guard let plan = sidebarMovePlan(payload: payload, destination: destination) else { return false }
         let oldTabs = tabs
@@ -1636,40 +1851,40 @@ enum BrowserWindowMode: Equatable {
 
     func canMoveTab(
         withID tabID: String, toPlacement placement: BrowserTabPlacement, atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil
+        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil,
     ) -> Bool {
         indexedTabMovePlan(
             tabIDs: [tabID],
             placement: placement,
             sectionIndex: sectionIndex,
             targetSpaceID: targetSpaceID,
-            targetPinnedFolderID: targetPinnedFolderID
+            targetPinnedFolderID: targetPinnedFolderID,
         ) != nil
     }
 
     func canMoveTabs(
         withIDs tabIDs: Set<String>, toPlacement placement: BrowserTabPlacement, atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil
+        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil,
     ) -> Bool {
         tabIDs.count > 1 && indexedTabMovePlan(
             tabIDs: tabIDs,
             placement: placement,
             sectionIndex: sectionIndex,
             targetSpaceID: targetSpaceID,
-            targetPinnedFolderID: targetPinnedFolderID
+            targetPinnedFolderID: targetPinnedFolderID,
         ) != nil
     }
 
     func moveTab(
         withID tabID: String, toPlacement placement: BrowserTabPlacement, atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil
+        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil,
     ) {
         guard let plan = indexedTabMovePlan(
             tabIDs: [tabID],
             placement: placement,
             sectionIndex: sectionIndex,
             targetSpaceID: targetSpaceID,
-            targetPinnedFolderID: targetPinnedFolderID
+            targetPinnedFolderID: targetPinnedFolderID,
         )
         else { return }
         commitSidebarDrop(payload: plan.payload, destination: plan.destination)
@@ -1677,7 +1892,7 @@ enum BrowserWindowMode: Equatable {
 
     func moveTabs(
         withIDs tabIDs: Set<String>, toPlacement placement: BrowserTabPlacement, atSectionIndex sectionIndex: Int,
-        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil
+        targetSpaceID: String? = nil, targetPinnedFolderID: String? = nil,
     ) {
         guard tabIDs.count > 1,
               let plan = indexedTabMovePlan(
@@ -1685,7 +1900,7 @@ enum BrowserWindowMode: Equatable {
                   placement: placement,
                   sectionIndex: sectionIndex,
                   targetSpaceID: targetSpaceID,
-                  targetPinnedFolderID: targetPinnedFolderID
+                  targetPinnedFolderID: targetPinnedFolderID,
               )
         else { return }
         commitSidebarDrop(payload: plan.payload, destination: plan.destination)
@@ -1693,25 +1908,25 @@ enum BrowserWindowMode: Equatable {
 
     func canMovePinnedTabFolder(
         withID folderID: String, toRootSectionIndex rootSectionIndex: Int,
-        targetSpaceID: String? = nil, targetParentFolderID: String? = nil
+        targetSpaceID: String? = nil, targetParentFolderID: String? = nil,
     ) -> Bool {
         indexedFolderMovePlan(
             folderID: folderID,
             index: rootSectionIndex,
             targetSpaceID: targetSpaceID,
-            parentFolderID: targetParentFolderID
+            parentFolderID: targetParentFolderID,
         ) != nil
     }
 
     func movePinnedTabFolder(
         withID folderID: String, toRootSectionIndex rootSectionIndex: Int,
-        targetSpaceID: String? = nil, targetParentFolderID: String? = nil
+        targetSpaceID: String? = nil, targetParentFolderID: String? = nil,
     ) {
         guard let plan = indexedFolderMovePlan(
             folderID: folderID,
             index: rootSectionIndex,
             targetSpaceID: targetSpaceID,
-            parentFolderID: targetParentFolderID
+            parentFolderID: targetParentFolderID,
         )
         else { return }
         commitSidebarDrop(payload: plan.payload, destination: plan.destination)
@@ -1844,7 +2059,7 @@ enum BrowserWindowMode: Equatable {
             .prefix(100)
             .map {
                 LocalAutomaticArchiveCandidate(
-                    id: $0.id, syncID: $0.syncID, spaceID: $0.spaceID, lastActivityAt: $0.lastActivityAt
+                    id: $0.id, syncID: $0.syncID, spaceID: $0.spaceID, lastActivityAt: $0.lastActivityAt,
                 )
             })
         continueLocalAutomaticArchiveSweep()
@@ -1994,7 +2209,7 @@ enum BrowserWindowMode: Equatable {
         tabDriver.reloadActiveTabIgnoringCache()
         BrowserTelemetry.captureUsage(
             .tabReloaded,
-            properties: telemetryProperties.merging(["force": "true"]) { _, new in new }
+            properties: telemetryProperties.merging(["force": "true"]) { _, new in new },
         )
     }
 
@@ -2006,7 +2221,7 @@ enum BrowserWindowMode: Equatable {
         tabDriver.clearCacheAndReloadActiveTab()
         BrowserTelemetry.captureUsage(
             .tabReloaded,
-            properties: telemetryProperties.merging(["clear_cache": "true"]) { _, new in new }
+            properties: telemetryProperties.merging(["clear_cache": "true"]) { _, new in new },
         )
     }
 
@@ -2018,7 +2233,7 @@ enum BrowserWindowMode: Equatable {
         tabDriver.clearCookiesAndReloadActiveTab()
         BrowserTelemetry.captureUsage(
             .tabReloaded,
-            properties: telemetryProperties.merging(["clear_cookies": "true"]) { _, new in new }
+            properties: telemetryProperties.merging(["clear_cookies": "true"]) { _, new in new },
         )
     }
 
@@ -2106,7 +2321,7 @@ enum BrowserWindowMode: Equatable {
     func setSiteSettingInEngine(
         _ kind: BrowserSiteSettingKind,
         value: BrowserSiteSettingValue,
-        forURLString urlString: String
+        forURLString urlString: String,
     ) {
         tabDriver.setSiteSetting(kind, value: value, forURLString: urlString)
     }
@@ -2129,7 +2344,7 @@ enum BrowserWindowMode: Equatable {
         pasteboard.clearContents()
         return pasteboard.setString(
             BrowserMarkdownLink.text(title: selectedTab.displayTitle, urlString: selectedTab.urlString),
-            forType: .string
+            forType: .string,
         )
     }
 
@@ -2196,7 +2411,7 @@ enum BrowserWindowMode: Equatable {
                 hostView: extensionActionPopupDriver.hostView,
                 closeHandler: { [weak extensionActionPopupDriver] in
                     extensionActionPopupDriver?.closePopup(id: popupID)
-                }
+                },
             )
         case .sidePanel:
             openExtensionSidePanel(id: id)
@@ -2252,7 +2467,7 @@ enum BrowserWindowMode: Equatable {
             extensionID: browserExtension.id,
             title: browserExtension.name,
             urlString: urlString,
-            iconData: browserExtension.iconData
+            iconData: browserExtension.iconData,
         )
         return true
     }
@@ -2443,7 +2658,7 @@ enum BrowserWindowMode: Equatable {
                 continue
             }
             pendingRemoteTabCreations[engineID] = RemoteTabCreation(
-                snapshot: replacement, generation: remoteProjectionGeneration
+                snapshot: replacement, generation: remoteProjectionGeneration,
             )
             if replacement.urlString != binding.snapshot.urlString {
                 tabDriver.navigateTab(withID: engineID, toURLString: resolvedBrowserURLString(replacement.urlString))
@@ -2495,7 +2710,7 @@ enum BrowserWindowMode: Equatable {
             else { continue }
             let engineID = tabDriver.createTab(withURLString: remoteTab.urlString, makeActive: false)
             pendingRemoteTabCreations[engineID] = RemoteTabCreation(
-                snapshot: remoteTab, generation: remoteProjectionGeneration
+                snapshot: remoteTab, generation: remoteProjectionGeneration,
             )
         }
         isReconcilingRemoteProjection = false
@@ -2529,7 +2744,7 @@ enum BrowserWindowMode: Equatable {
     @discardableResult func closeAppTabProcess(
         id: String,
         forceClose: Bool = false,
-        engineAlreadyClosed: Bool = false
+        engineAlreadyClosed: Bool = false,
     ) -> Bool {
         guard
             !closingTabIDs.contains(id),
@@ -2544,7 +2759,7 @@ enum BrowserWindowMode: Equatable {
             guard !isShuttingDown else { return false }
             return requestConfirmedTabClose(
                 id: id, registersUndo: false, actionName: BrowserStrings.tabArchiveAction,
-                createsArchive: false, preservesPersistentTab: true, unloadsPersistentTab: true
+                createsArchive: false, preservesPersistentTab: true, unloadsPersistentTab: true,
             )
         }
 
@@ -2579,7 +2794,7 @@ enum BrowserWindowMode: Equatable {
     @discardableResult func closePinnedTabProcessOrReset(
         id: String,
         forceClose: Bool = false,
-        engineAlreadyClosed: Bool = false
+        engineAlreadyClosed: Bool = false,
     ) -> Bool {
         guard
             !closingTabIDs.contains(id),
@@ -2595,7 +2810,7 @@ enum BrowserWindowMode: Equatable {
             guard !isShuttingDown else { return false }
             return requestConfirmedTabClose(
                 id: id, registersUndo: false, actionName: BrowserStrings.tabArchiveAction,
-                createsArchive: false, preservesPersistentTab: true, unloadsPersistentTab: true
+                createsArchive: false, preservesPersistentTab: true, unloadsPersistentTab: true,
             )
         }
 
@@ -2652,7 +2867,7 @@ enum BrowserWindowMode: Equatable {
         moveTab(
             withID: id,
             toPlacement: .temporary,
-            atSectionIndex: temporaryTabs.count
+            atSectionIndex: temporaryTabs.count,
         )
     }
 
@@ -2728,7 +2943,7 @@ enum BrowserWindowMode: Equatable {
         tabSwitcherState = TabSwitcherState(
             entries: entries,
             selectedTabID: entries[initialSelectionIndex].id,
-            isVisible: false
+            isVisible: false,
         )
         scheduleTabSwitcherPresentation()
         return true
@@ -2760,7 +2975,7 @@ enum BrowserWindowMode: Equatable {
         forceClose: Bool = false,
         registersUndo: Bool = true,
         undoActionName: String = BrowserStrings.tabArchiveAction,
-        reason: TabCloseReason = .manual
+        reason: TabCloseReason = .manual,
     ) -> Bool {
         guard let closingIndex = tabs.firstIndex(where: { $0.id == id }) else { return false }
         // A remote/structural removal supersedes an outstanding local dialog.
@@ -2782,12 +2997,12 @@ enum BrowserWindowMode: Equatable {
             return requestConfirmedTabClose(
                 id: id, registersUndo: registersUndo, actionName: undoActionName,
                 createsArchive: archives, preservesPersistentTab: archives,
-                historyKind: archives ? .archive : .logicalRemoval
+                historyKind: archives ? .archive : .logicalRemoval,
             )
         }
         return finishTabClose(
             id: id, forceClose: forceClose, requestsEngineClose: true,
-            registersUndo: registersUndo, undoActionName: undoActionName
+            registersUndo: registersUndo, undoActionName: undoActionName,
         )
     }
 
@@ -2870,219 +3085,6 @@ enum BrowserWindowMode: Equatable {
         pictureInPictureTabIDs.contains(tabID)
     }
 
-    // MARK: Private
-
-    private struct LocalAutomaticArchiveCandidate {
-        let id: String
-        let syncID: String
-        let spaceID: String
-        let lastActivityAt: Date
-    }
-
-    private struct PendingTabCloseRequest {
-        let requestID: String
-        let syncID: String
-        let registersUndo: Bool
-        let undoActionName: String
-        let createsArchive: Bool
-        let preservesPersistentTab: Bool
-        let unloadsPersistentTab: Bool
-        let historyKind: TabHistoryKind
-        let localAutomaticCandidate: LocalAutomaticArchiveCandidate?
-        var invalidatedAutomaticClose = false
-        let completion: ((HistoryCloseResult) -> Void)?
-    }
-
-    private enum HistoryCloseResult {
-        case closed(TabUndoSnapshot, archiveID: String?)
-        case cancelled
-        case removed
-    }
-
-    private enum TabHistoryKind: Equatable {
-        case creation
-        case archive
-        case logicalRemoval
-    }
-
-    private struct PendingSessionCompletion {
-        let write: BrowserSessionWrite
-        let completion: () -> Void
-    }
-
-    private struct PendingHistoryRestore {
-        let archiveID: String?
-        let syncID: String
-        let snapshot: TabUndoSnapshot
-        let kind: TabHistoryKind
-        let actionName: String
-        let completion: (BrowserTabUndoManager.Outcome) -> Void
-    }
-
-    private struct PendingReopenedTabCreation {
-        let previousID: String
-        let titleAtRequest: String
-    }
-
-    private struct PendingCreatedTabContext {
-        let spaceID: String
-        let placement: BrowserTabPlacement
-        let undoSnapshot: TabUndoSnapshot?
-    }
-
-    private final class TabCreationUndoReference {
-        // MARK: Lifecycle
-
-        init(tabID: String) {
-            self.currentTabID = tabID
-        }
-
-        // MARK: Internal
-
-        var currentTabID: String?
-    }
-
-    private struct TabUndoSnapshot {
-        let tab: Tab
-        let insertionIndex: Int
-        let wasSelectedTab: Bool
-        let wasSelectedInSpace: Bool
-        let creationUndoReference: TabCreationUndoReference?
-    }
-
-    private struct RemoteTabCreation {
-        let snapshot: BrowserTabSessionSnapshotTab
-        let generation: Int
-    }
-
-    private enum AutomaticArchivalSettingsRetry {
-        case reload
-        case synchronized(BrowserTemporaryTabLifetime?)
-        case localLifetime(BrowserTemporaryTabLifetime)
-    }
-
-    private static let automaticArchivalLogger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "AutomaticArchival"
-    )
-
-    /// Answers this window's waiting requests that another window's answer covers.
-    private var sitePermissionDecisionsObservation: AnyCancellable?
-
-    /// Spaces colored in this session; a stored projection never overrides them.
-    private var locallyColoredSpaceIDs = Set<String>()
-
-    /// Tabs whose video was sent to Picture in Picture on leaving them.
-    private var pictureInPictureTabIDs = Set<String>()
-
-    private let tabDriver: BrowserTabDriving
-    private let sessionSnapshotStore: BrowserTabSessionSnapshotStoring
-    private let sessionPreferencesStore: BrowserSessionPreferencesStoring
-    private let newTabURLString: String
-    private let commandBarSuggestionProvider: BrowserSuggestionProviding
-    private let navigationResolver: BrowserNavigationResolver
-    private let historyStore: BrowserHistorySearching
-    private let extensionManager: any BrowserExtensionManaging
-    private let extensionSidePanelDriver: (any BrowserExtensionSidePanelDriving)?
-    private let extensionActionPopupDriver: (any BrowserExtensionActionPopupDriving)?
-    private let syncCoordinator: BrowserSyncCoordinating?
-    private let windowTitleHandler: (String) -> Void
-    private let allTabsClosedHandler: () -> Void
-    private let dateProvider: () -> Date
-    private let spaceIDProvider: () -> String
-    private let tabSyncIDProvider: () -> String
-    private let commandHandler: (BrowserCommandID, BrowserChromeModel) -> Void
-
-    private var hasCreatedInitialTab = false
-    private var closingTabIDs = Set<String>()
-    private var pendingTabCloseRequests = [String: PendingTabCloseRequest]()
-    private var isCompletingTabClose = false
-    private var localAutomaticArchiveCandidates = [LocalAutomaticArchiveCandidate]()
-    private var isProcessingLocalAutomaticArchiveCandidates = false
-    private var pendingSessionCompletions = [PendingSessionCompletion]()
-    private var pendingHistoryRestore: PendingHistoryRestore?
-    private var historyRestoreFailure: BrowserSessionPersistenceFailure?
-    private var closedAppTabIDs = Set<String>()
-    private var closedPinnedTabIDs = Set<String>()
-    /// Unloaded pinned tabs restored at launch; they reopen at the page they
-    /// showed last. Tabs the user unloaded reopen at their pinned URL.
-    private var lastPageRestoreTabIDs = Set<String>()
-    private var pendingReopenedAppTabCreations = [String: PendingReopenedTabCreation]()
-    private var pendingReopenedPinnedTabCreations = [String: PendingReopenedTabCreation]()
-    private var isPersistenceEnabled = true
-    private var sessionWriteBuffer = BrowserSessionWriteBuffer()
-    private var hasDiscardedSessionForClosure = false
-    private var isSessionClosurePrepared = false
-    private var isRestoringSession = false
-    private var isApplyingRemoteSync = false
-    private var deferredRemoteSyncSnapshot: BrowserTabSessionSnapshot?
-    private var remoteProjectionSnapshot: BrowserTabSessionSnapshot?
-    private var remoteProjectionGeneration = 0
-    private var isReconcilingRemoteProjection = false
-    private var hasLocalChangesDuringRemoteProjection = false
-    private var needsRemoteFallbackPublication = false
-    private var pendingRemoteTabCreations = [String: RemoteTabCreation]()
-    private var discardedRemoteTabCreationIDs = Set<String>()
-    private var pendingRestoredSelectedTabIndex: Int?
-    private var restoredTabCreationIDs = Set<String>()
-    private var pendingRestoredSpaces = [BrowserSpaceSessionSnapshot]()
-    private var pendingCreatedTabContexts = [String: PendingCreatedTabContext]()
-    private var pendingHydratedTabCreationIDs = Set<String>()
-    private var tabCreationUndoReferences = [String: TabCreationUndoReference]()
-    private var automaticArchivalTimer: Timer?
-    private var automaticArchivalSettingsLoaded = false
-    private var pendingAutomaticArchivalSettingsRetry: AutomaticArchivalSettingsRetry?
-
-    private var isViewingActivityActive = true
-    private var recentlySelectedTabIDs = [String]()
-    private var tabPreviewImagesByID = [String: NSImage]()
-    private var tabSwitcherPresentationTask: Task<Void, Never>?
-    private var tabSwitcherSessionID = UUID()
-    private var webAppManifestLoadTask: Task<Void, Never>?
-
-    private var canAdmitLocalAutomaticArchive: Bool {
-        isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
-            !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
-            !isApplyingRemoteSync && !isReconcilingRemoteProjection && !isArchiveOperationInFlight &&
-            !isCompletingTabClose && !undoManager.isTabTransitionPending && pendingTabCloseRequests.isEmpty
-    }
-
-    private var selectedTab: Tab? {
-        guard let selectedTabID else {
-            return nil
-        }
-
-        return tabs.first(where: { $0.id == selectedTabID })
-    }
-
-    private var selectedTabIndex: Int? {
-        guard let selectedTabID else {
-            return nil
-        }
-
-        return tabs.firstIndex(where: { $0.id == selectedTabID })
-    }
-
-    private var selectedSpaceIndex: Int? {
-        guard let selectedSpaceID else {
-            return nil
-        }
-
-        return spaces.firstIndex(where: { $0.id == selectedSpaceID })
-    }
-
-    private var telemetryProperties: [String: String] {
-        [
-            "profile": profile.isDefault ? "default" : "custom",
-            "window_mode": windowMode.telemetryValue,
-            "space_count": "\(spaces.count)",
-            "tab_count": "\(tabs.count)",
-        ]
-    }
-
-    private var canRegisterTabUndo: Bool {
-        isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
-    }
-
     /// Chromium writes the pasteboard only for a selection that differs from
     /// the find text, so nothing happens without one, as in Chrome.
     private func awaitSelectionForFind(changedFrom before: Int, tabID: String, attempts: Int) {
@@ -3127,7 +3129,7 @@ enum BrowserWindowMode: Equatable {
             return true
         } catch {
             Self.automaticArchivalLogger.error(
-                "Skipping automatic archival because sync ownership could not be read: \(error.localizedDescription, privacy: .public)"
+                "Skipping automatic archival because sync ownership could not be read: \(error.localizedDescription, privacy: .public)",
             )
             return false
         }
@@ -3157,7 +3159,7 @@ enum BrowserWindowMode: Equatable {
                   isLocalAutomaticArchiveEligible(tab) else { continue }
             _ = requestConfirmedTabClose(
                 id: tab.id, registersUndo: false, actionName: BrowserStrings.tabArchiveAction,
-                createsArchive: true, preservesPersistentTab: true, localAutomaticCandidate: candidate
+                createsArchive: true, preservesPersistentTab: true, localAutomaticCandidate: candidate,
             )
             // Inline engine-less outcomes continue this loop; a deferred result
             // resumes it after finishing its own transaction. Never stack sheets.
@@ -3172,7 +3174,7 @@ enum BrowserWindowMode: Equatable {
         preservesPersistentTab: Bool, unloadsPersistentTab: Bool = false,
         historyKind: TabHistoryKind = .archive,
         localAutomaticCandidate: LocalAutomaticArchiveCandidate? = nil,
-        completion: ((HistoryCloseResult) -> Void)? = nil
+        completion: ((HistoryCloseResult) -> Void)? = nil,
     ) -> Bool {
         guard let tab = tabs.first(where: { $0.id == id }), !closingTabIDs.contains(id) else { return false }
         if closedAppTabIDs.contains(id) || closedPinnedTabIDs.contains(id) {
@@ -3185,7 +3187,7 @@ enum BrowserWindowMode: Equatable {
             return finishTabClose(
                 id: id, forceClose: false, requestsEngineClose: false,
                 registersUndo: registersUndo, undoActionName: actionName,
-                createsArchive: createsArchive, historyKind: historyKind, completion: completion
+                createsArchive: createsArchive, historyKind: historyKind, completion: completion,
             )
         }
         let requestID = UUID().uuidString
@@ -3195,7 +3197,7 @@ enum BrowserWindowMode: Equatable {
             preservesPersistentTab: preservesPersistentTab, unloadsPersistentTab: unloadsPersistentTab,
             historyKind: historyKind,
             localAutomaticCandidate: localAutomaticCandidate,
-            completion: completion
+            completion: completion,
         )
         closingTabIDs.insert(id)
         guard tabDriver.requestCloseTab(withID: id, requestID: requestID) else {
@@ -3212,7 +3214,7 @@ enum BrowserWindowMode: Equatable {
         id: String, forceClose: Bool, requestsEngineClose: Bool,
         registersUndo: Bool, undoActionName: String, createsArchive: Bool = false,
         historyKind: TabHistoryKind = .archive,
-        completion: ((HistoryCloseResult) -> Void)? = nil
+        completion: ((HistoryCloseResult) -> Void)? = nil,
     ) -> Bool {
         guard let closingIndex = tabs.firstIndex(where: { $0.id == id }) else { return false }
         let closingTab = tabs[closingIndex]
@@ -3225,7 +3227,7 @@ enum BrowserWindowMode: Equatable {
         let archiveEntry = archivedTab.map {
             BrowserTabArchiveEntry(
                 id: UUID().uuidString, tab: $0, archivedAt: dateProvider().timeIntervalSince1970,
-                title: closingTab.title
+                title: closingTab.title,
             )
         }
         let closingTabWasSelected = selectedTabID == id
@@ -3277,7 +3279,7 @@ enum BrowserWindowMode: Equatable {
         // must stay above this Close even if its write also retries this batch.
         if registersUndo, let undoSnapshot {
             registerTabCloseUndo(
-                undoSnapshot, archiveID: archiveEntry?.id, kind: historyKind, actionName: undoActionName
+                undoSnapshot, archiveID: archiveEntry?.id, kind: historyKind, actionName: undoActionName,
             )
         }
         let didCommit: () -> Void = { [weak self] in
@@ -3305,10 +3307,10 @@ enum BrowserWindowMode: Equatable {
                     // while other engines are pending. Normalize inside this
                     // Archive action, after its receipt check, so retry cannot
                     // replay a stale prefix after the deletion already committed.
-                    archiveProjectionSnapshot: isApplyingRemoteSync ? precloseSnapshot : nil
+                    archiveProjectionSnapshot: isApplyingRemoteSync ? precloseSnapshot : nil,
                 ),
                 schedulesPush: !isApplyingRemoteSync,
-                onCommit: didCommit
+                onCommit: didCommit,
             )
         } else {
             didCommit()
@@ -3318,7 +3320,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func indexedFolderMovePlan(
-        folderID: String, index: Int, targetSpaceID: String?, parentFolderID: String?
+        folderID: String, index: Int, targetSpaceID: String?, parentFolderID: String?,
     ) -> BrowserSidebarMovePlan? {
         let tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
         guard let folder = tree.folders[folderID],
@@ -3331,15 +3333,15 @@ enum BrowserWindowMode: Equatable {
         return sidebarMovePlan(
             payload: .init(
                 primary: .folder(folderID),
-                tabIDs: Set(tree.tabIDs(in: .pinned(folder.spaceID, folderID: folderID)))
+                tabIDs: Set(tree.tabIDs(in: .pinned(folder.spaceID, folderID: folderID))),
             ),
-            destination: .init(container: container, beforeItem: index < siblings.count ? siblings[index] : nil)
+            destination: .init(container: container, beforeItem: index < siblings.count ? siblings[index] : nil),
         )
     }
 
     private func indexedTabMovePlan(
         tabIDs: Set<String>, placement: BrowserTabPlacement, sectionIndex: Int,
-        targetSpaceID: String?, targetPinnedFolderID: String?
+        targetSpaceID: String?, targetPinnedFolderID: String?,
     ) -> BrowserSidebarMovePlan? {
         guard let primary = tabs.first(where: { tabIDs.contains($0.id) })?.id else { return nil }
         let candidate = tabIDs.count == 1
@@ -3348,14 +3350,14 @@ enum BrowserWindowMode: Equatable {
                 toPlacement: placement,
                 requestedSectionIndex: sectionIndex,
                 targetSpaceID: targetSpaceID,
-                targetPinnedFolderID: targetPinnedFolderID
+                targetPinnedFolderID: targetPinnedFolderID,
             )
             : reorderedTabs(
                 movingTabIDs: tabIDs,
                 toPlacement: placement,
                 requestedSectionIndex: sectionIndex,
                 targetSpaceID: targetSpaceID,
-                targetPinnedFolderID: targetPinnedFolderID
+                targetPinnedFolderID: targetPinnedFolderID,
             )
         guard let candidate, candidate != tabs,
               let moved = candidate.first(where: { $0.id == primary }) else { return nil }
@@ -3372,7 +3374,7 @@ enum BrowserWindowMode: Equatable {
         }
         let inferred = BrowserSidebarTabTree(snapshot: sidebarSnapshot.replacingTabs(
             unrankedTabs,
-            pinnedTabFolders: unrankedFolders
+            pinnedTabFolders: unrankedFolders,
         ))
         let container: BrowserSidebarDropContainer =
             switch placement {
@@ -3386,7 +3388,7 @@ enum BrowserWindowMode: Equatable {
         let before = siblings.dropFirst(last + 1).first { !moving.contains($0) }
         return sidebarMovePlan(
             payload: .init(primary: .tab(primary), tabIDs: tabIDs),
-            destination: .init(container: container, beforeItem: before)
+            destination: .init(container: container, beforeItem: before),
         )
     }
 
@@ -3418,7 +3420,7 @@ enum BrowserWindowMode: Equatable {
                 title: "", userTitleOverride: snapshot.userTitleOverride, urlString: snapshot.urlString,
                 pinnedURLString: snapshot.pinnedURLString, placement: snapshot.placement,
                 pinnedFolderID: snapshot.pinnedFolderID, pinnedSiblingRank: snapshot.pinnedSiblingRank,
-                lastActivityAt: lastActivityDate(from: snapshot) ?? dateProvider()
+                lastActivityAt: lastActivityDate(from: snapshot) ?? dateProvider(),
             )
         }
         return sidebarSnapshot.replacingTabs(logicalTabs)
@@ -3433,7 +3435,7 @@ enum BrowserWindowMode: Equatable {
                     id: original.id, urlString: original.urlString, pinnedURLString: original.pinnedURLString,
                     userTitleOverride: original.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: original.lastActivityTimestamp,
-                    pinnedSiblingRank: tab.pinnedSiblingRank, systemImageName: original.systemImageName
+                    pinnedSiblingRank: tab.pinnedSiblingRank, systemImageName: original.systemImageName,
                 )
             }
             return BrowserTabSessionSnapshotTab(
@@ -3441,7 +3443,7 @@ enum BrowserWindowMode: Equatable {
                 userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                 pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
                 pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.title.isEmpty ? nil : tab.title,
-                systemImageName: tabIconsBySyncID[tab.syncID]
+                systemImageName: tabIconsBySyncID[tab.syncID],
             )
         }
         for (tab, snapshot) in zip(logicalTabs, snapshots) {
@@ -3450,7 +3452,7 @@ enum BrowserWindowMode: Equatable {
         }
         if let projection = remoteProjectionSnapshot {
             remoteProjectionSnapshot = BrowserTabSessionSnapshot(
-                spaces: projection.spaces, pinnedTabFolders: projection.pinnedTabFolders, tabs: snapshots
+                spaces: projection.spaces, pinnedTabFolders: projection.pinnedTabFolders, tabs: snapshots,
             )
         }
     }
@@ -3556,7 +3558,7 @@ enum BrowserWindowMode: Equatable {
             id: id, syncID: syncID, spaceID: Self.defaultSpaceID,
             title: urlString == binding.snapshot.urlString ? title : "",
             urlString: binding.snapshot.urlString,
-            lastActivityAt: lastActivityDate(from: binding.snapshot) ?? dateProvider()
+            lastActivityAt: lastActivityDate(from: binding.snapshot) ?? dateProvider(),
         )
         applyRemoteTabMetadata(binding.snapshot, to: &tab)
         if let icon = binding.snapshot.systemImageName {
@@ -3606,7 +3608,7 @@ enum BrowserWindowMode: Equatable {
             extensionID: browserExtension.id,
             title: browserExtension.name,
             urlString: sidePanel.urlString,
-            iconData: browserExtension.iconData
+            iconData: browserExtension.iconData,
         )
     }
 
@@ -3666,16 +3668,16 @@ enum BrowserWindowMode: Equatable {
         spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
         spaceColorsByID = Dictionary(
             (snapshot.spaces ?? []).compactMap { space in space.colorName.map { (space.id, $0) } },
-            uniquingKeysWith: { first, _ in first }
+            uniquingKeysWith: { first, _ in first },
         )
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
         splitGroups = restoredSplitGroups(from: snapshot)
         let selectedSpaceIndex = sessionPreferencesStore.loadSelectedSpaceIndex(
-            spaceCount: spaces.count
+            spaceCount: spaces.count,
         ) ?? 0
         selectedSpaceID = spaces.indices.contains(selectedSpaceIndex) ? spaces[selectedSpaceIndex].id : spaces.first?.id
         pendingRestoredSelectedTabIndex = sessionPreferencesStore.loadSelectedTabIndex(
-            tabCount: snapshot.tabs.count
+            tabCount: snapshot.tabs.count,
         )
         pendingRestoredSpaces = snapshot.spaces ?? []
         let splitMemberSyncIDs = Set((snapshot.splitGroups ?? []).flatMap(\.tabIDs))
@@ -3690,7 +3692,7 @@ enum BrowserWindowMode: Equatable {
                 ? UUID().uuidString
                 : tabDriver.createTab(
                     withURLString: tabSnapshot.urlString,
-                    makeActive: index == pendingRestoredSelectedTabIndex
+                    makeActive: index == pendingRestoredSelectedTabIndex,
                 )
             restoredTabCreationIDs.insert(engineID)
             if restoresUnloaded {
@@ -3713,7 +3715,7 @@ enum BrowserWindowMode: Equatable {
                 placement: placement,
                 pinnedFolderID: tabSnapshot.pinnedFolderID,
                 pinnedSiblingRank: tabSnapshot.pinnedSiblingRank,
-                lastActivityAt: lastActivityDate(from: tabSnapshot) ?? dateProvider()
+                lastActivityAt: lastActivityDate(from: tabSnapshot) ?? dateProvider(),
             ))
         }
         // The driver returns the logical identity immediately. Its later created
@@ -3726,7 +3728,7 @@ enum BrowserWindowMode: Equatable {
     private func restoreSidebarWidthIfNeeded() {
         guard isPersistenceEnabled, let storedSidebarWidth = sessionPreferencesStore.loadSidebarWidth(
             minimum: Self.minSidebarWidth,
-            maximum: Self.maxSidebarWidth
+            maximum: Self.maxSidebarWidth,
         ) else {
             return
         }
@@ -3786,13 +3788,13 @@ enum BrowserWindowMode: Equatable {
         }
         _ = persistSessionWrite(
             .init(snapshot: snapshot, origin: .local(syncMove: syncMove)),
-            schedulesPush: !isApplyingRemoteSync
+            schedulesPush: !isApplyingRemoteSync,
         )
     }
 
     @discardableResult private func persistSessionWrite(
         _ write: BrowserSessionWrite, schedulesPush: Bool,
-        onCommit: (() -> Void)? = nil
+        onCommit: (() -> Void)? = nil,
     ) -> Bool {
         isSessionClosurePrepared = false
         guard isPersistenceEnabled, !hasDiscardedSessionForClosure, !sessionWriteBuffer.isTerminal else { return false }
@@ -3885,14 +3887,14 @@ enum BrowserWindowMode: Equatable {
                 id: space.id, title: space.title, systemImageName: space.systemImageName,
                 isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                 selectedTabIndex: visible.firstIndex { $0.id == selectedSyncID },
-                colorName: space.colorName
+                colorName: space.colorName,
             )
         }
         return BrowserTabSessionSnapshot(
             spaces: spaceSnapshots,
             pinnedTabFolders: current.pinnedTabFolders,
             tabs: mergedTabs,
-            splitGroups: current.splitGroups
+            splitGroups: current.splitGroups,
         )
     }
 
@@ -3913,7 +3915,7 @@ enum BrowserWindowMode: Equatable {
                     systemImageName: space.systemImageName,
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                     selectedTabIndex: selectedTabIndex(inSpace: space.id),
-                    colorName: spaceColorsByID[space.id]
+                    colorName: spaceColorsByID[space.id],
                 )
             },
             pinnedTabFolders: pinnedTabFolders.compactMap { tree.folders[$0.id] }.map { folder in
@@ -3924,7 +3926,7 @@ enum BrowserWindowMode: Equatable {
                     title: folder.title,
                     systemImageName: folder.systemImageName,
                     isExpanded: folder.isExpanded,
-                    pinnedSiblingRank: folder.pinnedSiblingRank
+                    pinnedSiblingRank: folder.pinnedSiblingRank,
                 )
             },
             tabs: snapshotTabs.map { tab in
@@ -3939,10 +3941,10 @@ enum BrowserWindowMode: Equatable {
                     lastActivityTimestamp: tab.lastActivityAt.timeIntervalSince1970,
                     pinnedSiblingRank: tab.pinnedSiblingRank,
                     pageTitle: tab.title.isEmpty ? nil : tab.title,
-                    systemImageName: tabIconsBySyncID[tab.syncID]
+                    systemImageName: tabIconsBySyncID[tab.syncID],
                 )
             },
-            splitGroups: splitGroupSessionSnapshots()
+            splitGroups: splitGroupSessionSnapshots(),
         )
     }
 
@@ -3957,7 +3959,7 @@ enum BrowserWindowMode: Equatable {
         withURLString urlString: String,
         registersUndo: Bool = true,
         undoActionName: String = BrowserStrings.menuNewTab,
-        makeActive: Bool = true
+        makeActive: Bool = true,
     ) -> String? {
         guard canCreateTab else {
             return nil
@@ -3976,7 +3978,7 @@ enum BrowserWindowMode: Equatable {
         let context = PendingCreatedTabContext(
             spaceID: selectedSpaceID,
             placement: .temporary,
-            undoSnapshot: nil
+            undoSnapshot: nil,
         )
         applyCreatedTabContext(context, toTabID: tabID)
         if registersUndo, canRegisterTabUndo {
@@ -4019,7 +4021,7 @@ enum BrowserWindowMode: Equatable {
         if let pending = takePendingSplitAnchor(), openInSplitView(
             tabID: tab.id,
             anchorTabID: pending.anchorID,
-            insertion: pending.insertion
+            insertion: pending.insertion,
         ) {
             return
         }
@@ -4075,8 +4077,8 @@ enum BrowserWindowMode: Equatable {
         suggestions.append(
             contentsOf: commandActionSuggestions(
                 for: trimmedQuery,
-                maximumCount: maximumCount
-            )
+                maximumCount: maximumCount,
+            ),
         )
 
         let remainingAfterCommands = maximumCount - suggestions.count
@@ -4084,8 +4086,8 @@ enum BrowserWindowMode: Equatable {
             suggestions.append(
                 contentsOf: internalPageSuggestions(
                     for: trimmedQuery,
-                    maximumCount: remainingAfterCommands
-                )
+                    maximumCount: remainingAfterCommands,
+                ),
             )
         }
 
@@ -4094,8 +4096,8 @@ enum BrowserWindowMode: Equatable {
             suggestions.append(
                 contentsOf: openTabSuggestions(
                     for: trimmedQuery,
-                    maximumCount: remainingAfterInternalPages
-                )
+                    maximumCount: remainingAfterInternalPages,
+                ),
             )
         }
 
@@ -4104,8 +4106,8 @@ enum BrowserWindowMode: Equatable {
             suggestions.append(
                 contentsOf: bookmarksModel.suggestions(
                     for: trimmedQuery,
-                    maximumCount: remainingAfterTabs
-                )
+                    maximumCount: remainingAfterTabs,
+                ),
             )
         }
 
@@ -4114,8 +4116,8 @@ enum BrowserWindowMode: Equatable {
             suggestions.append(
                 contentsOf: historyStore.suggestions(
                     for: trimmedQuery,
-                    maximumCount: remainingAfterBookmarks
-                )
+                    maximumCount: remainingAfterBookmarks,
+                ),
             )
         }
 
@@ -4140,7 +4142,7 @@ enum BrowserWindowMode: Equatable {
                     kind: .command,
                     displayText: commandDisplayText(for: commandID, descriptor: descriptor),
                     commandID: commandID,
-                    shortcut: descriptor.shortcut.isAssigned ? descriptor.shortcut : nil
+                    shortcut: descriptor.shortcut.isAssigned ? descriptor.shortcut : nil,
                 )
             }
     }
@@ -4179,7 +4181,8 @@ enum BrowserWindowMode: Equatable {
 
     private func isCommandBarActionAvailable(_ commandID: BrowserCommandID) -> Bool {
         switch commandID {
-        case .openSettings, .setAsDefaultBrowser:
+        case .openSettings,
+             .setAsDefaultBrowser:
             true
         case .newTab:
             canCreateTab
@@ -4217,15 +4220,18 @@ enum BrowserWindowMode: Equatable {
             canSavePage
         case .printPage:
             canPrintPage
-        case .copyLink, .copyLinkAsMarkdown:
+        case .copyLink,
+             .copyLinkAsMarkdown:
             canCopySelectedTabLink
         case .copyLinkAsQuote:
             canCopySelectedTextAsQuoteLink
         case .findInPage:
             canPresentFindInPage
-        case .findAndReplace, .jumpToSelection:
+        case .findAndReplace,
+             .jumpToSelection:
             false
-        case .findNext, .findPrevious:
+        case .findNext,
+             .findPrevious:
             canStepThroughFindMatches
         case .clearTemporaryTabs:
             canClearTemporaryTabs
@@ -4253,33 +4259,54 @@ enum BrowserWindowMode: Equatable {
             canCreateTab && selectedTabID != nil
         case .captureArea:
             canCaptureArea
-        case .goToLastSidebarItem, .selectNextTab, .selectPreviousTab:
+        case .goToLastSidebarItem,
+             .selectNextTab,
+             .selectPreviousTab:
             !sidebarItemTabIDs.isEmpty
-        case .selectNextTabAlternate, .selectPreviousTabAlternate:
+        case .selectNextTabAlternate,
+             .selectPreviousTabAlternate:
             // The command bar lists Next/Previous Tab once.
             false
-        case .selectNextSpace, .selectPreviousSpace:
+        case .selectNextSpace,
+             .selectPreviousSpace:
             supportsSpaces && spaces.count > 1
         case .revealCurrentTab:
             canRevealSelectedTab
         case .openExtensions:
             canOpenExtensions
-        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
-             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+        case .goToSidebarItem1,
+             .goToSidebarItem2,
+             .goToSidebarItem3,
+             .goToSidebarItem4,
+             .goToSidebarItem5,
+             .goToSidebarItem6,
+             .goToSidebarItem7,
+             .goToSidebarItem8:
             sidebarItemTabIDs.count > commandID.sidebarItemIndex
         case .goBack:
             canGoBack
         case .goForward:
             canGoForward
-        case .clearCacheAndRefresh, .clearCookiesAndRefresh, .forceReload, .reload:
+        case .clearCacheAndRefresh,
+             .clearCookiesAndRefresh,
+             .forceReload,
+             .reload:
             canReload
         case .addSplitView:
             canAddSplitView
-        case .closeSplitPane, .separateSplitView, .separateTabFromSplit, .toggleSplitOrientation:
+        case .closeSplitPane,
+             .separateSplitView,
+             .separateTabFromSplit,
+             .toggleSplitOrientation:
             selectedSplitGroup != nil && !isShuttingDown
-        case .focusSplitPane1, .focusSplitPane2, .focusSplitPane3, .focusSplitPane4:
+        case .focusSplitPane1,
+             .focusSplitPane2,
+             .focusSplitPane3,
+             .focusSplitPane4:
             selectedSplitGroup.map { splitPaneTabIDs(of: $0).count > commandID.splitPaneIndex } == true
-        case .expandCurrentSplit, .focusNextSplitPane, .focusPreviousSplitPane:
+        case .expandCurrentSplit,
+             .focusNextSplitPane,
+             .focusPreviousSplitPane:
             selectedSplitGroup != nil
         case .toggleSidebar:
             true
@@ -4303,25 +4330,25 @@ enum BrowserWindowMode: Equatable {
                 title: "Open Settings",
                 detail: "openarc://settings",
                 aliases: ["settings", "chrome://settings", "arc://settings", "dia://settings"],
-                urlString: "openarc://settings/"
+                urlString: "openarc://settings/",
             ),
             (
                 title: "Open Bookmarks",
                 detail: "openarc://bookmarks",
                 aliases: ["bookmarks", "chrome://bookmarks", "arc://bookmarks", "dia://bookmarks"],
-                urlString: "openarc://bookmarks/"
+                urlString: "openarc://bookmarks/",
             ),
             (
                 title: "Open History",
                 detail: "openarc://history",
                 aliases: ["history", "chrome://history", "arc://history", "dia://history"],
-                urlString: "openarc://history"
+                urlString: "openarc://history",
             ),
             (
                 title: "Open Extensions",
                 detail: "openarc://extensions",
                 aliases: ["extensions", "chrome://extensions", "arc://extensions", "dia://extensions"],
-                urlString: "openarc://extensions/"
+                urlString: "openarc://extensions/",
             ),
             (
                 title: "Open Passwords",
@@ -4334,7 +4361,7 @@ enum BrowserWindowMode: Equatable {
                     "arc://password-manager/passwords",
                     "dia://password-manager/passwords",
                 ],
-                urlString: "openarc://password-manager/passwords"
+                urlString: "openarc://password-manager/passwords",
             ),
         ]
 
@@ -4350,7 +4377,7 @@ enum BrowserWindowMode: Equatable {
                     kind: .url,
                     displayText: page.title,
                     detailText: page.detail,
-                    resolvedURLString: page.urlString
+                    resolvedURLString: page.urlString,
                 )
             }
     }
@@ -4375,7 +4402,7 @@ enum BrowserWindowMode: Equatable {
                     displayText: tab.displayTitle,
                     detailText: BrowserURLDisplayFormatter.displayString(for: tab.urlString),
                     resolvedURLString: tab.urlString,
-                    tabIDs: [tab.id]
+                    tabIDs: [tab.id],
                 )
             }
     }
@@ -4439,7 +4466,7 @@ enum BrowserWindowMode: Equatable {
             placement: undoSnapshot.tab.placement,
             pinnedFolderID: undoSnapshot.tab.pinnedFolderID,
             pinnedSiblingRank: undoSnapshot.tab.pinnedSiblingRank,
-            lastActivityAt: undoSnapshot.tab.lastActivityAt
+            lastActivityAt: undoSnapshot.tab.lastActivityAt,
         )
     }
 
@@ -4448,7 +4475,7 @@ enum BrowserWindowMode: Equatable {
         id: String,
         title: String? = nil,
         urlString: String? = nil,
-        lastActivityAt: Date? = nil
+        lastActivityAt: Date? = nil,
     ) -> Tab {
         Tab(
             id: id,
@@ -4461,7 +4488,7 @@ enum BrowserWindowMode: Equatable {
             faviconURLString: tab.faviconURLString,
             placement: .app,
             pinnedFolderID: nil,
-            lastActivityAt: lastActivityAt ?? tab.lastActivityAt
+            lastActivityAt: lastActivityAt ?? tab.lastActivityAt,
         )
     }
 
@@ -4470,7 +4497,7 @@ enum BrowserWindowMode: Equatable {
         id: String,
         title: String? = nil,
         urlString: String? = nil,
-        lastActivityAt: Date? = nil
+        lastActivityAt: Date? = nil,
     ) -> Tab {
         Tab(
             id: id,
@@ -4484,7 +4511,7 @@ enum BrowserWindowMode: Equatable {
             placement: .spacePinned,
             pinnedFolderID: tab.pinnedFolderID,
             pinnedSiblingRank: tab.pinnedSiblingRank,
-            lastActivityAt: lastActivityAt ?? tab.lastActivityAt
+            lastActivityAt: lastActivityAt ?? tab.lastActivityAt,
         )
     }
 
@@ -4504,13 +4531,13 @@ enum BrowserWindowMode: Equatable {
 
         let newTabID = tabDriver.createTab(
             withURLString: resolvedBrowserURLString(tab.urlString),
-            makeActive: true
+            makeActive: true,
         )
         pendingReopenedAppTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = reidentifiedAppTab(
             from: tab,
             id: newTabID,
-            lastActivityAt: advancedActivityDate(after: tab.lastActivityAt)
+            lastActivityAt: advancedActivityDate(after: tab.lastActivityAt),
         )
         closedAppTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
@@ -4546,14 +4573,14 @@ enum BrowserWindowMode: Equatable {
             : pinnedURLString
         let newTabID = tabDriver.createTab(
             withURLString: resolvedBrowserURLString(urlString),
-            makeActive: true
+            makeActive: true,
         )
         pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = reidentifiedPinnedTab(
             from: tab,
             id: newTabID,
             urlString: urlString,
-            lastActivityAt: advancedActivityDate(after: tab.lastActivityAt)
+            lastActivityAt: advancedActivityDate(after: tab.lastActivityAt),
         )
         closedPinnedTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
@@ -4576,14 +4603,14 @@ enum BrowserWindowMode: Equatable {
         let isSelected = selectedTabID == id
         let newTabID = tabDriver.createTab(
             withURLString: resolvedBrowserURLString(tab.urlString),
-            makeActive: isSelected
+            makeActive: isSelected,
         )
         pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = Tab(
             id: newTabID, syncID: tab.syncID, spaceID: tab.spaceID, title: tab.title,
             userTitleOverride: tab.userTitleOverride, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
             faviconURLString: tab.faviconURLString, placement: tab.placement, pinnedFolderID: tab.pinnedFolderID,
-            pinnedSiblingRank: tab.pinnedSiblingRank, lastActivityAt: tab.lastActivityAt
+            pinnedSiblingRank: tab.pinnedSiblingRank, lastActivityAt: tab.lastActivityAt,
         )
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID, selectsInSpace: false)
         if isSelected {
@@ -4610,7 +4637,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func replaceTabRuntimeReferences(
-        oldID: String, newID: String, spaceID: String, selectsInSpace: Bool = true
+        oldID: String, newID: String, spaceID: String, selectsInSpace: Bool = true,
     ) {
         if selectedTabID == oldID {
             selectedTabID = newID
@@ -4681,7 +4708,7 @@ enum BrowserWindowMode: Equatable {
             insertionIndex: closingIndex,
             wasSelectedTab: selectedTabID == tab.id,
             wasSelectedInSpace: spaces.first { $0.id == tab.spaceID }?.selectedTabID == tab.id,
-            creationUndoReference: tabCreationUndoReferences[tab.id]
+            creationUndoReference: tabCreationUndoReferences[tab.id],
         )
     }
 
@@ -4708,16 +4735,16 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func registerTabCloseUndo(
-        _ snapshot: TabUndoSnapshot, archiveID: String?, kind: TabHistoryKind, actionName: String
+        _ snapshot: TabUndoSnapshot, archiveID: String?, kind: TabHistoryKind, actionName: String,
     ) {
         guard canRegisterTabUndo else { return }
         undoManager.registerTabAction(historyRestoreAction(
-            snapshot, archiveID: archiveID, kind: kind, actionName: actionName
+            snapshot, archiveID: archiveID, kind: kind, actionName: actionName,
         ))
     }
 
     private func creationUndoAction(
-        _ reference: TabCreationUndoReference, actionName: String
+        _ reference: TabCreationUndoReference, actionName: String,
     ) -> BrowserTabUndoManager.Action {
         .init(name: actionName) { [weak self] completion in
             guard let self else { completion(.cancelled)
@@ -4729,7 +4756,7 @@ enum BrowserWindowMode: Equatable {
             }
             let admitted = requestConfirmedTabClose(
                 id: id, registersUndo: false, actionName: actionName,
-                createsArchive: false, preservesPersistentTab: false, historyKind: .creation
+                createsArchive: false, preservesPersistentTab: false, historyKind: .creation,
             ) { [weak self] result in
                 guard let self else { completion(.cancelled)
                     return
@@ -4739,7 +4766,7 @@ enum BrowserWindowMode: Equatable {
                 case .removed: completion(.committed(inverse: nil))
                 case .closed(let snapshot, _):
                     completion(.committed(inverse: historyRestoreAction(
-                        snapshot, archiveID: nil, kind: .creation, actionName: actionName
+                        snapshot, archiveID: nil, kind: .creation, actionName: actionName,
                     )))
                 }
             }
@@ -4758,7 +4785,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func closeRedoAction(
-        syncID: String, kind: TabHistoryKind, actionName: String
+        syncID: String, kind: TabHistoryKind, actionName: String,
     ) -> BrowserTabUndoManager.Action {
         .init(name: actionName) { [weak self] completion in
             guard let self else { completion(.cancelled)
@@ -4773,7 +4800,7 @@ enum BrowserWindowMode: Equatable {
             let admitted = requestConfirmedTabClose(
                 id: tab.id, registersUndo: false, actionName: actionName,
                 createsArchive: kind == .archive, preservesPersistentTab: kind == .archive,
-                historyKind: kind
+                historyKind: kind,
             ) { [weak self] result in
                 guard let self else { completion(.cancelled)
                     return
@@ -4783,7 +4810,7 @@ enum BrowserWindowMode: Equatable {
                 case .removed: completion(.committed(inverse: nil))
                 case .closed(let snapshot, let archiveID):
                     completion(.committed(inverse: historyRestoreAction(
-                        snapshot, archiveID: archiveID, kind: kind, actionName: actionName
+                        snapshot, archiveID: archiveID, kind: kind, actionName: actionName,
                     )))
                 }
             }
@@ -4794,7 +4821,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func historyRestoreAction(
-        _ snapshot: TabUndoSnapshot, archiveID: String?, kind: TabHistoryKind, actionName: String
+        _ snapshot: TabUndoSnapshot, archiveID: String?, kind: TabHistoryKind, actionName: String,
     ) -> BrowserTabUndoManager.Action {
         .init(name: actionName) { [weak self] completion in
             guard let self, pendingHistoryRestore == nil, canCreateTab,
@@ -4804,7 +4831,7 @@ enum BrowserWindowMode: Equatable {
             }
             pendingHistoryRestore = PendingHistoryRestore(
                 archiveID: archiveID, syncID: tabSyncIDProvider(), snapshot: snapshot,
-                kind: kind, actionName: actionName, completion: completion
+                kind: kind, actionName: actionName, completion: completion,
             )
             _ = retryHistoryRestore()
         }
@@ -4865,7 +4892,7 @@ enum BrowserWindowMode: Equatable {
                     ? original.pinnedSiblingRank
                     : nil,
                 pageTitle: archived?.tab.pageTitle ?? (original.title.isEmpty ? nil : original.title),
-                systemImageName: archived?.tab.systemImageName ?? tabIconsBySyncID[original.syncID]
+                systemImageName: archived?.tab.systemImageName ?? tabIconsBySyncID[original.syncID],
             )
             let shouldSelect = request.snapshot.wasSelectedTab || selectedTabID == nil
             let outgoing = shouldSelect && canRecordExplicitViewingActivity && selectedTab?.creationState == .ready
@@ -4880,7 +4907,7 @@ enum BrowserWindowMode: Equatable {
                     userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: outgoingDate.timeIntervalSince1970,
                     pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.pageTitle,
-                    systemImageName: tab.systemImageName
+                    systemImageName: tab.systemImageName,
                 )
             }
             let insertionIndex = min(max(request.snapshot.insertionIndex, 0), nextTabs.count)
@@ -4901,18 +4928,18 @@ enum BrowserWindowMode: Equatable {
                         id: space.id, title: space.title, systemImageName: space.systemImageName,
                         isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                         selectedTabIndex: visible.firstIndex { $0.id == selectedID },
-                        colorName: space.colorName
+                        colorName: space.colorName,
                     )
-                }, pinnedTabFolders: current.pinnedTabFolders, tabs: nextTabs, splitGroups: current.splitGroups
+                }, pinnedTabFolders: current.pinnedTabFolders, tabs: nextTabs, splitGroups: current.splitGroups,
             )
             try sessionSnapshotStore.writeSessionBatch([.init(
                 snapshot: next, origin: .local(syncMove: nil),
-                archiveAction: request.archiveID.map { .restore(archiveID: $0, tabID: request.syncID) }
+                archiveAction: request.archiveID.map { .restore(archiveID: $0, tabID: request.syncID) },
             )])
             isSessionClosurePrepared = false
             let reference = publishHistoryRestoration(
                 request, restored: restored, insertionIndex: insertionIndex,
-                shouldSelect: shouldSelect, outgoing: outgoing, outgoingDate: outgoingDate
+                shouldSelect: shouldSelect, outgoing: outgoing, outgoingDate: outgoingDate,
             )
             archiveError = nil
             if request.archiveID != nil {
@@ -4961,7 +4988,7 @@ enum BrowserWindowMode: Equatable {
 
     private func publishHistoryRestoration(
         _ request: PendingHistoryRestore, restored: BrowserTabSessionSnapshotTab, insertionIndex: Int,
-        shouldSelect: Bool, outgoing: Tab?, outgoingDate: Date?
+        shouldSelect: Bool, outgoing: Tab?, outgoingDate: Date?,
     ) -> TabCreationUndoReference {
         let wasRestoringSession = isRestoringSession
         isRestoringSession = true
@@ -4970,7 +4997,7 @@ enum BrowserWindowMode: Equatable {
             tabs[index].lastActivityAt = outgoingDate
         }
         let runtimeID = tabDriver.createTab(
-            withURLString: resolvedBrowserURLString(restored.urlString), makeActive: shouldSelect
+            withURLString: resolvedBrowserURLString(restored.urlString), makeActive: shouldSelect,
         )
         restoredTabCreationIDs.insert(runtimeID)
         let tab = Tab(
@@ -4979,7 +5006,7 @@ enum BrowserWindowMode: Equatable {
             urlString: restored.urlString, pinnedURLString: restored.pinnedURLString,
             faviconURLString: request.snapshot.tab.faviconURLString, placement: restored.placement,
             pinnedFolderID: restored.pinnedFolderID, pinnedSiblingRank: restored.pinnedSiblingRank,
-            lastActivityAt: Date(timeIntervalSince1970: restored.lastActivityTimestamp ?? 0)
+            lastActivityAt: Date(timeIntervalSince1970: restored.lastActivityTimestamp ?? 0),
         )
         tabs.insert(tab, at: min(insertionIndex, tabs.count))
         tabIconsBySyncID[request.syncID] = restored.systemImageName
@@ -5018,7 +5045,7 @@ extension BrowserChromeModel {
     }
 
     func loadArchivedTabs(
-        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50
+        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50,
     ) async throws -> BrowserTabArchivePage {
         guard canBrowseArchive, let archive = sessionSnapshotStore as? any BrowserTabArchiveStoring
         else { throw BrowserTabArchiveError.unsupportedStore }
@@ -5102,7 +5129,7 @@ extension BrowserChromeModel {
             let restored = BrowserTabSessionSnapshotTab(
                 id: syncID, urlString: entry.tab.urlString, userTitleOverride: entry.tab.userTitleOverride,
                 placement: .temporary, spaceID: destination, lastActivityTimestamp: now, pageTitle: entry.tab.pageTitle,
-                systemImageName: entry.tab.systemImageName
+                systemImageName: entry.tab.systemImageName,
             )
             let nextTabs = snapshot.tabs.map { tab in
                 guard tab.id == outgoing?.syncID, let outgoingDate else { return tab }
@@ -5111,7 +5138,7 @@ extension BrowserChromeModel {
                     userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: outgoingDate.timeIntervalSince1970,
                     pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: tab.pageTitle,
-                    systemImageName: tab.systemImageName
+                    systemImageName: tab.systemImageName,
                 )
             } + [restored]
             let next = BrowserTabSessionSnapshot(
@@ -5120,16 +5147,16 @@ extension BrowserChromeModel {
                     return BrowserSpaceSessionSnapshot(
                         id: space.id, title: space.title, systemImageName: space.systemImageName,
                         isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                        selectedTabIndex: nextTabs.filter { $0.spaceID == destination && $0.placement != .app }
-                            .count - 1,
-                        colorName: space.colorName
+                        selectedTabIndex: nextTabs.count(where: { $0.spaceID == destination && $0.placement != .app })
+                             - 1,
+                        colorName: space.colorName,
                     )
-                }, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: nextTabs, splitGroups: snapshot.splitGroups
+                }, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: nextTabs, splitGroups: snapshot.splitGroups,
             )
             // Archive transitions cannot be buffered independently of the live
             // tree: a later full snapshot could otherwise drop a consumed restore.
             try sessionSnapshotStore.writeSessionBatch([.init(
-                snapshot: next, origin: .local(syncMove: nil), archiveAction: .restore(archiveID: id, tabID: syncID)
+                snapshot: next, origin: .local(syncMove: nil), archiveAction: .restore(archiveID: id, tabID: syncID),
             )])
             isSessionClosurePrepared = false
             publishArchivedTab(entry: entry, restored: restored, outgoing: outgoing, outgoingDate: outgoingDate)
@@ -5148,7 +5175,7 @@ extension BrowserChromeModel {
     }
 
     private func publishArchivedTab(
-        entry: BrowserTabArchiveEntry, restored: BrowserTabSessionSnapshotTab, outgoing: Tab?, outgoingDate: Date?
+        entry: BrowserTabArchiveEntry, restored: BrowserTabSessionSnapshotTab, outgoing: Tab?, outgoingDate: Date?,
     ) {
         guard let syncID = restored.id, let destination = restored.spaceID,
               let activity = restored.lastActivityTimestamp else { return }
@@ -5165,13 +5192,13 @@ extension BrowserChromeModel {
         invalidateSelectedTabWebAppInstallMetadata()
         let runtimeID = tabDriver.createTab(
             withURLString: resolvedBrowserURLString(restored.urlString),
-            makeActive: true
+            makeActive: true,
         )
         restoredTabCreationIDs.insert(runtimeID)
         tabs.append(Tab(
             id: runtimeID, syncID: syncID, spaceID: destination, title: entry.title ?? "",
             userTitleOverride: restored.userTitleOverride, urlString: restored.urlString,
-            placement: .temporary, lastActivityAt: Date(timeIntervalSince1970: activity)
+            placement: .temporary, lastActivityAt: Date(timeIntervalSince1970: activity),
         ))
         tabIconsBySyncID[syncID] = restored.systemImageName
         selectedSpaceID = destination
@@ -5203,12 +5230,16 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         let protectedIDs = Set(tabs.filter { visibleIDs.contains($0.id) }.map(\.syncID))
         guard let ownership = sessionSnapshotStore as? any BrowserSyncOwnershipReading else { return nil }
         let owner: BrowserSyncOwner?
-        do { owner = try ownership.syncOwner() } catch { return nil }
+        do {
+            owner = try ownership.syncOwner()
+        } catch {
+            return nil
+        }
         return .init(
             inactiveForSeconds: owner != nil && automaticTabArchivalEnabled
                 ? Int(temporaryTabLifetime.timeInterval)
                 : nil,
-            protectedTabIDs: protectedIDs
+            protectedTabIDs: protectedIDs,
         )
     }
 
@@ -5232,10 +5263,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     @discardableResult func recordExplicitViewingActivity(ids: [String?]) -> Bool {
         guard canRecordExplicitViewingActivity else { return false }
         var changed = false
-        for id in Set(ids.compactMap { $0 }) {
-            if touchTab(id: id) {
-                changed = true
-            }
+        for id in Set(ids.compactMap(\.self)) where touchTab(id: id) {
+            changed = true
         }
         return changed
     }
@@ -5267,7 +5296,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
         automaticArchivalTimer = Timer.scheduledTimer(
             withTimeInterval: Self.automaticArchivalCheckInterval,
-            repeats: true
+            repeats: true,
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.archiveExpiredTemporaryTabs()
@@ -5362,7 +5391,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         let visibleTabs = sidebarTabs(forSpaceID: closingTab.spaceID)
         let previousSidebarOrder = sidebarTabs(
             forSpaceID: closingTab.spaceID,
-            including: closingTab
+            including: closingTab,
         )
         guard let closingIndex = previousSidebarOrder.firstIndex(where: { $0.id == closingTab.id }) else {
             return visibleTabs.first?.id
@@ -5383,7 +5412,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     func fallbackTabID(afterClosingDormantTab closingTab: Tab, excluding excludedTabIDs: Set<String>) -> String? {
         if let splitSiblingID = splitSiblingTabID(
             afterClosing: closingTab,
-            excluding: excludedTabIDs.union(closedPinnedTabIDs)
+            excluding: excludedTabIDs.union(closedPinnedTabIDs),
         ) {
             return splitSiblingID
         }
@@ -5499,8 +5528,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                 placement: restoredPlacement,
                 pinnedFolderID: undoSnapshot?.tab.pinnedFolderID,
                 pinnedSiblingRank: undoSnapshot?.tab.pinnedSiblingRank,
-                lastActivityAt: undoSnapshot?.tab.lastActivityAt ?? dateProvider()
-            )
+                lastActivityAt: undoSnapshot?.tab.lastActivityAt ?? dateProvider(),
+            ),
         )
 
         if let pendingContext {
@@ -5554,7 +5583,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             text: findQuery,
             forward: forward,
             matchCase: false,
-            findNext: findNext
+            findNext: findNext,
         )
     }
 
@@ -5562,7 +5591,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         id: String,
         matchCount: Int,
         activeMatchOrdinal _: Int,
-        finalUpdate: Bool
+        finalUpdate: Bool,
     ) {
         guard id == selectedTabID, isFindBarPresented, !findQuery.isEmpty else {
             return
@@ -5581,7 +5610,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         id: String,
         title: String?,
         urlString: String?,
-        faviconURLString: String?
+        faviconURLString: String?,
     ) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else {
             return
@@ -5656,7 +5685,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             userTitleOverride: tab.userTitleOverride, urlString: tab.urlString,
             pinnedURLString: tab.pinnedURLString, faviconURLString: tab.faviconURLString,
             placement: tab.placement, pinnedFolderID: tab.pinnedFolderID,
-            pinnedSiblingRank: tab.pinnedSiblingRank, lastActivityAt: tab.lastActivityAt
+            pinnedSiblingRank: tab.pinnedSiblingRank, lastActivityAt: tab.lastActivityAt,
         )
         replaceTabRuntimeReferences(oldID: tab.id, newID: newID, spaceID: tab.spaceID, selectsInSpace: false)
         if selected {
@@ -5707,7 +5736,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                 id: id, forceClose: false, requestsEngineClose: false,
                 registersUndo: request.registersUndo, undoActionName: request.undoActionName,
                 createsArchive: request.createsArchive, historyKind: request.historyKind,
-                completion: request.completion
+                completion: request.completion,
             )
         } else {
             // Pin/Favorite may have arrived while the page's dialog was open.
@@ -5814,7 +5843,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         else { return }
 
         switch (tabs[index].creationState, state) {
-        case (.creating, .failed), (.creating, .ready), (.failed, .creating):
+        case (.creating, .failed),
+             (.creating, .ready),
+             (.failed, .creating):
             tabs[index].creationState = state
         default:
             // Duplicates and obsolete outcomes cannot regress an attached page
@@ -5892,7 +5923,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                 payloadJSON: payloadJSON,
                 fallbackPageURL: pageURL,
                 fallbackTitle: fallbackTitle,
-                fallbackIconURL: fallbackIconURL
+                fallbackIconURL: fallbackIconURL,
             )
             guard
                 metadata.manifestURL != nil,
@@ -5935,7 +5966,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             title: defaultSpaceTitle(forDisplayIndex: 1),
             systemImageName: Self.defaultSpaceIconName,
             isPinnedSectionCollapsed: false,
-            selectedTabID: nil
+            selectedTabID: nil,
         )
     }
 
@@ -5945,7 +5976,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             title: defaultSpaceTitle(forDisplayIndex: spaces.count + 1),
             systemImageName: Self.defaultSpaceIconName,
             isPinnedSectionCollapsed: false,
-            selectedTabID: nil
+            selectedTabID: nil,
         )
     }
 
@@ -5978,7 +6009,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                     : snapshot
                         .systemImageName,
                 isPinnedSectionCollapsed: snapshot.isPinnedSectionCollapsed,
-                selectedTabID: nil
+                selectedTabID: nil,
             )
         }
     }
@@ -6016,7 +6047,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                     ?? BrowserStrings.pinnedTabFolderDefaultTitle,
                 systemImageName: snapshot.systemImageName,
                 isExpanded: snapshot.isExpanded,
-                pinnedSiblingRank: snapshot.pinnedSiblingRank
+                pinnedSiblingRank: snapshot.pinnedSiblingRank,
             )
         }
     }
@@ -6185,7 +6216,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         toPlacement placement: BrowserTabPlacement,
         requestedSectionIndex: Int,
         targetSpaceID: String? = nil,
-        targetPinnedFolderID: String? = nil
+        targetPinnedFolderID: String? = nil,
     ) -> [Tab]? {
         guard supportsAppTabs || placement != .app,
               let movingTab = tabs.first(where: { $0.id == movingTabID })
@@ -6208,7 +6239,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         guard placement == .app || spaces.contains(where: { $0.id == resolvedTargetSpaceID }),
               targetFolder == nil || placement == .spacePinned, canMoveTab(
                   movingTab,
-                  to: placement
+                  to: placement,
               )
         else {
             return nil
@@ -6218,7 +6249,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             && (placement == .app || movingTab.spaceID == resolvedTargetSpaceID)
         let sourceSectionTabs = tabs(
             for: movingTab.placement,
-            inSpaceID: movingTab.placement == .app ? nil : movingTab.spaceID
+            inSpaceID: movingTab.placement == .app ? nil : movingTab.spaceID,
         )
         let sourceSectionIndex = sourceSectionTabs.firstIndex(where: { $0.id == movingTabID })
 
@@ -6239,7 +6270,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                 requestedSectionIndex,
                 movingWithinTargetSection: movingWithinTargetSection,
                 sourceSectionIndex: sourceSectionIndex,
-                sectionCount: updatedAppTabs.count
+                sectionCount: updatedAppTabs.count,
             )
             updatedAppTabs.insert(updatedTab, at: destinationIndex)
         case .spacePinned:
@@ -6249,14 +6280,14 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                     pinnedFolderChildInsertionIndex(
                         requestedSectionIndex,
                         in: updatedSpacePinnedTabs,
-                        folderID: targetPinnedFolderID
+                        folderID: targetPinnedFolderID,
                     )
                 } else {
                     adjustedSectionIndex(
                         requestedSectionIndex,
                         movingWithinTargetSection: movingWithinTargetSection,
                         sourceSectionIndex: sourceSectionIndex,
-                        sectionCount: updatedSpacePinnedTabs.count
+                        sectionCount: updatedSpacePinnedTabs.count,
                     )
                 }
             updatedSpacePinnedTabs.insert(updatedTab, at: destinationIndex)
@@ -6267,7 +6298,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                 requestedSectionIndex,
                 movingWithinTargetSection: movingWithinTargetSection,
                 sourceSectionIndex: sourceSectionIndex,
-                sectionCount: updatedTemporaryTabs.count
+                sectionCount: updatedTemporaryTabs.count,
             )
             updatedTemporaryTabs.insert(updatedTab, at: destinationIndex)
             updatedTemporaryTabsBySpaceID[resolvedTargetSpaceID] = updatedTemporaryTabs
@@ -6276,7 +6307,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         return tabsByReplacingTabs(
             spacePinnedTabsBySpaceID: updatedSpacePinnedTabsBySpaceID,
             temporaryTabsBySpaceID: updatedTemporaryTabsBySpaceID,
-            appTabs: updatedAppTabs
+            appTabs: updatedAppTabs,
         )
     }
 
@@ -6285,7 +6316,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         toPlacement placement: BrowserTabPlacement,
         requestedSectionIndex: Int,
         targetSpaceID: String? = nil,
-        targetPinnedFolderID: String? = nil
+        targetPinnedFolderID: String? = nil,
     ) -> [Tab]? {
         guard placement == .spacePinned else {
             return nil
@@ -6313,7 +6344,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         let resolvedTargetSpaceID = targetFolder?.spaceID ?? targetSpaceID ?? selectedSpaceID ?? movingTabs[0].spaceID
         guard spaces.contains(where: { $0.id == resolvedTargetSpaceID }), movingTabs.allSatisfy({ canMoveTab(
             $0,
-            to: placement
+            to: placement,
         ) }) else {
             return nil
         }
@@ -6326,7 +6357,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             movingTabIDs.contains(tab.id) ? index : nil
         }
         let removedBeforeTarget = movingWithinTargetSection
-            ? sourceSectionIndices.filter { $0 < requestedSectionIndex }.count
+            ? sourceSectionIndices.count(where: { $0 < requestedSectionIndex })
             : 0
 
         var updatedSpacePinnedTabsBySpaceID = tabsBySpaceID(for: .spacePinned, removingTabIDs: movingTabIDs)
@@ -6336,7 +6367,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                 pinnedFolderChildInsertionIndex(
                     requestedSectionIndex,
                     in: targetPinnedTabs,
-                    folderID: targetPinnedFolderID
+                    folderID: targetPinnedFolderID,
                 )
             } else {
                 min(max(requestedSectionIndex - removedBeforeTarget, 0), targetPinnedTabs.count)
@@ -6355,7 +6386,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         return tabsByReplacingTabs(
             spacePinnedTabsBySpaceID: updatedSpacePinnedTabsBySpaceID,
             temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: movingTabIDs),
-            appTabs: appTabs.filter { !movingTabIDs.contains($0.id) }
+            appTabs: appTabs.filter { !movingTabIDs.contains($0.id) },
         )
     }
 }
@@ -6542,14 +6573,14 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
     func tabsBySpaceID(
         for placement: BrowserTabPlacement,
-        removingTabID tabID: String
+        removingTabID tabID: String,
     ) -> [String: [Tab]] {
         tabsBySpaceID(for: placement, removingTabIDs: [tabID])
     }
 
     func tabsBySpaceID(
         for placement: BrowserTabPlacement,
-        removingTabIDs tabIDs: Set<String>
+        removingTabIDs tabIDs: Set<String>,
     ) -> [String: [Tab]] {
         spaces.reduce(into: [:]) { result, space in
             result[space.id] = tabs(for: placement, inSpaceID: space.id)
@@ -6560,7 +6591,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     func tabsBySpaceID(
         replacing replacementTabs: [Tab],
         for placement: BrowserTabPlacement,
-        inSpaceID spaceID: String
+        inSpaceID spaceID: String,
     ) -> [String: [Tab]] {
         var result = tabsBySpaceID(for: placement, removingTabIDs: [])
         result[spaceID] = replacementTabs
@@ -6570,7 +6601,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     func tabsByReplacingTabs(
         spacePinnedTabsBySpaceID: [String: [Tab]],
         temporaryTabsBySpaceID: [String: [Tab]],
-        appTabs: [Tab]
+        appTabs: [Tab],
     ) -> [Tab] {
         var result = appTabs
         for space in spaces {
@@ -6587,7 +6618,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         _ requestedSectionIndex: Int,
         movingWithinTargetSection: Bool,
         sourceSectionIndex: Int?,
-        sectionCount: Int
+        sectionCount: Int,
     ) -> Int {
         var adjustedSectionIndex = max(requestedSectionIndex, 0)
 
@@ -6605,7 +6636,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     func pinnedFolderChildInsertionIndex(
         _ requestedChildIndex: Int,
         in pinnedTabs: [Tab],
-        folderID: String
+        folderID: String,
     ) -> Int {
         let childIndices = pinnedTabs.indices.filter { pinnedTabs[$0].pinnedFolderID == folderID }
         guard !childIndices.isEmpty else {
@@ -6803,7 +6834,8 @@ extension BrowserCommandID {
             ["next tab", "select next tab"]
         case .selectPreviousTab:
             ["previous tab", "select previous tab"]
-        case .selectNextTabAlternate, .selectPreviousTabAlternate:
+        case .selectNextTabAlternate,
+             .selectPreviousTabAlternate:
             []
         case .revealCurrentTab:
             ["reveal current tab", "reveal tab", "show tab in sidebar", "find tab in sidebar"]
@@ -6813,8 +6845,14 @@ extension BrowserCommandID {
             ["next space", "switch space"]
         case .selectPreviousSpace:
             ["previous space", "switch space"]
-        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
-             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+        case .goToSidebarItem1,
+             .goToSidebarItem2,
+             .goToSidebarItem3,
+             .goToSidebarItem4,
+             .goToSidebarItem5,
+             .goToSidebarItem6,
+             .goToSidebarItem7,
+             .goToSidebarItem8:
             ["tab \(sidebarItemIndex + 1)", "sidebar item \(sidebarItemIndex + 1)", "go to tab"]
         case .goToLastSidebarItem:
             ["last tab", "last sidebar item"]
@@ -6846,7 +6884,10 @@ extension BrowserCommandID {
             ["separate all tabs", "exit split view", "end split view", "unsplit"]
         case .toggleSplitOrientation:
             ["convert split", "vertical split", "horizontal split", "rotate split", "split orientation"]
-        case .focusSplitPane1, .focusSplitPane2, .focusSplitPane3, .focusSplitPane4:
+        case .focusSplitPane1,
+             .focusSplitPane2,
+             .focusSplitPane3,
+             .focusSplitPane4:
             ["split pane \(splitPaneIndex + 1)", "switch split pane", "focus pane"]
         case .focusNextSplitPane:
             ["next split pane", "next pane"]
@@ -6897,7 +6938,8 @@ extension BrowserCommandID {
             "clock.arrow.circlepath"
         case .toggleBookmark:
             "star"
-        case .archiveTab, .viewArchive:
+        case .archiveTab,
+             .viewArchive:
             "archivebox"
         case .clearArchive:
             "trash"
@@ -6949,7 +6991,8 @@ extension BrowserCommandID {
             "crop"
         case .selectNextTab:
             "arrow.down.square"
-        case .selectPreviousTab, .selectPreviousTabAlternate:
+        case .selectPreviousTab,
+             .selectPreviousTabAlternate:
             "arrow.up.square"
         case .selectNextTabAlternate:
             "arrow.down.square"
@@ -6961,8 +7004,14 @@ extension BrowserCommandID {
             "arrow.right.square"
         case .selectPreviousSpace:
             "arrow.left.square"
-        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
-             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+        case .goToSidebarItem1,
+             .goToSidebarItem2,
+             .goToSidebarItem3,
+             .goToSidebarItem4,
+             .goToSidebarItem5,
+             .goToSidebarItem6,
+             .goToSidebarItem7,
+             .goToSidebarItem8:
             "\(sidebarItemIndex + 1).circle"
         case .goToLastSidebarItem:
             "9.circle"
@@ -6982,11 +7031,15 @@ extension BrowserCommandID {
             "rectangle.split.2x1"
         case .closeSplitPane:
             "xmark.rectangle"
-        case .separateSplitView, .separateTabFromSplit:
+        case .separateSplitView,
+             .separateTabFromSplit:
             "rectangle.on.rectangle"
         case .toggleSplitOrientation:
             "rectangle.split.1x2"
-        case .focusSplitPane1, .focusSplitPane2, .focusSplitPane3, .focusSplitPane4:
+        case .focusSplitPane1,
+             .focusSplitPane2,
+             .focusSplitPane3,
+             .focusSplitPane4:
             "\(splitPaneIndex + 1).square"
         case .focusNextSplitPane:
             "arrow.right.square"
@@ -7084,6 +7137,11 @@ private extension [String] {
 // MARK: - BrowserTabPreviewCapture
 
 private enum BrowserTabPreviewCapture {
+    // MARK: Private
+
+    private static let maximumPreviewPixelWidth: CGFloat = 960
+    private static let minimumCaptureDimension: CGFloat = 24
+
     // MARK: Internal
 
     @MainActor static func image(for view: NSView) -> NSImage? {
@@ -7098,11 +7156,6 @@ private enum BrowserTabPreviewCapture {
             BrowserImageThumbnailer.resizedImage($0, maximumPixelWidth: maximumPreviewPixelWidth)
         }
     }
-
-    // MARK: Private
-
-    private static let maximumPreviewPixelWidth: CGFloat = 960
-    private static let minimumCaptureDimension: CGFloat = 24
 
     @MainActor private static func viewSnapshot(for view: NSView) -> NSImage? {
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
@@ -7124,6 +7177,14 @@ enum BrowserQuoteLink {
 
     /// Chromium links a highlight by its exact text up to this length.
     static let exactTextLimit = 300
+
+    // MARK: Private
+
+    /// Words at each end of a long quote; words, not spaces, so text without
+    /// spaces such as Chinese or Japanese splits too.
+    private static let edgeWordCount = 4
+    /// Each end stays short even when its words are long.
+    private static let edgeCharacterLimit = 60
 
     /// The page's address with a text fragment for the quote: its exact text,
     /// or its first and last words when it is long or spans paragraphs.
@@ -7153,14 +7214,6 @@ enum BrowserQuoteLink {
         components.percentEncodedFragment = fragment + ":~:text=" + directive
         return components.string
     }
-
-    // MARK: Private
-
-    /// Words at each end of a long quote; words, not spaces, so text without
-    /// spaces such as Chinese or Japanese splits too.
-    private static let edgeWordCount = 4
-    /// Each end stays short even when its words are long.
-    private static let edgeCharacterLimit = 60
 
     private static func edgeWords(of line: String, fromStart: Bool) -> Range<String.Index>? {
         var words = [Range<String.Index>]()
@@ -7198,13 +7251,13 @@ enum BrowserMarkdownLink {
     static func text(title: String, urlString: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let label = (trimmed.isEmpty ? urlString : trimmed)
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "[", with: "\\[")
-            .replacingOccurrences(of: "]", with: "\\]")
+            .replacing("\\", with: "\\\\")
+            .replacing("[", with: "\\[")
+            .replacing("]", with: "\\]")
         let destination = urlString
-            .replacingOccurrences(of: "(", with: "%28")
-            .replacingOccurrences(of: ")", with: "%29")
-            .replacingOccurrences(of: " ", with: "%20")
+            .replacing("(", with: "%28")
+            .replacing(")", with: "%29")
+            .replacing(" ", with: "%20")
         return "[\(label)](\(destination))"
     }
 }

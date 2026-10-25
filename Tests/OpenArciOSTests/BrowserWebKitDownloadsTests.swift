@@ -1,3 +1,5 @@
+// BrowserWebKitDownloadsTests.swift
+
 import Foundation
 import Network
 import Testing
@@ -66,9 +68,9 @@ import WebKit
             let post = try #require(f.server.requests.first { $0.path == "/post" })
             #expect(post.method == "POST" && post.body == Data("value=cookie+and+post".utf8))
             #expect(post.cookie.contains("download-token=kept"))
-            #expect(f.server.requests.filter { $0.path == "/post" }.count == 1)
-            #expect(f.server.requests.filter { $0.path == "/inline" }.count == 1)
-            #expect(f.server.requests.filter { $0.path == "/attachment" }.count == 2)
+            #expect(f.server.requests.count(where: { $0.path == "/post" }) == 1)
+            #expect(f.server.requests.count(where: { $0.path == "/inline" }) == 1)
+            #expect(f.server.requests.count(where: { $0.path == "/attachment" }) == 2)
             let reopened = BrowserMobileDownloads(directory: f.downloadDirectory)
             await reopened.load()
             #expect(Set(reopened.entries.map(\.id)) == Set(f.downloads.entries.map(\.id)))
@@ -283,7 +285,7 @@ import WebKit
             #expect(reopened.entries.map(\.id) == [failed.id])
             let recovered = try await reopened.exportURL(id: failed.id)
             #expect(try Data(contentsOf: recovered) == DownloadHTTPFixture.bytes)
-            #expect(f.server.requests.filter { $0.path == "/attachment" }.count == 1)
+            #expect(f.server.requests.count(where: { $0.path == "/attachment" }) == 1)
             #expect(f.workspace.selectedTab?.urlString == f.sourceURL.absoluteString)
         }
     }
@@ -325,7 +327,7 @@ import WebKit
 }
 
 @MainActor private func runDownloadWebKit(
-    directory: URL, body: @MainActor (DownloadWebKitFixture) async throws -> Void
+    directory: URL, body: @MainActor (DownloadWebKitFixture) async throws -> Void,
 ) async throws {
     let f = try DownloadWebKitFixture(directory: directory)
     defer { f.stop() }
@@ -337,34 +339,6 @@ import WebKit
 // MARK: - DownloadWebKitFixture
 
 @MainActor private final class DownloadWebKitFixture {
-    // MARK: Lifecycle
-
-    init(directory: URL) throws {
-        self.downloadDirectory = directory.appendingPathComponent("Downloads")
-        self.downloads = BrowserMobileDownloads(directory: downloadDirectory)
-        self.server = try DownloadHTTPFixture()
-        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
-        let seed = BrowserTabSessionSnapshot(
-            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
-            tabs: [.init(id: "page", urlString: "about:blank", spaceID: "space", lastActivityTimestamp: 1_800_000_000)]
-        )
-        try store.writeSessionBatch([.init(snapshot: seed, origin: .local(syncMove: nil))])
-        self.document = try BrowserMobileProfileDocument(
-            store: store, initialSnapshot: seed, downloads: downloads,
-            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, automaticArchivalCheckInterval: nil
-        )
-        self.preferencesName = "Downloads." + UUID().uuidString
-        self.preferences = try #require(UserDefaults(suiteName: preferencesName))
-        let profile = document
-        self.workspace = BrowserMobileWorkspace(
-            engine: engine, sceneID: "downloads", profileLoader: { profile }, preferences: preferences
-        )
-        workspace.onChange = { [weak self] in
-            guard let self, let url = workspace.selectedTab?.urlString else { return }
-            observedURLs.append(url)
-        }
-    }
-
     // MARK: Internal
 
     let server: DownloadHTTPFixture
@@ -378,6 +352,32 @@ import WebKit
     let preferencesName: String
     var observedURLs = [String]()
     private(set) var sourceURL = URL(string: "about:blank")!
+
+    init(directory: URL) throws {
+        self.downloadDirectory = directory.appendingPathComponent("Downloads")
+        self.downloads = BrowserMobileDownloads(directory: downloadDirectory)
+        self.server = try DownloadHTTPFixture()
+        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
+        let seed = BrowserTabSessionSnapshot(
+            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
+            tabs: [.init(id: "page", urlString: "about:blank", spaceID: "space", lastActivityTimestamp: 1_800_000_000)],
+        )
+        try store.writeSessionBatch([.init(snapshot: seed, origin: .local(syncMove: nil))])
+        self.document = try BrowserMobileProfileDocument(
+            store: store, initialSnapshot: seed, downloads: downloads,
+            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, automaticArchivalCheckInterval: nil,
+        )
+        self.preferencesName = "Downloads." + UUID().uuidString
+        self.preferences = try #require(UserDefaults(suiteName: preferencesName))
+        let profile = document
+        self.workspace = BrowserMobileWorkspace(
+            engine: engine, sceneID: "downloads", profileLoader: { profile }, preferences: preferences,
+        )
+        workspace.onChange = { [weak self] in
+            guard let self, let url = workspace.selectedTab?.urlString else { return }
+            observedURLs.append(url)
+        }
+    }
 
     func start() async throws {
         try await server.start()
@@ -413,14 +413,6 @@ import WebKit
 
 /// Loopback-only HTTP; transfers retain WebKit's real Cookie/POST context.
 @MainActor private final class DownloadHTTPFixture {
-    // MARK: Lifecycle
-
-    init() throws {
-        let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
-        self.listener = try NWListener(using: parameters)
-    }
-
     // MARK: Internal
 
     struct Request {
@@ -436,6 +428,20 @@ import WebKit
 
     private(set) var requests = [Request]()
 
+    // MARK: Private
+
+    private let listener: NWListener
+    private var connections = [ObjectIdentifier: NWConnection]()
+    private var slowConnections = [NWConnection]()
+    private var startContinuation: CheckedContinuation<Void, Error>?
+    private var startTimeout: Task<Void, Never>?
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        self.listener = try NWListener(using: parameters)
+    }
+
     func start() async throws {
         try await withCheckedThrowingContinuation { continuation in
             startContinuation = continuation
@@ -444,7 +450,8 @@ import WebKit
                     guard let self else { return }
                     switch state {
                     case .ready: finishStarting()
-                    case .failed(let error), .waiting(let error): finishStarting(error: error)
+                    case .failed(let error),
+                         .waiting(let error): finishStarting(error: error)
                     default: break
                     }
                 }
@@ -490,14 +497,6 @@ import WebKit
         slowConnections.removeAll()
         listener.cancel()
     }
-
-    // MARK: Private
-
-    private let listener: NWListener
-    private var connections = [ObjectIdentifier: NWConnection]()
-    private var slowConnections = [NWConnection]()
-    private var startContinuation: CheckedContinuation<Void, Error>?
-    private var startTimeout: Task<Void, Never>?
 
     private func finishStarting(error: Error? = nil) {
         startTimeout?.cancel()
@@ -555,7 +554,7 @@ import WebKit
                     let request = Request(
                         method: String(parts[0]), path: String(parts[1]),
                         cookie: lines.first { $0.lowercased().hasPrefix("cookie:") } ?? "",
-                        body: Data(body.prefix(length))
+                        body: Data(body.prefix(length)),
                     )
                     requests.append(request)
                     respond(to: request, on: connection)
@@ -569,7 +568,7 @@ import WebKit
             response(
                 Data("<title>First</title><a id='next' href='/second'>Next</a>".utf8),
                 type: "text/html",
-                on: connection
+                on: connection,
             )
         case "/second":
             let html = """
@@ -585,17 +584,19 @@ import WebKit
                 Data(html.utf8),
                 type: "text/html",
                 extra: "Set-Cookie: download-token=kept; Path=/; SameSite=Lax\r\n",
-                on: connection
+                on: connection,
             )
         case "/redirect":
             send(
                 Data("HTTP/1.1 302 Found\r\nLocation: /attachment\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                     .utf8),
                 on: connection,
-                close: true
+                close: true,
             )
         case "/inline": response(Self.bytes, type: "text/plain", on: connection)
-        case "/attachment", "/post", "/unknown":
+        case "/attachment",
+             "/post",
+             "/unknown":
             let body = request.path == "/post" ? Self.postBytes : Self.bytes
             let type = request.path == "/unknown" ? "application/x-openarc-test-download" : "text/plain"
             let disposition = request.path == "/unknown"

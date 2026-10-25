@@ -1,3 +1,5 @@
+// BrowserArchiveProjectionWriteTests.swift
+
 import Foundation
 import Testing
 
@@ -21,23 +23,23 @@ import Testing
         var latestTabs = [BrowserTabSessionSnapshotTab(
             id: survivor.id, urlString: survivor.urlString,
             userTitleOverride: "Later survivor edit", placement: survivor.placement,
-            spaceID: survivor.spaceID, lastActivityTimestamp: survivor.lastActivityTimestamp
+            spaceID: survivor.spaceID, lastActivityTimestamp: survivor.lastActivityTimestamp,
         )]
         if restoresEntry {
             latestTabs.append(.init(
                 id: "restored-a", urlString: entry.tab.urlString,
-                userTitleOverride: entry.tab.userTitleOverride, spaceID: "work"
+                userTitleOverride: entry.tab.userTitleOverride, spaceID: "work",
             ))
             try f.store.writeSessionBatch([.init(
                 snapshot: archiveProjectionSnapshot(current, tabs: latestTabs), origin: .local(syncMove: nil),
-                archiveAction: .restore(archiveID: entry.id, tabID: "restored-a")
+                archiveAction: .restore(archiveID: entry.id, tabID: "restored-a"),
             )])
         } else {
             let boundary = try await f.store.archiveClearBoundary()
             let cleared = try await f.store.clearArchive(through: boundary)
             #expect(cleared == 1)
             try f.store.writeSessionBatch([.init(
-                snapshot: archiveProjectionSnapshot(current, tabs: latestTabs), origin: .local(syncMove: nil)
+                snapshot: archiveProjectionSnapshot(current, tabs: latestTabs), origin: .local(syncMove: nil),
             )])
         }
         let later = try f.evidence()
@@ -59,7 +61,7 @@ import Testing
             snapshot: valid.snapshot, origin: valid.origin, archiveAction: valid.archiveAction,
             archiveProjectionSnapshot: archiveProjectionSnapshot(projection, tabs: projection.tabs.map {
                 $0.id == "a" ? .init(id: "a", urlString: "https://example.com/wrong", spaceID: "work") : $0
-            })
+            }),
         )
         let before = try f.evidence()
         #expect(throws: BrowserTabArchiveError.invalidTransition) {
@@ -80,24 +82,24 @@ import Testing
             (.init(
                 snapshot: valid.snapshot,
                 origin: .local(syncMove: nil),
-                archiveProjectionSnapshot: projection
+                archiveProjectionSnapshot: projection,
             ), .invalidTransition),
             (.init(
                 snapshot: valid.snapshot,
                 origin: .local(syncMove: nil),
                 archiveAction: .restore(archiveID: "archive-a", tabID: "b"),
-                archiveProjectionSnapshot: projection
+                archiveProjectionSnapshot: projection,
             ), .invalidTransition),
             (.init(
                 snapshot: valid.snapshot,
                 origin: .remoteProjection,
-                archiveProjectionSnapshot: projection
+                archiveProjectionSnapshot: projection,
             ), .requiresLocalWrite),
             (.init(
                 snapshot: valid.snapshot,
                 origin: .remoteProjection,
                 archiveAction: valid.archiveAction,
-                archiveProjectionSnapshot: projection
+                archiveProjectionSnapshot: projection,
             ), .requiresLocalWrite),
         ]
         let before = try f.evidence()
@@ -111,17 +113,17 @@ import Testing
     @Test func normalizationBytesCountTowardTheSameBoundedFailureBufferAction() throws {
         let snapshot = BrowserTabSessionSnapshot(tabs: [])
         let entry = BrowserTabArchiveEntry(
-            id: "archive-a", tab: .init(id: "a", urlString: "https://example.com/a"), archivedAt: 1
+            id: "archive-a", tab: .init(id: "a", urlString: "https://example.com/a"), archivedAt: 1,
         )
         let ordinary = BrowserSessionWrite(
             snapshot: snapshot,
             origin: .local(syncMove: nil),
-            archiveAction: .insert(entry)
+            archiveAction: .insert(entry),
         )
         let projection = BrowserTabSessionSnapshot(tabs: [entry.tab])
         let normalized = BrowserSessionWrite(
             snapshot: snapshot, origin: ordinary.origin, archiveAction: ordinary.archiveAction,
-            archiveProjectionSnapshot: projection
+            archiveProjectionSnapshot: projection,
         )
         let encoder = JSONEncoder()
         let originalBytes = try encoder.encode(snapshot).count + encoder.encode(BrowserTabArchiveAction.insert(entry))
@@ -147,19 +149,19 @@ import Testing
     let originalTab = try #require(original.tabs.first { $0.id == "a" })
     let liveTab = BrowserTabSessionSnapshotTab(
         id: "a", urlString: "https://example.com/live-a", userTitleOverride: originalTab.userTitleOverride,
-        spaceID: originalTab.spaceID, lastActivityTimestamp: originalTab.lastActivityTimestamp
+        spaceID: originalTab.spaceID, lastActivityTimestamp: originalTab.lastActivityTimestamp,
     )
     let projection = archiveProjectionSnapshot(original, tabs: original.tabs.map { $0.id == "a" ? liveTab : $0 })
     return BrowserSessionWrite(
         snapshot: archiveProjectionSnapshot(original, tabs: original.tabs.filter { $0.id != "a" }),
         origin: .local(syncMove: nil),
         archiveAction: .insert(.init(id: "archive-a", tab: liveTab, archivedAt: f.clock.now, title: "Live page")),
-        archiveProjectionSnapshot: projection
+        archiveProjectionSnapshot: projection,
     )
 }
 
 private func archiveProjectionSnapshot(
-    _ snapshot: BrowserTabSessionSnapshot, tabs: [BrowserTabSessionSnapshotTab]
+    _ snapshot: BrowserTabSessionSnapshot, tabs: [BrowserTabSessionSnapshotTab],
 ) -> BrowserTabSessionSnapshot {
     .init(version: snapshot.version, spaces: snapshot.spaces, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: tabs)
 }

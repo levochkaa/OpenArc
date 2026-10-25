@@ -1,3 +1,5 @@
+// BrowserTooltipCoordinatorTests.swift
+
 import Foundation
 import Testing
 
@@ -7,7 +9,7 @@ import Testing
         tooltipSize: CGSize(width: 140, height: 40),
         containerSize: CGSize(width: 320, height: 200),
         placement: .belowLeading,
-        viewportPadding: 8
+        viewportPadding: 8,
     )
 
     #expect(topLeft.x == 172)
@@ -20,7 +22,7 @@ import Testing
         tooltipSize: CGSize(width: 140, height: 40),
         containerSize: CGSize(width: 320, height: 200),
         placement: .belowLeading,
-        viewportPadding: 8
+        viewportPadding: 8,
     )
 
     #expect(topLeft.x == 8)
@@ -34,7 +36,7 @@ import Testing
         containerSize: CGSize(width: 320, height: 200),
         placement: .aboveCapsule,
         verticalGap: 8,
-        viewportPadding: 8
+        viewportPadding: 8,
     )
 
     #expect(topLeft.x == 80)
@@ -46,7 +48,7 @@ import Testing
         windowSize: CGSize(width: 800, height: 600),
         windowScreenFrame: CGRect(x: 520, y: 120, width: 800, height: 600),
         screenVisibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 900),
-        isWindowFullscreen: false
+        isWindowFullscreen: false,
     )
 
     #expect(viewport.size == CGSize(width: 1440, height: 900))
@@ -58,7 +60,7 @@ import Testing
         windowSize: CGSize(width: 1440, height: 900),
         windowScreenFrame: CGRect(x: 0, y: 0, width: 1440, height: 900),
         screenVisibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 875),
-        isWindowFullscreen: true
+        isWindowFullscreen: true,
     )
 
     #expect(viewport.size == CGSize(width: 1440, height: 900))
@@ -69,7 +71,7 @@ import Testing
     let size = BrowserTooltipMeasuredSizeResolver.resolvedSize(
         idealSize: CGSize(width: 184, height: 42),
         constrainedSize: CGSize(width: 360, height: 42),
-        maximumWidth: 360
+        maximumWidth: 360,
     )
 
     #expect(size == CGSize(width: 184, height: 42))
@@ -79,7 +81,7 @@ import Testing
     let size = BrowserTooltipMeasuredSizeResolver.resolvedSize(
         idealSize: CGSize(width: 520, height: 42),
         constrainedSize: CGSize(width: 316, height: 64),
-        maximumWidth: 360
+        maximumWidth: 360,
     )
 
     #expect(size == CGSize(width: 316, height: 64))
@@ -89,7 +91,7 @@ import Testing
 @MainActor func tooltipAppearsOnlyAfterContinuousHoverDelay() async {
     let coordinator = BrowserTooltipCoordinator(
         activationDelayNanoseconds: 20_000_000,
-        cooldownDelayNanoseconds: 10_000_000
+        cooldownDelayNanoseconds: 10_000_000,
     )
     let tooltipID = UUID()
 
@@ -103,7 +105,7 @@ import Testing
 @MainActor func warmStateMakesNextTooltipAppearImmediately() async {
     let coordinator = BrowserTooltipCoordinator(
         activationDelayNanoseconds: 20_000_000,
-        cooldownDelayNanoseconds: 30_000_000
+        cooldownDelayNanoseconds: 30_000_000,
     )
     let firstTooltipID = UUID()
     let secondTooltipID = UUID()
@@ -121,7 +123,7 @@ import Testing
 @MainActor func leavingAllTooltipTargetsResetsWarmStateAfterCooldown() async {
     let coordinator = BrowserTooltipCoordinator(
         activationDelayNanoseconds: 20_000_000,
-        cooldownDelayNanoseconds: 20_000_000
+        cooldownDelayNanoseconds: 20_000_000,
     )
     let firstTooltipID = UUID()
     let secondTooltipID = UUID()
@@ -142,7 +144,7 @@ import Testing
     _ expectedTooltipID: UUID?,
     in coordinator: BrowserTooltipCoordinator,
     timeoutNanoseconds: UInt64 = 500_000_000,
-    pollIntervalNanoseconds: UInt64 = 5_000_000
+    pollIntervalNanoseconds: UInt64 = 5_000_000,
 ) async {
     var elapsedNanoseconds: UInt64 = 0
 
@@ -158,7 +160,7 @@ import Testing
 @MainActor func staleExitDoesNotCancelAnotherTargetsActivation() async {
     let coordinator = BrowserTooltipCoordinator(
         activationDelayNanoseconds: 20_000_000,
-        cooldownDelayNanoseconds: 10_000_000
+        cooldownDelayNanoseconds: 10_000_000,
     )
     let first = UUID()
     let second = UUID()

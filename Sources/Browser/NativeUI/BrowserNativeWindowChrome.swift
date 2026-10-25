@@ -1,3 +1,5 @@
+// BrowserNativeWindowChrome.swift
+
 import AppKit
 
 // MARK: - BrowserChromeBackgroundMode
@@ -7,20 +9,6 @@ enum BrowserChromeBackgroundMode: Hashable { case blurred, black }
 // MARK: - BrowserChromeBackgroundNSView
 
 final class BrowserChromeBackgroundNSView: NSView {
-    // MARK: Lifecycle
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        addSubview(effect)
-        addSubview(tintView)
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        tintView.wantsLayer = true
-        update()
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
-
     // MARK: Internal
 
     var mode = BrowserChromeBackgroundMode.blurred { didSet { update() } }
@@ -36,6 +24,23 @@ final class BrowserChromeBackgroundNSView: NSView {
             update()
         }
     }
+
+    // MARK: Private
+
+    private let effect = NSVisualEffectView()
+    private let tintView = NSView()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        addSubview(effect)
+        addSubview(tintView)
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        tintView.wantsLayer = true
+        update()
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
 
     override func hitTest(_: NSPoint) -> NSView? { nil }
     override func layout() { super.layout()
@@ -53,11 +58,6 @@ final class BrowserChromeBackgroundNSView: NSView {
             bounds.fill()
         }
     }
-
-    // MARK: Private
-
-    private let effect = NSVisualEffectView()
-    private let tintView = NSView()
 
     private func update() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -92,7 +92,7 @@ final class BrowserNativeWindowMargins: NSView {
         leading: CGFloat,
         top: CGFloat,
         trailing: CGFloat,
-        bottom: CGFloat
+        bottom: CGFloat,
     ) {
         let width = max(bounds.width - blockedLeadingWidth - blockedTrailingWidth, 0)
         let trailingEdge = max(bounds.width - blockedTrailingWidth, 0)
@@ -112,6 +112,10 @@ final class BrowserNativeSidebarRevealEdge: NSView {
 
     var onHoverChange: (Bool) -> Void = { _ in }
 
+    // MARK: Private
+
+    private var tracking: NSTrackingArea?
+
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
     override func updateTrackingAreas() {
@@ -122,7 +126,7 @@ final class BrowserNativeSidebarRevealEdge: NSView {
         let area = NSTrackingArea(
             rect: .zero,
             options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
-            owner: self
+            owner: self,
         )
         addTrackingArea(area)
         tracking = area
@@ -130,10 +134,6 @@ final class BrowserNativeSidebarRevealEdge: NSView {
 
     override func mouseEntered(with _: NSEvent) { onHoverChange(true) }
     override func mouseExited(with _: NSEvent) { onHoverChange(false) }
-
-    // MARK: Private
-
-    private var tracking: NSTrackingArea?
 }
 
 extension BrowserFindBarNSView {
@@ -151,7 +151,7 @@ extension BrowserFindBarNSView {
             isPresented: model.isFindBarPresented,
             canStep: model.canStepThroughFindMatches,
             focusRequestID: model.findBarFocusRequest,
-            blockedLeadingInset: blockedLeadingInset
+            blockedLeadingInset: blockedLeadingInset,
         )
     }
 }

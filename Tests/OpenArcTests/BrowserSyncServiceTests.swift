@@ -1,3 +1,5 @@
+// BrowserSyncServiceTests.swift
+
 import Foundation
 import Testing
 
@@ -39,10 +41,11 @@ import Testing
 
 @Test(arguments: [false, true])
 @MainActor func inactiveRuntimeDiscardsInFlightPullAndBothKindsOfStatusCallbacks(fails: Bool) async throws {
-    var successes = [BrowserSyncFailurePhase](), failures = [BrowserSyncFailurePhase]()
+    var successes = [BrowserSyncFailurePhase]()
+    var failures = [BrowserSyncFailurePhase]()
     let h = try await SyncServiceHarness(
         errorReporter: { _, phase in failures.append(phase) },
-        operationDidSucceed: { successes.append($0) }
+        operationDidSucceed: { successes.append($0) },
     )
     defer { h.cleanup() }
     h.persist(syncServiceSnapshot(tabID: "retained"))
@@ -273,7 +276,7 @@ import Testing
         0: BrowserSyncPullResponse(cursor: 500, events: first),
         500: BrowserSyncPullResponse(
             cursor: 501,
-            events: [syncServiceUpsert(id: "remote", title: "latest", sequence: 501)]
+            events: [syncServiceUpsert(id: "remote", title: "latest", sequence: 501)],
         ),
     ]
     let session = try #require(h.auth.session)
@@ -433,7 +436,7 @@ import Testing
             events: [syncServiceUpsert(id: "tab", title: "semantic", sequence: 3)],
             outcomes: mutation.operations.indices.map {
                 BrowserSyncSemanticOutcome(operationIndex: $0, status: .applied, reason: nil)
-            }
+            },
         )
     }
     h.service.schedulePull()
@@ -490,7 +493,7 @@ import Testing
                 ? []
                 : mutation.operations.indices.map {
                     BrowserSyncSemanticOutcome(operationIndex: $0, status: .applied, reason: nil)
-                }
+                },
         )
     }
     let snapshot = syncServiceSnapshot(tabID: "tab", title: "pending")
@@ -517,7 +520,7 @@ import Testing
             events: [syncServiceUpsert(id: "tab", title: "canonical", sequence: 3)],
             outcomes: mutation.operations.indices.map {
                 BrowserSyncSemanticOutcome(operationIndex: $0, status: .rejected, reason: "missing")
-            }
+            },
         )
     }
     h.persist(syncServiceSnapshot(tabID: "tab", title: "rejected local edit"))
@@ -534,7 +537,7 @@ import Testing
     let h = try await SyncServiceHarness()
     defer { h.cleanup() }
     h.remote.responsePages[0] = BrowserSyncPullResponse(
-        cursor: 500, events: (1...500).map { syncServiceSpace(sequence: $0) }, supportedPushVersions: [2, 3]
+        cursor: 500, events: (1...500).map { syncServiceSpace(sequence: $0) }, supportedPushVersions: [2, 3],
     )
     h.remote.responsePages[500] = BrowserSyncPullResponse(cursor: 500, events: [], supportedPushVersions: [2])
     h.service.schedulePull()
@@ -572,11 +575,11 @@ import Testing
     h.remote.folderResponsePages[0] = BrowserSyncPullResponse(
         cursor: 500, events: [syncServiceSpace(sequence: 1)] + (2...500).map {
             syncServiceFolder(sequence: $0, title: "historical")
-        }, protocolVersion: 4, supportedPushVersions: [2, 3, 4]
+        }, protocolVersion: 4, supportedPushVersions: [2, 3, 4],
     )
     h.remote.folderResponsePages[500] = BrowserSyncPullResponse(
         cursor: 501, events: [syncServiceFolder(sequence: 501, title: "latest")],
-        protocolVersion: 4, supportedPushVersions: [2, 3, 4]
+        protocolVersion: 4, supportedPushVersions: [2, 3, 4],
     )
     h.service.schedulePull()
     await h.service.waitForPendingOperations()
@@ -644,7 +647,7 @@ import Testing
                 ? []
                 : mutation.operations.indices.map {
                     BrowserSyncSemanticOutcome(operationIndex: $0, status: .applied, reason: nil)
-                }
+                },
         )
     }
     let snapshot = syncServiceSnapshot(tabID: "pending")
@@ -662,20 +665,32 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
     BrowserSyncEvent(
         serverSeq: sequence, deviceID: "remote", entityType: "folder", entityID: "folder", op: "upsert",
         data: .folder(BrowserSyncEventFolderData(
-            id: "folder", spaceID: "space", parentFolderID: nil, title: title, systemImageName: nil, rank: 0
-        )), createdAt: "2026-10-03T00:00:00Z"
+            id: "folder", spaceID: "space", parentFolderID: nil, title: title, systemImageName: nil, rank: 0,
+        )), createdAt: "2026-10-03T00:00:00Z",
     )
 }
 
 // MARK: - SyncServiceHarness
 
 @MainActor private final class SyncServiceHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directoryURL: URL
+    let owner = BrowserSyncOwner(baseURL: syncServiceURL("https://sync.example"), userID: "account-a")
+    let store: BrowserSQLiteSessionStore
+    let remote = SyncServiceRemote()
+    let auth = SyncServiceAuthStore()
+    let applier = SyncServiceSnapshotApplier()
+    var service: BrowserSyncService!
+    let errorReporter: BrowserSyncErrorReporter
+    let operationDidSucceed: @MainActor (BrowserSyncFailurePhase) -> Void
+
+    var databaseURL: URL { directoryURL.appendingPathComponent("Browser.sqlite") }
 
     init(
         bindOwner: Bool = true, runtimeActive: Bool = true,
         errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in },
-        operationDidSucceed: @escaping @MainActor (BrowserSyncFailurePhase) -> Void = { _ in }
+        operationDidSucceed: @escaping @MainActor (BrowserSyncFailurePhase) -> Void = { _ in },
     ) async throws {
         self.errorReporter = errorReporter
         self.operationDidSucceed = operationDidSucceed
@@ -695,22 +710,8 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
         applier.snapshots.removeAll()
     }
 
-    // MARK: Internal
-
-    let directoryURL: URL
-    let owner = BrowserSyncOwner(baseURL: syncServiceURL("https://sync.example"), userID: "account-a")
-    let store: BrowserSQLiteSessionStore
-    let remote = SyncServiceRemote()
-    let auth = SyncServiceAuthStore()
-    let applier = SyncServiceSnapshotApplier()
-    var service: BrowserSyncService!
-    let errorReporter: BrowserSyncErrorReporter
-    let operationDidSucceed: @MainActor (BrowserSyncFailurePhase) -> Void
-
-    var databaseURL: URL { directoryURL.appendingPathComponent("Browser.sqlite") }
-
     func makeService(
-        store: BrowserSQLiteSessionStore, retryDelay: Duration? = nil, runtimeActive: Bool = true
+        store: BrowserSQLiteSessionStore, retryDelay: Duration? = nil, runtimeActive: Bool = true,
     ) -> BrowserSyncService {
         BrowserSyncService(
             localStore: store,
@@ -721,7 +722,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
             retryDelay: retryDelay,
             runtimeActive: runtimeActive,
             errorReporter: errorReporter,
-            operationDidSucceed: operationDidSucceed
+            operationDidSucceed: operationDidSucceed,
         )
     }
 
@@ -773,6 +774,11 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
     var onPush: (Int) -> Void = { _ in }
     private(set) var maximumConcurrentRequests = 0
 
+    // MARK: Private
+
+    private var activeRequests = 0
+    private var receipts = [String: BrowserSyncPushResponse]()
+
     func push(mutation: BrowserSyncMutation, authSession: BrowserAuthSession) async throws -> BrowserSyncPushResponse {
         beginRequest()
         defer { activeRequests -= 1 }
@@ -789,7 +795,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
             receipt = BrowserSyncPushResponse(
                 cursor: pushCursorOverride ?? events.count,
                 events: Array(events.dropFirst(start)),
-                mutationID: mutation.id
+                mutationID: mutation.id,
             )
             receipts[mutation.id] = receipt
         }
@@ -803,13 +809,13 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
         return BrowserSyncPushResponse(
             cursor: receipt.cursor,
             events: receipt.events,
-            mutationID: receiptIDOverride ?? mutation.id
+            mutationID: receiptIDOverride ?? mutation.id,
         )
     }
 
     func push(
         mutation: BrowserSyncSemanticMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) async throws -> BrowserSyncSemanticPushResponse {
         beginRequest()
         defer { activeRequests -= 1 }
@@ -830,7 +836,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
         let page = Array(events.filter { $0.serverSeq > cursor }.prefix(500))
         let response = responsePages[cursor] ?? BrowserSyncPullResponse(
             cursor: page.last?.serverSeq ?? cursor, events: page, protocolVersion: protocolVersion,
-            supportedPushVersions: supportedPushVersions
+            supportedPushVersions: supportedPushVersions,
         )
         pullStarted.open()
         await pullGate?.wait()
@@ -843,7 +849,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
     func pull(
         cursor: Int,
         protocolVersion: Int,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncPullResponse {
         guard protocolVersion == 4 else { return try await pull(cursor: cursor, authSession: authSession) }
         beginRequest()
@@ -856,7 +862,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
         let page = Array(events.filter { $0.serverSeq > cursor }.prefix(500))
         let response = folderResponsePages[cursor] ?? BrowserSyncPullResponse(
             cursor: page.last?.serverSeq ?? cursor, events: page, protocolVersion: 4,
-            supportedPushVersions: supportedPushVersions
+            supportedPushVersions: supportedPushVersions,
         )
         folderPullStarted.open()
         await folderPullGate?.wait()
@@ -865,7 +871,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
 
     func push(
         mutation: BrowserSyncFolderMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncFolderPushResponse {
         beginRequest()
         defer { activeRequests -= 1 }
@@ -876,11 +882,6 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
         events += response.events
         return response
     }
-
-    // MARK: Private
-
-    private var activeRequests = 0
-    private var receipts = [String: BrowserSyncPushResponse]()
 
     private func beginRequest() {
         activeRequests += 1
@@ -907,6 +908,11 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
 // MARK: - SyncServiceGate
 
 @MainActor private final class SyncServiceGate {
+    // MARK: Private
+
+    private var isOpen = false
+    private var waiters = [CheckedContinuation<Void, Never>]()
+
     // MARK: Internal
 
     func wait() async {
@@ -920,11 +926,6 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
         waiters.removeAll()
         pending.forEach { $0.resume() }
     }
-
-    // MARK: Private
-
-    private var isOpen = false
-    private var waiters = [CheckedContinuation<Void, Never>]()
 }
 
 private func syncServiceURL(_ value: String) -> URL { URL(string: value)! }
@@ -934,7 +935,7 @@ private func syncServiceSession(userID: String) -> BrowserAuthSession {
         userID: userID,
         userEmail: nil,
         deviceID: "device-\(userID)",
-        serverURL: syncServiceURL("https://sync.example")
+        serverURL: syncServiceURL("https://sync.example"),
     )
 }
 
@@ -945,8 +946,8 @@ private func syncServiceSnapshot(tabID: String? = nil, title: String? = nil) -> 
             id: $0,
             urlString: "https://example.com/\($0)",
             userTitleOverride: title,
-            spaceID: "space"
-        )] } ?? []
+            spaceID: "space",
+        )] } ?? [],
     )
 }
 
@@ -958,7 +959,7 @@ private func syncServiceDelete(id: String, sequence: Int) -> BrowserSyncEvent {
         entityID: id,
         op: "delete",
         data: .deleted(id: id),
-        createdAt: "2026-10-03T00:00:00Z"
+        createdAt: "2026-10-03T00:00:00Z",
     )
 }
 
@@ -975,9 +976,9 @@ private func syncServiceSpace(sequence: Int) -> BrowserSyncEvent {
             systemImageName: "briefcase",
             rank: 0,
             isPinnedSectionCollapsed: false,
-            selectedTabID: nil
+            selectedTabID: nil,
         )),
-        createdAt: "2026-10-03T00:00:00Z"
+        createdAt: "2026-10-03T00:00:00Z",
     )
 }
 
@@ -998,9 +999,9 @@ private func syncServiceUpsert(id: String, title: String, sequence: Int) -> Brow
             title: nil,
             userTitleOverride: title,
             faviconURLString: nil,
-            lastActivityAt: nil
+            lastActivityAt: nil,
         )),
-        createdAt: "2026-10-03T00:00:00Z"
+        createdAt: "2026-10-03T00:00:00Z",
     )
 }
 
@@ -1015,7 +1016,7 @@ private func syncServiceEvent(_ change: BrowserSyncChange, sequence: Int) throws
             systemImageName: space.systemImageName,
             rank: space.rank,
             isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-            selectedTabID: space.selectedTabID
+            selectedTabID: space.selectedTabID,
         ))
     } else if let tab = change.tabData {
         data = .tab(BrowserSyncEventTabData(
@@ -1028,7 +1029,7 @@ private func syncServiceEvent(_ change: BrowserSyncChange, sequence: Int) throws
             title: tab.title,
             userTitleOverride: tab.userTitleOverride,
             faviconURLString: tab.faviconURLString,
-            lastActivityAt: tab.lastActivityAt
+            lastActivityAt: tab.lastActivityAt,
         ))
     } else {
         throw BrowserRemoteSyncError.invalidMutationReceipt
@@ -1040,6 +1041,6 @@ private func syncServiceEvent(_ change: BrowserSyncChange, sequence: Int) throws
         entityID: change.entityID,
         op: change.op.rawValue,
         data: data,
-        createdAt: "2026-10-03T00:00:00Z"
+        createdAt: "2026-10-03T00:00:00Z",
     )
 }

@@ -1,3 +1,5 @@
+// BrowserNativeSessionRecoveryTests.swift
+
 import AppKit
 import Testing
 
@@ -7,7 +9,8 @@ import Testing
 
     @Test func recoveryControlsRemainVisibleAndOnlyOfferValidActions() throws {
         let view = BrowserSessionPersistenceStatusView()
-        var retries = 0, exports = 0
+        var retries = 0
+        var exports = 0
         view.onRetry = { retries += 1 }
         view.onSaveCopy = { exports += 1 }
         let retry = try #require(descendants(view)

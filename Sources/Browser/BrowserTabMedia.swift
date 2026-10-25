@@ -1,10 +1,12 @@
+// BrowserTabMedia.swift
+
 import Foundation
 
 // MARK: - BrowserTabMediaState
 
 /// What a tab's pages are playing, as their renderer reports it: CEF has no
 /// audible signal. Present while media plays or can resume.
-struct BrowserTabMediaState: Equatable, Sendable {
+struct BrowserTabMediaState: Equatable {
     var isPlaying: Bool
     /// The playing media has sound: unmuted, with volume and an audio track.
     var audible: Bool
@@ -19,7 +21,7 @@ struct BrowserTabMediaState: Equatable, Sendable {
 // MARK: - BrowserMiniPlayerItem
 
 /// What a mini player shows for one tab.
-struct BrowserMiniPlayerItem: Equatable, Sendable {
+struct BrowserMiniPlayerItem: Equatable {
     let tabID: String
     let title: String
     let faviconURL: URL?
@@ -32,7 +34,7 @@ struct BrowserMiniPlayerItem: Equatable, Sendable {
 
 // MARK: - BrowserMediaAction
 
-enum BrowserMediaAction: String, Sendable {
+enum BrowserMediaAction: String {
     case play
     case pause
     case previousTrack = "previoustrack"
@@ -80,7 +82,7 @@ extension BrowserChromeModel {
                 isPlaying: state.isPlaying,
                 hasPreviousTrack: state.hasPreviousTrack,
                 hasNextTrack: state.hasNextTrack,
-                isMuted: isTabMuted(id: id)
+                isMuted: isTabMuted(id: id),
             )
         }
     }

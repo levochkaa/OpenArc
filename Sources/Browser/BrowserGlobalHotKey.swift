@@ -1,3 +1,5 @@
+// BrowserGlobalHotKey.swift
+
 import AppKit
 import Carbon.HIToolbox
 
@@ -7,7 +9,16 @@ import Carbon.HIToolbox
 /// Option-Command-N for the small window. Carbon hot keys need no Accessibility
 /// permission; the system delivers them on the main thread.
 @MainActor final class BrowserGlobalHotKey {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    /// 'TBHK'
+    private static let signature: OSType = 0x5442_484B
+    private static var nextIdentifier: UInt32 = 0
+
+    private let action: () -> Void
+    private var identifier: UInt32 = 0
+    private var hotKey: EventHotKeyRef?
+    private var handler: EventHandlerRef?
 
     /// Nil when another app already holds the key combination.
     init?(keyCode: UInt32, carbonModifiers: UInt32, action: @escaping () -> Void) {
@@ -25,7 +36,7 @@ import Carbon.HIToolbox
                     nil,
                     MemoryLayout<EventHotKeyID>.size,
                     nil,
-                    &pressed
+                    &pressed,
                 )
                 let hotKey = Unmanaged<BrowserGlobalHotKey>.fromOpaque(userData).takeUnretainedValue()
                 return MainActor.assumeIsolated {
@@ -39,7 +50,7 @@ import Carbon.HIToolbox
             1,
             &eventType,
             Unmanaged.passUnretained(self).toOpaque(),
-            &handler
+            &handler,
         )
         Self.nextIdentifier += 1
         self.identifier = Self.nextIdentifier
@@ -49,7 +60,7 @@ import Carbon.HIToolbox
             EventHotKeyID(signature: Self.signature, id: identifier),
             GetApplicationEventTarget(),
             0,
-            &hotKey
+            &hotKey,
         )
         guard handlerStatus == noErr, registerStatus == noErr else {
             unregister()
@@ -75,17 +86,6 @@ import Carbon.HIToolbox
         let modifiers = flags.reduce(UInt32(0)) { $0 | (shortcut.modifiers.contains($1.0) ? UInt32($1.1) : 0) }
         return BrowserGlobalHotKey(keyCode: UInt32(keyCode), carbonModifiers: modifiers, action: action)
     }
-
-    // MARK: Private
-
-    /// 'TBHK'
-    private static let signature: OSType = 0x5442_484B
-    private static var nextIdentifier: UInt32 = 0
-
-    private let action: () -> Void
-    private var identifier: UInt32 = 0
-    private var hotKey: EventHotKeyRef?
-    private var handler: EventHandlerRef?
 
     private func unregister() {
         if let hotKey {

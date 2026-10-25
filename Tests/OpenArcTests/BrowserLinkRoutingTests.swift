@@ -1,3 +1,5 @@
+// BrowserLinkRoutingTests.swift
+
 import Foundation
 import Testing
 
@@ -30,7 +32,7 @@ import Testing
         let space = BrowserLinkRoute(
             match: .site,
             pattern: "google.com",
-            destination: .space(profileID: "Default", spaceID: "work")
+            destination: .space(profileID: "Default", spaceID: "work"),
         )
         let routes = [contains, space]
         #expect(try BrowserLinkRouter
@@ -46,7 +48,7 @@ import Testing
             BrowserLinkRoute(
                 pattern: "figma.com",
                 destination: .space(profileID: "Work", spaceID: "s"),
-                spaceTitle: "Design"
+                spaceTitle: "Design",
             ),
             BrowserLinkRoute(match: .contains, pattern: "zoom", destination: .littleWindow),
         ]
@@ -86,7 +88,7 @@ import Testing
         for (first, second, same) in pairs {
             #expect(
                 try BrowserSite.isSameSite(#require(URL(string: first)), #require(URL(string: second))) == same,
-                "\(first) \(second)"
+                "\(first) \(second)",
             )
         }
     }
@@ -109,7 +111,7 @@ import Testing
         f.driver.emitUpdate(id: loaded, urlString: "https://other.com/page")
         #expect(
             !f.model.peeksNavigation(fromTabWithID: loaded, toURLString: "https://a.example/home"),
-            "Back home stays"
+            "Back home stays",
         )
         #expect(!f.model.peeksNavigation(fromTabWithID: loaded, toURLString: "https://other.com/next"))
         #expect(f.model.peeksNavigation(fromTabWithID: loaded, toURLString: "https://third.com"))

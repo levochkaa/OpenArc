@@ -1,3 +1,5 @@
+// BrowserDesktopArchiveHTTPIntegrationTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -13,12 +15,12 @@ extension BrowserSyncHTTPIntegrationTests {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
         let remote = try BrowserRemoteSyncClient(
-            configuration: #require(BrowserSyncConfiguration(baseURL: fixture.baseURL)), session: session
+            configuration: #require(BrowserSyncConfiguration(baseURL: fixture.baseURL)), session: session,
         )
         let auth = account.devices.map { device in
             BrowserAuthSession(
                 accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-                deviceID: device.deviceID, serverURL: fixture.baseURL
+                deviceID: device.deviceID, serverURL: fixture.baseURL,
             )
         }
         let seed = BrowserSyncFolderMutation(id: UUID().uuidString, operations: [
@@ -26,12 +28,12 @@ extension BrowserSyncHTTPIntegrationTests {
             .createTab(id: "anchor", data: .init(
                 spaceID: "source", placement: .spacePinned, urlString: "https://desktop-archive.example/anchor",
                 pinnedURLString: "https://desktop-archive.example/home",
-                lastActivityAt: "2030-03-17T17:46:40Z"
+                lastActivityAt: "2030-03-17T17:46:40Z",
             )),
             .createTab(id: "expired", data: .init(
                 spaceID: "source", placement: .temporary, urlString: "https://desktop-archive.example/saved",
                 title: "Canonical page title", userTitleOverride: "Saved title",
-                lastActivityAt: "2000-01-01T00:00:00Z"
+                lastActivityAt: "2000-01-01T00:00:00Z",
             )),
         ])
         _ = try await remote.push(mutation: seed, authSession: auth[0])
@@ -110,7 +112,7 @@ extension BrowserSyncHTTPIntegrationTests {
         try #require(restoreQueue.count == 1 && restoreQueue[0].protocolVersion == 4)
         let frozen = try desktopArchiveHTTPOutbox(databaseURL)
         let committedBeforeCallback = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
-        #expect(committedBeforeCallback.loadSnapshot()?.tabs.filter { $0.id == restoredID }.count == 1)
+        #expect(committedBeforeCallback.loadSnapshot()?.tabs.count(where: { $0.id == restoredID }) == 1)
         #expect(try committedBeforeCallback.loadArchivePage().entries.isEmpty)
         #expect(live.model.restoreArchivedTab(id: archive.id) == nil)
         #expect(live.driver.createdTabRequests.count == requestsBeforeRestore.count + 1)
@@ -152,14 +154,14 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(receipt == replay && receipt.outcomes.first?.status == .applied)
         let full = try await remote.pull(cursor: 0, protocolVersion: 5, authSession: auth[0])
         let projected = try reopened.store.completeExpirySyncBootstrap(
-            events: full.events, cursor: full.cursor, for: reopened.owner
+            events: full.events, cursor: full.cursor, for: reopened.owner,
         )
         reopenedModel.model.applyRemoteSyncSnapshot(projected)
         reopenedModel.driver.flushPendingCreateEvents()
         await reopened.service.waitForPendingOperations()
         await second.pull()
         #expect(try reopened.store.loadArchivePage().entries.isEmpty)
-        #expect(reopenedModel.model.tabs.filter { $0.syncID == restoredID }.count == 1)
+        #expect(reopenedModel.model.tabs.count(where: { $0.syncID == restoredID }) == 1)
         #expect(reopenedModel.model.tabs.contains { $0.syncID == "expired" } == false)
         let final = try await fixture.inspect(account)
         #expect(final.eventCount == afterRetry.eventCount && final.receiptCount == afterRetry.receiptCount)
@@ -170,7 +172,7 @@ extension BrowserSyncHTTPIntegrationTests {
         reopenedModel.close()
         let finalStore = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         #expect(try finalStore.loadArchivePage().entries.isEmpty)
-        #expect(finalStore.loadSnapshot()?.tabs.filter { $0.id == restoredID }.count == 1)
+        #expect(finalStore.loadSnapshot()?.tabs.count(where: { $0.id == restoredID }) == 1)
         #expect(finalStore.loadSnapshot()?.tabs.contains { $0.id == "expired" } == false)
         try await fixture.complete(account)
     }
@@ -179,7 +181,17 @@ extension BrowserSyncHTTPIntegrationTests {
 // MARK: - DesktopArchiveHTTPModel
 
 @MainActor private final class DesktopArchiveHTTPModel {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+
+    // MARK: Private
+
+    private let profile: SyncHTTPProfile
+    private let suite = "DesktopArchiveHTTPModel.\(UUID())"
+    private let defaults: UserDefaults
+    private var closed = false
 
     init(profile: SyncHTTPProfile) throws {
         self.profile = profile
@@ -191,17 +203,12 @@ extension BrowserSyncHTTPIntegrationTests {
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: profile.service,
             dateProvider: { Date(timeIntervalSince1970: 1_900_000_000) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
         profile.service.setSnapshotApplier(model)
     }
-
-    // MARK: Internal
-
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
 
     func close() {
         guard !closed else { return }
@@ -211,13 +218,6 @@ extension BrowserSyncHTTPIntegrationTests {
         model.prepareForTermination()
         defaults.removePersistentDomain(forName: suite)
     }
-
-    // MARK: Private
-
-    private let profile: SyncHTTPProfile
-    private let suite = "DesktopArchiveHTTPModel.\(UUID())"
-    private let defaults: UserDefaults
-    private var closed = false
 }
 
 @MainActor private func desktopArchiveHTTPSQL(_ url: URL, _ sql: String) throws {

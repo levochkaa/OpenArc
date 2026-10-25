@@ -1,8 +1,26 @@
+// BrowserNativeMaterialPanel.swift
+
 import AppKit
 
 /// Shared material, outline and shadow for floating browser controls.
 final class BrowserNativeMaterialPanel: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    let contentView = BrowserNativeSurface()
+
+    var cornerRadius: CGFloat = 12 { didSet { updateStyle() } }
+    var fillColor = BrowserChromeColors.commandBarPanelTint { didSet { updateStyle() } }
+    var borderColor = BrowserChromeColors.commandBarPanelBorder { didSet { updateStyle() } }
+    var shadowOpacity: CGFloat = 0.38 { didSet { updateStyle() } }
+    var shadowRadius: CGFloat = BrowserChromeLayout.commandBarShadowRadius { didSet { updateStyle() } }
+    var shadowOffset: CGFloat = 18 { didSet { updateStyle() } }
+
+    // MARK: Private
+
+    private let clip = NSView()
+    private let material = NSVisualEffectView()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -21,19 +39,6 @@ final class BrowserNativeMaterialPanel: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    let contentView = BrowserNativeSurface()
-
-    var cornerRadius: CGFloat = 12 { didSet { updateStyle() } }
-    var fillColor = BrowserChromeColors.commandBarPanelTint { didSet { updateStyle() } }
-    var borderColor = BrowserChromeColors.commandBarPanelBorder { didSet { updateStyle() } }
-    var shadowOpacity: CGFloat = 0.38 { didSet { updateStyle() } }
-    var shadowRadius: CGFloat = BrowserChromeLayout.commandBarShadowRadius { didSet { updateStyle() } }
-    var shadowOffset: CGFloat = 18 { didSet { updateStyle() } }
-
     override func layout() {
         super.layout()
         clip.frame = bounds
@@ -42,11 +47,6 @@ final class BrowserNativeMaterialPanel: NSView {
     }
 
     override func mouseDown(with _: NSEvent) {}
-
-    // MARK: Private
-
-    private let clip = NSView()
-    private let material = NSVisualEffectView()
 
     private func updateStyle() {
         clip.layer?.cornerRadius = cornerRadius

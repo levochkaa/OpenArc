@@ -1,9 +1,13 @@
+// BrowserNativeControls.swift
+
 import AppKit
 
 // MARK: - BrowserActionButton
 
 final class BrowserActionButton: NSButton {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onAction: () -> Void
 
     init(_ title: String, action: @escaping () -> Void) {
         self.onAction = action
@@ -17,10 +21,6 @@ final class BrowserActionButton: NSButton {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    var onAction: () -> Void
-
     // MARK: Private
 
     @objc private func activate() { onAction() }
@@ -29,7 +29,9 @@ final class BrowserActionButton: NSButton {
 // MARK: - BrowserActionToggle
 
 final class BrowserActionToggle: NSButton {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onChange: (Bool) -> Void = { _ in }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -41,10 +43,6 @@ final class BrowserActionToggle: NSButton {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    var onChange: (Bool) -> Void = { _ in }
-
     // MARK: Private
 
     @objc private func changed() { onChange(state == .on) }
@@ -53,7 +51,9 @@ final class BrowserActionToggle: NSButton {
 // MARK: - BrowserActionPopUpButton
 
 final class BrowserActionPopUpButton: NSPopUpButton {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onChange: (Int) -> Void = { _ in }
 
     init(titles: [String]) {
         super.init(frame: .zero, pullsDown: false)
@@ -63,10 +63,6 @@ final class BrowserActionPopUpButton: NSPopUpButton {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    var onChange: (Int) -> Void = { _ in }
 
     // MARK: Private
 
@@ -81,7 +77,7 @@ final class BrowserActionPopUpButton: NSPopUpButton {
         size: CGFloat = 13,
         weight: NSFont.Weight = .regular,
         color: NSColor = .labelColor,
-        wraps: Bool = false
+        wraps: Bool = false,
     ) -> NSTextField {
         let label = wraps ? NSTextField(wrappingLabelWithString: text) : NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: size, weight: weight)
@@ -93,7 +89,7 @@ final class BrowserActionPopUpButton: NSPopUpButton {
     static func stack(
         _ views: [NSView],
         orientation: NSUserInterfaceLayoutOrientation = .vertical,
-        spacing: CGFloat = 0
+        spacing: CGFloat = 0,
     ) -> NSStackView {
         let stack = NSStackView(views: views)
         stack.orientation = orientation
@@ -108,7 +104,7 @@ final class BrowserActionPopUpButton: NSPopUpButton {
         view.widthAnchor
             .constraint(
                 equalTo: stack.widthAnchor,
-                constant: -stack.edgeInsets.left - stack.edgeInsets.right
+                constant: -stack.edgeInsets.left - stack.edgeInsets.right,
             )
             .isActive = true
     }
@@ -152,7 +148,13 @@ final class BrowserActionPopUpButton: NSPopUpButton {
 
 /// A flipped document with a stable scroll position; rebuilding a section does not replace the scroll view.
 final class BrowserNativeScrollingStack: NSScrollView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let stack = NSStackView()
+
+    // MARK: Private
+
+    private let document = BrowserNativeSurface()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -174,10 +176,6 @@ final class BrowserNativeScrollingStack: NSScrollView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    let stack = NSStackView()
-
     override func layout() {
         super.layout()
         let position = contentView.bounds.origin
@@ -193,8 +191,4 @@ final class BrowserNativeScrollingStack: NSScrollView {
         BrowserNativeControls.replaceViews(views, in: stack)
         needsLayout = true
     }
-
-    // MARK: Private
-
-    private let document = BrowserNativeSurface()
 }

@@ -1,3 +1,5 @@
+// BrowserWebKitDialogTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Network
@@ -8,7 +10,7 @@ import WebKit
 // MARK: - BrowserWebKitDialogTests
 
 extension BrowserMobileUITests {
-    enum Cancellation: CaseIterable, Sendable { case navigate, close, shutdown, processTermination, stop, detach }
+    enum Cancellation: CaseIterable { case navigate, close, shutdown, processTermination, stop, detach }
 
     @Test func actualJavaScriptAlertConfirmAndPromptReturnUserResponses() async throws {
         let fixture = try DialogWebKitFixture()
@@ -128,7 +130,7 @@ extension BrowserMobileUITests {
         try await fixture.load()
         var responses = [BrowserMobileJavaScriptDialogResponse]()
         fixture.engine.requestJavaScriptDialog(
-            in: fixture.webView, kind: .confirm, message: "pending", origin: "https://dialog.example"
+            in: fixture.webView, kind: .confirm, message: "pending", origin: "https://dialog.example",
         ) { responses.append($0) }
         let request = try #require(fixture.requests.first)
         switch cancellation {
@@ -155,18 +157,18 @@ extension BrowserMobileUITests {
         var responses = [BrowserMobileJavaScriptDialogResponse]()
         var nested = [BrowserMobileJavaScriptDialogResponse]()
         fixture.engine.requestJavaScriptDialog(
-            in: fixture.webView, kind: .confirm, message: "owned", origin: "https://dialog.example"
+            in: fixture.webView, kind: .confirm, message: "owned", origin: "https://dialog.example",
         ) { response in
             responses.append(response)
             fixture.engine.requestJavaScriptDialog(
-                in: fixture.webView, kind: .confirm, message: "reentrant", origin: "https://dialog.example"
+                in: fixture.webView, kind: .confirm, message: "reentrant", origin: "https://dialog.example",
             ) { nested.append($0) }
         }
         fixture.engine.requestJavaScriptDialog(
-            in: fixture.webView, kind: .alert, message: "overlap", origin: "https://dialog.example"
+            in: fixture.webView, kind: .alert, message: "overlap", origin: "https://dialog.example",
         ) { nested.append($0) }
         fixture.engine.requestJavaScriptDialog(
-            in: WKWebView(), kind: .confirm, message: "unknown", origin: "https://dialog.example"
+            in: WKWebView(), kind: .confirm, message: "unknown", origin: "https://dialog.example",
         ) { nested.append($0) }
         fixture.engine.selectTab(id: "tab")
         fixture.engine.goForward(id: "tab")
@@ -202,11 +204,11 @@ extension BrowserMobileUITests {
         var answer: Bool?
         try fixture.engine.webView(
             fixture.webView, runJavaScriptConfirmPanelWithMessage: "opaque",
-            initiatedByFrame: #require(frames.opaque)
+            initiatedByFrame: #require(frames.opaque),
         ) { answer = $0 }
         #expect(answer == false)
         #expect(fixture.requests.first { $0.message == "opaque" }?.origin == String(
-            localized: "Unknown origin", table: "Mobile"
+            localized: "Unknown origin", table: "Mobile",
         ))
         #expect(fixture.finished.count == 2)
         let pageURL = fixture.states["tab"]?.url
@@ -221,17 +223,22 @@ extension BrowserMobileUITests {
 /// Holds one loopback response so old JavaScript can resume before the next
 /// document commits. No remote endpoint or timing-based network race is used.
 @MainActor private final class HeldDialogHTTPServer {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    private(set) var hasRequest = false
+
+    // MARK: Private
+
+    private let listener: NWListener
+    private var connections = [NWConnection]()
+    private var startContinuation: CheckedContinuation<Void, Error>?
+    private var timeout: Task<Void, Never>?
 
     init() throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         self.listener = try NWListener(using: parameters)
     }
-
-    // MARK: Internal
-
-    private(set) var hasRequest = false
 
     func start() async throws {
         try await withCheckedThrowingContinuation { continuation in
@@ -241,7 +248,8 @@ extension BrowserMobileUITests {
                     guard let self else { return }
                     switch state {
                     case .ready: completeStart()
-                    case .failed(let error), .waiting(let error): completeStart(error: error)
+                    case .failed(let error),
+                         .waiting(let error): completeStart(error: error)
                     default: break
                     }
                 }
@@ -287,13 +295,6 @@ extension BrowserMobileUITests {
         listener.cancel()
     }
 
-    // MARK: Private
-
-    private let listener: NWListener
-    private var connections = [NWConnection]()
-    private var startContinuation: CheckedContinuation<Void, Error>?
-    private var timeout: Task<Void, Never>?
-
     private func completeStart(error: Error? = nil) {
         timeout?.cancel()
         guard let continuation = startContinuation else { return }
@@ -321,7 +322,20 @@ extension BrowserMobileUITests {
 // MARK: - DialogWebKitFixture
 
 @MainActor private final class DialogWebKitFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let engine = BrowserWebKitEngine(dataStore: .nonPersistent())
+    let window: UIWindow
+    private(set) var webView: WKWebView!
+    var requests = [BrowserMobileJavaScriptDialog]()
+    var finished = [UUID]()
+    var states = [String: BrowserMobilePageState]()
+    var response: ((BrowserMobileJavaScriptDialog) -> BrowserMobileJavaScriptDialogResponse?)?
+
+    // MARK: Private
+
+    private var evaluations = [UUID: Result<String, Error>]()
+    private var tasks = [Task<Void, Never>]()
 
     init() throws {
         let scene = try #require(BrowserMobileTestScene.windowScene)
@@ -334,7 +348,9 @@ extension BrowserMobileUITests {
             guard let self else { return }
             switch event {
             case .state(let id, let state): states[id] = state
-            case .closed, .httpAuthenticationFinished, .httpAuthenticationRequested: break
+            case .closed,
+                 .httpAuthenticationFinished,
+                 .httpAuthenticationRequested: break
             case .javaScriptDialogRequested(let request):
                 requests.append(request)
                 if let answer = response?(request) {
@@ -358,28 +374,21 @@ extension BrowserMobileUITests {
         engine.setJavaScriptDialogPresentationActive(true)
     }
 
-    // MARK: Internal
-
-    let engine = BrowserWebKitEngine(dataStore: .nonPersistent())
-    let window: UIWindow
-    private(set) var webView: WKWebView!
-    var requests = [BrowserMobileJavaScriptDialog]()
-    var finished = [UUID]()
-    var states = [String: BrowserMobilePageState]()
-    var response: ((BrowserMobileJavaScriptDialog) -> BrowserMobileJavaScriptDialogResponse?)?
-
     func load(html: String = "<title>Dialog fixture</title>") async throws {
         engine.loadHTMLString(html, baseURL: URL(string: "https://dialog.example"), id: "tab")
         try #require(await wait { self.states["tab"]?.isLoading == false })
     }
 
     func startEvaluation(_ body: String, in view: WKWebView? = nil) -> UUID {
-        let id = UUID(), target = view ?? webView!
+        let id = UUID()
+        let target = view ?? webView!
         tasks.append(Task { @MainActor [weak self] in
             do {
                 let result = try await target.evaluateJavaScript("JSON.stringify((() => { \(body) })())")
                 self?.evaluations[id] = .success(result as? String ?? "undefined")
-            } catch { self?.evaluations[id] = .failure(error) }
+            } catch {
+                self?.evaluations[id] = .failure(error)
+            }
         })
         return id
     }
@@ -395,7 +404,8 @@ extension BrowserMobileUITests {
     }
 
     func wait(_ condition: () -> Bool) async -> Bool {
-        let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(8))
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(8))
         while clock.now < deadline {
             if condition() {
                 return true
@@ -412,9 +422,4 @@ extension BrowserMobileUITests {
         window.isHidden = true
         window.rootViewController = nil
     }
-
-    // MARK: Private
-
-    private var evaluations = [UUID: Result<String, Error>]()
-    private var tasks = [Task<Void, Never>]()
 }

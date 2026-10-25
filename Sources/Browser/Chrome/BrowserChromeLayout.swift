@@ -1,3 +1,5 @@
+// BrowserChromeLayout.swift
+
 import AppKit
 
 // MARK: - BrowserChromeLayout

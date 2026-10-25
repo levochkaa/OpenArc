@@ -1,3 +1,5 @@
+// BrowserNativeSurface.swift
+
 import AppKit
 import QuartzCore
 
@@ -33,17 +35,17 @@ class BrowserNativeSurface: NSView {
             path.appendArc(
                 from: NSPoint(x: rect.maxX, y: rect.minY),
                 to: NSPoint(x: rect.maxX, y: rect.maxY),
-                radius: radius
+                radius: radius,
             )
             path.appendArc(
                 from: NSPoint(x: rect.maxX, y: rect.maxY),
                 to: NSPoint(x: rect.minX, y: rect.maxY),
-                radius: radius
+                radius: radius,
             )
             path.appendArc(
                 from: NSPoint(x: rect.minX, y: rect.maxY),
                 to: NSPoint(x: rect.minX, y: rect.minY),
-                radius: radius
+                radius: radius,
             )
             path.close()
         }
@@ -64,7 +66,7 @@ struct BrowserNativeChromeButtonStyle {
         symbolSize: BrowserChromeLayout.chromeButtonSymbolSize,
         symbolWeight: .semibold,
         foreground: BrowserChromeColors.secondaryText,
-        hoverBackground: BrowserChromeColors.rowHover
+        hoverBackground: BrowserChromeColors.rowHover,
     )
     static let bookmark = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.bookmarksBarControlSize,
@@ -72,7 +74,7 @@ struct BrowserNativeChromeButtonStyle {
         symbolSize: BrowserChromeLayout.bookmarksBarIconSize,
         symbolWeight: .semibold,
         foreground: BrowserChromeColors.secondaryText,
-        hoverBackground: BrowserChromeColors.rowHover
+        hoverBackground: BrowserChromeColors.rowHover,
     )
     static let currentURL = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarCurrentURLButtonSize,
@@ -81,7 +83,7 @@ struct BrowserNativeChromeButtonStyle {
         symbolWeight: .bold,
         foreground: BrowserChromeColors.currentURLText,
         hoverBackground: BrowserChromeColors.currentURLButtonHover,
-        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale
+        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
     )
     static let sidebarClose = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarCloseButtonSize,
@@ -90,7 +92,7 @@ struct BrowserNativeChromeButtonStyle {
         symbolWeight: .bold,
         foreground: BrowserChromeColors.rowCloseForeground,
         hoverBackground: BrowserChromeColors.rowCloseHover,
-        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale
+        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
     )
     static let miniPlayer = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarMiniPlayerButtonSize,
@@ -99,7 +101,7 @@ struct BrowserNativeChromeButtonStyle {
         symbolWeight: .semibold,
         foreground: BrowserChromeColors.primaryText,
         hoverBackground: BrowserChromeColors.rowHover,
-        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale
+        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
     )
     static let extensionClose = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.extensionSidePanelCloseButtonSize,
@@ -108,7 +110,7 @@ struct BrowserNativeChromeButtonStyle {
         symbolWeight: .bold,
         foreground: BrowserChromeColors.rowCloseForeground,
         hoverBackground: BrowserChromeColors.rowCloseHover,
-        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale
+        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
     )
 
     let size: CGFloat
@@ -124,34 +126,6 @@ struct BrowserNativeChromeButtonStyle {
 
 /// Native target/action button with the same geometry and press treatment as browser chrome.
 final class BrowserNativeChromeButton: NSButton {
-    // MARK: Lifecycle
-
-    init(
-        symbol: String,
-        title: String,
-        style: BrowserNativeChromeButtonStyle = .chrome,
-        pressEffect: PressEffect = .none,
-        action: @escaping () -> Void
-    ) {
-        self.symbolName = symbol
-        self.style = style
-        self.pressEffect = pressEffect
-        self.onAction = action
-        super.init(frame: .zero)
-        self.title = title
-        setButtonType(.momentaryChange)
-        isBordered = false
-        imagePosition = .imageOnly
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
-            .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: style.symbolWeight))
-        self.tooltipTitle = title
-        setAccessibilityLabel(title)
-        target = self
-        self.action = #selector(activate)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
     // MARK: Internal
 
     enum PressEffect { case none, up, down, left, right, compress, rotateClockwise }
@@ -195,6 +169,60 @@ final class BrowserNativeChromeButton: NSButton {
         }
     }
 
+    // MARK: Private
+
+    private var oldSymbolCell: NSCell?
+    private var symbolName: String
+    private var symbolProgress = 1.0
+    private let symbolAnimation = BrowserNativeAnimation()
+    private let style: BrowserNativeChromeButtonStyle
+    private let tooltipID = UUID()
+    private let pressAnimation = BrowserNativeAnimation()
+    private let hoverAnimation = BrowserNativeAnimation()
+    private var pressProgress = 0.0
+    private var hoverProgress = 0.0
+    private var pressTarget = false
+
+    private var hoverTrackingArea: NSTrackingArea?
+
+    private var hovered = false {
+        didSet {
+            guard oldValue != hovered else { return }
+            let from = hoverProgress
+            let to = hovered ? 1.0 : 0.0
+            hoverAnimation.start(.hover) { [weak self] progress in
+                self?.hoverProgress = from + (to - from) * progress
+                self?.needsDisplay = true
+            }
+        }
+    }
+
+    init(
+        symbol: String,
+        title: String,
+        style: BrowserNativeChromeButtonStyle = .chrome,
+        pressEffect: PressEffect = .none,
+        action: @escaping () -> Void,
+    ) {
+        self.symbolName = symbol
+        self.style = style
+        self.pressEffect = pressEffect
+        self.onAction = action
+        super.init(frame: .zero)
+        self.title = title
+        setButtonType(.momentaryChange)
+        isBordered = false
+        imagePosition = .imageOnly
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
+            .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: style.symbolWeight))
+        self.tooltipTitle = title
+        setAccessibilityLabel(title)
+        target = self
+        self.action = #selector(activate)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
     override func highlight(_ flag: Bool) {
         super.highlight(flag)
         updatePressAnimation()
@@ -216,7 +244,7 @@ final class BrowserNativeChromeButton: NSButton {
         let area = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self
+            owner: self,
         )
         addTrackingArea(area)
         hoverTrackingArea = area
@@ -229,7 +257,7 @@ final class BrowserNativeChromeButton: NSButton {
                 anchor: self,
                 title: tooltipTitle,
                 shortcut: tooltipShortcut,
-                placement: tooltipPlacement
+                placement: tooltipPlacement,
             )
         }
         needsDisplay = true
@@ -251,12 +279,12 @@ final class BrowserNativeChromeButton: NSButton {
             let backgroundCompression = style.pressedScale == 1 ? 0.05 : 1 - style.pressedScale
             let rect = bounds.insetBy(
                 dx: bounds.width * backgroundCompression / 2 * progress,
-                dy: bounds.height * backgroundCompression / 2 * progress
+                dy: bounds.height * backgroundCompression / 2 * progress,
             )
             NSBezierPath(
                 roundedRect: rect,
                 xRadius: style.cornerRadius,
-                yRadius: style.cornerRadius
+                yRadius: style.cornerRadius,
             ).fill()
         }
         let foreground = isSelected ? BrowserChromeColors.primaryText : style.foreground
@@ -264,7 +292,7 @@ final class BrowserNativeChromeButton: NSButton {
             ? BrowserChromeColors.buttonDisabledForeground
             : foreground.blended(
                 withFraction: min(max(progress, 0), 1),
-                of: BrowserChromeColors.chromeButtonPressedForeground
+                of: BrowserChromeColors.chromeButtonPressedForeground,
             ) ?? foreground
         if let oldSymbolCell, symbolProgress < 1 {
             NSGraphicsContext.saveGraphicsState()
@@ -321,34 +349,6 @@ final class BrowserNativeChromeButton: NSButton {
         tooltipTitle = title
     }
 
-    // MARK: Private
-
-    private var oldSymbolCell: NSCell?
-    private var symbolName: String
-    private var symbolProgress = 1.0
-    private let symbolAnimation = BrowserNativeAnimation()
-    private let style: BrowserNativeChromeButtonStyle
-    private let tooltipID = UUID()
-    private let pressAnimation = BrowserNativeAnimation()
-    private let hoverAnimation = BrowserNativeAnimation()
-    private var pressProgress = 0.0
-    private var hoverProgress = 0.0
-    private var pressTarget = false
-
-    private var hoverTrackingArea: NSTrackingArea?
-
-    private var hovered = false {
-        didSet {
-            guard oldValue != hovered else { return }
-            let from = hoverProgress
-            let to = hovered ? 1.0 : 0.0
-            hoverAnimation.start(.hover) { [weak self] progress in
-                self?.hoverProgress = from + (to - from) * progress
-                self?.needsDisplay = true
-            }
-        }
-    }
-
     private func updatePressAnimation() {
         let target = isEnabled && isHighlighted
         guard target != pressTarget else { return }
@@ -370,7 +370,7 @@ final class BrowserNativeChromeButton: NSButton {
             if let window {
                 hovered = visibleRect.contains(convert(
                     window.convertPoint(fromScreen: NSEvent.mouseLocation),
-                    from: nil
+                    from: nil,
                 ))
             }
         }

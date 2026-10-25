@@ -1,3 +1,5 @@
+// BrowserDesktopHistoryFolderPlacementTests.swift
+
 import Foundation
 import Testing
 
@@ -49,7 +51,7 @@ import Testing
         #expect(tree.items(in: .pinned(destination)) == [.folder(folderID)])
         #expect(tree.items(in: .pinned(destination, folderID: folderID)) == [.tab(siblingID)])
 
-        let write = try #require(f.recording.attempts.flatMap { $0 }.last)
+        let write = try #require(f.recording.attempts.flatMap(\.self).last)
         let proposed = try #require(write.snapshot.tabs.first { $0.id == restored.syncID })
         #expect(proposed.pinnedFolderID == nil && proposed.pinnedSiblingRank == nil)
         #expect(write.archiveAction == nil)

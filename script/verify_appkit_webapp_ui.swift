@@ -1,3 +1,5 @@
+// verify_appkit_webapp_ui.swift
+
 import AppKit
 import ApplicationServices
 import Carbon
@@ -42,7 +44,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(
         size as! AXValue,
         .cgSize,
-        &dimensions
+        &dimensions,
     ) else { return nil }
     return CGRect(origin: point, size: dimensions)
 }
@@ -85,7 +87,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         .write(
             to: temporary.appendingPathComponent("index.html"),
             atomically: true,
-            encoding: .utf8
+            encoding: .utf8,
         )
     let server = Process()
     server.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
@@ -146,7 +148,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     }
     func press(_ e: AXUIElement) throws { try require(
         AXUIElementPerformAction(e, kAXPressAction as CFString) == .success,
-        "Cannot press \(id(e))"
+        "Cannot press \(id(e))",
     ) }
     func click(_ e: AXUIElement) throws {
         guard let frame = elementFrame(e) else { throw UIError.failed("Missing frame") }
@@ -156,14 +158,14 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
                 mouseEventSource: nil,
                 mouseType: type,
                 mouseCursorPosition: point,
-                mouseButton: .left
+                mouseButton: .left,
             )?.post(tap: .cghidEventTap)
         }
     }
     func menuItem(_ title: String) -> AXUIElement? { descendants(ax)
         .first { attribute($0, kAXRoleAttribute) as? String == kAXMenuItemRole && attribute(
             $0,
-            kAXTitleAttribute
+            kAXTitleAttribute,
         ) as? String == title }
     }
     try waitFor("native web app loaded") { value("browser.webapp.title") == "Native Web App Fixture" }
@@ -174,12 +176,12 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try waitFor("reload completed") { value("browser.webapp.title") == "Native Web App Fixture" }
     try runAppleScript(
         "click menu item \"Always Show Full URLs\" of menu 1 of menu bar item \"View\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     try waitFor("full URL title") { value("browser.webapp.title")?.contains("127.0.0.1") == true }
     try runAppleScript(
         "click menu item \"Always Show Full URLs\" of menu 1 of menu bar item \"View\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     try waitFor("page title restored") { value("browser.webapp.title") == "Native Web App Fixture" }
     print("PASS web app: native root, reload and full URL preference")
@@ -199,25 +201,27 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     else { throw UIError.failed("Missing web app window") }
     try require(
         AXUIElementSetAttributeValue(main, "AXFullScreen" as CFString, kCFBooleanTrue) == .success,
-        "Cannot enter fullscreen"
+        "Cannot enter fullscreen",
     )
     try waitFor("web app fullscreen") { attribute(main, "AXFullScreen") as? Bool == true }
     RunLoop.current.run(until: Date().addingTimeInterval(1))
     try waitFor("fullscreen hides web app toolbar") { element("browser.webapp.more") == nil }
     try runAppleScript(
         "click menu item \"Always Show Toolbar in Full Screen\" of menu 1 of menu bar item \"View\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     try waitFor("fullscreen toolbar preference") { element("browser.webapp.more") != nil }
     try require(
         AXUIElementSetAttributeValue(main, "AXFullScreen" as CFString, kCFBooleanFalse) == .success,
-        "Cannot exit fullscreen"
+        "Cannot exit fullscreen",
     )
     try waitFor("web app window restored") { attribute(main, "AXFullScreen") as? Bool != true }
     print("PASS web app: fullscreen toolbar hiding and persistent toolbar preference")
 }
 
-do { try MainActor.assumeIsolated { try verifyWebApp() } }
-catch { fputs("FAIL \(error)\n", stderr)
+do {
+    try MainActor.assumeIsolated { try verifyWebApp() }
+} catch {
+    fputs("FAIL \(error)\n", stderr)
     exit(1)
 }

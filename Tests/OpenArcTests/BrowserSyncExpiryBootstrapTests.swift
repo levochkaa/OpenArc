@@ -1,3 +1,5 @@
+// BrowserSyncExpiryBootstrapTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -18,7 +20,7 @@ import Testing
     var known = remote.firstPage
     known[499] = .init(
         serverSeq: 500, deviceID: "remote", entityType: "tab", entityID: "expired", op: "delete",
-        data: .deleted(id: "expired"), createdAt: "2026-10-03T12:00:00Z"
+        data: .deleted(id: "expired"), createdAt: "2026-10-03T12:00:00Z",
     )
     let seed = try store.completeFolderSyncBootstrap(events: known, cursor: 500, for: owner)
     let local = BrowserTabSessionSnapshot(
@@ -28,9 +30,9 @@ import Testing
                 title: space.id == "work" ? "Pending local name" : space.title,
                 systemImageName: space.systemImageName,
                 isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                selectedTabIndex: space.selectedTabIndex
+                selectedTabIndex: space.selectedTabIndex,
             )
-        }, pinnedTabFolders: seed.pinnedTabFolders, tabs: seed.tabs
+        }, pinnedTabFolders: seed.pinnedTabFolders, tabs: seed.tabs,
     )
     try store.writeSessionBatch([.init(snapshot: local, origin: .local(syncMove: nil))])
     let before = try #require(try store.loadSnapshotStrict())
@@ -42,7 +44,7 @@ import Testing
     let service = BrowserSyncService(
         localStore: store, remoteClient: remote, authSessionStore: auth,
         pushDebounce: .zero, pollInterval: nil, retryDelay: nil, runtimeActive: false,
-        errorReporter: { _, phase in failures.append(phase) }
+        errorReporter: { _, phase in failures.append(phase) },
     )
     defer {
         service.setSnapshotApplier(nil)
@@ -130,9 +132,9 @@ import Testing
                 entityID: "expired",
                 op: "delete",
                 data: .deleted(id: "expired", autoArchive: .init(
-                    archivedAt: "2026-10-03T12:00:00.123456Z", sourceServerSeq: 2, tab: canonical
+                    archivedAt: "2026-10-03T12:00:00.123456Z", sourceServerSeq: 2, tab: canonical,
                 )),
-                createdAt: "2026-10-03T12:00:00Z"
+                createdAt: "2026-10-03T12:00:00Z",
             ),
         ]
     }
@@ -156,7 +158,7 @@ import Testing
         }
         return .init(cursor: 501, events: [upsert(
             id: "live", sequence: 501,
-            data: .tab(tab(id: "live", url: "https://example.com/after-final-page", rank: 1))
+            data: .tab(tab(id: "live", url: "https://example.com/after-final-page", rank: 1)),
         )], protocolVersion: 5, supportedPushVersions: [2, 3, 4, 5])
     }
 
@@ -167,7 +169,7 @@ import Testing
 
     func push(
         mutation _: BrowserSyncSemanticMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncSemanticPushResponse {
         pushes += 1
         throw URLError(.unsupportedURL)
@@ -175,7 +177,7 @@ import Testing
 
     func push(
         mutation _: BrowserSyncFolderMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncFolderPushResponse {
         pushes += 1
         throw URLError(.unsupportedURL)
@@ -195,7 +197,7 @@ import Testing
             userTitleOverride: nil,
             faviconURLString: nil,
             lastActivityAt: "2000-01-01T00:00:00.123456Z",
-            pinnedFolderID: nil
+            pinnedFolderID: nil,
         )
     }
 
@@ -212,9 +214,9 @@ import Testing
                 systemImageName: "globe",
                 rank: Double(sequence),
                 isPinnedSectionCollapsed: false,
-                selectedTabID: nil
+                selectedTabID: nil,
             )),
-            createdAt: "2026-10-03T11:00:00Z"
+            createdAt: "2026-10-03T11:00:00Z",
         )
     }
 
@@ -226,7 +228,7 @@ import Testing
             entityID: id,
             op: "upsert",
             data: data,
-            createdAt: "2026-10-03T11:00:00Z"
+            createdAt: "2026-10-03T11:00:00Z",
         )
     }
 }
@@ -239,7 +241,7 @@ import Testing
         userID: "owner",
         userEmail: nil,
         deviceID: "device",
-        serverURL: URL(string: "https://expiry-bootstrap.example")!
+        serverURL: URL(string: "https://expiry-bootstrap.example")!,
     )
 
     func loadSession() -> BrowserAuthSession? { session }

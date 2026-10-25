@@ -1,3 +1,5 @@
+// BrowserNativeCommandBarTests.swift
+
 import AppKit
 import Testing
 
@@ -12,10 +14,10 @@ import Testing
             style: .compact(
                 anchorFrame: anchor,
                 sidebarWidth: 240,
-                matchesAnchorWidth: true
+                matchesAnchorWidth: true,
             ),
             displayText: "example.com",
-            suggestionCount: 2
+            suggestionCount: 2,
         )
         #expect(anchored.panelFrame.minX == 220)
         #expect(anchored.panelFrame.minY == 52)
@@ -25,10 +27,10 @@ import Testing
             style: .compact(
                 anchorFrame: anchor,
                 sidebarWidth: 240,
-                matchesAnchorWidth: false
+                matchesAnchorWidth: false,
             ),
             displayText: String(repeating: "long-input", count: 100),
-            suggestionCount: 10
+            suggestionCount: 10,
         )
         #expect(growing.panelWidth == 600)
         #expect(growing.visibleSuggestionCount == 5)
@@ -36,7 +38,7 @@ import Testing
             availableSize: CGSize(width: 320, height: 480),
             style: .standard,
             displayText: "",
-            suggestionCount: 0
+            suggestionCount: 0,
         )
         #expect(narrow.panelFrame.minX >= 0)
         #expect(narrow.panelFrame.maxX <= 320)
@@ -46,7 +48,7 @@ import Testing
         let model = BrowserCommandBarModel(
             suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["browser": ["browser command bar"]]),
             suggestionDebounceNanoseconds: 0,
-            submitHandler: { _ in }
+            submitHandler: { _ in },
         )
         let view = BrowserCommandBarNSView(model: model, faviconCache: BrowserFaviconCache(dataLoader: { _ in nil }))
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
@@ -65,7 +67,7 @@ import Testing
         #expect(view.control(
             view.queryField,
             textView: editor,
-            doCommandBy: #selector(NSResponder.cancelOperation(_:))
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)),
         ))
         #expect(!model.isPresented)
     }
@@ -90,7 +92,7 @@ import Testing
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
             styleMask: [.titled],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: 200))
@@ -112,7 +114,7 @@ import Testing
             shouldFocus: true,
             focusRequestID: 1,
             fontSize: 22,
-            selectAllOnFocus: false
+            selectAllOnFocus: false,
         )
         permission = false
         #expect(window.makeFirstResponder(other))
@@ -129,7 +131,7 @@ import Testing
             shouldFocus: false,
             focusRequestID: 0,
             fontSize: 22,
-            selectAllOnFocus: false
+            selectAllOnFocus: false,
         )
         #expect(field.previewSelectionRange == NSRange(location: 2, length: 7))
         #expect(field.committedText == "😀")
@@ -141,7 +143,7 @@ import Testing
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 100),
             styleMask: [.titled],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         let field = BrowserCommandNSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 28))
@@ -162,7 +164,7 @@ import Testing
             shouldFocus: true,
             focusRequestID: 1,
             fontSize: 22,
-            selectAllOnFocus: false
+            selectAllOnFocus: false,
         )
         #expect(editor.selectedRange() == NSRange(location: 2, length: 2))
         field.syncCommandPresentation(
@@ -172,7 +174,7 @@ import Testing
             shouldFocus: true,
             focusRequestID: 1,
             fontSize: 22,
-            selectAllOnFocus: false
+            selectAllOnFocus: false,
         )
         #expect(editor.selectedRange() == NSRange(location: 3, length: 3))
         field.syncCommandPresentation(
@@ -182,7 +184,7 @@ import Testing
             shouldFocus: true,
             focusRequestID: 1,
             fontSize: 22,
-            selectAllOnFocus: false
+            selectAllOnFocus: false,
         )
         #expect(editor.selectedRange() == NSRange(location: 6, length: 0))
     }
@@ -192,7 +194,7 @@ import Testing
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 100),
             styleMask: [.titled],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         let field = BrowserCommandNSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 28))
@@ -207,7 +209,7 @@ import Testing
         editor.setMarkedText(
             "に",
             selectedRange: NSRange(location: 1, length: 0),
-            replacementRange: NSRange(location: NSNotFound, length: 0)
+            replacementRange: NSRange(location: NSNotFound, length: 0),
         )
         #expect(editor.hasMarkedText())
         field.syncCommandPresentation(
@@ -217,7 +219,7 @@ import Testing
             shouldFocus: true,
             focusRequestID: 1,
             fontSize: 22,
-            selectAllOnFocus: false
+            selectAllOnFocus: false,
         )
         #expect(editor.string == "に")
         #expect(editor.hasMarkedText())
@@ -229,7 +231,7 @@ import Testing
         row.update(
             suggestion: .init(kind: .search, displayText: "find", shortcut: BrowserKeyboardShortcut("f")),
             selected: true,
-            favicon: nil
+            favicon: nil,
         )
         row.layoutSubtreeIfNeeded()
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
@@ -251,7 +253,7 @@ import Testing
         view.configure(
             blockedLeadingInset: 0,
             style: .compact(anchorFrame: nil, sidebarWidth: 240, matchesAnchorWidth: false),
-            faviconCandidate: nil
+            faviconCandidate: nil,
         )
         #expect(view.queryField.selectAllOnFocus)
         #expect(view.queryField.focusSelectionRequestID == model.focusRequestID)
@@ -261,7 +263,7 @@ import Testing
         let suggestions = (0..<9).map { "browser suggestion \($0)" }
         let model = BrowserCommandBarModel(
             suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["browser": suggestions]),
-            suggestionDebounceNanoseconds: 0, submitHandler: { _ in }
+            suggestionDebounceNanoseconds: 0, submitHandler: { _ in },
         )
         let view = BrowserCommandBarNSView(model: model, faviconCache: BrowserFaviconCache(dataLoader: { _ in nil }))
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
@@ -291,7 +293,7 @@ import Testing
         let suggestions = (0..<providerSuggestionCount).map { "browser suggestion \($0)" }
         let model = BrowserCommandBarModel(
             suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["browser": suggestions]),
-            suggestionDebounceNanoseconds: 0, submitHandler: { _ in }
+            suggestionDebounceNanoseconds: 0, submitHandler: { _ in },
         )
         let view = BrowserCommandBarNSView(model: model, faviconCache: BrowserFaviconCache(dataLoader: { _ in nil }))
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)

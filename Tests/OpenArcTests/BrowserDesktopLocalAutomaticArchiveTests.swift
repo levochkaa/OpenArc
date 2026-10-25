@@ -1,3 +1,5 @@
+// BrowserDesktopLocalAutomaticArchiveTests.swift
+
 import AppKit
 import GRDB
 import Testing
@@ -115,7 +117,7 @@ import Testing
 
     @Test(arguments: LocalAutomaticInvalidation.allCases)
     func changedEligibilityPreservesLatestLogicalStateAfterTheEngineAlreadyClosed(
-        change: LocalAutomaticInvalidation
+        change: LocalAutomaticInvalidation,
     ) throws {
         let f = try LocalAutomaticArchiveFixture()
         defer { f.close() }
@@ -162,7 +164,7 @@ import Testing
         f.driver.emitClose(id: request.id)
         f.flushReady()
         #expect(f.driver.createdTabRequests.count == creates + 1)
-        #expect(f.model.tabs.filter { $0.syncID == "b" }.count == 1)
+        #expect(f.model.tabs.count(where: { $0.syncID == "b" }) == 1)
         #expect(try f.evidence() == beforeCompletion)
         #expect(try f.store.loadArchivePage().entries.isEmpty)
     }
@@ -224,7 +226,7 @@ import Testing
         }
         #expect(f.driver.confirmedCloseRequests.count == 100)
         #expect(try f.evidence() == before)
-        #expect(f.model.tabs.filter { $0.syncID.hasPrefix("old-") }.count == 101)
+        #expect(f.model.tabs.count(where: { $0.syncID.hasPrefix("old-") }) == 101)
         #expect(!f.model.undoManager.canUndo)
     }
 }
@@ -238,7 +240,20 @@ enum LocalAutomaticInvalidation: CaseIterable {
 // MARK: - LocalAutomaticArchiveFixture
 
 @MainActor final class LocalAutomaticArchiveFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    static let start: TimeInterval = 1_800_000_000
+    static let day: TimeInterval = 24 * 60 * 60
+
+    let directory: URL
+    let databaseURL: URL
+    let suite: String
+    let defaults: UserDefaults
+    let store: BrowserSQLiteSessionStore
+    let recording: ConfirmedCloseRecordingStore
+    let clock = ConfirmedCloseClock()
+    let driver = FakeBrowserTabDriver()
+    let model: BrowserChromeModel
 
     init(candidateIDs: [String] = ["b"]) throws {
         self.directory = FileManager.default
@@ -260,9 +275,9 @@ enum LocalAutomaticInvalidation: CaseIterable {
                     pinnedURLString: id == "pin" ? "https://example.com/pin" : nil,
                     placement: id == "favorite" ? .app : id == "pin" ? .spacePinned : .temporary,
                     spaceID: id == "other" ? "other" : "work",
-                    lastActivityTimestamp: Self.start + (id == "younger" ? 1 : 0)
+                    lastActivityTimestamp: Self.start + (id == "younger" ? 1 : 0),
                 )
-            }
+            },
         )
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
         store.saveSelectedSpaceIndex(0)
@@ -276,28 +291,13 @@ enum LocalAutomaticInvalidation: CaseIterable {
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(),
             dateProvider: { Date(timeIntervalSince1970: fixtureClock.now) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         flushReady()
         model.undoManager.removeAllActions()
         recording.reset()
     }
-
-    // MARK: Internal
-
-    static let start: TimeInterval = 1_800_000_000
-    static let day: TimeInterval = 24 * 60 * 60
-
-    let directory: URL
-    let databaseURL: URL
-    let suite: String
-    let defaults: UserDefaults
-    let store: BrowserSQLiteSessionStore
-    let recording: ConfirmedCloseRecordingStore
-    let clock = ConfirmedCloseClock()
-    let driver = FakeBrowserTabDriver()
-    let model: BrowserChromeModel
 
     func expireCandidates() { clock.now = Self.start + 30 * Self.day }
     func runtimeID(_ id: String) throws -> String { try #require(model.tabs.first { $0.syncID == id }).id }
@@ -321,9 +321,9 @@ enum LocalAutomaticInvalidation: CaseIterable {
                 Data.fetchAll(db, sql: "SELECT payload FROM browser_tab_archive ORDER BY id"),
                 String.fetchAll(
                     db,
-                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id,'') FROM browser_tab_archive_receipts ORDER BY id"
+                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id,'') FROM browser_tab_archive_receipts ORDER BY id",
                 ),
-                String.fetchAll(db, sql: "SELECT key || ':' || value FROM browser_preferences ORDER BY key")
+                String.fetchAll(db, sql: "SELECT key || ':' || value FROM browser_preferences ORDER BY key"),
             )
         }
         return try .init(
@@ -332,7 +332,7 @@ enum LocalAutomaticInvalidation: CaseIterable {
             baseline: rows.1,
             archive: rows.2,
             receipts: rows.3,
-            preferences: rows.4
+            preferences: rows.4,
         )
     }
 

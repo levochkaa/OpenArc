@@ -1,9 +1,29 @@
+// BrowserSidebarRenameNSTextField.swift
+
 import AppKit
 
 // MARK: - BrowserSidebarRenameNSTextField
 
 final class BrowserSidebarRenameNSTextField: NSTextField {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: 17)
+    }
+
+    var focusPermission: () -> Bool = { true }
+    var pendingFocus = false
+    var pendingSelectAll = false
+
+    // MARK: Private
+
+    private var activeTextColor: NSColor {
+        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            NSColor.white.withAlphaComponent(0.92)
+        } else {
+            .labelColor
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -25,16 +45,6 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    // MARK: Internal
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: 17)
-    }
-
-    var focusPermission: () -> Bool = { true }
-    var pendingFocus = false
-    var pendingSelectAll = false
 
     override func becomeFirstResponder() -> Bool {
         let didBecomeFirstResponder = super.becomeFirstResponder()
@@ -89,14 +99,6 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
         if isEditing {
             window.makeFirstResponder(nil)
         }
-    }
-
-    // MARK: Private
-
-    private var activeTextColor: NSColor {
-        effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor.white.withAlphaComponent(0.92)
-            : .labelColor
     }
 
     private func selectAllTextIfNeeded() {

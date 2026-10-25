@@ -1,3 +1,5 @@
+// BrowserSpaceIconCatalog.swift
+
 import Foundation
 
 // MARK: - BrowserSpaceIconCatalog

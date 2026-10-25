@@ -1,3 +1,5 @@
+// BrowserSyncSemanticModels.swift
+
 import Foundation
 
 // MARK: - BrowserSyncPatchValue
@@ -7,8 +9,6 @@ enum BrowserSyncPatchValue<Value: Codable & Equatable>: Codable, Equatable {
     case unchanged
     case set(Value)
     case clear
-
-    // MARK: Lifecycle
 
     init(from decoder: any Decoder) throws {
         let value = try decoder.singleValueContainer()
@@ -25,8 +25,8 @@ enum BrowserSyncPatchValue<Value: Codable & Equatable>: Codable, Equatable {
                 self,
                 .init(
                     codingPath: encoder.codingPath,
-                    debugDescription: "Unchanged patch fields must be omitted by their keyed container"
-                )
+                    debugDescription: "Unchanged patch fields must be omitted by their keyed container",
+                ),
             )
         case .set(let update): try value.encode(update)
         case .clear: try value.encodeNil()
@@ -41,7 +41,12 @@ extension BrowserSyncPatchValue: Sendable where Value: Sendable {}
 // MARK: - BrowserSyncSemanticSpaceCreate
 
 struct BrowserSyncSemanticSpaceCreate: Codable, Equatable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let title: String
+    let systemImageName: String
+    let isPinnedSectionCollapsed: Bool
+    let selectedTabID: String?
 
     init(title: String, systemImageName: String, isPinnedSectionCollapsed: Bool = false, selectedTabID: String? = nil) {
         self.title = title
@@ -49,40 +54,11 @@ struct BrowserSyncSemanticSpaceCreate: Codable, Equatable {
         self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
         self.selectedTabID = selectedTabID
     }
-
-    // MARK: Internal
-
-    let title: String
-    let systemImageName: String
-    let isPinnedSectionCollapsed: Bool
-    let selectedTabID: String?
 }
 
 // MARK: - BrowserSyncSemanticTabCreate
 
 struct BrowserSyncSemanticTabCreate: Codable, Equatable {
-    // MARK: Lifecycle
-
-    init(
-        spaceID: String,
-        placement: BrowserTabPlacement,
-        urlString: String,
-        pinnedURLString: String? = nil,
-        title: String? = nil,
-        userTitleOverride: String? = nil,
-        faviconURLString: String? = nil,
-        lastActivityAt: String? = nil
-    ) {
-        self.spaceID = spaceID
-        self.placement = placement
-        self.urlString = urlString
-        self.pinnedURLString = pinnedURLString
-        self.title = title
-        self.userTitleOverride = userTitleOverride
-        self.faviconURLString = faviconURLString
-        self.lastActivityAt = lastActivityAt
-    }
-
     // MARK: Internal
 
     let spaceID: String
@@ -93,18 +69,47 @@ struct BrowserSyncSemanticTabCreate: Codable, Equatable {
     let userTitleOverride: String?
     let faviconURLString: String?
     let lastActivityAt: String?
+
+    init(
+        spaceID: String,
+        placement: BrowserTabPlacement,
+        urlString: String,
+        pinnedURLString: String? = nil,
+        title: String? = nil,
+        userTitleOverride: String? = nil,
+        faviconURLString: String? = nil,
+        lastActivityAt: String? = nil,
+    ) {
+        self.spaceID = spaceID
+        self.placement = placement
+        self.urlString = urlString
+        self.pinnedURLString = pinnedURLString
+        self.title = title
+        self.userTitleOverride = userTitleOverride
+        self.faviconURLString = faviconURLString
+        self.lastActivityAt = lastActivityAt
+    }
 }
 
 // MARK: - BrowserSyncSemanticSpacePatch
 
 struct BrowserSyncSemanticSpacePatch: Codable, Equatable {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case title, systemImageName, isPinnedSectionCollapsed, selectedTabID }
+
+    // MARK: Internal
+
+    let title: String?
+    let systemImageName: String?
+    let isPinnedSectionCollapsed: Bool?
+    let selectedTabID: BrowserSyncPatchValue<String>
 
     init(
         title: String? = nil,
         systemImageName: String? = nil,
         isPinnedSectionCollapsed: Bool? = nil,
-        selectedTabID: BrowserSyncPatchValue<String> = .unchanged
+        selectedTabID: BrowserSyncPatchValue<String> = .unchanged,
     ) {
         self.title = title
         self.systemImageName = systemImageName
@@ -120,13 +125,6 @@ struct BrowserSyncSemanticSpacePatch: Codable, Equatable {
         self.selectedTabID = try values.decodePatch(String.self, forKey: .selectedTabID)
     }
 
-    // MARK: Internal
-
-    let title: String?
-    let systemImageName: String?
-    let isPinnedSectionCollapsed: Bool?
-    let selectedTabID: BrowserSyncPatchValue<String>
-
     func encode(to encoder: any Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encodeIfPresent(title, forKey: .title)
@@ -134,16 +132,25 @@ struct BrowserSyncSemanticSpacePatch: Codable, Equatable {
         try values.encodeIfPresent(isPinnedSectionCollapsed, forKey: .isPinnedSectionCollapsed)
         try values.encodePatch(selectedTabID, forKey: .selectedTabID)
     }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case title, systemImageName, isPinnedSectionCollapsed, selectedTabID }
 }
 
 // MARK: - BrowserSyncSemanticTabPatch
 
 struct BrowserSyncSemanticTabPatch: Codable, Equatable {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case urlString, pinnedURLString, title, userTitleOverride, faviconURLString, lastActivityAt
+    }
+
+    // MARK: Internal
+
+    let urlString: String?
+    let pinnedURLString: BrowserSyncPatchValue<String>
+    let title: BrowserSyncPatchValue<String>
+    let userTitleOverride: BrowserSyncPatchValue<String>
+    let faviconURLString: BrowserSyncPatchValue<String>
+    let lastActivityAt: BrowserSyncPatchValue<String>
 
     init(
         urlString: String? = nil,
@@ -151,7 +158,7 @@ struct BrowserSyncSemanticTabPatch: Codable, Equatable {
         title: BrowserSyncPatchValue<String> = .unchanged,
         userTitleOverride: BrowserSyncPatchValue<String> = .unchanged,
         faviconURLString: BrowserSyncPatchValue<String> = .unchanged,
-        lastActivityAt: BrowserSyncPatchValue<String> = .unchanged
+        lastActivityAt: BrowserSyncPatchValue<String> = .unchanged,
     ) {
         self.urlString = urlString
         self.pinnedURLString = pinnedURLString
@@ -171,15 +178,6 @@ struct BrowserSyncSemanticTabPatch: Codable, Equatable {
         self.lastActivityAt = try values.decodePatch(String.self, forKey: .lastActivityAt)
     }
 
-    // MARK: Internal
-
-    let urlString: String?
-    let pinnedURLString: BrowserSyncPatchValue<String>
-    let title: BrowserSyncPatchValue<String>
-    let userTitleOverride: BrowserSyncPatchValue<String>
-    let faviconURLString: BrowserSyncPatchValue<String>
-    let lastActivityAt: BrowserSyncPatchValue<String>
-
     func encode(to encoder: any Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encodeIfPresent(urlString, forKey: .urlString)
@@ -188,12 +186,6 @@ struct BrowserSyncSemanticTabPatch: Codable, Equatable {
         try values.encodePatch(userTitleOverride, forKey: .userTitleOverride)
         try values.encodePatch(faviconURLString, forKey: .faviconURLString)
         try values.encodePatch(lastActivityAt, forKey: .lastActivityAt)
-    }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case urlString, pinnedURLString, title, userTitleOverride, faviconURLString, lastActivityAt
     }
 }
 
@@ -216,12 +208,16 @@ enum BrowserSyncSemanticOperation: Codable, Equatable {
         ids: [String],
         destination: BrowserSyncSemanticTabDestination,
         beforeID: String? = nil,
-        afterID: String? = nil
+        afterID: String? = nil,
     )
     case deleteSpace(id: String)
     case deleteTab(id: String)
 
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private enum Kind: String, Codable { case create, patch, move, delete }
+    private enum CodingKeys: String,
+    CodingKey { case kind, entityType, entityID, entityIDs, data, fields, destination, beforeID, afterID }
 
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -234,44 +230,44 @@ enum BrowserSyncSemanticOperation: Codable, Equatable {
                     id: values.decode(String.self, forKey: .entityID),
                     data: values.decode(BrowserSyncSemanticSpaceCreate.self, forKey: .data),
                     beforeID: values.decodeIfPresent(String.self, forKey: .beforeID),
-                    afterID: values.decodeIfPresent(String.self, forKey: .afterID)
+                    afterID: values.decodeIfPresent(String.self, forKey: .afterID),
                 )
             case (.create, .tab):
                 try .createTab(
                     id: values.decode(String.self, forKey: .entityID),
                     data: values.decode(BrowserSyncSemanticTabCreate.self, forKey: .data),
                     beforeID: values.decodeIfPresent(String.self, forKey: .beforeID),
-                    afterID: values.decodeIfPresent(String.self, forKey: .afterID)
+                    afterID: values.decodeIfPresent(String.self, forKey: .afterID),
                 )
             case (.patch, .space):
                 try .patchSpace(
                     id: values.decode(String.self, forKey: .entityID),
-                    fields: values.decode(BrowserSyncSemanticSpacePatch.self, forKey: .fields)
+                    fields: values.decode(BrowserSyncSemanticSpacePatch.self, forKey: .fields),
                 )
             case (.patch, .tab):
                 try .patchTab(
                     id: values.decode(String.self, forKey: .entityID),
-                    fields: values.decode(BrowserSyncSemanticTabPatch.self, forKey: .fields)
+                    fields: values.decode(BrowserSyncSemanticTabPatch.self, forKey: .fields),
                 )
             case (.move, .space):
                 try .moveSpaces(
                     ids: values.decode([String].self, forKey: .entityIDs),
                     beforeID: values.decodeIfPresent(String.self, forKey: .beforeID),
-                    afterID: values.decodeIfPresent(String.self, forKey: .afterID)
+                    afterID: values.decodeIfPresent(String.self, forKey: .afterID),
                 )
             case (.move, .tab):
                 try .moveTabs(
                     ids: values.decode([String].self, forKey: .entityIDs),
                     destination: values.decode(BrowserSyncSemanticTabDestination.self, forKey: .destination),
                     beforeID: values.decodeIfPresent(String.self, forKey: .beforeID),
-                    afterID: values.decodeIfPresent(String.self, forKey: .afterID)
+                    afterID: values.decodeIfPresent(String.self, forKey: .afterID),
                 )
             case (.delete, .space): try .deleteSpace(id: values.decode(String.self, forKey: .entityID))
             case (.delete, .tab): try .deleteTab(id: values.decode(String.self, forKey: .entityID))
             case (_, .folder):
                 throw DecodingError.dataCorruptedError(
                     forKey: .entityType, in: values,
-                    debugDescription: "Protocol version 3 cannot encode folder operations"
+                    debugDescription: "Protocol version 3 cannot encode folder operations",
                 )
             }
     }
@@ -328,12 +324,6 @@ enum BrowserSyncSemanticOperation: Codable, Equatable {
             try values.encode(id, forKey: .entityID)
         }
     }
-
-    // MARK: Private
-
-    private enum Kind: String, Codable { case create, patch, move, delete }
-    private enum CodingKeys: String,
-    CodingKey { case kind, entityType, entityID, entityIDs, data, fields, destination, beforeID, afterID }
 }
 
 // MARK: - BrowserSyncSemanticMutation
@@ -346,7 +336,16 @@ struct BrowserSyncSemanticMutation: Codable, Equatable {
 // MARK: - BrowserSyncSemanticPushRequest
 
 struct BrowserSyncSemanticPushRequest: Codable, Equatable {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case protocolVersion, mutationID, deviceID, operations }
+
+    // MARK: Internal
+
+    let protocolVersion: Int
+    let mutationID: String
+    let deviceID: String
+    let operations: [BrowserSyncSemanticOperation]
 
     init(mutationID: String, deviceID: String, operations: [BrowserSyncSemanticOperation]) {
         self.protocolVersion = 3
@@ -362,24 +361,13 @@ struct BrowserSyncSemanticPushRequest: Codable, Equatable {
             throw DecodingError.dataCorruptedError(
                 forKey: .protocolVersion,
                 in: values,
-                debugDescription: "Expected semantic protocol version 3"
+                debugDescription: "Expected semantic protocol version 3",
             )
         }
         self.mutationID = try values.decode(String.self, forKey: .mutationID)
         self.deviceID = try values.decode(String.self, forKey: .deviceID)
         self.operations = try values.decode([BrowserSyncSemanticOperation].self, forKey: .operations)
     }
-
-    // MARK: Internal
-
-    let protocolVersion: Int
-    let mutationID: String
-    let deviceID: String
-    let operations: [BrowserSyncSemanticOperation]
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case protocolVersion, mutationID, deviceID, operations }
 }
 
 // MARK: - BrowserSyncSemanticOutcome
@@ -395,6 +383,10 @@ struct BrowserSyncSemanticOutcome: Codable, Equatable {
 // MARK: - BrowserSyncSemanticPushResponse
 
 struct BrowserSyncSemanticPushResponse: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case protocolVersion, mutationID, cursor, events, outcomes }
+
     // MARK: Internal
 
     let protocolVersion: Int
@@ -411,16 +403,20 @@ struct BrowserSyncSemanticPushResponse: Codable, Equatable {
         try values.encode(events.map { BrowserSyncSemanticEncodedEvent(event: $0) }, forKey: .events)
         try values.encode(outcomes, forKey: .outcomes)
     }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case protocolVersion, mutationID, cursor, events, outcomes }
 }
 
 // MARK: - BrowserSyncSemanticEncodedEvent
 
 /// Receipt encoding is separate from the frozen v2 request and mutation codecs.
 private struct BrowserSyncSemanticEncodedEvent: Encodable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case serverSeq, deviceID, entityType, entityID, op, data, createdAt }
+    private enum DataKeys: String, CodingKey {
+        case id, title, systemImageName, rank, isPinnedSectionCollapsed, selectedTabID, autoArchive
+        case spaceID, placement, urlString, pinnedURLString, userTitleOverride, faviconURLString, lastActivityAt
+    }
+
     // MARK: Internal
 
     let event: BrowserSyncEvent
@@ -460,17 +456,9 @@ private struct BrowserSyncSemanticEncodedEvent: Encodable {
         case .folder:
             throw EncodingError.invalidValue(event, .init(
                 codingPath: encoder.codingPath,
-                debugDescription: "Protocol version 3 cannot encode folder events"
+                debugDescription: "Protocol version 3 cannot encode folder events",
             ))
         }
-    }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case serverSeq, deviceID, entityType, entityID, op, data, createdAt }
-    private enum DataKeys: String, CodingKey {
-        case id, title, systemImageName, rank, isPinnedSectionCollapsed, selectedTabID, autoArchive
-        case spaceID, placement, urlString, pinnedURLString, userTitleOverride, faviconURLString, lastActivityAt
     }
 }
 

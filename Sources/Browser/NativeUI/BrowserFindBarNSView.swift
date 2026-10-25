@@ -1,8 +1,45 @@
+// BrowserFindBarNSView.swift
+
 import AppKit
 
 /// Owns find-panel layout and editing. Search state and engine commands remain in BrowserChromeModel.
 final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    let queryField = BrowserFindNSTextField()
+    let previousButton = BrowserNativeChromeButton(
+        symbol: "chevron.up",
+        title: BrowserStrings.findBarPreviousMatch,
+        pressEffect: .up,
+        action: {},
+    )
+    let nextButton = BrowserNativeChromeButton(
+        symbol: "chevron.down",
+        title: BrowserStrings.findBarNextMatch,
+        pressEffect: .down,
+        action: {},
+    )
+    let closeButton = BrowserNativeChromeButton(
+        symbol: "xmark",
+        title: BrowserStrings.findBarClose,
+        pressEffect: .compress,
+        action: {},
+    )
+    var onQueryChanged: (String) -> Void = { _ in }
+    var onNext: () -> Void = {}
+    var onPrevious: () -> Void = {}
+    var onDismiss: () -> Void = {}
+
+    // MARK: Private
+
+    private let visibility = BrowserNativeVisibilityAnimation()
+    private let panel = NSVisualEffectView()
+    private let tint = BrowserNativeSurface()
+    private let fieldBackground = BrowserNativeSurface()
+    private let symbol = NSImageView()
+    private var blockedLeadingInset: CGFloat = 0
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -49,34 +86,6 @@ final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    let queryField = BrowserFindNSTextField()
-    let previousButton = BrowserNativeChromeButton(
-        symbol: "chevron.up",
-        title: BrowserStrings.findBarPreviousMatch,
-        pressEffect: .up,
-        action: {}
-    )
-    let nextButton = BrowserNativeChromeButton(
-        symbol: "chevron.down",
-        title: BrowserStrings.findBarNextMatch,
-        pressEffect: .down,
-        action: {}
-    )
-    let closeButton = BrowserNativeChromeButton(
-        symbol: "xmark",
-        title: BrowserStrings.findBarClose,
-        pressEffect: .compress,
-        action: {}
-    )
-    var onQueryChanged: (String) -> Void = { _ in }
-    var onNext: () -> Void = {}
-    var onPrevious: () -> Void = {}
-    var onDismiss: () -> Void = {}
-
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !panel.isHidden else { return nil }
         let hit = super.hitTest(point)
@@ -91,7 +100,7 @@ final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
             x: bounds.width - BrowserChromeLayout.findBarTrailingInset - width,
             y: BrowserChromeLayout.findBarTopInset,
             width: width,
-            height: BrowserChromeLayout.findBarHeight
+            height: BrowserChromeLayout.findBarHeight,
         )
         tint.frame = panel.bounds
         let spacing = BrowserChromeLayout.findBarContentSpacing
@@ -101,7 +110,7 @@ final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
         let symbolWidth = BrowserChromeLayout.commandBarSymbolWidth
         let fieldWidth = min(
             BrowserChromeLayout.findBarFieldWidth,
-            max(width - padding * 2 - symbolWidth - spacing * 4 - buttonSize * 3, 0)
+            max(width - padding * 2 - symbolWidth - spacing * 4 - buttonSize * 3, 0),
         )
         let contentWidth = symbolWidth + fieldWidth + spacing * 4 + buttonSize * 3
         let startX = max((width - contentWidth) / 2, padding)
@@ -132,7 +141,8 @@ final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
 
     func control(_: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
-        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+        case #selector(NSResponder.insertNewline(_:)),
+             #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
             onNext()
             return true
         case #selector(NSResponder.cancelOperation(_:)):
@@ -144,13 +154,4 @@ final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
         default: return false
         }
     }
-
-    // MARK: Private
-
-    private let visibility = BrowserNativeVisibilityAnimation()
-    private let panel = NSVisualEffectView()
-    private let tint = BrowserNativeSurface()
-    private let fieldBackground = BrowserNativeSurface()
-    private let symbol = NSImageView()
-    private var blockedLeadingInset: CGFloat = 0
 }

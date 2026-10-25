@@ -1,3 +1,5 @@
+// BrowserMobileSyncSession.swift
+
 import Combine
 import Foundation
 import UIKit
@@ -7,7 +9,41 @@ import UIKit
 /// Profile-owned account and transport. UIKit scenes contribute activity; none
 /// owns the coordinator's snapshot applier or the durable account binding.
 @MainActor final class BrowserMobileSyncSession: NSObject, ObservableObject {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private static let configurationKey = "mobile.sync.serverURL"
+
+    private static var deviceIdentity: BrowserSyncDeviceIdentity {
+        .init(name: UIDevice.current.name, platform: UIDevice.current.userInterfaceIdiom == .pad ? "iPadOS" : "iOS")
+    }
+
+    // MARK: Internal
+
+    @Published private(set) var account: BrowserAccountStore
+    @Published private(set) var serverURL: URL?
+    @Published private(set) var lastSyncError: String?
+    private(set) var syncService: BrowserSyncService?
+
+    private let store: BrowserSQLiteSessionStore
+    private let document: BrowserMobileProfileDocument
+    private let preferences: UserDefaults
+    private let authSessionStore: any BrowserSyncAuthSessionStoring
+    private let identityProvider: any BrowserAppleIdentityProviding
+    private let clientFactory: (BrowserSyncConfiguration) -> any BrowserMobileSyncRemoteServing
+    private let pushDebounce: Duration
+    private let pollInterval: Duration?
+    private let retryDelay: Duration?
+    private let expirySweepInterval: TimeInterval
+    private let expiryActivityRefreshInterval: TimeInterval
+    private let dateProvider: @MainActor () -> Date
+    private var activeScenes = Set<String>()
+    private var generation: UInt64 = 0
+    private var signInAttempt: UUID?
+    private weak var signInWindow: UIWindow?
+    private var lastErrorPhase: BrowserSyncFailurePhase?
+    private var accountObservation: AnyCancellable?
+
+    var isForeground: Bool { !activeScenes.isEmpty }
 
     init(
         store: BrowserSQLiteSessionStore,
@@ -23,7 +59,7 @@ import UIKit
         pushDebounce: Duration = .milliseconds(750), pollInterval: Duration? = .seconds(15),
         retryDelay: Duration? = .seconds(2),
         expirySweepInterval: TimeInterval = 60, expiryActivityRefreshInterval: TimeInterval = 300,
-        dateProvider: @escaping @MainActor () -> Date = Date.init
+        dateProvider: @escaping @MainActor () -> Date = Date.init,
     ) {
         self.store = store
         self.document = document
@@ -39,7 +75,7 @@ import UIKit
         self.dateProvider = dateProvider
         self.account = BrowserAccountStore(
             syncClient: nil, authSessionStore: authSessionStore, syncCoordinator: nil,
-            appleSignInService: identityProvider, deviceIdentity: Self.deviceIdentity
+            appleSignInService: identityProvider, deviceIdentity: Self.deviceIdentity,
         )
         super.init()
         document.syncSession = self
@@ -48,7 +84,7 @@ import UIKit
                 self,
                 selector: #selector(sceneDeactivated(_:)),
                 name: name,
-                object: nil
+                object: nil,
             )
         }
         observeAccount()
@@ -57,19 +93,13 @@ import UIKit
         if let initial, !initial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            !initial.contains("$(")
         {
-            do { try configureServer(initial) }
-            catch { self.lastSyncError = error.localizedDescription }
+            do {
+                try configureServer(initial)
+            } catch {
+                self.lastSyncError = error.localizedDescription
+            }
         }
     }
-
-    // MARK: Internal
-
-    @Published private(set) var account: BrowserAccountStore
-    @Published private(set) var serverURL: URL?
-    @Published private(set) var lastSyncError: String?
-    private(set) var syncService: BrowserSyncService?
-
-    var isForeground: Bool { !activeScenes.isEmpty }
 
     static func configuration(_ raw: String) -> BrowserSyncConfiguration? {
         guard let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -106,7 +136,7 @@ import UIKit
                 guard let self, generation == currentGeneration, lastErrorPhase == phase else { return }
                 lastErrorPhase = nil
                 lastSyncError = nil
-            }
+            },
         )
         document.attachSyncService(service)
         syncService = service
@@ -118,7 +148,7 @@ import UIKit
         // applier is attached and the aggregate scene gate is known.
         account = BrowserAccountStore(
             syncClient: client, authSessionStore: authSessionStore, syncCoordinator: service,
-            appleSignInService: identityProvider, deviceIdentity: Self.deviceIdentity
+            appleSignInService: identityProvider, deviceIdentity: Self.deviceIdentity,
         )
         observeAccount()
         service.setRuntimeActive(isForeground)
@@ -183,33 +213,6 @@ import UIKit
         syncService?.schedulePull()
         syncService?.schedulePush(snapshot: document.snapshot)
     }
-
-    // MARK: Private
-
-    private static let configurationKey = "mobile.sync.serverURL"
-
-    private static var deviceIdentity: BrowserSyncDeviceIdentity {
-        .init(name: UIDevice.current.name, platform: UIDevice.current.userInterfaceIdiom == .pad ? "iPadOS" : "iOS")
-    }
-
-    private let store: BrowserSQLiteSessionStore
-    private let document: BrowserMobileProfileDocument
-    private let preferences: UserDefaults
-    private let authSessionStore: any BrowserSyncAuthSessionStoring
-    private let identityProvider: any BrowserAppleIdentityProviding
-    private let clientFactory: (BrowserSyncConfiguration) -> any BrowserMobileSyncRemoteServing
-    private let pushDebounce: Duration
-    private let pollInterval: Duration?
-    private let retryDelay: Duration?
-    private let expirySweepInterval: TimeInterval
-    private let expiryActivityRefreshInterval: TimeInterval
-    private let dateProvider: @MainActor () -> Date
-    private var activeScenes = Set<String>()
-    private var generation: UInt64 = 0
-    private var signInAttempt: UUID?
-    private weak var signInWindow: UIWindow?
-    private var lastErrorPhase: BrowserSyncFailurePhase?
-    private var accountObservation: AnyCancellable?
 
     private func observeAccount() {
         accountObservation = account.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }

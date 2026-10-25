@@ -1,3 +1,5 @@
+// BrowserChromeModel+SidebarSnapshot.swift
+
 import AppKit
 
 extension BrowserChromeModel {
@@ -19,22 +21,22 @@ extension BrowserChromeModel {
             canStopLoading: canStopLoading,
             canReload: canReload,
             splitGroups: validatedSplitGroups().map { splitPaneTabIDs(of: $0) }.filter { $0.count > 1 },
-            mutedTabIDs: Set(tabs.filter { mutedTabSyncIDs.contains($0.syncID) }.map(\.id))
+            mutedTabIDs: Set(tabs.filter { mutedTabSyncIDs.contains($0.syncID) }.map(\.id)),
         )
         snapshot.audibleTabIDs = audibleTabIDs
         snapshot.miniPlayers = miniPlayerItems
         snapshot.tabIcons = Dictionary(
             tabs.compactMap { tab in tabIconsBySyncID[tab.syncID].map { (tab.id, $0) } },
-            uniquingKeysWith: { first, _ in first }
+            uniquingKeysWith: { first, _ in first },
         )
         snapshot.splitNames = Dictionary(
             validatedSplitGroups().compactMap { group in
                 group.title.map { (
                     splitPaneTabIDs(of: group),
-                    BrowserSidebarSplitName(title: $0, systemImageName: group.systemImageName)
+                    BrowserSidebarSplitName(title: $0, systemImageName: group.systemImageName),
                 ) }
             },
-            uniquingKeysWith: { first, _ in first }
+            uniquingKeysWith: { first, _ in first },
         )
         return snapshot
     }
@@ -43,8 +45,10 @@ extension BrowserChromeModel {
 extension BrowserChromeModel {
     /// View menu and command bar title that moves the sidebar to the other window edge.
     var sidebarPositionToggleTitle: String {
-        userPreferencesStore.sidebarPosition == .left
-            ? BrowserStrings.menuMoveSidebarRight
-            : BrowserStrings.menuMoveSidebarLeft
+        if userPreferencesStore.sidebarPosition == .left {
+            BrowserStrings.menuMoveSidebarRight
+        } else {
+            BrowserStrings.menuMoveSidebarLeft
+        }
     }
 }

@@ -1,3 +1,5 @@
+// BrowserURLDisplayFormatterTests.swift
+
 import Testing
 
 @Test func urlDisplayFormatterShowsBareHost() {
@@ -11,16 +13,16 @@ import Testing
 @Test func urlFullDisplayFormatterStripsLeadingWWWFromHostOnly() {
     #expect(
         BrowserURLDisplayFormatter.fullDisplayString(
-            for: "https://www.youtube.com/feed?list=latest#top"
-        ) == "https://youtube.com/feed?list=latest#top"
+            for: "https://www.youtube.com/feed?list=latest#top",
+        ) == "https://youtube.com/feed?list=latest#top",
     )
 }
 
 @Test func urlFullDisplayFormatterPreservesImportantSubdomains() {
     #expect(
         BrowserURLDisplayFormatter.fullDisplayString(
-            for: "https://www1.youtube.com/feed"
-        ) == "https://www1.youtube.com/feed"
+            for: "https://www1.youtube.com/feed",
+        ) == "https://www1.youtube.com/feed",
     )
 }
 
@@ -36,7 +38,7 @@ import Testing
         syncID: "sync",
         spaceID: "space",
         title: "",
-        urlString: "https://www.youtube.com/feed"
+        urlString: "https://www.youtube.com/feed",
     )
 
     #expect(tab.pageTitle == "youtube.com")
@@ -48,7 +50,7 @@ import Testing
         kind: .bookmark,
         title: "",
         urlString: "https://www.youtube.com/feed",
-        children: []
+        children: [],
     )
 
     #expect(item.displayTitle == "youtube.com")
@@ -74,8 +76,8 @@ import Testing
 @Test func urlDisplayFormatterPreservesImportantSubdomains() {
     #expect(
         BrowserURLDisplayFormatter.displayString(
-            for: "https://chromewebstore.google.com/detail/example"
-        ) == "chromewebstore.google.com"
+            for: "https://chromewebstore.google.com/detail/example",
+        ) == "chromewebstore.google.com",
     )
 }
 
@@ -114,7 +116,7 @@ import Testing
 @Test func urlDisplayFormatterFallsBackForFileURLs() {
     #expect(
         BrowserURLDisplayFormatter.displayString(
-            for: "file:///Users/lev/Downloads/example.html"
-        ) == "file:///Users/lev/Downloads/example.html"
+            for: "file:///Users/lev/Downloads/example.html",
+        ) == "file:///Users/lev/Downloads/example.html",
     )
 }

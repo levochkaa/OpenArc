@@ -1,3 +1,5 @@
+// BrowserWebApps.swift
+
 import AppKit
 import Foundation
 
@@ -14,42 +16,6 @@ enum BrowserWebAppDisplayMode: String, Codable, Equatable {
 // MARK: - BrowserWebAppConfiguration
 
 struct BrowserWebAppConfiguration: Equatable {
-    // MARK: Lifecycle
-
-    init(
-        identifier: String,
-        name: String,
-        startURL: URL,
-        scopeURL: URL,
-        profileDirectoryName: String,
-        profileName: String,
-        hostBundleURL: URL,
-        bundleURL: URL,
-        manifestURL: URL? = nil,
-        applicationIDURL: URL? = nil,
-        appDescription: String? = nil,
-        displayMode: BrowserWebAppDisplayMode? = nil,
-        themeColor: String? = nil,
-        backgroundColor: String? = nil,
-        iconURL: URL? = nil
-    ) {
-        self.identifier = identifier
-        self.name = name
-        self.startURL = startURL
-        self.scopeURL = scopeURL
-        self.profileDirectoryName = profileDirectoryName
-        self.profileName = profileName
-        self.hostBundleURL = hostBundleURL
-        self.bundleURL = bundleURL
-        self.manifestURL = manifestURL
-        self.applicationIDURL = applicationIDURL
-        self.appDescription = appDescription
-        self.displayMode = displayMode
-        self.themeColor = themeColor
-        self.backgroundColor = backgroundColor
-        self.iconURL = iconURL
-    }
-
     // MARK: Internal
 
     static let identifierInfoKey = "OpenArcWebAppIdentifier"
@@ -92,9 +58,43 @@ struct BrowserWebAppConfiguration: Equatable {
         BrowserProfile(directoryName: profileDirectoryName, name: profileName)
     }
 
+    init(
+        identifier: String,
+        name: String,
+        startURL: URL,
+        scopeURL: URL,
+        profileDirectoryName: String,
+        profileName: String,
+        hostBundleURL: URL,
+        bundleURL: URL,
+        manifestURL: URL? = nil,
+        applicationIDURL: URL? = nil,
+        appDescription: String? = nil,
+        displayMode: BrowserWebAppDisplayMode? = nil,
+        themeColor: String? = nil,
+        backgroundColor: String? = nil,
+        iconURL: URL? = nil,
+    ) {
+        self.identifier = identifier
+        self.name = name
+        self.startURL = startURL
+        self.scopeURL = scopeURL
+        self.profileDirectoryName = profileDirectoryName
+        self.profileName = profileName
+        self.hostBundleURL = hostBundleURL
+        self.bundleURL = bundleURL
+        self.manifestURL = manifestURL
+        self.applicationIDURL = applicationIDURL
+        self.appDescription = appDescription
+        self.displayMode = displayMode
+        self.themeColor = themeColor
+        self.backgroundColor = backgroundColor
+        self.iconURL = iconURL
+    }
+
     static func current(
         bundle: Bundle = .main,
-        arguments: [String] = ProcessInfo.processInfo.arguments
+        arguments: [String] = ProcessInfo.processInfo.arguments,
     ) -> BrowserWebAppConfiguration? {
         if let bundleArgument = arguments.first(where: { $0.hasPrefix(bundleArgumentPrefix) }) {
             let bundlePath = String(bundleArgument.dropFirst(bundleArgumentPrefix.count))
@@ -102,7 +102,7 @@ struct BrowserWebAppConfiguration: Equatable {
             if let webAppBundle = Bundle(url: bundleURL),
                let configuration = configuration(
                    infoDictionary: webAppBundle.infoDictionary,
-                   bundleURL: bundleURL
+                   bundleURL: bundleURL,
                )
             {
                 return configuration
@@ -114,7 +114,7 @@ struct BrowserWebAppConfiguration: Equatable {
 
     static func configuration(
         infoDictionary: [String: Any]?,
-        bundleURL: URL
+        bundleURL: URL,
     ) -> BrowserWebAppConfiguration? {
         guard
             let infoDictionary,
@@ -148,7 +148,7 @@ struct BrowserWebAppConfiguration: Equatable {
                 .flatMap(BrowserWebAppDisplayMode.init(rawValue:)),
             themeColor: nonemptyString(infoDictionary[themeColorInfoKey]),
             backgroundColor: nonemptyString(infoDictionary[backgroundColorInfoKey]),
-            iconURL: optionalWebURL(infoDictionary[iconURLInfoKey])
+            iconURL: optionalWebURL(infoDictionary[iconURLInfoKey]),
         )
     }
 
@@ -172,7 +172,7 @@ struct BrowserWebAppConfiguration: Equatable {
     static func stableIdentifier(
         for pageURL: URL,
         profileDirectoryName: String,
-        applicationIDURL: URL? = nil
+        applicationIDURL: URL? = nil,
     ) -> String? {
         guard let scopeURL = scopeURL(for: pageURL) else {
             return nil
@@ -259,7 +259,7 @@ struct BrowserWebAppInstallMetadata: Equatable {
         }
         return BrowserWebAppBundleInstaller.suggestedName(
             pageTitle: fallbackTitle,
-            pageURL: sourcePageURL
+            pageURL: sourcePageURL,
         )
     }
 }
@@ -267,100 +267,6 @@ struct BrowserWebAppInstallMetadata: Equatable {
 // MARK: - BrowserWebAppManifestParser
 
 enum BrowserWebAppManifestParser {
-    // MARK: Internal
-
-    static func installMetadata(
-        payloadJSON: String?,
-        fallbackPageURL: URL,
-        fallbackTitle _: String,
-        fallbackIconURL: URL?
-    ) -> BrowserWebAppInstallMetadata {
-        let fallbackScopeURL = BrowserWebAppConfiguration.scopeURL(for: fallbackPageURL) ?? fallbackPageURL
-        let fallback = BrowserWebAppInstallMetadata(
-            sourcePageURL: fallbackPageURL,
-            manifestURL: nil,
-            applicationIDURL: fallbackScopeURL,
-            name: nil,
-            shortName: nil,
-            appDescription: nil,
-            startURL: fallbackPageURL,
-            scopeURL: fallbackScopeURL,
-            displayMode: nil,
-            themeColor: nil,
-            backgroundColor: nil,
-            iconURL: fallbackIconURL
-        )
-
-        guard
-            let payloadJSON,
-            let payloadData = payloadJSON.data(using: .utf8),
-            let payload = try? JSONDecoder().decode(Payload.self, from: payloadData),
-            let documentURL = validatedWebURL(payload.documentURL),
-            sameOrigin(documentURL, fallbackPageURL)
-        else {
-            return fallback
-        }
-
-        let documentIconURL = preferredDocumentIconURL(
-            from: payload.documentIcons ?? [],
-            documentURL: documentURL
-        )
-        guard
-            let rawManifest = payload.manifest,
-            let manifestURL = validatedWebURL(payload.manifestURL)
-        else {
-            return BrowserWebAppInstallMetadata(
-                sourcePageURL: documentURL,
-                manifestURL: nil,
-                applicationIDURL: BrowserWebAppConfiguration.scopeURL(for: documentURL) ?? documentURL,
-                name: nil,
-                shortName: nil,
-                appDescription: nil,
-                startURL: documentURL,
-                scopeURL: BrowserWebAppConfiguration.scopeURL(for: documentURL) ?? documentURL,
-                displayMode: nil,
-                themeColor: nil,
-                backgroundColor: nil,
-                iconURL: documentIconURL ?? fallbackIconURL
-            )
-        }
-
-        let startURL = resolvedWebURL(rawManifest.startURL, relativeTo: manifestURL)
-            .flatMap { sameOrigin($0, documentURL) ? removingFragment(from: $0) : nil }
-            ?? removingFragment(from: documentURL)
-        let defaultScope = defaultScopeURL(for: startURL)
-        let specifiedScope = resolvedWebURL(rawManifest.scope, relativeTo: manifestURL)
-            .flatMap { scopeURL in
-                sameOrigin(scopeURL, startURL) && contains(startURL, in: scopeURL)
-                    ? removingFragment(from: scopeURL)
-                    : nil
-            }
-        let scopeURL = specifiedScope ?? defaultScope
-        let applicationIDURL = resolvedWebURL(rawManifest.id, relativeTo: startURL)
-            .flatMap { sameOrigin($0, startURL) ? removingFragment(from: $0) : nil }
-            ?? startURL
-        let displayMode = preferredDisplayMode(rawManifest)
-        let manifestIconURL = preferredManifestIconURL(
-            from: rawManifest.icons ?? [],
-            manifestURL: manifestURL
-        )
-
-        return BrowserWebAppInstallMetadata(
-            sourcePageURL: documentURL,
-            manifestURL: manifestURL,
-            applicationIDURL: applicationIDURL,
-            name: nonempty(rawManifest.name),
-            shortName: nonempty(rawManifest.shortName),
-            appDescription: nonempty(rawManifest.description),
-            startURL: startURL,
-            scopeURL: scopeURL,
-            displayMode: displayMode,
-            themeColor: nonempty(rawManifest.themeColor),
-            backgroundColor: nonempty(rawManifest.backgroundColor),
-            iconURL: manifestIconURL ?? documentIconURL ?? fallbackIconURL
-        )
-    }
-
     // MARK: Private
 
     private struct Payload: Decodable {
@@ -419,8 +325,102 @@ enum BrowserWebAppManifestParser {
         let formatPriority: Int
     }
 
+    // MARK: Internal
+
+    static func installMetadata(
+        payloadJSON: String?,
+        fallbackPageURL: URL,
+        fallbackTitle _: String,
+        fallbackIconURL: URL?,
+    ) -> BrowserWebAppInstallMetadata {
+        let fallbackScopeURL = BrowserWebAppConfiguration.scopeURL(for: fallbackPageURL) ?? fallbackPageURL
+        let fallback = BrowserWebAppInstallMetadata(
+            sourcePageURL: fallbackPageURL,
+            manifestURL: nil,
+            applicationIDURL: fallbackScopeURL,
+            name: nil,
+            shortName: nil,
+            appDescription: nil,
+            startURL: fallbackPageURL,
+            scopeURL: fallbackScopeURL,
+            displayMode: nil,
+            themeColor: nil,
+            backgroundColor: nil,
+            iconURL: fallbackIconURL,
+        )
+
+        guard
+            let payloadJSON,
+            let payloadData = payloadJSON.data(using: .utf8),
+            let payload = try? JSONDecoder().decode(Payload.self, from: payloadData),
+            let documentURL = validatedWebURL(payload.documentURL),
+            sameOrigin(documentURL, fallbackPageURL)
+        else {
+            return fallback
+        }
+
+        let documentIconURL = preferredDocumentIconURL(
+            from: payload.documentIcons ?? [],
+            documentURL: documentURL,
+        )
+        guard
+            let rawManifest = payload.manifest,
+            let manifestURL = validatedWebURL(payload.manifestURL)
+        else {
+            return BrowserWebAppInstallMetadata(
+                sourcePageURL: documentURL,
+                manifestURL: nil,
+                applicationIDURL: BrowserWebAppConfiguration.scopeURL(for: documentURL) ?? documentURL,
+                name: nil,
+                shortName: nil,
+                appDescription: nil,
+                startURL: documentURL,
+                scopeURL: BrowserWebAppConfiguration.scopeURL(for: documentURL) ?? documentURL,
+                displayMode: nil,
+                themeColor: nil,
+                backgroundColor: nil,
+                iconURL: documentIconURL ?? fallbackIconURL,
+            )
+        }
+
+        let startURL = resolvedWebURL(rawManifest.startURL, relativeTo: manifestURL)
+            .flatMap { sameOrigin($0, documentURL) ? removingFragment(from: $0) : nil }
+            ?? removingFragment(from: documentURL)
+        let defaultScope = defaultScopeURL(for: startURL)
+        let specifiedScope = resolvedWebURL(rawManifest.scope, relativeTo: manifestURL)
+            .flatMap { scopeURL in
+                sameOrigin(scopeURL, startURL) && contains(startURL, in: scopeURL)
+                    ? removingFragment(from: scopeURL)
+                    : nil
+            }
+        let scopeURL = specifiedScope ?? defaultScope
+        let applicationIDURL = resolvedWebURL(rawManifest.id, relativeTo: startURL)
+            .flatMap { sameOrigin($0, startURL) ? removingFragment(from: $0) : nil }
+            ?? startURL
+        let displayMode = preferredDisplayMode(rawManifest)
+        let manifestIconURL = preferredManifestIconURL(
+            from: rawManifest.icons ?? [],
+            manifestURL: manifestURL,
+        )
+
+        return BrowserWebAppInstallMetadata(
+            sourcePageURL: documentURL,
+            manifestURL: manifestURL,
+            applicationIDURL: applicationIDURL,
+            name: nonempty(rawManifest.name),
+            shortName: nonempty(rawManifest.shortName),
+            appDescription: nonempty(rawManifest.description),
+            startURL: startURL,
+            scopeURL: scopeURL,
+            displayMode: displayMode,
+            themeColor: nonempty(rawManifest.themeColor),
+            backgroundColor: nonempty(rawManifest.backgroundColor),
+            iconURL: manifestIconURL ?? documentIconURL ?? fallbackIconURL,
+        )
+    }
+
     private static func preferredDisplayMode(_ manifest: Manifest) -> BrowserWebAppDisplayMode? {
-        let candidates = (manifest.displayOverride ?? []) + [manifest.display].compactMap { $0 }
+        let candidates = (manifest.displayOverride ?? []) + [manifest.display].compactMap(\.self)
         return candidates.lazy
             .compactMap { rawValue in
                 BrowserWebAppDisplayMode(rawValue: rawValue.lowercased())
@@ -443,7 +443,7 @@ enum BrowserWebAppManifestParser {
                 url: url,
                 purposePriority: purposePriority,
                 pixelSize: largestPixelSize(icon.sizes),
-                formatPriority: imageFormatPriority(type: icon.type, url: url)
+                formatPriority: imageFormatPriority(type: icon.type, url: url),
             )
         }
         .max(by: iconCandidateIsLessPreferred)?
@@ -469,7 +469,7 @@ enum BrowserWebAppManifestParser {
                 url: url,
                 purposePriority: relationPriority,
                 pixelSize: largestPixelSize(icon.sizes),
-                formatPriority: imageFormatPriority(type: icon.type, url: url)
+                formatPriority: imageFormatPriority(type: icon.type, url: url),
             )
         }
         .max(by: iconCandidateIsLessPreferred)?
@@ -591,20 +591,6 @@ enum BrowserWebAppManifestParser {
 // MARK: - BrowserWebAppInstallRequest
 
 struct BrowserWebAppInstallRequest: Equatable {
-    // MARK: Lifecycle
-
-    init(
-        name: String,
-        metadata: BrowserWebAppInstallMetadata,
-        profile: BrowserProfile,
-        bundleIconData: Data? = nil
-    ) {
-        self.name = name
-        self.metadata = metadata
-        self.profile = profile
-        self.bundleIconData = bundleIconData
-    }
-
     // MARK: Internal
 
     let name: String
@@ -614,6 +600,18 @@ struct BrowserWebAppInstallRequest: Equatable {
 
     var pageURL: URL {
         metadata.sourcePageURL
+    }
+
+    init(
+        name: String,
+        metadata: BrowserWebAppInstallMetadata,
+        profile: BrowserProfile,
+        bundleIconData: Data? = nil,
+    ) {
+        self.name = name
+        self.metadata = metadata
+        self.profile = profile
+        self.bundleIconData = bundleIconData
     }
 }
 
@@ -627,20 +625,6 @@ struct BrowserInstalledWebApp: Equatable {
 // MARK: - BrowserWebAppBundleInstaller
 
 struct BrowserWebAppBundleInstaller {
-    // MARK: Lifecycle
-
-    init(
-        hostBundleURL: URL,
-        applicationsDirectoryURL: URL,
-        fileManager: FileManager = .default,
-        bundleSigner: @escaping BundleSigner = Self.signBundle
-    ) {
-        self.hostBundleURL = hostBundleURL
-        self.applicationsDirectoryURL = applicationsDirectoryURL
-        self.fileManager = fileManager
-        self.bundleSigner = bundleSigner
-    }
-
     // MARK: Internal
 
     typealias BundleSigner = (URL, String) throws -> Void
@@ -650,6 +634,23 @@ struct BrowserWebAppBundleInstaller {
 
     let hostBundleURL: URL
     let applicationsDirectoryURL: URL
+
+    // MARK: Private
+
+    private let fileManager: FileManager
+    private let bundleSigner: BundleSigner
+
+    init(
+        hostBundleURL: URL,
+        applicationsDirectoryURL: URL,
+        fileManager: FileManager = .default,
+        bundleSigner: @escaping BundleSigner = Self.signBundle,
+    ) {
+        self.hostBundleURL = hostBundleURL
+        self.applicationsDirectoryURL = applicationsDirectoryURL
+        self.fileManager = fileManager
+        self.bundleSigner = bundleSigner
+    }
 
     static func defaultApplicationsDirectoryURL(fileManager: FileManager = .default) -> URL? {
         fileManager.urls(for: .applicationDirectory, in: .userDomainMask)
@@ -680,91 +681,6 @@ struct BrowserWebAppBundleInstaller {
 
         return BrowserStrings.applicationName
     }
-
-    func install(_ request: BrowserWebAppInstallRequest) throws -> BrowserInstalledWebApp {
-        guard
-            BrowserWebAppConfiguration.scopeURL(for: request.metadata.startURL) != nil,
-            let identifier = BrowserWebAppConfiguration.stableIdentifier(
-                for: request.pageURL,
-                profileDirectoryName: request.profile.directoryName,
-                applicationIDURL: request.metadata.applicationIDURL
-            )
-        else {
-            throw BrowserWebAppInstallationError.unsupportedURL
-        }
-        let scopeURL = request.metadata.scopeURL
-        let legacyIdentifier = BrowserWebAppConfiguration.stableIdentifier(
-            for: request.pageURL,
-            profileDirectoryName: request.profile.directoryName
-        )
-
-        let appName = Self.sanitizedAppName(request.name)
-        guard !appName.isEmpty else {
-            throw BrowserWebAppInstallationError.invalidName
-        }
-
-        let hostInfoDictionary = try hostInfoDictionary()
-        let hostExecutableName = try hostExecutableName(from: hostInfoDictionary)
-        let hostExecutableURL = hostBundleURL
-            .appendingPathComponent("Contents/MacOS", isDirectory: true)
-            .appendingPathComponent(hostExecutableName, isDirectory: false)
-        guard fileManager.isExecutableFile(atPath: hostExecutableURL.path) else {
-            throw BrowserWebAppInstallationError.missingHostExecutable
-        }
-        let launcherExecutableURL = hostBundleURL
-            .appendingPathComponent("Contents/Resources", isDirectory: true)
-            .appendingPathComponent(Self.launcherExecutableName, isDirectory: false)
-        guard fileManager.isExecutableFile(atPath: launcherExecutableURL.path) else {
-            throw BrowserWebAppInstallationError.missingLauncherExecutable
-        }
-
-        try fileManager.createDirectory(at: applicationsDirectoryURL, withIntermediateDirectories: true)
-        let destinationURL = existingBundleURL(forAny: Set([identifier, legacyIdentifier].compactMap { $0 }))
-            ?? availableBundleURL(preferredName: appName)
-        let stagingURL = applicationsDirectoryURL
-            .appendingPathComponent(".installing-\(UUID().uuidString).app", isDirectory: true)
-
-        do {
-            try createBundle(
-                at: stagingURL,
-                appName: appName,
-                identifier: identifier,
-                request: request,
-                scopeURL: scopeURL,
-                hostInfoDictionary: hostInfoDictionary,
-                launcherExecutableURL: launcherExecutableURL
-            )
-            try moveStagedBundle(from: stagingURL, to: destinationURL)
-        } catch {
-            try? fileManager.removeItem(at: stagingURL)
-            throw error
-        }
-
-        let installedBundleURL = URL(fileURLWithPath: destinationURL.path, isDirectory: true)
-        let configuration = BrowserWebAppConfiguration(
-            identifier: identifier,
-            name: appName,
-            startURL: request.metadata.startURL,
-            scopeURL: scopeURL,
-            profileDirectoryName: request.profile.directoryName,
-            profileName: request.profile.displayName,
-            hostBundleURL: hostBundleURL,
-            bundleURL: installedBundleURL,
-            manifestURL: request.metadata.manifestURL,
-            applicationIDURL: request.metadata.applicationIDURL,
-            appDescription: request.metadata.appDescription,
-            displayMode: request.metadata.displayMode,
-            themeColor: request.metadata.themeColor,
-            backgroundColor: request.metadata.backgroundColor,
-            iconURL: request.metadata.iconURL
-        )
-        return BrowserInstalledWebApp(configuration: configuration, bundleURL: installedBundleURL)
-    }
-
-    // MARK: Private
-
-    private let fileManager: FileManager
-    private let bundleSigner: BundleSigner
 
     private static func sanitizedAppName(_ rawName: String) -> String {
         let invalidCharacters = CharacterSet(charactersIn: "/:")
@@ -822,6 +738,86 @@ struct BrowserWebAppBundleInstaller {
         }
     }
 
+    func install(_ request: BrowserWebAppInstallRequest) throws -> BrowserInstalledWebApp {
+        guard
+            BrowserWebAppConfiguration.scopeURL(for: request.metadata.startURL) != nil,
+            let identifier = BrowserWebAppConfiguration.stableIdentifier(
+                for: request.pageURL,
+                profileDirectoryName: request.profile.directoryName,
+                applicationIDURL: request.metadata.applicationIDURL,
+            )
+        else {
+            throw BrowserWebAppInstallationError.unsupportedURL
+        }
+        let scopeURL = request.metadata.scopeURL
+        let legacyIdentifier = BrowserWebAppConfiguration.stableIdentifier(
+            for: request.pageURL,
+            profileDirectoryName: request.profile.directoryName,
+        )
+
+        let appName = Self.sanitizedAppName(request.name)
+        guard !appName.isEmpty else {
+            throw BrowserWebAppInstallationError.invalidName
+        }
+
+        let hostInfoDictionary = try hostInfoDictionary()
+        let hostExecutableName = try hostExecutableName(from: hostInfoDictionary)
+        let hostExecutableURL = hostBundleURL
+            .appendingPathComponent("Contents/MacOS", isDirectory: true)
+            .appendingPathComponent(hostExecutableName, isDirectory: false)
+        guard fileManager.isExecutableFile(atPath: hostExecutableURL.path) else {
+            throw BrowserWebAppInstallationError.missingHostExecutable
+        }
+        let launcherExecutableURL = hostBundleURL
+            .appendingPathComponent("Contents/Resources", isDirectory: true)
+            .appendingPathComponent(Self.launcherExecutableName, isDirectory: false)
+        guard fileManager.isExecutableFile(atPath: launcherExecutableURL.path) else {
+            throw BrowserWebAppInstallationError.missingLauncherExecutable
+        }
+
+        try fileManager.createDirectory(at: applicationsDirectoryURL, withIntermediateDirectories: true)
+        let destinationURL = existingBundleURL(forAny: Set([identifier, legacyIdentifier].compactMap(\.self)))
+            ?? availableBundleURL(preferredName: appName)
+        let stagingURL = applicationsDirectoryURL
+            .appendingPathComponent(".installing-\(UUID().uuidString).app", isDirectory: true)
+
+        do {
+            try createBundle(
+                at: stagingURL,
+                appName: appName,
+                identifier: identifier,
+                request: request,
+                scopeURL: scopeURL,
+                hostInfoDictionary: hostInfoDictionary,
+                launcherExecutableURL: launcherExecutableURL,
+            )
+            try moveStagedBundle(from: stagingURL, to: destinationURL)
+        } catch {
+            try? fileManager.removeItem(at: stagingURL)
+            throw error
+        }
+
+        let installedBundleURL = URL(fileURLWithPath: destinationURL.path, isDirectory: true)
+        let configuration = BrowserWebAppConfiguration(
+            identifier: identifier,
+            name: appName,
+            startURL: request.metadata.startURL,
+            scopeURL: scopeURL,
+            profileDirectoryName: request.profile.directoryName,
+            profileName: request.profile.displayName,
+            hostBundleURL: hostBundleURL,
+            bundleURL: installedBundleURL,
+            manifestURL: request.metadata.manifestURL,
+            applicationIDURL: request.metadata.applicationIDURL,
+            appDescription: request.metadata.appDescription,
+            displayMode: request.metadata.displayMode,
+            themeColor: request.metadata.themeColor,
+            backgroundColor: request.metadata.backgroundColor,
+            iconURL: request.metadata.iconURL,
+        )
+        return BrowserInstalledWebApp(configuration: configuration, bundleURL: installedBundleURL)
+    }
+
     private func hostInfoDictionary() throws -> [String: Any] {
         let infoURL = hostBundleURL.appendingPathComponent("Contents/Info.plist", isDirectory: false)
         let infoData = try Data(contentsOf: infoURL)
@@ -849,7 +845,7 @@ struct BrowserWebAppBundleInstaller {
             let appURLs = try? fileManager.contentsOfDirectory(
                 at: applicationsDirectoryURL,
                 includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
+                options: [.skipsHiddenFiles],
             )
         else {
             return nil
@@ -896,7 +892,7 @@ struct BrowserWebAppBundleInstaller {
         request: BrowserWebAppInstallRequest,
         scopeURL: URL,
         hostInfoDictionary: [String: Any],
-        launcherExecutableURL: URL
+        launcherExecutableURL: URL,
     ) throws {
         let contentsURL = bundleURL.appendingPathComponent("Contents", isDirectory: true)
         let macOSURL = contentsURL.appendingPathComponent("MacOS", isDirectory: true)
@@ -905,7 +901,7 @@ struct BrowserWebAppBundleInstaller {
         let executableName = Self.sanitizedExecutableName(appName)
         try fileManager.copyItem(
             at: launcherExecutableURL,
-            to: macOSURL.appendingPathComponent(executableName, isDirectory: false)
+            to: macOSURL.appendingPathComponent(executableName, isDirectory: false),
         )
 
         let bundleIdentifier = Self.bundleIdentifier(for: identifier)
@@ -914,7 +910,7 @@ struct BrowserWebAppBundleInstaller {
             try fileManager.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
             try bundleIconData.write(
                 to: resourcesURL.appendingPathComponent("app.icns", isDirectory: false),
-                options: .atomic
+                options: .atomic,
             )
         }
 
@@ -925,16 +921,16 @@ struct BrowserWebAppBundleInstaller {
             identifier: identifier,
             request: request,
             scopeURL: scopeURL,
-            hostInfoDictionary: hostInfoDictionary
+            hostInfoDictionary: hostInfoDictionary,
         )
         let infoData = try PropertyListSerialization.data(
             fromPropertyList: infoDictionary,
             format: .binary,
-            options: 0
+            options: 0,
         )
         try infoData.write(
             to: contentsURL.appendingPathComponent("Info.plist", isDirectory: false),
-            options: .atomic
+            options: .atomic,
         )
         try bundleSigner(bundleURL, bundleIdentifier)
     }
@@ -946,7 +942,7 @@ struct BrowserWebAppBundleInstaller {
         identifier: String,
         request: BrowserWebAppInstallRequest,
         scopeURL: URL,
-        hostInfoDictionary: [String: Any]
+        hostInfoDictionary: [String: Any],
     ) -> [String: Any] {
         var infoDictionary: [String: Any] = [
             "CFBundleDevelopmentRegion": hostInfoDictionary["CFBundleDevelopmentRegion"] as? String ?? "en",
@@ -1030,19 +1026,6 @@ enum BrowserWebAppInstallationError: LocalizedError {
 // MARK: - BrowserWebAppPreferences
 
 @MainActor final class BrowserWebAppPreferences: ObservableObject {
-    // MARK: Lifecycle
-
-    init(identifier: String, userDefaults: UserDefaults = .standard) {
-        self.identifier = identifier
-        self.userDefaults = userDefaults
-        self.alwaysShowsToolbarInFullscreen = userDefaults.bool(
-            forKey: Self.toolbarKey(identifier: identifier)
-        )
-        self.alwaysShowsFullURLs = userDefaults.bool(
-            forKey: Self.fullURLKey(identifier: identifier)
-        )
-    }
-
     // MARK: Internal
 
     @Published var alwaysShowsToolbarInFullscreen: Bool {
@@ -1061,6 +1044,17 @@ enum BrowserWebAppInstallationError: LocalizedError {
 
     private let identifier: String
     private let userDefaults: UserDefaults
+
+    init(identifier: String, userDefaults: UserDefaults = .standard) {
+        self.identifier = identifier
+        self.userDefaults = userDefaults
+        self.alwaysShowsToolbarInFullscreen = userDefaults.bool(
+            forKey: Self.toolbarKey(identifier: identifier),
+        )
+        self.alwaysShowsFullURLs = userDefaults.bool(
+            forKey: Self.fullURLKey(identifier: identifier),
+        )
+    }
 
     private static func toolbarKey(identifier: String) -> String {
         "browser.webApp.\(identifier).alwaysShowsToolbarInFullscreen"

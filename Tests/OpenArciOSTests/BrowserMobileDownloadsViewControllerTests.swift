@@ -1,3 +1,5 @@
+// BrowserMobileDownloadsViewControllerTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -17,8 +19,8 @@ extension BrowserMobileUITests {
             controller.tableView,
             trailingSwipeActionsConfigurationForRowAt: .init(
                 row: 0,
-                section: 0
-            )
+                section: 0,
+            ),
         ))
         #expect(!swipe.performsFirstActionWithFullSwipe)
         let action = try #require(swipe.actions.first)
@@ -45,7 +47,7 @@ extension BrowserMobileUITests {
         let confirmedAlert = try await downloadUIDeletionAlert(controller, in: host)
         try #require(
             confirmedAlert.message?.contains(first.filename) == true,
-            "The retained accessibility action must still confirm the first download after row reuse"
+            "The retained accessibility action must still confirm the first download after row reuse",
         )
         #expect(confirmedAlert.message?.contains(second.filename) == false)
         #expect(confirmedAlert.actions.contains { $0.style == .destructive })
@@ -61,7 +63,7 @@ extension BrowserMobileUITests {
         let context = try #require(controller.tableView(
             controller.tableView,
             contextMenuConfigurationForRowAt: .init(row: 0, section: 0),
-            point: .zero
+            point: .zero,
         ))
         #expect(context.identifier as? UUID == second.id)
     }
@@ -84,7 +86,7 @@ extension BrowserMobileUITests {
         #expect(host.view(first.id, suffix: "filename")?.accessibilityCustomActions == nil)
         #expect(controller.tableView(
             controller.tableView,
-            trailingSwipeActionsConfigurationForRowAt: .init(row: 0, section: 0)
+            trailingSwipeActionsConfigurationForRowAt: .init(row: 0, section: 0),
         ) == nil)
         source.finishRemoval(succeeded: false)
         try await downloadUIWait { source.canRetryPersistence && !source.isDeleting(id: first.id) }
@@ -270,7 +272,7 @@ extension BrowserMobileUITests {
         try await downloadUIWait { presented.count == 2 }
         presented[1].1.delegate?.documentPicker?(
             presented[1].1,
-            didPickDocumentsAt: [directory.appendingPathComponent("export")]
+            didPickDocumentsAt: [directory.appendingPathComponent("export")],
         )
         let reopened = BrowserMobileDownloads(directory: directory)
         await reopened.load()
@@ -305,7 +307,7 @@ extension BrowserMobileUITests {
             #expect(button.bounds.width > 0)
             #expect(
                 !button.hasAmbiguousLayout,
-                "Button \(button.frame), vertical constraints \(button.constraintsAffectingLayout(for: .vertical))"
+                "Button \(button.frame), vertical constraints \(button.constraintsAffectingLayout(for: .vertical))",
             )
             #expect(currentLabel.bounds.width > 0 && !currentLabel.hasAmbiguousLayout)
         }
@@ -473,17 +475,6 @@ enum DownloadUIInvalidation: CaseIterable { case hidden, done, disconnected }
 // MARK: - DownloadUIModel
 
 @MainActor private final class DownloadUIModel: BrowserMobileDownloadsPresenting {
-    // MARK: Lifecycle
-
-    init(entries: [BrowserMobileDownload]) throws {
-        self.entries = entries
-        self.durableIDs = Set(entries.filter { $0.status == .completed }.map(\.id))
-        self.exportURL = FileManager.default.temporaryDirectory.appendingPathComponent("DownloadUI-\(UUID()).txt")
-        try Data("A file ready for export".utf8).write(to: exportURL)
-    }
-
-    deinit { try? FileManager.default.removeItem(at: exportURL) }
-
     // MARK: Internal
 
     var entries: [BrowserMobileDownload]
@@ -500,10 +491,30 @@ enum DownloadUIInvalidation: CaseIterable { case hidden, done, disconnected }
     var holdsRemoval = false
     var removedOnRetry = [UUID]()
 
+    // MARK: Private
+
+    private let exportURL: URL
+    private let clearOwnerID = UUID()
+    private var leases = [UUID: UUID]()
+    private var deletingIDs = Set<UUID>()
+    private var pendingRemoval: UUID?
+    private var removalContinuation: CheckedContinuation<Bool, Never>?
+    private var observers = [UUID: @MainActor () -> Void]()
+    private var continuations = [CheckedContinuation<URL, Error>]()
+
     var observerCount: Int { observers.count }
 
     var canClearCompleted: Bool { !durableIDs.isEmpty && pendingRemoval == nil }
     var isClearingCompleted: Bool { false }
+
+    init(entries: [BrowserMobileDownload]) throws {
+        self.entries = entries
+        self.durableIDs = Set(entries.filter { $0.status == .completed }.map(\.id))
+        self.exportURL = FileManager.default.temporaryDirectory.appendingPathComponent("DownloadUI-\(UUID()).txt")
+        try Data("A file ready for export".utf8).write(to: exportURL)
+    }
+
+    deinit { try? FileManager.default.removeItem(at: exportURL) }
 
     func captureCompletedClear() -> BrowserMobileDownloadClearScope? {
         canClearCompleted ? .init(ids: durableIDs, ownerID: clearOwnerID) : nil
@@ -524,7 +535,7 @@ enum DownloadUIInvalidation: CaseIterable { case hidden, done, disconnected }
     }
 
     func isDeleting(id: UUID) -> Bool { deletingIDs.contains(id) }
-    func activeLeaseCount(id: UUID) -> Int { leases.values.filter { $0 == id }.count }
+    func activeLeaseCount(id: UUID) -> Int { leases.values.count(where: { $0 == id }) }
 
     func remove(id: UUID) async -> Bool {
         removalCalls.append(id)
@@ -616,23 +627,16 @@ enum DownloadUIInvalidation: CaseIterable { case hidden, done, disconnected }
 
     func finishExport(at index: Int) { continuations[index].resume(returning: exportURL) }
     func failExport(at index: Int) { continuations[index].resume(throwing: DownloadUITestError.exportFailed) }
-
-    // MARK: Private
-
-    private let exportURL: URL
-    private let clearOwnerID = UUID()
-    private var leases = [UUID: UUID]()
-    private var deletingIDs = Set<UUID>()
-    private var pendingRemoval: UUID?
-    private var removalContinuation: CheckedContinuation<Bool, Never>?
-    private var observers = [UUID: @MainActor () -> Void]()
-    private var continuations = [CheckedContinuation<URL, Error>]()
 }
 
 // MARK: - DownloadUIHost
 
 @MainActor private final class DownloadUIHost {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let controller: BrowserMobileDownloadsViewController
+    let navigation: UINavigationController
+    let window: UIWindow
 
     init(_ controller: BrowserMobileDownloadsViewController) throws {
         let scene = try #require(BrowserMobileTestScene.windowScene)
@@ -647,12 +651,6 @@ enum DownloadUIInvalidation: CaseIterable { case hidden, done, disconnected }
         controller.loadViewIfNeeded()
         layout()
     }
-
-    // MARK: Internal
-
-    let controller: BrowserMobileDownloadsViewController
-    let navigation: UINavigationController
-    let window: UIWindow
 
     func layout() { window.layoutIfNeeded()
         controller.view.layoutIfNeeded()
@@ -681,7 +679,7 @@ enum DownloadUIInvalidation: CaseIterable { case hidden, done, disconnected }
 private func downloadUIEntry(status: BrowserMobileDownload.Status) -> BrowserMobileDownload {
     .init(
         id: UUID(), filename: "A useful downloaded document.txt", sourceURL: URL(string: "https://example.com/file"),
-        status: status, receivedBytes: 20, totalBytes: 20, error: nil
+        status: status, receivedBytes: 20, totalBytes: 20, error: nil,
     )
 }
 
@@ -693,7 +691,7 @@ private func downloadUIEntry(status: BrowserMobileDownload.Status) -> BrowserMob
 }
 
 @MainActor private func downloadUIWait(
-    sourceLocation: SourceLocation = #_sourceLocation, _ predicate: @MainActor () -> Bool
+    sourceLocation: SourceLocation = #_sourceLocation, _ predicate: @MainActor () -> Bool,
 ) async throws {
     for _ in 0..<200 {
         if predicate() {
@@ -721,7 +719,7 @@ enum DownloadUIDeletionInvalidation: CaseIterable { case exporting, removed, ina
 
 @MainActor private func downloadUIDeletionAlert(
     _ controller: BrowserMobileDownloadsViewController, in host: DownloadUIHost,
-    sourceLocation: SourceLocation = #_sourceLocation
+    sourceLocation: SourceLocation = #_sourceLocation,
 ) async throws -> UIAlertController {
     try await downloadUIWait(sourceLocation: sourceLocation) {
         guard let alert = controller.presentedViewController as? UIAlertController else { return false }

@@ -1,7 +1,33 @@
+// BrowserNativeUpdateToastView.swift
+
 import AppKit
 
 final class BrowserNativeUpdateToastView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    var onInstall: () -> Void = {}
+    var onDismiss: () -> Void = {}
+
+    // MARK: Private
+
+    private let material = NSVisualEffectView()
+    private let outline = BrowserNativeSurface()
+    private let icon = NSImageView()
+    private let title = BrowserNativeControls.label("", size: 12, weight: .semibold)
+    private let message = BrowserNativeControls.label("", size: 11, color: .secondaryLabelColor, wraps: true)
+    private let install = BrowserNativePressableView()
+    private let actionTitle = BrowserNativeControls.label("", size: 11, weight: .semibold)
+    private let close = BrowserNativeChromeButton(
+        symbol: "xmark",
+        title: BrowserStrings.updateDismissAction,
+        style: .sidebarClose,
+        pressEffect: .compress,
+        action: {},
+    )
+
+    private var actionWidth: CGFloat { ceil(actionTitle.intrinsicContentSize.width) + 16 }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -22,7 +48,7 @@ final class BrowserNativeUpdateToastView: NSView {
         icon.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(
                 pointSize: 12,
-                weight: .semibold
+                weight: .semibold,
             ))
         icon.contentTintColor = .secondaryLabelColor
         message.maximumNumberOfLines = 2
@@ -41,13 +67,6 @@ final class BrowserNativeUpdateToastView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    var onInstall: () -> Void = {}
-    var onDismiss: () -> Void = {}
-
     override func layout() {
         super.layout()
         material.frame = bounds
@@ -58,7 +77,7 @@ final class BrowserNativeUpdateToastView: NSView {
             x: close.frame.minX - 8 - actionWidth,
             y: (bounds.height - 26) / 2,
             width: actionWidth,
-            height: 26
+            height: 26,
         )
         actionTitle.frame = NSRect(x: 8, y: 5, width: max(actionWidth - 16, 0), height: 16)
         let textWidth = max(install.frame.minX - 8 - 36, 0)
@@ -80,28 +99,9 @@ final class BrowserNativeUpdateToastView: NSView {
             .boundingRect(
                 with: NSSize(width: max(textWidth - 4, 1), height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: message.font!]
+                attributes: [.font: message.font!],
             )
             .height
         return max(16 + 2 + min(ceil(measured) + 2, 30), 26) + 18
     }
-
-    // MARK: Private
-
-    private let material = NSVisualEffectView()
-    private let outline = BrowserNativeSurface()
-    private let icon = NSImageView()
-    private let title = BrowserNativeControls.label("", size: 12, weight: .semibold)
-    private let message = BrowserNativeControls.label("", size: 11, color: .secondaryLabelColor, wraps: true)
-    private let install = BrowserNativePressableView()
-    private let actionTitle = BrowserNativeControls.label("", size: 11, weight: .semibold)
-    private let close = BrowserNativeChromeButton(
-        symbol: "xmark",
-        title: BrowserStrings.updateDismissAction,
-        style: .sidebarClose,
-        pressEffect: .compress,
-        action: {}
-    )
-
-    private var actionWidth: CGFloat { ceil(actionTitle.intrinsicContentSize.width) + 16 }
 }

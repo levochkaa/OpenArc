@@ -1,3 +1,5 @@
+// BrowserSyncExpiryTransportTests.swift
+
 import Foundation
 import Synchronization
 import Testing
@@ -17,7 +19,7 @@ import Testing
         let client = try BrowserRemoteSyncClient(configuration: #require(.init(baseURL: baseURL)), session: session)
         let auth = BrowserAuthSession(
             accessToken: "fixture-only", userID: "owner", userEmail: nil,
-            deviceID: "device", serverURL: baseURL
+            deviceID: "device", serverURL: baseURL,
         )
         #expect(try await client.push(mutation: mutation, authSession: auth) == response)
         let requests = ExpiryURLProtocol.state.withLock { $0.requests }
@@ -49,7 +51,7 @@ import Testing
 
         let malformed = BrowserSyncExpiryPushResponse(
             protocolVersion: 5, mutationID: UUID().uuidString, cursor: response.cursor,
-            events: response.events, outcomes: response.outcomes
+            events: response.events, outcomes: response.outcomes,
         )
         ExpiryURLProtocol.state.withLock { $0.response = try! JSONEncoder().encode(malformed) }
         await #expect(throws: BrowserRemoteSyncError.self) {
@@ -58,7 +60,7 @@ import Testing
         let otherURL = try #require(URL(string: "https://other.example"))
         let wrongServer = BrowserAuthSession(
             accessToken: "must-not-send", userID: "owner", userEmail: nil,
-            deviceID: "device", serverURL: otherURL
+            deviceID: "device", serverURL: otherURL,
         )
         await #expect(throws: BrowserSyncAccountError.self) {
             try await client.push(mutation: mutation, authSession: wrongServer)
@@ -100,7 +102,7 @@ import Testing
             outcomes = [.init(operationIndex: 0, status: .rejected, reason: .responseLimit)]
         }
         let response = BrowserSyncExpiryPushResponse(
-            protocolVersion: version, mutationID: id, cursor: cursor, events: events, outcomes: outcomes
+            protocolVersion: version, mutationID: id, cursor: cursor, events: events, outcomes: outcomes,
         )
         #expect(throws: (any Error).self) { try response.validate(for: mutation) }
     }
@@ -110,13 +112,13 @@ import Testing
         for reason in [BrowserSyncExpiryOutcome.Reason.missing, .responseLimit] {
             try BrowserSyncExpiryPushResponse(
                 protocolVersion: 5, mutationID: mutation.id, cursor: 2, events: [],
-                outcomes: [.init(operationIndex: 0, status: .rejected, reason: reason)]
+                outcomes: [.init(operationIndex: 0, status: .rejected, reason: reason)],
             ).validate(for: mutation)
         }
         try BrowserSyncExpiryPushResponse(
             protocolVersion: 5, mutationID: mutation.id, cursor: 3,
             events: [expiryTransportDelete(recovery: false)],
-            outcomes: [.init(operationIndex: 0, status: .deleted, reason: nil)]
+            outcomes: [.init(operationIndex: 0, status: .deleted, reason: nil)],
         ).validate(for: mutation)
     }
 
@@ -139,7 +141,7 @@ import Testing
         }
         let encoded = try JSONEncoder().encode(expiryTransportReceipt(mutation: valid))
         let unknownReason = String(decoding: encoded, as: UTF8.self)
-            .replacingOccurrences(of: "\"applied\"", with: "\"future-status\"")
+            .replacing("\"applied\"", with: "\"future-status\"")
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(BrowserSyncExpiryPushResponse.self, from: Data(unknownReason.utf8))
         }
@@ -161,17 +163,17 @@ private func expiryTransportMutation() -> BrowserSyncExpiryMutation {
 private func expiryTransportReceipt(mutation: BrowserSyncExpiryMutation) -> BrowserSyncExpiryPushResponse {
     .init(
         protocolVersion: 5, mutationID: mutation.id, cursor: 3, events: [expiryTransportDelete()],
-        outcomes: [.init(operationIndex: 0, status: .applied, reason: nil)]
+        outcomes: [.init(operationIndex: 0, status: .applied, reason: nil)],
     )
 }
 
 private func expiryTransportDelete(
-    id: String = "tab", sequence: Int = 3, sourceSequence: Int = 2, recovery: Bool = true
+    id: String = "tab", sequence: Int = 3, sourceSequence: Int = 2, recovery: Bool = true,
 ) -> BrowserSyncEvent {
     let tab = BrowserSyncEventTabData(
         id: id, spaceID: "work", placement: .temporary, rank: 0,
         urlString: "https://example.com/expired", pinnedURLString: nil, title: "Expired",
-        userTitleOverride: nil, faviconURLString: nil, lastActivityAt: "2000-01-01T00:00:00Z", pinnedFolderID: nil
+        userTitleOverride: nil, faviconURLString: nil, lastActivityAt: "2000-01-01T00:00:00Z", pinnedFolderID: nil,
     )
     return .init(
         serverSeq: sequence, deviceID: "remote", entityType: "tab", entityID: id, op: "delete",
@@ -179,10 +181,10 @@ private func expiryTransportDelete(
             id: id,
             autoArchive: recovery
                 ? .init(
-                    archivedAt: "2026-10-03T12:00:00.123456Z", sourceServerSeq: sourceSequence, tab: tab
+                    archivedAt: "2026-10-03T12:00:00.123456Z", sourceServerSeq: sourceSequence, tab: tab,
                 )
-                : nil
-        ), createdAt: "2026-10-03T12:00:00Z"
+                : nil,
+        ), createdAt: "2026-10-03T12:00:00Z",
     )
 }
 

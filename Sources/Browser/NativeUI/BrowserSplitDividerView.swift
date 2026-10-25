@@ -1,3 +1,5 @@
+// BrowserSplitDividerView.swift
+
 import AppKit
 import QuartzCore
 
@@ -6,21 +8,6 @@ import QuartzCore
 /// neighbors equal. A small grip fades in while the handle is hovered or
 /// dragged.
 @objc final class BrowserSplitDividerView: NSView {
-    // MARK: Lifecycle
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        grip.cornerRadius = BrowserSplitPaneLayout.dividerGripSize.width / 2
-        grip.opacity = 0
-        layer?.addSublayer(grip)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.splitter)
-        setAccessibilityLabel(BrowserStrings.splitDividerAccessibilityLabel)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
     // MARK: Internal
 
     override var mouseDownCanMoveWindow: Bool { false }
@@ -45,6 +32,34 @@ import QuartzCore
         }
     }
 
+    // MARK: Private
+
+    private let grip = CALayer()
+    private var trackingArea: NSTrackingArea?
+
+    private var isHovered = false {
+        didSet { updateGrip() }
+    }
+
+    private var isDragging = false {
+        didSet { updateGrip() }
+    }
+
+    private var cursor: NSCursor { isVerticalSplit ? .resizeUpDown : .resizeLeftRight }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        grip.cornerRadius = BrowserSplitPaneLayout.dividerGripSize.width / 2
+        grip.opacity = 0
+        layer?.addSublayer(grip)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.splitter)
+        setAccessibilityLabel(BrowserStrings.splitDividerAccessibilityLabel)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
 
     override func layout() {
@@ -57,7 +72,7 @@ import QuartzCore
             x: ((bounds.width - gripSize.width) / 2).rounded(),
             y: ((bounds.height - gripSize.height) / 2).rounded(),
             width: gripSize.width,
-            height: gripSize.height
+            height: gripSize.height,
         )
         CATransaction.commit()
     }
@@ -74,7 +89,7 @@ import QuartzCore
         let area = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-            owner: self
+            owner: self,
         )
         addTrackingArea(area)
         trackingArea = area
@@ -112,21 +127,6 @@ import QuartzCore
         NSCursor.pop()
         onDragEnd?()
     }
-
-    // MARK: Private
-
-    private let grip = CALayer()
-    private var trackingArea: NSTrackingArea?
-
-    private var isHovered = false {
-        didSet { updateGrip() }
-    }
-
-    private var isDragging = false {
-        didSet { updateGrip() }
-    }
-
-    private var cursor: NSCursor { isVerticalSplit ? .resizeUpDown : .resizeLeftRight }
 
     /// The grip fades over 0.16 s.
     private func updateGrip() {

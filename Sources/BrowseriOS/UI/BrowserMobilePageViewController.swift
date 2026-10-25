@@ -1,16 +1,8 @@
+// BrowserMobilePageViewController.swift
+
 import UIKit
 
 final class BrowserMobilePageViewController: UIViewController, UITextFieldDelegate {
-    // MARK: Lifecycle
-
-    init(workspace: BrowserMobileWorkspace, contentView: UIView) {
-        self.workspace = workspace
-        self.engineView = contentView
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
-
     // MARK: Internal
 
     override var canBecomeFirstResponder: Bool { true }
@@ -18,38 +10,38 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     override var keyCommands: [UIKeyCommand]? {
         let find = UIKeyCommand(
             title: String(localized: "Find in Page", table: "Mobile"),
-            action: #selector(findInPage), input: "f", modifierFlags: .command
+            action: #selector(findInPage), input: "f", modifierFlags: .command,
         )
         find.wantsPriorityOverSystemBehavior = true
         return [
             find,
             UIKeyCommand(
                 title: String(localized: "Downloads", table: "Mobile"),
-                action: #selector(showDownloads), input: "l", modifierFlags: [.command, .alternate]
+                action: #selector(showDownloads), input: "l", modifierFlags: [.command, .alternate],
             ),
             UIKeyCommand(
                 title: String(localized: "Open Location", table: "Mobile"),
                 action: #selector(focusAddress),
                 input: "l",
-                modifierFlags: .command
+                modifierFlags: .command,
             ),
             UIKeyCommand(
                 title: String(localized: "New Tab", table: "Mobile"),
                 action: #selector(createTab),
                 input: "t",
-                modifierFlags: .command
+                modifierFlags: .command,
             ),
             UIKeyCommand(
                 title: String(localized: "Close Tab", table: "Mobile"),
                 action: #selector(closeTab),
                 input: "w",
-                modifierFlags: .command
+                modifierFlags: .command,
             ),
             UIKeyCommand(
                 title: String(localized: "Reload", table: "Mobile"),
                 action: #selector(reload),
                 input: "r",
-                modifierFlags: .command
+                modifierFlags: .command,
             ),
             UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancelAddress)),
         ]
@@ -59,6 +51,56 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     var showTabs: (() -> Void)?
     let addressField = UITextField()
     private(set) var chromeIsAtBottom = true
+
+    // MARK: Private
+
+    private let engineView: UIView
+    private var addressTabID: String?
+    private let stack = UIStackView()
+    private let content = UIView()
+    private let chrome = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+    private let chromeStack = UIStackView()
+    private let progress = UIProgressView(progressViewStyle: .bar)
+    private let banner = UIStackView()
+    private let bannerLabel = UILabel()
+    private let bannerAction = UIButton(type: .system)
+    private let emptyState = UIStackView()
+    private let emptyTitle = UILabel()
+    private let emptyMessage = UILabel()
+    private let emptyAction = UIButton(type: .system)
+    private var backButton = UIButton(type: .system)
+    private var forwardButton = UIButton(type: .system)
+    private var reloadButton = UIButton(type: .system)
+    private var tabsButton = UIButton(type: .system)
+    private var newButton = UIButton(type: .system)
+    private var shareButton = UIButton(type: .system)
+    private var findButton = UIButton(type: .system)
+    private var downloadsButton = UIButton(type: .system)
+
+    private var canPresentFind: Bool {
+        guard workspace.canFindInPage, let window = viewIfLoaded?.window,
+              !window.isHidden, window.windowScene?.activationState == .foregroundActive,
+              !isBeingDismissed, !engineView.isHidden else { return false }
+        var root: UIViewController = self
+        while let parent = root.parent {
+            root = parent
+        }
+        return !Self.hasPresentedController(root)
+    }
+
+    private var shareURL: URL? {
+        guard let url = workspace.selectedTab.flatMap({ URL(string: $0.urlString) }),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return url
+    }
+
+    init(workspace: BrowserMobileWorkspace, contentView: UIView) {
+        self.workspace = workspace
+        self.engineView = contentView
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -95,7 +137,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         arrangeChrome()
         for name in [UIScene.willDeactivateNotification, UIScene.didDisconnectNotification] {
             NotificationCenter.default.addObserver(
-                self, selector: #selector(sceneBecameInactive(_:)), name: name, object: nil
+                self, selector: #selector(sceneBecameInactive(_:)), name: name, object: nil,
             )
         }
         render()
@@ -109,6 +151,10 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         workspace.dismissFindInPage()
+    }
+
+    private static func hasPresentedController(_ controller: UIViewController) -> Bool {
+        controller.presentedViewController != nil || controller.children.contains(where: hasPresentedController)
     }
 
     func render() {
@@ -156,7 +202,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             workspace.sessionError == nil
                 ? String(localized: "Edit Address", table: "Mobile")
                 : String(localized: "Retry", table: "Mobile"),
-            for: .normal
+            for: .normal,
         )
         emptyState.isHidden = tab?.state.error == nil && tab?.urlString != "about:blank" && tab != nil
         engineView.isHidden = !emptyState.isHidden
@@ -164,7 +210,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             emptyTitle.text = String(localized: "Opening your tabs", table: "Mobile")
             emptyMessage.text = workspace.sessionError ?? String(
                 localized: "Restoring this window’s session…",
-                table: "Mobile"
+                table: "Mobile",
             )
             emptyAction.isHidden = true
         } else if let error = tab?.state.error {
@@ -223,52 +269,6 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     func textFieldDidEndEditing(_: UITextField) { render() }
 
     func textFieldDidBeginEditing(_: UITextField) { workspace.dismissFindInPage() }
-
-    // MARK: Private
-
-    private let engineView: UIView
-    private var addressTabID: String?
-    private let stack = UIStackView()
-    private let content = UIView()
-    private let chrome = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
-    private let chromeStack = UIStackView()
-    private let progress = UIProgressView(progressViewStyle: .bar)
-    private let banner = UIStackView()
-    private let bannerLabel = UILabel()
-    private let bannerAction = UIButton(type: .system)
-    private let emptyState = UIStackView()
-    private let emptyTitle = UILabel()
-    private let emptyMessage = UILabel()
-    private let emptyAction = UIButton(type: .system)
-    private var backButton = UIButton(type: .system)
-    private var forwardButton = UIButton(type: .system)
-    private var reloadButton = UIButton(type: .system)
-    private var tabsButton = UIButton(type: .system)
-    private var newButton = UIButton(type: .system)
-    private var shareButton = UIButton(type: .system)
-    private var findButton = UIButton(type: .system)
-    private var downloadsButton = UIButton(type: .system)
-
-    private var canPresentFind: Bool {
-        guard workspace.canFindInPage, let window = viewIfLoaded?.window,
-              !window.isHidden, window.windowScene?.activationState == .foregroundActive,
-              !isBeingDismissed, !engineView.isHidden else { return false }
-        var root: UIViewController = self
-        while let parent = root.parent {
-            root = parent
-        }
-        return !Self.hasPresentedController(root)
-    }
-
-    private var shareURL: URL? {
-        guard let url = workspace.selectedTab.flatMap({ URL(string: $0.urlString) }),
-              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
-        return url
-    }
-
-    private static func hasPresentedController(_ controller: UIViewController) -> Bool {
-        controller.presentedViewController != nil || controller.children.contains(where: hasPresentedController)
-    }
 
     @objc private func sceneBecameInactive(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,

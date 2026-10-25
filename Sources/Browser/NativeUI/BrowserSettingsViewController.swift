@@ -1,3 +1,5 @@
+// BrowserSettingsViewController.swift
+
 import AppKit
 import Combine
 import Settings
@@ -96,7 +98,50 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
 // MARK: - BrowserSettingsViewController
 
 final class BrowserSettingsViewController: NSViewController, @MainActor SettingsPane, NSSearchFieldDelegate {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let model: BrowserChromeModel
+    private let preferences: BrowserUserPreferencesStore
+    private let shortcutStore: BrowserShortcutStore
+    private let profileStore: BrowserProfileStore
+    private let currentProfileID: String
+    private let accountStore: BrowserAccountStore?
+    private let pane: BrowserSettingsPane
+    private let canDeleteProfile: (BrowserProfile) -> Bool
+    private let openProfile: (BrowserProfile) -> Void
+    private let openURL: (URL) -> Void
+    private let defaultBrowserService = BrowserDefaultBrowserService()
+    private let scrollView = BrowserNativeScrollingStack()
+    private let searchField = NSSearchField()
+    private var observations = Set<AnyCancellable>()
+    private var updateBindings = [() -> Void]()
+    private var profileDeleteButtons = [(BrowserProfile, BrowserActionButton)]()
+    private let shortcutsBody = NSStackView()
+    private let profilesBody = NSStackView()
+    private let accountsBody = NSStackView()
+    private let linkRoutesBody = NSStackView()
+    private var linkRouteFields = [UUID: NSTextField]()
+    private let siteSearchesBody = NSStackView()
+    private let sitePermissionsBody = NSStackView()
+    private var shownSitePermissions = [BrowserSitePermissionDecision]()
+    private var siteSearchFields = [(
+        field: NSTextField,
+        id: UUID,
+        keyPath: WritableKeyPath<BrowserSiteSearch, String>,
+    )]()
+    private let shortcutMessage = BrowserNativeControls.label("", size: 12, color: .systemRed, wraps: true)
+    private let backupMessage = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
+    private var recordingCommandID: BrowserCommandID?
+    private var profileBackupInProgressID: BrowserProfile.ID?
+
+    // MARK: Internal
+
+    var paneIdentifier: Settings.PaneIdentifier { .init(pane.rawValue) }
+    var paneTitle: String { pane.title }
+    var toolbarItemIcon: NSImage { NSImage(
+        systemSymbolName: pane.systemImageName,
+        accessibilityDescription: pane.title,
+    ) ?? NSImage() }
 
     init(
         model: BrowserChromeModel,
@@ -106,7 +151,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         pane: BrowserSettingsPane,
         canDeleteProfile: @escaping (BrowserProfile) -> Bool = { _ in true },
         openProfile: @escaping (BrowserProfile) -> Void,
-        openURL: @escaping (URL) -> Void
+        openURL: @escaping (URL) -> Void,
     ) {
         self.model = model
         self.preferences = model.userPreferencesStore
@@ -123,21 +168,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    var paneIdentifier: Settings.PaneIdentifier { .init(pane.rawValue) }
-    var paneTitle: String { pane.title }
-    var toolbarItemIcon: NSImage { NSImage(
-        systemSymbolName: pane.systemImageName,
-        accessibilityDescription: pane.title
-    ) ?? NSImage() }
-
     override func loadView() {
         let background = BrowserNativeSurface(frame: NSRect(
             x: 0,
             y: 0,
             width: BrowserSettingsLayout.windowWidth,
-            height: BrowserSettingsLayout.windowHeight
+            height: BrowserSettingsLayout.windowHeight,
         ))
         background.fillColor = .windowBackgroundColor
         NSLayoutConstraint.activate([
@@ -191,42 +227,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         }
     }
 
-    // MARK: Private
-
-    private let model: BrowserChromeModel
-    private let preferences: BrowserUserPreferencesStore
-    private let shortcutStore: BrowserShortcutStore
-    private let profileStore: BrowserProfileStore
-    private let currentProfileID: String
-    private let accountStore: BrowserAccountStore?
-    private let pane: BrowserSettingsPane
-    private let canDeleteProfile: (BrowserProfile) -> Bool
-    private let openProfile: (BrowserProfile) -> Void
-    private let openURL: (URL) -> Void
-    private let defaultBrowserService = BrowserDefaultBrowserService()
-    private let scrollView = BrowserNativeScrollingStack()
-    private let searchField = NSSearchField()
-    private var observations = Set<AnyCancellable>()
-    private var updateBindings = [() -> Void]()
-    private var profileDeleteButtons = [(BrowserProfile, BrowserActionButton)]()
-    private let shortcutsBody = NSStackView()
-    private let profilesBody = NSStackView()
-    private let accountsBody = NSStackView()
-    private let linkRoutesBody = NSStackView()
-    private var linkRouteFields = [UUID: NSTextField]()
-    private let siteSearchesBody = NSStackView()
-    private let sitePermissionsBody = NSStackView()
-    private var shownSitePermissions = [BrowserSitePermissionDecision]()
-    private var siteSearchFields = [(
-        field: NSTextField,
-        id: UUID,
-        keyPath: WritableKeyPath<BrowserSiteSearch, String>
-    )]()
-    private let shortcutMessage = BrowserNativeControls.label("", size: 12, color: .systemRed, wraps: true)
-    private let backupMessage = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
-    private var recordingCommandID: BrowserCommandID?
-    private var profileBackupInProgressID: BrowserProfile.ID?
-
     private func observe(_ publisher: ObservableObjectPublisher, action: @escaping () -> Void) {
         publisher.receive(on: RunLoop.main).sink { action() }.store(in: &observations)
     }
@@ -267,7 +267,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         scrollView.setViews([
             section(
                 BrowserStrings.settingsGeneralTab,
-                rows: [row(BrowserStrings.settingsDefaultBrowserPrompt, control: button)]
+                rows: [row(BrowserStrings.settingsDefaultBrowserPrompt, control: button)],
             ),
             section(BrowserStrings.settingsAccountsCurrentAccounts, body: accountsBody),
         ])
@@ -283,7 +283,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     BrowserStrings.settingsAutomaticUpdates,
                     detail: BrowserStrings.settingsAutomaticUpdatesDetail,
                     get: { preferences.automaticUpdatesEnabled },
-                    set: { preferences.automaticUpdatesEnabled = $0 }
+                    set: { preferences.automaticUpdatesEnabled = $0 },
                 ),
                 picker(
                     "update-channel",
@@ -292,7 +292,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     options: BrowserUpdateChannel.allCases,
                     title: { $0.title },
                     get: { preferences.updateChannel },
-                    set: { preferences.updateChannel = $0 }
+                    set: { preferences.updateChannel = $0 },
                 ),
                 picker(
                     "appearance",
@@ -301,7 +301,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     options: BrowserAppearancePreference.allCases,
                     title: { $0.title },
                     get: { preferences.appearancePreference },
-                    set: { preferences.appearancePreference = $0 }
+                    set: { preferences.appearancePreference = $0 },
                 ),
                 picker(
                     "sidebar-position",
@@ -309,32 +309,32 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     options: BrowserSidebarPosition.allCases,
                     title: { $0.title },
                     get: { preferences.sidebarPosition },
-                    set: { preferences.sidebarPosition = $0 }
+                    set: { preferences.sidebarPosition = $0 },
                 ),
                 toggle(
                     "folder-previews",
                     BrowserStrings.settingsFolderPreviews,
                     get: { preferences.folderPreviewsEnabled },
-                    set: { preferences.folderPreviewsEnabled = $0 }
+                    set: { preferences.folderPreviewsEnabled = $0 },
                 ),
                 toggle(
                     "warn-before-quitting",
                     BrowserStrings.settingsWarnBeforeQuitting,
                     get: { preferences.warnBeforeQuitting },
-                    set: { preferences.warnBeforeQuitting = $0 }
+                    set: { preferences.warnBeforeQuitting = $0 },
                 ),
                 toggle(
                     "blurred-background",
                     BrowserStrings.settingsBlurredBackground,
                     get: { preferences.blurredChromeBackgroundEnabled },
-                    set: { preferences.blurredChromeBackgroundEnabled = $0 }
+                    set: { preferences.blurredChromeBackgroundEnabled = $0 },
                 ),
                 toggle(
                     "battery-saver",
                     BrowserStrings.settingsBatterySaver,
                     detail: BrowserStrings.settingsBatterySaverDetail,
                     get: { preferences.batterySaverEnabled },
-                    set: { preferences.batterySaverEnabled = $0 }
+                    set: { preferences.batterySaverEnabled = $0 },
                 ),
             ]),
             section(BrowserStrings.settingsSearch, rows: [
@@ -344,13 +344,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     options: BrowserSearchEngine.allCases,
                     title: { $0.title },
                     get: { preferences.searchEngine },
-                    set: { preferences.searchEngine = $0 }
+                    set: { preferences.searchEngine = $0 },
                 ),
                 toggle(
                     "search-suggestions",
                     BrowserStrings.settingsSearchSuggestions,
                     get: { preferences.searchEngineSuggestionsEnabled },
-                    set: { preferences.searchEngineSuggestionsEnabled = $0 }
+                    set: { preferences.searchEngineSuggestionsEnabled = $0 },
                 ),
                 picker(
                     "ai-search-provider",
@@ -358,7 +358,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     options: BrowserAISearchProvider.allCases,
                     title: { $0.title },
                     get: { preferences.aiSearchProvider },
-                    set: { preferences.aiSearchProvider = $0 }
+                    set: { preferences.aiSearchProvider = $0 },
                 ),
                 link(BrowserStrings.settingsManageSearch, url: BrowserSettingsRoute.searchEnginesURL),
             ]),
@@ -382,7 +382,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             BrowserStrings.settingsSitePermissionsDetail,
             size: 12,
             color: .secondaryLabelColor,
-            wraps: true
+            wraps: true,
         )
         var origins = [String]()
         for decision in decisions where !origins.contains(decision.origin) {
@@ -392,7 +392,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             let kinds = decisions.filter { $0.origin == origin }
             let state = BrowserStrings.settingsSitePermissionsState(
                 camera: kinds.last { $0.kind == .camera }?.allowed,
-                microphone: kinds.last { $0.kind == .microphone }?.allowed
+                microphone: kinds.last { $0.kind == .microphone }?.allowed,
             )
             let host = URLComponents(string: origin)?.host ?? origin
             let forget = BrowserActionButton(BrowserStrings.settingsSitePermissionsForget) { [weak self] in
@@ -404,12 +404,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let empty = BrowserNativeControls.label(
             BrowserStrings.settingsSitePermissionsEmpty,
             size: 12,
-            color: .secondaryLabelColor
+            color: .secondaryLabelColor,
         )
         replaceRows(
             [BrowserNativeControls.padded(detail, vertical: 8)]
                 + (rows.isEmpty ? [BrowserNativeControls.padded(empty, vertical: 8)] : rows),
-            in: sitePermissionsBody
+            in: sitePermissionsBody,
         )
     }
 
@@ -422,7 +422,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             BrowserStrings.settingsSiteSearchDetail,
             size: 12,
             color: .secondaryLabelColor,
-            wraps: true
+            wraps: true,
         )
         let add = BrowserActionButton(BrowserStrings.settingsSiteSearchAdd) { [weak self] in self?.addSiteSearch() }
         add.setAccessibilityIdentifier("browser.settings.site-search.add")
@@ -453,9 +453,9 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 + preferences.siteSearches.map(siteSearchRow)
                 + [BrowserNativeControls.padded(
                     BrowserNativeControls.stack([add, restore, importButton], orientation: .horizontal, spacing: 8),
-                    vertical: 8
+                    vertical: 8,
                 )],
-            in: siteSearchesBody
+            in: siteSearchesBody,
         )
     }
 
@@ -500,7 +500,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             placeholder: String,
             width: CGFloat,
             keyPath: WritableKeyPath<BrowserSiteSearch, String>,
-            identifier: String
+            identifier: String,
         ) -> NSTextField {
             let field = NSTextField(string: value)
             field.placeholderString = placeholder
@@ -517,21 +517,21 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             placeholder: BrowserStrings.settingsSiteSearchName,
             width: 110,
             keyPath: \.name,
-            identifier: "name"
+            identifier: "name",
         )
         let keyword = field(
             site.keyword,
             placeholder: BrowserStrings.settingsSiteSearchKeyword,
             width: 100,
             keyPath: \.keyword,
-            identifier: "keyword"
+            identifier: "keyword",
         )
         let url = field(
             site.urlTemplate,
             placeholder: BrowserStrings.settingsSiteSearchURL,
             width: 200,
             keyPath: \.urlTemplate,
-            identifier: "url"
+            identifier: "url",
         )
         name.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         keyword.setContentHuggingPriority(.defaultHigh, for: .horizontal)
@@ -542,14 +542,14 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         }
         remove.image = NSImage(
             systemSymbolName: "minus.circle",
-            accessibilityDescription: BrowserStrings.settingsSiteSearchRemove
+            accessibilityDescription: BrowserStrings.settingsSiteSearchRemove,
         )
         remove.isBordered = false
         remove.toolTip = BrowserStrings.settingsSiteSearchRemove
         remove.setAccessibilityIdentifier("browser.settings.site-search.remove")
         return BrowserNativeControls.padded(
             BrowserNativeControls.stack([name, keyword, url, remove], orientation: .horizontal, spacing: 8),
-            vertical: 4
+            vertical: 4,
         )
     }
 
@@ -563,19 +563,19 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     BrowserStrings.settingsLittleArc,
                     detail: BrowserStrings.settingsLittleArcDetail,
                     get: { preferences.littleArcEnabled },
-                    set: { preferences.littleArcEnabled = $0 }
+                    set: { preferences.littleArcEnabled = $0 },
                 ),
                 toggle(
                     "little-window-option-command-click",
                     BrowserStrings.settingsLittleWindowOptionCommandClick,
                     get: { preferences.opensOptionCommandClicksInLittleWindow },
-                    set: { preferences.opensOptionCommandClicksInLittleWindow = $0 }
+                    set: { preferences.opensOptionCommandClicksInLittleWindow = $0 },
                 ),
                 toggle(
                     "little-window-any-app",
                     BrowserStrings.settingsLittleWindowFromAnyApp,
                     get: { preferences.opensLittleWindowFromAnyApp },
-                    set: { preferences.opensLittleWindowFromAnyApp = $0 }
+                    set: { preferences.opensLittleWindowFromAnyApp = $0 },
                 ),
             ]),
             section(BrowserStrings.settingsPeekSection, rows: [
@@ -584,14 +584,14 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     BrowserStrings.settingsPeek,
                     detail: BrowserStrings.settingsPeekDetail,
                     get: { preferences.peekEnabled },
-                    set: { preferences.peekEnabled = $0 }
+                    set: { preferences.peekEnabled = $0 },
                 ),
                 toggle(
                     "peek-other-sites",
                     BrowserStrings.settingsPeekOtherSites,
                     detail: BrowserStrings.settingsPeekOtherSitesDetail,
                     get: { preferences.peeksLinksToOtherSites },
-                    set: { preferences.peeksLinksToOtherSites = $0 }
+                    set: { preferences.peeksLinksToOtherSites = $0 },
                 ),
             ]),
             section(BrowserStrings.settingsLinkRoutesTitle, body: linkRoutesBody),
@@ -608,7 +608,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             BrowserStrings.settingsLinkRoutesDetail,
             size: 12,
             color: .secondaryLabelColor,
-            wraps: true
+            wraps: true,
         )
         let add = BrowserActionButton(BrowserStrings.settingsLinkRouteAdd) { [weak self] in self?.addLinkRoute() }
         add.setAccessibilityIdentifier("browser.settings.link-routes.add")
@@ -616,7 +616,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             [BrowserNativeControls.padded(detail, vertical: 8)]
                 + preferences.linkRoutes.map(linkRouteRow)
                 + [BrowserNativeControls.padded(add, vertical: 8)],
-            in: linkRoutesBody
+            in: linkRoutesBody,
         )
     }
 
@@ -630,7 +630,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let space = model.spaces.first { $0.id == model.selectedSpaceID } ?? model.spaces.first
         preferences.linkRoutes.append(BrowserLinkRoute(
             destination: space.map { .space(profileID: currentProfileID, spaceID: $0.id) } ?? .littleWindow,
-            spaceTitle: space?.title
+            spaceTitle: space?.title,
         ))
         refreshLinkRoutes()
         if let id = preferences.linkRoutes.last?.id, let field = linkRouteFields[id] {
@@ -692,7 +692,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         }
         remove.image = NSImage(
             systemSymbolName: "minus.circle",
-            accessibilityDescription: BrowserStrings.settingsLinkRouteRemove
+            accessibilityDescription: BrowserStrings.settingsLinkRouteRemove,
         )
         remove.isBordered = false
         remove.toolTip = BrowserStrings.settingsLinkRouteRemove
@@ -701,15 +701,15 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let opensIn = BrowserNativeControls.label(
             BrowserStrings.settingsLinkRouteOpensIn,
             size: 12,
-            color: .secondaryLabelColor
+            color: .secondaryLabelColor,
         )
         return BrowserNativeControls.padded(
             BrowserNativeControls.stack(
                 [match, field, opensIn, destination, remove],
                 orientation: .horizontal,
-                spacing: 8
+                spacing: 8,
             ),
-            vertical: 6
+            vertical: 6,
         )
     }
 
@@ -720,7 +720,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let profile = profileStore.profiles.first { $0.id == profileID }
         return BrowserStrings.settingsLinkRouteUnavailableSpace(
             route.spaceTitle,
-            profileName: profile?.displayName ?? profileID
+            profileName: profile?.displayName ?? profileID,
         )
     }
 
@@ -753,7 +753,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         ], spacing: 2)
         return row(
             label: label,
-            control: BrowserNativeControls.stack([reset, choose], orientation: .horizontal, spacing: 8)
+            control: BrowserNativeControls.stack([reset, choose], orientation: .horizontal, spacing: 8),
         )
     }
 
@@ -769,7 +769,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 model.setTemporaryTabLifetime(lifetime)
                 self?.syncControls()
             },
-            enabled: { !model.usesSynchronizedAutomaticArchival }
+            enabled: { !model.usesSynchronizedAutomaticArchival },
         )
         let synchronizedRow = picker(
             "automatic-tab-archival",
@@ -786,7 +786,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 _ = model.setAutomaticTabArchival(lifetime: lifetime)
                 self?.syncControls()
             },
-            enabled: { model.canConfigureAutomaticTabArchival }
+            enabled: { model.canConfigureAutomaticTabArchival },
         )
         let description = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
         let error = BrowserNativeControls.label("", size: 12, color: .systemRed, wraps: true)
@@ -805,7 +805,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             weak description,
             weak error,
             weak retry,
-            weak errorRow
+            weak errorRow,
         ] in
             guard let model else { return }
             let synchronized = model.usesSynchronizedAutomaticArchival
@@ -859,7 +859,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let header = BrowserNativeControls.stack(
             [searchField, reset, extensions],
             orientation: .horizontal,
-            spacing: 12
+            spacing: 12,
         )
         searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         shortcutMessage.isHidden = true
@@ -879,31 +879,31 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     "haptic-feedback",
                     BrowserStrings.settingsHapticFeedback,
                     get: { preferences.hapticFeedbackEnabled },
-                    set: { preferences.hapticFeedbackEnabled = $0 }
+                    set: { preferences.hapticFeedbackEnabled = $0 },
                 ),
                 toggle(
                     "restore-windows",
                     BrowserStrings.settingsRestoreWindows,
                     get: { preferences.restoreWindowsOnLaunch },
-                    set: { preferences.restoreWindowsOnLaunch = $0 }
+                    set: { preferences.restoreWindowsOnLaunch = $0 },
                 ),
                 toggle(
                     "picture-in-picture",
                     BrowserStrings.settingsPictureInPicture,
                     get: { preferences.pictureInPictureEnabled },
-                    set: { preferences.pictureInPictureEnabled = $0 }
+                    set: { preferences.pictureInPictureEnabled = $0 },
                 ),
                 toggle(
                     "window-dragging-from-page-top",
                     BrowserStrings.settingsWindowDraggingFromPageTop,
                     get: { preferences.windowDraggingFromPageTopEnabled },
-                    set: { preferences.windowDraggingFromPageTopEnabled = $0 }
+                    set: { preferences.windowDraggingFromPageTopEnabled = $0 },
                 ),
                 toggle(
                     "bookmarks-bar",
                     BrowserStrings.settingsShowBookmarksBar,
                     get: { preferences.bookmarksBarVisible },
-                    set: { preferences.bookmarksBarVisible = $0 }
+                    set: { preferences.bookmarksBarVisible = $0 },
                 ),
             ]),
             section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),
@@ -924,7 +924,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     button.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
                     button.imagePosition = .imageLeading
                     return BrowserNativeControls.padded(button, vertical: 8)
-                }
+                },
             ),
             section(BrowserStrings.settingsContentTab, rows: [
                 link(BrowserStrings.settingsMoreSettings, url: BrowserSettingsRoute.rootURL),
@@ -949,7 +949,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                             spaces: result.spaceCount,
                             pinnedTabs: result.pinnedTabCount,
                             folders: result.folderCount,
-                            favorites: result.favoriteCount
+                            favorites: result.favoriteCount,
                         )
                 } catch BrowserArcSidebar.ImportError.missing {
                     message = BrowserStrings.arcImportMissing
@@ -983,23 +983,24 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             if let session = accountStore.session {
                 rows.append(titleDetail(
                     session.userEmail ?? BrowserStrings.syncAccountSignedIn,
-                    detail: BrowserStrings.syncAccountDevice(session.deviceID)
+                    detail: BrowserStrings.syncAccountDevice(session.deviceID),
                 ))
                 switch accountStore.bindingState {
                 case .needsConsent:
                     rows.append(BrowserNativeControls.label(
-                        BrowserStrings.syncAccountEnableDetail, color: .secondaryLabelColor, wraps: true
+                        BrowserStrings.syncAccountEnableDetail, color: .secondaryLabelColor, wraps: true,
                     ))
                     rows.append(BrowserActionButton(BrowserStrings.syncAccountEnable) { accountStore.enableSync() })
                 case .differentAccount:
                     rows.append(BrowserNativeControls.label(
-                        BrowserStrings.syncAccountDifferentOwner, color: .secondaryLabelColor, wraps: true
+                        BrowserStrings.syncAccountDifferentOwner, color: .secondaryLabelColor, wraps: true,
                     ))
                 case .enabled:
                     rows.append(BrowserNativeControls.label(
-                        BrowserStrings.syncAccountEnabled, color: .secondaryLabelColor, wraps: true
+                        BrowserStrings.syncAccountEnabled, color: .secondaryLabelColor, wraps: true,
                     ))
-                case nil, .paused: break
+                case nil,
+                     .paused: break
                 }
                 rows.append(BrowserActionButton(BrowserStrings.syncAccountSignOut) { accountStore.signOut() })
             } else {
@@ -1008,7 +1009,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                         ? BrowserStrings.settingsAccountsEmpty
                         : accountStore.unavailableMessage,
                     color: .secondaryLabelColor,
-                    wraps: true
+                    wraps: true,
                 ))
                 let signIn = BrowserActionButton(BrowserStrings.syncAccountSignInWithApple) {
                     Task { await accountStore.signInWithApple() }
@@ -1021,13 +1022,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     error,
                     size: 12,
                     color: .systemRed,
-                    wraps: true
+                    wraps: true,
                 ))
             }
         } else {
             rows.append(BrowserNativeControls.label(
                 BrowserStrings.settingsAccountsEmpty,
-                color: .secondaryLabelColor
+                color: .secondaryLabelColor,
             ))
         }
         accountsBody.spacing = 10
@@ -1041,13 +1042,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let rows = profileStore.profiles.map { profile -> NSView in
             let icon = NSImageView(image: NSImage(
                 systemSymbolName: "person.crop.circle",
-                accessibilityDescription: nil
+                accessibilityDescription: nil,
             ) ?? NSImage())
             icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
             icon.heightAnchor.constraint(equalToConstant: 24).isActive = true
             let title = titleDetail(
                 profile.displayName,
-                detail: BrowserStrings.settingsProfileDirectory(profile.directoryName)
+                detail: BrowserStrings.settingsProfileDirectory(profile.directoryName),
             )
             var items = [NSView]()
             if profile.id == currentProfileID {
@@ -1055,7 +1056,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     BrowserStrings.settingsCurrentProfile,
                     size: 12,
                     weight: .semibold,
-                    color: .secondaryLabelColor
+                    color: .secondaryLabelColor,
                 ))
             } else {
                 items.append(BrowserActionButton(BrowserStrings.settingsOpenProfile) { [weak self] in
@@ -1118,7 +1119,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     ? descriptor.shortcut.displayText
                     : BrowserStrings.settingsShortcutNotSet,
                 size: 12,
-                weight: .semibold
+                weight: .semibold,
             )
             label.alignment = .right
             value = label
@@ -1192,7 +1193,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     event: .profileBackupFailed,
                     properties: ["profile": profile.isDefault
                         ? "default"
-                        : "custom"]
+                        : "custom"],
                 )
                 refreshProfiles()
             }
@@ -1206,7 +1207,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 detail,
                 size: 12,
                 color: .secondaryLabelColor,
-                wraps: true
+                wraps: true,
             ))
         }
         return BrowserNativeControls.stack(labels, spacing: 2)
@@ -1239,7 +1240,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         _ title: String,
         detail: String? = nil,
         get: @escaping () -> Bool,
-        set: @escaping (Bool) -> Void
+        set: @escaping (Bool) -> Void,
     ) -> NSView {
         let control = BrowserActionToggle()
         control.setAccessibilityLabel(title)
@@ -1257,7 +1258,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         title optionTitle: (Value) -> String,
         get: @escaping () -> Value,
         set: @escaping (Value) -> Void,
-        enabled: @escaping () -> Bool = { true }
+        enabled: @escaping () -> Bool = { true },
     ) -> NSView {
         let control = BrowserActionPopUpButton(titles: options.map(optionTitle))
         control.setAccessibilityLabel(title)

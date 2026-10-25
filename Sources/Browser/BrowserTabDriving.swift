@@ -1,9 +1,11 @@
+// BrowserTabDriving.swift
+
 import AppKit
 import Foundation
 
 // MARK: - BrowserTabCreationState
 
-enum BrowserTabCreationState: Equatable, Sendable {
+enum BrowserTabCreationState: Equatable {
     case creating
     case ready
     case failed
@@ -11,7 +13,7 @@ enum BrowserTabCreationState: Equatable, Sendable {
 
 // MARK: - BrowserTabCloseOutcome
 
-enum BrowserTabCloseOutcome: Equatable, Sendable {
+enum BrowserTabCloseOutcome: Equatable {
     case closed
     case cancelled
 }
@@ -19,7 +21,7 @@ enum BrowserTabCloseOutcome: Equatable, Sendable {
 // MARK: - BrowserTabVisibleLayout
 
 /// Several tabs shown at once in one window (Split View), in pane order.
-struct BrowserTabVisibleLayout: Equatable, Sendable {
+struct BrowserTabVisibleLayout: Equatable {
     let tabIDs: [String]
     let orientation: BrowserTabSplitOrientation
     let fractions: [Double]?

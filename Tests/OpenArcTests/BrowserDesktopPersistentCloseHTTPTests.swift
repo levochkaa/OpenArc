@@ -1,3 +1,5 @@
+// BrowserDesktopPersistentCloseHTTPTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -22,21 +24,21 @@ extension BrowserSyncHTTPIntegrationTests {
         let device = account.devices[0]
         let auth = BrowserAuthSession(
             accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-            deviceID: device.deviceID, serverURL: fixture.baseURL
+            deviceID: device.deviceID, serverURL: fixture.baseURL,
         )
         _ = try await remote.push(mutation: BrowserSyncFolderMutation(id: UUID().uuidString, operations: [
             .createSpace(id: "source", data: .init(title: "Persistent Close", systemImageName: "globe")),
             .createTab(id: "favorite", data: .init(
                 spaceID: "source", placement: .app, urlString: favoriteURL,
-                userTitleOverride: "Favorite title", lastActivityAt: activity
+                userTitleOverride: "Favorite title", lastActivityAt: activity,
             )),
             .createTab(id: "pinned", data: .init(
                 spaceID: "source", placement: .spacePinned, urlString: away, pinnedURLString: home,
-                userTitleOverride: "Pinned title", lastActivityAt: activity
+                userTitleOverride: "Pinned title", lastActivityAt: activity,
             )),
             .createTab(id: "anchor", data: .init(
                 spaceID: "source", placement: .temporary, urlString: "https://persistent-close.example/anchor",
-                lastActivityAt: activity
+                lastActivityAt: activity,
             )),
         ]), authSession: auth)
         await first.activate()
@@ -63,13 +65,13 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(favoriteCancelled.id == favorite.id)
         #expect(try first.store.loadSnapshotStrict() == before)
         live.driver.emitCloseRequestOutcome(
-            id: favorite.id, requestID: favoriteCancelled.requestID, outcome: .cancelled
+            id: favorite.id, requestID: favoriteCancelled.requestID, outcome: .cancelled,
         )
         #expect(live.model.closeAppTabProcess(id: favorite.id))
         let favoriteConfirmed = try #require(live.driver.confirmedCloseRequests.last)
         #expect(favoriteConfirmed.requestID != favoriteCancelled.requestID)
         live.driver.emitCloseRequestOutcome(
-            id: favorite.id, requestID: favoriteConfirmed.requestID, outcome: .closed
+            id: favorite.id, requestID: favoriteConfirmed.requestID, outcome: .closed,
         )
         #expect(live.model.tabs.first { $0.syncID == "favorite" }?.id == favorite.id)
         #expect(live.model.tabs.first { $0.syncID == "favorite" }?.urlString == favoriteURL)
@@ -139,7 +141,7 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(reset.operations == [.patchTab(id: "pinned", fields: .init(urlString: home))])
         #expect(later.operations == [.patchTab(
             id: "anchor",
-            fields: .init(userTitleOverride: .set("Later surviving edit"))
+            fields: .init(userTitleOverride: .set("Later surviving edit")),
         )])
         let bytes = try persistentCloseHTTPOutbox(databaseURL)
         #expect(try first.store.loadSnapshotStrict()?.tabs.first { $0.id == "pinned" }?.urlString == home)
@@ -195,7 +197,17 @@ extension BrowserSyncHTTPIntegrationTests {
 // MARK: - PersistentCloseHTTPModel
 
 @MainActor private final class PersistentCloseHTTPModel {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+
+    // MARK: Private
+
+    private let profile: SyncHTTPProfile
+    private let defaults: UserDefaults
+    private let suite = "PersistentCloseHTTPModel.\(UUID())"
+    private var closed = false
 
     init(profile: SyncHTTPProfile, now: Date) throws {
         self.profile = profile
@@ -206,7 +218,7 @@ extension BrowserSyncHTTPIntegrationTests {
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: profile.service,
-            dateProvider: { now }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            dateProvider: { now }, windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         driver.automaticallyConfirmsCloseRequests = false
         model.handleContextReady()
@@ -217,11 +229,6 @@ extension BrowserSyncHTTPIntegrationTests {
         profile.service.setSnapshotApplier(model)
     }
 
-    // MARK: Internal
-
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
-
     func close() {
         guard !closed else { return }
         closed = true
@@ -230,13 +237,6 @@ extension BrowserSyncHTTPIntegrationTests {
         model.prepareForTermination()
         defaults.removePersistentDomain(forName: suite)
     }
-
-    // MARK: Private
-
-    private let profile: SyncHTTPProfile
-    private let defaults: UserDefaults
-    private let suite = "PersistentCloseHTTPModel.\(UUID())"
-    private var closed = false
 }
 
 @MainActor private func persistentCloseHTTPSQL(_ url: URL, _ sql: String) throws {

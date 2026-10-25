@@ -1,10 +1,18 @@
+// BrowserViewportClipView.swift
+
 import AppKit
 import QuartzCore
 
 // MARK: - BrowserViewportClipView
 
 final class BrowserViewportClipView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
+
+    var hostedView: NSView
 
     init(hostView: NSView) {
         self.hostedView = hostView
@@ -21,14 +29,6 @@ final class BrowserViewportClipView: NSView {
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    // MARK: Internal
-
-    override var mouseDownCanMoveWindow: Bool {
-        false
-    }
-
-    var hostedView: NSView
 
     override func layout() {
         super.layout()

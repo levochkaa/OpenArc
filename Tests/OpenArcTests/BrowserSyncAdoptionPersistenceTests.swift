@@ -1,3 +1,5 @@
+// BrowserSyncAdoptionPersistenceTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -105,62 +107,6 @@ import Testing
 // MARK: - SyncAdoptionFixture
 
 @MainActor private final class SyncAdoptionFixture {
-    // MARK: Lifecycle
-
-    init() throws {
-        self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("SyncAdoption-\(UUID())")
-        self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
-        try store.writeSessionBatch([.init(snapshot: .init(
-            spaces: [.init(id: "space", title: "Space", systemImageName: "globe", selectedTabIndex: 1)],
-            tabs: [
-                .init(
-                    id: "anchor",
-                    urlString: "https://example.com/anchor",
-                    placement: .spacePinned,
-                    spaceID: "space",
-                    lastActivityTimestamp: 100
-                ),
-                .init(
-                    id: "local-tab",
-                    urlString: "https://example.com/local",
-                    spaceID: "space",
-                    lastActivityTimestamp: 100
-                ),
-            ]
-        ), origin: .local(syncMove: nil))])
-        store.saveSelectedSpaceIndex(0)
-        store.saveSelectedTabIndex(1)
-        let session = BrowserAuthSession(
-            accessToken: "fixture-token", userID: owner.userID, userEmail: nil,
-            deviceID: "fixture-device", serverURL: owner.baseURL
-        )
-        self.credentials = SyncAdoptionCredentials(session: session)
-        self.service = BrowserSyncService(
-            localStore: store, remoteClient: remote, authSessionStore: credentials,
-            pushDebounce: .zero, pollInterval: nil, retryDelay: nil
-        )
-        self.defaults = UserDefaults(suiteName: suite)!
-        self.model = BrowserChromeModel(
-            tabDriver: driver, sessionSnapshotStore: store, sessionPreferencesStore: store,
-            commandBarSuggestionProvider: FakeSuggestionProvider(),
-            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
-            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
-            extensionManager: FakeBrowserExtensionManager(), syncCoordinator: service,
-            dateProvider: { Date(timeIntervalSince1970: 100) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
-        )
-        model.handleContextReady()
-        driver.flushPendingCreateEvents()
-        for tab in model.tabs {
-            driver.emitTabCreationState(id: tab.id, state: .ready)
-        }
-        self.account = BrowserAccountStore(
-            syncClient: remote, authSessionStore: credentials, syncCoordinator: service,
-            appleSignInService: SyncAdoptionIdentity(), deviceIdentity: .init(name: "Fixture", platform: "macOS")
-        )
-    }
-
     // MARK: Internal
 
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync-adoption.example")!, userID: "owner")
@@ -174,6 +120,65 @@ import Testing
     let remote = SyncAdoptionRemote()
     let driver = FakeBrowserTabDriver()
 
+    // MARK: Private
+
+    private let suite = "SyncAdoption.\(UUID())"
+    private let defaults: UserDefaults
+
+    init() throws {
+        self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("SyncAdoption-\(UUID())")
+        self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
+        self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+        try store.writeSessionBatch([.init(snapshot: .init(
+            spaces: [.init(id: "space", title: "Space", systemImageName: "globe", selectedTabIndex: 1)],
+            tabs: [
+                .init(
+                    id: "anchor",
+                    urlString: "https://example.com/anchor",
+                    placement: .spacePinned,
+                    spaceID: "space",
+                    lastActivityTimestamp: 100,
+                ),
+                .init(
+                    id: "local-tab",
+                    urlString: "https://example.com/local",
+                    spaceID: "space",
+                    lastActivityTimestamp: 100,
+                ),
+            ],
+        ), origin: .local(syncMove: nil))])
+        store.saveSelectedSpaceIndex(0)
+        store.saveSelectedTabIndex(1)
+        let session = BrowserAuthSession(
+            accessToken: "fixture-token", userID: owner.userID, userEmail: nil,
+            deviceID: "fixture-device", serverURL: owner.baseURL,
+        )
+        self.credentials = SyncAdoptionCredentials(session: session)
+        self.service = BrowserSyncService(
+            localStore: store, remoteClient: remote, authSessionStore: credentials,
+            pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
+        )
+        self.defaults = UserDefaults(suiteName: suite)!
+        self.model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: store, sessionPreferencesStore: store,
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(), syncCoordinator: service,
+            dateProvider: { Date(timeIntervalSince1970: 100) },
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
+        )
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        for tab in model.tabs {
+            driver.emitTabCreationState(id: tab.id, state: .ready)
+        }
+        self.account = BrowserAccountStore(
+            syncClient: remote, authSessionStore: credentials, syncCoordinator: service,
+            appleSignInService: SyncAdoptionIdentity(), deviceIdentity: .init(name: "Fixture", platform: "macOS"),
+        )
+    }
+
     func sql(_ sql: String) throws {
         try DatabaseQueue(path: databaseURL.path).write { try $0.execute(sql: sql) }
     }
@@ -186,14 +191,14 @@ import Testing
                 owner: owner, snapshot: snapshot,
                 outbox: String.fetchAll(
                     db,
-                    sql: "SELECT mutation_id || ':' || hex(payload) FROM browser_sync_outbox ORDER BY position"
+                    sql: "SELECT mutation_id || ':' || hex(payload) FROM browser_sync_outbox ORDER BY position",
                 ),
                 baseline: Data.fetchAll(db, sql: "SELECT payload FROM browser_sync_baseline ORDER BY id"),
                 archive: Data.fetchAll(db, sql: "SELECT payload FROM browser_tab_archive ORDER BY id"),
                 receipts: String.fetchAll(
                     db,
-                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id, '') FROM browser_tab_archive_receipts ORDER BY id"
-                )
+                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id, '') FROM browser_tab_archive_receipts ORDER BY id",
+                ),
             )
         }
     }
@@ -206,11 +211,6 @@ import Testing
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: directory)
     }
-
-    // MARK: Private
-
-    private let suite = "SyncAdoption.\(UUID())"
-    private let defaults: UserDefaults
 }
 
 // MARK: - SyncAdoptionEvidence
@@ -227,13 +227,11 @@ private struct SyncAdoptionEvidence: Equatable {
 // MARK: - SyncAdoptionCredentials
 
 @MainActor private final class SyncAdoptionCredentials: BrowserSyncAuthSessionStoring {
-    // MARK: Lifecycle
-
-    init(session: BrowserAuthSession) { self.session = session }
-
     // MARK: Internal
 
     var session: BrowserAuthSession?
+
+    init(session: BrowserAuthSession) { self.session = session }
 
     func loadSession() -> BrowserAuthSession? { session }
     func saveSession(_ session: BrowserAuthSession) { self.session = session }
@@ -256,7 +254,7 @@ private struct SyncAdoptionEvidence: Equatable {
     func authenticateWithApple(
         identityToken _: String,
         deviceName _: String,
-        devicePlatform _: String
+        devicePlatform _: String,
     ) throws -> BrowserAuthSession {
         throw URLError(.userAuthenticationRequired)
     }

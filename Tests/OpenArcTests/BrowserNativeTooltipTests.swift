@@ -1,3 +1,5 @@
+// BrowserNativeTooltipTests.swift
+
 import AppKit
 import Testing
 
@@ -9,7 +11,7 @@ import Testing
             title: String(repeating: "Long title ", count: 20),
             caption: String(repeating: "Long caption ", count: 20),
             shortcut: shortcut,
-            placement: .belowLeading
+            placement: .belowLeading,
         )
         let size = view.measuredSize(maximumWidth: 320)
         view.frame = NSRect(origin: .zero, size: size)
@@ -28,7 +30,7 @@ import Testing
         #expect(view.frame.width < 100)
         #expect(view.roundsTopLeadingCorner)
         #expect(view.cornerRadius == view.bounds.height / 2)
-        #expect(view.subviews.filter { !$0.isHidden }.count == 1)
+        #expect(view.subviews.count(where: { !$0.isHidden }) == 1)
     }
 
     @Test func chromeButtonRetainsActionsAndAccessibilityAcrossStateChanges() {

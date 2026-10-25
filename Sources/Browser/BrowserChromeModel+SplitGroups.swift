@@ -1,3 +1,5 @@
+// BrowserChromeModel+SplitGroups.swift
+
 import Foundation
 
 // MARK: - Split View
@@ -51,11 +53,11 @@ extension BrowserChromeModel {
             let preferred = group.focusedTabSyncID.flatMap { tabsBySyncID[$0] }.map(SplitContainerKey.init)
             guard let key = Self.dominantSplitKey(
                 candidates.compactMap { tabsBySyncID[$0].map(SplitContainerKey.init) },
-                preferring: preferred
+                preferring: preferred,
             ) else { continue }
             let members = Array(
                 candidates.filter { tabsBySyncID[$0].map(SplitContainerKey.init) == key }
-                    .prefix(Self.maximumSplitPaneCount)
+                    .prefix(Self.maximumSplitPaneCount),
             )
             guard members.count >= 2 else { continue }
             claimed.formUnion(members)
@@ -89,7 +91,7 @@ extension BrowserChromeModel {
                 fractions: group.fractions,
                 focusedTabID: group.focusedTabSyncID,
                 title: group.title,
-                systemImageName: group.systemImageName
+                systemImageName: group.systemImageName,
             )
         }
     }
@@ -103,7 +105,7 @@ extension BrowserChromeModel {
                 fractions: group.fractions,
                 focusedTabSyncID: group.focusedTabID,
                 title: group.title,
-                systemImageName: group.systemImageName
+                systemImageName: group.systemImageName,
             )
         }
     }
@@ -152,7 +154,7 @@ extension BrowserChromeModel {
                 BrowserTabVisibleLayout(
                     tabIDs: splitPaneTabIDs(of: group),
                     orientation: group.orientation,
-                    fractions: group.fractions
+                    fractions: group.fractions,
                 )
             }
             : nil
@@ -219,7 +221,7 @@ extension BrowserChromeModel {
         tabID: String,
         anchorTabID: String? = nil,
         insertion: SplitInsertion = .end,
-        orientation: BrowserTabSplitOrientation = .horizontal
+        orientation: BrowserTabSplitOrientation = .horizontal,
     ) -> Bool {
         guard let anchorID = anchorTabID ?? selectedTabID, anchorID != tabID,
               let anchor = tabs.first(where: { $0.id == anchorID }), anchor.placement != .app,
@@ -250,7 +252,7 @@ extension BrowserChromeModel {
                 id: UUID().uuidString,
                 tabSyncIDs: insertion == .before ? [added.syncID, anchor.syncID] : [anchor.syncID, added.syncID],
                 orientation: orientation,
-                focusedTabSyncID: added.syncID
+                focusedTabSyncID: added.syncID,
             ))
         }
         let wasSelected = selectedTabID == tabID
@@ -426,9 +428,11 @@ extension BrowserChromeModel {
     /// Convert title for the selected split; outside a split, the
     /// horizontal default converts to vertical.
     var splitOrientationToggleTitle: String {
-        selectedSplitGroup?.orientation == .vertical
-            ? BrowserStrings.splitConvertToHorizontalAction
-            : BrowserStrings.splitConvertToVerticalAction
+        if selectedSplitGroup?.orientation == .vertical {
+            BrowserStrings.splitConvertToHorizontalAction
+        } else {
+            BrowserStrings.splitConvertToVerticalAction
+        }
     }
 
     /// Converts the selected split between side by side and stacked panes.
@@ -500,26 +504,24 @@ extension BrowserChromeModel {
     // MARK: Private
 
     private struct SplitContainerKey: Hashable {
-        // MARK: Lifecycle
+        // MARK: Internal
+
+        let spaceID: String
+        let placement: BrowserTabPlacement
+        let folderID: String?
 
         init(_ tab: Tab) {
             self.spaceID = tab.spaceID
             self.placement = tab.placement
             self.folderID = tab.pinnedFolderID
         }
-
-        // MARK: Internal
-
-        let spaceID: String
-        let placement: BrowserTabPlacement
-        let folderID: String?
     }
 
     /// The container holding most members keeps the group; ties prefer the
     /// focused member's container, then the earliest member's.
     private static func dominantSplitKey(
         _ keys: [SplitContainerKey],
-        preferring preferred: SplitContainerKey?
+        preferring preferred: SplitContainerKey?,
     ) -> SplitContainerKey? {
         var counts = [SplitContainerKey: Int]()
         for key in keys {
@@ -566,7 +568,7 @@ extension BrowserChromeModel {
         let next = siblings.indices.contains(anchorIndex + 1) ? siblings[anchorIndex + 1] : nil
         return commitSidebarDrop(
             payload: .init(primary: .tab(tabID), tabIDs: [tabID]),
-            destination: .init(container: container, beforeItem: next)
+            destination: .init(container: container, beforeItem: next),
         )
     }
 }

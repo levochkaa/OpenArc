@@ -1,9 +1,24 @@
+// BrowserSidebarDragEventSession.swift
+
 import AppKit
 
 /// Scoped event ownership survives source-row replacement and always ends on
 /// release, Escape, deactivation or window closure. It never injects system input.
 @MainActor final class BrowserSidebarDragEventSession {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onMove: (CGPoint) -> Void = { _ in }
+    var onRelease: (CGPoint) -> Void = { _ in }
+    var onCancel: () -> Void = {}
+    var onTick: (TimeInterval) -> Void = { _ in }
+
+    // MARK: Private
+
+    private weak var window: NSWindow?
+    private var monitor: Any?
+    private var notifications = [NSObjectProtocol]()
+    private var timer: Timer?
+    private var lastTick: TimeInterval = 0
 
     isolated deinit {
         if let monitor {
@@ -12,13 +27,6 @@ import AppKit
         notifications.forEach(NotificationCenter.default.removeObserver)
         timer?.invalidate()
     }
-
-    // MARK: Internal
-
-    var onMove: (CGPoint) -> Void = { _ in }
-    var onRelease: (CGPoint) -> Void = { _ in }
-    var onCancel: () -> Void = {}
-    var onTick: (TimeInterval) -> Void = { _ in }
 
     func start(in window: NSWindow?) {
         stop()
@@ -59,7 +67,7 @@ import AppKit
         notifications.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification,
             object: nil,
-            queue: .main
+            queue: .main,
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.onCancel() }
         })
@@ -88,12 +96,4 @@ import AppKit
         timer = nil
         window = nil
     }
-
-    // MARK: Private
-
-    private weak var window: NSWindow?
-    private var monitor: Any?
-    private var notifications = [NSObjectProtocol]()
-    private var timer: Timer?
-    private var lastTick: TimeInterval = 0
 }

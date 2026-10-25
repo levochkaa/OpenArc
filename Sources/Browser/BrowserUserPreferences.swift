@@ -1,3 +1,5 @@
+// BrowserUserPreferences.swift
+
 import AppKit
 import Combine
 import Foundation
@@ -162,71 +164,34 @@ enum BrowserSidebarPosition: String, CaseIterable, Codable, Identifiable {
 // MARK: - BrowserUserPreferencesStore
 
 final class BrowserUserPreferencesStore: ObservableObject {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(userDefaults: UserDefaults = .standard) {
-        self.userDefaults = userDefaults
-        self.automaticUpdatesEnabled = Self.loadBool(userDefaults, key: Key.automaticUpdatesEnabled, defaultValue: true)
-        let rawUpdateChannel = userDefaults.string(forKey: Key.updateChannel)
-        self.updateChannel = rawUpdateChannel.flatMap(BrowserUpdateChannel.init(rawValue:)) ?? .stable
-        let rawAppearancePreference = userDefaults.string(forKey: Key.appearancePreference)
-        self.appearancePreference = rawAppearancePreference
-            .flatMap(BrowserAppearancePreference.init(rawValue:)) ?? .system
-        self.warnBeforeQuitting = Self.loadBool(userDefaults, key: Key.warnBeforeQuitting, defaultValue: true)
-        self.sidebarPosition = userDefaults.string(forKey: Key.sidebarPosition)
-            .flatMap(BrowserSidebarPosition.init(rawValue:)) ?? .left
-        let rawSearchEngine = userDefaults.string(forKey: Key.searchEngine)
-        self.searchEngine = rawSearchEngine.flatMap(BrowserSearchEngine.init(rawValue:)) ?? .google
-        let rawAISearchProvider = userDefaults.string(forKey: Key.aiSearchProvider)
-        self.aiSearchProvider = rawAISearchProvider.flatMap(BrowserAISearchProvider.init(rawValue:))
-            ?? (rawSearchEngine == "perplexity" ? .perplexity : .chatGPT)
-        self.searchEngineSuggestionsEnabled = Self.loadBool(
-            userDefaults,
-            key: Key.searchEngineSuggestionsEnabled,
-            defaultValue: true
-        )
-        self.hapticFeedbackEnabled = Self.loadBool(userDefaults, key: Key.hapticFeedbackEnabled, defaultValue: true)
-        self.restoreWindowsOnLaunch = Self.loadBool(userDefaults, key: Key.restoreWindowsOnLaunch, defaultValue: true)
-        self.pictureInPictureEnabled = Self.loadBool(userDefaults, key: Key.pictureInPictureEnabled, defaultValue: true)
-        self.windowDraggingFromPageTopEnabled = Self.loadBool(
-            userDefaults,
-            key: Key.windowDraggingFromPageTopEnabled,
-            defaultValue: true
-        )
-        self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: true)
-        self.siteURLToolbarEnabled = Self.loadBool(
-            userDefaults,
-            key: Key.siteURLToolbarEnabled,
-            defaultValue: false
-        )
-        self.siteToolbarShowsFullURL = Self.loadBool(
-            userDefaults,
-            key: Key.siteToolbarShowsFullURL,
-            defaultValue: false
-        )
-        self.blurredChromeBackgroundEnabled = Self.loadBool(
-            userDefaults,
-            key: Key.blurredChromeBackgroundEnabled,
-            defaultValue: true
-        )
-        self.batterySaverEnabled = Self.loadBool(userDefaults, key: Key.batterySaverEnabled, defaultValue: true)
-        self.pinnedExtensionIDs = Self.loadStringArray(userDefaults, key: Key.pinnedExtensionIDs)
-        self.downloadDirectoryPath = userDefaults.string(forKey: Self.downloadDirectoryKey).flatMap { $0.isEmpty
-            ? nil
-            : $0
-        }
-        self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
-        self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
-        self.opensOptionCommandClicksInLittleWindow = userDefaults.bool(forKey: Self.littleWindowOptionCommandClickKey)
-        self.opensLittleWindowFromAnyApp = userDefaults.bool(forKey: Key.opensLittleWindowFromAnyApp)
-        self.folderPreviewsEnabled = Self.loadBool(userDefaults, key: Key.folderPreviewsEnabled, defaultValue: true)
-        self.peeksLinksToOtherSites = Self.loadBool(userDefaults, key: Key.peeksLinksToOtherSites, defaultValue: false)
-        self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)
-            .flatMap { try? JSONDecoder().decode([BrowserLinkRoute].self, from: $0) } ?? []
-        self.siteSearches = userDefaults.data(forKey: Key.siteSearches)
-            .flatMap { try? JSONDecoder().decode([BrowserSiteSearch].self, from: $0) } ?? BrowserSiteSearch.arcDefaults
-        self.sitePermissionDecisions = userDefaults.data(forKey: Key.sitePermissionDecisions)
-            .flatMap { try? JSONDecoder().decode([BrowserSitePermissionDecision].self, from: $0) } ?? []
+    private enum Key {
+        static let automaticUpdatesEnabled = "browser.settings.automaticUpdatesEnabled"
+        static let updateChannel = "browser.settings.updateChannel"
+        static let appearancePreference = "browser.settings.appearancePreference"
+        static let sidebarPosition = "browser.settings.sidebarPosition"
+        static let warnBeforeQuitting = "browser.settings.warnBeforeQuitting"
+        static let searchEngine = "browser.settings.searchEngine"
+        static let aiSearchProvider = "browser.settings.aiSearchProvider"
+        static let searchEngineSuggestionsEnabled = "browser.settings.searchEngineSuggestionsEnabled"
+        static let hapticFeedbackEnabled = "browser.settings.hapticFeedbackEnabled"
+        static let restoreWindowsOnLaunch = "browser.settings.restoreWindowsOnLaunch"
+        static let pictureInPictureEnabled = "browser.settings.pictureInPictureEnabled"
+        static let windowDraggingFromPageTopEnabled = "browser.settings.windowDraggingFromPageTopEnabled"
+        static let bookmarksBarVisible = "browser.settings.bookmarksBarVisible"
+        static let siteURLToolbarEnabled = "browser.settings.siteURLToolbarEnabled"
+        static let siteToolbarShowsFullURL = "browser.settings.siteToolbarShowsFullURL"
+        static let blurredChromeBackgroundEnabled = "browser.settings.blurredChromeBackgroundEnabled"
+        static let batterySaverEnabled = "browser.settings.batterySaverEnabled"
+        static let pinnedExtensionIDs = "browser.extensions.pinnedExtensionIDs"
+        static let littleArcEnabled = "browser.settings.littleArcEnabled"
+        static let linkRoutes = "browser.settings.linkRoutes"
+        static let siteSearches = "browser.settings.siteSearches"
+        static let sitePermissionDecisions = "browser.settings.sitePermissionDecisions"
+        static let peeksLinksToOtherSites = "browser.settings.peeksLinksToOtherSites"
+        static let folderPreviewsEnabled = "browser.settings.folderPreviewsEnabled"
+        static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
     }
 
     // MARK: Internal
@@ -368,37 +333,72 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(downloadDirectoryPath, forKey: Self.downloadDirectoryKey) }
     }
 
-    // MARK: Private
-
-    private enum Key {
-        static let automaticUpdatesEnabled = "browser.settings.automaticUpdatesEnabled"
-        static let updateChannel = "browser.settings.updateChannel"
-        static let appearancePreference = "browser.settings.appearancePreference"
-        static let sidebarPosition = "browser.settings.sidebarPosition"
-        static let warnBeforeQuitting = "browser.settings.warnBeforeQuitting"
-        static let searchEngine = "browser.settings.searchEngine"
-        static let aiSearchProvider = "browser.settings.aiSearchProvider"
-        static let searchEngineSuggestionsEnabled = "browser.settings.searchEngineSuggestionsEnabled"
-        static let hapticFeedbackEnabled = "browser.settings.hapticFeedbackEnabled"
-        static let restoreWindowsOnLaunch = "browser.settings.restoreWindowsOnLaunch"
-        static let pictureInPictureEnabled = "browser.settings.pictureInPictureEnabled"
-        static let windowDraggingFromPageTopEnabled = "browser.settings.windowDraggingFromPageTopEnabled"
-        static let bookmarksBarVisible = "browser.settings.bookmarksBarVisible"
-        static let siteURLToolbarEnabled = "browser.settings.siteURLToolbarEnabled"
-        static let siteToolbarShowsFullURL = "browser.settings.siteToolbarShowsFullURL"
-        static let blurredChromeBackgroundEnabled = "browser.settings.blurredChromeBackgroundEnabled"
-        static let batterySaverEnabled = "browser.settings.batterySaverEnabled"
-        static let pinnedExtensionIDs = "browser.extensions.pinnedExtensionIDs"
-        static let littleArcEnabled = "browser.settings.littleArcEnabled"
-        static let linkRoutes = "browser.settings.linkRoutes"
-        static let siteSearches = "browser.settings.siteSearches"
-        static let sitePermissionDecisions = "browser.settings.sitePermissionDecisions"
-        static let peeksLinksToOtherSites = "browser.settings.peeksLinksToOtherSites"
-        static let folderPreviewsEnabled = "browser.settings.folderPreviewsEnabled"
-        static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
-    }
-
     private let userDefaults: UserDefaults
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+        self.automaticUpdatesEnabled = Self.loadBool(userDefaults, key: Key.automaticUpdatesEnabled, defaultValue: true)
+        let rawUpdateChannel = userDefaults.string(forKey: Key.updateChannel)
+        self.updateChannel = rawUpdateChannel.flatMap(BrowserUpdateChannel.init(rawValue:)) ?? .stable
+        let rawAppearancePreference = userDefaults.string(forKey: Key.appearancePreference)
+        self.appearancePreference = rawAppearancePreference
+            .flatMap(BrowserAppearancePreference.init(rawValue:)) ?? .system
+        self.warnBeforeQuitting = Self.loadBool(userDefaults, key: Key.warnBeforeQuitting, defaultValue: true)
+        self.sidebarPosition = userDefaults.string(forKey: Key.sidebarPosition)
+            .flatMap(BrowserSidebarPosition.init(rawValue:)) ?? .left
+        let rawSearchEngine = userDefaults.string(forKey: Key.searchEngine)
+        self.searchEngine = rawSearchEngine.flatMap(BrowserSearchEngine.init(rawValue:)) ?? .google
+        let rawAISearchProvider = userDefaults.string(forKey: Key.aiSearchProvider)
+        self.aiSearchProvider = rawAISearchProvider.flatMap(BrowserAISearchProvider.init(rawValue:))
+            ?? (rawSearchEngine == "perplexity" ? .perplexity : .chatGPT)
+        self.searchEngineSuggestionsEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.searchEngineSuggestionsEnabled,
+            defaultValue: true,
+        )
+        self.hapticFeedbackEnabled = Self.loadBool(userDefaults, key: Key.hapticFeedbackEnabled, defaultValue: true)
+        self.restoreWindowsOnLaunch = Self.loadBool(userDefaults, key: Key.restoreWindowsOnLaunch, defaultValue: true)
+        self.pictureInPictureEnabled = Self.loadBool(userDefaults, key: Key.pictureInPictureEnabled, defaultValue: true)
+        self.windowDraggingFromPageTopEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.windowDraggingFromPageTopEnabled,
+            defaultValue: true,
+        )
+        self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: true)
+        self.siteURLToolbarEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.siteURLToolbarEnabled,
+            defaultValue: false,
+        )
+        self.siteToolbarShowsFullURL = Self.loadBool(
+            userDefaults,
+            key: Key.siteToolbarShowsFullURL,
+            defaultValue: false,
+        )
+        self.blurredChromeBackgroundEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.blurredChromeBackgroundEnabled,
+            defaultValue: true,
+        )
+        self.batterySaverEnabled = Self.loadBool(userDefaults, key: Key.batterySaverEnabled, defaultValue: true)
+        self.pinnedExtensionIDs = Self.loadStringArray(userDefaults, key: Key.pinnedExtensionIDs)
+        self.downloadDirectoryPath = userDefaults.string(forKey: Self.downloadDirectoryKey).flatMap { $0.isEmpty
+            ? nil
+            : $0
+        }
+        self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
+        self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
+        self.opensOptionCommandClicksInLittleWindow = userDefaults.bool(forKey: Self.littleWindowOptionCommandClickKey)
+        self.opensLittleWindowFromAnyApp = userDefaults.bool(forKey: Key.opensLittleWindowFromAnyApp)
+        self.folderPreviewsEnabled = Self.loadBool(userDefaults, key: Key.folderPreviewsEnabled, defaultValue: true)
+        self.peeksLinksToOtherSites = Self.loadBool(userDefaults, key: Key.peeksLinksToOtherSites, defaultValue: false)
+        self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)
+            .flatMap { try? JSONDecoder().decode([BrowserLinkRoute].self, from: $0) } ?? []
+        self.siteSearches = userDefaults.data(forKey: Key.siteSearches)
+            .flatMap { try? JSONDecoder().decode([BrowserSiteSearch].self, from: $0) } ?? BrowserSiteSearch.arcDefaults
+        self.sitePermissionDecisions = userDefaults.data(forKey: Key.sitePermissionDecisions)
+            .flatMap { try? JSONDecoder().decode([BrowserSitePermissionDecision].self, from: $0) } ?? []
+    }
 
     private static func loadBool(_ userDefaults: UserDefaults, key: String, defaultValue: Bool) -> Bool {
         guard userDefaults.object(forKey: key) != nil else {
@@ -659,8 +659,14 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.copyLinkAsMarkdown
         case .copyLinkAsQuote:
             BrowserCommands.copyLinkAsQuote
-        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
-             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+        case .goToSidebarItem1,
+             .goToSidebarItem2,
+             .goToSidebarItem3,
+             .goToSidebarItem4,
+             .goToSidebarItem5,
+             .goToSidebarItem6,
+             .goToSidebarItem7,
+             .goToSidebarItem8:
             BrowserCommands.goToSidebarItem(sidebarItemIndex)
         case .goToLastSidebarItem:
             BrowserCommands.goToLastSidebarItem
@@ -793,7 +799,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .captureArea
         case .selectNextTab:
             .selectNextTab
-        case .selectPreviousTab, .selectPreviousTabAlternate:
+        case .selectPreviousTab,
+             .selectPreviousTabAlternate:
             .selectPreviousTab
         case .selectNextTabAlternate:
             .selectNextTab
@@ -809,8 +816,14 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .copyLinkAsMarkdown
         case .copyLinkAsQuote:
             .copyLinkAsQuote
-        case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
-             .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
+        case .goToSidebarItem1,
+             .goToSidebarItem2,
+             .goToSidebarItem3,
+             .goToSidebarItem4,
+             .goToSidebarItem5,
+             .goToSidebarItem6,
+             .goToSidebarItem7,
+             .goToSidebarItem8:
             .goToSidebarItem(sidebarItemIndex)
         case .goToLastSidebarItem:
             .goToLastSidebarItem
@@ -842,17 +855,64 @@ protocol BrowserShortcutResolving: AnyObject {
 // MARK: - BrowserShortcutStore
 
 final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private enum Key {
+        static let overrides = "browser.settings.shortcutOverrides"
+    }
+
+    private static let reservedShortcutTitles: [BrowserKeyboardShortcut: String] = [
+        BrowserKeyboardShortcut("z"): BrowserStrings.menuUndo,
+        BrowserKeyboardShortcut("z", modifiers: [.command, .shift]): BrowserStrings.menuRedo,
+        BrowserKeyboardShortcut("x"): BrowserStrings.menuCut,
+        BrowserKeyboardShortcut("c"): BrowserStrings.menuCopy,
+        BrowserKeyboardShortcut("v"): BrowserStrings.menuPaste,
+        BrowserKeyboardShortcut("v", modifiers: [.command, .shift]): BrowserStrings.menuPasteAndMatchStyle,
+        BrowserKeyboardShortcut("a"): BrowserStrings.menuSelectAll,
+        BrowserKeyboardShortcut("q"): BrowserStrings.quitShortcutTitle,
+        BrowserKeyboardShortcut("h"): BrowserStrings.hideMenuItem(appName: ProcessInfo.processInfo.processName),
+        BrowserKeyboardShortcut("h", modifiers: [.command, .option]): BrowserStrings.menuHideOthers,
+        BrowserKeyboardShortcut("m"): BrowserStrings.menuMinimize,
+        BrowserKeyboardShortcut("w", modifiers: [.command, .shift]): BrowserStrings.webAppCloseWindowAction,
+    ].reduce(into: [:]) { result, item in
+        result[item.key.normalizedForMatching] = item.value
+    }
+
+    private let userDefaults: UserDefaults
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    @Published private var overrides: [BrowserCommandID: BrowserKeyboardShortcut]
+
+    // MARK: Internal
+
+    var commandIDs: [BrowserCommandID] {
+        BrowserCommandID.allCases
+    }
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         self.overrides = Self.loadOverrides(userDefaults: userDefaults, decoder: decoder)
     }
 
-    // MARK: Internal
+    private static func loadOverrides(
+        userDefaults: UserDefaults,
+        decoder: JSONDecoder,
+    ) -> [BrowserCommandID: BrowserKeyboardShortcut] {
+        guard let data = userDefaults.data(forKey: Key.overrides), let rawOverrides = try? decoder.decode(
+            [String: BrowserKeyboardShortcut].self,
+            from: data,
+        ) else {
+            return [:]
+        }
 
-    var commandIDs: [BrowserCommandID] {
-        BrowserCommandID.allCases
+        return rawOverrides.reduce(into: [:]) { result, item in
+            guard let commandID = BrowserCommandID(rawValue: item.key) else {
+                return
+            }
+
+            result[commandID] = item.value
+        }
     }
 
     /// A default added in a later version yields to a key the user already
@@ -874,7 +934,7 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         return BrowserCommandDescriptor(
             menuTitle: defaultDescriptor.menuTitle,
             helpTitle: defaultDescriptor.helpTitle,
-            shortcut: shortcut(for: commandID)
+            shortcut: shortcut(for: commandID),
         )
     }
 
@@ -929,55 +989,6 @@ final class BrowserShortcutStore: ObservableObject, BrowserShortcutResolving {
         return BrowserShortcutStore.reservedShortcutTitles[normalizedShortcut]
     }
 
-    // MARK: Private
-
-    private enum Key {
-        static let overrides = "browser.settings.shortcutOverrides"
-    }
-
-    private static let reservedShortcutTitles: [BrowserKeyboardShortcut: String] = [
-        BrowserKeyboardShortcut("z"): BrowserStrings.menuUndo,
-        BrowserKeyboardShortcut("z", modifiers: [.command, .shift]): BrowserStrings.menuRedo,
-        BrowserKeyboardShortcut("x"): BrowserStrings.menuCut,
-        BrowserKeyboardShortcut("c"): BrowserStrings.menuCopy,
-        BrowserKeyboardShortcut("v"): BrowserStrings.menuPaste,
-        BrowserKeyboardShortcut("v", modifiers: [.command, .shift]): BrowserStrings.menuPasteAndMatchStyle,
-        BrowserKeyboardShortcut("a"): BrowserStrings.menuSelectAll,
-        BrowserKeyboardShortcut("q"): BrowserStrings.quitShortcutTitle,
-        BrowserKeyboardShortcut("h"): BrowserStrings.hideMenuItem(appName: ProcessInfo.processInfo.processName),
-        BrowserKeyboardShortcut("h", modifiers: [.command, .option]): BrowserStrings.menuHideOthers,
-        BrowserKeyboardShortcut("m"): BrowserStrings.menuMinimize,
-        BrowserKeyboardShortcut("w", modifiers: [.command, .shift]): BrowserStrings.webAppCloseWindowAction,
-    ].reduce(into: [:]) { result, item in
-        result[item.key.normalizedForMatching] = item.value
-    }
-
-    private let userDefaults: UserDefaults
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    @Published private var overrides: [BrowserCommandID: BrowserKeyboardShortcut]
-
-    private static func loadOverrides(
-        userDefaults: UserDefaults,
-        decoder: JSONDecoder
-    ) -> [BrowserCommandID: BrowserKeyboardShortcut] {
-        guard let data = userDefaults.data(forKey: Key.overrides), let rawOverrides = try? decoder.decode(
-            [String: BrowserKeyboardShortcut].self,
-            from: data
-        ) else {
-            return [:]
-        }
-
-        return rawOverrides.reduce(into: [:]) { result, item in
-            guard let commandID = BrowserCommandID(rawValue: item.key) else {
-                return
-            }
-
-            result[commandID] = item.value
-        }
-    }
-
     private func persistOverrides() {
         let rawOverrides = Dictionary(uniqueKeysWithValues: overrides.map { ($0.key.rawValue, $0.value) })
         if rawOverrides.isEmpty {
@@ -997,7 +1008,7 @@ extension BrowserKeyboardShortcut {
     var normalizedForMatching: BrowserKeyboardShortcut {
         BrowserKeyboardShortcut(
             keyEquivalent.lowercased(),
-            modifiers: modifiers.intersection(.deviceIndependentFlagsMask)
+            modifiers: modifiers.intersection(.deviceIndependentFlagsMask),
         )
     }
 }

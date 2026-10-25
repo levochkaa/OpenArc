@@ -1,3 +1,5 @@
+// BrowserNativeSidebarTests.swift
+
 import AppKit
 import Testing
 
@@ -40,7 +42,7 @@ import Testing
             payload: .init(primary: .tab(tab.id), tabIDs: [tab.id]),
             sourceFrame: CGRect(x: 0, y: 0, width: 240, height: 36),
             start: .zero,
-            pointer: CGPoint(x: 10, y: 20)
+            pointer: CGPoint(x: 10, y: 20),
         )
         #expect(state.isDraggingSidebarItem)
         #expect(state.drag.payload?.primary == .tab(tab.id))
@@ -90,7 +92,7 @@ import Testing
     @Test func shiftSelectionStartsAtActiveTabAndSkipsCollapsedFolderChildren() throws {
         let f = SidebarDragFixture(
             pinned: [("a", nil), ("hidden", "folder"), ("b", nil)],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)],
         )
         f.model.selectTab(id: f.id("a"))
         let state = BrowserNativeSidebarState(model: f.model, snapshot: f.model.sidebarSnapshot, sidebarWidth: 240)
@@ -122,7 +124,7 @@ import Testing
                 context: nil,
                 eventNumber: 1,
                 clickCount: 1,
-                pressure: 0
+                pressure: 0,
             ))
             row.onClick(event)
             row.onDoubleClick?(event)
@@ -157,13 +159,13 @@ import Testing
             selected: true,
             renaming: true,
             isResizing: false,
-            closeDescriptor: BrowserCommands.archiveTab
+            closeDescriptor: BrowserCommands.archiveTab,
         )
         #expect(row.renameField.pendingFocus)
         #expect(row.control(
             row.renameField,
             textView: NSTextView(),
-            doCommandBy: #selector(NSResponder.insertNewline(_:))
+            doCommandBy: #selector(NSResponder.insertNewline(_:)),
         ))
         #expect(commits.isEmpty)
         #expect(cancellations == 1)
@@ -172,7 +174,7 @@ import Testing
             selected: true,
             renaming: false,
             isResizing: false,
-            closeDescriptor: BrowserCommands.archiveTab
+            closeDescriptor: BrowserCommands.archiveTab,
         )
         #expect(!row.renameField.pendingFocus)
         #expect(!row.renameField.focusPermission())
@@ -181,7 +183,7 @@ import Testing
             selected: true,
             renaming: true,
             isResizing: false,
-            closeDescriptor: BrowserCommands.archiveTab
+            closeDescriptor: BrowserCommands.archiveTab,
         )
         row.renameField.stringValue = "Custom name"
         row.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification))
@@ -208,7 +210,7 @@ import Testing
                 context: nil,
                 eventNumber: 1,
                 clickCount: 1,
-                pressure: 1
+                pressure: 1,
             ))
         }
         try row.mouseDown(with: event(.leftMouseDown, NSPoint(x: 25, y: 30), 1))
@@ -229,7 +231,7 @@ import Testing
             renaming: true,
             indentLevel: 2,
             isResizing: false,
-            closeDescriptor: BrowserCommands.archiveTab
+            closeDescriptor: BrowserCommands.archiveTab,
         )
         row.layoutSubtreeIfNeeded()
         #expect(row.renameField.frame.minX >= BrowserChromeLayout.sidebarPinnedFolderTabIndent * 2)
@@ -270,7 +272,7 @@ import Testing
             context: nil,
             eventNumber: 1,
             clickCount: 0,
-            pressure: 0
+            pressure: 0,
         ))
         row.mouseEntered(with: event)
         row.layoutSubtreeIfNeeded()
@@ -287,7 +289,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 240, height: 36),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -318,7 +320,7 @@ import Testing
                 x: #require(points.map(\.x).min()),
                 y: #require(points.map(\.y).min()),
                 width: #require(points.map(\.x).max()) - #require(points.map(\.x).min()),
-                height: #require(points.map(\.y).max()) - #require(points.map(\.y).min())
+                height: #require(points.map(\.y).max()) - #require(points.map(\.y).min()),
             )
         }
         let symbol = try inkBounds(0..<Int(30 * scale))
@@ -337,7 +339,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 240, height: 36),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -358,7 +360,7 @@ import Testing
                     hasPinnedTabs: false,
                     dropTargeted: false,
                     isResizing: false,
-                    resetID: 0
+                    resetID: 0,
                 )
             default:
                 row.update(
@@ -366,7 +368,7 @@ import Testing
                     selected: true,
                     renaming: renaming,
                     isResizing: false,
-                    closeDescriptor: BrowserCommands.archiveTab
+                    closeDescriptor: BrowserCommands.archiveTab,
                 )
             }
             surface.layoutSubtreeIfNeeded()
@@ -422,7 +424,7 @@ import Testing
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(),
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
@@ -445,7 +447,7 @@ import Testing
             canGoBack: model.canGoBack,
             canGoForward: model.canGoForward,
             canStopLoading: model.canStopLoading,
-            canReload: model.canReload
+            canReload: model.canReload,
         )
     }
 }

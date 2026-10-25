@@ -1,3 +1,5 @@
+// BrowserNativeContentTests.swift
+
 import AppKit
 import Testing
 
@@ -41,7 +43,7 @@ import Testing
         let right = BrowserContentClipping(
             isSidebarVisible: true,
             usesWindowContentInsets: false,
-            sidebarPosition: .right
+            sidebarPosition: .right,
         )
         #expect(right.corners == [.layerMaxXMinYCorner, .layerMaxXMaxYCorner])
     }
@@ -58,7 +60,7 @@ import Testing
                 showsSiteToolbar: false,
                 showsBookmarksBar: false,
                 extensionSidePanelWidth: 300,
-                sidebarPosition: position
+                sidebarPosition: position,
             )
         }
         let inset = BrowserChromeLayout.browserContentEdgeInset
@@ -72,7 +74,7 @@ import Testing
         #expect(right.contentFrame.maxX + BrowserChromeLayout.sidebarOuterPadding == right.extensionFrame.minX)
         #expect(
             layout(position: .right, visible: false).sidebarFrame.minX == 1200,
-            "A hidden sidebar leaves to the right"
+            "A hidden sidebar leaves to the right",
         )
         let hover = layout(position: .right, visible: false, hover: true).sidebarFrame
         #expect(hover.maxX == 1200 - BrowserChromeLayout.sidebarHoverOverlayEdgeInset)
@@ -87,7 +89,7 @@ import Testing
             availableSize: CGSize(width: 1200, height: 800),
             style: .compact(anchorFrame: anchor, sidebarWidth: 240, matchesAnchorWidth: false),
             displayText: "example.com",
-            suggestionCount: 0
+            suggestionCount: 0,
         )
         #expect(layout.isTrailingAnchor)
         #expect(layout.origin.x + layout.panelWidth == anchor.maxX)
@@ -102,7 +104,7 @@ import Testing
             isContextReady: true,
             hasSelectedTab: false,
             isSidebarVisible: true,
-            usesWindowContentInsets: true
+            usesWindowContentInsets: true,
         )
         #expect(view.viewport.isHidden)
         view.update(
@@ -110,7 +112,7 @@ import Testing
             isContextReady: true,
             hasSelectedTab: true,
             isSidebarVisible: false,
-            usesWindowContentInsets: false
+            usesWindowContentInsets: false,
         )
         #expect(!view.viewport.isHidden)
         #expect(view.viewport.layer?.cornerRadius == 0)
@@ -128,11 +130,11 @@ import Testing
                 extensionID: "extension",
                 title: "Test",
                 urlString: "about:blank",
-                iconData: nil
+                iconData: nil,
             ),
             hostView: host,
             isContextReady: true,
-            usesWindowContentInsets: true
+            usesWindowContentInsets: true,
         )
         view.layoutSubtreeIfNeeded()
         #expect(view.viewport.frame.minY == BrowserChromeLayout.extensionSidePanelHeaderHeight)
@@ -164,7 +166,7 @@ import Testing
                 context: nil,
                 eventNumber: 1,
                 clickCount: clicks,
-                pressure: 1
+                pressure: 1,
             ))
         }
         try handle.mouseDown(with: event(clicks: 2))
@@ -201,7 +203,7 @@ import Testing
             context: nil,
             eventNumber: 1,
             clickCount: 1,
-            pressure: 1
+            pressure: 1,
         ))
         handle.mouseDown(with: down)
         handle.updateDrag(translation: -25)

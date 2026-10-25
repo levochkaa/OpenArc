@@ -1,3 +1,5 @@
+// BrowserDesktopPersistentRemovalHTTPTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -21,28 +23,28 @@ extension BrowserSyncHTTPIntegrationTests {
         let auth = account.devices.map { device in
             BrowserAuthSession(
                 accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-                deviceID: device.deviceID, serverURL: fixture.baseURL
+                deviceID: device.deviceID, serverURL: fixture.baseURL,
             )
         }
         let original = BrowserSyncFolderTabCreate(
             spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder",
-            urlString: away, pinnedURLString: home, userTitleOverride: "Saved pinned title", lastActivityAt: activity
+            urlString: away, pinnedURLString: home, userTitleOverride: "Saved pinned title", lastActivityAt: activity,
         )
         _ = try await remote.push(mutation: BrowserSyncFolderMutation(id: UUID().uuidString, operations: [
             .createSpace(id: "source", data: .init(title: "Persistent Removal", systemImageName: "globe")),
             .createFolder(id: "folder", data: .init(spaceID: "source", title: "Folder")),
             .createTab(id: "left", data: .init(
                 spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder",
-                urlString: "https://persistent-removal.example/left", lastActivityAt: activity
+                urlString: "https://persistent-removal.example/left", lastActivityAt: activity,
             )),
             .createTab(id: "pinned", data: original),
             .createTab(id: "right", data: .init(
                 spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder",
-                urlString: "https://persistent-removal.example/right", lastActivityAt: activity
+                urlString: "https://persistent-removal.example/right", lastActivityAt: activity,
             )),
             .createTab(id: "anchor", data: .init(
                 spaceID: "source", placement: .temporary, urlString: "https://persistent-removal.example/anchor",
-                lastActivityAt: activity
+                lastActivityAt: activity,
             )),
         ]), authSession: auth[0])
         await first.activate()
@@ -207,7 +209,7 @@ extension BrowserSyncHTTPIntegrationTests {
         // incarnation nor any Archive content may appear during full bootstrap.
         for device in account.devices {
             let fresh = try SyncHTTPProfile(
-                fixture: fixture, device: device, directory: directory, databaseID: "fresh-" + device.deviceID
+                fixture: fixture, device: device, directory: directory, databaseID: "fresh-" + device.deviceID,
             )
             await fresh.activate()
             let snapshot = try #require(try fresh.store.loadSnapshotStrict())
@@ -241,7 +243,17 @@ extension BrowserSyncHTTPIntegrationTests {
 // MARK: - PersistentRemovalHTTPModel
 
 @MainActor private final class PersistentRemovalHTTPModel {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+
+    // MARK: Private
+
+    private let profile: SyncHTTPProfile
+    private let defaults: UserDefaults
+    private let suite = "PersistentRemovalHTTPModel.\(UUID())"
+    private var closed = false
 
     init(profile: SyncHTTPProfile, now: Date) throws {
         self.profile = profile
@@ -252,7 +264,7 @@ extension BrowserSyncHTTPIntegrationTests {
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: profile.service,
-            dateProvider: { now }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            dateProvider: { now }, windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         driver.automaticallyConfirmsCloseRequests = false
         model.handleContextReady()
@@ -263,11 +275,6 @@ extension BrowserSyncHTTPIntegrationTests {
         profile.service.setSnapshotApplier(model)
     }
 
-    // MARK: Internal
-
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
-
     func close() {
         guard !closed else { return }
         closed = true
@@ -276,13 +283,6 @@ extension BrowserSyncHTTPIntegrationTests {
         model.prepareForTermination()
         defaults.removePersistentDomain(forName: suite)
     }
-
-    // MARK: Private
-
-    private let profile: SyncHTTPProfile
-    private let defaults: UserDefaults
-    private let suite = "PersistentRemovalHTTPModel.\(UUID())"
-    private var closed = false
 }
 
 @MainActor private func persistentRemovalHTTPOutbox(_ url: URL) throws -> [Data] {

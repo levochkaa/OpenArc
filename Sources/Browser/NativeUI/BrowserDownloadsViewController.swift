@@ -1,10 +1,30 @@
+// BrowserDownloadsViewController.swift
+
 import AppKit
 import Combine
 
 // MARK: - BrowserDownloadsViewController
 
 final class BrowserDownloadsViewController: NSViewController {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let model: BrowserDownloadsModel
+    var onSizeChanged: (NSSize) -> Void = { _ in }
+    private(set) var rows = [String: BrowserNativeDownloadRow]()
+    let clearButton = BrowserActionButton(BrowserStrings.downloadsClearFinished, action: {})
+
+    // MARK: Private
+
+    private let root = BrowserNativeSurface()
+    private let titleLabel = BrowserNativeControls.label(BrowserStrings.downloadsTitle, size: 13, weight: .semibold)
+    private let empty = BrowserNativeControls.label(
+        BrowserStrings.downloadsEmpty,
+        size: 13,
+        color: .secondaryLabelColor,
+    )
+    private let scroll = NSScrollView()
+    private let document = BrowserNativeSurface()
+    private var observation: AnyCancellable?
 
     init(model: BrowserDownloadsModel) {
         self.model = model
@@ -12,13 +32,6 @@ final class BrowserDownloadsViewController: NSViewController {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    let model: BrowserDownloadsModel
-    var onSizeChanged: (NSSize) -> Void = { _ in }
-    private(set) var rows = [String: BrowserNativeDownloadRow]()
-    let clearButton = BrowserActionButton(BrowserStrings.downloadsClearFinished, action: {})
 
     override func loadView() {
         view = root
@@ -82,25 +95,31 @@ final class BrowserDownloadsViewController: NSViewController {
         view.layoutSubtreeIfNeeded()
         onSizeChanged(size)
     }
-
-    // MARK: Private
-
-    private let root = BrowserNativeSurface()
-    private let titleLabel = BrowserNativeControls.label(BrowserStrings.downloadsTitle, size: 13, weight: .semibold)
-    private let empty = BrowserNativeControls.label(
-        BrowserStrings.downloadsEmpty,
-        size: 13,
-        color: .secondaryLabelColor
-    )
-    private let scroll = NSScrollView()
-    private let document = BrowserNativeSurface()
-    private var observation: AnyCancellable?
 }
 
 // MARK: - BrowserNativeDownloadRow
 
 final class BrowserNativeDownloadRow: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    var onOpen: () -> Void = {}
+    var onReveal: () -> Void = {}
+    private(set) var preferredHeight: CGFloat = 53
+    let progress = NSProgressIndicator()
+    let openButton = BrowserActionButton(BrowserStrings.downloadsOpen, action: {})
+    let revealButton = BrowserActionButton(BrowserStrings.downloadsReveal, action: {})
+
+    var showsDivider = true { didSet { divider.isHidden = !showsDivider } }
+
+    // MARK: Private
+
+    private let icon = NSImageView()
+    private let title = BrowserNativeControls.label("", size: 13, weight: .medium)
+    private let status = BrowserNativeControls.label("", size: 11, weight: .medium, color: .secondaryLabelColor)
+    private let detail = BrowserNativeControls.label("", size: 11.5, color: .secondaryLabelColor)
+    private let divider = BrowserNativeSurface()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -126,19 +145,6 @@ final class BrowserNativeDownloadRow: NSView {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    var onOpen: () -> Void = {}
-    var onReveal: () -> Void = {}
-    private(set) var preferredHeight: CGFloat = 53
-    let progress = NSProgressIndicator()
-    let openButton = BrowserActionButton(BrowserStrings.downloadsOpen, action: {})
-    let revealButton = BrowserActionButton(BrowserStrings.downloadsReveal, action: {})
-
-    var showsDivider = true { didSet { divider.isHidden = !showsDivider } }
 
     override func layout() {
         super.layout()
@@ -170,7 +176,7 @@ final class BrowserNativeDownloadRow: NSView {
             }
         icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(
             pointSize: 15,
-            weight: .semibold
+            weight: .semibold,
         ))
         icon.contentTintColor = item.state == .completed ? .systemGreen : .secondaryLabelColor
         progress.isHidden = item.state != .inProgress
@@ -190,12 +196,4 @@ final class BrowserNativeDownloadRow: NSView {
         revealButton.setAccessibilityIdentifier("browser.downloads.reveal.\(item.id)")
         needsLayout = true
     }
-
-    // MARK: Private
-
-    private let icon = NSImageView()
-    private let title = BrowserNativeControls.label("", size: 13, weight: .medium)
-    private let status = BrowserNativeControls.label("", size: 11, weight: .medium, color: .secondaryLabelColor)
-    private let detail = BrowserNativeControls.label("", size: 11.5, color: .secondaryLabelColor)
-    private let divider = BrowserNativeSurface()
 }

@@ -1,14 +1,43 @@
+// BrowserSidebarChromeView.swift
+
 import AppKit
 
 final class BrowserSidebarChromeView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    let sidebar: BrowserNativeSidebarNSView
+    let header: BrowserNativeSidebarHeaderNSView
+    let footer: BrowserNativeSidebarFooterNSView
+    var showsWindowControls = false
+    var isOverlayPresentation = false
+    var onToggleSidebar: () -> Void = {}
+    var onDragInteractionChange: () -> Void = {}
+    var onURLFrameChange: (CGRect?) -> Void = { _ in }
+
+    var sidebarPosition = BrowserSidebarPosition.left {
+        didSet {
+            guard oldValue != sidebarPosition else { return }
+            resize.direction = sidebarPosition == .left ? 1 : -1
+            needsLayout = true
+        }
+    }
+
+    // MARK: Private
+
+    private let model: BrowserChromeModel
+    private let background = BrowserChromeBackgroundNSView()
+    private let resize = BrowserNativeResizeHandle()
+    private var isResizing = false
+    private var resizeStartWidth: CGFloat = 0
 
     init(model: BrowserChromeModel, updateController: BrowserUpdateController) {
         self.model = model
         let state = BrowserNativeSidebarState(
             model: model,
             snapshot: model.sidebarSnapshot,
-            sidebarWidth: model.sidebarWidth
+            sidebarWidth: model.sidebarWidth,
         )
         self.header = BrowserNativeSidebarHeaderNSView(model: model)
         self.footer = BrowserNativeSidebarFooterNSView(state: state, updateController: updateController)
@@ -49,27 +78,6 @@ final class BrowserSidebarChromeView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    let sidebar: BrowserNativeSidebarNSView
-    let header: BrowserNativeSidebarHeaderNSView
-    let footer: BrowserNativeSidebarFooterNSView
-    var showsWindowControls = false
-    var isOverlayPresentation = false
-    var onToggleSidebar: () -> Void = {}
-    var onDragInteractionChange: () -> Void = {}
-    var onURLFrameChange: (CGRect?) -> Void = { _ in }
-
-    var sidebarPosition = BrowserSidebarPosition.left {
-        didSet {
-            guard oldValue != sidebarPosition else { return }
-            resize.direction = sidebarPosition == .left ? 1 : -1
-            needsLayout = true
-        }
-    }
-
     override func layout() {
         super.layout()
         background.frame = bounds
@@ -78,7 +86,7 @@ final class BrowserSidebarChromeView: NSView {
             x: sidebarPosition == .left ? max(bounds.width - BrowserChromeLayout.sidebarResizeHitWidth, 0) : 0,
             y: 0,
             width: BrowserChromeLayout.sidebarResizeHitWidth,
-            height: bounds.height
+            height: bounds.height,
         )
     }
 
@@ -97,13 +105,13 @@ final class BrowserSidebarChromeView: NSView {
             isResizing: isResizing,
             toggleTitle: model.isSidebarVisible
                 ? BrowserStrings.sidebarHide
-                : BrowserStrings.sidebarShow
+                : BrowserStrings.sidebarShow,
         )
         sidebar.headerHeight = header.preferredHeight
         footer.update(snapshot: snapshot, isResizing: isResizing)
         sidebar.footerHeight = footer.height(for: max(
             model.sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2,
-            0
+            0,
         ))
         sidebar.state.update(snapshot: snapshot, sidebarWidth: model.sidebarWidth, isResizing: isResizing)
         sidebar.isCommandBarPresented = model.commandBarModel.isPresented
@@ -120,12 +128,4 @@ final class BrowserSidebarChromeView: NSView {
         resize.hapticsEnabled = model.userPreferencesStore.hapticFeedbackEnabled
         needsLayout = true
     }
-
-    // MARK: Private
-
-    private let model: BrowserChromeModel
-    private let background = BrowserChromeBackgroundNSView()
-    private let resize = BrowserNativeResizeHandle()
-    private var isResizing = false
-    private var resizeStartWidth: CGFloat = 0
 }

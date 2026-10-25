@@ -1,3 +1,5 @@
+// BrowserLinkRouting.swift
+
 import Foundation
 
 // MARK: - BrowserLinkRoute
@@ -7,22 +9,6 @@ import Foundation
 /// matches, or whose Space's window is closed, opens as before. One could let a rule
 /// list several conditions; here each rule has one, and more rules cover more.
 struct BrowserLinkRoute: Codable, Equatable, Identifiable {
-    // MARK: Lifecycle
-
-    init(
-        id: UUID = UUID(),
-        match: Match = .site,
-        pattern: String = "",
-        destination: Destination,
-        spaceTitle: String? = nil
-    ) {
-        self.id = id
-        self.match = match
-        self.pattern = pattern
-        self.destination = destination
-        self.spaceTitle = spaceTitle
-    }
-
     // MARK: Internal
 
     enum Match: String, Codable, CaseIterable {
@@ -47,16 +33,18 @@ struct BrowserLinkRoute: Codable, Equatable, Identifiable {
     /// The Space's title when the rule was set, shown while its profile is closed.
     var spaceTitle: String?
 
-    func matches(_ url: URL) -> Bool {
-        let pattern = pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !pattern.isEmpty else { return false }
-        switch match {
-        case .contains:
-            let address = url.absoluteString
-            return [address, address.removingPercentEncoding ?? address].contains { $0.lowercased().contains(pattern) }
-        case .site:
-            return Self.site(pattern, contains: url)
-        }
+    init(
+        id: UUID = UUID(),
+        match: Match = .site,
+        pattern: String = "",
+        destination: Destination,
+        spaceTitle: String? = nil,
+    ) {
+        self.id = id
+        self.match = match
+        self.pattern = pattern
+        self.destination = destination
+        self.spaceTitle = spaceTitle
     }
 
     // MARK: Private
@@ -86,6 +74,18 @@ struct BrowserLinkRoute: Codable, Equatable, Identifiable {
     private static func withoutWWW(_ host: String) -> String {
         host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
+
+    func matches(_ url: URL) -> Bool {
+        let pattern = pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !pattern.isEmpty else { return false }
+        switch match {
+        case .contains:
+            let address = url.absoluteString
+            return [address, address.removingPercentEncoding ?? address].contains { $0.lowercased().contains(pattern) }
+        case .site:
+            return Self.site(pattern, contains: url)
+        }
+    }
 }
 
 // MARK: - BrowserLinkRouter
@@ -101,6 +101,10 @@ enum BrowserLinkRouter {
 // MARK: - BrowserSite
 
 enum BrowserSite {
+    // MARK: Private
+
+    private static let countrySecondLevels: Set = ["ac", "co", "com", "edu", "gov", "ne", "net", "or", "org"]
+
     // MARK: Internal
 
     /// Whether two web addresses belong to one site: the same registrable
@@ -111,10 +115,6 @@ enum BrowserSite {
         guard let first = site(of: first), let second = site(of: second) else { return false }
         return first == second
     }
-
-    // MARK: Private
-
-    private static let countrySecondLevels: Set = ["ac", "co", "com", "edu", "gov", "ne", "net", "or", "org"]
 
     private static func site(of url: URL) -> String? {
         guard let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")),

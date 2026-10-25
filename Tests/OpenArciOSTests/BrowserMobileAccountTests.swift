@@ -1,3 +1,5 @@
+// BrowserMobileAccountTests.swift
+
 import AuthenticationServices
 import BrowserMobileTestHost
 import Combine
@@ -150,7 +152,7 @@ import UIKit
         #expect(controller.view.accountView("account.cancelSignIn")?.isHidden == false)
         controller.presentationControllerDidDismiss(UIPresentationController(
             presentedViewController: navigation,
-            presenting: nil
+            presenting: nil,
         ))
         await host.drainUI()
         #expect(session.cancellations == 1)
@@ -167,6 +169,11 @@ import UIKit
 
     var cancellations = 0
 
+    // MARK: Private
+
+    private var completion: (@MainActor (Result<String, Error>) -> Void)?
+    private var started: CheckedContinuation<Void, Never>?
+
     func start(completion: @escaping @MainActor (Result<String, Error>) -> Void) {
         self.completion = completion
         started?.resume()
@@ -179,17 +186,14 @@ import UIKit
         guard completion == nil else { return }
         await withCheckedContinuation { started = $0 }
     }
-
-    // MARK: Private
-
-    private var completion: (@MainActor (Result<String, Error>) -> Void)?
-    private var started: CheckedContinuation<Void, Never>?
 }
 
 // MARK: - MobileAccountHost
 
 @MainActor private final class MobileAccountHost {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let window: UIWindow
 
     init(controller: UIViewController) throws {
         let scene = try #require(BrowserMobileTestScene.windowScene)
@@ -199,10 +203,6 @@ import UIKit
         controller.loadViewIfNeeded()
         window.layoutIfNeeded()
     }
-
-    // MARK: Internal
-
-    let window: UIWindow
 
     func press(_ id: String, in controller: UIViewController) throws {
         let button = try #require(controller.view.accountView(id) as? UIButton)
@@ -230,20 +230,6 @@ import UIKit
 // MARK: - MobileAccountSession
 
 @MainActor private final class MobileAccountSession: BrowserMobileAccountSessionPresenting {
-    // MARK: Lifecycle
-
-    init(configured: Bool = true, binding: BrowserSyncBindingState = .needsConsent, authenticated: Bool = false) {
-        sync.state = binding
-        if authenticated {
-            storage.session = remote.session
-        }
-        self.serverURL = configured ? remote.baseURL : nil
-        self.account = BrowserAccountStore(
-            syncClient: configured ? remote : nil, authSessionStore: storage, syncCoordinator: configured ? sync : nil,
-            appleSignInService: identity, deviceIdentity: .init(name: "Test iPad", platform: "iPadOS")
-        )
-    }
-
     // MARK: Internal
 
     var account: BrowserAccountStore
@@ -265,6 +251,18 @@ import UIKit
         Publishers.Merge(change, account.objectWillChange).eraseToAnyPublisher()
     }
 
+    init(configured: Bool = true, binding: BrowserSyncBindingState = .needsConsent, authenticated: Bool = false) {
+        sync.state = binding
+        if authenticated {
+            storage.session = remote.session
+        }
+        self.serverURL = configured ? remote.baseURL : nil
+        self.account = BrowserAccountStore(
+            syncClient: configured ? remote : nil, authSessionStore: storage, syncCoordinator: configured ? sync : nil,
+            appleSignInService: identity, deviceIdentity: .init(name: "Test iPad", platform: "iPadOS"),
+        )
+    }
+
     func configureServer(_ raw: String) throws {
         if configurationFails {
             throw MobileAccountTestError.failure
@@ -273,7 +271,7 @@ import UIKit
         serverURL = URL(string: raw)
         account = BrowserAccountStore(
             syncClient: remote, authSessionStore: storage, syncCoordinator: sync,
-            appleSignInService: identity, deviceIdentity: .init(name: "Test iPad", platform: "iPadOS")
+            appleSignInService: identity, deviceIdentity: .init(name: "Test iPad", platform: "iPadOS"),
         )
         change.send()
     }
@@ -313,6 +311,12 @@ import UIKit
 
     var holds = false
 
+    // MARK: Private
+
+    private var token: CheckedContinuation<String, Error>?
+    private var started: CheckedContinuation<Void, Never>?
+    private var didStart = false
+
     func requestIdentityToken() async throws -> String {
         didStart = true
         started?.resume()
@@ -332,12 +336,6 @@ import UIKit
         token?.resume(throwing: CancellationError())
         token = nil
     }
-
-    // MARK: Private
-
-    private var token: CheckedContinuation<String, Error>?
-    private var started: CheckedContinuation<Void, Never>?
-    private var didStart = false
 }
 
 // MARK: - MobileAccountAuthenticator
@@ -352,14 +350,14 @@ import UIKit
             userID: "test-user",
             userEmail: "user@example.com",
             deviceID: "test-device",
-            serverURL: baseURL
+            serverURL: baseURL,
         )
     }
 
     func authenticateWithApple(
         identityToken _: String,
         deviceName _: String,
-        devicePlatform _: String
+        devicePlatform _: String,
     ) -> BrowserAuthSession {
         requests += 1
         return session

@@ -1,3 +1,5 @@
+// BrowserTabSessionPersistenceTests.swift
+
 import CoreGraphics
 import Foundation
 import Testing
@@ -15,7 +17,7 @@ import Testing
                 parentFolderID: "folder-parent",
                 title: "Reading",
                 systemImageName: "book",
-                isExpanded: false
+                isExpanded: false,
             ),
         ],
         tabs: [
@@ -26,14 +28,14 @@ import Testing
                 placement: .spacePinned,
                 spaceID: "space-1",
                 pinnedFolderID: "folder-1",
-                lastActivityTimestamp: 1234
+                lastActivityTimestamp: 1234,
             ),
             BrowserTabSessionSnapshotTab(
                 urlString: "https://two.example/path",
                 spaceID: "space-2",
-                lastActivityTimestamp: 5678
+                lastActivityTimestamp: 5678,
             ),
-        ]
+        ],
     )
 
     store.saveSnapshot(snapshot)
@@ -53,26 +55,26 @@ import Testing
                 title: "Work",
                 systemImageName: "briefcase",
                 isPinnedSectionCollapsed: true,
-                selectedTabIndex: 1
+                selectedTabIndex: 1,
             ),
             BrowserSpaceSessionSnapshot(
                 id: "space-2",
                 title: "Read",
                 systemImageName: "book",
-                selectedTabIndex: nil
+                selectedTabIndex: nil,
             ),
         ],
         tabs: [
             BrowserTabSessionSnapshotTab(
                 urlString: "https://one.example",
                 placement: .spacePinned,
-                spaceID: "space-1"
+                spaceID: "space-1",
             ),
             BrowserTabSessionSnapshotTab(
                 urlString: "https://two.example",
-                spaceID: "space-2"
+                spaceID: "space-2",
             ),
-        ]
+        ],
     )
 
     store.saveSnapshot(snapshot)
@@ -104,8 +106,8 @@ import Testing
             tabs: [
                 BrowserTabSessionSnapshotTab(urlString: "https://one.example"),
                 BrowserTabSessionSnapshotTab(urlString: "https://two.example/path"),
-            ]
-        )
+            ],
+        ),
     )
 }
 
@@ -135,10 +137,10 @@ import Testing
             tabs: [
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://one.example",
-                    userTitleOverride: "Workspace"
+                    userTitleOverride: "Workspace",
                 ),
-            ]
-        )
+            ],
+        ),
     )
 }
 
@@ -172,11 +174,11 @@ import Testing
             tabs: [
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://one.example",
-                    placement: .spacePinned
+                    placement: .spacePinned,
                 ),
                 BrowserTabSessionSnapshotTab(urlString: "https://two.example"),
-            ]
-        )
+            ],
+        ),
     )
 }
 
@@ -237,12 +239,12 @@ import Testing
 
     harness.userDefaults.set(Double(maximumWidth * 4), forKey: "browser.session.sidebarWidth")
     #expect(
-        store.loadSidebarWidth(minimum: minimumWidth, maximum: maximumWidth) == maximumWidth
+        store.loadSidebarWidth(minimum: minimumWidth, maximum: maximumWidth) == maximumWidth,
     )
 
     harness.userDefaults.set(Double(minimumWidth / 4), forKey: "browser.session.sidebarWidth")
     #expect(
-        store.loadSidebarWidth(minimum: minimumWidth, maximum: maximumWidth) == minimumWidth
+        store.loadSidebarWidth(minimum: minimumWidth, maximum: maximumWidth) == minimumWidth,
     )
 }
 
@@ -272,7 +274,11 @@ import Testing
 // MARK: - PersistenceHarness
 
 private struct PersistenceHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let snapshotURL: URL
+    let userDefaultsSuiteName: String
+    let userDefaults: UserDefaults
 
     init() throws {
         let temporaryDirectory = FileManager.default
@@ -288,12 +294,6 @@ private struct PersistenceHarness {
         }
         self.userDefaults = userDefaults
     }
-
-    // MARK: Internal
-
-    let snapshotURL: URL
-    let userDefaultsSuiteName: String
-    let userDefaults: UserDefaults
 
     func cleanup() {
         try? FileManager.default.removeItem(at: snapshotURL.deletingLastPathComponent())

@@ -1,22 +1,10 @@
+// BrowserSessionWrite.swift
+
 // MARK: - BrowserSessionWrite
 
 /// One ordered persistence action. Remote projections must never become local
 /// mutations merely because an earlier action needs to be retried.
 struct BrowserSessionWrite: Equatable {
-    // MARK: Lifecycle
-
-    init(
-        snapshot: BrowserTabSessionSnapshot,
-        origin: Origin,
-        archiveAction: BrowserTabArchiveAction? = nil,
-        archiveProjectionSnapshot: BrowserTabSessionSnapshot? = nil
-    ) {
-        self.snapshot = snapshot
-        self.origin = origin
-        self.archiveAction = archiveAction
-        self.archiveProjectionSnapshot = archiveProjectionSnapshot
-    }
-
     // MARK: Internal
 
     enum Origin: Equatable {
@@ -30,6 +18,18 @@ struct BrowserSessionWrite: Equatable {
     /// Normalizes an unfinished engine projection before validating Archive's
     /// preimage. The Archive receipt also covers this write on every retry.
     let archiveProjectionSnapshot: BrowserTabSessionSnapshot?
+
+    init(
+        snapshot: BrowserTabSessionSnapshot,
+        origin: Origin,
+        archiveAction: BrowserTabArchiveAction? = nil,
+        archiveProjectionSnapshot: BrowserTabSessionSnapshot? = nil,
+    ) {
+        self.snapshot = snapshot
+        self.origin = origin
+        self.archiveAction = archiveAction
+        self.archiveProjectionSnapshot = archiveProjectionSnapshot
+    }
 
     func validate() throws {
         if case .local(let syncMove) = origin, let syncMove,
@@ -51,7 +51,7 @@ struct BrowserSessionWrite: Equatable {
             }
         case .restore(let archiveID, let tabID):
             guard !archiveID.isEmpty, !tabID.isEmpty,
-                  snapshot.tabs.filter({ $0.id == tabID }).count == 1,
+                  snapshot.tabs.count(where: { $0.id == tabID }) == 1,
                   snapshot.tabs.first(where: { $0.id == tabID })?.placement == .temporary
             else { throw BrowserTabArchiveError.invalidTransition }
         }

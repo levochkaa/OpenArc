@@ -1,14 +1,43 @@
+// BrowserSyncSemanticProjection.swift
+
 import Foundation
 
 /// Direct moves retain the identities the user moved. Snapshot-only callers infer
 /// a minimal move set from relative order for compatibility.
 enum BrowserSyncSemanticProjection {
+    // MARK: Private
+
+    // MARK: - Snapshot ordering
+
+    private enum Container: Hashable {
+        case spaces
+        case apps
+        case tabs(spaceID: String, pinned: Bool)
+
+        // MARK: Internal
+
+        static func tab(spaceID: String, placement: BrowserTabPlacement) -> Container {
+            placement == .app ? .apps : .tabs(spaceID: spaceID, pinned: placement == .spacePinned)
+        }
+
+        func key(_ id: String) -> String {
+            BrowserSyncOutboxProjection.key(type: self == .spaces ? .space : .tab, id: id)
+        }
+    }
+
+    private struct OrderPlan {
+        let container: Container
+        let ids: [String]
+        let kept: Set<String>
+        let created: Set<String>
+    }
+
     // MARK: Internal
 
     static func operations(
         from previous: BrowserTabSessionSnapshot?,
         to snapshot: BrowserTabSessionSnapshot,
-        syncMove: BrowserSyncMoveIntent? = nil
+        syncMove: BrowserSyncMoveIntent? = nil,
     ) -> [BrowserSyncSemanticOperation] {
         let before = BrowserSyncOutboxProjection.canonicalChanges(previous ?? .init(tabs: []))
         let after = BrowserSyncOutboxProjection.canonicalChanges(snapshot)
@@ -35,14 +64,14 @@ enum BrowserSyncSemanticProjection {
                     if let data = change.spaceData {
                         result.append(.createSpace(id: id, data: .init(
                             title: data.title, systemImageName: data.systemImageName,
-                            isPinnedSectionCollapsed: data.isPinnedSectionCollapsed, selectedTabID: data.selectedTabID
+                            isPinnedSectionCollapsed: data.isPinnedSectionCollapsed, selectedTabID: data.selectedTabID,
                         ), beforeID: beforeID, afterID: previousAnchor))
                     } else if let data = change.tabData {
                         result.append(.createTab(id: id, data: .init(
                             spaceID: data.spaceID, placement: data.placement, urlString: data.urlString,
                             pinnedURLString: data.pinnedURLString, title: data.title,
                             userTitleOverride: data.userTitleOverride, faviconURLString: data.faviconURLString,
-                            lastActivityAt: data.lastActivityAt
+                            lastActivityAt: data.lastActivityAt,
                         ), beforeID: beforeID, afterID: previousAnchor))
                     }
                 }
@@ -60,7 +89,7 @@ enum BrowserSyncSemanticProjection {
                     systemImageName: data.systemImageName == previous.systemImageName ? nil : data.systemImageName,
                     isPinnedSectionCollapsed: data.isPinnedSectionCollapsed == previous.isPinnedSectionCollapsed
                         ? nil
-                        : data.isPinnedSectionCollapsed
+                        : data.isPinnedSectionCollapsed,
                 )
                 if fields != .init() {
                     result.append(.patchSpace(id: change.entityID, fields: fields))
@@ -71,7 +100,7 @@ enum BrowserSyncSemanticProjection {
                 let fields = BrowserSyncSemanticTabPatch(
                     urlString: data.urlString == previous.urlString ? nil : data.urlString,
                     userTitleOverride: patch(from: previous.userTitleOverride, to: data.userTitleOverride),
-                    lastActivityAt: patch(from: previous.lastActivityAt, to: data.lastActivityAt)
+                    lastActivityAt: patch(from: previous.lastActivityAt, to: data.lastActivityAt),
                 )
                 if fields != .init() {
                     result.append(.patchTab(id: change.entityID, fields: fields))
@@ -111,13 +140,14 @@ enum BrowserSyncSemanticProjection {
                 switch plan.container {
                 case .spaces:
                     result.append(.moveSpaces(ids: ids, beforeID: beforeID, afterID: afterID))
-                case .apps, .tabs:
+                case .apps,
+                     .tabs:
                     guard let data = nextByKey[plan.container.key(ids[0])]?.tabData else { continue }
                     result.append(.moveTabs(
                         ids: ids,
                         destination: .init(spaceID: data.spaceID, placement: data.placement),
                         beforeID: beforeID,
-                        afterID: afterID
+                        afterID: afterID,
                     ))
                 }
             }
@@ -145,7 +175,7 @@ enum BrowserSyncSemanticProjection {
     static func apply(
         _ operations: [BrowserSyncSemanticOperation],
         to values: inout [String: BrowserSyncChange],
-        deleted: inout Set<String>
+        deleted: inout Set<String>,
     ) {
         let activityDates = BrowserSyncActivityDates()
         for operation in operations {
@@ -156,7 +186,7 @@ enum BrowserSyncSemanticProjection {
                       live(entityKey, values: values, deleted: deleted) == nil else { continue }
                 let change = BrowserSyncChange(entityType: .space, entityID: id, op: .upsert, spaceData: .init(
                     title: data.title, systemImageName: data.systemImageName, rank: 0,
-                    isPinnedSectionCollapsed: data.isPinnedSectionCollapsed, selectedTabID: data.selectedTabID
+                    isPinnedSectionCollapsed: data.isPinnedSectionCollapsed, selectedTabID: data.selectedTabID,
                 ), tabData: nil)
                 insert([change], into: .spaces, beforeID: beforeID, afterID: afterID, values: &values, deleted: deleted)
             case .createTab(let id, let data, let beforeID, let afterID):
@@ -173,8 +203,8 @@ enum BrowserSyncSemanticProjection {
                         spaceID: data.spaceID, placement: data.placement, rank: 0, urlString: data.urlString,
                         pinnedURLString: data.placement == .spacePinned ? data.pinnedURLString ?? data.urlString : nil,
                         title: data.title, userTitleOverride: data.userTitleOverride,
-                        faviconURLString: data.faviconURLString, lastActivityAt: data.lastActivityAt
-                    )
+                        faviconURLString: data.faviconURLString, lastActivityAt: data.lastActivityAt,
+                    ),
                 )
                 insert(
                     [change],
@@ -182,7 +212,7 @@ enum BrowserSyncSemanticProjection {
                     beforeID: beforeID,
                     afterID: afterID,
                     values: &values,
-                    deleted: deleted
+                    deleted: deleted,
                 )
             case .patchSpace(let id, let fields):
                 let entityKey = Container.spaces.key(id)
@@ -192,7 +222,7 @@ enum BrowserSyncSemanticProjection {
                     title: fields.title ?? data.title, systemImageName: fields.systemImageName ?? data.systemImageName,
                     rank: data.rank,
                     isPinnedSectionCollapsed: fields.isPinnedSectionCollapsed ?? data.isPinnedSectionCollapsed,
-                    selectedTabID: applying(fields.selectedTabID, to: data.selectedTabID)
+                    selectedTabID: applying(fields.selectedTabID, to: data.selectedTabID),
                 ), tabData: nil)
             case .patchTab(let id, let fields):
                 let entityKey = BrowserSyncOutboxProjection.key(type: .tab, id: id)
@@ -213,9 +243,9 @@ enum BrowserSyncSemanticProjection {
                         userTitleOverride: applying(fields.userTitleOverride, to: data.userTitleOverride),
                         faviconURLString: applying(fields.faviconURLString, to: data.faviconURLString),
                         lastActivityAt: activityDates.latest(
-                            data.lastActivityAt, applying(fields.lastActivityAt, to: data.lastActivityAt)
-                        )
-                    )
+                            data.lastActivityAt, applying(fields.lastActivityAt, to: data.lastActivityAt),
+                        ),
+                    ),
                 )
             case .moveSpaces(let ids, let beforeID, let afterID):
                 move(
@@ -225,7 +255,7 @@ enum BrowserSyncSemanticProjection {
                     beforeID: beforeID,
                     afterID: afterID,
                     values: &values,
-                    deleted: deleted
+                    deleted: deleted,
                 )
             case .moveTabs(let ids, let destination, let beforeID, let afterID):
                 move(
@@ -235,7 +265,7 @@ enum BrowserSyncSemanticProjection {
                     beforeID: beforeID,
                     afterID: afterID,
                     values: &values,
-                    deleted: deleted
+                    deleted: deleted,
                 )
             case .deleteSpace(let id):
                 remove(type: .space, id: id, values: &values, deleted: &deleted)
@@ -245,40 +275,13 @@ enum BrowserSyncSemanticProjection {
         }
     }
 
-    // MARK: Private
-
-    // MARK: - Snapshot ordering
-
-    private enum Container: Hashable {
-        case spaces
-        case apps
-        case tabs(spaceID: String, pinned: Bool)
-
-        // MARK: Internal
-
-        static func tab(spaceID: String, placement: BrowserTabPlacement) -> Container {
-            placement == .app ? .apps : .tabs(spaceID: spaceID, pinned: placement == .spacePinned)
-        }
-
-        func key(_ id: String) -> String {
-            BrowserSyncOutboxProjection.key(type: self == .spaces ? .space : .tab, id: id)
-        }
-    }
-
-    private struct OrderPlan {
-        let container: Container
-        let ids: [String]
-        let kept: Set<String>
-        let created: Set<String>
-    }
-
     private static func container(_ change: BrowserSyncChange) -> Container {
         guard let data = change.tabData else { return .spaces }
         return .tab(spaceID: data.spaceID, placement: data.placement)
     }
 
     private static func orderPlans(
-        before: [BrowserSyncChange], after: [BrowserSyncChange], explicitTabIDs: Set<String>? = nil
+        before: [BrowserSyncChange], after: [BrowserSyncChange], explicitTabIDs: Set<String>? = nil,
     ) -> [OrderPlan] {
         let oldKeys = Set(before.map(key))
         let oldGroups = Dictionary(grouping: before, by: container)
@@ -290,7 +293,7 @@ enum BrowserSyncSemanticProjection {
             let ids = newGroups[list, default: []].map(\.entityID)
             let oldIndices = Dictionary(uniqueKeysWithValues: oldGroups[list, default: []].enumerated().map { (
                 $1.entityID,
-                $0
+                $0,
             ) })
             let candidates = ids.compactMap { id in oldIndices[id].map { (id, $0) } }
             let kept: Set<String> =
@@ -303,13 +306,13 @@ enum BrowserSyncSemanticProjection {
                 container: list,
                 ids: ids,
                 kept: kept,
-                created: Set(ids.filter { !oldKeys.contains(list.key($0)) })
+                created: Set(ids.filter { !oldKeys.contains(list.key($0)) }),
             )
         }
     }
 
     private static func explicitTabMoves(
-        _ plan: OrderPlan, orderedIDs: [String], nextByKey: [String: BrowserSyncChange]
+        _ plan: OrderPlan, orderedIDs: [String], nextByKey: [String: BrowserSyncChange],
     ) -> [BrowserSyncSemanticOperation] {
         let anchors = plan.kept.union(plan.created)
         let nextAnchors = followingAnchors(ids: plan.ids, anchors: anchors)
@@ -357,7 +360,8 @@ enum BrowserSyncSemanticProjection {
         var tails = [Int]()
         var predecessors = Array(repeating: -1, count: candidates.count)
         for index in candidates.indices {
-            var low = 0, high = tails.count
+            var low = 0
+            var high = tails.count
             while low < high {
                 let middle = (low + high) / 2
                 if candidates[tails[middle]].1 < candidates[index].1 {
@@ -375,7 +379,8 @@ enum BrowserSyncSemanticProjection {
                 tails[low] = index
             }
         }
-        var result = Set<String>(), index = tails.last ?? -1
+        var result = Set<String>()
+        var index = tails.last ?? -1
         while index >= 0 {
             result.insert(candidates[index].0)
             index = predecessors[index]
@@ -404,21 +409,21 @@ enum BrowserSyncSemanticProjection {
     private static func key(_ change: BrowserSyncChange) -> String { BrowserSyncOutboxProjection.key(change) }
 
     private static func live(
-        _ key: String, values: [String: BrowserSyncChange], deleted: Set<String>
+        _ key: String, values: [String: BrowserSyncChange], deleted: Set<String>,
     ) -> BrowserSyncChange? {
         guard !deleted.contains(key), let value = values[key], value.op == .upsert else { return nil }
         return value
     }
 
     private static func valid(
-        _ destination: Container, values: [String: BrowserSyncChange], deleted: Set<String>
+        _ destination: Container, values: [String: BrowserSyncChange], deleted: Set<String>,
     ) -> Bool {
         guard case .tabs(let spaceID, _) = destination else { return true }
         return live(Container.spaces.key(spaceID), values: values, deleted: deleted)?.spaceData != nil
     }
 
     private static func list(
-        _ container: Container, values: [String: BrowserSyncChange], deleted: Set<String>
+        _ container: Container, values: [String: BrowserSyncChange], deleted: Set<String>,
     ) -> [BrowserSyncChange] {
         values.values
             .filter { change in
@@ -439,7 +444,7 @@ enum BrowserSyncSemanticProjection {
 
     private static func insert(
         _ group: [BrowserSyncChange], into destination: Container, beforeID: String?, afterID: String?,
-        values: inout [String: BrowserSyncChange], deleted: Set<String>
+        values: inout [String: BrowserSyncChange], deleted: Set<String>,
     ) {
         let movedKeys = Set(group.map(key))
         var siblings = list(destination, values: values, deleted: deleted).filter { !movedKeys.contains(key($0)) }
@@ -451,7 +456,7 @@ enum BrowserSyncSemanticProjection {
 
     private static func move(
         _ ids: [String], destination: Container, tabDestination: BrowserSyncSemanticTabDestination?,
-        beforeID: String?, afterID: String?, values: inout [String: BrowserSyncChange], deleted: Set<String>
+        beforeID: String?, afterID: String?, values: inout [String: BrowserSyncChange], deleted: Set<String>,
     ) {
         guard valid(destination, values: values, deleted: deleted) else { return }
         var seen = Set<String>()
@@ -465,7 +470,7 @@ enum BrowserSyncSemanticProjection {
         for source in sourceContainers where source != destination {
             publish(
                 list(source, values: values, deleted: deleted).filter { !movedKeys.contains(key($0)) },
-                values: &values
+                values: &values,
             )
         }
         let moved = survivors.map { change -> BrowserSyncChange in
@@ -482,8 +487,8 @@ enum BrowserSyncSemanticProjection {
                     spaceID: target.spaceID, placement: target.placement, rank: data.rank,
                     urlString: data.urlString, pinnedURLString: home, title: data.title,
                     userTitleOverride: data.userTitleOverride, faviconURLString: data.faviconURLString,
-                    lastActivityAt: data.lastActivityAt
-                )
+                    lastActivityAt: data.lastActivityAt,
+                ),
             )
         }
         insert(moved, into: destination, beforeID: beforeID, afterID: afterID, values: &values, deleted: deleted)
@@ -491,7 +496,7 @@ enum BrowserSyncSemanticProjection {
 
     private static func remove(
         type: BrowserSyncChange.EntityType, id: String,
-        values: inout [String: BrowserSyncChange], deleted: inout Set<String>
+        values: inout [String: BrowserSyncChange], deleted: inout Set<String>,
     ) {
         let entityKey = BrowserSyncOutboxProjection.key(type: type, id: id)
         let old = values[entityKey]
@@ -508,7 +513,7 @@ enum BrowserSyncSemanticProjection {
                     entityID: change.entityID,
                     op: .delete,
                     spaceData: nil,
-                    tabData: nil
+                    tabData: nil,
                 )
             }
         }

@@ -1,3 +1,5 @@
+// BrowserMobileSharedSidebarTests.swift
+
 import Foundation
 import Testing
 import UIKit
@@ -96,7 +98,7 @@ extension BrowserMobileUITests {
         let cell = f.cells(section: 1)[4]
         let swipe = try #require(f.sidebar
             .tableView(
-                f.table, trailingSwipeActionsConfigurationForRowAt: .init(row: 4, section: 1)
+                f.table, trailingSwipeActionsConfigurationForRowAt: .init(row: 4, section: 1),
             )?.actions
             .first)
         #expect(swipe.title == "Remove")
@@ -144,12 +146,24 @@ extension BrowserMobileUITests {
 // MARK: - SharedSidebarFixture
 
 @MainActor private final class SharedSidebarFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let store: BrowserSQLiteSessionStore
+    let document: BrowserMobileProfileDocument
+    let workspace: BrowserMobileWorkspace
+    let root: BrowserMobileViewController
+    let engine = SharedSidebarEngine()
+    let directory: URL
+    let preferences: UserDefaults
+    let preferencesName: String
+
+    var sidebar: BrowserMobileTabsViewController { root.tabsController }
+    var table: UITableView { sidebar.tableView }
 
     init() throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             UUID().uuidString,
-            isDirectory: true
+            isDirectory: true,
         )
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("session.sqlite"))
@@ -171,7 +185,7 @@ extension BrowserMobileUITests {
                     placement: .spacePinned,
                     spaceID: "first",
                     pinnedFolderID: "folder",
-                    pinnedSiblingRank: 0
+                    pinnedSiblingRank: 0,
                 ),
                 .init(
                     id: "nested-child",
@@ -179,18 +193,18 @@ extension BrowserMobileUITests {
                     placement: .spacePinned,
                     spaceID: "first",
                     pinnedFolderID: "nested",
-                    pinnedSiblingRank: 0
+                    pinnedSiblingRank: 0,
                 ),
                 .init(
                     id: "loose",
                     urlString: "https://example.com/loose",
                     placement: .spacePinned,
                     spaceID: "first",
-                    pinnedSiblingRank: 1
+                    pinnedSiblingRank: 1,
                 ),
                 .init(id: "today", urlString: "https://example.com/today", spaceID: "first"),
                 .init(id: "other", urlString: "https://example.com/other", spaceID: "second"),
-            ]
+            ],
         )
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
         let document = try BrowserMobileProfileDocument(store: store, initialSnapshot: snapshot)
@@ -198,24 +212,10 @@ extension BrowserMobileUITests {
         self.preferencesName = "SharedSidebarTests." + UUID().uuidString
         self.preferences = try #require(UserDefaults(suiteName: preferencesName))
         self.workspace = BrowserMobileWorkspace(
-            engine: engine, sceneID: "sidebar", profileLoader: { document }, preferences: preferences
+            engine: engine, sceneID: "sidebar", profileLoader: { document }, preferences: preferences,
         )
         self.root = BrowserMobileViewController(workspace: workspace, contentView: engine.hostView)
     }
-
-    // MARK: Internal
-
-    let store: BrowserSQLiteSessionStore
-    let document: BrowserMobileProfileDocument
-    let workspace: BrowserMobileWorkspace
-    let root: BrowserMobileViewController
-    let engine = SharedSidebarEngine()
-    let directory: URL
-    let preferences: UserDefaults
-    let preferencesName: String
-
-    var sidebar: BrowserMobileTabsViewController { root.tabsController }
-    var table: UITableView { sidebar.tableView }
 
     func loadSidebar() {
         root.loadViewIfNeeded()

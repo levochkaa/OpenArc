@@ -1,3 +1,5 @@
+// BrowserSyncExpiryHTTPIntegrationTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -17,7 +19,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let auth = account.devices.map { device in
             BrowserAuthSession(
                 accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-                deviceID: device.deviceID, serverURL: fixture.baseURL
+                deviceID: device.deviceID, serverURL: fixture.baseURL,
             )
         }
         let database = try DatabaseQueue(path: directory.appendingPathComponent(account.devices[0].deviceID + ".sqlite")
@@ -44,7 +46,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let strippedDelete = BrowserSyncEvent(
             serverSeq: originalDelete.serverSeq, deviceID: originalDelete.deviceID,
             entityType: originalDelete.entityType, entityID: originalDelete.entityID,
-            op: originalDelete.op, data: .deleted(id: originalDelete.entityID), createdAt: originalDelete.createdAt
+            op: originalDelete.op, data: .deleted(id: originalDelete.entityID), createdAt: originalDelete.createdAt,
         )
         // Simulate a prior v4 binary that advanced its cursor but discarded the
         // additive recovery field. No current HTTP decoder is deliberately weakened.
@@ -52,7 +54,7 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(try first.store.loadArchivePage().entries.isEmpty)
         #expect(first.store.loadSnapshot()?.tabs.contains { $0.id == "old-binary" } == false)
         try first.store.writeSessionBatch([.init(
-            snapshot: expiryHTTPSnapshot(includeOldBinary: false, offlineEdit: true), origin: .local(syncMove: nil)
+            snapshot: expiryHTTPSnapshot(includeOldBinary: false, offlineEdit: true), origin: .local(syncMove: nil),
         )])
         let pending = try first.store.pendingSyncQueue(for: first.owner)
         try #require(pending.count == 1)
@@ -61,7 +63,10 @@ extension BrowserSyncHTTPIntegrationTests {
             return
         }
         #expect(pendingMutation.operations == [.patchTab(
-            id: "offline-edit", fields: .init(urlString: expiryHTTPOfflineURL, userTitleOverride: .set("Offline title"))
+            id: "offline-edit", fields: .init(
+                urlString: expiryHTTPOfflineURL,
+                userTitleOverride: .set("Offline title"),
+            ),
         )])
         let bytes = try frozenRows()
         let offlineExpiry = try await fixture.expire(account, device: account.devices[1], source: offlineSource)
@@ -90,8 +95,8 @@ extension BrowserSyncHTTPIntegrationTests {
         let secondArchive = try second.store.loadArchivePage().entries
         #expect(firstArchive.count == 3 && secondArchive.count == 2)
         #expect(
-            firstArchive.filter { $0.tab.id == "old-binary" }.count == 1,
-            "Known tombstones still import previously discarded recovery"
+            firstArchive.count(where: { $0.tab.id == "old-binary" }) == 1,
+            "Known tombstones still import previously discarded recovery",
         )
         let canonical = try #require(firstArchive
             .first { $0.tab.id == "offline-edit" && $0.tab.urlString == expiryHTTPCanonicalURL })
@@ -107,7 +112,7 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(lostAttempt.status == 201 && lostAttempt.protocolVersion == 4)
         #expect(lost.tabs.filter { $0.id != "anchor" }.allSatisfy { $0.deleted && $0.tombstoned })
         let expiryReplay = try await fixture.expire(
-            account, device: account.devices[1], source: offlineSource, mutationID: offlineExpiry.response.mutationID
+            account, device: account.devices[1], source: offlineSource, mutationID: offlineExpiry.response.mutationID,
         )
         #expect(expiryReplay == offlineExpiry)
         await first.disconnect()
@@ -133,11 +138,11 @@ extension BrowserSyncHTTPIntegrationTests {
         let current = try #require(reopened.store.loadSnapshot())
         let restored = BrowserTabSessionSnapshotTab(
             id: restoredID, urlString: divergent.tab.urlString, userTitleOverride: divergent.tab.userTitleOverride,
-            spaceID: "source", lastActivityTimestamp: 1_900_000_000
+            spaceID: "source", lastActivityTimestamp: 1_900_000_000,
         )
         let restore = BrowserSessionWrite(
             snapshot: BrowserTabSessionSnapshot(spaces: current.spaces, tabs: current.tabs + [restored]),
-            origin: .local(syncMove: nil), archiveAction: .restore(archiveID: divergent.id, tabID: restoredID)
+            origin: .local(syncMove: nil), archiveAction: .restore(archiveID: divergent.id, tabID: restoredID),
         )
         try reopened.store.writeSessionBatch([restore])
         try reopened.store.writeSessionBatch([restore]) // Same receipt cannot create a second tab or queue row.
@@ -163,14 +168,14 @@ extension BrowserSyncHTTPIntegrationTests {
         _ = try reopened.store.completeExpirySyncBootstrap(
             events: fullReplay.events,
             cursor: fullReplay.cursor,
-            for: reopened.owner
+            for: reopened.owner,
         )
         #expect(
             try reopened.store.loadArchivePage().entries.isEmpty,
-            "Restored and explicitly cleared recovery records must not return on full bootstrap"
+            "Restored and explicitly cleared recovery records must not return on full bootstrap",
         )
         #expect(try reopened.store.pendingSyncQueue(for: reopened.owner).isEmpty)
-        #expect(reopened.store.loadSnapshot()?.tabs.filter { $0.id == restoredID }.count == 1)
+        #expect(reopened.store.loadSnapshot()?.tabs.count(where: { $0.id == restoredID }) == 1)
         let afterFullReplay = try await fixture.inspect(account)
         #expect(afterFullReplay.eventCount == beforeFullReplay.eventCount)
         #expect(afterFullReplay.receiptCount == beforeFullReplay.receiptCount)
@@ -179,7 +184,7 @@ extension BrowserSyncHTTPIntegrationTests {
             .appendingPathComponent(account.devices[0].deviceID + ".sqlite"))
         #expect(try finalStore.syncPullProtocolVersion(for: first.owner) == 5)
         #expect(try finalStore.loadArchivePage().entries.isEmpty)
-        #expect(finalStore.loadSnapshot()?.tabs.filter { $0.id == restoredID }.count == 1)
+        #expect(finalStore.loadSnapshot()?.tabs.count(where: { $0.id == restoredID }) == 1)
         await second.disconnect()
         try await fixture.complete(account)
     }
@@ -191,7 +196,7 @@ private let expiryHTTPOfflineURL = "https://offline.example/unsent"
 private func expiryHTTPSnapshot(includeOldBinary: Bool = true, offlineEdit: Bool = false) -> BrowserTabSessionSnapshot {
     let old = BrowserTabSessionSnapshotTab(
         id: "old-binary", urlString: "https://canonical.example/old-binary", spaceID: "source",
-        lastActivityTimestamp: 946_684_800
+        lastActivityTimestamp: 946_684_800,
     )
     return BrowserTabSessionSnapshot(
         spaces: [.init(id: "source", title: "Expiry recovery", systemImageName: "globe")],
@@ -201,15 +206,15 @@ private func expiryHTTPSnapshot(includeOldBinary: Bool = true, offlineEdit: Bool
                 urlString: offlineEdit ? expiryHTTPOfflineURL : expiryHTTPCanonicalURL,
                 userTitleOverride: offlineEdit ? "Offline title" : "Canonical title",
                 spaceID: "source",
-                lastActivityTimestamp: 946_684_800
+                lastActivityTimestamp: 946_684_800,
             ),
             .init(
                 id: "anchor",
                 urlString: "https://canonical.example/anchor",
                 spaceID: "source",
-                lastActivityTimestamp: 1_900_000_000
+                lastActivityTimestamp: 1_900_000_000,
             ),
-        ]
+        ],
     )
 }
 
@@ -233,7 +238,7 @@ private extension SyncHTTPFixture {
         _ account: Account,
         device: Device,
         source: BrowserSyncEvent,
-        mutationID: String = UUID().uuidString
+        mutationID: String = UUID().uuidString,
     ) async throws -> ExpiryHTTPResult {
         struct Command: Encodable {
             let action = "expire"
@@ -246,7 +251,7 @@ private extension SyncHTTPFixture {
         }
         let data = try await send(Command(
             userID: account.userID, deviceID: device.deviceID, mutationID: mutationID,
-            tabID: source.entityID, expectedServerSeq: source.serverSeq
+            tabID: source.entityID, expectedServerSeq: source.serverSeq,
         ))
         let result = try JSONDecoder().decode(ExpiryHTTPResult.self, from: data)
         #expect(result.response.protocolVersion == 5)

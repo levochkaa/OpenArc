@@ -1,3 +1,5 @@
+// BrowserPageTopWindowDrag.swift
+
 import AppKit
 
 // MARK: - BrowserPageTopWindowDrag
@@ -25,6 +27,12 @@ import AppKit
     var replay: (NSWindow, NSEvent) -> Void = { window, event in window.sendEvent(event) }
 
     private(set) var pendingPress: NSEvent?
+
+    // MARK: Private
+
+    private weak var window: NSWindow?
+    private var monitor: Any?
+    private var isReplaying = false
 
     func start(in window: NSWindow?) {
         self.window = window
@@ -55,7 +63,7 @@ import AppKit
                   region.contains(event.locationInWindow), let page = pageView(),
                   let hit = window.contentView?.hitTest(
                       window.contentView?.superview?.convert(event.locationInWindow, from: nil)
-                          ?? event.locationInWindow
+                          ?? event.locationInWindow,
                   ),
                   hit === page || hit.isDescendant(of: page)
             else { return event }
@@ -80,10 +88,4 @@ import AppKit
             return event
         }
     }
-
-    // MARK: Private
-
-    private weak var window: NSWindow?
-    private var monitor: Any?
-    private var isReplaying = false
 }

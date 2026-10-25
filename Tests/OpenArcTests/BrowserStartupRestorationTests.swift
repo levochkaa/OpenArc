@@ -1,3 +1,5 @@
+// BrowserStartupRestorationTests.swift
+
 import Foundation
 import Testing
 
@@ -102,8 +104,8 @@ import Testing
                 id: "b",
                 urlString: "https://remote.example/",
                 userTitleOverride: "Remote name",
-                spaceID: "work"
-            )]
+                spaceID: "work",
+            )],
         ))
         f.model.setUserTitleOverride("Latest local", forTabID: b.id)
         let writes = f.store.attemptedSessionWriteBatches.count
@@ -113,7 +115,7 @@ import Testing
                 id: request.id,
                 title: "Stale placeholder",
                 urlString: request.urlString,
-                isActive: true
+                isActive: true,
             )
         }
         #expect(f.model.tabs.map(\.syncID) == ["b"])
@@ -171,7 +173,14 @@ private enum StartupRestorationError: Error { case unavailable }
 // MARK: - StartupRestorationFixture
 
 @MainActor private final class StartupRestorationFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let suiteName: String
+    let defaults: UserDefaults
+    let driver = FakeBrowserTabDriver()
+    let store: InMemorySessionSnapshotStore
+    let sync = StartupSyncRecorder()
+    let model: BrowserChromeModel
 
     init(snapshot: BrowserTabSessionSnapshot) {
         self.suiteName = "BrowserStartupRestorationTests.\(UUID().uuidString)"
@@ -184,18 +193,9 @@ private enum StartupRestorationError: Error { case unavailable }
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
     }
-
-    // MARK: Internal
-
-    let suiteName: String
-    let defaults: UserDefaults
-    let driver = FakeBrowserTabDriver()
-    let store: InMemorySessionSnapshotStore
-    let sync = StartupSyncRecorder()
-    let model: BrowserChromeModel
 
     func cleanup() { defaults.removePersistentDomain(forName: suiteName) }
 }
@@ -222,10 +222,10 @@ private func startupSnapshot() -> BrowserTabSessionSnapshot {
                 urlString: "https://a.example/",
                 placement: .spacePinned,
                 spaceID: "work",
-                pinnedFolderID: "folder"
+                pinnedFolderID: "folder",
             ),
             .init(id: "b", urlString: "https://b.example/", spaceID: "work"),
             .init(id: "c", urlString: "https://c.example/", spaceID: "read"),
-        ]
+        ],
     )
 }

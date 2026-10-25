@@ -1,3 +1,5 @@
+// verify_appkit_site_ui.swift
+
 import AppKit
 import ApplicationServices
 import Carbon
@@ -42,7 +44,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(
         size as! AXValue,
         .cgSize,
-        &dimensions
+        &dimensions,
     ) else { return nil }
     return CGRect(origin: point, size: dimensions)
 }
@@ -84,7 +86,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     let ax = AXUIElementCreateApplication(pid)
     try waitFor("browser ready") { attribute(ax, kAXMenuBarAttribute) != nil && !(attribute(
         ax,
-        kAXWindowsAttribute
+        kAXWindowsAttribute,
     ) as? [AXUIElement] ?? []).isEmpty }
     let keyboard = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
     defer { TISSelectInputSource(keyboard) }
@@ -112,7 +114,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     func activeURL() -> AXUIElement? { element("browser.site-toolbar.url") ?? element("browser.sidebar.url") }
     func press(_ element: AXUIElement) throws { try require(
         AXUIElementPerformAction(element, kAXPressAction as CFString) == .success,
-        "Cannot press \(id(element))"
+        "Cannot press \(id(element))",
     ) }
     func movePointer(to element: AXUIElement) throws {
         guard let frame = elementFrame(element) else { throw UIError.failed("Missing control frame") }
@@ -120,7 +122,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
             mouseEventSource: nil,
             mouseType: .mouseMoved,
             mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY),
-            mouseButton: .left
+            mouseButton: .left,
         )?.post(tap: .cghidEventTap)
     }
     func menuAction(_ title: String) throws {
@@ -133,7 +135,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         func menuItem() -> AXUIElement? {
             descendants(ax).first { attribute($0, kAXRoleAttribute) as? String == kAXMenuItemRole && attribute(
                 $0,
-                kAXTitleAttribute
+                kAXTitleAttribute,
             ) as? String == title }
         }
         try waitFor("menu \(title)") { menuItem() != nil }
@@ -143,7 +145,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try "<html><head><title>Native Site Controls</title></head><body>Native Site Controls</body></html>".write(
         to: fixture,
         atomically: true,
-        encoding: .utf8
+        encoding: .utf8,
     )
     try runAppleScript("click menu item \"New Tab\" of menu 1 of menu bar item \"File\" of menu bar 1", pid: pid)
     try waitFor("command input") {
@@ -168,12 +170,12 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try press(element("browser.site-toolbar.url")!)
     try waitFor("toolbar URL editing") { element("browser.command.current-page-query").flatMap { attribute(
         $0,
-        kAXFocusedAttribute
+        kAXFocusedAttribute,
     ) as? Bool } == true }
     try require(
         element("browser.command.current-page-query").flatMap { attribute($0, kAXValueAttribute) as? String } == fixture
             .absoluteString,
-        "URL editor must use the complete current address"
+        "URL editor must use the complete current address",
     )
     try runAppleScript("key code 53", pid: pid)
     try waitFor("URL editor closes") { element("browser.command.current-page-query") == nil }
@@ -186,7 +188,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try press(element("browser.sidebar.url")!)
     try waitFor("sidebar URL editor") { element("browser.command.current-page-query").flatMap { attribute(
         $0,
-        kAXFocusedAttribute
+        kAXFocusedAttribute,
     ) as? Bool } == true }
     try runAppleScript("key code 53", pid: pid)
     try waitFor("sidebar URL editor closes") { element("browser.command.current-page-query") == nil }
@@ -204,7 +206,9 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     print("PASS sidebar URL: mode switch, URL editor, extension center, Escape")
 }
 
-do { try MainActor.assumeIsolated { try verifySiteControls() } }
-catch { fputs("FAIL \(error)\n", stderr)
+do {
+    try MainActor.assumeIsolated { try verifySiteControls() }
+} catch {
+    fputs("FAIL \(error)\n", stderr)
     exit(1)
 }

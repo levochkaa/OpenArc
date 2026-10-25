@@ -1,3 +1,5 @@
+// BrowserMobileDownloadDisk.swift
+
 import Foundation
 
 // MARK: - BrowserMobileDownloadError
@@ -12,7 +14,7 @@ enum BrowserMobileDownloadError: Error, Equatable {
 
 // MARK: - BrowserMobileDownloadDiskState
 
-struct BrowserMobileDownloadDiskState: Sendable {
+struct BrowserMobileDownloadDiskState {
     let revision: UInt64
     let entries: [BrowserMobileDownload]
     let pendingCleanupIDs: Set<UUID>
@@ -36,12 +38,29 @@ protocol BrowserMobileDownloadStoring: Sendable {
 /// File operations stay on this actor. Only completed, atomically committed
 /// records survive reopening; interrupted transfers are not resumed.
 actor BrowserMobileDownloadDisk: BrowserMobileDownloadStoring {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private struct Manifest: Codable {
+        let version: Int
+        let entries: [BrowserMobileDownload]
+    }
+
+    private static let maximumManifestBytes = 8 * 1024 * 1024
+
+    private let directory: URL
+    private let writeManifest: @Sendable (Data, URL) throws -> Void
+    private let removeItem: @Sendable (URL) throws -> Void
+    private var completed = [BrowserMobileDownload]()
+    private var pendingCleanupIDs = Set<UUID>()
+    private var isLoaded = false
+    private var revision: UInt64 = 0
+
+    private var manifestURL: URL { directory.appendingPathComponent("downloads.json", isDirectory: false) }
 
     init(
         directory: URL,
         writeManifest: @escaping @Sendable (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) },
-        removeItem: @escaping @Sendable (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }
+        removeItem: @escaping @Sendable (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) },
     ) {
         self.directory = directory
         self.writeManifest = writeManifest
@@ -51,7 +70,7 @@ actor BrowserMobileDownloadDisk: BrowserMobileDownloadStoring {
     // MARK: Internal
 
     nonisolated static func safeFilename(_ suggested: String) -> String {
-        let last = suggested.replacingOccurrences(of: "\\", with: "/").components(separatedBy: "/").last ?? ""
+        let last = suggested.replacing("\\", with: "/").components(separatedBy: "/").last ?? ""
         let allowed = last.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) && $0 != ":" }
         let trimmed = String(String.UnicodeScalarView(allowed))
             .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
@@ -74,8 +93,9 @@ actor BrowserMobileDownloadDisk: BrowserMobileDownloadStoring {
         revision += 1
         let entries = completed.map { entry in
             var result = entry
-            do { _ = try checkedFile(for: entry) }
-            catch {
+            do {
+                _ = try checkedFile(for: entry)
+            } catch {
                 result.status = .failed
                 result.error = String(localized: "downloads.error.missingFile", table: "Mobile")
             }
@@ -181,25 +201,6 @@ actor BrowserMobileDownloadDisk: BrowserMobileDownloadStoring {
         return try snapshot()
     }
 
-    // MARK: Private
-
-    private struct Manifest: Codable {
-        let version: Int
-        let entries: [BrowserMobileDownload]
-    }
-
-    private static let maximumManifestBytes = 8 * 1024 * 1024
-
-    private let directory: URL
-    private let writeManifest: @Sendable (Data, URL) throws -> Void
-    private let removeItem: @Sendable (URL) throws -> Void
-    private var completed = [BrowserMobileDownload]()
-    private var pendingCleanupIDs = Set<UUID>()
-    private var isLoaded = false
-    private var revision: UInt64 = 0
-
-    private var manifestURL: URL { directory.appendingPathComponent("downloads.json", isDirectory: false) }
-
     private func ensureLoaded() throws {
         guard !isLoaded else { return }
         guard directory.isFileURL else { throw BrowserMobileDownloadError.invalidDestination }
@@ -245,8 +246,9 @@ actor BrowserMobileDownloadDisk: BrowserMobileDownloadStoring {
     private func clean(id: UUID) throws {
         guard !completed.contains(where: { $0.id == id }) else { return }
         let folder = directory.appendingPathComponent(id.uuidString, isDirectory: true)
-        do { try removeItem(folder) }
-        catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {}
+        do {
+            try removeItem(folder)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {}
         pendingCleanupIDs.remove(id)
     }
 

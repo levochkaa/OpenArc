@@ -1,3 +1,5 @@
+// BrowserSplitPaneLayout.swift
+
 import AppKit
 
 // MARK: - BrowserSplitPaneLayout
@@ -103,14 +105,14 @@ import AppKit
     /// The page part of a pane, below its bar, in the host's coordinates.
     @objc(webContentFrameForPaneFrame:flipped:) static func webContentFrame(
         forPaneFrame pane: CGRect,
-        flipped: Bool
+        flipped: Bool,
     ) -> CGRect {
         let bar = min(paneBarHeight, pane.height)
         return CGRect(
             x: pane.minX,
             y: flipped ? pane.minY + bar : pane.minY,
             width: pane.width,
-            height: pane.height - bar
+            height: pane.height - bar,
         )
     }
 
@@ -119,7 +121,7 @@ import AppKit
         count: Int,
         orientation: BrowserTabSplitOrientation,
         fractions: [Double]?,
-        flipped: Bool
+        flipped: Bool,
     ) -> [CGRect] {
         guard count > 0 else { return [] }
         guard count > 1 else { return [bounds] }
@@ -153,14 +155,14 @@ import AppKit
         count: Int,
         vertical: Bool,
         fractions: [NSNumber],
-        flipped: Bool
+        flipped: Bool,
     ) -> [NSValue] {
         frames(
             in: bounds,
             count: count,
             orientation: vertical ? .vertical : .horizontal,
             fractions: fractions.isEmpty ? nil : fractions.map(\.doubleValue),
-            flipped: flipped
+            flipped: flipped,
         ).map { NSValue(rect: $0) }
     }
 
@@ -174,7 +176,7 @@ import AppKit
                     x: leading.maxX,
                     y: min(first.minY, second.minY),
                     width: max(trailing.minX - leading.maxX, 0),
-                    height: max(first.height, second.height)
+                    height: max(first.height, second.height),
                 ).insetBy(dx: -dividerHitOutset, dy: 0)
             }
             let lower = first.minY <= second.minY ? first : second
@@ -183,7 +185,7 @@ import AppKit
                 x: min(first.minX, second.minX),
                 y: lower.maxY,
                 width: max(first.width, second.width),
-                height: max(upper.minY - lower.maxY, 0)
+                height: max(upper.minY - lower.maxY, 0),
             ).insetBy(dx: 0, dy: -dividerHitOutset)
         }
     }
@@ -193,7 +195,7 @@ import AppKit
         of point: CGPoint,
         in bounds: CGRect,
         orientation: BrowserTabSplitOrientation,
-        flipped: Bool
+        flipped: Bool,
     ) -> CGFloat {
         if orientation == .horizontal {
             return point.x - bounds.minX
@@ -209,7 +211,7 @@ import AppKit
         to position: CGFloat,
         length: CGFloat,
         count: Int,
-        fractions: [Double]?
+        fractions: [Double]?,
     ) -> [Double]? {
         guard count > 1, index >= 0, index < count - 1 else { return nil }
         let available = Double(length - paneGap * CGFloat(count - 1))
@@ -221,7 +223,7 @@ import AppKit
         let minimum = min(Double(minimumPaneLength), (end - start) / 2)
         var edge = min(
             max(Double(position - paneGap * CGFloat(index) - paneGap / 2), start + minimum),
-            end - minimum
+            end - minimum,
         )
         let middle = (start + end) / 2
         if abs(edge - middle) <= Double(equalSnapDistance) {
@@ -249,13 +251,13 @@ import AppKit
         equalizingNeighbors(
             ofDivider: index,
             count: count,
-            fractions: fractions.isEmpty ? nil : fractions.map(\.doubleValue)
+            fractions: fractions.isEmpty ? nil : fractions.map(\.doubleValue),
         )?.map { NSNumber(value: $0) }
     }
 
     @objc(dividerFramesBetweenPaneFrames:vertical:) static func dividerFrames(
         between paneFrames: [NSValue],
-        vertical: Bool
+        vertical: Bool,
     ) -> [NSValue] {
         dividerFrames(between: paneFrames.map(\.rectValue), orientation: vertical ? .vertical : .horizontal)
             .map { NSValue(rect: $0) }
@@ -270,7 +272,7 @@ import AppKit
         count: Int,
         vertical: Bool,
         flipped: Bool,
-        fractions: [NSNumber]
+        fractions: [NSNumber],
     ) -> [NSNumber]? {
         let orientation: BrowserTabSplitOrientation = vertical ? .vertical : .horizontal
         return Self.fractions(
@@ -278,7 +280,7 @@ import AppKit
             to: axisPosition(of: point, in: bounds, orientation: orientation, flipped: flipped),
             length: vertical ? bounds.height : bounds.width,
             count: count,
-            fractions: fractions.isEmpty ? nil : fractions.map(\.doubleValue)
+            fractions: fractions.isEmpty ? nil : fractions.map(\.doubleValue),
         )?.map { NSNumber(value: $0) }
     }
 }

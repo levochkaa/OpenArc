@@ -1,3 +1,5 @@
+// verify_appkit_ui.swift
+
 import AppKit
 import ApplicationServices
 import Carbon
@@ -42,7 +44,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(
         size as! AXValue,
         .cgSize,
-        &dimensions
+        &dimensions,
     ) else { return nil }
     return CGRect(origin: point, size: dimensions)
 }
@@ -109,13 +111,13 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         guard let control = element(identifier) else { throw UIError.failed("Missing control: \(identifier)") }
         try require(
             AXUIElementPerformAction(control, kAXPressAction as CFString) == .success,
-            "Cannot press \(identifier)"
+            "Cannot press \(identifier)",
         )
     }
     func openFind() throws {
         try runAppleScript(
             "click menu item \"Find...\" of menu 1 of menu item \"Find\" of menu 1 of menu bar item \"Edit\" of menu bar 1",
-            pid: pid
+            pid: pid,
         )
         try waitFor("find field appears") { field() != nil }
     }
@@ -142,7 +144,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         .write(
             to: fixture,
             atomically: true,
-            encoding: .utf8
+            encoding: .utf8,
         )
     try require(app.activate(options: []), "Could not activate browser")
     try runAppleScript("click menu item \"New Tab\" of menu 1 of menu bar item \"File\" of menu bar 1", pid: pid)
@@ -230,7 +232,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
 
     try runAppleScript(
         "click menu item \"Settings…\" of menu 1 of menu bar item \"OpenArc\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     try waitFor("accounts page") { element("browser.settings.default-browser") != nil }
     for (title, sentinel) in [
@@ -264,7 +266,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     if let search = element("browser.settings.shortcut-search") {
         try require(
             AXUIElementSetAttributeValue(search, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success,
-            "Could not focus shortcut search"
+            "Could not focus shortcut search",
         )
     }
     try runAppleScript("keystroke \"Find\"", pid: pid)
@@ -281,6 +283,9 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     print("PASS settings: checkbox round trip, shortcut filtering, recorder cancellation")
 }
 
-do { try MainActor.assumeIsolated { try verify() } } catch { fputs("UI verification failed: \(error)\n", stderr)
+do {
+    try MainActor.assumeIsolated { try verify() }
+} catch {
+    fputs("UI verification failed: \(error)\n", stderr)
     exit(1)
 }

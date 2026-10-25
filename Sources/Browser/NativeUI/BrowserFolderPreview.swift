@@ -1,3 +1,5 @@
+// BrowserFolderPreview.swift
+
 import AppKit
 
 // MARK: - BrowserFolderPreviewItem
@@ -29,6 +31,11 @@ struct BrowserFolderPreviewItem: Equatable {
     private(set) var panel: BrowserFolderPreviewPanel?
     private(set) var shownFolderID: String?
 
+    // MARK: Private
+
+    private var showWork: DispatchWorkItem?
+    private var hideWork: DispatchWorkItem?
+
     /// Beside the row on the page's side, top-aligned with it and kept on screen.
     static func frame(for size: NSSize, beside row: NSView) -> NSRect {
         guard let window = row.window else { return NSRect(origin: .zero, size: size) }
@@ -36,7 +43,7 @@ struct BrowserFolderPreviewItem: Equatable {
         let opensRight = rowFrame.midX < window.frame.midX
         var origin = NSPoint(
             x: opensRight ? rowFrame.maxX + 8 : rowFrame.minX - 8 - size.width,
-            y: rowFrame.maxY - size.height
+            y: rowFrame.maxY - size.height,
         )
         if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
             origin.y = min(max(origin.y, visible.minY + 8), visible.maxY - size.height - 8)
@@ -100,11 +107,6 @@ struct BrowserFolderPreviewItem: Equatable {
         hidePanel()
     }
 
-    // MARK: Private
-
-    private var showWork: DispatchWorkItem?
-    private var hideWork: DispatchWorkItem?
-
     /// Keeps a pending preview of another folder, which replaces this one.
     private func scheduleHide() {
         schedule(&hideWork, after: Self.hideDelay) { [weak self] in
@@ -135,7 +137,31 @@ struct BrowserFolderPreviewItem: Equatable {
 /// The preview's floating list. It becomes key only when its search field is
 /// clicked.
 final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    static let width: CGFloat = 280
+    static let rowHeight: CGFloat = 28
+    static let maximumVisibleRows = 8
+    static let searchHeight: CGFloat = 36
+    static let padding: CGFloat = 6
+    static let cornerRadius: CGFloat = 10
+
+    override var canBecomeKey: Bool { true }
+
+    let searchField = NSSearchField()
+    private(set) var visibleItems: [BrowserFolderPreviewItem]
+    private(set) var selectedIndex = 0
+    private(set) var isPointerInside = false
+    var onSelect: (String) -> Void = { _ in }
+    var onCancel: () -> Void = {}
+    var onHoverChanged: (Bool) -> Void = { _ in }
+
+    // MARK: Private
+
+    private let items: [BrowserFolderPreviewItem]
+    private let list = BrowserFolderPreviewList()
+
+    var preferredSize: NSSize { Self.size(forRowCount: items.count) }
 
     init(items: [BrowserFolderPreviewItem]) {
         self.items = items
@@ -144,7 +170,7 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
             contentRect: NSRect(origin: .zero, size: Self.size(forRowCount: items.count)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         isReleasedWhenClosed = false
         becomesKeyOnlyIfNeeded = true
@@ -171,27 +197,6 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
         reloadRows()
     }
 
-    // MARK: Internal
-
-    static let width: CGFloat = 280
-    static let rowHeight: CGFloat = 28
-    static let maximumVisibleRows = 8
-    static let searchHeight: CGFloat = 36
-    static let padding: CGFloat = 6
-    static let cornerRadius: CGFloat = 10
-
-    override var canBecomeKey: Bool { true }
-
-    let searchField = NSSearchField()
-    private(set) var visibleItems: [BrowserFolderPreviewItem]
-    private(set) var selectedIndex = 0
-    private(set) var isPointerInside = false
-    var onSelect: (String) -> Void = { _ in }
-    var onCancel: () -> Void = {}
-    var onHoverChanged: (Bool) -> Void = { _ in }
-
-    var preferredSize: NSSize { Self.size(forRowCount: items.count) }
-
     override func resignKey() {
         super.resignKey()
         if !isPointerInside {
@@ -202,7 +207,7 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
     static func size(forRowCount count: Int) -> NSSize {
         NSSize(
             width: width,
-            height: searchHeight + CGFloat(min(max(count, 1), maximumVisibleRows)) * rowHeight + padding * 2
+            height: searchHeight + CGFloat(min(max(count, 1), maximumVisibleRows)) * rowHeight + padding * 2,
         )
     }
 
@@ -235,11 +240,6 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
         return true
     }
 
-    // MARK: Private
-
-    private let items: [BrowserFolderPreviewItem]
-    private let list = BrowserFolderPreviewList()
-
     private func select(_ index: Int) {
         guard visibleItems.indices.contains(index) else { return }
         selectedIndex = index
@@ -254,13 +254,13 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
             x: Self.padding + 2,
             y: Self.padding + 4,
             width: bounds.width - Self.padding * 2 - 4,
-            height: Self.searchHeight - 10
+            height: Self.searchHeight - 10,
         )
         list.frame = NSRect(
             x: Self.padding,
             y: Self.padding + Self.searchHeight,
             width: bounds.width - Self.padding * 2,
-            height: max(bounds.height - Self.searchHeight - Self.padding * 2, 0)
+            height: max(bounds.height - Self.searchHeight - Self.padding * 2, 0),
         )
         list.update(items: visibleItems, rowHeight: Self.rowHeight) { [weak self] id in self?.onSelect(id) }
         list.highlightedIndex = visibleItems.isEmpty ? nil : selectedIndex
@@ -279,7 +279,7 @@ private final class BrowserFolderPreviewSurface: BrowserNativeSurface {
         addTrackingArea(NSTrackingArea(
             rect: bounds,
             options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self
+            owner: self,
         ))
     }
 
@@ -291,7 +291,21 @@ private final class BrowserFolderPreviewSurface: BrowserNativeSurface {
 
 /// The tabs of the preview: favicon and title rows that scroll past eight.
 private final class BrowserFolderPreviewList: NSScrollView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var highlightedIndex: Int? {
+        didSet {
+            for (index, row) in rows.enumerated() {
+                row.isHighlighted = index == highlightedIndex
+            }
+        }
+    }
+
+    // MARK: Private
+
+    private let stack = BrowserFolderPreviewFlippedView()
+    private var rows = [BrowserFolderPreviewRow]()
+    private var rowHeight: CGFloat = 28
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -302,16 +316,6 @@ private final class BrowserFolderPreviewList: NSScrollView {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    var highlightedIndex: Int? {
-        didSet {
-            for (index, row) in rows.enumerated() {
-                row.isHighlighted = index == highlightedIndex
-            }
-        }
-    }
 
     func update(items: [BrowserFolderPreviewItem], rowHeight: CGFloat, onSelect: @escaping (String) -> Void) {
         rows.forEach { $0.removeFromSuperview() }
@@ -330,12 +334,6 @@ private final class BrowserFolderPreviewList: NSScrollView {
     func scrollRowToVisible(_ index: Int) {
         stack.scrollToVisible(NSRect(x: 0, y: CGFloat(index) * rowHeight, width: 1, height: rowHeight))
     }
-
-    // MARK: Private
-
-    private let stack = BrowserFolderPreviewFlippedView()
-    private var rows = [BrowserFolderPreviewRow]()
-    private var rowHeight: CGFloat = 28
 }
 
 // MARK: - BrowserFolderPreviewFlippedView
@@ -347,7 +345,17 @@ private final class BrowserFolderPreviewFlippedView: NSView {
 // MARK: - BrowserFolderPreviewRow
 
 final class BrowserFolderPreviewRow: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onSelect: () -> Void = {}
+
+    var isHighlighted = false { didSet { refreshBackground() } }
+
+    // MARK: Private
+
+    private let favicon = BrowserFaviconNSView()
+    private let title = BrowserNativeControls.label("", size: 12.5, color: BrowserChromeColors.primaryText)
+    private var isHovered = false
 
     init(item: BrowserFolderPreviewItem) {
         super.init(frame: .zero)
@@ -366,12 +374,6 @@ final class BrowserFolderPreviewRow: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    var onSelect: () -> Void = {}
-
-    var isHighlighted = false { didSet { refreshBackground() } }
-
     override func layout() {
         super.layout()
         favicon.frame = NSRect(x: 8, y: (bounds.height - 16) / 2, width: 16, height: 16)
@@ -384,7 +386,7 @@ final class BrowserFolderPreviewRow: NSView {
         addTrackingArea(NSTrackingArea(
             rect: bounds,
             options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self
+            owner: self,
         ))
     }
 
@@ -410,12 +412,6 @@ final class BrowserFolderPreviewRow: NSView {
         onSelect()
         return true
     }
-
-    // MARK: Private
-
-    private let favicon = BrowserFaviconNSView()
-    private let title = BrowserNativeControls.label("", size: 12.5, color: BrowserChromeColors.primaryText)
-    private var isHovered = false
 
     private func refreshBackground() {
         let color = isHighlighted ? BrowserChromeColors.rowSelected : isHovered ? BrowserChromeColors.rowHover : .clear

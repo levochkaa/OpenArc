@@ -1,3 +1,5 @@
+// BrowserSyncFolderEventTests.swift
+
 import Foundation
 import Testing
 
@@ -33,8 +35,8 @@ import Testing
             title: nil,
             userTitleOverride: nil,
             faviconURLString: nil,
-            lastActivityAt: nil
-        )
+            lastActivityAt: nil,
+        ),
     )
     let encoded = try JSONEncoder().encode(BrowserSyncMutation(id: "frozen", changes: [change]))
     #expect(!String(decoding: encoded, as: UTF8.self).contains("pinnedFolderID"))

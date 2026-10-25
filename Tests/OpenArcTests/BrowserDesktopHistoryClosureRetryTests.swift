@@ -1,3 +1,5 @@
+// BrowserDesktopHistoryClosureRetryTests.swift
+
 import Foundation
 import Testing
 
@@ -5,7 +7,7 @@ import Testing
 @MainActor struct BrowserDesktopHistoryClosureRetryTests {
     @Test(arguments: [BrowserTabPlacement.spacePinned, .app])
     func undoCreationRemovesDormantPersistentIdentityWithoutRequestingANonexistentEngine(
-        placement: BrowserTabPlacement
+        placement: BrowserTabPlacement,
     ) throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
@@ -58,7 +60,7 @@ import Testing
         BEGIN SELECT RAISE(ABORT,'injected'); END
         """)
         f.model.undoManager.undo()
-        let restore = try #require(f.recording.attempts.flatMap { $0 }.compactMap(\.archiveAction).first)
+        let restore = try #require(f.recording.attempts.flatMap(\.self).compactMap(\.archiveAction).first)
         guard case .restore(let archiveID, let freshID) = restore else {
             Issue.record("Undo must retain its Archive restore action")
             return
@@ -86,10 +88,10 @@ import Testing
         #expect(prepared && confirmations == 1)
         #expect(!f.model.hasUncommittedSessionWrites && !f.model.undoManager.isTabTransitionPending)
         #expect(f.driver.createdTabRequests.count == creates + 1)
-        #expect(f.model.tabs.filter { $0.syncID == freshID }.count == 1)
+        #expect(f.model.tabs.count(where: { $0.syncID == freshID }) == 1)
         #expect(try f.store.loadArchivePage().entries.isEmpty)
-        #expect(try f.store.loadSnapshotStrict()?.tabs.filter { $0.id == freshID }.count == 1)
-        let attempts = f.recording.attempts.flatMap { $0 }.compactMap(\.archiveAction)
+        #expect(try f.store.loadSnapshotStrict()?.tabs.count(where: { $0.id == freshID }) == 1)
+        let attempts = f.recording.attempts.flatMap(\.self).compactMap(\.archiveAction)
         #expect(attempts.count >= 3 && attempts.allSatisfy { $0 == restore })
         #expect(f.model.undoManager.canRedo)
 

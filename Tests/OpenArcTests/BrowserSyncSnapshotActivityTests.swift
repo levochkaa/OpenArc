@@ -1,3 +1,5 @@
+// BrowserSyncSnapshotActivityTests.swift
+
 import Foundation
 import Testing
 
@@ -10,17 +12,17 @@ func legacyRemoteSnapshotReadsCanonicalMicrosecondActivity(fraction: TimeInterva
             id: "tab",
             urlString: "https://example.com",
             spaceID: "space",
-            lastActivityTimestamp: 1_900_000_000
-        )]
+            lastActivityTimestamp: 1_900_000_000,
+        )],
     )
     let event = BrowserSyncEvent(
         serverSeq: 1, deviceID: "remote", entityType: "tab", entityID: "tab", op: "upsert",
         data: .tab(.init(
             id: "tab", spaceID: "space", placement: .temporary, rank: 0,
             urlString: "https://example.com/new", pinnedURLString: nil, title: nil,
-            userTitleOverride: "Remote title", faviconURLString: nil, lastActivityAt: wire
+            userTitleOverride: "Remote title", faviconURLString: nil, lastActivityAt: wire,
         )),
-        createdAt: "2026-10-03T10:00:01Z"
+        createdAt: "2026-10-03T10:00:01Z",
     )
     let projected = BrowserSyncSnapshotMerger.snapshot(applying: [event], to: old)
     let tab = try #require(projected.tabs.first)

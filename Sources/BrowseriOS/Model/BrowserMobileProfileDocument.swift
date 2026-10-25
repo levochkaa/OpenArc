@@ -1,3 +1,5 @@
+// BrowserMobileProfileDocument.swift
+
 import Foundation
 
 // MARK: - BrowserMobileProfileDocument
@@ -5,46 +7,22 @@ import Foundation
 /// One logical profile shared by scene adapters. Scenes submit stable-ID actions;
 /// their independently selected tabs and WebKit runtimes never replace this tree.
 @MainActor final class BrowserMobileProfileDocument: BrowserSyncSnapshotApplying, BrowserSyncExpiryScheduling {
-    // MARK: Lifecycle
-
-    init(
-        store: any BrowserTabSessionSnapshotStoring,
-        initialSnapshot: BrowserTabSessionSnapshot?,
-        syncCoordinator: (any BrowserSyncCoordinating)? = nil,
-        downloads: BrowserMobileDownloads? = nil,
-        idProvider: @escaping () -> String = { UUID().uuidString },
-        dateProvider: @escaping () -> Date = Date.init,
-        automaticArchivalCheckInterval: Duration? = .seconds(60),
-        maximumBufferedWrites: Int = 32,
-        maximumBufferedBytes: Int = 32 * 1024 * 1024
-    ) throws {
-        let initial = initialSnapshot ?? .init(tabs: [])
-        try Self.validate(initial)
-        self.store = store
-        self.snapshot = initial
-        self.syncCoordinator = syncCoordinator
-        self.downloads = downloads
-        self.idProvider = idProvider
-        self.dateProvider = dateProvider
-        self.automaticArchivalCheckInterval = automaticArchivalCheckInterval
-        self.writeBuffer = .init(maximumCount: maximumBufferedWrites, maximumBytes: maximumBufferedBytes)
-        reloadAutomaticTabArchivalSettings()
-    }
-
-    convenience init(
-        store: any BrowserTabSessionSnapshotStoring,
-        loadSnapshot: () throws -> BrowserTabSessionSnapshot?,
-        syncCoordinator: (any BrowserSyncCoordinating)? = nil,
-        downloads: BrowserMobileDownloads? = nil
-    ) throws {
-        try self.init(
-            store: store, initialSnapshot: loadSnapshot(), syncCoordinator: syncCoordinator, downloads: downloads
-        )
-    }
-
     // MARK: Internal
 
     typealias ObserverToken = UUID
+
+    // MARK: Private
+
+    private enum ArchiveMutation {
+        case remove(String)
+        case clear(BrowserTabArchiveBoundary)
+    }
+
+    private struct ExpiryLease {
+        let isActive: Bool
+        let isHydrated: Bool
+        let hydrationCheck: @MainActor () -> Bool
+    }
 
     let downloads: BrowserMobileDownloads?
 
@@ -56,6 +34,21 @@ import Foundation
     private(set) var temporaryTabLifetime = BrowserTemporaryTabLifetime.defaultValue
     private(set) var automaticTabArchivalError: String?
     weak var syncSession: BrowserMobileSyncSession?
+
+    private let store: any BrowserTabSessionSnapshotStoring
+    private var syncCoordinator: (any BrowserSyncCoordinating)?
+    private let idProvider: () -> String
+    private let dateProvider: () -> Date
+    private var writeBuffer: BrowserSessionWriteBuffer
+    private var observers = [ObserverToken: (BrowserTabSessionSnapshot) -> Void]()
+    private var selectionLeases = [UUID: String]()
+    private var expiryLeases = [UUID: ExpiryLease]()
+    private var automaticArchivalSettingsLoaded = false
+    private let automaticArchivalCheckInterval: Duration?
+    private var localArchivalTask: Task<Void, Never>?
+    private var lastLocalActivityRefresh: TimeInterval?
+    private var isNotifying = false
+    private var needsNotification = false
 
     var persistenceFailure: BrowserSessionPersistenceFailure? { writeBuffer.failure }
     var hasUncommittedWrites: Bool { !writeBuffer.writes.isEmpty || writeBuffer.isTerminal }
@@ -74,6 +67,116 @@ import Foundation
         Set(selectionLeases.values).intersection(snapshot.tabs.compactMap(\.id))
     }
 
+    init(
+        store: any BrowserTabSessionSnapshotStoring,
+        initialSnapshot: BrowserTabSessionSnapshot?,
+        syncCoordinator: (any BrowserSyncCoordinating)? = nil,
+        downloads: BrowserMobileDownloads? = nil,
+        idProvider: @escaping () -> String = { UUID().uuidString },
+        dateProvider: @escaping () -> Date = Date.init,
+        automaticArchivalCheckInterval: Duration? = .seconds(60),
+        maximumBufferedWrites: Int = 32,
+        maximumBufferedBytes: Int = 32 * 1024 * 1024,
+    ) throws {
+        let initial = initialSnapshot ?? .init(tabs: [])
+        try Self.validate(initial)
+        self.store = store
+        self.snapshot = initial
+        self.syncCoordinator = syncCoordinator
+        self.downloads = downloads
+        self.idProvider = idProvider
+        self.dateProvider = dateProvider
+        self.automaticArchivalCheckInterval = automaticArchivalCheckInterval
+        self.writeBuffer = .init(maximumCount: maximumBufferedWrites, maximumBytes: maximumBufferedBytes)
+        reloadAutomaticTabArchivalSettings()
+    }
+
+    convenience init(
+        store: any BrowserTabSessionSnapshotStoring,
+        loadSnapshot: () throws -> BrowserTabSessionSnapshot?,
+        syncCoordinator: (any BrowserSyncCoordinating)? = nil,
+        downloads: BrowserMobileDownloads? = nil,
+    ) throws {
+        try self.init(
+            store: store, initialSnapshot: loadSnapshot(), syncCoordinator: syncCoordinator, downloads: downloads,
+        )
+    }
+
+    private static func nonempty(_ value: String?) -> String? {
+        guard let text = value?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
+    }
+
+    private static func newActivity(
+        tab: BrowserTabSessionSnapshotTab, now: TimeInterval, formatter: ISO8601DateFormatter,
+    ) -> String? {
+        guard now.isFinite else { return nil }
+        let second = floor(now)
+        if let previous = tab.lastActivityTimestamp, previous.isFinite, second <= previous {
+            return nil
+        }
+        return formatter.string(from: Date(timeIntervalSince1970: second))
+    }
+
+    private static func archiveErrorMessage(_ error: Error) -> String {
+        guard let error = error as? BrowserTabArchiveError else { return error.localizedDescription }
+        switch error {
+        case .archiveAlreadyRestored,
+             .entryMissing:
+            return String(localized: "This archived tab is no longer available.", table: "Mobile")
+        case .unsupportedStore:
+            return String(localized: "Archive is unavailable for this profile.", table: "Mobile")
+        case .invalidCursor,
+             .invalidLimit:
+            return String(localized: "The archive could not be loaded. Try again.", table: "Mobile")
+        case .invalidQuery:
+            return String(localized: "Use a shorter search.", table: "Mobile")
+        case .archiveIDConflict,
+             .invalidBoundary,
+             .invalidEntry,
+             .invalidTransition,
+             .requiresLocalWrite,
+             .restoredTabIDNotFresh:
+            return String(localized: "This archive action could not be completed. Try again.", table: "Mobile")
+        }
+    }
+
+    private static func validate(_ snapshot: BrowserTabSessionSnapshot) throws {
+        guard (1...BrowserTabSessionSnapshot.currentVersion).contains(snapshot.version) else {
+            throw BrowserMobileProfileDocumentError.invalidSnapshot
+        }
+        let tabs = snapshot.tabs.compactMap(\.id)
+        let spaces = (snapshot.spaces ?? []).map(\.id)
+        let folders = snapshot.pinnedTabFolders ?? []
+        guard tabs.count == snapshot.tabs.count, tabs.allSatisfy({ !$0.isEmpty }), Set(tabs).count == tabs.count,
+              spaces.allSatisfy({ !$0.isEmpty }), Set(spaces).count == spaces.count,
+              folders.allSatisfy({ !$0.id.isEmpty }), Set(folders.map(\.id)).count == folders.count
+        else {
+            throw BrowserMobileProfileDocumentError.invalidSnapshot
+        }
+        let byID = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
+        let spaceIDs = Set(spaces)
+        for folder in folders {
+            guard spaceIDs.contains(folder.spaceID) else { throw BrowserMobileProfileDocumentError.invalidSnapshot }
+            var parent = folder.parentFolderID
+            var visited: Set<String> = [folder.id]
+            while let id = parent {
+                guard visited.insert(id).inserted, let value = byID[id], value.spaceID == folder.spaceID else {
+                    throw BrowserMobileProfileDocumentError.invalidSnapshot
+                }
+                parent = value.parentFolderID
+            }
+        }
+        for tab in snapshot.tabs {
+            guard !tab.urlString.isEmpty,
+                  tab.placement == .app || tab.spaceID.map(spaceIDs.contains) == true,
+                  tab.pinnedFolderID.map({ tab.placement == .spacePinned && byID[$0]?.spaceID == tab.spaceID }) ?? true
+            else {
+                throw BrowserMobileProfileDocumentError.invalidSnapshot
+            }
+        }
+    }
+
     @discardableResult func setAutomaticTabArchival(lifetime: BrowserTemporaryTabLifetime?) -> Bool {
         guard canManageArchive, let sqlite = store as? BrowserSQLiteSessionStore else { return false }
         let chosen = lifetime ?? temporaryTabLifetime
@@ -89,7 +192,7 @@ import Foundation
         } catch {
             automaticTabArchivalError = String(
                 localized: "Auto-Archive settings could not be saved. Try again.",
-                table: "Mobile"
+                table: "Mobile",
             )
             notify()
             return false
@@ -108,7 +211,7 @@ import Foundation
             automaticArchivalSettingsLoaded = false
             automaticTabArchivalError = String(
                 localized: "Auto-Archive settings could not be loaded. Try again.",
-                table: "Mobile"
+                table: "Mobile",
             )
         }
         notify()
@@ -128,7 +231,7 @@ import Foundation
     /// asynchronous profile load has not yet produced a selection lease.
     func updateExpiryLease(
         owner: UUID, isActive: Bool, isHydrated: Bool,
-        hydrationCheck: @escaping @MainActor () -> Bool
+        hydrationCheck: @escaping @MainActor () -> Bool,
     ) {
         let previous = expiryLeases[owner]
         expiryLeases[owner] = .init(isActive: isActive, isHydrated: isHydrated, hydrationCheck: hydrationCheck)
@@ -145,7 +248,7 @@ import Foundation
         else { return nil }
         return .init(
             inactiveForSeconds: automaticTabArchivalEnabled ? Int(temporaryTabLifetime.timeInterval) : nil,
-            protectedTabIDs: protectedTabIDs
+            protectedTabIDs: protectedTabIDs,
         )
     }
 
@@ -188,7 +291,7 @@ import Foundation
         } catch {
             automaticTabArchivalError = String(
                 localized: "Auto-Archive could not check this profile. Try again.",
-                table: "Mobile"
+                table: "Mobile",
             )
             notify()
         }
@@ -215,7 +318,7 @@ import Foundation
     }
 
     func searchArchivePage(
-        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50
+        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50,
     ) async throws -> BrowserTabArchivePage {
         guard let archive = store as? any BrowserTabArchiveStoring
         else { throw BrowserTabArchiveError.unsupportedStore }
@@ -248,7 +351,7 @@ import Foundation
         guard !archiveID.isEmpty else { return false }
         let entry = BrowserTabArchiveEntry(
             id: archiveID, tab: tab, archivedAt: dateProvider().timeIntervalSince1970,
-            title: Self.nonempty(displayTitle)
+            title: Self.nonempty(displayTitle),
         )
         archiveError = nil
         return apply([.deleteTab(id: id)], archiveAction: .insert(entry))
@@ -274,11 +377,12 @@ import Foundation
             }
             let restored = BrowserTabSessionSnapshotTab(
                 id: tabID, urlString: entry.tab.urlString, userTitleOverride: entry.tab.userTitleOverride,
-                placement: .temporary, spaceID: destination, lastActivityTimestamp: dateProvider().timeIntervalSince1970
+                placement: .temporary, spaceID: destination,
+                lastActivityTimestamp: dateProvider().timeIntervalSince1970,
             )
             let next = BrowserTabSessionSnapshot(
                 spaces: snapshot.spaces, pinnedTabFolders: snapshot.pinnedTabFolders,
-                tabs: snapshot.tabs + [restored]
+                tabs: snapshot.tabs + [restored],
             )
             try Self.validate(next)
             archiveError = nil
@@ -344,13 +448,13 @@ import Foundation
 
     @discardableResult func createTab(
         urlString: String = "about:blank", spaceID: String,
-        placement: BrowserTabPlacement = .temporary, pinnedFolderID: String? = nil
+        placement: BrowserTabPlacement = .temporary, pinnedFolderID: String? = nil,
     ) -> String? {
         guard Self.nonempty(urlString) != nil, let id = newID(type: .tab) else { return nil }
         let date = ISO8601DateFormatter().string(from: dateProvider())
         return apply([.createTab(id: id, data: .init(
             spaceID: spaceID, placement: placement, pinnedFolderID: pinnedFolderID,
-            urlString: urlString, lastActivityAt: date
+            urlString: urlString, lastActivityAt: date,
         ))]) ? id : nil
     }
 
@@ -358,22 +462,22 @@ import Foundation
         guard Self.nonempty(urlString) != nil, let tab = snapshot.tabs.first(where: { $0.id == tabID }),
               tab.urlString != urlString else { return false }
         let activity = Self.newActivity(
-            tab: tab, now: dateProvider().timeIntervalSince1970, formatter: ISO8601DateFormatter()
+            tab: tab, now: dateProvider().timeIntervalSince1970, formatter: ISO8601DateFormatter(),
         )
         return apply([.patchTab(id: tabID, fields: .init(
-            urlString: urlString, lastActivityAt: activity.map(BrowserSyncPatchValue.set) ?? .unchanged
+            urlString: urlString, lastActivityAt: activity.map(BrowserSyncPatchValue.set) ?? .unchanged,
         ))])
     }
 
     @discardableResult func renameTab(id: String, title: String?) -> Bool {
         apply([.patchTab(
             id: id,
-            fields: .init(userTitleOverride: Self.nonempty(title).map(BrowserSyncPatchValue.set) ?? .clear)
+            fields: .init(userTitleOverride: Self.nonempty(title).map(BrowserSyncPatchValue.set) ?? .clear),
         )])
     }
 
     @discardableResult func setPlacement(
-        tabID: String, placement: BrowserTabPlacement, spaceID: String? = nil, pinnedFolderID: String? = nil
+        tabID: String, placement: BrowserTabPlacement, spaceID: String? = nil, pinnedFolderID: String? = nil,
     ) -> Bool {
         guard let tab = snapshot.tabs.first(where: { $0.id == tabID }),
               let destinationSpace = spaceID ?? tab.spaceID
@@ -381,7 +485,7 @@ import Foundation
             return false
         }
         return move(items: [.init(entityType: .tab, entityID: tabID)], destination: .tabs(
-            spaceID: destinationSpace, placement: placement, pinnedFolderID: pinnedFolderID
+            spaceID: destinationSpace, placement: placement, pinnedFolderID: pinnedFolderID,
         ))
     }
 
@@ -390,11 +494,11 @@ import Foundation
     }
 
     @discardableResult func createFolder(
-        spaceID: String, parentFolderID: String? = nil, title: String, systemImageName: String? = nil
+        spaceID: String, parentFolderID: String? = nil, title: String, systemImageName: String? = nil,
     ) -> String? {
         guard let title = Self.nonempty(title), let id = newID(type: .folder) else { return nil }
         return apply([.createFolder(id: id, data: .init(
-            spaceID: spaceID, parentFolderID: parentFolderID, title: title, systemImageName: systemImageName
+            spaceID: spaceID, parentFolderID: parentFolderID, title: title, systemImageName: systemImageName,
         ))]) ? id : nil
     }
 
@@ -414,7 +518,7 @@ import Foundation
                 ? BrowserPinnedTabFolderSessionSnapshot(
                     id: value.id, spaceID: value.spaceID, parentFolderID: value.parentFolderID, title: value.title,
                     systemImageName: value.systemImageName, isExpanded: isExpanded,
-                    pinnedSiblingRank: value.pinnedSiblingRank
+                    pinnedSiblingRank: value.pinnedSiblingRank,
                 )
                 : value
         }
@@ -423,14 +527,14 @@ import Foundation
 
     @discardableResult func move(
         items: [BrowserSyncEntityReference], destination: BrowserSyncFolderDestination,
-        before: BrowserSyncEntityReference? = nil, after: BrowserSyncEntityReference? = nil
+        before: BrowserSyncEntityReference? = nil, after: BrowserSyncEntityReference? = nil,
     ) -> Bool {
         guard !items.isEmpty, Set(items).count == items.count,
               before.map({ !items.contains($0) }) ?? true,
               after.map({ !items.contains($0) }) ?? true else { return false }
         return apply(
             [.move(items: items, destination: destination, before: before, after: after)],
-            moveIntent: .init(items: items), recordTodayTransitions: true
+            moveIntent: .init(items: items), recordTodayTransitions: true,
         )
     }
 
@@ -444,100 +548,6 @@ import Foundation
             case .folder: .deleteFolder(id: entity.entityID)
             }
         return apply([operation])
-    }
-
-    // MARK: Private
-
-    private enum ArchiveMutation {
-        case remove(String)
-        case clear(BrowserTabArchiveBoundary)
-    }
-
-    private struct ExpiryLease {
-        let isActive: Bool
-        let isHydrated: Bool
-        let hydrationCheck: @MainActor () -> Bool
-    }
-
-    private let store: any BrowserTabSessionSnapshotStoring
-    private var syncCoordinator: (any BrowserSyncCoordinating)?
-    private let idProvider: () -> String
-    private let dateProvider: () -> Date
-    private var writeBuffer: BrowserSessionWriteBuffer
-    private var observers = [ObserverToken: (BrowserTabSessionSnapshot) -> Void]()
-    private var selectionLeases = [UUID: String]()
-    private var expiryLeases = [UUID: ExpiryLease]()
-    private var automaticArchivalSettingsLoaded = false
-    private let automaticArchivalCheckInterval: Duration?
-    private var localArchivalTask: Task<Void, Never>?
-    private var lastLocalActivityRefresh: TimeInterval?
-    private var isNotifying = false
-    private var needsNotification = false
-
-    private static func nonempty(_ value: String?) -> String? {
-        guard let text = value?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-        return text
-    }
-
-    private static func newActivity(
-        tab: BrowserTabSessionSnapshotTab, now: TimeInterval, formatter: ISO8601DateFormatter
-    ) -> String? {
-        guard now.isFinite else { return nil }
-        let second = floor(now)
-        if let previous = tab.lastActivityTimestamp, previous.isFinite, second <= previous {
-            return nil
-        }
-        return formatter.string(from: Date(timeIntervalSince1970: second))
-    }
-
-    private static func archiveErrorMessage(_ error: Error) -> String {
-        guard let error = error as? BrowserTabArchiveError else { return error.localizedDescription }
-        switch error {
-        case .archiveAlreadyRestored, .entryMissing:
-            return String(localized: "This archived tab is no longer available.", table: "Mobile")
-        case .unsupportedStore:
-            return String(localized: "Archive is unavailable for this profile.", table: "Mobile")
-        case .invalidCursor, .invalidLimit:
-            return String(localized: "The archive could not be loaded. Try again.", table: "Mobile")
-        case .invalidQuery:
-            return String(localized: "Use a shorter search.", table: "Mobile")
-        case .archiveIDConflict, .invalidBoundary, .invalidEntry, .invalidTransition, .requiresLocalWrite,
-             .restoredTabIDNotFresh:
-            return String(localized: "This archive action could not be completed. Try again.", table: "Mobile")
-        }
-    }
-
-    private static func validate(_ snapshot: BrowserTabSessionSnapshot) throws {
-        guard (1...BrowserTabSessionSnapshot.currentVersion).contains(snapshot.version) else {
-            throw BrowserMobileProfileDocumentError.invalidSnapshot
-        }
-        let tabs = snapshot.tabs.compactMap(\.id), spaces = (snapshot.spaces ?? []).map(\.id)
-        let folders = snapshot.pinnedTabFolders ?? []
-        guard tabs.count == snapshot.tabs.count, tabs.allSatisfy({ !$0.isEmpty }), Set(tabs).count == tabs.count,
-              spaces.allSatisfy({ !$0.isEmpty }), Set(spaces).count == spaces.count,
-              folders.allSatisfy({ !$0.id.isEmpty }), Set(folders.map(\.id)).count == folders.count
-        else {
-            throw BrowserMobileProfileDocumentError.invalidSnapshot
-        }
-        let byID = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) }), spaceIDs = Set(spaces)
-        for folder in folders {
-            guard spaceIDs.contains(folder.spaceID) else { throw BrowserMobileProfileDocumentError.invalidSnapshot }
-            var parent = folder.parentFolderID, visited: Set<String> = [folder.id]
-            while let id = parent {
-                guard visited.insert(id).inserted, let value = byID[id], value.spaceID == folder.spaceID else {
-                    throw BrowserMobileProfileDocumentError.invalidSnapshot
-                }
-                parent = value.parentFolderID
-            }
-        }
-        for tab in snapshot.tabs {
-            guard !tab.urlString.isEmpty,
-                  tab.placement == .app || tab.spaceID.map(spaceIDs.contains) == true,
-                  tab.pinnedFolderID.map({ tab.placement == .spacePinned && byID[$0]?.spaceID == tab.spaceID }) ?? true
-            else {
-                throw BrowserMobileProfileDocumentError.invalidSnapshot
-            }
-        }
     }
 
     private func requestAutomaticArchivalCheck() {
@@ -559,7 +569,11 @@ import Foundation
             while !Task.isCancelled {
                 guard self != nil else { return }
                 self?.performAutomaticTabArchivalCheck()
-                do { try await Task.sleep(for: interval) } catch { return }
+                do {
+                    try await Task.sleep(for: interval)
+                } catch {
+                    return
+                }
             }
         }
     }
@@ -592,7 +606,7 @@ import Foundation
 
     private func apply(
         _ operations: [BrowserSyncFolderOperation], moveIntent: BrowserSyncMoveIntent? = nil,
-        archiveAction: BrowserTabArchiveAction? = nil, recordTodayTransitions: Bool = false
+        archiveAction: BrowserTabArchiveAction? = nil, recordTodayTransitions: Bool = false,
     ) -> Bool {
         guard canEdit else { return false }
         var values = Dictionary(uniqueKeysWithValues: BrowserSyncFolderProjection.canonicalChanges(snapshot).map {
@@ -624,13 +638,13 @@ import Foundation
     /// write retained for Retry. A rejected tail never replaces the visible tree.
     private func commit(
         _ next: BrowserTabSessionSnapshot, moveIntent: BrowserSyncMoveIntent?,
-        archiveAction: BrowserTabArchiveAction? = nil
+        archiveAction: BrowserTabArchiveAction? = nil,
     ) -> Bool {
         guard canEdit else { return false }
         let write = BrowserSessionWrite(
             snapshot: next,
             origin: .local(syncMove: moveIntent),
-            archiveAction: archiveAction
+            archiveAction: archiveAction,
         )
         if hasUncommittedWrites {
             guard writeBuffer.append(write) else { blockAndNotify()

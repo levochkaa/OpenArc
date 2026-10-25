@@ -1,3 +1,5 @@
+// BrowserSpaceDockNSView.swift
+
 import AppKit
 
 // MARK: - BrowserSpaceDockNSView
@@ -34,6 +36,12 @@ final class BrowserSpaceDockNSView: BrowserNativeSurface {
         }
     }
 
+    // MARK: Private
+
+    private var pressedIndex: Int?
+    private var pressStart = NSPoint.zero
+    private var dragX: CGFloat = 0
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         return item(at: local) == nil ? nil : self
@@ -51,7 +59,7 @@ final class BrowserSpaceDockNSView: BrowserNativeSurface {
                 x: origin + CGFloat(slot) * (itemSize + itemSpacing),
                 y: 0,
                 width: itemSize,
-                height: itemSize
+                height: itemSize,
             )
         }
         if let draggedID, let dragged = items.first(where: { $0.id == draggedID }) {
@@ -117,12 +125,6 @@ final class BrowserSpaceDockNSView: BrowserNativeSurface {
             item.button.frame.insetBy(dx: -itemSpacing / 2, dy: 0).contains(local)
         }?.id
     }
-
-    // MARK: Private
-
-    private var pressedIndex: Int?
-    private var pressStart = NSPoint.zero
-    private var dragX: CGFloat = 0
 
     private func item(at point: NSPoint) -> Int? {
         items.indices.first { items[$0].button.frame.contains(point) }

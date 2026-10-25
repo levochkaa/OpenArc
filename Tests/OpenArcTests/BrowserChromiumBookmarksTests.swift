@@ -1,3 +1,5 @@
+// BrowserChromiumBookmarksTests.swift
+
 import Foundation
 import Testing
 import ZIPFoundation
@@ -95,7 +97,7 @@ import ZIPFoundation
             kind: .bookmark,
             title: "Example Docs",
             urlString: "https://docs.example.com/start",
-            children: []
+            children: [],
         ),
     ]))
 
@@ -157,59 +159,6 @@ private struct FakeBookmarkStore: BrowserBookmarkStoring {
 // MARK: - ChromiumBookmarkHarness
 
 private struct ChromiumBookmarkHarness {
-    // MARK: Lifecycle
-
-    init() throws {
-        self.directoryURL = FileManager.default
-            .temporaryDirectory
-            .appendingPathComponent("OpenArcBookmarksTests-\(UUID().uuidString)", isDirectory: true)
-        self.profileDirectoryURL = directoryURL.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileDirectoryURL, withIntermediateDirectories: true)
-    }
-
-    // MARK: Internal
-
-    let directoryURL: URL
-    let profileDirectoryURL: URL
-
-    func bookmarksDocument() throws -> [String: Any] {
-        let bookmarksURL = profileDirectoryURL.appendingPathComponent("Bookmarks", isDirectory: false)
-        let data = try Data(contentsOf: bookmarksURL)
-        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-    }
-
-    func makeSafariBookmarksHTMLFile() throws -> URL {
-        let bookmarksURL = directoryURL.appendingPathComponent("Bookmarks.html", isDirectory: false)
-        try Data(Self.safariBookmarksHTML.utf8).write(to: bookmarksURL, options: .atomic)
-        return bookmarksURL
-    }
-
-    func makeSafariExportArchive() throws -> URL {
-        let exportDirectoryURL = directoryURL.appendingPathComponent("Safari Export", isDirectory: true)
-        try FileManager.default.createDirectory(at: exportDirectoryURL, withIntermediateDirectories: true)
-        try Data(Self.safariBookmarksHTML.utf8).write(
-            to: exportDirectoryURL.appendingPathComponent("Закладки.html", isDirectory: false),
-            options: .atomic
-        )
-        try Data("{}".utf8).write(
-            to: exportDirectoryURL.appendingPathComponent("History.json", isDirectory: false),
-            options: .atomic
-        )
-
-        let archiveURL = directoryURL.appendingPathComponent("Safari Export.zip", isDirectory: false)
-        try FileManager.default.zipItem(
-            at: exportDirectoryURL,
-            to: archiveURL,
-            shouldKeepParent: false,
-            compressionMethod: .deflate
-        )
-        return archiveURL
-    }
-
-    func cleanup() {
-        try? FileManager.default.removeItem(at: directoryURL)
-    }
-
     // MARK: Private
 
     private static let safariBookmarksHTML = """
@@ -229,4 +178,55 @@ private struct ChromiumBookmarkHarness {
         </DL><p>
     </DL><p>
     """
+
+    // MARK: Internal
+
+    let directoryURL: URL
+    let profileDirectoryURL: URL
+
+    init() throws {
+        self.directoryURL = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("OpenArcBookmarksTests-\(UUID().uuidString)", isDirectory: true)
+        self.profileDirectoryURL = directoryURL.appendingPathComponent("Default", isDirectory: true)
+        try FileManager.default.createDirectory(at: profileDirectoryURL, withIntermediateDirectories: true)
+    }
+
+    func bookmarksDocument() throws -> [String: Any] {
+        let bookmarksURL = profileDirectoryURL.appendingPathComponent("Bookmarks", isDirectory: false)
+        let data = try Data(contentsOf: bookmarksURL)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    func makeSafariBookmarksHTMLFile() throws -> URL {
+        let bookmarksURL = directoryURL.appendingPathComponent("Bookmarks.html", isDirectory: false)
+        try Data(Self.safariBookmarksHTML.utf8).write(to: bookmarksURL, options: .atomic)
+        return bookmarksURL
+    }
+
+    func makeSafariExportArchive() throws -> URL {
+        let exportDirectoryURL = directoryURL.appendingPathComponent("Safari Export", isDirectory: true)
+        try FileManager.default.createDirectory(at: exportDirectoryURL, withIntermediateDirectories: true)
+        try Data(Self.safariBookmarksHTML.utf8).write(
+            to: exportDirectoryURL.appendingPathComponent("Закладки.html", isDirectory: false),
+            options: .atomic,
+        )
+        try Data("{}".utf8).write(
+            to: exportDirectoryURL.appendingPathComponent("History.json", isDirectory: false),
+            options: .atomic,
+        )
+
+        let archiveURL = directoryURL.appendingPathComponent("Safari Export.zip", isDirectory: false)
+        try FileManager.default.zipItem(
+            at: exportDirectoryURL,
+            to: archiveURL,
+            shouldKeepParent: false,
+            compressionMethod: .deflate,
+        )
+        return archiveURL
+    }
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: directoryURL)
+    }
 }

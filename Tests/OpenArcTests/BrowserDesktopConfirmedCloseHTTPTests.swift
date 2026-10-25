@@ -1,3 +1,5 @@
+// BrowserDesktopConfirmedCloseHTTPTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -14,23 +16,23 @@ extension BrowserSyncHTTPIntegrationTests {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
         let remote = try BrowserRemoteSyncClient(
-            configuration: #require(BrowserSyncConfiguration(baseURL: fixture.baseURL)), session: session
+            configuration: #require(BrowserSyncConfiguration(baseURL: fixture.baseURL)), session: session,
         )
         let auth = account.devices.map { device in
             BrowserAuthSession(
                 accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-                deviceID: device.deviceID, serverURL: fixture.baseURL
+                deviceID: device.deviceID, serverURL: fixture.baseURL,
             )
         }
         _ = try await remote.push(mutation: BrowserSyncFolderMutation(id: UUID().uuidString, operations: [
             .createSpace(id: "source", data: .init(title: "Confirmed Close", systemImageName: "globe")),
             .createTab(id: "anchor", data: .init(
                 spaceID: "source", placement: .spacePinned, urlString: "https://confirmed-close.example/anchor",
-                pinnedURLString: "https://confirmed-close.example/home"
+                pinnedURLString: "https://confirmed-close.example/home",
             )),
             .createTab(id: "closed", data: .init(
                 spaceID: "source", placement: .temporary, urlString: "https://confirmed-close.example/closed",
-                userTitleOverride: "Saved close title"
+                userTitleOverride: "Saved close title",
             )),
         ]), authSession: auth[0])
         await first.activate()
@@ -180,7 +182,7 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(cancelledRedo.id == undone.id)
         #expect(first.store.loadSnapshot() == restoredSnapshot)
         live.driver.emitCloseRequestOutcome(
-            id: cancelledRedo.id, requestID: cancelledRedo.requestID, outcome: .cancelled
+            id: cancelledRedo.id, requestID: cancelledRedo.requestID, outcome: .cancelled,
         )
         #expect(live.model.undoManager.canRedo)
         #expect(first.store.loadSnapshot() == restoredSnapshot)
@@ -190,7 +192,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let confirmedRedo = try #require(live.driver.confirmedCloseRequests.last)
         #expect(confirmedRedo.id == undone.id && confirmedRedo.requestID != cancelledRedo.requestID)
         live.driver.emitCloseRequestOutcome(
-            id: confirmedRedo.id, requestID: confirmedRedo.requestID, outcome: .closed
+            id: confirmedRedo.id, requestID: confirmedRedo.requestID, outcome: .closed,
         )
         let secondArchivePage = try first.store.loadArchivePage()
         try #require(secondArchivePage.entries.count == 1)
@@ -280,7 +282,7 @@ extension BrowserSyncHTTPIntegrationTests {
         await second.disconnect()
         rehydrated.close()
         let finalStore = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
-        #expect(finalStore.loadSnapshot()?.tabs.filter { $0.id == finalTab.syncID }.count == 1)
+        #expect(finalStore.loadSnapshot()?.tabs.count(where: { $0.id == finalTab.syncID }) == 1)
         #expect(finalStore.loadSnapshot()?.tabs.contains { $0.id == "closed" } == false)
         #expect(finalStore.loadSnapshot()?.tabs.contains { $0.id == undone.syncID } == false)
         #expect(try finalStore.loadArchivePage().entries.isEmpty)
@@ -294,7 +296,18 @@ extension BrowserSyncHTTPIntegrationTests {
 // MARK: - ConfirmedCloseHTTPModel
 
 @MainActor private final class ConfirmedCloseHTTPModel {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+    let syncIDs: ConfirmedCloseHTTPSyncIDs
+
+    // MARK: Private
+
+    private let profile: SyncHTTPProfile
+    private let defaults: UserDefaults
+    private let suite = "ConfirmedCloseHTTPModel.\(UUID())"
+    private var closed = false
 
     init(profile: SyncHTTPProfile, now: Date) throws {
         self.profile = profile
@@ -308,7 +321,7 @@ extension BrowserSyncHTTPIntegrationTests {
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: profile.service,
             dateProvider: { now }, tabSyncIDProvider: syncIDs.next,
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         driver.automaticallyConfirmsCloseRequests = false
         model.handleContextReady()
@@ -319,12 +332,6 @@ extension BrowserSyncHTTPIntegrationTests {
         profile.service.setSnapshotApplier(model)
     }
 
-    // MARK: Internal
-
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
-    let syncIDs: ConfirmedCloseHTTPSyncIDs
-
     func close() {
         guard !closed else { return }
         closed = true
@@ -333,13 +340,6 @@ extension BrowserSyncHTTPIntegrationTests {
         model.prepareForTermination()
         defaults.removePersistentDomain(forName: suite)
     }
-
-    // MARK: Private
-
-    private let profile: SyncHTTPProfile
-    private let defaults: UserDefaults
-    private let suite = "ConfirmedCloseHTTPModel.\(UUID())"
-    private var closed = false
 }
 
 // MARK: - ConfirmedCloseHTTPSyncIDs
@@ -367,7 +367,7 @@ extension BrowserSyncHTTPIntegrationTests {
 @MainActor private func confirmedCloseHTTPConsumedEntries(_ url: URL) throws -> [String: String] {
     try DatabaseQueue(path: url.path).read { db in
         let rows = try Row.fetchAll(
-            db, sql: "SELECT id, restored_tab_id FROM browser_tab_archive_receipts WHERE restored_tab_id IS NOT NULL"
+            db, sql: "SELECT id, restored_tab_id FROM browser_tab_archive_receipts WHERE restored_tab_id IS NOT NULL",
         )
         return Dictionary(uniqueKeysWithValues: rows.map { row in
             let id: String = row["id"]
@@ -378,7 +378,7 @@ extension BrowserSyncHTTPIntegrationTests {
 }
 
 @MainActor private func confirmedCloseHTTPCreation(
-    _ id: String, in queue: [BrowserSyncQueuedMutation]
+    _ id: String, in queue: [BrowserSyncQueuedMutation],
 ) throws -> BrowserSyncFolderMutation {
     let matches = queue.compactMap { mutation -> BrowserSyncFolderMutation? in
         guard case .folders(let folders) = mutation else { return nil }
@@ -394,7 +394,7 @@ extension BrowserSyncHTTPIntegrationTests {
 }
 
 @MainActor private func confirmedCloseHTTPDeletion(
-    _ id: String, in queue: [BrowserSyncQueuedMutation]
+    _ id: String, in queue: [BrowserSyncQueuedMutation],
 ) throws -> BrowserSyncFolderMutation {
     let matches = queue.compactMap { mutation -> BrowserSyncFolderMutation? in
         guard case .folders(let folders) = mutation else { return nil }

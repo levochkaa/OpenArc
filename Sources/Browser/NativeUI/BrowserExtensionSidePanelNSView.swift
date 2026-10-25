@@ -1,8 +1,28 @@
+// BrowserExtensionSidePanelNSView.swift
+
 import AppKit
 import QuartzCore
 
 final class BrowserExtensionSidePanelNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    var onClose: () -> Void = {}
+    let viewport: BrowserViewportClipView
+    let closeButton = BrowserNativeChromeButton(
+        symbol: "xmark",
+        title: BrowserStrings.extensionsCloseSidePanel,
+        style: .extensionClose,
+        pressEffect: .compress,
+        action: {},
+    )
+
+    // MARK: Private
+
+    private let icon = NSImageView()
+    private let title = NSTextField(labelWithString: "")
+    private let loading = BrowserNativeSurface()
 
     init(hostView: NSView) {
         self.viewport = BrowserViewportClipView(hostView: hostView)
@@ -28,20 +48,6 @@ final class BrowserExtensionSidePanelNSView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    var onClose: () -> Void = {}
-    let viewport: BrowserViewportClipView
-    let closeButton = BrowserNativeChromeButton(
-        symbol: "xmark",
-        title: BrowserStrings.extensionsCloseSidePanel,
-        style: .extensionClose,
-        pressEffect: .compress,
-        action: {}
-    )
-
     override func layout() {
         super.layout()
         let height = BrowserChromeLayout.extensionSidePanelHeaderHeight
@@ -53,13 +59,13 @@ final class BrowserExtensionSidePanelNSView: NSView {
             x: max(bounds.width - inset - closeSize, 0),
             y: (height - closeSize) / 2,
             width: closeSize,
-            height: closeSize
+            height: closeSize,
         )
         title.frame = NSRect(
             x: icon.frame.maxX + 8,
             y: (height - 16) / 2,
             width: max(closeButton.frame.minX - icon.frame.maxX - 16, 0),
-            height: 16
+            height: 16,
         )
         viewport.frame = NSRect(x: 0, y: height, width: bounds.width, height: max(bounds.height - height, 0))
         loading.frame = viewport.frame
@@ -69,7 +75,7 @@ final class BrowserExtensionSidePanelNSView: NSView {
         sidePanel: BrowserExtensionSidePanel,
         hostView: NSView,
         isContextReady: Bool,
-        usesWindowContentInsets: Bool
+        usesWindowContentInsets: Bool,
     ) {
         viewport.update(hostView: hostView)
         let radius = usesWindowContentInsets ? BrowserChromeLayout.leadingContentCornerRadius : 0
@@ -78,7 +84,7 @@ final class BrowserExtensionSidePanelNSView: NSView {
             cornerRadius: radius,
             maskedCorners: usesWindowContentInsets
                 ? [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-                : []
+                : [],
         )
         loading.isHidden = isContextReady
         title.stringValue = sidePanel.title
@@ -89,15 +95,9 @@ final class BrowserExtensionSidePanelNSView: NSView {
             icon.image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(
                     pointSize: BrowserChromeLayout.extensionSidePanelHeaderIconSize,
-                    weight: .medium
+                    weight: .medium,
                 ))
             icon.contentTintColor = BrowserChromeColors.primaryText
         }
     }
-
-    // MARK: Private
-
-    private let icon = NSImageView()
-    private let title = NSTextField(labelWithString: "")
-    private let loading = BrowserNativeSurface()
 }

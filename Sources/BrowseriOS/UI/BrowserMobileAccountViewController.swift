@@ -1,3 +1,5 @@
+// BrowserMobileAccountViewController.swift
+
 import AuthenticationServices
 import Combine
 import UIKit
@@ -30,7 +32,30 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
 @MainActor final class BrowserMobileAccountViewController: UIViewController, UIAdaptivePresentationControllerDelegate,
     UITextFieldDelegate
 {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let session: any BrowserMobileAccountSessionPresenting
+    private let serverField = UITextField()
+    private let statusLabel = UILabel()
+    private let errorLabel = UILabel()
+    private let consentLabel = UILabel()
+    private let serverButton = UIButton(type: .system)
+    private let signInButton = ASAuthorizationAppleIDButton(
+        authorizationButtonType: .signIn,
+        authorizationButtonStyle: .black,
+    )
+    private let enableButton = UIButton(type: .system)
+    private let pauseButton = UIButton(type: .system)
+    private let resumeButton = UIButton(type: .system)
+    private let signOutButton = UIButton(type: .system)
+    private let retryButton = UIButton(type: .system)
+    private let cancelButton = UIButton(type: .system)
+    private let progress = UIActivityIndicatorView(style: .medium)
+    private var observation: AnyCancellable?
+    private var signInTask: Task<Void, Never>?
+    private var signInAttempt: UUID?
+    private var localError: String?
+    private var renderedServerURL: URL?
 
     init(session: any BrowserMobileAccountSessionPresenting) {
         self.session = session
@@ -46,7 +71,7 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.close() }
+            systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.close() },
         )
         makeContent()
         observation = session.changePublisher.receive(on: RunLoop.main).sink { [weak self] in self?.render() }
@@ -65,40 +90,15 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         }
     }
 
+    private static func localized(_ key: String) -> String {
+        NSLocalizedString(key, tableName: "Mobile", comment: "Account and sync")
+    }
+
     func presentationControllerDidDismiss(_: UIPresentationController) { cancelOwnedSignIn() }
 
     func textFieldShouldReturn(_: UITextField) -> Bool {
         configureServer()
         return true
-    }
-
-    // MARK: Private
-
-    private let session: any BrowserMobileAccountSessionPresenting
-    private let serverField = UITextField()
-    private let statusLabel = UILabel()
-    private let errorLabel = UILabel()
-    private let consentLabel = UILabel()
-    private let serverButton = UIButton(type: .system)
-    private let signInButton = ASAuthorizationAppleIDButton(
-        authorizationButtonType: .signIn,
-        authorizationButtonStyle: .black
-    )
-    private let enableButton = UIButton(type: .system)
-    private let pauseButton = UIButton(type: .system)
-    private let resumeButton = UIButton(type: .system)
-    private let signOutButton = UIButton(type: .system)
-    private let retryButton = UIButton(type: .system)
-    private let cancelButton = UIButton(type: .system)
-    private let progress = UIActivityIndicatorView(style: .medium)
-    private var observation: AnyCancellable?
-    private var signInTask: Task<Void, Never>?
-    private var signInAttempt: UUID?
-    private var localError: String?
-    private var renderedServerURL: URL?
-
-    private static func localized(_ key: String) -> String {
-        NSLocalizedString(key, tableName: "Mobile", comment: "Account and sync")
     }
 
     private func makeContent() {
@@ -154,7 +154,7 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         statusLabel.accessibilityIdentifier = "account.status"
         consentLabel.text = Self
             .localized(
-                "Sync shares your Spaces, folders, and tab addresses with your other devices through this server."
+                "Sync shares your Spaces, folders, and tab addresses with your other devices through this server.",
             )
         consentLabel.textColor = .secondaryLabel
         errorLabel.textColor = .systemRed
@@ -238,7 +238,7 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
                 case nil: "Signed in."
                 }
             statusLabel.text = [account.session?.userEmail, Self.localized(status)]
-                .compactMap { $0 }
+                .compactMap(\.self)
                 .joined(separator: "\n")
         }
     }
@@ -248,7 +248,9 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
             try session.configureServer(serverField.text ?? "")
             localError = nil
             serverField.resignFirstResponder()
-        } catch { localError = error.localizedDescription }
+        } catch {
+            localError = error.localizedDescription
+        }
         render()
     }
 

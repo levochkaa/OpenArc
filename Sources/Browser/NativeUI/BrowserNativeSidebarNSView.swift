@@ -1,3 +1,5 @@
+// BrowserNativeSidebarNSView.swift
+
 import AppKit
 import Combine
 import QuartzCore
@@ -7,7 +9,64 @@ import QuartzCore
 /// AppKit owns sidebar layout, row identity, scrolling, selection, rename editors and drag/drop.
 /// Header and footer share native chrome controls with the main toolbar.
 final class BrowserNativeSidebarNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    let state: BrowserNativeSidebarState
+    let header: NSView
+    let footer: NSView
+    var headerHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
+    var footerHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
+    var isCommandBarPresented = false
+    var onDragInteractionChange: (Bool) -> Void = { _ in }
+    var headerHeightProvider: (() -> CGFloat)?
+    var footerHeightProvider: ((CGFloat) -> CGFloat)?
+    /// The footer's Space icons, which accept dragged tabs.
+    weak var spaceDock: BrowserSpaceDockNSView?
+
+    /// Folder preview beside a collapsed folder row.
+    let folderPreview = BrowserFolderPreviewCoordinator()
+
+    private(set) var linkDropProposal: BrowserSidebarDropProposal?
+
+    let miniPlayers = BrowserMiniPlayerStackNSView()
+
+    // MARK: Private
+
+    private let content = BrowserNativeSidebarBackground()
+    private let appGrid = BrowserNativeSidebarBackground()
+    private let emptyAppGuide = BrowserNativeNoninteractiveSurface()
+    private var emptyAppEntryFrame: CGRect?
+    private var reservedAppHeight: CGFloat = 0
+    private var isProjectingAppGrid = false
+    private let pagerClip = BrowserNativeSurface()
+    private let pagesContainer = BrowserNativeSurface()
+    private let bottomDivider = BrowserNativeSurface()
+    private let dragIndicator = BrowserSidebarInsertionIndicator()
+    private let dragPreview = BrowserNativeSidebarDragPreview()
+    private let dragEvents = BrowserSidebarDragEventSession()
+
+    private let landingAnimation = BrowserNativeAnimation()
+    private let dragPreviewAnimation = BrowserNativeAnimation()
+    private var dragPreviewTargetSize: CGSize?
+    private lazy var handledRevealRequestID = state.model.sidebarRevealRequestID
+    private lazy var handledRenameRequestID = state.model.sidebarRenameRequestID
+    private var lastWindowDragPoint = CGPoint.zero
+    private var acceptsLinkDrop = false
+    private var reportedDragging = false
+    private var highlightedDropRow: BrowserNativeSidebarRowNSView?
+    private var splitPreviewRow: BrowserNativeSidebarRowNSView?
+    private let scrollObserver = BrowserSpacePagerScrollNSView()
+    private var pages = [String: BrowserNativeSidebarPage]()
+    private var appTiles = [String: BrowserNativeSidebarRowNSView]()
+    private var hasRenderedAppTiles = false
+    private var tracking: NSTrackingArea?
+    private var clickMonitor: Any?
+    private var isLayingOut = false
+    private let frameTransitions = BrowserNativeFrameTransitions()
+
+    private var renderedSnapshot: BrowserSidebarSnapshot { state.renderedSnapshot(for: state.snapshot) }
 
     init(state: BrowserNativeSidebarState, header: NSView, footer: NSView) {
         self.state = state
@@ -104,29 +163,6 @@ final class BrowserNativeSidebarNSView: NSView {
         }
     }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    let state: BrowserNativeSidebarState
-    let header: NSView
-    let footer: NSView
-    var headerHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
-    var footerHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
-    var isCommandBarPresented = false
-    var onDragInteractionChange: (Bool) -> Void = { _ in }
-    var headerHeightProvider: (() -> CGFloat)?
-    var footerHeightProvider: ((CGFloat) -> CGFloat)?
-    /// The footer's Space icons, which accept dragged tabs.
-    weak var spaceDock: BrowserSpaceDockNSView?
-
-    /// Folder preview beside a collapsed folder row.
-    let folderPreview = BrowserFolderPreviewCoordinator()
-
-    private(set) var linkDropProposal: BrowserSidebarDropProposal?
-
-    let miniPlayers = BrowserMiniPlayerStackNSView()
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let clickMonitor {
@@ -160,7 +196,7 @@ final class BrowserNativeSidebarNSView: NSView {
         tracking = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self
+            owner: self,
         )
         addTrackingArea(tracking!)
     }
@@ -321,7 +357,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 ? appGrid.frame
                 : nil,
             rowWidth: content.bounds.width,
-            appEntryFrame: emptyAppEntryFrame
+            appEntryFrame: emptyAppEntryFrame,
         )
         if let newTab = page.frames["new-tab"] {
             let frame = page.document.convert(newTab, to: content)
@@ -329,13 +365,13 @@ final class BrowserNativeSidebarNSView: NSView {
             if state.snapshot.spacePinnedTabs(in: id).isEmpty {
                 geometry.addEmptySection(
                     .pinned(id),
-                    frame: CGRect(x: frame.minX, y: frame.minY - spacing, width: frame.width, height: spacing)
+                    frame: CGRect(x: frame.minX, y: frame.minY - spacing, width: frame.width, height: spacing),
                 )
             }
             if state.snapshot.temporaryTabs(in: id).isEmpty {
                 geometry.addEmptySection(
                     .temporary(id),
-                    frame: CGRect(x: frame.minX, y: frame.maxY, width: frame.width, height: spacing)
+                    frame: CGRect(x: frame.minX, y: frame.maxY, width: frame.width, height: spacing),
                 )
             }
         }
@@ -345,7 +381,7 @@ final class BrowserNativeSidebarNSView: NSView {
     @discardableResult func beginDragging(
         item: BrowserSidebarItemID,
         from row: NSView,
-        value: BrowserNativeDragValue
+        value: BrowserNativeDragValue,
     ) -> Bool {
         guard !state.isSidebarResizing else { return false }
         var source = row.convert(row.bounds, to: content)
@@ -359,7 +395,7 @@ final class BrowserNativeSidebarNSView: NSView {
     @discardableResult func beginDragging(
         item: BrowserSidebarItemID,
         sourceFrame: CGRect,
-        value: BrowserNativeDragValue
+        value: BrowserNativeDragValue,
     ) -> Bool {
         folderPreview.dismiss()
         landingAnimation.cancel()
@@ -391,7 +427,7 @@ final class BrowserNativeSidebarNSView: NSView {
             sourceFrame: sourceFrame,
             start: value.startLocation,
             pointer: value.location,
-            grabAnchor: value.grabAnchor
+            grabAnchor: value.grabAnchor,
         )
         frameTransitions.finishAll()
         for page in pages.values {
@@ -438,7 +474,7 @@ final class BrowserNativeSidebarNSView: NSView {
             if frames.indices.contains(index) {
                 return frames[index].offsetBy(
                     dx: appGrid.frame.minX,
-                    dy: appGrid.frame.minY
+                    dy: appGrid.frame.minY,
                 )
             }
         }
@@ -490,7 +526,7 @@ final class BrowserNativeSidebarNSView: NSView {
         let clip = page.scroll.contentView
         let y = min(
             max(clip.bounds.minY + speed * elapsed, 0),
-            max(page.document.bounds.height - clip.bounds.height, 0)
+            max(page.document.bounds.height - clip.bounds.height, 0),
         )
         guard y != clip.bounds.minY else { return }
         clip.scroll(to: CGPoint(x: 0, y: y))
@@ -530,42 +566,6 @@ final class BrowserNativeSidebarNSView: NSView {
         return next == nil ? [] : .copy
     }
 
-    // MARK: Private
-
-    private let content = BrowserNativeSidebarBackground()
-    private let appGrid = BrowserNativeSidebarBackground()
-    private let emptyAppGuide = BrowserNativeNoninteractiveSurface()
-    private var emptyAppEntryFrame: CGRect?
-    private var reservedAppHeight: CGFloat = 0
-    private var isProjectingAppGrid = false
-    private let pagerClip = BrowserNativeSurface()
-    private let pagesContainer = BrowserNativeSurface()
-    private let bottomDivider = BrowserNativeSurface()
-    private let dragIndicator = BrowserSidebarInsertionIndicator()
-    private let dragPreview = BrowserNativeSidebarDragPreview()
-    private let dragEvents = BrowserSidebarDragEventSession()
-
-    private let landingAnimation = BrowserNativeAnimation()
-    private let dragPreviewAnimation = BrowserNativeAnimation()
-    private var dragPreviewTargetSize: CGSize?
-    private lazy var handledRevealRequestID = state.model.sidebarRevealRequestID
-    private lazy var handledRenameRequestID = state.model.sidebarRenameRequestID
-    private var lastWindowDragPoint = CGPoint.zero
-    private var acceptsLinkDrop = false
-    private var reportedDragging = false
-    private var highlightedDropRow: BrowserNativeSidebarRowNSView?
-    private var splitPreviewRow: BrowserNativeSidebarRowNSView?
-    private let scrollObserver = BrowserSpacePagerScrollNSView()
-    private var pages = [String: BrowserNativeSidebarPage]()
-    private var appTiles = [String: BrowserNativeSidebarRowNSView]()
-    private var hasRenderedAppTiles = false
-    private var tracking: NSTrackingArea?
-    private var clickMonitor: Any?
-    private var isLayingOut = false
-    private let frameTransitions = BrowserNativeFrameTransitions()
-
-    private var renderedSnapshot: BrowserSidebarSnapshot { state.renderedSnapshot(for: state.snapshot) }
-
     /// A single dragged tab activates when the gesture starts; the tab stays
     /// active even if the drop is a no-op. Explicit multi-selections and
     /// folders keep the current tab.
@@ -591,7 +591,7 @@ final class BrowserNativeSidebarNSView: NSView {
             x: inset,
             y: inset,
             width: max(bounds.width - inset * 2, 0),
-            height: max(bounds.height - inset * 2, 0)
+            height: max(bounds.height - inset * 2, 0),
         )
         let width = max(content.bounds.width, 0)
         if let headerHeightProvider {
@@ -611,7 +611,7 @@ final class BrowserNativeSidebarNSView: NSView {
             x: 0,
             y: header.frame.maxY,
             width: width,
-            height: BrowserChromeLayout.sidebarListSpacing
+            height: BrowserChromeLayout.sidebarListSpacing,
         )
         emptyAppEntryFrame = offersEmptyAppDrop ? emptyAppGuide.frame.insetBy(dx: 0, dy: -4) : nil
         emptyAppGuide.isHidden = !offersEmptyAppDrop || showsApps
@@ -619,7 +619,7 @@ final class BrowserNativeSidebarNSView: NSView {
         var appHeight = showsApps
             ? max(
                 appLayout.height(for: appTabs.count, availableWidth: width),
-                BrowserChromeLayout.sidebarEmptySectionDropZoneHeight
+                BrowserChromeLayout.sidebarEmptySectionDropZoneHeight,
             )
             : 0
         if state.drag.isDragging {
@@ -633,7 +633,7 @@ final class BrowserNativeSidebarNSView: NSView {
             x: 0,
             y: header.frame.maxY + BrowserChromeLayout.sidebarSectionSpacing,
             width: width,
-            height: appHeight
+            height: appHeight,
         )
         setFrame(appFrame, of: appGrid, animated: animated)
         let appFrames = appLayout.frames(for: appTabs.count, availableWidth: width)
@@ -647,7 +647,7 @@ final class BrowserNativeSidebarNSView: NSView {
             x: 0,
             y: max(content.bounds.height - footerHeight, top),
             width: width,
-            height: footerHeight
+            height: footerHeight,
         )
         // Mini players sit above the dock; the list keeps room for their
         // collapsed rows, and a player growing on hover covers its bottom.
@@ -657,14 +657,14 @@ final class BrowserNativeSidebarNSView: NSView {
             x: 0,
             y: playersBottom - miniPlayers.currentHeight,
             width: width,
-            height: miniPlayers.currentHeight
+            height: miniPlayers.currentHeight,
         )
         let listBottom = reservedPlayers > 0 ? playersBottom - reservedPlayers : footer.frame.minY
         bottomDivider.frame = NSRect(
             x: 0,
             y: listBottom - BrowserChromeLayout.sidebarBottomChromeTopSpacing - 1,
             width: width,
-            height: 1
+            height: 1,
         )
         // Spaces slide across the outer padding, so a swipe is clipped only by
         // the window edge and the browser content. Pages sit one sidebar width
@@ -673,7 +673,7 @@ final class BrowserNativeSidebarNSView: NSView {
         setFrame(
             NSRect(x: -inset, y: top, width: pageStride, height: max(bottomDivider.frame.minY - top, 0)),
             of: pagerClip,
-            animated: animated
+            animated: animated,
         )
         scrollObserver.frame = pagerClip.frame
         let index = state.selectedSpaceIndex(in: state.snapshot) ?? 0
@@ -683,17 +683,17 @@ final class BrowserNativeSidebarNSView: NSView {
                 x: x,
                 y: 0,
                 width: pageStride * CGFloat(state.snapshot.spaces.count),
-                height: pagerClip.bounds.height
+                height: pagerClip.bounds.height,
             ),
             of: pagesContainer,
-            animated: animated
+            animated: animated,
         )
         for page in pages.values {
             page.frame = NSRect(
                 x: CGFloat(page.index) * pageStride + inset,
                 y: 0,
                 width: width,
-                height: pagerClip.bounds.height
+                height: pagerClip.bounds.height,
             )
             page.layoutRows(animated: animated)
         }
@@ -704,14 +704,14 @@ final class BrowserNativeSidebarNSView: NSView {
             rect,
             of: view,
             animated: animated,
-            curve: view === pagesContainer ? .sidebar : .list
+            curve: view === pagesContainer ? .sidebar : .list,
         )
     }
 
     private func configure(
         page: BrowserNativeSidebarPage,
         space: BrowserChromeModel.Space,
-        snapshot: BrowserSidebarSnapshot
+        snapshot: BrowserSidebarSnapshot,
     ) {
         let state = state
         let model = state.model
@@ -724,7 +724,7 @@ final class BrowserNativeSidebarNSView: NSView {
             hasPinnedTabs: !snapshot.spacePinnedTabs(in: space.id).isEmpty,
             dropTargeted: state.isSpaceHeaderDropTarget(spaceID: space.id),
             isResizing: state.isSidebarResizing,
-            resetID: state.tabRowInteractionResetID
+            resetID: state.tabRowInteractionResetID,
         )
         page.header.onToggle = { [weak state] in
             state?.dismissRenamingIfNeeded()
@@ -749,7 +749,7 @@ final class BrowserNativeSidebarNSView: NSView {
         let temporary = snapshot.temporaryTabs(in: space.id)
         let pinnedRows = snapshot.visiblePinnedRows(
             in: space.id,
-            revealedTabIDsByFolderID: state.revealedPinnedFolderTabIDsByFolderID
+            revealedTabIDsByFolderID: state.revealedPinnedFolderTabIDsByFolderID,
         )
         var entries = [BrowserNativeSidebarPage.Entry]()
         // A Split View is one row in place of its first member; the other
@@ -771,7 +771,7 @@ final class BrowserNativeSidebarNSView: NSView {
                         index: tabRow.sectionIndex,
                         folderID: tabRow.pinnedFolderID,
                         folderChildIndex: tabRow.folderChildIndex,
-                        indent: tabRow.depth
+                        indent: tabRow.depth,
                     ))
                 case .folder(let folder): entries.append(.folder(folder))
                 }
@@ -790,7 +790,7 @@ final class BrowserNativeSidebarNSView: NSView {
             index: $0.offset,
             folderID: nil,
             folderChildIndex: nil,
-            indent: 0
+            indent: 0,
         ) }
         page.entries = entries
         let ids = Set(entries.map(\.id))
@@ -811,7 +811,7 @@ final class BrowserNativeSidebarNSView: NSView {
                     indentLevel: folderRow.depth,
                     dropTargeted: state.isPinnedFolderDropTarget(folderID: folder.id),
                     isResizing: state.isSidebarResizing,
-                    resetID: state.tabRowInteractionResetID
+                    resetID: state.tabRowInteractionResetID,
                 )
                 row.dragOpacity = state.drag.hiddenFolderIDs.contains(folder.id) ? 0 : 1
                 row.onHoverChanged = { [weak self, weak row] hovered in
@@ -840,7 +840,7 @@ final class BrowserNativeSidebarNSView: NSView {
                     onChangeIcon: { model.setIcon($0, forPinnedTabFolderID: folder.id) },
                     onDelete: { [weak state] in
                         state?.withSidebarAnimation { _ = model.deletePinnedTabFolder(id: folder.id) }
-                    }
+                    },
                 ) }
                 row.dragCoordinateView = content
                 row.onBeginDragSession = { [weak self, weak row] value in
@@ -852,7 +852,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 row.updateNewTab(
                     isPresented: isCommandBarPresented,
                     isResizing: state.isSidebarResizing,
-                    descriptor: model.shortcutStore.descriptor(for: .newTab)
+                    descriptor: model.shortcutStore.descriptor(for: .newTab),
                 )
                 row.onSelect = { [weak state] in state?.toggleCommandBar() }
                 row.onDragChanged = { [weak self] value in
@@ -870,7 +870,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 page.divider.update(
                     showsClear: state.isSidebarHovered && !temporary.isEmpty && snapshot.selectedSpaceID == space.id,
                     includesActive: includesActive,
-                    descriptor: model.shortcutStore.descriptor(for: .clearTemporaryTabs)
+                    descriptor: model.shortcutStore.descriptor(for: .clearTemporaryTabs),
                 )
                 page.divider.onClear = { [weak state] in state?.clearTemporaryTabs(in: space.id) }
                 page.divider.isHidden = false
@@ -891,7 +891,7 @@ final class BrowserNativeSidebarNSView: NSView {
         row: BrowserNativeSidebarRowNSView,
         tab: BrowserChromeModel.Tab,
         section: BrowserSidebarTabSection,
-        indent: Int
+        indent: Int,
     ) {
         if section != .app, let members = state.snapshot.splitMembers(ofTabID: tab.id) {
             configureSplit(row: row, representative: tab, memberIDs: members, section: section, indent: indent)
@@ -913,7 +913,7 @@ final class BrowserNativeSidebarNSView: NSView {
             closeDescriptor: model.shortcutStore.descriptor(for: .archiveTab),
             muted: state.snapshot.mutedTabIDs.contains(tab.id),
             audible: state.snapshot.audibleTabIDs.contains(tab.id),
-            icon: state.snapshot.tabIcons[tab.id]
+            icon: state.snapshot.tabIcons[tab.id],
         )
         let muted = state.snapshot.mutedTabIDs.contains(tab.id)
         row.onToggleMute = { model.setTabMuted(!muted, id: tab.id) }
@@ -934,7 +934,7 @@ final class BrowserNativeSidebarNSView: NSView {
             if isApp {
                 if let title = BrowserNativeMenus.prompt(
                     title: BrowserStrings.tabRenamePromptTitle,
-                    defaultValue: tab.userTitleOverride ?? tab.displayTitle
+                    defaultValue: tab.userTitleOverride ?? tab.displayTitle,
                 ) {
                     model.setUserTitleOverride(title, forTabID: tab.id)
                 }
@@ -984,7 +984,7 @@ final class BrowserNativeSidebarNSView: NSView {
         representative tab: BrowserChromeModel.Tab,
         memberIDs: [String],
         section: BrowserSidebarTabSection,
-        indent: Int
+        indent: Int,
     ) {
         let state = state
         let model = state.model
@@ -999,7 +999,7 @@ final class BrowserNativeSidebarNSView: NSView {
             name: state.snapshot.splitNames[memberIDs],
             icons: state.snapshot.tabIcons,
             isResizing: state.isSidebarResizing,
-            resetID: state.tabRowInteractionResetID
+            resetID: state.tabRowInteractionResetID,
         )
         row.dragOpacity = !state.draggedTabIDs.isEmpty && memberIDs.allSatisfy(state.draggedTabIDs.contains) ? 0 : 1
         row.onSelectSplitMember = { [weak state] id in
@@ -1045,7 +1045,7 @@ final class BrowserNativeSidebarNSView: NSView {
         BrowserNativeMenus.add(
             BrowserStrings.menuAddSplitView,
             to: menu,
-            enabled: members.count < BrowserChromeModel.maximumSplitPaneCount
+            enabled: members.count < BrowserChromeModel.maximumSplitPaneCount,
         ) {
             if !members.contains(where: { $0.id == model.selectedTabID }) {
                 model.selectTab(id: model.splitPaneTabIDs(of: group).first { id in
@@ -1057,7 +1057,7 @@ final class BrowserNativeSidebarNSView: NSView {
         let vertical = group.orientation == .vertical
         BrowserNativeMenus.add(
             vertical ? BrowserStrings.splitConvertToHorizontalAction : BrowserStrings.splitConvertToVerticalAction,
-            to: menu
+            to: menu,
         ) {
             _ = model.setSplitOrientation(vertical ? .horizontal : .vertical, groupID: group.id)
         }
@@ -1068,7 +1068,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 let item = BrowserNativeMenus.add(space.title, to: submenu) { [weak state] in
                     state?.withSidebarAnimation { _ = model.moveSplitToSpace(
                         containingTabID: first.id,
-                        spaceID: space.id
+                        spaceID: space.id,
                     ) }
                 }
                 item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
@@ -1078,7 +1078,7 @@ final class BrowserNativeSidebarNSView: NSView {
         BrowserNativeMenus.add(BrowserStrings.splitRenameAction, to: menu) {
             if let title = BrowserNativeMenus.prompt(
                 title: BrowserStrings.splitRenameAction,
-                defaultValue: group.title ?? ""
+                defaultValue: group.title ?? "",
             ) {
                 model.setSplitTitle(title, groupID: group.id)
             }
@@ -1087,7 +1087,7 @@ final class BrowserNativeSidebarNSView: NSView {
             BrowserStrings.splitChangeIconAction,
             to: menu,
             selected: group.systemImageName,
-            noIconTitle: BrowserStrings.pinnedTabFolderNoIconAction
+            noIconTitle: BrowserStrings.pinnedTabFolderNoIconAction,
         ) { model.setSplitIcon($0, groupID: group.id) }
         BrowserNativeMenus.add(BrowserStrings.splitArchiveAction, to: menu) { [weak state] in
             state?.withSidebarAnimation { model.closeSplit(containingTabID: first.id) }
@@ -1118,7 +1118,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private func tabMenu(
         _ tab: BrowserChromeModel.Tab,
         section: BrowserSidebarTabSection,
-        row: BrowserNativeSidebarRowNSView
+        row: BrowserNativeSidebarRowNSView,
     ) -> NSMenu {
         let model = state.model
         let state = state
@@ -1133,13 +1133,13 @@ final class BrowserNativeSidebarNSView: NSView {
         BrowserNativeMenus.share(
             items: tab.pageURL.map { [$0] } ?? [NSString(string: tab.urlString)],
             subject: tab.displayTitle,
-            in: menu
+            in: menu,
         )
         BrowserNativeMenus.addIconMenu(
             BrowserStrings.tabChangeIconAction,
             to: menu,
             selected: model.icon(forTabID: tab.id),
-            noIconTitle: BrowserStrings.tabSiteIconAction
+            noIconTitle: BrowserStrings.tabSiteIconAction,
         ) { model.setIcon($0, forTabID: tab.id) }
         let folderIDs = state.pinnedTabFolderCreationTabIDs(fromTabID: tab.id, in: section)
         if !folderIDs.isEmpty {
@@ -1161,7 +1161,7 @@ final class BrowserNativeSidebarNSView: NSView {
             BrowserNativeMenus.add(BrowserStrings.pinnedTabEditURLAction, to: menu) {
                 if let url = BrowserNativeMenus.prompt(
                     title: BrowserStrings.pinnedTabEditURLPromptTitle,
-                    defaultValue: tab.pinnedURLString ?? tab.urlString
+                    defaultValue: tab.pinnedURLString ?? tab.urlString,
                 ) {
                     _ = model.setPinnedURLString(url, forTabID: tab.id)
                 }
@@ -1178,7 +1178,7 @@ final class BrowserNativeSidebarNSView: NSView {
             shortcut: selected
                 ? close.shortcut
                 : nil,
-            action: row.onClose
+            action: row.onClose,
         )
         if section == .app {
             BrowserNativeMenus
@@ -1203,7 +1203,7 @@ final class BrowserNativeSidebarNSView: NSView {
             BrowserNativeMenus.add(
                 BrowserStrings.tabArchiveTabsBelowAction,
                 to: menu,
-                enabled: state.snapshot.archivableTabIDs.contains(tab.id)
+                enabled: state.snapshot.archivableTabIDs.contains(tab.id),
             ) { [weak state] in
                 state?.renamingTabID = nil
                 state?.withSidebarAnimation { model.closeTabsBelow(id: tab.id) }
@@ -1261,7 +1261,7 @@ final class BrowserNativeSidebarNSView: NSView {
         let vertical = group.orientation == .vertical
         BrowserNativeMenus.add(
             vertical ? BrowserStrings.splitConvertToHorizontalAction : BrowserStrings.splitConvertToVerticalAction,
-            to: menu
+            to: menu,
         ) {
             _ = model.setSplitOrientation(vertical ? .horizontal : .vertical, groupID: group.id)
         }
@@ -1285,7 +1285,7 @@ final class BrowserNativeSidebarNSView: NSView {
             onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
                 state?.clearSidebarTabSelection()
                 model.deleteSpace(id: space.id)
-            }
+            },
         )
     }
 
@@ -1331,13 +1331,13 @@ final class BrowserNativeSidebarNSView: NSView {
         state.update(
             snapshot: state.model.sidebarSnapshot,
             sidebarWidth: state.sidebarWidth,
-            isResizing: state.isSidebarResizing
+            isResizing: state.isSidebarResizing,
         )
         refresh(animated: true)
         dragPreview.update(
             payload: payload,
             snapshot: state.snapshot,
-            appTile: state.snapshot.appTabs.contains { .tab($0.id) == payload.primary }
+            appTile: state.snapshot.appTabs.contains { .tab($0.id) == payload.primary },
         )
         ensureDestinationVisible(payload.primary)
         let target = restingFrame(for: payload.primary)
@@ -1431,7 +1431,7 @@ final class BrowserNativeSidebarNSView: NSView {
             reservedAppHeight = max(
                 pagerClip.frame.minY - header.frame.maxY
                     - BrowserChromeLayout.sidebarSectionSpacing - BrowserChromeLayout.sidebarListSpacing,
-                0
+                0,
             )
         }
         state.invalidate(animated: !leavingGrid)
@@ -1475,7 +1475,7 @@ final class BrowserNativeSidebarNSView: NSView {
         dragPreview.update(
             payload: payload,
             snapshot: state.snapshot,
-            appTile: state.drag.isAppPreview
+            appTile: state.drag.isAppPreview,
         )
         let size = state.drag.previewSize
         if dragPreview.isHidden || dragPreviewTargetSize == nil {
@@ -1486,7 +1486,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 guard let self else { return }
                 layoutDragPreview(size: CGSize(
                     width: from.width + (size.width - from.width) * progress,
-                    height: from.height + (size.height - from.height) * progress
+                    height: from.height + (size.height - from.height) * progress,
                 ))
             }
         }
@@ -1501,7 +1501,7 @@ final class BrowserNativeSidebarNSView: NSView {
             x: drag.pointer.x - size.width * drag.anchor.x,
             y: drag.pointer.y - size.height * drag.anchor.y,
             width: size.width,
-            height: size.height
+            height: size.height,
         )
         dragPreview.layoutSubtreeIfNeeded()
         if case .line(let line) = state.drag.proposal?.feedback {
@@ -1545,37 +1545,6 @@ private final class BrowserNativeSidebarScrollView: NSScrollView {
 // MARK: - BrowserNativeSidebarPage
 
 private final class BrowserNativeSidebarPage: NSView {
-    // MARK: Lifecycle
-
-    init(spaceID: String) {
-        self.spaceID = spaceID
-        super.init(frame: .zero)
-        addSubview(header)
-        addSubview(scroll)
-        addSubview(topDivider)
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = false
-        scroll.hasHorizontalScroller = false
-        scroll.automaticallyAdjustsContentInsets = false
-        scroll.documentView = document
-        scroll.contentView.postsBoundsChangedNotifications = true
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(scrolled),
-            name: NSView.boundsDidChangeNotification,
-            object: scroll.contentView
-        )
-        document.addSubview(divider)
-        document.addSubview(incognito)
-        topDivider.strokeWidth = 0
-        topDivider.fillColor = BrowserChromeColors.sidebarTopChromeDivider
-        topDivider.alphaValue = 0
-        incognito.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        incognito.textColor = BrowserChromeColors.secondaryText
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
     // MARK: Internal
 
     enum Entry {
@@ -1585,7 +1554,7 @@ private final class BrowserNativeSidebarPage: NSView {
             index: Int,
             folderID: String?,
             folderChildIndex: Int?,
-            indent: Int
+            indent: Int,
         )
         case folder(BrowserSidebarPinnedFolderRow)
         case newTab
@@ -1628,6 +1597,40 @@ private final class BrowserNativeSidebarPage: NSView {
     let incognito = NSTextField(labelWithString: BrowserStrings.incognitoTabsTitle)
     var onScroll: () -> Void = {}
 
+    // MARK: Private
+
+    private let frameTransitions = BrowserNativeFrameTransitions()
+    private var hasLaidOutRows = false
+
+    init(spaceID: String) {
+        self.spaceID = spaceID
+        super.init(frame: .zero)
+        addSubview(header)
+        addSubview(scroll)
+        addSubview(topDivider)
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = false
+        scroll.hasHorizontalScroller = false
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.documentView = document
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrolled),
+            name: NSView.boundsDidChangeNotification,
+            object: scroll.contentView,
+        )
+        document.addSubview(divider)
+        document.addSubview(incognito)
+        topDivider.strokeWidth = 0
+        topDivider.fillColor = BrowserChromeColors.sidebarTopChromeDivider
+        topDivider.alphaValue = 0
+        incognito.font = .systemFont(ofSize: 11.5, weight: .semibold)
+        incognito.textColor = BrowserChromeColors.secondaryText
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
     func finishRowAnimations() { frameTransitions.finishAll() }
 
     func row(for id: String) -> BrowserNativeSidebarRowNSView {
@@ -1669,7 +1672,7 @@ private final class BrowserNativeSidebarPage: NSView {
                     if case .incognito = entry {
                         frame.insetBy(
                             dx: BrowserChromeLayout.sidebarRowHorizontalPadding,
-                            dy: 0
+                            dy: 0,
                         )
                     } else {
                         frame
@@ -1687,11 +1690,6 @@ private final class BrowserNativeSidebarPage: NSView {
         }
     }
 
-    // MARK: Private
-
-    private let frameTransitions = BrowserNativeFrameTransitions()
-    private var hasLaidOutRows = false
-
     @objc private func scrolled() { onScroll() }
 }
 
@@ -1704,7 +1702,24 @@ private final class BrowserNativeNoninteractiveSurface: BrowserNativeSurface {
 // MARK: - BrowserNativeSidebarClearDivider
 
 private final class BrowserNativeSidebarClearDivider: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    var onClear: () -> Void = {}
+
+    // MARK: Private
+
+    private let line = BrowserNativeNoninteractiveSurface()
+    private let button = BrowserNativePressableView()
+    private let title = NSTextField(labelWithString: BrowserStrings.sidebarClearTemporaryTabs)
+    private let indicator = NSImageView()
+    private var includesActive = false
+    private let visibility = BrowserNativeVisibilityAnimation()
+    private let clearAnimation = BrowserNativeAnimation()
+    private let hoverAnimation = BrowserNativeAnimation()
+    private var clearProgress = 0.0
+    private var clearTarget = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1718,7 +1733,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         indicator.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(
                 pointSize: 8,
-                weight: .bold
+                weight: .bold,
             ))
         indicator.contentTintColor = BrowserChromeColors.secondaryText
         button.onClick = { [weak self] _ in self?.onClear() }
@@ -1736,12 +1751,6 @@ private final class BrowserNativeSidebarClearDivider: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    var onClear: () -> Void = {}
-
     override func layout() {
         super.layout()
         let textWidth = ceil((title.stringValue as NSString)
@@ -1754,19 +1763,19 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             x: BrowserChromeLayout.sidebarClearButtonHorizontalPadding + indicatorWidth,
             y: (bounds.height - 16) / 2,
             width: textWidth,
-            height: 16
+            height: 16,
         )
         indicator.frame = NSRect(
             x: BrowserChromeLayout.sidebarClearButtonHorizontalPadding,
             y: (bounds.height - 8) / 2,
             width: 8,
-            height: 8
+            height: 8,
         )
         line.frame = NSRect(
             x: 0,
             y: (bounds.height - 1) / 2,
             width: max(bounds.width - width * clearProgress, 0),
-            height: 1
+            height: 1,
         )
     }
 
@@ -1794,25 +1803,18 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             : BrowserChromeColors.sidebarClearButtonForeground
         needsLayout = true
     }
-
-    // MARK: Private
-
-    private let line = BrowserNativeNoninteractiveSurface()
-    private let button = BrowserNativePressableView()
-    private let title = NSTextField(labelWithString: BrowserStrings.sidebarClearTemporaryTabs)
-    private let indicator = NSImageView()
-    private var includesActive = false
-    private let visibility = BrowserNativeVisibilityAnimation()
-    private let clearAnimation = BrowserNativeAnimation()
-    private let hoverAnimation = BrowserNativeAnimation()
-    private var clearProgress = 0.0
-    private var clearTarget = false
 }
 
 // MARK: - BrowserNativeSidebarDragPreview
 
 private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let row = BrowserNativeSidebarRowNSView()
+    private var renderedTab: BrowserChromeModel.Tab?
+    private var renderedFolder: BrowserChromeModel.PinnedTabFolder?
+    private var renderedSplit: [BrowserChromeModel.Tab]?
+    private var renderedAsApp = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1856,7 +1858,7 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
                     focusedTabID: snapshot.selectedTabID,
                     selected: true,
                     icons: snapshot.tabIcons,
-                    isResizing: false
+                    isResizing: false,
                 )
             } else if let tab = snapshot.tab(withID: id) {
                 guard renderedTab != tab || renderedAsApp != appTile else { return }
@@ -1870,7 +1872,7 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
                     selected: true,
                     isResizing: false,
                     closeDescriptor: BrowserCommands.archiveTab,
-                    icon: snapshot.tabIcons[tab.id]
+                    icon: snapshot.tabIcons[tab.id],
                 )
             }
         case .folder(let id):
@@ -1885,7 +1887,7 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
                     indentLevel: 0,
                     dropTargeted: true,
                     isResizing: false,
-                    resetID: 0
+                    resetID: 0,
                 )
             }
         }
@@ -1895,14 +1897,6 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
         row.tooltipTitle = nil
         needsLayout = true
     }
-
-    // MARK: Private
-
-    private let row = BrowserNativeSidebarRowNSView()
-    private var renderedTab: BrowserChromeModel.Tab?
-    private var renderedFolder: BrowserChromeModel.PinnedTabFolder?
-    private var renderedSplit: [BrowserChromeModel.Tab]?
-    private var renderedAsApp = false
 }
 
 // MARK: - BrowserSidebarLinkDrop

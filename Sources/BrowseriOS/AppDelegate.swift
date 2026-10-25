@@ -1,3 +1,5 @@
+// AppDelegate.swift
+
 import UIKit
 
 @main final class BrowserMobileAppDelegate: UIResponder, UIApplicationDelegate {

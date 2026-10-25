@@ -1,3 +1,5 @@
+// BrowserKeyboardShortcutBridgeTests.swift
+
 import AppKit
 import Testing
 
@@ -5,7 +7,7 @@ import Testing
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 8,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "c"
+        charactersIgnoringModifiers: "c",
     )
 
     #expect(command == nil)
@@ -15,7 +17,7 @@ import Testing
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 0,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "u"
+        charactersIgnoringModifiers: "u",
     )
 
     #expect(command == .selectAll)
@@ -25,7 +27,7 @@ import Testing
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 9,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "m"
+        charactersIgnoringModifiers: "m",
     )
 
     #expect(command == .paste)
@@ -35,7 +37,7 @@ import Testing
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 9,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "M"
+        charactersIgnoringModifiers: "M",
     )
 
     #expect(command == .pasteAndMatchStyle)
@@ -45,77 +47,77 @@ import Testing
     let settingsCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 43,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "б"
+        charactersIgnoringModifiers: "б",
     )
     let toggleBookmarkCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 2,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "в"
+        charactersIgnoringModifiers: "в",
     )
     let newTabCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 17,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "e"
+        charactersIgnoringModifiers: "e",
     )
     let openHistoryCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 16,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "н"
+        charactersIgnoringModifiers: "н",
     )
     let archiveTabCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 13,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "ц"
+        charactersIgnoringModifiers: "ц",
     )
     let savePageCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 1,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "w"
+        charactersIgnoringModifiers: "w",
     )
     let printPageCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 35,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "з"
+        charactersIgnoringModifiers: "з",
     )
     let copyLinkCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 8,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "с"
+        charactersIgnoringModifiers: "с",
     )
     let findInPageCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 3,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "а"
+        charactersIgnoringModifiers: "а",
     )
     let findAndReplaceCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 3,
         modifierFlags: [.command, .option],
-        charactersIgnoringModifiers: "а"
+        charactersIgnoringModifiers: "а",
     )
     let findNextCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 5,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "п"
+        charactersIgnoringModifiers: "п",
     )
     let findPreviousCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 5,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "П"
+        charactersIgnoringModifiers: "П",
     )
     let jumpToSelectionCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 38,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "о"
+        charactersIgnoringModifiers: "о",
     )
     let clearTemporaryTabsCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 40,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "л"
+        charactersIgnoringModifiers: "л",
     )
     let goBackCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 33,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "x"
+        charactersIgnoringModifiers: "x",
     )
 
     #expect(settingsCommand == .openSettings)
@@ -152,22 +154,22 @@ import Testing
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 24,
         modifierFlags: [.control, .shift],
-        charactersIgnoringModifiers: "+"
+        charactersIgnoringModifiers: "+",
     ) == .addSplitView)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 27,
         modifierFlags: [.control, .shift],
-        charactersIgnoringModifiers: "_"
+        charactersIgnoringModifiers: "_",
     ) == .closeSplitPane)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 24,
         modifierFlags: [.shift],
-        charactersIgnoringModifiers: "+"
+        charactersIgnoringModifiers: "+",
     ) == nil, "Typing + is not a command")
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 24,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "+"
+        charactersIgnoringModifiers: "+",
     ) == nil, "Cmd-Shift-= is Zoom In, not a split command")
 }
 
@@ -178,22 +180,22 @@ import Testing
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 18,
         modifierFlags: [.control, .shift],
-        charactersIgnoringModifiers: "!"
+        charactersIgnoringModifiers: "!",
     ) == .focusSplitPane1)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 21,
         modifierFlags: [.control, .shift],
-        charactersIgnoringModifiers: "$"
+        charactersIgnoringModifiers: "$",
     ) == .focusSplitPane4)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 30,
         modifierFlags: [.control, .shift],
-        charactersIgnoringModifiers: "}"
+        charactersIgnoringModifiers: "}",
     ) == .focusNextSplitPane)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 33,
         modifierFlags: [.control, .shift],
-        charactersIgnoringModifiers: "{"
+        charactersIgnoringModifiers: "{",
     ) == .focusPreviousSplitPane)
     #expect(BrowserSpaceShortcuts.spaceIndex(forPhysicalKeyCode: 18, modifierFlags: [.control, .shift]) == nil)
 }
@@ -202,27 +204,27 @@ import Testing
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 4,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "р"
+        charactersIgnoringModifiers: "р",
     ) == .hideApplication)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 4,
         modifierFlags: [.command, .option],
-        charactersIgnoringModifiers: "р"
+        charactersIgnoringModifiers: "р",
     ) == .hideOtherApplications)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 46,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "ь"
+        charactersIgnoringModifiers: "ь",
     ) == .minimizeWindow)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 13,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "Ц"
+        charactersIgnoringModifiers: "Ц",
     ) == .closeWindow)
     #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 13,
         modifierFlags: [.command],
-        charactersIgnoringModifiers: "ц"
+        charactersIgnoringModifiers: "ц",
     ) == .archiveTab, "Command-W still archives the tab")
 
     let suiteName = "OpenArcTests.\(UUID().uuidString)"
@@ -246,6 +248,6 @@ import Testing
         keyCode: 46,
         modifierFlags: [.command],
         charactersIgnoringModifiers: "ь",
-        shortcutResolver: store
+        shortcutResolver: store,
     ) == .openHistory)
 }

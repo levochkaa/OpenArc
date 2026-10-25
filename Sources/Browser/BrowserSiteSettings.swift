@@ -1,3 +1,5 @@
+// BrowserSiteSettings.swift
+
 import Foundation
 
 // MARK: - BrowserSiteSettingKind
@@ -5,7 +7,7 @@ import Foundation
 /// A per-site setting the site control center lists in its Settings
 /// section. Camera and microphone are OpenArc's remembered answers;
 /// the others are Chromium's content settings for the page.
-enum BrowserSiteSettingKind: String, CaseIterable, Sendable {
+enum BrowserSiteSettingKind: String, CaseIterable {
     case camera
     case microphone
     case location
@@ -75,7 +77,8 @@ enum BrowserSiteSettingKind: String, CaseIterable, Sendable {
     /// and sound.
     var choices: [BrowserSiteSettingValue] {
         switch self {
-        case .popups, .sound: [.allow, .block]
+        case .popups,
+             .sound: [.allow, .block]
         default: [.allow, .block, .ask]
         }
     }
@@ -83,7 +86,7 @@ enum BrowserSiteSettingKind: String, CaseIterable, Sendable {
 
 // MARK: - BrowserSiteSettingValue
 
-enum BrowserSiteSettingValue: String, Sendable {
+enum BrowserSiteSettingValue: String {
     case allow
     case block
     case ask
@@ -96,7 +99,8 @@ enum BrowserSiteSettingValue: String, Sendable {
         switch self {
         case .allow: BrowserStrings.sitePermissionAllowedState
         case .block: BrowserStrings.sitePermissionBlockedState
-        case .ask, .default: BrowserStrings.siteSettingAskState
+        case .ask,
+             .default: BrowserStrings.siteSettingAskState
         }
     }
 
@@ -104,14 +108,15 @@ enum BrowserSiteSettingValue: String, Sendable {
         switch self {
         case .allow: BrowserStrings.sitePermissionAllow
         case .block: BrowserStrings.sitePermissionBlock
-        case .ask, .default: BrowserStrings.siteSettingAskAction
+        case .ask,
+             .default: BrowserStrings.siteSettingAskAction
         }
     }
 }
 
 // MARK: - BrowserSiteSettingRow
 
-struct BrowserSiteSettingRow: Equatable, Sendable {
+struct BrowserSiteSettingRow: Equatable {
     let kind: BrowserSiteSettingKind
     let value: BrowserSiteSettingValue
 }
@@ -142,7 +147,7 @@ extension BrowserChromeModel {
     func setSiteSetting(
         _ kind: BrowserSiteSettingKind,
         value: BrowserSiteSettingValue,
-        forURLString urlString: String
+        forURLString urlString: String,
     ) {
         guard let origin = BrowserSitePermissionRequest.origin(ofURLString: urlString) else { return }
         guard let permission = kind.permissionKind else {
@@ -158,7 +163,7 @@ extension BrowserChromeModel {
                 profileID: profile.id,
                 origin: origin,
                 kind: permission,
-                allowed: value == .allow
+                allowed: value == .allow,
             ))
         }
         sitePermissionDecisions = decisions

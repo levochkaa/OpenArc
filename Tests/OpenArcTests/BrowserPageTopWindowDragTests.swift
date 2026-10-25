@@ -1,3 +1,5 @@
+// BrowserPageTopWindowDragTests.swift
+
 import AppKit
 import Testing
 
@@ -9,7 +11,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 400, height: 300),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -34,7 +36,7 @@ import Testing
         func event(_ type: NSEvent.EventType, _ x: CGFloat, _ y: CGFloat, clicks: Int = 1) throws -> NSEvent {
             try #require(NSEvent.mouseEvent(
                 with: type, location: NSPoint(x: x, y: y), modifierFlags: [], timestamp: 0,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1,
             ))
         }
 

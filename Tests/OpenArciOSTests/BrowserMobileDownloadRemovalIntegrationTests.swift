@@ -1,3 +1,5 @@
+// BrowserMobileDownloadRemovalIntegrationTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -217,7 +219,7 @@ extension BrowserMobileUITests {
 }
 
 @MainActor private func withDownloadRemovalFixture(
-    _ body: @MainActor (DownloadRemovalFixture) async throws -> Void
+    _ body: @MainActor (DownloadRemovalFixture) async throws -> Void,
 ) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("DownloadRemoval-\(UUID())")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -229,14 +231,6 @@ extension BrowserMobileUITests {
 // MARK: - DownloadRemovalFixture
 
 @MainActor private final class DownloadRemovalFixture {
-    // MARK: Lifecycle
-
-    init(directory: URL) {
-        self.directory = directory
-        self.disk = BrowserMobileDownloadDisk(directory: directory)
-        self.downloads = BrowserMobileDownloads(disk: disk)
-    }
-
     // MARK: Internal
 
     let directory: URL
@@ -246,15 +240,21 @@ extension BrowserMobileUITests {
     let secondBytes = Data("Second file with the same display name".utf8)
     private(set) var first = BrowserMobileDownload(
         id: UUID(), filename: "download.txt", sourceURL: URL(string: "https://example.com/first"),
-        status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil
+        status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil,
     )
     private(set) var second = BrowserMobileDownload(
         id: UUID(), filename: "download.txt", sourceURL: URL(string: "https://example.com/second"),
-        status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil
+        status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil,
     )
 
     var firstURL: URL { directory.appendingPathComponent(first.id.uuidString).appendingPathComponent(first.filename) }
     var secondURL: URL { directory.appendingPathComponent(second.id.uuidString).appendingPathComponent(second.filename)
+    }
+
+    init(directory: URL) {
+        self.directory = directory
+        self.disk = BrowserMobileDownloadDisk(directory: directory)
+        self.downloads = BrowserMobileDownloads(disk: disk)
     }
 
     func prepare() async throws {
@@ -271,7 +271,7 @@ extension BrowserMobileUITests {
     func completeLater(bytes: Data) async throws -> BrowserMobileDownload {
         let entry = BrowserMobileDownload(
             id: UUID(), filename: "later.txt", sourceURL: URL(string: "https://example.com/later"),
-            status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil
+            status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil,
         )
         let file = try await disk.prepare(id: entry.id, filename: entry.filename)
         try bytes.write(to: file)
@@ -284,11 +284,17 @@ extension BrowserMobileUITests {
 // MARK: - DownloadRemovalHost
 
 @MainActor private final class DownloadRemovalHost {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let controller: BrowserMobileDownloadsViewController
+    let navigation: UINavigationController
+    let window: UIWindow
+
+    var rowCount: Int { controller.tableView.numberOfRows(inSection: 0) }
 
     init(
         downloads: BrowserMobileDownloads,
-        onPicker: @escaping (UIDocumentPickerViewController) -> Void = { _ in }
+        onPicker: @escaping (UIDocumentPickerViewController) -> Void = { _ in },
     ) throws {
         self.controller = BrowserMobileDownloadsViewController(downloads: downloads) { _, picker in onPicker(picker) }
         self.navigation = UINavigationController(rootViewController: controller)
@@ -300,14 +306,6 @@ extension BrowserMobileUITests {
         controller.loadViewIfNeeded()
         layout()
     }
-
-    // MARK: Internal
-
-    let controller: BrowserMobileDownloadsViewController
-    let navigation: UINavigationController
-    let window: UIWindow
-
-    var rowCount: Int { controller.tableView.numberOfRows(inSection: 0) }
 
     func layout() { window.layoutIfNeeded()
         controller.view.layoutIfNeeded()

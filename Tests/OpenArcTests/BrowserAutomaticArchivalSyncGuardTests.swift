@@ -1,3 +1,5 @@
+// BrowserAutomaticArchivalSyncGuardTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -27,7 +29,7 @@ import Testing
         #expect(pullObserver.snapshots.count == 1)
         #expect(
             pullObserver.snapshots.first?.tabs.compactMap(\.id) == automaticArchivalTabIDs,
-            "Startup must retain expired-looking local tabs before the first remote pull"
+            "Startup must retain expired-looking local tabs before the first remote pull",
         )
         let rowsAfterRestore = try fixture.outboxRows()
         #expect(rowsAfterRestore == originalRows)
@@ -203,9 +205,9 @@ private let automaticArchivalTabIDs = ["favorite", "pinned", "expired", "selecte
                 return .init(
                     id: id, urlString: url, pinnedURLString: placement == .spacePinned ? url : nil,
                     placement: placement, spaceID: id == "other-space" ? "other" : "work",
-                    lastActivityTimestamp: 0, pinnedSiblingRank: placement == .spacePinned ? 0 : nil
+                    lastActivityTimestamp: 0, pinnedSiblingRank: placement == .spacePinned ? 0 : nil,
                 )
-            }
+            },
         )
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
         store.saveTemporaryTabLifetime(.twelveHours)
@@ -218,7 +220,7 @@ private let automaticArchivalTabIDs = ["favorite", "pinned", "expired", "selecte
         preferences: (any BrowserSessionPreferencesStoring)? = nil,
         driver: FakeBrowserTabDriver,
         sync: (any BrowserSyncCoordinating)? = nil,
-        clock: AutomaticArchivalClock = AutomaticArchivalClock(seconds: 48 * 60 * 60)
+        clock: AutomaticArchivalClock = AutomaticArchivalClock(seconds: 48 * 60 * 60),
     ) -> BrowserChromeModel {
         let preferences = preferences ?? (store as! BrowserSQLiteSessionStore)
         return BrowserChromeModel(
@@ -228,7 +230,7 @@ private let automaticArchivalTabIDs = ["favorite", "pinned", "expired", "selecte
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
             dateProvider: { Date(timeIntervalSince1970: clock.seconds) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
     }
 
@@ -247,26 +249,22 @@ private let automaticArchivalTabIDs = ["favorite", "pinned", "expired", "selecte
 // MARK: - AutomaticArchivalClock
 
 @MainActor private final class AutomaticArchivalClock {
-    // MARK: Lifecycle
-
-    init(seconds: TimeInterval) { self.seconds = seconds }
-
     // MARK: Internal
 
     var seconds: TimeInterval
+
+    init(seconds: TimeInterval) { self.seconds = seconds }
 }
 
 // MARK: - AutomaticArchivalPullObserver
 
 @MainActor private final class AutomaticArchivalPullObserver: BrowserSyncCoordinating {
-    // MARK: Lifecycle
-
-    init(store: BrowserSQLiteSessionStore) { self.store = store }
-
     // MARK: Internal
 
     let store: BrowserSQLiteSessionStore
     var snapshots = [BrowserTabSessionSnapshot]()
+
+    init(store: BrowserSQLiteSessionStore) { self.store = store }
 
     func schedulePush(snapshot _: BrowserTabSessionSnapshot) {}
     func schedulePull() {
@@ -280,10 +278,6 @@ private let automaticArchivalTabIDs = ["favorite", "pinned", "expired", "selecte
 
 private final class AutomaticArchivalOwnershipFailure: BrowserTabSessionSnapshotStoring, BrowserSyncOwnershipReading,
 BrowserTabArchiveStoring {
-    // MARK: Lifecycle
-
-    init(store: BrowserSQLiteSessionStore) { self.store = store }
-
     // MARK: Internal
 
     enum ReadFailure: Error { case unavailable }
@@ -291,6 +285,8 @@ BrowserTabArchiveStoring {
     let store: BrowserSQLiteSessionStore
     var readAttempts = 0
     var failRead = true
+
+    init(store: BrowserSQLiteSessionStore) { self.store = store }
 
     func syncOwner() throws -> BrowserSyncOwner? {
         readAttempts += 1
@@ -309,7 +305,7 @@ BrowserTabArchiveStoring {
     }
 
     nonisolated(nonsending) func searchArchivePage(
-        query: String, before: BrowserTabArchiveCursor?, limit: Int
+        query: String, before: BrowserTabArchiveCursor?, limit: Int,
     ) async throws -> BrowserTabArchivePage {
         try await store.searchArchivePage(query: query, before: before, limit: limit)
     }

@@ -1,3 +1,5 @@
+// BrowserMobileSyncHTTPIntegrationTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -8,7 +10,7 @@ import WebKit
 
 @Suite(
     .serialized,
-    .enabled(if: MobileHTTPFixture.isConfigured, "Run ./script/test_mobile_sync.sh for localhost integration")
+    .enabled(if: MobileHTTPFixture.isConfigured, "Run ./script/test_mobile_sync.sh for localhost integration"),
 )
 @MainActor struct BrowserMobileSyncHTTPIntegrationTests {
     @Test func mobileV4RoundtripPreservesLoadedPageAndSharedFolderTree() async throws {
@@ -22,7 +24,7 @@ import WebKit
             device: account.devices[0],
             directory: directory,
             initial: mobileHTTPSeed(includeUnsupportedURL: true),
-            dateProvider: { activityDate }
+            dateProvider: { activityDate },
         )
         let second = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
         defer { first.cleanup()
@@ -70,20 +72,20 @@ import WebKit
         let nested = try #require(first.document.createFolder(
             spaceID: "source",
             parentFolderID: folder,
-            title: "Nested"
+            title: "Nested",
         ))
         let dragSource = try #require(BrowserMobileSidebarDrop.source(
-            item: .init(entityType: .tab, entityID: "browsing"), in: first.document.snapshot
+            item: .init(entityType: .tab, entityID: "browsing"), in: first.document.snapshot,
         ))
         let dropTarget = try #require(BrowserMobileSidebarDrop.target(
             relativeTo: .init(entityType: .folder, entityID: nested), position: .inside,
-            in: first.document.snapshot
+            in: first.document.snapshot,
         ))
         let drop = try #require(BrowserMobileSidebarDrop.plan(
-            source: dragSource, target: dropTarget, in: first.document.snapshot
+            source: dragSource, target: dropTarget, in: first.document.snapshot,
         ))
         try #require(first.document.move(
-            items: drop.items, destination: drop.destination, before: drop.before, after: drop.after
+            items: drop.items, destination: drop.destination, before: drop.before, after: drop.after,
         ))
         try #require(first.document.createFolder(spaceID: "source", title: "Empty") != nil)
         try #require(try first.store.pendingSyncQueue(for: first.owner).allSatisfy { $0.protocolVersion == 4 })
@@ -95,7 +97,7 @@ import WebKit
         let sharedDocument = first.document
         let otherScene = BrowserMobileWorkspace(
             engine: otherSceneEngine, sceneID: "second-window", profileLoader: { sharedDocument },
-            preferences: scenePreferences
+            preferences: scenePreferences,
         )
         defer {
             otherScene.setSyncActive(false)
@@ -128,7 +130,7 @@ import WebKit
 
         try #require(second.document.move(
             items: [.init(entityType: .folder, entityID: folder)],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         ))
         try #require(second.document.renameFolder(id: nested, title: "Renamed on second device"))
         try await second.drain()
@@ -167,8 +169,8 @@ import WebKit
         }
         #expect(activityMutation.operations == [.patchTab(
             id: "browsing", fields: .init(lastActivityAt: .set(
-                ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: activityTimestamp))
-            ))
+                ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: activityTimestamp)),
+            )),
         )])
         try await first.drain()
         try await second.pull()
@@ -269,7 +271,7 @@ import WebKit
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = try MobileHTTPProfile(
-            fixture: fixture, device: account.devices[0], directory: directory, initial: mobileHTTPGroupSeed()
+            fixture: fixture, device: account.devices[0], directory: directory, initial: mobileHTTPGroupSeed(),
         )
         let second = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
         defer { first.cleanup()
@@ -286,16 +288,16 @@ import WebKit
         let source = try #require(BrowserMobileSidebarDrop.source(items: roots, in: first.document.snapshot))
         let target = try #require(BrowserMobileSidebarDrop.target(
             relativeTo: .init(entityType: .folder, entityID: "destination"), position: .inside,
-            in: first.document.snapshot
+            in: first.document.snapshot,
         ))
         let plan = try #require(BrowserMobileSidebarDrop.plan(
             source: source,
             target: target,
-            in: first.document.snapshot
+            in: first.document.snapshot,
         ))
         #expect(plan.items == roots)
         try #require(first.document.move(
-            items: plan.items, destination: plan.destination, before: plan.before, after: plan.after
+            items: plan.items, destination: plan.destination, before: plan.before, after: plan.after,
         ))
         let pending = try first.store.pendingSyncQueue(for: first.owner)
         try #require(pending.count == 1)
@@ -305,7 +307,7 @@ import WebKit
         }
         #expect(mutation.operations == [.move(
             items: roots, destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "destination"),
-            before: nil, after: nil
+            before: nil, after: nil,
         )])
         let bytes = try first.outboxBytes()
         try #require(second.document.renameTab(id: "browsing", title: "Concurrent remote title"))
@@ -345,7 +347,7 @@ import WebKit
 
         try #require(second.document.move(
             items: [.init(entityType: .tab, entityID: "browsing")],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         ))
         try #require(second.document.delete(entity: .init(entityType: .folder, entityID: "group")))
         try await second.drain()
@@ -359,7 +361,7 @@ import WebKit
         try await second.pull()
         let afterReplay = try await fixture.inspect(account)
         let attempts = afterReplay.attempts.filter { $0.mutationID == mutation.id }
-        #expect(attempts.count > beforeReplay.attempts.filter { $0.mutationID == mutation.id }.count)
+        #expect(attempts.count > beforeReplay.attempts.count(where: { $0.mutationID == mutation.id }))
         #expect(Set(attempts.map(\.digest)) == [original.digest])
         #expect(attempts.allSatisfy { $0.protocolVersion == 4 && $0.status == 201 })
         #expect(afterReplay.eventCount == beforeReplay.eventCount && afterReplay.receiptCount == beforeReplay
@@ -387,7 +389,7 @@ import WebKit
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = try MobileHTTPProfile(
             fixture: fixture, device: account.devices[0], directory: directory,
-            initial: mobileHTTPCrossSpaceSeed(pageURL: fixture.baseURL.appendingPathComponent("mobile-test-page"))
+            initial: mobileHTTPCrossSpaceSeed(pageURL: fixture.baseURL.appendingPathComponent("mobile-test-page")),
         )
         let second = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
         defer { first.cleanup()
@@ -423,11 +425,11 @@ import WebKit
         // leaving the folder stay behind; children joining it travel with it.
         try #require(second.document.move(
             items: [.init(entityType: .tab, entityID: "escaped")],
-            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil),
         ))
         try #require(second.document.move(
             items: [.init(entityType: .tab, entityID: "joining")],
-            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "nested")
+            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "nested"),
         ))
         try #require(second.document.renameFolder(id: "group", title: "Remote group title"))
         try #require(second.document.renameTab(id: "joining", title: "Joined remotely"))
@@ -440,11 +442,11 @@ import WebKit
         let plan = try #require(BrowserMobileSidebarDrop.plan(
             source: source,
             target: BrowserMobileSidebarDrop.rootTarget(spaceID: "target", placement: .spacePinned),
-            in: first.document.snapshot
+            in: first.document.snapshot,
         ))
         #expect(plan.items == roots && plan.before == nil && plan.after == nil)
         try #require(first.document.move(
-            items: plan.items, destination: plan.destination, before: plan.before, after: plan.after
+            items: plan.items, destination: plan.destination, before: plan.before, after: plan.after,
         ))
         let pending = try first.store.pendingSyncQueue(for: first.owner)
         try #require(pending.count == 1)
@@ -453,7 +455,7 @@ import WebKit
             return
         }
         #expect(mutation.operations == [.move(
-            items: roots, destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            items: roots, destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         )])
         #expect(first.document.snapshot.tabs.first { $0.id == "escaped" }?.spaceID == "source")
         for id in ["browsing", "deep", "joining"] {
@@ -541,7 +543,7 @@ import WebKit
             fixture: fixture,
             device: account.devices[0],
             directory: directory,
-            initial: mobileHTTPSeed()
+            initial: mobileHTTPSeed(),
         )
         let second = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
         defer { first.cleanup()
@@ -570,7 +572,7 @@ import WebKit
             tabID: "browsing",
             placement: .spacePinned,
             spaceID: "target",
-            pinnedFolderID: folder
+            pinnedFolderID: folder,
         ))
         try await second.drain()
         let beforeReplay = try await fixture.inspect(account)
@@ -583,7 +585,7 @@ import WebKit
         try await second.pull()
         let afterReplay = try await fixture.inspect(account)
         let attempts = afterReplay.attempts.filter { $0.mutationID == original.mutationID }
-        #expect(attempts.count > beforeReplay.attempts.filter { $0.mutationID == original.mutationID }.count)
+        #expect(attempts.count > beforeReplay.attempts.count(where: { $0.mutationID == original.mutationID }))
         #expect(Set(attempts.map(\.digest)) == [original.digest])
         #expect(attempts.allSatisfy { $0.protocolVersion == 4 && $0.status == 201 })
         #expect(afterReplay.eventCount == beforeReplay.eventCount && afterReplay.receiptCount == beforeReplay
@@ -668,6 +670,18 @@ struct MobileHTTPFixture: Decodable {
 
     static var isConfigured: Bool { controlAddress != nil && controlCredential != nil }
 
+    // MARK: Private
+
+    private static var controlAddress: String? {
+        ProcessInfo.processInfo.environment["OPENARC_MOBILE_SYNC_CONTROL_URL"]
+            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_OPENARC_MOBILE_SYNC_CONTROL_URL"]
+    }
+
+    private static var controlCredential: String? {
+        ProcessInfo.processInfo.environment["OPENARC_MOBILE_SYNC_CONTROL_TOKEN"]
+            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_OPENARC_MOBILE_SYNC_CONTROL_TOKEN"]
+    }
+
     let baseURL: URL
     let controlURL: URL
     let controlToken: String
@@ -685,6 +699,17 @@ struct MobileHTTPFixture: Decodable {
         return fixture
     }
 
+    private static func send(_ command: [String: String], to url: URL, token: String) async throws -> Data {
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(command)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try #require((response as? HTTPURLResponse)?.statusCode == 200)
+        return data
+    }
+
     func account(_ scenario: String) throws -> Account {
         let account = try #require(accounts.first { $0.scenario == scenario })
         try #require(account.devices.count == 2)
@@ -693,7 +718,7 @@ struct MobileHTTPFixture: Decodable {
 
     func inspect(_ account: Account) async throws -> Inspection {
         try await JSONDecoder().decode(Inspection.self, from: Self.send(
-            ["action": "inspect", "userID": account.userID], to: controlURL, token: controlToken
+            ["action": "inspect", "userID": account.userID], to: controlURL, token: controlToken,
         ))
     }
 
@@ -705,38 +730,31 @@ struct MobileHTTPFixture: Decodable {
         _ = try await Self.send(
             ["action": "complete", "scenario": account.scenario],
             to: controlURL,
-            token: controlToken
+            token: controlToken,
         )
-    }
-
-    // MARK: Private
-
-    private static var controlAddress: String? {
-        ProcessInfo.processInfo.environment["OPENARC_MOBILE_SYNC_CONTROL_URL"]
-            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_OPENARC_MOBILE_SYNC_CONTROL_URL"]
-    }
-
-    private static var controlCredential: String? {
-        ProcessInfo.processInfo.environment["OPENARC_MOBILE_SYNC_CONTROL_TOKEN"]
-            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_OPENARC_MOBILE_SYNC_CONTROL_TOKEN"]
-    }
-
-    private static func send(_ command: [String: String], to url: URL, token: String) async throws -> Data {
-        var request = URLRequest(url: url, timeoutInterval: 10)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(command)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try #require((response as? HTTPURLResponse)?.statusCode == 200)
-        return data
     }
 }
 
 // MARK: - MobileHTTPProfile
 
 @MainActor final class MobileHTTPProfile {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let store: BrowserSQLiteSessionStore
+    let owner: BrowserSyncOwner
+    let document: BrowserMobileProfileDocument
+    let runtime: BrowserMobileSyncSession
+    let engine = BrowserWebKitEngine(dataStore: .nonPersistent())
+    let workspace: BrowserMobileWorkspace
+
+    // MARK: Private
+
+    private let session: URLSession
+    private let preferences: UserDefaults
+    private let preferencesName: String
+
+    var service: BrowserSyncService { runtime.syncService! }
 
     init(
         fixture: MobileHTTPFixture,
@@ -747,7 +765,7 @@ struct MobileHTTPFixture: Decodable {
         pollInterval: Duration? = nil,
         expirySweepInterval: TimeInterval = 60,
         expiryActivityRefreshInterval: TimeInterval = 300,
-        automaticArchivalCheckInterval: Duration? = .seconds(60)
+        automaticArchivalCheckInterval: Duration? = .seconds(60),
     ) throws {
         self.databaseURL = directory.appendingPathComponent(device.deviceID + ".sqlite")
         let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
@@ -757,7 +775,7 @@ struct MobileHTTPFixture: Decodable {
         }
         let document = try BrowserMobileProfileDocument(
             store: store, initialSnapshot: store.loadSnapshotStrict(), dateProvider: dateProvider,
-            automaticArchivalCheckInterval: automaticArchivalCheckInterval
+            automaticArchivalCheckInterval: automaticArchivalCheckInterval,
         )
         self.document = document
         self.owner = BrowserSyncOwner(baseURL: fixture.baseURL, userID: device.userID)
@@ -770,7 +788,7 @@ struct MobileHTTPFixture: Decodable {
         self.session = session
         let credentials = BrowserAuthSession(
             accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-            deviceID: device.deviceID, serverURL: fixture.baseURL
+            deviceID: device.deviceID, serverURL: fixture.baseURL,
         )
         self.runtime = BrowserMobileSyncSession(
             store: store, document: document, preferences: preferences,
@@ -779,32 +797,20 @@ struct MobileHTTPFixture: Decodable {
             clientFactory: { configuration in
                 MobileHTTPRemote(
                     client: BrowserRemoteSyncClient(configuration: configuration, session: session),
-                    credentials: credentials
+                    credentials: credentials,
                 )
             },
             pushDebounce: .zero, pollInterval: pollInterval, retryDelay: nil,
             expirySweepInterval: expirySweepInterval, expiryActivityRefreshInterval: expiryActivityRefreshInterval,
-            dateProvider: dateProvider
+            dateProvider: dateProvider,
         )
         self.workspace = BrowserMobileWorkspace(
             engine: engine,
             sceneID: "http-scene",
             profileLoader: { document },
-            preferences: preferences
+            preferences: preferences,
         )
     }
-
-    // MARK: Internal
-
-    let databaseURL: URL
-    let store: BrowserSQLiteSessionStore
-    let owner: BrowserSyncOwner
-    let document: BrowserMobileProfileDocument
-    let runtime: BrowserMobileSyncSession
-    let engine = BrowserWebKitEngine(dataStore: .nonPersistent())
-    let workspace: BrowserMobileWorkspace
-
-    var service: BrowserSyncService { runtime.syncService! }
 
     func start(expectedPullProtocolVersion: Int = 4) async throws {
         await workspace.restore()
@@ -848,26 +854,20 @@ struct MobileHTTPFixture: Decodable {
         session.invalidateAndCancel()
         preferences.removePersistentDomain(forName: preferencesName)
     }
-
-    // MARK: Private
-
-    private let session: URLSession
-    private let preferences: UserDefaults
-    private let preferencesName: String
 }
 
 // MARK: - MobileHTTPAuthStore
 
 @MainActor private final class MobileHTTPAuthStore: BrowserSyncAuthSessionStoring {
+    // MARK: Private
+
+    private var session: BrowserAuthSession?
+
     // MARK: Internal
 
     func loadSession() -> BrowserAuthSession? { session }
     func saveSession(_ session: BrowserAuthSession) { self.session = session }
     func clearSession() { session = nil }
-
-    // MARK: Private
-
-    private var session: BrowserAuthSession?
 }
 
 // MARK: - MobileHTTPIdentity
@@ -881,12 +881,6 @@ struct MobileHTTPFixture: Decodable {
 /// Apple authentication alone uses pre-provisioned localhost fixture credentials.
 /// Every push/pull uses the production URLSession/OpenAPI transport and backend.
 @MainActor private final class MobileHTTPRemote: BrowserMobileSyncRemoteServing {
-    // MARK: Lifecycle
-
-    init(client: BrowserRemoteSyncClient, credentials: BrowserAuthSession) { self.client = client
-        self.credentials = credentials
-    }
-
     // MARK: Internal
 
     let client: BrowserRemoteSyncClient
@@ -894,10 +888,14 @@ struct MobileHTTPFixture: Decodable {
 
     var baseURL: URL { client.baseURL }
 
+    init(client: BrowserRemoteSyncClient, credentials: BrowserAuthSession) { self.client = client
+        self.credentials = credentials
+    }
+
     func authenticateWithApple(
         identityToken _: String,
         deviceName _: String,
-        devicePlatform _: String
+        devicePlatform _: String,
     ) -> BrowserAuthSession { credentials }
     func pull(cursor: Int, authSession: BrowserAuthSession) async throws -> BrowserSyncPullResponse {
         try await client.pull(cursor: cursor, authSession: authSession)
@@ -906,7 +904,7 @@ struct MobileHTTPFixture: Decodable {
     func pull(
         cursor: Int,
         protocolVersion: Int,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncPullResponse {
         try await client.pull(cursor: cursor, protocolVersion: protocolVersion, authSession: authSession)
     }
@@ -917,21 +915,21 @@ struct MobileHTTPFixture: Decodable {
 
     func push(
         mutation: BrowserSyncSemanticMutation,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncSemanticPushResponse {
         try await client.push(mutation: mutation, authSession: authSession)
     }
 
     func push(
         mutation: BrowserSyncFolderMutation,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncFolderPushResponse {
         try await client.push(mutation: mutation, authSession: authSession)
     }
 
     func push(
         mutation: BrowserSyncExpiryMutation,
-        authSession: BrowserAuthSession
+        authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncExpiryPushResponse {
         try await client.push(mutation: mutation, authSession: authSession)
     }
@@ -951,21 +949,21 @@ private func mobileHTTPGroupSeed() -> BrowserTabSessionSnapshot {
             placement: .spacePinned,
             spaceID: "source",
             pinnedFolderID: "group",
-            pinnedSiblingRank: 0
+            pinnedSiblingRank: 0,
         ),
         .init(
             id: "browsing",
             urlString: "about:blank",
             placement: .spacePinned,
             spaceID: "source",
-            pinnedSiblingRank: 1
+            pinnedSiblingRank: 1,
         ),
         .init(
             id: "retained",
             urlString: "about:blank",
             placement: .spacePinned,
             spaceID: "source",
-            pinnedSiblingRank: 3
+            pinnedSiblingRank: 3,
         ),
     ])
 }
@@ -980,19 +978,19 @@ private func mobileHTTPCrossSpaceSeed(pageURL: URL) -> BrowserTabSessionSnapshot
     ], tabs: [
         .init(
             id: "escaped", urlString: "about:blank", placement: .spacePinned, spaceID: "source",
-            pinnedFolderID: "group", pinnedSiblingRank: 0
+            pinnedFolderID: "group", pinnedSiblingRank: 0,
         ),
         .init(
             id: "deep", urlString: "about:blank", placement: .spacePinned, spaceID: "source",
-            pinnedFolderID: "nested", pinnedSiblingRank: 0
+            pinnedFolderID: "nested", pinnedSiblingRank: 0,
         ),
         .init(
             id: "browsing", urlString: pageURL.absoluteString, placement: .spacePinned,
-            spaceID: "source", pinnedSiblingRank: 1
+            spaceID: "source", pinnedSiblingRank: 1,
         ),
         .init(
             id: "joining", urlString: "about:blank", placement: .spacePinned,
-            spaceID: "source", pinnedSiblingRank: 2
+            spaceID: "source", pinnedSiblingRank: 2,
         ),
         .init(id: "source-only", urlString: "about:blank", spaceID: "source"),
     ])
@@ -1013,7 +1011,8 @@ private func mobileHTTPSeed(includeUnsupportedURL: Bool = false) -> BrowserTabSe
 }
 
 @MainActor func mobileHTTPEventually(timeout: Duration = .seconds(10), _ condition: () -> Bool) async -> Bool {
-    let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: timeout)
+    let clock = ContinuousClock()
+    let deadline = ContinuousClock.now.advanced(by: timeout)
     while clock.now < deadline {
         if condition() {
             return true

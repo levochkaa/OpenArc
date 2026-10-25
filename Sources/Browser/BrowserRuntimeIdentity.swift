@@ -1,6 +1,12 @@
+// BrowserRuntimeIdentity.swift
+
 import Foundation
 
 enum BrowserRuntimeIdentity {
+    // MARK: Private
+
+    private static let runtimeSuffixArgumentPrefix = "--runtime-suffix="
+
     // MARK: Internal
 
     static func suffix(arguments: [String]) -> String? {
@@ -23,10 +29,6 @@ enum BrowserRuntimeIdentity {
     static func sessionDirectoryName(suffix: String?) -> String {
         suffix.map { "Session-\($0)" } ?? "Session"
     }
-
-    // MARK: Private
-
-    private static let runtimeSuffixArgumentPrefix = "--runtime-suffix="
 
     private static func sanitize(_ rawSuffix: String) -> String? {
         let allowedCharacters =

@@ -1,3 +1,5 @@
+// BrowserNavigationResolver.swift
+
 import DomainParser
 import Foundation
 import Network
@@ -5,16 +7,6 @@ import Network
 // MARK: - BrowserNavigationResolver
 
 struct BrowserNavigationResolver {
-    // MARK: Lifecycle
-
-    init(
-        domainParser: any BrowserDomainParsing = BrowserPublicSuffixDomainParser.shared,
-        searchEngineProvider: @escaping () -> BrowserSearchEngine = { .google }
-    ) {
-        self.domainParser = domainParser
-        self.searchEngineProvider = searchEngineProvider
-    }
-
     // MARK: Internal
 
     enum Kind: Equatable {
@@ -28,6 +20,19 @@ struct BrowserNavigationResolver {
         let resolvedURLString: String
     }
 
+    // MARK: Private
+
+    private let domainParser: any BrowserDomainParsing
+    private let searchEngineProvider: () -> BrowserSearchEngine
+
+    init(
+        domainParser: any BrowserDomainParsing = BrowserPublicSuffixDomainParser.shared,
+        searchEngineProvider: @escaping () -> BrowserSearchEngine = { .google },
+    ) {
+        self.domainParser = domainParser
+        self.searchEngineProvider = searchEngineProvider
+    }
+
     func resolve(_ rawInput: String) -> Resolution? {
         let trimmedInput = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedInput.isEmpty else {
@@ -38,21 +43,16 @@ struct BrowserNavigationResolver {
             return Resolution(
                 kind: .url,
                 displayText: trimmedInput,
-                resolvedURLString: resolvedURLString
+                resolvedURLString: resolvedURLString,
             )
         }
 
         return Resolution(
             kind: .search,
             displayText: trimmedInput,
-            resolvedURLString: searchEngineProvider().searchURLString(for: trimmedInput)
+            resolvedURLString: searchEngineProvider().searchURLString(for: trimmedInput),
         )
     }
-
-    // MARK: Private
-
-    private let domainParser: any BrowserDomainParsing
-    private let searchEngineProvider: () -> BrowserSearchEngine
 
     private func resolvedURLString(for input: String) -> String? {
         if let canonicalInternalURLString = BrowserInternalURLNormalizer.canonicalURLString(for: input) {
@@ -92,7 +92,7 @@ struct BrowserNavigationResolver {
         guard
             schemeCandidate.range(
                 of: #"^[A-Za-z][A-Za-z0-9+\-.]*$"#,
-                options: .regularExpression
+                options: .regularExpression,
             ) != nil
         else {
             return false
@@ -117,7 +117,7 @@ struct BrowserNavigationResolver {
     private func isValidResolvedURL(
         components: URLComponents,
         scheme: String,
-        allowSingleLabelHost: Bool
+        allowSingleLabelHost: Bool,
     ) -> Bool {
         guard components.url != nil else {
             return false
@@ -136,7 +136,8 @@ struct BrowserNavigationResolver {
 
     private func requiresHostValidation(for scheme: String) -> Bool {
         switch scheme {
-        case "http", "https":
+        case "http",
+             "https":
             true
         default:
             false
@@ -209,7 +210,8 @@ struct BrowserNavigationResolver {
 
     private func isASCIIAlpha(_ scalar: UnicodeScalar) -> Bool {
         switch scalar.value {
-        case 65...90, 97...122:
+        case 65...90,
+             97...122:
             true
         default:
             false
@@ -323,7 +325,9 @@ enum BrowserInternalURLNormalizer {
 
     private static func shouldPreferRootPath(forHost host: String) -> Bool {
         switch host {
-        case bookmarksHost, extensionsHost, settingsHost:
+        case bookmarksHost,
+             extensionsHost,
+             settingsHost:
             true
         default:
             false
@@ -347,12 +351,6 @@ protocol BrowserDomainParsing: Sendable {
 // MARK: - BrowserPublicSuffixDomainParser
 
 struct BrowserPublicSuffixDomainParser: BrowserDomainParsing, @unchecked Sendable {
-    // MARK: Lifecycle
-
-    init() throws {
-        self.parser = try DomainParser()
-    }
-
     // MARK: Internal
 
     static let shared: any BrowserDomainParsing = {
@@ -364,6 +362,14 @@ struct BrowserPublicSuffixDomainParser: BrowserDomainParsing, @unchecked Sendabl
         }
     }()
 
+    // MARK: Private
+
+    private let parser: DomainParser
+
+    init() throws {
+        self.parser = try DomainParser()
+    }
+
     func parse(host: String) -> BrowserParsedHost? {
         guard let parsedHost = parser.parse(host: host.lowercased()) else {
             return nil
@@ -371,13 +377,9 @@ struct BrowserPublicSuffixDomainParser: BrowserDomainParsing, @unchecked Sendabl
 
         return BrowserParsedHost(
             publicSuffix: parsedHost.publicSuffix,
-            registrableDomain: parsedHost.domain
+            registrableDomain: parsedHost.domain,
         )
     }
-
-    // MARK: Private
-
-    private let parser: DomainParser
 }
 
 // MARK: - BrowserNoopDomainParser

@@ -1,3 +1,5 @@
+// BrowserMobileWorkspace.swift
+
 import Foundation
 
 // MARK: - BrowserMobileTab
@@ -17,34 +19,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
 // MARK: - BrowserMobileWorkspace
 
 @MainActor final class BrowserMobileWorkspace {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(
-        engine: any BrowserMobileEngine, store: any BrowserMobileSessionStoring,
-        navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver()
-    ) {
-        self.engine = engine
-        self.store = store
-        self.navigationResolver = navigationResolver
-        engine.onEvent = { [weak self] event in self?.receive(event) }
-        engine.onPopupCreated = { [weak self] runtimeID, url in self?.adoptPopup(runtimeID: runtimeID, url: url) }
-    }
-
-    init(
-        engine: any BrowserMobileEngine, sceneID: String,
-        profileLoader: @escaping @MainActor () async throws -> BrowserMobileProfileDocument,
-        preferences: UserDefaults = .standard,
-        navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver()
-    ) {
-        self.engine = engine
-        self.store = nil
-        self.navigationResolver = navigationResolver
-        self.profileLoader = profileLoader
-        self.sceneID = sceneID
-        self.scenePreferences = preferences
-        engine.onEvent = { [weak self] event in self?.receive(event) }
-        engine.onPopupCreated = { [weak self] runtimeID, url in self?.adoptPopup(runtimeID: runtimeID, url: url) }
-    }
+    private static let blankURL = URL(string: "about:blank")!
 
     // MARK: Internal
 
@@ -59,6 +36,31 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private(set) var httpAuthentication: BrowserMobileHTTPAuthentication?
     private(set) var profileDocument: BrowserMobileProfileDocument?
     private(set) var selectedSpaceID: String?
+
+    private let engine: any BrowserMobileEngine
+    private let store: (any BrowserMobileSessionStoring)?
+    private let navigationResolver: BrowserNavigationResolver
+    private var hasRestored = false
+    private var isClosed = false
+    private var pendingSave: BrowserMobileSession?
+    private var lastSaved: BrowserMobileSession?
+    private var saveWorker: Task<Void, Never>?
+    private var saveFailed = false
+    private var isJavaScriptDialogPresentationActive = false
+    private var isSyncActive = false
+    private var isSceneAttached = false
+    private var isActivityActive = false
+    private let selectionLeaseOwner = UUID()
+    private var expiryHydrationCheck: (@MainActor () -> Bool)?
+    private var profileLoader: (@MainActor () async throws -> BrowserMobileProfileDocument)?
+    private var sceneID = ""
+    private var scenePreferences: UserDefaults?
+    private var documentObserver: UUID?
+    private var downloadsObserver: UUID?
+    private var applyingDocument = false
+    private var registeredRuntimeIDs = Set<String>()
+    private var adoptedPopupRuntimeID: String?
+    private var unloadedPersistentIDs = Set<String>()
 
     var syncSession: BrowserMobileSyncSession? { profileDocument?.syncSession }
     var downloads: BrowserMobileDownloads? { profileDocument?.downloads }
@@ -91,6 +93,39 @@ struct BrowserMobileTab: Identifiable, Equatable {
         return engine.canFindInPage(id: tab.runtimeID)
     }
 
+    private var canEdit: Bool {
+        isReady && !isClosed && !isRestoring && (profileDocument?.canEdit ?? true)
+    }
+
+    private var selectionKey: String { "mobile.scene." + Data(sceneID.utf8).base64EncodedString() }
+
+    init(
+        engine: any BrowserMobileEngine, store: any BrowserMobileSessionStoring,
+        navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver(),
+    ) {
+        self.engine = engine
+        self.store = store
+        self.navigationResolver = navigationResolver
+        engine.onEvent = { [weak self] event in self?.receive(event) }
+        engine.onPopupCreated = { [weak self] runtimeID, url in self?.adoptPopup(runtimeID: runtimeID, url: url) }
+    }
+
+    init(
+        engine: any BrowserMobileEngine, sceneID: String,
+        profileLoader: @escaping @MainActor () async throws -> BrowserMobileProfileDocument,
+        preferences: UserDefaults = .standard,
+        navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver(),
+    ) {
+        self.engine = engine
+        self.store = nil
+        self.navigationResolver = navigationResolver
+        self.profileLoader = profileLoader
+        self.sceneID = sceneID
+        self.scenePreferences = preferences
+        engine.onEvent = { [weak self] event in self?.receive(event) }
+        engine.onPopupCreated = { [weak self] runtimeID, url in self?.adoptPopup(runtimeID: runtimeID, url: url) }
+    }
+
     @discardableResult func setAutomaticTabArchival(lifetime: BrowserTemporaryTabLifetime?) -> Bool {
         guard canConfigureAutomaticTabArchival else { return false }
         return profileDocument?.setAutomaticTabArchival(lifetime: lifetime) ?? false
@@ -107,7 +142,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     }
 
     func searchArchivePage(
-        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50
+        query: String, before: BrowserTabArchiveCursor? = nil, limit: Int = 50,
     ) async throws -> BrowserTabArchivePage {
         guard let profileDocument else { throw BrowserTabArchiveError.unsupportedStore }
         return try await profileDocument.searchArchivePage(query: query, before: before, limit: limit)
@@ -165,7 +200,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
                     runtimeID: UUID().uuidString,
                     urlString: $0.urlString,
                     title: $0.title,
-                    state: BrowserMobilePageState(url: URL(string: $0.urlString))
+                    state: BrowserMobilePageState(url: URL(string: $0.urlString)),
                 )
             }
             selectedTabID = saved?.selectedTabID ?? tabs.first?.id
@@ -464,41 +499,6 @@ struct BrowserMobileTab: Identifiable, Equatable {
         return await flushPersistence()
     }
 
-    // MARK: Private
-
-    private static let blankURL = URL(string: "about:blank")!
-
-    private let engine: any BrowserMobileEngine
-    private let store: (any BrowserMobileSessionStoring)?
-    private let navigationResolver: BrowserNavigationResolver
-    private var hasRestored = false
-    private var isClosed = false
-    private var pendingSave: BrowserMobileSession?
-    private var lastSaved: BrowserMobileSession?
-    private var saveWorker: Task<Void, Never>?
-    private var saveFailed = false
-    private var isJavaScriptDialogPresentationActive = false
-    private var isSyncActive = false
-    private var isSceneAttached = false
-    private var isActivityActive = false
-    private let selectionLeaseOwner = UUID()
-    private var expiryHydrationCheck: (@MainActor () -> Bool)?
-    private var profileLoader: (@MainActor () async throws -> BrowserMobileProfileDocument)?
-    private var sceneID = ""
-    private var scenePreferences: UserDefaults?
-    private var documentObserver: UUID?
-    private var downloadsObserver: UUID?
-    private var applyingDocument = false
-    private var registeredRuntimeIDs = Set<String>()
-    private var adoptedPopupRuntimeID: String?
-    private var unloadedPersistentIDs = Set<String>()
-
-    private var canEdit: Bool {
-        isReady && !isClosed && !isRestoring && (profileDocument?.canEdit ?? true)
-    }
-
-    private var selectionKey: String { "mobile.scene." + Data(sceneID.utf8).base64EncodedString() }
-
     private func restoreProfile() async {
         guard let profileLoader else { return }
         isRestoring = true
@@ -515,7 +515,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             selectedSpaceID = scenePreferences?.string(forKey: selectionKey + ".space")
             selectedTabID = scenePreferences?.string(forKey: selectionKey + ".tab")
             if selectedSpaceID == nil {
-                let filename = Data(sceneID.utf8).base64EncodedString().replacingOccurrences(of: "/", with: "_") + ".json"
+                let filename = Data(sceneID.utf8).base64EncodedString().replacing("/", with: "_") + ".json"
                 let importedID = BrowserMobileProfileRegistry.legacySpaceID(filename: filename)
                 if let space = document.snapshot.spaces?.first(where: { $0.id == importedID }) {
                     selectedSpaceID = importedID
@@ -551,7 +551,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             var tab = previous[id] ?? BrowserMobileTab(
                 id: id, runtimeID: adoptedPopupRuntimeID ?? UUID().uuidString,
                 urlString: record.urlString, title: "",
-                state: BrowserMobilePageState(url: URL(string: record.urlString))
+                state: BrowserMobilePageState(url: URL(string: record.urlString)),
             )
             if previous[id] == nil, adoptedPopupRuntimeID != nil {
                 registeredRuntimeIDs.insert(tab.runtimeID)
@@ -567,7 +567,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             if BrowserMobileSession.allowedURL(record.urlString) == nil {
                 tab.state = BrowserMobilePageState(
                     url: URL(string: record.urlString),
-                    error: "This address is unavailable on this device."
+                    error: "This address is unavailable on this device.",
                 )
             }
             return tab
@@ -605,7 +605,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
                             spaceID: old.spaceID,
                             placement: old.placement,
                             pinnedFolderID: old.pinnedFolderID,
-                            userTitleOverride: old.userTitleOverride
+                            userTitleOverride: old.userTitleOverride,
                         )
                     }
                 }
@@ -638,7 +638,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
                 hydrationCheck: { [weak self] in
                     guard let self, isReady, !isRestoring, !isClosed else { return false }
                     return expiryHydrationCheck?() ?? true
-                }
+                },
             )
         } else {
             profileDocument.removeSelectionLease(owner: selectionLeaseOwner)
@@ -647,7 +647,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     private func recordSelectionActivity(previousID: String? = nil) {
         guard isActivityActive, isReady, !isClosed, !isRestoring else { return }
-        profileDocument?.recordActivity(tabIDs: Set([previousID, selectedTabID].compactMap { $0 }))
+        profileDocument?.recordActivity(tabIDs: Set([previousID, selectedTabID].compactMap(\.self)))
     }
 
     private func selectCurrentRuntime() {
@@ -683,7 +683,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             spaceID: tab.spaceID,
             placement: tab.placement,
             pinnedFolderID: tab.pinnedFolderID,
-            userTitleOverride: tab.userTitleOverride
+            userTitleOverride: tab.userTitleOverride,
         )
         if selectedTabID == tab.id {
             selectedTabID = visibleTabs.first { !unloadedPersistentIDs.contains($0.id) }?.id
@@ -713,7 +713,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             runtimeID: UUID().uuidString,
             urlString: url.absoluteString,
             title: "",
-            state: BrowserMobilePageState(url: url)
+            state: BrowserMobilePageState(url: url),
         )
         tabs.append(tab)
         selectedTabID = tab.id
@@ -754,7 +754,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             runtimeID: runtimeID,
             urlString: url.absoluteString,
             title: "",
-            state: BrowserMobilePageState(url: url)
+            state: BrowserMobilePageState(url: url),
         )
         tabs.append(tab)
         selectedTabID = tab.id
@@ -770,7 +770,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
         switch event {
         case .state(let runtimeID, let state):
             guard let index = tabs.firstIndex(where: { $0.runtimeID == runtimeID }) else { return }
-            let previousURL = tabs[index].urlString, previousTitle = tabs[index].title
+            let previousURL = tabs[index].urlString
+            let previousTitle = tabs[index].title
             tabs[index].state = state
             if let url = state.url, BrowserMobileSession.allowedURL(url.absoluteString) != nil {
                 if previousURL != url.absoluteString {
@@ -880,7 +881,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private func snapshot() -> BrowserMobileSession {
         BrowserMobileSession(
             tabs: tabs.map { .init(id: $0.id, urlString: $0.urlString, title: $0.title) },
-            selectedTabID: selectedTabID
+            selectedTabID: selectedTabID,
         )
     }
 

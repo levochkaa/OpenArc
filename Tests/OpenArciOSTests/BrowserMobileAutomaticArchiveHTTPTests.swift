@@ -1,3 +1,5 @@
+// BrowserMobileAutomaticArchiveHTTPTests.swift
+
 import Foundation
 import Testing
 import WebKit
@@ -15,11 +17,11 @@ extension BrowserMobileSyncHTTPIntegrationTests {
             fixture: fixture, device: account.devices[0], directory: directory,
             initial: mobileAutomaticHTTPSeed(pageURL: pageURL, activity: initialActivity), dateProvider: { state.now },
             pollInterval: .milliseconds(100), expirySweepInterval: 0.2, expiryActivityRefreshInterval: 300,
-            automaticArchivalCheckInterval: nil
+            automaticArchivalCheckInterval: nil,
         )
         let second = try MobileHTTPProfile(
             fixture: fixture, device: account.devices[1], directory: directory, dateProvider: { state.now },
-            automaticArchivalCheckInterval: nil
+            automaticArchivalCheckInterval: nil,
         )
         defer { first.cleanup()
             second.cleanup()
@@ -45,7 +47,7 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         let sharedDocument = first.document
         let sibling = BrowserMobileWorkspace(
             engine: siblingEngine, sceneID: "inactive-sibling", profileLoader: { sharedDocument },
-            preferences: siblingPreferences
+            preferences: siblingPreferences,
         )
         defer {
             sibling.setSceneAttached(false)
@@ -77,7 +79,7 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         let remote = BrowserRemoteSyncClient(configuration: configuration, session: transportSession)
         let credentials = BrowserAuthSession(
             accessToken: account.devices[0].accessToken, userID: account.userID, userEmail: nil,
-            deviceID: account.devices[0].deviceID, serverURL: fixture.baseURL
+            deviceID: account.devices[0].deviceID, serverURL: fixture.baseURL,
         )
         let initial = try await remote.pull(cursor: 0, protocolVersion: 5, authSession: credentials)
         let expiredSource = try #require(initial.events.last { $0.entityID == "expired" && $0.op == "upsert" })
@@ -99,7 +101,7 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         let unhydrated = try await fixture.inspect(account)
         #expect(
             !unhydrated.attempts.contains { $0.protocolVersion == 5 },
-            "Incomplete scene hydration must block scheduled destructive intent"
+            "Incomplete scene hydration must block scheduled destructive intent",
         )
         #expect(Set(first.document.snapshot.tabs.compactMap(\.id)) == mobileAutomaticHTTPOriginalIDs)
         #expect(try first.store.loadArchivePage().entries.isEmpty)
@@ -153,7 +155,7 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         // Replay the scheduler's actual request identity through the production
         // typed transport. Its original tombstone cannot consume the fresh ID.
         let scheduled = BrowserSyncExpiryMutation(id: expiryAttempt.mutationID, operations: [.init(
-            id: "expired", expectedServerSeq: expiredSource.serverSeq, inactiveForSeconds: 43200
+            id: "expired", expectedServerSeq: expiredSource.serverSeq, inactiveForSeconds: 43200,
         )])
         let beforeReplay = try await fixture.inspect(account)
         let receipt = try await remote.push(mutation: scheduled, authSession: credentials)
@@ -173,13 +175,13 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         try await second.stop()
         let reopened = try MobileHTTPProfile(
             fixture: fixture, device: account.devices[0], directory: directory, dateProvider: { state.now },
-            automaticArchivalCheckInterval: nil
+            automaticArchivalCheckInterval: nil,
         )
         defer { reopened.cleanup() }
         #expect(!reopened.document.automaticTabArchivalEnabled)
         #expect(reopened.document.temporaryTabLifetime == .twelveHours)
         try await reopened.start(expectedPullProtocolVersion: 5)
-        #expect(reopened.document.snapshot.tabs.filter { $0.id == restoredID }.count == 1)
+        #expect(reopened.document.snapshot.tabs.count(where: { $0.id == restoredID }) == 1)
         #expect(!reopened.document.snapshot.tabs.contains { $0.id == "expired" })
         #expect(try reopened.store.loadArchivePage().entries.isEmpty)
         try await fixture.complete(account)
@@ -205,13 +207,13 @@ private func mobileAutomaticHTTPSeed(pageURL: URL, activity: TimeInterval) -> Br
             urlString: "about:blank",
             userTitleOverride: "Expired tab",
             spaceID: "source",
-            lastActivityTimestamp: activity
+            lastActivityTimestamp: activity,
         ),
     ])
 }
 
 @MainActor private func mobileAutomaticHTTPWaitForCommitted(
-    _ fixture: MobileHTTPFixture, account: MobileHTTPFixture.Account, mutationID: String
+    _ fixture: MobileHTTPFixture, account: MobileHTTPFixture.Account, mutationID: String,
 ) async throws {
     for _ in 0..<100 {
         if try await fixture.inspect(account)

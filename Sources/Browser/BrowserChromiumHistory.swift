@@ -1,3 +1,5 @@
+// BrowserChromiumHistory.swift
+
 import Foundation
 import GRDB
 
@@ -18,11 +20,62 @@ struct BrowserEmptyHistoryStore: BrowserHistorySearching {
 // MARK: - BrowserChromiumHistoryStore
 
 final class BrowserChromiumHistoryStore: BrowserHistorySearching {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let profileDirectoryCandidates: [URL]
+    private let fileManager: FileManager
+
+    private var historyFileCandidates: [URL] {
+        profileDirectoryCandidates.map {
+            $0.appendingPathComponent("History", isDirectory: false)
+        }
+    }
+
+    private var existingHistoryURL: URL? {
+        historyFileCandidates
+            .filter { fileManager.fileExists(atPath: $0.path) }
+            .max { lhs, rhs in
+                modificationDate(for: lhs) < modificationDate(for: rhs)
+            }
+    }
 
     init(profileDirectoryCandidates: [URL], fileManager: FileManager = .default) {
         self.profileDirectoryCandidates = profileDirectoryCandidates
         self.fileManager = fileManager
+    }
+
+    private static func displayTitle(title: String, urlString: String) -> String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTitle.isEmpty {
+            return trimmedTitle
+        }
+
+        guard
+            let host = URL(string: urlString)?.host,
+            !host.isEmpty
+        else {
+            return urlString
+        }
+
+        return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
+    }
+
+    private static func likePattern(for query: String) -> String {
+        var pattern = "%"
+        for character in query {
+            switch character {
+            case "\\":
+                pattern += "\\\\"
+            case "%":
+                pattern += "\\%"
+            case "_":
+                pattern += "\\_"
+            default:
+                pattern.append(character)
+            }
+        }
+        pattern += "%"
+        return pattern
     }
 
     // MARK: Internal
@@ -58,7 +111,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching {
                     ORDER BY typed_count DESC, visit_count DESC, last_visit_time DESC
                     LIMIT ?
                     """,
-                    arguments: [pattern, pattern, maximumCount]
+                    arguments: [pattern, pattern, maximumCount],
                 )
             }
 
@@ -73,65 +126,12 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching {
                     kind: .history,
                     displayText: Self.displayTitle(title: title, urlString: urlString),
                     detailText: BrowserURLDisplayFormatter.displayString(for: urlString),
-                    resolvedURLString: urlString
+                    resolvedURLString: urlString,
                 )
             }
         } catch {
             return []
         }
-    }
-
-    // MARK: Private
-
-    private let profileDirectoryCandidates: [URL]
-    private let fileManager: FileManager
-
-    private var historyFileCandidates: [URL] {
-        profileDirectoryCandidates.map {
-            $0.appendingPathComponent("History", isDirectory: false)
-        }
-    }
-
-    private var existingHistoryURL: URL? {
-        historyFileCandidates
-            .filter { fileManager.fileExists(atPath: $0.path) }
-            .max { lhs, rhs in
-                modificationDate(for: lhs) < modificationDate(for: rhs)
-            }
-    }
-
-    private static func displayTitle(title: String, urlString: String) -> String {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedTitle.isEmpty {
-            return trimmedTitle
-        }
-
-        guard
-            let host = URL(string: urlString)?.host,
-            !host.isEmpty
-        else {
-            return urlString
-        }
-
-        return BrowserURLDisplayFormatter.hostDisplayString(forHost: host)
-    }
-
-    private static func likePattern(for query: String) -> String {
-        var pattern = "%"
-        for character in query {
-            switch character {
-            case "\\":
-                pattern += "\\\\"
-            case "%":
-                pattern += "\\%"
-            case "_":
-                pattern += "\\_"
-            default:
-                pattern.append(character)
-            }
-        }
-        pattern += "%"
-        return pattern
     }
 
     private func modificationDate(for url: URL) -> Date {

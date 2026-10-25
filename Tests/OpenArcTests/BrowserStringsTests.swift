@@ -1,3 +1,5 @@
+// BrowserStringsTests.swift
+
 import AppKit
 import Testing
 

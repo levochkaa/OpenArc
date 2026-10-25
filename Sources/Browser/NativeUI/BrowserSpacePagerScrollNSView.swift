@@ -1,17 +1,17 @@
+// BrowserSpacePagerScrollNSView.swift
+
 import AppKit
 
 // MARK: - BrowserLocalMonitorCleanup
 
 final class BrowserLocalMonitorCleanup: @unchecked Sendable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var monitor: Any?
 
     deinit {
         remove()
     }
-
-    // MARK: Internal
-
-    var monitor: Any?
 
     func set(_ monitor: Any?) {
         remove()
@@ -31,16 +31,6 @@ final class BrowserLocalMonitorCleanup: @unchecked Sendable {
 // MARK: - BrowserSpacePagerScrollNSView
 
 final class BrowserSpacePagerScrollNSView: NSView {
-    // MARK: Lifecycle
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
     // MARK: Internal
 
     var isEnabled = false
@@ -51,6 +41,18 @@ final class BrowserSpacePagerScrollNSView: NSView {
     var isTrackingHorizontalScroll = false
     var didSendScrollRelease = false
     var scrollEndWorkItem: DispatchWorkItem?
+
+    // MARK: Private
+
+    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     override func hitTest(_: NSPoint) -> NSView? {
         nil
@@ -65,10 +67,6 @@ final class BrowserSpacePagerScrollNSView: NSView {
             installLocalMonitorIfNeeded()
         }
     }
-
-    // MARK: Private
-
-    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
 
     private func installLocalMonitorIfNeeded() {
         guard localMonitorCleanup.monitor == nil else {

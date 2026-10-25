@@ -1,3 +1,5 @@
+// BrowserSidebarSnapshot.swift
+
 import AppKit
 import QuartzCore
 
@@ -78,7 +80,7 @@ struct BrowserSidebarSnapshot: Equatable {
 
     func visiblePinnedRows(
         in spaceID: String,
-        revealedTabIDsByFolderID: [String: Set<String>] = [:]
+        revealedTabIDsByFolderID: [String: Set<String>] = [:],
     ) -> [BrowserSidebarPinnedRow] {
         let tree = BrowserSidebarTabTree(snapshot: self)
         let pinned = spacePinnedTabs(in: spaceID)
@@ -106,7 +108,7 @@ struct BrowserSidebarSnapshot: Equatable {
                         folderChildIndex: container.folderID == nil
                             ? nil
                             : directTabs.firstIndex(of: id),
-                        depth: depth
+                        depth: depth,
                     )))
                 case .folder(let id):
                     guard visited.insert(id).inserted, let folder = tree.folders[id] else { continue }
@@ -127,7 +129,7 @@ struct BrowserSidebarSnapshot: Equatable {
                         childCount: directChildren.count,
                         firstSectionIndex: first,
                         afterSectionIndex: after,
-                        depth: depth
+                        depth: depth,
                     )))
                     if folder.isExpanded {
                         append(childContainer, depth: depth + 1)
@@ -143,7 +145,7 @@ struct BrowserSidebarSnapshot: Equatable {
                                 sectionIndex: index,
                                 pinnedFolderID: id,
                                 folderChildIndex: childIndex,
-                                depth: depth + 1
+                                depth: depth + 1,
                             )))
                         }
                     }
@@ -156,7 +158,7 @@ struct BrowserSidebarSnapshot: Equatable {
 
     func replacingTabs(
         _ tabs: [BrowserChromeModel.Tab],
-        pinnedTabFolders folders: [BrowserChromeModel.PinnedTabFolder]? = nil
+        pinnedTabFolders folders: [BrowserChromeModel.PinnedTabFolder]? = nil,
     ) -> BrowserSidebarSnapshot {
         let tabIDs = Set(tabs.map(\.id))
         return BrowserSidebarSnapshot(
@@ -175,7 +177,7 @@ struct BrowserSidebarSnapshot: Equatable {
             canGoForward: canGoForward,
             canStopLoading: canStopLoading,
             canReload: canReload,
-            splitGroups: splitGroups.map { $0.filter(tabIDs.contains) }.filter { $0.count > 1 }
+            splitGroups: splitGroups.map { $0.filter(tabIDs.contains) }.filter { $0.count > 1 },
         )
     }
 
@@ -184,13 +186,13 @@ struct BrowserSidebarSnapshot: Equatable {
     private func descendantTabCount(
         forFolderID folderID: String,
         in pinnedTabs: [BrowserChromeModel.Tab],
-        foldersByID: [String: BrowserChromeModel.PinnedTabFolder]
+        foldersByID: [String: BrowserChromeModel.PinnedTabFolder],
     ) -> Int {
         descendantTabCount(
             forFolderID: folderID,
             in: pinnedTabs,
             foldersByID: foldersByID,
-            visitedFolderIDs: []
+            visitedFolderIDs: [],
         )
     }
 
@@ -198,7 +200,7 @@ struct BrowserSidebarSnapshot: Equatable {
         forFolderID folderID: String,
         in pinnedTabs: [BrowserChromeModel.Tab],
         foldersByID: [String: BrowserChromeModel.PinnedTabFolder],
-        visitedFolderIDs: Set<String>
+        visitedFolderIDs: Set<String>,
     ) -> Int {
         guard !visitedFolderIDs.contains(folderID) else {
             return 0
@@ -208,13 +210,13 @@ struct BrowserSidebarSnapshot: Equatable {
         let childFolderIDs = foldersByID.values
             .filter { $0.parentFolderID == folderID }
             .map(\.id)
-        let directTabCount = pinnedTabs.filter { $0.pinnedFolderID == folderID }.count
+        let directTabCount = pinnedTabs.count(where: { $0.pinnedFolderID == folderID })
         return directTabCount + childFolderIDs.reduce(0) { count, childFolderID in
             count + descendantTabCount(
                 forFolderID: childFolderID,
                 in: pinnedTabs,
                 foldersByID: foldersByID,
-                visitedFolderIDs: visitedFolderIDs
+                visitedFolderIDs: visitedFolderIDs,
             )
         }
     }

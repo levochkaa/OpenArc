@@ -1,3 +1,5 @@
+// BrowserMobileSharedWorkspaceTests.swift
+
 import Foundation
 import Testing
 import UIKit
@@ -9,12 +11,14 @@ import UIKit
     @Test func independentScenesShareActionsAndKeepSelectionAndRuntimeIdentity() async throws {
         let f = try SharedWorkspaceFixture()
         defer { f.cleanup() }
-        let first = f.workspace("first"), second = f.workspace("second")
+        let first = f.workspace("first")
+        let second = f.workspace("second")
         await first.workspace.restore()
         await second.workspace.restore()
         first.workspace.selectTab(id: "a")
         second.workspace.selectTab(id: "c")
-        let firstIDs = first.workspace.tabs.map(\.runtimeID), secondIDs = second.workspace.tabs.map(\.runtimeID)
+        let firstIDs = first.workspace.tabs.map(\.runtimeID)
+        let secondIDs = second.workspace.tabs.map(\.runtimeID)
         #expect(Set(firstIDs).isDisjoint(with: secondIDs))
         let writes = f.store.writes.count
         #expect(f.document.renameTab(id: "a", title: "Shared name"))
@@ -36,7 +40,8 @@ import UIKit
     @Test func remoteMetadataAndOrderKeepLiveHistoryWithoutNavigationOrReplacement() async throws {
         let f = try SharedWorkspaceFixture()
         defer { f.cleanup() }
-        let first = f.workspace("first"), second = f.workspace("second")
+        let first = f.workspace("first")
+        let second = f.workspace("second")
         await first.workspace.restore()
         await second.workspace.restore()
         first.workspace.selectTab(id: "a")
@@ -44,7 +49,7 @@ import UIKit
         let a = try #require(first.workspace.selectedTab)
         first.engine.emit(
             id: a.runtimeID,
-            state: .init(url: URL(string: a.urlString), title: "Live page", canGoBack: true)
+            state: .init(url: URL(string: a.urlString), title: "Live page", canGoBack: true),
         )
         let firstIDs = Dictionary(uniqueKeysWithValues: first.workspace.tabs.map { ($0.id, $0.runtimeID) })
         let secondIDs = Dictionary(uniqueKeysWithValues: second.workspace.tabs.map { ($0.id, $0.runtimeID) })
@@ -60,7 +65,7 @@ import UIKit
                 spaceID: tab.spaceID,
                 pinnedFolderID: tab.pinnedFolderID,
                 lastActivityTimestamp: tab.lastActivityTimestamp,
-                pinnedSiblingRank: tab.pinnedSiblingRank
+                pinnedSiblingRank: tab.pinnedSiblingRank,
             )
         }
         let writes = f.store.writes.count
@@ -80,7 +85,8 @@ import UIKit
     @Test func deletingFromOneSceneClosesOtherRuntimeAndLateCallbacksCannotResurrect() async throws {
         let f = try SharedWorkspaceFixture()
         defer { f.cleanup() }
-        let first = f.workspace("first"), second = f.workspace("second")
+        let first = f.workspace("first")
+        let second = f.workspace("second")
         await first.workspace.restore()
         await second.workspace.restore()
         let oldFirst = try #require(first.workspace.tabs.first { $0.id == "a" })
@@ -118,10 +124,10 @@ import UIKit
         scene.workspace.submit("https://example.com/recovered")
         #expect(scene.workspace.selectedTabID == "desktop")
         #expect(f.document.snapshot.tabs.first { $0.id == "desktop" }?.urlString == "https://example.com/recovered")
-        #expect(scene.engine.created.filter { $0.id == unsupported.runtimeID }.count == 1)
+        #expect(scene.engine.created.count(where: { $0.id == unsupported.runtimeID }) == 1)
         #expect(
             scene.engine.loads.count == loads + 1,
-            "The newly selected runtime must not load the submitted URL twice"
+            "The newly selected runtime must not load the submitted URL twice",
         )
         #expect(await scene.workspace.shutdown())
     }
@@ -129,17 +135,20 @@ import UIKit
     @Test func ownSubmitAndPopupAdoptionReuseOneRuntimeAndPropagateToSecondScene() async throws {
         let f = try SharedWorkspaceFixture()
         defer { f.cleanup() }
-        let first = f.workspace("first"), second = f.workspace("second")
+        let first = f.workspace("first")
+        let second = f.workspace("second")
         await first.workspace.restore()
         await second.workspace.restore()
         first.workspace.selectTab(id: "a")
         let runtime = try #require(first.workspace.selectedTab?.runtimeID)
-        let created = first.engine.created.count, loads = first.engine.loads.count
+        let created = first.engine.created.count
+        let loads = first.engine.loads.count
         first.workspace.submit("https://example.com/typed")
         #expect(first.workspace.selectedTab?.runtimeID == runtime && first.engine.created.count == created)
         #expect(first.engine.loads.count == loads + 1)
         #expect(second.workspace.tabs.first { $0.id == "a" }?.urlString == "https://example.com/typed")
-        let repeatedLoads = first.engine.loads.count, repeatedWrites = f.store.writes.count
+        let repeatedLoads = first.engine.loads.count
+        let repeatedWrites = f.store.writes.count
         first.workspace.submit("https://example.com/typed")
         #expect(first.engine.loads.count == repeatedLoads + 1)
         #expect(f.store.writes.count == repeatedWrites, "Submitting the same address only reloads this scene")
@@ -148,12 +157,12 @@ import UIKit
         let popup = try #require(first.workspace.tabs.first { $0.runtimeID == popupRuntime })
         #expect(first.workspace.selectedTabID == popup.id)
         #expect(first.engine.created.count == created, "WebKit already supplied the popup runtime")
-        #expect(f.document.snapshot.tabs.filter { $0.id == popup.id }.count == 1)
+        #expect(f.document.snapshot.tabs.count(where: { $0.id == popup.id }) == 1)
         let otherPopup = try #require(second.workspace.tabs.first { $0.id == popup.id })
         #expect(otherPopup.runtimeID != popupRuntime)
-        #expect(second.engine.created.filter { $0.id == otherPopup.runtimeID }.count == 1)
+        #expect(second.engine.created.count(where: { $0.id == otherPopup.runtimeID }) == 1)
         first.engine.onPopupCreated?(popupRuntime, URL(string: "https://example.com/popup"))
-        #expect(f.document.snapshot.tabs.filter { $0.id == popup.id }.count == 1)
+        #expect(f.document.snapshot.tabs.count(where: { $0.id == popup.id }) == 1)
         #expect(await first.workspace.shutdown())
         #expect(await second.workspace.shutdown())
     }
@@ -167,7 +176,8 @@ import UIKit
         f.store.fails = true
         #expect(f.document.renameTab(id: "a", title: "Retained failed action"))
         #expect(f.document.hasUncommittedWrites && f.document.canEdit)
-        let oldURL = scene.workspace.selectedTab?.urlString, loads = scene.engine.loads.count
+        let oldURL = scene.workspace.selectedTab?.urlString
+        let loads = scene.engine.loads.count
         scene.workspace.submit("https://example.com/unretained")
         #expect(f.document.persistenceFailure?.reason == .bufferLimitExceeded)
         #expect(scene.workspace.selectedTab?.urlString == oldURL)
@@ -179,21 +189,25 @@ import UIKit
 
     @Test(arguments: [BrowserTabPlacement.spacePinned, .app], [false, true])
     func persistentCloseUnloadsOnlyThisSceneAndReopensWithFreshRuntime(
-        placement: BrowserTabPlacement, fromEngine: Bool
+        placement: BrowserTabPlacement, fromEngine: Bool,
     ) async throws {
         let f = try SharedWorkspaceFixture()
         defer { f.cleanup() }
         let owner = try BrowserSyncOwner(baseURL: #require(URL(string: "https://sync.example")), userID: "owner")
         try f.sqlite.bindSyncOwner(owner)
-        let first = f.workspace("first"), second = f.workspace("second")
+        let first = f.workspace("first")
+        let second = f.workspace("second")
         await first.workspace.restore()
         await second.workspace.restore()
         #expect(f.document.setPlacement(tabID: "a", placement: placement))
         first.workspace.selectTab(id: "a")
         second.workspace.selectTab(id: "a")
-        let tab = try #require(first.workspace.selectedTab), other = try #require(second.workspace.selectedTab)
-        let document = f.document.snapshot, writes = f.store.writes.count
-        let queue = try f.sqlite.pendingSyncQueue(for: owner), otherLoads = second.engine.loads.count
+        let tab = try #require(first.workspace.selectedTab)
+        let other = try #require(second.workspace.selectedTab)
+        let document = f.document.snapshot
+        let writes = f.store.writes.count
+        let queue = try f.sqlite.pendingSyncQueue(for: owner)
+        let otherLoads = second.engine.loads.count
         if fromEngine {
             first.engine.closeTab(id: tab.runtimeID)
         } else {
@@ -206,12 +220,13 @@ import UIKit
         #expect(second.workspace.selectedTab?.runtimeID == other.runtimeID)
         #expect(second.engine.closed.isEmpty && second.engine.loads.count == otherLoads)
         let closedRow = try #require(first.workspace.tabs.first { $0.id == "a" })
-        let creations = first.engine.created.count, loads = first.engine.loads.count
+        let creations = first.engine.created.count
+        let loads = first.engine.loads.count
         #expect(f.document.renameSpace(id: "source", title: "Unrelated rename"))
         #expect(f.document.move(
             items: [.init(entityType: .space, entityID: "source")],
             destination: .spaces,
-            after: .init(entityType: .space, entityID: "target")
+            after: .init(entityType: .space, entityID: "target"),
         ))
         #expect(first.engine.created.count == creations && first.engine.loads.count == loads)
         #expect(!first.engine.created.contains { $0.id == closedRow.runtimeID })
@@ -219,8 +234,8 @@ import UIKit
         first.workspace.selectTab(id: "a")
         let reopened = try #require(first.workspace.selectedTab)
         #expect(reopened.id == "a" && reopened.runtimeID != tab.runtimeID)
-        #expect(first.engine.created.filter { $0.id == reopened.runtimeID }.count == 1)
-        #expect(first.engine.loads.filter { $0.id == reopened.runtimeID }.count == 1)
+        #expect(first.engine.created.count(where: { $0.id == reopened.runtimeID }) == 1)
+        #expect(first.engine.loads.count(where: { $0.id == reopened.runtimeID }) == 1)
         #expect(f.store.writes.count == beforeSelect)
         #expect(second.workspace.selectedTab?.runtimeID == other.runtimeID)
         #expect(await first.workspace.shutdown())
@@ -230,12 +245,14 @@ import UIKit
     @Test func clearingUserTitleRestoresTheCurrentPageTitleInBothScenes() async throws {
         let f = try SharedWorkspaceFixture()
         defer { f.cleanup() }
-        let first = f.workspace("first"), second = f.workspace("second")
+        let first = f.workspace("first")
+        let second = f.workspace("second")
         await first.workspace.restore()
         await second.workspace.restore()
         first.workspace.selectTab(id: "a")
         second.workspace.selectTab(id: "a")
-        let a = try #require(first.workspace.selectedTab), b = try #require(second.workspace.selectedTab)
+        let a = try #require(first.workspace.selectedTab)
+        let b = try #require(second.workspace.selectedTab)
         first.engine.emit(id: a.runtimeID, state: .init(url: URL(string: a.urlString), title: "First page title"))
         second.engine.emit(id: b.runtimeID, state: .init(url: URL(string: b.urlString), title: "Second page title"))
         #expect(f.document.renameTab(id: "a", title: "Custom title"))
@@ -255,7 +272,8 @@ import UIKit
     @Test func closingOneSceneAndReopeningRetainsSharedDocumentAndIndependentSelection() async throws {
         let f = try SharedWorkspaceFixture()
         defer { f.cleanup() }
-        let first = f.workspace("first"), second = f.workspace("second")
+        let first = f.workspace("first")
+        let second = f.workspace("second")
         await first.workspace.restore()
         await second.workspace.restore()
         first.workspace.selectTab(id: "a")
@@ -281,7 +299,14 @@ import UIKit
 // MARK: - SharedWorkspaceFixture
 
 @MainActor private final class SharedWorkspaceFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SharedWorkspace-\(UUID())")
+    let suite = "SharedWorkspace.\(UUID())"
+    let preferences: UserDefaults
+    let sqlite: BrowserSQLiteSessionStore
+    let store: SharedWorkspaceStore
+    let document: BrowserMobileProfileDocument
 
     init(unsupported: Bool = false, maximumBufferedWrites: Int = 32) throws {
         self.preferences = try #require(UserDefaults(suiteName: suite))
@@ -298,7 +323,7 @@ import UIKit
                 id: "desktop",
                 urlString: "openarc://settings",
                 placement: .spacePinned,
-                spaceID: "source"
+                spaceID: "source",
             ))
         }
         let snapshot = BrowserTabSessionSnapshot(spaces: [
@@ -311,18 +336,9 @@ import UIKit
         let canonical = BrowserSyncFolderProjection.snapshot(values: values, local: snapshot)
         try sqlite.writeSessionBatch([.init(snapshot: canonical, origin: .local(syncMove: nil))])
         self.document = try BrowserMobileProfileDocument(
-            store: store, initialSnapshot: sqlite.loadSnapshotStrict(), maximumBufferedWrites: maximumBufferedWrites
+            store: store, initialSnapshot: sqlite.loadSnapshotStrict(), maximumBufferedWrites: maximumBufferedWrites,
         )
     }
-
-    // MARK: Internal
-
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SharedWorkspace-\(UUID())")
-    let suite = "SharedWorkspace.\(UUID())"
-    let preferences: UserDefaults
-    let sqlite: BrowserSQLiteSessionStore
-    let store: SharedWorkspaceStore
-    let document: BrowserMobileProfileDocument
 
     func workspace(_ scene: String) -> (workspace: BrowserMobileWorkspace, engine: SharedWorkspaceEngine) {
         let engine = SharedWorkspaceEngine()
@@ -330,7 +346,7 @@ import UIKit
             BrowserMobileWorkspace(engine: engine, sceneID: scene, profileLoader: { [document] in
                 document
             }, preferences: preferences),
-            engine
+            engine,
         )
     }
 
@@ -348,15 +364,13 @@ import UIKit
 // MARK: - SharedWorkspaceStore
 
 private final class SharedWorkspaceStore: BrowserTabSessionSnapshotStoring {
-    // MARK: Lifecycle
-
-    init(_ sqlite: BrowserSQLiteSessionStore) { self.sqlite = sqlite }
-
     // MARK: Internal
 
     let sqlite: BrowserSQLiteSessionStore
     var writes = [[BrowserSessionWrite]]()
     var fails = false
+
+    init(_ sqlite: BrowserSQLiteSessionStore) { self.sqlite = sqlite }
 
     func loadSnapshot() -> BrowserTabSessionSnapshot? { sqlite.loadSnapshot() }
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) { sqlite.saveSnapshot(snapshot) }
@@ -381,9 +395,16 @@ private final class SharedWorkspaceStore: BrowserTabSessionSnapshotStoring {
     let hostView = UIView()
     var onEvent: ((BrowserMobileEngineEvent) -> Void)?
     var onPopupCreated: ((String, URL?) -> Void)?
-    var created = [Request](), loads = [Request](), closed = [String]()
+    var created = [Request]()
+    var loads = [Request]()
+    var closed = [String]()
     var selected: String?
     var shutdownCount = 0
+
+    // MARK: Private
+
+    private var records = [String: URL]()
+    private var started = Set<String>()
 
     func createTab(id: String, url: URL) {
         created.append(.init(id: id, url: url))
@@ -430,9 +451,4 @@ private final class SharedWorkspaceStore: BrowserTabSessionSnapshotStoring {
     func shutdown() { shutdownCount += 1
         records.removeAll()
     }
-
-    // MARK: Private
-
-    private var records = [String: URL]()
-    private var started = Set<String>()
 }

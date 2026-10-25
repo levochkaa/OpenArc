@@ -1,10 +1,14 @@
+// BrowserInteractionObservers.swift
+
 import AppKit
 import QuartzCore
 
 // MARK: - BrowserNotificationObserverCleanup
 
 private final class BrowserNotificationObserverCleanup: @unchecked Sendable {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private var observers = [NSObjectProtocol]()
 
     deinit {
         removeAll()
@@ -22,16 +26,20 @@ private final class BrowserNotificationObserverCleanup: @unchecked Sendable {
         }
         observers.removeAll()
     }
-
-    // MARK: Private
-
-    private var observers = [NSObjectProtocol]()
 }
 
 // MARK: - BrowserSpaceSwipeNSView
 
 final class BrowserSpaceSwipeNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var canSwitchSpaces = false
+    var onSwipeLeft: () -> Void = {}
+    var onSwipeRight: () -> Void = {}
+
+    // MARK: Private
+
+    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -40,12 +48,6 @@ final class BrowserSpaceSwipeNSView: NSView {
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    // MARK: Internal
-
-    var canSwitchSpaces = false
-    var onSwipeLeft: () -> Void = {}
-    var onSwipeRight: () -> Void = {}
 
     override func hitTest(_: NSPoint) -> NSView? {
         nil
@@ -60,10 +62,6 @@ final class BrowserSpaceSwipeNSView: NSView {
             installLocalMonitorIfNeeded()
         }
     }
-
-    // MARK: Private
-
-    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
 
     private func installLocalMonitorIfNeeded() {
         guard localMonitorCleanup.monitor == nil else {
@@ -100,17 +98,6 @@ final class BrowserSpaceSwipeNSView: NSView {
 // MARK: - BrowserPassthroughInteractionNSView
 
 final class BrowserPassthroughInteractionNSView: NSView {
-    // MARK: Lifecycle
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        postsFrameChangedNotifications = true
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
     // MARK: Internal
 
     var onInteraction: (NSEvent, NSView) -> Void = { _, _ in }
@@ -123,6 +110,19 @@ final class BrowserPassthroughInteractionNSView: NSView {
 
             reinstallLocalMonitorIfNeeded()
         }
+    }
+
+    // MARK: Private
+
+    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        postsFrameChangedNotifications = true
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func hitTest(_: NSPoint) -> NSView? {
@@ -139,10 +139,6 @@ final class BrowserPassthroughInteractionNSView: NSView {
         }
     }
 
-    // MARK: Private
-
-    private let localMonitorCleanup = BrowserLocalMonitorCleanup()
-
     private func reinstallLocalMonitorIfNeeded() {
         guard window != nil else {
             return
@@ -158,7 +154,7 @@ final class BrowserPassthroughInteractionNSView: NSView {
         }
 
         localMonitorCleanup.set(NSEvent.addLocalMonitorForEvents(
-            matching: eventMask
+            matching: eventMask,
         ) { [weak self] event in
             guard let self, let window, event.window === window else {
                 return event
@@ -181,7 +177,11 @@ final class BrowserPassthroughInteractionNSView: NSView {
 // MARK: - BrowserWindowFrameReaderNSView
 
 final class BrowserWindowFrameReaderNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onFrameChange: (CGRect?) -> Void = { _ in }
+
+    var lastFrameInWindow: CGRect?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -191,12 +191,6 @@ final class BrowserWindowFrameReaderNSView: NSView {
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    // MARK: Internal
-
-    var onFrameChange: (CGRect?) -> Void = { _ in }
-
-    var lastFrameInWindow: CGRect?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -240,7 +234,15 @@ final class BrowserWindowFrameReaderNSView: NSView {
 // MARK: - BrowserScreenFrameReaderNSView
 
 final class BrowserScreenFrameReaderNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onFrameChange: (CGRect?) -> Void = { _ in }
+
+    var lastFrameInScreen: CGRect?
+
+    // MARK: Private
+
+    private let windowObserverCleanup = BrowserNotificationObserverCleanup()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -250,12 +252,6 @@ final class BrowserScreenFrameReaderNSView: NSView {
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    // MARK: Internal
-
-    var onFrameChange: (CGRect?) -> Void = { _ in }
-
-    var lastFrameInScreen: CGRect?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -284,10 +280,6 @@ final class BrowserScreenFrameReaderNSView: NSView {
         }
     }
 
-    // MARK: Private
-
-    private let windowObserverCleanup = BrowserNotificationObserverCleanup()
-
     private func updateWindowObservers() {
         removeWindowObservers()
 
@@ -300,7 +292,7 @@ final class BrowserScreenFrameReaderNSView: NSView {
             let observer = notificationCenter.addObserver(
                 forName: name,
                 object: window,
-                queue: .main
+                queue: .main,
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.scheduleFrameUpdate()
@@ -337,7 +329,17 @@ struct BrowserWindowFullscreenState: Equatable {
 // MARK: - BrowserWindowFullscreenReaderNSView
 
 final class BrowserWindowFullscreenReaderNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void = { _ in }
+
+    var lastFullscreenState: BrowserWindowFullscreenState?
+
+    // MARK: Private
+
+    private let notificationObserverCleanup = BrowserNotificationObserverCleanup()
+
+    private weak var observedWindow: NSWindow?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -346,12 +348,6 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    // MARK: Internal
-
-    var onFullscreenStateChange: (BrowserWindowFullscreenState) -> Void = { _ in }
-
-    var lastFullscreenState: BrowserWindowFullscreenState?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -363,16 +359,10 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
         sendFullscreenStateIfNeeded(
             BrowserWindowFullscreenState(
                 isFullscreen: window?.styleMask.contains(.fullScreen) ?? false,
-                isTransitioning: false
-            )
+                isTransitioning: false,
+            ),
         )
     }
-
-    // MARK: Private
-
-    private let notificationObserverCleanup = BrowserNotificationObserverCleanup()
-
-    private weak var observedWindow: NSWindow?
 
     private func updateObservedWindow() {
         guard observedWindow !== window else {
@@ -388,22 +378,22 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
 
         addNotificationObserver(for: NSWindow.willEnterFullScreenNotification, window: window) { [weak self] in
             self?.sendFullscreenStateIfNeeded(
-                BrowserWindowFullscreenState(isFullscreen: true, isTransitioning: true)
+                BrowserWindowFullscreenState(isFullscreen: true, isTransitioning: true),
             )
         }
         addNotificationObserver(for: NSWindow.didEnterFullScreenNotification, window: window) { [weak self] in
             self?.sendFullscreenStateIfNeeded(
-                BrowserWindowFullscreenState(isFullscreen: true, isTransitioning: false)
+                BrowserWindowFullscreenState(isFullscreen: true, isTransitioning: false),
             )
         }
         addNotificationObserver(for: NSWindow.willExitFullScreenNotification, window: window) { [weak self] in
             self?.sendFullscreenStateIfNeeded(
-                BrowserWindowFullscreenState(isFullscreen: false, isTransitioning: true)
+                BrowserWindowFullscreenState(isFullscreen: false, isTransitioning: true),
             )
         }
         addNotificationObserver(for: NSWindow.didExitFullScreenNotification, window: window) { [weak self] in
             self?.sendFullscreenStateIfNeeded(
-                BrowserWindowFullscreenState(isFullscreen: false, isTransitioning: false)
+                BrowserWindowFullscreenState(isFullscreen: false, isTransitioning: false),
             )
         }
     }
@@ -411,12 +401,12 @@ final class BrowserWindowFullscreenReaderNSView: NSView {
     private func addNotificationObserver(
         for name: NSNotification.Name,
         window: NSWindow,
-        handler: @escaping @MainActor @Sendable () -> Void
+        handler: @escaping @MainActor @Sendable () -> Void,
     ) {
         let observer = NotificationCenter.default.addObserver(
             forName: name,
             object: window,
-            queue: .main
+            queue: .main,
         ) { _ in
             Task { @MainActor in
                 handler()

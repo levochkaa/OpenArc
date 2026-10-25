@@ -1,3 +1,5 @@
+// BrowserApplicationController.swift
+
 import AppKit
 import Combine
 import CoreServices
@@ -8,7 +10,120 @@ import Settings
 @objcMembers
 @MainActor public final class BrowserApplicationController: NSObject, NSApplicationDelegate, NSWindowDelegate,
 NSMenuDelegate, NSUserInterfaceValidations {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private static let spacesMenuIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces")
+    private static let spaceListEndIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces.list-end")
+    private static let installWebAppMenuItemIdentifier = NSUserInterfaceItemIdentifier(
+        "browser.install-web-app",
+    )
+
+    private var aboutWindow: NSWindow?
+    private var settingsWindowController: SettingsWindowController?
+    private var archiveWindowControllers = [ObjectIdentifier: BrowserArchiveWindowController]()
+    private var webAppWindowSession: BrowserWebAppWindowSession?
+    private var incognitoWindowSessions = [BrowserIncognitoWindowSession]()
+    private var profileWindowSessions = [BrowserProfileWindowSession]()
+    private var profileStore: BrowserProfileStore?
+    private var updateController: BrowserUpdateController?
+    private let userPreferencesStore = BrowserUserPreferencesStore()
+    private let shortcutStore = BrowserShortcutStore()
+    private var batterySaverController: BrowserBatterySaverController?
+    private let defaultBrowserService = BrowserDefaultBrowserService()
+    private weak var setAsDefaultBrowserMenuItem: NSMenuItem?
+    private var pendingNavigationURLs = [URL]()
+    private var hasReceivedBrowserContext = false
+    private var isTerminationRequested = false
+    private var isQuitWarningPresented = false
+    private var isSessionClosureConfirmationPresented = false
+    private var didConfirmTerminationWarning = false
+    private var layoutIndependentKeyMonitor: Any?
+    private var shortcutStoreCancellable: AnyCancellable?
+    private var appearancePreferenceCancellable: AnyCancellable?
+    private var littleWindowHotKeyCancellable: AnyCancellable?
+    private weak var lastKeyProfileWindow: NSWindow?
+    /// Option-Command-N from any app, when turned on in Settings.
+    private var littleWindowHotKey: BrowserGlobalHotKey?
+    private var profileStoreCancellable: AnyCancellable?
+    private let webAppConfiguration: BrowserWebAppConfiguration?
+
+    private var shouldPresentQuitWarning: Bool {
+        guard webAppConfiguration == nil, !didConfirmTerminationWarning, !isQuitWarningPresented else {
+            return false
+        }
+
+        return BrowserQuitWarningPolicy(
+            warnsBeforeQuitting: userPreferencesStore.warnBeforeQuitting,
+            openTabCount: allChromeModels.reduce(0) { $0 + $1.tabs.count },
+        ).shouldWarn
+    }
+
+    private var allChromeModels: [BrowserChromeModel] {
+        let webAppModels = webAppWindowSession.map { [$0.chromeModel] } ?? []
+        return webAppModels + profileWindowSessions.map(\.chromeModel) + incognitoWindowSessions.map(\.chromeModel)
+    }
+
+    private var activeChromeModel: BrowserChromeModel? {
+        // An Archive is an auxiliary document surface, and Peek shows its own
+        // page. Page commands must not target an unrelated browser window behind it.
+        if focusedArchiveWindowController != nil || NSApp.keyWindow is BrowserPeekPanel {
+            return nil
+        }
+        if let webAppWindowSession {
+            return webAppWindowSession.chromeModel
+        }
+
+        if let session = activeIncognitoWindowSession {
+            return session.chromeModel
+        }
+
+        return activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
+    }
+
+    private var archiveContextModel: BrowserChromeModel? {
+        focusedArchiveWindowController?.model ?? activeChromeModel
+    }
+
+    /// The small window opens from the window behind a card or small window too,
+    /// where page commands are off, and from the last used profile window while
+    /// another app is active.
+    private var littleWindowModel: BrowserChromeModel? {
+        let lastUsed = profileWindowSessions.first { $0.window === lastKeyProfileWindow }
+        return (activeProfileWindowSession ?? lastUsed ?? profileWindowSessions.first)?.chromeModel
+    }
+
+    private var focusedArchiveWindowController: BrowserArchiveWindowController? {
+        var candidate = NSApp.keyWindow
+        while let window = candidate {
+            if let archive = archiveWindowControllers.values.first(where: { $0.window === window }) {
+                return archive
+            }
+            candidate = window.sheetParent ?? window.parent
+        }
+        return nil
+    }
+
+    private var activeBrowserWindow: NSWindow? {
+        if let webAppWindowSession {
+            return webAppWindowSession.window
+        }
+
+        if let session = activeIncognitoWindowSession {
+            return session.window
+        }
+
+        return activeProfileWindowSession?.window ?? profileWindowSessions.first?.window
+    }
+
+    private var activeProfileWindowSession: BrowserProfileWindowSession? {
+        profileWindowSession(containing: NSApp.keyWindow)
+            ?? profileWindowSession(containing: NSApp.mainWindow)
+    }
+
+    private var activeIncognitoWindowSession: BrowserIncognitoWindowSession? {
+        incognitoWindowSession(containing: NSApp.keyWindow)
+            ?? incognitoWindowSession(containing: NSApp.mainWindow)
+    }
 
     override public init() {
         self.webAppConfiguration = BrowserWebAppConfiguration.current()
@@ -597,7 +712,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canSavePage ?? false
         case #selector(addSplitView(_:)):
             return activeChromeModel?.isWebApp != true && activeChromeModel?.canAddSplitView == true
-        case #selector(closeSplitPane(_:)), #selector(separateSplitView(_:)), #selector(separateTabFromSplit(_:)):
+        case #selector(closeSplitPane(_:)),
+             #selector(separateSplitView(_:)),
+             #selector(separateTabFromSplit(_:)):
             return activeChromeModel?.selectedSplitGroup != nil
         case #selector(toggleSplitOrientation(_:)):
             if let menuItem = item as? NSMenuItem {
@@ -620,7 +737,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCopySelectedTabLink ?? false
         case #selector(findInPage(_:)):
             return focusedArchiveWindowController != nil || activeChromeModel?.canPresentFindInPage == true
-        case #selector(findNextInPage(_:)), #selector(findPreviousInPage(_:)):
+        case #selector(findNextInPage(_:)),
+             #selector(findPreviousInPage(_:)):
             return activeChromeModel?.canStepThroughFindMatches ?? false
         case #selector(findAndReplace(_:)):
             return false
@@ -651,7 +769,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 menuItem.title = model.siteToolbarToggleTitle
             }
             return activeChromeModel?.isWebApp == false
-        case #selector(selectNextSpace(_:)), #selector(selectPreviousSpace(_:)):
+        case #selector(selectNextSpace(_:)),
+             #selector(selectPreviousSpace(_:)):
             return activeChromeModel.map { !$0.isWebApp && $0.supportsSpaces && $0.spaces.count > 1 } ?? false
         case #selector(openExtensions(_:)):
             return activeChromeModel?.canOpenExtensions ?? false
@@ -694,7 +813,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCopySelectedTextAsQuoteLink ?? false
         case #selector(viewDownloads(_:)):
             return activeChromeModel?.onToggleDownloads != nil
-        case #selector(goToLastSidebarItem(_:)), #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)):
+        case #selector(goToLastSidebarItem(_:)),
+             #selector(selectNextTab(_:)),
+             #selector(selectPreviousTab(_:)):
             return activeChromeModel.map { !$0.isWebApp && !$0.sidebarItemTabIDs.isEmpty } ?? false
         case #selector(goToSidebarItem(_:)):
             let index = (item as? NSMenuItem)?.tag ?? 0
@@ -713,121 +834,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
         default:
             return true
         }
-    }
-
-    // MARK: Private
-
-    private static let spacesMenuIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces")
-    private static let spaceListEndIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces.list-end")
-    private static let installWebAppMenuItemIdentifier = NSUserInterfaceItemIdentifier(
-        "browser.install-web-app"
-    )
-
-    private var aboutWindow: NSWindow?
-    private var settingsWindowController: SettingsWindowController?
-    private var archiveWindowControllers = [ObjectIdentifier: BrowserArchiveWindowController]()
-    private var webAppWindowSession: BrowserWebAppWindowSession?
-    private var incognitoWindowSessions = [BrowserIncognitoWindowSession]()
-    private var profileWindowSessions = [BrowserProfileWindowSession]()
-    private var profileStore: BrowserProfileStore?
-    private var updateController: BrowserUpdateController?
-    private let userPreferencesStore = BrowserUserPreferencesStore()
-    private let shortcutStore = BrowserShortcutStore()
-    private var batterySaverController: BrowserBatterySaverController?
-    private let defaultBrowserService = BrowserDefaultBrowserService()
-    private weak var setAsDefaultBrowserMenuItem: NSMenuItem?
-    private var pendingNavigationURLs = [URL]()
-    private var hasReceivedBrowserContext = false
-    private var isTerminationRequested = false
-    private var isQuitWarningPresented = false
-    private var isSessionClosureConfirmationPresented = false
-    private var didConfirmTerminationWarning = false
-    private var layoutIndependentKeyMonitor: Any?
-    private var shortcutStoreCancellable: AnyCancellable?
-    private var appearancePreferenceCancellable: AnyCancellable?
-    private var littleWindowHotKeyCancellable: AnyCancellable?
-    private weak var lastKeyProfileWindow: NSWindow?
-    /// Option-Command-N from any app, when turned on in Settings.
-    private var littleWindowHotKey: BrowserGlobalHotKey?
-    private var profileStoreCancellable: AnyCancellable?
-    private let webAppConfiguration: BrowserWebAppConfiguration?
-
-    private var shouldPresentQuitWarning: Bool {
-        guard webAppConfiguration == nil, !didConfirmTerminationWarning, !isQuitWarningPresented else {
-            return false
-        }
-
-        return BrowserQuitWarningPolicy(
-            warnsBeforeQuitting: userPreferencesStore.warnBeforeQuitting,
-            openTabCount: allChromeModels.reduce(0) { $0 + $1.tabs.count }
-        ).shouldWarn
-    }
-
-    private var allChromeModels: [BrowserChromeModel] {
-        let webAppModels = webAppWindowSession.map { [$0.chromeModel] } ?? []
-        return webAppModels + profileWindowSessions.map(\.chromeModel) + incognitoWindowSessions.map(\.chromeModel)
-    }
-
-    private var activeChromeModel: BrowserChromeModel? {
-        // An Archive is an auxiliary document surface, and Peek shows its own
-        // page. Page commands must not target an unrelated browser window behind it.
-        if focusedArchiveWindowController != nil || NSApp.keyWindow is BrowserPeekPanel {
-            return nil
-        }
-        if let webAppWindowSession {
-            return webAppWindowSession.chromeModel
-        }
-
-        if let session = activeIncognitoWindowSession {
-            return session.chromeModel
-        }
-
-        return activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
-    }
-
-    private var archiveContextModel: BrowserChromeModel? {
-        focusedArchiveWindowController?.model ?? activeChromeModel
-    }
-
-    /// The small window opens from the window behind a card or small window too,
-    /// where page commands are off, and from the last used profile window while
-    /// another app is active.
-    private var littleWindowModel: BrowserChromeModel? {
-        let lastUsed = profileWindowSessions.first { $0.window === lastKeyProfileWindow }
-        return (activeProfileWindowSession ?? lastUsed ?? profileWindowSessions.first)?.chromeModel
-    }
-
-    private var focusedArchiveWindowController: BrowserArchiveWindowController? {
-        var candidate = NSApp.keyWindow
-        while let window = candidate {
-            if let archive = archiveWindowControllers.values.first(where: { $0.window === window }) {
-                return archive
-            }
-            candidate = window.sheetParent ?? window.parent
-        }
-        return nil
-    }
-
-    private var activeBrowserWindow: NSWindow? {
-        if let webAppWindowSession {
-            return webAppWindowSession.window
-        }
-
-        if let session = activeIncognitoWindowSession {
-            return session.window
-        }
-
-        return activeProfileWindowSession?.window ?? profileWindowSessions.first?.window
-    }
-
-    private var activeProfileWindowSession: BrowserProfileWindowSession? {
-        profileWindowSession(containing: NSApp.keyWindow)
-            ?? profileWindowSession(containing: NSApp.mainWindow)
-    }
-
-    private var activeIncognitoWindowSession: BrowserIncognitoWindowSession? {
-        incognitoWindowSession(containing: NSApp.keyWindow)
-            ?? incognitoWindowSession(containing: NSApp.mainWindow)
     }
 
     @nonobjc private func showArchive(for model: BrowserChromeModel) -> BrowserArchiveWindowController? {
@@ -881,7 +887,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         guard !isSessionClosureConfirmationPresented else { return }
         guard BrowserSessionClosureGuard.prepare(
             models: { allChromeModels },
-            confirmation: confirmUnsavedSessionClosure
+            confirmation: confirmUnsavedSessionClosure,
         ) else {
             didConfirmTerminationWarning = false
             return
@@ -994,7 +1000,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let aboutItem = NSMenuItem(
             title: BrowserStrings.aboutMenuItem(appName: appName),
             action: #selector(openAbout(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "",
         )
         aboutItem.target = self
         appMenu.addItem(aboutItem)
@@ -1002,21 +1008,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         let settingsItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .openSettings),
-            action: #selector(openSettings(_:))
+            action: #selector(openSettings(_:)),
         )
         appMenu.addItem(settingsItem)
 
         let checkForUpdatesItem = NSMenuItem(
             title: BrowserStrings.menuCheckForUpdates,
             action: #selector(checkForUpdates(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "",
         )
         checkForUpdatesItem.target = self
         appMenu.addItem(checkForUpdatesItem)
 
         let setAsDefaultBrowserItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .setAsDefaultBrowser),
-            action: #selector(setAsDefaultBrowser(_:))
+            action: #selector(setAsDefaultBrowser(_:)),
         )
         setAsDefaultBrowserMenuItem = setAsDefaultBrowserItem
         updateSetAsDefaultBrowserMenuItem(setAsDefaultBrowserItem)
@@ -1025,7 +1031,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let quitItem = NSMenuItem(
             title: BrowserStrings.quitMenuItem(appName: appName),
             action: #selector(quitApplication(_:)),
-            keyEquivalent: "q"
+            keyEquivalent: "q",
         )
         quitItem.target = self
         appMenu.addItem(quitItem)
@@ -1035,45 +1041,45 @@ NSMenuDelegate, NSUserInterfaceValidations {
         fileMenu.delegate = self
         let newTabItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newTab),
-            action: #selector(createNewTab(_:))
+            action: #selector(createNewTab(_:)),
         )
         fileMenu.addItem(newTabItem)
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .openLocation),
-            action: #selector(openLocation(_:))
+            action: #selector(openLocation(_:)),
         ))
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .restoreLastClosedTab),
-            action: #selector(restoreLastClosedTab(_:))
+            action: #selector(restoreLastClosedTab(_:)),
         ))
 
         let newIncognitoWindowItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newIncognitoWindow),
-            action: #selector(createNewIncognitoWindow(_:))
+            action: #selector(createNewIncognitoWindow(_:)),
         )
         fileMenu.addItem(newIncognitoWindowItem)
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newLittleWindow),
-            action: #selector(createNewLittleWindow(_:))
+            action: #selector(createNewLittleWindow(_:)),
         ))
         // Command-W archives the tab, so the window closes with Shift-Command-W.
         fileMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.webAppCloseWindowAction,
             action: #selector(NSWindow.performClose(_:)),
             keyEquivalent: standardKey("w", [.command, .shift]),
-            modifiers: [.command, .shift]
+            modifiers: [.command, .shift],
         ))
         fileMenu.addItem(.separator())
 
         let toggleBookmarkItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .toggleBookmark),
-            action: #selector(toggleCurrentPageBookmark(_:))
+            action: #selector(toggleCurrentPageBookmark(_:)),
         )
         fileMenu.addItem(toggleBookmarkItem)
 
         let archiveTabItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .archiveTab),
-            action: #selector(archiveCurrentTab(_:))
+            action: #selector(archiveCurrentTab(_:)),
         )
         fileMenu.addItem(archiveTabItem)
 
@@ -1081,29 +1087,29 @@ NSMenuDelegate, NSUserInterfaceValidations {
             shortcutResolver: shortcutStore,
             viewAction: #selector(showArchive(_:)),
             clearAction: #selector(clearArchive(_:)),
-            target: self
+            target: self,
         ) {
             fileMenu.addItem(item)
         }
 
         let savePageItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .savePage),
-            action: #selector(saveCurrentPage(_:))
+            action: #selector(saveCurrentPage(_:)),
         )
         fileMenu.addItem(savePageItem)
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .captureArea),
-            action: #selector(captureArea(_:))
+            action: #selector(captureArea(_:)),
         ))
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .captureFullPage),
-            action: #selector(captureFullPage(_:))
+            action: #selector(captureFullPage(_:)),
         ))
 
         let installWebAppItem = NSMenuItem(
             title: BrowserStrings.webAppInstallAction,
             action: #selector(installCurrentSiteAsApp(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "",
         )
         installWebAppItem.identifier = Self.installWebAppMenuItemIdentifier
         installWebAppItem.target = self
@@ -1112,7 +1118,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         let printItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .printPage),
-            action: #selector(printCurrentPage(_:))
+            action: #selector(printCurrentPage(_:)),
         )
         fileMenu.addItem(printItem)
         fileMenuItem.submenu = fileMenu
@@ -1122,56 +1128,56 @@ NSMenuDelegate, NSUserInterfaceValidations {
             makeStandardMenuItem(
                 title: BrowserStrings.menuUndo,
                 action: #selector(UndoManager.undo),
-                keyEquivalent: "z"
-            )
+                keyEquivalent: "z",
+            ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuRedo,
                 action: #selector(UndoManager.redo),
                 keyEquivalent: "z",
-                modifiers: [.command, .shift]
-            )
+                modifiers: [.command, .shift],
+            ),
         )
         editMenu.addItem(.separator())
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuCut,
                 action: #selector(NSText.cut(_:)),
-                keyEquivalent: "x"
-            )
+                keyEquivalent: "x",
+            ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuCopy,
                 action: #selector(NSText.copy(_:)),
-                keyEquivalent: "c"
-            )
+                keyEquivalent: "c",
+            ),
         )
         editMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .copyLink),
-                action: #selector(copySelectedTabLink(_:))
-            )
+                action: #selector(copySelectedTabLink(_:)),
+            ),
         )
         editMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .copyLinkAsMarkdown),
-                action: #selector(copySelectedTabLinkAsMarkdown(_:))
-            )
+                action: #selector(copySelectedTabLinkAsMarkdown(_:)),
+            ),
         )
         editMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .copyLinkAsQuote),
-                action: #selector(copySelectedTextAsQuoteLink(_:))
-            )
+                action: #selector(copySelectedTextAsQuoteLink(_:)),
+            ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuPaste,
                 action: #selector(NSText.paste(_:)),
-                keyEquivalent: "v"
-            )
+                keyEquivalent: "v",
+            ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
@@ -1179,16 +1185,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 action: #selector(pasteAndMatchStyle(_:)),
                 keyEquivalent: "v",
                 modifiers: [.command, .shift],
-                target: self
-            )
+                target: self,
+            ),
         )
         editMenu.addItem(.separator())
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuSelectAll,
                 action: #selector(NSText.selectAll(_:)),
-                keyEquivalent: "a"
-            )
+                keyEquivalent: "a",
+            ),
         )
         editMenu.addItem(.separator())
         let findMenuItem = NSMenuItem()
@@ -1198,40 +1204,40 @@ NSMenuDelegate, NSUserInterfaceValidations {
         findMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .findInPage),
-                action: #selector(findInPage(_:))
-            )
+                action: #selector(findInPage(_:)),
+            ),
         )
         findMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .findAndReplace),
-                action: #selector(findAndReplace(_:))
-            )
+                action: #selector(findAndReplace(_:)),
+            ),
         )
         findMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .findNext),
-                action: #selector(findNextInPage(_:))
-            )
+                action: #selector(findNextInPage(_:)),
+            ),
         )
         findMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .findPrevious),
-                action: #selector(findPreviousInPage(_:))
-            )
+                action: #selector(findPreviousInPage(_:)),
+            ),
         )
         findMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuUseSelectionToFind,
                 action: #selector(useSelectionToFind(_:)),
                 keyEquivalent: "",
-                target: self
-            )
+                target: self,
+            ),
         )
         findMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .jumpToSelection),
-                action: #selector(jumpToSelection(_:))
-            )
+                action: #selector(jumpToSelection(_:)),
+            ),
         )
         findMenuItem.submenu = findMenu
         editMenuItem.submenu = editMenu
@@ -1239,53 +1245,53 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let viewMenu = NSMenu(title: BrowserStrings.menuView)
         let backItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .goBack),
-            action: #selector(goBack(_:))
+            action: #selector(goBack(_:)),
         )
         viewMenu.addItem(backItem)
 
         let forwardItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .goForward),
-            action: #selector(goForward(_:))
+            action: #selector(goForward(_:)),
         )
         viewMenu.addItem(forwardItem)
 
         let historyItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .openHistory),
-            action: #selector(openHistory(_:))
+            action: #selector(openHistory(_:)),
         )
         viewMenu.addItem(historyItem)
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .viewDownloads),
-            action: #selector(viewDownloads(_:))
+            action: #selector(viewDownloads(_:)),
         ))
 
         viewMenu.addItem(.separator())
 
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .stopLoading),
-            action: #selector(stopLoadingCurrentTab(_:))
+            action: #selector(stopLoadingCurrentTab(_:)),
         ))
         let refreshItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .reload),
-            action: #selector(reloadCurrentTab(_:))
+            action: #selector(reloadCurrentTab(_:)),
         )
         viewMenu.addItem(refreshItem)
 
         let forceRefreshItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .forceReload),
-            action: #selector(forceReloadCurrentTab(_:))
+            action: #selector(forceReloadCurrentTab(_:)),
         )
         viewMenu.addItem(forceRefreshItem)
 
         let clearCacheAndRefreshItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .clearCacheAndRefresh),
-            action: #selector(clearCacheAndRefreshCurrentTab(_:))
+            action: #selector(clearCacheAndRefreshCurrentTab(_:)),
         )
         viewMenu.addItem(clearCacheAndRefreshItem)
 
         let clearCookiesAndRefreshItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .clearCookiesAndRefresh),
-            action: #selector(clearCookiesAndRefreshCurrentTab(_:))
+            action: #selector(clearCookiesAndRefreshCurrentTab(_:)),
         )
         viewMenu.addItem(clearCookiesAndRefreshItem)
 
@@ -1313,39 +1319,39 @@ NSMenuDelegate, NSUserInterfaceValidations {
         viewMenu.addItem(.separator())
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .developerTools),
-            action: #selector(showDeveloperTools(_:))
+            action: #selector(showDeveloperTools(_:)),
         ))
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .viewSource),
-            action: #selector(viewSource(_:))
+            action: #selector(viewSource(_:)),
         ))
 
         viewMenu.addItem(.separator())
 
         let toggleSidebarItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .toggleSidebar),
-            action: #selector(toggleSidebar(_:))
+            action: #selector(toggleSidebar(_:)),
         )
         viewMenu.addItem(toggleSidebarItem)
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .toggleSidebarPosition),
-            action: #selector(toggleSidebarPosition(_:))
+            action: #selector(toggleSidebarPosition(_:)),
         ))
 
         let toggleBookmarksBarItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .toggleBookmarksBar),
-            action: #selector(toggleBookmarksBar(_:))
+            action: #selector(toggleBookmarksBar(_:)),
         )
         toggleBookmarksBarItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
         viewMenu.addItem(toggleBookmarksBarItem)
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .toggleSiteToolbar),
-            action: #selector(toggleSiteToolbar(_:))
+            action: #selector(toggleSiteToolbar(_:)),
         ))
         viewMenu.addItem(.separator())
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .openExtensions),
-            action: #selector(openExtensions(_:))
+            action: #selector(openExtensions(_:)),
         ))
         viewMenuItem.submenu = viewMenu
 
@@ -1362,11 +1368,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         tabsMenu.addItem(.separator())
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectNextTab),
-            action: #selector(selectNextTab(_:))
+            action: #selector(selectNextTab(_:)),
         ))
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectPreviousTab),
-            action: #selector(selectPreviousTab(_:))
+            action: #selector(selectPreviousTab(_:)),
         ))
         for (commandID, action) in [
             (BrowserCommandID.selectNextTabAlternate, #selector(selectNextTab(_:))),
@@ -1379,7 +1385,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .revealCurrentTab),
-            action: #selector(revealCurrentTab(_:))
+            action: #selector(revealCurrentTab(_:)),
         ))
         // Go to Sidebar Item has no visible menu entry; the hidden
         // items keep their key equivalents ahead of the page.
@@ -1390,7 +1396,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         for commandID in sidebarItemCommands {
             let item = makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: commandID),
-                action: #selector(goToSidebarItem(_:))
+                action: #selector(goToSidebarItem(_:)),
             )
             item.tag = commandID.sidebarItemIndex
             item.isHidden = true
@@ -1399,7 +1405,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         let lastSidebarItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .goToLastSidebarItem),
-            action: #selector(goToLastSidebarItem(_:))
+            action: #selector(goToLastSidebarItem(_:)),
         )
         lastSidebarItem.isHidden = true
         lastSidebarItem.allowsKeyEquivalentWhenHidden = true
@@ -1407,20 +1413,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
         tabsMenu.addItem(.separator())
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newFolder),
-            action: #selector(createFolderFromSelectedTab(_:))
+            action: #selector(createFolderFromSelectedTab(_:)),
         ))
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .collapseAllFolders),
-            action: #selector(collapseAllFolders(_:))
+            action: #selector(collapseAllFolders(_:)),
         ))
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .expandAllFolders),
-            action: #selector(expandAllFolders(_:))
+            action: #selector(expandAllFolders(_:)),
         ))
         tabsMenu.addItem(.separator())
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .clearTemporaryTabs),
-            action: #selector(clearTemporaryTabs(_:))
+            action: #selector(clearTemporaryTabs(_:)),
         ))
         tabsMenuItem.submenu = tabsMenu
 
@@ -1431,20 +1437,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
         spacesMenu.delegate = self
         spacesMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectNextSpace),
-            action: #selector(selectNextSpace(_:))
+            action: #selector(selectNextSpace(_:)),
         ))
         spacesMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectPreviousSpace),
-            action: #selector(selectPreviousSpace(_:))
+            action: #selector(selectPreviousSpace(_:)),
         ))
         spacesMenu.addItem(.separator())
         spacesMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .resetSpaceTabs),
-            action: #selector(resetSpaceTabs(_:))
+            action: #selector(resetSpaceTabs(_:)),
         ))
         spacesMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newSpace),
-            action: #selector(createNewSpace(_:))
+            action: #selector(createNewSpace(_:)),
         ))
         spacesMenuItem.submenu = spacesMenu
     }
@@ -1465,7 +1471,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             let item = NSMenuItem(
                 title: space.title,
                 action: #selector(selectSpaceFromMenu(_:)),
-                keyEquivalent: shortcut?.keyEquivalent ?? ""
+                keyEquivalent: shortcut?.keyEquivalent ?? "",
             )
             item.keyEquivalentModifierMask = shortcut?.modifiers ?? []
             item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
@@ -1502,7 +1508,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let appInfoItem = NSMenuItem(
             title: BrowserStrings.webAppInfoAction,
             action: #selector(showCurrentWebAppInfo(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "",
         )
         appInfoItem.target = self
         appMenu.addItem(appInfoItem)
@@ -1510,7 +1516,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let quitItem = NSMenuItem(
             title: BrowserStrings.quitMenuItem(appName: session.configuration.name),
             action: #selector(quitApplication(_:)),
-            keyEquivalent: "q"
+            keyEquivalent: "q",
         )
         quitItem.target = self
         appMenu.addItem(quitItem)
@@ -1520,7 +1526,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let openInBrowserItem = NSMenuItem(
             title: BrowserStrings.webAppOpenInBrowserAction,
             action: #selector(openCurrentWebAppInBrowser(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "",
         )
         openInBrowserItem.target = self
         fileMenu.addItem(openInBrowserItem)
@@ -1528,16 +1534,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
         fileMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .printPage),
-                action: #selector(printCurrentPage(_:))
-            )
+                action: #selector(printCurrentPage(_:)),
+            ),
         )
         fileMenu.addItem(.separator())
         fileMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.webAppCloseWindowAction,
                 action: #selector(NSWindow.performClose(_:)),
-                keyEquivalent: "w"
-            )
+                keyEquivalent: "w",
+            ),
         )
         fileMenuItem.submenu = fileMenu
 
@@ -1546,30 +1552,34 @@ NSMenuDelegate, NSUserInterfaceValidations {
             makeStandardMenuItem(
                 title: BrowserStrings.menuUndo,
                 action: #selector(UndoManager.undo),
-                keyEquivalent: "z"
-            )
+                keyEquivalent: "z",
+            ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuRedo,
                 action: #selector(UndoManager.redo),
                 keyEquivalent: "z",
-                modifiers: [.command, .shift]
-            )
+                modifiers: [.command, .shift],
+            ),
         )
         editMenu.addItem(.separator())
         editMenu.addItem(
-            makeStandardMenuItem(title: BrowserStrings.menuCut, action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+            makeStandardMenuItem(title: BrowserStrings.menuCut, action: #selector(NSText.cut(_:)), keyEquivalent: "x"),
         )
         editMenu.addItem(
-            makeStandardMenuItem(title: BrowserStrings.menuCopy, action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+            makeStandardMenuItem(
+                title: BrowserStrings.menuCopy,
+                action: #selector(NSText.copy(_:)),
+                keyEquivalent: "c",
+            ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuPaste,
                 action: #selector(NSText.paste(_:)),
-                keyEquivalent: "v"
-            )
+                keyEquivalent: "v",
+            ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
@@ -1577,16 +1587,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 action: #selector(pasteAndMatchStyle(_:)),
                 keyEquivalent: "v",
                 modifiers: [.command, .shift],
-                target: self
-            )
+                target: self,
+            ),
         )
         editMenu.addItem(.separator())
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuSelectAll,
                 action: #selector(NSText.selectAll(_:)),
-                keyEquivalent: "a"
-            )
+                keyEquivalent: "a",
+            ),
         )
         editMenu.addItem(.separator())
         let findMenuItem = NSMenuItem()
@@ -1595,20 +1605,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
         findMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .findInPage),
-                action: #selector(findInPage(_:))
-            )
+                action: #selector(findInPage(_:)),
+            ),
         )
         findMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .findNext),
-                action: #selector(findNextInPage(_:))
-            )
+                action: #selector(findNextInPage(_:)),
+            ),
         )
         findMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .findPrevious),
-                action: #selector(findPreviousInPage(_:))
-            )
+                action: #selector(findPreviousInPage(_:)),
+            ),
         )
         findMenuItem.submenu = findMenu
         editMenu.addItem(findMenuItem)
@@ -1618,20 +1628,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
         viewMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .reload),
-                action: #selector(reloadCurrentTab(_:))
-            )
+                action: #selector(reloadCurrentTab(_:)),
+            ),
         )
         viewMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .forceReload),
-                action: #selector(forceReloadCurrentTab(_:))
-            )
+                action: #selector(forceReloadCurrentTab(_:)),
+            ),
         )
         viewMenu.addItem(.separator())
         let toolbarItem = NSMenuItem(
             title: BrowserStrings.webAppAlwaysShowToolbarInFullscreen,
             action: #selector(toggleWebAppToolbarInFullscreen(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "",
         )
         toolbarItem.target = self
         toolbarItem.state = session.preferences.alwaysShowsToolbarInFullscreen ? .on : .off
@@ -1639,7 +1649,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let fullURLItem = NSMenuItem(
             title: BrowserStrings.webAppAlwaysShowFullURLs,
             action: #selector(toggleWebAppAlwaysShowsFullURLs(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "",
         )
         fullURLItem.target = self
         fullURLItem.state = session.preferences.alwaysShowsFullURLs ? .on : .off
@@ -1650,14 +1660,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         historyMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .goBack),
-                action: #selector(goBack(_:))
-            )
+                action: #selector(goBack(_:)),
+            ),
         )
         historyMenu.addItem(
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .goForward),
-                action: #selector(goForward(_:))
-            )
+                action: #selector(goForward(_:)),
+            ),
         )
         historyMenuItem.submenu = historyMenu
     }
@@ -1680,19 +1690,19 @@ NSMenuDelegate, NSUserInterfaceValidations {
         menu.addItem(makeStandardMenuItem(
             title: BrowserStrings.hideMenuItem(appName: appName),
             action: #selector(NSApplication.hide(_:)),
-            keyEquivalent: standardKey("h")
+            keyEquivalent: standardKey("h"),
         ))
         menu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuHideOthers,
             action: #selector(NSApplication.hideOtherApplications(_:)),
             keyEquivalent: standardKey("h", [.command, .option]),
-            modifiers: [.command, .option]
+            modifiers: [.command, .option],
         ))
         menu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuShowAll,
             action: #selector(NSApplication.unhideAllApplications(_:)),
             keyEquivalent: "",
-            modifiers: []
+            modifiers: [],
         ))
         menu.addItem(.separator())
     }
@@ -1706,20 +1716,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
         windowMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuMinimize,
             action: #selector(NSWindow.performMiniaturize(_:)),
-            keyEquivalent: standardKey("m")
+            keyEquivalent: standardKey("m"),
         ))
         windowMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuZoom,
             action: #selector(NSWindow.performZoom(_:)),
             keyEquivalent: "",
-            modifiers: []
+            modifiers: [],
         ))
         windowMenu.addItem(.separator())
         windowMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuBringAllToFront,
             action: #selector(NSApplication.arrangeInFront(_:)),
             keyEquivalent: "",
-            modifiers: []
+            modifiers: [],
         ))
         windowMenuItem.submenu = windowMenu
         menubar.addItem(windowMenuItem)
@@ -1730,7 +1740,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let item = NSMenuItem(
             title: descriptor.menuTitle,
             action: action,
-            keyEquivalent: descriptor.shortcut.keyEquivalent
+            keyEquivalent: descriptor.shortcut.keyEquivalent,
         )
         item.keyEquivalentModifierMask = descriptor.shortcut.modifiers
         item.target = self
@@ -1748,12 +1758,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         action: Selector,
         keyEquivalent: String,
         modifiers: NSEvent.ModifierFlags = [.command],
-        target: AnyObject? = nil
+        target: AnyObject? = nil,
     ) -> NSMenuItem {
         let item = NSMenuItem(
             title: title,
             action: action,
-            keyEquivalent: keyEquivalent
+            keyEquivalent: keyEquivalent,
         )
         item.keyEquivalentModifierMask = modifiers
         item.target = target
@@ -1788,7 +1798,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         if let spaceIndex = BrowserSpaceShortcuts.spaceIndex(
             forPhysicalKeyCode: event.keyCode,
-            modifierFlags: event.modifierFlags
+            modifierFlags: event.modifierFlags,
         ) {
             return selectSpace(at: spaceIndex)
         }
@@ -1797,7 +1807,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             keyCode: event.keyCode,
             modifierFlags: event.modifierFlags,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
-            shortcutResolver: shortcutStore
+            shortcutResolver: shortcutStore,
         ) else {
             return false
         }
@@ -1860,7 +1870,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
     @nonobjc private func performCommandBarCommand(_ command: BrowserCommandID, from owner: BrowserChromeModel) {
         _ =
             switch command {
-            case .clearArchive, .viewArchive:
+            case .clearArchive,
+                 .viewArchive:
                 performArchiveCommand(command, from: owner)
             default:
                 performLayoutIndependentShortcutCommand(command.layoutIndependentCommand)
@@ -1873,12 +1884,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             from: owner,
             registeredOwners: profileWindowSessions.map(\.chromeModel),
             isTerminating: isTerminationRequested,
-            present: { [weak self] model in self?.showArchive(for: model)?.archiveController }
+            present: { [weak self] model in self?.showArchive(for: model)?.archiveController },
         )
     }
 
     private func performLayoutIndependentShortcutCommand(
-        _ command: BrowserLayoutIndependentShortcutCommand
+        _ command: BrowserLayoutIndependentShortcutCommand,
     ) -> Bool {
         switch command {
         case .undo:
@@ -2148,7 +2159,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return true
         case .viewDownloads:
             return activeChromeModel?.toggleDownloads() ?? false
-        case .selectNextSpace, .selectPreviousSpace:
+        case .selectNextSpace,
+             .selectPreviousSpace:
             guard let model = activeChromeModel, !model.isWebApp, model.supportsSpaces, model.spaces.count > 1 else {
                 return false
             }
@@ -2206,7 +2218,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         if NSApp.sendAction(
             #selector(NSTextView.pasteAsPlainText(_:)),
             to: nil,
-            from: sender ?? self
+            from: sender ?? self,
         ) {
             return true
         }
@@ -2296,11 +2308,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 model: profileSession.chromeModel,
                 profileStore: profileStore,
                 currentProfileID: profileSession.profile.id,
-                accountStore: profileSession.accountStore
+                accountStore: profileSession.accountStore,
             ),
             style: .toolbarItems,
             animated: false,
-            hidesToolbarForSingleItem: false
+            hidesToolbarForSingleItem: false,
         )
         self.settingsWindowController = settingsWindowController
         settingsWindowController.show()
@@ -2318,7 +2330,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         model: BrowserChromeModel,
         profileStore: BrowserProfileStore,
         currentProfileID: String,
-        accountStore: BrowserAccountStore?
+        accountStore: BrowserAccountStore?,
     ) -> [SettingsPane] {
         BrowserSettingsPane.allCases.map { pane in
             BrowserSettingsViewController(
@@ -2332,7 +2344,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                     return !profileWindowSessions.contains { $0.profile.id == profile.id }
                 },
                 openProfile: { [weak self] profile in self?.openProfile(profile) },
-                openURL: { [weak self] url in self?.openBrowserInternalPage(url) }
+                openURL: { [weak self] url in self?.openBrowserInternalPage(url) },
             )
         }
     }
@@ -2348,8 +2360,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
         childWindow.setFrameOrigin(
             NSPoint(
                 x: parentFrame.midX - childFrame.width / 2,
-                y: parentFrame.midY - childFrame.height / 2
-            )
+                y: parentFrame.midY - childFrame.height / 2,
+            ),
         )
     }
 
@@ -2365,7 +2377,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         createProfileWindow(
             for: profileStore.defaultProfile,
             runtimeConfiguration: runtimeConfiguration,
-            copyingFullscreenFrom: nil
+            copyingFullscreenFrom: nil,
         )
     }
 
@@ -2380,10 +2392,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         try? FileManager.default.createDirectory(at: profileDirectoryURL, withIntermediateDirectories: true)
 
         let profileDirectoryCandidates = BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
-            profileDirectoryURL: profileDirectoryURL
+            profileDirectoryURL: profileDirectoryURL,
         )
         let bookmarksModel = BrowserBookmarksModel(
-            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates)
+            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates),
         )
         let historyStore = BrowserChromiumHistoryStore(profileDirectoryCandidates: profileDirectoryCandidates)
         let ephemeralSessionStore = BrowserEphemeralSessionStore()
@@ -2411,7 +2423,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             },
             allTabsClosedHandler: {
                 windowReference?.performClose(nil)
-            }
+            },
         )
         let preferences = BrowserWebAppPreferences(identifier: configuration.identifier)
         let actions = BrowserWebAppViewActions(
@@ -2423,13 +2435,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
             },
             uninstall: { [weak self] in
                 self?.presentCurrentWebAppUninstallPrompt()
-            }
+            },
         )
         let rootView = BrowserWebAppRootView(
             model: chromeModel,
             configuration: configuration,
             preferences: preferences,
-            actions: actions
+            actions: actions,
         )
         let hostingView = rootView
         hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -2437,7 +2449,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
             styleMask: BrowserWebAppLayout.windowStyleMask,
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         windowReference = window
         window.title = configuration.name
@@ -2462,7 +2474,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             window: window,
             chromeModel: chromeModel,
             configuration: configuration,
-            preferences: preferences
+            preferences: preferences,
         )
         webAppWindowSession = session
         installMainMenu(for: NSApp)
@@ -2470,7 +2482,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let bundleIcon = NSWorkspace.shared.icon(forFile: configuration.bundleURL.path)
         bundleIcon.size = NSSize(
             width: BrowserImageThumbnailer.macOSApplicationIconCanvasSize,
-            height: BrowserImageThumbnailer.macOSApplicationIconCanvasSize
+            height: BrowserImageThumbnailer.macOSApplicationIconCanvasSize,
         )
         NSApp.applicationIconImage = bundleIcon
         window.makeKeyAndOrderFront(nil)
@@ -2495,14 +2507,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         createProfileWindow(
             for: profile,
             runtimeConfiguration: runtimeConfiguration,
-            copyingFullscreenFrom: activeBrowserWindow
+            copyingFullscreenFrom: activeBrowserWindow,
         )
     }
 
     private func createProfileWindow(
         for profile: BrowserProfile,
         runtimeConfiguration: BrowserRuntimeConfiguration,
-        copyingFullscreenFrom sourceWindow: NSWindow?
+        copyingFullscreenFrom sourceWindow: NSWindow?,
     ) {
         configureUpdateControllerIfNeeded()
         guard let updateController else {
@@ -2516,19 +2528,19 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         let sessionStorageDirectoryURL = profileSessionStorageDirectoryURL(
             for: profile,
-            runtimeConfiguration: runtimeConfiguration
+            runtimeConfiguration: runtimeConfiguration,
         )
         let sessionSnapshotURL = sessionStorageDirectoryURL
             .appendingPathComponent(BrowserTabSessionSnapshotStore.snapshotFileName, isDirectory: false)
         let sqliteSessionStore = try? BrowserSQLiteSessionStore(
             databaseURL: sessionStorageDirectoryURL
-                .appendingPathComponent(BrowserSQLiteSessionStore.databaseFileName, isDirectory: false)
+                .appendingPathComponent(BrowserSQLiteSessionStore.databaseFileName, isDirectory: false),
         )
         let profileDirectoryCandidates = BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
-            profileDirectoryURL: profileDirectoryURL
+            profileDirectoryURL: profileDirectoryURL,
         )
         let bookmarksModel = BrowserBookmarksModel(
-            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates)
+            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates),
         )
         let historyStore = BrowserChromiumHistoryStore(profileDirectoryCandidates: profileDirectoryCandidates)
         let authSessionStore = BrowserAuthSessionStore(namespace: profile.isDefault
@@ -2546,7 +2558,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                     runtimeActive: false,
                     errorReporter: { error, phase in
                         BrowserTelemetry.captureError(error, event: phase == .push ? .syncPushFailed : .syncPullFailed)
-                    }
+                    },
                 )
             } else {
                 nil
@@ -2556,7 +2568,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             authSessionStore: authSessionStore,
             syncCoordinator: syncCoordinator,
             appleSignInService: BrowserAppleSignInService(),
-            deviceIdentity: .init(name: Host.current().localizedName ?? "Mac", platform: "macOS")
+            deviceIdentity: .init(name: Host.current().localizedName ?? "Mac", platform: "macOS"),
         )
         let chromeModel = BrowserChromeModel(
             tabDriver: BrowserTabControllerDriver(profileCachePath: profileDirectoryURL.path),
@@ -2577,7 +2589,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 self?.performCommandBarCommand(commandID, from: owner)
             },
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         syncCoordinator?.setSnapshotApplier(chromeModel)
         if NSApp.isActive {
@@ -2594,7 +2606,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             contentRect: NSRect(x: 0, y: 0, width: 1360, height: 860),
             styleMask: [.borderless, .closable, .miniaturizable, .resizable],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.title = windowTitle(for: profile)
         window.delegate = self
@@ -2624,7 +2636,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             window: window,
             chromeModel: chromeModel,
             accountStore: accountStore,
-            profile: profile
+            profile: profile,
         )
         profileWindowSessions.append(session)
         window.contentView = contentView
@@ -2635,7 +2647,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             properties: [
                 "profile": profile.isDefault ? "default" : "custom",
                 "profile_count": "\(profileStore?.profiles.count ?? 1)",
-            ]
+            ],
         )
         updateProfilePresentationForOpenWindows()
 
@@ -2657,7 +2669,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private func profileSessionStorageDirectoryURL(
         for profile: BrowserProfile,
-        runtimeConfiguration: BrowserRuntimeConfiguration
+        runtimeConfiguration: BrowserRuntimeConfiguration,
     ) -> URL {
         let sessionStorageURL = URL(fileURLWithPath: runtimeConfiguration.sessionStoragePath, isDirectory: true)
         guard !profile.isDefault else {
@@ -2739,13 +2751,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
                     profileDirectoryURL: profileStore?.profileDirectoryURL(for: sourceProfile)
                         ?? URL(fileURLWithPath: runtimeConfiguration.rootCachePath, isDirectory: true)
-                        .appendingPathComponent(sourceProfile.directoryName, isDirectory: true)
+                        .appendingPathComponent(sourceProfile.directoryName, isDirectory: true),
                 )
             } else {
                 []
             }
         let bookmarksModel = BrowserBookmarksModel(
-            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates)
+            store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates),
         )
         let ephemeralSessionStore = BrowserEphemeralSessionStore()
         let chromeModel = BrowserChromeModel(
@@ -2762,7 +2774,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 self?.performCommandBarCommand(commandID, from: owner)
             },
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
 
         let rootView = BrowserRootView(model: chromeModel, updateController: updateController)
@@ -2773,7 +2785,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             contentRect: NSRect(x: 0, y: 0, width: 1360, height: 860),
             styleMask: [.borderless, .closable, .miniaturizable, .resizable],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.title = BrowserStrings.menuNewIncognitoWindow
         window.delegate = self
@@ -2835,14 +2847,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         presentWebAppInstallationPrompt(
             tab: tab,
             metadata: metadata,
-            window: window
+            window: window,
         )
     }
 
     private func presentWebAppInstallationPrompt(
         tab: BrowserChromeModel.Tab,
         metadata: BrowserWebAppInstallMetadata,
-        window: NSWindow
+        window: NSWindow,
     ) {
         let alert = NSAlert()
         alert.alertStyle = .informational
@@ -2869,7 +2881,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private func installWebApp(
         tab: BrowserChromeModel.Tab,
         metadata: BrowserWebAppInstallMetadata,
-        name: String
+        name: String,
     ) {
         guard
             let profileSession = activeProfileWindowSession ?? profileWindowSessions.first,
@@ -2896,13 +2908,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 name: name,
                 metadata: metadata,
                 profile: profile,
-                bundleIconData: manifestIconData ?? fallbackIconData
+                bundleIconData: manifestIconData ?? fallbackIconData,
             )
 
             do {
                 let installedApp = try BrowserWebAppBundleInstaller(
                     hostBundleURL: hostBundleURL,
-                    applicationsDirectoryURL: applicationsDirectoryURL
+                    applicationsDirectoryURL: applicationsDirectoryURL,
                 ).install(request)
                 _ = NSWorkspace.shared.setIcon(nil, forFile: installedApp.bundleURL.path)
                 _ = LSRegisterURL(installedApp.bundleURL as CFURL, true)
@@ -2912,7 +2924,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 openConfiguration.createsNewApplicationInstance = true
                 NSWorkspace.shared.openApplication(
                     at: installedApp.bundleURL,
-                    configuration: openConfiguration
+                    configuration: openConfiguration,
                 ) { [weak self] _, error in
                     guard let error else {
                         return
@@ -2957,7 +2969,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         NSWorkspace.shared.open(
             [pageURL],
             withApplicationAt: session.configuration.hostBundleURL,
-            configuration: openConfiguration
+            configuration: openConfiguration,
         ) { [weak self] _, error in
             guard let error else {
                 return
@@ -3028,13 +3040,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         let contentSize = NSSize(
             width: BrowserAboutLayout.windowWidth,
-            height: BrowserAboutLayout.windowHeight
+            height: BrowserAboutLayout.windowHeight,
         )
         let aboutWindow = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         aboutWindow.title = BrowserStrings.aboutWindowTitle(appName: info.applicationName)
         aboutWindow.isReleasedWhenClosed = false

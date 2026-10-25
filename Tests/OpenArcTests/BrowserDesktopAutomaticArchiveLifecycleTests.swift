@@ -1,3 +1,5 @@
+// BrowserDesktopAutomaticArchiveLifecycleTests.swift
+
 import Foundation
 import Testing
 
@@ -12,7 +14,7 @@ import Testing
         let old = try #require(f.model.tabs.first { $0.id == request.id })
         let owner = try BrowserSyncOwner(
             baseURL: #require(URL(string: "https://auto-lifecycle.example")),
-            userID: "owner"
+            userID: "owner",
         )
         if state == "unreadable" {
             try f.sql("ALTER TABLE browser_sync_state RENAME TO unavailable_sync_state")
@@ -47,7 +49,7 @@ import Testing
         f.driver.emitClose(id: old.id)
         f.driver.emitCreatedTab(id: old.id, urlString: old.urlString, isActive: false)
         f.flushReady()
-        #expect(f.model.tabs.filter { $0.syncID == old.syncID }.count == 1)
+        #expect(f.model.tabs.count(where: { $0.syncID == old.syncID }) == 1)
         #expect(f.driver.createdTabRequests.count == creates + 1)
         #expect(try f.evidence() == before)
         #expect(try f.store.loadArchivePage().entries.isEmpty)
@@ -186,13 +188,13 @@ import Testing
         let creates = f.driver.createdTabRequests.count
         let owner = try BrowserSyncOwner(
             baseURL: #require(URL(string: "https://auto-lifecycle.example")),
-            userID: "owner"
+            userID: "owner",
         )
         try f.store.bindSyncOwner(owner)
         let remote = try f.store.applyRemoteSyncEvents([
             .init(
                 serverSeq: 100, deviceID: "other-device", entityType: "tab", entityID: "b", op: "delete",
-                data: .deleted(id: "b"), createdAt: "2026-10-03T00:00:00Z"
+                data: .deleted(id: "b"), createdAt: "2026-10-03T00:00:00Z",
             ),
         ], cursor: 100, for: owner)
         f.model.applyRemoteSyncSnapshot(remote)

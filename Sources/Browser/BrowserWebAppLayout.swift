@@ -1,3 +1,5 @@
+// BrowserWebAppLayout.swift
+
 import AppKit
 
 // MARK: - BrowserWebAppWindowLayout

@@ -1,3 +1,5 @@
+// BrowserUserPreferencesTests.swift
+
 import AppKit
 import Foundation
 import Testing
@@ -129,7 +131,7 @@ import Testing
         keyCode: 14,
         modifierFlags: [.command],
         charactersIgnoringModifiers: "у",
-        shortcutResolver: store
+        shortcutResolver: store,
     ) == .openHistory)
     store.resetShortcut(for: .openHistory)
     #expect(store.shortcut(for: .openExtensions) == BrowserKeyboardShortcut("e"))
@@ -165,7 +167,7 @@ import Testing
         keyCode: 11,
         modifierFlags: [.command],
         charactersIgnoringModifiers: "и",
-        shortcutResolver: store
+        shortcutResolver: store,
     )
 
     #expect(command == .newTab)
@@ -175,7 +177,7 @@ import Testing
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 45,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "т"
+        charactersIgnoringModifiers: "т",
     )
 
     #expect(command == .newIncognitoWindow)
@@ -185,7 +187,7 @@ import Testing
     let command = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 11,
         modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "и"
+        charactersIgnoringModifiers: "и",
     )
 
     #expect(command == .toggleBookmarksBar)

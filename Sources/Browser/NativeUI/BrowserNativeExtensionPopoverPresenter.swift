@@ -1,8 +1,24 @@
+// BrowserNativeExtensionPopoverPresenter.swift
+
 import AppKit
 
 /// Shared extension popovers for browser chrome and installed web-app windows.
 @MainActor final class BrowserNativeExtensionPopoverPresenter: NSObject, NSPopoverDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var onPresentationChanged: () -> Void = {}
+
+    // MARK: Private
+
+    private let model: BrowserChromeModel
+    private let centerController: BrowserSiteControlCenterViewController
+    private let center = BrowserNativePopover()
+    private var action: BrowserNativePopover?
+    private var popupController: BrowserExtensionActionPopupViewController?
+    private weak var anchor: NSView?
+    private var preferredEdge = NSRectEdge.minY
+
+    var isPresented: Bool { center.isShown || action?.isShown == true }
 
     init(model: BrowserChromeModel) {
         self.model = model
@@ -37,12 +53,6 @@ import AppKit
     }
 
     isolated deinit { popupController?.close() }
-
-    // MARK: Internal
-
-    var onPresentationChanged: () -> Void = {}
-
-    var isPresented: Bool { center.isShown || action?.isShown == true }
 
     func refresh() { centerController.refresh() }
     func showControlCenter(relativeTo anchor: NSView, preferredEdge: NSRectEdge) {
@@ -115,17 +125,7 @@ import AppKit
                 model.removeExtension(id: browserExtension.id)
             },
             onTogglePinned: { model.toggleExtensionPinned(id: browserExtension.id)
-            }
+            },
         )
     }
-
-    // MARK: Private
-
-    private let model: BrowserChromeModel
-    private let centerController: BrowserSiteControlCenterViewController
-    private let center = BrowserNativePopover()
-    private var action: BrowserNativePopover?
-    private var popupController: BrowserExtensionActionPopupViewController?
-    private weak var anchor: NSView?
-    private var preferredEdge = NSRectEdge.minY
 }

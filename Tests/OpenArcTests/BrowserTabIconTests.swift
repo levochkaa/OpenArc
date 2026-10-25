@@ -1,3 +1,5 @@
+// BrowserTabIconTests.swift
+
 import AppKit
 import Testing
 
@@ -18,10 +20,10 @@ import Testing
                     urlString: "https://a.example",
                     placement: .spacePinned,
                     spaceID: "s",
-                    systemImageName: "leaf"
+                    systemImageName: "leaf",
                 ),
                 .init(id: "b", urlString: "https://b.example", spaceID: "s"),
-            ]
+            ],
         )
         do {
             let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
@@ -33,7 +35,7 @@ import Testing
         #expect(
             BrowserTabSessionSnapshotTab(id: "a", urlString: "https://a.example", systemImageName: "leaf")
                 == BrowserTabSessionSnapshotTab(id: "a", urlString: "https://a.example"),
-            "Icons are local, so sync and archive checks ignore them"
+            "Icons are local, so sync and archive checks ignore them",
         )
     }
 
@@ -58,7 +60,7 @@ import Testing
         func write(_ icon: String?) -> BrowserSessionWrite {
             BrowserSessionWrite(
                 snapshot: .init(tabs: [.init(id: "a", urlString: "https://a.example", systemImageName: icon)]),
-                origin: .local(syncMove: nil)
+                origin: .local(syncMove: nil),
             )
         }
         var buffer = BrowserSessionWriteBuffer()
@@ -88,13 +90,13 @@ import Testing
         id: "entry",
         tab: .init(id: "a", urlString: "https://a.example/old", spaceID: "s", lastActivityTimestamp: 100),
         archivedAt: 200,
-        title: "Old"
+        title: "Old",
     )
     let local = BrowserTabSessionSnapshot(tabs: [.init(
         id: "a",
         urlString: "https://a.example/new",
         spaceID: "s",
-        systemImageName: "leaf"
+        systemImageName: "leaf",
     )])
     let entries = BrowserSyncExpiryRecovery.localEntries(canonical: canonical, pending: [], local: local)
     #expect(!entries.isEmpty && entries.allSatisfy { $0.tab.systemImageName == "leaf" })

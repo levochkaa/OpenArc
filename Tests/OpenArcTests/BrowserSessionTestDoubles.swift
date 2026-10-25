@@ -1,3 +1,5 @@
+// BrowserSessionTestDoubles.swift
+
 import AppKit
 import CoreGraphics
 import Foundation
@@ -123,6 +125,12 @@ import Foundation
     /// Site settings by URL; `.default` removes one.
     var siteSettingsByURL = [String: [BrowserSiteSettingKind: BrowserSiteSettingValue]]()
 
+    // MARK: Private
+
+    private var pendingCreateRequests = [CreatedTabRequest]()
+    private var nextTabNumber = 0
+    private var activeTabID: String?
+
     @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool {
         pageActions.append(action)
         return pageActionResult
@@ -151,7 +159,7 @@ import Foundation
             id: tabID,
             urlString: urlString,
             makeActive: makeActive,
-            isActive: isActive
+            isActive: isActive,
         )
         createdTabRequests.append(request)
         pendingCreateRequests.append(request)
@@ -329,7 +337,7 @@ import Foundation
     func setSiteSetting(
         _ kind: BrowserSiteSettingKind,
         value: BrowserSiteSettingValue,
-        forURLString urlString: String
+        forURLString urlString: String,
     ) {
         siteSettingsByURL[urlString, default: [:]][kind] = value == .default ? nil : value
     }
@@ -340,8 +348,8 @@ import Foundation
                 text: text,
                 forward: forward,
                 matchCase: matchCase,
-                findNext: findNext
-            )
+                findNext: findNext,
+            ),
         )
     }
 
@@ -366,7 +374,7 @@ import Foundation
     /// Normal completion preserves the bridge's outcome-before-close ordering.
     /// Suppressing the generic event permits isolated stale-token delivery.
     func emitCloseRequestOutcome(
-        id: String, requestID: String, outcome: BrowserTabCloseOutcome, emitsClosedEvent: Bool = true
+        id: String, requestID: String, outcome: BrowserTabCloseOutcome, emitsClosedEvent: Bool = true,
     ) {
         onTabCloseRequestFinished?(id, requestID, outcome)
         if outcome == .closed, emitsClosedEvent {
@@ -382,7 +390,7 @@ import Foundation
         id: String,
         title: String? = nil,
         urlString: String? = nil,
-        faviconURLString: String? = nil
+        faviconURLString: String? = nil,
     ) {
         onTabUpdated?(id, title, urlString, faviconURLString)
     }
@@ -391,7 +399,7 @@ import Foundation
         id: String,
         title: String? = nil,
         urlString: String,
-        isActive: Bool
+        isActive: Bool,
     ) {
         if isActive {
             activeTabID = id
@@ -419,12 +427,6 @@ import Foundation
         onDownloadUpdated?(update)
     }
 
-    // MARK: Private
-
-    private var pendingCreateRequests = [CreatedTabRequest]()
-    private var nextTabNumber = 0
-    private var activeTabID: String?
-
     private func defaultTitle(for urlString: String) -> String {
         guard
             let url = URL(string: urlString),
@@ -441,12 +443,6 @@ import Foundation
 // MARK: - InMemorySessionSnapshotStore
 
 final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
-    // MARK: Lifecycle
-
-    init(loadedSnapshot: BrowserTabSessionSnapshot? = nil) {
-        self.loadedSnapshot = loadedSnapshot
-    }
-
     // MARK: Internal
 
     var loadedSnapshot: BrowserTabSessionSnapshot?
@@ -455,6 +451,10 @@ final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
     var sessionWriteError: Error?
     private(set) var attemptedSessionWriteBatches = [[BrowserSessionWrite]]()
     private(set) var savedSessionWriteBatches = [[BrowserSessionWrite]]()
+
+    init(loadedSnapshot: BrowserTabSessionSnapshot? = nil) {
+        self.loadedSnapshot = loadedSnapshot
+    }
 
     func writeSessionBatch(_ writes: [BrowserSessionWrite]) throws {
         attemptedSessionWriteBatches.append(writes)
@@ -492,20 +492,6 @@ final class InMemorySessionSnapshotStore: BrowserTabSessionSnapshotStoring {
 // MARK: - InMemorySessionPreferencesStore
 
 final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
-    // MARK: Lifecycle
-
-    init(
-        storedSelectedTabIndex: Int? = nil,
-        storedSelectedSpaceIndex: Int? = nil,
-        storedSidebarWidth: CGFloat? = nil,
-        storedTemporaryTabLifetime: BrowserTemporaryTabLifetime = .defaultValue
-    ) {
-        self.storedSelectedTabIndex = storedSelectedTabIndex
-        self.storedSelectedSpaceIndex = storedSelectedSpaceIndex
-        self.storedSidebarWidth = storedSidebarWidth
-        self.storedTemporaryTabLifetime = storedTemporaryTabLifetime
-    }
-
     // MARK: Internal
 
     var storedSelectedTabIndex: Int?
@@ -517,6 +503,18 @@ final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
     private(set) var savedSelectedSpaceIndices = [Int?]()
     private(set) var savedSidebarWidths = [CGFloat]()
     private(set) var savedTemporaryTabLifetimes = [BrowserTemporaryTabLifetime]()
+
+    init(
+        storedSelectedTabIndex: Int? = nil,
+        storedSelectedSpaceIndex: Int? = nil,
+        storedSidebarWidth: CGFloat? = nil,
+        storedTemporaryTabLifetime: BrowserTemporaryTabLifetime = .defaultValue,
+    ) {
+        self.storedSelectedTabIndex = storedSelectedTabIndex
+        self.storedSelectedSpaceIndex = storedSelectedSpaceIndex
+        self.storedSidebarWidth = storedSidebarWidth
+        self.storedTemporaryTabLifetime = storedTemporaryTabLifetime
+    }
 
     func loadSelectedTabIndex(tabCount: Int) -> Int? {
         guard tabCount > 0, let storedSelectedTabIndex else {
@@ -570,16 +568,14 @@ final class InMemorySessionPreferencesStore: BrowserSessionPreferencesStoring {
 // MARK: - FakeSuggestionProvider
 
 final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Sendable {
-    // MARK: Lifecycle
-
-    init(suggestionsByQuery: [String: [String]] = [:]) {
-        self.suggestionsByQuery = suggestionsByQuery
-    }
-
     // MARK: Internal
 
     var suggestionsByQuery: [String: [String]]
     private(set) var requestedQueries = [String]()
+
+    init(suggestionsByQuery: [String: [String]] = [:]) {
+        self.suggestionsByQuery = suggestionsByQuery
+    }
 
     func suggestions(for query: String, maximumCount: Int) -> [String] {
         requestedQueries.append(query)
@@ -590,12 +586,6 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Senda
 // MARK: - FakeBrowserExtensionManager
 
 @MainActor final class FakeBrowserExtensionManager: BrowserExtensionManaging {
-    // MARK: Lifecycle
-
-    init(extensions: [BrowserExtension] = []) {
-        self.extensions = extensions
-    }
-
     // MARK: Internal
 
     var extensions: [BrowserExtension]
@@ -603,6 +593,10 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Senda
     private(set) var actionRequests = [String]()
     private(set) var enabledStateRequests = [(id: String, isEnabled: Bool)]()
     private(set) var removedExtensionIDs = [String]()
+
+    init(extensions: [BrowserExtension] = []) {
+        self.extensions = extensions
+    }
 
     func installedExtensions() -> [BrowserExtension] {
         extensions
@@ -648,6 +642,11 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Senda
     private(set) var closedPanelIDs = [String]()
     private(set) var closeAllPanelsCount = 0
 
+    // MARK: Private
+
+    private var nextPanelNumber = 0
+    private var activePanelID: String?
+
     func openPanel(urlString: String) -> String {
         openedURLStrings.append(urlString)
         nextPanelNumber += 1
@@ -674,11 +673,6 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Senda
         }
         onPanelClosed?(id)
     }
-
-    // MARK: Private
-
-    private var nextPanelNumber = 0
-    private var activePanelID: String?
 }
 
 // MARK: - FakeBrowserExtensionActionPopupDriver
@@ -691,6 +685,10 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Senda
     private(set) var openedURLStrings = [String]()
     private(set) var closedPopupIDs = [String]()
     private(set) var closeAllPopupsCount = 0
+
+    // MARK: Private
+
+    private var nextPopupNumber = 0
 
     func openPopup(urlString: String) -> String {
         openedURLStrings.append(urlString)
@@ -705,8 +703,4 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Senda
     func closeAllPopups() {
         closeAllPopupsCount += 1
     }
-
-    // MARK: Private
-
-    private var nextPopupNumber = 0
 }

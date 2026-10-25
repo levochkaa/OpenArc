@@ -1,3 +1,5 @@
+// BrowserBookmarks.swift
+
 import Combine
 import Foundation
 
@@ -183,18 +185,20 @@ struct BrowserEmptyBookmarkStore: BrowserBookmarkStoring {
 // MARK: - BrowserBookmarksModel
 
 @MainActor final class BrowserBookmarksModel: ObservableObject {
-    // MARK: Lifecycle
-
-    init(store: BrowserBookmarkStoring = BrowserEmptyBookmarkStore()) {
-        self.store = store
-    }
-
     // MARK: Internal
 
     @Published private(set) var bookmarkBarItems = [BrowserBookmarkItem]()
 
+    // MARK: Private
+
+    private let store: BrowserBookmarkStoring
+
     var isEmpty: Bool {
         bookmarkBarItems.isEmpty
+    }
+
+    init(store: BrowserBookmarkStoring = BrowserEmptyBookmarkStore()) {
+        self.store = store
     }
 
     func reload() {
@@ -316,14 +320,10 @@ struct BrowserEmptyBookmarkStore: BrowserBookmarkStoring {
                     kind: .bookmark,
                     displayText: item.displayTitle,
                     detailText: item.urlString.map(BrowserURLDisplayFormatter.displayString),
-                    resolvedURLString: item.urlString ?? ""
+                    resolvedURLString: item.urlString ?? "",
                 )
             }
     }
-
-    // MARK: Private
-
-    private let store: BrowserBookmarkStoring
 }
 
 // MARK: - BrowserChromiumProfileDirectoryResolver

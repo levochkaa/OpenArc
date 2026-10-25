@@ -1,3 +1,5 @@
+// BrowserSadTabView.swift
+
 import AppKit
 
 // MARK: - BrowserSadTabView
@@ -5,7 +7,22 @@ import AppKit
 /// Page for a tab whose renderer crashed: "Tab crashed. Maybe reload
 /// the page?" with "reload" as a link, and Chromium's error code below.
 final class BrowserSadTabView: BrowserNativeSurface, NSTextViewDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    /// The address of the message's "reload" link.
+    static let reloadLink = URL(string: "openarc-sad-tab:reload")!
+
+    override var isFlipped: Bool { true }
+
+    var onReload: () -> Void = {}
+
+    private(set) var errorCode = 0
+
+    // MARK: Private
+
+    private let icon = NSImageView()
+    private let message = NSTextView()
+    private let code = BrowserNativeControls.label("", size: 11, color: BrowserChromeColors.secondaryText)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -37,17 +54,6 @@ final class BrowserSadTabView: BrowserNativeSurface, NSTextViewDelegate {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    /// The address of the message's "reload" link.
-    static let reloadLink = URL(string: "openarc-sad-tab:reload")!
-
-    override var isFlipped: Bool { true }
-
-    var onReload: () -> Void = {}
-
-    private(set) var errorCode = 0
 
     override func layout() {
         super.layout()
@@ -93,10 +99,4 @@ final class BrowserSadTabView: BrowserNativeSurface, NSTextViewDelegate {
         onReload()
         return true
     }
-
-    // MARK: Private
-
-    private let icon = NSImageView()
-    private let message = NSTextView()
-    private let code = BrowserNativeControls.label("", size: 11, color: BrowserChromeColors.secondaryText)
 }

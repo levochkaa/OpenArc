@@ -1,3 +1,5 @@
+// BrowserMobileArchiveViewController.swift
+
 import UIKit
 
 /// Bounded pages of profile-local recovery records. The document owns restore
@@ -5,20 +7,26 @@ import UIKit
 final class BrowserMobileArchiveViewController: UITableViewController, UISearchResultsUpdating,
     UISearchBarDelegate, UISearchControllerDelegate
 {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(
-        workspace: BrowserMobileWorkspace,
-        searchLoader: (@MainActor (String, BrowserTabArchiveCursor?, Int) async throws -> BrowserTabArchivePage)? = nil
-    ) {
-        self.workspace = workspace
-        self.searchLoader = searchLoader ?? { query, cursor, limit in
-            try await workspace.searchArchivePage(query: query, before: cursor, limit: limit)
-        }
-        super.init(style: .insetGrouped)
+    private enum Removal {
+        case entry(String)
+        case clear(BrowserTabArchiveBoundary)
     }
 
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
+    private enum ArchivalChoice {
+        case off
+        case interval(BrowserTemporaryTabLifetime)
+
+        // MARK: Internal
+
+        var lifetime: BrowserTemporaryTabLifetime? {
+            switch self {
+            case .off: nil
+            case .interval(let value): value
+            }
+        }
+    }
 
     // MARK: Internal
 
@@ -29,6 +37,55 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
     let workspace: BrowserMobileWorkspace
     var didRestore: (() -> Void)?
     private(set) var pendingClearBoundary: BrowserTabArchiveBoundary?
+
+    private let searchLoader: @MainActor (String, BrowserTabArchiveCursor?, Int) async throws -> BrowserTabArchivePage
+    private let searchController = UISearchController(searchResultsController: nil)
+    private var searchTask: Task<Void, Never>?
+    private var loadGeneration = 0
+    private var query = ""
+    private var pendingSearchAction: (() -> Void)?
+    private var isClosing = false
+    private var isLoading = false
+    private var isChangingArchive = false
+    private var isCapturingBoundary = false
+    private var boundaryLoadFailed = false
+    private var isQueryInvalid = false
+    private var failedRemoval: Removal?
+    private var actionError: String?
+    private var entries = [BrowserTabArchiveEntry]()
+    private var cursors: [BrowserTabArchiveCursor?] = [nil]
+    private var nextCursor: BrowserTabArchiveCursor?
+    private var lastRevision: Int?
+    private var loadError: String?
+    private var interactionError: String?
+    private var newerButton = UIBarButtonItem()
+    private var olderButton = UIBarButtonItem()
+    private var clearButton = UIBarButtonItem()
+    private var timingButton = UIBarButtonItem()
+    private var failedAutomaticArchival: ArchivalChoice?
+    private let errorLabel = UILabel()
+    private let retryButton = UIButton(type: .system)
+    private let statusStack = UIStackView()
+    private var isRetrying = false
+
+    private var mayManage: Bool {
+        workspace.canManageArchive && !isChangingArchive && !isCapturingBoundary && !isRetrying && !isClosing
+    }
+
+    private var mayRestore: Bool { mayManage && !isLoading && loadError == nil && failedRemoval == nil }
+
+    init(
+        workspace: BrowserMobileWorkspace,
+        searchLoader: (@MainActor (String, BrowserTabArchiveCursor?, Int) async throws -> BrowserTabArchivePage)? = nil,
+    ) {
+        self.workspace = workspace
+        self.searchLoader = searchLoader ?? { query, cursor, limit in
+            try await workspace.searchArchivePage(query: query, before: cursor, limit: limit)
+        }
+        super.init(style: .insetGrouped)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -42,23 +99,23 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         navigationItem.rightBarButtonItem = done
         timingButton = UIBarButtonItem(
             title: String(localized: "Auto-Archive", table: "Mobile"),
-            menu: UIMenu(children: [])
+            menu: UIMenu(children: []),
         )
         timingButton.accessibilityIdentifier = "browser.archive.timing"
         navigationItem.leftBarButtonItem = timingButton
         newerButton = UIBarButtonItem(
             title: String(localized: "Newer", table: "Mobile"), style: .plain,
-            target: self, action: #selector(showNewer)
+            target: self, action: #selector(showNewer),
         )
         olderButton = UIBarButtonItem(
             title: String(localized: "Older", table: "Mobile"), style: .plain,
-            target: self, action: #selector(showOlder)
+            target: self, action: #selector(showOlder),
         )
         newerButton.accessibilityIdentifier = "browser.archive.newer"
         olderButton.accessibilityIdentifier = "browser.archive.older"
         clearButton = UIBarButtonItem(
             image: UIImage(systemName: "trash"), style: .plain,
-            target: self, action: #selector(requestClear)
+            target: self, action: #selector(requestClear),
         )
         clearButton.title = String(localized: "Clear Archive", table: "Mobile")
         clearButton.tintColor = .systemRed
@@ -145,12 +202,12 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
     }
 
     override func tableView(
-        _: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+        _: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath,
     ) -> UISwipeActionsConfiguration? {
         guard mayRestore, entries.indices.contains(indexPath.row) else { return nil }
         let id = entries[indexPath.row].id
         let action = UIContextualAction(
-            style: .destructive, title: String(localized: "Delete", table: "Mobile")
+            style: .destructive, title: String(localized: "Delete", table: "Mobile"),
         ) { [weak self] _, _, completion in
             guard let self, mayRestore else { completion(false)
                 return
@@ -226,63 +283,6 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         }
     }
 
-    // MARK: Private
-
-    private enum Removal {
-        case entry(String)
-        case clear(BrowserTabArchiveBoundary)
-    }
-
-    private enum ArchivalChoice {
-        case off
-        case interval(BrowserTemporaryTabLifetime)
-
-        // MARK: Internal
-
-        var lifetime: BrowserTemporaryTabLifetime? {
-            switch self {
-            case .off: nil
-            case .interval(let value): value
-            }
-        }
-    }
-
-    private let searchLoader: @MainActor (String, BrowserTabArchiveCursor?, Int) async throws -> BrowserTabArchivePage
-    private let searchController = UISearchController(searchResultsController: nil)
-    private var searchTask: Task<Void, Never>?
-    private var loadGeneration = 0
-    private var query = ""
-    private var pendingSearchAction: (() -> Void)?
-    private var isClosing = false
-    private var isLoading = false
-    private var isChangingArchive = false
-    private var isCapturingBoundary = false
-    private var boundaryLoadFailed = false
-    private var isQueryInvalid = false
-    private var failedRemoval: Removal?
-    private var actionError: String?
-    private var entries = [BrowserTabArchiveEntry]()
-    private var cursors: [BrowserTabArchiveCursor?] = [nil]
-    private var nextCursor: BrowserTabArchiveCursor?
-    private var lastRevision: Int?
-    private var loadError: String?
-    private var interactionError: String?
-    private var newerButton = UIBarButtonItem()
-    private var olderButton = UIBarButtonItem()
-    private var clearButton = UIBarButtonItem()
-    private var timingButton = UIBarButtonItem()
-    private var failedAutomaticArchival: ArchivalChoice?
-    private let errorLabel = UILabel()
-    private let retryButton = UIButton(type: .system)
-    private let statusStack = UIStackView()
-    private var isRetrying = false
-
-    private var mayManage: Bool {
-        workspace.canManageArchive && !isChangingArchive && !isCapturingBoundary && !isRetrying && !isClosing
-    }
-
-    private var mayRestore: Bool { mayManage && !isLoading && loadError == nil && failedRemoval == nil }
-
     private func setQuery(_ value: String, debounce: Bool) {
         guard query != value, !isClosing else { return }
         query = value
@@ -295,7 +295,9 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         loadGeneration &+= 1
         let generation = loadGeneration
         searchTask?.cancel()
-        let query = query, cursor = cursors.last ?? nil, loader = searchLoader
+        let query = query
+        let cursor = cursors.last ?? nil
+        let loader = searchLoader
         isLoading = true
         loadError = nil
         isQueryInvalid = false
@@ -356,7 +358,7 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         let picker = UIAlertController(
             title: String(localized: "Restore to Space", table: "Mobile"),
             message: String(localized: "The original Space is no longer available.", table: "Mobile"),
-            preferredStyle: .actionSheet
+            preferredStyle: .actionSheet,
         )
         for space in workspace.spaces {
             picker.addAction(UIAlertAction(title: space.title, style: .default) { [weak self, weak picker] _ in
@@ -367,7 +369,7 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         picker.addAction(UIAlertAction(title: String(localized: "Cancel", table: "Mobile"), style: .cancel))
         picker.popoverPresentationController?.sourceView = tableView
         picker.popoverPresentationController?.sourceRect = CGRect(
-            x: tableView.bounds.midX, y: tableView.bounds.midY, width: 1, height: 1
+            x: tableView.bounds.midX, y: tableView.bounds.midY, width: 1, height: 1,
         )
         present(picker, animated: true)
     }
@@ -396,7 +398,7 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
             if !succeeded {
                 failedRemoval = action
                 actionError = workspace.archiveError ?? String(
-                    localized: "The archive could not be changed. Try again.", table: "Mobile"
+                    localized: "The archive could not be changed. Try again.", table: "Mobile",
                 )
             }
             lastRevision = workspace.archiveRevision
@@ -442,7 +444,7 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         let enabled = workspace.automaticTabArchivalEnabled
         var actions = [UIAction(
             title: String(localized: "Off", table: "Mobile"), identifier: .init("browser.archive.timing.off"),
-            state: enabled ? .off : .on
+            state: enabled ? .off : .on,
         ) { [weak self] _ in self?.chooseAutomaticArchival(nil) }]
         for lifetime in BrowserTemporaryTabLifetime.allCases {
             let title =
@@ -455,12 +457,12 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
                 }
             actions.append(UIAction(
                 title: title, identifier: .init("browser.archive.timing." + lifetime.rawValue),
-                state: enabled && workspace.temporaryTabLifetime == lifetime ? .on : .off
+                state: enabled && workspace.temporaryTabLifetime == lifetime ? .on : .off,
             ) { [weak self] _ in self?.chooseAutomaticArchival(lifetime) })
         }
         timingButton.menu = UIMenu(
             title: String(localized: "Auto-Archive Today Tabs", table: "Mobile"),
-            children: actions
+            children: actions,
         )
     }
 
@@ -469,7 +471,7 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         let width = tableView.bounds.width
         let size = statusStack.systemLayoutSizeFitting(
             CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
-            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel
+            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel,
         )
         guard statusStack.frame.size != CGSize(width: width, height: size.height) else { return }
         statusStack.frame = CGRect(x: 0, y: 0, width: width, height: size.height)
@@ -530,17 +532,17 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
                     title: String(localized: "Clear Archive?", table: "Mobile"),
                     message: String(
                         localized: "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept.",
-                        table: "Mobile"
-                    ), preferredStyle: .actionSheet
+                        table: "Mobile",
+                    ), preferredStyle: .actionSheet,
                 )
                 picker.addAction(UIAlertAction(
-                    title: String(localized: "Clear Archive", table: "Mobile"), style: .destructive
+                    title: String(localized: "Clear Archive", table: "Mobile"), style: .destructive,
                 ) { [weak self, weak picker] _ in
                     guard let picker else { return }
                     self?.chooseClearBoundary(boundary, dismissing: picker)
                 })
                 picker.addAction(UIAlertAction(
-                    title: String(localized: "Cancel", table: "Mobile"), style: .cancel
+                    title: String(localized: "Cancel", table: "Mobile"), style: .cancel,
                 ) { [weak self, weak picker] _ in
                     guard let picker else { return }
                     self?.cancelClear(dismissing: picker)

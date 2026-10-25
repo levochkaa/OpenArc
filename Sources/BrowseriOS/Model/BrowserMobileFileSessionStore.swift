@@ -1,3 +1,5 @@
+// BrowserMobileFileSessionStore.swift
+
 import Foundation
 
 // MARK: - BrowserMobileSessionStoring
@@ -12,7 +14,12 @@ protocol BrowserMobileSessionStoring: Sendable {
 /// Each scene supplies its own URL. A failed load never grants permission to
 /// replace that file; the caller must retry restoration before it can save.
 actor BrowserMobileFileSessionStore: BrowserMobileSessionStoring {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private static let maximumBytes = 8 * 1024 * 1024
+
+    private let fileURL: URL
+    private var canSave = false
 
     init(fileURL: URL) { self.fileURL = fileURL }
 
@@ -47,15 +54,8 @@ actor BrowserMobileFileSessionStore: BrowserMobileSessionStoring {
         guard data.count <= Self.maximumBytes else { throw BrowserMobileSessionError.tooLarge }
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
         )
         try data.write(to: fileURL, options: .atomic)
     }
-
-    // MARK: Private
-
-    private static let maximumBytes = 8 * 1024 * 1024
-
-    private let fileURL: URL
-    private var canSave = false
 }

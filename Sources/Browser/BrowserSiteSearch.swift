@@ -1,3 +1,5 @@
+// BrowserSiteSearch.swift
+
 import Foundation
 import GRDB
 
@@ -8,17 +10,7 @@ import GRDB
 /// site's own results. Keywords are Chromium's (`github.com`, or a shortcut
 /// such as `@y`), and the address uses `%s` for the query, as in Chrome's
 /// search engine settings.
-struct BrowserSiteSearch: Codable, Equatable, Identifiable, Sendable {
-    // MARK: Lifecycle
-
-    init(id: UUID = UUID(), name: String, keyword: String, urlTemplate: String, colorHex: String? = nil) {
-        self.id = id
-        self.name = name
-        self.keyword = keyword
-        self.urlTemplate = urlTemplate
-        self.colorHex = colorHex
-    }
-
+struct BrowserSiteSearch: Codable, Equatable, Identifiable {
     // MARK: Internal
 
     static let queryPlaceholder = "%s"
@@ -30,104 +22,104 @@ struct BrowserSiteSearch: Codable, Equatable, Identifiable, Sendable {
             name: "Google Drive",
             keyword: "drive.google.com",
             urlTemplate: "https://drive.google.com/drive/search?q=%s",
-            colorHex: "00A96B"
+            colorHex: "00A96B",
         ),
         .init(
             name: "Gmail",
             keyword: "mail.google.com",
             urlTemplate: "https://mail.google.com/mail/ca/u/0/#apps/%s",
-            colorHex: "DE5C47"
+            colorHex: "DE5C47",
         ),
         .init(
             name: "Google Maps",
             keyword: "maps.google.com",
             urlTemplate: "https://www.google.com/maps/search/%s",
-            colorHex: "FCC600"
+            colorHex: "FCC600",
         ),
         .init(
             name: "Google Calendar",
             keyword: "calendar.google.com",
             urlTemplate: "https://calendar.google.com/calendar/u/0/r/search?q=%s",
-            colorHex: "AD43BD"
+            colorHex: "AD43BD",
         ),
         .init(
             name: "Google Docs",
             keyword: "docs.google.com",
             urlTemplate: "https://docs.google.com/document/u/0/?q=%s",
-            colorHex: "519AF6"
+            colorHex: "519AF6",
         ),
         .init(
             name: "Dropbox",
             keyword: "dropbox.com",
             urlTemplate: "https://www.dropbox.com/search/personal?&query=%s",
-            colorHex: "0061FE"
+            colorHex: "0061FE",
         ),
         .init(
             name: "Amazon",
             keyword: "amazon.com",
             urlTemplate: "https://www.amazon.com/s?k=%s",
-            colorHex: "FFA900"
+            colorHex: "FFA900",
         ),
         .init(
             name: "GitHub",
             keyword: "github.com",
             urlTemplate: "https://github.com/search?q=%s",
-            colorHex: "8859D1"
+            colorHex: "8859D1",
         ),
         .init(
             name: "Figma",
             keyword: "figma.com",
             urlTemplate: "https://www.figma.com/files/search?q=%s",
-            colorHex: "F66526"
+            colorHex: "F66526",
         ),
         .init(name: "X", keyword: "x.com", urlTemplate: "https://x.com/search?q=%s", colorHex: "000000"),
         .init(
             name: "YouTube",
             keyword: "youtube.com",
             urlTemplate: "https://www.youtube.com/results?search_query=%s",
-            colorHex: "FF2600"
+            colorHex: "FF2600",
         ),
         .init(
             name: "Wikipedia",
             keyword: "wikipedia.org",
             urlTemplate: "https://wikipedia.org/w/index.php?search=%s",
-            colorHex: "FFB300"
+            colorHex: "FFB300",
         ),
         .init(
             name: "Reddit",
             keyword: "reddit.com",
             urlTemplate: "https://www.reddit.com/search/?q=%s",
-            colorHex: "FF5D00"
+            colorHex: "FF5D00",
         ),
         .init(
             name: "SoundCloud",
             keyword: "soundcloud.com",
             urlTemplate: "https://soundcloud.com/search?q=%s",
-            colorHex: "FB6919"
+            colorHex: "FB6919",
         ),
         .init(
             name: "Asana",
             keyword: "asana.com",
             urlTemplate: "https://app.asana.com/0/search?q=%s",
-            colorHex: "F06A6A"
+            colorHex: "F06A6A",
         ),
         .init(
             name: "LinkedIn",
             keyword: "linkedin.com",
             urlTemplate: "https://linkedin.com/search/results/all/?keywords=%s",
-            colorHex: "007CCD"
+            colorHex: "007CCD",
         ),
         .init(
             name: "Apple Music",
             keyword: "music.apple.com",
             urlTemplate: "https://music.apple.com/us/search?term=%s",
-            colorHex: "FD4455"
+            colorHex: "FD4455",
         ),
         .init(
             name: "Spotify",
             keyword: "spotify.com",
             urlTemplate: "https://open.spotify.com/search/%s",
-            colorHex: "1DB954"
+            colorHex: "1DB954",
         ),
     ]
 
@@ -152,6 +144,14 @@ struct BrowserSiteSearch: Codable, Equatable, Identifiable, Sendable {
         let keyword = normalizedKeyword
         return !keyword.isEmpty && !keyword.contains(where: \.isWhitespace)
             && searchURLString(for: "test") != nil
+    }
+
+    init(id: UUID = UUID(), name: String, keyword: String, urlTemplate: String, colorHex: String? = nil) {
+        self.id = id
+        self.name = name
+        self.keyword = keyword
+        self.urlTemplate = urlTemplate
+        self.colorHex = colorHex
     }
 
     /// The first site whose keyword is the typed text, else the shortest
@@ -184,7 +184,7 @@ struct BrowserSiteSearch: Codable, Equatable, Identifiable, Sendable {
             String($0).addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         }
         let encoded = spaceless.joined(separator: isInQuery ? "+" : "%20")
-        let urlString = template.replacingOccurrences(of: Self.queryPlaceholder, with: encoded)
+        let urlString = template.replacing(Self.queryPlaceholder, with: encoded)
         guard let url = URL(string: urlString), let scheme = url.scheme?.lowercased(),
               scheme == "https" || scheme == "http", url.host?.isEmpty == false
         else { return nil }
@@ -202,7 +202,7 @@ enum BrowserSiteSearchImport {
     /// first, since a running Chromium keeps it locked.
     static func load(
         from source: BrowserBookmarkImportSource,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
     ) -> [BrowserSiteSearch]? {
         func rank(_ file: URL) -> Int {
             file.deletingLastPathComponent().lastPathComponent == "Default" ? 0 : 1
@@ -257,21 +257,21 @@ enum BrowserSiteSearchImport {
     static func siteSearch(name: String?, keyword: String?, url: String?) -> BrowserSiteSearch? {
         guard let keyword, let url, url.contains("{searchTerms}") else { return nil }
         var template = url
-            .replacingOccurrences(of: "{searchTerms}", with: BrowserSiteSearch.queryPlaceholder)
-            .replacingOccurrences(of: "{inputEncoding}", with: "UTF-8")
-            .replacingOccurrences(of: "{outputEncoding}", with: "UTF-8")
-            .replacingOccurrences(of: "{google:baseURL}", with: "https://www.google.com/")
+            .replacing("{searchTerms}", with: BrowserSiteSearch.queryPlaceholder)
+            .replacing("{inputEncoding}", with: "UTF-8")
+            .replacing("{outputEncoding}", with: "UTF-8")
+            .replacing("{google:baseURL}", with: "https://www.google.com/")
         template = template.replacingOccurrences(
             of: #"\{google:[^}]*\}"#,
             with: "",
-            options: .regularExpression
+            options: .regularExpression,
         )
         guard !template.contains("{") else { return nil }
         let search = BrowserSiteSearch(
             name: name ?? keyword,
             keyword: keyword,
             urlTemplate: template,
-            colorHex: BrowserSiteSearch.arcDefaults.first { $0.hasSameAddress(as: template) }?.colorHex
+            colorHex: BrowserSiteSearch.arcDefaults.first { $0.hasSameAddress(as: template) }?.colorHex,
         )
         return search.isUsable ? search : nil
     }

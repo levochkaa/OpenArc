@@ -1,3 +1,5 @@
+// BrowserMobileDialogPresenterTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -156,7 +158,7 @@ extension BrowserMobileUITests {
         let presenter = BrowserMobileJavaScriptDialogPresenter(host: host) { responses.append(($0, $1)) }
         let request = BrowserMobileJavaScriptDialog(
             id: UUID(), runtimeID: "unattached", origin: "https://example.com",
-            message: "No window", kind: .prompt(defaultText: "value")
+            message: "No window", kind: .prompt(defaultText: "value"),
         )
         presenter.update(request)
         #expect(responses.count == 1)
@@ -168,7 +170,15 @@ extension BrowserMobileUITests {
 // MARK: - MobileDialogUIKitFixture
 
 @MainActor private final class MobileDialogUIKitFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let engine: BrowserWebKitEngine
+    let workspace: BrowserMobileWorkspace
+    let root: BrowserMobileViewController
+    let window: UIWindow
+    let webView: WKWebView
+
+    var presenter: BrowserMobileJavaScriptDialogPresenter { root.javaScriptDialogPresenter }
 
     init() async throws {
         let scene = try #require(BrowserMobileTestScene.windowScene)
@@ -187,7 +197,7 @@ extension BrowserMobileUITests {
             let id = try #require(workspace.selectedTab?.runtimeID)
             engine.loadHTMLString(
                 "<html><head><title>Dialog fixture</title></head><body>Test page</body></html>",
-                baseURL: URL(string: "https://dialog.example/"), id: id
+                baseURL: URL(string: "https://dialog.example/"), id: id,
             )
             let webView = try #require(engine.webView(for: id))
             try #require(await dialogEventually { workspace.selectedTab?.title == "Dialog fixture" })
@@ -205,16 +215,6 @@ extension BrowserMobileUITests {
             throw error
         }
     }
-
-    // MARK: Internal
-
-    let engine: BrowserWebKitEngine
-    let workspace: BrowserMobileWorkspace
-    let root: BrowserMobileViewController
-    let window: UIWindow
-    let webView: WKWebView
-
-    var presenter: BrowserMobileJavaScriptDialogPresenter { root.javaScriptDialogPresenter }
 
     func run(_ script: String, result: MobileDialogScriptResult) -> Task<Void, Never> {
         Task { @MainActor in
@@ -253,14 +253,14 @@ extension BrowserMobileUITests {
 // MARK: - MobileDialogMemoryStore
 
 private actor MobileDialogMemoryStore: BrowserMobileSessionStoring {
+    // MARK: Private
+
+    private var session: BrowserMobileSession?
+
     // MARK: Internal
 
     func load() -> BrowserMobileSession? { session }
     func save(_ session: BrowserMobileSession) { self.session = session }
-
-    // MARK: Private
-
-    private var session: BrowserMobileSession?
 }
 
 @MainActor private func dialogEventually(_ predicate: () -> Bool) async -> Bool {

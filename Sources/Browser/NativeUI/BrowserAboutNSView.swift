@@ -1,3 +1,5 @@
+// BrowserAboutNSView.swift
+
 import AppKit
 
 // MARK: - BrowserAboutLayout
@@ -32,7 +34,10 @@ enum BrowserAboutResources {
 // MARK: - BrowserAboutView
 
 final class BrowserAboutView: NSView, NSTextViewDelegate {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let openLink: (URL) -> Void
+    private let links = NSTextView()
 
     init(info: BrowserAboutInfo, openLink: @escaping (URL) -> Void) {
         self.openLink = openLink
@@ -40,7 +45,7 @@ final class BrowserAboutView: NSView, NSTextViewDelegate {
             x: 0,
             y: 0,
             width: BrowserAboutLayout.windowWidth,
-            height: BrowserAboutLayout.windowHeight
+            height: BrowserAboutLayout.windowHeight,
         ))
         setAccessibilityIdentifier("browser.about")
         let icon = NSImageView()
@@ -129,16 +134,11 @@ final class BrowserAboutView: NSView, NSTextViewDelegate {
         return true
     }
 
-    // MARK: Private
-
-    private let openLink: (URL) -> Void
-    private let links = NSTextView()
-
     private func label(
         _ text: String,
         size: CGFloat,
         weight: NSFont.Weight = .regular,
-        color: NSColor = .secondaryLabelColor
+        color: NSColor = .secondaryLabelColor,
     ) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: size, weight: weight)

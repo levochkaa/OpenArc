@@ -1,3 +1,5 @@
+// BrowserSidebarSnapshotTests.swift
+
 import Foundation
 import Testing
 
@@ -7,7 +9,7 @@ import Testing
         title: "Space",
         systemImageName: "square.grid.2x2",
         isPinnedSectionCollapsed: false,
-        selectedTabID: "folder-tab-2"
+        selectedTabID: "folder-tab-2",
     )
     let folder = BrowserChromeModel.PinnedTabFolder(
         id: "folder",
@@ -15,7 +17,7 @@ import Testing
         parentFolderID: nil,
         title: "Folder",
         systemImageName: nil,
-        isExpanded: false
+        isExpanded: false,
     )
     let firstFolderTab = browserSidebarSnapshotTestTab(
         id: "folder-tab-1",
@@ -23,7 +25,7 @@ import Testing
         title: "First Folder Tab",
         urlString: "https://first.example",
         placement: .spacePinned,
-        pinnedFolderID: folder.id
+        pinnedFolderID: folder.id,
     )
     let secondFolderTab = browserSidebarSnapshotTestTab(
         id: "folder-tab-2",
@@ -31,7 +33,7 @@ import Testing
         title: "Second Folder Tab",
         urlString: "https://second.example",
         placement: .spacePinned,
-        pinnedFolderID: folder.id
+        pinnedFolderID: folder.id,
     )
     let snapshot = BrowserSidebarSnapshot(
         spaces: [space],
@@ -48,12 +50,12 @@ import Testing
         canGoBack: false,
         canGoForward: false,
         canStopLoading: false,
-        canReload: false
+        canReload: false,
     )
 
     let rows = snapshot.visiblePinnedRows(
         in: space.id,
-        revealedTabIDsByFolderID: [folder.id: [firstFolderTab.id, secondFolderTab.id]]
+        revealedTabIDsByFolderID: [folder.id: [firstFolderTab.id, secondFolderTab.id]],
     )
 
     #expect(rows.map(\.id) == [
@@ -69,7 +71,7 @@ import Testing
         title: "Space",
         systemImageName: "square.grid.2x2",
         isPinnedSectionCollapsed: false,
-        selectedTabID: "active-tab"
+        selectedTabID: "active-tab",
     )
     let folder = BrowserChromeModel.PinnedTabFolder(
         id: "folder",
@@ -77,7 +79,7 @@ import Testing
         parentFolderID: nil,
         title: "Folder",
         systemImageName: nil,
-        isExpanded: false
+        isExpanded: false,
     )
     let folderTab = browserSidebarSnapshotTestTab(
         id: "folder-tab",
@@ -85,14 +87,14 @@ import Testing
         title: "Folder Tab",
         urlString: "https://folder.example",
         placement: .spacePinned,
-        pinnedFolderID: folder.id
+        pinnedFolderID: folder.id,
     )
     let activeTab = browserSidebarSnapshotTestTab(
         id: "active-tab",
         spaceID: space.id,
         title: "Active Tab",
         urlString: "https://active.example",
-        placement: .temporary
+        placement: .temporary,
     )
     let snapshot = BrowserSidebarSnapshot(
         spaces: [space],
@@ -109,12 +111,12 @@ import Testing
         canGoBack: false,
         canGoForward: false,
         canStopLoading: false,
-        canReload: false
+        canReload: false,
     )
 
     let rows = snapshot.visiblePinnedRows(
         in: space.id,
-        revealedTabIDsByFolderID: [folder.id: [folderTab.id]]
+        revealedTabIDsByFolderID: [folder.id: [folderTab.id]],
     )
 
     #expect(rows.map(\.id) == [
@@ -129,7 +131,7 @@ import Testing
         title: "Space",
         systemImageName: "square.grid.2x2",
         isPinnedSectionCollapsed: false,
-        selectedTabID: "folder-tab"
+        selectedTabID: "folder-tab",
     )
     let folder = BrowserChromeModel.PinnedTabFolder(
         id: "folder",
@@ -137,7 +139,7 @@ import Testing
         parentFolderID: nil,
         title: "Folder",
         systemImageName: nil,
-        isExpanded: false
+        isExpanded: false,
     )
     let folderTab = browserSidebarSnapshotTestTab(
         id: "folder-tab",
@@ -145,7 +147,7 @@ import Testing
         title: "Folder Tab",
         urlString: "https://folder.example",
         placement: .spacePinned,
-        pinnedFolderID: folder.id
+        pinnedFolderID: folder.id,
     )
     let otherFolderTab = browserSidebarSnapshotTestTab(
         id: "other-folder-tab",
@@ -153,7 +155,7 @@ import Testing
         title: "Other Folder Tab",
         urlString: "https://other.example",
         placement: .spacePinned,
-        pinnedFolderID: folder.id
+        pinnedFolderID: folder.id,
     )
     let snapshot = BrowserSidebarSnapshot(
         spaces: [space],
@@ -170,7 +172,7 @@ import Testing
         canGoBack: false,
         canGoForward: false,
         canStopLoading: false,
-        canReload: false
+        canReload: false,
     )
 
     let rows = snapshot.visiblePinnedRows(in: space.id)
@@ -187,7 +189,7 @@ private func browserSidebarSnapshotTestTab(
     title: String,
     urlString: String,
     placement: BrowserTabPlacement,
-    pinnedFolderID: String? = nil
+    pinnedFolderID: String? = nil,
 ) -> BrowserChromeModel.Tab {
     BrowserChromeModel.Tab(
         id: id,
@@ -199,6 +201,6 @@ private func browserSidebarSnapshotTestTab(
         faviconURLString: nil,
         placement: placement,
         pinnedFolderID: pinnedFolderID,
-        lastActivityAt: Date(timeIntervalSince1970: 0)
+        lastActivityAt: Date(timeIntervalSince1970: 0),
     )
 }

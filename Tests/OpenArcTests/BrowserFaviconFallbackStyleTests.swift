@@ -1,3 +1,5 @@
+// BrowserFaviconFallbackStyleTests.swift
+
 import Foundation
 import Testing
 
@@ -17,7 +19,7 @@ import Testing
         "openarc://bookmarks/",
     ] {
         #expect(
-            BrowserFaviconFallbackStyle.style(forPageURLString: pageURLString) == .chromiumWebUI
+            BrowserFaviconFallbackStyle.style(forPageURLString: pageURLString) == .chromiumWebUI,
         )
     }
 }
@@ -37,7 +39,7 @@ import Testing
 @Test func internalWebUITabsDoNotRequestRemoteFavicons() throws {
     let internalTab = makeFaviconTab(
         urlString: "openarc://settings/privacy",
-        faviconURLString: "https://example.com/favicon.ico"
+        faviconURLString: "https://example.com/favicon.ico",
     )
 
     #expect(internalTab.faviconFallbackStyle == .chromiumWebUI)
@@ -45,7 +47,7 @@ import Testing
 
     let regularTab = makeFaviconTab(
         urlString: "https://example.com/article",
-        faviconURLString: "https://example.com/favicon.ico"
+        faviconURLString: "https://example.com/favicon.ico",
     )
 
     #expect(regularTab.faviconFallbackStyle == .globe)
@@ -60,7 +62,7 @@ import Testing
 
 private func makeFaviconTab(
     urlString: String,
-    faviconURLString: String? = nil
+    faviconURLString: String? = nil,
 ) -> BrowserChromeModel.Tab {
     BrowserChromeModel.Tab(
         id: UUID().uuidString,
@@ -68,6 +70,6 @@ private func makeFaviconTab(
         spaceID: BrowserChromeModel.defaultSpaceID,
         title: "",
         urlString: urlString,
-        faviconURLString: faviconURLString
+        faviconURLString: faviconURLString,
     )
 }

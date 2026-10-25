@@ -1,3 +1,5 @@
+// BrowserNativeAutomaticArchiveTests.swift
+
 import AppKit
 import GRDB
 import Testing
@@ -54,11 +56,11 @@ import Testing
             let popup = try f.popup("automatic-tab-archival", in: controller)
             let retry = try #require(nativeAutomaticArchiveView(
                 "automatic-tab-archival-retry",
-                in: controller.view
+                in: controller.view,
             ) as? BrowserActionButton)
             let message = try #require(nativeAutomaticArchiveView(
                 "temporary-tab-error",
-                in: controller.view
+                in: controller.view,
             ) as? NSTextField)
             let before = try f.queueBytes()
             try f.installPreferenceFailure()
@@ -100,11 +102,11 @@ import Testing
             let popup = try f.popup("automatic-tab-archival", in: controller)
             let retry = try #require(nativeAutomaticArchiveView(
                 "automatic-tab-archival-retry",
-                in: controller.view
+                in: controller.view,
             ) as? BrowserActionButton)
             let message = try #require(nativeAutomaticArchiveView(
                 "temporary-tab-error",
-                in: controller.view
+                in: controller.view,
             ) as? NSTextField)
             #expect(popup.indexOfSelectedItem == 0 && popup.isEnabled)
             #expect(message.stringValue == BrowserStrings.settingsTemporaryTabsLoadFailed)
@@ -114,7 +116,7 @@ import Testing
             #expect(popup.indexOfSelectedItem == 0)
             try f
                 .sql(
-                    "UPDATE browser_preferences SET value='0' WHERE key='browser.settings.automaticTabArchivalEnabled'"
+                    "UPDATE browser_preferences SET value='0' WHERE key='browser.settings.automaticTabArchivalEnabled'",
                 )
             retry.performClick(nil)
             #expect(popup.indexOfSelectedItem == 0 && !f.model.automaticTabArchivalEnabled)
@@ -122,7 +124,7 @@ import Testing
             #expect(retry.isHiddenOrHasHiddenAncestor)
             try f
                 .sql(
-                    "UPDATE browser_preferences SET value='invalid' WHERE key='browser.settings.automaticTabArchivalEnabled'"
+                    "UPDATE browser_preferences SET value='invalid' WHERE key='browser.settings.automaticTabArchivalEnabled'",
                 )
             #expect(!f.model.reloadAutomaticTabArchivalSettings())
             controller.viewWillAppear()
@@ -169,7 +171,7 @@ import Testing
 
 @MainActor private func withNativeAutomaticArchive(
     state: String,
-    _ body: @MainActor (NativeAutomaticArchiveFixture) async throws -> Void
+    _ body: @MainActor (NativeAutomaticArchiveFixture) async throws -> Void,
 ) async throws {
     _ = NSApplication.shared
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -180,7 +182,7 @@ import Testing
 @MainActor private func runNativeAutomaticArchive(
     directory: URL,
     state: String,
-    _ body: @MainActor (NativeAutomaticArchiveFixture) async throws -> Void
+    _ body: @MainActor (NativeAutomaticArchiveFixture) async throws -> Void,
 ) async throws {
     let fixture = try NativeAutomaticArchiveFixture(directory: directory, state: state)
     defer { fixture.stop(fixture.model)
@@ -192,7 +194,16 @@ import Testing
 // MARK: - NativeAutomaticArchiveFixture
 
 @MainActor private final class NativeAutomaticArchiveFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let store: BrowserSQLiteSessionStore
+    let profiles: BrowserProfileStore
+    let preferences: UserDefaults
+    let suite = "NativeAutomaticArchive." + UUID().uuidString
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://native-automatic-archive.example")!, userID: "owner")
+    let driver = FakeBrowserTabDriver()
+    private(set) var model: BrowserChromeModel!
 
     init(directory: URL, state: String) throws {
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
@@ -205,8 +216,8 @@ import Testing
                 id: "active",
                 urlString: "https://active.example",
                 spaceID: "work",
-                lastActivityTimestamp: 100
-            )]
+                lastActivityTimestamp: 100,
+            )],
         ), origin: .local(syncMove: nil))])
         try store.saveTemporaryTabLifetimeStrict(.thirtyDays)
         if state != "local" {
@@ -222,23 +233,12 @@ import Testing
             try DatabaseQueue(path: databaseURL.path).write { db in
                 try db
                     .execute(
-                        sql: "INSERT INTO browser_preferences(key,value) VALUES ('browser.settings.automaticTabArchivalEnabled','invalid')"
+                        sql: "INSERT INTO browser_preferences(key,value) VALUES ('browser.settings.automaticTabArchivalEnabled','invalid')",
                     )
             }
         }
         self.model = makeModel(store: store)
     }
-
-    // MARK: Internal
-
-    let databaseURL: URL
-    let store: BrowserSQLiteSessionStore
-    let profiles: BrowserProfileStore
-    let preferences: UserDefaults
-    let suite = "NativeAutomaticArchive." + UUID().uuidString
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://native-automatic-archive.example")!, userID: "owner")
-    let driver = FakeBrowserTabDriver()
-    private(set) var model: BrowserChromeModel!
 
     func makeModel(store: BrowserSQLiteSessionStore) -> BrowserChromeModel {
         BrowserChromeModel(
@@ -251,7 +251,7 @@ import Testing
             extensionManager: FakeBrowserExtensionManager(),
             dateProvider: { Date(timeIntervalSince1970: 100) },
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
     }
 
@@ -263,7 +263,7 @@ import Testing
             accountStore: nil,
             pane: .general,
             openProfile: { _ in },
-            openURL: { _ in }
+            openURL: { _ in },
         )
     }
 
@@ -287,13 +287,13 @@ import Testing
     func queueBytes() throws -> [Data] {
         try DatabaseQueue(path: databaseURL.path).read { try Data.fetchAll(
             $0,
-            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"
+            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position",
         ) }
     }
 
     func installPreferenceFailure() throws {
         try sql(
-            "CREATE TRIGGER fail_archival_setting BEFORE INSERT ON browser_preferences WHEN NEW.key IN ('browser.settings.automaticTabArchivalEnabled','browser.settings.temporaryTabLifetime') BEGIN SELECT RAISE(ABORT,'injected'); END"
+            "CREATE TRIGGER fail_archival_setting BEFORE INSERT ON browser_preferences WHEN NEW.key IN ('browser.settings.automaticTabArchivalEnabled','browser.settings.temporaryTabLifetime') BEGIN SELECT RAISE(ABORT,'injected'); END",
         )
     }
 }

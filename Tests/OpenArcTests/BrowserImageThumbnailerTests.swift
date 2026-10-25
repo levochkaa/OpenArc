@@ -1,3 +1,5 @@
+// BrowserImageThumbnailerTests.swift
+
 import AppKit
 import Foundation
 import Testing
@@ -35,7 +37,7 @@ import Testing
 
     #expect(icon.size == CGSize(
         width: BrowserImageThumbnailer.macOSApplicationIconCanvasSize,
-        height: BrowserImageThumbnailer.macOSApplicationIconCanvasSize
+        height: BrowserImageThumbnailer.macOSApplicationIconCanvasSize,
     ))
     #expect(bitmap.colorAt(x: transparentSample, y: center)?.alphaComponent == 0)
     #expect((bitmap.colorAt(x: artworkSample, y: center)?.alphaComponent ?? 0) > 0)
@@ -113,7 +115,7 @@ import Testing
             isPlanar: false,
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
-            bitsPerPixel: 0
+            bitsPerPixel: 0,
         ),
         let context = NSGraphicsContext(bitmapImageRep: bitmap)
     else {

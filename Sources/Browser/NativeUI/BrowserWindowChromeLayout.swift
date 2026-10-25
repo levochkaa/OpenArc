@@ -1,3 +1,5 @@
+// BrowserWindowChromeLayout.swift
+
 import AppKit
 
 /// Window chrome reserves space for a pinned sidebar on its window edge; a hover
@@ -22,19 +24,28 @@ struct BrowserWindowChromeLayout {
     var leadingReservedWidth: CGFloat { sidebarPosition == .left ? sidebarReservedWidth : 0 }
     var trailingReservedWidth: CGFloat { sidebarPosition == .right ? sidebarReservedWidth : 0 }
     var contentMinX: CGFloat { leadingReservedWidth + leadingInset }
-    var chromeTopInset: CGFloat { showsSiteToolbar || showsBookmarksBar
-        ? max(edgeInset, BrowserChromeLayout.sidebarOuterPadding)
-        : edgeInset
+    var chromeTopInset: CGFloat {
+        if showsSiteToolbar || showsBookmarksBar {
+            max(edgeInset, BrowserChromeLayout.sidebarOuterPadding)
+        } else {
+            edgeInset
+        }
     }
 
-    var siteToolbarReservedHeight: CGFloat { showsSiteToolbar
-        ? BrowserChromeLayout.siteToolbarHeight + BrowserChromeLayout.bookmarksBarContentGap
-        : 0
+    var siteToolbarReservedHeight: CGFloat {
+        if showsSiteToolbar {
+            BrowserChromeLayout.siteToolbarHeight + BrowserChromeLayout.bookmarksBarContentGap
+        } else {
+            0
+        }
     }
 
-    var bookmarksBarReservedHeight: CGFloat { showsBookmarksBar
-        ? BrowserChromeLayout.bookmarksBarHeight + BrowserChromeLayout.bookmarksBarContentGap
-        : 0
+    var bookmarksBarReservedHeight: CGFloat {
+        if showsBookmarksBar {
+            BrowserChromeLayout.bookmarksBarHeight + BrowserChromeLayout.bookmarksBarContentGap
+        } else {
+            0
+        }
     }
 
     var contentMinY: CGFloat { chromeTopInset + siteToolbarReservedHeight + bookmarksBarReservedHeight }
@@ -48,7 +59,7 @@ struct BrowserWindowChromeLayout {
             x: contentMinX,
             y: contentMinY,
             width: max(barWidth - extensionReservedWidth, 0),
-            height: max(windowSize.height - contentMinY - edgeInset, 0)
+            height: max(windowSize.height - contentMinY - edgeInset, 0),
         )
     }
 
@@ -56,13 +67,13 @@ struct BrowserWindowChromeLayout {
         x: contentMinX,
         y: chromeTopInset,
         width: barWidth,
-        height: BrowserChromeLayout.siteToolbarHeight
+        height: BrowserChromeLayout.siteToolbarHeight,
     ) }
     var bookmarksFrame: CGRect { CGRect(
         x: contentMinX,
         y: chromeTopInset + siteToolbarReservedHeight,
         width: barWidth,
-        height: BrowserChromeLayout.bookmarksBarHeight
+        height: BrowserChromeLayout.bookmarksBarHeight,
     ) }
     var sidebarFrame: CGRect {
         let overlay = !isSidebarVisible && isOverlayChromeVisible
@@ -80,7 +91,7 @@ struct BrowserWindowChromeLayout {
             width: sidebarWidth,
             height: max(windowSize.height - (overlay
                     ? inset * 2
-                    : 0), 0)
+                    : 0), 0),
         )
     }
 
@@ -90,7 +101,7 @@ struct BrowserWindowChromeLayout {
             x: max(windowSize.width - trailingReservedWidth - trailingInset - width, 0),
             y: contentMinY,
             width: width,
-            height: contentFrame.height
+            height: contentFrame.height,
         )
     }
 
@@ -99,7 +110,7 @@ struct BrowserWindowChromeLayout {
             x: extensionFrame.minX - BrowserChromeLayout.sidebarResizeHitWidth,
             y: contentMinY,
             width: BrowserChromeLayout.sidebarResizeHitWidth,
-            height: contentFrame.height
+            height: contentFrame.height,
         )
     }
 }

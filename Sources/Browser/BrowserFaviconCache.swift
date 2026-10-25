@@ -1,8 +1,22 @@
+// BrowserFaviconCache.swift
+
 import AppKit
 import Foundation
 
 @MainActor final class BrowserFaviconCache: ObservableObject {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    typealias DataLoader = @Sendable (URL) async -> Data?
+
+    static let shared = BrowserFaviconCache()
+
+    // MARK: Private
+
+    @Published private var imagesByURL = [URL: NSImage]()
+
+    private let dataLoader: DataLoader
+    private var failedURLs = Set<URL>()
+    private var loadTasks = [URL: Task<Data?, Never>]()
 
     init(dataLoader: DataLoader? = nil) {
         self.dataLoader = dataLoader ?? { url in
@@ -10,11 +24,21 @@ import Foundation
         }
     }
 
-    // MARK: Internal
+    private nonisolated static func loadData(from url: URL) async -> Data? {
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if
+                let httpResponse = response as? HTTPURLResponse,
+                !(200...299).contains(httpResponse.statusCode)
+            {
+                return nil
+            }
 
-    typealias DataLoader = @Sendable (URL) async -> Data?
-
-    static let shared = BrowserFaviconCache()
+            return data
+        } catch {
+            return nil
+        }
+    }
 
     func image(for url: URL?) -> NSImage? {
         guard let url else {
@@ -55,30 +79,6 @@ import Foundation
         storeLoadedImageData(data, for: url)
     }
 
-    // MARK: Private
-
-    @Published private var imagesByURL = [URL: NSImage]()
-
-    private let dataLoader: DataLoader
-    private var failedURLs = Set<URL>()
-    private var loadTasks = [URL: Task<Data?, Never>]()
-
-    private nonisolated static func loadData(from url: URL) async -> Data? {
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            if
-                let httpResponse = response as? HTTPURLResponse,
-                !(200...299).contains(httpResponse.statusCode)
-            {
-                return nil
-            }
-
-            return data
-        } catch {
-            return nil
-        }
-    }
-
     private func storeLoadedImageData(_ data: Data?, for url: URL) {
         guard imagesByURL[url] == nil else {
             return
@@ -88,7 +88,7 @@ import Foundation
             let data,
             let image = BrowserImageThumbnailer.image(
                 data: data,
-                maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize
+                maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize,
             )
         else {
             failedURLs.insert(url)

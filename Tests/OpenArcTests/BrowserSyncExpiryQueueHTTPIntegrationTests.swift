@@ -1,3 +1,5 @@
+// BrowserSyncExpiryQueueHTTPIntegrationTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -16,7 +18,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let auth = account.devices.map { device in
             BrowserAuthSession(
                 accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-                deviceID: device.deviceID, serverURL: fixture.baseURL
+                deviceID: device.deviceID, serverURL: fixture.baseURL,
             )
         }
         // Larger than the bounded recovery response, but smaller than the
@@ -27,11 +29,11 @@ extension BrowserSyncHTTPIntegrationTests {
             .createSpace(id: "source", data: .init(title: "Response budget", systemImageName: "globe")),
             .createTab(id: "large", data: .init(
                 spaceID: "source", placement: .temporary, urlString: "https://expiry-limit.example/large",
-                title: largeTitle, lastActivityAt: "2000-01-01T00:00:00.000000Z"
+                title: largeTitle, lastActivityAt: "2000-01-01T00:00:00.000000Z",
             )),
             .createTab(id: "small", data: .init(
                 spaceID: "source", placement: .temporary, urlString: "https://expiry-limit.example/small",
-                title: "Small page", lastActivityAt: "2000-01-01T00:00:00.000000Z"
+                title: "Small page", lastActivityAt: "2000-01-01T00:00:00.000000Z",
             )),
         ])
         let seeded = try await remote.push(mutation: seed, authSession: auth[0])
@@ -56,7 +58,7 @@ extension BrowserSyncHTTPIntegrationTests {
         await first.service.waitForPendingOperations()
         #expect(
             try first.store.pendingSyncQueue(for: first.owner).isEmpty,
-            "A terminal response_limit outcome must not trap the immutable queue head"
+            "A terminal response_limit outcome must not trap the immutable queue head",
         )
         #expect(first.store.loadSnapshot()?.tabs.compactMap(\.id) == ["large"])
         let archive = try first.store.loadArchivePage().entries
@@ -113,7 +115,7 @@ extension BrowserSyncHTTPIntegrationTests {
         func auth(_ device: SyncHTTPFixture.Device) -> BrowserAuthSession {
             BrowserAuthSession(
                 accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-                deviceID: device.deviceID, serverURL: fixture.baseURL
+                deviceID: device.deviceID, serverURL: fixture.baseURL,
             )
         }
         let databaseURL = directory.appendingPathComponent(account.devices[0].deviceID + ".sqlite")
@@ -140,7 +142,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let beforeRejection = try await fixture.inspect(account)
         let beforeEnqueue = try #require(first.store.loadSnapshot())
         let rejectedID = try #require(try first.service.enqueueExpiry(operations: [.init(
-            id: "stale", expectedServerSeq: staleSource.serverSeq, inactiveForSeconds: 43200
+            id: "stale", expectedServerSeq: staleSource.serverSeq, inactiveForSeconds: 43200,
         )]))
         let rejectedQueue = try first.store.pendingSyncQueue(for: first.owner)
         try #require(rejectedQueue.count == 1)
@@ -177,11 +179,11 @@ extension BrowserSyncHTTPIntegrationTests {
         // unsent content separately when its immutable queue is replayed.
         try await fixture.command("drop", deviceID: account.devices[0].deviceID)
         let acceptedID = try #require(try first.service.enqueueExpiry(operations: [.init(
-            id: "accepted", expectedServerSeq: acceptedSource.serverSeq, inactiveForSeconds: 43200
+            id: "accepted", expectedServerSeq: acceptedSource.serverSeq, inactiveForSeconds: 43200,
         )]))
         #expect(first.store.loadSnapshot()?.tabs.contains { $0.id == "accepted" } == true)
         try first.store.writeSessionBatch([.init(
-            snapshot: expiryQueueHTTPSnapshot(remoteEdit: true, localEdit: true), origin: .local(syncMove: nil)
+            snapshot: expiryQueueHTTPSnapshot(remoteEdit: true, localEdit: true), origin: .local(syncMove: nil),
         )])
         let frozen = try first.store.pendingSyncQueue(for: first.owner)
         try #require(frozen.count == 2)
@@ -191,7 +193,7 @@ extension BrowserSyncHTTPIntegrationTests {
         }
         #expect(acceptedMutation.id == acceptedID)
         #expect(laterEdit.operations == [.patchTab(
-            id: "accepted", fields: .init(urlString: expiryQueueHTTPLocalURL, userTitleOverride: .set("Offline title"))
+            id: "accepted", fields: .init(urlString: expiryQueueHTTPLocalURL, userTitleOverride: .set("Offline title")),
         )])
         let frozenBytes = try queueBytes()
         #expect(first.store.loadSnapshot()?.tabs.first { $0.id == "accepted" }?.urlString == expiryQueueHTTPLocalURL)
@@ -209,7 +211,7 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(first.store.loadSnapshot()?.tabs.first { $0.id == "accepted" }?.urlString == expiryQueueHTTPLocalURL)
         #expect(
             try first.store.loadArchivePage().entries.isEmpty,
-            "A lost response cannot create an unconfirmed local archive"
+            "A lost response cannot create an unconfirmed local archive",
         )
         await second.pull()
         let remoteArchive = try second.store.loadArchivePage().entries
@@ -236,7 +238,7 @@ extension BrowserSyncHTTPIntegrationTests {
             .urlString == expiryQueueHTTPLocalURL)
         #expect(throws: (any Error).self) {
             try downgraded.service.enqueueExpiry(operations: [.init(
-                id: "stale", expectedServerSeq: authoritative.serverSeq, inactiveForSeconds: 43200
+                id: "stale", expectedServerSeq: authoritative.serverSeq, inactiveForSeconds: 43200,
             )])
         }
         #expect(try downgraded.store.pendingSyncQueue(for: downgraded.owner) == frozen)
@@ -245,7 +247,7 @@ extension BrowserSyncHTTPIntegrationTests {
         try await fixture.setCapabilities([2, 3, 4, 5], account: account)
         let rotatedDevice = try await fixture.rotateDevice(account)
         let rotated = try SyncHTTPProfile(
-            fixture: fixture, device: rotatedDevice, directory: directory, databaseID: account.devices[0].deviceID
+            fixture: fixture, device: rotatedDevice, directory: directory, databaseID: account.devices[0].deviceID,
         )
         #expect(try rotated.store.pendingSyncQueue(for: rotated.owner) == frozen)
         #expect(try queueBytes() == frozenBytes)
@@ -268,7 +270,7 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(afterRotation.eventCount == beforeRotation.eventCount)
         #expect(
             afterRotation.receiptCount == beforeRotation.receiptCount + 1,
-            "Only the later v4 edit needs a new receipt"
+            "Only the later v4 edit needs a new receipt",
         )
         for profile in [rotated, second] {
             #expect(try profile.store.pendingSyncQueue(for: profile.owner).isEmpty)
@@ -326,21 +328,21 @@ private func expiryQueueHTTPSnapshot(remoteEdit: Bool = false, localEdit: Bool =
                 urlString: remoteEdit ? expiryQueueHTTPRemoteURL : "https://expiry-queue.example/stale",
                 userTitleOverride: remoteEdit ? "Remote title" : nil,
                 spaceID: "source",
-                lastActivityTimestamp: 946_684_800
+                lastActivityTimestamp: 946_684_800,
             ),
             .init(
                 id: "accepted",
                 urlString: localEdit ? expiryQueueHTTPLocalURL : expiryQueueHTTPCanonicalURL,
                 userTitleOverride: localEdit ? "Offline title" : "Canonical title",
                 spaceID: "source",
-                lastActivityTimestamp: 946_684_800
+                lastActivityTimestamp: 946_684_800,
             ),
             .init(
                 id: "anchor",
                 urlString: "https://expiry-queue.example/anchor",
                 spaceID: "source",
-                lastActivityTimestamp: 1_900_000_000
+                lastActivityTimestamp: 1_900_000_000,
             ),
-        ]
+        ],
     )
 }

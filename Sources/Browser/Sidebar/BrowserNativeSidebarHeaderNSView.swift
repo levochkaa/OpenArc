@@ -1,8 +1,62 @@
+// BrowserNativeSidebarHeaderNSView.swift
+
 import AppKit
 import Combine
 
 final class BrowserNativeSidebarHeaderNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    let urlControls: BrowserSiteControlsNSView
+    var onToggleSidebar: () -> Void = {}
+
+    // MARK: Private
+
+    private let model: BrowserChromeModel
+    private let windowControls = BrowserWindowControlsHostView()
+    private let toggle = BrowserNativeChromeButton(
+        symbol: "sidebar.left",
+        title: BrowserStrings.sidebarHide,
+        pressEffect: .compress,
+        action: {},
+    )
+    private let back = BrowserNativeChromeButton(
+        symbol: "arrow.backward",
+        title: BrowserStrings.navigationBack,
+        pressEffect: .left,
+        action: {},
+    )
+    private let forward = BrowserNativeChromeButton(
+        symbol: "arrow.forward",
+        title: BrowserStrings.navigationForward,
+        pressEffect: .right,
+        action: {},
+    )
+    private let reload = BrowserNativeChromeButton(
+        symbol: "arrow.clockwise",
+        title: BrowserStrings.navigationRefresh,
+        pressEffect: .rotateClockwise,
+        action: {},
+    )
+    private let profile = BrowserNativeSurface()
+    private let profileIcon = NSImageView()
+    private let profileName = BrowserNativeControls.label(
+        "",
+        size: 12,
+        weight: .semibold,
+        color: BrowserChromeColors.primaryText,
+    )
+    private var observations = Set<AnyCancellable>()
+    private var showsURL = true
+
+    var preferredHeight: CGFloat {
+        let profileHeight: CGFloat = model.showsProfileIndicator ? 28 + BrowserChromeLayout.sidebarSectionSpacing : 0
+        let urlHeight: CGFloat = showsURL
+            ? BrowserChromeLayout.sidebarRowHeight + BrowserChromeLayout.sidebarSectionSpacing
+            : 0
+        return BrowserChromeLayout.chromeButtonSize + profileHeight + urlHeight
+    }
 
     init(model: BrowserChromeModel) {
         self.model = model
@@ -19,7 +73,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         profileIcon.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(
                 pointSize: 13,
-                weight: .semibold
+                weight: .semibold,
             ))
         profileIcon.contentTintColor = BrowserChromeColors.secondaryText
         toggle.onAction = { [weak self] in self?.onToggleSidebar() }
@@ -45,21 +99,6 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    let urlControls: BrowserSiteControlsNSView
-    var onToggleSidebar: () -> Void = {}
-
-    var preferredHeight: CGFloat {
-        let profileHeight: CGFloat = model.showsProfileIndicator ? 28 + BrowserChromeLayout.sidebarSectionSpacing : 0
-        let urlHeight: CGFloat = showsURL
-            ? BrowserChromeLayout.sidebarRowHeight + BrowserChromeLayout.sidebarSectionSpacing
-            : 0
-        return BrowserChromeLayout.chromeButtonSize + profileHeight + urlHeight
-    }
-
     override func layout() {
         super.layout()
         let size = BrowserChromeLayout.chromeButtonSize
@@ -69,7 +108,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
             x: controlsWidth + BrowserChromeLayout.windowControlsTrailingGap,
             y: 0,
             width: size,
-            height: size
+            height: size,
         )
         reload.frame = NSRect(x: bounds.width - size, y: 0, width: size, height: size)
         forward.frame = reload.frame.offsetBy(dx: -(size + BrowserChromeLayout.chromeButtonSpacing), dy: 0)
@@ -100,45 +139,6 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         refresh()
     }
 
-    // MARK: Private
-
-    private let model: BrowserChromeModel
-    private let windowControls = BrowserWindowControlsHostView()
-    private let toggle = BrowserNativeChromeButton(
-        symbol: "sidebar.left",
-        title: BrowserStrings.sidebarHide,
-        pressEffect: .compress,
-        action: {}
-    )
-    private let back = BrowserNativeChromeButton(
-        symbol: "arrow.backward",
-        title: BrowserStrings.navigationBack,
-        pressEffect: .left,
-        action: {}
-    )
-    private let forward = BrowserNativeChromeButton(
-        symbol: "arrow.forward",
-        title: BrowserStrings.navigationForward,
-        pressEffect: .right,
-        action: {}
-    )
-    private let reload = BrowserNativeChromeButton(
-        symbol: "arrow.clockwise",
-        title: BrowserStrings.navigationRefresh,
-        pressEffect: .rotateClockwise,
-        action: {}
-    )
-    private let profile = BrowserNativeSurface()
-    private let profileIcon = NSImageView()
-    private let profileName = BrowserNativeControls.label(
-        "",
-        size: 12,
-        weight: .semibold,
-        color: BrowserChromeColors.primaryText
-    )
-    private var observations = Set<AnyCancellable>()
-    private var showsURL = true
-
     private func refresh() {
         let shortcuts = model.shortcutStore
         toggle.tooltipShortcut = shortcuts.shortcut(for: .toggleSidebar)
@@ -152,7 +152,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
             model.canStopLoading ? "xmark" : "arrow.clockwise",
             title: model.canStopLoading
                 ? BrowserStrings.navigationStopLoading
-                : shortcuts.descriptor(for: .reload).helpTitle
+                : shortcuts.descriptor(for: .reload).helpTitle,
         )
         reload.tooltipShortcut = model.canStopLoading ? nil : shortcuts.shortcut(for: .reload)
         reload.isEnabled = model.canStopLoading || model.canReload

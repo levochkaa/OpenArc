@@ -1,3 +1,5 @@
+// BrowserSpaceColor.swift
+
 import AppKit
 
 // MARK: - BrowserSpaceColor

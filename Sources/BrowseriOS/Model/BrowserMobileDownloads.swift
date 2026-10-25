@@ -1,10 +1,12 @@
+// BrowserMobileDownloads.swift
+
 import Foundation
 import WebKit
 
 // MARK: - BrowserMobileDownload
 
-struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
-    enum Status: String, Codable, Sendable { case downloading, saving, completed, cancelled, failed }
+struct BrowserMobileDownload: Identifiable, Equatable, Codable {
+    enum Status: String, Codable { case downloading, saving, completed, cancelled, failed }
 
     let id: UUID
     var filename: String
@@ -17,35 +19,40 @@ struct BrowserMobileDownload: Identifiable, Equatable, Codable, Sendable {
 
 // MARK: - BrowserMobileDownloadClearScope
 
-struct BrowserMobileDownloadClearScope: Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserMobileDownloadClearScope: Equatable {
+    // MARK: Internal
+
+    let ids: Set<UUID>
+
+    // MARK: Fileprivate
+
+    fileprivate let ownerID: UUID
+
+    var count: Int { ids.count }
 
     init(ids: Set<UUID>, ownerID: UUID) {
         self.ids = ids
         self.ownerID = ownerID
     }
-
-    // MARK: Internal
-
-    let ids: Set<UUID>
-
-    var count: Int { ids.count }
-
-    // MARK: Fileprivate
-
-    fileprivate let ownerID: UUID
 }
 
 // MARK: - BrowserMobileDownloadClearResult
 
-enum BrowserMobileDownloadClearResult: Equatable, Sendable {
+enum BrowserMobileDownloadClearResult: Equatable {
     case removed, busy, invalidScope, failed
 }
 
 // MARK: - BrowserMobileDownloadExportLease
 
 @MainActor final class BrowserMobileDownloadExportLease {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let url: URL
+    let downloadID: UUID
+
+    // MARK: Private
+
+    private var onFinish: (@MainActor () -> Void)?
 
     init(url: URL, downloadID: UUID, onFinish: @escaping @MainActor () -> Void) {
         self.url = url
@@ -55,20 +62,11 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
 
     isolated deinit { onFinish?() }
 
-    // MARK: Internal
-
-    let url: URL
-    let downloadID: UUID
-
     func finish() {
         let callback = onFinish
         onFinish = nil
         callback?()
     }
-
-    // MARK: Private
-
-    private var onFinish: (@MainActor () -> Void)?
 }
 
 // MARK: - BrowserMobileDownloads
@@ -77,16 +75,17 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
 /// WebKit supplies and retains the transfer's authenticated request; no URL is
 /// fetched again here, and authentication/TLS handling remains with WebKit.
 @MainActor final class BrowserMobileDownloads: NSObject, WKDownloadDelegate {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(directory: URL) {
-        self.disk = BrowserMobileDownloadDisk(directory: directory)
-        super.init()
-    }
+    private final class Transfer {
+        // MARK: Internal
 
-    init(disk: any BrowserMobileDownloadStoring) {
-        self.disk = disk
-        super.init()
+        let id: UUID
+        let download: WKDownload
+
+        init(id: UUID, download: WKDownload) { self.id = id
+            self.download = download
+        }
     }
 
     // MARK: Internal
@@ -94,6 +93,26 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
     private(set) var entries = [BrowserMobileDownload]()
     private(set) var isLoading = false
     private(set) var error: String?
+
+    private let disk: any BrowserMobileDownloadStoring
+    private let clearOwnerID = UUID()
+    private var activeClearScope: BrowserMobileDownloadClearScope?
+    private var failedClearScope: BrowserMobileDownloadClearScope?
+    private var transfers = [ObjectIdentifier: Transfer]()
+    private var pendingCompletions = [UUID: BrowserMobileDownload]()
+    private var completionFailures = Set<UUID>()
+    private var pendingDiscards = Set<UUID>()
+    private var diskCleanupIDs = Set<UUID>()
+    private var persistedIDs = Set<UUID>()
+    private var failedRemovals = Set<UUID>()
+    private var removingIDs = Set<UUID>()
+    private var exportTokens = [UUID: UUID]()
+    private var latestDiskState: BrowserMobileDownloadDiskState?
+    private var loadFailed = false
+    private var observers = [UUID: @MainActor () -> Void]()
+    private var progressTask: Task<Void, Never>?
+    private var hasLoaded = false
+    private var isRetryingPersistence = false
 
     var canRetryPersistence: Bool {
         !hasLoaded || !completionFailures.isEmpty || !pendingDiscards.isEmpty || !diskCleanupIDs.isEmpty
@@ -106,13 +125,28 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
 
     var isClearingCompleted: Bool { activeClearScope != nil }
 
+    private var capturableCompletedIDs: Set<UUID> {
+        persistedIDs.subtracting(pendingCompletions.keys).subtracting(transfers.values.map(\.id))
+    }
+
+    init(directory: URL) {
+        self.disk = BrowserMobileDownloadDisk(directory: directory)
+        super.init()
+    }
+
+    init(disk: any BrowserMobileDownloadStoring) {
+        self.disk = disk
+        super.init()
+    }
+
     /// A generated transfer may have no committed source page. Filtering only
     /// the engine's supplied URL would let its original-request fallback retain
     /// a blob token or the entire data URL in the durable manifest.
     static func persistentSourceURL(sourceURL: URL?, requestURL: URL?) -> URL? {
-        for url in [sourceURL, requestURL].compactMap({ $0 }) {
+        for url in [sourceURL, requestURL].compactMap(\.self) {
             switch url.scheme?.lowercased() {
-            case "http", "https":
+            case "http",
+                 "https":
                 if url.host?.isEmpty == false {
                     return url
                 }
@@ -237,10 +271,13 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
         for id in Array(pendingDiscards) {
             await discardIncompleteDownload(id: id)
         }
-        do { try await publish(disk.retryCleanup())
+        do {
+            try await publish(disk.retryCleanup())
             refreshError()
             notify()
-        } catch { reportCleanupFailure() }
+        } catch {
+            reportCleanupFailure()
+        }
     }
 
     func adopt(_ download: WKDownload, sourceURL: URL?) {
@@ -249,7 +286,7 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
         let entry = BrowserMobileDownload(
             id: UUID(), filename: "Download",
             sourceURL: Self.persistentSourceURL(sourceURL: sourceURL, requestURL: download.originalRequest?.url),
-            status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil
+            status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil,
         )
         transfers[key] = Transfer(id: entry.id, download: download)
         entries.insert(entry, at: 0)
@@ -289,7 +326,7 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
 
     func download(
         _ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
-        completionHandler: @escaping @MainActor (URL?) -> Void
+        completionHandler: @escaping @MainActor (URL?) -> Void,
     ) {
         let key = ObjectIdentifier(download)
         guard let transfer = transfers[key] else { completionHandler(nil)
@@ -339,46 +376,9 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
     func discardIncompleteDownload(id: UUID) async {
         do {
             try await acceptCleanup(disk.discardState(id: id), id: id)
-        } catch { reportCleanupFailure(id: id) }
-    }
-
-    // MARK: Private
-
-    private final class Transfer {
-        // MARK: Lifecycle
-
-        init(id: UUID, download: WKDownload) { self.id = id
-            self.download = download
+        } catch {
+            reportCleanupFailure(id: id)
         }
-
-        // MARK: Internal
-
-        let id: UUID
-        let download: WKDownload
-    }
-
-    private let disk: any BrowserMobileDownloadStoring
-    private let clearOwnerID = UUID()
-    private var activeClearScope: BrowserMobileDownloadClearScope?
-    private var failedClearScope: BrowserMobileDownloadClearScope?
-    private var transfers = [ObjectIdentifier: Transfer]()
-    private var pendingCompletions = [UUID: BrowserMobileDownload]()
-    private var completionFailures = Set<UUID>()
-    private var pendingDiscards = Set<UUID>()
-    private var diskCleanupIDs = Set<UUID>()
-    private var persistedIDs = Set<UUID>()
-    private var failedRemovals = Set<UUID>()
-    private var removingIDs = Set<UUID>()
-    private var exportTokens = [UUID: UUID]()
-    private var latestDiskState: BrowserMobileDownloadDiskState?
-    private var loadFailed = false
-    private var observers = [UUID: @MainActor () -> Void]()
-    private var progressTask: Task<Void, Never>?
-    private var hasLoaded = false
-    private var isRetryingPersistence = false
-
-    private var capturableCompletedIDs: Set<UUID> {
-        persistedIDs.subtracting(pendingCompletions.keys).subtracting(transfers.values.map(\.id))
     }
 
     private func isReservedForClear(_ id: UUID) -> Bool {
@@ -462,8 +462,11 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
         guard progressTask == nil else { return }
         progressTask = Task { [weak self] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .milliseconds(250)) }
-                catch { return }
+                do {
+                    try await Task.sleep(for: .milliseconds(250))
+                } catch {
+                    return
+                }
                 guard let self else { return }
                 var changed = false
                 for transfer in transfers.values {
@@ -557,7 +560,7 @@ enum BrowserMobileDownloadClearResult: Equatable, Sendable {
             } else if !pendingDiscards.isEmpty || !diskCleanupIDs.isEmpty {
                 String(
                     localized: "downloads.error.cleanup",
-                    table: "Mobile"
+                    table: "Mobile",
                 )
             } else {
                 nil

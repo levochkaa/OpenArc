@@ -1,3 +1,5 @@
+// BrowserDownloads.swift
+
 import AppKit
 import Combine
 import Foundation
@@ -14,7 +16,9 @@ enum BrowserDownloadState: String, Equatable {
 
     var isFinished: Bool {
         switch self {
-        case .canceled, .completed, .interrupted:
+        case .canceled,
+             .completed,
+             .interrupted:
             true
         case .inProgress:
             false
@@ -70,19 +74,23 @@ struct BrowserDownloadItem: Identifiable, Equatable {
 // MARK: - BrowserDownloadsModel
 
 @MainActor final class BrowserDownloadsModel: ObservableObject {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(
-        dateProvider: @escaping () -> Date = Date.init,
-        workspace: NSWorkspace = .shared
-    ) {
-        self.dateProvider = dateProvider
-        self.workspace = workspace
-    }
+    private static let byteCountFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.isAdaptive = true
+        return formatter
+    }()
 
     // MARK: Internal
 
     @Published private(set) var items = [BrowserDownloadItem]()
+
+    private let dateProvider: () -> Date
+    private let workspace: NSWorkspace
 
     var hasActiveDownloads: Bool {
         items.contains { !$0.state.isFinished }
@@ -90,6 +98,14 @@ struct BrowserDownloadItem: Identifiable, Equatable {
 
     var finishedDownloadCount: Int {
         items.filter(\.state.isFinished).count
+    }
+
+    init(
+        dateProvider: @escaping () -> Date = Date.init,
+        workspace: NSWorkspace = .shared,
+    ) {
+        self.dateProvider = dateProvider
+        self.workspace = workspace
     }
 
     func apply(_ update: BrowserDownloadUpdate) {
@@ -125,9 +141,9 @@ struct BrowserDownloadItem: Identifiable, Equatable {
                 state: update.state,
                 startedAt: now,
                 updatedAt: now,
-                finishedAt: update.state.isFinished ? now : nil
+                finishedAt: update.state.isFinished ? now : nil,
             ),
-            at: 0
+            at: 0,
         )
     }
 
@@ -177,20 +193,6 @@ struct BrowserDownloadItem: Identifiable, Equatable {
         }
     }
 
-    // MARK: Private
-
-    private static let byteCountFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-        return formatter
-    }()
-
-    private let dateProvider: () -> Date
-    private let workspace: NSWorkspace
-
     private func sanitizedFileName(_ fileName: String, fallbackURLString: String) -> String {
         let trimmedFileName = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedFileName.isEmpty {
@@ -219,7 +221,7 @@ struct BrowserDownloadItem: Identifiable, Equatable {
                 return BrowserStrings.downloadsProgressKnownTotalWithSpeed(
                     received: received,
                     total: total,
-                    speed: speed
+                    speed: speed,
                 )
             }
 

@@ -1,3 +1,5 @@
+// BrowserProfileBackup.swift
+
 import Foundation
 import ZIPFoundation
 
@@ -13,21 +15,48 @@ struct BrowserProfileBackupManifest: Codable, Equatable {
 // MARK: - BrowserProfileBackupArchiver
 
 final class BrowserProfileBackupArchiver {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let rootCacheURL: URL
+    private let backupDirectoryURL: URL
+    private let fileManager: FileManager
+    private let now: () -> Date
+
+    private var localStateURL: URL {
+        rootCacheURL.appendingPathComponent("Local State", isDirectory: false)
+    }
 
     init(
         rootCacheURL: URL,
         backupDirectoryURL: URL? = nil,
         fileManager: FileManager = .default,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
     ) {
         self.rootCacheURL = rootCacheURL
         self.backupDirectoryURL = backupDirectoryURL ?? rootCacheURL.appendingPathComponent(
             "Backups",
-            isDirectory: true
+            isDirectory: true,
         )
         self.fileManager = fileManager
         self.now = now
+    }
+
+    private static func filenameTimestamp(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
+    }
+
+    private static func sanitizedFilenameComponent(_ value: String) -> String {
+        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        let sanitizedScalars = value.unicodeScalars.map { scalar in
+            allowedCharacters.contains(scalar) ? Character(scalar) : "-"
+        }
+        let sanitized = String(sanitizedScalars).trimmingCharacters(in: CharacterSet(charactersIn: ".-"))
+        return sanitized.isEmpty ? "Profile" : sanitized
     }
 
     // MARK: Internal
@@ -50,7 +79,7 @@ final class BrowserProfileBackupArchiver {
         try copyLocalStateIfPresent(to: stagingURL)
         try fileManager.copyItem(
             at: profileURL,
-            to: stagingURL.appendingPathComponent(profile.directoryName, isDirectory: true)
+            to: stagingURL.appendingPathComponent(profile.directoryName, isDirectory: true),
         )
         try writeManifest(for: profile, to: stagingURL)
 
@@ -59,38 +88,9 @@ final class BrowserProfileBackupArchiver {
             at: stagingURL,
             to: destinationURL,
             shouldKeepParent: false,
-            compressionMethod: .deflate
+            compressionMethod: .deflate,
         )
         return destinationURL
-    }
-
-    // MARK: Private
-
-    private let rootCacheURL: URL
-    private let backupDirectoryURL: URL
-    private let fileManager: FileManager
-    private let now: () -> Date
-
-    private var localStateURL: URL {
-        rootCacheURL.appendingPathComponent("Local State", isDirectory: false)
-    }
-
-    private static func filenameTimestamp(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return formatter.string(from: date)
-    }
-
-    private static func sanitizedFilenameComponent(_ value: String) -> String {
-        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
-        let sanitizedScalars = value.unicodeScalars.map { scalar in
-            allowedCharacters.contains(scalar) ? Character(scalar) : "-"
-        }
-        let sanitized = String(sanitizedScalars).trimmingCharacters(in: CharacterSet(charactersIn: ".-"))
-        return sanitized.isEmpty ? "Profile" : sanitized
     }
 
     private func copyLocalStateIfPresent(to stagingURL: URL) throws {
@@ -100,7 +100,7 @@ final class BrowserProfileBackupArchiver {
 
         try fileManager.copyItem(
             at: localStateURL,
-            to: stagingURL.appendingPathComponent(localStateURL.lastPathComponent, isDirectory: false)
+            to: stagingURL.appendingPathComponent(localStateURL.lastPathComponent, isDirectory: false),
         )
     }
 
@@ -109,7 +109,7 @@ final class BrowserProfileBackupArchiver {
             profileDirectoryName: profile.directoryName,
             profileDisplayName: profile.displayName,
             createdAt: ISO8601DateFormatter().string(from: now()),
-            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
         )
         let data = try JSONEncoder().encode(manifest)
         try data.write(to: stagingURL.appendingPathComponent("manifest.json", isDirectory: false), options: .atomic)

@@ -1,9 +1,30 @@
+// BrowserFindNSTextField.swift
+
 import AppKit
 
 // MARK: - BrowserFindNSTextField
 
 final class BrowserFindNSTextField: NSTextField {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: 18)
+    }
+
+    var focusPermission: () -> Bool = { true }
+    var pendingFocus = false
+    var pendingSelectAll = false
+    var lastFocusRequestID = 0
+
+    // MARK: Private
+
+    private var activeTextColor: NSColor {
+        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            NSColor.white.withAlphaComponent(0.92)
+        } else {
+            .labelColor
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -25,17 +46,6 @@ final class BrowserFindNSTextField: NSTextField {
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    // MARK: Internal
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: 18)
-    }
-
-    var focusPermission: () -> Bool = { true }
-    var pendingFocus = false
-    var pendingSelectAll = false
-    var lastFocusRequestID = 0
 
     override func becomeFirstResponder() -> Bool {
         let didBecomeFirstResponder = super.becomeFirstResponder()
@@ -68,14 +78,6 @@ final class BrowserFindNSTextField: NSTextField {
 
         pendingFocus = shouldFocus
         syncFocus(shouldFocus)
-    }
-
-    // MARK: Private
-
-    private var activeTextColor: NSColor {
-        effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor.white.withAlphaComponent(0.92)
-            : .labelColor
     }
 
     private func syncFocus(_ shouldFocus: Bool) {

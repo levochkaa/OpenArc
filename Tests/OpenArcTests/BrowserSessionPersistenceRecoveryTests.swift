@@ -1,3 +1,5 @@
+// BrowserSessionPersistenceRecoveryTests.swift
+
 import Foundation
 import Testing
 
@@ -13,7 +15,7 @@ import Testing
         f.store.sessionWriteError = SessionRecoveryTestError.unavailable
         #expect(f.model.commitSidebarDrop(
             payload: .init(primary: .tab(f.id("a")), tabIDs: [f.id("a")]),
-            destination: .init(container: .temporary("s"))
+            destination: .init(container: .temporary("s")),
         ))
         f.model.setUserTitleOverride("Renamed", forTabID: f.id("a"))
         #expect(f.model.hasUncommittedSessionWrites)
@@ -107,7 +109,7 @@ import Testing
         f.model.applyRemoteSyncSnapshot(recoverySnapshot(ids: ["a", "b", "c"]))
         #expect(f.model.commitSidebarDrop(
             payload: .init(primary: .tab(f.id("a")), tabIDs: [f.id("a")]),
-            destination: .init(container: .temporary("s"))
+            destination: .init(container: .temporary("s")),
         ))
         #expect(f.model.sessionRecoverySnapshot().tabs.contains { $0.id == "c" })
         f.driver.flushPendingCreateEvents()
@@ -166,7 +168,7 @@ import Testing
     @Test func byteLimitRetainsEarlierFIFOEntryAndNeverClearsTerminalFailure() throws {
         let first = BrowserSessionWrite(
             snapshot: recoverySnapshot(ids: ["a"]),
-            origin: .local(syncMove: .init(tabIDs: ["a"]))
+            origin: .local(syncMove: .init(tabIDs: ["a"])),
         )
         let second = BrowserSessionWrite(snapshot: recoverySnapshot(ids: ["b"]), origin: .remoteProjection)
         let bytes = try JSONEncoder().encode(first.snapshot).count
@@ -322,7 +324,13 @@ private enum SessionRecoveryTestError: Error { case unavailable }
 // MARK: - SessionRecoveryFixture
 
 @MainActor private final class SessionRecoveryFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let driver = FakeBrowserTabDriver()
+    let store: InMemorySessionSnapshotStore
+    let preferences = InMemorySessionPreferencesStore()
+    let sync = SessionRecoverySyncRecorder()
+    let model: BrowserChromeModel
 
     init(snapshot: BrowserTabSessionSnapshot = recoverySnapshot(ids: ["a", "b"])) {
         self.store = InMemorySessionSnapshotStore(loadedSnapshot: snapshot)
@@ -333,19 +341,11 @@ private enum SessionRecoveryTestError: Error { case unavailable }
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
     }
-
-    // MARK: Internal
-
-    let driver = FakeBrowserTabDriver()
-    let store: InMemorySessionSnapshotStore
-    let preferences = InMemorySessionPreferencesStore()
-    let sync = SessionRecoverySyncRecorder()
-    let model: BrowserChromeModel
 
     func id(_ syncID: String) -> String { model.tabs.first { $0.syncID == syncID }!.id }
 }

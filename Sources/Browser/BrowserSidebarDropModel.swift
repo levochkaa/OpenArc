@@ -1,3 +1,5 @@
+// BrowserSidebarDropModel.swift
+
 import Foundation
 
 // MARK: - BrowserSidebarItemID
@@ -9,7 +11,9 @@ enum BrowserSidebarItemID: Hashable {
 
     // MARK: Internal
 
-    var rawID: String { switch self { case .tab(let id), .folder(let id): id } }
+    var rawID: String { switch self { case .tab(let id),
+             .folder(let id): id }
+    }
 }
 
 // MARK: - BrowserSidebarDropContainer
@@ -48,7 +52,15 @@ struct BrowserSidebarDragPayload: Equatable {
 /// The same tree supplies visible rows and the order used to commit a drop.
 /// In particular, a parent containing only nested folders still has a root item.
 struct BrowserSidebarTabTree {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let snapshot: BrowserSidebarSnapshot
+    var children = [BrowserSidebarDropContainer: [BrowserSidebarItemID]]()
+    var folders: [String: BrowserChromeModel.PinnedTabFolder]
+
+    // MARK: Private
+
+    private var parents = [BrowserSidebarItemID: BrowserSidebarDropContainer]()
 
     init(snapshot: BrowserSidebarSnapshot) {
         self.snapshot = snapshot
@@ -107,14 +119,13 @@ struct BrowserSidebarTabTree {
         }
     }
 
-    // MARK: Internal
-
-    let snapshot: BrowserSidebarSnapshot
-    var children = [BrowserSidebarDropContainer: [BrowserSidebarItemID]]()
-    var folders: [String: BrowserChromeModel.PinnedTabFolder]
+    private static func orderKey(_ item: BrowserSidebarItemID) -> String {
+        switch item { case .folder(let id): "folder:\(id)"
+        case .tab(let id): "tab:\(id)" }
+    }
 
     mutating func assignPinnedRanks(
-        to tabs: inout [BrowserChromeModel.Tab], preservingExistingRanks: Bool = false
+        to tabs: inout [BrowserChromeModel.Tab], preservingExistingRanks: Bool = false,
     ) {
         let indices = Dictionary(uniqueKeysWithValues: tabs.enumerated().map { ($0.element.id, $0.offset) })
         for index in tabs.indices where tabs[index].placement != .spacePinned {
@@ -179,15 +190,6 @@ struct BrowserSidebarTabTree {
         return ids
     }
 
-    // MARK: Private
-
-    private var parents = [BrowserSidebarItemID: BrowserSidebarDropContainer]()
-
-    private static func orderKey(_ item: BrowserSidebarItemID) -> String {
-        switch item { case .folder(let id): "folder:\(id)"
-        case .tab(let id): "tab:\(id)" }
-    }
-
     private mutating func append(_ item: BrowserSidebarItemID, to container: BrowserSidebarDropContainer) {
         if children[container]?.contains(item) != true {
             children[container, default: []].append(item)
@@ -207,7 +209,7 @@ struct BrowserSidebarTabTree {
         snapshot: BrowserSidebarSnapshot,
         payload: BrowserSidebarDragPayload,
         destination: BrowserSidebarDropDestination,
-        transformTab: (BrowserChromeModel.Tab, BrowserSidebarDropContainer) -> BrowserChromeModel.Tab?
+        transformTab: (BrowserChromeModel.Tab, BrowserSidebarDropContainer) -> BrowserChromeModel.Tab?,
     ) -> Self? {
         var tree = BrowserSidebarTabTree(snapshot: snapshot)
         let originalOrder = tree.orderedTabIDs()
@@ -260,7 +262,7 @@ struct BrowserSidebarTabTree {
             }
         }
         let moving = Set(movingItems)
-        let index = siblings.prefix(originalIndex).filter { !moving.contains($0) }.count
+        let index = siblings.prefix(originalIndex).count(where: { !moving.contains($0) })
         for container in Array(tree.children.keys) {
             tree.children[container]?.removeAll { moving.contains($0) }
         }

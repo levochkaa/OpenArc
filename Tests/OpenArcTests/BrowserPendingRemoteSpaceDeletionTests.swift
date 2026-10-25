@@ -1,10 +1,12 @@
+// BrowserPendingRemoteSpaceDeletionTests.swift
+
 import Foundation
 import GRDB
 import Testing
 
 @Test(arguments: [BrowserTabPlacement.temporary, .spacePinned])
 @MainActor func deletingSpaceCancelsPendingOrdinaryChildWithoutResurrectionOrExtraMutation(
-    placement: BrowserTabPlacement
+    placement: BrowserTabPlacement,
 ) throws {
     let h = try PendingRemoteSpaceHarness()
     defer { h.cleanup() }
@@ -26,7 +28,7 @@ import Testing
     h.driver.flushPendingCreateEvents()
     #expect(h.model.tabs.map(\.syncID) == ["anchor"])
     #expect(!h.model.tabs.contains { $0.id == child.id || $0.urlString == child.urlString })
-    #expect(h.driver.closedTabRequests.filter { $0.id == child.id && $0.forceClose }.count >= 2)
+    #expect(h.driver.closedTabRequests.count(where: { $0.id == child.id && $0.forceClose }) >= 2)
     #expect(h.store.loadSnapshot()?.tabs.compactMap(\.id) == ["anchor"])
     #expect(try h.store.pendingSyncQueue(for: h.owner) == queue)
     #expect(try h.store.syncCursor(for: h.owner) == 4)
@@ -129,7 +131,18 @@ import Testing
 // MARK: - PendingRemoteSpaceHarness
 
 @MainActor private final class PendingRemoteSpaceHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pending-remote-\(UUID())")
+    let suiteName = "BrowserPendingRemoteSpaceDeletionTests.\(UUID())"
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://pending-remote.example")!, userID: "owner")
+    let defaults: UserDefaults
+    let store: BrowserSQLiteSessionStore
+    let driver = FakeBrowserTabDriver()
+    let sync = PendingRemoteSpaceSyncRecorder()
+    private(set) var model: BrowserChromeModel!
+
+    var databaseURL: URL { directory.appendingPathComponent("session.sqlite") }
 
     init() throws {
         self.defaults = UserDefaults(suiteName: suiteName)!
@@ -145,19 +158,6 @@ import Testing
         driver.flushPendingCreateEvents()
         try #require(store.pendingSyncQueue(for: owner).isEmpty)
     }
-
-    // MARK: Internal
-
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pending-remote-\(UUID())")
-    let suiteName = "BrowserPendingRemoteSpaceDeletionTests.\(UUID())"
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://pending-remote.example")!, userID: "owner")
-    let defaults: UserDefaults
-    let store: BrowserSQLiteSessionStore
-    let driver = FakeBrowserTabDriver()
-    let sync = PendingRemoteSpaceSyncRecorder()
-    private(set) var model: BrowserChromeModel!
-
-    var databaseURL: URL { directory.appendingPathComponent("session.sqlite") }
 
     func receiveChildren(ordinaryPlacement: BrowserTabPlacement, includesFavorite: Bool) throws
         -> BrowserTabSessionSnapshot
@@ -186,7 +186,7 @@ import Testing
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
             dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
     }
 
@@ -208,13 +208,13 @@ import Testing
             serverSeq: sequence, deviceID: "remote", entityType: "space", entityID: id, op: "upsert",
             data: .space(.init(
                 id: id, title: id, systemImageName: "globe", rank: rank, isPinnedSectionCollapsed: false,
-                selectedTabID: nil
-            )), createdAt: "2027-01-15T08:00:00Z"
+                selectedTabID: nil,
+            )), createdAt: "2027-01-15T08:00:00Z",
         )
     }
 
     private func tabEvent(
-        _ id: String, space: String, placement: BrowserTabPlacement, sequence: Int
+        _ id: String, space: String, placement: BrowserTabPlacement, sequence: Int,
     ) -> BrowserSyncEvent {
         BrowserSyncEvent(
             serverSeq: sequence, deviceID: "remote", entityType: "tab", entityID: id, op: "upsert",
@@ -222,8 +222,8 @@ import Testing
                 id: id, spaceID: space, placement: placement, rank: 0, urlString: "https://\(id).example",
                 pinnedURLString: placement == .spacePinned ? "https://\(id).example/home" : nil,
                 title: nil, userTitleOverride: id == "favorite" ? "Global Favorite" : "Remote \(id)",
-                faviconURLString: nil, lastActivityAt: "2027-01-15T08:00:00Z"
-            )), createdAt: "2027-01-15T08:00:00Z"
+                faviconURLString: nil, lastActivityAt: "2027-01-15T08:00:00Z",
+            )), createdAt: "2027-01-15T08:00:00Z",
         )
     }
 }

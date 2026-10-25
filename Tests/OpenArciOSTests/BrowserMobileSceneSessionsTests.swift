@@ -1,3 +1,5 @@
+// BrowserMobileSceneSessionsTests.swift
+
 import Foundation
 import Testing
 import UIKit
@@ -77,7 +79,7 @@ import UIKit
     #expect(try Data(contentsOf: fixture.url) == damaged)
     let repaired = BrowserMobileSession(
         tabs: [.init(id: "preserved", urlString: "https://example.com/recovered", title: "Saved")],
-        selectedTabID: "preserved"
+        selectedTabID: "preserved",
     )
     try JSONEncoder().encode(repaired).write(to: fixture.url, options: .atomic)
     #expect(await reconnected.workspace.retryPersistence())
@@ -171,7 +173,7 @@ import UIKit
         let engine = MobileSceneEngine()
         engines[sessionID] = engine
         let store = BrowserMobileFileSessionStore(
-            fileURL: fixture.directory.appendingPathComponent(sessionID + ".json")
+            fileURL: fixture.directory.appendingPathComponent(sessionID + ".json"),
         )
         return .init(workspace: BrowserMobileWorkspace(engine: engine, store: store), contentView: engine.hostView)
     }
@@ -226,13 +228,13 @@ import UIKit
         createdSessions += 1
         return BrowserMobileSyncSession(
             store: store, document: document, preferences: preferences,
-            authSessionStore: MobileSceneSyncAuth(), environment: [:], packagedServerURL: nil
+            authSessionStore: MobileSceneSyncAuth(), environment: [:], packagedServerURL: nil,
         )
     }
     let scenes = BrowserMobileSceneSessions { id in
         let engine = MobileSceneEngine()
         return .init(workspace: BrowserMobileWorkspace(
-            engine: engine, sceneID: id, profileLoader: { try await registry.document() }, preferences: preferences
+            engine: engine, sceneID: id, profileLoader: { try await registry.document() }, preferences: preferences,
         ), contentView: engine.hostView)
     }
     let first = try await scenes.connect(sessionID: "first")
@@ -291,6 +293,10 @@ import UIKit
         return .init(workspace: BrowserMobileWorkspace(engine: engine, store: store), contentView: engine.hostView)
     }
 
+    // MARK: Private
+
+    private var shutdownWaiter: CheckedContinuation<Void, Never>?
+
     var url: URL { directory.appendingPathComponent("session.json") }
 
     func waitForShutdown() async {
@@ -301,10 +307,6 @@ import UIKit
     }
 
     func cleanup() { try? FileManager.default.removeItem(at: directory) }
-
-    // MARK: Private
-
-    private var shutdownWaiter: CheckedContinuation<Void, Never>?
 }
 
 // MARK: - MobileSceneEngine
@@ -341,7 +343,15 @@ import UIKit
 // MARK: - MobileSceneStore
 
 private actor MobileSceneStore: BrowserMobileSessionStoring {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let file: BrowserMobileFileSessionStore
+    private var fails = false
+    private var holdSave = false
+    private var release: CheckedContinuation<Void, Never>?
+    private var heldWaiter: CheckedContinuation<Void, Never>?
+    private var activeSaves = 0
+    private var maximumSaves = 0
 
     init(fileURL: URL) { self.file = BrowserMobileFileSessionStore(fileURL: fileURL) }
 
@@ -382,14 +392,4 @@ private actor MobileSceneStore: BrowserMobileSessionStoring {
     }
 
     func maximumConcurrentSaves() -> Int { maximumSaves }
-
-    // MARK: Private
-
-    private let file: BrowserMobileFileSessionStore
-    private var fails = false
-    private var holdSave = false
-    private var release: CheckedContinuation<Void, Never>?
-    private var heldWaiter: CheckedContinuation<Void, Never>?
-    private var activeSaves = 0
-    private var maximumSaves = 0
 }

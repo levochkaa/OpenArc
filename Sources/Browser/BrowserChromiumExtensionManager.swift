@@ -1,9 +1,21 @@
+// BrowserChromiumExtensionManager.swift
+
 import Foundation
 
 // MARK: - BrowserChromiumExtensionManager
 
 @MainActor final class BrowserChromiumExtensionManager: BrowserExtensionManaging {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let profileDirectoryURL: URL?
+
+    private var profilePath: String? {
+        if let profileDirectoryURL {
+            return profileDirectoryURL.path
+        }
+
+        return BrowserRuntimeConfiguration.currentConfiguration()?.cachePath
+    }
 
     init(profileDirectoryURL: URL? = nil) {
         self.profileDirectoryURL = profileDirectoryURL
@@ -48,18 +60,6 @@ import Foundation
         return BrowserRemoveExtension(profilePath, id)
     }
 
-    // MARK: Private
-
-    private let profileDirectoryURL: URL?
-
-    private var profilePath: String? {
-        if let profileDirectoryURL {
-            return profileDirectoryURL.path
-        }
-
-        return BrowserRuntimeConfiguration.currentConfiguration()?.cachePath
-    }
-
     private func installedExtensionsFromBridge() -> [BrowserExtension]? {
         guard
             let profilePath,
@@ -78,8 +78,8 @@ import Foundation
         if let profileDirectoryURL {
             return BrowserExtensionProfileSnapshotStore.installedExtensions(
                 profileDirectories: BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
-                    profileDirectoryURL: profileDirectoryURL
-                )
+                    profileDirectoryURL: profileDirectoryURL,
+                ),
             )
         }
 
@@ -88,13 +88,13 @@ import Foundation
         }
 
         return BrowserExtensionProfileSnapshotStore.installedExtensions(
-            profileDirectories: extensionProfileDirectories(configuration: configuration)
+            profileDirectories: extensionProfileDirectories(configuration: configuration),
         )
     }
 
     private func extensionsWithSnapshotMetadata(_ extensions: [BrowserExtension]) -> [BrowserExtension] {
         let snapshotExtensionsByID = Dictionary(
-            uniqueKeysWithValues: installedExtensionsFromProfileSnapshot().map { ($0.id, $0) }
+            uniqueKeysWithValues: installedExtensionsFromProfileSnapshot().map { ($0.id, $0) },
         )
 
         return extensions.map { browserExtension in
@@ -112,7 +112,7 @@ import Foundation
                 version: browserExtension.version,
                 isEnabled: browserExtension.isEnabled,
                 iconData: browserExtension.iconData ?? snapshotExtension.iconData,
-                sidePanelURLString: snapshotExtension.sidePanelURLString
+                sidePanelURLString: snapshotExtension.sidePanelURLString,
             )
         }
     }
@@ -120,7 +120,7 @@ import Foundation
     private func extensionProfileDirectories(configuration: BrowserRuntimeConfiguration) -> [URL] {
         if let profileDirectoryURL {
             return BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
-                profileDirectoryURL: profileDirectoryURL
+                profileDirectoryURL: profileDirectoryURL,
             )
         }
 
@@ -129,7 +129,7 @@ import Foundation
 
         return BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
             rootCacheURL: rootCacheURL,
-            cacheURL: cacheURL
+            cacheURL: cacheURL,
         )
     }
 }
@@ -181,7 +181,7 @@ private struct BrowserChromiumExtensionPayload: Decodable {
             version: version,
             isEnabled: isEnabled,
             iconData: iconData,
-            sidePanelURLString: sidePanelURLString
+            sidePanelURLString: sidePanelURLString,
         )
     }
 

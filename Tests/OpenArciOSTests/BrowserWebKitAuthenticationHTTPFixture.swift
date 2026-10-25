@@ -1,22 +1,16 @@
+// BrowserWebKitAuthenticationHTTPFixture.swift
+
 import Foundation
 import Network
 
 /// Ephemeral loopback Basic authentication. Request evidence records only the
 /// classification of the fixture credential, never the Authorization value.
 @MainActor final class BasicAuthHTTPFixture {
-    // MARK: Lifecycle
-
-    init() throws {
-        let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
-        self.listener = try NWListener(using: parameters)
-    }
-
     // MARK: Internal
 
-    enum Authorization: Equatable, Sendable { case missing, invalid, valid }
+    enum Authorization: Equatable { case missing, invalid, valid }
 
-    struct Request: Sendable {
+    struct Request {
         let method: String
         let path: String
         let authorization: Authorization
@@ -25,13 +19,45 @@ import Network
     static let username = "test-user"
     static let password = "test-password"
 
+    // MARK: Private
+
+    private static let maximumRequestBytes = 1024 * 1024
+    private static let maximumHeaderBytes = 16 * 1024
+
     private(set) var requests = [Request]()
     private(set) var parseErrors = [String]()
 
+    private let listener: NWListener
+    private var started = false
+    private var stopped = false
+    private var connections = [ObjectIdentifier: NWConnection]()
+    private var connectionTimeouts = [ObjectIdentifier: Task<Void, Never>]()
+    private var startContinuation: CheckedContinuation<Void, Error>?
+    private var startTimeout: Task<Void, Never>?
+
     var protectedRequests: [Request] { requests.filter { Self.route($0.path) == "/protected" } }
-    var unauthenticatedRequestCount: Int { protectedRequests.filter { $0.authorization == .missing }.count }
-    var invalidAuthorizationRequestCount: Int { protectedRequests.filter { $0.authorization == .invalid }.count }
-    var authenticatedRequestCount: Int { protectedRequests.filter { $0.authorization == .valid }.count }
+    var unauthenticatedRequestCount: Int { protectedRequests.count(where: { $0.authorization == .missing }) }
+    var invalidAuthorizationRequestCount: Int { protectedRequests.count(where: { $0.authorization == .invalid }) }
+    var authenticatedRequestCount: Int { protectedRequests.count(where: { $0.authorization == .valid }) }
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        self.listener = try NWListener(using: parameters)
+    }
+
+    private static func route(_ path: String) -> String {
+        String(path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0])
+    }
+
+    private static func classify(_ value: String?) -> Authorization {
+        guard let value else { return .missing }
+        let parts = value.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        guard parts.count == 2, parts[0].lowercased() == "basic",
+              let decoded = Data(base64Encoded: String(parts[1])),
+              decoded == Data("\(username):\(password)".utf8) else { return .invalid }
+        return .valid
+    }
 
     func start() async throws {
         guard !started, !stopped else { throw URLError(.cannotConnectToHost) }
@@ -43,7 +69,8 @@ import Network
                     guard let self, !stopped else { return }
                     switch state {
                     case .ready: finishStarting()
-                    case .failed(let error), .waiting(let error): finishStarting(error: error)
+                    case .failed(let error),
+                         .waiting(let error): finishStarting(error: error)
                     default: break
                     }
                 }
@@ -58,7 +85,11 @@ import Network
                     connections[id] = connection
                     connection.start(queue: .main)
                     connectionTimeouts[id] = Task { @MainActor [weak self, weak connection] in
-                        do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                        do {
+                            try await Task.sleep(for: .seconds(10))
+                        } catch {
+                            return
+                        }
                         guard let self, let connection, connections[id] != nil else { return }
                         reject("Request timed out", on: connection)
                     }
@@ -67,7 +98,11 @@ import Network
             }
             listener.start(queue: .main)
             startTimeout = Task { @MainActor [weak self] in
-                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                do {
+                    try await Task.sleep(for: .seconds(5))
+                } catch {
+                    return
+                }
                 self?.finishStarting(error: URLError(.timedOut))
             }
         }
@@ -95,32 +130,6 @@ import Network
         }
         connections.removeAll()
         listener.cancel()
-    }
-
-    // MARK: Private
-
-    private static let maximumRequestBytes = 1024 * 1024
-    private static let maximumHeaderBytes = 16 * 1024
-
-    private let listener: NWListener
-    private var started = false
-    private var stopped = false
-    private var connections = [ObjectIdentifier: NWConnection]()
-    private var connectionTimeouts = [ObjectIdentifier: Task<Void, Never>]()
-    private var startContinuation: CheckedContinuation<Void, Error>?
-    private var startTimeout: Task<Void, Never>?
-
-    private static func route(_ path: String) -> String {
-        String(path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0])
-    }
-
-    private static func classify(_ value: String?) -> Authorization {
-        guard let value else { return .missing }
-        let parts = value.split(whereSeparator: { $0 == " " || $0 == "\t" })
-        guard parts.count == 2, parts[0].lowercased() == "basic",
-              let decoded = Data(base64Encoded: String(parts[1])),
-              decoded == Data("\(username):\(password)".utf8) else { return .invalid }
-        return .valid
     }
 
     private func finishStarting(error: Error? = nil) {
@@ -210,7 +219,7 @@ import Network
                 let request = Request(
                     method: String(first[0]),
                     path: String(first[1]),
-                    authorization: Self.classify(headers["authorization"])
+                    authorization: Self.classify(headers["authorization"]),
                 )
                 requests.append(request)
                 respond(to: request, on: connection)
@@ -234,7 +243,7 @@ import Network
                     title: "Authentication required",
                     status: "401 Unauthorized",
                     extra: "WWW-Authenticate: Basic realm=\"Fixture\"\r\n",
-                    on: connection
+                    on: connection,
                 )
             }
         default:
@@ -251,7 +260,7 @@ import Network
         connectionTimeouts.removeValue(forKey: ObjectIdentifier(connection))?.cancel()
         let body = Data(
             "<!doctype html><meta name='viewport' content='width=device-width, initial-scale=1'><title>\(title)</title><h1>\(title)</h1>"
-                .utf8
+                .utf8,
         )
         let header = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\n\(extra)Content-Length: \(body.count)\r\nConnection: close\r\n\r\n"
         connection.send(content: Data(header.utf8) + body, completion: .contentProcessed { [weak self] _ in

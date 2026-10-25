@@ -1,3 +1,5 @@
+// BrowserDesktopLocalAutomaticArchiveHTTPTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -9,7 +11,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let directory = SyncHTTPProfile.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = try LocalAutomaticArchiveHTTPProfile(
-            fixture: fixture, device: account.devices[0], directory: directory
+            fixture: fixture, device: account.devices[0], directory: directory,
         )
         defer { first.close() }
         let selected = try #require(first.model.tabs.first { $0.syncID == "active" })
@@ -136,7 +138,24 @@ extension BrowserSyncHTTPIntegrationTests {
 // MARK: - LocalAutomaticArchiveHTTPProfile
 
 @MainActor private final class LocalAutomaticArchiveHTTPProfile {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let owner: BrowserSyncOwner
+    let store: BrowserSQLiteSessionStore
+    let service: BrowserSyncService
+    let account: BrowserAccountStore
+    let auth: LocalAutomaticArchiveHTTPAuth
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+    let clock = LocalAutomaticArchiveHTTPClock()
+
+    // MARK: Private
+
+    private let suite = "LocalAutomaticArchiveHTTP.\(UUID())"
+    private let defaults: UserDefaults
+    private let urlSession: URLSession
+    private var closed = false
 
     init(fixture: SyncHTTPFixture, device: SyncHTTPFixture.Device, directory: URL) throws {
         self.databaseURL = directory.appendingPathComponent(device.deviceID + ".sqlite")
@@ -150,28 +169,28 @@ extension BrowserSyncHTTPIntegrationTests {
                     urlString: "https://local-expiry.example/pinned",
                     placement: .spacePinned,
                     spaceID: "source",
-                    lastActivityTimestamp: clock.now
+                    lastActivityTimestamp: clock.now,
                 ),
                 .init(
                     id: "active",
                     urlString: "https://local-expiry.example/active",
                     spaceID: "source",
-                    lastActivityTimestamp: clock.now
+                    lastActivityTimestamp: clock.now,
                 ),
                 .init(
                     id: "expired",
                     urlString: "https://local-expiry.example/expired",
                     userTitleOverride: "Local expired title",
                     spaceID: "source",
-                    lastActivityTimestamp: clock.now
+                    lastActivityTimestamp: clock.now,
                 ),
-            ]
+            ],
         ), origin: .local(syncMove: nil))])
         store.saveSelectedSpaceIndex(0)
         store.saveSelectedTabIndex(1)
         self.auth = LocalAutomaticArchiveHTTPAuth(session: .init(
             accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-            deviceID: device.deviceID, serverURL: fixture.baseURL
+            deviceID: device.deviceID, serverURL: fixture.baseURL,
         ))
         let configuration = try #require(BrowserSyncConfiguration(baseURL: fixture.baseURL))
         let network = URLSessionConfiguration.ephemeral
@@ -181,7 +200,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let remote = BrowserRemoteSyncClient(configuration: configuration, session: urlSession)
         self.service = BrowserSyncService(
             localStore: store, remoteClient: remote, authSessionStore: auth,
-            pushDebounce: .zero, pollInterval: nil, retryDelay: nil
+            pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
         )
         self.defaults = try #require(UserDefaults(suiteName: suite))
         let clock = clock
@@ -192,7 +211,7 @@ extension BrowserSyncHTTPIntegrationTests {
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: service,
             dateProvider: { Date(timeIntervalSince1970: clock.now) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         driver.automaticallyConfirmsCloseRequests = false
         model.handleContextReady()
@@ -204,21 +223,9 @@ extension BrowserSyncHTTPIntegrationTests {
         self.account = BrowserAccountStore(
             syncClient: remote, authSessionStore: auth, syncCoordinator: service,
             appleSignInService: LocalAutomaticArchiveHTTPIdentity(),
-            deviceIdentity: .init(name: "Local Archive HTTP", platform: "macOS")
+            deviceIdentity: .init(name: "Local Archive HTTP", platform: "macOS"),
         )
     }
-
-    // MARK: Internal
-
-    let databaseURL: URL
-    let owner: BrowserSyncOwner
-    let store: BrowserSQLiteSessionStore
-    let service: BrowserSyncService
-    let account: BrowserAccountStore
-    let auth: LocalAutomaticArchiveHTTPAuth
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
-    let clock = LocalAutomaticArchiveHTTPClock()
 
     func sql(_ sql: String) throws {
         try DatabaseQueue(path: databaseURL.path).write { try $0.execute(sql: sql) }
@@ -241,13 +248,6 @@ extension BrowserSyncHTTPIntegrationTests {
         urlSession.invalidateAndCancel()
         defaults.removePersistentDomain(forName: suite)
     }
-
-    // MARK: Private
-
-    private let suite = "LocalAutomaticArchiveHTTP.\(UUID())"
-    private let defaults: UserDefaults
-    private let urlSession: URLSession
-    private var closed = false
 }
 
 // MARK: - LocalAutomaticArchiveHTTPClock
@@ -259,13 +259,11 @@ extension BrowserSyncHTTPIntegrationTests {
 // MARK: - LocalAutomaticArchiveHTTPAuth
 
 @MainActor private final class LocalAutomaticArchiveHTTPAuth: BrowserSyncAuthSessionStoring {
-    // MARK: Lifecycle
-
-    init(session: BrowserAuthSession) { self.session = session }
-
     // MARK: Internal
 
     var session: BrowserAuthSession
+
+    init(session: BrowserAuthSession) { self.session = session }
 
     func loadSession() -> BrowserAuthSession? { session }
     func saveSession(_ session: BrowserAuthSession) { self.session = session }

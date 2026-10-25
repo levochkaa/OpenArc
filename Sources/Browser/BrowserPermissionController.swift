@@ -1,3 +1,5 @@
+// BrowserPermissionController.swift
+
 import AppKit
 import Foundation
 
@@ -6,7 +8,7 @@ import Foundation
 
     public static func requestNotificationPermission(
         for origin: String,
-        completion: @escaping @Sendable (Bool) -> Void
+        completion: @escaping @Sendable (Bool) -> Void,
     ) {
         let handlePromptResponse: @MainActor () -> Void = {
             let response = presentSitePrompt(for: origin)

@@ -1,3 +1,5 @@
+// BrowserDefaultBrowserServiceTests.swift
+
 import CoreServices
 import Foundation
 import Testing
@@ -8,13 +10,14 @@ import Testing
         schemes: ["http", "https"],
         defaultHandlerLookup: { scheme in
             switch scheme {
-            case "http", "https":
+            case "http",
+                 "https":
                 "com.example.Browser"
             default:
                 nil
             }
         },
-        defaultHandlerSetter: { _, _ in noErr }
+        defaultHandlerSetter: { _, _ in noErr },
     )
 
     #expect(service.isDefaultBrowser)
@@ -27,7 +30,7 @@ import Testing
         defaultHandlerLookup: { scheme in
             scheme == "http" ? "com.example.Browser" : "com.apple.Safari"
         },
-        defaultHandlerSetter: { _, _ in noErr }
+        defaultHandlerSetter: { _, _ in noErr },
     )
 
     #expect(!service.isDefaultBrowser)
@@ -42,7 +45,7 @@ import Testing
         defaultHandlerSetter: { scheme, bundleIdentifier in
             requests.append((scheme: scheme, bundleIdentifier: bundleIdentifier))
             return scheme == "http" ? noErr : -1
-        }
+        },
     )
 
     #expect(!service.setAsDefaultBrowser())

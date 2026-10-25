@@ -1,3 +1,5 @@
+// BrowserChromeModel+CrashedTabs.swift
+
 import Foundation
 
 // MARK: - Crashed tabs

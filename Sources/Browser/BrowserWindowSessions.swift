@@ -1,23 +1,10 @@
+// BrowserWindowSessions.swift
+
 import AppKit
 
 // MARK: - BrowserWindowContentContainerView
 
 final class BrowserWindowContentContainerView: NSView {
-    // MARK: Lifecycle
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        updateCornerRadius()
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
     // MARK: Internal
 
     static let defaultCornerRadius: CGFloat = BrowserWindowGeometry.windowCornerRadius
@@ -30,6 +17,19 @@ final class BrowserWindowContentContainerView: NSView {
 
             updateCornerRadius()
         }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        updateCornerRadius()
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     // MARK: Private
@@ -94,65 +94,59 @@ final class BrowserMainWindow: NSWindow {
 // MARK: - BrowserIncognitoWindowSession
 
 final class BrowserIncognitoWindowSession {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let window: NSWindow
+    let chromeModel: BrowserChromeModel
 
     init(window: NSWindow, chromeModel: BrowserChromeModel) {
         self.window = window
         self.chromeModel = chromeModel
     }
-
-    // MARK: Internal
-
-    let window: NSWindow
-    let chromeModel: BrowserChromeModel
 }
 
 // MARK: - BrowserWebAppWindowSession
 
 final class BrowserWebAppWindowSession {
-    // MARK: Lifecycle
-
-    init(
-        window: NSWindow,
-        chromeModel: BrowserChromeModel,
-        configuration: BrowserWebAppConfiguration,
-        preferences: BrowserWebAppPreferences
-    ) {
-        self.window = window
-        self.chromeModel = chromeModel
-        self.configuration = configuration
-        self.preferences = preferences
-    }
-
     // MARK: Internal
 
     let window: NSWindow
     let chromeModel: BrowserChromeModel
     let configuration: BrowserWebAppConfiguration
     let preferences: BrowserWebAppPreferences
+
+    init(
+        window: NSWindow,
+        chromeModel: BrowserChromeModel,
+        configuration: BrowserWebAppConfiguration,
+        preferences: BrowserWebAppPreferences,
+    ) {
+        self.window = window
+        self.chromeModel = chromeModel
+        self.configuration = configuration
+        self.preferences = preferences
+    }
 }
 
 // MARK: - BrowserProfileWindowSession
 
 final class BrowserProfileWindowSession {
-    // MARK: Lifecycle
-
-    init(
-        window: NSWindow,
-        chromeModel: BrowserChromeModel,
-        accountStore: BrowserAccountStore,
-        profile: BrowserProfile
-    ) {
-        self.window = window
-        self.chromeModel = chromeModel
-        self.accountStore = accountStore
-        self.profile = profile
-    }
-
     // MARK: Internal
 
     let window: NSWindow
     let chromeModel: BrowserChromeModel
     let accountStore: BrowserAccountStore
     let profile: BrowserProfile
+
+    init(
+        window: NSWindow,
+        chromeModel: BrowserChromeModel,
+        accountStore: BrowserAccountStore,
+        profile: BrowserProfile,
+    ) {
+        self.window = window
+        self.chromeModel = chromeModel
+        self.accountStore = accountStore
+        self.profile = profile
+    }
 }

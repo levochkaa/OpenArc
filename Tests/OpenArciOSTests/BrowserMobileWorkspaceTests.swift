@@ -1,3 +1,5 @@
+// BrowserMobileWorkspaceTests.swift
+
 import Foundation
 import Testing
 import UIKit
@@ -48,7 +50,7 @@ import UIKit
     #expect(await workspace.shutdown())
 
     let reopened = BrowserMobileWorkspace(
-        engine: MobileWorkspaceEngine(), store: BrowserMobileFileSessionStore(fileURL: f.url)
+        engine: MobileWorkspaceEngine(), store: BrowserMobileFileSessionStore(fileURL: f.url),
     )
     await reopened.restore()
     #expect(reopened.javaScriptDialog == nil)
@@ -123,10 +125,10 @@ import UIKit
 }
 
 private func mobileWorkspaceDialog(
-    runtimeID: String, kind: BrowserMobileJavaScriptDialog.Kind = .confirm
+    runtimeID: String, kind: BrowserMobileJavaScriptDialog.Kind = .confirm,
 ) -> BrowserMobileJavaScriptDialog {
     BrowserMobileJavaScriptDialog(
-        id: UUID(), runtimeID: runtimeID, origin: "https://example.com", message: "Page message", kind: kind
+        id: UUID(), runtimeID: runtimeID, origin: "https://example.com", message: "Page message", kind: kind,
     )
 }
 
@@ -153,7 +155,7 @@ func mobileChangedURLClearsPreviousTitleThroughFailureAndFileReopen(engineReport
     #expect(await workspace.shutdown())
 
     let reopened = BrowserMobileWorkspace(
-        engine: MobileWorkspaceEngine(), store: BrowserMobileFileSessionStore(fileURL: f.url)
+        engine: MobileWorkspaceEngine(), store: BrowserMobileFileSessionStore(fileURL: f.url),
     )
     await reopened.restore()
     #expect(reopened.selectedTab?.id == tab.id)
@@ -271,7 +273,7 @@ func mobileCorruptOrUnknownVersionRemainsIntactUntilSuccessfulRestoreRetry(unkno
 
     let repaired = BrowserMobileSession(
         tabs: [.init(id: "preserved", urlString: "https://example.com/recovered", title: "Saved")],
-        selectedTabID: "preserved"
+        selectedTabID: "preserved",
     )
     try JSONEncoder().encode(repaired).write(to: f.url, options: .atomic)
     #expect(await workspace.retryPersistence())
@@ -327,7 +329,7 @@ func mobileCorruptOrUnknownVersionRemainsIntactUntilSuccessfulRestoreRetry(unkno
         url: URL(string: tab.urlString),
         isLoading: true,
         canGoBack: true,
-        canGoForward: true
+        canGoForward: true,
     )))
     workspace.goBack()
     workspace.goForward()
@@ -349,7 +351,7 @@ func mobileCorruptOrUnknownVersionRemainsIntactUntilSuccessfulRestoreRetry(unkno
     try FileManager.default.createDirectory(at: f.directory, withIntermediateDirectories: true)
     let initial = BrowserMobileSession(
         tabs: [.init(id: "saved", urlString: "https://example.com/", title: "")],
-        selectedTabID: "saved"
+        selectedTabID: "saved",
     )
     let bytes = try JSONEncoder().encode(initial)
     try bytes.write(to: f.url)
@@ -424,7 +426,19 @@ private struct MobileWorkspaceFixture {
 // MARK: - ControlledMobileStore
 
 private actor ControlledMobileStore: BrowserMobileSessionStoring {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let file: BrowserMobileFileSessionStore
+    private var fails = false
+    private var shouldHoldSave = false
+    private var shouldHoldLoad = false
+    private var saveRelease: CheckedContinuation<Void, Never>?
+    private var loadRelease: CheckedContinuation<Void, Never>?
+    private var saveWaiters = [CheckedContinuation<Void, Never>]()
+    private var loadWaiters = [CheckedContinuation<Void, Never>]()
+    private var sessions = [BrowserMobileSession]()
+    private var activeSaves = 0
+    private var maximumSaves = 0
 
     init(fileURL: URL) { self.file = BrowserMobileFileSessionStore(fileURL: fileURL) }
 
@@ -490,18 +504,4 @@ private actor ControlledMobileStore: BrowserMobileSessionStoring {
 
     func savedSessions() -> [BrowserMobileSession] { sessions }
     func maximumConcurrentSaves() -> Int { maximumSaves }
-
-    // MARK: Private
-
-    private let file: BrowserMobileFileSessionStore
-    private var fails = false
-    private var shouldHoldSave = false
-    private var shouldHoldLoad = false
-    private var saveRelease: CheckedContinuation<Void, Never>?
-    private var loadRelease: CheckedContinuation<Void, Never>?
-    private var saveWaiters = [CheckedContinuation<Void, Never>]()
-    private var loadWaiters = [CheckedContinuation<Void, Never>]()
-    private var sessions = [BrowserMobileSession]()
-    private var activeSaves = 0
-    private var maximumSaves = 0
 }

@@ -1,10 +1,22 @@
+// BrowserSyncExpiryModels.swift
+
 import Foundation
 
 // MARK: - BrowserSyncExpiryOperation
 
 /// Conditional intent only. It never carries a client cutoff or archive content.
-struct BrowserSyncExpiryOperation: Codable, Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserSyncExpiryOperation: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, entityType, entityID, expectedServerSeq, inactiveForSeconds
+    }
+
+    // MARK: Internal
+
+    let entityID: String
+    let expectedServerSeq: Int
+    let inactiveForSeconds: Int
 
     init(id: String, expectedServerSeq: Int, inactiveForSeconds: Int) {
         self.entityID = id
@@ -23,12 +35,6 @@ struct BrowserSyncExpiryOperation: Codable, Equatable, Sendable {
         try validate()
     }
 
-    // MARK: Internal
-
-    let entityID: String
-    let expectedServerSeq: Int
-    let inactiveForSeconds: Int
-
     func validate() throws {
         guard !entityID.isEmpty, expectedServerSeq > 0, expectedServerSeq <= 9_007_199_254_740_991,
               [43200, 86400, 259_200, 604_800, 2_592_000].contains(inactiveForSeconds)
@@ -43,12 +49,6 @@ struct BrowserSyncExpiryOperation: Codable, Equatable, Sendable {
         try values.encode(entityID, forKey: .entityID)
         try values.encode(expectedServerSeq, forKey: .expectedServerSeq)
         try values.encode(inactiveForSeconds, forKey: .inactiveForSeconds)
-    }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case kind, entityType, entityID, expectedServerSeq, inactiveForSeconds
     }
 }
 
@@ -78,7 +78,7 @@ enum BrowserSyncExpiryError: Error, Equatable {
 
 // MARK: - BrowserSyncExpirySchedulingState
 
-struct BrowserSyncExpirySchedulingState: Equatable, Sendable {
+struct BrowserSyncExpirySchedulingState: Equatable {
     let inactiveForSeconds: Int?
     let protectedTabIDs: Set<String>
 }
@@ -94,7 +94,7 @@ struct BrowserSyncExpirySchedulingState: Equatable, Sendable {
 
 // MARK: - BrowserSyncExpiryCandidateBatch
 
-struct BrowserSyncExpiryCandidateBatch: Sendable {
+struct BrowserSyncExpiryCandidateBatch {
     let baseline: Data
     let operations: [BrowserSyncExpiryOperation]
 }
@@ -162,7 +162,8 @@ struct BrowserSyncExpiryPushResponse: Codable, Equatable {
             let operation = mutation.operations[outcome.operationIndex]
             let event = canonical[operation.entityID]
             switch outcome.status {
-            case .applied, .deleted:
+            case .applied,
+                 .deleted:
                 guard outcome.reason == nil, let event, event.op == "delete",
                       case .deleted(let id, let recovery) = event.data, id == operation.entityID
                 else { throw BrowserRemoteSyncError.invalidMutationReceipt }

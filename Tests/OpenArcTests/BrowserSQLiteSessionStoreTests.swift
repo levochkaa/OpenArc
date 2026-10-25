@@ -1,3 +1,5 @@
+// BrowserSQLiteSessionStoreTests.swift
+
 import Foundation
 import Testing
 
@@ -13,7 +15,7 @@ import Testing
                 title: "Work",
                 systemImageName: "briefcase",
                 isPinnedSectionCollapsed: true,
-                selectedTabIndex: 0
+                selectedTabIndex: 0,
             ),
         ],
         pinnedTabFolders: [
@@ -23,7 +25,7 @@ import Testing
                 parentFolderID: "folder-parent",
                 title: "Focus",
                 systemImageName: "star",
-                isExpanded: false
+                isExpanded: false,
             ),
         ],
         tabs: [
@@ -35,9 +37,9 @@ import Testing
                 placement: .spacePinned,
                 spaceID: "space-1",
                 pinnedFolderID: "folder-sync-1",
-                lastActivityTimestamp: 123
+                lastActivityTimestamp: 123,
             ),
-        ]
+        ],
     )
 
     store.saveSnapshot(snapshot)
@@ -63,7 +65,7 @@ import Testing
         ],
         tabs: [
             BrowserTabSessionSnapshotTab(id: "tab-old", urlString: "https://old.example"),
-        ]
+        ],
     )
     let current = BrowserTabSessionSnapshot(
         spaces: [
@@ -74,9 +76,9 @@ import Testing
                 id: "tab-new",
                 urlString: "https://new.example",
                 placement: .app,
-                spaceID: "space-new"
+                spaceID: "space-new",
             ),
-        ]
+        ],
     )
 
     let changes = BrowserRemoteSyncClient.changes(from: previous, to: current)
@@ -94,7 +96,7 @@ import Testing
         ],
         tabs: [
             BrowserTabSessionSnapshotTab(id: "tab-old", urlString: "https://old.example", spaceID: "space-old"),
-        ]
+        ],
     )
     let events = [
         BrowserSyncEvent(
@@ -110,10 +112,10 @@ import Testing
                     systemImageName: "cloud",
                     rank: 0,
                     isPinnedSectionCollapsed: false,
-                    selectedTabID: "tab-new"
-                )
+                    selectedTabID: "tab-new",
+                ),
             ),
-            createdAt: "2026-05-29T00:00:00Z"
+            createdAt: "2026-05-29T00:00:00Z",
         ),
         BrowserSyncEvent(
             serverSeq: 2,
@@ -132,10 +134,10 @@ import Testing
                     title: nil,
                     userTitleOverride: "Remote Tab",
                     faviconURLString: nil,
-                    lastActivityAt: "2026-05-29T00:00:00Z"
-                )
+                    lastActivityAt: "2026-05-29T00:00:00Z",
+                ),
             ),
-            createdAt: "2026-05-29T00:00:01Z"
+            createdAt: "2026-05-29T00:00:01Z",
         ),
         BrowserSyncEvent(
             serverSeq: 3,
@@ -144,7 +146,7 @@ import Testing
             entityID: "tab-old",
             op: "delete",
             data: .deleted(id: "tab-old"),
-            createdAt: "2026-05-29T00:00:02Z"
+            createdAt: "2026-05-29T00:00:02Z",
         ),
     ]
 
@@ -172,7 +174,7 @@ import Testing
                 spaceID: "space-1",
                 title: "Reading",
                 systemImageName: "book",
-                isExpanded: false
+                isExpanded: false,
             ),
         ],
         tabs: [
@@ -181,9 +183,9 @@ import Testing
                 urlString: "https://old.example",
                 placement: .spacePinned,
                 spaceID: "space-1",
-                pinnedFolderID: "folder-1"
+                pinnedFolderID: "folder-1",
             ),
-        ]
+        ],
     )
     let events = [
         BrowserSyncEvent(
@@ -203,10 +205,10 @@ import Testing
                     title: nil,
                     userTitleOverride: nil,
                     faviconURLString: nil,
-                    lastActivityAt: nil
-                )
+                    lastActivityAt: nil,
+                ),
             ),
-            createdAt: "2026-05-29T00:00:00Z"
+            createdAt: "2026-05-29T00:00:00Z",
         ),
     ]
 
@@ -223,13 +225,13 @@ import Testing
 func syncSnapshotMergerKeepsGlobalFavoritesAfterSpaceDeletion(applying: Bool, hasRemainingSpace: Bool) {
     let favorite = BrowserTabSessionSnapshotTab(
         id: "favorite", urlString: "https://favorite.example", userTitleOverride: "Favorite",
-        placement: .app, spaceID: "deleted-space", lastActivityTimestamp: 123
+        placement: .app, spaceID: "deleted-space", lastActivityTimestamp: 123,
     )
     let remainingTabs = hasRemainingSpace
         ? [BrowserTabSessionSnapshotTab(
             id: "unrelated",
             urlString: "https://other.example",
-            spaceID: "remaining-space"
+            spaceID: "remaining-space",
         )]
         : []
     let remainingSpaces = hasRemainingSpace
@@ -241,33 +243,33 @@ func syncSnapshotMergerKeepsGlobalFavoritesAfterSpaceDeletion(applying: Bool, ha
         pinnedTabFolders: [BrowserPinnedTabFolderSessionSnapshot(
             id: "folder",
             spaceID: "deleted-space",
-            title: "Folder"
+            title: "Folder",
         )],
         tabs: [
             favorite,
             BrowserTabSessionSnapshotTab(
                 id: "deleted-favorite", urlString: "https://deleted-favorite.example", placement: .app,
-                spaceID: "deleted-space"
+                spaceID: "deleted-space",
             ),
             BrowserTabSessionSnapshotTab(
                 id: "pinned", urlString: "https://pinned.example", placement: .spacePinned,
-                spaceID: "deleted-space", pinnedFolderID: "folder"
+                spaceID: "deleted-space", pinnedFolderID: "folder",
             ),
             BrowserTabSessionSnapshotTab(
                 id: "temporary",
                 urlString: "https://temporary.example",
-                spaceID: "deleted-space"
+                spaceID: "deleted-space",
             ),
-        ] + remainingTabs
+        ] + remainingTabs,
     )
     let events = [
         BrowserSyncEvent(
             serverSeq: 1, deviceID: "remote", entityType: "space", entityID: "deleted-space", op: "delete",
-            data: .deleted(id: "deleted-space"), createdAt: "2026-10-03T00:00:00Z"
+            data: .deleted(id: "deleted-space"), createdAt: "2026-10-03T00:00:00Z",
         ),
         BrowserSyncEvent(
             serverSeq: 2, deviceID: "remote", entityType: "tab", entityID: "deleted-favorite", op: "delete",
-            data: .deleted(id: "deleted-favorite"), createdAt: "2026-10-03T00:00:01Z"
+            data: .deleted(id: "deleted-favorite"), createdAt: "2026-10-03T00:00:01Z",
         ),
     ]
 
@@ -286,8 +288,8 @@ func syncSnapshotMergerKeepsGlobalFavoritesAfterSpaceDeletion(applying: Bool, ha
         data: .tab(BrowserSyncEventTabData(
             id: "favorite", spaceID: "historical-space", placement: .app, rank: 0,
             urlString: "https://favorite.example", pinnedURLString: nil, title: nil,
-            userTitleOverride: "Favorite", faviconURLString: nil, lastActivityAt: nil
-        )), createdAt: "2026-10-03T00:00:00Z"
+            userTitleOverride: "Favorite", faviconURLString: nil, lastActivityAt: nil,
+        )), createdAt: "2026-10-03T00:00:00Z",
     )
     let merged = BrowserSyncSnapshotMerger.snapshot(applying: [event], to: nil)
 
@@ -300,7 +302,10 @@ func syncSnapshotMergerKeepsGlobalFavoritesAfterSpaceDeletion(applying: Bool, ha
 // MARK: - SQLiteSessionHarness
 
 private struct SQLiteSessionHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directoryURL: URL
+    let databaseURL: URL
 
     init() throws {
         self.directoryURL = FileManager.default
@@ -309,11 +314,6 @@ private struct SQLiteSessionHarness {
         self.databaseURL = directoryURL.appendingPathComponent("Browser.sqlite", isDirectory: false)
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
     }
-
-    // MARK: Internal
-
-    let directoryURL: URL
-    let databaseURL: URL
 
     func cleanup() {
         try? FileManager.default.removeItem(at: directoryURL)

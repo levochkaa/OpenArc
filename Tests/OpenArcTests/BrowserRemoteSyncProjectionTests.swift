@@ -1,3 +1,5 @@
+// BrowserRemoteSyncProjectionTests.swift
+
 import Foundation
 import Testing
 
@@ -53,7 +55,7 @@ import Testing
         id: reopenedID,
         title: "Created title",
         urlString: reopenedRequest.urlString,
-        isActive: true
+        isActive: true,
     )
 
     #expect(harness.model.tabs.count == 1)
@@ -118,10 +120,10 @@ import Testing
         spaces: [BrowserSpaceSessionSnapshot(id: "work", title: "Remote space", systemImageName: "star")],
         tabs: [
             BrowserTabSessionSnapshotTab(
-                id: "b", urlString: "https://remote.example/stale", userTitleOverride: "Remote name", spaceID: "work"
+                id: "b", urlString: "https://remote.example/stale", userTitleOverride: "Remote name", spaceID: "work",
             ),
             BrowserTabSessionSnapshotTab(id: "a", urlString: "https://a.example", spaceID: "work"),
-        ]
+        ],
     ))
 
     let survivingB = try #require(harness.model.tabs.first)
@@ -191,9 +193,9 @@ import Testing
         tabs: [
             BrowserTabSessionSnapshotTab(
                 id: "a", urlString: "https://remote.example", pinnedURLString: "https://pinned.example",
-                placement: .spacePinned, spaceID: "read"
+                placement: .spacePinned, spaceID: "read",
             ),
-        ]
+        ],
     ))
 
     #expect(harness.model.tabs.first?.id == engineID)
@@ -231,7 +233,7 @@ import Testing
     #expect(harness.model.tabs.map(\.syncID) == ["c", "b"])
     #expect(harness.model.tabs.map(\.id) == [requestC.id, requestB.id])
     #expect(harness.model.tabs.map(\.urlString) == ["https://c.example", "https://b.example"])
-    #expect(harness.driver.closedTabRequests.filter { $0.id == requestA.id }.count == 2)
+    #expect(harness.driver.closedTabRequests.count(where: { $0.id == requestA.id }) == 2)
     #expect(harness.store.savedSnapshots.count == savedBefore + 1)
     #expect(harness.store.savedSnapshots.last?.tabs.map(\.id) == ["c", "b"])
     harness.driver.emitCreatedTab(id: requestB.id, urlString: requestB.urlString, isActive: true)
@@ -252,7 +254,7 @@ import Testing
     harness.driver.emitClose(id: request.id)
     harness.driver.emitCreatedTab(id: request.id, urlString: request.urlString, isActive: true)
     #expect(harness.model.tabs.isEmpty)
-    #expect(harness.driver.closedTabRequests.filter { $0.id == request.id }.count == 2)
+    #expect(harness.driver.closedTabRequests.count(where: { $0.id == request.id }) == 2)
 }
 
 @Test
@@ -278,9 +280,9 @@ import Testing
         spaces: [BrowserSpaceSessionSnapshot(
             id: BrowserChromeModel.defaultSpaceID,
             title: "Old",
-            systemImageName: "star"
+            systemImageName: "star",
         )],
-        tabs: []
+        tabs: [],
     )
     store.saveSnapshot(initial)
     try store.bindSyncOwner(owner)
@@ -293,12 +295,12 @@ import Testing
         userPreferencesStore: BrowserUserPreferencesStore(userDefaults: harness.defaults),
         shortcutStore: BrowserShortcutStore(userDefaults: harness.defaults),
         extensionManager: FakeBrowserExtensionManager(), syncCoordinator: harness.sync,
-        windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        windowTitleHandler: { _ in }, allTabsClosedHandler: {},
     )
     model.handleContextReady()
     let remote = try store.applyRemoteSyncEvents([BrowserSyncEvent(
         serverSeq: 100, deviceID: "other", entityType: "space", entityID: BrowserChromeModel.defaultSpaceID,
-        op: "delete", data: .deleted(id: BrowserChromeModel.defaultSpaceID), createdAt: "2026-10-03T00:00:00Z"
+        op: "delete", data: .deleted(id: BrowserChromeModel.defaultSpaceID), createdAt: "2026-10-03T00:00:00Z",
     )], cursor: 100, for: owner)
     model.applyRemoteSyncSnapshot(remote)
     let newSpaceID = try #require(model.spaces.first?.id)
@@ -318,12 +320,12 @@ import Testing
     let firstSpace = BrowserSpaceSessionSnapshot(id: "work", title: "Work", systemImageName: "briefcase")
     let otherSpace = BrowserSpaceSessionSnapshot(id: "other", title: "Other", systemImageName: "star")
     let favorite = BrowserTabSessionSnapshotTab(
-        id: "favorite", urlString: "https://favorite.example", placement: .app, spaceID: "work"
+        id: "favorite", urlString: "https://favorite.example", placement: .app, spaceID: "work",
     )
     let child = BrowserTabSessionSnapshotTab(id: "child", urlString: "https://child.example", spaceID: "work")
     let survivor = BrowserTabSessionSnapshotTab(id: "survivor", urlString: "https://survivor.example", spaceID: "other")
     let harness = RemoteProjectionHarness(snapshot: BrowserTabSessionSnapshot(
-        spaces: [firstSpace, otherSpace], tabs: [favorite, child, survivor]
+        spaces: [firstSpace, otherSpace], tabs: [favorite, child, survivor],
     ))
     defer { harness.cleanup() }
     harness.model.handleContextReady()
@@ -334,7 +336,7 @@ import Testing
 
     harness.model.applyRemoteSyncSnapshot(BrowserTabSessionSnapshot(
         spaces: deleteEverySpace ? nil : [otherSpace],
-        tabs: deleteEverySpace ? [favorite] : [favorite, survivor]
+        tabs: deleteEverySpace ? [favorite] : [favorite, survivor],
     ))
 
     #expect(harness.model.appTabs.map(\.id) == [favoriteEngineID])
@@ -349,7 +351,14 @@ import Testing
 // MARK: - RemoteProjectionHarness
 
 @MainActor private struct RemoteProjectionHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let suiteName: String
+    let defaults: UserDefaults
+    let driver: FakeBrowserTabDriver
+    let store: InMemorySessionSnapshotStore
+    let sync: ProjectionSyncRecorder
+    let model: BrowserChromeModel
 
     init(snapshot: BrowserTabSessionSnapshot) {
         self.suiteName = "BrowserRemoteSyncProjectionTests.\(UUID().uuidString)"
@@ -367,18 +376,9 @@ import Testing
             extensionManager: FakeBrowserExtensionManager(),
             syncCoordinator: sync,
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
     }
-
-    // MARK: Internal
-
-    let suiteName: String
-    let defaults: UserDefaults
-    let driver: FakeBrowserTabDriver
-    let store: InMemorySessionSnapshotStore
-    let sync: ProjectionSyncRecorder
-    let model: BrowserChromeModel
 
     func cleanup() { defaults.removePersistentDomain(forName: suiteName) }
 }
@@ -395,6 +395,6 @@ import Testing
 private func projectionSnapshot(_ ids: [String]) -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(
         spaces: [BrowserSpaceSessionSnapshot(id: "work", title: "Work", systemImageName: "briefcase")],
-        tabs: ids.map { BrowserTabSessionSnapshotTab(id: $0, urlString: "https://\($0).example", spaceID: "work") }
+        tabs: ids.map { BrowserTabSessionSnapshotTab(id: $0, urlString: "https://\($0).example", spaceID: "work") },
     )
 }

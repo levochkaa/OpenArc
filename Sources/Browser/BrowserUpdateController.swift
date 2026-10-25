@@ -1,3 +1,5 @@
+// BrowserUpdateController.swift
+
 import Combine
 import Foundation
 import Network
@@ -6,69 +8,9 @@ import Sparkle
 // MARK: - BrowserUpdateController
 
 @MainActor final class BrowserUpdateController: NSObject, ObservableObject {
-    // MARK: Lifecycle
-
-    init(preferencesStore: BrowserUserPreferencesStore) {
-        self.preferencesStore = preferencesStore
-        super.init()
-        self.updaterController = SPUStandardUpdaterController(
-            startingUpdater: false,
-            updaterDelegate: self,
-            userDriverDelegate: nil
-        )
-    }
-
-    deinit {
-        pathMonitor?.cancel()
-    }
-
     // MARK: Internal
 
     @Published private(set) var toast: BrowserUpdateToast?
-
-    var canCheckForUpdates: Bool {
-        updaterController?.updater.canCheckForUpdates ?? false
-    }
-
-    func start() {
-        guard !hasStarted else {
-            return
-        }
-
-        guard isSparkleConfigured else {
-            NSLog("OpenArc updates disabled: missing Sparkle feed URL or public EdDSA key.")
-            return
-        }
-
-        hasStarted = true
-        startNetworkPathMonitor()
-        observePreferences()
-        applyAutomaticUpdatePolicy()
-
-        do {
-            try updaterController?.updater.start()
-        } catch {
-            NSLog("OpenArc updates disabled: \(error.localizedDescription)")
-        }
-    }
-
-    func checkForUpdates(_ sender: Any?) {
-        updaterController?.checkForUpdates(sender)
-    }
-
-    func installDownloadedUpdateNow() {
-        guard let immediateInstallHandler else {
-            updaterController?.checkForUpdates(nil)
-            return
-        }
-
-        toast = nil
-        immediateInstallHandler()
-    }
-
-    func dismissToast() {
-        toast = nil
-    }
 
     // MARK: Private
 
@@ -82,6 +24,10 @@ import Sparkle
     private var isWiFiAvailable = false
     private var isAutomaticUpdatePolicyActive = false
     private var immediateInstallHandler: (() -> Void)?
+
+    var canCheckForUpdates: Bool {
+        updaterController?.updater.canCheckForUpdates ?? false
+    }
 
     private var configuredFeedURL: URL? {
         guard
@@ -124,6 +70,60 @@ import Sparkle
 
         return !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !publicKey.contains("$(")
+    }
+
+    init(preferencesStore: BrowserUserPreferencesStore) {
+        self.preferencesStore = preferencesStore
+        super.init()
+        self.updaterController = SPUStandardUpdaterController(
+            startingUpdater: false,
+            updaterDelegate: self,
+            userDriverDelegate: nil,
+        )
+    }
+
+    deinit {
+        pathMonitor?.cancel()
+    }
+
+    func start() {
+        guard !hasStarted else {
+            return
+        }
+
+        guard isSparkleConfigured else {
+            NSLog("OpenArc updates disabled: missing Sparkle feed URL or public EdDSA key.")
+            return
+        }
+
+        hasStarted = true
+        startNetworkPathMonitor()
+        observePreferences()
+        applyAutomaticUpdatePolicy()
+
+        do {
+            try updaterController?.updater.start()
+        } catch {
+            NSLog("OpenArc updates disabled: \(error.localizedDescription)")
+        }
+    }
+
+    func checkForUpdates(_ sender: Any?) {
+        updaterController?.checkForUpdates(sender)
+    }
+
+    func installDownloadedUpdateNow() {
+        guard let immediateInstallHandler else {
+            updaterController?.checkForUpdates(nil)
+            return
+        }
+
+        toast = nil
+        immediateInstallHandler()
+    }
+
+    func dismissToast() {
+        toast = nil
     }
 
     private func startNetworkPathMonitor() {
@@ -208,7 +208,7 @@ import Sparkle
         toast = BrowserUpdateToast(
             title: BrowserStrings.updateReadyTitle,
             message: BrowserStrings.updateReadyMessage(version: item.displayVersionString),
-            actionTitle: BrowserStrings.updateRestartAction
+            actionTitle: BrowserStrings.updateRestartAction,
         )
     }
 }
@@ -235,7 +235,7 @@ extension BrowserUpdateController: SPUUpdaterDelegate {
                 code: 1,
                 userInfo: [
                     NSLocalizedDescriptionKey: "Automatic updates are paused until Wi-Fi is available.",
-                ]
+                ],
             )
         }
     }
@@ -247,7 +247,7 @@ extension BrowserUpdateController: SPUUpdaterDelegate {
     func updater(
         _: SPUUpdater,
         willInstallUpdateOnQuit item: SUAppcastItem,
-        immediateInstallationBlock immediateInstallHandler: @escaping () -> Void
+        immediateInstallationBlock immediateInstallHandler: @escaping () -> Void,
     ) -> Bool {
         self.immediateInstallHandler = immediateInstallHandler
         showDownloadedUpdateToast(for: item)

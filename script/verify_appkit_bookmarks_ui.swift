@@ -1,3 +1,5 @@
+// verify_appkit_bookmarks_ui.swift
+
 import AppKit
 import ApplicationServices
 import Carbon
@@ -42,7 +44,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(
         size as! AXValue,
         .cgSize,
-        &dimensions
+        &dimensions,
     ) else { return nil }
     return CGRect(origin: point, size: dimensions)
 }
@@ -84,7 +86,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     let ax = AXUIElementCreateApplication(pid)
     try waitFor("browser ready") { attribute(ax, kAXMenuBarAttribute) != nil && !(attribute(
         ax,
-        kAXWindowsAttribute
+        kAXWindowsAttribute,
     ) as? [AXUIElement] ?? []).isEmpty }
     app.activate()
     let keyboard = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
@@ -97,12 +99,12 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     func element(_ value: String) -> AXUIElement? { elements().first { id($0) == value } }
     func press(_ e: AXUIElement) throws { try require(
         AXUIElementPerformAction(e, kAXPressAction as CFString) == .success,
-        "Cannot press \(id(e))"
+        "Cannot press \(id(e))",
     ) }
     func bookmark(_ title: String) -> AXUIElement? { elements()
         .first { id($0).hasPrefix("browser.bookmarks.item.") && (attribute(
             $0,
-            kAXTitleAttribute
+            kAXTitleAttribute,
         ) as? String == title || attribute($0, kAXDescriptionAttribute) as? String == title) }
     }
     func context(_ title: String, on e: AXUIElement) throws {
@@ -115,7 +117,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         func item() -> AXUIElement? { descendants(ax)
             .first { attribute($0, kAXRoleAttribute) as? String == kAXMenuItemRole && attribute(
                 $0,
-                kAXTitleAttribute
+                kAXTitleAttribute,
             ) as? String == title }
         }
         try waitFor("context \(title)") { item() != nil }
@@ -125,7 +127,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     if elements().contains(where: { id($0).hasPrefix("browser.settings.") }) {
         try runAppleScript(
             "key code 13 using command down",
-            pid: pid
+            pid: pid,
         )
     }
     let initiallyVisible = element("browser.bookmarks.bar") != nil
@@ -141,11 +143,11 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     let title = "Native Bookmark \(UUID().uuidString.prefix(6))"
     let fixture = FileManager.default
         .temporaryDirectory
-        .appendingPathComponent("\(title.replacingOccurrences(of: " ", with: "-")).html")
+        .appendingPathComponent("\(title.replacing(" ", with: "-")).html")
     try "<html><head><title>\(title)</title></head><body>Native bookmark fixture</body></html>".write(
         to: fixture,
         atomically: true,
-        encoding: .utf8
+        encoding: .utf8,
     )
     try runAppleScript("click menu item \"New Tab\" of menu 1 of menu bar item \"File\" of menu bar 1", pid: pid)
     try waitFor("command focus") {
@@ -156,7 +158,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         elements()
             .contains { (attribute($0, kAXTitleAttribute) as? String == title || attribute(
                 $0,
-                kAXDescriptionAttribute
+                kAXDescriptionAttribute,
             ) as? String == title) } && element("browser.command.query") ==
             nil
     }
@@ -166,7 +168,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try waitFor("rename field") {
         elements().contains { attribute($0, kAXRoleAttribute) as? String == kAXTextFieldRole && attribute(
             $0,
-            kAXValueAttribute
+            kAXValueAttribute,
         ) as? String == title }
     }
     let renamed = "Renamed \(title)"
@@ -178,7 +180,9 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     print("PASS bookmarks: star, rename, open, delete and visibility restoration")
 }
 
-do { try MainActor.assumeIsolated { try verifyBookmarks() } }
-catch { fputs("FAIL \(error)\n", stderr)
+do {
+    try MainActor.assumeIsolated { try verifyBookmarks() }
+} catch {
+    fputs("FAIL \(error)\n", stderr)
     exit(1)
 }

@@ -1,3 +1,5 @@
+// BrowserSpaceColorTests.swift
+
 import AppKit
 import Testing
 
@@ -17,7 +19,7 @@ import Testing
                 .init(id: "s", title: "Work", systemImageName: "star", colorName: "teal"),
                 .init(id: "t", title: "Home", systemImageName: "house"),
             ],
-            tabs: [.init(id: "a", urlString: "https://a.example", spaceID: "s")]
+            tabs: [.init(id: "a", urlString: "https://a.example", spaceID: "s")],
         )
         do {
             let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
@@ -28,7 +30,7 @@ import Testing
         #expect(
             BrowserSpaceSessionSnapshot(id: "s", title: "Work", systemImageName: "star", colorName: "teal")
                 == BrowserSpaceSessionSnapshot(id: "s", title: "Work", systemImageName: "star"),
-            "Colors are local, so sync checks ignore them"
+            "Colors are local, so sync checks ignore them",
         )
     }
 
@@ -49,7 +51,7 @@ import Testing
 
     @Test func theSpaceMenuOffersColorsWithTheCurrentOneChecked() throws {
         let space = BrowserChromeModel.Space(
-            id: "s", title: "Work", systemImageName: "star", isPinnedSectionCollapsed: false, selectedTabID: nil
+            id: "s", title: "Work", systemImageName: "star", isPinnedSectionCollapsed: false, selectedTabID: nil,
         )
         var chosen = [BrowserSpaceColor?]()
         let menu = BrowserNativeMenus.space(
@@ -59,7 +61,7 @@ import Testing
             onRename: {},
             onChangeIcon: { _ in },
             onChangeColor: { chosen.append($0) },
-            onDelete: {}
+            onDelete: {},
         )
         let colors = try #require(menu.items.first { $0.title == BrowserStrings.spaceChangeColorAction }?.submenu)
         #expect(colors.items.first?.title == BrowserStrings.spaceColorNone)
@@ -74,9 +76,9 @@ import Testing
             BrowserSessionWrite(
                 snapshot: .init(
                     spaces: [.init(id: "s", title: "Work", systemImageName: "star", colorName: color)],
-                    tabs: []
+                    tabs: [],
                 ),
-                origin: .local(syncMove: nil)
+                origin: .local(syncMove: nil),
             )
         }
         var buffer = BrowserSessionWriteBuffer()

@@ -1,3 +1,5 @@
+// BrowserNativeSiteControlsTests.swift
+
 import AppKit
 import Testing
 
@@ -75,14 +77,14 @@ import Testing
             id: "popup",
             extensionID: "extension",
             title: "Extension",
-            hostView: host
+            hostView: host,
         ) { closes += 1 }
         let controller = BrowserExtensionActionPopupViewController(popup: popup)
         _ = controller.view
         #expect(host.superview === controller.view)
         #expect(controller.preferredContentSize == NSSize(
             width: BrowserChromeLayout.extensionActionPopupWidth,
-            height: BrowserChromeLayout.extensionActionPopupHeight
+            height: BrowserChromeLayout.extensionActionPopupHeight,
         ))
         controller.close()
         controller.viewDidDisappear()
@@ -104,7 +106,7 @@ import Testing
             context: nil,
             eventNumber: 1,
             clickCount: 0,
-            pressure: 0
+            pressure: 0,
         ))
         view.mouseEntered(with: event)
         view.layoutSubtreeIfNeeded()
@@ -128,7 +130,7 @@ import Testing
         let model = BrowserChromeModel(
             tabDriver: driver,
             sessionSnapshotStore: InMemorySessionSnapshotStore(
-                loadedSnapshot: .init(tabURLStrings: ["https://example.com/path?query=value"])
+                loadedSnapshot: .init(tabURLStrings: ["https://example.com/path?query=value"]),
             ),
             sessionPreferencesStore: InMemorySessionPreferencesStore(),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
@@ -136,7 +138,7 @@ import Testing
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(extensions: extensions),
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()

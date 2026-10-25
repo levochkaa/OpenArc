@@ -1,8 +1,13 @@
+// BrowserNativePopover.swift
+
 import AppKit
 
 /// Gives native popovers Escape dismissal even when their contents have no enabled first responder.
 final class BrowserNativePopover: NSPopover {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private weak var anchorWindow: NSWindow?
+    private var keyMonitor: Any?
 
     override init() {
         super.init()
@@ -10,7 +15,7 @@ final class BrowserNativePopover: NSPopover {
             self,
             selector: #selector(didClose),
             name: NSPopover.didCloseNotification,
-            object: self
+            object: self,
         )
     }
 
@@ -32,11 +37,6 @@ final class BrowserNativePopover: NSPopover {
             return nil
         }
     }
-
-    // MARK: Private
-
-    private weak var anchorWindow: NSWindow?
-    private var keyMonitor: Any?
 
     @objc private func didClose() { removeKeyMonitor() }
     private func removeKeyMonitor() {

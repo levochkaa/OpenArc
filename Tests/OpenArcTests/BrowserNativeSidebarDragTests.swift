@@ -1,3 +1,5 @@
+// BrowserNativeSidebarDragTests.swift
+
 import AppKit
 import Testing
 
@@ -69,7 +71,7 @@ import Testing
         #expect(proposal.destination.container.section == .temporary)
         #expect(
             current.rows.map(\.frame) == expanded.rows.map(\.frame),
-            "Leaving the expanded grid must not pull the list out from under the pointer"
+            "Leaving the expanded grid must not pull the list out from under the pointer",
         )
         try h.snapshot("/tmp/openarc-drag-grid.png")
     }
@@ -98,7 +100,7 @@ import Testing
     @Test func droppingIntoCollapsedFolderMergesPreviewIntoItsHeader() async throws {
         let f = SidebarDragFixture(
             pinned: [("one", "folder"), ("two", "folder")],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)],
         )
         let h = SidebarDragHarness(f)
         defer { h.close() }
@@ -128,7 +130,7 @@ import Testing
         h.move(entry.center)
         h.view.refresh()
         #expect(h.state.drag.proposal?.destination == .init(container: .app))
-        #expect(h.state.drag.projectedPlan?.tabs.filter { $0.placement == .app }.count == 1)
+        #expect(h.state.drag.projectedPlan?.tabs.count(where: { $0.placement == .app }) == 1)
     }
 
     @Test func folderDragReleasesEveryHiddenDescendant() async throws {
@@ -147,8 +149,8 @@ import Testing
                 startLocation: point,
                 location: point,
                 translation: .zero,
-                predictedEndTranslation: .zero
-            )
+                predictedEndTranslation: .zero,
+            ),
         ))
         #expect(h.state.drag.hiddenFolderIDs == ["parent", "child"])
         let destination = BrowserSidebarDropDestination(container: .pinned("s"))
@@ -181,7 +183,7 @@ import Testing
                 context: nil,
                 eventNumber: 0,
                 clickCount: 1,
-                pressure: 1
+                pressure: 1,
             ))
         }
         try row.mouseDown(with: event(.leftMouseDown, point: down))
@@ -246,7 +248,7 @@ import Testing
             startLocation: point,
             location: point,
             translation: .zero,
-            predictedEndTranslation: .zero
+            predictedEndTranslation: .zero,
         )
         #expect(preview.onBeginDragSession?(value) == true)
         #expect(h.state.drag.payload?.primary == f.item("x"))
@@ -319,7 +321,7 @@ import Testing
         #expect(h.view.beginDragging(
             item: .tab(f.id("x")),
             from: row,
-            value: .init(startLocation: point, location: point, translation: .zero, predictedEndTranslation: .zero)
+            value: .init(startLocation: point, location: point, translation: .zero, predictedEndTranslation: .zero),
         ))
         #expect(h.state.drag.payload?.tabIDs == Set([f.id("x"), f.id("z")]))
         #expect(f.model.selectedTabID == f.id("x"), "Dragging a selected split keeps its focused pane")
@@ -399,7 +401,7 @@ import Testing
         let f = SidebarDragFixture(
             pinned: [("a", nil), ("one", "folder")],
             temporary: ["x", "y", "z"],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         f.model.selectTab(id: f.id("z"))
         let h = SidebarDragHarness(f)
@@ -416,7 +418,7 @@ import Testing
         #expect(h.view.beginDragging(
             item: .folder("folder"),
             from: folderRow,
-            value: .init(startLocation: point, location: point, translation: .zero, predictedEndTranslation: .zero)
+            value: .init(startLocation: point, location: point, translation: .zero, predictedEndTranslation: .zero),
         ))
         #expect(f.model.selectedTabID == f.id("z"))
     }
@@ -440,7 +442,9 @@ import Testing
 
     @Test func claimedNativeDragDoesNotDeliverADuplicateDropOrClick() throws {
         let row = BrowserNativePressableView(frame: CGRect(x: 0, y: 0, width: 240, height: 36))
-        var starts = 0, clicks = 0, legacyDrops = 0
+        var starts = 0
+        var clicks = 0
+        var legacyDrops = 0
         row.onBeginDragSession = { _ in starts += 1
             return true
         }
@@ -456,7 +460,7 @@ import Testing
                 context: nil,
                 eventNumber: 0,
                 clickCount: 1,
-                pressure: 1
+                pressure: 1,
             ))
         }
         try row.mouseDown(with: event(.leftMouseDown, y: 15))
@@ -537,21 +541,29 @@ import Testing
 // MARK: - SidebarDragHarness
 
 @MainActor private final class SidebarDragHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let fixture: SidebarDragFixture
+    let window: NSWindow
+    let state: BrowserNativeSidebarState
+    let view: BrowserNativeSidebarNSView
+
+    var coordinateView: NSView? { rows.compactMap(\.dragCoordinateView).first }
+    var rows: [BrowserNativeSidebarRowNSView] { allViews(view).compactMap { $0 as? BrowserNativeSidebarRowNSView } }
 
     init(_ fixture: SidebarDragFixture, height: CGFloat = 600) {
         self.fixture = fixture
         self.state = BrowserNativeSidebarState(
             model: fixture.model,
             snapshot: fixture.model.sidebarSnapshot,
-            sidebarWidth: 240
+            sidebarWidth: 240,
         )
         self.view = BrowserNativeSidebarNSView(state: state, header: NSView(), footer: NSView())
         self.window = NSWindow(
             contentRect: CGRect(x: -10000, y: -10000, width: 240, height: height),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         let background = BrowserNativeSurface(frame: CGRect(x: 0, y: 0, width: 240, height: height))
@@ -564,16 +576,6 @@ import Testing
         view.refresh()
         view.layoutSubtreeIfNeeded()
     }
-
-    // MARK: Internal
-
-    let fixture: SidebarDragFixture
-    let window: NSWindow
-    let state: BrowserNativeSidebarState
-    let view: BrowserNativeSidebarNSView
-
-    var coordinateView: NSView? { rows.compactMap(\.dragCoordinateView).first }
-    var rows: [BrowserNativeSidebarRowNSView] { allViews(view).compactMap { $0 as? BrowserNativeSidebarRowNSView } }
 
     func named(_ id: String) -> NSView? { allViews(view).first { $0.accessibilityIdentifier() == id } }
     func row(_ item: BrowserSidebarItemID) -> BrowserNativeSidebarRowNSView? {
@@ -593,8 +595,8 @@ import Testing
                 startLocation: point,
                 location: point,
                 translation: .zero,
-                predictedEndTranslation: .zero
-            )
+                predictedEndTranslation: .zero,
+            ),
         ))
     }
 

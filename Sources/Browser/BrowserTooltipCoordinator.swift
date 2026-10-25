@@ -1,3 +1,5 @@
+// BrowserTooltipCoordinator.swift
+
 import Combine
 import Foundation
 
@@ -23,7 +25,7 @@ enum BrowserTooltipPlacementResolver {
         verticalGap: CGFloat = 8,
         anchorXFraction: CGFloat = 0.75,
         anchorYFraction: CGFloat = 0.75,
-        viewportPadding: CGFloat = defaultViewportPadding
+        viewportPadding: CGFloat = defaultViewportPadding,
     ) -> CGPoint {
         let proposedTopLeft = proposedTopLeft(
             sourceFrame: sourceFrame,
@@ -31,20 +33,20 @@ enum BrowserTooltipPlacementResolver {
             placement: placement,
             verticalGap: verticalGap,
             anchorXFraction: anchorXFraction,
-            anchorYFraction: anchorYFraction
+            anchorYFraction: anchorYFraction,
         )
 
         return CGPoint(
             x: clamped(
                 proposedTopLeft.x,
                 minimum: viewportPadding,
-                maximum: max(viewportPadding, containerSize.width - tooltipSize.width - viewportPadding)
+                maximum: max(viewportPadding, containerSize.width - tooltipSize.width - viewportPadding),
             ),
             y: clamped(
                 proposedTopLeft.y,
                 minimum: viewportPadding,
-                maximum: max(viewportPadding, containerSize.height - tooltipSize.height - viewportPadding)
-            )
+                maximum: max(viewportPadding, containerSize.height - tooltipSize.height - viewportPadding),
+            ),
         )
     }
 
@@ -56,18 +58,18 @@ enum BrowserTooltipPlacementResolver {
         placement: BrowserTooltipPlacement,
         verticalGap: CGFloat,
         anchorXFraction: CGFloat,
-        anchorYFraction: CGFloat
+        anchorYFraction: CGFloat,
     ) -> CGPoint {
         switch placement {
         case .belowLeading:
             CGPoint(
                 x: sourceFrame.minX + sourceFrame.width * anchorXFraction,
-                y: sourceFrame.minY + sourceFrame.height * anchorYFraction
+                y: sourceFrame.minY + sourceFrame.height * anchorYFraction,
             )
         case .aboveCapsule:
             CGPoint(
                 x: sourceFrame.midX - tooltipSize.width / 2,
-                y: sourceFrame.minY - verticalGap - tooltipSize.height
+                y: sourceFrame.minY - verticalGap - tooltipSize.height,
             )
         }
     }
@@ -91,7 +93,7 @@ enum BrowserTooltipOverlayViewportResolver {
         windowSize: CGSize,
         windowScreenFrame: CGRect?,
         screenVisibleFrame: CGRect?,
-        isWindowFullscreen: Bool
+        isWindowFullscreen: Bool,
     ) -> BrowserTooltipOverlayViewport {
         guard !isWindowFullscreen,
               let windowScreenFrame,
@@ -105,8 +107,8 @@ enum BrowserTooltipOverlayViewportResolver {
             size: screenVisibleFrame.size,
             sourceFrameOffset: CGPoint(
                 x: windowScreenFrame.minX - screenVisibleFrame.minX,
-                y: screenVisibleFrame.maxY - windowScreenFrame.maxY
-            )
+                y: screenVisibleFrame.maxY - windowScreenFrame.maxY,
+            ),
         )
     }
 }
@@ -117,7 +119,7 @@ enum BrowserTooltipMeasuredSizeResolver {
     static func resolvedSize(
         idealSize: CGSize,
         constrainedSize: CGSize,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
     ) -> CGSize {
         guard maximumWidth > 0 else {
             return .zero
@@ -129,7 +131,7 @@ enum BrowserTooltipMeasuredSizeResolver {
 
         return CGSize(
             width: min(constrainedSize.width, maximumWidth),
-            height: constrainedSize.height
+            height: constrainedSize.height,
         )
     }
 }
@@ -137,32 +139,9 @@ enum BrowserTooltipMeasuredSizeResolver {
 // MARK: - BrowserTooltipCoordinator
 
 @MainActor final class BrowserTooltipCoordinator: ObservableObject {
-    // MARK: Lifecycle
-
-    init(
-        activationDelayNanoseconds: UInt64 = 1_000_000_000,
-        cooldownDelayNanoseconds: UInt64 = 300_000_000
-    ) {
-        self.activationDelayNanoseconds = activationDelayNanoseconds
-        self.cooldownDelayNanoseconds = cooldownDelayNanoseconds
-    }
-
-    deinit {
-        activationTask?.cancel()
-        cooldownTask?.cancel()
-    }
-
     // MARK: Internal
 
     @Published private(set) var activeTooltipID: UUID?
-
-    func setHovering(_ isHovering: Bool, for tooltipID: UUID) {
-        if isHovering {
-            beginHover(for: tooltipID)
-        } else {
-            endHover(for: tooltipID)
-        }
-    }
 
     // MARK: Private
 
@@ -173,6 +152,27 @@ enum BrowserTooltipMeasuredSizeResolver {
     private var isWarm = false
     private var activationTask: Task<Void, Never>?
     private var cooldownTask: Task<Void, Never>?
+
+    init(
+        activationDelayNanoseconds: UInt64 = 1_000_000_000,
+        cooldownDelayNanoseconds: UInt64 = 300_000_000,
+    ) {
+        self.activationDelayNanoseconds = activationDelayNanoseconds
+        self.cooldownDelayNanoseconds = cooldownDelayNanoseconds
+    }
+
+    deinit {
+        activationTask?.cancel()
+        cooldownTask?.cancel()
+    }
+
+    func setHovering(_ isHovering: Bool, for tooltipID: UUID) {
+        if isHovering {
+            beginHover(for: tooltipID)
+        } else {
+            endHover(for: tooltipID)
+        }
+    }
 
     private func beginHover(for tooltipID: UUID) {
         cooldownTask?.cancel()

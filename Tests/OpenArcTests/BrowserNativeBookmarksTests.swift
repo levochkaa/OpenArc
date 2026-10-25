@@ -1,3 +1,5 @@
+// BrowserNativeBookmarksTests.swift
+
 import AppKit
 import Testing
 
@@ -30,7 +32,7 @@ import Testing
             for index in 0..<10 {
                 _ = model.createBookmarkFolder(title: String(
                     repeating: "Long folder \(index) ",
-                    count: 10
+                    count: 10,
                 ))
             }
             let view = BrowserBookmarksBarNSView(model: model)
@@ -53,21 +55,21 @@ import Testing
                 kind: .bookmark,
                 title: "Leaf",
                 urlString: "https://leaf.example",
-                children: []
+                children: [],
             )
             let nested = BrowserBookmarkItem(
                 id: "nested",
                 kind: .folder,
                 title: "Nested",
                 urlString: nil,
-                children: [leaf]
+                children: [leaf],
             )
             let folder = BrowserBookmarkItem(
                 id: "root",
                 kind: .folder,
                 title: "Root",
                 urlString: nil,
-                children: [nested]
+                children: [nested],
             )
             #expect(BrowserBookmarkFolderDestination.destinations(in: [folder]) == [
                 .init(id: "root", title: "Root"), .init(id: "nested", title: "Root / Nested"),
@@ -107,7 +109,7 @@ import Testing
         let model = BrowserChromeModel(
             tabDriver: driver,
             sessionSnapshotStore: InMemorySessionSnapshotStore(
-                loadedSnapshot: .init(tabURLStrings: ["https://example.com/page"])
+                loadedSnapshot: .init(tabURLStrings: ["https://example.com/page"]),
             ),
             sessionPreferencesStore: InMemorySessionPreferencesStore(),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
@@ -116,7 +118,7 @@ import Testing
             bookmarksModel: bookmarks,
             extensionManager: FakeBrowserExtensionManager(),
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()

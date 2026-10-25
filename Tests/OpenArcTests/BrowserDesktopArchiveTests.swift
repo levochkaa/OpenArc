@@ -1,3 +1,5 @@
+// BrowserDesktopArchiveTests.swift
+
 import AppKit
 import Combine
 import GRDB
@@ -224,7 +226,7 @@ import Testing
         let before = try f.evidence()
         try f
             .sql(
-                "CREATE TRIGGER fail_clear BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT,'injected'); END"
+                "CREATE TRIGGER fail_clear BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT,'injected'); END",
             )
         #expect(await !f.model.clearArchive(through: boundary))
         #expect(try f.evidence() == before)
@@ -240,7 +242,16 @@ import Testing
 // MARK: - DesktopArchiveFixture
 
 @MainActor private final class DesktopArchiveFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory: URL
+    let databaseURL: URL
+    let suite: String
+    let defaults: UserDefaults
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://desktop-archive.example")!, userID: "owner")
+    let store: BrowserSQLiteSessionStore
+    let driver = FakeBrowserTabDriver()
+    let model: BrowserChromeModel
 
     init(archivedIDs: [String] = ["a"], removeSource: Bool = false, windowMode: BrowserWindowMode = .normal) throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopArchive-\(UUID())")
@@ -260,9 +271,9 @@ import Testing
                     urlString: "https://example.com/\(id)" + (id == "a" ? "?q=100%25_" : ""),
                     userTitleOverride: id == "a" ? "Saved café" : nil,
                     spaceID: id == "survivor" ? "target" : "source",
-                    lastActivityTimestamp: 1_800_000_000
+                    lastActivityTimestamp: 1_800_000_000,
                 )
-            }
+            },
         )
         let events = try desktopArchiveEvents(seed)
         _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
@@ -273,7 +284,7 @@ import Testing
             let current = try #require(try store.loadSnapshotStrict())
             try store.writeSessionBatch([.init(snapshot: .init(
                 spaces: current.spaces?.filter { $0.id != "source" },
-                tabs: current.tabs.filter { $0.spaceID != "source" }
+                tabs: current.tabs.filter { $0.spaceID != "source" },
             ), origin: .local(syncMove: nil))])
         }
         self.model = BrowserChromeModel(
@@ -283,20 +294,26 @@ import Testing
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), windowMode: windowMode,
             dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
     }
 
-    // MARK: Internal
+    // MARK: Private
 
-    let directory: URL
-    let databaseURL: URL
-    let suite: String
-    let defaults: UserDefaults
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://desktop-archive.example")!, userID: "owner")
-    let store: BrowserSQLiteSessionStore
-    let driver = FakeBrowserTabDriver()
-    let model: BrowserChromeModel
+    private static func archive(
+        _ id: String,
+        archivedAt: TimeInterval,
+        store: BrowserSQLiteSessionStore,
+    ) throws -> BrowserTabArchiveEntry {
+        let snapshot = try #require(try store.loadSnapshotStrict())
+        let tab = try #require(snapshot.tabs.first { $0.id == id })
+        let entry = BrowserTabArchiveEntry(id: "archive-\(id)", tab: tab, archivedAt: archivedAt, title: "Loaded \(id)")
+        try store.writeSessionBatch([.init(snapshot: .init(
+            spaces: snapshot.spaces, pinnedTabFolders: snapshot.pinnedTabFolders,
+            tabs: snapshot.tabs.filter { $0.id != id },
+        ), origin: .local(syncMove: nil), archiveAction: .insert(entry))])
+        return entry
+    }
 
     func restoreModel() {
         model.handleContextReady()
@@ -338,8 +355,8 @@ import Testing
                 Data.fetchAll(db, sql: "SELECT payload FROM browser_tab_archive ORDER BY id"),
                 String.fetchAll(
                     db,
-                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id,'') FROM browser_tab_archive_receipts ORDER BY id"
-                )
+                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id,'') FROM browser_tab_archive_receipts ORDER BY id",
+                ),
             )
         }
         return try .init(
@@ -348,7 +365,7 @@ import Testing
             baseline: rows.1,
             archive: rows.2,
             receipts: rows.3,
-            cursor: store.syncCursor(for: owner)
+            cursor: store.syncCursor(for: owner),
         )
     }
 
@@ -361,23 +378,6 @@ import Testing
         model.prepareForTermination()
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: directory)
-    }
-
-    // MARK: Private
-
-    private static func archive(
-        _ id: String,
-        archivedAt: TimeInterval,
-        store: BrowserSQLiteSessionStore
-    ) throws -> BrowserTabArchiveEntry {
-        let snapshot = try #require(try store.loadSnapshotStrict())
-        let tab = try #require(snapshot.tabs.first { $0.id == id })
-        let entry = BrowserTabArchiveEntry(id: "archive-\(id)", tab: tab, archivedAt: archivedAt, title: "Loaded \(id)")
-        try store.writeSessionBatch([.init(snapshot: .init(
-            spaces: snapshot.spaces, pinnedTabFolders: snapshot.pinnedTabFolders,
-            tabs: snapshot.tabs.filter { $0.id != id }
-        ), origin: .local(syncMove: nil), archiveAction: .insert(entry))])
-        return entry
     }
 }
 
@@ -415,6 +415,6 @@ private func desktopArchiveWebAppMode() -> BrowserWindowMode {
         profileDirectoryName: "Default",
         profileName: "Default",
         hostBundleURL: URL(fileURLWithPath: "/tmp/OpenArc.app"),
-        bundleURL: URL(fileURLWithPath: "/tmp/TestWebApp.app")
+        bundleURL: URL(fileURLWithPath: "/tmp/TestWebApp.app"),
     ))
 }

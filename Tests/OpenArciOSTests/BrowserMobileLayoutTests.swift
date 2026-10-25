@@ -1,3 +1,5 @@
+// BrowserMobileLayoutTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -74,7 +76,7 @@ import UIKit
         page.addressField.text = "example.com/from-address"
         engine.onEvent?(.state(id: tab.runtimeID, .init(
             url: URL(string: tab.urlString), title: "Updated page title", isLoading: true,
-            progress: 0.6, canGoBack: true
+            progress: 0.6, canGoBack: true,
         )))
         #expect(page.addressField.text == "example.com/from-address")
         #expect(workspace.selectedTab?.title == "Updated page title")
@@ -176,7 +178,7 @@ import UIKit
         #expect(selectedCell.accessibilityTraits.contains(.selected))
         #expect(selectedCell.accessibilityIdentifier == "browser.tab." + original[1].id)
         let configuration = try #require(sidebar.tableView(
-            table, trailingSwipeActionsConfigurationForRowAt: .init(row: 1, section: 0)
+            table, trailingSwipeActionsConfigurationForRowAt: .init(row: 1, section: 0),
         ))
         let close = try #require(configuration.actions.first)
         workspace.closeTab(id: original[0].id)
@@ -196,12 +198,15 @@ import UIKit
 // MARK: - MobileLayoutHost
 
 @MainActor private final class MobileLayoutHost {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let window: UIWindow
+    let controller: UIViewController
 
     init(controller: UIViewController) throws {
         let scene = try #require(
             BrowserMobileTestScene.windowScene,
-            "UIKit interaction coverage requires a connected test-runner window scene"
+            "UIKit interaction coverage requires a connected test-runner window scene",
         )
         self.controller = controller
         self.window = UIWindow(windowScene: scene)
@@ -209,11 +214,6 @@ import UIKit
         controller.loadViewIfNeeded()
         window.makeKeyAndVisible()
     }
-
-    // MARK: Internal
-
-    let window: UIWindow
-    let controller: UIViewController
 
     func resize(_ size: CGSize, horizontal: UIUserInterfaceSizeClass, vertical: UIUserInterfaceSizeClass) {
         controller.traitOverrides.horizontalSizeClass = horizontal
@@ -238,14 +238,6 @@ import UIKit
 // MARK: - MobileLayoutEngine
 
 @MainActor private final class MobileLayoutEngine: BrowserMobileEngine {
-    // MARK: Lifecycle
-
-    init() {
-        loadedSurface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        loadedSurface.frame = hostView.bounds
-        hostView.addSubview(loadedSurface)
-    }
-
     // MARK: Internal
 
     let hostView = UIView()
@@ -256,6 +248,12 @@ import UIKit
     var navigations = [(String, URL)]()
     var commands = [String]()
     var closedIDs = [String]()
+
+    init() {
+        loadedSurface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        loadedSurface.frame = hostView.bounds
+        hostView.addSubview(loadedSurface)
+    }
 
     func createTab(id: String, url: URL) { onEvent?(.state(id: id, .init(url: url))) }
     func selectTab(id: String?) { selectedID = id }

@@ -1,3 +1,5 @@
+// BrowserMobileActivityTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -24,7 +26,7 @@ import UIKit
             #expect(f.activity("a") == 100.75)
             #expect(try f.lastOperations() == [.patchTab(
                 id: "a",
-                fields: .init(urlString: "https://activity.example/new")
+                fields: .init(urlString: "https://activity.example/new"),
             )])
             #expect(try f.store.loadSnapshotStrict()?.tabs.first { $0.id == "a" }?.lastActivityTimestamp == 100.75)
             f.clock.now = 101.8
@@ -50,27 +52,27 @@ import UIKit
             let target = BrowserSyncFolderDestination.tabs(
                 spaceID: "source",
                 placement: .temporary,
-                pinnedFolderID: nil
+                pinnedFolderID: nil,
             )
             #expect(f.document.move(items: [item], destination: target))
             #expect(try f.queue().count == 1)
             let operations = try f.lastOperations()
             #expect(operations.contains(.patchTab(id: id, fields: .init(lastActivityAt: .set(f.date(300))))))
-            #expect(operations.filter {
+            #expect(operations.count(where: {
                 if case .move = $0 {
                     true
                 } else {
                     false
                 }
-            }
-            .count == 1)
+            })
+                 == 1)
             #expect(f.activity(id) == 300 && f.activity("a") == 100.75)
             f.clock.now = 400
             let previous = try f.queue()
             #expect(!f.document.move(items: [item], destination: target))
             #expect(!f.document.move(
                 items: [item],
-                destination: .tabs(spaceID: "missing", placement: .temporary, pinnedFolderID: nil)
+                destination: .tabs(spaceID: "missing", placement: .temporary, pinnedFolderID: nil),
             ))
             #expect(try f.queue() == previous && f.activity(id) == 300)
             #expect(f.document.move(items: [item], destination: target, before: .init(entityType: .tab, entityID: "a")))
@@ -105,7 +107,7 @@ import UIKit
             workspace.setActivityActive(true)
             #expect(
                 try f.queue() == repeatedSelection,
-                "Same-second selection and duplicate lifecycle delivery do not write"
+                "Same-second selection and duplicate lifecycle delivery do not write",
             )
             f.clock.now = 230
             workspace.setActivityActive(false)
@@ -137,21 +139,21 @@ import UIKit
                     title: "Loaded title",
                     isLoading: false,
                     progress: 1,
-                    canGoBack: true
-                )
+                    canGoBack: true,
+                ),
             ))
             #expect(try f.queue().isEmpty)
             let old = try #require(f.document.snapshot.tabs.first { $0.id == "a" })
             let changed = activityTab(old, url: "https://activity.example/remote", timestamp: 20)
             let changes = BrowserSyncFolderProjection.canonicalChanges(.init(
                 spaces: f.document.snapshot.spaces,
-                tabs: [changed]
+                tabs: [changed],
             ))
             .filter { $0.entityType == .tab }
             let remote = try f.store.applyRemoteSyncEvents(
                 activityEvents(changes, startingAt: 100),
                 cursor: 100,
-                for: f.owner
+                for: f.owner,
             )
             f.document.applyRemoteSyncSnapshot(remote)
             #expect(workspace.selectedTab?.runtimeID == runtime)
@@ -161,11 +163,11 @@ import UIKit
             let deleted = try f.store.applyRemoteSyncEvents(
                 activityEvents([deletion], startingAt: 101),
                 cursor: 101,
-                for: f.owner
+                for: f.owner,
             )
             f.document.applyRemoteSyncSnapshot(deleted)
             #expect(!workspace.tabs.contains { $0.id == "a" } && engine.closed.contains(runtime))
-            #expect(f.document.protectedTabIDs == Set([workspace.selectedTabID].compactMap { $0 }))
+            #expect(f.document.protectedTabIDs == Set([workspace.selectedTabID].compactMap(\.self)))
             #expect(try f.queue().isEmpty, "Remote URL, activity and fallback selection do not echo local touches")
         }
     }
@@ -207,7 +209,7 @@ import UIKit
             #expect(f.activity("b") == 520)
             #expect(f.document.removeTab(id: "b"))
             #expect(!f.document.protectedTabIDs.contains("b"))
-            #expect(f.document.protectedTabIDs == Set([replacement.workspace.selectedTabID].compactMap { $0 }))
+            #expect(f.document.protectedTabIDs == Set([replacement.workspace.selectedTabID].compactMap(\.self)))
             scenes.discard(sessionIDs: ["first", "second"])
             await scenes.waitForPendingOperations()
             #expect(f.document.protectedTabIDs.isEmpty)
@@ -254,10 +256,12 @@ import UIKit
             workspace.selectTab(id: "a")
             f.clock.now = 1000
             workspace.setActivityActive(true)
-            let durable = try f.store.loadSnapshotStrict(), queue = try f.queue(), bytes = try f.queueBytes()
+            let durable = try f.store.loadSnapshotStrict()
+            let queue = try f.queue()
+            let bytes = try f.queueBytes()
             try f
                 .sql(
-                    "CREATE TRIGGER fail_activity BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_activity BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             f.clock.now = 1100
             workspace.selectTab(id: "b")
@@ -297,7 +301,17 @@ import UIKit
 // MARK: - MobileActivityFixture
 
 @MainActor private final class MobileActivityFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://activity.example")!, userID: "activity-tests")
+    let store: BrowserSQLiteSessionStore
+    let document: BrowserMobileProfileDocument
+    let clock = MobileActivityClock()
+    let preferencesName = "MobileActivity." + UUID().uuidString
+    let preferences: UserDefaults
+    var workspaces = [BrowserMobileWorkspace]()
+    var sceneRegistries = [BrowserMobileSceneSessions]()
 
     init(directory: URL) throws {
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
@@ -317,14 +331,14 @@ import UIKit
                 pinnedURLString: "https://activity.example/pin",
                 placement: .spacePinned,
                 spaceID: "source",
-                lastActivityTimestamp: 60
+                lastActivityTimestamp: 60,
             ),
             .init(
                 id: "favorite",
                 urlString: "https://activity.example/favorite",
                 placement: .app,
                 spaceID: "source",
-                lastActivityTimestamp: 70
+                lastActivityTimestamp: 70,
             ),
         ])
         let events = try activityEvents(BrowserSyncFolderProjection.canonicalChanges(snapshot))
@@ -335,32 +349,20 @@ import UIKit
             pinnedTabFolders: canonical.pinnedTabFolders,
             tabs: canonical.tabs.map {
                 $0.id == "a" ? activityTab($0, timestamp: 100.75) : $0
-            }
+            },
         )
         try store.writeSessionBatch([.init(snapshot: precise, origin: .remoteProjection)])
         let clock = clock
         self.document = try BrowserMobileProfileDocument(
             store: store,
             initialSnapshot: precise,
-            dateProvider: { Date(timeIntervalSince1970: clock.now) }
+            dateProvider: { Date(timeIntervalSince1970: clock.now) },
         )
     }
 
-    // MARK: Internal
-
-    let databaseURL: URL
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://activity.example")!, userID: "activity-tests")
-    let store: BrowserSQLiteSessionStore
-    let document: BrowserMobileProfileDocument
-    let clock = MobileActivityClock()
-    let preferencesName = "MobileActivity." + UUID().uuidString
-    let preferences: UserDefaults
-    var workspaces = [BrowserMobileWorkspace]()
-    var sceneRegistries = [BrowserMobileSceneSessions]()
-
     func makeWorkspace(
         _ id: String,
-        loader: (@MainActor () async throws -> BrowserMobileProfileDocument)? = nil
+        loader: (@MainActor () async throws -> BrowserMobileProfileDocument)? = nil,
     )
     -> (BrowserMobileWorkspace, MobileActivityEngine) {
         let engine = MobileActivityEngine()
@@ -369,7 +371,7 @@ import UIKit
             engine: engine,
             sceneID: id,
             profileLoader: loader ?? { document },
-            preferences: preferences
+            preferences: preferences,
         )
         workspaces.append(workspace)
         return (workspace, engine)
@@ -405,13 +407,13 @@ import UIKit
         }
     }
 
-    func operations() throws -> [BrowserSyncFolderOperation] { try batches().flatMap { $0 } }
+    func operations() throws -> [BrowserSyncFolderOperation] { try batches().flatMap(\.self) }
     func lastOperations() throws -> [BrowserSyncFolderOperation] { try #require(try batches().last) }
     func sql(_ sql: String) throws { try DatabaseQueue(path: databaseURL.path).write { try $0.execute(sql: sql) } }
     func queueBytes() throws -> [Data] {
         try DatabaseQueue(path: databaseURL.path).read { try Data.fetchAll(
             $0,
-            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"
+            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position",
         ) }
     }
 
@@ -455,15 +457,13 @@ import UIKit
 // MARK: - MobileActivityLoadGate
 
 @MainActor private final class MobileActivityLoadGate {
-    // MARK: Lifecycle
-
-    init(document: BrowserMobileProfileDocument) { self.document = document }
-
     // MARK: Internal
 
     let document: BrowserMobileProfileDocument
     var continuation: CheckedContinuation<BrowserMobileProfileDocument, Never>?
     var waiter: CheckedContinuation<Void, Never>?
+
+    init(document: BrowserMobileProfileDocument) { self.document = document }
 
     func load() async -> BrowserMobileProfileDocument {
         await withCheckedContinuation { continuation in
@@ -489,7 +489,7 @@ import UIKit
 private func activityTab(
     _ tab: BrowserTabSessionSnapshotTab,
     url: String? = nil,
-    timestamp: TimeInterval
+    timestamp: TimeInterval,
 ) -> BrowserTabSessionSnapshotTab {
     .init(
         id: tab.id,
@@ -500,7 +500,7 @@ private func activityTab(
         spaceID: tab.spaceID,
         pinnedFolderID: tab.pinnedFolderID,
         lastActivityTimestamp: timestamp,
-        pinnedSiblingRank: tab.pinnedSiblingRank
+        pinnedSiblingRank: tab.pinnedSiblingRank,
     )
 }
 
@@ -530,10 +530,13 @@ private func activityEvents(_ changes: [BrowserSyncChange], startingAt: Int = 1)
 
 @MainActor private func runMobileActivityFixture(
     directory: URL,
-    _ body: (MobileActivityFixture) async throws -> Void
+    _ body: (MobileActivityFixture) async throws -> Void,
 ) async throws {
     let fixture = try MobileActivityFixture(directory: directory)
-    do { try await body(fixture) } catch { await fixture.stop()
+    do {
+        try await body(fixture)
+    } catch {
+        await fixture.stop()
         throw error
     }
     await fixture.stop()

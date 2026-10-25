@@ -1,3 +1,5 @@
+// BrowserExtensions.swift
+
 import AppKit
 import Foundation
 
@@ -18,7 +20,7 @@ struct BrowserExtension: Identifiable, Equatable {
 
         return BrowserImageThumbnailer.image(
             data: iconData,
-            maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize
+            maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize,
         )
     }
 }
@@ -94,7 +96,7 @@ enum BrowserExtensionProfileSnapshotStore {
                 let manifest = entry.manifest,
                 let name = extensionName(
                     from: manifest,
-                    extensionDirectory: extensionDirectory(for: id, entry: entry, profileDirectory: profileDirectory)
+                    extensionDirectory: extensionDirectory(for: id, entry: entry, profileDirectory: profileDirectory),
                 )
             else {
                 return nil
@@ -110,8 +112,8 @@ enum BrowserExtensionProfileSnapshotStore {
                 sidePanelURLString: sidePanelURLString(
                     from: manifest,
                     extensionID: id,
-                    extensionDirectory: extensionDirectory
-                )
+                    extensionDirectory: extensionDirectory,
+                ),
             )
         }
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -161,7 +163,7 @@ enum BrowserExtensionProfileSnapshotStore {
     private static func extensionDirectory(
         for id: String,
         entry: BrowserExtensionPreferencesEntry,
-        profileDirectory: URL
+        profileDirectory: URL,
     ) -> URL {
         let fileManager = FileManager.default
 
@@ -189,13 +191,12 @@ enum BrowserExtensionProfileSnapshotStore {
         guard
             let versionURLs = try? fileManager.contentsOfDirectory(
                 at: extensionRootURL,
-                includingPropertiesForKeys: nil
+                includingPropertiesForKeys: nil,
             ),
             let latestVersionURL = versionURLs
                 .filter(\.hasDirectoryPath)
-                .sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending
+                .min(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending
                 })
-                .first
         else {
             return extensionRootURL
         }
@@ -205,7 +206,7 @@ enum BrowserExtensionProfileSnapshotStore {
 
     private static func extensionName(
         from manifest: BrowserExtensionManifest,
-        extensionDirectory: URL
+        extensionDirectory: URL,
     ) -> String? {
         let rawName = manifest.name ?? manifest.shortName
         guard let rawName, !rawName.isEmpty else {
@@ -218,7 +219,7 @@ enum BrowserExtensionProfileSnapshotStore {
     private static func localizedManifestValue(
         _ value: String,
         manifest: BrowserExtensionManifest,
-        extensionDirectory: URL
+        extensionDirectory: URL,
     ) -> String {
         guard
             value.hasPrefix("__MSG_"),
@@ -260,7 +261,7 @@ enum BrowserExtensionProfileSnapshotStore {
 
     private static func iconData(
         from manifest: BrowserExtensionManifest,
-        extensionDirectory: URL
+        extensionDirectory: URL,
     ) -> Data? {
         let iconSet = manifest.icons
             ?? manifest.action?.defaultIcon
@@ -277,12 +278,12 @@ enum BrowserExtensionProfileSnapshotStore {
     private static func sidePanelURLString(
         from manifest: BrowserExtensionManifest,
         extensionID: String,
-        extensionDirectory: URL
+        extensionDirectory: URL,
     ) -> String? {
         if let defaultPath = manifest.sidePanel?.defaultPath {
             return BrowserExtensionRouting.extensionResourceURLString(
                 forExtensionID: extensionID,
-                path: defaultPath
+                path: defaultPath,
             )
         }
 
@@ -305,7 +306,7 @@ enum BrowserExtensionProfileSnapshotStore {
 
         return BrowserExtensionRouting.extensionResourceURLString(
             forExtensionID: extensionID,
-            path: sidePanelPath
+            path: sidePanelPath,
         )
     }
 }
@@ -378,7 +379,7 @@ enum BrowserExtensionControlCenterModel {
 
     static func gridItems(
         for extensions: [BrowserExtension],
-        maximumVisibleTiles: Int = Self.maximumVisibleTiles
+        maximumVisibleTiles: Int = Self.maximumVisibleTiles,
     ) -> [BrowserExtensionControlCenterItem] {
         guard maximumVisibleTiles > 0 else {
             return []
@@ -496,16 +497,14 @@ private struct BrowserExtensionManifest: Decodable {
 // MARK: - BrowserExtensionManifestPermission
 
 private struct BrowserExtensionManifestPermission: Decodable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let value: String?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         self.value = try? container.decode(String.self)
     }
-
-    // MARK: Internal
-
-    let value: String?
 }
 
 // MARK: - BrowserExtensionSidePanelManifest
@@ -531,22 +530,6 @@ private struct BrowserExtensionAction: Decodable {
 // MARK: - BrowserExtensionIconSet
 
 private struct BrowserExtensionIconSet: Decodable {
-    // MARK: Lifecycle
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-
-        if let path = try? container.decode(String.self) {
-            self.pathsBySize = [0: path]
-            return
-        }
-
-        let rawPathsBySize = try container.decode([String: String].self)
-        self.pathsBySize = rawPathsBySize.reduce(into: [:]) { result, item in
-            result[Int(item.key) ?? 0] = item.value
-        }
-    }
-
     // MARK: Internal
 
     let pathsBySize: [Int: String]
@@ -562,12 +545,28 @@ private struct BrowserExtensionIconSet: Decodable {
 
         return sortedIcons.first { $0.key <= 128 }?.value ?? sortedIcons.last?.value
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if let path = try? container.decode(String.self) {
+            self.pathsBySize = [0: path]
+            return
+        }
+
+        let rawPathsBySize = try container.decode([String: String].self)
+        self.pathsBySize = rawPathsBySize.reduce(into: [:]) { result, item in
+            result[Int(item.key) ?? 0] = item.value
+        }
+    }
 }
 
 // MARK: - BrowserExtensionDisableReasons
 
 private struct BrowserExtensionDisableReasons: Decodable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let isEmpty: Bool
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -594,10 +593,6 @@ private struct BrowserExtensionDisableReasons: Decodable {
 
         self.isEmpty = true
     }
-
-    // MARK: Internal
-
-    let isEmpty: Bool
 }
 
 // MARK: - BrowserExtensionLocaleMessage

@@ -1,3 +1,5 @@
+// BrowserChromeModel+SidebarItems.swift
+
 import Foundation
 
 // MARK: - Sidebar items
@@ -15,7 +17,7 @@ extension BrowserChromeModel {
         if let spaceID = activeSpace?.id, !(supportsSpaces && snapshot.isPinnedSectionCollapsed(in: spaceID)) {
             pinnedIDs = snapshot.visiblePinnedRows(
                 in: spaceID,
-                revealedTabIDsByFolderID: sidebarRevealedPinnedTabIDsByFolderID
+                revealedTabIDsByFolderID: sidebarRevealedPinnedTabIDsByFolderID,
             )
             .compactMap { row in
                 if case .tab(let tabRow) = row {

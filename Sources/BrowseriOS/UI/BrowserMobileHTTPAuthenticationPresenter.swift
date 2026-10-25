@@ -1,23 +1,49 @@
+// BrowserMobileHTTPAuthenticationPresenter.swift
+
 import UIKit
 
 /// Owns this window's transient prompt. The engine owns the challenge completion.
 @MainActor final class BrowserMobileHTTPAuthenticationPresenter {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(
-        host: UIViewController,
-        respond: @escaping (UUID, BrowserMobileHTTPAuthenticationResponse) -> Void
-    ) {
-        self.host = host
-        self.respond = respond
+    private final class Presentation {
+        // MARK: Internal
+
+        let request: BrowserMobileHTTPAuthentication
+        let alert: UIAlertController
+        weak var window: UIWindow?
+
+        init(request: BrowserMobileHTTPAuthentication, alert: UIAlertController, window: UIWindow) {
+            self.request = request
+            self.alert = alert
+            self.window = window
+        }
     }
 
     // MARK: Internal
 
     private(set) var isTransitioning = false
 
+    private weak var host: UIViewController?
+    private let respond: (UUID, BrowserMobileHTTPAuthenticationResponse) -> Void
+    private var desiredRequest: BrowserMobileHTTPAuthentication?
+    private var current: Presentation?
+    private var dismissing: Presentation?
+
     var presentedAlert: UIAlertController? { current?.alert }
     var presentedID: UUID? { current?.request.id }
+
+    init(
+        host: UIViewController,
+        respond: @escaping (UUID, BrowserMobileHTTPAuthenticationResponse) -> Void,
+    ) {
+        self.host = host
+        self.respond = respond
+    }
+
+    private static func hasPresentedController(_ controller: UIViewController) -> Bool {
+        controller.presentedViewController != nil || controller.children.contains(where: hasPresentedController)
+    }
 
     func update(_ request: BrowserMobileHTTPAuthentication?) {
         desiredRequest = request
@@ -35,34 +61,6 @@ import UIKit
     func cancel(id: UUID) {
         guard let current, current.request.id == id, !isTransitioning else { return }
         finish(current, response: .cancel)
-    }
-
-    // MARK: Private
-
-    private final class Presentation {
-        // MARK: Lifecycle
-
-        init(request: BrowserMobileHTTPAuthentication, alert: UIAlertController, window: UIWindow) {
-            self.request = request
-            self.alert = alert
-            self.window = window
-        }
-
-        // MARK: Internal
-
-        let request: BrowserMobileHTTPAuthentication
-        let alert: UIAlertController
-        weak var window: UIWindow?
-    }
-
-    private weak var host: UIViewController?
-    private let respond: (UUID, BrowserMobileHTTPAuthenticationResponse) -> Void
-    private var desiredRequest: BrowserMobileHTTPAuthentication?
-    private var current: Presentation?
-    private var dismissing: Presentation?
-
-    private static func hasPresentedController(_ controller: UIViewController) -> Bool {
-        controller.presentedViewController != nil || controller.children.contains(where: hasPresentedController)
     }
 
     private func attachedWindow() -> UIWindow? {
@@ -125,7 +123,7 @@ import UIKit
         let alert = UIAlertController(
             title: request.origin,
             message: lines.joined(separator: "\n\n"),
-            preferredStyle: .alert
+            preferredStyle: .alert,
         )
         alert.view.accessibilityIdentifier = "browser.httpAuthentication"
         alert.addTextField { field in

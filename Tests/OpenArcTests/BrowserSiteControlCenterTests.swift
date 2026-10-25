@@ -1,3 +1,5 @@
+// BrowserSiteControlCenterTests.swift
+
 import AppKit
 import Foundation
 import Testing
@@ -5,7 +7,12 @@ import Testing
 // MARK: - SiteControlFixture
 
 @MainActor private final class SiteControlFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let suite: String
+    let defaults: UserDefaults
+    let driver: FakeBrowserTabDriver
+    let model: BrowserChromeModel
 
     init(extensions: [BrowserExtension] = [], mode: BrowserWindowMode = .normal) throws {
         let suite = "BrowserSiteControlCenterTests.\(UUID().uuidString)"
@@ -24,7 +31,7 @@ import Testing
             extensionManager: FakeBrowserExtensionManager(extensions: extensions),
             windowMode: mode,
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         // macOS has already let OpenArc use the camera, microphone and location.
         model.requestSystemMediaCaptureAuthorization = { _, completion in completion(true) }
@@ -35,13 +42,6 @@ import Testing
         driver.flushPendingCreateEvents()
         model.refreshBrowserExtensions()
     }
-
-    // MARK: Internal
-
-    let suite: String
-    let defaults: UserDefaults
-    let driver: FakeBrowserTabDriver
-    let model: BrowserChromeModel
 
     func show(_ urlString: String) throws {
         let tab = try #require(model.selectedTabID)

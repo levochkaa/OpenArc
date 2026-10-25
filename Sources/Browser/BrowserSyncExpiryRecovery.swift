@@ -1,3 +1,5 @@
+// BrowserSyncExpiryRecovery.swift
+
 import Foundation
 
 // MARK: - BrowserSyncAutoArchiveData
@@ -9,6 +11,13 @@ struct BrowserSyncAutoArchiveData: Codable, Equatable {
     let archivedAt: String
     let sourceServerSeq: Int
     let tab: BrowserSyncEventTabData
+
+    // MARK: Private
+
+    private static func timestamp(_ value: String) -> TimeInterval? {
+        ((try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value))
+            ?? (try? Date.ISO8601FormatStyle().parse(value)))?.timeIntervalSince1970
+    }
 
     func entry(event: BrowserSyncEvent, id: String) throws -> BrowserTabArchiveEntry {
         guard event.entityType == "tab", event.op == "delete", tab.id == event.entityID,
@@ -23,17 +32,10 @@ struct BrowserSyncAutoArchiveData: Codable, Equatable {
         let entry = BrowserTabArchiveEntry(id: id, tab: .init(
             id: tab.id, urlString: url, pinnedURLString: tab.pinnedURLString,
             userTitleOverride: tab.userTitleOverride, spaceID: spaceID,
-            lastActivityTimestamp: activity
+            lastActivityTimestamp: activity,
         ), archivedAt: date, title: tab.title)
         try entry.validate()
         return entry
-    }
-
-    // MARK: Private
-
-    private static func timestamp(_ value: String) -> TimeInterval? {
-        ((try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value))
-            ?? (try? Date.ISO8601FormatStyle().parse(value)))?.timeIntervalSince1970
     }
 }
 
@@ -42,17 +44,45 @@ struct BrowserSyncAutoArchiveData: Codable, Equatable {
 /// Recover content from immutable pending writes even if an older binary has
 /// already hidden the tab with a tombstone. This never changes live projection.
 enum BrowserSyncExpiryRecovery {
+    // MARK: Private
+
+    private struct Content: Equatable {
+        // MARK: Internal
+
+        var url: String
+        var override: String?
+        var title: String?
+
+        // MARK: Private
+
+        private static func value(_ patch: BrowserSyncPatchValue<String>, previous: String?) -> String? {
+            switch patch {
+            case .unchanged: previous
+            case .clear: nil
+            case .set(let value): value
+            }
+        }
+
+        mutating func apply(_ patch: BrowserSyncSemanticTabPatch) {
+            if let url = patch.urlString {
+                self.url = url
+            }
+            override = Self.value(patch.userTitleOverride, previous: override)
+            title = Self.value(patch.title, previous: title)
+        }
+    }
+
     // MARK: Internal
 
     static func localEntries(
         canonical: BrowserTabArchiveEntry, pending: [BrowserSyncQueuedMutation],
-        local: BrowserTabSessionSnapshot?
+        local: BrowserTabSessionSnapshot?,
     ) -> [BrowserTabArchiveEntry] {
         let tabID = canonical.tab.id
         let original = Content(
             url: canonical.tab.urlString,
             override: canonical.tab.userTitleOverride,
-            title: canonical.title
+            title: canonical.title,
         )
         var queued = original
         for mutation in pending {
@@ -82,7 +112,7 @@ enum BrowserSyncExpiryRecovery {
                         queued = Content(
                             url: data.base.urlString,
                             override: data.base.userTitleOverride,
-                            title: data.base.title
+                            title: data.base.title,
                         )
                     default: break
                     }
@@ -110,36 +140,8 @@ enum BrowserSyncExpiryRecovery {
             BrowserTabArchiveEntry(id: canonical.id + "-local-\(index)", tab: .init(
                 id: tabID, urlString: content.url, userTitleOverride: content.override,
                 spaceID: canonical.tab.spaceID, lastActivityTimestamp: canonical.tab.lastActivityTimestamp,
-                systemImageName: icon
+                systemImageName: icon,
             ), archivedAt: canonical.archivedAt, title: content.title)
-        }
-    }
-
-    // MARK: Private
-
-    private struct Content: Equatable {
-        // MARK: Internal
-
-        var url: String
-        var override: String?
-        var title: String?
-
-        mutating func apply(_ patch: BrowserSyncSemanticTabPatch) {
-            if let url = patch.urlString {
-                self.url = url
-            }
-            override = Self.value(patch.userTitleOverride, previous: override)
-            title = Self.value(patch.title, previous: title)
-        }
-
-        // MARK: Private
-
-        private static func value(_ patch: BrowserSyncPatchValue<String>, previous: String?) -> String? {
-            switch patch {
-            case .unchanged: previous
-            case .clear: nil
-            case .set(let value): value
-            }
         }
     }
 }

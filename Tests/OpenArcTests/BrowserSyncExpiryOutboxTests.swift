@@ -1,3 +1,5 @@
+// BrowserSyncExpiryOutboxTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -20,17 +22,17 @@ func expiryOutboxMigrationPreservesEveryLegacyByteAndConsumedFIFOHighWater(empty
                             systemImageName: "globe",
                             rank: 0,
                             isPinnedSectionCollapsed: false,
-                            selectedTabID: nil
+                            selectedTabID: nil,
                         ),
-                        tabData: nil
+                        tabData: nil,
                     ),
                 ])),
                 .semantic(.init(
                     id: UUID().uuidString,
-                    operations: [.patchSpace(id: "work", fields: .init(title: "work"))]
+                    operations: [.patchSpace(id: "work", fields: .init(title: "work"))],
                 )),
                 .folders(.init(id: UUID().uuidString, operations: [.patchTab(
-                    id: "expired", fields: .init(urlString: ExpiryOutboxFixture.canonicalURL)
+                    id: "expired", fields: .init(urlString: ExpiryOutboxFixture.canonicalURL),
                 )])),
             ]
         try fixture.database { db in
@@ -44,7 +46,7 @@ func expiryOutboxMigrationPreservesEveryLegacyByteAndConsumedFIFOHighWater(empty
                 }
                 try db.execute(
                     sql: "INSERT INTO browser_sync_outbox(position, mutation_id, payload, protocol_version) VALUES (?, ?, ?, ?)",
-                    arguments: [10 + index * 20, mutation.id, payload, mutation.protocolVersion]
+                    arguments: [10 + index * 20, mutation.id, payload, mutation.protocolVersion],
                 )
             }
             try db.execute(sql: """
@@ -106,7 +108,7 @@ func expiryOutboxMigrationPreservesEveryLegacyByteAndConsumedFIFOHighWater(empty
                 .init(
                     id: String(repeating: "x", count: 8 * 1024 * 1024),
                     expectedServerSeq: 2,
-                    inactiveForSeconds: 43200
+                    inactiveForSeconds: 43200,
                 ),
             ]), for: fixture.owner)
         }
@@ -117,7 +119,7 @@ func expiryOutboxMigrationPreservesEveryLegacyByteAndConsumedFIFOHighWater(empty
         let wireBytes = try JSONEncoder().encode(BrowserSyncExpiryPushRequest(
             mutationID: escaped.id,
             deviceID: "00000000-0000-4000-8000-000000000000",
-            operations: escaped.operations
+            operations: escaped.operations,
         ))
         #expect(storedBytes.count < 8 * 1024 * 1024 && wireBytes.count > 8 * 1024 * 1024)
         #expect(throws: BrowserSyncQueueError.mutationTooLarge) {
@@ -134,7 +136,7 @@ func expiryOutboxMigrationPreservesEveryLegacyByteAndConsumedFIFOHighWater(empty
             try db.execute(sql: "UPDATE browser_sync_state SET new_mutation_version=4 WHERE id=1")
             try db
                 .execute(
-                    sql: "CREATE TRIGGER fail_expiry_enqueue BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT,'injected'); END"
+                    sql: "CREATE TRIGGER fail_expiry_enqueue BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT,'injected'); END",
                 )
         }
         #expect(throws: DatabaseError.self) { try store.enqueueSyncExpiry(request, for: fixture.owner) }
@@ -145,7 +147,7 @@ func expiryOutboxMigrationPreservesEveryLegacyByteAndConsumedFIFOHighWater(empty
         try fixture.database { db in
             try db.execute(
                 sql: "UPDATE browser_sync_outbox SET payload=? WHERE mutation_id=?",
-                arguments: [fixture.prettyEncoder.encode(request), request.id]
+                arguments: [fixture.prettyEncoder.encode(request), request.id],
             )
         }
         let frozen = try fixture.evidence(store)
@@ -187,7 +189,7 @@ func expiryPendingOverlayIsInertAndTerminalRejectionKeepsInterveningLocalChanges
         let rebased = try store.completeExpirySyncBootstrap(
             events: fixture.seed + [remote],
             cursor: 5,
-            for: fixture.owner
+            for: fixture.owner,
         )
         #expect(rebased.tabs.first { $0.id == "expired" }?.urlString == ExpiryOutboxFixture.offlineURL)
         #expect(try fixture.rows() == frozen, "Device rebootstrap accepts immutable v4 and v5 rows together")
@@ -196,7 +198,7 @@ func expiryPendingOverlayIsInertAndTerminalRejectionKeepsInterveningLocalChanges
         // Empty canonical events represent a terminal response_limit rejection.
         // A normal rejection may return the latest canonical tab instead.
         let after = try store.acknowledgeSyncMutation(
-            id: expiry.id, protocolVersion: 5, events: noCanonicalEvent ? [] : [remote], for: fixture.owner
+            id: expiry.id, protocolVersion: 5, events: noCanonicalEvent ? [] : [remote], for: fixture.owner,
         )
         #expect(after.tabs == edited.tabs)
         #expect(try store.pendingSyncQueue(for: fixture.owner) == [queue[1]])
@@ -221,7 +223,7 @@ func expiryPendingOverlayIsInertAndTerminalRejectionKeepsInterveningLocalChanges
         try fixture.database { db in
             try db
                 .execute(
-                    sql: "CREATE TRIGGER fail_expiry_ack BEFORE INSERT ON browser_tab_archive BEGIN SELECT RAISE(ABORT,'injected'); END"
+                    sql: "CREATE TRIGGER fail_expiry_ack BEFORE INSERT ON browser_tab_archive BEGIN SELECT RAISE(ABORT,'injected'); END",
                 )
         }
         #expect(throws: DatabaseError.self) {
@@ -229,13 +231,13 @@ func expiryPendingOverlayIsInertAndTerminalRejectionKeepsInterveningLocalChanges
                 id: expiry.id,
                 protocolVersion: 5,
                 events: [fixture.recovery],
-                for: fixture.owner
+                for: fixture.owner,
             )
         }
         #expect(try fixture.evidence(store) == before)
         try fixture.database { try $0.execute(sql: "DROP TRIGGER fail_expiry_ack") }
         let projected = try store.acknowledgeSyncMutation(
-            id: expiry.id, protocolVersion: 5, events: [fixture.recovery], for: fixture.owner
+            id: expiry.id, protocolVersion: 5, events: [fixture.recovery], for: fixture.owner,
         )
         #expect(projected.tabs.compactMap(\.id) == ["survivor"])
         #expect(try store.pendingSyncQueue(for: fixture.owner) == [pending[1]])
@@ -251,10 +253,10 @@ func expiryPendingOverlayIsInertAndTerminalRejectionKeepsInterveningLocalChanges
 
         let reopened = try fixture.open()
         _ = try reopened.acknowledgeSyncMutation(
-            id: expiry.id, protocolVersion: 5, events: [fixture.recovery], for: fixture.owner
+            id: expiry.id, protocolVersion: 5, events: [fixture.recovery], for: fixture.owner,
         )
         _ = try reopened.acknowledgeSyncMutation(
-            id: pending[1].id, protocolVersion: 4, events: [fixture.seed[1]], for: fixture.owner
+            id: pending[1].id, protocolVersion: 4, events: [fixture.seed[1]], for: fixture.owner,
         )
         #expect(try reopened.pendingSyncQueue(for: fixture.owner).isEmpty)
         #expect(try reopened.loadSnapshotStrict() == projected)
@@ -299,9 +301,9 @@ private struct ExpiryOutboxFixture {
                     systemImageName: "globe",
                     rank: 0,
                     isPinnedSectionCollapsed: false,
-                    selectedTabID: nil
+                    selectedTabID: nil,
                 )),
-                createdAt: "2026-10-03T00:00:00Z"
+                createdAt: "2026-10-03T00:00:00Z",
             ),
             tabEvent(id: "expired", sequence: 2, url: Self.canonicalURL),
             tabEvent(id: "survivor", sequence: 3, url: "https://example.com/survivor"),
@@ -317,9 +319,9 @@ private struct ExpiryOutboxFixture {
             op: "delete",
             data: .deleted(id: "expired", autoArchive: .init(
                 archivedAt: "2026-10-03T00:00:00.123456Z", sourceServerSeq: 2,
-                tab: tabData(id: "expired", url: Self.canonicalURL)
+                tab: tabData(id: "expired", url: Self.canonicalURL),
             )),
-            createdAt: "2026-10-03T00:00:00Z"
+            createdAt: "2026-10-03T00:00:00Z",
         )
     }
 
@@ -347,7 +349,7 @@ private struct ExpiryOutboxFixture {
             userTitleOverride: nil,
             faviconURLString: nil,
             lastActivityAt: "2000-01-01T00:00:00.123456Z",
-            pinnedFolderID: nil
+            pinnedFolderID: nil,
         )
     }
 
@@ -359,7 +361,7 @@ private struct ExpiryOutboxFixture {
             entityID: id,
             op: "upsert",
             data: .tab(tabData(id: id, url: url)),
-            createdAt: "2026-10-03T00:00:00Z"
+            createdAt: "2026-10-03T00:00:00Z",
         )
     }
 
@@ -378,9 +380,9 @@ private struct ExpiryOutboxFixture {
                     spaceID: tab.spaceID,
                     pinnedFolderID: tab.pinnedFolderID,
                     lastActivityTimestamp: tab.lastActivityTimestamp,
-                    pinnedSiblingRank: tab.pinnedSiblingRank
+                    pinnedSiblingRank: tab.pinnedSiblingRank,
                 )
-            }
+            },
         )
         try store.writeSessionBatch([.init(snapshot: next, origin: .local(syncMove: nil))])
     }
@@ -393,14 +395,14 @@ private struct ExpiryOutboxFixture {
         try database { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT position,mutation_id,protocol_version,payload FROM browser_sync_outbox ORDER BY position"
+                sql: "SELECT position,mutation_id,protocol_version,payload FROM browser_sync_outbox ORDER BY position",
             )
             .map {
                 .init(
                     position: $0["position"],
                     id: $0["mutation_id"],
                     version: $0["protocol_version"],
-                    payload: $0["payload"]
+                    payload: $0["payload"],
                 )
             }
         }
@@ -418,7 +420,7 @@ private struct ExpiryOutboxFixture {
     func ordinaryVersion() throws -> Int {
         let value = try database { try Int.fetchOne(
             $0,
-            sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id=1"
+            sql: "SELECT new_mutation_version FROM browser_sync_state WHERE id=1",
         ) }
         return try #require(value)
     }
@@ -426,7 +428,7 @@ private struct ExpiryOutboxFixture {
     func evidence(_ store: BrowserSQLiteSessionStore) throws -> ExpiryOutboxEvidence {
         let highWater = try database { try Int64.fetchOne(
             $0,
-            sql: "SELECT seq FROM sqlite_sequence WHERE name='browser_sync_outbox'"
+            sql: "SELECT seq FROM sqlite_sequence WHERE name='browser_sync_outbox'",
         ) }
         return try .init(
             snapshot: store.loadSnapshotStrict(),
@@ -437,7 +439,7 @@ private struct ExpiryOutboxFixture {
             pullVersion: store.syncPullProtocolVersion(for: owner),
             ordinaryVersion: ordinaryVersion(),
             archive: store.loadArchivePage(),
-            archiveRevision: store.syncArchiveRevision(for: owner)
+            archiveRevision: store.syncArchiveRevision(for: owner),
         )
     }
 }

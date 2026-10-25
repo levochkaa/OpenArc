@@ -1,3 +1,5 @@
+// BrowserAccountStore.swift
+
 import Combine
 import Foundation
 
@@ -12,7 +14,7 @@ import Foundation
 @MainActor protocol BrowserAppleAuthenticating: AnyObject {
     var baseURL: URL { get }
     func authenticateWithApple(
-        identityToken: String, deviceName: String, devicePlatform: String
+        identityToken: String, deviceName: String, devicePlatform: String,
     ) async throws -> BrowserAuthSession
 }
 
@@ -29,14 +31,34 @@ enum BrowserAppleSignInError: Error {
 // MARK: - BrowserAccountStore
 
 @MainActor final class BrowserAccountStore: ObservableObject {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    @Published private(set) var session: BrowserAuthSession?
+    @Published private(set) var isSigningIn = false
+    @Published private(set) var lastError: String?
+    @Published private(set) var bindingState: BrowserSyncBindingState?
+
+    // MARK: Private
+
+    private let syncClient: (any BrowserAppleAuthenticating)?
+    private let authSessionStore: any BrowserSyncAuthSessionStoring
+    private let syncCoordinator: (any BrowserAccountSyncControlling)?
+    private let appleSignInService: any BrowserAppleIdentityProviding
+    private let deviceIdentity: BrowserSyncDeviceIdentity
+    private var signInGeneration: UInt64 = 0
+
+    var isConfigured: Bool { syncClient != nil && syncCoordinator != nil }
+    var isAuthenticated: Bool { session != nil }
+    var unavailableMessage: String {
+        syncClient == nil ? BrowserStrings.syncAccountServerNotConfigured : BrowserStrings.syncAccountUnavailable
+    }
 
     init(
         syncClient: (any BrowserAppleAuthenticating)?,
         authSessionStore: any BrowserSyncAuthSessionStoring,
         syncCoordinator: (any BrowserAccountSyncControlling)?,
         appleSignInService: any BrowserAppleIdentityProviding,
-        deviceIdentity: BrowserSyncDeviceIdentity
+        deviceIdentity: BrowserSyncDeviceIdentity,
     ) {
         self.syncClient = syncClient
         self.authSessionStore = authSessionStore
@@ -66,19 +88,6 @@ enum BrowserAppleSignInError: Error {
         }
     }
 
-    // MARK: Internal
-
-    @Published private(set) var session: BrowserAuthSession?
-    @Published private(set) var isSigningIn = false
-    @Published private(set) var lastError: String?
-    @Published private(set) var bindingState: BrowserSyncBindingState?
-
-    var isConfigured: Bool { syncClient != nil && syncCoordinator != nil }
-    var isAuthenticated: Bool { session != nil }
-    var unavailableMessage: String {
-        syncClient == nil ? BrowserStrings.syncAccountServerNotConfigured : BrowserStrings.syncAccountUnavailable
-    }
-
     func signInWithApple() async {
         guard !isSigningIn else { return }
         guard let syncClient, let syncCoordinator else {
@@ -100,7 +109,7 @@ enum BrowserAppleSignInError: Error {
             let session = try await syncClient.authenticateWithApple(
                 identityToken: identityToken,
                 deviceName: deviceIdentity.name,
-                devicePlatform: deviceIdentity.platform
+                devicePlatform: deviceIdentity.platform,
             )
             guard attempt == signInGeneration else { return }
             guard session.belongs(to: syncClient.baseURL) else { throw BrowserSyncAccountError.serverChanged }
@@ -169,21 +178,18 @@ enum BrowserAppleSignInError: Error {
         // Require fresh authentication before removing credentials; preserve ownership and cursor.
         // Attempt both writes so either successful operation prevents auto-resume.
         var failures = [String]()
-        do { try syncCoordinator?.signOut() }
-        catch { failures.append(error.localizedDescription) }
-        do { try authSessionStore.clearSession() }
-        catch { failures.append(error.localizedDescription) }
+        do {
+            try syncCoordinator?.signOut()
+        } catch {
+            failures.append(error.localizedDescription)
+        }
+        do {
+            try authSessionStore.clearSession()
+        } catch {
+            failures.append(error.localizedDescription)
+        }
         if !failures.isEmpty {
             lastError = failures.joined(separator: "\n")
         }
     }
-
-    // MARK: Private
-
-    private let syncClient: (any BrowserAppleAuthenticating)?
-    private let authSessionStore: any BrowserSyncAuthSessionStoring
-    private let syncCoordinator: (any BrowserAccountSyncControlling)?
-    private let appleSignInService: any BrowserAppleIdentityProviding
-    private let deviceIdentity: BrowserSyncDeviceIdentity
-    private var signInGeneration: UInt64 = 0
 }

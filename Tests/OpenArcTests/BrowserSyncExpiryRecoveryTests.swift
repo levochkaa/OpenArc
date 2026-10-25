@@ -1,3 +1,5 @@
+// BrowserSyncExpiryRecoveryTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -54,7 +56,7 @@ func expiryRecoveryFailureRollsBackArchiveAndSyncStateTogether(path: String) thr
     let before = try f.evidence()
     try f
         .sql(
-            "CREATE TRIGGER fail_expiry_archive BEFORE INSERT ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected recovery failure'); END"
+            "CREATE TRIGGER fail_expiry_archive BEFORE INSERT ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected recovery failure'); END",
         )
     #expect(throws: DatabaseError.self) {
         _ = try f.apply(path: path, pending: pending)
@@ -85,11 +87,11 @@ func consumedExpiryRecoveryDoesNotReappearAfterBootstrapOrReceiptReplay(consumpt
         let current = try #require(try f.store.loadSnapshotStrict())
         let restored = BrowserTabSessionSnapshotTab(
             id: "fresh-restored", urlString: entry.tab.urlString,
-            userTitleOverride: entry.tab.userTitleOverride, spaceID: "target", lastActivityTimestamp: 1_800_000_100
+            userTitleOverride: entry.tab.userTitleOverride, spaceID: "target", lastActivityTimestamp: 1_800_000_100,
         )
         try f.store.writeSessionBatch([.init(
             snapshot: expiryRecoveryReplacing(current, current.tabs + [restored]),
-            origin: .local(syncMove: nil), archiveAction: .restore(archiveID: entry.id, tabID: "fresh-restored")
+            origin: .local(syncMove: nil), archiveAction: .restore(archiveID: entry.id, tabID: "fresh-restored"),
         )])
     } else if consumption == "remove" {
         let removed = try await f.store.removeArchiveEntry(id: entry.id)
@@ -107,7 +109,7 @@ func consumedExpiryRecoveryDoesNotReappearAfterBootstrapOrReceiptReplay(consumpt
     _ = try reopened.completeExpirySyncBootstrap(events: f.history, cursor: 20, for: f.owner)
     _ = try reopened.applyRemoteSyncEvents([f.recovery], cursor: 20, for: f.owner)
     _ = try reopened.acknowledgeSyncMutation(
-        id: "already-consumed-ack", protocolVersion: 4, events: [f.recovery], for: f.owner
+        id: "already-consumed-ack", protocolVersion: 4, events: [f.recovery], for: f.owner,
     )
     #expect(try reopened.loadArchivePage().entries.isEmpty)
     #expect(try reopened.syncArchiveRevision(for: f.owner) == revision)
@@ -131,7 +133,7 @@ func expiryRecoveryCapturesOldPendingContentEvenWhenTheTombstoneWasAlreadyKnown(
     let frozen = try f.queueRows()
     let oldClientDelete = BrowserSyncEvent(
         serverSeq: 20, deviceID: "other-device", entityType: "tab", entityID: "expired", op: "delete",
-        data: .deleted(id: "expired"), createdAt: "2026-10-03T12:00:00Z"
+        data: .deleted(id: "expired"), createdAt: "2026-10-03T12:00:00Z",
     )
     _ = try f.store.applyRemoteSyncEvents([oldClientDelete], cursor: 20, for: f.owner)
     #expect(try f.store.loadSnapshotStrict()?.tabs.map(\.id) == ["survivor"])
@@ -143,7 +145,7 @@ func expiryRecoveryCapturesOldPendingContentEvenWhenTheTombstoneWasAlreadyKnown(
     // ACK must preserve its own still-pending payload before removing that row.
     // The current snapshot and ordinary pending projection both hide this ID.
     let projected = try reopened.acknowledgeSyncMutation(
-        id: pending.id, protocolVersion: protocolVersion, events: [f.recovery], for: f.owner
+        id: pending.id, protocolVersion: protocolVersion, events: [f.recovery], for: f.owner,
     )
     #expect(projected.tabs.map(\.id) == ["survivor"])
     #expect(try reopened.pendingSyncQueue(for: f.owner).isEmpty)
@@ -198,7 +200,7 @@ func malformedExpiryRecoveryCannotAdvanceCursorOrApplyDeletion(corruption: Strin
 
 @Test(arguments: [2, 3, 4])
 func expiryRecoveryMigrationPreservesOriginalQueueBytesAndStartsWithAnUnacknowledgedBootstrap(
-    protocolVersion: Int
+    protocolVersion: Int,
 ) throws {
     let f = try ExpiryRecoveryFixture(protocolVersion: protocolVersion)
     defer { f.cleanup() }
@@ -224,7 +226,7 @@ func expiryRecoveryMigrationPreservesOriginalQueueBytesAndStartsWithAnUnacknowle
     let rows = try DatabaseQueue(path: f.databaseURL.path).read { db in
         try (
             Data.fetchAll(db, sql: "SELECT payload FROM browser_sync_baseline ORDER BY id"),
-            Int.fetchOne(db, sql: "SELECT COUNT(*) FROM browser_sync_expiry_imports")
+            Int.fetchOne(db, sql: "SELECT COUNT(*) FROM browser_sync_expiry_imports"),
         )
     }
     #expect(rows.0 == before.baseline && rows.1 == 0)
@@ -235,26 +237,6 @@ func expiryRecoveryMigrationPreservesOriginalQueueBytesAndStartsWithAnUnacknowle
 // MARK: - ExpiryRecoveryFixture
 
 private struct ExpiryRecoveryFixture {
-    // MARK: Lifecycle
-
-    init(protocolVersion: Int = 4) throws {
-        self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("ExpiryRecovery-\(UUID())")
-        self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
-        try store.bindSyncOwner(owner)
-        _ =
-            if protocolVersion == 4 {
-                try store.completeFolderSyncBootstrap(events: seed, cursor: 4, for: owner)
-            } else {
-                try store.applyRemoteSyncEvents(
-                    seed,
-                    cursor: 4,
-                    for: owner,
-                    enableSemanticMutations: protocolVersion == 3
-                )
-            }
-    }
-
     // MARK: Internal
 
     static let canonicalURL = "https://example.com/canonical-recovery"
@@ -270,7 +252,7 @@ private struct ExpiryRecoveryFixture {
             id: "expired", spaceID: "source", placement: .temporary, rank: 0,
             urlString: Self.canonicalURL, pinnedURLString: nil, title: "Canonical loaded title",
             userTitleOverride: "Canonical custom title", faviconURLString: "https://example.com/favicon.ico",
-            lastActivityAt: "2000-01-01T00:00:00.123456Z", pinnedFolderID: nil
+            lastActivityAt: "2000-01-01T00:00:00.123456Z", pinnedFolderID: nil,
         )
     }
 
@@ -278,17 +260,17 @@ private struct ExpiryRecoveryFixture {
         [
             event(sequence: 1, type: "space", id: "source", data: .space(.init(
                 id: "source", title: "Source", systemImageName: "globe", rank: 0,
-                isPinnedSectionCollapsed: false, selectedTabID: nil
+                isPinnedSectionCollapsed: false, selectedTabID: nil,
             ))),
             event(sequence: 2, type: "space", id: "target", data: .space(.init(
                 id: "target", title: "Target", systemImageName: "star", rank: 1,
-                isPinnedSectionCollapsed: false, selectedTabID: nil
+                isPinnedSectionCollapsed: false, selectedTabID: nil,
             ))),
             event(sequence: 3, type: "tab", id: "expired", data: .tab(canonical)),
             event(sequence: 4, type: "tab", id: "survivor", data: .tab(.init(
                 id: "survivor", spaceID: "source", placement: .temporary, rank: 1,
                 urlString: "https://example.com/survivor", pinnedURLString: nil, title: "Survivor",
-                userTitleOverride: nil, faviconURLString: nil, lastActivityAt: "2026-10-03T11:00:00Z"
+                userTitleOverride: nil, faviconURLString: nil, lastActivityAt: "2026-10-03T11:00:00Z",
             ))),
         ]
     }
@@ -297,12 +279,30 @@ private struct ExpiryRecoveryFixture {
         .init(
             serverSeq: 20, deviceID: "other-device", entityType: "tab", entityID: "expired", op: "delete",
             data: .deleted(id: "expired", autoArchive: .init(
-                archivedAt: "2026-10-03T12:00:00.123456Z", sourceServerSeq: 3, tab: canonical
-            )), createdAt: "2026-10-03T12:00:00Z"
+                archivedAt: "2026-10-03T12:00:00.123456Z", sourceServerSeq: 3, tab: canonical,
+            )), createdAt: "2026-10-03T12:00:00Z",
         )
     }
 
     var history: [BrowserSyncEvent] { seed + [recovery] }
+
+    init(protocolVersion: Int = 4) throws {
+        self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("ExpiryRecovery-\(UUID())")
+        self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
+        self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+        try store.bindSyncOwner(owner)
+        _ =
+            if protocolVersion == 4 {
+                try store.completeFolderSyncBootstrap(events: seed, cursor: 4, for: owner)
+            } else {
+                try store.applyRemoteSyncEvents(
+                    seed,
+                    cursor: 4,
+                    for: owner,
+                    enableSemanticMutations: protocolVersion == 3,
+                )
+            }
+    }
 
     func cleanup() { try? FileManager.default.removeItem(at: directory) }
     func sql(_ statement: String) throws {
@@ -315,7 +315,7 @@ private struct ExpiryRecoveryFixture {
             guard tab.id == "expired" else { return tab }
             return .init(
                 id: tab.id, urlString: url, userTitleOverride: title, spaceID: tab.spaceID,
-                lastActivityTimestamp: tab.lastActivityTimestamp
+                lastActivityTimestamp: tab.lastActivityTimestamp,
             )
         })
         try store.writeSessionBatch([.init(snapshot: next, origin: .local(syncMove: nil))])
@@ -324,7 +324,7 @@ private struct ExpiryRecoveryFixture {
     func apply(path: String, pending: BrowserSyncQueuedMutation) throws -> BrowserTabSessionSnapshot {
         switch path {
         case "ack": try store.acknowledgeSyncMutation(
-                id: pending.id, protocolVersion: pending.protocolVersion, events: [recovery], for: owner
+                id: pending.id, protocolVersion: pending.protocolVersion, events: [recovery], for: owner,
             )
         case "bootstrap": try store.completeExpirySyncBootstrap(events: history, cursor: 20, for: owner)
         default: try store.applyRemoteSyncEvents([recovery], cursor: 20, for: owner)
@@ -338,7 +338,7 @@ private struct ExpiryRecoveryFixture {
                 let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
                 try db.execute(
                     sql: "UPDATE browser_sync_outbox SET payload = ? WHERE mutation_id = ?",
-                    arguments: [data, row["mutation_id"] as String]
+                    arguments: [data, row["mutation_id"] as String],
                 )
             }
         }
@@ -348,13 +348,13 @@ private struct ExpiryRecoveryFixture {
         try DatabaseQueue(path: databaseURL.path).read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT position, mutation_id, protocol_version, payload FROM browser_sync_outbox ORDER BY position"
+                sql: "SELECT position, mutation_id, protocol_version, payload FROM browser_sync_outbox ORDER BY position",
             )
             .map { .init(
                 position: $0["position"],
                 id: $0["mutation_id"],
                 version: $0["protocol_version"],
-                bytes: $0["payload"]
+                bytes: $0["payload"],
             ) }
         }
     }
@@ -366,15 +366,15 @@ private struct ExpiryRecoveryFixture {
                 Data.fetchAll(db, sql: "SELECT payload FROM browser_tab_archive ORDER BY id"),
                 String.fetchAll(
                     db,
-                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id, '') FROM browser_tab_archive_receipts ORDER BY id"
-                )
+                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id, '') FROM browser_tab_archive_receipts ORDER BY id",
+                ),
             )
         }
         return try .init(
             snapshot: store.loadSnapshotStrict(), queue: queueRows(), baseline: rows.0, archive: rows.1,
             receipts: rows.2, cursor: store.syncCursor(for: owner),
             pullVersion: store.syncPullProtocolVersion(for: owner),
-            revision: store.syncArchiveRevision(for: owner)
+            revision: store.syncArchiveRevision(for: owner),
         )
     }
 
@@ -388,7 +388,7 @@ private struct ExpiryRecoveryFixture {
             entityID: id,
             op: "upsert",
             data: data,
-            createdAt: "2026-10-03T00:00:00Z"
+            createdAt: "2026-10-03T00:00:00Z",
         )
     }
 }
@@ -416,7 +416,7 @@ private struct ExpiryRecoveryEvidence: Equatable {
 }
 
 private func expiryRecoveryReplacing(
-    _ snapshot: BrowserTabSessionSnapshot, _ tabs: [BrowserTabSessionSnapshotTab]
+    _ snapshot: BrowserTabSessionSnapshot, _ tabs: [BrowserTabSessionSnapshotTab],
 ) -> BrowserTabSessionSnapshot {
     .init(version: snapshot.version, spaces: snapshot.spaces, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: tabs)
 }

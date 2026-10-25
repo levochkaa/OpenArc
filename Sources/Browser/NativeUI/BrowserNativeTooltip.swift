@@ -1,10 +1,19 @@
+// BrowserNativeTooltip.swift
+
 import AppKit
 import Combine
 
 // MARK: - BrowserNativeTooltipMetrics
 
 struct BrowserNativeTooltipMetrics {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let size: NSSize
+    let textWidth: CGFloat
+    let titleHeight: CGFloat
+    let captionHeight: CGFloat
+    let keysWidth: CGFloat
+    let keyWidths: [CGFloat]
 
     init(title: String, caption: String?, shortcut: BrowserKeyboardShortcut?, maximumWidth: CGFloat) {
         let titleFont = NSFont.systemFont(ofSize: 12.5, weight: .medium)
@@ -14,18 +23,18 @@ struct BrowserNativeTooltipMetrics {
         self.keyWidths = caps.map { max(
             ceil(($0 as NSString).size(withAttributes: [.font: capFont]).width) + BrowserChromeLayout
                 .tooltipKeyHorizontalPadding * 2,
-            BrowserChromeLayout.tooltipKeyHeight
+            BrowserChromeLayout.tooltipKeyHeight,
         ) }
         self.keysWidth = keyWidths.reduce(0, +) + CGFloat(max(keyWidths.count - 1, 0)) * BrowserChromeLayout
             .tooltipKeySpacing
         let accessoryWidth = caps.isEmpty ? 0 : keysWidth + BrowserChromeLayout.tooltipContentSpacing
         let idealTextWidth = max(
             (title as NSString).size(withAttributes: [.font: titleFont]).width,
-            ((caption ?? "") as NSString).size(withAttributes: [.font: captionFont]).width
+            ((caption ?? "") as NSString).size(withAttributes: [.font: captionFont]).width,
         )
         self.textWidth = min(
             ceil(idealTextWidth) + 4,
-            max(maximumWidth - BrowserChromeLayout.tooltipHorizontalPadding * 2 - accessoryWidth, 1)
+            max(maximumWidth - BrowserChromeLayout.tooltipHorizontalPadding * 2 - accessoryWidth, 1),
         )
         let measuredTextWidth = max(textWidth - 4, 1)
         func textHeight(_ string: String, font: NSFont) -> CGFloat {
@@ -33,7 +42,7 @@ struct BrowserNativeTooltipMetrics {
                 .boundingRect(
                     with: NSSize(width: measuredTextWidth, height: CGFloat.greatestFiniteMagnitude),
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: [.font: font]
+                    attributes: [.font: font],
                 )
                 .height
             return min(ceil(measured), ceil((font.ascender - font.descender + font.leading) * 2)) + 2
@@ -44,24 +53,26 @@ struct BrowserNativeTooltipMetrics {
         self.size = NSSize(
             width: min(maximumWidth, textWidth + accessoryWidth + BrowserChromeLayout.tooltipHorizontalPadding * 2),
             height: max(textHeight, caps.isEmpty ? 0 : BrowserChromeLayout.tooltipKeyHeight) + BrowserChromeLayout
-                .tooltipVerticalPadding * 2
+                .tooltipVerticalPadding * 2,
         )
     }
-
-    // MARK: Internal
-
-    let size: NSSize
-    let textWidth: CGFloat
-    let titleHeight: CGFloat
-    let captionHeight: CGFloat
-    let keysWidth: CGFloat
-    let keyWidths: [CGFloat]
 }
 
 // MARK: - BrowserNativeTooltipContent
 
 final class BrowserNativeTooltipContent: BrowserNativeSurface {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var intrinsicContentSize: NSSize { measuredSize(maximumWidth: BrowserChromeLayout.tooltipMaximumWidth) }
+
+    // MARK: Private
+
+    private let titleLabel = NSTextField(wrappingLabelWithString: "")
+    private let captionLabel = NSTextField(wrappingLabelWithString: "")
+    private var caption: String?
+    private var shortcut: BrowserKeyboardShortcut?
+    private var placement = BrowserTooltipPlacement.belowLeading
+    private var keyCaps = [BrowserNativeSurface]()
 
     init(title: String, caption: String?, shortcut: BrowserKeyboardShortcut?, placement: BrowserTooltipPlacement) {
         super.init(frame: .zero)
@@ -82,17 +93,13 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var intrinsicContentSize: NSSize { measuredSize(maximumWidth: BrowserChromeLayout.tooltipMaximumWidth) }
-
     override func layout() {
         super.layout()
         let metrics = BrowserNativeTooltipMetrics(
             title: titleLabel.stringValue,
             caption: caption,
             shortcut: shortcut,
-            maximumWidth: max(bounds.width, 1)
+            maximumWidth: max(bounds.width, 1),
         )
         let textHeight = metrics.titleHeight + (caption == nil ? 0 : 2 + metrics.captionHeight)
         let top = (bounds.height - textHeight) / 2
@@ -100,13 +107,13 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
             x: BrowserChromeLayout.tooltipHorizontalPadding,
             y: top,
             width: metrics.textWidth,
-            height: metrics.titleHeight
+            height: metrics.titleHeight,
         )
         captionLabel.frame = NSRect(
             x: titleLabel.frame.minX,
             y: titleLabel.frame.maxY + 2,
             width: metrics.textWidth,
-            height: metrics.captionHeight
+            height: metrics.captionHeight,
         )
         var x = titleLabel.frame.maxX + BrowserChromeLayout.tooltipContentSpacing
         for (index, cap) in keyCaps.enumerated() {
@@ -114,7 +121,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
                 x: x,
                 y: (bounds.height - BrowserChromeLayout.tooltipKeyHeight) / 2,
                 width: metrics.keyWidths[index],
-                height: BrowserChromeLayout.tooltipKeyHeight
+                height: BrowserChromeLayout.tooltipKeyHeight,
             )
             x += metrics.keyWidths[index] + BrowserChromeLayout.tooltipKeySpacing
         }
@@ -131,7 +138,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
             title: titleLabel.stringValue,
             caption: caption,
             shortcut: shortcut,
-            maximumWidth: maximumWidth
+            maximumWidth: maximumWidth,
         ).size
     }
 
@@ -139,7 +146,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         title: String,
         caption: String?,
         shortcut: BrowserKeyboardShortcut?,
-        placement: BrowserTooltipPlacement
+        placement: BrowserTooltipPlacement,
     ) {
         titleLabel.stringValue = title
         captionLabel.stringValue = caption ?? ""
@@ -158,7 +165,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
                 text,
                 size: 11.5,
                 weight: .semibold,
-                color: BrowserChromeColors.tooltipKeyText
+                color: BrowserChromeColors.tooltipKeyText,
             )
             cap.addSubview(label)
             label.translatesAutoresizingMaskIntoConstraints = false
@@ -172,21 +179,32 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         invalidateIntrinsicContentSize()
         needsLayout = true
     }
-
-    // MARK: Private
-
-    private let titleLabel = NSTextField(wrappingLabelWithString: "")
-    private let captionLabel = NSTextField(wrappingLabelWithString: "")
-    private var caption: String?
-    private var shortcut: BrowserKeyboardShortcut?
-    private var placement = BrowserTooltipPlacement.belowLeading
-    private var keyCaps = [BrowserNativeSurface]()
 }
 
 // MARK: - BrowserNativeTooltipPresenter
 
 @MainActor final class BrowserNativeTooltipPresenter: NSObject {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private struct Descriptor {
+        let id: UUID
+        let title: String
+        let caption: String?
+        let shortcut: BrowserKeyboardShortcut?
+        let placement: BrowserTooltipPlacement
+    }
+
+    // MARK: Internal
+
+    static let shared = BrowserNativeTooltipPresenter()
+
+    private var hoveredID: UUID?
+    private weak var anchor: NSView?
+    private var descriptor: Descriptor?
+    private let coordinator = BrowserTooltipCoordinator()
+    private var observation: AnyCancellable?
+    private var panel: NSPanel?
+    private let visibilityAnimation = BrowserNativeAnimation()
 
     override init() {
         super.init()
@@ -202,21 +220,17 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
             self,
             selector: #selector(applicationDeactivated),
             name: NSApplication.didResignActiveNotification,
-            object: nil
+            object: nil,
         )
         for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(windowGeometryChanged),
                 name: name,
-                object: nil
+                object: nil,
             )
         }
     }
-
-    // MARK: Internal
-
-    static let shared = BrowserNativeTooltipPresenter()
 
     func begin(
         id: UUID,
@@ -224,7 +238,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         title: String,
         caption: String? = nil,
         shortcut: BrowserKeyboardShortcut? = nil,
-        placement: BrowserTooltipPlacement = .belowLeading
+        placement: BrowserTooltipPlacement = .belowLeading,
     ) {
         let isAlreadyHovering = hoveredID == id
         hoveredID = id
@@ -252,24 +266,6 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         }
     }
 
-    // MARK: Private
-
-    private struct Descriptor {
-        let id: UUID
-        let title: String
-        let caption: String?
-        let shortcut: BrowserKeyboardShortcut?
-        let placement: BrowserTooltipPlacement
-    }
-
-    private var hoveredID: UUID?
-    private weak var anchor: NSView?
-    private var descriptor: Descriptor?
-    private let coordinator = BrowserTooltipCoordinator()
-    private var observation: AnyCancellable?
-    private var panel: NSPanel?
-    private let visibilityAnimation = BrowserNativeAnimation()
-
     private func show() {
         guard let descriptor, let anchor, let window = anchor.window, window.isVisible,
               !anchor.isHiddenOrHasHiddenAncestor, !anchor.visibleRect.isEmpty
@@ -284,7 +280,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
                 contentRect: .zero,
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
-                defer: false
+                defer: false,
             )
             panel.isReleasedWhenClosed = false
             panel.isOpaque = false
@@ -303,24 +299,24 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
             title: descriptor.title,
             caption: descriptor.caption,
             shortcut: descriptor.shortcut,
-            placement: descriptor.placement
+            placement: descriptor.placement,
         )
         let size = content.measuredSize(maximumWidth: min(
             BrowserChromeLayout.tooltipMaximumWidth,
             max(
                 screenFrame.width - BrowserChromeLayout
                     .tooltipViewportPadding * 2,
-                1
-            )
+                1,
+            ),
         ))
         let origin = BrowserTooltipPlacementResolver.topLeft(
             sourceFrame: CGRect(
                 x: source.minX - screenFrame.minX,
                 y: screenFrame.maxY - source.maxY,
                 width: source.width,
-                height: source.height
+                height: source.height,
             ),
-            tooltipSize: size, containerSize: screenFrame.size, placement: descriptor.placement
+            tooltipSize: size, containerSize: screenFrame.size, placement: descriptor.placement,
         )
         panel.appearance = window.effectiveAppearance
         panel.contentView = content
@@ -328,7 +324,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
             x: screenFrame.minX + origin.x,
             y: screenFrame.maxY - origin.y - size.height,
             width: size.width,
-            height: size.height
+            height: size.height,
         ), display: true)
         if panel.parent !== window {
             panel.parent?.removeChildWindow(panel)

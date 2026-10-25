@@ -1,10 +1,39 @@
+// BrowserMobileViewController.swift
+
 import UIKit
 
 // MARK: - BrowserMobileViewController
 
 /// Scene-owned composition. UIKit handles column collapse as the window resizes.
 final class BrowserMobileViewController: UISplitViewController, UISplitViewControllerDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var keyCommands: [UIKeyCommand]? {
+        let find = UIKeyCommand(
+            title: String(localized: "Find in Page", table: "Mobile"),
+            action: #selector(findInPage), input: "f", modifierFlags: .command,
+        )
+        find.wantsPriorityOverSystemBehavior = true
+        return (super.keyCommands ?? []) + [find]
+    }
+
+    let workspace: BrowserMobileWorkspace
+    let pageController: BrowserMobilePageViewController
+    let tabsController: BrowserMobileTabsViewController
+
+    lazy var javaScriptDialogPresenter =
+        BrowserMobileJavaScriptDialogPresenter(host: self) { [weak self] id, response in
+            self?.workspace.resolveJavaScriptDialog(id: id, response: response)
+        }
+
+    lazy var httpAuthenticationPresenter =
+        BrowserMobileHTTPAuthenticationPresenter(host: self) { [weak self] id, response in
+            self?.workspace.resolveHTTPAuthentication(id: id, response: response)
+        }
+
+    // MARK: Private
+
+    private weak var presentedTabs: BrowserMobileTabsViewController?
 
     init(workspace: BrowserMobileWorkspace, contentView: UIView) {
         self.workspace = workspace
@@ -31,31 +60,6 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    // MARK: Internal
-
-    override var keyCommands: [UIKeyCommand]? {
-        let find = UIKeyCommand(
-            title: String(localized: "Find in Page", table: "Mobile"),
-            action: #selector(findInPage), input: "f", modifierFlags: .command
-        )
-        find.wantsPriorityOverSystemBehavior = true
-        return (super.keyCommands ?? []) + [find]
-    }
-
-    let workspace: BrowserMobileWorkspace
-    let pageController: BrowserMobilePageViewController
-    let tabsController: BrowserMobileTabsViewController
-
-    lazy var javaScriptDialogPresenter =
-        BrowserMobileJavaScriptDialogPresenter(host: self) { [weak self] id, response in
-            self?.workspace.resolveJavaScriptDialog(id: id, response: response)
-        }
-
-    lazy var httpAuthenticationPresenter =
-        BrowserMobileHTTPAuthenticationPresenter(host: self) { [weak self] id, response in
-            self?.workspace.resolveHTTPAuthentication(id: id, response: response)
-        }
-
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -74,10 +78,6 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         .secondary
     }
 
-    // MARK: Private
-
-    private weak var presentedTabs: BrowserMobileTabsViewController?
-
     @objc private func findInPage() { pageController.findInPage() }
 
     private func showTabList() {
@@ -94,7 +94,7 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         let controller = BrowserMobileTabsViewController(workspace: workspace)
         controller.didSelectTab = { [weak controller] in controller?.dismiss(animated: true) }
         controller.navigationItem.rightBarButtonItem = UIBarButtonItem(
-            systemItem: .done, primaryAction: UIAction { [weak controller] _ in controller?.dismiss(animated: true) }
+            systemItem: .done, primaryAction: UIAction { [weak controller] _ in controller?.dismiss(animated: true) },
         )
         let navigation = UINavigationController(rootViewController: controller)
         navigation.sheetPresentationController?.detents = [.medium(), .large()]
@@ -109,21 +109,77 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 final class BrowserMobileTabsViewController: UITableViewController, UITableViewDragDelegate, UITableViewDropDelegate,
     UIDropInteractionDelegate
 {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(
-        workspace: BrowserMobileWorkspace,
-        hoverScheduler: any BrowserMobileSidebarHoverScheduling = BrowserMobileSidebarHoverScheduler(),
-        tableView: UITableView? = nil
-    ) {
-        self.workspace = workspace
-        self.hoverScheduler = hoverScheduler
-        self.suppliedTableView = tableView
-        super.init(style: .insetGrouped)
-        title = String(localized: "Tabs", table: "Mobile")
+    private enum Row: Equatable {
+        case tab(String, depth: Int)
+        case folder(String, depth: Int)
+
+        // MARK: Internal
+
+        var reference: BrowserSyncEntityReference {
+            switch self {
+            case .tab(let id, _): .init(entityType: .tab, entityID: id)
+            case .folder(let id, _): .init(entityType: .folder, entityID: id)
+            }
+        }
+
+        var depth: Int {
+            switch self { case .tab(_, let depth),
+                 .folder(_, let depth): depth }
+        }
     }
 
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
+    private final class SpaceSpringBehavior: NSObject, UISpringLoadedInteractionBehavior {
+        // MARK: Private
+
+        private let canActivate: () -> Bool
+
+        init(canActivate: @escaping () -> Bool) { self.canActivate = canActivate }
+
+        // MARK: Internal
+
+        func shouldAllow(_: UISpringLoadedInteraction, with _: any UISpringLoadedInteractionContext) -> Bool {
+            canActivate()
+        }
+    }
+
+    private struct DropHover {
+        let target: BrowserMobileSidebarDrop.Target
+        let point: CGPoint
+        var insideFolder: IndexPath?
+        var indentation: CGFloat = 0
+    }
+
+    private struct TargetKey: Hashable {
+        let item: BrowserSyncEntityReference
+        let position: Int
+    }
+
+    private struct PlanCache {
+        let source: BrowserMobileSidebarDrop.Source
+        let target: BrowserMobileSidebarDrop.Target
+        let snapshot: BrowserTabSessionSnapshot
+        let plan: BrowserMobileSidebarDrop.Plan?
+    }
+
+    private struct FolderHoverCandidate {
+        let tokenID: ObjectIdentifier
+        let sessionID: ObjectIdentifier
+        let folderID: String
+        let target: BrowserMobileSidebarDrop.Target
+        let generation: UUID
+        var isDue = false
+        var retryCount = 0
+        var retryScheduled = false
+    }
+
+    private struct FolderExpansionCache {
+        let source: BrowserMobileSidebarDrop.Source
+        let target: BrowserMobileSidebarDrop.Target
+        let snapshot: BrowserTabSessionSnapshot
+        let isEligible: Bool
+    }
 
     // MARK: Internal
 
@@ -133,7 +189,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         let escape = UIKeyCommand(
             input: UIKeyCommand.inputEscape,
             modifierFlags: [],
-            action: #selector(cancelSidebarDrag)
+            action: #selector(cancelSidebarDrag),
         )
         escape.wantsPriorityOverSystemBehavior = true
         return (super.keyCommands ?? []) + [escape]
@@ -142,12 +198,101 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     let workspace: BrowserMobileWorkspace
     var didSelectTab: (() -> Void)?
 
+    private let hoverScheduler: any BrowserMobileSidebarHoverScheduling
+    private let suppliedTableView: UITableView?
+    private var folderHoverCandidate: FolderHoverCandidate?
+    private var folderExpansionCache: FolderExpansionCache?
+    private weak var hoverDropSession: (any UIDropSession)?
+    private var transientExpandedFolderIDs = Set<String>()
+    private var renderedAvailableTabIDs = Set<String>()
+    private var isApplyingHoverProjection = false
+
+    private let spaceButton = UIButton(type: .system)
+    private lazy var selectionButton = UIBarButtonItem(
+        title: String(localized: "Select", table: "Mobile"), style: .plain,
+        target: self, action: #selector(toggleSidebarSelection),
+    )
+    private var nonSelectionRightButtons = [UIBarButtonItem]()
+    private var isSelectingRows = false
+    private var selectedItems = Set<BrowserSyncEntityReference>()
+    private var rows = [[Row]]()
+    private var renderedSnapshot: BrowserTabSessionSnapshot?
+    private var renderedTabs = [String: BrowserMobileTab]()
+    private weak var renderedDocument: BrowserMobileProfileDocument?
+    private var renderedSpaceID: String?
+    private var activeSource: BrowserMobileSidebarDragSession?
+    private var observedDragMembershipRevision: Int?
+    private var initialDragItems = [BrowserSyncEntityReference: UIDragItem]()
+    private var suppliedInitialItems = Set<BrowserSyncEntityReference>()
+    private var sourceSessionID: ObjectIdentifier?
+    private var dropSessionID: ObjectIdentifier?
+    private var hover: DropHover?
+    private weak var dragScene: UIWindowScene?
+    private var spaceDropController: BrowserMobileSpaceDropViewController?
+    private var spaceDropTopConstraint: NSLayoutConstraint?
+    private var spaceDropBottomConstraint: NSLayoutConstraint?
+    private var spaceDropSessionID: ObjectIdentifier?
+    private weak var spaceHoverDropSession: (any UIDropSession)?
+    private var spaceDropHover: BrowserMobileSpaceDropViewController.Target?
+    private var spaceDropClosing = false
+    private var spaceDropBatchID: UUID?
+    private var spaceDropBatchSessionID: ObjectIdentifier?
+    private var spaceDropPreviewTarget: BrowserMobileSpaceDropViewController.Target?
+    private var registeredSpaceDropAnimations = Set<ObjectIdentifier>()
+    private var highlightedFolder: IndexPath?
+    private var needsStructuralRefresh = false
+    private var isCommittingDrop = false
+    private var dragAdmissionSuspended = false
+    private let insertionLine = UIView()
+    private var capturedTargets = [TargetKey: BrowserMobileSidebarDrop.Target]()
+    private var planCache: PlanCache?
+    private var terminalRefreshTask: Task<Void, Never>?
+
+    private var archiveButton = UIBarButtonItem()
+    private weak var presentedArchive: BrowserMobileArchiveViewController?
+
     var sidebarDragHasHoverProjection: Bool { isApplyingHoverProjection }
 
     var sidebarDragHasNativeHold: Bool {
         sourceSessionID != nil || dropSessionID != nil || spaceDropSessionID != nil || isCommittingDrop
             || isApplyingHoverProjection
     }
+
+    private var pendingDropAnimations: Set<ObjectIdentifier> { activeSource?.pendingDropAnimations ?? [] }
+    private var animationBatchID: UUID? { activeSource?.animationBatchID }
+
+    private var isHoldingRows: Bool {
+        sidebarDragHasNativeHold || activeSource?.isHoldingRows == true
+    }
+
+    private var canOpenSpaceDropTargets: Bool {
+        guard workspace.isReady, let document = workspace.profileDocument, document.canEdit,
+              let payload = activeSource, !payload.isCancelled, !payload.isCommitted, payload.document === document,
+              payload.owner === self, sourceSessionID == payload.sourceSessionID,
+              payload.spaceID == workspace.selectedSpaceID,
+              acceptsSidebarDrops,
+              view.window?.windowScene === dragScene,
+              (document.snapshot.spaces ?? []).contains(where: { $0.id != payload.spaceID }) else { return false }
+        return BrowserMobileSidebarDrop.source(items: payload.source.items, in: document.snapshot) == payload.source
+    }
+
+    private var acceptsSidebarDrops: Bool {
+        !dragAdmissionSuspended && viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive
+    }
+
+    init(
+        workspace: BrowserMobileWorkspace,
+        hoverScheduler: any BrowserMobileSidebarHoverScheduling = BrowserMobileSidebarHoverScheduler(),
+        tableView: UITableView? = nil,
+    ) {
+        self.workspace = workspace
+        self.hoverScheduler = hoverScheduler
+        self.suppliedTableView = tableView
+        super.init(style: .insetGrouped)
+        title = String(localized: "Tabs", table: "Mobile")
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func loadView() {
         if let suppliedTableView {
@@ -177,16 +322,16 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             primaryAction: UIAction { [weak self] _ in
                 self?.workspace.newTab()
                 self?.didSelectTab?()
-            }
+            },
         )
         let accountButton = UIBarButtonItem(
             title: String(localized: "Account", table: "Mobile"), image: UIImage(systemName: "person.crop.circle"),
-            primaryAction: UIAction { [weak self] _ in self?.showAccount() }
+            primaryAction: UIAction { [weak self] _ in self?.showAccount() },
         )
         accountButton.accessibilityIdentifier = "browser.account"
         archiveButton = UIBarButtonItem(
             image: UIImage(systemName: "archivebox"), style: .plain,
-            target: self, action: #selector(showArchive)
+            target: self, action: #selector(showArchive),
         )
         archiveButton.title = String(localized: "Archive", table: "Mobile")
         archiveButton.accessibilityIdentifier = "browser.archive"
@@ -199,7 +344,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }, for: .menuActionTriggered)
         let behavior = SpaceSpringBehavior { [weak self] in self?.canOpenSpaceDropTargets == true }
         spaceButton.addInteraction(UISpringLoadedInteraction(
-            interactionBehavior: behavior, interactionEffect: nil
+            interactionBehavior: behavior, interactionEffect: nil,
         ) { [weak spaceButton] _, _ in
             spaceButton?.sendActions(for: .primaryActionTriggered)
         })
@@ -210,7 +355,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             UIScene.didDisconnectNotification,
         ] {
             NotificationCenter.default.addObserver(
-                self, selector: #selector(sidebarDragSceneChanged(_:)), name: name, object: nil
+                self, selector: #selector(sidebarDragSceneChanged(_:)), name: name, object: nil,
             )
         }
         spaceButton.accessibilityIdentifier = "browser.spaces"
@@ -318,7 +463,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             style: .destructive,
             title: removes
                 ? String(localized: "Remove", table: "Mobile")
-                : String(localized: "Close", table: "Mobile")
+                : String(localized: "Close", table: "Mobile"),
         ) { [weak self] _, _, completion in
             guard let self, !isSelectingRows else { completion(false)
                 return
@@ -378,7 +523,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             navigationItem.titleView = spaceButton
             applyRows(sharedRows(
                 document.snapshot, spaceID: workspace.selectedSpaceID,
-                available: Set(workspace.visibleTabs.map(\.id)), expanded: []
+                available: Set(workspace.visibleTabs.map(\.id)), expanded: [],
             ), snapshot: document.snapshot)
         } else {
             navigationItem.titleView = nil
@@ -389,7 +534,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     func tableView(
         _: UITableView,
         itemsForBeginning session: any UIDragSession,
-        at indexPath: IndexPath
+        at indexPath: IndexPath,
     ) -> [UIDragItem] {
         let sessionID = ObjectIdentifier(session)
         if sourceSessionID == sessionID, let payload = activeSource {
@@ -401,7 +546,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
               document.canEdit,
               let row = row(at: indexPath) else { return [] }
         let requestedItems = isSelectingRows && selectedItems.contains(row.reference)
-            ? rows.flatMap { $0 }.map(\.reference).filter { selectedItems.contains($0) }
+            ? rows.flatMap(\.self).map(\.reference).filter { selectedItems.contains($0) }
             : [row.reference]
         guard let source = BrowserMobileSidebarDrop.source(items: requestedItems, in: document.snapshot)
         else { return [] }
@@ -417,7 +562,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             document: document,
             spaceID: workspace.selectedSpaceID,
             source: source,
-            sourceSessionID: sessionID
+            sourceSessionID: sessionID,
         )
         initialDragItems.removeAll(keepingCapacity: true)
         suppliedInitialItems.removeAll(keepingCapacity: true)
@@ -442,7 +587,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         _ tableView: UITableView,
         itemsForAddingTo session: any UIDragSession,
         at indexPath: IndexPath,
-        point: CGPoint
+        point: CGPoint,
     ) -> [UIDragItem] {
         guard acceptsSidebarDrops, workspace.isReady, let document = workspace.profileDocument, document.canEdit,
               let payload = activeSource, payload.canAddItems, ownsSidebarDrag(payload),
@@ -454,11 +599,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
               let addition = BrowserMobileSidebarDrop.source(item: row.reference, in: snapshot)
         else { return [] }
         let references = Set(payload.source.items).union(addition.items)
-        let ordered = rows.flatMap { $0 }.map(\.reference).filter { references.contains($0) }
+        let ordered = rows.flatMap(\.self).map(\.reference).filter { references.contains($0) }
         guard let capturedGroup = BrowserMobileSidebarDrop.source(items: ordered, in: snapshot),
               capturedGroup.items == ordered,
               let extended = BrowserMobileSidebarDrop.extending(
-                  source: payload.source, adding: addition, orderedItems: ordered, in: document.snapshot
+                  source: payload.source, adding: addition, orderedItems: ordered, in: document.snapshot,
               ) else { return [] }
         let item = UIDragItem(itemProvider: NSItemProvider(object: dragLabel(for: row.reference) as NSString))
         item.localObject = payload
@@ -516,7 +661,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     func tableView(
         _ tableView: UITableView,
         dropSessionDidUpdate session: any UIDropSession,
-        withDestinationIndexPath _: IndexPath?
+        withDestinationIndexPath _: IndexPath?,
     ) -> UITableViewDropProposal {
         clearDropFeedback()
         guard !isApplyingHoverProjection,
@@ -551,9 +696,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 width: max(
                     0,
                     tableView.bounds.width - tableView.layoutMargins.left - tableView.layoutMargins.right - target
-                        .indentation
+                        .indentation,
                 ),
-                height: 2
+                height: 2,
             )
             if insertionLine.superview == nil {
                 tableView.addSubview(insertionLine)
@@ -567,7 +712,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             operation: .move,
             intent: target.insideFolder == nil
                 ? .unspecified
-                : .insertIntoDestinationIndexPath
+                : .insertIntoDestinationIndexPath,
         )
     }
 
@@ -613,7 +758,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     func dropInteraction(
         _ interaction: UIDropInteraction,
-        sessionDidUpdate session: any UIDropSession
+        sessionDidUpdate session: any UIDropSession,
     ) -> UIDropProposal {
         guard dropInteraction(interaction, canHandle: session), let palette = spaceDropController,
               let payload = payload(for: session), joinSidebarDrag(payload), let document = workspace.profileDocument
@@ -655,7 +800,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
               let plan = validatedPlan(
                   source: payload.source,
                   target: target.plannerTarget,
-                  snapshot: document.snapshot
+                  snapshot: document.snapshot,
               )
         else { return }
         isCommittingDrop = true
@@ -673,7 +818,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     func dropInteraction(
         _ interaction: UIDropInteraction, previewForDropping item: UIDragItem,
-        withDefault defaultPreview: UITargetedDragPreview
+        withDefault defaultPreview: UITargetedDragPreview,
     ) -> UITargetedDragPreview? {
         guard isSpaceDropInteraction(interaction), spaceDropBatchID == animationBatchID,
               pendingDropAnimations.contains(ObjectIdentifier(item)), let target = spaceDropPreviewTarget,
@@ -682,7 +827,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func dropInteraction(
-        _ interaction: UIDropInteraction, item: UIDragItem, willAnimateDropWith animator: any UIDragAnimating
+        _ interaction: UIDropInteraction, item: UIDragItem, willAnimateDropWith animator: any UIDragAnimating,
     ) {
         let itemID = ObjectIdentifier(item)
         guard isSpaceDropInteraction(interaction), let token = activeSource,
@@ -707,7 +852,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             return UIMenu(children: [UIAction(
                 title: String(localized: "Close Tab", table: "Mobile"),
                 image: UIImage(systemName: "xmark"),
-                attributes: .destructive
+                attributes: .destructive,
             ) { [weak self] _ in self?.removeTab(id: id) }])
         }
         let disabled: UIMenuElement.Attributes = document.canEdit ? [] : .disabled
@@ -718,7 +863,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                     ? String(localized: "Unpin", table: "Mobile")
                     : String(localized: "Pin", table: "Mobile"),
                 image: UIImage(systemName: tab.placement == .spacePinned ? "pin.slash" : "pin"),
-                attributes: disabled
+                attributes: disabled,
             ) { [weak document] _ in
                 document?.setTabPinned(id: id, isPinned: tab.placement != .spacePinned)
             })
@@ -728,24 +873,24 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 ? String(localized: "Remove from Favorites", table: "Mobile")
                 : String(localized: "Add to Favorites", table: "Mobile"),
             image: UIImage(systemName: "star"),
-            attributes: disabled
+            attributes: disabled,
         ) { [weak self, weak document] _ in
             document?.setPlacement(
                 tabID: id,
                 placement: tab.placement == .app ? .temporary : .app,
-                spaceID: tab.placement == .app ? self?.workspace.selectedSpaceID : nil
+                spaceID: tab.placement == .app ? self?.workspace.selectedSpaceID : nil,
             )
         })
         actions.append(UIAction(
             title: String(localized: "Rename", table: "Mobile"),
             image: UIImage(systemName: "pencil"),
-            attributes: disabled
+            attributes: disabled,
         ) { [weak self, weak document] _ in
             let latest = self?.workspace.tabs.first { $0.id == id }
             self?.prompt(
                 title: String(localized: "Rename", table: "Mobile"),
                 value: latest?.userTitleOverride ?? latest?.title ?? "",
-                allowsEmpty: true
+                allowsEmpty: true,
             ) { [weak document] in
                 document?.renameTab(id: id, title: $0)
             }
@@ -756,7 +901,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 ? String(localized: "Close Tab", table: "Mobile")
                 : String(localized: "Remove", table: "Mobile"),
             image: UIImage(systemName: "xmark"),
-            attributes: disabled.union(.destructive)
+            attributes: disabled.union(.destructive),
         ) { [weak self] _ in self?.removeTab(id: id) })
         return UIMenu(children: actions)
     }
@@ -769,7 +914,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             UIAction(
                 title: String(localized: "Rename", table: "Mobile"),
                 image: UIImage(systemName: "pencil"),
-                attributes: disabled
+                attributes: disabled,
             ) { [weak self, weak document] _ in
                 guard let value = document?.snapshot.pinnedTabFolders?.first(where: { $0.id == id })?.title
                 else { return }
@@ -777,14 +922,14 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                     .prompt(title: String(localized: "Rename", table: "Mobile"), value: value) { [weak document] in
                         document?.renameFolder(
                             id: id,
-                            title: $0
+                            title: $0,
                         )
                     }
             },
             UIAction(
                 title: String(localized: "New Folder", table: "Mobile"),
                 image: UIImage(systemName: "folder.badge.plus"),
-                attributes: disabled
+                attributes: disabled,
             ) { [weak self, weak document] _ in
                 guard let current = document?.snapshot.pinnedTabFolders?.first(where: { $0.id == id }) else { return }
                 self?.createFolder(spaceID: current.spaceID, parent: id)
@@ -793,11 +938,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             UIAction(
                 title: String(localized: "Delete Folder and Contents", table: "Mobile"),
                 image: UIImage(systemName: "trash"),
-                attributes: disabled.union(.destructive)
+                attributes: disabled.union(.destructive),
             ) { [weak self, weak document] _ in
                 self?.confirmFolderRemoval(title: folder.title) { [weak document] in document?.delete(entity: .init(
                     entityType: .folder,
-                    entityID: id
+                    entityID: id,
                 )) }
             },
         ])
@@ -848,7 +993,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             spaceHoverDropSession = nil
             clearDropFeedback()
             spaceDropController?.highlight(nil)
-        case .background, .unattached:
+        case .background,
+             .unattached:
             dragAdmissionSuspended = true
             endSidebarDragForSceneLoss()
         @unknown default:
@@ -867,154 +1013,6 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .formSheet
         present(navigation, animated: true)
-    }
-
-    // MARK: Private
-
-    private enum Row: Equatable {
-        case tab(String, depth: Int)
-        case folder(String, depth: Int)
-
-        // MARK: Internal
-
-        var reference: BrowserSyncEntityReference {
-            switch self {
-            case .tab(let id, _): .init(entityType: .tab, entityID: id)
-            case .folder(let id, _): .init(entityType: .folder, entityID: id)
-            }
-        }
-
-        var depth: Int {
-            switch self { case .tab(_, let depth), .folder(_, let depth): depth }
-        }
-    }
-
-    private final class SpaceSpringBehavior: NSObject, UISpringLoadedInteractionBehavior {
-        // MARK: Lifecycle
-
-        init(canActivate: @escaping () -> Bool) { self.canActivate = canActivate }
-
-        // MARK: Internal
-
-        func shouldAllow(_: UISpringLoadedInteraction, with _: any UISpringLoadedInteractionContext) -> Bool {
-            canActivate()
-        }
-
-        // MARK: Private
-
-        private let canActivate: () -> Bool
-    }
-
-    private struct DropHover {
-        let target: BrowserMobileSidebarDrop.Target
-        let point: CGPoint
-        var insideFolder: IndexPath?
-        var indentation: CGFloat = 0
-    }
-
-    private struct TargetKey: Hashable {
-        let item: BrowserSyncEntityReference
-        let position: Int
-    }
-
-    private struct PlanCache {
-        let source: BrowserMobileSidebarDrop.Source
-        let target: BrowserMobileSidebarDrop.Target
-        let snapshot: BrowserTabSessionSnapshot
-        let plan: BrowserMobileSidebarDrop.Plan?
-    }
-
-    private struct FolderHoverCandidate {
-        let tokenID: ObjectIdentifier
-        let sessionID: ObjectIdentifier
-        let folderID: String
-        let target: BrowserMobileSidebarDrop.Target
-        let generation: UUID
-        var isDue = false
-        var retryCount = 0
-        var retryScheduled = false
-    }
-
-    private struct FolderExpansionCache {
-        let source: BrowserMobileSidebarDrop.Source
-        let target: BrowserMobileSidebarDrop.Target
-        let snapshot: BrowserTabSessionSnapshot
-        let isEligible: Bool
-    }
-
-    private let hoverScheduler: any BrowserMobileSidebarHoverScheduling
-    private let suppliedTableView: UITableView?
-    private var folderHoverCandidate: FolderHoverCandidate?
-    private var folderExpansionCache: FolderExpansionCache?
-    private weak var hoverDropSession: (any UIDropSession)?
-    private var transientExpandedFolderIDs = Set<String>()
-    private var renderedAvailableTabIDs = Set<String>()
-    private var isApplyingHoverProjection = false
-
-    private let spaceButton = UIButton(type: .system)
-    private lazy var selectionButton = UIBarButtonItem(
-        title: String(localized: "Select", table: "Mobile"), style: .plain,
-        target: self, action: #selector(toggleSidebarSelection)
-    )
-    private var nonSelectionRightButtons = [UIBarButtonItem]()
-    private var isSelectingRows = false
-    private var selectedItems = Set<BrowserSyncEntityReference>()
-    private var rows = [[Row]]()
-    private var renderedSnapshot: BrowserTabSessionSnapshot?
-    private var renderedTabs = [String: BrowserMobileTab]()
-    private weak var renderedDocument: BrowserMobileProfileDocument?
-    private var renderedSpaceID: String?
-    private var activeSource: BrowserMobileSidebarDragSession?
-    private var observedDragMembershipRevision: Int?
-    private var initialDragItems = [BrowserSyncEntityReference: UIDragItem]()
-    private var suppliedInitialItems = Set<BrowserSyncEntityReference>()
-    private var sourceSessionID: ObjectIdentifier?
-    private var dropSessionID: ObjectIdentifier?
-    private var hover: DropHover?
-    private weak var dragScene: UIWindowScene?
-    private var spaceDropController: BrowserMobileSpaceDropViewController?
-    private var spaceDropTopConstraint: NSLayoutConstraint?
-    private var spaceDropBottomConstraint: NSLayoutConstraint?
-    private var spaceDropSessionID: ObjectIdentifier?
-    private weak var spaceHoverDropSession: (any UIDropSession)?
-    private var spaceDropHover: BrowserMobileSpaceDropViewController.Target?
-    private var spaceDropClosing = false
-    private var spaceDropBatchID: UUID?
-    private var spaceDropBatchSessionID: ObjectIdentifier?
-    private var spaceDropPreviewTarget: BrowserMobileSpaceDropViewController.Target?
-    private var registeredSpaceDropAnimations = Set<ObjectIdentifier>()
-    private var highlightedFolder: IndexPath?
-    private var needsStructuralRefresh = false
-    private var isCommittingDrop = false
-    private var dragAdmissionSuspended = false
-    private let insertionLine = UIView()
-    private var capturedTargets = [TargetKey: BrowserMobileSidebarDrop.Target]()
-    private var planCache: PlanCache?
-    private var terminalRefreshTask: Task<Void, Never>?
-
-    private var archiveButton = UIBarButtonItem()
-    private weak var presentedArchive: BrowserMobileArchiveViewController?
-
-    private var pendingDropAnimations: Set<ObjectIdentifier> { activeSource?.pendingDropAnimations ?? [] }
-    private var animationBatchID: UUID? { activeSource?.animationBatchID }
-
-    private var isHoldingRows: Bool {
-        sidebarDragHasNativeHold || activeSource?.isHoldingRows == true
-    }
-
-    private var canOpenSpaceDropTargets: Bool {
-        guard workspace.isReady, let document = workspace.profileDocument, document.canEdit,
-              let payload = activeSource, !payload.isCancelled, !payload.isCommitted, payload.document === document,
-              payload.owner === self, sourceSessionID == payload.sourceSessionID,
-              payload.spaceID == workspace.selectedSpaceID,
-              acceptsSidebarDrops,
-              view.window?.windowScene === dragScene,
-              (document.snapshot.spaces ?? []).contains(where: { $0.id != payload.spaceID }) else { return false }
-        return BrowserMobileSidebarDrop.source(items: payload.source.items, in: document.snapshot) == payload.source
-    }
-
-    private var acceptsSidebarDrops: Bool {
-        !dragAdmissionSuspended && viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive
     }
 
     @objc private func toggleSidebarSelection() {
@@ -1040,10 +1038,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func restoreRowSelection() {
-        for index in tableView.indexPathsForSelectedRows ?? [] {
-            if !isSelectingRows || row(at: index).map({ !selectedItems.contains($0.reference) }) != false {
-                tableView.deselectRow(at: index, animated: false)
-            }
+        for index in tableView.indexPathsForSelectedRows ?? []
+            where !isSelectingRows || row(at: index).map({ !selectedItems.contains($0.reference) }) != false
+        {
+            tableView.deselectRow(at: index, animated: false)
         }
         if isSelectingRows {
             for item in selectedItems {
@@ -1051,7 +1049,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                     tableView.selectRow(
                         at: index,
                         animated: false,
-                        scrollPosition: .none
+                        scrollPosition: .none,
                     )
                 }
             }
@@ -1068,7 +1066,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         case .tab: renderedTabs[item.entityID].map(displayTitle) ?? String(localized: "Tabs", table: "Mobile")
         case .folder: renderedSnapshot?.pinnedTabFolders?.first(where: { $0.id == item.entityID })?.title ?? String(
                 localized: "Tabs",
-                table: "Mobile"
+                table: "Mobile",
             )
         case .space: String(localized: "Spaces", table: "Mobile")
         }
@@ -1177,7 +1175,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func updateFolderExpansion(
-        session: any UIDropSession, payload: BrowserMobileSidebarDragSession, target: DropHover
+        session: any UIDropSession, payload: BrowserMobileSidebarDragSession, target: DropHover,
     ) {
         guard let index = target.insideFolder, case .folder(let folderID, _) = row(at: index),
               !transientExpandedFolderIDs.contains(folderID),
@@ -1200,7 +1198,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         let generation = UUID()
         folderHoverCandidate = .init(
             tokenID: ObjectIdentifier(payload), sessionID: ObjectIdentifier(session), folderID: folderID,
-            target: target.target, generation: generation
+            target: target.target, generation: generation,
         )
         hoverScheduler.schedule(after: .milliseconds(600)) { [weak self] in
             guard let self, folderHoverCandidate?.generation == generation else { return }
@@ -1211,7 +1209,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func canExpandFolder(
         source: BrowserMobileSidebarDrop.Source, target: BrowserMobileSidebarDrop.Target,
-        snapshot: BrowserTabSessionSnapshot
+        snapshot: BrowserTabSessionSnapshot,
     ) -> Bool {
         if let cache = folderExpansionCache, cache.source == source, cache.target == target,
            cache.snapshot == snapshot
@@ -1261,10 +1259,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             snapshot,
             spaceID: renderedSpaceID,
             available: renderedAvailableTabIDs,
-            expanded: expanded
+            expanded: expanded,
         )
         let previousRows = rows
-        let previousIDs = Set(previousRows.flatMap { $0 }.map(\.reference))
+        let previousIDs = Set(previousRows.flatMap(\.self).map(\.reference))
         let insertions = nextRows.enumerated().flatMap { section, values in
             values.enumerated().compactMap { row, item in
                 previousIDs.contains(item.reference) ? nil : IndexPath(row: row, section: section)
@@ -1340,7 +1338,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 insideFolder: inside
                     ? index
                     : nil,
-                indentation: CGFloat(row.depth) * 16
+                indentation: CGFloat(row.depth) * 16,
             )
         }
         for section in rows.indices {
@@ -1352,7 +1350,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             {
                 return .init(
                     target: target,
-                    point: CGPoint(x: rect.midX, y: tableView.rectForRow(at: .init(row: 0, section: section)).minY)
+                    point: CGPoint(x: rect.midX, y: tableView.rectForRow(at: .init(row: 0, section: section)).minY),
                 )
             }
             let placement: BrowserTabPlacement
@@ -1371,7 +1369,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 : tableView.rectForRow(at: .init(row: rows[section].count - 1, section: section)).maxY
             return .init(
                 target: BrowserMobileSidebarDrop.rootTarget(spaceID: spaceID, placement: placement),
-                point: CGPoint(x: rect.midX, y: boundaryY)
+                point: CGPoint(x: rect.midX, y: boundaryY),
             )
         }
         return nil
@@ -1383,7 +1381,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         let palette = BrowserMobileSpaceDropViewController(
             spaces: (document.snapshot.spaces ?? []).filter { $0.id != payload.spaceID },
             includesFolders: payload.source.items.contains { $0.entityType == .folder },
-            dropDelegate: self
+            dropDelegate: self,
         )
         palette.onScroll = { [weak self, weak palette] interaction in
             guard let self, let palette, spaceDropController === palette,
@@ -1398,10 +1396,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         palette.view.translatesAutoresizingMaskIntoConstraints = false
         tableView.addSubview(palette.view)
         let top = palette.view.topAnchor.constraint(
-            equalTo: tableView.frameLayoutGuide.topAnchor, constant: tableView.safeAreaInsets.top + 8
+            equalTo: tableView.frameLayoutGuide.topAnchor, constant: tableView.safeAreaInsets.top + 8,
         )
         let bottom = palette.view.bottomAnchor.constraint(
-            lessThanOrEqualTo: tableView.frameLayoutGuide.bottomAnchor, constant: -tableView.safeAreaInsets.bottom - 8
+            lessThanOrEqualTo: tableView.frameLayoutGuide.bottomAnchor, constant: -tableView.safeAreaInsets.bottom - 8,
         )
         spaceDropTopConstraint = top
         spaceDropBottomConstraint = bottom
@@ -1486,7 +1484,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func commit(
         _ plan: BrowserMobileSidebarDrop.Plan, document: BrowserMobileProfileDocument,
-        payload: BrowserMobileSidebarDragSession
+        payload: BrowserMobileSidebarDragSession,
     ) -> UUID? {
         cancelPendingFolderExpansion(clearSession: true)
         return payload.commit {
@@ -1522,7 +1520,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private func capturedTarget(
         relativeTo item: BrowserSyncEntityReference,
         position: BrowserMobileSidebarDrop.Position,
-        snapshot: BrowserTabSessionSnapshot
+        snapshot: BrowserTabSessionSnapshot,
     ) -> BrowserMobileSidebarDrop.Target? {
         let positionID =
             switch position { case .before: 0
@@ -1544,7 +1542,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private func validatedPlan(
         source: BrowserMobileSidebarDrop.Source,
         target: BrowserMobileSidebarDrop.Target,
-        snapshot: BrowserTabSessionSnapshot
+        snapshot: BrowserTabSessionSnapshot,
     ) -> BrowserMobileSidebarDrop.Plan? {
         if let cache = planCache, cache.source == source, cache.target == target,
            cache.snapshot == snapshot
@@ -1585,7 +1583,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private func scheduleTerminalRefresh() {
         guard terminalRefreshTask == nil, viewIfLoaded?.window != nil else { return }
         terminalRefreshTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            do {
+                try await Task.sleep(for: .milliseconds(16))
+            } catch {
+                return
+            }
             guard let self else { return }
             terminalRefreshTask = nil
             finishInteractionIfPossible()
@@ -1593,7 +1595,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func applyRows(_ newRows: [[Row]], snapshot: BrowserTabSessionSnapshot?) {
-        let newItems = Set(newRows.flatMap { $0 }.map(\.reference))
+        let newItems = Set(newRows.flatMap(\.self).map(\.reference))
         let anchor = tableView.indexPathsForVisibleRows?
             .sorted()
             .compactMap { index -> (
@@ -1623,11 +1625,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 let minY = -tableView.adjustedContentInset.top
                 let maxY = max(
                     minY,
-                    tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom
+                    tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom,
                 )
                 tableView.setContentOffset(
                     CGPoint(x: tableView.contentOffset.x, y: min(maxY, max(minY, y))),
-                    animated: false
+                    animated: false,
                 )
             }
         } else {
@@ -1645,7 +1647,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             if let row = rows[section].firstIndex(where: { $0.reference == item }) {
                 return .init(
                     row: row,
-                    section: section
+                    section: section,
                 )
             }
         }
@@ -1668,15 +1670,17 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func sharedRows(
-        _ snapshot: BrowserTabSessionSnapshot, spaceID: String?, available: Set<String>, expanded: Set<String>
+        _ snapshot: BrowserTabSessionSnapshot, spaceID: String?, available: Set<String>, expanded: Set<String>,
     ) -> [[Row]] {
         let folders = Dictionary(
             (snapshot.pinnedTabFolders ?? []).map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first }
+            uniquingKeysWith: { first, _ in first },
         )
         var result = [[Row](), [Row](), [Row]()]
         func visibleDepth(parent: String?) -> Int? {
-            var next = parent, depth = 0, seen = Set<String>()
+            var next = parent
+            var depth = 0
+            var seen = Set<String>()
             while let id = next {
                 guard seen.insert(id).inserted, let folder = folders[id],
                       folder.isExpanded || expanded.contains(id) else { return nil }
@@ -1734,7 +1738,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             UIAction(
                 title: space.title,
                 image: UIImage(systemName: space.systemImageName),
-                state: workspace.selectedSpaceID == space.id ? .on : .off
+                state: workspace.selectedSpaceID == space.id ? .on : .off,
             ) { [weak self] _ in
                 self?.workspace.selectSpace(id: space.id)
                 self?.render()
@@ -1744,11 +1748,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         var edits: [UIMenuElement] = [UIAction(
             title: String(localized: "New Space", table: "Mobile"),
             image: UIImage(systemName: "plus"),
-            attributes: disabled
+            attributes: disabled,
         ) { [weak self, weak document] _ in
             self?.prompt(title: String(localized: "New Space", table: "Mobile"), value: "") { [
                 weak self,
-                weak document
+                weak document,
             ] name in
                 guard let id = document?.createSpace(title: name) else { return }
                 self?.workspace.selectSpace(id: id)
@@ -1758,13 +1762,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             edits.append(UIAction(
                 title: String(localized: "Rename Space", table: "Mobile"),
                 image: UIImage(systemName: "pencil"),
-                attributes: disabled
+                attributes: disabled,
             ) { [weak self, weak document] _ in
                 guard let title = document?.snapshot.spaces?.first(where: { $0.id == id })?.title else { return }
                 self?
                     .prompt(
                         title: String(localized: "Rename Space", table: "Mobile"),
-                        value: title
+                        value: title,
                     ) { [weak document] in
                         document?.renameSpace(id: id, title: $0)
                     }
@@ -1772,7 +1776,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             edits.append(UIAction(
                 title: String(localized: "New Folder", table: "Mobile"),
                 image: UIImage(systemName: "folder.badge.plus"),
-                attributes: disabled
+                attributes: disabled,
             ) { [weak self] _ in
                 self?.createFolder(spaceID: id, parent: nil)
             })
@@ -1793,7 +1797,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         let folders = document.snapshot.pinnedTabFolders ?? []
         func isDescendant(_ folder: BrowserPinnedTabFolderSessionSnapshot) -> Bool {
             guard item.entityType == .folder else { return false }
-            var next: String? = folder.id, seen = Set<String>()
+            var next: String? = folder.id
+            var seen = Set<String>()
             while let id = next, seen.insert(id).inserted {
                 if id == item.entityID {
                     return true
@@ -1806,7 +1811,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             UIAction(title: title, attributes: disabled) { [weak document] _ in
                 document?.move(
                     items: [item],
-                    destination: .tabs(spaceID: spaceID, placement: placement, pinnedFolderID: parent)
+                    destination: .tabs(spaceID: spaceID, placement: placement, pinnedFolderID: parent),
                 )
             }
         }
@@ -1815,18 +1820,20 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 String(localized: "Pinned", table: "Mobile"),
                 spaceID: space.id,
                 placement: .spacePinned,
-                parent: nil
+                parent: nil,
             )]
             if item.entityType == .tab {
                 children.append(moveAction(
                     String(localized: "Today", table: "Mobile"),
                     spaceID: space.id,
                     placement: .temporary,
-                    parent: nil
+                    parent: nil,
                 ))
             }
             for folder in folders where folder.spaceID == space.id && !isDescendant(folder) {
-                var names = [folder.title], parent = folder.parentFolderID, seen: Set<String> = [folder.id]
+                var names = [folder.title]
+                var parent = folder.parentFolderID
+                var seen: Set<String> = [folder.id]
                 while let id = parent, seen.insert(id).inserted, let ancestor = folders.first(where: { $0.id == id }) {
                     names.insert(ancestor.title, at: 0)
                     parent = ancestor.parentFolderID
@@ -1835,7 +1842,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                     names.joined(separator: " / "),
                     spaceID: space.id,
                     placement: .spacePinned,
-                    parent: folder.id
+                    parent: folder.id,
                 ))
             }
             return UIMenu(title: space.title, image: UIImage(systemName: space.systemImageName), children: children)
@@ -1843,7 +1850,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         return UIMenu(
             title: String(localized: "Move To", table: "Mobile"),
             image: UIImage(systemName: "folder"),
-            children: spaces
+            children: spaces,
         )
     }
 
@@ -1864,7 +1871,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         alert
             .addAction(UIAlertAction(
                 title: String(localized: "Save", table: "Mobile"),
-                style: .default
+                style: .default,
             ) { [weak alert] _ in
                 let text = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 guard allowsEmpty || !text.isEmpty else { return }
@@ -1879,7 +1886,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         let alert = UIAlertController(
             title: String(localized: "Delete Folder and Contents", table: "Mobile"),
             message: title,
-            preferredStyle: .alert
+            preferredStyle: .alert,
         )
         alert.addAction(UIAlertAction(title: String(localized: "Cancel", table: "Mobile"), style: .cancel))
         alert

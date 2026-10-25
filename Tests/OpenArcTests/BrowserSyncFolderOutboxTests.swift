@@ -1,3 +1,5 @@
+// BrowserSyncFolderOutboxTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -19,7 +21,7 @@ import Testing
             let bytes = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
             try db.execute(
                 sql: "UPDATE browser_sync_outbox SET payload = ? WHERE mutation_id = ?",
-                arguments: [bytes, row["mutation_id"] as String]
+                arguments: [bytes, row["mutation_id"] as String],
             )
         }
         try db.execute(sql: """
@@ -119,7 +121,7 @@ import Testing
             id: row.id,
             protocolVersion: 4,
             events: acknowledged,
-            for: fixture.owner
+            for: fixture.owner,
         )
     }
     #expect(try reopened.pendingSyncQueue(for: fixture.owner).isEmpty)
@@ -138,7 +140,7 @@ import Testing
     let projected = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: fixture.owner)
     #expect(
         try store.pendingSyncQueue(for: fixture.owner).isEmpty,
-        "Fresh profile must not adopt remote folders as local creates"
+        "Fresh profile must not adopt remote folders as local creates",
     )
     #expect(projected.pinnedTabFolders?.first { $0.id == "root" }?.title == "Canonical folder")
     #expect(projected.pinnedTabFolders?.first { $0.id == "root" }?.pinnedSiblingRank == 0)
@@ -168,8 +170,8 @@ import Testing
                 urlString: "https://example.com",
                 placement: .spacePinned,
                 spaceID: spaceID,
-                pinnedFolderID: "folder"
-            )]
+                pinnedFolderID: "folder",
+            )],
         )
     }
     try store.writeSessionBatch([.init(snapshot: snapshot(spaceID: "source"), origin: .local(syncMove: nil))])
@@ -210,13 +212,13 @@ import Testing
     try database.write { db in
         try db
             .execute(
-                sql: "CREATE TRIGGER fail_folder_adoption BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                sql: "CREATE TRIGGER fail_folder_adoption BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END",
             )
     }
     #expect(throws: DatabaseError.self) { try store.completeFolderSyncBootstrap(
         events: remote,
         cursor: 10,
-        for: fixture.owner
+        for: fixture.owner,
     ) }
     #expect(try store.syncPullProtocolVersion(for: fixture.owner) == 2)
     #expect(try store.syncCursor(for: fixture.owner) == 8)
@@ -232,13 +234,13 @@ import Testing
             .execute(
                 // The projection is unchanged here and is not rewritten; the
                 // baseline write fails inside the same transaction instead.
-                sql: "CREATE TRIGGER fail_folder_projection BEFORE INSERT ON browser_sync_baseline BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                sql: "CREATE TRIGGER fail_folder_projection BEFORE INSERT ON browser_sync_baseline BEGIN SELECT RAISE(ABORT, 'injected'); END",
             )
     }
     #expect(throws: DatabaseError.self) { try store.completeFolderSyncBootstrap(
         events: remote,
         cursor: 20,
-        for: fixture.owner
+        for: fixture.owner,
     ) }
     #expect(try fixture.rows() == frozen)
     #expect(try fixture.baseline() == adoptedBaseline)
@@ -259,7 +261,8 @@ import Testing
     let renamed = BrowserTabSessionSnapshot(spaces: initial.spaces, pinnedTabFolders: changed, tabs: initial.tabs)
     try store.writeSessionBatch([.init(snapshot: renamed, origin: .local(syncMove: nil))])
     let pending = try #require(store.pendingSyncQueue(for: fixture.owner).first)
-    let rows = try fixture.rows(), baseline = try fixture.baseline()
+    let rows = try fixture.rows()
+    let baseline = try fixture.baseline()
     #expect(throws: BrowserSyncQueueError.protocolVersionMismatch) {
         try store.acknowledgeSyncMutation(id: pending.id, protocolVersion: 3, events: [], for: fixture.owner)
     }
@@ -268,7 +271,7 @@ import Testing
         id: pending.id,
         protocolVersion: 4,
         events: originalEvents,
-        for: fixture.owner
+        for: fixture.owner,
     )
     #expect(canonical.pinnedTabFolders?.first { $0.id == "root" }?.title == "Local folder")
     #expect(try store.pendingSyncQueue(for: fixture.owner).isEmpty)
@@ -276,7 +279,7 @@ import Testing
     let deleted = BrowserTabSessionSnapshot(
         spaces: canonical.spaces,
         pinnedTabFolders: canonical.pinnedTabFolders?.filter { $0.id == "empty" },
-        tabs: canonical.tabs.filter { $0.id != "child" }
+        tabs: canonical.tabs.filter { $0.id != "child" },
     )
     try store.writeSessionBatch([.init(snapshot: deleted, origin: .local(syncMove: nil))])
     let deletion = try #require(store.pendingSyncQueue(for: fixture.owner).first)
@@ -293,7 +296,7 @@ import Testing
         id: deletion.id,
         protocolVersion: 4,
         events: remoteDeletes,
-        for: fixture.owner
+        for: fixture.owner,
     )
     _ = try store.applyRemoteSyncEvents(originalEvents, cursor: 103, for: fixture.owner)
     let reopened = try fixture.store()
@@ -309,7 +312,7 @@ import Testing
     try store.bindSyncOwner(fixture.owner)
     let events = try folderOutboxEvents(
         BrowserSyncFolderProjection.canonicalChanges(folderOutboxSnapshot()),
-        startingAt: 1
+        startingAt: 1,
     )
     _ = try store.completeFolderSyncBootstrap(events: events, cursor: 10, for: fixture.owner)
     let deletes = try [
@@ -330,16 +333,16 @@ import Testing
                 urlString: "https://example.com/direct",
                 placement: .spacePinned,
                 spaceID: "space",
-                pinnedFolderID: "root"
+                pinnedFolderID: "root",
             ),
             .init(
                 id: "late-descendant",
                 urlString: "https://example.com/descendant",
                 placement: .spacePinned,
                 spaceID: "space",
-                pinnedFolderID: "late-nested"
+                pinnedFolderID: "late-nested",
             ),
-        ]
+        ],
     )
     try store.writeSessionBatch([.init(snapshot: lateSnapshot, origin: .local(syncMove: nil))])
     #expect(store.loadSnapshot() == canonical, "A missing deleted parent must still suppress late children")
@@ -364,14 +367,14 @@ private struct FolderOutboxFixture {
         try database().read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position"
+                sql: "SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position",
             )
             .map {
                 FolderOutboxRow(
                     position: $0["position"],
                     id: $0["mutation_id"],
                     bytes: $0["payload"],
-                    version: $0["protocol_version"]
+                    version: $0["protocol_version"],
                 )
             }
         }
@@ -392,7 +395,7 @@ private struct FolderOutboxRow: Equatable {
 }
 
 private func folderOutboxSnapshot(
-    spaceTitle: String = "Work", rootTitle: String = "Local folder", childRank: Double = 0
+    spaceTitle: String = "Work", rootTitle: String = "Local folder", childRank: Double = 0,
 ) -> BrowserTabSessionSnapshot {
     .init(spaces: [.init(id: "space", title: spaceTitle, systemImageName: "globe")], pinnedTabFolders: [
         .init(id: "root", spaceID: "space", title: rootTitle, isExpanded: false, pinnedSiblingRank: 0),
@@ -406,7 +409,7 @@ private func folderOutboxSnapshot(
             placement: .spacePinned,
             spaceID: "space",
             pinnedFolderID: "nested",
-            pinnedSiblingRank: childRank
+            pinnedSiblingRank: childRank,
         ),
         .init(
             id: "loose",
@@ -414,7 +417,7 @@ private func folderOutboxSnapshot(
             pinnedURLString: "https://example.com/loose",
             placement: .spacePinned,
             spaceID: "space",
-            pinnedSiblingRank: 1
+            pinnedSiblingRank: 1,
         ),
     ])
 }
@@ -429,7 +432,7 @@ private func folderOutboxEvents(_ changes: [BrowserSyncChange], startingAt start
             id: change.entityID,
             sequence: start + index,
             op: change.op.rawValue,
-            data: data
+            data: data,
         )
     }
 }
@@ -443,7 +446,7 @@ private func folderOutboxEvent(
     id: String,
     sequence: Int,
     op: String,
-    data: [String: Any]
+    data: [String: Any],
 ) throws -> BrowserSyncEvent {
     let wire: [String: Any] = [
         "serverSeq": sequence,

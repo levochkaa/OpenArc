@@ -1,3 +1,5 @@
+// BrowserPersistentReopenArchiveObservationTests.swift
+
 import AppKit
 import Testing
 
@@ -6,7 +8,7 @@ import Testing
 @Suite(.serialized) @MainActor struct BrowserPersistentReopenArchiveObservationTests {
     @Test(arguments: [BrowserTabPlacement.app, .spacePinned])
     func retiringReopenBindingEnablesObservedArchiveRestoreWithoutAnotherModelEvent(
-        placement: BrowserTabPlacement
+        placement: BrowserTabPlacement,
     ) async throws {
         _ = NSApplication.shared
         let f = try ConfirmedCloseFixture()
@@ -28,7 +30,7 @@ import Testing
         #expect(reopenedID != originalID)
         f.driver.emitUpdate(
             id: reopenedID, title: "Newer title than the allocation placeholder",
-            urlString: "https://example.com/newer-reopened-page"
+            urlString: "https://example.com/newer-reopened-page",
         )
         let current = try #require(f.model.tabs.first { $0.id == reopenedID })
         #expect(current.creationState == .creating && !f.model.canRestoreArchivedTab)
@@ -38,7 +40,7 @@ import Testing
         let controller = BrowserArchiveViewController(model: f.model)
         let window = NSWindow(
             contentRect: NSRect(x: -20000, y: -20000, width: 680, height: 340),
-            styleMask: [.titled, .resizable], backing: .buffered, defer: false
+            styleMask: [.titled, .resizable], backing: .buffered, defer: false,
         )
         window.contentViewController = controller
         defer {

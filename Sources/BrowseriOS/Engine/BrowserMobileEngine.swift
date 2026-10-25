@@ -1,9 +1,11 @@
+// BrowserMobileEngine.swift
+
 import Foundation
 import UIKit
 
 // MARK: - BrowserMobilePageState
 
-struct BrowserMobilePageState: Equatable, Sendable {
+struct BrowserMobilePageState: Equatable {
     var url: URL?
     var title = ""
     var isLoading = false
@@ -15,7 +17,7 @@ struct BrowserMobilePageState: Equatable, Sendable {
 
 // MARK: - BrowserMobileEngineEvent
 
-enum BrowserMobileEngineEvent: Sendable {
+enum BrowserMobileEngineEvent {
     case state(id: String, BrowserMobilePageState)
     case closed(id: String)
     case javaScriptDialogRequested(BrowserMobileJavaScriptDialog)

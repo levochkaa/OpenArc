@@ -1,3 +1,5 @@
+// BrowserChromeColors.swift
+
 import AppKit
 
 // MARK: - BrowserChromeColors
@@ -79,7 +81,7 @@ enum BrowserChromeColors {
             srgbRed: red / 255,
             green: green / 255,
             blue: blue / 255,
-            alpha: alpha
+            alpha: alpha,
         )
     }
 }

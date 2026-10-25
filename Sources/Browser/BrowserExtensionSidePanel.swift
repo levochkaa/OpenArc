@@ -1,3 +1,5 @@
+// BrowserExtensionSidePanel.swift
+
 import AppKit
 import Foundation
 
@@ -17,7 +19,7 @@ struct BrowserExtensionSidePanel: Equatable {
 
         return BrowserImageThumbnailer.image(
             data: iconData,
-            maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize
+            maximumPixelSize: BrowserImageThumbnailer.chromeIconMaximumPixelSize,
         )
     }
 }
@@ -36,14 +38,23 @@ struct BrowserExtensionSidePanel: Equatable {
 // MARK: - BrowserExtensionActionPopup
 
 @MainActor final class BrowserExtensionActionPopup: Identifiable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let id: String
+    let extensionID: String
+    let title: String
+    let hostView: NSView
+
+    // MARK: Private
+
+    private let closeHandler: () -> Void
 
     init(
         id: String,
         extensionID: String,
         title: String,
         hostView: NSView,
-        closeHandler: @escaping () -> Void
+        closeHandler: @escaping () -> Void,
     ) {
         self.id = id
         self.extensionID = extensionID
@@ -52,20 +63,9 @@ struct BrowserExtensionSidePanel: Equatable {
         self.closeHandler = closeHandler
     }
 
-    // MARK: Internal
-
-    let id: String
-    let extensionID: String
-    let title: String
-    let hostView: NSView
-
     func close() {
         closeHandler()
     }
-
-    // MARK: Private
-
-    private let closeHandler: () -> Void
 }
 
 // MARK: - BrowserExtensionActionPopupDriving

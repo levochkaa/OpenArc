@@ -1,3 +1,5 @@
+// BrowserDesktopArchiveProjectionTests.swift
+
 import Foundation
 import Testing
 
@@ -6,7 +8,7 @@ import Testing
 @Suite(.serialized)
 @MainActor struct BrowserDesktopArchiveProjectionTests {
     @Test(arguments: [false, true]) func confirmedCloseArchivesLiveURLDuringPendingRemoteCreationWithoutEcho(
-        failsArchiveInsert: Bool
+        failsArchiveInsert: Bool,
     ) throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
@@ -19,10 +21,10 @@ import Testing
         let remote = try f.store.applyRemoteSyncEvents([
             archiveProjectionTabEvent(
                 id: "a", url: canonicalURL, rank: 0, sequence: sequence + 1,
-                activity: activity, userTitle: "Saved title"
+                activity: activity, userTitle: "Saved title",
             ),
             archiveProjectionTabEvent(
-                id: "c", url: createdURL, rank: 2, sequence: sequence + 2, activity: activity
+                id: "c", url: createdURL, rank: 2, sequence: sequence + 2, activity: activity,
             ),
         ], cursor: sequence + 2, for: f.owner)
         #expect(remote.tabs.first { $0.id == "a" }?.urlString == canonicalURL)
@@ -129,15 +131,15 @@ import Testing
 }
 
 private func archiveProjectionTabEvent(
-    id: String, url: String, rank: Double, sequence: Int, activity: String, userTitle: String? = nil
+    id: String, url: String, rank: Double, sequence: Int, activity: String, userTitle: String? = nil,
 ) -> BrowserSyncEvent {
     BrowserSyncEvent(
         serverSeq: sequence, deviceID: "other-device", entityType: "tab", entityID: id, op: "upsert",
         data: .tab(.init(
             id: id, spaceID: "work", placement: .temporary, rank: rank,
             urlString: url, pinnedURLString: nil, title: nil, userTitleOverride: userTitle,
-            faviconURLString: nil, lastActivityAt: activity
+            faviconURLString: nil, lastActivityAt: activity,
         )),
-        createdAt: "2026-10-03T00:00:00Z"
+        createdAt: "2026-10-03T00:00:00Z",
     )
 }

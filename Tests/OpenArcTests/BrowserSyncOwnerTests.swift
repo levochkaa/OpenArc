@@ -1,3 +1,5 @@
+// BrowserSyncOwnerTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -5,7 +7,7 @@ import Testing
 @Test func syncOwnerNormalizesServerIdentityWithoutCombiningDistinctBackends() {
     let owner = BrowserSyncOwner(
         baseURL: syncOwnerFixtureURL("HTTPS://SYNC.Example:443/api///#settings"),
-        userID: "user-1"
+        userID: "user-1",
     )
     #expect(owner.baseURL.absoluteString == "https://sync.example/api")
     #expect(owner == BrowserSyncOwner(baseURL: syncOwnerFixtureURL("https://sync.example/api"), userID: "user-1"))
@@ -31,13 +33,13 @@ import Testing
         accessToken: "first-secret",
         userID: "user-1",
         userEmail: "old@example.test",
-        deviceID: "device-1"
+        deviceID: "device-1",
     )
     let refreshed = BrowserAuthSession(
         accessToken: "rotated-secret",
         userID: "user-1",
         userEmail: "new@example.test",
-        deviceID: "device-2"
+        deviceID: "device-2",
     )
     let owner = BrowserSyncOwner(baseURL: url, userID: original.userID)
     #expect(owner == BrowserSyncOwner(baseURL: url, userID: refreshed.userID))
@@ -58,7 +60,7 @@ import Testing
     let store = try BrowserSQLiteSessionStore(databaseURL: harness.databaseURL)
     let snapshot = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
         id: "local-tab",
-        urlString: "https://local.example"
+        urlString: "https://local.example",
     )])
     store.saveSnapshot(snapshot)
     #expect(try store.syncOwner() == nil)
@@ -85,7 +87,7 @@ import Testing
     #expect(try reopened.syncCursor(for: harness.owner) == 42)
     let equivalentOwner = BrowserSyncOwner(
         baseURL: syncOwnerFixtureURL("HTTPS://SYNC.EXAMPLE:443/"),
-        userID: harness.owner.userID
+        userID: harness.owner.userID,
     )
     try reopened.bindSyncOwner(equivalentOwner)
     #expect(try reopened.syncCursor(for: equivalentOwner) == 42)
@@ -106,7 +108,7 @@ import Testing
         BrowserSyncOwner(baseURL: harness.owner.baseURL, userID: "other-user"),
         BrowserSyncOwner(
             baseURL: syncOwnerFixtureURL("https://another-server.example"),
-            userID: harness.owner.userID
+            userID: harness.owner.userID,
         ),
     ]
     for owner in others {
@@ -197,10 +199,10 @@ import Testing
     defer { harness.cleanup() }
     let store = try BrowserSQLiteSessionStore(databaseURL: harness.databaseURL)
     let original = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
-        id: "original", urlString: "https://original.example"
+        id: "original", urlString: "https://original.example",
     )])
     let replacement = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
-        id: "replacement", urlString: "https://replacement.example"
+        id: "replacement", urlString: "https://replacement.example",
     )])
     try store.bindSyncOwner(harness.owner)
     try store.saveSyncSnapshot(original, cursor: 42, for: harness.owner)
@@ -229,10 +231,10 @@ import Testing
     defer { harness.cleanup() }
     let store = try BrowserSQLiteSessionStore(databaseURL: harness.databaseURL)
     let original = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
-        id: "original", urlString: "https://original.example"
+        id: "original", urlString: "https://original.example",
     )])
     let replacement = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
-        id: "replacement", urlString: "https://replacement.example"
+        id: "replacement", urlString: "https://replacement.example",
     )])
     try store.bindSyncOwner(harness.owner)
     try store.saveSyncSnapshot(original, cursor: 42, for: harness.owner)
@@ -253,10 +255,10 @@ import Testing
     let store = try BrowserSQLiteSessionStore(databaseURL: harness.databaseURL)
     try store.bindSyncOwner(harness.owner)
     let original = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
-        id: "original", urlString: "https://original.example"
+        id: "original", urlString: "https://original.example",
     )])
     let replacement = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
-        id: "replacement", urlString: "https://replacement.example"
+        id: "replacement", urlString: "https://replacement.example",
     )])
     try store.saveSyncSnapshot(original, cursor: 42, for: harness.owner)
     try store.saveSyncSnapshot(replacement, cursor: 21, for: harness.owner)
@@ -270,30 +272,28 @@ import Testing
 // MARK: - SQLiteSyncOwnerHarness
 
 private struct SQLiteSyncOwnerHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let owner: BrowserSyncOwner
+
+    // MARK: Private
+
+    private let directoryURL: URL
 
     init() throws {
         self.directoryURL = FileManager.default.temporaryDirectory.appendingPathComponent(
             "OpenArcSyncOwnerTests-\(UUID().uuidString)",
-            isDirectory: true
+            isDirectory: true,
         )
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         self.databaseURL = directoryURL.appendingPathComponent("Browser.sqlite")
         self.owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "user-1")
     }
 
-    // MARK: Internal
-
-    let databaseURL: URL
-    let owner: BrowserSyncOwner
-
     func cleanup() {
         try? FileManager.default.removeItem(at: directoryURL)
     }
-
-    // MARK: Private
-
-    private let directoryURL: URL
 }
 
 private func syncOwnerFixtureURL(_ string: String) -> URL {

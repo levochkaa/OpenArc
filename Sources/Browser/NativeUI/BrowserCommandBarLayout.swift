@@ -1,3 +1,5 @@
+// BrowserCommandBarLayout.swift
+
 import AppKit
 import QuartzCore
 
@@ -80,28 +82,14 @@ enum BrowserCommandBarTextWidthMeasurer {
 // MARK: - BrowserCommandBarFaviconCandidate
 
 struct BrowserCommandBarFaviconCandidate: Equatable {
-    // MARK: Lifecycle
-
-    init(tab: BrowserChromeModel.Tab) {
-        self.pageURLString = tab.urlString
-        self.faviconURL = tab.faviconURL
-    }
-
     // MARK: Internal
 
     let pageURLString: String
     let faviconURL: URL?
 
-    func faviconURL(for suggestion: BrowserCommandSuggestion?) -> URL? {
-        guard
-            let suggestion,
-            suggestion.kind == .url,
-            Self.matchesPageURL(suggestion.resolvedURLString, pageURLString)
-        else {
-            return nil
-        }
-
-        return faviconURL
+    init(tab: BrowserChromeModel.Tab) {
+        self.pageURLString = tab.urlString
+        self.faviconURL = tab.faviconURL
     }
 
     // MARK: Private
@@ -123,6 +111,18 @@ struct BrowserCommandBarFaviconCandidate: Equatable {
 
         return components.url?.absoluteString ?? urlString
     }
+
+    func faviconURL(for suggestion: BrowserCommandSuggestion?) -> URL? {
+        guard
+            let suggestion,
+            suggestion.kind == .url,
+            Self.matchesPageURL(suggestion.resolvedURLString, pageURLString)
+        else {
+            return nil
+        }
+
+        return faviconURL
+    }
 }
 
 // MARK: - BrowserCommandBarLayout
@@ -142,7 +142,7 @@ struct BrowserCommandBarLayout {
         case .standard:
             return min(
                 BrowserChromeLayout.commandBarWidth,
-                max(availableSize.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
+                max(availableSize.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0),
             )
         case .compact(let anchor, let sidebarWidth, let matchesAnchorWidth):
             let padding = BrowserChromeLayout.compactCommandBarHorizontalViewportPadding
@@ -154,14 +154,14 @@ struct BrowserCommandBarLayout {
             }
             let maximum = min(
                 max(availableSize.width * BrowserChromeLayout.compactCommandBarMaximumWindowFraction, 0),
-                viewportMaximum
+                viewportMaximum,
             )
             let minimum = min(
                 max(
                     sidebarWidth,
-                    BrowserChromeModel.minSidebarWidth * BrowserChromeLayout.compactCommandBarMinimumSidebarMultiplier
+                    BrowserChromeModel.minSidebarWidth * BrowserChromeLayout.compactCommandBarMinimumSidebarMultiplier,
                 ),
-                maximum
+                maximum,
             )
             let measured = BrowserCommandBarTextWidthMeasurer.width(for: displayText, fontSize: style.fontSize)
                 + BrowserChromeLayout.compactCommandBarTextWidthBuffer + extraWidth
@@ -186,9 +186,9 @@ struct BrowserCommandBarLayout {
             return CGPoint(
                 x: max((availableSize.width - min(
                     BrowserChromeLayout.commandBarWidth,
-                    max(availableSize.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0)
+                    max(availableSize.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0),
                 )) / 2, 0),
-                y: standardTopInset
+                y: standardTopInset,
             )
         case .compact(let anchor, _, _):
             // A sidebar on the right anchors the bar at its trailing edge.
@@ -199,7 +199,7 @@ struct BrowserCommandBarLayout {
                 if let anchor {
                     max(
                         availableSize.height - anchor.maxY + BrowserChromeLayout.compactCommandBarTopGap,
-                        BrowserChromeLayout.sidebarOuterPadding
+                        BrowserChromeLayout.sidebarOuterPadding,
                     )
                 } else {
                     BrowserChromeLayout.sidebarOuterPadding + BrowserChromeLayout.chromeButtonSize
@@ -238,7 +238,7 @@ struct BrowserCommandBarLayout {
         let centered = (availableSize.height - estimated) / 2
         let maximum = max(
             availableSize.height - estimated - BrowserChromeLayout.commandBarTopInsetMinimum,
-            BrowserChromeLayout.sidebarOuterPadding
+            BrowserChromeLayout.sidebarOuterPadding,
         )
         return min(max(centered, BrowserChromeLayout.commandBarTopInsetMinimum), maximum)
     }

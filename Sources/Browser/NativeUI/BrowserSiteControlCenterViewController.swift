@@ -1,3 +1,5 @@
+// BrowserSiteControlCenterViewController.swift
+
 import AppKit
 import Combine
 
@@ -6,14 +8,6 @@ import Combine
 /// Site control center: page actions, extensions, the site's own
 /// settings, and its connection with a menu of site tools.
 final class BrowserSiteControlCenterViewController: NSViewController {
-    // MARK: Lifecycle
-
-    init(model: BrowserChromeModel) { self.model = model
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
     // MARK: Internal
 
     enum Action: Equatable {
@@ -25,12 +19,82 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         case allSiteSettings
     }
 
+    // MARK: Private
+
+    private struct PageAction {
+        let symbol: String
+        let title: String
+        let identifier: String
+        let action: Action?
+        let isAvailable: @MainActor (BrowserChromeModel) -> Bool
+    }
+
     var onManage: () -> Void = {}
     var onAdd: () -> Void = {}
     var onSelectExtension: (String) -> Void = { _ in }
     var menuForExtension: (BrowserExtension) -> NSMenu = { _ in NSMenu() }
     /// Page actions that close the popover first.
     var onAction: (Action) -> Void = { _ in }
+
+    private let model: BrowserChromeModel
+    private let root = BrowserNativeSurface()
+    private let extensionsHeading = BrowserNativeControls.label(
+        BrowserStrings.extensionsSectionTitle,
+        size: 13,
+        weight: .semibold,
+    )
+    private let settingsHeading = BrowserNativeControls.label(
+        BrowserStrings.siteControlSettingsSection,
+        size: 13,
+        weight: .semibold,
+    )
+    private let manage = BrowserActionButton(BrowserStrings.extensionsManageAction, action: {})
+    private let divider = BrowserNativeSurface()
+    private let security = BrowserNativeSurface()
+    private let securityIcon = NSImageView()
+    private let securityLabel = BrowserNativeControls.label("", size: 12, weight: .medium, color: .secondaryLabelColor)
+    private let more = BrowserSiteControlButton(symbol: "ellipsis")
+    private var actionButtons = [BrowserSiteControlButton]()
+    private var tiles = [String: BrowserNativeExtensionButton]()
+    private var settingViews = [BrowserSiteSettingRowView]()
+    private var siteSettings = [BrowserSiteSettingRow]()
+    private var siteSettingsURLString = ""
+    private var observation: AnyCancellable?
+
+    private let pageActions: [PageAction] = [
+        PageAction(
+            symbol: "square.and.arrow.up",
+            title: BrowserStrings.siteControlShare,
+            identifier: "share",
+            action: nil,
+        ) { _ in true },
+        PageAction(
+            symbol: "link",
+            title: BrowserStrings.tabCopyURLAction,
+            identifier: "copy-url",
+            action: .copyURL,
+        ) { _ in true },
+        PageAction(
+            symbol: "camera.viewfinder",
+            title: BrowserStrings.siteControlCapture,
+            identifier: "capture",
+            action: .capture,
+        ) {
+            $0.canCaptureArea
+        },
+        PageAction(
+            symbol: "rectangle.dashed.and.paperclip",
+            title: BrowserStrings.siteCaptureFullPageAction,
+            identifier: "capture-full-page",
+            action: .captureFullPage,
+        ) { _ in true },
+    ]
+
+    init(model: BrowserChromeModel) { self.model = model
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func loadView() {
         view = root
@@ -104,7 +168,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
                 x: padding + CGFloat(index) * (actionWidth + actionGap),
                 y: y,
                 width: actionWidth,
-                height: 36
+                height: 36,
             )
             button.isInteractionEnabled = tab != nil && pageActions[index].isAvailable(model)
             button.alphaValue = button.isInteractionEnabled ? 1 : 0.4
@@ -144,7 +208,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
                 x: padding + CGFloat(index % columns) * (tileSize + tileGap),
                 y: y + CGFloat(index / columns) * (tileSize + tileGap),
                 width: tileSize,
-                height: tileSize
+                height: tileSize,
             )
         }
         let rows = (items.count + columns - 1) / columns
@@ -180,7 +244,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         let secure = scheme == "https"
         securityIcon.image = NSImage(
             systemSymbolName: secure ? "lock.fill" : "lock.open",
-            accessibilityDescription: nil
+            accessibilityDescription: nil,
         )
         securityIcon.contentTintColor = secure ? .secondaryLabelColor : .systemOrange
         securityLabel.stringValue = secure ? BrowserStrings.siteControlSecure : BrowserStrings.siteControlNotSecure
@@ -196,70 +260,6 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         preferredContentSize = NSSize(width: width, height: y)
         view.frame = NSRect(origin: .zero, size: preferredContentSize)
     }
-
-    // MARK: Private
-
-    private struct PageAction {
-        let symbol: String
-        let title: String
-        let identifier: String
-        let action: Action?
-        let isAvailable: @MainActor (BrowserChromeModel) -> Bool
-    }
-
-    private let model: BrowserChromeModel
-    private let root = BrowserNativeSurface()
-    private let extensionsHeading = BrowserNativeControls.label(
-        BrowserStrings.extensionsSectionTitle,
-        size: 13,
-        weight: .semibold
-    )
-    private let settingsHeading = BrowserNativeControls.label(
-        BrowserStrings.siteControlSettingsSection,
-        size: 13,
-        weight: .semibold
-    )
-    private let manage = BrowserActionButton(BrowserStrings.extensionsManageAction, action: {})
-    private let divider = BrowserNativeSurface()
-    private let security = BrowserNativeSurface()
-    private let securityIcon = NSImageView()
-    private let securityLabel = BrowserNativeControls.label("", size: 12, weight: .medium, color: .secondaryLabelColor)
-    private let more = BrowserSiteControlButton(symbol: "ellipsis")
-    private var actionButtons = [BrowserSiteControlButton]()
-    private var tiles = [String: BrowserNativeExtensionButton]()
-    private var settingViews = [BrowserSiteSettingRowView]()
-    private var siteSettings = [BrowserSiteSettingRow]()
-    private var siteSettingsURLString = ""
-    private var observation: AnyCancellable?
-
-    private let pageActions: [PageAction] = [
-        PageAction(
-            symbol: "square.and.arrow.up",
-            title: BrowserStrings.siteControlShare,
-            identifier: "share",
-            action: nil
-        ) { _ in true },
-        PageAction(
-            symbol: "link",
-            title: BrowserStrings.tabCopyURLAction,
-            identifier: "copy-url",
-            action: .copyURL
-        ) { _ in true },
-        PageAction(
-            symbol: "camera.viewfinder",
-            title: BrowserStrings.siteControlCapture,
-            identifier: "capture",
-            action: .capture
-        ) {
-            $0.canCaptureArea
-        },
-        PageAction(
-            symbol: "rectangle.dashed.and.paperclip",
-            title: BrowserStrings.siteCaptureFullPageAction,
-            identifier: "capture-full-page",
-            action: .captureFullPage
-        ) { _ in true },
-    ]
 
     private func settingRows(for rows: [BrowserSiteSettingRow], urlString: String) -> [BrowserSiteSettingRowView] {
         while settingViews.count < rows.count {
@@ -340,7 +340,9 @@ final class BrowserSiteControlCenterViewController: NSViewController {
 
 /// An icon button of the site control center.
 final class BrowserSiteControlButton: BrowserNativePressableView {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let icon = NSImageView()
 
     init(symbol: String) {
         super.init(frame: .zero)
@@ -368,10 +370,6 @@ final class BrowserSiteControlButton: BrowserNativePressableView {
         super.layout()
         icon.frame = NSRect(x: (bounds.width - 18) / 2, y: (bounds.height - 18) / 2, width: 18, height: 18)
     }
-
-    // MARK: Private
-
-    private let icon = NSImageView()
 }
 
 // MARK: - BrowserSiteSettingRowView
@@ -379,7 +377,12 @@ final class BrowserSiteControlButton: BrowserNativePressableView {
 /// One of the site's settings: icon, name and value; a click offers the
 /// other values.
 final class BrowserSiteSettingRowView: BrowserNativePressableView {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let badge = BrowserNativeSurface()
+    private let icon = NSImageView()
+    private let title = BrowserNativeControls.label("", size: 13, weight: .medium)
+    private let value = BrowserNativeControls.label("", size: 11, color: .secondaryLabelColor)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -419,11 +422,4 @@ final class BrowserSiteSettingRowView: BrowserNativePressableView {
         setAccessibilityLabel("\(row.kind.title), \(row.value.title)")
         setAccessibilityIdentifier("browser.site-control.setting.\(row.kind.rawValue)")
     }
-
-    // MARK: Private
-
-    private let badge = BrowserNativeSurface()
-    private let icon = NSImageView()
-    private let title = BrowserNativeControls.label("", size: 13, weight: .medium)
-    private let value = BrowserNativeControls.label("", size: 11, color: .secondaryLabelColor)
 }

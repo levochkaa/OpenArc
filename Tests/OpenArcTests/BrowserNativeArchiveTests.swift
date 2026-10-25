@@ -1,3 +1,5 @@
+// BrowserNativeArchiveTests.swift
+
 import AppKit
 import GRDB
 import Testing
@@ -61,7 +63,7 @@ import Testing
             let created = f.driver.createdTabRequests.count
             try f
                 .sql(
-                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             controller.restoreButton.performClick(nil)
             try await nativeArchiveWait { !controller.retryButton.isHidden }
@@ -122,7 +124,7 @@ import Testing
             let later = try f.appendArchive(id: "later", date: -100)
             try f
                 .sql(
-                    "CREATE TRIGGER fail_clear BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_clear BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             alerts.respond(.alertFirstButtonReturn)
             try await nativeArchiveWait { !controller.retryButton.isHidden }
@@ -184,7 +186,7 @@ import Testing
                 contentRect: NSRect(x: -20000, y: -20000, width: 680, height: 340),
                 styleMask: [.titled, .resizable],
                 backing: .buffered,
-                defer: false
+                defer: false,
             )
             window.contentViewController = controller
             defer { controller.invalidate()
@@ -214,7 +216,7 @@ import Testing
                 characters: "\u{7F}",
                 charactersIgnoringModifiers: "\u{7F}",
                 isARepeat: false,
-                keyCode: 51
+                keyCode: 51,
             ))
             controller.table.keyDown(with: key)
             try await nativeArchiveWait { (try? f.store.loadArchiveEntry(id: f.entries[1].id)) == nil }
@@ -243,7 +245,7 @@ import Testing
                 characters: "f",
                 charactersIgnoringModifiers: "f",
                 isARepeat: false,
-                keyCode: 3
+                keyCode: 3,
             ))
             #expect(controller.performKeyEquivalent(with: commandF))
             #expect(controller.searchField.currentEditor() === window.firstResponder)
@@ -259,6 +261,10 @@ import Testing
 
     private(set) var queries = [String]()
     private(set) var cursors = [BrowserTabArchiveCursor?]()
+
+    // MARK: Private
+
+    private var held = [(String, CheckedContinuation<BrowserTabArchivePage, any Error>)]()
 
     func load(_ query: String, _ cursor: BrowserTabArchiveCursor?, _: Int) async throws -> BrowserTabArchivePage {
         queries.append(query)
@@ -276,10 +282,6 @@ import Testing
         held.removeAll()
         pending.forEach { $0.1.resume(returning: page) }
     }
-
-    // MARK: Private
-
-    private var held = [(String, CheckedContinuation<BrowserTabArchivePage, any Error>)]()
 }
 
 // MARK: - NativeArchiveAlerts
@@ -288,6 +290,10 @@ import Testing
     // MARK: Internal
 
     private(set) var alert: NSAlert?
+
+    // MARK: Private
+
+    private var completion: (@MainActor (NSApplication.ModalResponse) -> Void)?
 
     func present(_ alert: NSAlert, completion: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
         self.alert = alert
@@ -300,10 +306,6 @@ import Testing
         completion = nil
         callback?(response)
     }
-
-    // MARK: Private
-
-    private var completion: (@MainActor (NSApplication.ModalResponse) -> Void)?
 }
 
 @MainActor private func nativeArchiveWait(_ predicate: @MainActor () -> Bool) async throws {
@@ -323,7 +325,7 @@ private enum NativeArchiveTestError: Error { case timeout }
 
 @MainActor private func withNativeArchive(
     ready: Bool = true,
-    _ body: @MainActor (NativeArchiveFixture) async throws -> Void
+    _ body: @MainActor (NativeArchiveFixture) async throws -> Void,
 ) async throws {
     _ = NSApplication.shared
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -334,7 +336,7 @@ private enum NativeArchiveTestError: Error { case timeout }
 @MainActor private func runNativeArchive(
     directory: URL,
     ready: Bool,
-    body: @MainActor (NativeArchiveFixture) async throws -> Void
+    body: @MainActor (NativeArchiveFixture) async throws -> Void,
 ) async throws {
     let fixture = try NativeArchiveFixture(directory: directory, ready: ready)
     defer { fixture.model.discardUnsavedSessionForClosure()
@@ -347,7 +349,15 @@ private enum NativeArchiveTestError: Error { case timeout }
 // MARK: - NativeArchiveFixture
 
 @MainActor private final class NativeArchiveFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let store: BrowserSQLiteSessionStore
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+    let suite = "NativeArchive." + UUID().uuidString
+    let preferences: UserDefaults
+    let entries: [BrowserTabArchiveEntry]
 
     init(directory: URL, ready: Bool) throws {
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
@@ -364,7 +374,7 @@ private enum NativeArchiveTestError: Error { case timeout }
                 spaceID: index == 2
                     ? "deleted"
                     : "work",
-                lastActivityTimestamp: 50
+                lastActivityTimestamp: 50,
             )
         })
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
@@ -375,13 +385,13 @@ private enum NativeArchiveTestError: Error { case timeout }
                 id: "archive-\(index)",
                 tab: tab,
                 archivedAt: Double(index + 1),
-                title: "Page \(index)"
+                title: "Page \(index)",
             )
             snapshot = .init(spaces: snapshot.spaces, tabs: snapshot.tabs.filter { $0.id != tab.id })
             try store.writeSessionBatch([.init(
                 snapshot: snapshot,
                 origin: .local(syncMove: nil),
-                archiveAction: .insert(entry)
+                archiveAction: .insert(entry),
             )])
             archived.append(entry)
         }
@@ -396,23 +406,13 @@ private enum NativeArchiveTestError: Error { case timeout }
             extensionManager: FakeBrowserExtensionManager(),
             dateProvider: { Date(timeIntervalSince1970: 100) },
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         if ready {
             model.handleContextReady()
             driver.flushPendingCreateEvents()
         }
     }
-
-    // MARK: Internal
-
-    let databaseURL: URL
-    let store: BrowserSQLiteSessionStore
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
-    let suite = "NativeArchive." + UUID().uuidString
-    let preferences: UserDefaults
-    let entries: [BrowserTabArchiveEntry]
 
     func sql(_ sql: String) throws {
         try DatabaseQueue(path: databaseURL.path).write { try $0.execute(sql: sql) }
@@ -424,17 +424,17 @@ private enum NativeArchiveTestError: Error { case timeout }
             id: id,
             urlString: "https://later.example",
             spaceID: "work",
-            lastActivityTimestamp: 100
+            lastActivityTimestamp: 100,
         )
         try store.writeSessionBatch([.init(
             snapshot: .init(spaces: old.spaces, tabs: old.tabs + [tab]),
-            origin: .local(syncMove: nil)
+            origin: .local(syncMove: nil),
         )])
         let entry = BrowserTabArchiveEntry(id: "archive-" + id, tab: tab, archivedAt: date)
         try store.writeSessionBatch([.init(
             snapshot: old,
             origin: .local(syncMove: nil),
-            archiveAction: .insert(entry)
+            archiveAction: .insert(entry),
         )])
         return entry
     }

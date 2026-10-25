@@ -1,3 +1,5 @@
+// BrowserAboutView.swift
+
 import AppKit
 
 @MainActor extension BrowserAboutInfo {
@@ -16,11 +18,11 @@ import AppKit
             applicationName: applicationName,
             applicationVersionText: BrowserStrings.aboutApplicationVersion(
                 marketingVersion: marketingVersion,
-                buildVersion: buildVersion
+                buildVersion: buildVersion,
             ),
             chromiumVersionText: BrowserStrings.aboutChromiumVersion(BrowserChromiumVersionString()),
             copyrightText: copyright,
-            icon: NSApp.applicationIconImage
+            icon: NSApp.applicationIconImage,
         )
     }
 }

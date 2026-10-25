@@ -1,3 +1,5 @@
+// BrowserSyncVersionedOutboxTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -20,7 +22,7 @@ import Testing
             let payload = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
             try db.execute(
                 sql: "UPDATE browser_sync_outbox SET payload = ? WHERE mutation_id = ?",
-                arguments: [payload, row["mutation_id"] as String]
+                arguments: [payload, row["mutation_id"] as String],
             )
         }
     }
@@ -71,7 +73,7 @@ import Testing
         #expect(throws: BrowserSyncQueueError.protocolVersionMismatch) {
             try store.acknowledgeSyncMutation(
                 id: id, protocolVersion: wrongVersion,
-                events: [versionedDelete(id: "space", type: "space", sequence: 100)], for: harness.owner
+                events: [versionedDelete(id: "space", type: "space", sequence: 100)], for: harness.owner,
             )
         }
     }
@@ -79,7 +81,7 @@ import Testing
     #expect(try harness.baseline() == baseline)
     #expect(store.loadSnapshot()?.spaces?.first?.title == "Pending rename")
     let projected = try store.acknowledgeSyncMutation(
-        id: seed.id, events: versionedEvents(seed.changes, startingAt: 1), for: harness.owner
+        id: seed.id, events: versionedEvents(seed.changes, startingAt: 1), for: harness.owner,
     )
     #expect(projected.spaces?.first?.title == "Pending rename")
     #expect(try store.pendingSyncQueue(for: harness.owner) == [semantic])
@@ -88,7 +90,7 @@ import Testing
     // overlay even when the operation produced no new server event.
     let canonical = try store.acknowledgeSyncMutation(
         id: semantic.id, protocolVersion: 3,
-        events: versionedEvents(seed.changes, startingAt: 1), for: harness.owner
+        events: versionedEvents(seed.changes, startingAt: 1), for: harness.owner,
     )
     #expect(canonical == original)
     #expect(try store.pendingSyncQueue(for: harness.owner).isEmpty)
@@ -96,7 +98,7 @@ import Testing
     // Unknown or already removed ACKs must not introduce unrelated events.
     _ = try store.acknowledgeSyncMutation(
         id: semantic.id, protocolVersion: 3,
-        events: [versionedDelete(id: "a", sequence: 200)], for: harness.owner
+        events: [versionedDelete(id: "a", sequence: 200)], for: harness.owner,
     )
     #expect(store.loadSnapshot() == original)
 }
@@ -119,17 +121,17 @@ import Testing
     let reopened = try harness.store()
     #expect(try reopened.isSyncPaused(for: harness.owner))
     _ = try reopened.acknowledgeSyncMutation(
-        id: seed.id, events: versionedEvents(seed.changes, startingAt: 1), for: harness.owner
+        id: seed.id, events: versionedEvents(seed.changes, startingAt: 1), for: harness.owner,
     )
     #expect(reopened.loadSnapshot()?.tabs.map(\.id) == ["a"])
     _ = try reopened.acknowledgeSyncMutation(
         id: mutation.id, protocolVersion: 3,
-        events: [versionedDelete(id: "b", sequence: 10)], for: harness.owner
+        events: [versionedDelete(id: "b", sequence: 10)], for: harness.owner,
     )
     _ = try reopened.applyRemoteSyncEvents(
         versionedEvents(seed.changes, startingAt: 20),
         cursor: 22,
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(reopened.loadSnapshot()?.tabs.map(\.id) == ["a"])
     #expect(try reopened.pendingSyncQueue(for: harness.owner).isEmpty)
@@ -146,7 +148,7 @@ import Testing
     _ = try store.acknowledgeSyncMutation(
         id: seed.id,
         events: versionedEvents(seed.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     try store.enableSemanticSyncMutations(for: harness.owner)
     let baseline = try harness.baseline()
@@ -154,7 +156,7 @@ import Testing
     try database.write { db in
         try db
             .execute(
-                sql: "CREATE TRIGGER fail_versioned_insert BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                sql: "CREATE TRIGGER fail_versioned_insert BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END",
             )
     }
     store.saveSnapshot(versionedSnapshot(ids: ["a", "b"]))
@@ -172,13 +174,13 @@ import Testing
     try database.write { db in
         try db
             .execute(
-                sql: "CREATE TRIGGER fail_versioned_projection BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                sql: "CREATE TRIGGER fail_versioned_projection BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'injected'); END",
             )
     }
     #expect(throws: DatabaseError.self) {
         try store.acknowledgeSyncMutation(
             id: pending.id, protocolVersion: 3,
-            events: versionedEvents(seed.changes, startingAt: 10), for: harness.owner
+            events: versionedEvents(seed.changes, startingAt: 10), for: harness.owner,
         )
     }
     #expect(try harness.rows() == beforeRows)
@@ -220,7 +222,7 @@ import Testing
     let baseline = try harness.baseline()
     let newer = BrowserSyncOutboxProjection.changes(
         from: nil,
-        to: versionedSnapshot(ids: ["a"], title: "Remote rename")
+        to: versionedSnapshot(ids: ["a"], title: "Remote rename"),
     )
     let database = try harness.database()
     try database.write { db in
@@ -231,7 +233,7 @@ import Testing
     }
     #expect(throws: DatabaseError.self) {
         try store.applyRemoteSyncEvents(
-            versionedEvents(newer, startingAt: 10), cursor: 11, for: harness.owner, enableSemanticMutations: true
+            versionedEvents(newer, startingAt: 10), cursor: 11, for: harness.owner, enableSemanticMutations: true,
         )
     }
     #expect(store.loadSnapshot() == original)
@@ -242,7 +244,7 @@ import Testing
     } == 2)
     try database.write { db in try db.execute(sql: "DROP TRIGGER fail_capability") }
     _ = try store.applyRemoteSyncEvents(
-        versionedEvents(newer, startingAt: 10), cursor: 11, for: harness.owner, enableSemanticMutations: true
+        versionedEvents(newer, startingAt: 10), cursor: 11, for: harness.owner, enableSemanticMutations: true,
     )
     #expect(try store.syncCursor(for: harness.owner) == 11)
     #expect(store.loadSnapshot()?.spaces?.first?.title == "Remote rename")
@@ -266,7 +268,7 @@ import Testing
     try store.enableSemanticSyncMutations(for: harness.owner)
     store.saveSnapshot(versionedSnapshot(ids: ids, override: largeTitle + "changed"))
     let all = try store.pendingSyncQueue(for: harness.owner)
-    #expect(all.filter { $0.protocolVersion == 3 }.count > 1)
+    #expect(all.count(where: { $0.protocolVersion == 3 }) > 1)
     #expect(try Array(harness.rows().prefix(legacyRows.count)) == legacyRows)
     let device = "00000000-0000-4000-8000-000000000000"
     for queued in all {
@@ -277,16 +279,17 @@ import Testing
             request = try JSONEncoder().encode(BrowserSyncPushRequest(
                 mutationID: mutation.id,
                 deviceID: device,
-                changes: mutation.changes
+                changes: mutation.changes,
             ))
         case .semantic(let mutation):
             #expect(mutation.operations.count <= 1000)
             request = try JSONEncoder().encode(BrowserSyncSemanticPushRequest(
                 mutationID: mutation.id,
                 deviceID: device,
-                operations: mutation.operations
+                operations: mutation.operations,
             ))
-        case .expiry, .folders:
+        case .expiry,
+             .folders:
             Issue.record("Legacy migration fixture must contain only v2/v3 rows")
             return
         }
@@ -342,10 +345,6 @@ import Testing
 // MARK: - VersionedOutboxHarness
 
 private struct VersionedOutboxHarness {
-    // MARK: Lifecycle
-
-    init() throws { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
-
     // MARK: Internal
 
     let directory = FileManager.default
@@ -354,6 +353,8 @@ private struct VersionedOutboxHarness {
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
 
     var databaseURL: URL { directory.appendingPathComponent("test.sqlite") }
+
+    init() throws { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
 
     func store() throws -> BrowserSQLiteSessionStore { try BrowserSQLiteSessionStore(databaseURL: databaseURL) }
     func database() throws -> DatabaseQueue { try DatabaseQueue(path: databaseURL.path) }
@@ -368,14 +369,14 @@ private struct VersionedOutboxHarness {
         try database().read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position"
+                sql: "SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position",
             )
             .map {
                 VersionedStoredRow(
                     position: $0["position"],
                     id: $0["mutation_id"],
                     payload: $0["payload"],
-                    version: $0["protocol_version"]
+                    version: $0["protocol_version"],
                 )
             }
         }
@@ -394,7 +395,7 @@ private struct VersionedStoredRow: Equatable {
 private func versionedSnapshot(
     ids: [String],
     title: String = "Work",
-    override: String? = nil
+    override: String? = nil,
 ) -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(
         spaces: [BrowserSpaceSessionSnapshot(id: "space", title: title, systemImageName: "briefcase")],
@@ -402,8 +403,8 @@ private func versionedSnapshot(
             id: $0,
             urlString: "https://\($0).example",
             userTitleOverride: override,
-            spaceID: "space"
-        ) }
+            spaceID: "space",
+        ) },
     )
 }
 
@@ -415,7 +416,7 @@ private func versionedDelete(id: String, type: String = "tab", sequence: Int) ->
         entityID: id,
         op: "delete",
         data: .deleted(id: id),
-        createdAt: "2026-10-03T00:00:00Z"
+        createdAt: "2026-10-03T00:00:00Z",
     )
 }
 
@@ -429,7 +430,7 @@ private func versionedEvents(_ changes: [BrowserSyncChange], startingAt sequence
                     systemImageName: space.systemImageName,
                     rank: space.rank,
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                    selectedTabID: space.selectedTabID
+                    selectedTabID: space.selectedTabID,
                 ))
             } else if let tab = change.tabData {
                 .tab(BrowserSyncEventTabData(
@@ -442,7 +443,7 @@ private func versionedEvents(_ changes: [BrowserSyncChange], startingAt sequence
                     title: tab.title,
                     userTitleOverride: tab.userTitleOverride,
                     faviconURLString: tab.faviconURLString,
-                    lastActivityAt: tab.lastActivityAt
+                    lastActivityAt: tab.lastActivityAt,
                 ))
             } else {
                 .deleted(id: change.entityID)
@@ -454,7 +455,7 @@ private func versionedEvents(_ changes: [BrowserSyncChange], startingAt sequence
             entityID: change.entityID,
             op: change.op.rawValue,
             data: data,
-            createdAt: "2026-10-03T00:00:00Z"
+            createdAt: "2026-10-03T00:00:00Z",
         )
     }
 }

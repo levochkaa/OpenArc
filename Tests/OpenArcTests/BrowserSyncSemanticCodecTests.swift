@@ -1,3 +1,5 @@
+// BrowserSyncSemanticCodecTests.swift
+
 import Foundation
 import Testing
 
@@ -7,18 +9,18 @@ import Testing
         .createTab(
             id: "tab",
             data: .init(spaceID: "work", placement: .temporary, urlString: "https://example.test"),
-            afterID: "previous"
+            afterID: "previous",
         ),
         .patchSpace(
             id: "work",
-            fields: .init(title: "Renamed", isPinnedSectionCollapsed: false, selectedTabID: .clear)
+            fields: .init(title: "Renamed", isPinnedSectionCollapsed: false, selectedTabID: .clear),
         ),
         .patchTab(id: "tab", fields: .init(userTitleOverride: .set("Renamed tab"), faviconURLString: .clear)),
         .moveSpaces(ids: ["work", "personal"], beforeID: "other"),
         .moveTabs(
             ids: ["b", "a"],
             destination: .init(spaceID: "personal", placement: .spacePinned),
-            afterID: "neighbor"
+            afterID: "neighbor",
         ),
         .deleteSpace(id: "old-space"),
         .deleteTab(id: "old-tab"),
@@ -60,11 +62,11 @@ import Testing
     let empty = try JSONDecoder().decode(BrowserSyncSemanticTabPatch.self, from: Data("{}".utf8))
     let clear = try JSONDecoder().decode(
         BrowserSyncSemanticTabPatch.self,
-        from: Data(#"{"userTitleOverride":null}"#.utf8)
+        from: Data(#"{"userTitleOverride":null}"#.utf8),
     )
     let set = try JSONDecoder().decode(
         BrowserSyncSemanticTabPatch.self,
-        from: Data(#"{"userTitleOverride":"Named"}"#.utf8)
+        from: Data(#"{"userTitleOverride":"Named"}"#.utf8),
     )
     #expect(empty.userTitleOverride == .unchanged)
     #expect(clear.userTitleOverride == .clear)
@@ -77,7 +79,7 @@ import Testing
 
     let patch = BrowserSyncSemanticTabPatch(
         urlString: "https://new.example", pinnedURLString: .clear, title: .set("Title"),
-        userTitleOverride: .unchanged, faviconURLString: .clear, lastActivityAt: .set("2026-10-03T00:00:00Z")
+        userTitleOverride: .unchanged, faviconURLString: .clear, lastActivityAt: .set("2026-10-03T00:00:00Z"),
     )
     #expect(try JSONDecoder().decode(BrowserSyncSemanticTabPatch.self, from: JSONEncoder().encode(patch)) == patch)
     let body = try semanticJSONObject(JSONEncoder().encode(patch))
@@ -107,7 +109,7 @@ import Testing
 @Test func semanticMoveNullAnchorsDecodeToAppendFallbackWithoutLosingGroupOrder() throws {
     let json = Data(
         #"{"kind":"move","entityType":"tab","entityIDs":["b","a"],"destination":{"spaceID":"work","placement":"temporary"},"beforeID":null,"afterID":null}"#
-            .utf8
+            .utf8,
     )
     let operation = try JSONDecoder().decode(BrowserSyncSemanticOperation.self, from: json)
     #expect(operation == .moveTabs(ids: ["b", "a"], destination: .init(spaceID: "work", placement: .temporary)))
@@ -120,7 +122,7 @@ import Testing
 @Test func semanticReceiptDecodesTypedOutcomesAndRejectsUnknownStatus() throws {
     let json = Data(
         #"{"protocolVersion":3,"mutationID":"mutation","cursor":9,"events":[{"serverSeq":9,"deviceID":null,"entityType":"tab","entityID":"gone","op":"delete","data":{"id":"gone"},"createdAt":"2026-10-03T00:00:00Z"}],"outcomes":[{"operationIndex":0,"status":"applied"},{"operationIndex":1,"status":"deleted"},{"operationIndex":2,"status":"rejected","reason":"destinationDeleted"}]}"#
-            .utf8
+            .utf8,
     )
     let receipt = try JSONDecoder().decode(BrowserSyncSemanticPushResponse.self, from: json)
     #expect(receipt.outcomes.map(\.status) == [.applied, .deleted, .rejected])
@@ -130,7 +132,7 @@ import Testing
     #expect(throws: DecodingError.self) {
         try JSONDecoder().decode(
             BrowserSyncSemanticOutcome.self,
-            from: Data(#"{"operationIndex":0,"status":"future-status"}"#.utf8)
+            from: Data(#"{"operationIndex":0,"status":"future-status"}"#.utf8),
         )
     }
 }
@@ -142,13 +144,13 @@ import Testing
     #expect(legacy.supportedPushVersions == nil)
     let durable = try decoder.decode(
         BrowserSyncPullResponse.self,
-        from: Data(#"{"protocolVersion":2,"cursor":0,"events":[]}"#.utf8)
+        from: Data(#"{"protocolVersion":2,"cursor":0,"events":[]}"#.utf8),
     )
     #expect(durable.protocolVersion == 2)
     #expect(durable.supportedPushVersions == nil)
     let semantic = try decoder.decode(
         BrowserSyncPullResponse.self,
-        from: Data(#"{"protocolVersion":2,"supportedPushVersions":[2,3],"cursor":0,"events":[]}"#.utf8)
+        from: Data(#"{"protocolVersion":2,"supportedPushVersions":[2,3],"cursor":0,"events":[]}"#.utf8),
     )
     #expect(semantic.protocolVersion == 2)
     #expect(semantic.supportedPushVersions == [2, 3])
@@ -167,7 +169,7 @@ import Testing
     #expect(throws: DecodingError.self) {
         try JSONDecoder().decode(
             BrowserSyncSemanticPushRequest.self,
-            from: Data(#"{"protocolVersion":2,"mutationID":"id","deviceID":"device","operations":[]}"#.utf8)
+            from: Data(#"{"protocolVersion":2,"mutationID":"id","deviceID":"device","operations":[]}"#.utf8),
         )
     }
 }
@@ -180,12 +182,12 @@ import Testing
         userID: "owner",
         userEmail: nil,
         deviceID: "device",
-        serverURL: URL(string: "https://foreign.example")
+        serverURL: URL(string: "https://foreign.example"),
     )
     do {
         _ = try await client.push(
             mutation: BrowserSyncSemanticMutation(id: "mutation", operations: []),
-            authSession: foreign
+            authSession: foreign,
         )
         Issue.record("Semantic transport accepted credentials from another origin")
     } catch let error as BrowserSyncAccountError {

@@ -1,3 +1,5 @@
+// BrowserSyncExpiryCompatibilityTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -6,7 +8,7 @@ import Testing
     let wire = ExpiryCompatibilityWire()
     for version in [2, 4, 5] {
         let response = try JSONDecoder().decode(
-            BrowserSyncPullResponse.self, from: wire.pull(cursor: 4, protocolVersion: version)
+            BrowserSyncPullResponse.self, from: wire.pull(cursor: 4, protocolVersion: version),
         )
         #expect(response.protocolVersion == version)
         #expect(response.supportedPushVersions == [2, 3, 4, 5])
@@ -65,7 +67,7 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
     #expect(oldSnapshot.tabs.first?.spaceID == "source")
     let staleSnapshot = BrowserTabSessionSnapshot(spaces: oldSnapshot.spaces, tabs: [.init(
         id: "expired", urlString: "https://expiry.example/offline", userTitleOverride: "Offline rename",
-        spaceID: "target", lastActivityTimestamp: 1_800_000_000
+        spaceID: "target", lastActivityTimestamp: 1_800_000_000,
     )])
     try store.writeSessionBatch([.init(snapshot: staleSnapshot, origin: .local(syncMove: nil))])
     let queued = try store.pendingSyncQueue(for: owner)
@@ -100,7 +102,7 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
     let first = BrowserSyncService(
         localStore: store, remoteClient: remote, authSessionStore: auth,
         pushDebounce: .zero, pollInterval: nil, retryDelay: nil, runtimeActive: false,
-        errorReporter: { _, phase in failures.append(phase) }
+        errorReporter: { _, phase in failures.append(phase) },
     )
     defer { first.accountSessionDidChange(nil) }
     first.setSnapshotApplier(applier)
@@ -139,7 +141,7 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
     let second = BrowserSyncService(
         localStore: reopened, remoteClient: remote, authSessionStore: auth,
         pushDebounce: .zero, pollInterval: nil, retryDelay: nil, runtimeActive: false,
-        errorReporter: { _, phase in failures.append(phase) }
+        errorReporter: { _, phase in failures.append(phase) },
     )
     defer { second.accountSessionDidChange(nil) }
     second.setSnapshotApplier(secondApplier)
@@ -153,7 +155,7 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
     #expect(remote.pullVersions.allSatisfy { [2, 4, 5].contains($0) })
     #expect(
         remote.sent.allSatisfy { [2, 3, 4].contains($0.protocolVersion) },
-        "Advertising v5 does not schedule expiry in an existing coordinator"
+        "Advertising v5 does not schedule expiry in an existing coordinator",
     )
     #expect(try reopened.pendingSyncQueue(for: owner).isEmpty)
     #expect(try reopened.syncCursor(for: owner) == 100, "Old ACK cursor must not replace the pull cursor")
@@ -169,13 +171,13 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
 
     // Unknown/replayed ACKs and even a later upsert cannot revive this permanent identity.
     let oldReceipt = try JSONDecoder().decode(BrowserSyncPushResponse.self, from: remote.wire.receipt(
-        version: 2, id: pending.id, operationCount: 1, expiry: false
+        version: 2, id: pending.id, operationCount: 1, expiry: false,
     ))
     _ = try reopened.acknowledgeSyncMutation(
         id: pending.id,
         protocolVersion: protocolVersion,
         events: oldReceipt.events,
-        for: owner
+        for: owner,
     )
     let impossibleUpsert = try JSONDecoder().decode([BrowserSyncEvent].self, from: remote.wire.laterUpsert())
     _ = try reopened.applyRemoteSyncEvents(impossibleUpsert, cursor: 101, for: owner)
@@ -191,6 +193,24 @@ func expiryDeleteSurvivesOldPendingMutationsLostACKAndCoordinatorReopen(protocol
 /// Fixed wire history, not a sync implementation: the old request committed at
 /// sequence4, expiry committed at100, and its recovery metadata is additive.
 private struct ExpiryCompatibilityWire {
+    // MARK: Private
+
+    private var priorTab: [String: Any] {
+        [
+            "id": "expired",
+            "spaceID": "target",
+            "placement": "temporary",
+            "rank": 0,
+            "urlString": "https://expiry.example/prior",
+            "pinnedURLString": NSNull(),
+            "pinnedFolderID": NSNull(),
+            "title": "Loaded page before expiry",
+            "userTitleOverride": "Canonical rename",
+            "faviconURLString": "https://expiry.example/favicon.ico",
+            "lastActivityAt": "2026-10-01T00:00:00.123456Z",
+        ]
+    }
+
     // MARK: Internal
 
     func seed() throws -> Data {
@@ -218,24 +238,6 @@ private struct ExpiryCompatibilityWire {
             "events": [expiry ? expiryEvent() : tab(sequence: 4)],
             "outcomes": (0..<operationCount).map { ["operationIndex": $0, "status": expiry ? "deleted" : "applied"] },
         ])
-    }
-
-    // MARK: Private
-
-    private var priorTab: [String: Any] {
-        [
-            "id": "expired",
-            "spaceID": "target",
-            "placement": "temporary",
-            "rank": 0,
-            "urlString": "https://expiry.example/prior",
-            "pinnedURLString": NSNull(),
-            "pinnedFolderID": NSNull(),
-            "title": "Loaded page before expiry",
-            "userTitleOverride": "Canonical rename",
-            "faviconURLString": "https://expiry.example/favicon.ico",
-            "lastActivityAt": "2026-10-01T00:00:00.123456Z",
-        ]
     }
 
     private func space(_ id: String, sequence: Int) -> [String: Any] {
@@ -294,34 +296,34 @@ private struct ExpiryCompatibilityWire {
         pullVersions.append(protocolVersion)
         return try JSONDecoder().decode(
             BrowserSyncPullResponse.self,
-            from: wire.pull(cursor: cursor, protocolVersion: protocolVersion)
+            from: wire.pull(cursor: cursor, protocolVersion: protocolVersion),
         )
     }
 
     func push(mutation: BrowserSyncMutation, authSession _: BrowserAuthSession) throws -> BrowserSyncPushResponse {
         try JSONDecoder().decode(
             BrowserSyncPushResponse.self,
-            from: receive(.legacy(mutation), count: mutation.changes.count)
+            from: receive(.legacy(mutation), count: mutation.changes.count),
         )
     }
 
     func push(
         mutation: BrowserSyncSemanticMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncSemanticPushResponse {
         try JSONDecoder().decode(
             BrowserSyncSemanticPushResponse.self,
-            from: receive(.semantic(mutation), count: mutation.operations.count)
+            from: receive(.semantic(mutation), count: mutation.operations.count),
         )
     }
 
     func push(
         mutation: BrowserSyncFolderMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncFolderPushResponse {
         try JSONDecoder().decode(
             BrowserSyncFolderPushResponse.self,
-            from: receive(.folders(mutation), count: mutation.operations.count)
+            from: receive(.folders(mutation), count: mutation.operations.count),
         )
     }
 
@@ -334,7 +336,7 @@ private struct ExpiryCompatibilityWire {
                 version: mutation.protocolVersion,
                 id: mutation.id,
                 operationCount: count,
-                expiry: false
+                expiry: false,
             )
         }
         if loseNextReceipt {
@@ -353,7 +355,7 @@ private struct ExpiryCompatibilityWire {
         userID: "owner",
         userEmail: nil,
         deviceID: "old-client",
-        serverURL: URL(string: "https://expiry.example")!
+        serverURL: URL(string: "https://expiry.example")!,
     )
 
     func loadSession() -> BrowserAuthSession? { session }
@@ -383,14 +385,14 @@ private func expiryStoredRows(_ url: URL) throws -> [ExpiryStoredRow] {
     try DatabaseQueue(path: url.path).read { db in
         try Row.fetchAll(
             db,
-            sql: "SELECT position, mutation_id, protocol_version, payload FROM browser_sync_outbox ORDER BY position"
+            sql: "SELECT position, mutation_id, protocol_version, payload FROM browser_sync_outbox ORDER BY position",
         )
         .map {
             .init(
                 position: $0["position"],
                 id: $0["mutation_id"],
                 version: $0["protocol_version"],
-                bytes: $0["payload"]
+                bytes: $0["payload"],
             )
         }
     }
@@ -399,7 +401,7 @@ private func expiryStoredRows(_ url: URL) throws -> [ExpiryStoredRow] {
 private func expiryBaseline(_ url: URL) throws -> BrowserSyncOutboxBaseline {
     let data = try DatabaseQueue(path: url.path).read { try Data.fetchOne(
         $0,
-        sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1"
+        sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1",
     ) }
     let payload = try #require(data)
     return try JSONDecoder().decode(BrowserSyncOutboxBaseline.self, from: payload)

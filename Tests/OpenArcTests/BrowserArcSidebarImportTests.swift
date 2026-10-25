@@ -1,3 +1,5 @@
+// BrowserArcSidebarImportTests.swift
+
 import AppKit
 import Testing
 
@@ -41,7 +43,7 @@ import Testing
             children: [
                 .tab(title: nil, savedTitle: "Docs", urlString: "https://docs.example"),
                 .folder(title: "Empty", icon: nil, children: []),
-            ]
+            ],
         )
         #expect(sidebar.spaces.first?.pinned == [
             .tab(title: "Mail", savedTitle: "Inbox", urlString: "https://mail.example"),
@@ -85,7 +87,7 @@ import Testing
         f.model.selectSpace(id: work.id)
         #expect(
             f.model.tabs.first { $0.syncID == mail.syncID }?.id != mail.id,
-            "Opening a Space of unloaded tabs loads the one it shows"
+            "Opening a Space of unloaded tabs loads the one it shows",
         )
         #expect(f.model.selectedTabID == f.model.tabs.first { $0.syncID == mail.syncID }?.id)
     }

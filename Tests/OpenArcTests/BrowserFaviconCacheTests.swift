@@ -1,3 +1,5 @@
+// BrowserFaviconCacheTests.swift
+
 import AppKit
 import Foundation
 import Testing
@@ -72,7 +74,13 @@ private func makeTestFaviconImage() -> NSImage {
 // MARK: - BlockingFaviconDataLoader
 
 private actor BlockingFaviconDataLoader {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let data: Data
+    private var invocationWaiters = [(Int, CheckedContinuation<Void, Never>)]()
+    private var isReleased = false
+    private var requestedURLs = [URL]()
+    private var releaseWaiters = [CheckedContinuation<Void, Never>]()
 
     init(data: Data) {
         self.data = data
@@ -121,14 +129,6 @@ private actor BlockingFaviconDataLoader {
         releaseWaiters.removeAll()
         waiters.forEach { $0.resume() }
     }
-
-    // MARK: Private
-
-    private let data: Data
-    private var invocationWaiters = [(Int, CheckedContinuation<Void, Never>)]()
-    private var isReleased = false
-    private var requestedURLs = [URL]()
-    private var releaseWaiters = [CheckedContinuation<Void, Never>]()
 
     private func resumeInvocationWaiters() {
         let waiters = invocationWaiters

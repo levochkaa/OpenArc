@@ -1,15 +1,17 @@
+// BrowserBatterySaverPolicyTests.swift
+
 import Testing
 
 @Test func batterySaverPolicyActivatesAtTwentyPercentOnBatteryPower() {
     let state = BrowserBatteryState(
         hasBattery: true,
         isUsingBatteryPower: true,
-        batteryPercentage: 20
+        batteryPercentage: 20,
     )
 
     #expect(BrowserBatterySaverPolicy.shouldActivate(
         for: state,
-        isEnabledInPreferences: true
+        isEnabledInPreferences: true,
     ))
 }
 
@@ -17,12 +19,12 @@ import Testing
     let state = BrowserBatteryState(
         hasBattery: true,
         isUsingBatteryPower: true,
-        batteryPercentage: 21
+        batteryPercentage: 21,
     )
 
     #expect(!BrowserBatterySaverPolicy.shouldActivate(
         for: state,
-        isEnabledInPreferences: true
+        isEnabledInPreferences: true,
     ))
 }
 
@@ -30,33 +32,33 @@ import Testing
     let pluggedInState = BrowserBatteryState(
         hasBattery: true,
         isUsingBatteryPower: false,
-        batteryPercentage: 10
+        batteryPercentage: 10,
     )
     let noBatteryState = BrowserBatteryState(
         hasBattery: false,
         isUsingBatteryPower: true,
-        batteryPercentage: 10
+        batteryPercentage: 10,
     )
     let unknownPercentageState = BrowserBatteryState(
         hasBattery: true,
         isUsingBatteryPower: true,
-        batteryPercentage: nil
+        batteryPercentage: nil,
     )
 
     #expect(!BrowserBatterySaverPolicy.shouldActivate(
         for: pluggedInState,
-        isEnabledInPreferences: true
+        isEnabledInPreferences: true,
     ))
     #expect(!BrowserBatterySaverPolicy.shouldActivate(
         for: noBatteryState,
-        isEnabledInPreferences: true
+        isEnabledInPreferences: true,
     ))
     #expect(!BrowserBatterySaverPolicy.shouldActivate(
         for: unknownPercentageState,
-        isEnabledInPreferences: true
+        isEnabledInPreferences: true,
     ))
     #expect(!BrowserBatterySaverPolicy.shouldActivate(
         for: BrowserBatteryState(hasBattery: true, isUsingBatteryPower: true, batteryPercentage: 10),
-        isEnabledInPreferences: false
+        isEnabledInPreferences: false,
     ))
 }

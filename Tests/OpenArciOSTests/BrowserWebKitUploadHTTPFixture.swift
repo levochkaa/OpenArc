@@ -1,17 +1,11 @@
+// BrowserWebKitUploadHTTPFixture.swift
+
 import Foundation
 import Network
 
 /// Disposable loopback pages and raw upload capture. This fixture deliberately
 /// accepts bounded Content-Length requests only; it never guesses chunked bytes.
 @MainActor final class UploadHTTPFixture {
-    // MARK: Lifecycle
-
-    init() throws {
-        let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
-        self.listener = try NWListener(using: parameters)
-    }
-
     // MARK: Internal
 
     struct Request {
@@ -21,50 +15,6 @@ import Network
         let path: String
         let headers: [String: String]
         let body: Data
-
-        func multipartParts() throws -> [Part] {
-            guard body.count <= 1024 * 1024 else { throw MultipartError.invalidBody }
-            let boundary = try Self.boundary(in: headers["content-type"])
-            let marker = Data(("--" + boundary).utf8)
-            let nextMarker = Data("\r\n".utf8) + marker
-            let newline = Data("\r\n".utf8)
-            let final = Data("--\r\n".utf8)
-            let headerEnd = Data("\r\n\r\n".utf8)
-            guard body.starts(with: marker) else { throw MultipartError.invalidBody }
-            var offset = marker.count
-            var parts = [Part]()
-            while true {
-                if body[offset...].starts(with: final) {
-                    guard offset + final.count == body.count else { throw MultipartError.invalidBody }
-                    return parts
-                }
-                guard body[offset...].starts(with: newline) else { throw MultipartError.invalidBody }
-                offset += newline.count
-                guard let separator = body.range(of: headerEnd, in: offset..<body.count),
-                      separator.lowerBound - offset <= 16 * 1024,
-                      let headerText = String(data: body[offset..<separator.lowerBound], encoding: .utf8)
-                else {
-                    throw MultipartError.invalidHeaders
-                }
-                let partHeaders = try Self.partHeaders(headerText)
-                let payloadStart = separator.upperBound
-                var searchStart = payloadStart
-                var delimiter: Range<Int>?
-                while let candidate = body.range(of: nextMarker, in: searchStart..<body.count) {
-                    let suffix = body[candidate.upperBound...]
-                    if suffix.starts(with: newline) || suffix.starts(with: final) {
-                        delimiter = candidate
-                        break
-                    }
-                    // A boundary-like sequence with a different suffix belongs
-                    // to the binary file; only an exact delimiter ends a part.
-                    searchStart = candidate.upperBound
-                }
-                guard let delimiter else { throw MultipartError.invalidBody }
-                parts.append(.init(headers: partHeaders, body: Data(body[payloadStart..<delimiter.lowerBound])))
-                offset = delimiter.upperBound
-            }
-        }
 
         // MARK: Private
 
@@ -155,6 +105,50 @@ import Network
         private static func isToken(_ byte: UInt8) -> Bool {
             (33...126).contains(byte) && !Array("()<>@,;:\\\"/[]?={}".utf8).contains(byte)
         }
+
+        func multipartParts() throws -> [Part] {
+            guard body.count <= 1024 * 1024 else { throw MultipartError.invalidBody }
+            let boundary = try Self.boundary(in: headers["content-type"])
+            let marker = Data(("--" + boundary).utf8)
+            let nextMarker = Data("\r\n".utf8) + marker
+            let newline = Data("\r\n".utf8)
+            let final = Data("--\r\n".utf8)
+            let headerEnd = Data("\r\n\r\n".utf8)
+            guard body.starts(with: marker) else { throw MultipartError.invalidBody }
+            var offset = marker.count
+            var parts = [Part]()
+            while true {
+                if body[offset...].starts(with: final) {
+                    guard offset + final.count == body.count else { throw MultipartError.invalidBody }
+                    return parts
+                }
+                guard body[offset...].starts(with: newline) else { throw MultipartError.invalidBody }
+                offset += newline.count
+                guard let separator = body.range(of: headerEnd, in: offset..<body.count),
+                      separator.lowerBound - offset <= 16 * 1024,
+                      let headerText = String(data: body[offset..<separator.lowerBound], encoding: .utf8)
+                else {
+                    throw MultipartError.invalidHeaders
+                }
+                let partHeaders = try Self.partHeaders(headerText)
+                let payloadStart = separator.upperBound
+                var searchStart = payloadStart
+                var delimiter: Range<Int>?
+                while let candidate = body.range(of: nextMarker, in: searchStart..<body.count) {
+                    let suffix = body[candidate.upperBound...]
+                    if suffix.starts(with: newline) || suffix.starts(with: final) {
+                        delimiter = candidate
+                        break
+                    }
+                    // A boundary-like sequence with a different suffix belongs
+                    // to the binary file; only an exact delimiter ends a part.
+                    searchStart = candidate.upperBound
+                }
+                guard let delimiter else { throw MultipartError.invalidBody }
+                parts.append(.init(headers: partHeaders, body: Data(body[payloadStart..<delimiter.lowerBound])))
+                offset = delimiter.upperBound
+            }
+        }
     }
 
     struct Part {
@@ -166,8 +160,27 @@ import Network
         case invalidContentType, invalidHeaders, invalidBody
     }
 
+    // MARK: Private
+
+    private static let maximumBodyBytes = 1024 * 1024
+    private static let maximumHeaderBytes = 16 * 1024
+
     private(set) var requests = [Request]()
     private(set) var parseErrors = [String]()
+
+    private let listener: NWListener
+    private var started = false
+    private var stopped = false
+    private var connections = [ObjectIdentifier: NWConnection]()
+    private var connectionTimeouts = [ObjectIdentifier: Task<Void, Never>]()
+    private var startContinuation: CheckedContinuation<Void, Error>?
+    private var startTimeout: Task<Void, Never>?
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        self.listener = try NWListener(using: parameters)
+    }
 
     func start() async throws {
         guard !started, !stopped else { throw URLError(.cannotConnectToHost) }
@@ -179,7 +192,8 @@ import Network
                     guard let self, !stopped else { return }
                     switch state {
                     case .ready: finishStarting()
-                    case .failed(let error), .waiting(let error): finishStarting(error: error)
+                    case .failed(let error),
+                         .waiting(let error): finishStarting(error: error)
                     default: break
                     }
                 }
@@ -194,7 +208,11 @@ import Network
                     connections[id] = connection
                     connection.start(queue: .main)
                     connectionTimeouts[id] = Task { @MainActor [weak self, weak connection] in
-                        do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                        do {
+                            try await Task.sleep(for: .seconds(10))
+                        } catch {
+                            return
+                        }
                         guard let self, let connection, connections[id] != nil else { return }
                         reject("Request timed out", on: connection)
                     }
@@ -203,7 +221,11 @@ import Network
             }
             listener.start(queue: .main)
             startTimeout = Task { @MainActor [weak self] in
-                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                do {
+                    try await Task.sleep(for: .seconds(5))
+                } catch {
+                    return
+                }
                 self?.finishStarting(error: URLError(.timedOut))
             }
         }
@@ -232,19 +254,6 @@ import Network
         connections.removeAll()
         listener.cancel()
     }
-
-    // MARK: Private
-
-    private static let maximumBodyBytes = 1024 * 1024
-    private static let maximumHeaderBytes = 16 * 1024
-
-    private let listener: NWListener
-    private var started = false
-    private var stopped = false
-    private var connections = [ObjectIdentifier: NWConnection]()
-    private var connectionTimeouts = [ObjectIdentifier: Task<Void, Never>]()
-    private var startContinuation: CheckedContinuation<Void, Error>?
-    private var startTimeout: Task<Void, Never>?
 
     private func finishStarting(error: Error? = nil) {
         startTimeout?.cancel()
@@ -352,7 +361,7 @@ import Network
                     method: method,
                     path: String(first[1]),
                     headers: headers,
-                    body: Data(body.prefix(length))
+                    body: Data(body.prefix(length)),
                 )
                 requests.append(request)
                 respond(to: request, on: connection)
@@ -382,7 +391,7 @@ import Network
         case ("GET", "/next"):
             response(
                 "<!doctype html><meta name='viewport' content='width=device-width, initial-scale=1'><title>Upload next</title>Next page",
-                on: connection
+                on: connection,
             )
         case ("POST", "/submit"):
             response("<!doctype html><title>Upload received</title>Upload received", on: connection)

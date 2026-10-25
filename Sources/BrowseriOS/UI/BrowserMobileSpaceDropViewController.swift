@@ -1,19 +1,10 @@
+// BrowserMobileSpaceDropViewController.swift
+
 import UIKit
 
 /// A drag destination palette. Space identities and row geometry stay fixed for
 /// its lifetime; the source controller validates the latest document at drop.
 @MainActor final class BrowserMobileSpaceDropViewController: UIViewController, UIScrollViewDelegate {
-    // MARK: Lifecycle
-
-    init(spaces: [BrowserSpaceSessionSnapshot], includesFolders: Bool, dropDelegate: any UIDropInteractionDelegate) {
-        self.spaces = spaces
-        self.includesFolders = includesFolders
-        self.dropDelegate = dropDelegate
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
-
     // MARK: Internal
 
     struct Target: Equatable {
@@ -27,6 +18,24 @@ import UIKit
     }
 
     var onScroll: ((UIDropInteraction) -> Void)?
+
+    // MARK: Private
+
+    private let spaces: [BrowserSpaceSessionSnapshot]
+    private var includesFolders: Bool
+    private weak var dropDelegate: (any UIDropInteractionDelegate)?
+    private weak var installedDropInteraction: UIDropInteraction?
+    private var targetViews = [(Target, UIView)]()
+    private var todayLabels = [String: (title: UILabel, detail: UILabel)]()
+
+    init(spaces: [BrowserSpaceSessionSnapshot], includesFolders: Bool, dropDelegate: any UIDropInteractionDelegate) {
+        self.spaces = spaces
+        self.includesFolders = includesFolders
+        self.dropDelegate = dropDelegate
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -79,7 +88,7 @@ import UIKit
                 let target = Target(
                     spaceID: space.id,
                     placement: placement,
-                    isEnabled: placement == .spacePinned || !includesFolders
+                    isEnabled: placement == .spacePinned || !includesFolders,
                 )
                 let row = makeRow(target)
                 targetViews.append((target, row))
@@ -118,7 +127,7 @@ import UIKit
         guard let row = targetViews.first(where: { $0.0 == target })?.1 else { return nil }
         return UIDragPreviewTarget(
             container: view,
-            center: row.convert(CGPoint(x: row.bounds.midX, y: row.bounds.midY), to: view)
+            center: row.convert(CGPoint(x: row.bounds.midX, y: row.bounds.midY), to: view),
         )
     }
 
@@ -129,15 +138,6 @@ import UIKit
                 : .tertiarySystemGroupedBackground
         }
     }
-
-    // MARK: Private
-
-    private let spaces: [BrowserSpaceSessionSnapshot]
-    private var includesFolders: Bool
-    private weak var dropDelegate: (any UIDropInteractionDelegate)?
-    private weak var installedDropInteraction: UIDropInteraction?
-    private var targetViews = [(Target, UIView)]()
-    private var todayLabels = [String: (title: UILabel, detail: UILabel)]()
 
     private func makeRow(_ target: Target) -> UIView {
         let row = UIView()

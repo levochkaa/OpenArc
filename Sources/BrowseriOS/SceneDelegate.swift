@@ -1,9 +1,17 @@
+// SceneDelegate.swift
+
 import UIKit
 
 final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
     // MARK: Internal
 
     var window: UIWindow?
+
+    // MARK: Private
+
+    private var connection: BrowserMobileSceneSessions.Connection?
+    private var connectionTask: Task<Void, Never>?
+    private weak var connectionScene: UIWindowScene?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options _: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
@@ -16,7 +24,7 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
         connectionScene = windowScene
         connectionTask = Task { [weak self] in
             guard let connection = try? await BrowserMobileSceneSessions.shared.connect(
-                sessionID: session.persistentIdentifier
+                sessionID: session.persistentIdentifier,
             ) else { return }
             guard let self, !Task.isCancelled, connectionScene === windowScene else {
                 BrowserMobileSceneSessions.shared.disconnect(connection)
@@ -26,13 +34,13 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
             let window = UIWindow(windowScene: windowScene)
             window.rootViewController = BrowserMobileViewController(
                 workspace: connection.workspace,
-                contentView: connection.contentView
+                contentView: connection.contentView,
             )
             self.window = window
             window.makeKeyAndVisible()
             BrowserMobileSceneSessions.shared.setActive(
                 windowScene.activationState == .foregroundActive,
-                for: connection
+                for: connection,
             )
             connectionTask = nil
         }
@@ -65,10 +73,4 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
         connectionScene = nil
         window = nil
     }
-
-    // MARK: Private
-
-    private var connection: BrowserMobileSceneSessions.Connection?
-    private var connectionTask: Task<Void, Never>?
-    private weak var connectionScene: UIWindowScene?
 }

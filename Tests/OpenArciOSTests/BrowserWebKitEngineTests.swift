@@ -1,3 +1,5 @@
+// BrowserWebKitEngineTests.swift
+
 import Foundation
 import Network
 import Testing
@@ -24,7 +26,7 @@ import WebKit
             tabs: [
                 .init(id: "browsing", urlString: "about:blank", spaceID: "source"),
                 .init(id: "retained", urlString: "about:blank", spaceID: "source"),
-            ]
+            ],
         )
         try store.writeSessionBatch([.init(snapshot: initial, origin: .local(syncMove: nil))])
         let document = try BrowserMobileProfileDocument(store: store, loadSnapshot: { try store.loadSnapshotStrict() })
@@ -41,10 +43,10 @@ import WebKit
             try? FileManager.default.removeItem(at: directory)
         }
         let first = BrowserMobileWorkspace(
-            engine: firstEngine, sceneID: "first", profileLoader: { document }, preferences: preferences
+            engine: firstEngine, sceneID: "first", profileLoader: { document }, preferences: preferences,
         )
         let second = BrowserMobileWorkspace(
-            engine: secondEngine, sceneID: "second", profileLoader: { document }, preferences: preferences
+            engine: secondEngine, sceneID: "second", profileLoader: { document }, preferences: preferences,
         )
         await first.restore()
         try #require(first.isReady)
@@ -54,7 +56,8 @@ import WebKit
         page.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         page.view.layoutIfNeeded()
         first.selectTab(id: "browsing")
-        let firstURL = try fixture.url(path: "first"), secondURL = try fixture.url(path: "second")
+        let firstURL = try fixture.url(path: "first")
+        let secondURL = try fixture.url(path: "second")
         page.addressField.text = firstURL.absoluteString
         #expect(page.textFieldShouldReturn(page.addressField))
         try #require(await eventually {
@@ -79,7 +82,7 @@ import WebKit
         let parent = try #require(document.createFolder(spaceID: "target", title: "Target parent"))
         #expect(document.move(
             items: [.init(entityType: .folder, entityID: folder)],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: parent)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: parent),
         ))
         first.selectTab(id: "browsing")
         #expect(first.selectedSpaceID == "target")
@@ -129,10 +132,10 @@ import WebKit
 
         let reopenedStore = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         let reopenedDocument = try BrowserMobileProfileDocument(
-            store: reopenedStore, loadSnapshot: { try reopenedStore.loadSnapshotStrict() }
+            store: reopenedStore, loadSnapshot: { try reopenedStore.loadSnapshotStrict() },
         )
         let reopened = BrowserMobileWorkspace(
-            engine: reopenedEngine, sceneID: "first", profileLoader: { reopenedDocument }, preferences: preferences
+            engine: reopenedEngine, sceneID: "first", profileLoader: { reopenedDocument }, preferences: preferences,
         )
         await reopened.restore()
         #expect(reopened.isReady && reopened.selectedTabID == "retained")
@@ -151,7 +154,7 @@ import WebKit
         let fileURL = directory.appendingPathComponent("session.json")
         let engine = BrowserWebKitEngine(dataStore: .nonPersistent())
         let workspace = BrowserMobileWorkspace(
-            engine: engine, store: BrowserMobileFileSessionStore(fileURL: fileURL)
+            engine: engine, store: BrowserMobileFileSessionStore(fileURL: fileURL),
         )
         var reopenedWorkspace: BrowserMobileWorkspace?
         var reopenedEngine: BrowserWebKitEngine?
@@ -226,7 +229,7 @@ import WebKit
             let nextEngine = BrowserWebKitEngine(dataStore: .nonPersistent())
             reopenedEngine = nextEngine
             let reopened = BrowserMobileWorkspace(
-                engine: nextEngine, store: BrowserMobileFileSessionStore(fileURL: fileURL)
+                engine: nextEngine, store: BrowserMobileFileSessionStore(fileURL: fileURL),
             )
             reopenedWorkspace = reopened
             await reopened.restore()
@@ -296,7 +299,7 @@ import WebKit
         #expect((0..<1000).allSatisfy { engine.webView(for: "saved-\($0)") == nil })
         engine.selectTab(id: "saved-500")
         #expect(engine.webView(for: "saved-500") != nil)
-        #expect((0..<1000).filter { engine.webView(for: "saved-\($0)") != nil }.count == 1)
+        #expect((0..<1000).count(where: { engine.webView(for: "saved-\($0)") != nil }) == 1)
         engine.closeTab(id: "saved-999")
         #expect(engine.webView(for: "saved-999") == nil)
         engine.navigate(id: "saved-100", url: url)
@@ -312,7 +315,7 @@ import WebKit
         engine.selectTab(id: "tab")
         let view = try #require(engine.webView(for: "tab"))
         let first = try #require(engine.loadHTMLString(
-            "<title>Old</title>", baseURL: URL(string: "https://fixture.invalid/old"), id: "tab"
+            "<title>Old</title>", baseURL: URL(string: "https://fixture.invalid/old"), id: "tab",
         ))
         let secondURL = try #require(URL(string: "https://fixture.invalid/new"))
         engine.loadHTMLString("<title>New</title>", baseURL: secondURL, id: "tab")
@@ -380,7 +383,7 @@ import WebKit
             engine.selectTab(id: id)
         }
         let popup = try #require(engine.adoptPopup(
-            configuration: configuration, url: URL(string: "https://fixture.invalid/popup")
+            configuration: configuration, url: URL(string: "https://fixture.invalid/popup"),
         ))
         let id = try #require(adoptedID)
         #expect(registeredBeforeCallback)
@@ -459,7 +462,11 @@ import WebKit
 // MARK: - MobileWebKitRecorder
 
 @MainActor private final class MobileWebKitRecorder {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var states = [String: BrowserMobilePageState]()
+    var closedIDs = [String]()
+    var eventCount = 0
 
     init(engine: BrowserWebKitEngine) {
         engine.onEvent = { [weak self] event in
@@ -468,17 +475,13 @@ import WebKit
             switch event {
             case .state(let id, let state): states[id] = state
             case .closed(let id): closedIDs.append(id)
-            case .httpAuthenticationFinished, .httpAuthenticationRequested, .javaScriptDialogFinished,
+            case .httpAuthenticationFinished,
+                 .httpAuthenticationRequested,
+                 .javaScriptDialogFinished,
                  .javaScriptDialogRequested: break
             }
         }
     }
-
-    // MARK: Internal
-
-    var states = [String: BrowserMobilePageState]()
-    var closedIDs = [String]()
-    var eventCount = 0
 
     func finished(_ id: String, title: String) -> Bool {
         states[id]?.title == title && states[id]?.isLoading == false && states[id]?.error == nil
@@ -486,7 +489,7 @@ import WebKit
 }
 
 @MainActor private func eventually(
-    timeout: Duration = .seconds(8), condition: () -> Bool
+    timeout: Duration = .seconds(8), condition: () -> Bool,
 ) async -> Bool {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: timeout)
@@ -503,7 +506,11 @@ import WebKit
 
 /// Disposable loopback HTTP documents; no internet requests or shared cookies.
 @MainActor private final class LocalBrowserHTTPFixture {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let listener: NWListener
+    private var startContinuation: CheckedContinuation<Void, Error>?
+    private var startTimeout: Task<Void, Never>?
 
     init() throws {
         let parameters = NWParameters.tcp
@@ -524,7 +531,8 @@ import WebKit
                         startTimeout?.cancel()
                         startContinuation?.resume()
                         startContinuation = nil
-                    case .failed(let error), .waiting(let error):
+                    case .failed(let error),
+                         .waiting(let error):
                         startTimeout?.cancel()
                         startContinuation?.resume(throwing: error)
                         startContinuation = nil
@@ -566,10 +574,4 @@ import WebKit
         startContinuation = nil
         listener.cancel()
     }
-
-    // MARK: Private
-
-    private let listener: NWListener
-    private var startContinuation: CheckedContinuation<Void, Error>?
-    private var startTimeout: Task<Void, Never>?
 }

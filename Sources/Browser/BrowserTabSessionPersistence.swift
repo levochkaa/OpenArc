@@ -1,3 +1,5 @@
+// BrowserTabSessionPersistence.swift
+
 import CoreGraphics
 import Foundation
 import OSLog
@@ -33,7 +35,7 @@ enum BrowserTemporaryTabLifetime: String, CaseIterable, Codable, Equatable, Hash
 
 // MARK: - BrowserTabPlacement
 
-enum BrowserTabPlacement: String, Codable, Equatable, Hashable, Sendable {
+enum BrowserTabPlacement: String, Codable, Equatable, Hashable {
     case temporary
     case spacePinned
     case app
@@ -42,24 +44,6 @@ enum BrowserTabPlacement: String, Codable, Equatable, Hashable, Sendable {
 // MARK: - BrowserSpaceSessionSnapshot
 
 struct BrowserSpaceSessionSnapshot: Codable, Equatable {
-    // MARK: Lifecycle
-
-    init(
-        id: String,
-        title: String,
-        systemImageName: String,
-        isPinnedSectionCollapsed: Bool = false,
-        selectedTabIndex: Int? = nil,
-        colorName: String? = nil
-    ) {
-        self.id = id
-        self.title = title
-        self.systemImageName = systemImageName
-        self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
-        self.selectedTabIndex = selectedTabIndex
-        self.colorName = colorName
-    }
-
     // MARK: Internal
 
     let id: String
@@ -71,6 +55,22 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
     /// never synced, and ignored by equality so sync checks do not see it.
     let colorName: String?
 
+    init(
+        id: String,
+        title: String,
+        systemImageName: String,
+        isPinnedSectionCollapsed: Bool = false,
+        selectedTabIndex: Int? = nil,
+        colorName: String? = nil,
+    ) {
+        self.id = id
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
+        self.selectedTabIndex = selectedTabIndex
+        self.colorName = colorName
+    }
+
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.title == rhs.title && lhs.systemImageName == rhs.systemImageName
             && lhs.isPinnedSectionCollapsed == rhs.isPinnedSectionCollapsed
@@ -81,26 +81,6 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
 // MARK: - BrowserPinnedTabFolderSessionSnapshot
 
 struct BrowserPinnedTabFolderSessionSnapshot: Codable, Equatable {
-    // MARK: Lifecycle
-
-    init(
-        id: String,
-        spaceID: String,
-        parentFolderID: String? = nil,
-        title: String,
-        systemImageName: String? = nil,
-        isExpanded: Bool = true,
-        pinnedSiblingRank: Double? = nil
-    ) {
-        self.id = id
-        self.spaceID = spaceID
-        self.parentFolderID = parentFolderID
-        self.title = title
-        self.systemImageName = systemImageName
-        self.isExpanded = isExpanded
-        self.pinnedSiblingRank = pinnedSiblingRank
-    }
-
     // MARK: Internal
 
     let id: String
@@ -110,12 +90,64 @@ struct BrowserPinnedTabFolderSessionSnapshot: Codable, Equatable {
     let systemImageName: String?
     let isExpanded: Bool
     let pinnedSiblingRank: Double?
+
+    init(
+        id: String,
+        spaceID: String,
+        parentFolderID: String? = nil,
+        title: String,
+        systemImageName: String? = nil,
+        isExpanded: Bool = true,
+        pinnedSiblingRank: Double? = nil,
+    ) {
+        self.id = id
+        self.spaceID = spaceID
+        self.parentFolderID = parentFolderID
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isExpanded = isExpanded
+        self.pinnedSiblingRank = pinnedSiblingRank
+    }
 }
 
 // MARK: - BrowserTabSessionSnapshotTab
 
-struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserTabSessionSnapshotTab: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case urlString
+        case pinnedURLString
+        case userTitleOverride
+        case placement
+        case spaceID
+        case pinnedFolderID
+        case pinnedSiblingRank
+        case isPinned
+        case lastActivityTimestamp
+        case pageTitle
+        case systemImageName
+    }
+
+    // MARK: Internal
+
+    let id: String?
+    let urlString: String
+    let pinnedURLString: String?
+    let userTitleOverride: String?
+    let placement: BrowserTabPlacement
+    let spaceID: String?
+    let pinnedFolderID: String?
+    let pinnedSiblingRank: Double?
+    let lastActivityTimestamp: TimeInterval?
+    /// The page's last title, kept locally so an unloaded tab shows it. Sync
+    /// never sends it, and equality ignores it: it is display data that may lag
+    /// behind the page, while archive and sync checks compare stored tabs.
+    let pageTitle: String?
+    /// The icon chosen for the tab in place of its favicon (Change Icon).
+    /// Local like the page title, and equality ignores it for the same reason.
+    let systemImageName: String?
 
     init(
         id: String? = nil,
@@ -128,7 +160,7 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         lastActivityTimestamp: TimeInterval? = nil,
         pinnedSiblingRank: Double? = nil,
         pageTitle: String? = nil,
-        systemImageName: String? = nil
+        systemImageName: String? = nil,
     ) {
         self.pageTitle = pageTitle
         self.systemImageName = systemImageName
@@ -163,25 +195,6 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         self.systemImageName = try container.decodeIfPresent(String.self, forKey: .systemImageName)
     }
 
-    // MARK: Internal
-
-    let id: String?
-    let urlString: String
-    let pinnedURLString: String?
-    let userTitleOverride: String?
-    let placement: BrowserTabPlacement
-    let spaceID: String?
-    let pinnedFolderID: String?
-    let pinnedSiblingRank: Double?
-    let lastActivityTimestamp: TimeInterval?
-    /// The page's last title, kept locally so an unloaded tab shows it. Sync
-    /// never sends it, and equality ignores it: it is display data that may lag
-    /// behind the page, while archive and sync checks compare stored tabs.
-    let pageTitle: String?
-    /// The icon chosen for the tab in place of its favicon (Change Icon).
-    /// Local like the page title, and equality ignores it for the same reason.
-    let systemImageName: String?
-
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.urlString == rhs.urlString && lhs.pinnedURLString == rhs.pinnedURLString
             && lhs.userTitleOverride == rhs.userTitleOverride && lhs.placement == rhs.placement
@@ -203,71 +216,20 @@ struct BrowserTabSessionSnapshotTab: Codable, Equatable, Sendable {
         try container.encodeIfPresent(pageTitle, forKey: .pageTitle)
         try container.encodeIfPresent(systemImageName, forKey: .systemImageName)
     }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case urlString
-        case pinnedURLString
-        case userTitleOverride
-        case placement
-        case spaceID
-        case pinnedFolderID
-        case pinnedSiblingRank
-        case isPinned
-        case lastActivityTimestamp
-        case pageTitle
-        case systemImageName
-    }
 }
 
 // MARK: - BrowserTabSessionSnapshot
 
 struct BrowserTabSessionSnapshot: Codable, Equatable {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(
-        version: Int = currentVersion,
-        spaces: [BrowserSpaceSessionSnapshot]? = nil,
-        pinnedTabFolders: [BrowserPinnedTabFolderSessionSnapshot]? = nil,
-        tabs: [BrowserTabSessionSnapshotTab],
-        splitGroups: [BrowserTabSplitGroupSessionSnapshot]? = nil
-    ) {
-        self.version = version
-        self.spaces = spaces
-        self.pinnedTabFolders = pinnedTabFolders
-        self.tabs = tabs
-        self.splitGroups = splitGroups
-    }
-
-    init(version: Int = currentVersion, tabURLStrings: [String]) {
-        self.init(
-            version: version,
-            tabs: tabURLStrings.map { BrowserTabSessionSnapshotTab(urlString: $0) }
-        )
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.version = try container.decode(Int.self, forKey: .version)
-        self.spaces = try container.decodeIfPresent([BrowserSpaceSessionSnapshot].self, forKey: .spaces)
-        self.pinnedTabFolders = try container.decodeIfPresent(
-            [BrowserPinnedTabFolderSessionSnapshot].self,
-            forKey: .pinnedTabFolders
-        )
-        self.splitGroups = try container.decodeIfPresent(
-            [BrowserTabSplitGroupSessionSnapshot].self,
-            forKey: .splitGroups
-        )
-
-        if let tabs = try container.decodeIfPresent([BrowserTabSessionSnapshotTab].self, forKey: .tabs) {
-            self.tabs = tabs
-            return
-        }
-
-        let tabURLStrings = try container.decode([String].self, forKey: .tabURLStrings)
-        self.tabs = tabURLStrings.map { BrowserTabSessionSnapshotTab(urlString: $0) }
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case spaces
+        case pinnedTabFolders
+        case tabs
+        case tabURLStrings
+        case splitGroups
     }
 
     // MARK: Internal
@@ -286,6 +248,49 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         tabs.map(\.urlString)
     }
 
+    init(
+        version: Int = currentVersion,
+        spaces: [BrowserSpaceSessionSnapshot]? = nil,
+        pinnedTabFolders: [BrowserPinnedTabFolderSessionSnapshot]? = nil,
+        tabs: [BrowserTabSessionSnapshotTab],
+        splitGroups: [BrowserTabSplitGroupSessionSnapshot]? = nil,
+    ) {
+        self.version = version
+        self.spaces = spaces
+        self.pinnedTabFolders = pinnedTabFolders
+        self.tabs = tabs
+        self.splitGroups = splitGroups
+    }
+
+    init(version: Int = currentVersion, tabURLStrings: [String]) {
+        self.init(
+            version: version,
+            tabs: tabURLStrings.map { BrowserTabSessionSnapshotTab(urlString: $0) },
+        )
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try container.decode(Int.self, forKey: .version)
+        self.spaces = try container.decodeIfPresent([BrowserSpaceSessionSnapshot].self, forKey: .spaces)
+        self.pinnedTabFolders = try container.decodeIfPresent(
+            [BrowserPinnedTabFolderSessionSnapshot].self,
+            forKey: .pinnedTabFolders,
+        )
+        self.splitGroups = try container.decodeIfPresent(
+            [BrowserTabSplitGroupSessionSnapshot].self,
+            forKey: .splitGroups,
+        )
+
+        if let tabs = try container.decodeIfPresent([BrowserTabSessionSnapshotTab].self, forKey: .tabs) {
+            self.tabs = tabs
+            return
+        }
+
+        let tabURLStrings = try container.decode([String].self, forKey: .tabURLStrings)
+        self.tabs = tabURLStrings.map { BrowserTabSessionSnapshotTab(urlString: $0) }
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(version, forKey: .version)
@@ -295,23 +300,12 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         try container.encode(tabURLStrings, forKey: .tabURLStrings)
         try container.encodeIfPresent(splitGroups, forKey: .splitGroups)
     }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case version
-        case spaces
-        case pinnedTabFolders
-        case tabs
-        case tabURLStrings
-        case splitGroups
-    }
 }
 
 // MARK: - BrowserTabSplitOrientation
 
 /// Horizontal panes sit side by side; vertical panes are stacked.
-enum BrowserTabSplitOrientation: String, Codable, Sendable {
+enum BrowserTabSplitOrientation: String, Codable {
     case horizontal
     case vertical
 }
@@ -321,8 +315,31 @@ enum BrowserTabSplitOrientation: String, Codable, Sendable {
 /// One Split View in pane order. Members are tab sync IDs. Decoding tolerates
 /// unknown orientations and malformed fractions so one bad group cannot fail
 /// a whole session restore.
-struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case tabIDs
+        case orientation
+        case fractions
+        case focusedTabID
+        case title
+        case systemImageName
+    }
+
+    // MARK: Internal
+
+    static let maximumTabCount = 4
+
+    let id: String
+    let tabIDs: [String]
+    let orientation: BrowserTabSplitOrientation
+    let fractions: [Double]?
+    let focusedTabID: String?
+    /// Rename… and Change Icon… on a split row.
+    let title: String?
+    let systemImageName: String?
 
     init(
         id: String,
@@ -331,7 +348,7 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
         fractions: [Double]? = nil,
         focusedTabID: String? = nil,
         title: String? = nil,
-        systemImageName: String? = nil
+        systemImageName: String? = nil,
     ) {
         self.title = title
         self.systemImageName = systemImageName
@@ -349,26 +366,13 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
             id: container.decode(String.self, forKey: .id),
             tabIDs: tabIDs,
             orientation: (try? container.decodeIfPresent(BrowserTabSplitOrientation.self, forKey: .orientation))
-                .flatMap { $0 } ?? .horizontal,
-            fractions: (try? container.decodeIfPresent([Double].self, forKey: .fractions)).flatMap { $0 },
-            focusedTabID: (try? container.decodeIfPresent(String.self, forKey: .focusedTabID)).flatMap { $0 },
-            title: (try? container.decodeIfPresent(String.self, forKey: .title)).flatMap { $0 },
-            systemImageName: (try? container.decodeIfPresent(String.self, forKey: .systemImageName)).flatMap { $0 }
+                .flatMap(\.self) ?? .horizontal,
+            fractions: (try? container.decodeIfPresent([Double].self, forKey: .fractions)).flatMap(\.self),
+            focusedTabID: (try? container.decodeIfPresent(String.self, forKey: .focusedTabID)).flatMap(\.self),
+            title: (try? container.decodeIfPresent(String.self, forKey: .title)).flatMap(\.self),
+            systemImageName: (try? container.decodeIfPresent(String.self, forKey: .systemImageName)).flatMap(\.self),
         )
     }
-
-    // MARK: Internal
-
-    static let maximumTabCount = 4
-
-    let id: String
-    let tabIDs: [String]
-    let orientation: BrowserTabSplitOrientation
-    let fractions: [Double]?
-    let focusedTabID: String?
-    /// Rename… and Change Icon… on a split row.
-    let title: String?
-    let systemImageName: String?
 
     /// Pane fractions must name every pane, be finite and positive, and sum to 1.
     static func validFractions(_ fractions: [Double]?, count: Int) -> [Double]? {
@@ -388,7 +392,7 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
         guard members != tabIDs else { return self }
         return Self(
             id: id, tabIDs: members, orientation: orientation, focusedTabID: focusedTabID,
-            title: title, systemImageName: systemImageName
+            title: title, systemImageName: systemImageName,
         )
     }
 
@@ -401,18 +405,6 @@ struct BrowserTabSplitGroupSessionSnapshot: Codable, Equatable, Sendable {
         try container.encodeIfPresent(focusedTabID, forKey: .focusedTabID)
         try container.encodeIfPresent(title, forKey: .title)
         try container.encodeIfPresent(systemImageName, forKey: .systemImageName)
-    }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case tabIDs
-        case orientation
-        case fractions
-        case focusedTabID
-        case title
-        case systemImageName
     }
 }
 
@@ -434,7 +426,7 @@ extension BrowserTabSessionSnapshotStoring {
             try writeSessionBatch([BrowserSessionWrite(snapshot: snapshot, origin: .local(syncMove: syncMove))])
         } catch {
             BrowserSessionDiagnostics.logger.error(
-                "Failed to save session snapshot: \(error.localizedDescription, privacy: .public)"
+                "Failed to save session snapshot: \(error.localizedDescription, privacy: .public)",
             )
         }
     }
@@ -444,7 +436,7 @@ extension BrowserTabSessionSnapshotStoring {
             try writeSessionBatch([BrowserSessionWrite(snapshot: snapshot, origin: .remoteProjection)])
         } catch {
             BrowserSessionDiagnostics.logger.error(
-                "Failed to save remote projection: \(error.localizedDescription, privacy: .public)"
+                "Failed to save remote projection: \(error.localizedDescription, privacy: .public)",
             )
         }
     }
@@ -507,23 +499,28 @@ final class BrowserEphemeralSessionStore: BrowserTabSessionSnapshotStoring, Brow
 private enum BrowserSessionDiagnostics {
     static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc",
-        category: "Session"
+        category: "Session",
     )
 }
 
 // MARK: - BrowserTabSessionSnapshotStore
 
 final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    static let snapshotFileName = "tabs.json"
+
+    // MARK: Private
+
+    private let snapshotURL: URL?
+    private let fileManager: FileManager
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
 
     init(snapshotURL: URL?, fileManager: FileManager = .default) {
         self.snapshotURL = snapshotURL
         self.fileManager = fileManager
     }
-
-    // MARK: Internal
-
-    static let snapshotFileName = "tabs.json"
 
     func loadSnapshot() -> BrowserTabSessionSnapshot? {
         guard let snapshotURL, fileManager.fileExists(atPath: snapshotURL.path) else {
@@ -535,14 +532,14 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
             let snapshot = try decoder.decode(BrowserTabSessionSnapshot.self, from: data)
             guard (1...BrowserTabSessionSnapshot.currentVersion).contains(snapshot.version) else {
                 BrowserSessionDiagnostics.logger.warning(
-                    "Ignoring session snapshot with unsupported version \(snapshot.version, privacy: .public)"
+                    "Ignoring session snapshot with unsupported version \(snapshot.version, privacy: .public)",
                 )
                 return nil
             }
             return snapshot
         } catch {
             BrowserSessionDiagnostics.logger.error(
-                "Failed to load session snapshot: \(error.localizedDescription, privacy: .public)"
+                "Failed to load session snapshot: \(error.localizedDescription, privacy: .public)",
             )
             return nil
         }
@@ -553,7 +550,7 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
             try writeSessionBatch([BrowserSessionWrite(snapshot: snapshot, origin: .local(syncMove: nil))])
         } catch {
             BrowserSessionDiagnostics.logger.error(
-                "Failed to save session snapshot: \(error.localizedDescription, privacy: .public)"
+                "Failed to save session snapshot: \(error.localizedDescription, privacy: .public)",
             )
         }
     }
@@ -571,23 +568,25 @@ final class BrowserTabSessionSnapshotStore: BrowserTabSessionSnapshotStoring {
         }
         guard let finalData else { return }
         try fileManager.createDirectory(
-            at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true
+            at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true,
         )
         try finalData.write(to: snapshotURL, options: .atomic)
     }
-
-    // MARK: Private
-
-    private let snapshotURL: URL?
-    private let fileManager: FileManager
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
 }
 
 // MARK: - BrowserSessionPreferencesStore
 
 final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private enum Key {
+        static let selectedTabIndex = "browser.session.selectedTabIndex"
+        static let selectedSpaceIndex = "browser.session.selectedSpaceIndex"
+        static let sidebarWidth = "browser.session.sidebarWidth"
+        static let temporaryTabLifetime = "browser.settings.temporaryTabLifetime"
+    }
+
+    private let userDefaults: UserDefaults
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -666,15 +665,4 @@ final class BrowserSessionPreferencesStore: BrowserSessionPreferencesStoring {
     func saveTemporaryTabLifetime(_ lifetime: BrowserTemporaryTabLifetime) {
         userDefaults.set(lifetime.rawValue, forKey: Key.temporaryTabLifetime)
     }
-
-    // MARK: Private
-
-    private enum Key {
-        static let selectedTabIndex = "browser.session.selectedTabIndex"
-        static let selectedSpaceIndex = "browser.session.selectedSpaceIndex"
-        static let sidebarWidth = "browser.session.sidebarWidth"
-        static let temporaryTabLifetime = "browser.settings.temporaryTabLifetime"
-    }
-
-    private let userDefaults: UserDefaults
 }

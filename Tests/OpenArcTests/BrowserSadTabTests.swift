@@ -1,3 +1,5 @@
+// BrowserSadTabTests.swift
+
 import AppKit
 import Testing
 
@@ -7,7 +9,8 @@ import Testing
 @MainActor struct BrowserSadTabTests {
     @Test func aCrashOnScreenShowsTheCrashPageAndABackgroundCrashReloadsWhenShown() async throws {
         let f = SidebarDragFixture(temporary: ["x", "y"])
-        let (x, y) = (f.id("x"), f.id("y"))
+        let x = f.id("x")
+        let y = f.id("y")
         f.model.selectTab(id: x)
         let reloads = f.driver.reloadCount
 
@@ -46,7 +49,7 @@ import Testing
             isContextReady: true,
             hasSelectedTab: true,
             isSidebarVisible: true,
-            usesWindowContentInsets: true
+            usesWindowContentInsets: true,
         )
         f.driver.onRenderProcessTerminated?(x, 11)
         content.refreshCrashPages()
@@ -55,7 +58,7 @@ import Testing
         #expect(!page.isHidden && page.frame == content.bounds)
         #expect(page.accessibilityLabel() == String(
             format: BrowserStrings.sadTabMessage,
-            BrowserStrings.sadTabReloadLink
+            BrowserStrings.sadTabReloadLink,
         ))
         let reloads = f.driver.reloadCount
         let message = try #require(page.subviews.compactMap { $0 as? NSTextView }.first)

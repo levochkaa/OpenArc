@@ -1,3 +1,5 @@
+// BrowserProfiles.swift
+
 import Combine
 import Foundation
 
@@ -31,14 +33,9 @@ struct BrowserProfile: Equatable, Identifiable {
 // MARK: - BrowserProfileStore
 
 final class BrowserProfileStore: ObservableObject {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(rootCacheURL: URL, fileManager: FileManager = .default) {
-        self.rootCacheURL = rootCacheURL
-        self.fileManager = fileManager
-        self.profiles = []
-        refresh()
-    }
+    private typealias JSONObject = [String: Any]
 
     // MARK: Internal
 
@@ -46,8 +43,25 @@ final class BrowserProfileStore: ObservableObject {
 
     let rootCacheURL: URL
 
+    private let fileManager: FileManager
+
     var defaultProfile: BrowserProfile {
         profile(withID: BrowserProfile.defaultDirectoryName) ?? BrowserProfile.defaultProfile
+    }
+
+    private var localStateURL: URL {
+        rootCacheURL.appendingPathComponent("Local State", isDirectory: false)
+    }
+
+    private var deletedProfilesURL: URL {
+        rootCacheURL.appendingPathComponent("OpenArc Deleted Profiles.json", isDirectory: false)
+    }
+
+    init(rootCacheURL: URL, fileManager: FileManager = .default) {
+        self.rootCacheURL = rootCacheURL
+        self.fileManager = fileManager
+        self.profiles = []
+        refresh()
     }
 
     func profile(withID profileID: String) -> BrowserProfile? {
@@ -63,7 +77,7 @@ final class BrowserProfileStore: ObservableObject {
         let existingDirectoryNames = Set(
             profileDirectoryNames(in: localState)
                 + existingProfileDirectoryNames()
-                + deletedProfileDirectoryNames()
+                + deletedProfileDirectoryNames(),
         )
         var profileIndex = 1
         while existingDirectoryNames.contains("Profile \(profileIndex)") {
@@ -72,7 +86,7 @@ final class BrowserProfileStore: ObservableObject {
 
         let profile = BrowserProfile(
             directoryName: "Profile \(profileIndex)",
-            name: "Profile \(profileIndex + 1)"
+            name: "Profile \(profileIndex + 1)",
         )
         _ = ensureProfile(profile, in: &localState)
         writeLocalState(localState)
@@ -89,7 +103,7 @@ final class BrowserProfileStore: ObservableObject {
         var localState = loadLocalState()
         let hadMetadata = removeProfiles(
             withDirectoryNames: [profile.directoryName],
-            from: &localState
+            from: &localState,
         )
         writeLocalState(localState)
         let didRecordDeletion = recordDeletedProfileDirectoryName(profile.directoryName)
@@ -109,7 +123,7 @@ final class BrowserProfileStore: ObservableObject {
         let deletedDirectoryNames = Set(deletedProfileDirectoryNames())
         var didUpdateLocalState = removeProfiles(
             withDirectoryNames: deletedDirectoryNames,
-            from: &localState
+            from: &localState,
         )
         if ensureProfile(BrowserProfile.defaultProfile, in: &localState) {
             didUpdateLocalState = true
@@ -126,20 +140,6 @@ final class BrowserProfileStore: ObservableObject {
         for profile in profiles {
             createProfileDirectoryIfNeeded(for: profile)
         }
-    }
-
-    // MARK: Private
-
-    private typealias JSONObject = [String: Any]
-
-    private let fileManager: FileManager
-
-    private var localStateURL: URL {
-        rootCacheURL.appendingPathComponent("Local State", isDirectory: false)
-    }
-
-    private var deletedProfilesURL: URL {
-        rootCacheURL.appendingPathComponent("OpenArc Deleted Profiles.json", isDirectory: false)
     }
 
     private func loadLocalState() -> JSONObject {
@@ -163,7 +163,7 @@ final class BrowserProfileStore: ObservableObject {
             try fileManager.createDirectory(at: rootCacheURL, withIntermediateDirectories: true)
             let data = try JSONSerialization.data(
                 withJSONObject: localState,
-                options: [.prettyPrinted, .sortedKeys]
+                options: [.prettyPrinted, .sortedKeys],
             )
             try data.write(to: localStateURL, options: .atomic)
         } catch {
@@ -177,7 +177,7 @@ final class BrowserProfileStore: ObservableObject {
             profileDirectoryNames(in: localState)
                 + infoCache.keys.sorted()
                 + existingProfileDirectoryNames()
-                + [BrowserProfile.defaultDirectoryName]
+                + [BrowserProfile.defaultDirectoryName],
         )
 
         return orderedDirectoryNames.compactMap { directoryName in
@@ -189,14 +189,14 @@ final class BrowserProfileStore: ObservableObject {
             let name = entry?["name"] as? String
             return BrowserProfile(
                 directoryName: directoryName,
-                name: name ?? defaultDisplayName(forDirectoryName: directoryName)
+                name: name ?? defaultDisplayName(forDirectoryName: directoryName),
             )
         }
     }
 
     @discardableResult private func removeProfiles(
         withDirectoryNames directoryNames: Set<String>,
-        from localState: inout JSONObject
+        from localState: inout JSONObject,
     ) -> Bool {
         let directoryNames = directoryNames.filter { $0 != BrowserProfile.defaultDirectoryName }
         guard !directoryNames.isEmpty else {
@@ -298,7 +298,7 @@ final class BrowserProfileStore: ObservableObject {
             let directoryURLs = try? fileManager.contentsOfDirectory(
                 at: rootCacheURL,
                 includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
+                options: [.skipsHiddenFiles],
             )
         else {
             return []
@@ -321,7 +321,7 @@ final class BrowserProfileStore: ObservableObject {
         do {
             try fileManager.createDirectory(
                 at: profileDirectoryURL(for: profile),
-                withIntermediateDirectories: true
+                withIntermediateDirectories: true,
             )
         } catch {
             return
@@ -372,7 +372,7 @@ final class BrowserProfileStore: ObservableObject {
             try fileManager.createDirectory(at: rootCacheURL, withIntermediateDirectories: true)
             let data = try JSONSerialization.data(
                 withJSONObject: object,
-                options: [.prettyPrinted, .sortedKeys]
+                options: [.prettyPrinted, .sortedKeys],
             )
             try data.write(to: deletedProfilesURL, options: .atomic)
         } catch {

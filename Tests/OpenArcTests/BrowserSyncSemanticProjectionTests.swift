@@ -1,3 +1,5 @@
+// BrowserSyncSemanticProjectionTests.swift
+
 import Foundation
 import Testing
 
@@ -51,7 +53,7 @@ import Testing
     let insertion = BrowserSyncSemanticProjection.operations(from: before, to: inserted)
     #expect(insertion.count == 1)
     #expect(insertion.first == .createTab(id: "new", data: .init(
-        spaceID: "one", placement: .temporary, urlString: "https://new.example/"
+        spaceID: "one", placement: .temporary, urlString: "https://new.example/",
     ), beforeID: "b", afterID: "a"))
     #expect(BrowserSyncSemanticProjection.operations(from: before, to: semanticSnapshot([
         semanticTab("a"), semanticTab("c"),
@@ -88,7 +90,7 @@ import Testing
     ], spaces: ["one", "two"])
     #expect(BrowserSyncSemanticProjection.operations(from: before, to: regrouped).isEmpty)
     let projected = BrowserSyncOutboxProjection.snapshot(
-        baseline: semanticBaseline(before), pending: [BrowserSyncQueuedMutation](), local: before
+        baseline: semanticBaseline(before), pending: [BrowserSyncQueuedMutation](), local: before,
     )
     #expect(projected.tabs.compactMap(\.id) == ["favorite", "pin", "ordinary-one", "ordinary-two"])
 }
@@ -112,7 +114,7 @@ import Testing
     var baseline = semanticBaseline(before)
     baseline.deletedKeys = ["space:one", "tab:discard"]
     let result = BrowserSyncOutboxProjection.snapshot(
-        baseline: baseline, pending: [.semantic(.init(id: "move-delete", operations: operations))], local: after
+        baseline: baseline, pending: [.semantic(.init(id: "move-delete", operations: operations))], local: after,
     )
     #expect(Set(result.tabs.compactMap(\.id)) == ["move", "favorite"])
     #expect(result.tabs.first { $0.id == "move" }?.spaceID == "two")
@@ -127,11 +129,11 @@ import Testing
             .createSpace(id: "one", data: .init(title: "One", systemImageName: "circle")),
             .createTab(
                 id: "keep",
-                data: .init(spaceID: "one", placement: .temporary, urlString: "https://keep.example/")
+                data: .init(spaceID: "one", placement: .temporary, urlString: "https://keep.example/"),
             ),
             .createTab(
                 id: "discard",
-                data: .init(spaceID: "one", placement: .temporary, urlString: "https://discard.example/")
+                data: .init(spaceID: "one", placement: .temporary, urlString: "https://discard.example/"),
             ),
         ])),
         .semantic(.init(id: "move-delete", operations: [
@@ -175,14 +177,14 @@ import Testing
             systemImageName: "circle",
             rank: 0,
             isPinnedSectionCollapsed: false,
-            selectedTabID: nil
-        )), createdAt: "2026-10-03T12:00:00Z"
+            selectedTabID: nil,
+        )), createdAt: "2026-10-03T12:00:00Z",
     )])
     let queue: [BrowserSyncQueuedMutation] = [
         .semantic(.init(id: "create-child", operations: [
             .createTab(
                 id: "keep",
-                data: .init(spaceID: "one", placement: .temporary, urlString: "https://keep.example/")
+                data: .init(spaceID: "one", placement: .temporary, urlString: "https://keep.example/"),
             ),
         ])),
         .semantic(.init(id: "move-delete", operations: [
@@ -209,7 +211,7 @@ import Testing
     let removed = BrowserSyncOutboxProjection.snapshot(
         baseline: semanticBaseline(before),
         pending: queue,
-        local: before
+        local: before,
     )
     #expect(removed.tabs.isEmpty)
 
@@ -221,7 +223,7 @@ import Testing
         .legacy(.init(id: "legacy-move-delete", changes: [parentDelete] + moveChange)),
     ]
     let preserved = BrowserSyncOutboxProjection.snapshot(
-        baseline: semanticBaseline(before), pending: moveThenDelete, local: moved
+        baseline: semanticBaseline(before), pending: moveThenDelete, local: moved,
     )
     #expect(preserved.tabs.first?.spaceID == "two")
 }
@@ -230,7 +232,7 @@ import Testing
     let before = semanticSnapshot([semanticTab("a")], spaces: ["one", "two"])
     var baseline = semanticBaseline(before)
     baseline.entities["tab:a"] = .init(serverSeq: 100, change: .init(
-        entityType: .tab, entityID: "a", op: .delete, spaceData: nil, tabData: nil
+        entityType: .tab, entityID: "a", op: .delete, spaceData: nil, tabData: nil,
     ))
     baseline.deletedKeys.insert("tab:a")
     let result = BrowserSyncOutboxProjection.snapshot(
@@ -238,13 +240,13 @@ import Testing
         pending: [.semantic(.init(id: "stale", operations: [
             .createTab(
                 id: "a",
-                data: .init(spaceID: "one", placement: .temporary, urlString: "https://stale.example/")
+                data: .init(spaceID: "one", placement: .temporary, urlString: "https://stale.example/"),
             ),
             .patchTab(id: "a", fields: .init(userTitleOverride: .set("Stale"))),
             .moveTabs(ids: ["a"], destination: .init(spaceID: "two", placement: .temporary)),
             .deleteTab(id: "a"),
         ]))],
-        local: before
+        local: before,
     )
     #expect(result.tabs.isEmpty)
 }
@@ -283,7 +285,7 @@ import Testing
     let operations: [BrowserSyncSemanticOperation] = [
         .createTab(
             id: "favorite",
-            data: .init(spaceID: "historical", placement: .app, urlString: "https://favorite.example/")
+            data: .init(spaceID: "historical", placement: .app, urlString: "https://favorite.example/"),
         ),
         .deleteSpace(id: "historical"),
         .patchTab(id: "favorite", fields: .init(userTitleOverride: .set("Favorite"))),
@@ -337,7 +339,7 @@ import Testing
         return ids
     }
     #expect(groups.map(\.count) == [1000, 1000, 1])
-    #expect(groups.flatMap { $0 } == ids)
+    #expect(groups.flatMap(\.self) == ids)
     let result = semanticReplay(before, operations: operations)
     #expect(result.tabs.compactMap(\.id) == ids)
     #expect(result.tabs.allSatisfy { $0.spaceID == "two" })
@@ -356,7 +358,7 @@ import Testing
 
 private func semanticTab(
     _ id: String, space: String = "one", url: String? = nil, title: String? = nil,
-    placement: BrowserTabPlacement = .temporary, home: String? = nil
+    placement: BrowserTabPlacement = .temporary, home: String? = nil,
 ) -> BrowserTabSessionSnapshotTab {
     .init(
         id: id,
@@ -364,12 +366,12 @@ private func semanticTab(
         pinnedURLString: home,
         userTitleOverride: title,
         placement: placement,
-        spaceID: space
+        spaceID: space,
     )
 }
 
 private func semanticSnapshot(
-    _ tabs: [BrowserTabSessionSnapshotTab], spaces: [String] = ["one"]
+    _ tabs: [BrowserTabSessionSnapshotTab], spaces: [String] = ["one"],
 ) -> BrowserTabSessionSnapshot {
     .init(spaces: spaces.map { .init(id: $0, title: $0, systemImageName: "circle") }, tabs: tabs)
 }
@@ -383,11 +385,11 @@ private func semanticBaseline(_ snapshot: BrowserTabSessionSnapshot) -> BrowserS
 }
 
 private func semanticReplay(
-    _ snapshot: BrowserTabSessionSnapshot, operations: [BrowserSyncSemanticOperation]
+    _ snapshot: BrowserTabSessionSnapshot, operations: [BrowserSyncSemanticOperation],
 ) -> BrowserTabSessionSnapshot {
     BrowserSyncOutboxProjection.snapshot(
         baseline: semanticBaseline(snapshot),
-        pending: [.semantic(.init(id: "projection", operations: operations))], local: snapshot
+        pending: [.semantic(.init(id: "projection", operations: operations))], local: snapshot,
     )
 }
 

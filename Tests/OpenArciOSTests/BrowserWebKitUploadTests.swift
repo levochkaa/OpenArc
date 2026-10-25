@@ -1,3 +1,5 @@
+// BrowserWebKitUploadTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -31,7 +33,7 @@ extension BrowserMobileUITests {
             }
             let payload = try await view.callAsyncJavaScript(
                 "return await Promise.all(Array.from(document.getElementById(input).files).map(async f=>({name:f.name, bytes:Array.from(new Uint8Array(await f.arrayBuffer()))})));",
-                arguments: ["input": input], in: nil, contentWorld: .page
+                arguments: ["input": input], in: nil, contentWorld: .page,
             )
             let result = try #require(payload as? [[String: Any]])
             #expect(result.compactMap { $0["name"] as? String } == names)
@@ -181,33 +183,6 @@ extension BrowserMobileUITests {
 // MARK: - UploadWebKitFixture
 
 @MainActor private final class UploadWebKitFixture {
-    // MARK: Lifecycle
-
-    init(directory: URL) throws {
-        self.directory = directory
-        self.server = try UploadHTTPFixture()
-        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
-        let snapshot = BrowserTabSessionSnapshot(
-            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
-            tabs: ["a", "b"].map {
-                .init(id: $0, urlString: "about:blank", spaceID: "space", lastActivityTimestamp: 1_800_000_000)
-            }
-        )
-        try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
-        try store.bindSyncOwner(owner)
-        self.document = try BrowserMobileProfileDocument(
-            store: store, initialSnapshot: snapshot,
-            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, automaticArchivalCheckInterval: nil
-        )
-        self.preferences = try #require(UserDefaults(suiteName: preferencesName))
-        let document = document
-        self.workspace = BrowserMobileWorkspace(
-            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences
-        )
-        self.root = BrowserMobileViewController(workspace: workspace, contentView: engine.hostView)
-        self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
-    }
-
     // MARK: Internal
 
     let directory: URL
@@ -221,6 +196,31 @@ extension BrowserMobileUITests {
     let workspace: BrowserMobileWorkspace
     let root: BrowserMobileViewController
     let window: UIWindow
+
+    init(directory: URL) throws {
+        self.directory = directory
+        self.server = try UploadHTTPFixture()
+        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
+        let snapshot = BrowserTabSessionSnapshot(
+            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
+            tabs: ["a", "b"].map {
+                .init(id: $0, urlString: "about:blank", spaceID: "space", lastActivityTimestamp: 1_800_000_000)
+            },
+        )
+        try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
+        try store.bindSyncOwner(owner)
+        self.document = try BrowserMobileProfileDocument(
+            store: store, initialSnapshot: snapshot,
+            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, automaticArchivalCheckInterval: nil,
+        )
+        self.preferences = try #require(UserDefaults(suiteName: preferencesName))
+        let document = document
+        self.workspace = BrowserMobileWorkspace(
+            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences,
+        )
+        self.root = BrowserMobileViewController(workspace: workspace, contentView: engine.hostView)
+        self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
+    }
 
     func start() async throws -> WKWebView {
         try await server.start()
@@ -292,7 +292,9 @@ extension BrowserMobileUITests {
     var failure: (any Error)?
     do {
         try await runUploadWebKit(directory: directory, observeStore: { store = $0 }, body)
-    } catch { failure = error }
+    } catch {
+        failure = error
+    }
     // UIKit may retain an outgoing controller until the next run-loop turn.
     // Wait for actual SQLite ownership release before removing the directory.
     try await uploadWait { store == nil }
@@ -305,7 +307,7 @@ extension BrowserMobileUITests {
 @MainActor private func runUploadWebKit(
     directory: URL,
     observeStore: (BrowserSQLiteSessionStore) -> Void,
-    _ body: (UploadWebKitFixture) async throws -> Void
+    _ body: (UploadWebKitFixture) async throws -> Void,
 ) async throws {
     let fixture = try UploadWebKitFixture(directory: directory)
     observeStore(fixture.store)
@@ -335,7 +337,8 @@ extension BrowserMobileUITests {
 }
 
 @MainActor private func uploadWait(_ condition: () async throws -> Bool) async throws {
-    let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(8))
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(8))
     while clock.now < deadline {
         if try await condition() {
             return

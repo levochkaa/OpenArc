@@ -1,3 +1,5 @@
+// BrowserArcSidebarImport.swift
+
 import Foundation
 
 // MARK: - BrowserArcSidebar
@@ -7,44 +9,6 @@ import Foundation
 /// Split View contributes its tabs. Arc stores ordered dictionaries as flat
 /// arrays that alternate keys and values.
 struct BrowserArcSidebar: Equatable {
-    // MARK: Lifecycle
-
-    init(spaces: [Space], favorites: [Node]) {
-        self.spaces = spaces
-        self.favorites = favorites
-    }
-
-    init(data: Data) throws {
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sidebar = root["sidebar"] as? [String: Any],
-              let containers = sidebar["containers"] as? [Any],
-              let container = containers.compactMap({ $0 as? [String: Any] }).first(where: { $0["spaces"] != nil })
-        else { throw ImportError.unreadable }
-
-        var items = [String: [String: Any]]()
-        for (key, value) in Self.pairs(container["items"] as? [Any] ?? []) {
-            if let id = key as? String, let item = value as? [String: Any] {
-                items[id] = item
-            }
-        }
-        let reader = Reader(items: items)
-        self.spaces = Self.pairs(container["spaces"] as? [Any] ?? []).compactMap { _, value in
-            guard let space = value as? [String: Any] else { return nil }
-            let containerIDs = Self.pairs(space["containerIDs"] as? [Any] ?? [])
-            let pinnedID = containerIDs.first { $0.key as? String == "pinned" }?.value as? String
-            return Space(
-                title: (space["title"] as? String).flatMap(Self.trimmed),
-                icon: Self.icon(in: space["customInfo"]),
-                pinned: pinnedID.map { reader.children(of: $0) } ?? []
-            )
-        }
-        let favoritesID = Self.pairs(container["topAppsContainerIDs"] as? [Any] ?? [])
-            .first { key, _ in
-                (key as? [String: Any])?["default"] as? Bool == true
-            }?.value as? String
-        self.favorites = favoritesID.map { reader.children(of: $0).flatMap(\.tabs) } ?? []
-    }
-
     // MARK: Internal
 
     enum ImportError: Error, Equatable {
@@ -74,25 +38,6 @@ struct BrowserArcSidebar: Equatable {
         var pinned: [Node]
     }
 
-    /// Arc keeps the file in its Application Support folder.
-    static var defaultFileURL: URL? {
-        FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("Arc", isDirectory: true)
-            .appendingPathComponent("StorableSidebar.json")
-    }
-
-    var spaces: [Space]
-    var favorites: [Node]
-
-    var pinnedTabCount: Int { spaces.flatMap(\.pinned).flatMap(\.tabs).count }
-
-    static func load(from url: URL) throws -> BrowserArcSidebar {
-        guard let data = FileManager.default.contents(atPath: url.path) else { throw ImportError.missing }
-        return try BrowserArcSidebar(data: data)
-    }
-
     // MARK: Private
 
     /// Builds nodes from the item graph, ignoring cycles and very deep trees.
@@ -111,14 +56,14 @@ struct BrowserArcSidebar: Equatable {
                     return [.tab(
                         title: (child["title"] as? String).flatMap(BrowserArcSidebar.trimmed),
                         savedTitle: (tab["savedTitle"] as? String).flatMap(BrowserArcSidebar.trimmed),
-                        urlString: url
+                        urlString: url,
                     )]
                 }
                 if let list = data["list"] {
                     return [.folder(
                         title: (child["title"] as? String).flatMap(BrowserArcSidebar.trimmed),
                         icon: BrowserArcSidebar.icon(in: (list as? [String: Any])?["customInfo"]),
-                        children: children(of: childID, depth: depth + 1, visited: visited)
+                        children: children(of: childID, depth: depth + 1, visited: visited),
                     )]
                 }
                 if data["splitView"] != nil {
@@ -127,6 +72,61 @@ struct BrowserArcSidebar: Equatable {
                 return []
             }
         }
+    }
+
+    /// Arc keeps the file in its Application Support folder.
+    static var defaultFileURL: URL? {
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("Arc", isDirectory: true)
+            .appendingPathComponent("StorableSidebar.json")
+    }
+
+    var spaces: [Space]
+    var favorites: [Node]
+
+    var pinnedTabCount: Int { spaces.flatMap(\.pinned).flatMap(\.tabs).count }
+
+    init(spaces: [Space], favorites: [Node]) {
+        self.spaces = spaces
+        self.favorites = favorites
+    }
+
+    init(data: Data) throws {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sidebar = root["sidebar"] as? [String: Any],
+              let containers = sidebar["containers"] as? [Any],
+              let container = containers.compactMap({ $0 as? [String: Any] }).first(where: { $0["spaces"] != nil })
+        else { throw ImportError.unreadable }
+
+        var items = [String: [String: Any]]()
+        for (key, value) in Self.pairs(container["items"] as? [Any] ?? []) {
+            if let id = key as? String, let item = value as? [String: Any] {
+                items[id] = item
+            }
+        }
+        let reader = Reader(items: items)
+        self.spaces = Self.pairs(container["spaces"] as? [Any] ?? []).compactMap { _, value in
+            guard let space = value as? [String: Any] else { return nil }
+            let containerIDs = Self.pairs(space["containerIDs"] as? [Any] ?? [])
+            let pinnedID = containerIDs.first { $0.key as? String == "pinned" }?.value as? String
+            return Space(
+                title: (space["title"] as? String).flatMap(Self.trimmed),
+                icon: Self.icon(in: space["customInfo"]),
+                pinned: pinnedID.map { reader.children(of: $0) } ?? [],
+            )
+        }
+        let favoritesID = Self.pairs(container["topAppsContainerIDs"] as? [Any] ?? [])
+            .first { key, _ in
+                (key as? [String: Any])?["default"] as? Bool == true
+            }?.value as? String
+        self.favorites = favoritesID.map { reader.children(of: $0).flatMap(\.tabs) } ?? []
+    }
+
+    static func load(from url: URL) throws -> BrowserArcSidebar {
+        guard let data = FileManager.default.contents(atPath: url.path) else { throw ImportError.missing }
+        return try BrowserArcSidebar(data: data)
     }
 
     private static func pairs(_ array: [Any]) -> [(key: Any, value: Any)] {

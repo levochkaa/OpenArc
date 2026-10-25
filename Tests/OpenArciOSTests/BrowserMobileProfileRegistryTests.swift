@@ -1,3 +1,5 @@
+// BrowserMobileProfileRegistryTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -21,7 +23,7 @@ import Testing
     #expect(snapshot.tabs.map(\.urlString) == (first.tabs + second.tabs).map(\.urlString))
     #expect(
         snapshot.tabs.allSatisfy { $0.userTitleOverride == nil },
-        "Cached WebKit titles must not become persistent user renames after import"
+        "Cached WebKit titles must not become persistent user renames after import",
     )
     #expect(snapshot.tabs.map(\.spaceID) == [spaces[0].id, spaces[0].id, spaces[1].id])
     let reopened = try fixture.store()
@@ -37,12 +39,13 @@ import Testing
     let store = try fixture.store()
     let existing = BrowserTabSessionSnapshot(
         spaces: [.init(id: "existing", title: "Existing", systemImageName: "globe")],
-        tabs: [.init(id: "saved", urlString: "https://example.com/saved", spaceID: "existing")]
+        tabs: [.init(id: "saved", urlString: "https://example.com/saved", spaceID: "existing")],
     )
     try store.writeSessionBatch([.init(snapshot: existing, origin: .local(syncMove: nil))])
     let session = mobileRegistrySession(ids: ["imported"], selected: "imported")
     let bytes = try fixture.write(session, filename: "scene.json")
-    let frozen = try fixture.queueBytes(), baseline = try fixture.baselineBytes()
+    let frozen = try fixture.queueBytes()
+    let baseline = try fixture.baselineBytes()
     try fixture.execute("""
     CREATE TRIGGER reject_import_marker BEFORE INSERT ON browser_preferences
     WHEN NEW.key = 'session_import:mobile-json-v1'
@@ -71,7 +74,7 @@ import Testing
     let store = try fixture.store()
     try store.writeSessionBatch([.init(snapshot: .init(
         spaces: [.init(id: "space", title: "Synced", systemImageName: "globe")],
-        tabs: [.init(id: "deleted", urlString: "https://example.com/deleted", spaceID: "space")]
+        tabs: [.init(id: "deleted", urlString: "https://example.com/deleted", spaceID: "space")],
     ), origin: .local(syncMove: nil))])
     try store.bindSyncOwner(fixture.owner)
     let deletion = try JSONDecoder().decode(BrowserSyncEvent.self, from: Data("""
@@ -82,7 +85,8 @@ import Testing
     #expect(!before.tabs.contains { $0.id == "deleted" })
     let session = mobileRegistrySession(ids: ["deleted"], selected: "deleted")
     let source = try fixture.write(session, filename: "scene.json")
-    let queue = try fixture.queueBytes(), baseline = try fixture.baselineBytes()
+    let queue = try fixture.queueBytes()
+    let baseline = try fixture.baselineBytes()
     for current in try [store, fixture.store()] {
         #expect(throws: BrowserSessionImportError.self) {
             try BrowserMobileProfileRegistry.importLegacySessions([("scene.json", session)], into: current)
@@ -117,11 +121,11 @@ import Testing
     defer { fixture.cleanup() }
     let first = BrowserMobileSession(
         tabs: [.init(id: "copied", urlString: "https://example.com/first", title: "First")],
-        selectedTabID: "copied"
+        selectedTabID: "copied",
     )
     let second = BrowserMobileSession(
         tabs: [.init(id: "copied", urlString: "https://example.com/second", title: "Second")],
-        selectedTabID: "copied"
+        selectedTabID: "copied",
     )
     _ = try fixture.write(second, filename: "b.json")
     _ = try fixture.write(first, filename: "a.json")
@@ -183,7 +187,7 @@ private struct MobileRegistryFixture {
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "MobileRegistry-\(UUID())",
-        isDirectory: true
+        isDirectory: true,
     )
 
     var databaseURL: URL {
@@ -200,7 +204,7 @@ private struct MobileRegistryFixture {
     func write(_ session: BrowserMobileSession, filename: String) throws -> Data {
         try FileManager.default.createDirectory(
             at: legacyURL(filename).deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
         )
         let bytes = try JSONEncoder().encode(session)
         try bytes.write(to: legacyURL(filename), options: .atomic)
@@ -216,7 +220,7 @@ private struct MobileRegistryFixture {
         let database = try DatabaseQueue(path: databaseURL.path)
         return try database.read { try Data.fetchAll(
             $0,
-            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"
+            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position",
         ) }
     }
 
@@ -229,6 +233,6 @@ private struct MobileRegistryFixture {
 private func mobileRegistrySession(ids: [String], selected: String?) -> BrowserMobileSession {
     .init(
         tabs: ids.map { .init(id: $0, urlString: "https://example.com/\($0)", title: "Title \($0)") },
-        selectedTabID: selected
+        selectedTabID: selected,
     )
 }

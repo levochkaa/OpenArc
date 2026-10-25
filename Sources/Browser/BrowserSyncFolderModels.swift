@@ -1,8 +1,10 @@
+// BrowserSyncFolderModels.swift
+
 import Foundation
 
 // MARK: - BrowserSyncEntityReference
 
-struct BrowserSyncEntityReference: Codable, Equatable, Hashable, Sendable {
+struct BrowserSyncEntityReference: Codable, Equatable, Hashable {
     let entityType: BrowserSyncChange.EntityType
     let entityID: String
 
@@ -14,7 +16,11 @@ struct BrowserSyncEntityReference: Codable, Equatable, Hashable, Sendable {
 
 // MARK: - BrowserSyncFolderPayload
 
-struct BrowserSyncFolderPayload: Codable, Equatable, Sendable {
+struct BrowserSyncFolderPayload: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case spaceID, parentFolderID, title, systemImageName, rank }
+
     // MARK: Internal
 
     let spaceID: String
@@ -31,16 +37,21 @@ struct BrowserSyncFolderPayload: Codable, Equatable, Sendable {
         try values.encode(systemImageName, forKey: .systemImageName)
         try values.encode(rank, forKey: .rank)
     }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case spaceID, parentFolderID, title, systemImageName, rank }
 }
 
 // MARK: - BrowserSyncFolderCreate
 
-struct BrowserSyncFolderCreate: Codable, Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserSyncFolderCreate: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case spaceID, parentFolderID, title, systemImageName }
+
+    // MARK: Internal
+
+    let spaceID: String
+    let parentFolderID: String?
+    let title: String
+    let systemImageName: String?
 
     init(spaceID: String, parentFolderID: String? = nil, title: String, systemImageName: String? = nil) {
         self.spaceID = spaceID
@@ -57,13 +68,6 @@ struct BrowserSyncFolderCreate: Codable, Equatable, Sendable {
         self.systemImageName = try values.decodeIfPresent(String.self, forKey: .systemImageName)
     }
 
-    // MARK: Internal
-
-    let spaceID: String
-    let parentFolderID: String?
-    let title: String
-    let systemImageName: String?
-
     func encode(to encoder: any Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(spaceID, forKey: .spaceID)
@@ -71,21 +75,24 @@ struct BrowserSyncFolderCreate: Codable, Equatable, Sendable {
         try values.encode(title, forKey: .title)
         try values.encode(systemImageName, forKey: .systemImageName)
     }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case spaceID, parentFolderID, title, systemImageName }
 }
 
 // MARK: - BrowserSyncFolderTabCreate
 
-struct BrowserSyncFolderTabCreate: Codable, Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserSyncFolderTabCreate: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case pinnedFolderID }
+
+    // MARK: Internal
+
+    let base: BrowserSyncSemanticTabCreate
+    let pinnedFolderID: String?
 
     init(
         spaceID: String, placement: BrowserTabPlacement, pinnedFolderID: String? = nil,
         urlString: String, pinnedURLString: String? = nil, title: String? = nil,
-        userTitleOverride: String? = nil, faviconURLString: String? = nil, lastActivityAt: String? = nil
+        userTitleOverride: String? = nil, faviconURLString: String? = nil, lastActivityAt: String? = nil,
     ) {
         self.base = .init(
             spaceID: spaceID,
@@ -95,7 +102,7 @@ struct BrowserSyncFolderTabCreate: Codable, Equatable, Sendable {
             title: title,
             userTitleOverride: userTitleOverride,
             faviconURLString: faviconURLString,
-            lastActivityAt: lastActivityAt
+            lastActivityAt: lastActivityAt,
         )
         self.pinnedFolderID = pinnedFolderID
     }
@@ -108,31 +115,29 @@ struct BrowserSyncFolderTabCreate: Codable, Equatable, Sendable {
             throw DecodingError.dataCorruptedError(
                 forKey: .pinnedFolderID,
                 in: values,
-                debugDescription: "Only pinned tabs can belong to folders"
+                debugDescription: "Only pinned tabs can belong to folders",
             )
         }
     }
-
-    // MARK: Internal
-
-    let base: BrowserSyncSemanticTabCreate
-    let pinnedFolderID: String?
 
     func encode(to encoder: any Encoder) throws {
         try base.encode(to: encoder)
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(pinnedFolderID, forKey: .pinnedFolderID)
     }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case pinnedFolderID }
 }
 
 // MARK: - BrowserSyncFolderPatch
 
-struct BrowserSyncFolderPatch: Codable, Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserSyncFolderPatch: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case title, systemImageName }
+
+    // MARK: Internal
+
+    let title: String?
+    let systemImageName: BrowserSyncPatchValue<String>
 
     init(title: String? = nil, systemImageName: BrowserSyncPatchValue<String> = .unchanged) {
         self.title = title
@@ -147,11 +152,6 @@ struct BrowserSyncFolderPatch: Codable, Equatable, Sendable {
             : .unchanged
     }
 
-    // MARK: Internal
-
-    let title: String?
-    let systemImageName: BrowserSyncPatchValue<String>
-
     func encode(to encoder: any Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encodeIfPresent(title, forKey: .title)
@@ -159,19 +159,18 @@ struct BrowserSyncFolderPatch: Codable, Equatable, Sendable {
             try values.encode(systemImageName, forKey: .systemImageName)
         }
     }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case title, systemImageName }
 }
 
 // MARK: - BrowserSyncFolderDestination
 
-enum BrowserSyncFolderDestination: Codable, Equatable, Hashable, Sendable {
+enum BrowserSyncFolderDestination: Codable, Equatable, Hashable {
     case spaces
     case tabs(spaceID: String, placement: BrowserTabPlacement, pinnedFolderID: String?)
 
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private enum Kind: String, Codable { case spaces, tabs }
+    private enum CodingKeys: String, CodingKey { case kind, spaceID, placement, pinnedFolderID }
 
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -184,13 +183,13 @@ enum BrowserSyncFolderDestination: Codable, Equatable, Hashable, Sendable {
                 throw DecodingError.dataCorruptedError(
                     forKey: .pinnedFolderID,
                     in: values,
-                    debugDescription: "Only pinned lists can have a folder parent"
+                    debugDescription: "Only pinned lists can have a folder parent",
                 )
             }
             self = try .tabs(
                 spaceID: values.decode(String.self, forKey: .spaceID),
                 placement: placement,
-                pinnedFolderID: folder
+                pinnedFolderID: folder,
             )
         }
     }
@@ -208,34 +207,29 @@ enum BrowserSyncFolderDestination: Codable, Equatable, Hashable, Sendable {
             try values.encode(folder, forKey: .pinnedFolderID)
         }
     }
-
-    // MARK: Private
-
-    private enum Kind: String, Codable { case spaces, tabs }
-    private enum CodingKeys: String, CodingKey { case kind, spaceID, placement, pinnedFolderID }
 }
 
 // MARK: - BrowserSyncFolderOperation
 
 /// V4 is a separate codec: frozen v2/v3 operations keep their original bytes.
-enum BrowserSyncFolderOperation: Codable, Equatable, Sendable {
+enum BrowserSyncFolderOperation: Codable, Equatable {
     case createSpace(
         id: String,
         data: BrowserSyncSemanticSpaceCreate,
         before: BrowserSyncEntityReference? = nil,
-        after: BrowserSyncEntityReference? = nil
+        after: BrowserSyncEntityReference? = nil,
     )
     case createTab(
         id: String,
         data: BrowserSyncFolderTabCreate,
         before: BrowserSyncEntityReference? = nil,
-        after: BrowserSyncEntityReference? = nil
+        after: BrowserSyncEntityReference? = nil,
     )
     case createFolder(
         id: String,
         data: BrowserSyncFolderCreate,
         before: BrowserSyncEntityReference? = nil,
-        after: BrowserSyncEntityReference? = nil
+        after: BrowserSyncEntityReference? = nil,
     )
     case patchSpace(id: String, fields: BrowserSyncSemanticSpacePatch)
     case patchTab(id: String, fields: BrowserSyncSemanticTabPatch)
@@ -244,13 +238,17 @@ enum BrowserSyncFolderOperation: Codable, Equatable, Sendable {
         items: [BrowserSyncEntityReference],
         destination: BrowserSyncFolderDestination,
         before: BrowserSyncEntityReference? = nil,
-        after: BrowserSyncEntityReference? = nil
+        after: BrowserSyncEntityReference? = nil,
     )
     case deleteSpace(id: String)
     case deleteTab(id: String)
     case deleteFolder(id: String)
 
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private enum Kind: String, Codable { case create, patch, move, delete }
+    private enum CodingKeys: String,
+    CodingKey { case kind, entityType, entityID, data, fields, items, destination, before, after }
 
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -262,7 +260,7 @@ enum BrowserSyncFolderOperation: Codable, Equatable, Sendable {
                 items: values.decode([BrowserSyncEntityReference].self, forKey: .items),
                 destination: values.decode(BrowserSyncFolderDestination.self, forKey: .destination),
                 before: before,
-                after: after
+                after: after,
             )
             return
         }
@@ -273,31 +271,31 @@ enum BrowserSyncFolderOperation: Codable, Equatable, Sendable {
                 id: id,
                 data: values.decode(BrowserSyncSemanticSpaceCreate.self, forKey: .data),
                 before: before,
-                after: after
+                after: after,
             )
         case (.create, .tab): self = try .createTab(
                 id: id,
                 data: values.decode(BrowserSyncFolderTabCreate.self, forKey: .data),
                 before: before,
-                after: after
+                after: after,
             )
         case (.create, .folder): self = try .createFolder(
                 id: id,
                 data: values.decode(BrowserSyncFolderCreate.self, forKey: .data),
                 before: before,
-                after: after
+                after: after,
             )
         case (.patch, .space): self = try .patchSpace(
                 id: id,
-                fields: values.decode(BrowserSyncSemanticSpacePatch.self, forKey: .fields)
+                fields: values.decode(BrowserSyncSemanticSpacePatch.self, forKey: .fields),
             )
         case (.patch, .tab): self = try .patchTab(
                 id: id,
-                fields: values.decode(BrowserSyncSemanticTabPatch.self, forKey: .fields)
+                fields: values.decode(BrowserSyncSemanticTabPatch.self, forKey: .fields),
             )
         case (.patch, .folder): self = try .patchFolder(
                 id: id,
-                fields: values.decode(BrowserSyncFolderPatch.self, forKey: .fields)
+                fields: values.decode(BrowserSyncFolderPatch.self, forKey: .fields),
             )
         case (.delete, .space): self = .deleteSpace(id: id)
         case (.delete, .tab): self = .deleteTab(id: id)
@@ -348,25 +346,28 @@ enum BrowserSyncFolderOperation: Codable, Equatable, Sendable {
             try anchors(before, after)
         }
     }
-
-    // MARK: Private
-
-    private enum Kind: String, Codable { case create, patch, move, delete }
-    private enum CodingKeys: String,
-    CodingKey { case kind, entityType, entityID, data, fields, items, destination, before, after }
 }
 
 // MARK: - BrowserSyncFolderMutation
 
-struct BrowserSyncFolderMutation: Codable, Equatable, Sendable {
+struct BrowserSyncFolderMutation: Codable, Equatable {
     let id: String
     let operations: [BrowserSyncFolderOperation]
 }
 
 // MARK: - BrowserSyncFolderPushRequest
 
-struct BrowserSyncFolderPushRequest: Codable, Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserSyncFolderPushRequest: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey { case protocolVersion, mutationID, deviceID, operations }
+
+    // MARK: Internal
+
+    let protocolVersion: Int
+    let mutationID: String
+    let deviceID: String
+    let operations: [BrowserSyncFolderOperation]
 
     init(mutationID: String, deviceID: String, operations: [BrowserSyncFolderOperation]) {
         self.protocolVersion = 4
@@ -382,29 +383,18 @@ struct BrowserSyncFolderPushRequest: Codable, Equatable, Sendable {
             throw DecodingError.dataCorruptedError(
                 forKey: .protocolVersion,
                 in: values,
-                debugDescription: "Expected protocol version 4"
+                debugDescription: "Expected protocol version 4",
             )
         }
         self.mutationID = try values.decode(String.self, forKey: .mutationID)
         self.deviceID = try values.decode(String.self, forKey: .deviceID)
         self.operations = try values.decode([BrowserSyncFolderOperation].self, forKey: .operations)
     }
-
-    // MARK: Internal
-
-    let protocolVersion: Int
-    let mutationID: String
-    let deviceID: String
-    let operations: [BrowserSyncFolderOperation]
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey { case protocolVersion, mutationID, deviceID, operations }
 }
 
 // MARK: - BrowserSyncFolderPushResponse
 
-struct BrowserSyncFolderPushResponse: Codable, Equatable, Sendable {
+struct BrowserSyncFolderPushResponse: Codable, Equatable {
     let protocolVersion: Int
     let mutationID: String
     let cursor: Int

@@ -1,37 +1,11 @@
+// BrowserCommandBarModel.swift
+
 import Combine
 import Foundation
 
 // MARK: - BrowserCommandSuggestion
 
 struct BrowserCommandSuggestion: Identifiable, Equatable {
-    // MARK: Lifecycle
-
-    init(
-        kind: Kind,
-        displayText: String,
-        detailText: String? = nil,
-        resolvedURLString: String = "",
-        commandID: BrowserCommandID? = nil,
-        shortcut: BrowserKeyboardShortcut? = nil,
-        tabID: String? = nil,
-        tabIDs: [String] = []
-    ) {
-        self.kind = kind
-        self.displayText = displayText
-        self.detailText = detailText
-        self.resolvedURLString = resolvedURLString
-        self.commandID = commandID
-        self.shortcut = shortcut
-        self.tabIDs =
-            if !tabIDs.isEmpty {
-                Self.normalizedTabIDs(tabIDs)
-            } else if let tabID {
-                Self.normalizedTabIDs([tabID])
-            } else {
-                []
-            }
-    }
-
     // MARK: Internal
 
     enum Kind: String, Equatable {
@@ -71,7 +45,8 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
             "rectangle.on.rectangle"
         case .url:
             "globe"
-        case .googleSuggestion, .search:
+        case .googleSuggestion,
+             .search:
             "magnifyingglass"
         case .aiSearch:
             "sparkles"
@@ -80,25 +55,30 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
         }
     }
 
-    func inlineCompletionSuffix(relativeTo query: String) -> String? {
-        guard kind != .command,
-              !query.isEmpty,
-              let matchedRange = displayText.range(
-                  of: query,
-                  options: [.anchored, .caseInsensitive, .diacriticInsensitive]
-              ),
-              matchedRange.lowerBound == displayText.startIndex,
-              matchedRange.upperBound < displayText.endIndex
-        else {
-            return nil
-        }
-
-        let suffix = String(displayText[matchedRange.upperBound...])
-        return suffix.isEmpty ? nil : suffix
-    }
-
-    mutating func appendTabIDs(_ ids: [String]) {
-        tabIDs = Self.normalizedTabIDs(tabIDs + ids)
+    init(
+        kind: Kind,
+        displayText: String,
+        detailText: String? = nil,
+        resolvedURLString: String = "",
+        commandID: BrowserCommandID? = nil,
+        shortcut: BrowserKeyboardShortcut? = nil,
+        tabID: String? = nil,
+        tabIDs: [String] = [],
+    ) {
+        self.kind = kind
+        self.displayText = displayText
+        self.detailText = detailText
+        self.resolvedURLString = resolvedURLString
+        self.commandID = commandID
+        self.shortcut = shortcut
+        self.tabIDs =
+            if !tabIDs.isEmpty {
+                Self.normalizedTabIDs(tabIDs)
+            } else if let tabID {
+                Self.normalizedTabIDs([tabID])
+            } else {
+                []
+            }
     }
 
     // MARK: Private
@@ -114,6 +94,27 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
             return true
         }
     }
+
+    func inlineCompletionSuffix(relativeTo query: String) -> String? {
+        guard kind != .command,
+              !query.isEmpty,
+              let matchedRange = displayText.range(
+                  of: query,
+                  options: [.anchored, .caseInsensitive, .diacriticInsensitive],
+              ),
+              matchedRange.lowerBound == displayText.startIndex,
+              matchedRange.upperBound < displayText.endIndex
+        else {
+            return nil
+        }
+
+        let suffix = String(displayText[matchedRange.upperBound...])
+        return suffix.isEmpty ? nil : suffix
+    }
+
+    mutating func appendTabIDs(_ ids: [String]) {
+        tabIDs = Self.normalizedTabIDs(tabIDs + ids)
+    }
 }
 
 // MARK: - BrowserSuggestionProviding
@@ -125,7 +126,9 @@ protocol BrowserSuggestionProviding: Sendable {
 // MARK: - BrowserGoogleSuggestionService
 
 struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let session: URLSession
 
     init(session: URLSession = .shared) {
         self.session = session
@@ -167,41 +170,11 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             return []
         }
     }
-
-    // MARK: Private
-
-    private let session: URLSession
 }
 
 // MARK: - BrowserCommandBarModel
 
 @MainActor final class BrowserCommandBarModel: ObservableObject {
-    // MARK: Lifecycle
-
-    init(
-        suggestionProvider: BrowserSuggestionProviding,
-        navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver(),
-        suggestionDebounceNanoseconds: UInt64 = 150_000_000,
-        localSuggestionProvider: @escaping (String, Int) -> [BrowserCommandSuggestion] = { _, _ in [] },
-        remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
-        aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
-        siteSearchesProvider: @escaping () -> [BrowserSiteSearch] = { [] },
-        submitHandler: @escaping (String) -> Void,
-        openTabHandler: @escaping ([String]) -> Void = { _ in },
-        commandHandler: @escaping (BrowserCommandID) -> Void = { _ in }
-    ) {
-        self.suggestionProvider = suggestionProvider
-        self.navigationResolver = navigationResolver
-        self.submitHandler = submitHandler
-        self.openTabHandler = openTabHandler
-        self.commandHandler = commandHandler
-        self.suggestionDebounceNanoseconds = suggestionDebounceNanoseconds
-        self.localSuggestionProvider = localSuggestionProvider
-        self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
-        self.aiSearchProviderProvider = aiSearchProviderProvider
-        self.siteSearchesProvider = siteSearchesProvider
-    }
-
     // MARK: Internal
 
     static let maximumSuggestions = 10
@@ -219,6 +192,22 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             handleQueryChange()
         }
     }
+
+    // MARK: Private
+
+    private let suggestionProvider: BrowserSuggestionProviding
+    private let navigationResolver: BrowserNavigationResolver
+    private let submitHandler: (String) -> Void
+    private let openTabHandler: ([String]) -> Void
+    private let commandHandler: (BrowserCommandID) -> Void
+    private let suggestionDebounceNanoseconds: UInt64
+    private let localSuggestionProvider: (String, Int) -> [BrowserCommandSuggestion]
+    private let remoteSuggestionsEnabledProvider: () -> Bool
+    private let aiSearchProviderProvider: () -> BrowserAISearchProvider
+    private let siteSearchesProvider: () -> [BrowserSiteSearch]
+
+    private var suggestionLoadTask: Task<Void, Never>?
+    private var siteSearchTriggerQuery: String?
 
     var selectedSuggestion: BrowserCommandSuggestion? {
         guard
@@ -260,6 +249,30 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         }
 
         return previewDisplayText
+    }
+
+    init(
+        suggestionProvider: BrowserSuggestionProviding,
+        navigationResolver: BrowserNavigationResolver = BrowserNavigationResolver(),
+        suggestionDebounceNanoseconds: UInt64 = 150_000_000,
+        localSuggestionProvider: @escaping (String, Int) -> [BrowserCommandSuggestion] = { _, _ in [] },
+        remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
+        aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
+        siteSearchesProvider: @escaping () -> [BrowserSiteSearch] = { [] },
+        submitHandler: @escaping (String) -> Void,
+        openTabHandler: @escaping ([String]) -> Void = { _ in },
+        commandHandler: @escaping (BrowserCommandID) -> Void = { _ in },
+    ) {
+        self.suggestionProvider = suggestionProvider
+        self.navigationResolver = navigationResolver
+        self.submitHandler = submitHandler
+        self.openTabHandler = openTabHandler
+        self.commandHandler = commandHandler
+        self.suggestionDebounceNanoseconds = suggestionDebounceNanoseconds
+        self.localSuggestionProvider = localSuggestionProvider
+        self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
+        self.aiSearchProviderProvider = aiSearchProviderProvider
+        self.siteSearchesProvider = siteSearchesProvider
     }
 
     /// Tab scopes the bar to the offered site; the typed keyword comes back
@@ -364,22 +377,6 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     func waitForPendingSuggestionLoad() async {
         await suggestionLoadTask?.value
     }
-
-    // MARK: Private
-
-    private let suggestionProvider: BrowserSuggestionProviding
-    private let navigationResolver: BrowserNavigationResolver
-    private let submitHandler: (String) -> Void
-    private let openTabHandler: ([String]) -> Void
-    private let commandHandler: (BrowserCommandID) -> Void
-    private let suggestionDebounceNanoseconds: UInt64
-    private let localSuggestionProvider: (String, Int) -> [BrowserCommandSuggestion]
-    private let remoteSuggestionsEnabledProvider: () -> Bool
-    private let aiSearchProviderProvider: () -> BrowserAISearchProvider
-    private let siteSearchesProvider: () -> [BrowserSiteSearch]
-
-    private var suggestionLoadTask: Task<Void, Never>?
-    private var siteSearchTriggerQuery: String?
 }
 
 @MainActor private extension BrowserCommandBarModel {
@@ -402,7 +399,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
                     : [BrowserCommandSuggestion(
                         kind: .search,
                         displayText: trimmedQuery,
-                        resolvedURLString: urlString
+                        resolvedURLString: urlString,
                     )]
             } ?? []
             selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
@@ -413,7 +410,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         suggestions = assembledSuggestions(
             for: trimmedQuery,
             localSuggestions: localSuggestions,
-            remoteSuggestions: []
+            remoteSuggestions: [],
         )
         selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
 
@@ -442,7 +439,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             let remoteSuggestionLimit = max(Self.maximumSuggestions - 2, 0)
             let remoteSuggestions = await suggestionProvider.suggestions(
                 for: currentQuery,
-                maximumCount: remoteSuggestionLimit
+                maximumCount: remoteSuggestionLimit,
             )
 
             guard !Task.isCancelled else {
@@ -458,7 +455,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             suggestions = assembledSuggestions(
                 for: currentQuery,
                 localSuggestions: localSuggestions,
-                remoteSuggestions: remoteSuggestions
+                remoteSuggestions: remoteSuggestions,
             )
             selectedSuggestionIndex = suggestions.isEmpty
                 ? nil
@@ -469,7 +466,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     func assembledSuggestions(
         for query: String,
         localSuggestions: [BrowserCommandSuggestion],
-        remoteSuggestions: [String]
+        remoteSuggestions: [String],
     ) -> [BrowserCommandSuggestion] {
         guard !query.isEmpty else {
             return []
@@ -536,7 +533,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             let suggestion = BrowserCommandSuggestion(
                 kind: suggestionKind,
                 displayText: trimmedSuggestion,
-                resolvedURLString: resolvedSuggestion.resolvedURLString
+                resolvedURLString: resolvedSuggestion.resolvedURLString,
             )
             appendSuggestion(suggestion)
 
@@ -554,7 +551,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             kind: .aiSearch,
             displayText: BrowserStrings.commandBarAskAI(provider.title),
             detailText: query,
-            resolvedURLString: provider.searchURLString(for: query)
+            resolvedURLString: provider.searchURLString(for: query),
         )
     }
 
@@ -574,7 +571,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         return BrowserCommandSuggestion(
             kind: kind,
             displayText: resolvedQuery.displayText,
-            resolvedURLString: resolvedQuery.resolvedURLString
+            resolvedURLString: resolvedQuery.resolvedURLString,
         )
     }
 

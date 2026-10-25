@@ -1,7 +1,35 @@
+// BrowserCommandSuggestionNSView.swift
+
 import AppKit
 
 final class BrowserCommandSuggestionNSView: NSButton {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    /// The fill of shortcut badges and key caps in the command bar.
+    static let badgeFill = NSColor(name: nil) { appearance in
+        var resolved = NSColor.clear
+        appearance.performAsCurrentDrawingAppearance {
+            let color = BrowserChromeColors.commandBarPanelBorder.usingColorSpace(.sRGB) ?? .clear
+            resolved = color.withAlphaComponent(color.alphaComponent * 0.55)
+        }
+        return resolved
+    }
+
+    override var isFlipped: Bool { true }
+
+    var onPress: () -> Void = {}
+
+    // MARK: Private
+
+    private let icon = NSImageView()
+    private let primary = NSTextField(labelWithString: "")
+    private let detail = NSTextField(labelWithString: "")
+    private let badge = BrowserNativeSurface()
+    private let badgeLabel = NSTextField(labelWithString: "")
+    private var hovered = false
+    private var isSelectedSuggestion = false
+    private var selectionColor: NSColor?
+    private var tracking: NSTrackingArea?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -30,22 +58,6 @@ final class BrowserCommandSuggestionNSView: NSButton {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    /// The fill of shortcut badges and key caps in the command bar.
-    static let badgeFill = NSColor(name: nil) { appearance in
-        var resolved = NSColor.clear
-        appearance.performAsCurrentDrawingAppearance {
-            let color = BrowserChromeColors.commandBarPanelBorder.usingColorSpace(.sRGB) ?? .clear
-            resolved = color.withAlphaComponent(color.alphaComponent * 0.55)
-        }
-        return resolved
-    }
-
-    override var isFlipped: Bool { true }
-
-    var onPress: () -> Void = {}
-
     override func hitTest(_ point: NSPoint) -> NSView? { bounds.contains(convert(point, from: superview)) ? self : nil }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -55,7 +67,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         let area = NSTrackingArea(
             rect: .zero,
             options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
-            owner: self
+            owner: self,
         )
         addTrackingArea(area)
         tracking = area
@@ -91,14 +103,14 @@ final class BrowserCommandSuggestionNSView: NSButton {
             x: padding,
             y: (bounds.height - 14) / 2,
             width: BrowserChromeLayout.commandBarSymbolWidth,
-            height: 14
+            height: 14,
         )
         let badgeWidth = badge.isHidden ? 0 : textWidth(badgeLabel) + 14
         badge.frame = NSRect(
             x: bounds.width - padding - badgeWidth,
             y: (bounds.height - 20) / 2,
             width: badgeWidth,
-            height: 20
+            height: 20,
         )
         badgeLabel.frame = NSRect(x: 7, y: 3, width: max(badgeWidth - 14, 0), height: 14)
         let x = icon.frame.maxX + spacing
@@ -110,7 +122,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
             x: primary.frame.maxX + spacing,
             y: (bounds.height - 16) / 2,
             width: max(available - titleWidth - spacing, 0),
-            height: 16
+            height: 16,
         )
         detail.isHidden = !hasDetail
     }
@@ -121,7 +133,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         suggestion: BrowserCommandSuggestion,
         selected: Bool,
         favicon: NSImage?,
-        selectionColor: NSColor? = nil
+        selectionColor: NSColor? = nil,
     ) {
         isSelectedSuggestion = selected
         self.selectionColor = selectionColor
@@ -147,18 +159,6 @@ final class BrowserCommandSuggestionNSView: NSButton {
         needsLayout = true
         needsDisplay = true
     }
-
-    // MARK: Private
-
-    private let icon = NSImageView()
-    private let primary = NSTextField(labelWithString: "")
-    private let detail = NSTextField(labelWithString: "")
-    private let badge = BrowserNativeSurface()
-    private let badgeLabel = NSTextField(labelWithString: "")
-    private var hovered = false
-    private var isSelectedSuggestion = false
-    private var selectionColor: NSColor?
-    private var tracking: NSTrackingArea?
 
     private func textWidth(_ label: NSTextField) -> CGFloat {
         ceil((label.stringValue as NSString)

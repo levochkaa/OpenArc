@@ -1,24 +1,10 @@
+// BrowserDefaultBrowserService.swift
+
 import AppKit
 import CoreServices
 import Foundation
 
 struct BrowserDefaultBrowserService {
-    // MARK: Lifecycle
-
-    init(
-        bundleIdentifier: String = Bundle.main.bundleIdentifier ?? BrowserDefaultBrowserService.defaultBundleIdentifier,
-        schemes: [String] = BrowserDefaultBrowserService.webURLSchemes,
-        defaultHandlerLookup: @escaping DefaultHandlerLookup = BrowserDefaultBrowserService
-            .defaultHandlerBundleIdentifier(for:),
-        defaultHandlerSetter: @escaping DefaultHandlerSetter = BrowserDefaultBrowserService
-            .setDefaultHandler(for:bundleIdentifier:)
-    ) {
-        self.bundleIdentifier = bundleIdentifier
-        self.schemes = schemes
-        self.defaultHandlerLookup = defaultHandlerLookup
-        self.defaultHandlerSetter = defaultHandlerSetter
-    }
-
     // MARK: Internal
 
     typealias DefaultHandlerLookup = (_ scheme: String) -> String?
@@ -29,30 +15,31 @@ struct BrowserDefaultBrowserService {
 
     let bundleIdentifier: String
 
+    // MARK: Private
+
+    private let schemes: [String]
+    private let defaultHandlerLookup: DefaultHandlerLookup
+    private let defaultHandlerSetter: DefaultHandlerSetter
+
     var isDefaultBrowser: Bool {
         schemes.allSatisfy { scheme in
             defaultHandlerLookup(scheme)?.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
         }
     }
 
-    @discardableResult func setAsDefaultBrowser() -> Bool {
-        var didSetEveryScheme = true
-
-        for scheme in schemes {
-            let status = defaultHandlerSetter(scheme, bundleIdentifier)
-            if status != noErr {
-                didSetEveryScheme = false
-            }
-        }
-
-        return didSetEveryScheme
+    init(
+        bundleIdentifier: String = Bundle.main.bundleIdentifier ?? BrowserDefaultBrowserService.defaultBundleIdentifier,
+        schemes: [String] = BrowserDefaultBrowserService.webURLSchemes,
+        defaultHandlerLookup: @escaping DefaultHandlerLookup = BrowserDefaultBrowserService
+            .defaultHandlerBundleIdentifier(for:),
+        defaultHandlerSetter: @escaping DefaultHandlerSetter = BrowserDefaultBrowserService
+            .setDefaultHandler(for:bundleIdentifier:),
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.schemes = schemes
+        self.defaultHandlerLookup = defaultHandlerLookup
+        self.defaultHandlerSetter = defaultHandlerSetter
     }
-
-    // MARK: Private
-
-    private let schemes: [String]
-    private let defaultHandlerLookup: DefaultHandlerLookup
-    private let defaultHandlerSetter: DefaultHandlerSetter
 
     private static func defaultHandlerBundleIdentifier(for scheme: String) -> String? {
         guard
@@ -67,5 +54,18 @@ struct BrowserDefaultBrowserService {
 
     private static func setDefaultHandler(for scheme: String, bundleIdentifier: String) -> OSStatus {
         LSSetDefaultHandlerForURLScheme(scheme as CFString, bundleIdentifier as CFString)
+    }
+
+    @discardableResult func setAsDefaultBrowser() -> Bool {
+        var didSetEveryScheme = true
+
+        for scheme in schemes {
+            let status = defaultHandlerSetter(scheme, bundleIdentifier)
+            if status != noErr {
+                didSetEveryScheme = false
+            }
+        }
+
+        return didSetEveryScheme
     }
 }

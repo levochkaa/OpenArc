@@ -1,21 +1,16 @@
+// BrowserKeyboardShortcuts.swift
+
 import AppKit
 import Foundation
 
 // MARK: - BrowserKeyboardShortcut
 
 struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(_ keyEquivalent: String, modifiers: NSEvent.ModifierFlags = [.command]) {
-        self.keyEquivalent = keyEquivalent
-        self.modifiers = modifiers
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.keyEquivalent = try container.decode(String.self, forKey: .keyEquivalent)
-        let modifiersRawValue = try container.decode(NSEvent.ModifierFlags.RawValue.self, forKey: .modifiersRawValue)
-        self.modifiers = NSEvent.ModifierFlags(rawValue: modifiersRawValue)
+    private enum CodingKeys: String, CodingKey {
+        case keyEquivalent
+        case modifiersRawValue
     }
 
     // MARK: Internal
@@ -68,6 +63,22 @@ struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
         keyCaps.joined()
     }
 
+    init(_ keyEquivalent: String, modifiers: NSEvent.ModifierFlags = [.command]) {
+        self.keyEquivalent = keyEquivalent
+        self.modifiers = modifiers
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.keyEquivalent = try container.decode(String.self, forKey: .keyEquivalent)
+        let modifiersRawValue = try container.decode(NSEvent.ModifierFlags.RawValue.self, forKey: .modifiersRawValue)
+        self.modifiers = NSEvent.ModifierFlags(rawValue: modifiersRawValue)
+    }
+
+    private static func functionKey(_ key: Int) -> String {
+        UnicodeScalar(UInt32(key)).map { String(Character($0)) } ?? ""
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(keyEquivalent, forKey: .keyEquivalent)
@@ -77,17 +88,6 @@ struct BrowserKeyboardShortcut: Codable, Equatable, Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(keyEquivalent)
         hasher.combine(modifiers.rawValue)
-    }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case keyEquivalent
-        case modifiersRawValue
-    }
-
-    private static func functionKey(_ key: Int) -> String {
-        UnicodeScalar(UInt32(key)).map { String(Character($0)) } ?? ""
     }
 }
 
@@ -105,19 +105,19 @@ enum BrowserCommands {
     static let openSettings = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSettings,
         helpTitle: BrowserStrings.menuSettings,
-        shortcut: BrowserKeyboardShortcut(",")
+        shortcut: BrowserKeyboardShortcut(","),
     )
 
     static let setAsDefaultBrowser = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSetAsDefaultBrowser,
         helpTitle: BrowserStrings.menuSetAsDefaultBrowser,
-        shortcut: BrowserKeyboardShortcut("♡")
+        shortcut: BrowserKeyboardShortcut("♡"),
     )
 
     static let newTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNewTab,
         helpTitle: BrowserStrings.sidebarNewTab,
-        shortcut: BrowserKeyboardShortcut("t")
+        shortcut: BrowserKeyboardShortcut("t"),
     )
 
     /// Open Location is Command-L and starts from the
@@ -125,35 +125,35 @@ enum BrowserCommands {
     static let openLocation = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuOpenLocation,
         helpTitle: BrowserStrings.menuOpenLocation,
-        shortcut: BrowserKeyboardShortcut("l")
+        shortcut: BrowserKeyboardShortcut("l"),
     )
 
     /// Restore Last Closed Tab is Shift-Command-T.
     static let restoreLastClosedTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuRestoreLastClosedTab,
         helpTitle: BrowserStrings.menuRestoreLastClosedTab,
-        shortcut: BrowserKeyboardShortcut("t", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("t", modifiers: [.command, .shift]),
     )
 
     /// View menu: Stop Loading is Command-period.
     static let stopLoading = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.navigationStopLoading,
         helpTitle: BrowserStrings.navigationStopLoading,
-        shortcut: BrowserKeyboardShortcut(".")
+        shortcut: BrowserKeyboardShortcut("."),
     )
 
     /// View menu: Developer Tools is Option-Command-I.
     static let developerTools = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuDeveloperTools,
         helpTitle: BrowserStrings.menuDeveloperTools,
-        shortcut: BrowserKeyboardShortcut("i", modifiers: [.command, .option])
+        shortcut: BrowserKeyboardShortcut("i", modifiers: [.command, .option]),
     )
 
     /// View Source is Option-Command-U.
     static let viewSource = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuViewSource,
         helpTitle: BrowserStrings.menuViewSource,
-        shortcut: BrowserKeyboardShortcut("u", modifiers: [.command, .option])
+        shortcut: BrowserKeyboardShortcut("u", modifiers: [.command, .option]),
     )
 
     /// View menu: Zoom In, Zoom Out and Zoom to Actual Size are
@@ -161,191 +161,191 @@ enum BrowserCommands {
     static let zoomIn = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.webAppZoomInAction,
         helpTitle: BrowserStrings.webAppZoomInAction,
-        shortcut: BrowserKeyboardShortcut("=")
+        shortcut: BrowserKeyboardShortcut("="),
     )
 
     static let zoomOut = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.webAppZoomOutAction,
         helpTitle: BrowserStrings.webAppZoomOutAction,
-        shortcut: BrowserKeyboardShortcut("-")
+        shortcut: BrowserKeyboardShortcut("-"),
     )
 
     static let resetZoom = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.webAppZoomResetAction,
         helpTitle: BrowserStrings.webAppZoomResetAction,
-        shortcut: BrowserKeyboardShortcut("0")
+        shortcut: BrowserKeyboardShortcut("0"),
     )
 
     static let newIncognitoWindow = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNewIncognitoWindow,
         helpTitle: BrowserStrings.menuNewIncognitoWindow,
-        shortcut: BrowserKeyboardShortcut("n", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("n", modifiers: [.command, .shift]),
     )
 
     /// New Small Window is Option-Command-N.
     static let newLittleWindow = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNewLittleWindow,
         helpTitle: BrowserStrings.menuNewLittleWindow,
-        shortcut: BrowserKeyboardShortcut("n", modifiers: [.command, .option])
+        shortcut: BrowserKeyboardShortcut("n", modifiers: [.command, .option]),
     )
 
     static let openHistory = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuHistory,
         helpTitle: BrowserStrings.menuHistory,
-        shortcut: BrowserKeyboardShortcut("y")
+        shortcut: BrowserKeyboardShortcut("y"),
     )
 
     static let toggleBookmark = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.bookmarksAddCurrentPage,
         helpTitle: BrowserStrings.bookmarksAddCurrentPage,
-        shortcut: BrowserKeyboardShortcut("d")
+        shortcut: BrowserKeyboardShortcut("d"),
     )
 
     static let archiveTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.tabArchiveAction,
         helpTitle: BrowserStrings.tabArchiveTooltip,
-        shortcut: BrowserKeyboardShortcut("w")
+        shortcut: BrowserKeyboardShortcut("w"),
     )
 
     static let viewArchive = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.archiveViewAction,
         helpTitle: BrowserStrings.archiveViewAction,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let clearArchive = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.archiveClear,
         helpTitle: BrowserStrings.archiveClear,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let savePage = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSavePageAs,
         helpTitle: BrowserStrings.menuSavePageAs,
-        shortcut: BrowserKeyboardShortcut("s", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("s", modifiers: [.command, .shift]),
     )
 
     static let printPage = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuPrint,
         helpTitle: BrowserStrings.menuPrint,
-        shortcut: BrowserKeyboardShortcut("p")
+        shortcut: BrowserKeyboardShortcut("p"),
     )
 
     static let copyLink = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.tabCopyLinkAction,
         helpTitle: BrowserStrings.tabCopyLinkAction,
-        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .shift]),
     )
 
     static let findInPage = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuFind,
         helpTitle: BrowserStrings.menuFind,
-        shortcut: BrowserKeyboardShortcut("f")
+        shortcut: BrowserKeyboardShortcut("f"),
     )
 
     static let findAndReplace = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuFindAndReplace,
         helpTitle: BrowserStrings.menuFindAndReplace,
-        shortcut: BrowserKeyboardShortcut("f", modifiers: [.command, .option])
+        shortcut: BrowserKeyboardShortcut("f", modifiers: [.command, .option]),
     )
 
     static let findNext = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuFindNext,
         helpTitle: BrowserStrings.menuFindNext,
-        shortcut: BrowserKeyboardShortcut("g")
+        shortcut: BrowserKeyboardShortcut("g"),
     )
 
     static let findPrevious = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuFindPrevious,
         helpTitle: BrowserStrings.menuFindPrevious,
-        shortcut: BrowserKeyboardShortcut("g", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("g", modifiers: [.command, .shift]),
     )
 
     static let jumpToSelection = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuJumpToSelection,
         helpTitle: BrowserStrings.menuJumpToSelection,
-        shortcut: BrowserKeyboardShortcut("j")
+        shortcut: BrowserKeyboardShortcut("j"),
     )
 
     static let clearTemporaryTabs = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuClearTemporaryTabs,
         helpTitle: BrowserStrings.sidebarClearTemporaryTabsTooltip,
-        shortcut: BrowserKeyboardShortcut("k", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("k", modifiers: [.command, .shift]),
     )
 
     static let goBack = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.navigationBack,
         helpTitle: BrowserStrings.navigationBack,
-        shortcut: BrowserKeyboardShortcut("[")
+        shortcut: BrowserKeyboardShortcut("["),
     )
 
     static let goForward = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.navigationForward,
         helpTitle: BrowserStrings.navigationForward,
-        shortcut: BrowserKeyboardShortcut("]")
+        shortcut: BrowserKeyboardShortcut("]"),
     )
 
     static let reload = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.navigationRefresh,
         helpTitle: BrowserStrings.navigationRefresh,
-        shortcut: BrowserKeyboardShortcut("r")
+        shortcut: BrowserKeyboardShortcut("r"),
     )
 
     static let forceReload = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuForceRefresh,
         helpTitle: BrowserStrings.menuForceRefresh,
-        shortcut: BrowserKeyboardShortcut("r", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("r", modifiers: [.command, .shift]),
     )
 
     static let clearCacheAndRefresh = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuClearCacheAndRefresh,
         helpTitle: BrowserStrings.menuClearCacheAndRefresh,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let clearCookiesAndRefresh = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuClearCookiesAndRefresh,
         helpTitle: BrowserStrings.menuClearCookiesAndRefresh,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// Add Split View is Control-Shift-=.
     static let addSplitView = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuAddSplitView,
         helpTitle: BrowserStrings.menuAddSplitView,
-        shortcut: BrowserKeyboardShortcut("=", modifiers: [.control, .shift])
+        shortcut: BrowserKeyboardShortcut("=", modifiers: [.control, .shift]),
     )
 
     /// View menu: Close this Split Pane is Control-Shift--.
     static let closeSplitPane = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCloseSplitPane,
         helpTitle: BrowserStrings.menuCloseSplitPane,
-        shortcut: BrowserKeyboardShortcut("-", modifiers: [.control, .shift])
+        shortcut: BrowserKeyboardShortcut("-", modifiers: [.control, .shift]),
     )
 
     static let separateTabFromSplit = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSeparatePageFromSplitView,
         helpTitle: BrowserStrings.menuSeparatePageFromSplitView,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let separateSplitView = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.splitSeparateAllTabsAction,
         helpTitle: BrowserStrings.splitSeparateAllTabsAction,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let toggleSplitOrientation = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuToggleSplitOrientation,
         helpTitle: BrowserStrings.menuToggleSplitOrientation,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// Expand Current Split has no default shortcut.
     static let expandCurrentSplit = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuExpandCurrentSplit,
         helpTitle: BrowserStrings.menuExpandCurrentSplit,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// Switch to Split View 1–4 is Control-Shift-1…4
@@ -353,107 +353,107 @@ enum BrowserCommands {
     static let focusSplitPane1 = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.splitFocusPaneTitle(1),
         helpTitle: BrowserStrings.splitFocusPaneTitle(1),
-        shortcut: BrowserKeyboardShortcut("1", modifiers: [.control, .shift])
+        shortcut: BrowserKeyboardShortcut("1", modifiers: [.control, .shift]),
     )
 
     static let focusSplitPane2 = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.splitFocusPaneTitle(2),
         helpTitle: BrowserStrings.splitFocusPaneTitle(2),
-        shortcut: BrowserKeyboardShortcut("2", modifiers: [.control, .shift])
+        shortcut: BrowserKeyboardShortcut("2", modifiers: [.control, .shift]),
     )
 
     static let focusSplitPane3 = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.splitFocusPaneTitle(3),
         helpTitle: BrowserStrings.splitFocusPaneTitle(3),
-        shortcut: BrowserKeyboardShortcut("3", modifiers: [.control, .shift])
+        shortcut: BrowserKeyboardShortcut("3", modifiers: [.control, .shift]),
     )
 
     static let focusSplitPane4 = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.splitFocusPaneTitle(4),
         helpTitle: BrowserStrings.splitFocusPaneTitle(4),
-        shortcut: BrowserKeyboardShortcut("4", modifiers: [.control, .shift])
+        shortcut: BrowserKeyboardShortcut("4", modifiers: [.control, .shift]),
     )
 
     static let focusNextSplitPane = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuFocusNextSplitPane,
         helpTitle: BrowserStrings.menuFocusNextSplitPane,
-        shortcut: BrowserKeyboardShortcut("]", modifiers: [.control, .shift])
+        shortcut: BrowserKeyboardShortcut("]", modifiers: [.control, .shift]),
     )
 
     static let focusPreviousSplitPane = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuFocusPreviousSplitPane,
         helpTitle: BrowserStrings.menuFocusPreviousSplitPane,
-        shortcut: BrowserKeyboardShortcut("[", modifiers: [.control, .shift])
+        shortcut: BrowserKeyboardShortcut("[", modifiers: [.control, .shift]),
     )
 
     static let toggleSidebarPosition = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuMoveSidebarRight,
         helpTitle: BrowserStrings.menuMoveSidebarRight,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let toggleSidebar = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuToggleSidebar,
         helpTitle: BrowserStrings.sidebarHide,
-        shortcut: BrowserKeyboardShortcut("s")
+        shortcut: BrowserKeyboardShortcut("s"),
     )
 
     static let toggleBookmarksBar = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.settingsShowBookmarksBar,
         helpTitle: BrowserStrings.settingsShowBookmarksBar,
-        shortcut: BrowserKeyboardShortcut("b", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("b", modifiers: [.command, .shift]),
     )
 
     /// View menu: Show/Hide Toolbar is Command-Shift-D.
     static let toggleSiteToolbar = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuShowToolbar,
         helpTitle: BrowserStrings.menuShowToolbar,
-        shortcut: BrowserKeyboardShortcut("d", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("d", modifiers: [.command, .shift]),
     )
 
     /// Pin/Unpin Tab has no default: Command-D is Add Bookmark.
     static let togglePinTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuPinTab,
         helpTitle: BrowserStrings.menuPinTab,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// These commands have no default shortcut.
     static let duplicateTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuDuplicateTab,
         helpTitle: BrowserStrings.menuDuplicateTab,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let renameTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuRenameTab,
         helpTitle: BrowserStrings.menuRenameTab,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let resetTabToPinnedURL = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuResetTabToPinnedURL,
         helpTitle: BrowserStrings.menuResetTabToPinnedURL,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// Reset all tabs in this Space, unbound by default.
     static let resetSpaceTabs = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuResetSpaceTabs,
         helpTitle: BrowserStrings.menuResetSpaceTabs,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let collapseAllFolders = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCollapseAllFolders,
         helpTitle: BrowserStrings.menuCollapseAllFolders,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let expandAllFolders = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuExpandAllFolders,
         helpTitle: BrowserStrings.menuExpandAllFolders,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// New Folder…; folders hold at least one tab, so the new
@@ -461,7 +461,7 @@ enum BrowserCommands {
     static let newFolder = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.pinnedTabFolderNewAction,
         helpTitle: BrowserStrings.pinnedTabFolderNewAction,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// Capture Full Page has no default.
@@ -469,26 +469,26 @@ enum BrowserCommands {
     static let captureArea = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCaptureArea,
         helpTitle: BrowserStrings.menuCaptureArea,
-        shortcut: BrowserKeyboardShortcut("2", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("2", modifiers: [.command, .shift]),
     )
 
     static let captureFullPage = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.siteCaptureFullPageAction,
         helpTitle: BrowserStrings.siteCaptureFullPageAction,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     static let newSpace = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.spaceNewAction,
         helpTitle: BrowserStrings.spaceNewAction,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// Window menu: View Downloads is Command-Shift-J.
     static let viewDownloads = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuViewDownloads,
         helpTitle: BrowserStrings.menuViewDownloads,
-        shortcut: BrowserKeyboardShortcut("j", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("j", modifiers: [.command, .shift]),
     )
 
     /// Next/Previous Tab are
@@ -496,39 +496,39 @@ enum BrowserCommands {
     static let selectNextTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextTab,
         helpTitle: BrowserStrings.menuSelectNextTab,
-        shortcut: BrowserKeyboardShortcut("]", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("]", modifiers: [.command, .shift]),
     )
 
     static let selectPreviousTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectPreviousTab,
         helpTitle: BrowserStrings.menuSelectPreviousTab,
-        shortcut: BrowserKeyboardShortcut("[", modifiers: [.command, .shift])
+        shortcut: BrowserKeyboardShortcut("[", modifiers: [.command, .shift]),
     )
 
     /// Tabs menu: Next/Previous Tab are Option-Command-Down/Up.
     static let selectNextTabAlternate = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextTabAlternate,
         helpTitle: BrowserStrings.menuSelectNextTabAlternate,
-        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.downArrow, modifiers: [.command, .option])
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.downArrow, modifiers: [.command, .option]),
     )
 
     static let selectPreviousTabAlternate = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectPreviousTabAlternate,
         helpTitle: BrowserStrings.menuSelectPreviousTabAlternate,
-        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.upArrow, modifiers: [.command, .option])
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.upArrow, modifiers: [.command, .option]),
     )
 
     /// Spaces menu: Next/Previous Space are Option-Command-Right/Left.
     static let selectNextSpace = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextSpace,
         helpTitle: BrowserStrings.menuSelectNextSpace,
-        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.rightArrow, modifiers: [.command, .option])
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.rightArrow, modifiers: [.command, .option]),
     )
 
     static let selectPreviousSpace = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectPreviousSpace,
         helpTitle: BrowserStrings.menuSelectPreviousSpace,
-        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.leftArrow, modifiers: [.command, .option])
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.leftArrow, modifiers: [.command, .option]),
     )
 
     /// Reveal Current Tab leaves out Control-Space, which macOS uses to switch
@@ -536,35 +536,35 @@ enum BrowserCommands {
     static let revealCurrentTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuRevealCurrentTab,
         helpTitle: BrowserStrings.menuRevealCurrentTab,
-        shortcut: .unassigned
+        shortcut: .unassigned,
     )
 
     /// Open Extensions is Command-E.
     static let openExtensions = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuOpenExtensions,
         helpTitle: BrowserStrings.menuOpenExtensions,
-        shortcut: BrowserKeyboardShortcut("e")
+        shortcut: BrowserKeyboardShortcut("e"),
     )
 
     /// Edit menu: Copy URL as Markdown is Option-Shift-Command-C.
     static let copyLinkAsMarkdown = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCopyLinkAsMarkdown,
         helpTitle: BrowserStrings.menuCopyLinkAsMarkdown,
-        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .option, .shift])
+        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .option, .shift]),
     )
 
     /// Copy URL as Quote is Control-Shift-Command-C.
     static let copyLinkAsQuote = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCopyLinkAsQuote,
         helpTitle: BrowserStrings.menuCopyLinkAsQuote,
-        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .control, .shift])
+        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .control, .shift]),
     )
 
     /// Go to last Sidebar Item is Command-9.
     static let goToLastSidebarItem = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuGoToLastSidebarItem,
         helpTitle: BrowserStrings.menuGoToLastSidebarItem,
-        shortcut: BrowserKeyboardShortcut("9")
+        shortcut: BrowserKeyboardShortcut("9"),
     )
 
     /// Go to Sidebar Item 1–8 is Command-1…8.
@@ -572,7 +572,7 @@ enum BrowserCommands {
         BrowserCommandDescriptor(
             menuTitle: BrowserStrings.menuGoToSidebarItem(index + 1),
             helpTitle: BrowserStrings.menuGoToSidebarItem(index + 1),
-            shortcut: BrowserKeyboardShortcut("\(index + 1)")
+            shortcut: BrowserKeyboardShortcut("\(index + 1)"),
         )
     }
 }
@@ -701,6 +701,37 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
 // MARK: - BrowserKeyboardShortcutBridge
 
 enum BrowserKeyboardShortcutBridge {
+    // MARK: Private
+
+    private struct ShortcutMatch {
+        // MARK: Internal
+
+        let command: BrowserLayoutIndependentShortcutCommand
+        let keyEquivalent: String
+        let modifiers: NSEvent.ModifierFlags
+
+        init(
+            command: BrowserLayoutIndependentShortcutCommand,
+            keyEquivalent: String,
+            modifiers: NSEvent.ModifierFlags,
+        ) {
+            self.command = command
+            self.keyEquivalent = keyEquivalent.lowercased()
+            self.modifiers = modifiers.intersection(.deviceIndependentFlagsMask)
+        }
+
+        init(
+            command: BrowserLayoutIndependentShortcutCommand,
+            shortcut: BrowserKeyboardShortcut,
+        ) {
+            self.init(
+                command: command,
+                keyEquivalent: shortcut.keyEquivalent,
+                modifiers: shortcut.modifiers,
+            )
+        }
+    }
+
     // MARK: Internal
 
     static let windowShortcuts: [
@@ -713,11 +744,15 @@ enum BrowserKeyboardShortcutBridge {
             (.closeWindow, BrowserKeyboardShortcut("w", modifiers: [.command, .shift])),
         ]
 
+    private static var windowShortcutMatches: [ShortcutMatch] {
+        windowShortcuts.map { ShortcutMatch(command: $0.command, shortcut: $0.shortcut) }
+    }
+
     static func commandForLayoutIndependentDispatch(
         keyCode: UInt16,
         modifierFlags: NSEvent.ModifierFlags,
         charactersIgnoringModifiers: String?,
-        shortcutResolver: BrowserShortcutResolving? = nil
+        shortcutResolver: BrowserShortcutResolving? = nil,
     ) -> BrowserLayoutIndependentShortcutCommand? {
         let normalizedModifiers = modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard !normalizedModifiers.isDisjoint(with: [.command, .control]),
@@ -739,43 +774,6 @@ enum BrowserKeyboardShortcutBridge {
         (0..<128).first { usKeyEquivalent(for: $0) == keyEquivalent.lowercased() }
     }
 
-    // MARK: Private
-
-    private struct ShortcutMatch {
-        // MARK: Lifecycle
-
-        init(
-            command: BrowserLayoutIndependentShortcutCommand,
-            keyEquivalent: String,
-            modifiers: NSEvent.ModifierFlags
-        ) {
-            self.command = command
-            self.keyEquivalent = keyEquivalent.lowercased()
-            self.modifiers = modifiers.intersection(.deviceIndependentFlagsMask)
-        }
-
-        init(
-            command: BrowserLayoutIndependentShortcutCommand,
-            shortcut: BrowserKeyboardShortcut
-        ) {
-            self.init(
-                command: command,
-                keyEquivalent: shortcut.keyEquivalent,
-                modifiers: shortcut.modifiers
-            )
-        }
-
-        // MARK: Internal
-
-        let command: BrowserLayoutIndependentShortcutCommand
-        let keyEquivalent: String
-        let modifiers: NSEvent.ModifierFlags
-    }
-
-    private static var windowShortcutMatches: [ShortcutMatch] {
-        windowShortcuts.map { ShortcutMatch(command: $0.command, shortcut: $0.shortcut) }
-    }
-
     private static func shortcutMatches(shortcutResolver: BrowserShortcutResolving?) -> [ShortcutMatch] {
         var matches = [
             ShortcutMatch(command: .undo, keyEquivalent: "z", modifiers: [.command]),
@@ -792,9 +790,9 @@ enum BrowserKeyboardShortcutBridge {
             contentsOf: BrowserCommandID.allCases.map { commandID in
                 ShortcutMatch(
                     command: commandID.layoutIndependentCommand,
-                    shortcut: shortcutResolver?.shortcut(for: commandID) ?? commandID.defaultDescriptor.shortcut
+                    shortcut: shortcutResolver?.shortcut(for: commandID) ?? commandID.defaultDescriptor.shortcut,
                 )
-            }
+            },
         )
         // The window keys added later come after commands, so a key the user
         // gave a command before they were reserved keeps working.

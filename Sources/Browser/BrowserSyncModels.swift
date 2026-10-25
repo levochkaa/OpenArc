@@ -1,9 +1,13 @@
+// BrowserSyncModels.swift
+
 import Foundation
 
 // MARK: - BrowserSyncConfiguration
 
 struct BrowserSyncConfiguration {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let baseURL: URL
 
     init?(baseURL: URL) {
         guard let components = URLComponents(url: baseURL, resolvingAgainstBaseURL: true),
@@ -15,10 +19,6 @@ struct BrowserSyncConfiguration {
         else { return nil }
         self.baseURL = BrowserSyncOwner(baseURL: baseURL, userID: "").baseURL
     }
-
-    // MARK: Internal
-
-    let baseURL: URL
 
     static func current(environment: [String: String] = ProcessInfo.processInfo
         .environment) -> BrowserSyncConfiguration?
@@ -37,16 +37,6 @@ struct BrowserSyncConfiguration {
 // MARK: - BrowserAuthSession
 
 struct BrowserAuthSession: Codable, Equatable {
-    // MARK: Lifecycle
-
-    init(accessToken: String, userID: String, userEmail: String?, deviceID: String, serverURL: URL? = nil) {
-        self.accessToken = accessToken
-        self.userID = userID
-        self.userEmail = userEmail
-        self.deviceID = deviceID
-        self.serverURL = serverURL
-    }
-
     // MARK: Internal
 
     let accessToken: String
@@ -55,6 +45,14 @@ struct BrowserAuthSession: Codable, Equatable {
     let deviceID: String
     /// Legacy credentials have no issuer provenance and require a fresh sign-in.
     let serverURL: URL?
+
+    init(accessToken: String, userID: String, userEmail: String?, deviceID: String, serverURL: URL? = nil) {
+        self.accessToken = accessToken
+        self.userID = userID
+        self.userEmail = userEmail
+        self.deviceID = deviceID
+        self.serverURL = serverURL
+    }
 
     func belongs(to baseURL: URL) -> Bool {
         guard let serverURL else { return false }
@@ -107,25 +105,6 @@ struct BrowserSyncSpacePayload: Codable, Equatable {
 // MARK: - BrowserSyncTabPayload
 
 struct BrowserSyncTabPayload: Codable, Equatable {
-    // MARK: Lifecycle
-
-    init(
-        spaceID: String, placement: BrowserTabPlacement, rank: Double, urlString: String,
-        pinnedURLString: String?, title: String?, userTitleOverride: String?,
-        faviconURLString: String?, lastActivityAt: String?, pinnedFolderID: String? = nil
-    ) {
-        self.spaceID = spaceID
-        self.placement = placement
-        self.rank = rank
-        self.urlString = urlString
-        self.pinnedURLString = pinnedURLString
-        self.title = title
-        self.userTitleOverride = userTitleOverride
-        self.faviconURLString = faviconURLString
-        self.lastActivityAt = lastActivityAt
-        self.pinnedFolderID = pinnedFolderID
-    }
-
     // MARK: Internal
 
     let spaceID: String
@@ -138,12 +117,54 @@ struct BrowserSyncTabPayload: Codable, Equatable {
     let faviconURLString: String?
     let lastActivityAt: String?
     let pinnedFolderID: String?
+
+    init(
+        spaceID: String, placement: BrowserTabPlacement, rank: Double, urlString: String,
+        pinnedURLString: String?, title: String?, userTitleOverride: String?,
+        faviconURLString: String?, lastActivityAt: String?, pinnedFolderID: String? = nil,
+    ) {
+        self.spaceID = spaceID
+        self.placement = placement
+        self.rank = rank
+        self.urlString = urlString
+        self.pinnedURLString = pinnedURLString
+        self.title = title
+        self.userTitleOverride = userTitleOverride
+        self.faviconURLString = faviconURLString
+        self.lastActivityAt = lastActivityAt
+        self.pinnedFolderID = pinnedFolderID
+    }
 }
 
 // MARK: - BrowserSyncChange
 
 struct BrowserSyncChange: Codable, Equatable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    enum EntityType: String, Codable, Hashable {
+        case space
+        case tab
+        case folder
+    }
+
+    enum Operation: String, Codable {
+        case upsert
+        case delete
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case entityType
+        case entityID
+        case op
+        case data
+    }
+
+    let entityType: EntityType
+    let entityID: String
+    let op: Operation
+    let spaceData: BrowserSyncSpacePayload?
+    let tabData: BrowserSyncTabPayload?
+    let folderData: BrowserSyncFolderPayload?
 
     init(
         entityType: EntityType,
@@ -151,7 +172,7 @@ struct BrowserSyncChange: Codable, Equatable {
         op: Operation,
         spaceData: BrowserSyncSpacePayload?,
         tabData: BrowserSyncTabPayload?,
-        folderData: BrowserSyncFolderPayload? = nil
+        folderData: BrowserSyncFolderPayload? = nil,
     ) {
         self.entityType = entityType
         self.entityID = entityID
@@ -182,33 +203,6 @@ struct BrowserSyncChange: Codable, Equatable {
         }
     }
 
-    // MARK: Internal
-
-    enum EntityType: String, Codable, Hashable, Sendable {
-        case space
-        case tab
-        case folder
-    }
-
-    enum Operation: String, Codable {
-        case upsert
-        case delete
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case entityType
-        case entityID
-        case op
-        case data
-    }
-
-    let entityType: EntityType
-    let entityID: String
-    let op: Operation
-    let spaceData: BrowserSyncSpacePayload?
-    let tabData: BrowserSyncTabPayload?
-    let folderData: BrowserSyncFolderPayload?
-
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(entityType, forKey: .entityType)
@@ -236,11 +230,19 @@ struct BrowserSyncMutation: Codable, Equatable {
 // MARK: - BrowserSyncEvent
 
 struct BrowserSyncEvent: Codable, Equatable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let serverSeq: Int
+    let deviceID: String?
+    let entityType: String
+    let entityID: String
+    let op: String
+    let data: BrowserSyncEventData
+    let createdAt: String
 
     init(
         serverSeq: Int, deviceID: String?, entityType: String, entityID: String,
-        op: String, data: BrowserSyncEventData, createdAt: String
+        op: String, data: BrowserSyncEventData, createdAt: String,
     ) {
         self.serverSeq = serverSeq
         self.deviceID = deviceID
@@ -274,16 +276,6 @@ struct BrowserSyncEvent: Codable, Equatable {
             }
     }
 
-    // MARK: Internal
-
-    let serverSeq: Int
-    let deviceID: String?
-    let entityType: String
-    let entityID: String
-    let op: String
-    let data: BrowserSyncEventData
-    let createdAt: String
-
     // MARK: Private
 
     private static func deletedData(_ data: BrowserSyncDeletedData) -> BrowserSyncEventData {
@@ -299,8 +291,6 @@ enum BrowserSyncEventData: Codable, Equatable {
     case folder(BrowserSyncEventFolderData)
     case deleted(id: String, autoArchive: BrowserSyncAutoArchiveData? = nil)
     case unknown
-
-    // MARK: Lifecycle
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -337,7 +327,7 @@ enum BrowserSyncEventData: Codable, Equatable {
         case .folder(let data): try values.encode(data)
         case .deleted(let id, let autoArchive): try values.encode(BrowserSyncDeletedData(
                 id: id,
-                autoArchive: autoArchive
+                autoArchive: autoArchive,
             ))
         case .unknown: try values.encode([String: String]())
         }
@@ -358,26 +348,6 @@ struct BrowserSyncEventSpaceData: Codable, Equatable {
 // MARK: - BrowserSyncEventTabData
 
 struct BrowserSyncEventTabData: Codable, Equatable {
-    // MARK: Lifecycle
-
-    init(
-        id: String, spaceID: String?, placement: BrowserTabPlacement?, rank: Double?,
-        urlString: String?, pinnedURLString: String?, title: String?, userTitleOverride: String?,
-        faviconURLString: String?, lastActivityAt: String?, pinnedFolderID: String? = nil
-    ) {
-        self.id = id
-        self.spaceID = spaceID
-        self.placement = placement
-        self.rank = rank
-        self.urlString = urlString
-        self.pinnedURLString = pinnedURLString
-        self.title = title
-        self.userTitleOverride = userTitleOverride
-        self.faviconURLString = faviconURLString
-        self.lastActivityAt = lastActivityAt
-        self.pinnedFolderID = pinnedFolderID
-    }
-
     // MARK: Internal
 
     let id: String
@@ -391,6 +361,24 @@ struct BrowserSyncEventTabData: Codable, Equatable {
     let faviconURLString: String?
     let lastActivityAt: String?
     let pinnedFolderID: String?
+
+    init(
+        id: String, spaceID: String?, placement: BrowserTabPlacement?, rank: Double?,
+        urlString: String?, pinnedURLString: String?, title: String?, userTitleOverride: String?,
+        faviconURLString: String?, lastActivityAt: String?, pinnedFolderID: String? = nil,
+    ) {
+        self.id = id
+        self.spaceID = spaceID
+        self.placement = placement
+        self.rank = rank
+        self.urlString = urlString
+        self.pinnedURLString = pinnedURLString
+        self.title = title
+        self.userTitleOverride = userTitleOverride
+        self.faviconURLString = faviconURLString
+        self.lastActivityAt = lastActivityAt
+        self.pinnedFolderID = pinnedFolderID
+    }
 }
 
 // MARK: - BrowserSyncEventFolderData
@@ -423,7 +411,12 @@ struct BrowserSyncPushRequest: Encodable {
 // MARK: - BrowserSyncPushResponse
 
 struct BrowserSyncPushResponse: Decodable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let protocolVersion: Int?
+    let mutationID: String?
+    let cursor: Int
+    let events: [BrowserSyncEvent]
 
     init(cursor: Int, events: [BrowserSyncEvent], protocolVersion: Int? = 2, mutationID: String? = nil) {
         self.cursor = cursor
@@ -431,19 +424,17 @@ struct BrowserSyncPushResponse: Decodable {
         self.protocolVersion = protocolVersion
         self.mutationID = mutationID
     }
-
-    // MARK: Internal
-
-    let protocolVersion: Int?
-    let mutationID: String?
-    let cursor: Int
-    let events: [BrowserSyncEvent]
 }
 
 // MARK: - BrowserSyncPullRequest
 
 struct BrowserSyncPullRequest: Encodable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let deviceID: String
+    let cursor: Int
+    let limit: Int
+    let protocolVersion: Int?
 
     init(deviceID: String, cursor: Int, limit: Int, protocolVersion: Int? = nil) {
         self.deviceID = deviceID
@@ -451,19 +442,17 @@ struct BrowserSyncPullRequest: Encodable {
         self.limit = limit
         self.protocolVersion = protocolVersion
     }
-
-    // MARK: Internal
-
-    let deviceID: String
-    let cursor: Int
-    let limit: Int
-    let protocolVersion: Int?
 }
 
 // MARK: - BrowserSyncPullResponse
 
 struct BrowserSyncPullResponse: Decodable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let protocolVersion: Int?
+    let supportedPushVersions: [Int]?
+    let cursor: Int
+    let events: [BrowserSyncEvent]
 
     init(cursor: Int, events: [BrowserSyncEvent], protocolVersion: Int? = 2, supportedPushVersions: [Int]? = nil) {
         self.cursor = cursor
@@ -471,13 +460,6 @@ struct BrowserSyncPullResponse: Decodable {
         self.protocolVersion = protocolVersion
         self.supportedPushVersions = supportedPushVersions
     }
-
-    // MARK: Internal
-
-    let protocolVersion: Int?
-    let supportedPushVersions: [Int]?
-    let cursor: Int
-    let events: [BrowserSyncEvent]
 }
 
 // MARK: - BrowserSyncCoordinating

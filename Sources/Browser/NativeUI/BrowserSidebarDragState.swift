@@ -1,18 +1,10 @@
+// BrowserSidebarDragState.swift
+
 import AppKit
 
 /// One gesture owns one payload and one semantic proposal. Pointer motion updates
 /// only its presentation; it does not rebuild the sidebar or mutate the tab model.
 @MainActor final class BrowserSidebarDragState {
-    // MARK: Lifecycle
-
-    init(
-        model: BrowserChromeModel,
-        planner: ((BrowserSidebarDragPayload, BrowserSidebarDropDestination) -> BrowserSidebarMovePlan?)? = nil
-    ) {
-        self.model = model
-        self.planner = planner ?? { model.sidebarMovePlan(payload: $0, destination: $1) }
-    }
-
     // MARK: Internal
 
     enum Phase { case idle, dragging, settling }
@@ -69,6 +61,21 @@ import AppKit
     var onLayoutChange: () -> Void = {}
     var onTargetChange: () -> Void = {}
 
+    // MARK: Private
+
+    private var geometricProposal: BrowserSidebarDropProposal?
+    private let model: BrowserChromeModel
+    private let planner: (BrowserSidebarDragPayload, BrowserSidebarDropDestination) -> BrowserSidebarMovePlan?
+    private var sourceContainer: BrowserSidebarDropContainer?
+    private var hiddenFolders = Set<String>()
+
+    private var plans = [BrowserSidebarDropDestination: BrowserSidebarMovePlan]()
+    private var validity = [BrowserSidebarDropDestination: Bool]()
+    private var splitCandidateTabID: String?
+    private var splitCandidateSince = Date.distantFuture
+    private var splitDelayWork: DispatchWorkItem?
+    private var dockSpringWork: DispatchWorkItem?
+
     var isDragging: Bool { phase == .dragging }
     var hiddenTabIDs: Set<String> { payload?.tabIDs ?? [] }
     var hiddenFolderID: String? {
@@ -106,12 +113,20 @@ import AppKit
         return CGSize(width: geometry?.rowWidth ?? sourceFrame.width, height: BrowserChromeLayout.sidebarRowHeight)
     }
 
+    init(
+        model: BrowserChromeModel,
+        planner: ((BrowserSidebarDragPayload, BrowserSidebarDropDestination) -> BrowserSidebarMovePlan?)? = nil,
+    ) {
+        self.model = model
+        self.planner = planner ?? { model.sidebarMovePlan(payload: $0, destination: $1) }
+    }
+
     func begin(
         payload: BrowserSidebarDragPayload,
         sourceFrame: CGRect,
         start: CGPoint,
         pointer: CGPoint,
-        grabAnchor: CGPoint? = nil
+        grabAnchor: CGPoint? = nil,
     ) {
         self.payload = payload
         self.sourceFrame = sourceFrame
@@ -119,7 +134,7 @@ import AppKit
         refreshSourceMetadata()
         anchor = grabAnchor ?? CGPoint(
             x: min(max((start.x - sourceFrame.minX) / max(sourceFrame.width, 1), 0), 1),
-            y: min(max((start.y - sourceFrame.minY) / max(sourceFrame.height, 1), 0), 1)
+            y: min(max((start.y - sourceFrame.minY) / max(sourceFrame.height, 1), 0), 1),
         )
         phase = .dragging
         proposal = nil
@@ -228,7 +243,7 @@ import AppKit
                 model.openInSplitView(
                     tabID: id,
                     anchorTabID: target.tabID,
-                    insertion: target.side == .leading ? .before : .after
+                    insertion: target.side == .leading ? .before : .after,
                 )
             } else if !cancel, let target = pageSplitTarget, target.replacesAnchor,
                       case .tab(let id) = payload.primary
@@ -239,7 +254,7 @@ import AppKit
                     tabID: id,
                     anchorTabID: target.anchorTabID,
                     insertion: target.insertion,
-                    orientation: target.orientation
+                    orientation: target.orientation,
                 )
             } else {
                 !cancel && proposal.map {
@@ -273,21 +288,6 @@ import AppKit
         validity.removeAll()
         onPresentationChange()
     }
-
-    // MARK: Private
-
-    private var geometricProposal: BrowserSidebarDropProposal?
-    private let model: BrowserChromeModel
-    private let planner: (BrowserSidebarDragPayload, BrowserSidebarDropDestination) -> BrowserSidebarMovePlan?
-    private var sourceContainer: BrowserSidebarDropContainer?
-    private var hiddenFolders = Set<String>()
-
-    private var plans = [BrowserSidebarDropDestination: BrowserSidebarMovePlan]()
-    private var validity = [BrowserSidebarDropDestination: Bool]()
-    private var splitCandidateTabID: String?
-    private var splitCandidateSince = Date.distantFuture
-    private var splitDelayWork: DispatchWorkItem?
-    private var dockSpringWork: DispatchWorkItem?
 
     private func clearPageDrop() {
         let hadTarget = pageSplitTarget != nil
@@ -365,7 +365,7 @@ import AppKit
 
     private func resolve(
         payload: BrowserSidebarDragPayload,
-        destination: BrowserSidebarDropDestination
+        destination: BrowserSidebarDropDestination,
     ) -> (valid: Bool, plan: BrowserSidebarMovePlan?) {
         if let valid = validity[destination] {
             return (valid, plans[destination])

@@ -1,3 +1,5 @@
+// BrowserBatterySaverController.swift
+
 import Combine
 import Foundation
 import IOKit.ps
@@ -29,21 +31,89 @@ protocol BrowserBatteryStateProviding: AnyObject, Sendable {
 // MARK: - BrowserPowerSourceMonitor
 
 final class BrowserPowerSourceMonitor: BrowserBatteryStateProviding, @unchecked Sendable {
-    // MARK: Lifecycle
-
-    deinit {
-        stop()
-    }
-
     // MARK: Internal
 
     private(set) var currentState = BrowserBatteryState(
         hasBattery: false,
         isUsingBatteryPower: false,
-        batteryPercentage: nil
+        batteryPercentage: nil,
     )
 
     var onStateChange: ((BrowserBatteryState) -> Void)?
+
+    // MARK: Private
+
+    private var runLoopSource: CFRunLoopSource?
+
+    deinit {
+        stop()
+    }
+
+    private static func readCurrentState() -> BrowserBatteryState {
+        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
+            return BrowserBatteryState(hasBattery: false, isUsingBatteryPower: false, batteryPercentage: nil)
+        }
+
+        let sourceType = IOPSGetProvidingPowerSourceType(snapshot)?
+            .takeUnretainedValue() as String?
+        let isUsingBatteryPower = sourceType == kIOPSBatteryPowerValue as String
+        guard
+            let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef],
+            !sources.isEmpty
+        else {
+            return BrowserBatteryState(
+                hasBattery: false,
+                isUsingBatteryPower: isUsingBatteryPower,
+                batteryPercentage: nil,
+            )
+        }
+
+        var totalCurrentCapacity = 0
+        var totalMaxCapacity = 0
+        var hasBattery = false
+
+        for source in sources {
+            guard
+                let description = IOPSGetPowerSourceDescription(snapshot, source)?
+                    .takeUnretainedValue() as? [String: Any],
+                boolValue(from: description[kIOPSIsPresentKey as String])
+            else {
+                continue
+            }
+
+            hasBattery = true
+            if
+                let currentCapacity = description[kIOPSCurrentCapacityKey as String] as? Int,
+                let maxCapacity = description[kIOPSMaxCapacityKey as String] as? Int,
+                maxCapacity > 0
+            {
+                totalCurrentCapacity += currentCapacity
+                totalMaxCapacity += maxCapacity
+            }
+        }
+
+        let batteryPercentage = totalMaxCapacity > 0
+            ? Int((Double(totalCurrentCapacity) / Double(totalMaxCapacity) * 100).rounded(.down))
+            : nil
+
+        return BrowserBatteryState(
+            hasBattery: hasBattery,
+            isUsingBatteryPower: isUsingBatteryPower,
+            batteryPercentage: batteryPercentage,
+        )
+    }
+
+    private static func boolValue(from value: Any?) -> Bool {
+        if let value = value as? Bool {
+            return value
+        }
+
+        if let value = value as? NSNumber {
+            return value.boolValue
+        }
+
+        return false
+    }
 
     func start() {
         guard runLoopSource == nil else {
@@ -80,76 +150,6 @@ final class BrowserPowerSourceMonitor: BrowserBatteryStateProviding, @unchecked 
         self.runLoopSource = nil
     }
 
-    // MARK: Private
-
-    private var runLoopSource: CFRunLoopSource?
-
-    private static func readCurrentState() -> BrowserBatteryState {
-        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
-            return BrowserBatteryState(hasBattery: false, isUsingBatteryPower: false, batteryPercentage: nil)
-        }
-
-        let sourceType = IOPSGetProvidingPowerSourceType(snapshot)?
-            .takeUnretainedValue() as String?
-        let isUsingBatteryPower = sourceType == kIOPSBatteryPowerValue as String
-        guard
-            let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef],
-            !sources.isEmpty
-        else {
-            return BrowserBatteryState(
-                hasBattery: false,
-                isUsingBatteryPower: isUsingBatteryPower,
-                batteryPercentage: nil
-            )
-        }
-
-        var totalCurrentCapacity = 0
-        var totalMaxCapacity = 0
-        var hasBattery = false
-
-        for source in sources {
-            guard
-                let description = IOPSGetPowerSourceDescription(snapshot, source)?
-                    .takeUnretainedValue() as? [String: Any],
-                boolValue(from: description[kIOPSIsPresentKey as String])
-            else {
-                continue
-            }
-
-            hasBattery = true
-            if
-                let currentCapacity = description[kIOPSCurrentCapacityKey as String] as? Int,
-                let maxCapacity = description[kIOPSMaxCapacityKey as String] as? Int,
-                maxCapacity > 0
-            {
-                totalCurrentCapacity += currentCapacity
-                totalMaxCapacity += maxCapacity
-            }
-        }
-
-        let batteryPercentage = totalMaxCapacity > 0
-            ? Int((Double(totalCurrentCapacity) / Double(totalMaxCapacity) * 100).rounded(.down))
-            : nil
-
-        return BrowserBatteryState(
-            hasBattery: hasBattery,
-            isUsingBatteryPower: isUsingBatteryPower,
-            batteryPercentage: batteryPercentage
-        )
-    }
-
-    private static func boolValue(from value: Any?) -> Bool {
-        if let value = value as? Bool {
-            return value
-        }
-
-        if let value = value as? NSNumber {
-            return value.boolValue
-        }
-
-        return false
-    }
-
     private func refresh() {
         let nextState = Self.readCurrentState()
         guard nextState != currentState else {
@@ -164,12 +164,23 @@ final class BrowserPowerSourceMonitor: BrowserBatteryStateProviding, @unchecked 
 // MARK: - BrowserBatterySaverController
 
 @MainActor final class BrowserBatterySaverController {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    private(set) var isActive = false
+
+    // MARK: Private
+
+    private let preferencesStore: BrowserUserPreferencesStore
+    private let stateProvider: BrowserBatteryStateProviding
+    private let applier: BrowserBatterySaverApplying
+
+    private var isStarted = false
+    private var preferencesCancellable: AnyCancellable?
 
     init(
         preferencesStore: BrowserUserPreferencesStore,
         stateProvider: BrowserBatteryStateProviding = BrowserPowerSourceMonitor(),
-        applier: BrowserBatterySaverApplying = BrowserChromiumBatterySaverApplier()
+        applier: BrowserBatterySaverApplying = BrowserChromiumBatterySaverApplier(),
     ) {
         self.preferencesStore = preferencesStore
         self.stateProvider = stateProvider
@@ -188,10 +199,6 @@ final class BrowserPowerSourceMonitor: BrowserBatteryStateProviding, @unchecked 
     deinit {
         stateProvider.stop()
     }
-
-    // MARK: Internal
-
-    private(set) var isActive = false
 
     func start() {
         guard !isStarted else {
@@ -213,15 +220,6 @@ final class BrowserPowerSourceMonitor: BrowserBatteryStateProviding, @unchecked 
         setActive(false)
     }
 
-    // MARK: Private
-
-    private let preferencesStore: BrowserUserPreferencesStore
-    private let stateProvider: BrowserBatteryStateProviding
-    private let applier: BrowserBatterySaverApplying
-
-    private var isStarted = false
-    private var preferencesCancellable: AnyCancellable?
-
     private func handlePowerStateChange(_: BrowserBatteryState) {
         updateActiveState()
     }
@@ -233,7 +231,7 @@ final class BrowserPowerSourceMonitor: BrowserBatteryStateProviding, @unchecked 
 
         setActive(BrowserBatterySaverPolicy.shouldActivate(
             for: stateProvider.currentState,
-            isEnabledInPreferences: preferencesStore.batterySaverEnabled
+            isEnabledInPreferences: preferencesStore.batterySaverEnabled,
         ))
     }
 

@@ -1,3 +1,5 @@
+// BrowserSyncAutomaticExpiryFairnessTests.swift
+
 import Foundation
 import Testing
 
@@ -69,7 +71,7 @@ import Testing
     let previous = try #require(seed.last)
     remote.events.append(.init(
         serverSeq: 3, deviceID: "other-device", entityType: "tab", entityID: previous.entityID,
-        op: "upsert", data: previous.data, createdAt: "2026-10-03T12:00:00Z"
+        op: "upsert", data: previous.data, createdAt: "2026-10-03T12:00:00Z",
     ))
     // A new canonical sequence is a new candidate, even for the same tab.
     await sweep(at: 341, expectedPushes: 5)
@@ -117,12 +119,12 @@ import Testing
 
 @MainActor private func expiryFairnessService(
     _ fixture: ExpiryQueueFixture, remote: ExpiryFairnessRemote, scheduler: ExpiryFairnessScheduler,
-    store: BrowserSQLiteSessionStore? = nil
+    store: BrowserSQLiteSessionStore? = nil,
 ) -> BrowserSyncService {
     let service = BrowserSyncService(
         localStore: store ?? fixture.store, remoteClient: remote, authSessionStore: fixture.auth,
         pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
-        dateProvider: { scheduler.now }, errorReporter: { _, _ in }
+        dateProvider: { scheduler.now }, errorReporter: { _, _ in },
     )
     service.setExpiryScheduler(scheduler)
     return service
@@ -135,8 +137,8 @@ private func expiryFairnessSeed(count: Int) -> [BrowserSyncEvent] {
         serverSeq: 1, deviceID: "remote", entityType: "space", entityID: "work", op: "upsert",
         data: .space(.init(
             id: "work", title: "Work", systemImageName: "globe", rank: 0,
-            isPinnedSectionCollapsed: false, selectedTabID: nil
-        )), createdAt: "2026-10-03T11:00:00Z"
+            isPinnedSectionCollapsed: false, selectedTabID: nil,
+        )), createdAt: "2026-10-03T11:00:00Z",
     )
     return [space] + (0..<count).map { index in
         let id = expiryFairnessID(index)
@@ -146,8 +148,8 @@ private func expiryFairnessSeed(count: Int) -> [BrowserSyncEvent] {
                 id: id, spaceID: "work", placement: .temporary, rank: Double(index),
                 urlString: "https://example.com/\(id)", pinnedURLString: nil, title: id,
                 userTitleOverride: nil, faviconURLString: nil, lastActivityAt: "2000-01-01T00:00:00Z",
-                pinnedFolderID: nil
-            )), createdAt: "2026-10-03T11:00:00Z"
+                pinnedFolderID: nil,
+            )), createdAt: "2026-10-03T11:00:00Z",
         )
     }
 }
@@ -165,16 +167,14 @@ private func expiryFairnessSeed(count: Int) -> [BrowserSyncEvent] {
 // MARK: - ExpiryFairnessRemote
 
 @MainActor private final class ExpiryFairnessRemote: BrowserSyncRemoteServing {
-    // MARK: Lifecycle
-
-    init(events: [BrowserSyncEvent]) { self.events = events }
-
     // MARK: Internal
 
     let baseURL = URL(string: "https://expiry-queue.example")!
     var events: [BrowserSyncEvent]
     var pushes = [BrowserSyncExpiryMutation]()
     var failPush = false
+
+    init(events: [BrowserSyncEvent]) { self.events = events }
 
     func pull(cursor: Int, authSession: BrowserAuthSession) -> BrowserSyncPullResponse {
         pull(cursor: cursor, protocolVersion: 2, authSession: authSession)
@@ -183,13 +183,13 @@ private func expiryFairnessSeed(count: Int) -> [BrowserSyncEvent] {
     func pull(cursor: Int, protocolVersion: Int, authSession _: BrowserAuthSession) -> BrowserSyncPullResponse {
         .init(
             cursor: max(cursor, events.map(\.serverSeq).max() ?? 0), events: events.filter { $0.serverSeq > cursor },
-            protocolVersion: protocolVersion, supportedPushVersions: [2, 3, 4, 5]
+            protocolVersion: protocolVersion, supportedPushVersions: [2, 3, 4, 5],
         )
     }
 
     func push(
         mutation: BrowserSyncExpiryMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncExpiryPushResponse {
         pushes.append(mutation)
         if failPush {
@@ -199,7 +199,7 @@ private func expiryFairnessSeed(count: Int) -> [BrowserSyncEvent] {
             protocolVersion: 5, mutationID: mutation.id, cursor: events.map(\.serverSeq).max() ?? 0,
             events: [], outcomes: mutation.operations.indices.map {
                 .init(operationIndex: $0, status: .rejected, reason: .responseLimit)
-            }
+            },
         )
     }
 

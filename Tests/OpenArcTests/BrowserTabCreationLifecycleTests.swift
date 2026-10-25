@@ -1,3 +1,5 @@
+// BrowserTabCreationLifecycleTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -33,7 +35,7 @@ import Testing
     h.driver.emitTabCreationState(id: original.id, state: .failed)
     #expect(
         h.model.tabs.first { $0.id == original.id }?.creationState == .ready,
-        "Late refusal cannot regress readiness"
+        "Late refusal cannot regress readiness",
     )
     #expect(!h.model.retrySelectedTabCreation())
     let after = try #require(h.model.tabs.first { $0.id == original.id })
@@ -102,10 +104,10 @@ import Testing
     let remoteTab = BrowserTabSessionSnapshotTab(
         id: "remote", urlString: "https://remote.example/current", pinnedURLString: "https://remote.example/home",
         userTitleOverride: "Remote label", placement: .spacePinned, spaceID: "second",
-        lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970
+        lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970,
     )
     let remote = try h.store.applyRemoteSyncEvents(
-        tabCreationLifecycleEvents(.init(tabs: [remoteTab]), startingAt: 10), cursor: 10, for: h.owner
+        tabCreationLifecycleEvents(.init(tabs: [remoteTab]), startingAt: 10), cursor: 10, for: h.owner,
     )
     let pushesBefore = h.sync.pushedSnapshots.count
     h.model.applyRemoteSyncSnapshot(remote)
@@ -137,7 +139,7 @@ import Testing
         return
     }
     #expect(mutation.operations == [.patchTab(
-        id: "remote", fields: .init(userTitleOverride: .set("Local edit while failed"))
+        id: "remote", fields: .init(userTitleOverride: .set("Local edit while failed")),
     )])
     let outboxBytes = try h.outboxBytes()
     let reopened = try BrowserSQLiteSessionStore(databaseURL: h.databaseURL)
@@ -163,10 +165,10 @@ import Testing
     if pendingRemote {
         let remoteTab = BrowserTabSessionSnapshotTab(
             id: "late-remote", urlString: "https://late.example/", spaceID: "second",
-            lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970
+            lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970,
         )
         let remote = try h.store.applyRemoteSyncEvents(
-            tabCreationLifecycleEvents(.init(tabs: [remoteTab]), startingAt: 10), cursor: 10, for: h.owner
+            tabCreationLifecycleEvents(.init(tabs: [remoteTab]), startingAt: 10), cursor: 10, for: h.owner,
         )
         h.model.applyRemoteSyncSnapshot(remote)
         id = try #require(h.driver.createdTabRequests.last { $0.urlString == remoteTab.urlString }).id
@@ -188,7 +190,18 @@ import Testing
 // MARK: - TabCreationLifecycleHarness
 
 @MainActor private final class TabCreationLifecycleHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tab-creation-\(UUID())")
+    let suiteName = "BrowserTabCreationLifecycleTests.\(UUID())"
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://tab-creation.example")!, userID: "owner")
+    let defaults: UserDefaults
+    let store: BrowserSQLiteSessionStore
+    let driver = FakeBrowserTabDriver()
+    let sync = TabCreationLifecycleSyncRecorder()
+    private(set) var model: BrowserChromeModel!
+
+    var databaseURL: URL { directory.appendingPathComponent("session.sqlite") }
 
     init() throws {
         self.defaults = UserDefaults(suiteName: suiteName)!
@@ -203,16 +216,16 @@ import Testing
                     id: "pinned", urlString: "https://pinned.example/current",
                     pinnedURLString: "https://pinned.example/home",
                     userTitleOverride: "Pinned label", placement: .spacePinned, spaceID: "first",
-                    lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970
+                    lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970,
                 ),
                 .init(
                     id: "anchor", urlString: "https://anchor.example", spaceID: "second",
-                    lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970
+                    lastActivityTimestamp: tabCreationLifecycleDate.timeIntervalSince1970,
                 ),
-            ]
+            ],
         )
         _ = try store.applyRemoteSyncEvents(
-            tabCreationLifecycleEvents(initial, startingAt: 1), cursor: 4, for: owner, enableSemanticMutations: true
+            tabCreationLifecycleEvents(initial, startingAt: 1), cursor: 4, for: owner, enableSemanticMutations: true,
         )
         self.model = makeModel(store: store, driver: driver)
         model.handleContextReady()
@@ -220,26 +233,13 @@ import Testing
         try #require(store.pendingSyncQueue(for: owner).isEmpty)
     }
 
-    // MARK: Internal
-
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tab-creation-\(UUID())")
-    let suiteName = "BrowserTabCreationLifecycleTests.\(UUID())"
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://tab-creation.example")!, userID: "owner")
-    let defaults: UserDefaults
-    let store: BrowserSQLiteSessionStore
-    let driver = FakeBrowserTabDriver()
-    let sync = TabCreationLifecycleSyncRecorder()
-    private(set) var model: BrowserChromeModel!
-
-    var databaseURL: URL { directory.appendingPathComponent("session.sqlite") }
-
     func diskState() throws -> TabCreationLifecycleDiskState {
         let database = try DatabaseQueue(path: databaseURL.path)
         return try TabCreationLifecycleDiskState(
             snapshot: store.loadSnapshotForSync(for: owner), queue: store.pendingSyncQueue(for: owner),
             outboxBytes: outboxBytes(), baseline: database.read { db in
                 try Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1")
-            }, cursor: store.syncCursor(for: owner)
+            }, cursor: store.syncCursor(for: owner),
         )
     }
 
@@ -256,7 +256,7 @@ import Testing
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
-            dateProvider: { tabCreationLifecycleDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            dateProvider: { tabCreationLifecycleDate }, windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
     }
 
@@ -294,28 +294,28 @@ private struct TabCreationLifecycleDiskState: Equatable {
 private let tabCreationLifecycleDate = Date(timeIntervalSince1970: 1_800_000_000)
 
 private func tabCreationLifecycleEvents(
-    _ snapshot: BrowserTabSessionSnapshot, startingAt sequence: Int
+    _ snapshot: BrowserTabSessionSnapshot, startingAt sequence: Int,
 ) -> [BrowserSyncEvent] {
     BrowserSyncOutboxProjection.canonicalChanges(snapshot).enumerated().map { index, change in
         let data: BrowserSyncEventData =
             if let space = change.spaceData {
                 .space(.init(
                     id: change.entityID, title: space.title, systemImageName: space.systemImageName, rank: space.rank,
-                    isPinnedSectionCollapsed: space.isPinnedSectionCollapsed, selectedTabID: space.selectedTabID
+                    isPinnedSectionCollapsed: space.isPinnedSectionCollapsed, selectedTabID: space.selectedTabID,
                 ))
             } else if let tab = change.tabData {
                 .tab(.init(
                     id: change.entityID, spaceID: tab.spaceID, placement: tab.placement, rank: tab.rank,
                     urlString: tab.urlString, pinnedURLString: tab.pinnedURLString, title: tab.title,
                     userTitleOverride: tab.userTitleOverride, faviconURLString: tab.faviconURLString,
-                    lastActivityAt: tab.lastActivityAt
+                    lastActivityAt: tab.lastActivityAt,
                 ))
             } else {
                 .deleted(id: change.entityID)
             }
         return BrowserSyncEvent(
             serverSeq: sequence + index, deviceID: "remote", entityType: change.entityType.rawValue,
-            entityID: change.entityID, op: change.op.rawValue, data: data, createdAt: "2027-01-15T08:00:00Z"
+            entityID: change.entityID, op: change.op.rawValue, data: data, createdAt: "2027-01-15T08:00:00Z",
         )
     }
 }

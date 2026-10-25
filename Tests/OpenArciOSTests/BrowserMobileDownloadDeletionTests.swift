@@ -1,3 +1,5 @@
+// BrowserMobileDownloadDeletionTests.swift
+
 import Foundation
 import Synchronization
 import Testing
@@ -138,9 +140,12 @@ import Testing
         #expect(await !(downloads.remove(id: entry.id)))
         pending.cancel()
         await controlled.releaseExport()
-        do { _ = try await pending.value
+        do {
+            _ = try await pending.value
             Issue.record("Cancelled export must not publish a lease")
-        } catch { #expect(error is CancellationError) }
+        } catch {
+            #expect(error is CancellationError)
+        }
         #expect(!downloads.canDelete(id: entry.id))
         retainedLease.finish()
         #expect(downloads.canDelete(id: entry.id))
@@ -214,6 +219,14 @@ import Testing
 // MARK: - DownloadDeletionFaults
 
 private final class DownloadDeletionFaults: Sendable {
+    // MARK: Private
+
+    private struct Flags { var writes = false
+        var cleanup = false
+    }
+
+    private let flags = Mutex(Flags())
+
     // MARK: Internal
 
     func failWrites(_ value: Bool) { flags.withLock { $0.writes = value } }
@@ -231,14 +244,6 @@ private final class DownloadDeletionFaults: Sendable {
         }
         try FileManager.default.removeItem(at: url)
     }
-
-    // MARK: Private
-
-    private struct Flags { var writes = false
-        var cleanup = false
-    }
-
-    private let flags = Mutex(Flags())
 }
 
 // MARK: - DownloadDeletionFixture
@@ -254,7 +259,7 @@ private final class DownloadDeletionFaults: Sendable {
         BrowserMobileDownloadDisk(
             directory: directory,
             writeManifest: { [faults] in try faults.write($0, to: $1) },
-            removeItem: { [faults] in try faults.remove($0) }
+            removeItem: { [faults] in try faults.remove($0) },
         )
     }
 
@@ -266,7 +271,7 @@ private final class DownloadDeletionFaults: Sendable {
             status: .downloading,
             receivedBytes: 0,
             totalBytes: nil,
-            error: nil
+            error: nil,
         )
         let destination = try await disk.prepare(id: entry.id, filename: filename)
         try bytes.write(to: destination)
@@ -283,9 +288,20 @@ private final class DownloadDeletionFaults: Sendable {
 // MARK: - HeldDownloadDisk
 
 private actor HeldDownloadDisk: BrowserMobileDownloadStoring {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(base: BrowserMobileDownloadDisk) { self.base = base }
+    private let base: BrowserMobileDownloadDisk
+    private var shouldHoldSnapshot = false
+    private var shouldHoldExport = false
+    private var shouldHoldRemoval = false
+    private var shouldHoldDiscard = false
+    private var snapshotContinuation: CheckedContinuation<BrowserMobileDownloadDiskState, Never>?
+    private var heldSnapshot: BrowserMobileDownloadDiskState?
+    private var exportContinuation: CheckedContinuation<URL, Never>?
+    private var heldURL: URL?
+    private var removalContinuation: CheckedContinuation<Void, Never>?
+    private var discardContinuation: CheckedContinuation<BrowserMobileDownloadDiskState, Never>?
+    private var heldDiscard: BrowserMobileDownloadDiskState?
 
     // MARK: Internal
 
@@ -293,6 +309,8 @@ private actor HeldDownloadDisk: BrowserMobileDownloadStoring {
     var isExportHeld: Bool { exportContinuation != nil }
     var isRemovalHeld: Bool { removalContinuation != nil }
     var isDiscardHeld: Bool { discardContinuation != nil }
+
+    init(base: BrowserMobileDownloadDisk) { self.base = base }
 
     func holdNextSnapshot() { shouldHoldSnapshot = true }
     func holdNextExport() { shouldHoldExport = true }
@@ -367,21 +385,6 @@ private actor HeldDownloadDisk: BrowserMobileDownloadStoring {
             continuation.resume(returning: value)
         }
     }
-
-    // MARK: Private
-
-    private let base: BrowserMobileDownloadDisk
-    private var shouldHoldSnapshot = false
-    private var shouldHoldExport = false
-    private var shouldHoldRemoval = false
-    private var shouldHoldDiscard = false
-    private var snapshotContinuation: CheckedContinuation<BrowserMobileDownloadDiskState, Never>?
-    private var heldSnapshot: BrowserMobileDownloadDiskState?
-    private var exportContinuation: CheckedContinuation<URL, Never>?
-    private var heldURL: URL?
-    private var removalContinuation: CheckedContinuation<Void, Never>?
-    private var discardContinuation: CheckedContinuation<BrowserMobileDownloadDiskState, Never>?
-    private var heldDiscard: BrowserMobileDownloadDiskState?
 }
 
 @MainActor private func deletionWait(_ predicate: () async -> Bool) async throws {

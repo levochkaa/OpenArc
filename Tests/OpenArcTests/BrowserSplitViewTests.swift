@@ -1,3 +1,5 @@
+// BrowserSplitViewTests.swift
+
 import AppKit
 import GRDB
 import Testing
@@ -139,7 +141,7 @@ import Testing
         #expect(f.model.setSplitOrientation(.vertical, groupID: group.id))
         #expect(f.model.setSplitFractions([1, 3], groupID: group.id))
         #expect(f.driver.visibleTabLayouts.last == BrowserTabVisibleLayout(
-            tabIDs: [f.id("x"), f.id("z")], orientation: .vertical, fractions: [0.25, 0.75]
+            tabIDs: [f.id("x"), f.id("z")], orientation: .vertical, fractions: [0.25, 0.75],
         ))
         f.model.closeTab(id: f.id("x"))
         #expect(f.driver.visibleTabLayouts.last == .some(nil), "A dissolved split shows one tab")
@@ -166,7 +168,7 @@ import Testing
         f.driver.simulateSplitResize([f.id("x"), f.id("z")], fractions: [0.7, 0.3])
         #expect(f.model.selectedSplitGroup?.fractions == [0.7, 0.3])
         #expect(f.driver.visibleTabLayouts.last == BrowserTabVisibleLayout(
-            tabIDs: [f.id("x"), f.id("z")], orientation: .horizontal, fractions: [0.7, 0.3]
+            tabIDs: [f.id("x"), f.id("z")], orientation: .horizontal, fractions: [0.7, 0.3],
         ))
         f.driver.simulateSplitResize([f.id("z"), f.id("x")], fractions: [0.5, 0.5])
         #expect(f.model.selectedSplitGroup?.fractions == [0.7, 0.3], "Stale pane order is ignored")
@@ -211,7 +213,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 600),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -224,7 +226,7 @@ import Testing
             isContextReady: true,
             hasSelectedTab: true,
             isSidebarVisible: true,
-            usesWindowContentInsets: true
+            usesWindowContentInsets: true,
         )
         content.layoutSubtreeIfNeeded()
         let host = content.viewport.hostedView
@@ -241,7 +243,7 @@ import Testing
             x: leftPane.minX,
             y: leftPane.minY,
             width: leftPane.width,
-            height: BrowserSplitPaneLayout.paneBarHeight
+            height: BrowserSplitPaneLayout.paneBarHeight,
         ), "The bar covers the top of its pane")
         #expect(focused.isFocused && !other.isFocused)
         #expect(!focused.reloadButton.isHidden && other.reloadButton.isHidden, "Only the focused pane reloads")
@@ -259,7 +261,7 @@ import Testing
                 isContextReady: true,
                 hasSelectedTab: true,
                 isSidebarVisible: visible,
-                usesWindowContentInsets: true
+                usesWindowContentInsets: true,
             )
             bars.layoutSubtreeIfNeeded()
         }
@@ -361,7 +363,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 600),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -374,7 +376,7 @@ import Testing
             isContextReady: true,
             hasSelectedTab: true,
             isSidebarVisible: true,
-            usesWindowContentInsets: true
+            usesWindowContentInsets: true,
         )
         content.layoutSubtreeIfNeeded()
         let host = content.viewport.hostedView
@@ -391,7 +393,7 @@ import Testing
         #expect(bars.paneDropTarget(for: f.id("x"), at: overLast) == f.id("z"))
         #expect(
             bars.paneDropTarget(for: f.id("x"), at: bars.convert(CGPoint(x: 100, y: 300), from: host)) == nil,
-            "Over its own pane nothing moves"
+            "Over its own pane nothing moves",
         )
         bars.finishPaneDrag(for: f.id("x"), at: overLast)
         let moved = try #require(f.model.selectedSplitGroup)
@@ -416,7 +418,7 @@ import Testing
             payload: .init(primary: .tab(f.id("x")), tabIDs: [f.id("x"), f.id("y")]),
             sourceFrame: .zero,
             start: .zero,
-            pointer: .zero
+            pointer: .zero,
         )
         drag.updatePageDrop(atWindowPoint: CGPoint(x: 500, y: 20))
         #expect(drag.pageSplitTarget == nil, "A group of tabs cannot split the page")
@@ -425,7 +427,7 @@ import Testing
             payload: .init(primary: .tab(f.id("y")), tabIDs: [f.id("y")]),
             sourceFrame: .zero,
             start: .zero,
-            pointer: .zero
+            pointer: .zero,
         )
         drag.updatePageDrop(atWindowPoint: CGPoint(x: 500, y: 20))
         #expect(drag.pageSplitTarget?.orientation == .vertical)
@@ -443,7 +445,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 600),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -456,7 +458,7 @@ import Testing
             isContextReady: true,
             hasSelectedTab: true,
             isSidebarVisible: true,
-            usesWindowContentInsets: true
+            usesWindowContentInsets: true,
         )
         content.layoutSubtreeIfNeeded()
         let bars = content.splitPaneBars
@@ -505,7 +507,7 @@ import Testing
         let order = f.model.temporaryTabs.map(\.id)
         #expect(
             try #require(order.firstIndex(of: f.id("y"))) > #require(order.firstIndex(of: f.id("z"))),
-            "The replaced row follows the split"
+            "The replaced row follows the split",
         )
 
         #expect(f.model.replaceSplitPane(anchorTabID: f.id("x"), with: f.id("z")), "A member moves to the pane")
@@ -582,7 +584,8 @@ import Testing
         f.model.selectTab(id: f.id("a"))
         #expect(f.model.openInSplitView(tabID: f.id("b")))
         #expect(f.model.openInSplitView(tabID: f.id("c")))
-        let (a, c) = (f.id("a"), f.id("c"))
+        let a = f.id("a")
+        let c = f.id("c")
         f.model.selectTab(id: f.id("b"))
         #expect(f.model.closeFocusedSplitPane())
         #expect(f.model.selectedTabID == c)
@@ -658,26 +661,26 @@ import Testing
     let gap = BrowserSplitPaneLayout.paneGap
     let bounds = CGRect(x: 0, y: 0, width: 1000 + gap, height: 600)
     let equal = BrowserSplitPaneLayout.frames(
-        in: bounds, count: 2, orientation: .horizontal, fractions: nil, flipped: false
+        in: bounds, count: 2, orientation: .horizontal, fractions: nil, flipped: false,
     )
     #expect(equal == [CGRect(x: 0, y: 0, width: 500, height: 600), CGRect(x: 500 + gap, y: 0, width: 500, height: 600)])
     let weighted = BrowserSplitPaneLayout.frames(
-        in: bounds, count: 2, orientation: .horizontal, fractions: [3, 1], flipped: false
+        in: bounds, count: 2, orientation: .horizontal, fractions: [3, 1], flipped: false,
     )
     #expect(weighted.map(\.width) == [750, 250])
     #expect(weighted[1].maxX == bounds.maxX)
     let invalid = BrowserSplitPaneLayout.frames(
-        in: bounds, count: 2, orientation: .horizontal, fractions: [1, .nan], flipped: false
+        in: bounds, count: 2, orientation: .horizontal, fractions: [1, .nan], flipped: false,
     )
     #expect(invalid == equal)
     let three = BrowserSplitPaneLayout.frames(
         in: CGRect(x: 10, y: 20, width: 900 + gap * 2, height: 100), count: 3, orientation: .horizontal,
-        fractions: nil, flipped: false
+        fractions: nil, flipped: false,
     )
     #expect(three.map(\.width).reduce(0, +) + gap * 2 == 900 + gap * 2)
     #expect(zip(three, three.dropFirst()).allSatisfy { $1.minX - $0.maxX == gap })
     #expect(BrowserSplitPaneLayout.frames(
-        in: bounds, count: 1, orientation: .vertical, fractions: nil, flipped: false
+        in: bounds, count: 1, orientation: .vertical, fractions: nil, flipped: false,
     ) == [bounds])
 }
 
@@ -685,12 +688,12 @@ import Testing
     let gap = BrowserSplitPaneLayout.paneGap
     let bounds = CGRect(x: 0, y: 0, width: 800, height: 600 + gap)
     let unflipped = BrowserSplitPaneLayout.frames(
-        in: bounds, count: 2, orientation: .vertical, fractions: nil, flipped: false
+        in: bounds, count: 2, orientation: .vertical, fractions: nil, flipped: false,
     )
     #expect(unflipped[0] == CGRect(x: 0, y: 300 + gap, width: 800, height: 300))
     #expect(unflipped[1] == CGRect(x: 0, y: 0, width: 800, height: 300))
     let flipped = BrowserSplitPaneLayout.frames(
-        in: bounds, count: 2, orientation: .vertical, fractions: nil, flipped: true
+        in: bounds, count: 2, orientation: .vertical, fractions: nil, flipped: true,
     )
     #expect(flipped[0] == CGRect(x: 0, y: 0, width: 800, height: 300))
     #expect(flipped[1] == CGRect(x: 0, y: 300 + gap, width: 800, height: 300))
@@ -702,20 +705,20 @@ import Testing
     // Three panes of 300 pt with two gaps.
     let length: CGFloat = 900 + gap * 2
     let dragged = try #require(BrowserSplitPaneLayout.fractions(
-        movingDivider: 0, to: 360 + gap / 2, length: length, count: 3, fractions: nil
+        movingDivider: 0, to: 360 + gap / 2, length: length, count: 3, fractions: nil,
     ))
     #expect(abs(dragged[0] - 360 / 900) < 1e-9)
     #expect(abs(dragged[1] - 240 / 900) < 1e-9)
     #expect(abs(dragged[2] - 1 / 3) < 1e-9, "The far pane keeps its size")
     let clamped = try #require(BrowserSplitPaneLayout.fractions(
-        movingDivider: 1, to: 0, length: length, count: 3, fractions: dragged
+        movingDivider: 1, to: 0, length: length, count: 3, fractions: dragged,
     ))
     #expect(abs(clamped[1] * 900 - minimum) < 1e-9, "A pane stops at the minimum length")
     #expect(abs(clamped.reduce(0, +) - 1) < 1e-9)
     #expect(BrowserSplitPaneLayout.fractions(movingDivider: 2, to: 10, length: length, count: 3, fractions: nil) == nil)
     let frames = BrowserSplitPaneLayout.frames(
         in: CGRect(x: 0, y: 0, width: length, height: 500), count: 3, orientation: .horizontal,
-        fractions: dragged, flipped: false
+        fractions: dragged, flipped: false,
     )
     #expect(frames[0].width == 360)
     #expect(frames[1].minX == 360 + gap)
@@ -726,24 +729,24 @@ import Testing
     let outset = BrowserSplitPaneLayout.dividerHitOutset
     let horizontal = BrowserSplitPaneLayout.frames(
         in: CGRect(x: 0, y: 0, width: 1000 + gap, height: 600), count: 2, orientation: .horizontal,
-        fractions: nil, flipped: false
+        fractions: nil, flipped: false,
     )
     #expect(BrowserSplitPaneLayout.dividerFrames(between: horizontal, orientation: .horizontal) == [
         CGRect(x: 500 - outset, y: 0, width: gap + outset * 2, height: 600),
     ])
     let vertical = BrowserSplitPaneLayout.frames(
         in: CGRect(x: 0, y: 0, width: 800, height: 600 + gap), count: 2, orientation: .vertical,
-        fractions: nil, flipped: false
+        fractions: nil, flipped: false,
     )
     #expect(BrowserSplitPaneLayout.dividerFrames(between: vertical, orientation: .vertical) == [
         CGRect(x: 0, y: 300 - outset, width: 800, height: gap + outset * 2),
     ])
     let bounds = CGRect(x: 0, y: 0, width: 800, height: 606)
     #expect(BrowserSplitPaneLayout.axisPosition(
-        of: CGPoint(x: 10, y: 100), in: bounds, orientation: .vertical, flipped: false
+        of: CGPoint(x: 10, y: 100), in: bounds, orientation: .vertical, flipped: false,
     ) == 506)
     #expect(BrowserSplitPaneLayout.axisPosition(
-        of: CGPoint(x: 10, y: 100), in: bounds, orientation: .vertical, flipped: true
+        of: CGPoint(x: 10, y: 100), in: bounds, orientation: .vertical, flipped: true,
     ) == 100)
 }
 
@@ -761,15 +764,15 @@ import Testing
     let snap = BrowserSplitPaneLayout.equalSnapDistance
     let length = 1000 + gap
     let near = try #require(BrowserSplitPaneLayout.fractions(
-        movingDivider: 0, to: 500 + snap - 1 + gap / 2, length: length, count: 2, fractions: [0.3, 0.7]
+        movingDivider: 0, to: 500 + snap - 1 + gap / 2, length: length, count: 2, fractions: [0.3, 0.7],
     ))
     #expect(near == [0.5, 0.5], "Within the snap distance the neighbors become equal")
     let far = try #require(BrowserSplitPaneLayout.fractions(
-        movingDivider: 0, to: 500 + snap + 10 + gap / 2, length: length, count: 2, fractions: nil
+        movingDivider: 0, to: 500 + snap + 10 + gap / 2, length: length, count: 2, fractions: nil,
     ))
     #expect(abs(far[0] * 1000 - (500 + snap + 10)) < 1e-9)
     let three = try #require(BrowserSplitPaneLayout.equalizingNeighbors(
-        ofDivider: 1, count: 3, fractions: [0.5, 0.1, 0.4]
+        ofDivider: 1, count: 3, fractions: [0.5, 0.1, 0.4],
     ))
     #expect(three == [0.5, 0.25, 0.25], "Only the divider's neighbors change")
     #expect(BrowserSplitPaneLayout.equalizingNeighbors(ofDivider: 2, count: 3, fractions: nil) == nil)
@@ -800,18 +803,18 @@ import Testing
     #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 450, y: 560), in: page) == .bottom)
     #expect(
         BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 10, y: 40), in: page) == .leading,
-        "The relatively closer edge wins"
+        "The relatively closer edge wins",
     )
     let narrow = CGRect(x: 0, y: 0, width: 150, height: 600)
     #expect(
         BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 55, y: 300), in: narrow) == nil,
-        "A third of a narrow pane"
+        "A third of a narrow pane",
     )
     #expect(BrowserSplitPaneLayout.pageDropPreview(for: .bottom, in: page) == CGRect(
         x: 0,
         y: 300,
         width: 900,
-        height: 300
+        height: 300,
     ))
 }
 
@@ -819,14 +822,14 @@ import Testing
     let group = try JSONDecoder().decode(
         BrowserTabSplitGroupSessionSnapshot.self,
         from: Data(#"{"id":"g","tabIDs":["a","b"],"orientation":"diagonal","fractions":[1,2,3],"focusedTabID":"z"}"#
-            .utf8)
+            .utf8),
     )
     #expect(group.orientation == .horizontal)
     #expect(group.fractions == nil)
     #expect(group.focusedTabID == nil)
     let legacy = try JSONDecoder().decode(
         BrowserTabSessionSnapshot.self,
-        from: Data(#"{"version":4,"tabs":[{"urlString":"https://a.example","placement":"temporary"}]}"#.utf8)
+        from: Data(#"{"version":4,"tabs":[{"urlString":"https://a.example","placement":"temporary"}]}"#.utf8),
     )
     #expect(legacy.splitGroups == nil)
     let encoded = try JSONEncoder().encode(splitStoreSnapshot(ids: ["a", "b"], groups: [group]))
@@ -837,7 +840,7 @@ import Testing
     let harness = try SplitStoreHarness()
     defer { harness.cleanup() }
     let group = BrowserTabSplitGroupSessionSnapshot(
-        id: "g", tabIDs: ["a", "c"], orientation: .vertical, fractions: [0.4, 0.6], focusedTabID: "c"
+        id: "g", tabIDs: ["a", "c"], orientation: .vertical, fractions: [0.4, 0.6], focusedTabID: "c",
     )
     do {
         let store = try harness.store()
@@ -895,7 +898,12 @@ private extension SidebarDragFixture {
 // MARK: - SplitStoreHarness
 
 private struct SplitStoreHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory: URL
+    let owner: BrowserSyncOwner
+
+    var databaseURL: URL { directory.appendingPathComponent("test.sqlite") }
 
     init() throws {
         self.directory = FileManager.default
@@ -905,24 +913,17 @@ private struct SplitStoreHarness {
         self.owner = try BrowserSyncOwner(baseURL: #require(URL(string: "https://sync.example")), userID: "owner")
     }
 
-    // MARK: Internal
-
-    let directory: URL
-    let owner: BrowserSyncOwner
-
-    var databaseURL: URL { directory.appendingPathComponent("test.sqlite") }
-
     func store() throws -> BrowserSQLiteSessionStore { try BrowserSQLiteSessionStore(databaseURL: databaseURL) }
     func cleanup() { try? FileManager.default.removeItem(at: directory) }
 }
 
 private func splitStoreSnapshot(
     ids: [String],
-    groups: [BrowserTabSplitGroupSessionSnapshot]?
+    groups: [BrowserTabSplitGroupSessionSnapshot]?,
 ) -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(
         spaces: [BrowserSpaceSessionSnapshot(id: "space", title: "Work", systemImageName: "briefcase")],
         tabs: ids.map { BrowserTabSessionSnapshotTab(id: $0, urlString: "https://\($0).example", spaceID: "space") },
-        splitGroups: groups
+        splitGroups: groups,
     )
 }

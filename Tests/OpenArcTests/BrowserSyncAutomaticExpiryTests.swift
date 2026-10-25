@@ -1,3 +1,5 @@
+// BrowserSyncAutomaticExpiryTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -52,7 +54,7 @@ enum AutomaticExpiryInvalidation: CaseIterable {
 
 @Test(arguments: AutomaticExpiryInvalidation.allCases)
 @MainActor func unsentAutomaticExpiryIsCancelledWhenItsLiveLeaseChanges(
-    _ invalidation: AutomaticExpiryInvalidation
+    _ invalidation: AutomaticExpiryInvalidation,
 ) async throws {
     let f = try ExpiryQueueFixture()
     defer { f.close() }
@@ -160,9 +162,9 @@ enum AutomaticExpiryInvalidation: CaseIterable {
                 spaceID: $0.spaceID,
                 pinnedFolderID: $0.pinnedFolderID,
                 lastActivityTimestamp: $0.lastActivityTimestamp,
-                pinnedSiblingRank: $0.pinnedSiblingRank
+                pinnedSiblingRank: $0.pinnedSiblingRank,
             )
-        }
+        },
     )
     try f.store.writeSessionBatch([.init(snapshot: changed, origin: .local(syncMove: nil))])
     let before = try f.store.pendingSyncQueue(for: f.owner)
@@ -171,7 +173,7 @@ enum AutomaticExpiryInvalidation: CaseIterable {
         try f.store.enqueueSyncExpiry(
             .init(id: UUID().uuidString, operations: batch.operations),
             for: f.owner,
-            automaticBaseline: batch.baseline
+            automaticBaseline: batch.baseline,
         )
     }
     #expect(try !f.store.prepareAutomaticExpiry(id: mutation.id, baseline: batch.baseline, for: f.owner))

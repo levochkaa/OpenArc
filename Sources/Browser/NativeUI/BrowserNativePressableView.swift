@@ -1,3 +1,5 @@
+// BrowserNativePressableView.swift
+
 import AppKit
 import QuartzCore
 
@@ -16,18 +18,6 @@ struct BrowserNativeDragValue {
 /// Pointer tracking is shared by sidebar rows, tiles and small native controls.
 // swiftformat:disable:next preferFinalClasses
 class BrowserNativePressableView: BrowserNativeSurface {
-    // MARK: Lifecycle
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        strokeWidth = 0
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
     // MARK: Internal
 
     override var isHidden: Bool {
@@ -66,7 +56,29 @@ class BrowserNativePressableView: BrowserNativeSurface {
         }
     }
 
+    // MARK: Private
+
+    private let tooltipID = UUID()
+    private var tracking: NSTrackingArea?
+    private let pressAnimation = BrowserNativeAnimation()
+    private var displayedScale: CGFloat = 1
+    private var downEvent: NSEvent?
+    private var dragGrabAnchor: CGPoint?
+    private var hasExternalDragSession = false
+    private var previousDragSample: (point: CGPoint, time: TimeInterval)?
+    private var velocity = CGSize.zero
+
     var dragContentBounds: CGRect { bounds }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        strokeWidth = 0
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
@@ -100,7 +112,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
         tracking = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
-            owner: self
+            owner: self,
         )
         addTrackingArea(tracking!)
     }
@@ -129,7 +141,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
         let area = dragContentBounds
         dragGrabAnchor = CGPoint(
             x: min(max((localPoint.x - area.minX) / max(area.width, 1), 0), 1),
-            y: min(max((localPoint.y - area.minY) / max(area.height, 1), 0), 1)
+            y: min(max((localPoint.y - area.minY) / max(area.height, 1), 0), 1),
         )
         hasExternalDragSession = false
         previousDragSample = nil
@@ -142,7 +154,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
         guard isInteractionEnabled, let downEvent, !hasExternalDragSession else { return }
         let distance = hypot(
             event.locationInWindow.x - downEvent.locationInWindow.x,
-            event.locationInWindow.y - downEvent.locationInWindow.y
+            event.locationInWindow.y - downEvent.locationInWindow.y,
         )
         if onDragChanged != nil || onBeginDragSession != nil,
            distance >= BrowserChromeLayout.sidebarTabDragMinimumDistance
@@ -214,24 +226,12 @@ class BrowserNativePressableView: BrowserNativeSurface {
                 title: tooltipTitle,
                 caption: tooltipCaption,
                 shortcut: tooltipShortcut,
-                placement: tooltipPlacement
+                placement: tooltipPlacement,
             )
         } else {
             BrowserNativeTooltipPresenter.shared.end(id: tooltipID)
         }
     }
-
-    // MARK: Private
-
-    private let tooltipID = UUID()
-    private var tracking: NSTrackingArea?
-    private let pressAnimation = BrowserNativeAnimation()
-    private var displayedScale: CGFloat = 1
-    private var downEvent: NSEvent?
-    private var dragGrabAnchor: CGPoint?
-    private var hasExternalDragSession = false
-    private var previousDragSample: (point: CGPoint, time: TimeInterval)?
-    private var velocity = CGSize.zero
 
     private func dragValue(_ event: NSEvent) -> BrowserNativeDragValue {
         let coordinateView = dragCoordinateView ?? superview ?? self
@@ -243,7 +243,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
             if elapsed > 0, elapsed < 0.15 {
                 velocity = CGSize(
                     width: (location.x - previousDragSample.point.x) / elapsed,
-                    height: (location.y - previousDragSample.point.y) / elapsed
+                    height: (location.y - previousDragSample.point.y) / elapsed,
                 )
             } else if elapsed >= 0.15 {
                 velocity = .zero
@@ -257,9 +257,9 @@ class BrowserNativePressableView: BrowserNativeSurface {
             predictedEndTranslation: CGSize(
                 width: translation.width + velocity.width * 0.15,
                 height: translation.height + velocity
-                    .height * 0.15
+                    .height * 0.15,
             ),
-            grabAnchor: dragGrabAnchor
+            grabAnchor: dragGrabAnchor,
         )
     }
 
@@ -284,7 +284,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
             CATransaction.setDisableActions(true)
             layer?.setAffineTransform(CGAffineTransform(
                 translationX: bounds.width * (1 - displayedScale) / 2,
-                y: bounds.height * (1 - displayedScale) / 2
+                y: bounds.height * (1 - displayedScale) / 2,
             ).scaledBy(x: displayedScale, y: displayedScale))
             CATransaction.commit()
         }

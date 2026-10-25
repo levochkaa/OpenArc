@@ -1,3 +1,5 @@
+// BrowserMobileProfileDocumentTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -9,7 +11,8 @@ import Testing
     @Test func twoSubscribersEditLatestCompleteDocumentWithoutDeletingEachOthersTabs() throws {
         let f = try MobileDocumentFixture()
         defer { f.cleanup() }
-        var first = [BrowserTabSessionSnapshot](), second = [BrowserTabSessionSnapshot]()
+        var first = [BrowserTabSessionSnapshot]()
+        var second = [BrowserTabSessionSnapshot]()
         let one = f.document.observe { first.append($0) }
         let two = f.document.observe { second.append($0) }
         let staleSecondScene = try #require(second.last)
@@ -37,7 +40,7 @@ import Testing
         let reopened = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
         let restored = try BrowserMobileProfileDocument(
             store: reopened,
-            loadSnapshot: { try reopened.loadSnapshotStrict() }
+            loadSnapshot: { try reopened.loadSnapshotStrict() },
         )
         #expect(restored.snapshot == f.document.snapshot)
         #expect(try reopened.pendingSyncQueue(for: f.owner).prefix(queue.count) == queue[...])
@@ -53,7 +56,7 @@ import Testing
         #expect(f.document.setPlacement(tabID: "b", placement: .spacePinned, pinnedFolderID: folder))
         let before = try f.store.pendingSyncQueue(for: f.owner).count
         #expect(f.document.move(items: [.init(entityType: .folder, entityID: folder)], destination: .tabs(
-            spaceID: "target", placement: .spacePinned, pinnedFolderID: nil
+            spaceID: "target", placement: .spacePinned, pinnedFolderID: nil,
         )))
         let moveRow = try #require(f.store.pendingSyncQueue(for: f.owner).last)
         guard case .folders(let moved) = moveRow else { Issue.record("Expected v4 row")
@@ -61,13 +64,13 @@ import Testing
         }
         #expect(moved.operations == [.move(
             items: [.init(entityType: .folder, entityID: folder)],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         )])
         #expect(try f.store.pendingSyncQueue(for: f.owner).count == before + 1)
         #expect(f.document.snapshot.tabs.first { $0.id == "a" }?.spaceID == "target")
         #expect(f.document.snapshot.pinnedTabFolders?.first { $0.id == nested }?.spaceID == "target")
         #expect(!f.document.move(items: [.init(entityType: .folder, entityID: folder)], destination: .tabs(
-            spaceID: "target", placement: .spacePinned, pinnedFolderID: nested
+            spaceID: "target", placement: .spacePinned, pinnedFolderID: nested,
         )))
         #expect(f.document.setPlacement(tabID: "a", placement: .spacePinned, spaceID: "source"))
         #expect(f.document.delete(entity: .init(entityType: .folder, entityID: folder)))
@@ -90,7 +93,7 @@ import Testing
             .write { db in
                 try db
                     .execute(
-                        sql: "CREATE TRIGGER fail_mobile_write BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                        sql: "CREATE TRIGGER fail_mobile_write BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'injected'); END",
                     )
             }
         let durable = try f.store.loadSnapshotStrict()
@@ -135,7 +138,7 @@ import Testing
                 urlString: "openarc://settings",
                 placement: .spacePinned,
                 spaceID: "source",
-                pinnedSiblingRank: 0
+                pinnedSiblingRank: 0,
             ),
             .init(id: "favorite", urlString: "https://example.com/favorite", placement: .app, spaceID: "source"),
         ])
@@ -202,7 +205,20 @@ import Testing
 // MARK: - MobileDocumentFixture
 
 @MainActor private final class MobileDocumentFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("MobileDocument-\(UUID())")
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
+    let store: BrowserSQLiteSessionStore
+    let recording: MobileDocumentRecordingStore
+    let coordinator = MobileDocumentCoordinator()
+    let document: BrowserMobileProfileDocument
+
+    // MARK: Private
+
+    private var sequence = 100
+
+    var databaseURL: URL { directory.appendingPathComponent("Profile.sqlite") }
 
     init(maximumBufferedWrites: Int = 32) throws {
         self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
@@ -218,7 +234,7 @@ import Testing
                 urlString: "https://example.com/favorite",
                 placement: .app,
                 spaceID: "source",
-                lastActivityTimestamp: 1_800_000_000
+                lastActivityTimestamp: 1_800_000_000,
             ),
         ])
         let events = try Self.events(BrowserSyncFolderProjection.canonicalChanges(seed), startingAt: 1)
@@ -230,20 +246,23 @@ import Testing
             idProvider: { nextID += 1
                 return "new-\(nextID)"
             },
-            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, maximumBufferedWrites: maximumBufferedWrites
+            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, maximumBufferedWrites: maximumBufferedWrites,
         )
     }
 
-    // MARK: Internal
-
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("MobileDocument-\(UUID())")
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
-    let store: BrowserSQLiteSessionStore
-    let recording: MobileDocumentRecordingStore
-    let coordinator = MobileDocumentCoordinator()
-    let document: BrowserMobileProfileDocument
-
-    var databaseURL: URL { directory.appendingPathComponent("Profile.sqlite") }
+    private static func events(_ changes: [BrowserSyncChange], startingAt sequence: Int) throws -> [BrowserSyncEvent] {
+        try changes.enumerated().map { offset, change in
+            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(change)) as! [String: Any]
+            var payload = object["data"] as? [String: Any] ?? [:]
+            payload["id"] = change.entityID
+            let wire: [String: Any] = [
+                "serverSeq": sequence + offset, "deviceID": NSNull(), "entityType": change.entityType.rawValue,
+                "entityID": change.entityID, "op": change.op.rawValue, "data": payload,
+                "createdAt": "2026-10-03T00:00:00Z",
+            ]
+            return try JSONDecoder().decode(BrowserSyncEvent.self, from: JSONSerialization.data(withJSONObject: wire))
+        }
+    }
 
     func cleanup() { try? FileManager.default.removeItem(at: directory) }
 
@@ -264,45 +283,25 @@ import Testing
                 entityID: $0.entityID,
                 op: .delete,
                 spaceData: nil,
-                tabData: nil
+                tabData: nil,
             )
         }
         let events = try Self.events(next + deletes, startingAt: sequence)
         sequence += events.count
         return try store.applyRemoteSyncEvents(events, cursor: sequence - 1, for: owner)
     }
-
-    // MARK: Private
-
-    private var sequence = 100
-
-    private static func events(_ changes: [BrowserSyncChange], startingAt sequence: Int) throws -> [BrowserSyncEvent] {
-        try changes.enumerated().map { offset, change in
-            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(change)) as! [String: Any]
-            var payload = object["data"] as? [String: Any] ?? [:]
-            payload["id"] = change.entityID
-            let wire: [String: Any] = [
-                "serverSeq": sequence + offset, "deviceID": NSNull(), "entityType": change.entityType.rawValue,
-                "entityID": change.entityID, "op": change.op.rawValue, "data": payload,
-                "createdAt": "2026-10-03T00:00:00Z",
-            ]
-            return try JSONDecoder().decode(BrowserSyncEvent.self, from: JSONSerialization.data(withJSONObject: wire))
-        }
-    }
 }
 
 // MARK: - MobileDocumentRecordingStore
 
 private final class MobileDocumentRecordingStore: BrowserTabSessionSnapshotStoring {
-    // MARK: Lifecycle
-
-    init(_ underlying: BrowserSQLiteSessionStore) { self.underlying = underlying }
-
     // MARK: Internal
 
     let underlying: BrowserSQLiteSessionStore
     var failure: Error?
     var attempts = [[BrowserSessionWrite]]()
+
+    init(_ underlying: BrowserSQLiteSessionStore) { self.underlying = underlying }
 
     func loadSnapshot() -> BrowserTabSessionSnapshot? { underlying.loadSnapshot() }
     func saveSnapshot(_ snapshot: BrowserTabSessionSnapshot) { underlying.saveSnapshot(snapshot) }

@@ -1,27 +1,42 @@
+// BrowserNativeMessagingHostInstaller.swift
+
 import Foundation
 
 struct BrowserNativeMessagingHostInstaller {
-    // MARK: Lifecycle
-
-    init(
-        fileManager: FileManager = .default,
-        manifestCandidates: [URL] = Self.applePasswordManagerManifestCandidates
-    ) {
-        self.fileManager = fileManager
-        self.manifestCandidates = manifestCandidates
-    }
-
     // MARK: Internal
 
     static let applePasswordManagerHostName = "com.apple.passwordmanager"
     static let nativeMessagingHostsDirectoryName = "NativeMessagingHosts"
 
+    // MARK: Private
+
+    private static let applePasswordManagerManifestFileName = "\(applePasswordManagerHostName).json"
+    private static let applePasswordManagerManifestCandidates = [
+        URL(
+            fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts/\(applePasswordManagerManifestFileName)",
+            isDirectory: false,
+        ),
+        URL(
+            fileURLWithPath:
+            "/System/Library/Templates/Data/Library/Google/Chrome/NativeMessagingHosts/\(applePasswordManagerManifestFileName)",
+            isDirectory: false,
+        ),
+    ]
+
     let fileManager: FileManager
     let manifestCandidates: [URL]
 
+    init(
+        fileManager: FileManager = .default,
+        manifestCandidates: [URL] = Self.applePasswordManagerManifestCandidates,
+    ) {
+        self.fileManager = fileManager
+        self.manifestCandidates = manifestCandidates
+    }
+
     static func installApplePasswordManagerHostIfAvailable(
         in rootCacheURL: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
     ) {
         do {
             try BrowserNativeMessagingHostInstaller(fileManager: fileManager)
@@ -39,11 +54,11 @@ struct BrowserNativeMessagingHostInstaller {
 
         let hostsDirectoryURL = rootCacheURL.appendingPathComponent(
             Self.nativeMessagingHostsDirectoryName,
-            isDirectory: true
+            isDirectory: true,
         )
         let destinationManifestURL = hostsDirectoryURL.appendingPathComponent(
             Self.applePasswordManagerManifestFileName,
-            isDirectory: false
+            isDirectory: false,
         )
 
         try fileManager.createDirectory(at: hostsDirectoryURL, withIntermediateDirectories: true)
@@ -63,26 +78,11 @@ struct BrowserNativeMessagingHostInstaller {
         }
     }
 
-    // MARK: Private
-
-    private static let applePasswordManagerManifestFileName = "\(applePasswordManagerHostName).json"
-    private static let applePasswordManagerManifestCandidates = [
-        URL(
-            fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts/\(applePasswordManagerManifestFileName)",
-            isDirectory: false
-        ),
-        URL(
-            fileURLWithPath:
-            "/System/Library/Templates/Data/Library/Google/Chrome/NativeMessagingHosts/\(applePasswordManagerManifestFileName)",
-            isDirectory: false
-        ),
-    ]
-
     private func destinationNeedsUpdate(_ destinationURL: URL, sourceManifestURL: URL) -> Bool {
         if let symbolicLinkDestination = try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path) {
             let resolvedDestinationURL = URL(
                 fileURLWithPath: symbolicLinkDestination,
-                relativeTo: destinationURL.deletingLastPathComponent()
+                relativeTo: destinationURL.deletingLastPathComponent(),
             )
             .standardizedFileURL
             return resolvedDestinationURL.path != sourceManifestURL.standardizedFileURL.path

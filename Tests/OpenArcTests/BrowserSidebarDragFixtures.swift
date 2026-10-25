@@ -1,14 +1,20 @@
+// BrowserSidebarDragFixtures.swift
+
 import AppKit
 import Testing
 
 @MainActor final class SidebarDragFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+    let store: InMemorySessionSnapshotStore
 
     init(
         pinned: [(String, String?)] = [("a", nil), ("b", nil)],
         temporary: [String] = ["x", "y"],
         apps: [String] = [],
-        folders: [BrowserPinnedTabFolderSessionSnapshot] = []
+        folders: [BrowserPinnedTabFolderSessionSnapshot] = [],
     ) {
         let defaults = UserDefaults(suiteName: "SidebarDragFixture.\(UUID().uuidString)")!
         let prefs = BrowserUserPreferencesStore(userDefaults: defaults)
@@ -18,7 +24,7 @@ import Testing
             urlString: "https://\($0).example",
             userTitleOverride: $0,
             placement: .app,
-            spaceID: "s"
+            spaceID: "s",
         ) }
             + pinned.map { BrowserTabSessionSnapshotTab(
                 id: $0.0,
@@ -26,20 +32,20 @@ import Testing
                 userTitleOverride: $0.0,
                 placement: .spacePinned,
                 spaceID: "s",
-                pinnedFolderID: $0.1
+                pinnedFolderID: $0.1,
             ) }
             + temporary.map { BrowserTabSessionSnapshotTab(
                 id: $0,
                 urlString: "https://\($0).example",
                 userTitleOverride: $0,
-                spaceID: "s"
+                spaceID: "s",
             ) }
         self.store = InMemorySessionSnapshotStore(loadedSnapshot: .init(
             spaces: [
                 .init(id: "s", title: "Space", systemImageName: "square.grid.2x2"),
                 .init(id: "t", title: "Other", systemImageName: "book"),
             ],
-            pinnedTabFolders: folders, tabs: tabs
+            pinnedTabFolders: folders, tabs: tabs,
         ))
         self.model = BrowserChromeModel(
             tabDriver: driver,
@@ -52,17 +58,11 @@ import Testing
             // A fixed clock keeps activity dates stable when activating a dragged tab crosses a second.
             dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) },
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
     }
-
-    // MARK: Internal
-
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
-    let store: InMemorySessionSnapshotStore
 
     func id(_ name: String) -> String { model.tabs.first { $0.userTitleOverride == name }!.id }
     func item(_ name: String) -> BrowserSidebarItemID { .tab(id(name)) }

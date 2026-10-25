@@ -1,10 +1,52 @@
+// BrowserNativeSidebarFooterNSView.swift
+
 import AppKit
 import Combine
 
 // MARK: - BrowserNativeSidebarFooterNSView
 
 final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    var onSizeChanged: () -> Void = {}
+
+    // MARK: Private
+
+    private let state: BrowserNativeSidebarState
+    private let updateController: BrowserUpdateController
+    private let toast = BrowserNativeUpdateToastView()
+    private let toastVisibility = BrowserNativeVisibilityAnimation()
+    private let toastAnimation = BrowserNativeAnimation()
+    private var toastTarget = false
+    private var toastProgress = 0.0
+    private let scroll = NSScrollView()
+    private let spacesContainer = BrowserSpaceDockNSView()
+    private let downloadsButton = BrowserNativeChromeButton(
+        symbol: "arrow.down.circle",
+        title: BrowserStrings.downloadsTitle,
+        pressEffect: .compress,
+        action: {},
+    )
+    private let createButton = BrowserNativeChromeButton(
+        symbol: "plus",
+        title: BrowserStrings.spaceNewAction,
+        pressEffect: .compress,
+        action: {},
+    )
+    private let downloadDot = BrowserNativeDownloadIndicator()
+    private let downloadsController: BrowserDownloadsViewController
+    private let popover = BrowserNativePopover()
+    private var buttons = [String: BrowserNativeChromeButton]()
+    private var spaces = [BrowserChromeModel.Space]()
+    private var observations = Set<AnyCancellable>()
+    private var isResizing = false
+
+    var isDownloadsPresented: Bool { popover.isShown }
+
+    /// The Space icons, for drops from the sidebar.
+    var spaceDock: BrowserSpaceDockNSView { spacesContainer }
 
     init(state: BrowserNativeSidebarState, updateController: BrowserUpdateController) {
         self.state = state
@@ -50,17 +92,6 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    var onSizeChanged: () -> Void = {}
-
-    var isDownloadsPresented: Bool { popover.isShown }
-
-    /// The Space icons, for drops from the sidebar.
-    var spaceDock: BrowserSpaceDockNSView { spacesContainer }
 
     override func layout() {
         super.layout()
@@ -112,7 +143,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
                 symbol: space.systemImageName,
                 title: space.title,
                 pressEffect: .compress,
-                action: {}
+                action: {},
             )
             if buttons[space.id] == nil {
                 buttons[space.id] = button
@@ -143,7 +174,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
                 onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
                     state?.clearSidebarTabSelection()
                     model.deleteSpace(id: space.id)
-                }
+                },
             )
         }
         spacesContainer.items = spaces.compactMap { space in buttons[space.id].map { (space.id, $0) } }
@@ -187,37 +218,6 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         refreshDownloadsButton()
     }
 
-    // MARK: Private
-
-    private let state: BrowserNativeSidebarState
-    private let updateController: BrowserUpdateController
-    private let toast = BrowserNativeUpdateToastView()
-    private let toastVisibility = BrowserNativeVisibilityAnimation()
-    private let toastAnimation = BrowserNativeAnimation()
-    private var toastTarget = false
-    private var toastProgress = 0.0
-    private let scroll = NSScrollView()
-    private let spacesContainer = BrowserSpaceDockNSView()
-    private let downloadsButton = BrowserNativeChromeButton(
-        symbol: "arrow.down.circle",
-        title: BrowserStrings.downloadsTitle,
-        pressEffect: .compress,
-        action: {}
-    )
-    private let createButton = BrowserNativeChromeButton(
-        symbol: "plus",
-        title: BrowserStrings.spaceNewAction,
-        pressEffect: .compress,
-        action: {}
-    )
-    private let downloadDot = BrowserNativeDownloadIndicator()
-    private let downloadsController: BrowserDownloadsViewController
-    private let popover = BrowserNativePopover()
-    private var buttons = [String: BrowserNativeChromeButton]()
-    private var spaces = [BrowserChromeModel.Space]()
-    private var observations = Set<AnyCancellable>()
-    private var isResizing = false
-
     private func refreshToast() {
         let visible = updateController.toast != nil
         if let content = updateController.toast {
@@ -247,7 +247,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         let active = state.model.downloadsModel.hasActiveDownloads
         downloadsButton.configureSymbol(
             active ? "arrow.down.circle.fill" : "arrow.down.circle",
-            title: BrowserStrings.downloadsTitle
+            title: BrowserStrings.downloadsTitle,
         )
         downloadsButton.isSelected = popover.isShown || active
         downloadDot.isHidden = !active || !state.model.supportsSpaces

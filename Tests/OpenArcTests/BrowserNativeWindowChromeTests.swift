@@ -1,3 +1,5 @@
+// BrowserNativeWindowChromeTests.swift
+
 import AppKit
 import Testing
 
@@ -64,7 +66,7 @@ import Testing
         fullscreen: Bool = false,
         toolbar: Bool = false,
         bookmarks: Bool = false,
-        extensionWidth: CGFloat? = nil
+        extensionWidth: CGFloat? = nil,
     ) -> BrowserWindowChromeLayout {
         .init(
             windowSize: CGSize(width: 1200, height: 800),
@@ -75,7 +77,7 @@ import Testing
             isFullscreen: fullscreen,
             showsSiteToolbar: toolbar,
             showsBookmarksBar: bookmarks,
-            extensionSidePanelWidth: extensionWidth
+            extensionSidePanelWidth: extensionWidth,
         )
     }
 }

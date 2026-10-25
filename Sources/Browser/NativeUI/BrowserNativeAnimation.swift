@@ -1,3 +1,5 @@
+// BrowserNativeAnimation.swift
+
 import AppKit
 import QuartzCore
 
@@ -7,10 +9,6 @@ import QuartzCore
 /// Frames are advanced together on the main run loop: nested AppKit/CEF views see the
 /// current geometry, rather than a final model frame with an animated backing layer.
 @MainActor final class BrowserNativeAnimation {
-    // MARK: Lifecycle
-
-    isolated deinit { timer?.invalidate() }
-
     // MARK: Internal
 
     enum Curve {
@@ -36,7 +34,8 @@ import QuartzCore
 
         var duration: Double {
             switch self {
-            case .easeInOut(let duration), .easeOut(let duration): duration
+            case .easeInOut(let duration),
+                 .easeOut(let duration): duration
             case .spring(let response, let damping): -log(0.001) / (damping * 2 * .pi / response)
             }
         }
@@ -54,7 +53,8 @@ import QuartzCore
                 let frequency = omega * sqrt(1 - damping * damping)
                 return 1 - exp(-damping * omega * elapsed)
                     * (cos(frequency * elapsed) + damping * omega / frequency * sin(frequency * elapsed))
-            case .easeInOut, .easeOut:
+            case .easeInOut,
+                 .easeOut:
                 let x = elapsed / duration
                 let x1: Double =
                     if case .easeInOut = self {
@@ -82,12 +82,18 @@ import QuartzCore
 
     private(set) var isRunning = false
 
+    // MARK: Private
+
+    private var timer: Timer?
+
+    isolated deinit { timer?.invalidate() }
+
     static func interpolate(_ from: CGRect, _ to: CGRect, _ progress: Double) -> CGRect {
         CGRect(
             x: from.minX + (to.minX - from.minX) * progress,
             y: from.minY + (to.minY - from.minY) * progress,
             width: from.width + (to.width - from.width) * progress,
-            height: from.height + (to.height - from.height) * progress
+            height: from.height + (to.height - from.height) * progress,
         )
     }
 
@@ -100,7 +106,7 @@ import QuartzCore
     func start(
         _ curve: Curve,
         updates: @escaping @MainActor (Double) -> Void,
-        completion: @escaping @MainActor () -> Void = {}
+        completion: @escaping @MainActor () -> Void = {},
     ) {
         cancel()
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
@@ -125,15 +131,17 @@ import QuartzCore
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
-
-    // MARK: Private
-
-    private var timer: Timer?
 }
 
 // MARK: - BrowserNativeVisibilityAnimation
 
 @MainActor final class BrowserNativeVisibilityAnimation {
+    // MARK: Private
+
+    private let animation = BrowserNativeAnimation()
+    private var target: Bool?
+    private weak var targetView: NSView?
+
     // MARK: Internal
 
     func setVisible(_ visible: Bool, view: NSView, curve: BrowserNativeAnimation.Curve) {
@@ -159,20 +167,24 @@ import QuartzCore
             view?.alphaValue = from + ((visible ? 1 : 0) - from) * progress
         } completion: { [weak view] in view?.isHidden = !visible }
     }
-
-    // MARK: Private
-
-    private let animation = BrowserNativeAnimation()
-    private var target: Bool?
-    private weak var targetView: NSView?
 }
 
 // MARK: - BrowserNativeFrameTransitions
 
 @MainActor final class BrowserNativeFrameTransitions {
+    // MARK: Private
+
+    private struct Transition {
+        weak var view: NSView?
+        var target: CGRect
+        let animation: BrowserNativeAnimation
+    }
+
     // MARK: Internal
 
     var onFrameChange: () -> Void = {}
+
+    private var transitions = [ObjectIdentifier: Transition]()
 
     func targetFrame(of view: NSView) -> CGRect { transitions[ObjectIdentifier(view)]?.target ?? view.frame }
 
@@ -196,7 +208,7 @@ import QuartzCore
         _ frame: CGRect,
         of view: NSView,
         animated: Bool,
-        curve: BrowserNativeAnimation.Curve = .list
+        curve: BrowserNativeAnimation.Curve = .list,
     ) {
         transitions = transitions.filter { $0.value.view != nil }
         let id = ObjectIdentifier(view)
@@ -218,14 +230,4 @@ import QuartzCore
             onFrameChange()
         }
     }
-
-    // MARK: Private
-
-    private struct Transition {
-        weak var view: NSView?
-        var target: CGRect
-        let animation: BrowserNativeAnimation
-    }
-
-    private var transitions = [ObjectIdentifier: Transition]()
 }

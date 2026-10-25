@@ -1,31 +1,10 @@
+// BrowserCommandNSTextField.swift
+
 import AppKit
 
 // MARK: - BrowserCommandNSTextField
 
 final class BrowserCommandNSTextField: NSTextField {
-    // MARK: Lifecycle
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-
-        isBezeled = false
-        isBordered = false
-        drawsBackground = false
-        focusRingType = .none
-        isEditable = true
-        isSelectable = true
-        applyFont()
-        textColor = activeTextColor
-        cell?.usesSingleLineMode = true
-        cell?.wraps = false
-        cell?.isScrollable = true
-        cell?.lineBreakMode = .byClipping
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
     // MARK: Internal
 
     override var intrinsicContentSize: NSSize {
@@ -54,6 +33,10 @@ final class BrowserCommandNSTextField: NSTextField {
         }
     }
 
+    // MARK: Private
+
+    private var collapsePreviewSelection = false
+
     var hasSuggestionPreview: Bool {
         guard previewDisplayText != nil else {
             return false
@@ -78,11 +61,40 @@ final class BrowserCommandNSTextField: NSTextField {
         if let inlineCompletionSuffix, !inlineCompletionSuffix.isEmpty {
             return NSRange(
                 location: (committedText as NSString).length,
-                length: (inlineCompletionSuffix as NSString).length
+                length: (inlineCompletionSuffix as NSString).length,
             )
         }
 
         return nil
+    }
+
+    private var activeTextColor: NSColor {
+        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            NSColor.white.withAlphaComponent(0.92)
+        } else {
+            .labelColor
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+
+        isBezeled = false
+        isBordered = false
+        drawsBackground = false
+        focusRingType = .none
+        isEditable = true
+        isSelectable = true
+        applyFont()
+        textColor = activeTextColor
+        cell?.usesSingleLineMode = true
+        cell?.wraps = false
+        cell?.isScrollable = true
+        cell?.lineBreakMode = .byClipping
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func becomeFirstResponder() -> Bool {
@@ -106,7 +118,7 @@ final class BrowserCommandNSTextField: NSTextField {
         shouldFocus: Bool,
         focusRequestID: Int,
         fontSize: CGFloat,
-        selectAllOnFocus: Bool
+        selectAllOnFocus: Bool,
     ) {
         self.fontSize = fontSize
         self.selectAllOnFocus = selectAllOnFocus
@@ -126,16 +138,6 @@ final class BrowserCommandNSTextField: NSTextField {
 
     func clearFocusSelectionRequest() {
         focusSelectionRequestID = nil
-    }
-
-    // MARK: Private
-
-    private var collapsePreviewSelection = false
-
-    private var activeTextColor: NSColor {
-        effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor.white.withAlphaComponent(0.92)
-            : .labelColor
     }
 
     private func syncFocus(_ shouldFocus: Bool, force: Bool = false) {
@@ -213,7 +215,7 @@ final class BrowserCommandNSTextField: NSTextField {
                 focusSelectionRequestID = nil
             } else if needsStringUpdate || needsSelectionCollapse {
                 editor.setSelectedRange(
-                    NSRange(location: (targetDisplayText as NSString).length, length: 0)
+                    NSRange(location: (targetDisplayText as NSString).length, length: 0),
                 )
             }
 

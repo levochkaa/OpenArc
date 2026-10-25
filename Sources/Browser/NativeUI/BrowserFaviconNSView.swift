@@ -1,8 +1,16 @@
+// BrowserFaviconNSView.swift
+
 import AppKit
 import Combine
 
 final class BrowserFaviconNSView: NSImageView {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let cache: BrowserFaviconCache
+    private var url: URL?
+    private var pageURLString: String?
+    private var observation: AnyCancellable?
+    private var loadTask: Task<Void, Never>?
 
     init(cache: BrowserFaviconCache = .shared) {
         self.cache = cache
@@ -31,14 +39,6 @@ final class BrowserFaviconNSView: NSImageView {
             self?.refreshImage()
         }
     }
-
-    // MARK: Private
-
-    private let cache: BrowserFaviconCache
-    private var url: URL?
-    private var pageURLString: String?
-    private var observation: AnyCancellable?
-    private var loadTask: Task<Void, Never>?
 
     private func refreshImage() {
         if BrowserFaviconFallbackStyle.style(forPageURLString: pageURLString) == .chromiumWebUI {

@@ -1,3 +1,5 @@
+// BrowserChromeModelTests.swift
+
 import Foundation
 import Testing
 
@@ -10,17 +12,17 @@ import Testing
                 "https://one.example",
                 "https://two.example",
                 "https://three.example",
-            ]
-        )
+            ],
+        ),
     )
     let preferencesStore = InMemorySessionPreferencesStore(
         storedSelectedTabIndex: 1,
-        storedSidebarWidth: BrowserChromeModel.maxSidebarWidth * 4
+        storedSidebarWidth: BrowserChromeModel.maxSidebarWidth * 4,
     )
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -31,7 +33,7 @@ import Testing
             "https://one.example",
             "https://two.example",
             "https://three.example",
-        ]
+        ],
     )
     #expect(model.spaces.map(\.id) == [BrowserChromeModel.defaultSpaceID])
     #expect(model.tabs.map(\.spaceID) == Array(repeating: BrowserChromeModel.defaultSpaceID, count: 3))
@@ -52,38 +54,38 @@ import Testing
                     id: "space-1",
                     title: "Work",
                     systemImageName: "briefcase",
-                    selectedTabIndex: 1
+                    selectedTabIndex: 1,
                 ),
                 BrowserSpaceSessionSnapshot(
                     id: "space-2",
                     title: "Read",
                     systemImageName: "book",
                     isPinnedSectionCollapsed: true,
-                    selectedTabIndex: 0
+                    selectedTabIndex: 0,
                 ),
             ],
             tabs: [
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://pin.example",
                     placement: .spacePinned,
-                    spaceID: "space-1"
+                    spaceID: "space-1",
                 ),
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://work.example",
-                    spaceID: "space-1"
+                    spaceID: "space-1",
                 ),
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://read.example",
-                    spaceID: "space-2"
+                    spaceID: "space-2",
                 ),
-            ]
-        )
+            ],
+        ),
     )
     let preferencesStore = InMemorySessionPreferencesStore(storedSelectedSpaceIndex: 1)
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -110,16 +112,16 @@ import Testing
             tabs: [
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://work.example",
-                    spaceID: "space-1"
+                    spaceID: "space-1",
                 ),
-            ]
-        )
+            ],
+        ),
     )
     let preferencesStore = InMemorySessionPreferencesStore(storedSelectedSpaceIndex: 1)
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -146,14 +148,14 @@ import Testing
             tabURLStrings: [
                 "https://one.example",
                 "https://two.example",
-            ]
-        )
+            ],
+        ),
     )
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
         preferencesStore: InMemorySessionPreferencesStore(),
-        userPreferencesStore: userPreferencesStore
+        userPreferencesStore: userPreferencesStore,
     )
 
     model.handleContextReady()
@@ -169,7 +171,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -185,7 +187,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -195,7 +197,7 @@ import Testing
     driver.emitCreatedTab(
         id: "popup-tab",
         urlString: "https://popup.example",
-        isActive: true
+        isActive: true,
     )
 
     #expect(model.selectedTabID == "popup-tab")
@@ -209,7 +211,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -219,7 +221,7 @@ import Testing
     driver.emitCreatedTab(
         id: "background-tab",
         urlString: "https://background.example",
-        isActive: false
+        isActive: false,
     )
 
     #expect(model.selectedTabID == initialTabID)
@@ -231,14 +233,14 @@ import Testing
 @MainActor func incognitoWindowSkipsRestoreAndPersistence() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore(
-        loadedSnapshot: BrowserTabSessionSnapshot(tabURLStrings: ["https://saved.example"])
+        loadedSnapshot: BrowserTabSessionSnapshot(tabURLStrings: ["https://saved.example"]),
     )
     let preferencesStore = InMemorySessionPreferencesStore(storedSidebarWidth: BrowserChromeModel.maxSidebarWidth)
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
         preferencesStore: preferencesStore,
-        windowMode: .incognito
+        windowMode: .incognito,
     )
 
     model.handleContextReady()
@@ -266,7 +268,7 @@ import Testing
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
         preferencesStore: InMemorySessionPreferencesStore(),
-        windowMode: .incognito
+        windowMode: .incognito,
     )
 
     model.handleContextReady()
@@ -294,7 +296,7 @@ import Testing
         spaceIDProvider: {
             nextSpaceNumber += 1
             return "space-\(nextSpaceNumber)"
-        }
+        },
     )
 
     model.handleContextReady()
@@ -324,7 +326,7 @@ import Testing
         spaceIDProvider: {
             nextSpaceNumber += 1
             return "space-\(nextSpaceNumber)"
-        }
+        },
     )
 
     model.handleContextReady()
@@ -361,7 +363,7 @@ import Testing
         spaceIDProvider: {
             nextSpaceNumber += 1
             return "space-\(nextSpaceNumber)"
-        }
+        },
     )
 
     model.handleContextReady()
@@ -403,7 +405,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -424,7 +426,7 @@ import Testing
         driver: driver,
         snapshotStore: store,
         preferencesStore: InMemorySessionPreferencesStore(),
-        spaceIDProvider: { "surviving-space" }
+        spaceIDProvider: { "surviving-space" },
     )
     model.handleContextReady()
     driver.flushPendingCreateEvents()
@@ -465,7 +467,7 @@ import Testing
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
         preferencesStore: InMemorySessionPreferencesStore(),
-        spaceIDProvider: { "space-2" }
+        spaceIDProvider: { "space-2" },
     )
 
     model.handleContextReady()
@@ -483,7 +485,7 @@ import Testing
         withID: secondTabID,
         toPlacement: .temporary,
         atSectionIndex: 0,
-        targetSpaceID: "space-2"
+        targetSpaceID: "space-2",
     )
 
     #expect(model.selectedSpaceID == BrowserChromeModel.defaultSpaceID)
@@ -505,7 +507,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -525,7 +527,7 @@ import Testing
     let restoredModel = makeModel(
         driver: restoredDriver,
         snapshotStore: InMemorySessionSnapshotStore(loadedSnapshot: snapshotStore.savedSnapshots.last),
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     restoredModel.handleContextReady()
@@ -544,7 +546,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -572,7 +574,7 @@ import Testing
         spaceIDProvider: {
             nextSpaceNumber += 1
             return "space-\(nextSpaceNumber)"
-        }
+        },
     )
 
     model.handleContextReady()
@@ -606,7 +608,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -639,38 +641,38 @@ import Testing
                     id: "space-2",
                     title: "Read",
                     systemImageName: "book",
-                    selectedTabIndex: 1
+                    selectedTabIndex: 1,
                 ),
             ],
             tabs: [
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://inactive-stale.example",
                     spaceID: "space-1",
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://active-stale.example",
                     spaceID: "space-2",
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://active-selected.example",
                     spaceID: "space-2",
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
-            ]
-        )
+            ],
+        ),
     )
     let preferencesStore = InMemorySessionPreferencesStore(
         storedSelectedSpaceIndex: 1,
-        storedTemporaryTabLifetime: .twelveHours
+        storedTemporaryTabLifetime: .twelveHours,
     )
     let now = Date(timeIntervalSince1970: 24 * 60 * 60)
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
         preferencesStore: preferencesStore,
-        dateProvider: { now }
+        dateProvider: { now },
     )
 
     model.handleContextReady()
@@ -696,14 +698,14 @@ import Testing
                 BrowserTabSessionSnapshotTab(urlString: "https://inactive.example", spaceID: "space-1"),
                 BrowserTabSessionSnapshotTab(urlString: "https://active-one.example", spaceID: "space-2"),
                 BrowserTabSessionSnapshotTab(urlString: "https://active-two.example", spaceID: "space-2"),
-            ]
-        )
+            ],
+        ),
     )
     let preferencesStore = InMemorySessionPreferencesStore(storedSelectedSpaceIndex: 1)
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -727,7 +729,7 @@ import Testing
     let firstModel = makeModel(
         driver: firstDriver,
         snapshotStore: firstSnapshotStore,
-        preferencesStore: firstPreferencesStore
+        preferencesStore: firstPreferencesStore,
     )
 
     firstModel.handleContextReady()
@@ -737,12 +739,12 @@ import Testing
 
     let secondDriver = FakeBrowserTabDriver()
     let secondSnapshotStore = InMemorySessionSnapshotStore(
-        loadedSnapshot: firstSnapshotStore.savedSnapshots.last
+        loadedSnapshot: firstSnapshotStore.savedSnapshots.last,
     )
     let secondModel = makeModel(
         driver: secondDriver,
         snapshotStore: secondSnapshotStore,
-        preferencesStore: firstPreferencesStore
+        preferencesStore: firstPreferencesStore,
     )
 
     secondModel.handleContextReady()
@@ -759,7 +761,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -772,7 +774,7 @@ import Testing
         id: tabID,
         title: nil,
         urlString: nil,
-        faviconURLString: "https://one.example/favicon.ico"
+        faviconURLString: "https://one.example/favicon.ico",
     )
     driver.emitNavigationStateChange(id: tabID, canGoBack: true, canGoForward: false)
 
@@ -792,7 +794,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -815,7 +817,7 @@ import Testing
     let restoredModel = makeModel(
         driver: restoredDriver,
         snapshotStore: InMemorySessionSnapshotStore(loadedSnapshot: snapshotStore.savedSnapshots.last),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     restoredModel.handleContextReady()
@@ -833,7 +835,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -867,7 +869,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -896,7 +898,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -919,7 +921,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -939,7 +941,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -972,7 +974,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1007,7 +1009,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1033,7 +1035,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -1057,7 +1059,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1085,7 +1087,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1117,7 +1119,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1150,7 +1152,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1185,7 +1187,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1215,7 +1217,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1260,7 +1262,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1284,7 +1286,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -1307,7 +1309,7 @@ import Testing
         withID: thirdTabID,
         toPlacement: .spacePinned,
         atSectionIndex: 2,
-        targetPinnedFolderID: folderID
+        targetPinnedFolderID: folderID,
     )
 
     #expect(model.spacePinnedTabs.map(\.id) == [firstTabID, secondTabID, thirdTabID])
@@ -1326,7 +1328,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -1357,7 +1359,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -1378,7 +1380,7 @@ import Testing
     model.moveTabs(
         withIDs: Set([firstTabID, secondTabID]),
         toPlacement: .spacePinned,
-        atSectionIndex: 3
+        atSectionIndex: 3,
     )
 
     #expect(model.spacePinnedTabs.map(\.id) == [thirdTabID, firstTabID, secondTabID])
@@ -1390,7 +1392,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -1417,14 +1419,14 @@ import Testing
     model.movePinnedTabFolder(
         withID: childFolderID,
         toRootSectionIndex: 2,
-        targetParentFolderID: parentFolderID
+        targetParentFolderID: parentFolderID,
     )
 
     #expect(model.pinnedTabFolders.first { $0.id == childFolderID }?.parentFolderID == parentFolderID)
     #expect(!model.canMovePinnedTabFolder(
         withID: parentFolderID,
         toRootSectionIndex: 2,
-        targetParentFolderID: childFolderID
+        targetParentFolderID: childFolderID,
     ))
 
     model.movePinnedTabFolder(withID: childFolderID, toRootSectionIndex: 0)
@@ -1440,7 +1442,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1487,7 +1489,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1507,7 +1509,7 @@ import Testing
     let restoredModel = makeModel(
         driver: restoredDriver,
         snapshotStore: InMemorySessionSnapshotStore(loadedSnapshot: snapshotStore.savedSnapshots.last),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     restoredModel.handleContextReady()
@@ -1526,29 +1528,29 @@ import Testing
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://app.example",
                     placement: .app,
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://stale.example",
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://selected.example",
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
-            ]
-        )
+            ],
+        ),
     )
     let preferencesStore = InMemorySessionPreferencesStore(
         storedSelectedTabIndex: 2,
-        storedTemporaryTabLifetime: .twelveHours
+        storedTemporaryTabLifetime: .twelveHours,
     )
     let now = Date(timeIntervalSince1970: 24 * 60 * 60)
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
         preferencesStore: preferencesStore,
-        dateProvider: { now }
+        dateProvider: { now },
     )
 
     model.handleContextReady()
@@ -1571,7 +1573,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1604,7 +1606,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1632,7 +1634,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1662,7 +1664,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1703,7 +1705,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -1733,7 +1735,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1759,7 +1761,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1795,7 +1797,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1823,7 +1825,7 @@ import Testing
             firstTemporaryTabID,
             secondTemporaryTabID,
             thirdTemporaryTabID,
-        ]
+        ],
     )
     #expect(!model.hasTabsBelow(id: pinnedTabID))
 }
@@ -1836,7 +1838,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -1867,7 +1869,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -1907,7 +1909,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -1941,7 +1943,7 @@ import Testing
         entityID: deletedSyncID,
         op: "delete",
         data: .deleted(id: deletedSyncID),
-        createdAt: "2026-10-03T00:00:00Z"
+        createdAt: "2026-10-03T00:00:00Z",
     )
     let merged = BrowserSyncSnapshotMerger.snapshot(applying: [staleDelete], to: restoredSnapshot)
     #expect(merged.tabs.contains { $0.id == restoredTab.syncID })
@@ -1958,7 +1960,7 @@ import Testing
     ])
     #expect(driver.closedTabRequests.last == FakeBrowserTabDriver.CloseTabRequest(
         id: restoredTab.id,
-        forceClose: false
+        forceClose: false,
     ))
 }
 
@@ -1968,7 +1970,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2000,29 +2002,29 @@ import Testing
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://pinned.example",
                     placement: .spacePinned,
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://stale.example",
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
                 BrowserTabSessionSnapshotTab(
                     urlString: "https://selected.example",
-                    lastActivityTimestamp: 0
+                    lastActivityTimestamp: 0,
                 ),
-            ]
-        )
+            ],
+        ),
     )
     let preferencesStore = InMemorySessionPreferencesStore(
         storedSelectedTabIndex: 2,
-        storedTemporaryTabLifetime: .twelveHours
+        storedTemporaryTabLifetime: .twelveHours,
     )
     let now = Date(timeIntervalSince1970: 24 * 60 * 60)
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
         preferencesStore: preferencesStore,
-        dateProvider: { now }
+        dateProvider: { now },
     )
 
     model.handleContextReady()
@@ -2048,7 +2050,7 @@ import Testing
         driver: driver,
         snapshotStore: snapshotStore,
         preferencesStore: preferencesStore,
-        dateProvider: { currentDate }
+        dateProvider: { currentDate },
     )
 
     model.handleContextReady()
@@ -2073,7 +2075,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: snapshotStore,
-        preferencesStore: preferencesStore
+        preferencesStore: preferencesStore,
     )
 
     model.handleContextReady()
@@ -2105,7 +2107,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.prepareForTermination()
@@ -2122,7 +2124,7 @@ import Testing
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
         preferencesStore: InMemorySessionPreferencesStore(),
-        suggestionProvider: suggestionProvider
+        suggestionProvider: suggestionProvider,
     )
 
     model.handleContextReady()
@@ -2151,7 +2153,7 @@ import Testing
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
         preferencesStore: InMemorySessionPreferencesStore(),
-        suggestionProvider: suggestionProvider
+        suggestionProvider: suggestionProvider,
     )
 
     model.handleContextReady()
@@ -2178,7 +2180,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2199,7 +2201,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2220,7 +2222,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2243,7 +2245,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2262,7 +2264,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2292,7 +2294,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
     model.handleContextReady()
     driver.flushPendingCreateEvents()
@@ -2320,7 +2322,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
     model.handleContextReady()
     driver.flushPendingCreateEvents()
@@ -2357,7 +2359,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.clearCacheAndRefreshCurrentTab()
@@ -2382,7 +2384,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     #expect(!model.canPrintPage)
@@ -2403,7 +2405,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     #expect(!model.canCastPage)
@@ -2424,7 +2426,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     #expect(!model.canPasteAndMatchStyle)
@@ -2445,7 +2447,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     #expect(!model.captureFullPageSelectedTabToPasteboard())
@@ -2464,7 +2466,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     #expect(!model.canFindInPage)
@@ -2490,8 +2492,8 @@ import Testing
             text: "browser",
             forward: true,
             matchCase: false,
-            findNext: false
-        )
+            findNext: false,
+        ),
     )
 
     model.findNextInPage()
@@ -2502,13 +2504,13 @@ import Testing
             text: "browser",
             forward: true,
             matchCase: false,
-            findNext: true
+            findNext: true,
         ),
         FakeBrowserTabDriver.FindRequest(
             text: "browser",
             forward: false,
             matchCase: false,
-            findNext: true
+            findNext: true,
         ),
     ])
 
@@ -2537,7 +2539,7 @@ import Testing
         let model = makeModel(
             driver: driver,
             snapshotStore: InMemorySessionSnapshotStore(),
-            preferencesStore: InMemorySessionPreferencesStore()
+            preferencesStore: InMemorySessionPreferencesStore(),
         )
 
         model.handleContextReady()
@@ -2575,7 +2577,7 @@ import Testing
         let model = makeModel(
             driver: driver,
             snapshotStore: InMemorySessionSnapshotStore(),
-            preferencesStore: InMemorySessionPreferencesStore()
+            preferencesStore: InMemorySessionPreferencesStore(),
         )
 
         model.handleContextReady()
@@ -2601,7 +2603,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2632,7 +2634,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2668,7 +2670,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2687,7 +2689,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2712,7 +2714,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2737,7 +2739,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2761,7 +2763,7 @@ import Testing
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
         preferencesStore: InMemorySessionPreferencesStore(),
-        suggestionProvider: FakeSuggestionProvider()
+        suggestionProvider: FakeSuggestionProvider(),
     )
 
     model.commandBarModel.present()
@@ -2769,7 +2771,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let bookmarkSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.displayText == "Open Bookmarks" }
+        model.commandBarModel.suggestions.first { $0.displayText == "Open Bookmarks" },
     )
     #expect(bookmarkSuggestion.resolvedURLString == "openarc://bookmarks/")
     #expect(bookmarkSuggestion.detailText == "openarc://bookmarks")
@@ -2786,7 +2788,7 @@ import Testing
         snapshotStore: InMemorySessionSnapshotStore(),
         preferencesStore: InMemorySessionPreferencesStore(),
         suggestionProvider: FakeSuggestionProvider(),
-        shortcutStore: shortcutStore
+        shortcutStore: shortcutStore,
     )
 
     model.handleContextReady()
@@ -2799,7 +2801,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let forceRefreshSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .forceReload }
+        model.commandBarModel.suggestions.first { $0.commandID == .forceReload },
     )
     #expect(forceRefreshSuggestion.kind == .command)
     #expect(forceRefreshSuggestion.displayText == BrowserStrings.menuForceRefresh)
@@ -2809,7 +2811,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let clearCacheSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .clearCacheAndRefresh }
+        model.commandBarModel.suggestions.first { $0.commandID == .clearCacheAndRefresh },
     )
     #expect(clearCacheSuggestion.displayText == BrowserStrings.menuClearCacheAndRefresh)
     #expect(clearCacheSuggestion.shortcut == nil)
@@ -2818,7 +2820,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let clearCookiesSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .clearCookiesAndRefresh }
+        model.commandBarModel.suggestions.first { $0.commandID == .clearCookiesAndRefresh },
     )
     #expect(clearCookiesSuggestion.displayText == BrowserStrings.menuClearCookiesAndRefresh)
     #expect(clearCookiesSuggestion.shortcut == nil)
@@ -2827,7 +2829,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let refreshShortcutSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .reload }
+        model.commandBarModel.suggestions.first { $0.commandID == .reload },
     )
     #expect(refreshShortcutSuggestion.displayText == BrowserStrings.navigationRefresh)
     #expect(refreshShortcutSuggestion.shortcut == customReloadShortcut)
@@ -2836,7 +2838,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let backSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .goBack }
+        model.commandBarModel.suggestions.first { $0.commandID == .goBack },
     )
     #expect(backSuggestion.shortcut == BrowserCommands.goBack.shortcut)
 
@@ -2844,7 +2846,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let forwardSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .goForward }
+        model.commandBarModel.suggestions.first { $0.commandID == .goForward },
     )
     #expect(forwardSuggestion.shortcut == BrowserCommands.goForward.shortcut)
 
@@ -2852,7 +2854,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let bookmarksBarSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .toggleBookmarksBar }
+        model.commandBarModel.suggestions.first { $0.commandID == .toggleBookmarksBar },
     )
     #expect(bookmarksBarSuggestion.displayText == BrowserStrings.bookmarksHideBarAction)
     #expect(bookmarksBarSuggestion.shortcut == BrowserCommands.toggleBookmarksBar.shortcut)
@@ -2862,7 +2864,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let showBookmarksBarSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .toggleBookmarksBar }
+        model.commandBarModel.suggestions.first { $0.commandID == .toggleBookmarksBar },
     )
     #expect(showBookmarksBarSuggestion.displayText == BrowserStrings.settingsShowBookmarksBar)
 }
@@ -2876,7 +2878,7 @@ import Testing
         snapshotStore: InMemorySessionSnapshotStore(),
         preferencesStore: InMemorySessionPreferencesStore(),
         suggestionProvider: FakeSuggestionProvider(),
-        commandHandler: { performedCommandIDs.append($0) }
+        commandHandler: { performedCommandIDs.append($0) },
     )
 
     model.handleContextReady()
@@ -2886,7 +2888,7 @@ import Testing
     await model.commandBarModel.waitForPendingSuggestionLoad()
 
     let forceRefreshSuggestion = try #require(
-        model.commandBarModel.suggestions.first { $0.commandID == .forceReload }
+        model.commandBarModel.suggestions.first { $0.commandID == .forceReload },
     )
     model.commandBarModel.submitSuggestion(id: forceRefreshSuggestion.id)
 
@@ -2901,7 +2903,7 @@ import Testing
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
         preferencesStore: InMemorySessionPreferencesStore(),
-        suggestionProvider: FakeSuggestionProvider()
+        suggestionProvider: FakeSuggestionProvider(),
     )
 
     model.handleContextReady()
@@ -2938,7 +2940,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
 
     model.handleContextReady()
@@ -2954,7 +2956,7 @@ import Testing
     let model = makeModel(
         driver: driver,
         snapshotStore: InMemorySessionSnapshotStore(),
-        preferencesStore: InMemorySessionPreferencesStore()
+        preferencesStore: InMemorySessionPreferencesStore(),
     )
     model.handleContextReady()
     driver.flushPendingCreateEvents()
@@ -2988,7 +2990,7 @@ import Testing
     windowMode: BrowserWindowMode = .normal,
     dateProvider: @escaping () -> Date = Date.init,
     spaceIDProvider: @escaping () -> String = { UUID().uuidString },
-    commandHandler: @escaping (BrowserCommandID) -> Void = { _ in }
+    commandHandler: @escaping (BrowserCommandID) -> Void = { _ in },
 ) -> BrowserChromeModel {
     let userDefaults = isolatedUserDefaults()
     return BrowserChromeModel(
@@ -3004,7 +3006,7 @@ import Testing
         spaceIDProvider: spaceIDProvider,
         commandHandler: { commandID, _ in commandHandler(commandID) },
         windowTitleHandler: { _ in },
-        allTabsClosedHandler: {}
+        allTabsClosedHandler: {},
     )
 }
 
@@ -3026,7 +3028,7 @@ private func isolatedUserDefaults() -> UserDefaults {
 
 @MainActor private func submitOpenTabSuggestion(
     matching query: String,
-    in model: BrowserChromeModel
+    in model: BrowserChromeModel,
 ) async throws {
     model.commandBarModel.present()
     model.commandBarModel.query = query

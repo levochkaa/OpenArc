@@ -1,3 +1,5 @@
+// BrowserSyncProjectionRestartTests.swift
+
 import Foundation
 import Testing
 
@@ -33,7 +35,7 @@ import Testing
     // a deletion, reordered survivors, two new identities and the pull cursor.
     let desired = projectionRestartSnapshot(ids: ["c", "b", "d", "e"])
     let changes = BrowserSyncOutboxProjection.canonicalChanges(desired) + [BrowserSyncChange(
-        entityType: .tab, entityID: "a", op: .delete, spaceData: nil, tabData: nil
+        entityType: .tab, entityID: "a", op: .delete, spaceData: nil, tabData: nil,
     )]
     let events = try changes.enumerated().map { try projectionRestartEvent($0.element, sequence: 100 + $0.offset) }
     let committedCursor = try #require(events.last?.serverSeq)
@@ -81,7 +83,7 @@ import Testing
 }
 
 @MainActor private func projectionRestartModel(
-    driver: FakeBrowserTabDriver, store: BrowserSQLiteSessionStore, defaults: UserDefaults
+    driver: FakeBrowserTabDriver, store: BrowserSQLiteSessionStore, defaults: UserDefaults,
 ) -> BrowserChromeModel {
     let preferences = BrowserUserPreferencesStore(userDefaults: defaults)
     preferences.restoreWindowsOnLaunch = true
@@ -90,7 +92,7 @@ import Testing
         commandBarSuggestionProvider: FakeSuggestionProvider(), userPreferencesStore: preferences,
         shortcutStore: BrowserShortcutStore(userDefaults: defaults), extensionManager: FakeBrowserExtensionManager(),
         dateProvider: { Date(timeIntervalSince1970: projectionRestartTimestamp) },
-        windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+        windowTitleHandler: { _ in }, allTabsClosedHandler: {},
     )
 }
 
@@ -102,9 +104,9 @@ private func projectionRestartSnapshot(ids: [String]) -> BrowserTabSessionSnapsh
         tabs: ids.map { id in
             .init(
                 id: id, urlString: "https://\(id).example/", userTitleOverride: "Name \(id)", spaceID: "work",
-                lastActivityTimestamp: projectionRestartTimestamp
+                lastActivityTimestamp: projectionRestartTimestamp,
             )
-        }
+        },
     )
 }
 
@@ -115,20 +117,20 @@ private func projectionRestartEvent(_ change: BrowserSyncChange, sequence: Int) 
     } else if let value = change.spaceData {
         data = .space(.init(
             id: change.entityID, title: value.title, systemImageName: value.systemImageName, rank: value.rank,
-            isPinnedSectionCollapsed: value.isPinnedSectionCollapsed, selectedTabID: value.selectedTabID
+            isPinnedSectionCollapsed: value.isPinnedSectionCollapsed, selectedTabID: value.selectedTabID,
         ))
     } else if let value = change.tabData {
         data = .tab(.init(
             id: change.entityID, spaceID: value.spaceID, placement: value.placement, rank: value.rank,
             urlString: value.urlString, pinnedURLString: value.pinnedURLString, title: value.title,
             userTitleOverride: value.userTitleOverride, faviconURLString: value.faviconURLString,
-            lastActivityAt: value.lastActivityAt
+            lastActivityAt: value.lastActivityAt,
         ))
     } else {
         throw BrowserRemoteSyncError.invalidMutationReceipt
     }
     return .init(
         serverSeq: sequence, deviceID: "remote", entityType: change.entityType.rawValue, entityID: change.entityID,
-        op: change.op.rawValue, data: data, createdAt: "2026-10-03T00:00:00Z"
+        op: change.op.rawValue, data: data, createdAt: "2026-10-03T00:00:00Z",
     )
 }

@@ -1,3 +1,5 @@
+// BrowserMobileDownloadsTests.swift
+
 import Foundation
 import Testing
 
@@ -192,7 +194,7 @@ private struct DownloadDiskFixture {
     func entry(filename: String = "file.txt") -> BrowserMobileDownload {
         .init(
             id: UUID(), filename: filename, sourceURL: URL(string: "https://example.com/file"),
-            status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil
+            status: .downloading, receivedBytes: 0, totalBytes: nil, error: nil,
         )
     }
 }

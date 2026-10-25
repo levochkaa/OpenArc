@@ -1,3 +1,5 @@
+// BrowserSpaceDockTests.swift
+
 import AppKit
 import Testing
 
@@ -12,14 +14,14 @@ import Testing
                 .init(id: "b", title: "B", systemImageName: "book"),
                 .init(id: "c", title: "C", systemImageName: "globe"),
             ],
-            tabs: [.init(id: "t", urlString: "https://a.example", spaceID: "a")]
+            tabs: [.init(id: "t", urlString: "https://a.example", spaceID: "a")],
         ))
         let driver = FakeBrowserTabDriver()
         let model = BrowserChromeModel(
             tabDriver: driver, sessionSnapshotStore: store,
             sessionPreferencesStore: InMemorySessionPreferencesStore(),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
-            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         defer {
             model.discardUnsavedSessionForClosure()
@@ -43,7 +45,7 @@ import Testing
             contentRect: NSRect(x: -10000, y: -10000, width: 200, height: 40),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -70,7 +72,7 @@ import Testing
             // The dock is flipped; window coordinates grow upward.
             try #require(NSEvent.mouseEvent(
                 with: type, location: NSPoint(x: x, y: 20), modifierFlags: [], timestamp: 0,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1,
             ))
         }
 
@@ -111,7 +113,7 @@ import Testing
             payload: f.payload("x"),
             sourceFrame: CGRect(x: 0, y: 200, width: 220, height: 36),
             start: CGPoint(x: 20, y: 210),
-            pointer: CGPoint(x: 20, y: 500)
+            pointer: CGPoint(x: 20, y: 500),
         )
         // Passing over an icon does not switch.
         drag.updateDockTarget("t")
@@ -147,7 +149,7 @@ import Testing
                 payload: payload,
                 sourceFrame: CGRect(x: 0, y: 200, width: 220, height: 36),
                 start: CGPoint(x: 20, y: 210),
-                pointer: CGPoint(x: 20, y: 500)
+                pointer: CGPoint(x: 20, y: 500),
             )
             drag.updateDockTarget(spaceID)
             return drag.release(at: CGPoint(x: 20, y: 500))

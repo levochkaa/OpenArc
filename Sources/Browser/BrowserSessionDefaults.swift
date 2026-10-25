@@ -1,3 +1,5 @@
+// BrowserSessionDefaults.swift
+
 import Foundation
 
 /// Stable shared identities must not depend on either platform's browser model.

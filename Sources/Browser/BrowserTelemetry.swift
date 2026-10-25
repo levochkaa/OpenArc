@@ -1,3 +1,5 @@
+// BrowserTelemetry.swift
+
 import Foundation
 import Sentry
 
@@ -27,6 +29,29 @@ enum BrowserTelemetryEvent: String {
 // MARK: - BrowserTelemetry
 
 @MainActor enum BrowserTelemetry {
+    // MARK: Private
+
+    private static var hasStarted = false
+    private static var usageAnalyticsEnabled = false
+
+    private static var baseProperties: [String: String] {
+        [
+            "bundle": Bundle.main.bundleIdentifier ?? "unknown",
+            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+        ]
+    }
+
+    private static var releaseName: String? {
+        guard let bundleID = Bundle.main.bundleIdentifier else {
+            return nil
+        }
+
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+        return "\(bundleID)@\(version)+\(build)"
+    }
+
     // MARK: Internal
 
     static func startIfConfigured() {
@@ -61,7 +86,7 @@ enum BrowserTelemetryEvent: String {
 
     static func captureUsage(
         _ event: BrowserTelemetryEvent,
-        properties: [String: String] = [:]
+        properties: [String: String] = [:],
     ) {
         guard hasStarted, usageAnalyticsEnabled else {
             return
@@ -74,7 +99,7 @@ enum BrowserTelemetryEvent: String {
     static func captureError(
         _ error: Error,
         event: BrowserTelemetryEvent,
-        properties: [String: String] = [:]
+        properties: [String: String] = [:],
     ) {
         guard hasStarted else {
             return
@@ -82,29 +107,6 @@ enum BrowserTelemetryEvent: String {
 
         captureUsage(event, properties: properties)
         SentrySDK.capture(error: error)
-    }
-
-    // MARK: Private
-
-    private static var hasStarted = false
-    private static var usageAnalyticsEnabled = false
-
-    private static var baseProperties: [String: String] {
-        [
-            "bundle": Bundle.main.bundleIdentifier ?? "unknown",
-            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
-            "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
-        ]
-    }
-
-    private static var releaseName: String? {
-        guard let bundleID = Bundle.main.bundleIdentifier else {
-            return nil
-        }
-
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
-        return "\(bundleID)@\(version)+\(build)"
     }
 
     private static func infoString(_ key: String) -> String? {
@@ -133,9 +135,13 @@ enum BrowserTelemetryEvent: String {
         }
 
         switch value {
-        case "1", "true", "yes":
+        case "1",
+             "true",
+             "yes":
             return true
-        case "0", "false", "no":
+        case "0",
+             "false",
+             "no":
             return false
         default:
             return defaultValue

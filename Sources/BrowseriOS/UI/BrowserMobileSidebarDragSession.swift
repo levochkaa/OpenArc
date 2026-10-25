@@ -1,20 +1,18 @@
+// BrowserMobileSidebarDragSession.swift
+
 import UIKit
 
 /// App-local drag identity and the shared barrier for every participating sidebar.
 /// Participants are weak: a disconnected source cannot retain an entire window.
 @MainActor final class BrowserMobileSidebarDragSession {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(
-        owner: BrowserMobileTabsViewController, document: BrowserMobileProfileDocument,
-        spaceID: String?, source: BrowserMobileSidebarDrop.Source, sourceSessionID: ObjectIdentifier
-    ) {
-        self.owner = owner
-        self.document = document
-        self.spaceID = spaceID
-        self.source = source
-        self.sourceSessionID = sourceSessionID
-        self.participants = [Participant(owner)]
+    private final class Participant {
+        // MARK: Internal
+
+        weak var controller: BrowserMobileTabsViewController?
+
+        init(_ controller: BrowserMobileTabsViewController) { self.controller = controller }
     }
 
     // MARK: Internal
@@ -31,6 +29,9 @@ import UIKit
     private(set) var animationBatchID: UUID?
     private(set) var pendingDropAnimations = Set<ObjectIdentifier>()
 
+    private var participants: [Participant]
+    private var isCommitting = false
+
     var isHoldingRows: Bool {
         isCommitting || !pendingDropAnimations.isEmpty
             || participants.contains { $0.controller?.sidebarDragHasNativeHold == true }
@@ -39,6 +40,18 @@ import UIKit
     var canAddItems: Bool {
         !isCancelled && !isCommitted && !isCommitting
             && !participants.contains { $0.controller?.sidebarDragHasHoverProjection == true }
+    }
+
+    init(
+        owner: BrowserMobileTabsViewController, document: BrowserMobileProfileDocument,
+        spaceID: String?, source: BrowserMobileSidebarDrop.Source, sourceSessionID: ObjectIdentifier,
+    ) {
+        self.owner = owner
+        self.document = document
+        self.spaceID = spaceID
+        self.source = source
+        self.sourceSessionID = sourceSessionID
+        self.participants = [Participant(owner)]
     }
 
     func setInitialItems(_ items: [UIDragItem]) {
@@ -124,19 +137,4 @@ import UIKit
             controller.sidebarDragSessionDidChange(self)
         }
     }
-
-    // MARK: Private
-
-    private final class Participant {
-        // MARK: Lifecycle
-
-        init(_ controller: BrowserMobileTabsViewController) { self.controller = controller }
-
-        // MARK: Internal
-
-        weak var controller: BrowserMobileTabsViewController?
-    }
-
-    private var participants: [Participant]
-    private var isCommitting = false
 }

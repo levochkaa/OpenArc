@@ -1,3 +1,5 @@
+// BrowserDesktopAutomaticArchiveHTTPTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -14,27 +16,27 @@ extension BrowserSyncHTTPIntegrationTests {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
         let remote = try BrowserRemoteSyncClient(
-            configuration: #require(BrowserSyncConfiguration(baseURL: fixture.baseURL)), session: session
+            configuration: #require(BrowserSyncConfiguration(baseURL: fixture.baseURL)), session: session,
         )
         let auth = account.devices.map { device in
             BrowserAuthSession(
                 accessToken: device.accessToken, userID: device.userID, userEmail: nil,
-                deviceID: device.deviceID, serverURL: fixture.baseURL
+                deviceID: device.deviceID, serverURL: fixture.baseURL,
             )
         }
         let seed = BrowserSyncFolderMutation(id: UUID().uuidString, operations: [
             .createSpace(id: "source", data: .init(title: "Desktop automatic Archive", systemImageName: "globe")),
             .createTab(id: "pinned", data: .init(
                 spaceID: "source", placement: .spacePinned, urlString: "https://desktop-auto.example/pinned",
-                pinnedURLString: "https://desktop-auto.example/home", lastActivityAt: "2000-01-01T00:00:00Z"
+                pinnedURLString: "https://desktop-auto.example/home", lastActivityAt: "2000-01-01T00:00:00Z",
             )),
             .createTab(id: "selected", data: .init(
                 spaceID: "source", placement: .temporary, urlString: "https://desktop-auto.example/selected",
-                lastActivityAt: "2000-01-01T00:00:00Z"
+                lastActivityAt: "2000-01-01T00:00:00Z",
             )),
             .createTab(id: "expired", data: .init(
                 spaceID: "source", placement: .temporary, urlString: "https://desktop-auto.example/expired",
-                title: "Old page", userTitleOverride: "Retained title", lastActivityAt: "2000-01-01T00:00:00Z"
+                title: "Old page", userTitleOverride: "Retained title", lastActivityAt: "2000-01-01T00:00:00Z",
             )),
         ])
         _ = try await remote.push(mutation: seed, authSession: auth[0])
@@ -100,7 +102,7 @@ extension BrowserSyncHTTPIntegrationTests {
             #expect(Set(live.model.tabs.map(\.syncID)) == ["pinned", "selected", "expired"])
             #expect(
                 try first.store.loadArchivePage().entries.isEmpty,
-                "No optimistic deletion or Archive before receipt"
+                "No optimistic deletion or Archive before receipt",
             )
             #expect(live.model.selectedTabID == selected.id && live.model.canGoBack)
             #expect(live.driver.createdTabRequests.count == 3 && live.driver.closedTabRequests.isEmpty)
@@ -182,7 +184,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let finalStore = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         #expect(try !finalStore.loadAutomaticTabArchivalSettings().enabled)
         #expect(try finalStore.loadArchivePage().entries.isEmpty)
-        #expect(finalStore.loadSnapshot()?.tabs.filter { $0.id == freshID }.count == 1)
+        #expect(finalStore.loadSnapshot()?.tabs.count(where: { $0.id == freshID }) == 1)
         #expect(finalStore.loadSnapshot()?.tabs.contains { $0.id == "expired" } == false)
         try await fixture.complete(account)
     }
@@ -191,7 +193,17 @@ extension BrowserSyncHTTPIntegrationTests {
 // MARK: - DesktopAutomaticHTTPModel
 
 @MainActor private final class DesktopAutomaticHTTPModel {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+
+    // MARK: Private
+
+    private let profile: SyncHTTPProfile
+    private let defaults: UserDefaults
+    private let suite = "DesktopAutomaticHTTPModel.\(UUID())"
+    private var closed = false
 
     init(profile: SyncHTTPProfile, now: Date) throws {
         self.profile = profile
@@ -202,17 +214,12 @@ extension BrowserSyncHTTPIntegrationTests {
             userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: profile.service,
-            dateProvider: { now }, windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            dateProvider: { now }, windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
         profile.service.setSnapshotApplier(model)
     }
-
-    // MARK: Internal
-
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
 
     func close() {
         guard !closed else { return }
@@ -222,13 +229,6 @@ extension BrowserSyncHTTPIntegrationTests {
         model.prepareForTermination()
         defaults.removePersistentDomain(forName: suite)
     }
-
-    // MARK: Private
-
-    private let profile: SyncHTTPProfile
-    private let defaults: UserDefaults
-    private let suite = "DesktopAutomaticHTTPModel.\(UUID())"
-    private var closed = false
 }
 
 @MainActor private func desktopAutomaticHTTPOutbox(_ url: URL) throws -> [Data] {

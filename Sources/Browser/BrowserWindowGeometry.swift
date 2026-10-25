@@ -1,3 +1,5 @@
+// BrowserWindowGeometry.swift
+
 import CoreGraphics
 
 enum BrowserWindowGeometry {

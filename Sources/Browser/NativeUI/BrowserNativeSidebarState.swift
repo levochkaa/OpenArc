@@ -1,19 +1,11 @@
+// BrowserNativeSidebarState.swift
+
 import AppKit
 
 // MARK: - BrowserNativeSidebarState
 
 /// Selection, editing and space paging stay separate from the owned drag session.
 @MainActor final class BrowserNativeSidebarState {
-    // MARK: Lifecycle
-
-    init(model: BrowserChromeModel, snapshot: BrowserSidebarSnapshot, sidebarWidth: CGFloat) {
-        self.model = model
-        self.snapshot = snapshot
-        self.sidebarWidth = sidebarWidth
-        self.drag = BrowserSidebarDragState(model: model)
-        updateRevealedPinnedFolderTabs(for: snapshot)
-    }
-
     // MARK: Internal
 
     let model: BrowserChromeModel
@@ -26,19 +18,6 @@ import AppKit
     var sidebarTabSelectionAnchorID: String?
     var spacePagerRawDragTranslation: CGFloat = 0
     var renameDismissSuppressedUntil = Date.distantPast
-
-    var draggedTabID: String? {
-        if case .tab(let id) = drag.payload?.primary {
-            id
-        } else {
-            nil
-        }
-    }
-
-    var draggedPinnedFolderID: String? { drag.hiddenFolderID }
-    var draggedTabIDs: Set<String> { drag.hiddenTabIDs }
-
-    var isDraggingSidebarItem: Bool { drag.isDragging }
 
     var isClearButtonHovered = false { didSet { invalidate() } }
     var activeTemporaryTabClearConfirmationTabID: String? { didSet { invalidate() } }
@@ -58,6 +37,50 @@ import AppKit
     var bottomChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }
     var isSpacePagerDragging = false { didSet { invalidate() } }
     var spacePagerDragTranslation: CGFloat = 0 { didSet { invalidate() } }
+
+    // MARK: Private
+
+    private var updateScheduled = false
+    private var shouldAnimate = false
+
+    var draggedTabID: String? {
+        if case .tab(let id) = drag.payload?.primary {
+            id
+        } else {
+            nil
+        }
+    }
+
+    var draggedPinnedFolderID: String? { drag.hiddenFolderID }
+    var draggedTabIDs: Set<String> { drag.hiddenTabIDs }
+
+    var isDraggingSidebarItem: Bool { drag.isDragging }
+
+    private var visibleSidebarTabIDs: [String] {
+        guard let spaceID = snapshot.selectedSpaceID else { return [] }
+        let collapsed = model.supportsSpaces && snapshot.isPinnedSectionCollapsed(in: spaceID)
+        let pinnedIDs: [String] = collapsed
+            ? []
+            : snapshot.visiblePinnedRows(
+                in: spaceID,
+                revealedTabIDsByFolderID: revealedPinnedFolderTabIDsByFolderID,
+            )
+            .compactMap { row in
+                if case .tab(let value) = row {
+                    return value.tab.id
+                }
+                return nil
+            }
+        return pinnedIDs + snapshot.temporaryTabs.map(\.id)
+    }
+
+    init(model: BrowserChromeModel, snapshot: BrowserSidebarSnapshot, sidebarWidth: CGFloat) {
+        self.model = model
+        self.snapshot = snapshot
+        self.sidebarWidth = sidebarWidth
+        self.drag = BrowserSidebarDragState(model: model)
+        updateRevealedPinnedFolderTabs(for: snapshot)
+    }
 
     func invalidate(animated: Bool = false) {
         shouldAnimate = shouldAnimate || animated
@@ -165,7 +188,7 @@ import AppKit
     func updateSpacePagerDrag(
         _ value: BrowserNativeDragValue,
         in snapshot: BrowserSidebarSnapshot,
-        pageWidth: CGFloat
+        pageWidth: CGFloat,
     ) {
         guard
             pageWidth > 0,
@@ -193,7 +216,7 @@ import AppKit
                 spacePagerRawDragTranslation,
                 selectedIndex: selectedIndex,
                 spaceCount: snapshot.spaces.count,
-                pageWidth: pageWidth
+                pageWidth: pageWidth,
             )
         }
     }
@@ -201,7 +224,7 @@ import AppKit
     func finishSpacePagerDrag(
         _ value: BrowserNativeDragValue,
         in snapshot: BrowserSidebarSnapshot,
-        pageWidth: CGFloat
+        pageWidth: CGFloat,
     ) {
         guard isSpacePagerDragging else {
             resetSpacePagerDrag()
@@ -222,7 +245,7 @@ import AppKit
     func updateSpacePagerScroll(
         by delta: CGFloat,
         in snapshot: BrowserSidebarSnapshot,
-        pageWidth: CGFloat
+        pageWidth: CGFloat,
     ) {
         guard
             pageWidth > 0,
@@ -246,14 +269,14 @@ import AppKit
                 spacePagerRawDragTranslation,
                 selectedIndex: selectedIndex,
                 spaceCount: snapshot.spaces.count,
-                pageWidth: pageWidth
+                pageWidth: pageWidth,
             )
         }
     }
 
     func finishSpacePagerScroll(
         in snapshot: BrowserSidebarSnapshot,
-        pageWidth: CGFloat
+        pageWidth: CGFloat,
     ) {
         guard isSpacePagerDragging else {
             resetSpacePagerDrag()
@@ -263,7 +286,7 @@ import AppKit
         let targetSpaceID = targetSpaceID(
             forProjectedTranslation: spacePagerRawDragTranslation,
             in: snapshot,
-            pageWidth: pageWidth
+            pageWidth: pageWidth,
         )
         withSidebarAnimation {
             isSpacePagerDragging = false
@@ -297,7 +320,7 @@ import AppKit
         _ translation: CGFloat,
         selectedIndex: Int,
         spaceCount: Int,
-        pageWidth: CGFloat
+        pageWidth: CGFloat,
     ) -> CGFloat {
         guard pageWidth > 0, translation != 0 else {
             return 0
@@ -317,7 +340,7 @@ import AppKit
         let overscrollLimit = pageWidth * (canMoveToAdjacentSpace ? 0.2 : 0.14)
         let resistedOverflow = rubberBandDistance(
             magnitude - pageLimit,
-            limit: overscrollLimit
+            limit: overscrollLimit,
         )
         return direction * (pageLimit + resistedOverflow)
     }
@@ -325,7 +348,7 @@ import AppKit
     func targetSpaceID(
         for value: BrowserNativeDragValue,
         in snapshot: BrowserSidebarSnapshot,
-        pageWidth: CGFloat
+        pageWidth: CGFloat,
     ) -> String? {
         guard
             pageWidth > 0,
@@ -340,14 +363,14 @@ import AppKit
         return targetSpaceID(
             forProjectedTranslation: projectedTranslation,
             in: snapshot,
-            pageWidth: pageWidth
+            pageWidth: pageWidth,
         )
     }
 
     func targetSpaceID(
         forProjectedTranslation projectedTranslation: CGFloat,
         in snapshot: BrowserSidebarSnapshot,
-        pageWidth: CGFloat
+        pageWidth: CGFloat,
     ) -> String? {
         guard
             pageWidth > 0,
@@ -393,7 +416,7 @@ import AppKit
             appTabs: plan.tabs.filter { $0.placement == .app }, spacePinnedTabs: snapshot.spacePinnedTabs,
             temporaryTabs: snapshot.temporaryTabs, selectedTabID: snapshot.selectedTabID,
             archivableTabIDs: snapshot.archivableTabIDs, canGoBack: snapshot.canGoBack,
-            canGoForward: snapshot.canGoForward, canStopLoading: snapshot.canStopLoading, canReload: snapshot.canReload
+            canGoForward: snapshot.canGoForward, canStopLoading: snapshot.canStopLoading, canReload: snapshot.canReload,
         )
     }
 
@@ -406,7 +429,7 @@ import AppKit
     func handleSidebarTabSelection(
         _ tab: BrowserChromeModel.Tab,
         in section: BrowserSidebarTabSection,
-        modifiers: NSEvent.ModifierFlags = []
+        modifiers: NSEvent.ModifierFlags = [],
     ) {
         guard section != .app else {
             clearSidebarTabSelection()
@@ -490,7 +513,7 @@ import AppKit
 
     func pinnedTabFolderCreationTabIDs(
         fromTabID tabID: String,
-        in section: BrowserSidebarTabSection
+        in section: BrowserSidebarTabSection,
     ) -> Set<String> {
         guard section != .app else {
             return []
@@ -501,7 +524,7 @@ import AppKit
             clickedTabID: tabID,
             activeTabID: snapshot.selectedTabID,
             selectedTabIDs: selectedSidebarTabIDs,
-            listTabIDs: listTabIDs
+            listTabIDs: listTabIDs,
         )
         .tabIDs
     }
@@ -692,29 +715,6 @@ import AppKit
         updates()
         invalidate()
     }
-
-    // MARK: Private
-
-    private var updateScheduled = false
-    private var shouldAnimate = false
-
-    private var visibleSidebarTabIDs: [String] {
-        guard let spaceID = snapshot.selectedSpaceID else { return [] }
-        let collapsed = model.supportsSpaces && snapshot.isPinnedSectionCollapsed(in: spaceID)
-        let pinnedIDs: [String] = collapsed
-            ? []
-            : snapshot.visiblePinnedRows(
-                in: spaceID,
-                revealedTabIDsByFolderID: revealedPinnedFolderTabIDsByFolderID
-            )
-            .compactMap { row in
-                if case .tab(let value) = row {
-                    return value.tab.id
-                }
-                return nil
-            }
-        return pinnedIDs + snapshot.temporaryTabs.map(\.id)
-    }
 }
 
 // MARK: - Folder preview
@@ -730,7 +730,7 @@ extension BrowserNativeSidebarState {
                     id: $0.id,
                     title: $0.displayTitle,
                     urlString: $0.urlString,
-                    faviconURL: $0.faviconURL
+                    faviconURL: $0.faviconURL,
                 )
             }
         }

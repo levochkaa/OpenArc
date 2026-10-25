@@ -1,3 +1,5 @@
+// BrowserTabRowActionTests.swift
+
 import AppKit
 import Testing
 
@@ -16,7 +18,7 @@ import Testing
         let pinnedCopy = try #require(f.model.duplicateTab(id: f.id("a")))
         #expect(
             f.model.temporaryTabs.first?.id == pinnedCopy,
-            "A pinned tab's copy opens at the top of the temporary tabs"
+            "A pinned tab's copy opens at the top of the temporary tabs",
         )
         #expect(f.pinnedNames() == ["a", "b"])
     }
@@ -47,13 +49,13 @@ import Testing
             selected: false,
             isResizing: false,
             closeDescriptor: BrowserCommands.archiveTab,
-            muted: true
+            muted: true,
         )
         row.layoutSubtreeIfNeeded()
         #expect(!row.muteButton.isHidden)
         #expect(
             row.muteButton.frame.maxX <= row.titleLabel.frame.minX,
-            "The speaker sits between the icon and the title"
+            "The speaker sits between the icon and the title",
         )
         var unmutes = 0
         row.onToggleMute = { unmutes += 1 }
@@ -65,7 +67,7 @@ import Testing
 
         // A tab with sound shows a speaker that mutes it.
         f.driver.onMediaStateChanged?(x, BrowserTabMediaState(
-            isPlaying: true, audible: true, video: false, hasPreviousTrack: false, hasNextTrack: false, title: ""
+            isPlaying: true, audible: true, video: false, hasPreviousTrack: false, hasNextTrack: false, title: "",
         ))
         #expect(f.model.sidebarSnapshot.audibleTabIDs == [x])
         row.update(
@@ -73,7 +75,7 @@ import Testing
             selected: false,
             isResizing: false,
             closeDescriptor: BrowserCommands.archiveTab,
-            audible: true
+            audible: true,
         )
         row.layoutSubtreeIfNeeded()
         #expect(!row.muteButton.isHidden)
@@ -90,7 +92,7 @@ import Testing
             selected: false,
             isResizing: false,
             closeDescriptor: BrowserCommands.archiveTab,
-            audible: true
+            audible: true,
         )
         pinnedRow.layoutSubtreeIfNeeded()
         #expect(!pinnedRow.muteButton.isHidden)
@@ -101,7 +103,8 @@ import Testing
 
     @Test func aSplitMovesToAnotherSpaceWholeAndArchivesAsOneItem() throws {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
-        let (x, y) = (f.id("x"), f.id("y"))
+        let x = f.id("x")
+        let y = f.id("y")
         f.model.selectTab(id: x)
         #expect(f.model.openInSplitView(tabID: y))
         #expect(f.model.moveSplitToSpace(containingTabID: x, spaceID: "t"))
@@ -116,7 +119,8 @@ import Testing
 
     @Test func archivingASplitUnloadsPinnedPanesInsteadOfRemovingThem() {
         let f = SidebarDragFixture(temporary: ["x"])
-        let (a, b) = (f.id("a"), f.id("b"))
+        let a = f.id("a")
+        let b = f.id("b")
         f.model.selectTab(id: a)
         #expect(f.model.openInSplitView(tabID: b))
         f.model.closeSplit(containingTabID: a)
@@ -146,7 +150,7 @@ import Testing
         let f = SidebarDragFixture(
             pinned: [("a", nil), ("child", "folder")],
             temporary: ["x"],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder", isExpanded: false)],
         )
         f.model.selectTab(id: f.id("x"))
         #expect(f.model.pinToggleTitle == BrowserStrings.menuPinTab)
@@ -200,7 +204,9 @@ import Testing
 @MainActor struct BrowserPictureInPictureTests {
     @Test func leavingATabSendsItsVideoToPictureInPictureUntilTheUserReturns() {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
-        let (x, y, z) = (f.id("x"), f.id("y"), f.id("z"))
+        let x = f.id("x")
+        let y = f.id("y")
+        let z = f.id("z")
         f.model.selectTab(id: x)
         let start = f.driver.pictureInPictureRequests.count
         f.model.selectTab(id: y)
@@ -209,7 +215,7 @@ import Testing
         f.model.selectTab(id: x)
         #expect(
             f.driver.pictureInPictureRequests.dropFirst(start).map(\.active) == [true, false, true],
-            "Returning to x brings its video back and y's goes to Picture in Picture"
+            "Returning to x brings its video back and y's goes to Picture in Picture",
         )
         // Moving focus between panes of a split keeps both on screen.
         #expect(f.model.openInSplitView(tabID: z))
@@ -257,7 +263,7 @@ import Testing
         #expect(BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
             keyCode: 29,
             modifierFlags: [.command],
-            charactersIgnoringModifiers: "à"
+            charactersIgnoringModifiers: "à",
         ) == .resetZoom)
     }
 }
@@ -277,7 +283,7 @@ import Testing
         #expect(saved.title == "Research" && saved.systemImageName == "book")
         let decoded = try JSONDecoder().decode(
             BrowserTabSplitGroupSessionSnapshot.self,
-            from: JSONEncoder().encode(saved)
+            from: JSONEncoder().encode(saved),
         )
         #expect(decoded.title == "Research", "The name survives the stored JSON")
         let members = f.model.splitPaneTabIDs(of: group)
@@ -290,7 +296,7 @@ import Testing
             focusedTabID: f.model.selectedTabID,
             selected: true,
             name: .init(title: "Research", systemImageName: "book"),
-            isResizing: false
+            isResizing: false,
         )
         row.layoutSubtreeIfNeeded()
         #expect(!row.titleLabel.isHidden && row.titleLabel.stringValue == "Research")

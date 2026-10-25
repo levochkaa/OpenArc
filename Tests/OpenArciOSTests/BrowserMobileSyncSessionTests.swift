@@ -1,3 +1,5 @@
+// BrowserMobileSyncSessionTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -25,7 +27,8 @@ import UIKit
         await f.drain()
         #expect(f.remote.pushes.count == before + 1)
         f.runtime.setSceneActive(false, sceneID: "two")
-        let pulls = f.remote.pulls.count, pushes = f.remote.pushes.count
+        let pulls = f.remote.pulls.count
+        let pushes = f.remote.pushes.count
         let credentials = f.auth.session
         #expect(f.document.renameTab(id: "tab", title: "Background edit"))
         await f.drain()
@@ -145,7 +148,8 @@ import UIKit
         let scene = try #require(host.window.windowScene)
         f.runtime.setSceneActive(true, sceneID: scene.session.persistentIdentifier)
         f.runtime.setSceneActive(true, sceneID: "other-scene")
-        let firstGate = MobileSyncRuntimeGate(), secondGate = MobileSyncRuntimeGate()
+        let firstGate = MobileSyncRuntimeGate()
+        let secondGate = MobileSyncRuntimeGate()
         f.remote.authenticationGates = [firstGate, secondGate]
         let first = Task { await f.runtime.signIn(from: host.window) }
         await f.remote.waitForAuthentication(count: 1)
@@ -196,7 +200,8 @@ import UIKit
             sheet.view.frame = container.view.bounds
             sheet.didMove(toParent: container)
         }
-        let firstGate = MobileSyncRuntimeGate(), secondGate = MobileSyncRuntimeGate()
+        let firstGate = MobileSyncRuntimeGate()
+        let secondGate = MobileSyncRuntimeGate()
         f.remote.authenticationGates = [firstGate, secondGate]
         let firstButton = try #require(firstSheet.view.runtimeAccountControl("account.signIn"))
         firstButton.sendActions(for: .touchUpInside)
@@ -211,7 +216,7 @@ import UIKit
         await f.remote.waitForAuthentication(count: 2)
         firstSheet.presentationControllerDidDismiss(UIPresentationController(
             presentedViewController: firstSheet,
-            presenting: container
+            presenting: container,
         ))
         #expect(f.runtime.account.isSigningIn)
         firstGate.open()
@@ -239,7 +244,18 @@ import UIKit
 // MARK: - MobileSyncRuntimeFixture
 
 @MainActor private final class MobileSyncRuntimeFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory: URL
+    let preferencesName: String
+    let preferences: UserDefaults
+    let store: BrowserSQLiteSessionStore
+    let document: BrowserMobileProfileDocument
+    let owner: BrowserSyncOwner
+    let remote = MobileSyncRuntimeRemote()
+    let auth = MobileSyncRuntimeAuthStorage()
+    let identity = MobileSyncRuntimeIdentity()
+    let runtime: BrowserMobileSyncSession
 
     init(cached: Bool = false, bound: Bool = false, configured: Bool = true) throws {
         self.directory = FileManager.default
@@ -251,7 +267,7 @@ import UIKit
         self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Browser.sqlite"))
         let snapshot = BrowserTabSessionSnapshot(
             spaces: [.init(id: "space", title: "Space", systemImageName: "globe", selectedTabIndex: 0)],
-            tabs: [.init(id: "tab", urlString: "https://example.com", placement: .temporary, spaceID: "space")]
+            tabs: [.init(id: "tab", urlString: "https://example.com", placement: .temporary, spaceID: "space")],
         )
         store.saveSnapshot(snapshot)
         self.document = try BrowserMobileProfileDocument(store: store, initialSnapshot: store.loadSnapshotStrict())
@@ -267,22 +283,9 @@ import UIKit
             identityProvider: identity,
             environment: configured ? ["OPENARC_SYNC_BASE_URL": remote.baseURL.absoluteString] : [:],
             packagedServerURL: nil, clientFactory: { [remote] _ in remote },
-            pushDebounce: .zero, pollInterval: nil, retryDelay: nil
+            pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
         )
     }
-
-    // MARK: Internal
-
-    let directory: URL
-    let preferencesName: String
-    let preferences: UserDefaults
-    let store: BrowserSQLiteSessionStore
-    let document: BrowserMobileProfileDocument
-    let owner: BrowserSyncOwner
-    let remote = MobileSyncRuntimeRemote()
-    let auth = MobileSyncRuntimeAuthStorage()
-    let identity = MobileSyncRuntimeIdentity()
-    let runtime: BrowserMobileSyncSession
 
     func drain() async { await runtime.syncService?.waitForPendingOperations() }
     func cleanup() {
@@ -307,20 +310,24 @@ import UIKit
     var pullFails = false
     var authenticationGates = [MobileSyncRuntimeGate]()
 
+    // MARK: Private
+
+    private var authWaiters = [(Int, CheckedContinuation<Void, Never>)]()
+
     var session: BrowserAuthSession {
         .init(
             accessToken: "test-only-token",
             userID: "user",
             userEmail: "user@example.com",
             deviceID: "device",
-            serverURL: baseURL
+            serverURL: baseURL,
         )
     }
 
     func authenticateWithApple(
         identityToken: String,
         deviceName: String,
-        devicePlatform: String
+        devicePlatform: String,
     ) async -> BrowserAuthSession {
         let index = identityTokens.count
         identityTokens.append(identityToken)
@@ -359,10 +366,6 @@ import UIKit
         return .init(cursor: events.count, events: Array(events.dropFirst(start)), mutationID: mutation.id)
     }
 
-    // MARK: Private
-
-    private var authWaiters = [(Int, CheckedContinuation<Void, Never>)]()
-
     private func event(_ change: BrowserSyncChange, sequence: Int) throws -> BrowserSyncEvent {
         let data: BrowserSyncEventData
         if change.op == .delete {
@@ -374,7 +377,7 @@ import UIKit
                 systemImageName: space.systemImageName,
                 rank: space.rank,
                 isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                selectedTabID: space.selectedTabID
+                selectedTabID: space.selectedTabID,
             ))
         } else if let tab = change.tabData {
             data = .tab(.init(
@@ -387,7 +390,7 @@ import UIKit
                 title: tab.title,
                 userTitleOverride: tab.userTitleOverride,
                 faviconURLString: tab.faviconURLString,
-                lastActivityAt: tab.lastActivityAt
+                lastActivityAt: tab.lastActivityAt,
             ))
         } else {
             throw BrowserRemoteSyncError.invalidMutationReceipt
@@ -399,7 +402,7 @@ import UIKit
             entityID: change.entityID,
             op: change.op.rawValue,
             data: data,
-            createdAt: "2026-10-03T00:00:00Z"
+            createdAt: "2026-10-03T00:00:00Z",
         )
     }
 }
@@ -428,6 +431,11 @@ import UIKit
 // MARK: - MobileSyncRuntimeGate
 
 @MainActor private final class MobileSyncRuntimeGate {
+    // MARK: Private
+
+    private var isOpen = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
     // MARK: Internal
 
     func wait() async {
@@ -442,17 +450,14 @@ import UIKit
         continuation?.resume()
         continuation = nil
     }
-
-    // MARK: Private
-
-    private var isOpen = false
-    private var continuation: CheckedContinuation<Void, Never>?
 }
 
 // MARK: - MobileSyncRuntimeWindow
 
 @MainActor private final class MobileSyncRuntimeWindow {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let window: UIWindow
 
     init() throws {
         let scene = try #require(BrowserMobileTestScene.windowScene)
@@ -461,10 +466,6 @@ import UIKit
         window.rootViewController = UIViewController()
         window.makeKeyAndVisible()
     }
-
-    // MARK: Internal
-
-    let window: UIWindow
 
     func close() {
         window.isHidden = true

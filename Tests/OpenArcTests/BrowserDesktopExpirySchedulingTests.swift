@@ -1,3 +1,5 @@
+// BrowserDesktopExpirySchedulingTests.swift
+
 import AppKit
 import GRDB
 import Testing
@@ -100,9 +102,9 @@ import Testing
                     userTitleOverride: tab.userTitleOverride, placement: tab.placement,
                     spaceID: tab.spaceID, pinnedFolderID: tab.pinnedFolderID,
                     lastActivityTimestamp: tab.id == "a" ? 600.125 : tab.lastActivityTimestamp,
-                    pinnedSiblingRank: tab.pinnedSiblingRank
+                    pinnedSiblingRank: tab.pinnedSiblingRank,
                 )
-            }
+            },
         )
         f.model.applyRemoteSyncSnapshot(remote)
         #expect(try f.activity("a") == 600.125)
@@ -114,7 +116,7 @@ import Testing
             id: f.runtimeID("a"),
             title: nil,
             urlString: "https://example.com/later",
-            faviconURLString: nil
+            faviconURLString: nil,
         )
         #expect(try f.activity("a") == 600.125)
     }
@@ -125,7 +127,7 @@ import Testing
         f.restore()
         try f
             .sql(
-                "CREATE TRIGGER reject_activity BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'fixture'); END"
+                "CREATE TRIGGER reject_activity BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'fixture'); END",
             )
         f.clock.now = 300
         #expect(!f.model.refreshExpiryActivity())
@@ -161,8 +163,8 @@ import Testing
             spaces: original.spaces, pinnedTabFolders: original.pinnedTabFolders,
             tabs: original.tabs + [.init(
                 id: "pending-remote", urlString: "https://example.com/pending", spaceID: "work",
-                lastActivityTimestamp: 50
-            )]
+                lastActivityTimestamp: 50,
+            )],
         )
         try f.store.writeSessionBatch([.init(snapshot: remote, origin: .remoteProjection)])
         let before = try f.queueBytes()
@@ -193,7 +195,7 @@ import Testing
         let original = f.model.temporaryTabLifetime
         try f
             .sql(
-                "CREATE TRIGGER reject_timing BEFORE INSERT ON browser_preferences BEGIN SELECT RAISE(ABORT, 'fixture'); END"
+                "CREATE TRIGGER reject_timing BEFORE INSERT ON browser_preferences BEGIN SELECT RAISE(ABORT, 'fixture'); END",
             )
         f.model.setTemporaryTabLifetime(.threeDays)
         #expect(f.model.temporaryTabLifetime == original)
@@ -207,15 +209,15 @@ import Testing
         let controller = BrowserSettingsViewController(
             model: f.model, profileStore: BrowserProfileStore(rootCacheURL: f.directory),
             currentProfileID: BrowserProfile.defaultProfile.id, accountStore: nil, pane: .general,
-            openProfile: { _ in }, openURL: { _ in }
+            openProfile: { _ in }, openURL: { _ in },
         )
         let picker = try #require(desktopExpiryView(
             "browser.settings.automatic-tab-archival",
-            in: controller.view
+            in: controller.view,
         ) as? BrowserActionPopUpButton)
         let description = try #require(desktopExpiryView(
             "browser.settings.temporary-tab-availability",
-            in: controller.view
+            in: controller.view,
         ) as? NSTextField)
         #expect(picker.isEnabled)
         #expect(picker.titleOfSelectedItem == BrowserStrings.settingsAutomaticArchivalOff)
@@ -229,7 +231,17 @@ import Testing
 // MARK: - DesktopExpiryFixture
 
 @MainActor private final class DesktopExpiryFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory: URL
+    let suite: String
+    let defaults: UserDefaults
+    let databaseURL: URL
+    let store: BrowserSQLiteSessionStore
+    let driver = FakeBrowserTabDriver()
+    let sync = DesktopExpiryCoordinator()
+    let clock = DesktopExpiryClock()
+    let model: BrowserChromeModel
 
     init() throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopExpiry-\(UUID())")
@@ -242,7 +254,7 @@ import Testing
             tabs: [
                 .init(id: "a", urlString: "https://example.com/a", spaceID: "work", lastActivityTimestamp: 10.75),
                 .init(id: "b", urlString: "https://example.com/b", spaceID: "work", lastActivityTimestamp: 20.25),
-            ]
+            ],
         )
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
         try store.bindSyncOwner(.init(baseURL: URL(string: "https://desktop-expiry.example")!, userID: "owner"))
@@ -256,21 +268,9 @@ import Testing
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
             dateProvider: { Date(timeIntervalSince1970: clock.now) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
     }
-
-    // MARK: Internal
-
-    let directory: URL
-    let suite: String
-    let defaults: UserDefaults
-    let databaseURL: URL
-    let store: BrowserSQLiteSessionStore
-    let driver = FakeBrowserTabDriver()
-    let sync = DesktopExpiryCoordinator()
-    let clock = DesktopExpiryClock()
-    let model: BrowserChromeModel
 
     func restore() {
         model.handleContextReady()
@@ -295,7 +295,7 @@ import Testing
     func queueBytes() throws -> [Data] {
         try DatabaseQueue(path: databaseURL.path).read { try Data.fetchAll(
             $0,
-            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"
+            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position",
         ) }
     }
 

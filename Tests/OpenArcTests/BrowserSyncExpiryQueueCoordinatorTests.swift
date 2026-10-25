@@ -1,3 +1,5 @@
+// BrowserSyncExpiryQueueCoordinatorTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -33,7 +35,7 @@ import Testing
 
 @Test(arguments: [BrowserSyncExpiryOutcome.Reason.stateChanged, .responseLimit])
 @MainActor func terminalExpiryRejectionDrainsIntentWithoutDeletingOrArchiving(
-    _ reason: BrowserSyncExpiryOutcome.Reason
+    _ reason: BrowserSyncExpiryOutcome.Reason,
 ) async throws {
     let fixture = try ExpiryQueueFixture()
     defer { fixture.close() }
@@ -66,7 +68,7 @@ import Testing
 
 @Test(arguments: ExpiryQueueInvalidReceipt.allCases)
 @MainActor func injectedTransportCannotConsumeExpiryUsingAnInvalidReceipt(
-    _ defect: ExpiryQueueInvalidReceipt
+    _ defect: ExpiryQueueInvalidReceipt,
 ) async throws {
     let fixture = try ExpiryQueueFixture()
     defer { fixture.close() }
@@ -134,7 +136,7 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
     let before = try fixture.snapshot()
     fixture.auth.session = .init(
         accessToken: "replacement-token", userID: fixture.owner.userID, userEmail: nil,
-        deviceID: "replacement-device", serverURL: fixture.remote.baseURL
+        deviceID: "replacement-device", serverURL: fixture.remote.baseURL,
     )
     fixture.remote.requiresBootstrap = true
     fixture.remote.failBootstrapOnce = true
@@ -163,7 +165,15 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
 // MARK: - ExpiryQueueFixture
 
 @MainActor final class ExpiryQueueFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory: URL
+    let databaseURL: URL
+    let store: BrowserSQLiteSessionStore
+    let remote = ExpiryQueueRemote()
+    let auth = ExpiryQueueAuth()
+    let owner: BrowserSyncOwner
+    let operations = [BrowserSyncExpiryOperation(id: "tab", expectedServerSeq: 2, inactiveForSeconds: 43200)]
 
     init(seed: [BrowserSyncEvent]? = nil) throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("ExpiryQueue-\(UUID())")
@@ -176,16 +186,6 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
         _ = try store.completeFolderSyncBootstrap(events: remote.seed, cursor: cursor, for: owner)
         _ = try store.completeExpirySyncBootstrap(events: remote.seed, cursor: cursor, for: owner)
     }
-
-    // MARK: Internal
-
-    let directory: URL
-    let databaseURL: URL
-    let store: BrowserSQLiteSessionStore
-    let remote = ExpiryQueueRemote()
-    let auth = ExpiryQueueAuth()
-    let owner: BrowserSyncOwner
-    let operations = [BrowserSyncExpiryOperation(id: "tab", expectedServerSeq: 2, inactiveForSeconds: 43200)]
 
     func close() { try? FileManager.default.removeItem(at: directory) }
     func snapshot() throws -> BrowserTabSessionSnapshot { try #require(try store.loadSnapshotStrict()) }
@@ -200,12 +200,12 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
     func service(
         store: BrowserSQLiteSessionStore? = nil,
         dateProvider: @escaping @MainActor () -> Date = Date.init,
-        errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in }
+        errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in },
     ) -> BrowserSyncService {
         .init(
             localStore: store ?? self.store, remoteClient: remote, authSessionStore: auth,
             pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
-            dateProvider: dateProvider, errorReporter: errorReporter
+            dateProvider: dateProvider, errorReporter: errorReporter,
         )
     }
 }
@@ -231,8 +231,8 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
                 serverSeq: 1, deviceID: "remote", entityType: "space", entityID: "work", op: "upsert",
                 data: .space(.init(
                     id: "work", title: "Work", systemImageName: "globe", rank: 0,
-                    isPinnedSectionCollapsed: false, selectedTabID: nil
-                )), createdAt: "2026-10-03T11:00:00Z"
+                    isPinnedSectionCollapsed: false, selectedTabID: nil,
+                )), createdAt: "2026-10-03T11:00:00Z",
             ),
             .init(
                 serverSeq: 2, deviceID: "remote", entityType: "tab", entityID: "tab", op: "upsert",
@@ -240,8 +240,8 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
                     id: "tab", spaceID: "work", placement: .temporary, rank: 0,
                     urlString: "https://example.com/expired", pinnedURLString: nil, title: "Expired",
                     userTitleOverride: nil, faviconURLString: nil, lastActivityAt: "2000-01-01T00:00:00Z",
-                    pinnedFolderID: nil
-                )), createdAt: "2026-10-03T11:00:00Z"
+                    pinnedFolderID: nil,
+                )), createdAt: "2026-10-03T11:00:00Z",
             ),
         ]
     }
@@ -266,7 +266,7 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
     }
 
     func push(
-        mutation: BrowserSyncExpiryMutation, authSession: BrowserAuthSession
+        mutation: BrowserSyncExpiryMutation, authSession: BrowserAuthSession,
     ) throws -> BrowserSyncExpiryPushResponse {
         calls.append("push:5")
         deviceIDs.append(authSession.deviceID)
@@ -276,29 +276,29 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
         }
         let deletion = BrowserSyncEvent(
             serverSeq: 3, deviceID: "remote", entityType: "tab", entityID: "tab", op: "delete",
-            data: .deleted(id: "tab"), createdAt: "2026-10-03T12:00:00Z"
+            data: .deleted(id: "tab"), createdAt: "2026-10-03T12:00:00Z",
         )
         switch invalidReceipt {
         case .wrongIdentity:
             return .init(
                 protocolVersion: 5, mutationID: UUID().uuidString, cursor: 9999, events: [],
-                outcomes: [.init(operationIndex: 0, status: .rejected, reason: .responseLimit)]
+                outcomes: [.init(operationIndex: 0, status: .rejected, reason: .responseLimit)],
             )
         case .missingRecovery:
             return .init(
                 protocolVersion: 5, mutationID: mutation.id, cursor: 9999, events: [deletion],
-                outcomes: [.init(operationIndex: 0, status: .applied, reason: nil)]
+                outcomes: [.init(operationIndex: 0, status: .applied, reason: nil)],
             )
         case .rejectionDeletes:
             return .init(
                 protocolVersion: 5, mutationID: mutation.id, cursor: 9999, events: [deletion],
-                outcomes: [.init(operationIndex: 0, status: .rejected, reason: .stateChanged)]
+                outcomes: [.init(operationIndex: 0, status: .rejected, reason: .stateChanged)],
             )
         case nil:
             return .init(
                 protocolVersion: 5, mutationID: mutation.id, cursor: 9999,
                 events: reason == .stateChanged ? [seed[1]] : [],
-                outcomes: [.init(operationIndex: 0, status: .rejected, reason: reason)]
+                outcomes: [.init(operationIndex: 0, status: .rejected, reason: reason)],
             )
         }
     }
@@ -313,7 +313,7 @@ enum ExpiryQueueInvalidReceipt: CaseIterable {
 @MainActor final class ExpiryQueueAuth: BrowserSyncAuthSessionReading {
     var session = BrowserAuthSession(
         accessToken: "fixture-only", userID: "owner", userEmail: nil,
-        deviceID: "device", serverURL: URL(string: "https://expiry-queue.example")!
+        deviceID: "device", serverURL: URL(string: "https://expiry-queue.example")!,
     )
 
     func loadSession() -> BrowserAuthSession? { session }

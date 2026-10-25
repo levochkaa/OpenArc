@@ -1,3 +1,5 @@
+// BrowserSyncFolderProjectionTests.swift
+
 import Foundation
 import Testing
 
@@ -9,12 +11,12 @@ struct BrowserSyncFolderProjectionTests {
             .createFolder(id: "same", data: .init(spaceID: "s", title: "Folder")),
             .createTab(
                 id: "same",
-                data: .init(spaceID: "s", placement: .spacePinned, urlString: "https://example.test")
+                data: .init(spaceID: "s", placement: .spacePinned, urlString: "https://example.test"),
             ),
             .move(
                 items: [r(.folder, "same"), r(.tab, "same")],
                 destination: .tabs(spaceID: "s", placement: .spacePinned, pinnedFolderID: nil),
-                before: r(.tab, "anchor")
+                before: r(.tab, "anchor"),
             ),
             .patchFolder(id: "same", fields: .init(title: "Renamed")),
             .patchFolder(id: "same", fields: .init(systemImageName: .clear)),
@@ -23,7 +25,7 @@ struct BrowserSyncFolderProjectionTests {
         let request = BrowserSyncFolderPushRequest(
             mutationID: UUID().uuidString,
             deviceID: UUID().uuidString,
-            operations: operations
+            operations: operations,
         )
         let encoded = try JSONEncoder().encode(request)
         #expect(try JSONDecoder().decode(BrowserSyncFolderPushRequest.self, from: encoded) == request)
@@ -39,13 +41,13 @@ struct BrowserSyncFolderProjectionTests {
         let legacyFolder = Data(#"{"kind":"delete","entityType":"folder","entityID":"f"}"#.utf8)
         #expect(throws: DecodingError.self) { try JSONDecoder().decode(
             BrowserSyncSemanticOperation.self,
-            from: legacyFolder
+            from: legacyFolder,
         ) }
         let missingMembership = Data(#"{"spaceID":"s","placement":"spacePinned","urlString":"https://example.test"}"#
             .utf8)
         #expect(throws: DecodingError.self) { try JSONDecoder().decode(
             BrowserSyncFolderTabCreate.self,
-            from: missingMembership
+            from: missingMembership,
         ) }
     }
 
@@ -58,14 +60,14 @@ struct BrowserSyncFolderProjectionTests {
                 urlString: "https://example.test",
                 placement: .spacePinned,
                 spaceID: "s",
-                pinnedSiblingRank: 0
+                pinnedSiblingRank: 0,
             ),
             .init(
                 id: "last",
                 urlString: "https://example.test",
                 placement: .spacePinned,
                 spaceID: "s",
-                pinnedSiblingRank: 2
+                pinnedSiblingRank: 2,
             ),
         ])
         let canonical = BrowserSyncFolderProjection.canonicalChanges(local)
@@ -93,7 +95,7 @@ struct BrowserSyncFolderProjectionTests {
                 urlString: "https://example.test",
                 placement: .spacePinned,
                 spaceID: "s",
-                pinnedFolderID: "nested"
+                pinnedFolderID: "nested",
             ),
             .init(id: "root", urlString: "https://example.test", placement: .spacePinned, spaceID: "s"),
         ])
@@ -105,11 +107,12 @@ struct BrowserSyncFolderProjectionTests {
     }
 
     @Test func explicitFolderMoveCarriesCurrentCanonicalSubtreeAndKeepsConcurrentMetadata() {
-        var base = seeded(), deleted = Set<String>()
+        var base = seeded()
+        var deleted = Set<String>()
         let before = BrowserSyncFolderProjection.snapshot(values: base, local: nil)
         let move = BrowserSyncFolderOperation.move(
             items: [r(.folder, "f")],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         )
         var moved = base
         BrowserSyncFolderProjection.apply([move], to: &moved, deleted: &deleted)
@@ -117,7 +120,7 @@ struct BrowserSyncFolderProjectionTests {
         let captured = BrowserSyncFolderProjection.operations(
             from: before,
             to: after,
-            moveIntent: .init(items: [r(.folder, "f")])
+            moveIntent: .init(items: [r(.folder, "f")]),
         )
         #expect(captured == [move])
         BrowserSyncFolderProjection.apply([
@@ -128,12 +131,12 @@ struct BrowserSyncFolderProjectionTests {
                     spaceID: "s",
                     placement: .spacePinned,
                     pinnedFolderID: "nested",
-                    urlString: "https://new.test"
-                )
+                    urlString: "https://new.test",
+                ),
             ),
             .move(
                 items: [r(.tab, "escaped")],
-                destination: .tabs(spaceID: "s", placement: .spacePinned, pinnedFolderID: nil)
+                destination: .tabs(spaceID: "s", placement: .spacePinned, pinnedFolderID: nil),
             ),
         ], to: &base, deleted: &deleted)
         BrowserSyncFolderProjection.apply(captured, to: &base, deleted: &deleted)
@@ -150,10 +153,11 @@ struct BrowserSyncFolderProjectionTests {
     @Test func snapshotInferenceAlsoMovesOnlyFolderRootAndMetadataPatchPreservesRemoteMove() {
         let initial = seeded()
         let before = BrowserSyncFolderProjection.snapshot(values: initial, local: nil)
-        var changed = initial, deleted = Set<String>()
+        var changed = initial
+        var deleted = Set<String>()
         let move = BrowserSyncFolderOperation.move(
             items: [r(.folder, "f")],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         )
         BrowserSyncFolderProjection.apply([move], to: &changed, deleted: &deleted)
         let afterMove = BrowserSyncFolderProjection.snapshot(values: changed, local: nil)
@@ -162,11 +166,11 @@ struct BrowserSyncFolderProjectionTests {
         BrowserSyncFolderProjection.apply(
             [.patchFolder(id: "f", fields: .init(title: "Local rename", systemImageName: .clear))],
             to: &renamed,
-            deleted: &deleted
+            deleted: &deleted,
         )
         let rename = BrowserSyncFolderProjection.operations(
             from: before,
-            to: BrowserSyncFolderProjection.snapshot(values: renamed, local: nil)
+            to: BrowserSyncFolderProjection.snapshot(values: renamed, local: nil),
         )
         #expect(rename == [.patchFolder(id: "f", fields: .init(title: "Local rename"))])
         BrowserSyncFolderProjection.apply(rename, to: &changed, deleted: &deleted)
@@ -175,19 +179,22 @@ struct BrowserSyncFolderProjectionTests {
     }
 
     @Test func parentDeleteEmitsNoStaleChildDeletesAndMovedOutChildSurvivesBothReplayOrders() {
-        let initial = seeded(), before = BrowserSyncFolderProjection.snapshot(values: initial, local: nil)
-        var removed = initial, deleted = Set<String>()
+        let initial = seeded()
+        let before = BrowserSyncFolderProjection.snapshot(values: initial, local: nil)
+        var removed = initial
+        var deleted = Set<String>()
         BrowserSyncFolderProjection.apply([.deleteFolder(id: "f")], to: &removed, deleted: &deleted)
         let operations = BrowserSyncFolderProjection.operations(
             from: before,
-            to: BrowserSyncFolderProjection.snapshot(values: removed, local: nil)
+            to: BrowserSyncFolderProjection.snapshot(values: removed, local: nil),
         )
         #expect(operations == [.deleteFolder(id: "f")])
         let escape = BrowserSyncFolderOperation.move(
             items: [r(.tab, "child")],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         )
-        var live = initial, liveDeleted = Set<String>()
+        var live = initial
+        var liveDeleted = Set<String>()
         BrowserSyncFolderProjection.apply([escape] + operations, to: &live, deleted: &liveDeleted)
         #expect(live["tab:child"]?.op == .upsert)
         #expect(live["tab:child"]?.tabData?.spaceID == "target")
@@ -201,23 +208,25 @@ struct BrowserSyncFolderProjectionTests {
         for operation: BrowserSyncFolderOperation in [
             .move(
                 items: [r(.folder, "f"), r(.tab, "peer")],
-                destination: .tabs(spaceID: "s", placement: .spacePinned, pinnedFolderID: "nested")
+                destination: .tabs(spaceID: "s", placement: .spacePinned, pinnedFolderID: "nested"),
             ),
             .move(
                 items: [r(.folder, "f"), r(.tab, "child")],
-                destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+                destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
             ),
             .move(
                 items: [r(.folder, "f"), r(.tab, "peer")],
-                destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: "missing")
+                destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: "missing"),
             ),
         ] {
-            var values = initial, deleted = Set<String>()
+            var values = initial
+            var deleted = Set<String>()
             BrowserSyncFolderProjection.apply([operation], to: &values, deleted: &deleted)
             #expect(values == initial)
             #expect(deleted.isEmpty)
         }
-        var values = initial, deleted = Set<String>()
+        var values = initial
+        var deleted = Set<String>()
         BrowserSyncFolderProjection.apply([
             .move(items: [r(.tab, "child")], destination: .tabs(spaceID: "s", placement: .app, pinnedFolderID: nil)),
             .deleteSpace(id: "s"),
@@ -236,7 +245,7 @@ struct BrowserSyncFolderProjectionTests {
             urlString: "https://example.test",
             placement: .spacePinned,
             spaceID: "s",
-            pinnedSiblingRank: 1
+            pinnedSiblingRank: 1,
         )])
         let swapped = BrowserTabSessionSnapshot(spaces: local.spaces, pinnedTabFolders: [
             .init(id: "f", spaceID: "s", title: "Folder", pinnedSiblingRank: 1),
@@ -245,17 +254,17 @@ struct BrowserSyncFolderProjectionTests {
             urlString: "https://example.test",
             placement: .spacePinned,
             spaceID: "s",
-            pinnedSiblingRank: 0
+            pinnedSiblingRank: 0,
         )])
         #expect(BrowserSyncFolderProjection.operations(
             from: local,
             to: swapped,
-            moveIntent: .init(items: [r(.folder, "f")])
+            moveIntent: .init(items: [r(.folder, "f")]),
         ) == [
             .move(
                 items: [r(.folder, "f")],
                 destination: .tabs(spaceID: "s", placement: .spacePinned, pinnedFolderID: nil),
-                after: r(.tab, "t")
+                after: r(.tab, "t"),
             ),
         ])
         let many = BrowserTabSessionSnapshot(spaces: [space("s"), space("target")], tabs: (0..<1001).map {
@@ -276,13 +285,14 @@ struct BrowserSyncFolderProjectionTests {
     }
 
     @Test func adoptionIsParentFirstIdempotentAndPreservesAuthoritativeMetadataMembershipAndTombstones() {
-        var canonical = [String: BrowserSyncChange](), deleted = Set<String>()
+        var canonical = [String: BrowserSyncChange]()
+        var deleted = Set<String>()
         BrowserSyncFolderProjection.apply([
             .createSpace(id: "s", data: .init(title: "Space", systemImageName: "globe")),
             .createFolder(id: "remote", data: .init(spaceID: "s", title: "Canonical")),
             .createTab(
                 id: "root",
-                data: .init(spaceID: "s", placement: .spacePinned, urlString: "https://example.test")
+                data: .init(spaceID: "s", placement: .spacePinned, urlString: "https://example.test"),
             ),
             .createTab(
                 id: "member",
@@ -290,8 +300,8 @@ struct BrowserSyncFolderProjectionTests {
                     spaceID: "s",
                     placement: .spacePinned,
                     pinnedFolderID: "remote",
-                    urlString: "https://example.test"
-                )
+                    urlString: "https://example.test",
+                ),
             ),
             .deleteFolder(id: "dead"),
         ], to: &canonical, deleted: &deleted)
@@ -306,14 +316,14 @@ struct BrowserSyncFolderProjectionTests {
                 urlString: "https://example.test",
                 placement: .spacePinned,
                 spaceID: "s",
-                pinnedFolderID: "new"
+                pinnedFolderID: "new",
             ),
             .init(
                 id: "member",
                 urlString: "https://example.test",
                 placement: .spacePinned,
                 spaceID: "s",
-                pinnedFolderID: "new"
+                pinnedFolderID: "new",
             ),
         ])
         let adopted = BrowserSyncFolderProjection.adoptionOperations(local: local, values: canonical, deleted: deleted)
@@ -340,7 +350,7 @@ struct BrowserSyncFolderProjectionTests {
                 placement: .spacePinned,
                 spaceID: "s",
                 pinnedFolderID: "f",
-                pinnedSiblingRank: 0
+                pinnedSiblingRank: 0,
             ),
             .init(
                 id: "b",
@@ -348,21 +358,22 @@ struct BrowserSyncFolderProjectionTests {
                 placement: .spacePinned,
                 spaceID: "s",
                 pinnedFolderID: "f",
-                pinnedSiblingRank: 2
+                pinnedSiblingRank: 2,
             ),
             .init(
                 id: "loose",
                 urlString: "https://example.test",
                 placement: .spacePinned,
                 spaceID: "s",
-                pinnedSiblingRank: 1
+                pinnedSiblingRank: 1,
             ),
         ])
-        var canonical = keyed(BrowserSyncOutboxProjection.canonicalChanges(local)), deleted = Set<String>()
+        var canonical = keyed(BrowserSyncOutboxProjection.canonicalChanges(local))
+        var deleted = Set<String>()
         let operations = BrowserSyncFolderProjection.adoptionOperations(
             local: local,
             values: canonical,
-            deleted: deleted
+            deleted: deleted,
         )
         BrowserSyncFolderProjection.apply(operations, to: &canonical, deleted: &deleted)
         let result = BrowserSyncFolderProjection.snapshot(values: canonical, local: local)
@@ -383,7 +394,8 @@ struct BrowserSyncFolderProjectionTests {
     // MARK: Private
 
     private func seeded() -> [String: BrowserSyncChange] {
-        var values = [String: BrowserSyncChange](), deleted = Set<String>()
+        var values = [String: BrowserSyncChange]()
+        var deleted = Set<String>()
         BrowserSyncFolderProjection.apply([
             .createSpace(id: "s", data: .init(title: "Source", systemImageName: "globe")),
             .createSpace(id: "target", data: .init(title: "Target", systemImageName: "globe")),
@@ -395,8 +407,8 @@ struct BrowserSyncFolderProjectionTests {
                     spaceID: "s",
                     placement: .spacePinned,
                     pinnedFolderID: "nested",
-                    urlString: "https://example.test"
-                )
+                    urlString: "https://example.test",
+                ),
             ),
             .createTab(
                 id: "escaped",
@@ -404,12 +416,12 @@ struct BrowserSyncFolderProjectionTests {
                     spaceID: "s",
                     placement: .spacePinned,
                     pinnedFolderID: "f",
-                    urlString: "https://example.test"
-                )
+                    urlString: "https://example.test",
+                ),
             ),
             .createTab(
                 id: "peer",
-                data: .init(spaceID: "s", placement: .spacePinned, urlString: "https://example.test")
+                data: .init(spaceID: "s", placement: .spacePinned, urlString: "https://example.test"),
             ),
         ], to: &values, deleted: &deleted)
         return values
@@ -418,11 +430,11 @@ struct BrowserSyncFolderProjectionTests {
     private func space(_ id: String) -> BrowserSpaceSessionSnapshot { .init(
         id: id,
         title: "Space",
-        systemImageName: "globe"
+        systemImageName: "globe",
     ) }
     private func r(_ type: BrowserSyncChange.EntityType, _ id: String) -> BrowserSyncEntityReference { .init(
         entityType: type,
-        entityID: id
+        entityID: id,
     ) }
     private func keyed(_ changes: [BrowserSyncChange]) -> [String: BrowserSyncChange] {
         Dictionary(changes.map { (BrowserSyncOutboxProjection.key($0), $0) }, uniquingKeysWith: { first, _ in first })

@@ -1,44 +1,11 @@
+// BrowserTabControllerDriver.swift
+
 import AppKit
 import Foundation
 
 // MARK: - BrowserTabControllerDriver
 
 @MainActor final class BrowserTabControllerDriver: NSObject, BrowserTabDriving {
-    // MARK: Lifecycle
-
-    init(
-        hostView: BrowserTabHostView,
-        usesEphemeralRequestContext: Bool = false,
-        profileCachePath: String? = nil
-    ) {
-        self.browserHostView = hostView
-        self.controller = BrowserTabController(
-            hostView: hostView,
-            usesEphemeralRequestContext: usesEphemeralRequestContext,
-            profileCachePath: profileCachePath
-        )
-        super.init()
-        controller.delegate = self
-    }
-
-    override convenience init() {
-        self.init(hostView: BrowserTabHostView(frame: .zero))
-    }
-
-    convenience init(usesEphemeralRequestContext: Bool) {
-        self.init(
-            hostView: BrowserTabHostView(frame: .zero),
-            usesEphemeralRequestContext: usesEphemeralRequestContext
-        )
-    }
-
-    convenience init(profileCachePath: String) {
-        self.init(
-            hostView: BrowserTabHostView(frame: .zero),
-            profileCachePath: profileCachePath
-        )
-    }
-
     // MARK: Internal
 
     var onTabCreated: ((String, String, String, Bool) -> Void)?
@@ -64,8 +31,48 @@ import Foundation
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
     var onRenderProcessTerminated: ((String, Int) -> Void)?
 
+    // MARK: Private
+
+    private let browserHostView: BrowserTabHostView
+    private let controller: BrowserTabController
+    /// Peek sessions showing a prompt.
+    private var promptingPeekSessions = Set<Int>()
+
     var hostView: NSView {
         browserHostView
+    }
+
+    init(
+        hostView: BrowserTabHostView,
+        usesEphemeralRequestContext: Bool = false,
+        profileCachePath: String? = nil,
+    ) {
+        self.browserHostView = hostView
+        self.controller = BrowserTabController(
+            hostView: hostView,
+            usesEphemeralRequestContext: usesEphemeralRequestContext,
+            profileCachePath: profileCachePath,
+        )
+        super.init()
+        controller.delegate = self
+    }
+
+    override convenience init() {
+        self.init(hostView: BrowserTabHostView(frame: .zero))
+    }
+
+    convenience init(usesEphemeralRequestContext: Bool) {
+        self.init(
+            hostView: BrowserTabHostView(frame: .zero),
+            usesEphemeralRequestContext: usesEphemeralRequestContext,
+        )
+    }
+
+    convenience init(profileCachePath: String) {
+        self.init(
+            hostView: BrowserTabHostView(frame: .zero),
+            profileCachePath: profileCachePath,
+        )
     }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {
@@ -84,7 +91,7 @@ import Foundation
         controller.setVisibleTabLayout(
             withTabIDs: layout?.tabIDs,
             vertical: layout?.orientation == .vertical,
-            fractions: layout?.fractions?.map { NSNumber(value: $0) }
+            fractions: layout?.fractions?.map { NSNumber(value: $0) },
         )
     }
 
@@ -239,7 +246,7 @@ import Foundation
     func setSiteSetting(
         _ kind: BrowserSiteSettingKind,
         value: BrowserSiteSettingValue,
-        forURLString urlString: String
+        forURLString urlString: String,
     ) {
         controller.setSiteSetting(kind.rawValue, value: value.rawValue, forURLString: urlString)
     }
@@ -262,7 +269,7 @@ import Foundation
             withText: text,
             forward: forward,
             matchCase: matchCase,
-            findNext: findNext
+            findNext: findNext,
         )
     }
 
@@ -293,13 +300,6 @@ import Foundation
         onSplitPaneLayout = nil
         controller.prepareForCefShutdown()
     }
-
-    // MARK: Private
-
-    private let browserHostView: BrowserTabHostView
-    private let controller: BrowserTabController
-    /// Peek sessions showing a prompt.
-    private var promptingPeekSessions = Set<Int>()
 }
 
 // MARK: BrowserTabControllerDelegate
@@ -312,7 +312,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         didClosePeekWithURLString urlString: String,
-        standalone: Bool
+        standalone: Bool,
     ) {
         MainActor.assumeIsolated { onPeekClosedByUser?(urlString, standalone) }
     }
@@ -324,7 +324,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         openPeekURLString urlString: String,
-        inSpaceWithID spaceID: String
+        inSpaceWithID spaceID: String,
     ) {
         MainActor.assumeIsolated { onOpenPeekInSpace?(urlString, spaceID) }
     }
@@ -332,7 +332,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         shouldPeekNavigationFromTabWithID tabID: String,
-        toURLString urlString: String
+        toURLString urlString: String,
     ) -> Bool {
         // The engine asks on the main thread and needs the answer now.
         MainActor.assumeIsolated {
@@ -349,7 +349,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         didLayoutSplitPanesWithTabIDs tabIDs: [String],
-        frames: [NSValue]
+        frames: [NSValue],
     ) {
         let rects = frames.map(\.rectValue)
         // Layout runs on the main thread; reporting synchronously keeps the bars
@@ -362,7 +362,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         didResizeSplitWithTabIDs tabIDs: [String],
-        fractions: [NSNumber]
+        fractions: [NSNumber],
     ) {
         let sizes = fractions.map(\.doubleValue)
         DispatchQueue.main.async { [weak self] in
@@ -376,14 +376,14 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         forTabWithID tabID: String,
         origin: String,
         kinds: [String],
-        mediaAccess: Bool
+        mediaAccess: Bool,
     ) {
         let request = BrowserSitePermissionRequest(
             id: requestID,
             tabID: tabID,
             origin: origin,
             kinds: kinds.compactMap(BrowserSitePermissionKind.init(rawValue:)),
-            isMediaAccess: mediaAccess
+            isMediaAccess: mediaAccess,
         )
         MainActor.assumeIsolated { onSitePermissionRequested?(request) }
     }
@@ -395,7 +395,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         renderProcessTerminatedForTabWithID tabID: String,
-        errorCode: Int
+        errorCode: Int,
     ) {
         MainActor.assumeIsolated { onRenderProcessTerminated?(tabID, errorCode) }
     }
@@ -409,7 +409,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         video: Bool,
         hasPreviousTrack: Bool,
         hasNextTrack: Bool,
-        title: String
+        title: String,
     ) {
         let state = playing || paused
             ? BrowserTabMediaState(
@@ -418,7 +418,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
                 video: video,
                 hasPreviousTrack: hasPreviousTrack,
                 hasNextTrack: hasNextTrack,
-                title: title
+                title: title,
             )
             : nil
         MainActor.assumeIsolated { onMediaStateChanged?(tabID, state) }
@@ -428,7 +428,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         _: BrowserTabController,
         didFinishCloseRequestForTabWithID tabID: String,
         requestID: String,
-        outcome: BrowserTabCloseRequestOutcome
+        outcome: BrowserTabCloseRequestOutcome,
     ) {
         // FIFO keeps the token completion ahead of the generic closed event.
         DispatchQueue.main.async { [weak self] in
@@ -447,7 +447,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         didChangeCreationStateForTabWithID tabID: String,
-        state: BrowserTabEngineCreationState
+        state: BrowserTabEngineCreationState,
     ) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -472,7 +472,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         didCreateTabWithID tabID: String,
         title: String,
         urlString: String,
-        isActive: Bool
+        isActive: Bool,
     ) {
         DispatchQueue.main.async { [weak self] in
             self?.onTabCreated?(tabID, title, urlString, isActive)
@@ -484,7 +484,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         didUpdateTabWithID tabID: String,
         title: String?,
         urlString: String?,
-        faviconURLString: String?
+        faviconURLString: String?,
     ) {
         DispatchQueue.main.async { [weak self] in
             self?.onTabUpdated?(tabID, title, urlString, faviconURLString)
@@ -501,7 +501,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         _: BrowserTabController,
         didUpdateNavigationStateForTabWithID tabID: String,
         canGoBack: Bool,
-        canGoForward: Bool
+        canGoForward: Bool,
     ) {
         DispatchQueue.main.async { [weak self] in
             self?.onNavigationStateChanged?(tabID, canGoBack, canGoForward)
@@ -511,7 +511,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
     nonisolated func browserTabController(
         _: BrowserTabController,
         didUpdateLoadingStateForTabWithID tabID: String,
-        isLoading: Bool
+        isLoading: Bool,
     ) {
         DispatchQueue.main.async { [weak self] in
             self?.onLoadingStateChanged?(tabID, isLoading)
@@ -523,7 +523,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         didUpdateFindResultForTabWithID tabID: String,
         matchCount: Int,
         activeMatchOrdinal: Int,
-        finalUpdate: Bool
+        finalUpdate: Bool,
     ) {
         DispatchQueue.main.async { [weak self] in
             self?.onFindResultChanged?(tabID, matchCount, activeMatchOrdinal, finalUpdate)
@@ -539,7 +539,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         receivedBytes: Int64,
         totalBytes: Int64,
         currentSpeedBytesPerSecond: Int64,
-        stateRawValue: String
+        stateRawValue: String,
     ) {
         DispatchQueue.main.async { [weak self] in
             let state = BrowserDownloadState(rawValue: stateRawValue) ?? .interrupted
@@ -551,7 +551,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
                 receivedBytes: receivedBytes,
                 totalBytes: totalBytes,
                 currentSpeedBytesPerSecond: currentSpeedBytesPerSecond,
-                state: state
+                state: state,
             ))
         }
     }

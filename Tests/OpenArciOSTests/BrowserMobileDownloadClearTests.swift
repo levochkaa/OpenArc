@@ -1,3 +1,5 @@
+// BrowserMobileDownloadClearTests.swift
+
 import Foundation
 import Synchronization
 import Testing
@@ -212,6 +214,15 @@ import Testing
 // MARK: - DownloadClearFaults
 
 private final class DownloadClearFaults: Sendable {
+    // MARK: Private
+
+    private struct State { var writesFail = false
+        var cleanupFails = false
+        var writeCount = 0
+    }
+
+    private let state = Mutex(State())
+
     // MARK: Internal
 
     var writeCount: Int { state.withLock { $0.writeCount } }
@@ -234,15 +245,6 @@ private final class DownloadClearFaults: Sendable {
         }
         try FileManager.default.removeItem(at: url)
     }
-
-    // MARK: Private
-
-    private struct State { var writesFail = false
-        var cleanupFails = false
-        var writeCount = 0
-    }
-
-    private let state = Mutex(State())
 }
 
 // MARK: - DownloadClearFixture
@@ -258,7 +260,7 @@ private final class DownloadClearFaults: Sendable {
         BrowserMobileDownloadDisk(
             directory: directory,
             writeManifest: { [faults] in try faults.write($0, to: $1) },
-            removeItem: { [faults] in try faults.remove($0) }
+            removeItem: { [faults] in try faults.remove($0) },
         )
     }
 
@@ -270,7 +272,7 @@ private final class DownloadClearFaults: Sendable {
             status: .downloading,
             receivedBytes: 0,
             totalBytes: nil,
-            error: nil
+            error: nil,
         )
         let url = try await disk.prepare(id: entry.id, filename: filename)
         try Data(filename.utf8).write(to: url)
@@ -287,15 +289,24 @@ private final class DownloadClearFaults: Sendable {
 // MARK: - HeldClearDisk
 
 private actor HeldClearDisk: BrowserMobileDownloadStoring {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(base: BrowserMobileDownloadDisk) { self.base = base }
+    private let base: BrowserMobileDownloadDisk
+    private var holdClear = false
+    private var holdRemoval = false
+    private var holdSnapshot = false
+    private var clearContinuation: CheckedContinuation<Void, Never>?
+    private var removalContinuation: CheckedContinuation<Void, Never>?
+    private var snapshotContinuation: CheckedContinuation<BrowserMobileDownloadDiskState, Never>?
+    private var heldSnapshot: BrowserMobileDownloadDiskState?
 
     // MARK: Internal
 
     var isClearHeld: Bool { clearContinuation != nil }
     var isRemovalHeld: Bool { removalContinuation != nil }
     var isSnapshotHeld: Bool { snapshotContinuation != nil }
+
+    init(base: BrowserMobileDownloadDisk) { self.base = base }
 
     func holdNextClear() { holdClear = true }
     func holdNextRemoval() { holdRemoval = true }
@@ -348,17 +359,6 @@ private actor HeldClearDisk: BrowserMobileDownloadStoring {
     func retryCleanup() async throws -> BrowserMobileDownloadDiskState { try await base.retryCleanup() }
     func exportURL(id: UUID) async throws -> URL { try await base.exportURL(id: id) }
     func discardState(id: UUID) async throws -> BrowserMobileDownloadDiskState { try await base.discardState(id: id) }
-
-    // MARK: Private
-
-    private let base: BrowserMobileDownloadDisk
-    private var holdClear = false
-    private var holdRemoval = false
-    private var holdSnapshot = false
-    private var clearContinuation: CheckedContinuation<Void, Never>?
-    private var removalContinuation: CheckedContinuation<Void, Never>?
-    private var snapshotContinuation: CheckedContinuation<BrowserMobileDownloadDiskState, Never>?
-    private var heldSnapshot: BrowserMobileDownloadDiskState?
 }
 
 @MainActor private func clearWait(_ predicate: () async -> Bool) async throws {

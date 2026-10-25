@@ -1,3 +1,5 @@
+// BrowserAccountPersistenceTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -17,8 +19,8 @@ import Testing
                 spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
                 tabs: [.init(
                     id: "tab", urlString: "https://page.example",
-                    userTitleOverride: "Edited while paused", spaceID: "space"
-                )]
+                    userTitleOverride: "Edited while paused", spaceID: "space",
+                )],
             )
             try first.store.writeSessionBatch([.init(snapshot: edited, origin: .local(syncMove: nil))])
             first.service.schedulePush(snapshot: edited)
@@ -232,7 +234,7 @@ import Testing
             let before = try f.evidence(runtime.store)
             f.remote.response = accountPersistenceSession(
                 userID: mismatch == "owner" ? "other-owner" : f.owner.userID,
-                baseURL: mismatch == "server" ? URL(string: "https://other.example")! : f.owner.baseURL
+                baseURL: mismatch == "server" ? URL(string: "https://other.example")! : f.owner.baseURL,
             )
             await runtime.account.signInWithApple()
             #expect(runtime.account.session == nil && runtime.account.lastError != nil)
@@ -299,21 +301,6 @@ import Testing
 // MARK: - AccountPersistenceFixture
 
 @MainActor private final class AccountPersistenceFixture {
-    // MARK: Lifecycle
-
-    init(directory: URL, bound: Bool) throws {
-        self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
-        try store.writeSessionBatch([.init(snapshot: .init(
-            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
-            tabs: [.init(id: "tab", urlString: "https://page.example", spaceID: "space")]
-        ), origin: .local(syncMove: nil))])
-        if bound {
-            try store.bindSyncOwner(owner)
-            try store.saveSyncCursor(47, for: owner)
-        }
-    }
-
     // MARK: Internal
 
     let databaseURL: URL
@@ -322,16 +309,33 @@ import Testing
     let identity = AccountPersistenceIdentity()
     let remote = AccountPersistenceRemote()
 
+    // MARK: Private
+
+    private var runtimes = [AccountPersistenceRuntime]()
+
+    init(directory: URL, bound: Bool) throws {
+        self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
+        let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+        try store.writeSessionBatch([.init(snapshot: .init(
+            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
+            tabs: [.init(id: "tab", urlString: "https://page.example", spaceID: "space")],
+        ), origin: .local(syncMove: nil))])
+        if bound {
+            try store.bindSyncOwner(owner)
+            try store.saveSyncCursor(47, for: owner)
+        }
+    }
+
     func open(runtimeActive: Bool = true) throws -> AccountPersistenceRuntime {
         let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         let service = BrowserSyncService(
             localStore: store, remoteClient: remote, authSessionStore: credentials,
             pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
-            runtimeActive: runtimeActive, errorReporter: { _, _ in }
+            runtimeActive: runtimeActive, errorReporter: { _, _ in },
         )
         let account = BrowserAccountStore(
             syncClient: remote, authSessionStore: credentials, syncCoordinator: service,
-            appleSignInService: identity, deviceIdentity: .init(name: "Fixture", platform: "macOS")
+            appleSignInService: identity, deviceIdentity: .init(name: "Fixture", platform: "macOS"),
         )
         let runtime = AccountPersistenceRuntime(store: store, service: service, account: account)
         runtimes.append(runtime)
@@ -343,22 +347,22 @@ import Testing
         let values = try database.read { db in
             let rows = try Row.fetchAll(
                 db,
-                sql: "SELECT position, mutation_id, protocol_version, payload FROM browser_sync_outbox ORDER BY position"
+                sql: "SELECT position, mutation_id, protocol_version, payload FROM browser_sync_outbox ORDER BY position",
             )
             return try (
                 rows.map { row in
                     AccountPersistenceEvidence.OutboxRow(
                         position: row["position"], id: row["mutation_id"],
-                        version: row["protocol_version"], payload: row["payload"]
+                        version: row["protocol_version"], payload: row["payload"],
                     )
                 },
-                Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1")
+                Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1"),
             )
         }
         let owner = try store.syncOwner()
         return try .init(
             snapshot: store.loadSnapshotStrict(), owner: owner,
-            cursor: owner.map { try store.syncCursor(for: $0) }, outbox: values.0, baseline: values.1
+            cursor: owner.map { try store.syncCursor(for: $0) }, outbox: values.0, baseline: values.1,
         )
     }
 
@@ -377,10 +381,6 @@ import Testing
         }
         runtimes.removeAll()
     }
-
-    // MARK: Private
-
-    private var runtimes = [AccountPersistenceRuntime]()
 }
 
 // MARK: - AccountPersistenceEvidence
@@ -466,7 +466,7 @@ private struct AccountPersistenceEvidence: Equatable {
     func authenticateWithApple(
         identityToken _: String,
         deviceName _: String,
-        devicePlatform _: String
+        devicePlatform _: String,
     ) async -> BrowserAuthSession {
         authenticationRequests += 1
         let response = response
@@ -486,7 +486,7 @@ private struct AccountPersistenceEvidence: Equatable {
 
     func push(
         mutation _: BrowserSyncSemanticMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncSemanticPushResponse {
         otherPushes += 1
         throw URLError(.networkConnectionLost)
@@ -494,7 +494,7 @@ private struct AccountPersistenceEvidence: Equatable {
 
     func push(
         mutation _: BrowserSyncFolderMutation,
-        authSession _: BrowserAuthSession
+        authSession _: BrowserAuthSession,
     ) throws -> BrowserSyncFolderPushResponse {
         otherPushes += 1
         throw URLError(.networkConnectionLost)
@@ -504,6 +504,11 @@ private struct AccountPersistenceEvidence: Equatable {
 // MARK: - AccountPersistenceGate
 
 @MainActor private final class AccountPersistenceGate {
+    // MARK: Private
+
+    private var isOpen = false
+    private var waiters = [CheckedContinuation<Void, Never>]()
+
     // MARK: Internal
 
     func wait() async {
@@ -519,11 +524,6 @@ private struct AccountPersistenceEvidence: Equatable {
             waiter.resume()
         }
     }
-
-    // MARK: Private
-
-    private var isOpen = false
-    private var waiters = [CheckedContinuation<Void, Never>]()
 }
 
 // MARK: - AccountPersistenceError
@@ -531,19 +531,20 @@ private struct AccountPersistenceEvidence: Equatable {
 private enum AccountPersistenceError: Error { case injected }
 
 private func accountPersistenceSession(
-    token: String = "fixture-token", userID: String = "account", baseURL: URL = URL(string: "https://sync.example")!
+    token: String = "fixture-token", userID: String = "account", baseURL: URL = URL(string: "https://sync.example")!,
 ) -> BrowserAuthSession {
     .init(
         accessToken: token,
         userID: userID,
         userEmail: "fixture@example.test",
         deviceID: "fixture-device",
-        serverURL: baseURL
+        serverURL: baseURL,
     )
 }
 
 @MainActor private func accountPersistenceEventually(_ condition: () -> Bool) async -> Bool {
-    let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(3))
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(3))
     while clock.now < deadline {
         if condition() {
             return true
@@ -554,7 +555,7 @@ private func accountPersistenceSession(
 }
 
 @MainActor private func withAccountPersistenceFixture(
-    bound: Bool = true, _ body: (AccountPersistenceFixture) async throws -> Void
+    bound: Bool = true, _ body: (AccountPersistenceFixture) async throws -> Void,
 ) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("AccountPersistence-\(UUID())")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -562,11 +563,13 @@ private func accountPersistenceSession(
 }
 
 @MainActor private func runAccountPersistenceFixture(
-    directory: URL, bound: Bool, _ body: (AccountPersistenceFixture) async throws -> Void
+    directory: URL, bound: Bool, _ body: (AccountPersistenceFixture) async throws -> Void,
 ) async throws {
     let fixture = try AccountPersistenceFixture(directory: directory, bound: bound)
-    do { try await body(fixture) }
-    catch { await fixture.stop()
+    do {
+        try await body(fixture)
+    } catch {
+        await fixture.stop()
         throw error
     }
     await fixture.stop()

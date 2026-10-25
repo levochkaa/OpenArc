@@ -1,15 +1,16 @@
+// BrowserWindowControlsView.swift
+
 import AppKit
 
 // MARK: - BrowserWindowControlsHostView
 
 final class BrowserWindowControlsHostView: NSView {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    isolated deinit {
-        if managesSystemButtons {
-            updateSystemButtons(hidden: false, for: observedWindow)
-        }
-        stopObservingWindow()
+    private enum DisplayMode {
+        case hidden
+        case sidebar
+        case system
     }
 
     // MARK: Internal
@@ -21,7 +22,7 @@ final class BrowserWindowControlsHostView: NSView {
 
         return NSSize(
             width: shouldReserveSidebarWidth ? BrowserWindowControlsLayout.totalWidth : 0,
-            height: BrowserWindowControlsLayout.controlsHeight
+            height: BrowserWindowControlsLayout.controlsHeight,
         )
     }
 
@@ -39,59 +40,6 @@ final class BrowserWindowControlsHostView: NSView {
             invalidateIntrinsicContentSize()
             updateWindowButtons()
         }
-    }
-
-    override func invalidateIntrinsicContentSize() {
-        super.invalidateIntrinsicContentSize()
-        superview?.needsLayout = true
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        updateWindowObservation()
-        ensureCustomButtons()
-        invalidateIntrinsicContentSize()
-        updateWindowButtons()
-    }
-
-    override func layout() {
-        super.layout()
-        layoutCustomButtons()
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-
-        if let hoverTrackingArea {
-            removeTrackingArea(hoverTrackingArea)
-        }
-
-        let trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea)
-        hoverTrackingArea = trackingArea
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
-        setGroupHovered(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        setGroupHovered(false)
-    }
-
-    // MARK: Private
-
-    private enum DisplayMode {
-        case hidden
-        case sidebar
-        case system
     }
 
     private let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
@@ -143,9 +91,62 @@ final class BrowserWindowControlsHostView: NSView {
         switch displayMode {
         case .system:
             return false
-        case .hidden, .sidebar:
+        case .hidden,
+             .sidebar:
             return true
         }
+    }
+
+    isolated deinit {
+        if managesSystemButtons {
+            updateSystemButtons(hidden: false, for: observedWindow)
+        }
+        stopObservingWindow()
+    }
+
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        superview?.needsLayout = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateWindowObservation()
+        ensureCustomButtons()
+        invalidateIntrinsicContentSize()
+        updateWindowButtons()
+    }
+
+    override func layout() {
+        super.layout()
+        layoutCustomButtons()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil,
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        setGroupHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        setGroupHovered(false)
     }
 
     @objc private func handleWindowStateChange(_ notification: Notification) {
@@ -216,61 +217,61 @@ final class BrowserWindowControlsHostView: NSView {
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.willEnterFullScreenNotification,
-            object: window
+            object: window,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.didEnterFullScreenNotification,
-            object: window
+            object: window,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.willExitFullScreenNotification,
-            object: window
+            object: window,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.didExitFullScreenNotification,
-            object: window
+            object: window,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.didBecomeKeyNotification,
-            object: window
+            object: window,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.didResignKeyNotification,
-            object: window
+            object: window,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.didBecomeMainNotification,
-            object: window
+            object: window,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSWindow.didResignMainNotification,
-            object: window
+            object: window,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSApplication.didBecomeActiveNotification,
-            object: nil
+            object: nil,
         )
         notificationCenter.addObserver(
             self,
             selector: #selector(handleWindowStateChange(_:)),
             name: NSApplication.didResignActiveNotification,
-            object: nil
+            object: nil,
         )
     }
 
@@ -356,7 +357,7 @@ final class BrowserWindowControlsHostView: NSView {
                 x: originX,
                 y: originY,
                 width: BrowserWindowControlsLayout.buttonSize,
-                height: BrowserWindowControlsLayout.buttonSize
+                height: BrowserWindowControlsLayout.buttonSize,
             )
         }
     }
@@ -452,21 +453,29 @@ final class BrowserWindowControlsHostView: NSView {
 // MARK: - BrowserTrafficLightButton
 
 private final class BrowserTrafficLightButton: NSButton {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(buttonType: NSWindow.ButtonType) {
-        self.buttonType = buttonType
-        super.init(frame: .zero)
-        isBordered = false
-        title = ""
-        image = nil
-        focusRingType = .none
-        setButtonType(.momentaryPushIn)
+    private enum VisualState {
+        case disabled
+        case unfocused
+        case normal
+        case hover
+        case pressed
     }
 
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    private enum AssetName: String {
+        case closeNormal = "TrafficLightCloseNormal"
+        case closeHover = "TrafficLightCloseHover"
+        case closePressed = "TrafficLightClosePressed"
+        case minimizeNormal = "TrafficLightMinimizeNormal"
+        case minimizeHover = "TrafficLightMinimizeHover"
+        case minimizePressed = "TrafficLightMinimizePressed"
+        case fullscreenNormal = "TrafficLightFullscreenNormal"
+        case fullscreenHover = "TrafficLightFullscreenHover"
+        case fullscreenPressed = "TrafficLightFullscreenPressed"
     }
+
+    private static var imageCache = [AssetName: NSImage]()
 
     // MARK: Internal
 
@@ -504,38 +513,6 @@ private final class BrowserTrafficLightButton: NSButton {
         }
     }
 
-    override func draw(_: NSRect) {
-        guard let image = Self.image(named: currentAssetName) else {
-            return
-        }
-
-        image.draw(in: bounds)
-    }
-
-    // MARK: Private
-
-    private enum VisualState {
-        case disabled
-        case unfocused
-        case normal
-        case hover
-        case pressed
-    }
-
-    private enum AssetName: String {
-        case closeNormal = "TrafficLightCloseNormal"
-        case closeHover = "TrafficLightCloseHover"
-        case closePressed = "TrafficLightClosePressed"
-        case minimizeNormal = "TrafficLightMinimizeNormal"
-        case minimizeHover = "TrafficLightMinimizeHover"
-        case minimizePressed = "TrafficLightMinimizePressed"
-        case fullscreenNormal = "TrafficLightFullscreenNormal"
-        case fullscreenHover = "TrafficLightFullscreenHover"
-        case fullscreenPressed = "TrafficLightFullscreenPressed"
-    }
-
-    private static var imageCache = [AssetName: NSImage]()
-
     private let buttonType: NSWindow.ButtonType
 
     private var visualState: VisualState {
@@ -562,7 +539,8 @@ private final class BrowserTrafficLightButton: NSButton {
         switch visualState {
         case .disabled:
             normalAssetName
-        case .normal, .unfocused:
+        case .normal,
+             .unfocused:
             normalAssetName
         case .hover:
             switch buttonType {
@@ -602,6 +580,28 @@ private final class BrowserTrafficLightButton: NSButton {
         }
     }
 
+    init(buttonType: NSWindow.ButtonType) {
+        self.buttonType = buttonType
+        super.init(frame: .zero)
+        isBordered = false
+        title = ""
+        image = nil
+        focusRingType = .none
+        setButtonType(.momentaryPushIn)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_: NSRect) {
+        guard let image = Self.image(named: currentAssetName) else {
+            return
+        }
+
+        image.draw(in: bounds)
+    }
+
     private static func image(named assetName: AssetName) -> NSImage? {
         if let image = imageCache[assetName] {
             return image
@@ -614,7 +614,7 @@ private final class BrowserTrafficLightButton: NSButton {
 
         let resizedImage = BrowserImageThumbnailer.resizedImage(
             image,
-            fitting: BrowserWindowControlsLayout.buttonSize
+            fitting: BrowserWindowControlsLayout.buttonSize,
         ) ?? image
         resizedImage.isTemplate = false
         imageCache[assetName] = resizedImage

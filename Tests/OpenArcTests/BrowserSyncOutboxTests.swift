@@ -1,3 +1,5 @@
+// BrowserSyncOutboxTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -120,7 +122,7 @@ import Testing
     let result = try store.acknowledgeSyncMutation(
         id: first.id,
         events: outboxEvents(first.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(result.tabs.first?.userTitleOverride == "Second")
     #expect(try store.pendingSyncMutations(for: harness.owner) == [second])
@@ -130,13 +132,13 @@ import Testing
     _ = try store.acknowledgeSyncMutation(
         id: first.id,
         events: outboxEvents(first.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(try store.pendingSyncMutations(for: harness.owner) == [second])
     _ = try store.acknowledgeSyncMutation(
         id: second.id,
         events: outboxEvents(second.changes, startingAt: 3),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(try store.pendingSyncMutations(for: harness.owner).isEmpty)
     #expect(store.loadSnapshot()?.tabs.first?.userTitleOverride == "Second")
@@ -153,12 +155,12 @@ import Testing
     _ = try store.acknowledgeSyncMutation(
         id: UUID().uuidString,
         events: outboxEvents(older, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     _ = try store.acknowledgeSyncMutation(
         id: UUID().uuidString,
         events: [outboxDelete(id: "a", sequence: 5)],
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(store.loadSnapshot()?.tabs.first?.userTitleOverride == "Latest")
     #expect(try store.syncCursor(for: harness.owner) == 11)
@@ -174,14 +176,14 @@ import Testing
     let projection = try store.applyRemoteSyncEvents(
         [outboxDelete(id: "a", sequence: 10)],
         cursor: 10,
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.tabs.isEmpty)
     let reopened = try harness.store()
     _ = try reopened.acknowledgeSyncMutation(
         id: seed.id,
         events: outboxEvents(seed.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(reopened.loadSnapshot()?.tabs.isEmpty == true)
     // Undo uses a new identity, which remains eligible for upload.
@@ -205,7 +207,7 @@ import Testing
             id: "space",
             title: "Work",
             systemImageName: "briefcase",
-            selectedTabIndex: 1
+            selectedTabIndex: 1,
         )],
         pinnedTabFolders: folders,
         tabs: [
@@ -214,10 +216,10 @@ import Testing
                 urlString: "https://a.example",
                 placement: .spacePinned,
                 spaceID: "space",
-                pinnedFolderID: "child"
+                pinnedFolderID: "child",
             ),
             BrowserTabSessionSnapshotTab(id: "b", urlString: "https://b.example", spaceID: "space"),
-        ]
+        ],
     )
     store.saveSnapshot(local)
     try store.bindSyncOwner(harness.owner)
@@ -225,7 +227,7 @@ import Testing
     let projection = try store.applyRemoteSyncEvents(
         [outboxDelete(id: "a", sequence: 10)],
         cursor: 10,
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.pinnedTabFolders == folders)
     #expect(projection.spaces?.first?.selectedTabIndex == 0)
@@ -246,7 +248,7 @@ import Testing
     _ = try store.acknowledgeSyncMutation(
         id: clear.id,
         events: outboxEvents(clear.changes, startingAt: 10),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(try harness.store().loadSnapshot()?.tabs.first?.userTitleOverride == nil)
 }
@@ -290,7 +292,7 @@ import Testing
         try store.acknowledgeSyncMutation(
             id: mutation.id,
             events: outboxEvents(mutation.changes, startingAt: 1),
-            for: harness.owner
+            for: harness.owner,
         )
     }
     #expect(throws: DatabaseError.self) {
@@ -303,7 +305,7 @@ import Testing
     _ = try store.acknowledgeSyncMutation(
         id: mutation.id,
         events: outboxEvents(mutation.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(try store.pendingSyncMutations(for: harness.owner).isEmpty)
 }
@@ -321,7 +323,7 @@ import Testing
     #expect(throws: BrowserSyncStoreError.ownerMismatch) { try store.acknowledgeSyncMutation(
         id: mutation.id,
         events: [],
-        for: foreign
+        for: foreign,
     ) }
     #expect(throws: BrowserSyncStoreError.ownerMismatch) {
         try store.applyRemoteSyncEvents([], cursor: 99, for: foreign)
@@ -333,7 +335,7 @@ import Testing
         entityID: "a",
         op: "upsert",
         data: .unknown,
-        createdAt: ""
+        createdAt: "",
     )
     #expect(throws: BrowserSyncOutboxError.invalidEvent) {
         try store.acknowledgeSyncMutation(id: mutation.id, events: [malformed], for: harness.owner)
@@ -358,14 +360,14 @@ import Testing
     let projection = try store.acknowledgeSyncMutation(
         id: mutation.id,
         events: outboxEvents(mutation.changes, startingAt: 10),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.tabs.map(\.id) == ["z", "a", "m"])
     #expect(projection.tabs[1].userTitleOverride == "Renamed")
 
     let renamedSpace = BrowserTabSessionSnapshot(
         spaces: [BrowserSpaceSessionSnapshot(id: "space", title: "Renamed space", systemImageName: "briefcase")],
-        tabs: projection.tabs
+        tabs: projection.tabs,
     )
     store.saveSnapshot(renamedSpace)
     let spaceChange = try #require(store.pendingSyncMutations(for: harness.owner).first?.changes.first)
@@ -391,12 +393,12 @@ import Testing
     _ = try store.acknowledgeSyncMutation(
         id: pending[0].id,
         events: outboxEvents(pending[0].changes, startingAt: 10),
-        for: harness.owner
+        for: harness.owner,
     )
     let projection = try store.acknowledgeSyncMutation(
         id: pending[1].id,
         events: outboxEvents(pending[1].changes, startingAt: 11),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.tabs.map(\.id) == ["a", "m"])
 }
@@ -409,7 +411,7 @@ import Testing
     let original = try store.applyRemoteSyncEvents(outboxSparseEvents(), cursor: 4, for: harness.owner)
     let reordered = BrowserTabSessionSnapshot(
         spaces: original.spaces,
-        tabs: [original.tabs[1], original.tabs[0], original.tabs[2]]
+        tabs: [original.tabs[1], original.tabs[0], original.tabs[2]],
     )
     store.saveSnapshot(reordered)
     let mutation = try #require(store.pendingSyncMutations(for: harness.owner).first)
@@ -420,7 +422,7 @@ import Testing
     let projection = try store.acknowledgeSyncMutation(
         id: mutation.id,
         events: outboxEvents(mutation.changes, startingAt: 10),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.tabs.map(\.id) == ["a", "z", "m"])
 }
@@ -436,7 +438,7 @@ import Testing
         tabs: [
             original.tabs[0],
             BrowserTabSessionSnapshotTab(id: "new", urlString: "https://new.example", spaceID: "space"),
-        ] + Array(original.tabs.dropFirst())
+        ] + Array(original.tabs.dropFirst()),
     )
     store.saveSnapshot(inserted)
     let mutation = try #require(store.pendingSyncMutations(for: harness.owner).first)
@@ -445,7 +447,7 @@ import Testing
     let projection = try store.acknowledgeSyncMutation(
         id: mutation.id,
         events: outboxEvents(mutation.changes, startingAt: 10),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.tabs.map(\.id) == ["z", "new", "a", "m"])
 }
@@ -461,10 +463,10 @@ import Testing
                 id: "app",
                 urlString: "https://app.example",
                 placement: .app,
-                spaceID: "space"
+                spaceID: "space",
             ),
             BrowserTabSessionSnapshotTab(id: "ordinary", urlString: "https://ordinary.example", spaceID: "space"),
-        ]
+        ],
     )
     store.saveSnapshot(original)
     try store.bindSyncOwner(harness.owner)
@@ -473,7 +475,7 @@ import Testing
     let queued = try #require(store.pendingSyncMutations(for: harness.owner).first)
     let deleteSpace = BrowserSyncEvent(
         serverSeq: 10, deviceID: "remote", entityType: "space", entityID: "space", op: "delete",
-        data: .deleted(id: "space"), createdAt: "2026-10-03T00:00:00Z"
+        data: .deleted(id: "space"), createdAt: "2026-10-03T00:00:00Z",
     )
     let projection = try store.applyRemoteSyncEvents([deleteSpace], cursor: 10, for: harness.owner)
     #expect(projection.spaces == nil)
@@ -490,7 +492,7 @@ import Testing
     _ = try store.acknowledgeSyncMutation(
         id: queued.id,
         events: outboxEvents(queued.changes, startingAt: 11),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(store.loadSnapshot()?.tabs.first?.userTitleOverride == "Second rename")
     let reopened = try harness.store()
@@ -510,7 +512,7 @@ import Testing
     let projection = try store.acknowledgeSyncMutation(
         id: mutation.id,
         events: outboxEvents(mutation.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.spaces == nil)
     #expect(projection.tabs.map(\.id) == ["app"])
@@ -521,7 +523,7 @@ import Testing
     ])
     let changes = BrowserSyncOutboxProjection.changes(from: nil, to: mixed)
     #expect(changes.first?.entityID == BrowserChromeModel.defaultSpaceID)
-    #expect(changes.filter { $0.entityType == .space }.count == 1)
+    #expect(changes.count(where: { $0.entityType == .space }) == 1)
 }
 
 @Test func syncOutboxExplicitLocalAppDeleteDominatesOldQueuedRenameWithoutParent() throws {
@@ -529,7 +531,7 @@ import Testing
     defer { harness.cleanup() }
     let store = try harness.store()
     let original = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
-        id: "app", urlString: "https://app.example", placement: .app, spaceID: "absent-parent"
+        id: "app", urlString: "https://app.example", placement: .app, spaceID: "absent-parent",
     )])
     store.saveSnapshot(original)
     try store.bindSyncOwner(harness.owner)
@@ -539,7 +541,7 @@ import Testing
     let projection = try store.acknowledgeSyncMutation(
         id: seed.id,
         events: outboxEvents(seed.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.tabs.isEmpty)
     #expect(try store.pendingSyncMutations(for: harness.owner)
@@ -555,7 +557,7 @@ import Testing
     defer { harness.cleanup() }
     let store = try harness.store()
     let original = BrowserTabSessionSnapshot(tabs: [BrowserTabSessionSnapshotTab(
-        id: "app", urlString: "https://app.example", placement: .app, spaceID: "absent-parent"
+        id: "app", urlString: "https://app.example", placement: .app, spaceID: "absent-parent",
     )])
     store.saveSnapshot(original)
     try store.bindSyncOwner(harness.owner)
@@ -563,13 +565,13 @@ import Testing
     let projection = try store.applyRemoteSyncEvents(
         [outboxDelete(id: "app", sequence: 10)],
         cursor: 10,
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(projection.tabs.isEmpty)
     _ = try store.acknowledgeSyncMutation(
         id: seed.id,
         events: outboxEvents(seed.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     store.saveSnapshot(outboxRenaming(original, tabID: "app", title: "Stale rename"))
     #expect(store.loadSnapshot() == nil)
@@ -584,8 +586,8 @@ private func outboxSparseEvents() -> [BrowserSyncEvent] {
             systemImageName: "briefcase",
             rank: 500,
             isPinnedSectionCollapsed: false,
-            selectedTabID: nil
-        ), tabData: nil
+            selectedTabID: nil,
+        ), tabData: nil,
     )
     let tabs = ["z", "a", "m"].enumerated().map { index, id in
         BrowserSyncChange(
@@ -599,8 +601,8 @@ private func outboxSparseEvents() -> [BrowserSyncEvent] {
                 title: nil,
                 userTitleOverride: nil,
                 faviconURLString: nil,
-                lastActivityAt: nil
-            )
+                lastActivityAt: nil,
+            ),
         )
     }
     return outboxEvents([space] + tabs, startingAt: 1)
@@ -609,7 +611,7 @@ private func outboxSparseEvents() -> [BrowserSyncEvent] {
 private func outboxRenaming(
     _ snapshot: BrowserTabSessionSnapshot,
     tabID: String,
-    title: String
+    title: String,
 ) -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(
         spaces: snapshot.spaces, pinnedTabFolders: snapshot.pinnedTabFolders,
@@ -624,16 +626,21 @@ private func outboxRenaming(
                 placement: tab.placement,
                 spaceID: tab.spaceID,
                 pinnedFolderID: tab.pinnedFolderID,
-                lastActivityTimestamp: tab.lastActivityTimestamp
+                lastActivityTimestamp: tab.lastActivityTimestamp,
             )
-        }
+        },
     )
 }
 
 // MARK: - SyncOutboxHarness
 
 private struct SyncOutboxHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory: URL
+    let owner: BrowserSyncOwner
+
+    var databaseURL: URL { directory.appendingPathComponent("test.sqlite") }
 
     init() throws {
         self.directory = FileManager.default
@@ -643,13 +650,6 @@ private struct SyncOutboxHarness {
         self.owner = try BrowserSyncOwner(baseURL: #require(URL(string: "https://sync.example")), userID: "owner")
     }
 
-    // MARK: Internal
-
-    let directory: URL
-    let owner: BrowserSyncOwner
-
-    var databaseURL: URL { directory.appendingPathComponent("test.sqlite") }
-
     func store() throws -> BrowserSQLiteSessionStore { try BrowserSQLiteSessionStore(databaseURL: databaseURL) }
     func cleanup() { try? FileManager.default.removeItem(at: directory) }
 }
@@ -657,7 +657,7 @@ private struct SyncOutboxHarness {
 private func outboxSnapshot(
     ids: [String],
     title: String = "Work",
-    override: String? = nil
+    override: String? = nil,
 ) -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(
         spaces: [BrowserSpaceSessionSnapshot(id: "space", title: title, systemImageName: "briefcase")],
@@ -665,8 +665,8 @@ private func outboxSnapshot(
             id: $0,
             urlString: "https://\($0).example",
             userTitleOverride: override,
-            spaceID: "space"
-        ) }
+            spaceID: "space",
+        ) },
     )
 }
 
@@ -676,7 +676,7 @@ private func outboxAcknowledgeAll(_ store: BrowserSQLiteSessionStore, owner: Bro
         _ = try store.acknowledgeSyncMutation(
             id: mutation.id,
             events: outboxEvents(mutation.changes, startingAt: sequence),
-            for: owner
+            for: owner,
         )
         sequence += mutation.changes.count
     }
@@ -690,7 +690,7 @@ private func outboxDelete(id: String, sequence: Int) -> BrowserSyncEvent {
         entityID: id,
         op: "delete",
         data: .deleted(id: id),
-        createdAt: "2026-10-03T00:00:00Z"
+        createdAt: "2026-10-03T00:00:00Z",
     )
 }
 
@@ -704,7 +704,7 @@ private func outboxEvents(_ changes: [BrowserSyncChange], startingAt sequence: I
                     systemImageName: space.systemImageName,
                     rank: space.rank,
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                    selectedTabID: space.selectedTabID
+                    selectedTabID: space.selectedTabID,
                 ))
             } else if let tab = change.tabData {
                 .tab(BrowserSyncEventTabData(
@@ -717,7 +717,7 @@ private func outboxEvents(_ changes: [BrowserSyncChange], startingAt sequence: I
                     title: tab.title,
                     userTitleOverride: tab.userTitleOverride,
                     faviconURLString: tab.faviconURLString,
-                    lastActivityAt: tab.lastActivityAt
+                    lastActivityAt: tab.lastActivityAt,
                 ))
             } else {
                 .deleted(id: change.entityID)
@@ -729,7 +729,7 @@ private func outboxEvents(_ changes: [BrowserSyncChange], startingAt sequence: I
             entityID: change.entityID,
             op: change.op.rawValue,
             data: data,
-            createdAt: "2026-10-03T00:00:00Z"
+            createdAt: "2026-10-03T00:00:00Z",
         )
     }
 }
@@ -753,7 +753,7 @@ private func outboxEvents(_ changes: [BrowserSyncChange], startingAt sequence: I
     _ = try store.acknowledgeSyncMutation(
         id: mutation.id,
         events: outboxEvents(mutation.changes, startingAt: 1),
-        for: harness.owner
+        for: harness.owner,
     )
     #expect(store.loadSnapshot() == original)
     #expect(try store.pendingSyncMutations(for: harness.owner).isEmpty)

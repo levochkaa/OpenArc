@@ -1,3 +1,5 @@
+// BrowserNativeAnimationTests.swift
+
 import AppKit
 import Testing
 
@@ -71,7 +73,7 @@ import Testing
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
             styleMask: [.borderless],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         defer { window.close() }

@@ -1,11 +1,23 @@
+// BrowserSyncOwner.swift
+
 import Foundation
 
 // MARK: - BrowserSyncOwner
 
 /// The durable account that owns a profile's synchronized data. Credentials and
 /// device registrations can change without changing this identity.
-struct BrowserSyncOwner: Codable, Equatable, Sendable {
-    // MARK: Lifecycle
+struct BrowserSyncOwner: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case baseURL
+        case userID
+    }
+
+    // MARK: Internal
+
+    let baseURL: URL
+    let userID: String
 
     init(baseURL: URL, userID: String) {
         self.baseURL = Self.normalized(baseURL)
@@ -16,20 +28,8 @@ struct BrowserSyncOwner: Codable, Equatable, Sendable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
             baseURL: values.decode(URL.self, forKey: .baseURL),
-            userID: values.decode(String.self, forKey: .userID)
+            userID: values.decode(String.self, forKey: .userID),
         )
-    }
-
-    // MARK: Internal
-
-    let baseURL: URL
-    let userID: String
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case baseURL
-        case userID
     }
 
     private static func normalized(_ url: URL) -> URL {

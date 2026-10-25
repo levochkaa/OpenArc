@@ -1,3 +1,5 @@
+// BrowserUpdateToast.swift
+
 import Foundation
 
 // MARK: - BrowserUpdateToast

@@ -1,3 +1,5 @@
+// BrowserPendingFolderMoveTests.swift
+
 import Foundation
 import Testing
 
@@ -20,10 +22,10 @@ import Testing
             #expect(saved.tabs.first { $0.id == id }?.spaceID == "target")
             #expect(saved.tabs.first { $0.id == id }?.pinnedFolderID == (id == "child" ? "folder" : "nested"))
         }
-        #expect(f.model.tabs.filter { ["child", "nested-child"].contains($0.syncID) }.count == deliveredChildren)
+        #expect(f.model.tabs.count(where: { ["child", "nested-child"].contains($0.syncID) }) == deliveredChildren)
         #expect(try f.operations() == [.move(
             items: [.init(entityType: .folder, entityID: "folder")],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         )])
         let frozen = try f.store.pendingSyncQueue(for: f.owner)
         for child in children.dropFirst(deliveredChildren) {
@@ -59,14 +61,14 @@ import Testing
         #expect(!beforeCallbacks.tabs.contains { $0.id == "nested-child" })
         #expect(beforeCallbacks.tabs.contains { $0.id == "favorite" })
         #expect(try f.operations()
-            .filter {
+            .count(where: {
                 if case .deleteFolder(id: "folder") = $0 {
                     true
                 } else {
                     false
                 }
-            }
-            .count == 1)
+            })
+             == 1)
         #expect(try !f.operations().contains {
             if case .deleteTab = $0 {
                 true
@@ -101,7 +103,7 @@ import Testing
         let request = try #require(f.driver.createdTabRequests.last)
         let a = try #require(f.model.tabs.first { $0.syncID == "a" })
         #expect(f.model.commitSidebarDrop(
-            payload: .init(primary: .tab(a.id), tabIDs: [a.id]), destination: .init(container: .pinned("source"))
+            payload: .init(primary: .tab(a.id), tabIDs: [a.id]), destination: .init(container: .pinned("source")),
         ))
         let moves = try f.operations().filter {
             if case .move = $0 {
@@ -113,7 +115,7 @@ import Testing
         #expect(moves == [.move(
             items: [.init(entityType: .tab, entityID: "a")],
             destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil),
-            after: .init(entityType: .tab, entityID: "b")
+            after: .init(entityType: .tab, entityID: "b"),
         )])
         let saved = try #require(f.store.loadSnapshot())
         #expect(BrowserSyncFolderProjection.canonicalChanges(saved)
@@ -137,19 +139,19 @@ import Testing
                 id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
                 userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
                 pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: nil,
-                pinnedSiblingRank: tab.pinnedSiblingRank
+                pinnedSiblingRank: tab.pinnedSiblingRank,
             )
         }
         try f.receive(.init(spaces: incoming.spaces, pinnedTabFolders: incoming.pinnedTabFolders, tabs: noActivity))
         let requests = Array(f.driver.createdTabRequests.suffix(3))
         f.model.movePinnedTabFolder(withID: "folder", toRootSectionIndex: 0, targetSpaceID: "target")
         let saved = try #require(f.store.loadSnapshot())
-        #expect(saved.tabs.filter { pendingIDs.contains($0.id ?? "") }.count == 3)
+        #expect(saved.tabs.count(where: { pendingIDs.contains($0.id ?? "") }) == 3)
         #expect(saved.tabs.filter { pendingIDs.contains($0.id ?? "") }.allSatisfy { $0.lastActivityTimestamp == nil })
         #expect(saved.tabs.first { $0.id == "unrelated" }?.spaceID == "source")
         #expect(try f.operations() == [.move(
             items: [.init(entityType: .folder, entityID: "folder")],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         )])
         let frozen = try f.store.pendingSyncQueue(for: f.owner)
         for request in requests {
@@ -179,7 +181,20 @@ import Testing
 // MARK: - PendingFolderFixture
 
 @MainActor private final class PendingFolderFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PendingFolder-\(UUID())")
+    let suite = "PendingFolder.\(UUID())"
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
+    let store: BrowserSQLiteSessionStore
+    let driver = FakeBrowserTabDriver()
+    let model: BrowserChromeModel
+
+    // MARK: Private
+
+    private var sequence = 100
+
+    var databaseURL: URL { directory.appendingPathComponent("Browser.sqlite") }
 
     init() throws {
         self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Browser.sqlite"))
@@ -199,23 +214,50 @@ import Testing
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(),
             dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
         model.selectSpace(id: "source")
     }
 
-    // MARK: Internal
+    private static func tab(
+        _ id: String,
+        space: String = "source",
+        folder: String? = nil,
+        placement: BrowserTabPlacement = .spacePinned,
+        rank: Double = 0,
+    ) -> BrowserTabSessionSnapshotTab {
+        .init(
+            id: id,
+            urlString: "https://example.com/\(id)",
+            pinnedURLString: placement == .spacePinned
+                ? "https://example.com/\(id)"
+                : nil,
+            userTitleOverride: id,
+            placement: placement,
+            spaceID: space,
+            pinnedFolderID: folder,
+            lastActivityTimestamp: 1_800_000_000,
+            pinnedSiblingRank: placement == .spacePinned ? rank : nil,
+        )
+    }
 
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PendingFolder-\(UUID())")
-    let suite = "PendingFolder.\(UUID())"
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
-    let store: BrowserSQLiteSessionStore
-    let driver = FakeBrowserTabDriver()
-    let model: BrowserChromeModel
-
-    var databaseURL: URL { directory.appendingPathComponent("Browser.sqlite") }
+    private static func events(_ snapshot: BrowserTabSessionSnapshot, start: Int) throws -> [BrowserSyncEvent] {
+        try BrowserSyncFolderProjection.canonicalChanges(snapshot).enumerated().map { offset, change in
+            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(change)) as! [String: Any]
+            var data = object["data"] as! [String: Any]
+            data["id"] = change.entityID
+            let envelope: [String: Any] = [
+                "serverSeq": start + offset, "deviceID": NSNull(), "entityType": change.entityType.rawValue,
+                "entityID": change.entityID, "op": "upsert", "data": data, "createdAt": "2026-10-03T00:00:00Z",
+            ]
+            return try JSONDecoder().decode(
+                BrowserSyncEvent.self,
+                from: JSONSerialization.data(withJSONObject: envelope),
+            )
+        }
+    }
 
     func cleanup() {
         model.prepareForTermination()
@@ -228,7 +270,7 @@ import Testing
         space: String = "source",
         folder: String? = nil,
         placement: BrowserTabPlacement = .spacePinned,
-        rank: Double = 0
+        rank: Double = 0,
     ) -> BrowserTabSessionSnapshotTab {
         Self.tab(id, space: space, folder: folder, placement: placement, rank: rank)
     }
@@ -256,48 +298,6 @@ import Testing
         try store.pendingSyncQueue(for: owner).flatMap { row in
             guard case .folders(let mutation) = row else { throw BrowserSyncQueueError.protocolVersionMismatch }
             return mutation.operations
-        }
-    }
-
-    // MARK: Private
-
-    private var sequence = 100
-
-    private static func tab(
-        _ id: String,
-        space: String = "source",
-        folder: String? = nil,
-        placement: BrowserTabPlacement = .spacePinned,
-        rank: Double = 0
-    ) -> BrowserTabSessionSnapshotTab {
-        .init(
-            id: id,
-            urlString: "https://example.com/\(id)",
-            pinnedURLString: placement == .spacePinned
-                ? "https://example.com/\(id)"
-                : nil,
-            userTitleOverride: id,
-            placement: placement,
-            spaceID: space,
-            pinnedFolderID: folder,
-            lastActivityTimestamp: 1_800_000_000,
-            pinnedSiblingRank: placement == .spacePinned ? rank : nil
-        )
-    }
-
-    private static func events(_ snapshot: BrowserTabSessionSnapshot, start: Int) throws -> [BrowserSyncEvent] {
-        try BrowserSyncFolderProjection.canonicalChanges(snapshot).enumerated().map { offset, change in
-            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(change)) as! [String: Any]
-            var data = object["data"] as! [String: Any]
-            data["id"] = change.entityID
-            let envelope: [String: Any] = [
-                "serverSeq": start + offset, "deviceID": NSNull(), "entityType": change.entityType.rawValue,
-                "entityID": change.entityID, "op": "upsert", "data": data, "createdAt": "2026-10-03T00:00:00Z",
-            ]
-            return try JSONDecoder().decode(
-                BrowserSyncEvent.self,
-                from: JSONSerialization.data(withJSONObject: envelope)
-            )
         }
     }
 }

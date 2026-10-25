@@ -1,3 +1,5 @@
+// BrowserMobileArchiveTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import GRDB
@@ -9,7 +11,8 @@ import WebKit
 extension BrowserMobileUITests {
     @Test func archiveCloseAndRestoreAreExactlyOnceAcrossTwoSharedScenes() async throws {
         try await withMobileArchiveFixture { f in
-            let firstEngine = MobileArchiveEngine(), secondEngine = MobileArchiveEngine()
+            let firstEngine = MobileArchiveEngine()
+            let secondEngine = MobileArchiveEngine()
             let first = await f.workspace(engine: firstEngine, scene: "first")
             let second = await f.workspace(engine: secondEngine, scene: "second")
             first.selectTab(id: "a")
@@ -17,7 +20,7 @@ extension BrowserMobileUITests {
             let firstRuntime = try #require(first.tabs.first { $0.id == "a" }?.runtimeID)
             let secondRuntime = try #require(second.tabs.first { $0.id == "a" }?.runtimeID)
             firstEngine.onEvent?(.state(id: firstRuntime, .init(
-                url: URL(string: "https://archive.example/latest"), title: "Latest document title"
+                url: URL(string: "https://archive.example/latest"), title: "Latest document title",
             )))
             #expect(f.document.renameTab(id: "a", title: "User title"))
             let latest = try #require(f.document.snapshot.tabs.first { $0.id == "a" })
@@ -89,7 +92,7 @@ extension BrowserMobileUITests {
             let revision = first.archiveRevision
             try f
                 .sql(
-                    "CREATE TRIGGER fail_archive BEFORE INSERT ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_archive BEFORE INSERT ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             first.closeTab(id: "a")
             #expect(f.document.hasUncommittedWrites && f.document.persistenceFailure?.isRetryable == true)
@@ -112,7 +115,7 @@ extension BrowserMobileUITests {
             #expect(try f.operations() == [
                 .deleteTab(id: "a"), .patchTab(
                     id: "b",
-                    fields: .init(userTitleOverride: .set("Edit after failed close"))
+                    fields: .init(userTitleOverride: .set("Edit after failed close")),
                 ),
             ])
             let entry = try #require(try f.store.loadArchivePage().entries.first)
@@ -120,12 +123,12 @@ extension BrowserMobileUITests {
 
             try f
                 .sql(
-                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             let freshID = try #require(first.restoreArchivedTab(id: entry.id))
             #expect(freshID != "a" && first.selectedTabID == freshID)
             #expect(second.restoreArchivedTab(id: entry.id) == nil)
-            #expect(f.document.snapshot.tabs.filter { $0.id == freshID }.count == 1)
+            #expect(f.document.snapshot.tabs.count(where: { $0.id == freshID }) == 1)
             #expect(try f.queue() == queueBeforeRestore && f.store.loadArchiveEntry(id: entry.id) == entry)
             #expect(f.document.renameTab(id: freshID, title: "After failed restore"))
             let restored = f.document.snapshot
@@ -136,7 +139,7 @@ extension BrowserMobileUITests {
             #expect(try f.queue().count == queueBeforeRestore.count + 2)
             #expect(second.restoreArchivedTab(id: entry.id) == nil)
             let reopened = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
-            #expect(try reopened.loadSnapshotStrict()?.tabs.filter { $0.id == freshID }.count == 1)
+            #expect(try reopened.loadSnapshotStrict()?.tabs.count(where: { $0.id == freshID }) == 1)
             #expect(try reopened.pendingSyncQueue(for: f.owner) == f.queue())
         }
     }
@@ -208,7 +211,7 @@ extension BrowserMobileUITests {
             let oldIDs = Set(workspace.tabs.map(\.id))
             try f
                 .sql(
-                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_restore BEFORE UPDATE OF restored_tab_id ON browser_tab_archive_receipts BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             archive.tableView(archive.tableView, didSelectRowAt: .init(row: 0, section: 0))
             let freshID = try #require(workspace.tabs.first { !oldIDs.contains($0.id) }?.id)
@@ -304,7 +307,7 @@ extension BrowserMobileUITests {
             #expect(!refused)
             try f
                 .sql(
-                    "CREATE TRIGGER fail_during_archive BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_during_archive BEFORE INSERT ON browser_tabs BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             #expect(document.renameTab(id: "b", title: "Unsaved while Archive awaits"))
             #expect(document.hasUncommittedWrites && first.sessionError != nil)
@@ -324,7 +327,7 @@ extension BrowserMobileUITests {
             #expect(try f.store.loadArchivePage().entries.isEmpty)
             #expect(try f.lastOperations() == [.patchTab(
                 id: "b",
-                fields: .init(userTitleOverride: .set("Unsaved while Archive awaits"))
+                fields: .init(userTitleOverride: .set("Unsaved while Archive awaits")),
             )])
         }
     }
@@ -347,7 +350,7 @@ extension BrowserMobileUITests {
                 workspace: workspace,
                 searchLoader: { query, cursor, limit in
                     try await loader.load(query: query, cursor: cursor, limit: limit)
-                }
+                },
             )
             try await host.present(archive)
             try #require(await mobileArchiveEventually { loader.requests.count == 1 })
@@ -433,13 +436,13 @@ extension BrowserMobileUITests {
             #expect(cell.accessibilityIdentifier == "browser.archive.entry." + entry.id)
             let action = try #require(archive.tableView(
                 archive.tableView,
-                trailingSwipeActionsConfigurationForRowAt: path
+                trailingSwipeActionsConfigurationForRowAt: path,
             )?.actions
                 .first)
             #expect(action.title == "Delete")
             try f
                 .sql(
-                    "CREATE TRIGGER fail_archive_delete BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_archive_delete BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             var result: Bool?
             action.handler(action, cell) { result = $0 }
@@ -517,7 +520,7 @@ extension BrowserMobileUITests {
             let revision = workspace.archiveRevision
             try f
                 .sql(
-                    "CREATE TRIGGER fail_clear BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                    "CREATE TRIGGER fail_clear BEFORE DELETE ON browser_tab_archive BEGIN SELECT RAISE(ABORT, 'injected'); END",
                 )
             archive.chooseClearBoundary(boundary, dismissing: picker)
             try #require(await mobileArchiveEventually {
@@ -581,7 +584,7 @@ extension BrowserMobileUITests {
             if compact {
                 let tabsButton = try #require(mobileArchiveView(
                     "browser.showTabs",
-                    in: root.pageController.view
+                    in: root.pageController.view,
                 ) as? UIButton)
                 tabsButton.sendActions(for: .touchUpInside)
                 try #require(await mobileArchiveEventually {
@@ -623,7 +626,7 @@ extension BrowserMobileUITests {
                 archiveAction,
                 to: archiveButton.target,
                 from: archiveButton,
-                for: nil
+                for: nil,
             ))
             // Keep the Archive controller in a separate frame, so the test does
             // not retain it through dismissal of the compact outer tabs sheet.
@@ -644,13 +647,13 @@ extension BrowserMobileUITests {
             let reopenedStore = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
             let reopenedDocument = try BrowserMobileProfileDocument(
                 store: reopenedStore,
-                loadSnapshot: { try reopenedStore.loadSnapshotStrict() }
+                loadSnapshot: { try reopenedStore.loadSnapshotStrict() },
             )
             let reopenedEngine = BrowserWebKitEngine(dataStore: .nonPersistent())
             defer { reopenedEngine.shutdown() }
             let reopened = BrowserMobileWorkspace(
                 engine: reopenedEngine, sceneID: "reopened", profileLoader: { reopenedDocument },
-                preferences: f.preferences
+                preferences: f.preferences,
             )
             await reopened.restore()
             reopened.selectTab(id: fresh.id)
@@ -668,7 +671,7 @@ extension BrowserMobileUITests {
 }
 
 @MainActor private func selectMobileArchiveEntry(
-    in root: BrowserMobileViewController, window: UIWindow, entryID: String
+    in root: BrowserMobileViewController, window: UIWindow, entryID: String,
 ) async throws {
     try #require(await mobileArchiveEventually { mobileArchiveController(in: root) != nil })
     let archive = try #require(mobileArchiveController(in: root))
@@ -694,7 +697,10 @@ extension BrowserMobileUITests {
 // MARK: - MobileArchivePresentation
 
 @MainActor private final class MobileArchivePresentation {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let root: BrowserMobileViewController
+    let window: UIWindow
 
     init(workspace: BrowserMobileWorkspace, contentView: UIView) throws {
         self.root = BrowserMobileViewController(workspace: workspace, contentView: contentView)
@@ -708,11 +714,6 @@ extension BrowserMobileUITests {
         root.view.frame = window.bounds
         root.view.layoutIfNeeded()
     }
-
-    // MARK: Internal
-
-    let root: BrowserMobileViewController
-    let window: UIWindow
 
     func open() async throws -> BrowserMobileArchiveViewController {
         let sidebar = root.tabsController
@@ -748,7 +749,15 @@ extension BrowserMobileUITests {
 // MARK: - MobileArchiveFixture
 
 @MainActor private final class MobileArchiveFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://archive.example")!, userID: "mobile-archive")
+    let store: BrowserSQLiteSessionStore
+    let document: BrowserMobileProfileDocument
+    let preferencesName = "MobileArchive." + UUID().uuidString
+    let preferences: UserDefaults
+    var workspaces = [BrowserMobileWorkspace]()
 
     init(directory: URL) throws {
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
@@ -771,11 +780,11 @@ extension BrowserMobileUITests {
                     placement: .spacePinned,
                     spaceID: "source",
                     pinnedFolderID: "folder",
-                    pinnedSiblingRank: 0
+                    pinnedSiblingRank: 0,
                 ),
                 .init(id: "favorite", urlString: "about:blank", placement: .app, spaceID: "source"),
                 .init(id: "remote", urlString: "about:blank", spaceID: "target"),
-            ]
+            ],
         )
         let events = try mobileArchiveEvents(BrowserSyncFolderProjection.canonicalChanges(snapshot))
         _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
@@ -784,29 +793,19 @@ extension BrowserMobileUITests {
             store: store, initialSnapshot: store.loadSnapshotStrict(), idProvider: {
                 nextID += 1
                 return "generated-\(nextID)"
-            }, dateProvider: { Date(timeIntervalSince1970: 1_800_000_100) }
+            }, dateProvider: { Date(timeIntervalSince1970: 1_800_000_100) },
         )
     }
 
-    // MARK: Internal
-
-    let databaseURL: URL
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://archive.example")!, userID: "mobile-archive")
-    let store: BrowserSQLiteSessionStore
-    let document: BrowserMobileProfileDocument
-    let preferencesName = "MobileArchive." + UUID().uuidString
-    let preferences: UserDefaults
-    var workspaces = [BrowserMobileWorkspace]()
-
     func workspace(
-        engine: any BrowserMobileEngine, scene: String, document suppliedDocument: BrowserMobileProfileDocument? = nil
+        engine: any BrowserMobileEngine, scene: String, document suppliedDocument: BrowserMobileProfileDocument? = nil,
     ) async -> BrowserMobileWorkspace {
         let document = suppliedDocument ?? document
         let workspace = BrowserMobileWorkspace(
             engine: engine,
             sceneID: scene,
             profileLoader: { document },
-            preferences: preferences
+            preferences: preferences,
         )
         workspaces.append(workspace)
         await workspace.restore()
@@ -883,17 +882,21 @@ private func mobileArchiveEvents(_ changes: [BrowserSyncChange], startingAt: Int
 
 @MainActor private func runMobileArchiveFixture(
     directory: URL,
-    _ body: (MobileArchiveFixture) async throws -> Void
+    _ body: (MobileArchiveFixture) async throws -> Void,
 ) async throws {
     let fixture = try MobileArchiveFixture(directory: directory)
-    do { try await body(fixture) } catch { await fixture.stop()
+    do {
+        try await body(fixture)
+    } catch {
+        await fixture.stop()
         throw error
     }
     await fixture.stop()
 }
 
 @MainActor private func mobileArchiveEventually(_ condition: () -> Bool) async -> Bool {
-    let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(8))
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(8))
     while clock.now < deadline {
         if condition() {
             return true
@@ -936,6 +939,10 @@ private func mobileArchiveEvents(_ changes: [BrowserSyncChange], startingAt: Int
     var requests = [Request]()
     var finished = Set<Int>()
 
+    // MARK: Private
+
+    private var replies = [Int: CheckedContinuation<BrowserTabArchivePage, any Error>]()
+
     func load(query: String, cursor: BrowserTabArchiveCursor?, limit: Int) async throws -> BrowserTabArchivePage {
         let id = requests.count
         requests.append(.init(query: query, cursor: cursor, limit: limit))
@@ -954,24 +961,22 @@ private func mobileArchiveEvents(_ changes: [BrowserSyncChange], startingAt: Int
         }
         replies.removeAll()
     }
-
-    // MARK: Private
-
-    private var replies = [Int: CheckedContinuation<BrowserTabArchivePage, any Error>]()
 }
 
 // MARK: - MobileArchiveOperationGate
 
 private final class MobileArchiveOperationGate: BrowserTabSessionSnapshotStoring, BrowserTabArchiveStoring {
-    // MARK: Lifecycle
-
-    init(store: BrowserSQLiteSessionStore) { self.store = store }
-
     // MARK: Internal
 
     let store: BrowserSQLiteSessionStore
 
+    // MARK: Private
+
+    private var continuation: CheckedContinuation<Void, Never>?
+
     var isWaiting: Bool { continuation != nil }
+
+    init(store: BrowserSQLiteSessionStore) { self.store = store }
 
     func release() { let saved = continuation
         continuation = nil
@@ -989,7 +994,7 @@ private final class MobileArchiveOperationGate: BrowserTabSessionSnapshotStoring
     nonisolated(nonsending) func searchArchivePage(
         query: String,
         before: BrowserTabArchiveCursor?,
-        limit: Int
+        limit: Int,
     ) async throws -> BrowserTabArchivePage {
         try await store.searchArchivePage(query: query, before: before, limit: limit)
     }
@@ -1006,10 +1011,6 @@ private final class MobileArchiveOperationGate: BrowserTabSessionSnapshotStoring
     nonisolated(nonsending) func clearArchive(through boundary: BrowserTabArchiveBoundary) async throws -> Int {
         try await store.clearArchive(through: boundary)
     }
-
-    // MARK: Private
-
-    private var continuation: CheckedContinuation<Void, Never>?
 }
 
 @MainActor private func sendMobileArchiveBar(_ item: UIBarButtonItem?) throws {
@@ -1023,7 +1024,11 @@ private final class MobileArchiveOperationGate: BrowserTabSessionSnapshotStoring
 /// Disposable HTTP content ensures restore really loads the archived URL,
 /// instead of injecting HTML into a new view after the fact.
 @MainActor private final class MobileArchiveHTTPFixture {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let listener: NWListener
+    private var startContinuation: CheckedContinuation<Void, Error>?
+    private var timeout: Task<Void, Never>?
 
     init() throws {
         let parameters = NWParameters.tcp
@@ -1043,7 +1048,8 @@ private final class MobileArchiveOperationGate: BrowserTabSessionSnapshotStoring
                     case .ready: timeout?.cancel()
                         startContinuation?.resume()
                         startContinuation = nil
-                    case .failed(let error), .waiting(let error):
+                    case .failed(let error),
+                         .waiting(let error):
                         timeout?.cancel()
                         startContinuation?.resume(throwing: error)
                         startContinuation = nil
@@ -1058,7 +1064,7 @@ private final class MobileArchiveOperationGate: BrowserTabSessionSnapshotStoring
                     let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
                     connection.send(
                         content: Data(response.utf8),
-                        completion: .contentProcessed { _ in connection.cancel() }
+                        completion: .contentProcessed { _ in connection.cancel() },
                     )
                 }
             }
@@ -1084,10 +1090,4 @@ private final class MobileArchiveOperationGate: BrowserTabSessionSnapshotStoring
         startContinuation = nil
         listener.cancel()
     }
-
-    // MARK: Private
-
-    private let listener: NWListener
-    private var startContinuation: CheckedContinuation<Void, Error>?
-    private var timeout: Task<Void, Never>?
 }

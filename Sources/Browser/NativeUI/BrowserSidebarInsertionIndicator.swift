@@ -1,9 +1,16 @@
+// BrowserSidebarInsertionIndicator.swift
+
 import AppKit
 
 /// A single insertion cue with a hollow leading ring in the row margin, as in
 /// sidebar drags. The dragged row may cover the middle of the gap; its text is never
 /// crossed by the line, and the line starts at the ring's outer edge.
 final class BrowserSidebarInsertionIndicator: NSView {
+    // MARK: Private
+
+    private static let ringDiameter = BrowserChromeLayout.sidebarDropIndicatorThickness * 3
+    private static let ringLineWidth = BrowserChromeLayout.sidebarDropIndicatorThickness * 0.75
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -23,7 +30,7 @@ final class BrowserSidebarInsertionIndicator: NSView {
             x: inset,
             y: inset,
             width: Self.ringDiameter - Self.ringLineWidth,
-            height: Self.ringDiameter - Self.ringLineWidth
+            height: Self.ringDiameter - Self.ringLineWidth,
         ))
         ring.lineWidth = Self.ringLineWidth
         color.setStroke()
@@ -50,7 +57,7 @@ final class BrowserSidebarInsertionIndicator: NSView {
             x: strokeMinX,
             y: line.minY,
             width: max(line.maxX - strokeMinX, 0),
-            height: thickness
+            height: thickness,
         )
         visibleLineSegments =
             if let preview, preview.intersects(stroke) {
@@ -59,13 +66,13 @@ final class BrowserSidebarInsertionIndicator: NSView {
                         x: stroke.minX,
                         y: stroke.minY,
                         width: max(min(preview.minX, stroke.maxX) - stroke.minX, 0),
-                        height: thickness
+                        height: thickness,
                     ),
                     CGRect(
                         x: max(preview.maxX, stroke.minX),
                         y: stroke.minY,
                         width: max(stroke.maxX - max(preview.maxX, stroke.minX), 0),
-                        height: thickness
+                        height: thickness,
                     ),
                 ].filter { $0.width > 0 }
             } else {
@@ -73,9 +80,4 @@ final class BrowserSidebarInsertionIndicator: NSView {
             }
         needsDisplay = true
     }
-
-    // MARK: Private
-
-    private static let ringDiameter = BrowserChromeLayout.sidebarDropIndicatorThickness * 3
-    private static let ringLineWidth = BrowserChromeLayout.sidebarDropIndicatorThickness * 0.75
 }

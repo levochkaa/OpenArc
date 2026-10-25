@@ -1,9 +1,13 @@
+// BrowserNativeMenus.swift
+
 import AppKit
 
 // MARK: - BrowserNativeMenuItem
 
 @MainActor final class BrowserNativeMenuItem: NSMenuItem {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let handler: () -> Void
 
     init(_ title: String, shortcut: BrowserKeyboardShortcut? = nil, action: @escaping () -> Void) {
         self.handler = action
@@ -13,10 +17,6 @@ import AppKit
     }
 
     @available(*, unavailable) required init(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Private
-
-    private let handler: () -> Void
 
     @objc private func invoke() { handler() }
 }
@@ -36,7 +36,7 @@ import AppKit
         to menu: NSMenu,
         shortcut: BrowserKeyboardShortcut? = nil,
         enabled: Bool = true,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
     ) -> NSMenuItem {
         let item = BrowserNativeMenuItem(title, shortcut: shortcut, action: action)
         item.isEnabled = enabled
@@ -86,7 +86,7 @@ import AppKit
         onChangeIcon: @escaping (String) -> Void,
         onChangeColor: ((BrowserSpaceColor?) -> Void)? = nil,
         onResetTabs: @escaping () -> Void = {},
-        onDelete: @escaping () -> Void
+        onDelete: @escaping () -> Void,
     ) -> NSMenu {
         let menu = menu()
         add(BrowserStrings.spaceRenameAction, to: menu, action: onRename)
@@ -113,7 +113,7 @@ import AppKit
         _ folder: BrowserChromeModel.PinnedTabFolder,
         onRename: @escaping () -> Void,
         onChangeIcon: @escaping (String?) -> Void,
-        onDelete: (() -> Void)? = nil
+        onDelete: (() -> Void)? = nil,
     ) -> NSMenu {
         let menu = menu()
         add(BrowserStrings.pinnedTabFolderRenameAction, to: menu, action: onRename)
@@ -134,7 +134,7 @@ import AppKit
         to menu: NSMenu,
         selected: String?,
         noIconTitle: String,
-        action: @escaping (String?) -> Void
+        action: @escaping (String?) -> Void,
     ) {
         let icons = submenu(title, in: menu)
         add(noIconTitle, to: icons) { action(nil) }

@@ -1,15 +1,11 @@
+// BrowserMobileSceneSessions.swift
+
 import UIKit
 import WebKit
 
 /// A UIKit session keeps one workspace and one save worker across reconnection.
 /// Disconnecting a window must not discard a failed, unsaved snapshot.
 @MainActor final class BrowserMobileSceneSessions {
-    // MARK: Lifecycle
-
-    init(factory: (@MainActor (String) -> Components)? = nil) {
-        self.factory = factory ?? Self.makeComponents
-    }
-
     // MARK: Internal
 
     struct Connection {
@@ -29,7 +25,41 @@ import WebKit
         let contentView: UIView
     }
 
+    // MARK: Private
+
+    private final class Entry {
+        // MARK: Internal
+
+        let components: Components
+        var attachmentID: UUID?
+        var restoreTask: Task<Void, Never>?
+        var flushTask: Task<Void, Never>?
+        var discardTask: Task<Void, Never>?
+
+        init(components: Components) { self.components = components }
+    }
+
     static let shared = BrowserMobileSceneSessions()
+
+    private let factory: @MainActor (String) -> Components
+    private var entries = [String: Entry]()
+
+    init(factory: (@MainActor (String) -> Components)? = nil) {
+        self.factory = factory ?? Self.makeComponents
+    }
+
+    private static func makeComponents(sessionID: String) -> Components {
+        let engine = BrowserWebKitEngine(dataStore: .default())
+        return Components(
+            workspace: BrowserMobileWorkspace(
+                engine: engine,
+                sceneID: sessionID,
+                profileLoader: { try await BrowserMobileProfileRegistry.shared.document()
+                },
+            ),
+            contentView: engine.hostView,
+        )
+    }
 
     func connect(sessionID: String) async throws -> Connection {
         // A discarded session normally cannot reconnect. Still serialize an
@@ -65,7 +95,7 @@ import WebKit
             workspace: entry.components.workspace,
             contentView: entry.components.contentView,
             sessionID: sessionID,
-            attachmentID: attachmentID
+            attachmentID: attachmentID,
         )
     }
 
@@ -119,44 +149,12 @@ import WebKit
 
     func waitForPendingOperations() async {
         while true {
-            let tasks = entries.values.flatMap { [$0.restoreTask, $0.flushTask, $0.discardTask].compactMap { $0 } }
+            let tasks = entries.values.flatMap { [$0.restoreTask, $0.flushTask, $0.discardTask].compactMap(\.self) }
             guard !tasks.isEmpty else { return }
             for task in tasks {
                 await task.value
             }
         }
-    }
-
-    // MARK: Private
-
-    private final class Entry {
-        // MARK: Lifecycle
-
-        init(components: Components) { self.components = components }
-
-        // MARK: Internal
-
-        let components: Components
-        var attachmentID: UUID?
-        var restoreTask: Task<Void, Never>?
-        var flushTask: Task<Void, Never>?
-        var discardTask: Task<Void, Never>?
-    }
-
-    private let factory: @MainActor (String) -> Components
-    private var entries = [String: Entry]()
-
-    private static func makeComponents(sessionID: String) -> Components {
-        let engine = BrowserWebKitEngine(dataStore: .default())
-        return Components(
-            workspace: BrowserMobileWorkspace(
-                engine: engine,
-                sceneID: sessionID,
-                profileLoader: { try await BrowserMobileProfileRegistry.shared.document()
-                }
-            ),
-            contentView: engine.hostView
-        )
     }
 
     private func currentEntry(for connection: Connection) -> Entry? {

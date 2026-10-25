@@ -1,3 +1,5 @@
+// BrowserDesktopConfirmedCloseTests.swift
+
 import AppKit
 import GRDB
 import Testing
@@ -32,7 +34,7 @@ import Testing
         let current = try #require(f.driver.confirmedCloseRequests.last)
         #expect(current.requestID != cancelled.requestID)
         f.driver.emitCloseRequestOutcome(
-            id: id, requestID: cancelled.requestID, outcome: .closed, emitsClosedEvent: false
+            id: id, requestID: cancelled.requestID, outcome: .closed, emitsClosedEvent: false,
         )
         #expect(try f.evidence() == before)
         #expect(f.model.tabs.map(\.id) == runtimeIDs)
@@ -65,7 +67,7 @@ import Testing
         #expect(!f.model.tabs.contains { $0.syncID == "a" })
         #expect(f.model.tabs.first { $0.id == f.model.selectedTabID }?.syncID == "b")
         #expect(try f.hasTombstone("a"))
-        #expect(try f.operations().filter { $0 == .deleteTab(id: "a") }.count == 1)
+        #expect(try f.operations().count(where: { $0 == .deleteTab(id: "a") }) == 1)
         let committed = try f.evidence()
         f.finish(request, .closed)
         f.finish(request, .cancelled)
@@ -148,8 +150,8 @@ import Testing
         #expect(f.model.selectedTabID == restored.id)
         #expect(f.model.tabs.map(\.syncID) == [restored.syncID, "b"])
         #expect(try f.store.loadArchivePage().entries.isEmpty)
-        #expect(f.recording.attempts.flatMap { $0 }.compactMap(\.archiveAction).contains(
-            .restore(archiveID: archived.id, tabID: restored.syncID)
+        #expect(f.recording.attempts.flatMap(\.self).compactMap(\.archiveAction).contains(
+            .restore(archiveID: archived.id, tabID: restored.syncID),
         ))
         #expect(try f.hasTombstone("a"))
         #expect(f.model.undoManager.canRedo)
@@ -170,7 +172,7 @@ import Testing
         let sequence = try f.store.syncCursor(for: f.owner) + 1
         let event = BrowserSyncEvent(
             serverSeq: sequence, deviceID: "other-device", entityType: "tab", entityID: "a", op: "delete",
-            data: .deleted(id: "a"), createdAt: "2026-10-03T00:00:00Z"
+            data: .deleted(id: "a"), createdAt: "2026-10-03T00:00:00Z",
         )
         let remote = try f.store.applyRemoteSyncEvents([event], cursor: sequence, for: f.owner)
         f.model.applyRemoteSyncSnapshot(remote)
@@ -187,7 +189,7 @@ import Testing
 
     @Test(arguments: [BrowserTabPlacement.spacePinned, .app])
     func promotionWhileCloseIsPendingPreservesPersistentIdentityAndLeavesOnlyItsRuntimeDormant(
-        placement: BrowserTabPlacement
+        placement: BrowserTabPlacement,
     ) throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
@@ -244,7 +246,7 @@ import Testing
             #expect(f.model.tabs.contains { $0.syncID == "a" })
         } else {
             #expect(!f.model.tabs.contains { $0.syncID == "a" })
-            #expect(try f.operations().filter { $0 == .deleteTab(id: "a") }.count == 1)
+            #expect(try f.operations().count(where: { $0 == .deleteTab(id: "a") }) == 1)
             #expect(try f.hasTombstone("a"))
         }
         #expect(try f.store.loadArchivePage().entries.map(\.tab.id) == (outcome == .closed ? ["a"] : []))
@@ -278,7 +280,7 @@ import Testing
         let before = try f.evidence()
         try f
             .sql(
-                "CREATE TRIGGER fail_last_close BEFORE DELETE ON browser_tabs BEGIN SELECT RAISE(ABORT,'injected'); END"
+                "CREATE TRIGGER fail_last_close BEFORE DELETE ON browser_tabs BEGIN SELECT RAISE(ABORT,'injected'); END",
             )
         #expect(f.model.archiveSelectedTab())
         let request = try #require(f.driver.confirmedCloseRequests.last)
@@ -304,49 +306,6 @@ import Testing
 // MARK: - ConfirmedCloseFixture
 
 @MainActor final class ConfirmedCloseFixture {
-    // MARK: Lifecycle
-
-    init(tabIDs: [String] = ["a", "b"], ready: Bool = true) throws {
-        self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("ConfirmedClose-\(UUID())")
-        self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        self.suite = "ConfirmedClose.\(UUID())"
-        self.defaults = UserDefaults(suiteName: suite)!
-        self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
-        self.recording = ConfirmedCloseRecordingStore(store)
-        let fixtureClock = clock
-        let fixtureLifecycle = lifecycle
-        let seed = BrowserTabSessionSnapshot(
-            spaces: [.init(id: "work", title: "Work", systemImageName: "globe", selectedTabIndex: 0)],
-            tabs: tabIDs.map { .init(
-                id: $0, urlString: "https://example.com/\($0)", userTitleOverride: $0 == "a" ? "Saved title" : nil,
-                spaceID: "work", lastActivityTimestamp: fixtureClock.now
-            ) }
-        )
-        try store.bindSyncOwner(owner)
-        let events = try confirmedCloseEvents(seed)
-        _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
-        store.saveSelectedSpaceIndex(0)
-        store.saveSelectedTabIndex(0)
-        self.model = BrowserChromeModel(
-            tabDriver: driver, sessionSnapshotStore: recording, sessionPreferencesStore: store,
-            commandBarSuggestionProvider: FakeSuggestionProvider(),
-            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
-            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
-            extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
-            dateProvider: { Date(timeIntervalSince1970: fixtureClock.now) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: { fixtureLifecycle.allClosed += 1 }
-        )
-        driver.automaticallyConfirmsCloseRequests = false
-        model.handleContextReady()
-        if ready {
-            flushReady()
-        } else {
-            driver.flushPendingCreateEvents()
-        }
-        model.undoManager.removeAllActions()
-        recording.reset()
-    }
-
     // MARK: Internal
 
     let directory: URL
@@ -361,6 +320,47 @@ import Testing
     let driver = FakeBrowserTabDriver()
     let sync = ConfirmedCloseCoordinator()
     let model: BrowserChromeModel
+
+    init(tabIDs: [String] = ["a", "b"], ready: Bool = true) throws {
+        self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("ConfirmedClose-\(UUID())")
+        self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
+        self.suite = "ConfirmedClose.\(UUID())"
+        self.defaults = UserDefaults(suiteName: suite)!
+        self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+        self.recording = ConfirmedCloseRecordingStore(store)
+        let fixtureClock = clock
+        let fixtureLifecycle = lifecycle
+        let seed = BrowserTabSessionSnapshot(
+            spaces: [.init(id: "work", title: "Work", systemImageName: "globe", selectedTabIndex: 0)],
+            tabs: tabIDs.map { .init(
+                id: $0, urlString: "https://example.com/\($0)", userTitleOverride: $0 == "a" ? "Saved title" : nil,
+                spaceID: "work", lastActivityTimestamp: fixtureClock.now,
+            ) },
+        )
+        try store.bindSyncOwner(owner)
+        let events = try confirmedCloseEvents(seed)
+        _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
+        store.saveSelectedSpaceIndex(0)
+        store.saveSelectedTabIndex(0)
+        self.model = BrowserChromeModel(
+            tabDriver: driver, sessionSnapshotStore: recording, sessionPreferencesStore: store,
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
+            dateProvider: { Date(timeIntervalSince1970: fixtureClock.now) },
+            windowTitleHandler: { _ in }, allTabsClosedHandler: { fixtureLifecycle.allClosed += 1 },
+        )
+        driver.automaticallyConfirmsCloseRequests = false
+        model.handleContextReady()
+        if ready {
+            flushReady()
+        } else {
+            driver.flushPendingCreateEvents()
+        }
+        model.undoManager.removeAllActions()
+        recording.reset()
+    }
 
     func runtimeID(_ stableID: String) throws -> String {
         try #require(model.tabs.first { $0.syncID == stableID }).id
@@ -409,9 +409,9 @@ import Testing
                 Data.fetchAll(db, sql: "SELECT payload FROM browser_tab_archive ORDER BY id"),
                 String.fetchAll(
                     db,
-                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id,'') FROM browser_tab_archive_receipts ORDER BY id"
+                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id,'') FROM browser_tab_archive_receipts ORDER BY id",
                 ),
-                String.fetchAll(db, sql: "SELECT key || ':' || value FROM browser_preferences ORDER BY key")
+                String.fetchAll(db, sql: "SELECT key || ':' || value FROM browser_preferences ORDER BY key"),
             )
         }
         return try .init(
@@ -420,7 +420,7 @@ import Testing
             baseline: rows.1,
             archive: rows.2,
             receipts: rows.3,
-            preferences: rows.4
+            preferences: rows.4,
         )
     }
 
@@ -465,14 +465,12 @@ struct ConfirmedCloseEvidence: Equatable {
 
 final class ConfirmedCloseRecordingStore: BrowserTabSessionSnapshotStoring, BrowserTabArchiveStoring,
 BrowserSyncOwnershipReading {
-    // MARK: Lifecycle
-
-    init(_ store: BrowserSQLiteSessionStore) { self.store = store }
-
     // MARK: Internal
 
     let store: BrowserSQLiteSessionStore
     private(set) var attempts = [[BrowserSessionWrite]]()
+
+    init(_ store: BrowserSQLiteSessionStore) { self.store = store }
 
     func reset() { attempts.removeAll() }
     func loadSnapshot() -> BrowserTabSessionSnapshot? { store.loadSnapshot() }
@@ -491,7 +489,7 @@ BrowserSyncOwnershipReading {
     nonisolated(nonsending) func searchArchivePage(
         query: String,
         before: BrowserTabArchiveCursor?,
-        limit: Int
+        limit: Int,
     ) async throws -> BrowserTabArchivePage {
         try await store.searchArchivePage(query: query, before: before, limit: limit)
     }

@@ -1,3 +1,5 @@
+// BrowserArchiveCommandRouting.swift
+
 import AppKit
 
 /// Archive commands retain the originating model across Command Bar dismissal.
@@ -10,7 +12,7 @@ import AppKit
         from owner: BrowserChromeModel,
         registeredOwners: [BrowserChromeModel],
         isTerminating: Bool,
-        present: (BrowserChromeModel) -> BrowserArchiveViewController?
+        present: (BrowserChromeModel) -> BrowserArchiveViewController?,
     ) -> Bool {
         guard command == .viewArchive || command == .clearArchive,
               !isTerminating,
@@ -34,7 +36,7 @@ import AppKit
         shortcutResolver: any BrowserShortcutResolving,
         viewAction: Selector,
         clearAction: Selector,
-        target: AnyObject
+        target: AnyObject,
     ) -> [NSMenuItem] {
         [
             (BrowserCommandID.viewArchive, viewAction, "browser.archive.open"),
@@ -44,7 +46,7 @@ import AppKit
             let item = NSMenuItem(
                 title: descriptor.menuTitle,
                 action: action,
-                keyEquivalent: descriptor.shortcut.keyEquivalent
+                keyEquivalent: descriptor.shortcut.keyEquivalent,
             )
             item.keyEquivalentModifierMask = descriptor.shortcut.modifiers
             item.identifier = NSUserInterfaceItemIdentifier(identifier)

@@ -1,3 +1,5 @@
+// BrowserWebKitAuthenticationTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -33,7 +35,7 @@ extension BrowserMobileUITests {
             // An old token cannot authenticate or consume this explicit retry.
             f.workspace.resolveHTTPAuthentication(
                 id: request.id,
-                response: .credentials(username: "stale", password: "stale")
+                response: .credentials(username: "stale", password: "stale"),
             )
             #expect(f.workspace.httpAuthentication?.id == retry.id)
             try f.signIn(request: retry)
@@ -46,8 +48,8 @@ extension BrowserMobileUITests {
             #expect(view.uiDelegate === f.engine && view.navigationDelegate === f.engine)
             #expect(f.server.parseErrors.isEmpty)
             let persisted = try JSONEncoder().encode(f.store.loadSnapshotStrict())
-            #expect(persisted.range(of: Data(BasicAuthHTTPFixture.password.utf8)) == nil)
-            #expect(persisted.range(of: Data(BasicAuthHTTPFixture.username.utf8)) == nil)
+            #expect(!persisted.contains(Data(BasicAuthHTTPFixture.password.utf8)))
+            #expect(!persisted.contains(Data(BasicAuthHTTPFixture.username.utf8)))
         }
     }
 
@@ -104,7 +106,7 @@ extension BrowserMobileUITests {
             let selected = f.workspace.selectedTab?.id
             presenter.accept(id: request.id)
             f.workspace.resolveHTTPAuthentication(id: request.id, response: .credentials(
-                username: BasicAuthHTTPFixture.username, password: BasicAuthHTTPFixture.password
+                username: BasicAuthHTTPFixture.username, password: BasicAuthHTTPFixture.password,
             ))
             // Wait for the actual challenged load to stop, not only UI dismissal.
             if transition != "shutdown", transition != "switch", transition != "close" {
@@ -141,7 +143,7 @@ extension BrowserMobileUITests {
                 first.workspace.setJavaScriptDialogPresentationActive(false)
                 try await authenticationWait { first.root.httpAuthenticationPresenter.presentedAlert == nil }
                 first.workspace.resolveHTTPAuthentication(id: a.id, response: .credentials(
-                    username: BasicAuthHTTPFixture.username, password: BasicAuthHTTPFixture.password
+                    username: BasicAuthHTTPFixture.username, password: BasicAuthHTTPFixture.password,
                 ))
                 #expect(second.workspace.httpAuthentication?.id == b.id)
                 try second.signIn(request: b)
@@ -156,33 +158,6 @@ extension BrowserMobileUITests {
 // MARK: - AuthenticationWebKitFixture
 
 @MainActor private final class AuthenticationWebKitFixture {
-    // MARK: Lifecycle
-
-    init(directory: URL) throws {
-        self.directory = directory
-        self.server = try BasicAuthHTTPFixture()
-        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
-        let snapshot = BrowserTabSessionSnapshot(
-            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
-            tabs: ["a", "b"].map {
-                .init(id: $0, urlString: "about:blank", spaceID: "space", lastActivityTimestamp: 1_800_000_000)
-            }
-        )
-        try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
-        try store.bindSyncOwner(owner)
-        self.document = try BrowserMobileProfileDocument(
-            store: store, initialSnapshot: snapshot,
-            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, automaticArchivalCheckInterval: nil
-        )
-        self.preferences = try #require(UserDefaults(suiteName: preferencesName))
-        let document = document
-        self.workspace = BrowserMobileWorkspace(
-            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences
-        )
-        self.root = BrowserMobileViewController(workspace: workspace, contentView: engine.hostView)
-        self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
-    }
-
     // MARK: Internal
 
     let directory: URL
@@ -196,6 +171,31 @@ extension BrowserMobileUITests {
     let workspace: BrowserMobileWorkspace
     let root: BrowserMobileViewController
     let window: UIWindow
+
+    init(directory: URL) throws {
+        self.directory = directory
+        self.server = try BasicAuthHTTPFixture()
+        self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
+        let snapshot = BrowserTabSessionSnapshot(
+            spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
+            tabs: ["a", "b"].map {
+                .init(id: $0, urlString: "about:blank", spaceID: "space", lastActivityTimestamp: 1_800_000_000)
+            },
+        )
+        try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
+        try store.bindSyncOwner(owner)
+        self.document = try BrowserMobileProfileDocument(
+            store: store, initialSnapshot: snapshot,
+            dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) }, automaticArchivalCheckInterval: nil,
+        )
+        self.preferences = try #require(UserDefaults(suiteName: preferencesName))
+        let document = document
+        self.workspace = BrowserMobileWorkspace(
+            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences,
+        )
+        self.root = BrowserMobileViewController(workspace: workspace, contentView: engine.hostView)
+        self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
+    }
 
     func start() async throws -> WKWebView {
         try await server.start()
@@ -275,7 +275,9 @@ extension BrowserMobileUITests {
     var failure: (any Error)?
     do {
         try await runAuthenticationWebKit(directory: directory, observeStore: { store = $0 }, body)
-    } catch { failure = error }
+    } catch {
+        failure = error
+    }
     // UIKit may retain an outgoing controller until the next run-loop turn.
     // Wait for actual SQLite ownership release before removing the directory.
     try await authenticationWait { store == nil }
@@ -288,7 +290,7 @@ extension BrowserMobileUITests {
 @MainActor private func runAuthenticationWebKit(
     directory: URL,
     observeStore: (BrowserSQLiteSessionStore) -> Void,
-    _ body: (AuthenticationWebKitFixture) async throws -> Void
+    _ body: (AuthenticationWebKitFixture) async throws -> Void,
 ) async throws {
     let fixture = try AuthenticationWebKitFixture(directory: directory)
     observeStore(fixture.store)
@@ -303,7 +305,8 @@ extension BrowserMobileUITests {
 }
 
 @MainActor private func authenticationWait(_ condition: () async throws -> Bool) async throws {
-    let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(8))
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(8))
     while clock.now < deadline {
         if try await condition() {
             return

@@ -1,3 +1,5 @@
+// BrowserSessionClosureGuard.swift
+
 import Foundation
 
 /// Runs before teardown. Modal confirmation can deliver new model callbacks,
@@ -11,7 +13,7 @@ import Foundation
 
     static func prepare(
         models: () -> [BrowserChromeModel],
-        confirmation: ([BrowserChromeModel]) -> Decision
+        confirmation: ([BrowserChromeModel]) -> Decision,
     ) -> Bool {
         while true {
             let failed = models().filter { !$0.prepareSessionForClosure() }

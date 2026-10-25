@@ -1,3 +1,5 @@
+// BrowserDesktopAutomaticArchiveTests.swift
+
 import AppKit
 import Combine
 import GRDB
@@ -79,7 +81,7 @@ import Testing
         } else {
             try f
                 .sql(
-                    "UPDATE browser_preferences SET value='invalid' WHERE key='browser.settings.automaticTabArchivalEnabled'"
+                    "UPDATE browser_preferences SET value='invalid' WHERE key='browser.settings.automaticTabArchivalEnabled'",
                 )
         }
         #expect(!f.model.reloadAutomaticTabArchivalSettings())
@@ -93,7 +95,7 @@ import Testing
         }
         #expect(
             f.model.expirySchedulingState() == nil,
-            "A successful repair alone must not silently clear failed admission"
+            "A successful repair alone must not silently clear failed admission",
         )
         #expect(f.model.retryAutomaticTabArchivalSettings())
         #expect(f.model.expirySchedulingState()?.inactiveForSeconds == (missingTable ? 43200 : 259_200))
@@ -135,8 +137,8 @@ import Testing
                 id: "remote-pending",
                 urlString: "https://example.com/remote",
                 spaceID: "work",
-                lastActivityTimestamp: f.clock.now
-            )]
+                lastActivityTimestamp: f.clock.now,
+            )],
         )
         try f.store.writeSessionBatch([.init(snapshot: remote, origin: .remoteProjection)])
         f.model.applyRemoteSyncSnapshot(remote)
@@ -182,7 +184,7 @@ import Testing
         f.restore()
         try f
             .sql(
-                "INSERT INTO browser_preferences(key,value) VALUES ('browser.settings.automaticTabArchivalEnabled','invalid')"
+                "INSERT INTO browser_preferences(key,value) VALUES ('browser.settings.automaticTabArchivalEnabled','invalid')",
             )
         #expect(!f.model.reloadAutomaticTabArchivalSettings())
         if repaired {
@@ -273,7 +275,18 @@ enum DesktopAutomaticBinding: CaseIterable { case bound, paused, signedOut, unre
 // MARK: - DesktopAutomaticArchiveFixture
 
 @MainActor private final class DesktopAutomaticArchiveFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory: URL
+    let databaseURL: URL
+    let suite: String
+    let defaults: UserDefaults
+    let store: BrowserSQLiteSessionStore
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://desktop-automatic.example")!, userID: "owner")
+    let clock = DesktopAutomaticClock()
+    let sync = DesktopAutomaticCoordinator()
+    private(set) var driver = FakeBrowserTabDriver()
+    private(set) var model: BrowserChromeModel!
 
     init(bound: Bool = true) throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopAutomatic-\(UUID())")
@@ -293,9 +306,9 @@ enum DesktopAutomaticBinding: CaseIterable { case bound, paused, signedOut, unre
                     pinnedURLString: id == "pin" ? "https://example.com/pin" : nil,
                     placement: id == "favorite" ? .app : id == "pin" ? .spacePinned : .temporary,
                     spaceID: id == "other" ? "other" : "work",
-                    lastActivityTimestamp: clock.now
+                    lastActivityTimestamp: clock.now,
                 )
-            }
+            },
         )
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
         if bound {
@@ -305,19 +318,6 @@ enum DesktopAutomaticBinding: CaseIterable { case bound, paused, signedOut, unre
         store.saveSelectedTabIndex(2)
         self.model = makeModel()
     }
-
-    // MARK: Internal
-
-    let directory: URL
-    let databaseURL: URL
-    let suite: String
-    let defaults: UserDefaults
-    let store: BrowserSQLiteSessionStore
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://desktop-automatic.example")!, userID: "owner")
-    let clock = DesktopAutomaticClock()
-    let sync = DesktopAutomaticCoordinator()
-    private(set) var driver = FakeBrowserTabDriver()
-    private(set) var model: BrowserChromeModel!
 
     func restore() {
         model.handleContextReady()
@@ -349,7 +349,7 @@ enum DesktopAutomaticBinding: CaseIterable { case bound, paused, signedOut, unre
         let rows = try DatabaseQueue(path: databaseURL.path).read { db in
             try (
                 Data.fetchAll(db, sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"),
-                Data.fetchAll(db, sql: "SELECT payload FROM browser_sync_baseline ORDER BY id")
+                Data.fetchAll(db, sql: "SELECT payload FROM browser_sync_baseline ORDER BY id"),
             )
         }
         return try .init(snapshot: store.loadSnapshotStrict(), queue: rows.0, baseline: rows.1)
@@ -373,7 +373,7 @@ enum DesktopAutomaticBinding: CaseIterable { case bound, paused, signedOut, unre
             shortcutStore: BrowserShortcutStore(userDefaults: defaults),
             extensionManager: FakeBrowserExtensionManager(), syncCoordinator: sync,
             dateProvider: { Date(timeIntervalSince1970: clock.now) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
     }
 }

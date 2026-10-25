@@ -1,3 +1,5 @@
+// BrowserTabUndoManager.swift
+
 import Foundation
 
 /// Keeps AppKit's ordinary undo stack and responder routing. Tab operations
@@ -13,6 +15,32 @@ import Foundation
     enum Outcome {
         case committed(inverse: Action?)
         case cancelled
+    }
+
+    // MARK: Private
+
+    private enum Direction: Equatable {
+        case undo, redo
+    }
+
+    private final class Marker: NSObject {
+        // MARK: Internal
+
+        let action: Action
+
+        init(action: Action) { self.action = action }
+    }
+
+    private struct Pending {
+        let nonce: UUID
+        let epoch: UUID
+        let marker: Marker
+        let direction: Direction
+    }
+
+    private struct Prepared {
+        let marker: Marker
+        let inverse: Action?
     }
 
     /// Foundation owns this metadata and the unique target with the registration.
@@ -37,6 +65,12 @@ import Foundation
 
     /// Gates tab transitions only. Native text undo continues to use Foundation.
     var canPerformTabAction: (() -> Bool)?
+
+    private var epoch = UUID()
+    private var pending: Pending?
+    private var prepared: Prepared?
+    private var isInvokingFoundation = false
+    private var deferredActions = [Action]()
 
     var isTabTransitionPending: Bool { pending != nil }
 
@@ -90,40 +124,6 @@ import Foundation
         installMarker(action)
         endUndoGrouping()
     }
-
-    // MARK: Private
-
-    private enum Direction: Equatable {
-        case undo, redo
-    }
-
-    private final class Marker: NSObject {
-        // MARK: Lifecycle
-
-        init(action: Action) { self.action = action }
-
-        // MARK: Internal
-
-        let action: Action
-    }
-
-    private struct Pending {
-        let nonce: UUID
-        let epoch: UUID
-        let marker: Marker
-        let direction: Direction
-    }
-
-    private struct Prepared {
-        let marker: Marker
-        let inverse: Action?
-    }
-
-    private var epoch = UUID()
-    private var pending: Pending?
-    private var prepared: Prepared?
-    private var isInvokingFoundation = false
-    private var deferredActions = [Action]()
 
     private func marker(on direction: Direction) -> Marker? {
         switch direction {

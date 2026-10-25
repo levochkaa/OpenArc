@@ -1,10 +1,41 @@
+// BrowserCommandBarNSView.swift
+
 import AppKit
 import Combine
 
 // MARK: - BrowserCommandBarNSView
 
 final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    let queryField = BrowserCommandNSTextField()
+    private(set) var displayedSuggestions = [BrowserCommandSuggestion]()
+
+    // MARK: Private
+
+    private let model: BrowserCommandBarModel
+    private let faviconCache: BrowserFaviconCache
+    private var observations = Set<AnyCancellable>()
+    private let panel = BrowserNativeMaterialPanel()
+    private let symbol = NSImageView()
+    private let siteChip = BrowserNativeSurface()
+    private let siteChipLabel = NSTextField(labelWithString: "")
+    private let siteHint = NSTextField(labelWithString: "")
+    private let siteHintKey = BrowserNativeSurface()
+    private let siteHintKeyLabel = NSTextField(labelWithString: "Tab")
+    private let divider = BrowserNativeSurface()
+    private let scrollView = NSScrollView()
+    private let table = BrowserCommandSuggestionTableView()
+    private var style = BrowserCommandBarOverlayStyle.standard
+    private var blockedLeadingInset: CGFloat = 0
+    private var blockedTrailingInset: CGFloat = 0
+    private var faviconCandidate: BrowserCommandBarFaviconCandidate?
+    private var scrolledSelectionID: String?
+    private let scrollAnimation = BrowserNativeAnimation()
+
+    var panelFrame: CGRect { panel.frame }
 
     init(model: BrowserCommandBarModel, faviconCache: BrowserFaviconCache = .shared) {
         self.model = model
@@ -56,7 +87,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             top: BrowserChromeLayout.commandBarSuggestionScrollInset,
             left: 0,
             bottom: BrowserChromeLayout.commandBarSuggestionScrollInset,
-            right: 0
+            right: 0,
         )
         table.addTableColumn(NSTableColumn(identifier: .init("suggestions")))
         table.headerView = nil
@@ -84,15 +115,6 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    let queryField = BrowserCommandNSTextField()
-    private(set) var displayedSuggestions = [BrowserCommandSuggestion]()
-
-    var panelFrame: CGRect { panel.frame }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -122,7 +144,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             style: style,
             displayText: model.previewDisplayText ?? model.query,
             suggestionCount: displayedSuggestions.count,
-            extraWidth: siteSearchWidth()
+            extraWidth: siteSearchWidth(),
         )
         panel.frame = geometry.panelFrame
         let outer = BrowserChromeLayout.commandBarOuterPadding
@@ -132,7 +154,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             x: horizontal,
             y: outer + (fieldHeight - style.symbolSize) / 2,
             width: BrowserChromeLayout.commandBarSymbolWidth,
-            height: style.symbolSize
+            height: style.symbolSize,
         )
         let spacing = BrowserChromeLayout.commandBarRowContentSpacing
         var queryX = symbol.frame.maxX + spacing
@@ -151,7 +173,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
                 x: queryMaxX - keyWidth,
                 y: outer + (fieldHeight - 20) / 2,
                 width: keyWidth,
-                height: 20
+                height: 20,
             )
             siteHintKeyLabel.frame = NSRect(x: 0, y: 3, width: keyWidth, height: 14)
             let hintWidth = min(ceil(siteHint.attributedStringValue.size().width) + 4, geometry.panelWidth / 3)
@@ -159,7 +181,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
                 x: siteHintKey.frame.minX - 6 - hintWidth,
                 y: outer + (fieldHeight - 17) / 2,
                 width: hintWidth,
-                height: 17
+                height: 17,
             )
             queryMaxX = siteHint.frame.minX - spacing
         }
@@ -167,19 +189,19 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             x: queryX,
             y: outer + (fieldHeight - 28) / 2 + style.textFieldVerticalOffset,
             width: max(queryMaxX - queryX, 0),
-            height: 28
+            height: 28,
         )
         divider.frame = NSRect(
             x: outer * 2,
             y: outer + fieldHeight,
             width: max(geometry.panelWidth - outer * 4, 0),
-            height: 1
+            height: 1,
         )
         scrollView.frame = NSRect(
             x: outer * 2,
             y: divider.frame.maxY,
             width: max(geometry.panelWidth - outer * 4, 0),
-            height: geometry.suggestionViewportHeight
+            height: geometry.suggestionViewportHeight,
         )
         table.tableColumns.first?.width = scrollView.contentSize.width
         table.setFrameSize(NSSize(width: scrollView.contentSize.width, height: table.frame.height))
@@ -190,7 +212,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         blockedLeadingInset: CGFloat,
         blockedTrailingInset: CGFloat = 0,
         style: BrowserCommandBarOverlayStyle,
-        faviconCandidate: BrowserCommandBarFaviconCandidate?
+        faviconCandidate: BrowserCommandBarFaviconCandidate?,
     ) {
         self.blockedTrailingInset = blockedTrailingInset
         let inputStyleChanged = self.style.fontSize != style.fontSize || self.style.selectsTextOnFocus != style
@@ -258,7 +280,8 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             return true
         case #selector(NSResponder.selectAll(_:)): textView.selectAll(nil)
             return true
-        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+        case #selector(NSResponder.insertNewline(_:)),
+             #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
             model.submitSelection()
             return true
         case #selector(NSResponder.cancelOperation(_:)):
@@ -271,28 +294,6 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         default: return false
         }
     }
-
-    // MARK: Private
-
-    private let model: BrowserCommandBarModel
-    private let faviconCache: BrowserFaviconCache
-    private var observations = Set<AnyCancellable>()
-    private let panel = BrowserNativeMaterialPanel()
-    private let symbol = NSImageView()
-    private let siteChip = BrowserNativeSurface()
-    private let siteChipLabel = NSTextField(labelWithString: "")
-    private let siteHint = NSTextField(labelWithString: "")
-    private let siteHintKey = BrowserNativeSurface()
-    private let siteHintKeyLabel = NSTextField(labelWithString: "Tab")
-    private let divider = BrowserNativeSurface()
-    private let scrollView = NSScrollView()
-    private let table = BrowserCommandSuggestionTableView()
-    private var style = BrowserCommandBarOverlayStyle.standard
-    private var blockedLeadingInset: CGFloat = 0
-    private var blockedTrailingInset: CGFloat = 0
-    private var faviconCandidate: BrowserCommandBarFaviconCandidate?
-    private var scrolledSelectionID: String?
-    private let scrollAnimation = BrowserNativeAnimation()
 
     private func refresh() {
         let changed = displayedSuggestions != model.suggestions
@@ -309,7 +310,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             shouldFocus: model.isPresented,
             focusRequestID: model.focusRequestID,
             fontSize: style.fontSize,
-            selectAllOnFocus: style.selectsTextOnFocus
+            selectAllOnFocus: style.selectsTextOnFocus,
         )
         if changed {
             scrollAnimation.cancel()
@@ -332,7 +333,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         } else {
             symbol.image = NSImage(
                 systemSymbolName: model.selectedSuggestion?.systemImageName ?? "magnifyingglass",
-                accessibilityDescription: nil
+                accessibilityDescription: nil,
             )?
                 .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: .semibold))
             symbol.contentTintColor = BrowserChromeColors.primaryText
@@ -343,7 +344,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             {
                 configureRow(
                     view,
-                    at: row
+                    at: row,
                 )
             }
         }
@@ -391,7 +392,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             suggestion: suggestion,
             selected: model.selectedSuggestionID == suggestion.id,
             favicon: faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion)),
-            selectionColor: model.activeSiteSearch?.chipColor
+            selectionColor: model.activeSiteSearch?.chipColor,
         )
         view.onPress = { [weak model] in model?.submitSuggestion(id: suggestion.id) }
     }
@@ -447,7 +448,7 @@ extension BrowserSiteSearch {
             srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
             green: CGFloat((value >> 8) & 0xFF) / 255,
             blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
+            alpha: 1,
         )
     }
 }

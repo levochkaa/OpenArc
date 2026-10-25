@@ -1,3 +1,5 @@
+// BrowserChromeModel+SitePermissions.swift
+
 import Foundation
 
 // MARK: - Site permissions
@@ -24,7 +26,7 @@ extension BrowserChromeModel {
            let remembered = BrowserSitePermissionDecision.remembered(
                for: request,
                profileID: profile.id,
-               in: sitePermissionDecisions
+               in: sitePermissionDecisions,
            )
         {
             resolveMediaAccessInEngine(request, allowed: remembered)
@@ -44,7 +46,7 @@ extension BrowserChromeModel {
                 allowed,
                 for: request,
                 profileID: profile.id,
-                in: sitePermissionDecisions
+                in: sitePermissionDecisions,
             )
             return
         }
@@ -131,7 +133,7 @@ extension BrowserChromeModel {
                   let allowed = BrowserSitePermissionDecision.remembered(
                       for: request,
                       profileID: profile.id,
-                      in: decisions
+                      in: decisions,
                   )
             else { return nil }
             return (request, allowed)

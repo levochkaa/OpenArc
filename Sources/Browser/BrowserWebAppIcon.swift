@@ -1,3 +1,5 @@
+// BrowserWebAppIcon.swift
+
 import AppKit
 import Foundation
 

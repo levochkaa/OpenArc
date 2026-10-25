@@ -1,3 +1,5 @@
+// verify_appkit_window_ui.swift
+
 import AppKit
 import ApplicationServices
 import Carbon
@@ -42,7 +44,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(
         size as! AXValue,
         .cgSize,
-        &dimensions
+        &dimensions,
     ) else { return nil }
     return CGRect(origin: point, size: dimensions)
 }
@@ -95,17 +97,17 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     func frame(_ value: String) -> CGRect? { element(value).flatMap(elementFrame) }
     func titleIs(_ title: String) -> Bool { elements().contains { id($0).hasPrefix("browser.sidebar.tab.") && attribute(
         $0,
-        kAXDescriptionAttribute
+        kAXDescriptionAttribute,
     ) as? String == title } }
     func press(_ e: AXUIElement) throws { try require(
         AXUIElementPerformAction(e, kAXPressAction as CFString) == .success,
-        "Cannot press \(id(e))"
+        "Cannot press \(id(e))",
     ) }
     func mouse(_ type: CGEventType, _ point: CGPoint) { CGEvent(
         mouseEventSource: nil,
         mouseType: type,
         mouseCursorPosition: point,
-        mouseButton: .left
+        mouseButton: .left,
     )?.post(tap: .cghidEventTap) }
     func click(_ point: CGPoint) { mouse(.leftMouseDown, point)
         mouse(.leftMouseUp, point)
@@ -130,7 +132,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         .write(
             to: fixture,
             atomically: true,
-            encoding: .utf8
+            encoding: .utf8,
         )
     try runAppleScript("click menu item \"New Tab\" of menu 1 of menu bar item \"File\" of menu bar 1", pid: pid)
     try waitFor("command focus") {
@@ -173,7 +175,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
           let updatedHandle = frame("browser.sidebar.resize") else { throw UIError.failed("Missing resized sidebar") }
     drag(
         CGPoint(x: updatedHandle.midX, y: updatedHandle.midY),
-        CGPoint(x: updatedHandle.midX - (enlarged.width - initialSidebar.width), y: updatedHandle.midY)
+        CGPoint(x: updatedHandle.midX - (enlarged.width - initialSidebar.width), y: updatedHandle.midY),
     )
     try waitFor("sidebar width restored") { abs((frame("browser.sidebar")?.width ?? 0) - initialSidebar.width) < 1 }
     guard let sidebarElement = element("browser.sidebar"), let pageElement = element("browser.content"),
@@ -215,7 +217,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     print("PASS sidebar: resize, restore, delayed hover, dismissal and pinning without moving CEF under overlay")
     try runAppleScript(
         "click menu item \"Enter Full Screen\" of menu 1 of menu bar item \"View\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     func fullscreen() -> Bool {
         (attribute(ax, kAXWindowsAttribute) as? [AXUIElement] ?? [])
@@ -227,13 +229,13 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try require(frame("browser.content") != nil, "CEF viewport must survive fullscreen")
     try runAppleScript(
         "click menu item \"Exit Full Screen\" of menu 1 of menu bar item \"View\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     try waitFor("fullscreen exited") { !fullscreen() }
     RunLoop.current.run(until: Date().addingTimeInterval(1))
     try require(
         abs((frame("browser.sidebar")?.width ?? 0) - initialSidebar.width) < 1,
-        "Fullscreen must preserve sidebar width"
+        "Fullscreen must preserve sidebar width",
     )
     print("PASS fullscreen: native window enters and exits with viewport and sidebar intact")
     try press(element("browser.sidebar.toggle")!)
@@ -247,7 +249,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     RunLoop.current.run(until: Date().addingTimeInterval(0.3))
     try runAppleScript(
         "click menu item \"Enter Full Screen\" of menu 1 of menu bar item \"View\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     try waitFor("hover fullscreen entered") { fullscreen() }
     RunLoop.current.run(until: Date().addingTimeInterval(1))
@@ -255,11 +257,11 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     let fullContent = frame("browser.content")!
     try require(
         (frame("browser.sidebar")?.minX ?? -9999) > fullRoot.minX,
-        "Hover sidebar must survive fullscreen entry"
+        "Hover sidebar must survive fullscreen entry",
     )
     try require(
         abs(fullContent.minX - fullRoot.minX) < 1,
-        "Hover sidebar must not reserve viewport width in fullscreen"
+        "Hover sidebar must not reserve viewport width in fullscreen",
     )
     mouse(.mouseMoved, CGPoint(x: fullContent.maxX - 30, y: fullContent.midY))
     try waitFor("fullscreen hover dismissed after pointer movement") {
@@ -267,7 +269,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     }
     try runAppleScript(
         "click menu item \"Exit Full Screen\" of menu 1 of menu bar item \"View\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     try waitFor("hover fullscreen exited") { !fullscreen() }
     RunLoop.current.run(until: Date().addingTimeInterval(1))
@@ -280,13 +282,13 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     let beforeWindowCount = (attribute(ax, kAXWindowsAttribute) as? [AXUIElement] ?? []).count
     try runAppleScript(
         "click menu item \"New Incognito Window\" of menu 1 of menu bar item \"File\" of menu bar 1",
-        pid: pid
+        pid: pid,
     )
     func privateWindow() -> AXUIElement? {
         (attribute(ax, kAXWindowsAttribute) as? [AXUIElement] ?? [])
             .first { window in descendants(window).contains { attribute(
                 $0,
-                kAXValueAttribute
+                kAXValueAttribute,
             ) as? String == "Incognito Tabs" } }
     }
     try waitFor("native incognito window") { privateWindow() != nil }
@@ -298,12 +300,14 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try press(close)
     try waitFor("private window closed independently") { privateWindow() == nil && (attribute(
         ax,
-        kAXWindowsAttribute
+        kAXWindowsAttribute,
     ) as? [AXUIElement] ?? []).count == beforeWindowCount }
     print("PASS incognito: native root, private tabs and independent close")
 }
 
-do { try MainActor.assumeIsolated { try verifyWindow() } }
-catch { fputs("FAIL \(error)\n", stderr)
+do {
+    try MainActor.assumeIsolated { try verifyWindow() }
+} catch {
+    fputs("FAIL \(error)\n", stderr)
     exit(1)
 }

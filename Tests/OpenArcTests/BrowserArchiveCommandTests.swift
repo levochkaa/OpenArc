@@ -1,3 +1,5 @@
+// BrowserArchiveCommandTests.swift
+
 import AppKit
 import GRDB
 import Testing
@@ -103,8 +105,8 @@ import Testing
         #expect(second.runtimeEvidence() == secondRuntime)
         #expect(route.controller(for: second.model) == nil)
         #expect(route.origins.allSatisfy { $0 == ObjectIdentifier(first.model) })
-        #expect(route.dismissedBeforeRouting.allSatisfy { $0 })
-        #expect(route.results.allSatisfy { $0 })
+        #expect(!route.dismissedBeforeRouting.contains(false))
+        #expect(!route.results.contains(false))
     }
 
     @Test func archiveCommandsWorkBeforeEngineReadinessAndStaleSubmissionCannotNavigate() async throws {
@@ -135,7 +137,7 @@ import Testing
         #expect(view.control(
             view.queryField,
             textView: NSTextView(),
-            doCommandBy: #selector(NSResponder.insertNewline(_:))
+            doCommandBy: #selector(NSResponder.insertNewline(_:)),
         ))
         #expect(!bar.isPresented && route.results.last == false)
         #expect(route.presentationCount == presented)
@@ -156,6 +158,11 @@ import Testing
     private(set) var presentationCount = 0
     private(set) var createdControllerCount = 0
 
+    // MARK: Private
+
+    private var controllers = [ObjectIdentifier: BrowserArchiveViewController]()
+    private var alertPresenters = [ObjectIdentifier: ArchiveCommandAlerts]()
+
     func perform(_ command: BrowserCommandID, from model: BrowserChromeModel) {
         origins.append(ObjectIdentifier(model))
         dismissedBeforeRouting
@@ -175,7 +182,7 @@ import Testing
                 createdControllerCount += 1
                 _ = controller.view
                 return controller
-            }
+            },
         ))
     }
 
@@ -193,11 +200,6 @@ import Testing
         alertPresenters.removeAll()
         registeredOwners.removeAll()
     }
-
-    // MARK: Private
-
-    private var controllers = [ObjectIdentifier: BrowserArchiveViewController]()
-    private var alertPresenters = [ObjectIdentifier: ArchiveCommandAlerts]()
 }
 
 // MARK: - ArchiveCommandAlerts
@@ -207,6 +209,10 @@ import Testing
 
     private(set) var alert: NSAlert?
     private(set) var presentationCount = 0
+
+    // MARK: Private
+
+    private var completion: (@MainActor (NSApplication.ModalResponse) -> Void)?
 
     func present(_ alert: NSAlert, completion: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
         self.alert = alert
@@ -220,16 +226,22 @@ import Testing
         completion = nil
         callback?(response)
     }
-
-    // MARK: Private
-
-    private var completion: (@MainActor (NSApplication.ModalResponse) -> Void)?
 }
 
 // MARK: - ArchiveCommandProfile
 
 @MainActor private final class ArchiveCommandProfile {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directory: URL
+    let databaseURL: URL
+    let suite = "ArchiveCommand.\(UUID())"
+    let defaults: UserDefaults
+    let owner: BrowserSyncOwner
+    let store: BrowserSQLiteSessionStore
+    let model: BrowserChromeModel
+    let driver = FakeBrowserTabDriver()
+    let entries: [BrowserTabArchiveEntry]
 
     init(name: String, route: ArchiveCommandRoute, ready: Bool = true) throws {
         _ = NSApplication.shared
@@ -243,7 +255,7 @@ import Testing
             spaces: [.init(id: "work", title: "Work", systemImageName: "globe", selectedTabIndex: 0)],
             tabs: ["active", "old-0", "old-1"].map { (id: String) in
                 .init(id: id, urlString: "https://example.com/\(id)", spaceID: "work", lastActivityTimestamp: 100)
-            }
+            },
         )
         let events = try archiveCommandEvents(seed)
         _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
@@ -255,11 +267,11 @@ import Testing
                 id: "archive-\(index)",
                 tab: tab,
                 archivedAt: Double(index + 1),
-                title: "Page \(index)"
+                title: "Page \(index)",
             )
             try store.writeSessionBatch([.init(
                 snapshot: .init(spaces: snapshot.spaces, tabs: snapshot.tabs.filter { $0.id != tab.id }),
-                origin: .local(syncMove: nil), archiveAction: .insert(entry)
+                origin: .local(syncMove: nil), archiveAction: .insert(entry),
             )])
             archived.append(entry)
         }
@@ -273,7 +285,7 @@ import Testing
             profile: .init(directoryName: name, name: name),
             dateProvider: { Date(timeIntervalSince1970: 100) },
             commandHandler: { [weak route] command, owner in route?.perform(command, from: owner) },
-            windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         if ready {
             model.handleContextReady()
@@ -283,18 +295,6 @@ import Testing
             }
         }
     }
-
-    // MARK: Internal
-
-    let directory: URL
-    let databaseURL: URL
-    let suite = "ArchiveCommand.\(UUID())"
-    let defaults: UserDefaults
-    let owner: BrowserSyncOwner
-    let store: BrowserSQLiteSessionStore
-    let model: BrowserChromeModel
-    let driver = FakeBrowserTabDriver()
-    let entries: [BrowserTabArchiveEntry]
 
     func prepare(_ command: BrowserCommandID, bar: BrowserCommandBarModel) async throws -> BrowserCommandBarNSView {
         let query = command == .viewArchive ? "view archive" : "clear archive"
@@ -315,7 +315,7 @@ import Testing
         #expect(view.control(
             view.queryField,
             textView: NSTextView(),
-            doCommandBy: #selector(NSResponder.insertNewline(_:))
+            doCommandBy: #selector(NSResponder.insertNewline(_:)),
         ))
         #expect(!bar.isPresented)
     }
@@ -326,17 +326,17 @@ import Testing
             id: id,
             urlString: "https://example.com/\(id)",
             spaceID: "work",
-            lastActivityTimestamp: 100
+            lastActivityTimestamp: 100,
         )
         try store.writeSessionBatch([.init(
             snapshot: .init(spaces: snapshot.spaces, tabs: snapshot.tabs + [tab]),
-            origin: .local(syncMove: nil)
+            origin: .local(syncMove: nil),
         )])
         let entry = BrowserTabArchiveEntry(id: "archive-" + id, tab: tab, archivedAt: date)
         try store.writeSessionBatch([.init(
             snapshot: snapshot,
             origin: .local(syncMove: nil),
-            archiveAction: .insert(entry)
+            archiveAction: .insert(entry),
         )])
         return entry
     }
@@ -354,15 +354,15 @@ import Testing
                     baseline: Data.fetchAll(db, sql: "SELECT payload FROM browser_sync_baseline ORDER BY id"),
                     preferences: String.fetchAll(
                         db,
-                        sql: "SELECT key || ':' || value FROM browser_preferences ORDER BY key"
+                        sql: "SELECT key || ':' || value FROM browser_preferences ORDER BY key",
                     ),
-                    cursor: store.syncCursor(for: owner)
+                    cursor: store.syncCursor(for: owner),
                 ),
                 archive: Data.fetchAll(db, sql: "SELECT payload FROM browser_tab_archive ORDER BY id"),
                 receipts: String.fetchAll(
                     db,
-                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id,'') FROM browser_tab_archive_receipts ORDER BY id"
-                )
+                    sql: "SELECT id || ':' || hex(entry_digest) || ':' || COALESCE(restored_tab_id,'') FROM browser_tab_archive_receipts ORDER BY id",
+                ),
             )
         }
     }
@@ -376,7 +376,7 @@ import Testing
             closes: driver.closedTabRequests.count,
             navigations: driver.targetedNavigationRequests.count,
             activeNavigations: driver.activeTabNavigationURLStrings.count,
-            selections: driver.selectedTabIDs.count
+            selections: driver.selectedTabIDs.count,
         )
     }
 

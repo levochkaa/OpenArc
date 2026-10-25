@@ -1,3 +1,5 @@
+// BrowserCommandBarModelTests.swift
+
 import Foundation
 import Testing
 
@@ -11,8 +13,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
         resolution == BrowserNavigationResolver.Resolution(
             kind: .url,
             displayText: "https://openai.com/research?q=browser",
-            resolvedURLString: "https://openai.com/research?q=browser"
-        )
+            resolvedURLString: "https://openai.com/research?q=browser",
+        ),
     )
 }
 
@@ -65,8 +67,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
         resolution == BrowserNavigationResolver.Resolution(
             kind: .url,
             displayText: "openarc://settings",
-            resolvedURLString: "openarc://settings/"
-        )
+            resolvedURLString: "openarc://settings/",
+        ),
     )
 }
 
@@ -78,8 +80,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
         resolution == BrowserNavigationResolver.Resolution(
             kind: .url,
             displayText: "openarc://extensions/?id=abc",
-            resolvedURLString: "openarc://extensions/?id=abc"
-        )
+            resolvedURLString: "openarc://extensions/?id=abc",
+        ),
     )
 }
 
@@ -91,8 +93,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
         resolution == BrowserNavigationResolver.Resolution(
             kind: .url,
             displayText: "chrome://settings",
-            resolvedURLString: "openarc://settings/"
-        )
+            resolvedURLString: "openarc://settings/",
+        ),
     )
 }
 
@@ -108,12 +110,12 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test func internalURLNormalizerMapsBookmarksAndPasswordManagerToChromiumURLs() {
     #expect(
         BrowserInternalURLNormalizer
-            .chromiumURLString(forCanonicalURLString: "openarc://bookmarks/") == "chrome://bookmarks/"
+            .chromiumURLString(forCanonicalURLString: "openarc://bookmarks/") == "chrome://bookmarks/",
     )
     #expect(
         BrowserInternalURLNormalizer
             .chromiumURLString(forCanonicalURLString: "openarc://password-manager/passwords")
-            == "chrome://password-manager/passwords"
+            == "chrome://password-manager/passwords",
     )
 }
 
@@ -196,7 +198,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func primarySuggestionIsSelectedByDefault() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["привет": ["привет макет", "привет мир"]]
+        suggestionsByQuery: ["привет": ["привет макет", "привет мир"]],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -212,11 +214,11 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func disabledRemoteSuggestionsKeepPrimaryAndAIOnly() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["browser": ["browser settings"]]
+        suggestionsByQuery: ["browser": ["browser settings"]],
     )
     let model = makeModel(
         suggestionProvider: suggestionProvider,
-        remoteSuggestionsEnabledProvider: { false }
+        remoteSuggestionsEnabledProvider: { false },
     )
 
     model.present()
@@ -230,7 +232,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func remoteURLSuggestionUsesURLPresentationKind() async throws {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["https://google.com/": ["https://google.com/business"]]
+        suggestionsByQuery: ["https://google.com/": ["https://google.com/business"]],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -253,7 +255,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func localSuggestionsAreShownBeforeRemoteSuggestions() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["docs": ["docs remote"]]
+        suggestionsByQuery: ["docs": ["docs remote"]],
     )
     let localSuggestions = [
         BrowserCommandSuggestion(
@@ -261,20 +263,20 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
             displayText: "Docs Tab",
             detailText: "docs.example",
             resolvedURLString: "https://docs.example",
-            tabID: "tab-1"
+            tabID: "tab-1",
         ),
         BrowserCommandSuggestion(
             kind: .bookmark,
             displayText: "Docs Bookmark",
             detailText: "bookmarks.example",
-            resolvedURLString: "https://bookmarks.example"
+            resolvedURLString: "https://bookmarks.example",
         ),
     ]
     let model = makeModel(
         suggestionProvider: suggestionProvider,
         localSuggestionProvider: { query, maximumCount in
             query == "docs" ? Array(localSuggestions.prefix(maximumCount)) : []
-        }
+        },
     )
 
     model.present()
@@ -297,7 +299,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     let model = makeModel(
         suggestionProvider: FakeSuggestionProvider(),
         aiSearchProviderProvider: { .deepSeek },
-        submitHandler: { submittedURLStrings.append($0) }
+        submitHandler: { submittedURLStrings.append($0) },
     )
 
     model.present()
@@ -344,12 +346,12 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
                     kind: .openTab,
                     displayText: "Open Tab",
                     resolvedURLString: "https://open.example",
-                    tabIDs: ["tab-1", "tab-2"]
+                    tabIDs: ["tab-1", "tab-2"],
                 ),
             ]
         },
         submitHandler: { submittedURLStrings.append($0) },
-        openTabHandler: { openedTabIDGroups.append($0) }
+        openTabHandler: { openedTabIDGroups.append($0) },
     )
 
     model.present()
@@ -376,13 +378,13 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
                     kind: .command,
                     displayText: BrowserStrings.navigationRefresh,
                     commandID: .reload,
-                    shortcut: BrowserKeyboardShortcut("r")
+                    shortcut: BrowserKeyboardShortcut("r"),
                 ),
             ]
         },
         submitHandler: { submittedURLStrings.append($0) },
         openTabHandler: { openedTabIDGroups.append($0) },
-        commandHandler: { performedCommandIDs.append($0) }
+        commandHandler: { performedCommandIDs.append($0) },
     )
 
     model.present()
@@ -400,7 +402,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func arrowNavigationUpdatesSelectedSuggestionAndInlineSuffix() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["привет": ["привет макет", "привет мир"]]
+        suggestionsByQuery: ["привет": ["привет макет", "привет мир"]],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -417,7 +419,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func acceptSelectedSuggestionPromotesInlineCompletionIntoQuery() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["привет": ["привет макет"]]
+        suggestionsByQuery: ["привет": ["привет макет"]],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -433,7 +435,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func trailingSpaceDoesNotTriggerPrimarySuggestionPreview() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["hello": ["hello world"]]
+        suggestionsByQuery: ["hello": ["hello world"]],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -449,7 +451,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func inlineCompletionPreservesTypedTrailingSpace() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["hello": ["hello world"]]
+        suggestionsByQuery: ["hello": ["hello world"]],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -468,7 +470,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: [
             "test english com listening b2": ["https test english com listening b2 inside google's office"],
-        ]
+        ],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -487,7 +489,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     let suggestionProvider = FakeSuggestionProvider(
         suggestionsByQuery: [
             "test english com listening b2": ["https test english com listening b2 inside google's office"],
-        ]
+        ],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -505,7 +507,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     var submittedURLStrings = [String]()
     let model = makeModel(
         suggestionProvider: FakeSuggestionProvider(),
-        submitHandler: { submittedURLStrings.append($0) }
+        submitHandler: { submittedURLStrings.append($0) },
     )
 
     model.present()
@@ -521,11 +523,11 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @MainActor func submitUsesCurrentlySelectedSuggestion() async {
     var submittedURLStrings = [String]()
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["привет": ["привет макет"]]
+        suggestionsByQuery: ["привет": ["привет макет"]],
     )
     let model = makeModel(
         suggestionProvider: suggestionProvider,
-        submitHandler: { submittedURLStrings.append($0) }
+        submitHandler: { submittedURLStrings.append($0) },
     )
 
     model.present()
@@ -541,7 +543,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 @Test
 @MainActor func dismissClearsTransientState() async {
     let suggestionProvider = FakeSuggestionProvider(
-        suggestionsByQuery: ["browser": ["browser command bar"]]
+        suggestionsByQuery: ["browser": ["browser command bar"]],
     )
     let model = makeModel(suggestionProvider: suggestionProvider)
 
@@ -564,7 +566,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
     submitHandler: @escaping (String) -> Void = { _ in },
     openTabHandler: @escaping ([String]) -> Void = { _ in },
-    commandHandler: @escaping (BrowserCommandID) -> Void = { _ in }
+    commandHandler: @escaping (BrowserCommandID) -> Void = { _ in },
 ) -> BrowserCommandBarModel {
     BrowserCommandBarModel(
         suggestionProvider: suggestionProvider,
@@ -574,7 +576,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
         aiSearchProviderProvider: aiSearchProviderProvider,
         submitHandler: submitHandler,
         openTabHandler: openTabHandler,
-        commandHandler: commandHandler
+        commandHandler: commandHandler,
     )
 }
 

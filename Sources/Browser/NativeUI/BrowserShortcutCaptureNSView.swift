@@ -1,10 +1,27 @@
+// BrowserShortcutCaptureNSView.swift
+
 import AppKit
 
 // MARK: - BrowserShortcutCaptureNSView
 
 /// The app's key monitor routes events here before evaluating browser shortcuts.
 final class BrowserShortcutCaptureNSView: BrowserNativeSurface {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private weak static var activeCapture: BrowserShortcutCaptureNSView?
+
+    // MARK: Internal
+
+    override var acceptsFirstResponder: Bool { true }
+
+    var onCapture: ((BrowserKeyboardShortcut) -> Void)?
+    var onCancel: (() -> Void)?
+
+    private let label = BrowserNativeControls.label(
+        BrowserStrings.settingsShortcutPressShortcut,
+        size: 12,
+        color: .secondaryLabelColor,
+    )
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -26,13 +43,6 @@ final class BrowserShortcutCaptureNSView: BrowserNativeSurface {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    // MARK: Internal
-
-    override var acceptsFirstResponder: Bool { true }
-
-    var onCapture: ((BrowserKeyboardShortcut) -> Void)?
-    var onCancel: (() -> Void)?
 
     override func becomeFirstResponder() -> Bool {
         Self.activeCapture = self
@@ -75,16 +85,6 @@ final class BrowserShortcutCaptureNSView: BrowserNativeSurface {
         capture.keyDown(with: event)
         return true
     }
-
-    // MARK: Private
-
-    private weak static var activeCapture: BrowserShortcutCaptureNSView?
-
-    private let label = BrowserNativeControls.label(
-        BrowserStrings.settingsShortcutPressShortcut,
-        size: 12,
-        color: .secondaryLabelColor
-    )
 }
 
 extension BrowserKeyboardShortcut {

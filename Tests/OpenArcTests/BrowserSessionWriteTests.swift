@@ -1,3 +1,5 @@
+// BrowserSessionWriteTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -64,10 +66,10 @@ import Testing
     }
     #expect(first.id != second.id)
     #expect(first.operations == [.moveTabs(
-        ids: ["a"], destination: .init(spaceID: "space", placement: .temporary), beforeID: "c", afterID: "b"
+        ids: ["a"], destination: .init(spaceID: "space", placement: .temporary), beforeID: "c", afterID: "b",
     )])
     #expect(second.operations == [.moveTabs(
-        ids: ["a"], destination: .init(spaceID: "space", placement: .temporary), beforeID: "b"
+        ids: ["a"], destination: .init(spaceID: "space", placement: .temporary), beforeID: "b",
     )])
     #expect(try Array(harness.rows().prefix(rows.count)) == rows)
 }
@@ -95,7 +97,7 @@ import Testing
         return
     }
     #expect(mutation.operations == [.moveTabs(
-        ids: ["a"], destination: .init(spaceID: "space", placement: .temporary), afterID: "b"
+        ids: ["a"], destination: .init(spaceID: "space", placement: .temporary), afterID: "b",
     )])
     #expect(try Array(harness.rows().prefix(rows.count)) == rows)
     #expect(store.loadSnapshot() == local)
@@ -106,7 +108,8 @@ import Testing
     defer { harness.cleanup() }
     let original = batchSnapshot(["a", "b"])
     let store = try harness.seed(original)
-    let rows = try harness.rows(), baseline = try harness.baseline()
+    let rows = try harness.rows()
+    let baseline = try harness.baseline()
     let moved = batchSnapshot(["b", "a"])
     let oversized = batchSnapshot(["b", "a"], title: String(repeating: "x", count: 8 * 1024 * 1024))
     #expect(throws: BrowserSyncQueueError.mutationTooLarge) {
@@ -125,7 +128,8 @@ import Testing
     defer { harness.cleanup() }
     let original = batchSnapshot(["a", "b"])
     let store = try harness.seed(original)
-    let rows = try harness.rows(), baseline = try harness.baseline()
+    let rows = try harness.rows()
+    let baseline = try harness.baseline()
     #expect(throws: BrowserSessionWriteError.duplicateMoveIDs) {
         try store.writeSessionBatch([
             .init(snapshot: batchSnapshot(["b", "a"]), origin: .local(syncMove: .init(tabIDs: ["a"]))),
@@ -199,10 +203,6 @@ import Testing
 // MARK: - SessionWriteHarness
 
 private struct SessionWriteHarness {
-    // MARK: Lifecycle
-
-    init() throws { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
-
     // MARK: Internal
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("session-write-\(UUID().uuidString)")
@@ -210,6 +210,8 @@ private struct SessionWriteHarness {
 
     var databaseURL: URL { directory.appendingPathComponent("session.sqlite") }
     var snapshotURL: URL { directory.appendingPathComponent("tabs.json") }
+
+    init() throws { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
 
     func store() throws -> BrowserSQLiteSessionStore { try BrowserSQLiteSessionStore(databaseURL: databaseURL) }
     func database() throws -> DatabaseQueue { try DatabaseQueue(path: databaseURL.path) }
@@ -228,14 +230,14 @@ private struct SessionWriteHarness {
         try database().read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT position, mutation_id, protocol_version, payload FROM browser_sync_outbox ORDER BY position"
+                sql: "SELECT position, mutation_id, protocol_version, payload FROM browser_sync_outbox ORDER BY position",
             )
             .map {
                 SessionWriteRow(
                     position: $0["position"],
                     id: $0["mutation_id"],
                     version: $0["protocol_version"],
-                    payload: $0["payload"]
+                    payload: $0["payload"],
                 )
             }
         }
@@ -259,6 +261,6 @@ private struct SessionWriteRow: Equatable {
 private func batchSnapshot(_ ids: [String], title: String = "Work") -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(
         spaces: [.init(id: "space", title: title, systemImageName: "briefcase")],
-        tabs: ids.map { .init(id: $0, urlString: "https://\($0).example", spaceID: "space") }
+        tabs: ids.map { .init(id: $0, urlString: "https://\($0).example", spaceID: "space") },
     )
 }

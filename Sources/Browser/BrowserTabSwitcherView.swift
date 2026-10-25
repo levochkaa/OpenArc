@@ -1,14 +1,23 @@
+// BrowserTabSwitcherView.swift
+
 import AppKit
 
 // MARK: - BrowserTabSwitcherEventNSView
 
 final class BrowserTabSwitcherEventNSView: NSView {
+    // MARK: Private
+
+    private static let tabKeyCode: UInt16 = 48
+    private static let escapeKeyCode: UInt16 = 53
+
     // MARK: Internal
 
     var isEnabled = false
     var onTab: (Bool) -> Bool = { _ in false }
     var onCommit: () -> Bool = { false }
     var onCancel: () -> Bool = { false }
+
+    private let localMonitorCleanup = BrowserTabSwitcherMonitorCleanup()
 
     override func hitTest(_: NSPoint) -> NSView? {
         nil
@@ -23,13 +32,6 @@ final class BrowserTabSwitcherEventNSView: NSView {
             installLocalMonitorIfNeeded()
         }
     }
-
-    // MARK: Private
-
-    private static let tabKeyCode: UInt16 = 48
-    private static let escapeKeyCode: UInt16 = 53
-
-    private let localMonitorCleanup = BrowserTabSwitcherMonitorCleanup()
 
     private static func isOptionTabEvent(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -95,15 +97,13 @@ final class BrowserTabSwitcherEventNSView: NSView {
 // MARK: - BrowserTabSwitcherMonitorCleanup
 
 private final class BrowserTabSwitcherMonitorCleanup: @unchecked Sendable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var monitor: Any?
 
     deinit {
         remove()
     }
-
-    // MARK: Internal
-
-    var monitor: Any?
 
     func set(_ monitor: Any?) {
         remove()

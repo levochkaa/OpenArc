@@ -1,3 +1,5 @@
+// BrowserMobileSidebarDragTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -29,7 +31,7 @@ extension BrowserMobileUITests {
         #expect(f.document.move(
             items: [.init(entityType: .tab, entityID: inserted)],
             destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
-            before: .init(entityType: .tab, entityID: "row-0")
+            before: .init(entityType: .tab, entityID: "row-0"),
         ))
         let precedingQueue = try f.mutations()
         #expect(f.table.numberOfRows(inSection: 2) == 80)
@@ -47,7 +49,7 @@ extension BrowserMobileUITests {
             items: [.init(entityType: .tab, entityID: "row-0")],
             destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
             before: .init(entityType: .tab, entityID: "row-22"),
-            after: .init(entityType: .tab, entityID: "row-21")
+            after: .init(entityType: .tab, entityID: "row-21"),
         )])
         f.end(drag, drop)
         #expect(f.table.numberOfRows(inSection: 2) == 80)
@@ -74,7 +76,8 @@ extension BrowserMobileUITests {
         #expect(f.table.indexPathForRow(at: drop.location(in: f.table)) == .init(row: 24, section: 2), "\(geometry)")
         let visible = (f.table.indexPathsForVisibleRows ?? []).filter { $0.section == 2 }.sorted()
         try #require(visible.count > 2)
-        let deletedPath = visible[0], survivingPath = visible[1]
+        let deletedPath = visible[0]
+        let survivingPath = visible[1]
         let deletedID = try #require(f.table.cellForRow(at: deletedPath)?.accessibilityIdentifier)
         let survivorID = try #require(f.table.cellForRow(at: survivingPath)?.accessibilityIdentifier)
         let survivorY = f.table.convert(f.table.rectForRow(at: survivingPath), to: f.window).minY
@@ -123,7 +126,7 @@ extension BrowserMobileUITests {
         #expect(drop.locationQueryCount > queries)
         #expect(destination.table.indexPathForRow(at: drop.location(in: destination.table)) == .init(
             row: 12,
-            section: 1
+            section: 1,
         ), "\(geometry)")
         #expect(scheduler.requests[0].cancelled)
         try #require(scheduler.requests.count == 2)
@@ -155,11 +158,11 @@ extension BrowserMobileUITests {
         #expect(try palette.hover(drop, targetID: "browser.spaceDrop.space-0.pinned").operation == .move)
         let original = try #require(sidebarDragView(
             withID: "browser.spaceDrop.space-0.pinned",
-            in: palette.controller.view
+            in: palette.controller.view,
         ))
         let target = try #require(sidebarDragView(
             withID: "browser.spaceDrop.space-6.today",
-            in: palette.controller.view
+            in: palette.controller.view,
         ))
         let windowPoint = palette.controller.view.convert(drop.point, to: f.window)
         drop.fixLocation(windowPoint, in: f.window)
@@ -168,7 +171,7 @@ extension BrowserMobileUITests {
         let before = try f.durableState()
         scroll.setContentOffset(
             CGPoint(x: 0, y: scroll.contentOffset.y + targetWindowY - windowPoint.y),
-            animated: false
+            animated: false,
         )
         palette.controller.view.layoutIfNeeded()
         #expect(drop.locationQueryCount > queries)
@@ -182,7 +185,7 @@ extension BrowserMobileUITests {
         #expect(try f.mutations().count == 1)
         #expect(try f.mutations().first?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "drag")],
-            destination: .tabs(spaceID: "space-6", placement: .temporary, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "space-6", placement: .temporary, pinnedFolderID: nil),
         )])
         let animations = palette.installAnimations(for: drag.items)
         f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
@@ -207,7 +210,7 @@ extension BrowserMobileUITests {
             drop.fixLocation(windowPoint, in: f.window)
             let target = try #require(sidebarDragView(
                 withID: "browser.spaceDrop.space-5.today",
-                in: palette.controller.view
+                in: palette.controller.view,
             ))
             if change == "delete-target" {
                 #expect(f.document.delete(entity: .init(entityType: .space, entityID: "space-5")))
@@ -219,7 +222,7 @@ extension BrowserMobileUITests {
             let changed = try f.durableState()
             scroll.setContentOffset(
                 CGPoint(x: 0, y: scroll.contentOffset.y + targetWindowY - windowPoint.y),
-                animated: false
+                animated: false,
             )
             palette.controller.view.layoutIfNeeded()
             #expect(target.backgroundColor?.isEqual(UIColor.tertiarySystemGroupedBackground) == true)
@@ -230,7 +233,7 @@ extension BrowserMobileUITests {
                 let centerY = target.convert(CGPoint(x: target.bounds.midX, y: target.bounds.midY), to: f.window).y
                 scroll.setContentOffset(
                     CGPoint(x: 0, y: scroll.contentOffset.y + centerY - windowPoint.y),
-                    animated: false
+                    animated: false,
                 )
                 palette.controller.view.layoutIfNeeded()
                 #expect(target.backgroundColor?
@@ -240,7 +243,7 @@ extension BrowserMobileUITests {
                 #expect(try f.mutations().count == 1)
                 #expect(try f.mutations().first?.operations == [.move(
                     items: [.init(entityType: .tab, entityID: "drag")],
-                    destination: .tabs(spaceID: "space-5", placement: .temporary, pinnedFolderID: nil)
+                    destination: .tabs(spaceID: "space-5", placement: .temporary, pinnedFolderID: nil),
                 )])
                 recoveredAnimations = palette.installAnimations(for: drag.items)
             }
@@ -299,7 +302,7 @@ extension BrowserMobileUITests {
         #expect(try source.mutations().first?.operations == [.move(
             items: ["a", "b", "c"].map { .init(entityType: .tab, entityID: $0) },
             destination: .tabs(spaceID: "other", placement: .temporary, pinnedFolderID: nil),
-            after: .init(entityType: .tab, entityID: "destination-page")
+            after: .init(entityType: .tab, entityID: "destination-page"),
         )])
         try #require(coordinator.animations.count == 3)
         source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
@@ -375,14 +378,14 @@ extension BrowserMobileUITests {
             switch invalidation {
             case "frozen-ancestor": #expect(f.document.move(
                     items: [.init(entityType: .folder, entityID: "nested")],
-                    destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil)
+                    destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: nil),
                 ))
             case "old-root-moved": #expect(f.document.setPlacement(tabID: "b", placement: .temporary, spaceID: "other"))
             case "new-row-moved": #expect(f.document.setPlacement(
                     tabID: "a",
                     placement: .spacePinned,
                     spaceID: "source",
-                    pinnedFolderID: "folder"
+                    pinnedFolderID: "folder",
                 ))
             case "old-root-deleted": #expect(f.document.removeTab(id: "b"))
             default: break
@@ -446,7 +449,7 @@ extension BrowserMobileUITests {
         destination.sidebar.tableView(destination.table, performDropWith: coordinator)
         #expect(try source.mutations().last?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "child"), .init(entityType: .tab, entityID: "a")],
-            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil),
         )])
         source.end(drag, hover)
         destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
@@ -466,7 +469,7 @@ extension BrowserMobileUITests {
         let today = try #require(sidebarDragView(withID: "browser.spaceDrop.other.today", in: palette.controller.view))
         let pinned = try #require(sidebarDragView(
             withID: "browser.spaceDrop.other.pinned",
-            in: palette.controller.view
+            in: palette.controller.view,
         ))
         let todayFrame = today.convert(today.bounds, to: f.window)
         let pinnedFrame = pinned.convert(pinned.bounds, to: f.window)
@@ -488,7 +491,7 @@ extension BrowserMobileUITests {
         #expect(try f.mutations().count == 1)
         #expect(try f.mutations().first?.operations == [.move(
             items: [.init(entityType: .folder, entityID: "folder"), .init(entityType: .tab, entityID: "a")],
-            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil),
         )])
         let animations = palette.installAnimations(for: drag.items)
         try #require(animations.count == 2)
@@ -692,7 +695,7 @@ extension BrowserMobileUITests {
             case "delete-folder": #expect(f.document.delete(entity: .init(entityType: .folder, entityID: "folder")))
             case "move-folder": #expect(f.document.move(
                     items: [.init(entityType: .folder, entityID: "folder")],
-                    destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil)
+                    destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil),
                 ))
             case "delete-source": #expect(f.document.removeTab(id: "a"))
             default: #expect(f.document.setPlacement(tabID: "a", placement: .temporary, spaceID: "other"))
@@ -750,12 +753,12 @@ extension BrowserMobileUITests {
         let tab = try #require(f.document.createTab(
             spaceID: "source",
             placement: .spacePinned,
-            pinnedFolderID: "folder"
+            pinnedFolderID: "folder",
         ))
         let folder = try #require(f.document.createFolder(
             spaceID: "source",
             parentFolderID: "folder",
-            title: "New folder"
+            title: "New folder",
         ))
         #expect(f.document.renameTab(id: "child", title: "Latest metadata"))
         let current = try f.durableState()
@@ -821,7 +824,7 @@ extension BrowserMobileUITests {
             #expect(try source.mutations().first?.operations == [.move(
                 items: [.init(entityType: .tab, entityID: "a"), .init(entityType: .tab, entityID: "c")],
                 destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "nested"),
-                before: before ? anchor : nil, after: before ? nil : anchor
+                before: before ? anchor : nil, after: before ? nil : anchor,
             )])
             #expect(source.engine.selectedID == sourceRuntime && destination.engine.selectedID == destinationRuntime)
             #expect(source.engine.closed.isEmpty && destination.engine.closed.isEmpty)
@@ -857,9 +860,9 @@ extension BrowserMobileUITests {
                     placement: .spacePinned,
                     spaceID: "source",
                     pinnedFolderID: "folder",
-                    pinnedSiblingRank: Double(rank)
+                    pinnedSiblingRank: Double(rank),
                 )
-            }
+            },
         ))
         let destination = try SidebarDragFixture(sharing: source, hoverScheduler: scheduler, trackingTable: table)
         defer { destination.cleanup()
@@ -892,7 +895,7 @@ extension BrowserMobileUITests {
         #expect(try source.mutations().first?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "last")],
             destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "folder"),
-            before: .init(entityType: .tab, entityID: "first")
+            before: .init(entityType: .tab, entityID: "first"),
         )])
         source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
         destination.sidebar.tableView(destination.table, dropSessionDidEnd: drop)
@@ -988,7 +991,7 @@ extension BrowserMobileUITests {
         #expect(try source.mutations().first?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "a")],
             destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
-            after: .init(entityType: .tab, entityID: "c")
+            after: .init(entityType: .tab, entityID: "c"),
         )])
         let expandedRows = expanding.rowIDs(section: 1)
         source.sidebar.tableView(source.table, dragSessionDidEnd: drag)
@@ -1104,7 +1107,7 @@ extension BrowserMobileUITests {
         #expect(proposal.operation == .move && proposal.intent == .insertIntoDestinationIndexPath)
         #expect(source.document.setPlacement(tabID: "child", placement: .spacePinned, spaceID: "source"))
         #expect(source.document.setPlacement(
-            tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+            tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
         ))
         #expect(source.document.renameTab(id: "a", title: "Renamed while dragging"))
         let previous = try source.mutations()
@@ -1116,7 +1119,7 @@ extension BrowserMobileUITests {
         #expect(mutations.last?.operations == [.move(
             items: [.init(entityType: .folder, entityID: "folder"), .init(entityType: .tab, entityID: "a")],
             destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: "destination-folder"),
-            after: .init(entityType: .tab, entityID: "destination-pin")
+            after: .init(entityType: .tab, entityID: "destination-pin"),
         )])
         let snapshot = source.document.snapshot
         #expect(snapshot.tabs.first { $0.id == "child" }?.spaceID == "source")
@@ -1181,7 +1184,7 @@ extension BrowserMobileUITests {
         #expect(try source.mutations().first?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "a"), .init(entityType: .tab, entityID: "c")],
             destination: .tabs(spaceID: "other", placement: .temporary, pinnedFolderID: nil),
-            after: .init(entityType: .tab, entityID: "destination-page")
+            after: .init(entityType: .tab, entityID: "destination-page"),
         )])
         #expect(coordinator.animations.map(\.completionCount) == [1, 1])
         #expect(source.workspace.selectedSpaceID == "source" && source.workspace.selectedTabID == "b")
@@ -1238,7 +1241,7 @@ extension BrowserMobileUITests {
         #expect(committed.last?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "a")],
             destination: .tabs(spaceID: "other", placement: .temporary, pinnedFolderID: nil),
-            before: .init(entityType: .tab, entityID: "destination-page")
+            before: .init(entityType: .tab, entityID: "destination-page"),
         )])
         #expect(first.hover(drop).operation == .forbidden)
         first.sidebar.tableView(first.table, performDropWith: firstCoordinator)
@@ -1274,11 +1277,11 @@ extension BrowserMobileUITests {
             switch mutation {
             case "delete-root": #expect(source.document.removeTab(id: "c"))
             case "reparent-root": #expect(source.document.setPlacement(
-                    tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                    tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
                 ))
             case "delete-target": #expect(source.document.removeTab(id: "destination-pin"))
             case "reparent-target": #expect(source.document.setPlacement(
-                    tabID: "destination-pin", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                    tabID: "destination-pin", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
                 ))
             default: #expect(source.document.delete(entity: .init(entityType: .space, entityID: "other")))
             }
@@ -1590,7 +1593,7 @@ extension BrowserMobileUITests {
 
         #expect(f.document.setPlacement(tabID: "child", placement: .spacePinned, spaceID: "source"))
         #expect(f.document.setPlacement(
-            tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+            tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
         ))
         let previousQueue = try f.mutations()
         palette.perform(drop)
@@ -1599,7 +1602,7 @@ extension BrowserMobileUITests {
         #expect(queue.count == previousQueue.count + 1)
         #expect(queue.last?.operations == [.move(
             items: [.init(entityType: .folder, entityID: "folder"), .init(entityType: .tab, entityID: "a")],
-            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil),
         )])
         let moved = f.document.snapshot
         #expect(moved.pinnedTabFolders?.first { $0.id == "folder" }?.spaceID == "other")
@@ -1649,7 +1652,7 @@ extension BrowserMobileUITests {
         #expect(queue.count == 1)
         #expect(queue.first?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "a"), .init(entityType: .tab, entityID: "c")],
-            destination: .tabs(spaceID: "other", placement: .temporary, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "other", placement: .temporary, pinnedFolderID: nil),
         )])
         #expect(f.document.snapshot.tabs.filter { $0.spaceID == "other" }.compactMap(\.id) == ["a", "c"])
         #expect(f.workspace.selectedSpaceID == "source")
@@ -1680,7 +1683,7 @@ extension BrowserMobileUITests {
         #expect(f.document.renameSpace(id: "other", title: "Renamed destination"))
         #expect(f.document.move(
             items: [.init(entityType: .space, entityID: "other")], destination: .spaces,
-            before: .init(entityType: .space, entityID: "source")
+            before: .init(entityType: .space, entityID: "source"),
         ))
         #expect(f.document.snapshot.spaces?.map(\.id) == ["other", "source"])
         let previous = try f.mutations()
@@ -1690,7 +1693,7 @@ extension BrowserMobileUITests {
         #expect(try f.mutations().count == previous.count + 1)
         #expect(try f.mutations().last?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "a")],
-            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil)
+            destination: .tabs(spaceID: "other", placement: .spacePinned, pinnedFolderID: nil),
         )])
         let animations = palette.installAnimations(for: drag.items)
         f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
@@ -1713,7 +1716,7 @@ extension BrowserMobileUITests {
             switch change {
             case "space-deleted": #expect(f.document.delete(entity: .init(entityType: .space, entityID: "other")))
             case "source-moved": #expect(f.document.setPlacement(
-                    tabID: "a", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                    tabID: "a", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
                 ))
             default:
                 // This drives the installed notification callback, not an OS
@@ -1801,7 +1804,7 @@ extension BrowserMobileUITests {
         #expect(mutations.first?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "a"), .init(entityType: .tab, entityID: "c")],
             destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
-            before: .init(entityType: .tab, entityID: "b")
+            before: .init(entityType: .tab, entityID: "b"),
         )])
         #expect(f.todayIDs == ["a", "c", "b"])
         #expect(coordinator.droppedItems.map(ObjectIdentifier.init) == drag.items.map(ObjectIdentifier.init))
@@ -1874,7 +1877,7 @@ extension BrowserMobileUITests {
         #expect(mutations.first?.operations == [.move(
             items: [.init(entityType: .tab, entityID: "b")],
             destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
-            after: .init(entityType: .tab, entityID: "c")
+            after: .init(entityType: .tab, entityID: "c"),
         )])
         #expect(f.todayIDs == ["a", "c", "b"])
         f.end(drag, drop)
@@ -1931,7 +1934,7 @@ extension BrowserMobileUITests {
                 #expect(f.document.removeTab(id: "c"))
             } else {
                 #expect(f.document.setPlacement(
-                    tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                    tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
                 ))
             }
             let afterConcurrentChange = try f.durableState()
@@ -1969,7 +1972,7 @@ extension BrowserMobileUITests {
             items: [.init(entityType: .tab, entityID: "a")],
             destination: .tabs(spaceID: "source", placement: .temporary, pinnedFolderID: nil),
             before: .init(entityType: .tab, entityID: "c"),
-            after: .init(entityType: .tab, entityID: "b")
+            after: .init(entityType: .tab, entityID: "b"),
         )])
         #expect(coordinator.previewTarget != nil)
         #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.b", "browser.tab.c"])
@@ -2023,10 +2026,10 @@ extension BrowserMobileUITests {
             switch change {
             case "target-delete": #expect(f.document.removeTab(id: "c"))
             case "target-move": #expect(f.document.setPlacement(
-                    tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                    tabID: "c", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
                 ))
             case "source-move": #expect(f.document.setPlacement(
-                    tabID: "a", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+                    tabID: "a", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
                 ))
             default: f.workspace.selectSpace(id: "other")
             }
@@ -2076,7 +2079,7 @@ extension BrowserMobileUITests {
         // canonical tree while the rendered rows remain frozen.
         #expect(f.document.setPlacement(tabID: "child", placement: .spacePinned, spaceID: "source"))
         #expect(f.document.setPlacement(
-            tabID: "a", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder"
+            tabID: "a", placement: .spacePinned, spaceID: "source", pinnedFolderID: "folder",
         ))
         let earlierRows = try f.mutations()
         #expect(f.rowIDs(section: 1) == [
@@ -2090,7 +2093,7 @@ extension BrowserMobileUITests {
         #expect(allRows.count == earlierRows.count + 1)
         #expect(allRows.last?.operations == [.move(
             items: [.init(entityType: .folder, entityID: "folder")],
-            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "empty")
+            destination: .tabs(spaceID: "source", placement: .spacePinned, pinnedFolderID: "empty"),
         )])
         let snapshot = f.document.snapshot
         #expect(snapshot.pinnedTabFolders?.first { $0.id == "folder" }?.parentFolderID == "empty")
@@ -2208,6 +2211,10 @@ extension BrowserMobileUITests {
 
     var requests = [Request]()
 
+    // MARK: Private
+
+    private var activeIndex: Int?
+
     func schedule(after delay: Duration, action: @escaping @MainActor () -> Void) {
         cancel()
         activeIndex = requests.count
@@ -2229,10 +2236,6 @@ extension BrowserMobileUITests {
         }
         requests[index].action()
     }
-
-    // MARK: Private
-
-    private var activeIndex: Int?
 }
 
 // MARK: - SidebarHoverTrackingTable
@@ -2290,13 +2293,37 @@ extension BrowserMobileUITests {
 // MARK: - SidebarDragFixture
 
 @MainActor private final class SidebarDragFixture {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private struct DurableState: Encodable {
+        let snapshot: BrowserTabSessionSnapshot?
+        let queue: [BrowserSyncFolderMutation]
+    }
+
+    // MARK: Internal
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SidebarDrag-\(UUID())")
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
+    let preferencesName = "SidebarDrag.\(UUID())"
+    let store: BrowserSQLiteSessionStore
+    let document: BrowserMobileProfileDocument
+    let workspace: BrowserMobileWorkspace
+    let sidebar: BrowserMobileTabsViewController
+    let engine = SidebarDragEngine()
+    let preferences: UserDefaults
+    let window: UIWindow
+    let dismissButton = UIBarButtonItem(barButtonSystemItem: .done, target: nil, action: nil)
+
+    var table: UITableView { sidebar.tableView }
+    var todayIDs: [String] {
+        document.snapshot.tabs.filter { $0.placement == .temporary && $0.spaceID == "source" }.compactMap(\.id)
+    }
 
     init(
         sharing shared: SidebarDragFixture? = nil,
         snapshot: BrowserTabSessionSnapshot = sidebarDragSnapshot(),
         hoverScheduler: (any BrowserMobileSidebarHoverScheduling)? = nil,
-        trackingTable: SidebarHoverTrackingTable? = nil
+        trackingTable: SidebarHoverTrackingTable? = nil,
     ) throws {
         let document: BrowserMobileProfileDocument
         if let shared {
@@ -2317,7 +2344,7 @@ extension BrowserMobileUITests {
                 ]
                 return try JSONDecoder().decode(
                     BrowserSyncEvent.self,
-                    from: JSONSerialization.data(withJSONObject: wire)
+                    from: JSONSerialization.data(withJSONObject: wire),
                 )
             }
             _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
@@ -2326,35 +2353,16 @@ extension BrowserMobileUITests {
         self.document = document
         self.preferences = try #require(UserDefaults(suiteName: preferencesName))
         self.workspace = BrowserMobileWorkspace(
-            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences
+            engine: engine, sceneID: UUID().uuidString, profileLoader: { document }, preferences: preferences,
         )
         self.sidebar = BrowserMobileTabsViewController(
             workspace: workspace,
             hoverScheduler: hoverScheduler ?? BrowserMobileSidebarHoverScheduler(),
-            tableView: trackingTable
+            tableView: trackingTable,
         )
         self.window = try UIWindow(windowScene: #require(BrowserMobileTestScene.windowScene))
         sidebar.navigationItem.rightBarButtonItem = dismissButton
         workspace.onChange = { [weak sidebar] in sidebar?.render() }
-    }
-
-    // MARK: Internal
-
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SidebarDrag-\(UUID())")
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
-    let preferencesName = "SidebarDrag.\(UUID())"
-    let store: BrowserSQLiteSessionStore
-    let document: BrowserMobileProfileDocument
-    let workspace: BrowserMobileWorkspace
-    let sidebar: BrowserMobileTabsViewController
-    let engine = SidebarDragEngine()
-    let preferences: UserDefaults
-    let window: UIWindow
-    let dismissButton = UIBarButtonItem(barButtonSystemItem: .done, target: nil, action: nil)
-
-    var table: UITableView { sidebar.tableView }
-    var todayIDs: [String] {
-        document.snapshot.tabs.filter { $0.placement == .temporary && $0.spaceID == "source" }.compactMap(\.id)
     }
 
     func start(showNavigation: Bool = false, spaceID: String = "source") async {
@@ -2461,7 +2469,7 @@ extension BrowserMobileUITests {
             table,
             itemsForAddingTo: session,
             at: .init(row: row, section: section),
-            point: point(row: row, section: section, fraction: 0.5)
+            point: point(row: row, section: section, fraction: 0.5),
         )
     }
 
@@ -2508,13 +2516,6 @@ extension BrowserMobileUITests {
             try? FileManager.default.removeItem(at: directory)
         }
     }
-
-    // MARK: Private
-
-    private struct DurableState: Encodable {
-        let snapshot: BrowserTabSessionSnapshot?
-        let queue: [BrowserSyncFolderMutation]
-    }
 }
 
 // MARK: - SidebarWeakController
@@ -2524,7 +2525,7 @@ extension BrowserMobileUITests {
 }
 
 @MainActor private func retiredSidebarDestination(
-    source: SidebarDragFixture, drag: SidebarDragSession
+    source: SidebarDragFixture, drag: SidebarDragSession,
 ) async throws -> ([SidebarDragAnimation], SidebarWeakController) {
     let destination = try SidebarDragFixture(sharing: source)
     await destination.start(spaceID: "other")
@@ -2551,19 +2552,17 @@ extension BrowserMobileUITests {
 // MARK: - SidebarSpaceDropHarness
 
 @MainActor private struct SidebarSpaceDropHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let controller: UIViewController
+    let interaction: UIDropInteraction
+    let delegate: any UIDropInteractionDelegate
 
     init(controller: UIViewController, interaction: UIDropInteraction) throws {
         self.controller = controller
         self.interaction = interaction
         self.delegate = try #require(interaction.delegate)
     }
-
-    // MARK: Internal
-
-    let controller: UIViewController
-    let interaction: UIDropInteraction
-    let delegate: any UIDropInteractionDelegate
 
     func canHandle(_ session: SidebarDropSession) -> Bool {
         delegate.dropInteraction?(interaction, canHandle: session) ?? false
@@ -2628,6 +2627,11 @@ extension BrowserMobileUITests {
     var pointProvider: ((UIView) -> CGPoint)?
     private(set) var locationQueryCount = 0
 
+    // MARK: Private
+
+    private weak var coordinateWindow: UIWindow?
+    private var fixedWindowPoint: CGPoint?
+
     func fixLocation(_ point: CGPoint, in window: UIWindow) {
         fixedWindowPoint = point
         coordinateWindow = window
@@ -2643,11 +2647,6 @@ extension BrowserMobileUITests {
 
     func hasItemsConforming(toTypeIdentifiers _: [String]) -> Bool { true }
     func canLoadObjects(ofClass _: any NSItemProviderReading.Type) -> Bool { false }
-
-    // MARK: Private
-
-    private weak var coordinateWindow: UIWindow?
-    private var fixedWindowPoint: CGPoint?
 }
 
 // MARK: - SidebarDragSession
@@ -2661,7 +2660,11 @@ extension BrowserMobileUITests {
 // MARK: - SidebarDropSession
 
 @MainActor private final class SidebarDropSession: SidebarDragDropSession, UIDropSession {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var localDragSession: (any UIDragSession)?
+    var progressIndicatorStyle = UIDropSessionProgressIndicatorStyle.none
+    nonisolated let progress = Progress(totalUnitCount: 0)
 
     init(drag: SidebarDragSession, point: CGPoint) {
         self.localDragSession = drag
@@ -2670,15 +2673,9 @@ extension BrowserMobileUITests {
         self.point = point
     }
 
-    // MARK: Internal
-
-    var localDragSession: (any UIDragSession)?
-    var progressIndicatorStyle = UIDropSessionProgressIndicatorStyle.none
-    nonisolated let progress = Progress(totalUnitCount: 0)
-
     func loadObjects(
         ofClass _: any NSItemProviderReading.Type,
-        completion: @escaping ([any NSItemProviderReading]) -> Void
+        completion: @escaping ([any NSItemProviderReading]) -> Void,
     ) -> Progress {
         completion([])
         return progress
@@ -2688,29 +2685,25 @@ extension BrowserMobileUITests {
 // MARK: - SidebarDropItem
 
 @MainActor private final class SidebarDropItem: NSObject, UITableViewDropItem {
-    // MARK: Lifecycle
-
-    init(_ item: UIDragItem) { self.dragItem = item }
-
     // MARK: Internal
 
     let dragItem: UIDragItem
     let sourceIndexPath: IndexPath? = nil
     let previewSize = CGSize(width: 100, height: 44)
+
+    init(_ item: UIDragItem) { self.dragItem = item }
 }
 
 // MARK: - SidebarDragAnimation
 
 @MainActor private final class SidebarDragAnimation: NSObject, UIDragAnimating {
-    // MARK: Lifecycle
-
-    init(completesInline: Bool = false) { self.completesInline = completesInline }
-
     // MARK: Internal
 
     let completesInline: Bool
     var completionCount = 0
     var completions = [(UIViewAnimatingPosition) -> Void]()
+
+    init(completesInline: Bool = false) { self.completesInline = completesInline }
 
     func addAnimations(_ animations: @escaping () -> Void) { animations() }
     func addCompletion(_ completion: @escaping (UIViewAnimatingPosition) -> Void) {
@@ -2735,16 +2728,6 @@ extension BrowserMobileUITests {
 // MARK: - SidebarDropCoordinator
 
 @MainActor private final class SidebarDropCoordinator: NSObject, UITableViewDropCoordinator {
-    // MARK: Lifecycle
-
-    init(session: SidebarDropSession, proposal: UITableViewDropProposal, completesInline: Bool = false) {
-        self.session = session
-        self.proposal = proposal
-        self.items = session.items.map { SidebarDropItem($0) }
-        self.completesInline = completesInline
-        self.animation = SidebarDragAnimation(completesInline: completesInline)
-    }
-
     // MARK: Internal
 
     let items: [any UITableViewDropItem]
@@ -2756,6 +2739,14 @@ extension BrowserMobileUITests {
     var animations = [SidebarDragAnimation]()
     var droppedItems = [UIDragItem]()
     var previewTarget: UIDragPreviewTarget?
+
+    init(session: SidebarDropSession, proposal: UITableViewDropProposal, completesInline: Bool = false) {
+        self.session = session
+        self.proposal = proposal
+        self.items = session.items.map { SidebarDropItem($0) }
+        self.completesInline = completesInline
+        self.animation = SidebarDragAnimation(completesInline: completesInline)
+    }
 
     func drop(_ item: UIDragItem, to target: UIDragPreviewTarget) -> any UIDragAnimating {
         previewTarget = target
@@ -2819,7 +2810,7 @@ private func sidebarDragSnapshot() -> BrowserTabSessionSnapshot {
             placement: .spacePinned,
             spaceID: "source",
             pinnedFolderID: "folder",
-            pinnedSiblingRank: 10.5
+            pinnedSiblingRank: 10.5,
         ),
         .init(
             id: "deep",
@@ -2827,7 +2818,7 @@ private func sidebarDragSnapshot() -> BrowserTabSessionSnapshot {
             placement: .spacePinned,
             spaceID: "source",
             pinnedFolderID: "nested",
-            pinnedSiblingRank: 10.5
+            pinnedSiblingRank: 10.5,
         ),
         .init(id: "a", urlString: "about:blank", spaceID: "source"),
         .init(id: "b", urlString: "about:blank", spaceID: "source"),
@@ -2849,17 +2840,17 @@ private func sidebarInterwindowSnapshot() -> BrowserTabSessionSnapshot {
                 placement: .spacePinned,
                 spaceID: "other",
                 pinnedFolderID: "destination-folder",
-                pinnedSiblingRank: 1
+                pinnedSiblingRank: 1,
             ),
             .init(id: "destination-page", urlString: "about:blank", spaceID: "other"),
-        ]
+        ],
     )
 }
 
 private func sidebarLongListSnapshot() -> BrowserTabSessionSnapshot {
     .init(
         spaces: [.init(id: "source", title: "Source", systemImageName: "globe")],
-        tabs: (0..<80).map { .init(id: "row-\($0)", urlString: "about:blank", spaceID: "source") }
+        tabs: (0..<80).map { .init(id: "row-\($0)", urlString: "about:blank", spaceID: "source") },
     )
 }
 
@@ -2873,7 +2864,7 @@ private func sidebarLongFolderSnapshot() -> BrowserTabSessionSnapshot {
             spaceID: "source",
             title: "Folder \($0)",
             isExpanded: false,
-            pinnedSiblingRank: Double($0)
+            pinnedSiblingRank: Double($0),
         )
     }, tabs: (0..<40).map {
         .init(
@@ -2882,7 +2873,7 @@ private func sidebarLongFolderSnapshot() -> BrowserTabSessionSnapshot {
             placement: .spacePinned,
             spaceID: "source",
             pinnedFolderID: "folder-\($0)",
-            pinnedSiblingRank: 0
+            pinnedSiblingRank: 0,
         )
     } + [.init(id: "drag", urlString: "about:blank", spaceID: "other")])
 }

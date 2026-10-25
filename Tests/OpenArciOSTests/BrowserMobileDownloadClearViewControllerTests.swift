@@ -1,3 +1,5 @@
+// BrowserMobileDownloadClearViewControllerTests.swift
+
 import BrowserMobileTestHost
 import Foundation
 import Testing
@@ -11,7 +13,7 @@ extension BrowserMobileUITests {
         let saving = clearUIEntry("Saving.txt", status: .saving)
         let failedTransfer = clearUIEntry("Failed transfer.txt", status: .failed)
         let source = ClearUIModel(
-            entries: [first, missing, active, saving, failedTransfer], durableIDs: [first.id, missing.id]
+            entries: [first, missing, active, saving, failedTransfer], durableIDs: [first.id, missing.id],
         )
         let host = try ClearUIHost(source)
         defer { host.close() }
@@ -22,8 +24,8 @@ extension BrowserMobileUITests {
         #expect(cancelled.message == String(
             format: String(
                 localized: "Remove %d completed downloads from this browser? Copies saved to Files will remain.",
-                table: "Mobile"
-            ), 2
+                table: "Mobile",
+            ), 2,
         ))
         #expect(source.captures.count == 1 && source.clearCalls.isEmpty)
         #expect(!host.clearButton.isEnabled)
@@ -88,10 +90,11 @@ extension BrowserMobileUITests {
             let done = try #require(host.controller.navigationItem.rightBarButtonItem)
             let action = try #require(done.action)
             #expect(UIApplication.shared.sendAction(action, to: done.target, from: done, for: nil))
-        case .disconnected, .inactive:
+        case .disconnected,
+             .inactive:
             NotificationCenter.default.post(
                 name: reason == .inactive ? UIScene.willDeactivateNotification : UIScene.didDisconnectNotification,
-                object: host.window.windowScene
+                object: host.window.windowScene,
             )
             // An old callback must stay invalid even if the scene resumes.
             NotificationCenter.default.post(name: UIScene.didActivateNotification, object: host.window.windowScene)
@@ -161,7 +164,7 @@ extension BrowserMobileUITests {
         let export = try #require(host.rowView(first.id, suffix: "action") as? UIButton)
         #expect(!export.isEnabled)
         #expect(host.controller.tableView(
-            host.controller.tableView, trailingSwipeActionsConfigurationForRowAt: .init(row: 0, section: 0)
+            host.controller.tableView, trailingSwipeActionsConfigurationForRowAt: .init(row: 0, section: 0),
         ) == nil)
         let later = clearUIEntry("Later.txt")
         source.appendDurable(later)
@@ -186,7 +189,7 @@ extension BrowserMobileUITests {
         let host = try ClearUIHost(source)
         defer { host.close() }
         let swipe = try #require(host.controller.tableView(
-            host.controller.tableView, trailingSwipeActionsConfigurationForRowAt: .init(row: 0, section: 0)
+            host.controller.tableView, trailingSwipeActionsConfigurationForRowAt: .init(row: 0, section: 0),
         ))
         let delete = try #require(swipe.actions.first)
         delete.handler(delete, host.controller.view) { _ in }
@@ -205,7 +208,7 @@ extension BrowserMobileUITests {
         try await clearUIWait {
             host.statusText == String(
                 localized: "This Clear Completed request is no longer available.",
-                table: "Mobile"
+                table: "Mobile",
             )
         }
         #expect(source.entries == [entry] && source.removals.isEmpty && !source.canRetryPersistence)
@@ -222,7 +225,7 @@ extension BrowserMobileUITests {
             alert = try await host.openClear()
         } else {
             let swipe = try #require(host.controller.tableView(
-                host.controller.tableView, trailingSwipeActionsConfigurationForRowAt: .init(row: 0, section: 0)
+                host.controller.tableView, trailingSwipeActionsConfigurationForRowAt: .init(row: 0, section: 0),
             ))
             let action = try #require(swipe.actions.first)
             action.handler(action, host.controller.view) { _ in }
@@ -269,11 +272,11 @@ extension BrowserMobileUITests {
         // items through their public accessibility IDs, not a label subtree.
         let clearControl = try #require(
             clearUIView("browser.downloads.clear-completed", in: bar),
-            "Clear control missing: \(clearUIHierarchy(bar))"
+            "Clear control missing: \(clearUIHierarchy(bar))",
         )
         let doneControl = try #require(
             clearUIView("browser.downloads.done", in: bar),
-            "Done control missing: \(clearUIHierarchy(bar))"
+            "Done control missing: \(clearUIHierarchy(bar))",
         )
         let clearRect = clearControl.convert(clearControl.bounds, to: bar)
         let doneRect = doneControl.convert(doneControl.bounds, to: bar)
@@ -283,7 +286,7 @@ extension BrowserMobileUITests {
         let alert = try await host.openClear()
         #expect(alert.message == String(
             localized: "Remove this completed download from this browser? Copies saved to Files will remain.",
-            table: "Mobile"
+            table: "Mobile",
         ))
         #expect(source.captures.first?.count == 1)
         host.controller.cancelClearCompleted(dismissing: alert)
@@ -299,13 +302,6 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
 // MARK: - ClearUIModel
 
 @MainActor private final class ClearUIModel: BrowserMobileDownloadsPresenting {
-    // MARK: Lifecycle
-
-    init(entries: [BrowserMobileDownload], durableIDs: Set<UUID>? = nil) {
-        self.storedEntries = entries
-        self.durableIDs = durableIDs ?? Set(entries.filter { $0.status == .completed }.map(\.id))
-    }
-
     // MARK: Internal
 
     static let failureMessage = "The completed downloads could not be removed. Try again."
@@ -323,6 +319,15 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
     var holdsClear = false
     var nextResult = BrowserMobileDownloadClearResult.removed
 
+    // MARK: Private
+
+    private let ownerID = UUID()
+    private var storedEntries: [BrowserMobileDownload]
+    private var observers = [UUID: @MainActor () -> Void]()
+    private var completion: CheckedContinuation<BrowserMobileDownloadClearResult, Never>?
+    private var failedScope: BrowserMobileDownloadClearScope?
+    private var reservedIDs = Set<UUID>()
+
     var entries: [BrowserMobileDownload] {
         get {
             onEntriesRead?()
@@ -333,6 +338,11 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
 
     var canRetryPersistence: Bool { failedScope != nil }
     var canClearCompleted: Bool { !durableIDs.isEmpty && !isClearingCompleted && failedScope == nil }
+
+    init(entries: [BrowserMobileDownload], durableIDs: Set<UUID>? = nil) {
+        self.storedEntries = entries
+        self.durableIDs = durableIDs ?? Set(entries.filter { $0.status == .completed }.map(\.id))
+    }
 
     func captureCompletedClear() -> BrowserMobileDownloadClearScope? {
         guard canClearCompleted else { return nil }
@@ -362,7 +372,8 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
         case .failed:
             failedScope = scope
             error = Self.failureMessage
-        case .busy, .invalidScope:
+        case .busy,
+             .invalidScope:
             reservedIDs = []
         }
         notify()
@@ -422,15 +433,6 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
         notify()
     }
 
-    // MARK: Private
-
-    private let ownerID = UUID()
-    private var storedEntries: [BrowserMobileDownload]
-    private var observers = [UUID: @MainActor () -> Void]()
-    private var completion: CheckedContinuation<BrowserMobileDownloadClearResult, Never>?
-    private var failedScope: BrowserMobileDownloadClearScope?
-    private var reservedIDs = Set<UUID>()
-
     private func discard(_ scope: BrowserMobileDownloadClearScope) {
         entries.removeAll { scope.ids.contains($0.id) }
         durableIDs.subtract(scope.ids)
@@ -440,7 +442,14 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
 // MARK: - ClearUIHost
 
 @MainActor private final class ClearUIHost {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let controller: BrowserMobileDownloadsViewController
+    let navigation: UINavigationController
+    let window: UIWindow
+
+    var clearButton: UIBarButtonItem { controller.navigationItem.leftBarButtonItem! }
+    var statusText: String? { (clearUIView("browser.downloads.status", in: controller.view) as? UILabel)?.text }
 
     init(_ source: ClearUIModel, width: Double = 390) throws {
         let scene = try #require(BrowserMobileTestScene.windowScene)
@@ -456,15 +465,6 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
         layout()
     }
 
-    // MARK: Internal
-
-    let controller: BrowserMobileDownloadsViewController
-    let navigation: UINavigationController
-    let window: UIWindow
-
-    var clearButton: UIBarButtonItem { controller.navigationItem.leftBarButtonItem! }
-    var statusText: String? { (clearUIView("browser.downloads.status", in: controller.view) as? UILabel)?.text }
-
     func sendClearAction() throws {
         let action = try #require(clearButton.action)
         #expect(UIApplication.shared.sendAction(action, to: clearButton.target, from: clearButton, for: nil))
@@ -479,11 +479,11 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
         }
         let alert = try #require(
             controller.presentedViewController as? UIAlertController,
-            sourceLocation: sourceLocation
+            sourceLocation: sourceLocation,
         )
         #expect(
             alert.view.accessibilityIdentifier == "browser.downloads.clear-confirmation",
-            sourceLocation: sourceLocation
+            sourceLocation: sourceLocation,
         )
         try await clearUIWait(sourceLocation: sourceLocation) {
             !alert.isBeingPresented && alert.view.window === self.window
@@ -521,13 +521,13 @@ enum ClearUIUnavailableOwner: CaseIterable { case hidden, done, inactive, discon
 private var clearUIBusyMessage: String {
     String(
         localized: "Finish any Save to Files actions or retry pending deletions, then try Clear Completed again.",
-        table: "Mobile"
+        table: "Mobile",
     )
 }
 
 private func clearUIEntry(
     _ filename: String,
-    status: BrowserMobileDownload.Status = .completed
+    status: BrowserMobileDownload.Status = .completed,
 ) -> BrowserMobileDownload {
     .init(id: UUID(), filename: filename, sourceURL: nil, status: status, receivedBytes: 20, totalBytes: 20, error: nil)
 }
@@ -546,7 +546,7 @@ private func clearUIEntry(
 }
 
 @MainActor private func clearUIWait(
-    sourceLocation: SourceLocation = #_sourceLocation, _ predicate: @MainActor () -> Bool
+    sourceLocation: SourceLocation = #_sourceLocation, _ predicate: @MainActor () -> Bool,
 ) async throws {
     for _ in 0..<200 {
         if predicate() {

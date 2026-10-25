@@ -1,3 +1,5 @@
+// BrowserDesktopArchiveHistoryTests.swift
+
 import AppKit
 import Testing
 
@@ -34,7 +36,7 @@ import Testing
         defer { f.close() }
         #expect(BrowserCommands.restoreLastClosedTab.shortcut == BrowserKeyboardShortcut(
             "t",
-            modifiers: [.command, .shift]
+            modifiers: [.command, .shift],
         ))
         let created = try createHistoryTab(in: f, path: "restore")
         #expect(!f.model.canRestoreLastClosedTab, "The latest action opened a tab")
@@ -152,7 +154,7 @@ import Testing
         BEGIN SELECT RAISE(ABORT,'injected'); END
         """)
         f.model.undoManager.undo()
-        let action = try #require(f.recording.attempts.flatMap { $0 }.compactMap(\.archiveAction).last)
+        let action = try #require(f.recording.attempts.flatMap(\.self).compactMap(\.archiveAction).last)
         guard case .restore(let archiveID, let freshID) = action else {
             Issue.record("Undo must use an atomic Archive restore action")
             return
@@ -178,7 +180,7 @@ import Testing
         #expect(f.model.retrySessionPersistence())
         f.flushReady()
         #expect(!f.model.hasUncommittedSessionWrites && f.model.sessionPersistenceFailure == nil)
-        let restores = f.recording.attempts.flatMap { $0 }.compactMap(\.archiveAction).filter {
+        let restores = f.recording.attempts.flatMap(\.self).compactMap(\.archiveAction).filter {
             if case .restore = $0 {
                 return true
             }

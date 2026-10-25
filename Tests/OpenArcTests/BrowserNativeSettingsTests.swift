@@ -1,8 +1,57 @@
+// BrowserNativeSettingsTests.swift
+
 import AppKit
 import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserNativeSettingsTests {
+    // MARK: Private
+
+    @MainActor private struct Fixture {
+        // MARK: Internal
+
+        let suite: String
+        let defaults: UserDefaults
+        let root: URL
+        let profiles: BrowserProfileStore
+        let model: BrowserChromeModel
+
+        init() throws {
+            self.suite = "OpenArcNativeSettingsTests.\(UUID().uuidString)"
+            self.defaults = try #require(UserDefaults(suiteName: suite))
+            self.root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            self.profiles = BrowserProfileStore(rootCacheURL: root)
+            self.model = BrowserChromeModel(
+                tabDriver: FakeBrowserTabDriver(),
+                sessionSnapshotStore: InMemorySessionSnapshotStore(),
+                sessionPreferencesStore: InMemorySessionPreferencesStore(),
+                commandBarSuggestionProvider: FakeSuggestionProvider(),
+                userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+                shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+                extensionManager: FakeBrowserExtensionManager(),
+                windowTitleHandler: { _ in },
+                allTabsClosedHandler: {},
+            )
+        }
+
+        func controller(_ pane: BrowserSettingsPane) -> BrowserSettingsViewController {
+            BrowserSettingsViewController(
+                model: model,
+                profileStore: profiles,
+                currentProfileID: BrowserProfile.defaultProfile.id,
+                accountStore: nil,
+                pane: pane,
+                openProfile: { _ in },
+                openURL: { _ in },
+            )
+        }
+
+        func cleanup() { defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+    }
+
     // MARK: Internal
 
     @Test func openProfileCannotBeDeletedEvenIfItOpensAfterSettingsRenders() async throws {
@@ -18,11 +67,11 @@ import Testing
             pane: .profiles,
             canDeleteProfile: { !openProfiles.contains($0.id) },
             openProfile: { _ in },
-            openURL: { _ in }
+            openURL: { _ in },
         )
         let delete = try #require(find(
             "browser.settings.profile.delete.\(profile.id)",
-            in: controller.view
+            in: controller.view,
         ) as? BrowserActionButton)
         #expect(delete.isEnabled)
         openProfiles.insert(profile.id)
@@ -37,11 +86,11 @@ import Testing
             pane: .profiles,
             canDeleteProfile: { !openProfiles.contains($0.id) },
             openProfile: { _ in },
-            openURL: { _ in }
+            openURL: { _ in },
         )
         let disabled = try #require(find(
             "browser.settings.profile.delete.\(profile.id)",
-            in: freshController.view
+            in: freshController.view,
         ) as? BrowserActionButton)
         #expect(!disabled.isEnabled)
         #expect(disabled.toolTip == BrowserStrings.sessionRecoveryCloseProfileBeforeDeleting)
@@ -65,7 +114,7 @@ import Testing
         try await waitUntil { toggle.state == (oldValue ? .on : .off) }
         let popup = try #require(find(
             "browser.settings.search-engine",
-            in: controller.view
+            in: controller.view,
         ) as? BrowserActionPopUpButton)
         popup.selectItem(withTitle: BrowserSearchEngine.brave.title)
         _ = popup.sendAction(popup.action, to: popup.target)
@@ -85,7 +134,7 @@ import Testing
         let path = try #require(find("browser.settings.download-location.path", in: controller.view) as? NSTextField)
         let reset = try #require(find(
             "browser.settings.download-location.reset",
-            in: controller.view
+            in: controller.view,
         ) as? BrowserActionButton)
         let downloads = BrowserDownloadLocation.defaultDirectory()
         #expect(path.stringValue == (downloads.path as NSString).abbreviatingWithTildeInPath)
@@ -101,11 +150,11 @@ import Testing
         #expect(path.stringValue == (folder.path as NSString).abbreviatingWithTildeInPath)
         #expect(BrowserDownloadLocation.directory(customPath: folder.path) == URL(
             fileURLWithPath: folder.path,
-            isDirectory: true
+            isDirectory: true,
         ))
         #expect(
             BrowserDownloadLocation.directory(customPath: folder.path + "-missing") == downloads,
-            "A missing folder falls back"
+            "A missing folder falls back",
         )
         reset.performClick(nil)
         #expect(preferences.downloadDirectoryPath == nil)
@@ -119,7 +168,7 @@ import Testing
             controller.view.layoutSubtreeIfNeeded()
             #expect(controller.view.fittingSize == NSSize(
                 width: BrowserSettingsLayout.windowWidth,
-                height: BrowserSettingsLayout.windowHeight
+                height: BrowserSettingsLayout.windowHeight,
             ))
             let views = descendants(controller.view)
             let scroll = try #require(views.first { $0 is BrowserNativeScrollingStack } as? BrowserNativeScrollingStack)
@@ -167,7 +216,7 @@ import Testing
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
             styleMask: [.titled],
             backing: .buffered,
-            defer: false
+            defer: false,
         )
         window.isReleasedWhenClosed = false
         let capture = BrowserShortcutCaptureNSView()
@@ -191,7 +240,7 @@ import Testing
             characters: "r",
             charactersIgnoringModifiers: "r",
             isARepeat: false,
-            keyCode: 15
+            keyCode: 15,
         ))
         #expect(BrowserShortcutCaptureNSView.handleRecordingEvent(reload))
         #expect(captured == [BrowserKeyboardShortcut("r")])
@@ -205,7 +254,7 @@ import Testing
             characters: "\u{1B}",
             charactersIgnoringModifiers: "\u{1B}",
             isARepeat: false,
-            keyCode: 53
+            keyCode: 53,
         ))
         #expect(BrowserShortcutCaptureNSView.handleRecordingEvent(escape))
         #expect(cancelled)
@@ -231,11 +280,11 @@ import Testing
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
         let match = try #require(find(
             "browser.settings.link-routes.match",
-            in: controller.view
+            in: controller.view,
         ) as? BrowserActionPopUpButton)
         match.onChange(1)
         let destination = try #require(
-            find("browser.settings.link-routes.destination", in: controller.view) as? BrowserActionPopUpButton
+            find("browser.settings.link-routes.destination", in: controller.view) as? BrowserActionPopUpButton,
         )
         destination.onChange(destination.numberOfItems - 1)
         #expect(preferences.linkRoutes == [BrowserLinkRoute(
@@ -243,12 +292,12 @@ import Testing
             match: .contains,
             pattern: "figma.com",
             destination: .littleWindow,
-            spaceTitle: route.spaceTitle
+            spaceTitle: route.spaceTitle,
         )])
 
         let remove = try #require(find(
             "browser.settings.link-routes.remove",
-            in: controller.view
+            in: controller.view,
         ) as? BrowserActionButton)
         remove.performClick(nil)
         #expect(preferences.linkRoutes.isEmpty)
@@ -271,7 +320,7 @@ import Testing
         ] {
             let field = try #require(find(
                 "browser.settings.site-search.\(identifier)",
-                in: controller.view
+                in: controller.view,
             ) as? NSTextField)
             field.stringValue = value
             controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
@@ -280,12 +329,12 @@ import Testing
             id: added.id,
             name: "Google Translate",
             keyword: "@t",
-            urlTemplate: "https://translate.google.com/?q=%s"
+            urlTemplate: "https://translate.google.com/?q=%s",
         )])
 
         let restore = try #require(find(
             "browser.settings.site-search.restore",
-            in: controller.view
+            in: controller.view,
         ) as? BrowserActionButton)
         restore.performClick(nil)
         #expect(preferences.siteSearches.count == BrowserSiteSearch.arcDefaults.count + 1)
@@ -294,7 +343,7 @@ import Testing
 
         let remove = try #require(find(
             "browser.settings.site-search.remove",
-            in: controller.view
+            in: controller.view,
         ) as? BrowserActionButton)
         remove.performClick(nil)
         // Restored entries get identities of their own.
@@ -302,58 +351,9 @@ import Testing
         #expect(Set(preferences.siteSearches.map(\.id)).isDisjoint(with: BrowserSiteSearch.arcDefaults.map(\.id)))
         let importMenu = try #require(find(
             "browser.settings.site-search.import",
-            in: controller.view
+            in: controller.view,
         ) as? NSPopUpButton)
         #expect(importMenu.itemTitles.dropFirst() == ["Arc", "Dia", "Google Chrome"])
-    }
-
-    // MARK: Private
-
-    @MainActor private struct Fixture {
-        // MARK: Lifecycle
-
-        init() throws {
-            self.suite = "OpenArcNativeSettingsTests.\(UUID().uuidString)"
-            self.defaults = try #require(UserDefaults(suiteName: suite))
-            self.root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            self.profiles = BrowserProfileStore(rootCacheURL: root)
-            self.model = BrowserChromeModel(
-                tabDriver: FakeBrowserTabDriver(),
-                sessionSnapshotStore: InMemorySessionSnapshotStore(),
-                sessionPreferencesStore: InMemorySessionPreferencesStore(),
-                commandBarSuggestionProvider: FakeSuggestionProvider(),
-                userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
-                shortcutStore: BrowserShortcutStore(userDefaults: defaults),
-                extensionManager: FakeBrowserExtensionManager(),
-                windowTitleHandler: { _ in },
-                allTabsClosedHandler: {}
-            )
-        }
-
-        // MARK: Internal
-
-        let suite: String
-        let defaults: UserDefaults
-        let root: URL
-        let profiles: BrowserProfileStore
-        let model: BrowserChromeModel
-
-        func controller(_ pane: BrowserSettingsPane) -> BrowserSettingsViewController {
-            BrowserSettingsViewController(
-                model: model,
-                profileStore: profiles,
-                currentProfileID: BrowserProfile.defaultProfile.id,
-                accountStore: nil,
-                pane: pane,
-                openProfile: { _ in },
-                openURL: { _ in }
-            )
-        }
-
-        func cleanup() { defaults.removePersistentDomain(forName: suite)
-            try? FileManager.default.removeItem(at: root)
-        }
     }
 
     private func find(_ id: String, in view: NSView) -> NSView? {

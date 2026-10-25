@@ -1,3 +1,5 @@
+// BrowserSidebarTabDragTests.swift
+
 import AppKit
 import Testing
 
@@ -17,7 +19,7 @@ import Testing
         #expect(payload.tabIDs.isEmpty)
         #expect(f.model.commitSidebarDrop(
             payload: payload,
-            destination: .init(container: .pinned("s"), beforeItem: f.item("a"))
+            destination: .init(container: .pinned("s"), beforeItem: f.item("a")),
         ))
         #expect(f.store.savedSyncMoves == [.init(items: [.init(entityType: .folder, entityID: "empty")])])
         let snapshot = try #require(f.store.savedSnapshots.last)
@@ -32,7 +34,7 @@ import Testing
             commandBarSuggestionProvider: FakeSuggestionProvider(),
             extensionManager: FakeBrowserExtensionManager(),
             windowTitleHandler: { _ in },
-            allTabsClosedHandler: {}
+            allTabsClosedHandler: {},
         )
         restored.handleContextReady()
         driver.flushPendingCreateEvents()
@@ -60,7 +62,7 @@ import Testing
             withID: "empty",
             toRootSectionIndex: 0,
             targetSpaceID: "t",
-            targetParentFolderID: "parent"
+            targetParentFolderID: "parent",
         )
         let folder = try #require(f.model.pinnedTabFolders.first { $0.id == "empty" })
         #expect(folder.spaceID == "t" && folder.parentFolderID == "parent" && folder.pinnedSiblingRank == 0)
@@ -75,7 +77,7 @@ import Testing
             folders: [
                 .init(id: "parent", spaceID: "s", title: "Parent"),
                 .init(id: "nested", spaceID: "s", parentFolderID: "parent", title: "Nested"),
-            ]
+            ],
         )
         f.model.moveTab(withID: f.id("escape"), toPlacement: .spacePinned, atSectionIndex: 0, targetSpaceID: "t")
         let count = f.store.savedSnapshots.count
@@ -96,7 +98,7 @@ import Testing
                 id: "remote",
                 spaceID: "s",
                 title: "Remote",
-                pinnedSiblingRank: 1
+                pinnedSiblingRank: 1,
             )],
             tabs: current.tabs + [.init(
                 id: "pending",
@@ -104,8 +106,8 @@ import Testing
                 placement: .spacePinned,
                 spaceID: "s",
                 pinnedFolderID: "remote",
-                pinnedSiblingRank: 0
-            )]
+                pinnedSiblingRank: 0,
+            )],
         ))
         #expect(!f.model.tabs.contains { $0.syncID == "pending" })
         #expect(f.model.deletePinnedTabFolder(id: "remote"))
@@ -124,7 +126,7 @@ import Testing
                 id: "empty",
                 spaceID: "s",
                 title: "Empty",
-                pinnedSiblingRank: 1
+                pinnedSiblingRank: 1,
             )],
             tabs: [
                 .init(
@@ -132,7 +134,7 @@ import Testing
                     urlString: "https://example.com/pending",
                     placement: .spacePinned,
                     spaceID: "s",
-                    pinnedSiblingRank: 0
+                    pinnedSiblingRank: 0,
                 ),
                 .init(
                     id: "ready",
@@ -140,9 +142,9 @@ import Testing
                     userTitleOverride: "ready",
                     placement: .spacePinned,
                     spaceID: "s",
-                    pinnedSiblingRank: 2
+                    pinnedSiblingRank: 2,
                 ),
-            ]
+            ],
         ))
         #expect(!f.model.tabs.contains { $0.syncID == "pending" })
         f.model.setTitle("Renamed while loading", forPinnedTabFolderID: "empty")
@@ -173,11 +175,14 @@ import Testing
     @Test func moveIntentDistinguishesActedTabFromComplementaryReorder() {
         let movingA = SidebarDragFixture(pinned: [], temporary: ["a", "b"])
         #expect(movingA.model.commitSidebarDrop(
-            payload: movingA.payload("a"), destination: .init(container: .temporary("s"))
+            payload: movingA.payload("a"), destination: .init(container: .temporary("s")),
         ))
         let movingB = SidebarDragFixture(pinned: [], temporary: ["a", "b"])
         #expect(movingB.model.commitSidebarDrop(
-            payload: movingB.payload("b"), destination: .init(container: .temporary("s"), beforeItem: movingB.item("a"))
+            payload: movingB.payload("b"), destination: .init(
+                container: .temporary("s"),
+                beforeItem: movingB.item("a"),
+            ),
         ))
         #expect(movingA.names(movingA.model.temporaryTabs) == ["b", "a"])
         #expect(movingB.names(movingB.model.temporaryTabs) == ["b", "a"])
@@ -190,11 +195,11 @@ import Testing
     @Test func moveIntentOrdersMixedGroupByFinalSidebarAcrossSpaces() {
         let f = SidebarDragFixture(
             pinned: [("root", nil), ("one", "folder"), ("two", "folder")],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         let count = f.store.savedSnapshots.count
         #expect(f.model.commitSidebarDrop(
-            payload: f.payload("x", "two", "one"), destination: .init(container: .temporary("t"))
+            payload: f.payload("x", "two", "one"), destination: .init(container: .temporary("t")),
         ))
         #expect(f.store.savedSyncMoves == [.init(tabIDs: ["one", "two", "x"])])
         #expect(f.store.savedSnapshots.count == count + 1)
@@ -214,13 +219,13 @@ import Testing
         ]
         let f = SidebarDragFixture(pinned: [("one", "child"), ("two", "child"), ("root", nil)], folders: folders)
         #expect(f.model.commitSidebarDrop(
-            payload: f.folderPayload("parent"), destination: .init(container: .pinned("s"))
+            payload: f.folderPayload("parent"), destination: .init(container: .pinned("s")),
         ))
         #expect(f.store.savedSyncMoves == [.init(items: [.init(entityType: .folder, entityID: "parent")])])
         f.model.movePinnedTabFolder(withID: "parent", toRootSectionIndex: 0, targetSpaceID: "t")
         #expect(f.store.savedSyncMoves == Array(
             repeating: .init(items: [.init(entityType: .folder, entityID: "parent")]),
-            count: 2
+            count: 2,
         ))
         #expect(f.store
             .savedSnapshots
@@ -262,16 +267,16 @@ import Testing
             payload: f.payload("x"),
             sourceFrame: CGRect(x: 0, y: 200, width: 220, height: 36),
             start: CGPoint(x: 20, y: 210),
-            pointer: CGPoint(x: 20, y: 100)
+            pointer: CGPoint(x: 20, y: 100),
         )
         #expect(!drag.release(at: CGPoint(x: 20, y: 100), cancel: true))
         #expect(f.store.savedSyncMoves.isEmpty)
         #expect(!f.model.commitSidebarDrop(
-            payload: f.payload("a"), destination: .init(container: .pinned("s"), beforeItem: f.item("b"))
+            payload: f.payload("a"), destination: .init(container: .pinned("s"), beforeItem: f.item("b")),
         ))
         #expect(!f.model.commitSidebarDrop(
             payload: f.payload("x"),
-            destination: .init(container: .temporary("missing"))
+            destination: .init(container: .temporary("missing")),
         ))
         f.model.moveTab(withID: f.id("a"), toPlacement: .spacePinned, atSectionIndex: 0)
         f.model.moveTabs(withIDs: [f.id("a")], toPlacement: .spacePinned, atSectionIndex: 0)
@@ -306,7 +311,7 @@ import Testing
             tabDriver: driver, sessionSnapshotStore: store,
             sessionPreferencesStore: InMemorySessionPreferencesStore(),
             commandBarSuggestionProvider: FakeSuggestionProvider(),
-            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {}
+            extensionManager: FakeBrowserExtensionManager(), windowTitleHandler: { _ in }, allTabsClosedHandler: {},
         )
         model.handleContextReady()
         driver.flushPendingCreateEvents()
@@ -317,7 +322,7 @@ import Testing
         #expect(restoredA.id != f.id("a"))
         #expect(model.commitSidebarDrop(
             payload: .init(primary: .tab(restoredA.id), tabIDs: [restoredA.id]),
-            destination: .init(container: .temporary("s"), beforeItem: .tab(restoredB.id))
+            destination: .init(container: .temporary("s"), beforeItem: .tab(restoredB.id)),
         ))
         #expect(store.savedSyncMoves == [.init(tabIDs: ["a"])])
     }
@@ -325,17 +330,17 @@ import Testing
     @Test func childInsertionUsesSiblingIdentityInsteadOfGlobalPinnedIndex() {
         let f = SidebarDragFixture(
             pinned: [("root", nil), ("one", "folder"), ("two", "folder"), ("three", "folder")],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         let target = BrowserSidebarDropDestination(
             container: .pinned("s", folderID: "folder"),
-            beforeItem: f.item("three")
+            beforeItem: f.item("three"),
         )
         #expect(f.model.commitSidebarDrop(payload: f.payload("one"), destination: target))
         #expect(f.pinnedNames() == ["root", "two", "one", "three"])
         #expect(f.model.commitSidebarDrop(
             payload: f.payload("x"),
-            destination: .init(container: target.container, beforeItem: f.item("two"))
+            destination: .init(container: target.container, beforeItem: f.item("two")),
         ))
         #expect(f.pinnedNames() == ["root", "x", "two", "one", "three"])
         #expect(f.model.tabs.first { $0.id == f.id("x") }?.pinnedFolderID == "folder")
@@ -344,11 +349,11 @@ import Testing
     @Test func movingFolderUsesRootItemsRatherThanItsFlatTabCount() {
         let f = SidebarDragFixture(
             pinned: [("a", nil), ("one", "folder"), ("two", "folder"), ("b", nil), ("c", nil)],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         #expect(f.model.commitSidebarDrop(
             payload: f.folderPayload("folder"),
-            destination: .init(container: .pinned("s"), beforeItem: f.item("c"))
+            destination: .init(container: .pinned("s"), beforeItem: f.item("c")),
         ))
         #expect(f.pinnedNames() == ["a", "b", "one", "two", "c"])
     }
@@ -368,12 +373,12 @@ import Testing
         ])
         #expect(f.model.commitSidebarDrop(
             payload: f.folderPayload("parent"),
-            destination: .init(container: .pinned("s"))
+            destination: .init(container: .pinned("s")),
         ))
         #expect(f.pinnedNames() == ["root", "one", "two"])
         #expect(f.model.sidebarMovePlan(
             payload: f.folderPayload("parent"),
-            destination: .init(container: .pinned("s", folderID: "child"))
+            destination: .init(container: .pinned("s", folderID: "child")),
         ) == nil)
     }
 
@@ -388,7 +393,7 @@ import Testing
         #expect(f.names(f.model.temporaryTabs) == ["y", "x"])
         #expect(f.model.commitSidebarDrop(
             payload: f.payload("y"),
-            destination: .init(container: .pinned("s"), beforeItem: f.item("b"))
+            destination: .init(container: .pinned("s"), beforeItem: f.item("b")),
         ))
         #expect(f.pinnedNames() == ["a", "y", "b"])
         #expect(f.model.selectedTabID == f.id("x"))
@@ -397,17 +402,17 @@ import Testing
     @Test func multiSelectionKeepsRelativeOrderAcrossFolders() {
         let f = SidebarDragFixture(
             pinned: [("a", nil), ("one", "f"), ("two", "f"), ("b", nil)],
-            folders: [.init(id: "f", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "f", spaceID: "s", title: "Folder")],
         )
         #expect(f.model.commitSidebarDrop(
             payload: f.payload("b", "one"),
-            destination: .init(container: .pinned("s"), beforeItem: f.item("a"))
+            destination: .init(container: .pinned("s"), beforeItem: f.item("a")),
         ))
         #expect(f.pinnedNames() == ["one", "b", "a", "two"])
         #expect(f.model.tabs.first { $0.id == f.id("one") }?.pinnedFolderID == nil)
         #expect(f.model.commitSidebarDrop(
             payload: f.payload("b", "one"),
-            destination: .init(container: .temporary("s"), beforeItem: f.item("y"))
+            destination: .init(container: .temporary("s"), beforeItem: f.item("y")),
         ))
         #expect(f.names(f.model.temporaryTabs) == ["x", "one", "b", "y"])
         #expect(f.pinnedNames() == ["a", "two"])
@@ -416,7 +421,7 @@ import Testing
     @Test func multiSelectionMovesMixedRowsAcrossSpacesWithoutReplacingDestinationSelection() throws {
         let f = SidebarDragFixture(
             pinned: [("one", "folder"), ("two", "folder"), ("root", nil)],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         f.model.selectTab(id: f.id("one"))
         let payload = f.payload("x", "two", "one")
@@ -427,7 +432,7 @@ import Testing
         let saves = f.store.savedSnapshots.count
         #expect(f.model.commitSidebarDrop(
             payload: payload,
-            destination: .init(container: .temporary("t"), beforeItem: .tab(activeID))
+            destination: .init(container: .temporary("t"), beforeItem: .tab(activeID)),
         ))
         #expect(f.model.temporaryTabs.map(\.id) == [f.id("one"), f.id("two"), f.id("x"), activeID])
         #expect(f.model.selectedTabID == activeID)
@@ -463,15 +468,15 @@ import Testing
             let moving = names.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element)
             let payload = try BrowserSidebarDragPayload(
                 primary: f.item(#require(moving.last)),
-                tabIDs: Set(moving.map(f.id))
+                tabIDs: Set(moving.map(f.id)),
             )
             for insertion in 0...names.count {
                 let destination = BrowserSidebarDropDestination(
                     container: .temporary("s"),
-                    beforeItem: insertion < names.count ? f.item(names[insertion]) : nil
+                    beforeItem: insertion < names.count ? f.item(names[insertion]) : nil,
                 )
                 var expected = names.filter { !moving.contains($0) }
-                let beforeCount = names.prefix(insertion).filter { !moving.contains($0) }.count
+                let beforeCount = names.prefix(insertion).count(where: { !moving.contains($0) })
                 expected.insert(contentsOf: moving, at: beforeCount)
                 let plan = f.model.sidebarMovePlan(payload: payload, destination: destination)
                 #expect(plan.map { f.names($0.tabs) } == (expected == names ? nil : expected))
@@ -484,11 +489,11 @@ import Testing
         #expect(f.model.sidebarMovePlan(payload: f.payload("x"), destination: .init(container: .app)) == nil)
         #expect(f.model.sidebarMovePlan(
             payload: f.payload("a"),
-            destination: .init(container: .pinned("s"), beforeItem: f.item("a"))
+            destination: .init(container: .pinned("s"), beforeItem: f.item("a")),
         ) == nil)
         #expect(f.model.sidebarMovePlan(
             payload: f.payload("a"),
-            destination: .init(container: .pinned("s"), beforeItem: f.item("b"))
+            destination: .init(container: .pinned("s"), beforeItem: f.item("b")),
         ) == nil)
     }
 
@@ -505,7 +510,7 @@ import Testing
     @Test func gapAfterExpandedFolderAgreesWithCommittedOrder() throws {
         let f = SidebarDragFixture(
             pinned: [("a", nil), ("one", "folder"), ("two", "folder"), ("b", nil)],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         let tree = BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot)
         let rowSpecs: [(BrowserSidebarItemID, CGFloat, Int)] = [
@@ -515,7 +520,7 @@ import Testing
         let rows = rowSpecs.map { item, y, depth in BrowserSidebarDragRowGeometry(
             item: item,
             container: tree.container(of: item)!,
-            frame: CGRect(x: CGFloat(depth) * 16, y: y, width: 224 - CGFloat(depth) * 16, height: 36)
+            frame: CGRect(x: CGFloat(depth) * 16, y: y, width: 224 - CGFloat(depth) * 16, height: 36),
         ) }
         let geometry = BrowserSidebarDragGeometry(
             tree: tree,
@@ -524,7 +529,7 @@ import Testing
             listViewport: CGRect(x: 0, y: 0, width: 224, height: 400),
             spaceHeader: nil,
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         let proposal = try #require(geometry.proposal(at: CGPoint(x: 80, y: 179), previous: nil))
         #expect(proposal.destination == .init(container: .pinned("s"), beforeItem: f.item("b")))
@@ -544,12 +549,12 @@ import Testing
             BrowserSidebarDragRowGeometry(
                 item: f.item("b"),
                 container: .pinned("s"),
-                frame: CGRect(x: 0, y: 10, width: 224, height: 36)
+                frame: CGRect(x: 0, y: 10, width: 224, height: 36),
             ),
             BrowserSidebarDragRowGeometry(
                 item: f.item("x"),
                 container: .temporary("s"),
-                frame: CGRect(x: 0, y: 110, width: 224, height: 36)
+                frame: CGRect(x: 0, y: 110, width: 224, height: 36),
             ),
         ]
         let geometry = BrowserSidebarDragGeometry(
@@ -559,7 +564,7 @@ import Testing
             listViewport: CGRect(x: 0, y: 0, width: 224, height: 300),
             spaceHeader: nil,
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         let proposal = try #require(geometry.proposal(at: CGPoint(x: 60, y: 113), previous: nil))
         guard case .line(let line) = proposal.feedback else { Issue.record("Expected gap line")
@@ -572,19 +577,19 @@ import Testing
     @Test func folderAndSpaceBodiesHighlightAndInsertAtTheStart() throws {
         let f = SidebarDragFixture(
             pinned: [("one", "folder"), ("two", "folder")],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         let tree = BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot)
         let rows = [
             BrowserSidebarDragRowGeometry(
                 item: .folder("folder"),
                 container: .pinned("s"),
-                frame: CGRect(x: 0, y: 50, width: 224, height: 36)
+                frame: CGRect(x: 0, y: 50, width: 224, height: 36),
             ),
             BrowserSidebarDragRowGeometry(
                 item: f.item("one"),
                 container: .pinned("s", folderID: "folder"),
-                frame: CGRect(x: 16, y: 91, width: 208, height: 36)
+                frame: CGRect(x: 16, y: 91, width: 208, height: 36),
             ),
         ]
         let geometry = BrowserSidebarDragGeometry(
@@ -594,10 +599,10 @@ import Testing
             listViewport: CGRect(x: 0, y: 45, width: 224, height: 300),
             spaceHeader: (
                 "s",
-                CGRect(x: 0, y: 0, width: 224, height: 36)
+                CGRect(x: 0, y: 0, width: 224, height: 36),
             ),
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         let folder = try #require(geometry.proposal(at: CGPoint(x: 80, y: 74), previous: nil))
         #expect(folder.feedback == .folder("folder"))
@@ -614,7 +619,7 @@ import Testing
         let row = BrowserSidebarDragRowGeometry(
             item: f.item("a"),
             container: .pinned("s"),
-            frame: CGRect(x: 0, y: 10, width: 224, height: 36)
+            frame: CGRect(x: 0, y: 10, width: 224, height: 36),
         )
         let geometry = BrowserSidebarDragGeometry(
             tree: tree,
@@ -623,7 +628,7 @@ import Testing
             listViewport: CGRect(x: 0, y: 0, width: 224, height: 300),
             spaceHeader: nil,
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         let initial = try #require(geometry.proposal(at: CGPoint(x: 80, y: 27), previous: nil))
         for y in [27.9, 28.1, 27.8, 28.2] {
@@ -638,7 +643,7 @@ import Testing
         let row = BrowserSidebarDragRowGeometry(
             item: f.item("a"),
             container: .pinned("s"),
-            frame: CGRect(x: 0, y: -100, width: 224, height: 36)
+            frame: CGRect(x: 0, y: -100, width: 224, height: 36),
         )
         let geometry = BrowserSidebarDragGeometry(
             tree: tree,
@@ -647,7 +652,7 @@ import Testing
             listViewport: CGRect(x: 0, y: 0, width: 224, height: 300),
             spaceHeader: nil,
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         #expect(geometry.slots.isEmpty)
         #expect(geometry.proposal(at: CGPoint(x: 80, y: -80), previous: nil) == nil)
@@ -660,14 +665,14 @@ import Testing
             payload: f.payload("x"),
             sourceFrame: CGRect(x: 16, y: 200, width: 208, height: 36),
             start: CGPoint(x: 180, y: 212),
-            pointer: CGPoint(x: 187, y: 240)
+            pointer: CGPoint(x: 187, y: 240),
         )
         #expect(abs(drag.anchor.x - 164.0 / 208) < 0.0001)
         #expect(abs(drag.anchor.y - 1.0 / 3) < 0.0001)
         for size in [CGSize(width: 208, height: 36), CGSize(width: 50, height: 50)] {
             let origin = CGPoint(
                 x: drag.pointer.x - size.width * drag.anchor.x,
-                y: drag.pointer.y - size.height * drag.anchor.y
+                y: drag.pointer.y - size.height * drag.anchor.y,
             )
             #expect(CGRect(origin: origin, size: size).contains(drag.pointer))
         }
@@ -683,7 +688,7 @@ import Testing
             listViewport: CGRect(x: 0, y: 100, width: 224, height: 300),
             spaceHeader: nil,
             appFrame: CGRect(x: 0, y: 0, width: 224, height: 50),
-            rowWidth: 224
+            rowWidth: 224,
         )
         let proposal = try #require(geometry.proposal(at: CGPoint(x: 180, y: 20), previous: nil))
         #expect(proposal.destination.beforeItem == nil)
@@ -705,14 +710,14 @@ import Testing
                 listViewport: CGRect(x: 0, y: 160, width: 224, height: 300),
                 spaceHeader: nil,
                 appFrame: CGRect(x: 0, y: 0, width: 224, height: height),
-                rowWidth: 224
+                rowWidth: 224,
             )
         }
         let first = try #require(geometry(height: originalHeight).proposal(at: point, previous: nil))
         #expect(first.destination == .init(container: .app))
         let next = try #require(geometry(height: layout.height(for: 5, availableWidth: 224)).proposal(
             at: point,
-            previous: first
+            previous: first,
         ))
         #expect(next.destination == first.destination)
         #expect(next.previewSize == first.previewSize)
@@ -721,19 +726,19 @@ import Testing
     @Test func collapsedHiddenChildrenDoNotCreateTwoTargetsForOneVisibleGap() {
         let f = SidebarDragFixture(
             pinned: [("one", "f"), ("hidden", "f"), ("three", "f")],
-            folders: [.init(id: "f", spaceID: "s", title: "Folder", isExpanded: false)]
+            folders: [.init(id: "f", spaceID: "s", title: "Folder", isExpanded: false)],
         )
         let tree = BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot)
         let rows = [
             BrowserSidebarDragRowGeometry(
                 item: f.item("one"),
                 container: .pinned("s", folderID: "f"),
-                frame: CGRect(x: 16, y: 50, width: 208, height: 36)
+                frame: CGRect(x: 16, y: 50, width: 208, height: 36),
             ),
             BrowserSidebarDragRowGeometry(
                 item: f.item("three"),
                 container: .pinned("s", folderID: "f"),
-                frame: CGRect(x: 16, y: 91, width: 208, height: 36)
+                frame: CGRect(x: 16, y: 91, width: 208, height: 36),
             ),
         ]
         let geometry = BrowserSidebarDragGeometry(
@@ -743,7 +748,7 @@ import Testing
             listViewport: CGRect(x: 0, y: 0, width: 224, height: 300),
             spaceHeader: nil,
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         let targets = Set(geometry.slots.compactMap { slot -> BrowserSidebarDropDestination? in
             if case .line(let line) = slot.proposal.feedback, line.midY == 88.5 {
@@ -766,10 +771,10 @@ import Testing
                     container: .pinned("s"),
                     beforeItem: insertion < names.count
                         ? f.item(names[insertion])
-                        : nil
+                        : nil,
                 )
                 let remaining = names.filter { !moving.contains($0) }
-                let beforeCount = names.prefix(insertion).filter { !moving.contains($0) }.count
+                let beforeCount = names.prefix(insertion).count(where: { !moving.contains($0) })
                 var expected = remaining
                 expected.insert(contentsOf: moving, at: beforeCount)
                 let plan = f.model.sidebarMovePlan(payload: payload, destination: destination)
@@ -800,7 +805,7 @@ import Testing
     @Test func folderReorderDoesNotMarkEveryChildAsRecentlyVisited() {
         let f = SidebarDragFixture(
             pinned: [("a", nil), ("one", "folder"), ("two", "folder"), ("b", nil)],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         f.model.selectTab(id: f.id("a"))
         let payload = f.folderPayload("folder")
@@ -813,7 +818,9 @@ import Testing
 
     @Test func pointerMotionDoesNotReplanOrRelayoutAnUnchangedDestination() {
         let f = SidebarDragFixture()
-        var plans = 0, layouts = 0, haptics = 0
+        var plans = 0
+        var layouts = 0
+        var haptics = 0
         let drag = BrowserSidebarDragState(model: f.model) { payload, destination in
             plans += 1
             return f.model.sidebarMovePlan(payload: payload, destination: destination)
@@ -824,7 +831,7 @@ import Testing
             payload: f.payload("x"),
             sourceFrame: CGRect(x: 0, y: 100, width: 224, height: 36),
             start: .zero,
-            pointer: CGPoint(x: 100, y: 12)
+            pointer: CGPoint(x: 100, y: 12),
         )
         let tree = BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot)
         drag.updateGeometry(.init(
@@ -836,7 +843,7 @@ import Testing
             listViewport: CGRect(x: 0, y: 0, width: 224, height: 300),
             spaceHeader: nil,
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         ))
         let count = plans
         for i in 0..<500 {
@@ -855,7 +862,7 @@ import Testing
         ])
         #expect(f.model.sidebarMovePlan(
             payload: f.folderPayload("child"),
-            destination: .init(container: .pinned("s", folderID: "parent"), beforeItem: .folder("child"))
+            destination: .init(container: .pinned("s", folderID: "parent"), beforeItem: .folder("child")),
         ) == nil)
         #expect(f.model.pinnedTabFolders.first { $0.id == "child" }?.isExpanded == false)
     }
@@ -863,7 +870,7 @@ import Testing
     @Test func offscreenFolderHeaderDoesNotHideAVisibleChildInsertionCue() throws {
         let f = SidebarDragFixture(
             pinned: [("one", "folder")],
-            folders: [.init(id: "folder", spaceID: "s", title: "Folder")]
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
         let tree = BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot)
         let geometry = BrowserSidebarDragGeometry(
@@ -873,18 +880,18 @@ import Testing
                 .init(
                     item: .folder("folder"),
                     container: .pinned("s"),
-                    frame: CGRect(x: 0, y: -40, width: 224, height: 36)
+                    frame: CGRect(x: 0, y: -40, width: 224, height: 36),
                 ),
                 .init(
                     item: f.item("one"),
                     container: .pinned("s", folderID: "folder"),
-                    frame: CGRect(x: 16, y: 8, width: 208, height: 36)
+                    frame: CGRect(x: 16, y: 8, width: 208, height: 36),
                 ),
             ],
             listViewport: CGRect(x: 0, y: 0, width: 224, height: 300),
             spaceHeader: nil,
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         let proposal = try #require(geometry.proposal(at: CGPoint(x: 80, y: 10), previous: nil))
         guard case .line(let line) = proposal.feedback else { Issue.record("Offscreen highlight hid the insertion cue")
@@ -904,13 +911,13 @@ import Testing
                 .init(
                     item: f.item("x"),
                     container: .temporary("s"),
-                    frame: CGRect(x: 0, y: -4, width: 224, height: 36)
+                    frame: CGRect(x: 0, y: -4, width: 224, height: 36),
                 ),
             ],
             listViewport: CGRect(x: 0, y: 0, width: 224, height: 300),
             spaceHeader: ("s", CGRect(x: 0, y: -41, width: 224, height: 36)),
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         #expect(geometry.proposal(at: CGPoint(x: 80, y: 1), previous: nil) == nil)
         #expect(geometry.proposal(at: CGPoint(x: 80, y: 22), previous: nil)?
@@ -929,13 +936,13 @@ import Testing
                 .init(
                     item: f.item("x"),
                     container: .temporary("s"),
-                    frame: CGRect(x: 0, y: 70, width: 224, height: 36)
+                    frame: CGRect(x: 0, y: 70, width: 224, height: 36),
                 ),
             ],
             listViewport: CGRect(x: 0, y: 100, width: 224, height: 300),
             spaceHeader: ("s", CGRect(x: 0, y: 59, width: 224, height: 36)),
             appFrame: nil,
-            rowWidth: 224
+            rowWidth: 224,
         )
         let proposal = try #require(geometry.proposal(at: CGPoint(x: 80, y: 94), previous: nil))
         #expect(proposal.feedback == .space("s"))

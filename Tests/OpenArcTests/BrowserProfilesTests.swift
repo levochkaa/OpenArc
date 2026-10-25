@@ -1,3 +1,5 @@
+// BrowserProfilesTests.swift
+
 import Foundation
 import Testing
 import ZIPFoundation
@@ -115,7 +117,7 @@ import ZIPFoundation
     try "profile preferences".write(
         to: profileDirectoryURL.appendingPathComponent("Preferences", isDirectory: false),
         atomically: true,
-        encoding: .utf8
+        encoding: .utf8,
     )
 
     let store = BrowserProfileStore(rootCacheURL: rootURL)
@@ -127,7 +129,7 @@ import ZIPFoundation
     #expect(FileManager.default.fileExists(atPath: unzipURL.appendingPathComponent("manifest.json").path))
     let preferences = try String(
         contentsOf: unzipURL.appendingPathComponent("Default/Preferences", isDirectory: false),
-        encoding: .utf8
+        encoding: .utf8,
     )
     #expect(preferences == "profile preferences")
 }
@@ -137,7 +139,7 @@ import ZIPFoundation
     let profileURL = rootURL.appendingPathComponent("Profile 1", isDirectory: true)
 
     let candidates = BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
-        profileDirectoryURL: profileURL
+        profileDirectoryURL: profileURL,
     )
 
     #expect(candidates == [

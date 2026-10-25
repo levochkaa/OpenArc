@@ -1,3 +1,5 @@
+// BrowserSyncActivityProjectionTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -79,19 +81,20 @@ func activityMaterializationPreservesOnlyTheSameCanonicalSecondOfLocalPrecision(
         let local = syncActivitySnapshot(timestamp: value.local)
         let projected = BrowserSyncOutboxProjection.snapshot(
             baseline: baseline, pending: [BrowserSyncQueuedMutation](), local: local,
-            folderSyncEnabled: folderSyncEnabled
+            folderSyncEnabled: folderSyncEnabled,
         )
         #expect(projected.tabs.first?.lastActivityTimestamp == value.expected)
     }
 
-    let firstDate = "2026-10-03T00:00:00.123456Z", secondDate = "2026-10-03T00:00:00.123789Z"
+    let firstDate = "2026-10-03T00:00:00.123456Z"
+    let secondDate = "2026-10-03T00:00:00.123789Z"
     let first = try BrowserSyncOutboxProjection.snapshot(
         baseline: syncActivityBaseline(activity: firstDate), pending: [BrowserSyncQueuedMutation](), local: nil,
-        folderSyncEnabled: folderSyncEnabled
+        folderSyncEnabled: folderSyncEnabled,
     )
     let second = try BrowserSyncOutboxProjection.snapshot(
         baseline: syncActivityBaseline(activity: secondDate), pending: [BrowserSyncQueuedMutation](), local: nil,
-        folderSyncEnabled: folderSyncEnabled
+        folderSyncEnabled: folderSyncEnabled,
     )
     let firstTime = try #require(first.tabs.first?.lastActivityTimestamp)
     let secondTime = try #require(second.tabs.first?.lastActivityTimestamp)
@@ -115,7 +118,7 @@ func durableActivityOverlaySurvivesPullAckAndRestartWithoutRewritingQueuedBytes(
                     seed,
                     cursor: 2,
                     for: fixture.owner,
-                    enableSemanticMutations: protocolVersion == 3
+                    enableSemanticMutations: protocolVersion == 3,
                 )
             }
         // Simulate an already persisted old client request. Projection must not
@@ -123,7 +126,7 @@ func durableActivityOverlaySurvivesPullAckAndRestartWithoutRewritingQueuedBytes(
         let oldTime = try Date.ISO8601FormatStyle().parse("2026-10-02T23:59:59Z").timeIntervalSince1970
         try store.writeSessionBatch([.init(
             snapshot: syncActivitySnapshot(timestamp: oldTime, title: "Offline rename"),
-            origin: .local(syncMove: nil)
+            origin: .local(syncMove: nil),
         )])
         let pending = try #require(try store.pendingSyncQueue(for: fixture.owner).first)
         #expect(pending.protocolVersion == protocolVersion)
@@ -131,7 +134,7 @@ func durableActivityOverlaySurvivesPullAckAndRestartWithoutRewritingQueuedBytes(
         let latestDate = "2026-10-03T00:00:00.123789Z"
         let latestEvent = try syncActivityEvents(
             [syncActivityTab(activity: latestDate, title: "Remote rename")],
-            startingAt: 10
+            startingAt: 10,
         )
         let projected = try store.applyRemoteSyncEvents(latestEvent, cursor: 10, for: fixture.owner)
         let expectedTime = try Date.ISO8601FormatStyle(includingFractionalSeconds: true)
@@ -147,13 +150,13 @@ func durableActivityOverlaySurvivesPullAckAndRestartWithoutRewritingQueuedBytes(
         let baselineBeforeAck = try fixture.baseline()
         let oldReceipt = try syncActivityEvents(
             [syncActivityTab(activity: "2026-10-02T23:59:59Z", title: "Old receipt")],
-            startingAt: 5
+            startingAt: 5,
         )
         let acknowledged = try reopened.acknowledgeSyncMutation(
             id: pending.id,
             protocolVersion: protocolVersion,
             events: oldReceipt,
-            for: fixture.owner
+            for: fixture.owner,
         )
         #expect(acknowledged.tabs.first?.lastActivityTimestamp == expectedTime)
         #expect(acknowledged.tabs.first?.userTitleOverride == "Remote rename")
@@ -166,7 +169,7 @@ func durableActivityOverlaySurvivesPullAckAndRestartWithoutRewritingQueuedBytes(
         // or keep a different local date forever when no pending activity wins.
         let olderCanonical = try syncActivityEvents(
             [syncActivityTab(activity: "2026-10-02T23:59:58Z", title: "New canonical metadata")],
-            startingAt: 11
+            startingAt: 11,
         )
         let canonical = try reopened.applyRemoteSyncEvents(olderCanonical, cursor: 11, for: fixture.owner)
         #expect(canonical.tabs.first?.userTitleOverride == "New canonical metadata")
@@ -176,12 +179,12 @@ func durableActivityOverlaySurvivesPullAckAndRestartWithoutRewritingQueuedBytes(
         _ = try reopened.applyRemoteSyncEvents(
             syncActivityEvents([syncActivityDelete()], startingAt: 12),
             cursor: 12,
-            for: fixture.owner
+            for: fixture.owner,
         )
         let afterDelete = try reopened.applyRemoteSyncEvents(
             syncActivityEvents([syncActivityTab(activity: "2099-01-01T00:00:00Z")], startingAt: 13),
             cursor: 13,
-            for: fixture.owner
+            for: fixture.owner,
         )
         #expect(try afterDelete.tabs.isEmpty && reopened.pendingSyncQueue(for: fixture.owner).isEmpty)
     }
@@ -190,7 +193,7 @@ func durableActivityOverlaySurvivesPullAckAndRestartWithoutRewritingQueuedBytes(
 private func syncActivityMutation(
     version: Int,
     activity: BrowserSyncPatchValue<String>,
-    title: String
+    title: String,
 ) -> BrowserSyncQueuedMutation {
     let id = UUID().uuidString
     let fields = BrowserSyncSemanticTabPatch(userTitleOverride: .set(title), lastActivityAt: activity)
@@ -216,12 +219,12 @@ private func syncActivityMutation(
             urlString: "https://activity.example/a",
             spaceID: "space",
             pageTitle: "Inbox",
-            systemImageName: "leaf"
-        )]
+            systemImageName: "leaf",
+        )],
     )
     let projected = try BrowserSyncOutboxProjection.snapshot(
         baseline: syncActivityBaseline(activity: nil), pending: [BrowserSyncQueuedMutation](), local: local,
-        folderSyncEnabled: folderSyncEnabled
+        folderSyncEnabled: folderSyncEnabled,
     )
     #expect(projected.tabs.first?.pageTitle == "Inbox")
     #expect(projected.tabs.first?.systemImageName == "leaf", "Local icons survive a sync projection")
@@ -244,9 +247,9 @@ private func syncActivitySpace() -> BrowserSyncChange {
             systemImageName: "globe",
             rank: 0,
             isPinnedSectionCollapsed: false,
-            selectedTabID: nil
+            selectedTabID: nil,
         ),
-        tabData: nil
+        tabData: nil,
     )
 }
 
@@ -265,8 +268,8 @@ private func syncActivityTab(activity: String?, title: String? = nil) -> Browser
             title: nil,
             userTitleOverride: title,
             faviconURLString: nil,
-            lastActivityAt: activity
-        )
+            lastActivityAt: activity,
+        ),
     )
 }
 
@@ -282,8 +285,8 @@ private func syncActivitySnapshot(timestamp: TimeInterval?, title: String? = nil
             urlString: "https://activity.example/a",
             userTitleOverride: title,
             spaceID: "space",
-            lastActivityTimestamp: timestamp
-        )]
+            lastActivityTimestamp: timestamp,
+        )],
     )
 }
 
@@ -322,14 +325,14 @@ private struct SyncActivityStoreFixture {
         try DatabaseQueue(path: databaseURL.path).read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position"
+                sql: "SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position",
             )
             .map {
                 RowEvidence(
                     position: $0["position"],
                     id: $0["mutation_id"],
                     payload: $0["payload"],
-                    version: $0["protocol_version"]
+                    version: $0["protocol_version"],
                 )
             }
         }
@@ -338,7 +341,7 @@ private struct SyncActivityStoreFixture {
     func baseline() throws -> BrowserSyncOutboxBaseline {
         let data = try DatabaseQueue(path: databaseURL.path).read { try Data.fetchOne(
             $0,
-            sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1"
+            sql: "SELECT payload FROM browser_sync_baseline WHERE id = 1",
         ) }
         let payload = try #require(data)
         return try JSONDecoder().decode(BrowserSyncOutboxBaseline.self, from: payload)
@@ -355,7 +358,7 @@ private func withSyncActivityStore(_ body: (SyncActivityStoreFixture, BrowserSQL
 
 private func runSyncActivityStore(
     directory: URL,
-    _ body: (SyncActivityStoreFixture, BrowserSQLiteSessionStore) throws -> Void
+    _ body: (SyncActivityStoreFixture, BrowserSQLiteSessionStore) throws -> Void,
 ) throws {
     let fixture = SyncActivityStoreFixture(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
     let store = try BrowserSQLiteSessionStore(databaseURL: fixture.databaseURL)

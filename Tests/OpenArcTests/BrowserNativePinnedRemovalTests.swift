@@ -1,3 +1,5 @@
+// BrowserNativePinnedRemovalTests.swift
+
 import AppKit
 import Testing
 
@@ -6,7 +8,7 @@ import Testing
 @Suite(.serialized) @MainActor struct BrowserNativePinnedRemovalTests {
     @Test(arguments: [BrowserTabPlacement.spacePinned, .app])
     func refusedCancelledAndRepeatedPersistentRemovalLeaveLogicalStateUntouched(
-        placement: BrowserTabPlacement
+        placement: BrowserTabPlacement,
     ) throws {
         let f = try ConfirmedCloseFixture()
         defer { f.close() }
@@ -36,7 +38,7 @@ import Testing
         let retry = try #require(f.driver.confirmedCloseRequests.last)
         #expect(retry.requestID != request.requestID)
         f.driver.emitCloseRequestOutcome(
-            id: id, requestID: request.requestID, outcome: .closed, emitsClosedEvent: false
+            id: id, requestID: request.requestID, outcome: .closed, emitsClosedEvent: false,
         )
         #expect(f.model.tabs == tabs)
         f.finish(retry, .cancelled)
@@ -47,7 +49,7 @@ import Testing
 
     @Test(arguments: [BrowserTabPlacement.spacePinned, .app, .temporary])
     func nativeRemovalCapturesLatestStateAndRepeatedHistoryNeverBecomesArchive(
-        finalPlacement: BrowserTabPlacement
+        finalPlacement: BrowserTabPlacement,
     ) throws {
         let f = try ConfirmedCloseFixture(tabIDs: ["a", "b", "c"])
         defer { f.close() }
@@ -80,9 +82,9 @@ import Testing
         #expect(!f.model.tabs.contains { $0.syncID == "a" })
         #expect(f.model.selectedTabID == survivor && f.driver.selectedTabIDs == selections)
         #expect(try f.hasTombstone("a"))
-        #expect(try f.operations().filter { $0 == .deleteTab(id: "a") }.count == 1)
+        #expect(try f.operations().count(where: { $0 == .deleteTab(id: "a") }) == 1)
         #expect(f.recording.attempts.count == 1)
-        #expect(f.recording.attempts.flatMap { $0 }.allSatisfy { $0.archiveAction == nil })
+        #expect(f.recording.attempts.flatMap(\.self).allSatisfy { $0.archiveAction == nil })
         #expect(try Array(f.evidence().queue.prefix(queuePrefix.count)) == queuePrefix)
         let committed = try f.evidence()
         f.finish(close, .closed)
@@ -210,7 +212,7 @@ import Testing
             .tabs
             .first { $0.id == "b" }?
             .userTitleOverride == "Later survivor edit")
-        #expect(try f.operations().filter { $0 == .deleteTab(id: "a") }.count == 1)
+        #expect(try f.operations().count(where: { $0 == .deleteTab(id: "a") }) == 1)
         #expect(try f.hasTombstone("a"))
         #expect(try f.store.loadArchivePage().entries.isEmpty)
         let committed = try f.evidence()
@@ -256,7 +258,7 @@ import Testing
         #expect(f.model.retrySessionPersistence())
         f.flushReady()
         #expect(!f.model.hasUncommittedSessionWrites && !f.model.undoManager.isTabTransitionPending)
-        #expect(f.model.tabs.filter { $0.syncID == freshID }.count == 1)
+        #expect(f.model.tabs.count(where: { $0.syncID == freshID }) == 1)
         #expect(f.driver.createdTabRequests.count == creations + 1)
         #expect(f.model.tabs.first { $0.syncID == "b" }?.userTitleOverride == "Saved while Undo awaits Retry")
         #expect(try f.hasTombstone("a"))
@@ -312,7 +314,7 @@ import Testing
             let projected = try f.store.applyRemoteSyncEvents([
                 .init(
                     serverSeq: 100, deviceID: "remote", entityType: "tab", entityID: "a", op: "delete",
-                    data: .deleted(id: "a"), createdAt: "2026-10-03T00:00:00Z"
+                    data: .deleted(id: "a"), createdAt: "2026-10-03T00:00:00Z",
                 ),
             ], cursor: 100, for: f.owner)
             f.model.applyRemoteSyncSnapshot(projected)
@@ -350,7 +352,7 @@ import Testing
 }
 
 @MainActor private func requestRemoval(
-    _ f: ConfirmedCloseFixture, sidebar: PinnedRemovalSidebar, id: String, placement: BrowserTabPlacement
+    _ f: ConfirmedCloseFixture, sidebar: PinnedRemovalSidebar, id: String, placement: BrowserTabPlacement,
 ) throws {
     if placement == .spacePinned {
         try sidebar.closeRow(id)
@@ -364,7 +366,11 @@ import Testing
 // MARK: - PinnedRemovalSidebar
 
 @MainActor private final class PinnedRemovalSidebar {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let window: NSWindow
+    let state: BrowserNativeSidebarState
+    let view: BrowserNativeSidebarNSView
 
     init(model: BrowserChromeModel) {
         _ = NSApplication.shared
@@ -372,7 +378,7 @@ import Testing
         self.view = BrowserNativeSidebarNSView(state: state, header: NSView(), footer: NSView())
         self.window = NSWindow(
             contentRect: NSRect(x: -20000, y: -20000, width: 260, height: 640),
-            styleMask: [.borderless], backing: .buffered, defer: false
+            styleMask: [.borderless], backing: .buffered, defer: false,
         )
         window.isReleasedWhenClosed = false
         window.contentView = view
@@ -380,12 +386,6 @@ import Testing
         view.refresh()
         view.layoutSubtreeIfNeeded()
     }
-
-    // MARK: Internal
-
-    let window: NSWindow
-    let state: BrowserNativeSidebarState
-    let view: BrowserNativeSidebarNSView
 
     func closeRow(_ id: String) throws {
         let row = try #require(descendants(view).first {

@@ -1,3 +1,5 @@
+// BrowserChromeModelTypes.swift
+
 import AppKit
 import Foundation
 

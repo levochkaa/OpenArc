@@ -1,10 +1,25 @@
+// BrowserBeforeUnloadConfirmation.swift
+
 import AppKit
 
 /// Owns one native confirmation and resolves its continuation exactly once.
 /// The engine bridge separately validates the browser identity and close nonce.
 @objc(BrowserBeforeUnloadConfirmation)
 @MainActor final class BrowserBeforeUnloadConfirmation: NSObject {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    typealias Presenter = @MainActor (NSAlert, NSWindow, @escaping @MainActor (NSApplication.ModalResponse) -> Void)
+        -> Void
+
+    let alert = NSAlert()
+
+    // MARK: Private
+
+    private weak var window: NSWindow?
+    private let presenter: Presenter
+    private var completion: ((Bool) -> Void)?
+    private var didPresent = false
+    private var keyMonitor: Any?
 
     @objc(initWithWindow:completion:) convenience init(window: NSWindow?, completion: @escaping (Bool) -> Void) {
         self.init(window: window, presenter: { alert, parent, reply in
@@ -26,13 +41,6 @@ import AppKit
     }
 
     isolated deinit { removeKeyMonitor() }
-
-    // MARK: Internal
-
-    typealias Presenter = @MainActor (NSAlert, NSWindow, @escaping @MainActor (NSApplication.ModalResponse) -> Void)
-        -> Void
-
-    let alert = NSAlert()
 
     @objc func present() {
         guard !didPresent, completion != nil else { return }
@@ -66,14 +74,6 @@ import AppKit
         cancel()
         return true
     }
-
-    // MARK: Private
-
-    private weak var window: NSWindow?
-    private let presenter: Presenter
-    private var completion: ((Bool) -> Void)?
-    private var didPresent = false
-    private var keyMonitor: Any?
 
     private func removeKeyMonitor() {
         if let keyMonitor {

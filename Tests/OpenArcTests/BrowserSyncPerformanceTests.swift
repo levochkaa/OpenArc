@@ -1,3 +1,5 @@
+// BrowserSyncPerformanceTests.swift
+
 import CryptoKit
 import Foundation
 import GRDB
@@ -7,7 +9,7 @@ import Testing
 
 @Suite(.serialized, .enabled(
     if: ProcessInfo.processInfo.environment["OPENARC_SYNC_PERFORMANCE"] == "1",
-    "Run ./script/test_sync_performance.sh for the bounded SQLite probe"
+    "Run ./script/test_sync_performance.sh for the bounded SQLite probe",
 ))
 @MainActor struct BrowserSyncPerformanceTests {
     @Test func boundedSQLiteProbe() throws {
@@ -20,10 +22,54 @@ import Testing
 // MARK: - SyncPerformanceProbe
 
 @MainActor private final class SyncPerformanceProbe {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private static var encoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }
+
+    private let directory = FileManager.default
+        .temporaryDirectory
+        .appendingPathComponent("sync-performance-\(UUID().uuidString)")
+    private let clock = ContinuousClock()
+    private let started = ContinuousClock.now
+    private let budgetSeconds = 60.0
+    private var fixtures = [String: SyncPerformanceFixture]()
+    private var results = [SyncPerformanceResult]()
+
+    private var elapsed: Double { seconds(started.duration(to: clock.now)) }
+    private var exhausted: Bool { elapsed >= budgetSeconds }
 
     init() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    private static func rows(_ databaseURL: URL) throws -> [SyncPerformanceRow] {
+        try DatabaseQueue(path: databaseURL.path).read { db in
+            try Row.fetchAll(
+                db,
+                sql: "SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position",
+            )
+            .map {
+                SyncPerformanceRow(
+                    position: $0["position"],
+                    id: $0["mutation_id"],
+                    payload: $0["payload"],
+                    version: $0["protocol_version"],
+                )
+            }
+        }
+    }
+
+    private static func fingerprint(_ rows: [SyncPerformanceRow]) -> String {
+        var digest = SHA256()
+        for row in rows.sorted(by: { $0.id < $1.id }) {
+            digest.update(data: Data("\(row.id):\(row.version):\(row.payload.count):".utf8))
+            digest.update(data: row.payload)
+        }
+        return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: Internal
@@ -49,60 +95,14 @@ import Testing
             schemaVersion: 1,
             runID: ProcessInfo.processInfo.environment["OPENARC_SYNC_PERFORMANCE_RUN_ID"] ?? UUID().uuidString,
             budgetSeconds: budgetSeconds, elapsedSeconds: elapsed,
-            plannedCases: 29, completedCases: results.filter { $0.status == "completed" }.count,
-            allCasesAccountedFor: results.count == 29, results: results
+            plannedCases: 29, completedCases: results.count(where: { $0.status == "completed" }),
+            allCasesAccountedFor: results.count == 29, results: results,
         )
         let payload = try Self.encoder.encode(report)
         if let path = ProcessInfo.processInfo.environment["OPENARC_SYNC_PERFORMANCE_REPORT"] {
             try payload.write(to: URL(fileURLWithPath: path), options: .atomic)
         }
         print("SYNC_PERFORMANCE_REPORT \(String(decoding: payload, as: UTF8.self))")
-    }
-
-    // MARK: Private
-
-    private static var encoder: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return encoder
-    }
-
-    private let directory = FileManager.default
-        .temporaryDirectory
-        .appendingPathComponent("sync-performance-\(UUID().uuidString)")
-    private let clock = ContinuousClock()
-    private let started = ContinuousClock.now
-    private let budgetSeconds = 60.0
-    private var fixtures = [String: SyncPerformanceFixture]()
-    private var results = [SyncPerformanceResult]()
-
-    private var elapsed: Double { seconds(started.duration(to: clock.now)) }
-    private var exhausted: Bool { elapsed >= budgetSeconds }
-
-    private static func rows(_ databaseURL: URL) throws -> [SyncPerformanceRow] {
-        try DatabaseQueue(path: databaseURL.path).read { db in
-            try Row.fetchAll(
-                db,
-                sql: "SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position"
-            )
-            .map {
-                SyncPerformanceRow(
-                    position: $0["position"],
-                    id: $0["mutation_id"],
-                    payload: $0["payload"],
-                    version: $0["protocol_version"]
-                )
-            }
-        }
-    }
-
-    private static func fingerprint(_ rows: [SyncPerformanceRow]) -> String {
-        var digest = SHA256()
-        for row in rows.sorted(by: { $0.id < $1.id }) {
-            digest.update(data: Data("\(row.id):\(row.version):\(row.payload.count):".utf8))
-            digest.update(data: row.payload)
-        }
-        return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private func measure(_ phase: SyncPerformancePhase, tabs: Int, pending: Int) throws {
@@ -134,7 +134,7 @@ import Testing
                 _ = try store.applyRemoteSyncEvents([], cursor: fixture.cursor, for: fixture.owner)
             case .firstAck:
                 _ = try store.acknowledgeSyncMutation(
-                    id: fixture.rows[0].id, protocolVersion: 3, events: fixture.receipts[0], for: fixture.owner
+                    id: fixture.rows[0].id, protocolVersion: 3, events: fixture.receipts[0], for: fixture.owner,
                 )
                 acknowledged = 1
             case .drain:
@@ -143,7 +143,7 @@ import Testing
                     // but it can stop a long drain safely between durable ACKs.
                     guard !exhausted else { break }
                     _ = try store.acknowledgeSyncMutation(
-                        id: row.id, protocolVersion: 3, events: fixture.receipts[index], for: fixture.owner
+                        id: row.id, protocolVersion: 3, events: fixture.receipts[index], for: fixture.owner,
                     )
                     acknowledged += 1
                 }
@@ -175,7 +175,7 @@ import Testing
 
     private func validate(
         _ store: BrowserSQLiteSessionStore, databaseURL: URL, fixture: SyncPerformanceFixture,
-        phase: SyncPerformancePhase, acknowledged: Int
+        phase: SyncPerformancePhase, acknowledged: Int,
     ) throws {
         // Full equality covers relative order, URL/title, timestamps, placement,
         // Space identity, and each Space's selected tab index.
@@ -190,7 +190,7 @@ import Testing
             let mutation = try JSONDecoder().decode(BrowserSyncSemanticMutation.self, from: last.payload)
             #expect(mutation.operations == [.moveTabs(
                 ids: ["tab-0"], destination: .init(spaceID: "space-0", placement: .temporary),
-                beforeID: "tab-2", afterID: "tab-1"
+                beforeID: "tab-2", afterID: "tab-1",
             )])
         } else {
             let expected = Array(fixture.rows.dropFirst(acknowledged))
@@ -221,20 +221,20 @@ import Testing
         try database.write { db in
             try db.execute(
                 sql: "UPDATE browser_sync_baseline SET payload = ? WHERE id = 1",
-                arguments: [JSONEncoder().encode(fixture.baseline)]
+                arguments: [JSONEncoder().encode(fixture.baseline)],
             )
             try db.execute(sql: "UPDATE browser_sync_state SET cursor = ? WHERE id = 1", arguments: [fixture.cursor])
             for row in fixture.rows {
                 try db.execute(
                     sql: "INSERT INTO browser_sync_outbox(position, mutation_id, payload, protocol_version) VALUES (?, ?, ?, 3)",
-                    arguments: [row.position, row.id, row.payload]
+                    arguments: [row.position, row.id, row.payload],
                 )
             }
         }
         // Independently verify the synthetic queue's optimistic snapshot through
         // the production reducer, outside measurement and within the soft budget.
         #expect(BrowserSyncOutboxProjection.snapshot(
-            baseline: fixture.baseline, pending: fixture.queue, local: fixture.snapshot
+            baseline: fixture.baseline, pending: fixture.queue, local: fixture.snapshot,
         ) == fixture.snapshot)
         try database.writeWithoutTransaction { db in try db.execute(sql: "PRAGMA wal_checkpoint(TRUNCATE)") }
         fixtures[key] = fixture
@@ -249,7 +249,17 @@ import Testing
 // MARK: - SyncPerformanceFixture
 
 private struct SyncPerformanceFixture {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let databaseURL: URL
+    let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync-performance.example")!, userID: "probe")
+    let snapshot: BrowserTabSessionSnapshot
+    let captureSnapshot: BrowserTabSessionSnapshot
+    let baseline: BrowserSyncOutboxBaseline
+    let queue: [BrowserSyncQueuedMutation]
+    let rows: [SyncPerformanceRow]
+    let receipts: [[BrowserSyncEvent]]
+    let cursor: Int
 
     init(databaseURL: URL, tabs count: Int, pending: Int) throws {
         self.databaseURL = databaseURL
@@ -259,13 +269,13 @@ private struct SyncPerformanceFixture {
                 id: "space-\($0)",
                 title: "Space \($0)",
                 systemImageName: "circle",
-                selectedTabIndex: 2
+                selectedTabIndex: 2,
             )
         }
         let tabs = (0..<count).map { index in
             BrowserTabSessionSnapshotTab(
                 id: "tab-\(index)", urlString: "https://example.test/\(index)", userTitleOverride: "Title \(index)",
-                spaceID: "space-\(index / (count / 10))", lastActivityTimestamp: 1_780_000_000 + Double(index)
+                spaceID: "space-\(index / (count / 10))", lastActivityTimestamp: 1_780_000_000 + Double(index),
             )
         }
         self.snapshot = BrowserTabSessionSnapshot(spaces: spaces, tabs: tabs)
@@ -278,7 +288,7 @@ private struct SyncPerformanceFixture {
         for (index, space) in spaces.enumerated() {
             let change = BrowserSyncChange(entityType: .space, entityID: space.id, op: .upsert, spaceData: .init(
                 title: space.title, systemImageName: space.systemImageName, rank: Double(index),
-                isPinnedSectionCollapsed: false, selectedTabID: nil
+                isPinnedSectionCollapsed: false, selectedTabID: nil,
             ), tabData: nil)
             baseline.entities["space:\(space.id)"] = .init(serverSeq: index + 1, change: change)
         }
@@ -289,7 +299,7 @@ private struct SyncPerformanceFixture {
             let data = BrowserSyncTabPayload(
                 spaceID: tab.spaceID!, placement: .temporary, rank: rank, urlString: tab.urlString,
                 pinnedURLString: nil, title: "Page \(index)", userTitleOverride: tab.userTitleOverride,
-                faviconURLString: "https://example.test/icon.png", lastActivityAt: activity
+                faviconURLString: "https://example.test/icon.png", lastActivityAt: activity,
             )
             let change = BrowserSyncChange(entityType: .tab, entityID: id, op: .upsert, spaceData: nil, tabData: data)
             baseline.entities["tab:\(id)"] = .init(serverSeq: index + 11, change: change)
@@ -297,12 +307,14 @@ private struct SyncPerformanceFixture {
                 eventsByID[id] = .init(
                     id: id, spaceID: data.spaceID, placement: .temporary, rank: rank, urlString: data.urlString,
                     pinnedURLString: nil, title: data.title, userTitleOverride: data.userTitleOverride,
-                    faviconURLString: data.faviconURLString, lastActivityAt: activity
+                    faviconURLString: data.faviconURLString, lastActivityAt: activity,
                 )
             }
         }
         self.baseline = baseline
-        var queue = [BrowserSyncQueuedMutation](), rows = [SyncPerformanceRow](), receipts = [[BrowserSyncEvent]]()
+        var queue = [BrowserSyncQueuedMutation]()
+        var rows = [SyncPerformanceRow]()
+        var receipts = [[BrowserSyncEvent]]()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         for index in 0..<pending {
@@ -311,18 +323,19 @@ private struct SyncPerformanceFixture {
                 id: String(format: "00000000-0000-4000-8000-%012d", index + 1),
                 operations: [.moveTabs(
                     ids: ["tab-0"], destination: .init(spaceID: "space-0", placement: .temporary),
-                    beforeID: after ? "tab-2" : "tab-1", afterID: after ? "tab-1" : nil
-                )]
+                    beforeID: after ? "tab-2" : "tab-1", afterID: after ? "tab-1" : nil,
+                )],
             )
             queue.append(.semantic(mutation))
             try rows.append(.init(
                 position: index + 1,
                 id: mutation.id,
                 payload: encoder.encode(mutation),
-                version: 3
+                version: 3,
             ))
             receipts.append((0..<2).map { tabIndex in
-                let id = "tab-\(tabIndex)", data = eventsByID[id]!
+                let id = "tab-\(tabIndex)"
+                let data = eventsByID[id]!
                 return BrowserSyncEvent(
                     serverSeq: count + 11 + index * 2 + tabIndex, deviceID: nil, entityType: "tab", entityID: id,
                     op: "upsert",
@@ -330,8 +343,8 @@ private struct SyncPerformanceFixture {
                         id: id, spaceID: data.spaceID, placement: data.placement,
                         rank: Double(after ? 1 - tabIndex : tabIndex), urlString: data.urlString,
                         pinnedURLString: nil, title: data.title, userTitleOverride: data.userTitleOverride,
-                        faviconURLString: data.faviconURLString, lastActivityAt: data.lastActivityAt
-                    )), createdAt: "2026-10-03T00:00:00Z"
+                        faviconURLString: data.faviconURLString, lastActivityAt: data.lastActivityAt,
+                    )), createdAt: "2026-10-03T00:00:00Z",
                 )
             })
         }
@@ -339,18 +352,6 @@ private struct SyncPerformanceFixture {
         self.rows = rows
         self.receipts = receipts
     }
-
-    // MARK: Internal
-
-    let databaseURL: URL
-    let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync-performance.example")!, userID: "probe")
-    let snapshot: BrowserTabSessionSnapshot
-    let captureSnapshot: BrowserTabSessionSnapshot
-    let baseline: BrowserSyncOutboxBaseline
-    let queue: [BrowserSyncQueuedMutation]
-    let rows: [SyncPerformanceRow]
-    let receipts: [[BrowserSyncEvent]]
-    let cursor: Int
 }
 
 // MARK: - SyncPerformancePhase

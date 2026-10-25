@@ -1,3 +1,5 @@
+// BrowserSyncMoveIntentTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -29,7 +31,7 @@ import Testing
     // A lost ACK survives reopen with the same identity, payload and move target.
     let accepted = moveSnapshot([moveTab("b"), moveTab("a", url: "https://remote.example"), moveTab("c")])
     _ = try reopened.acknowledgeSyncMutation(
-        id: mutation.id, protocolVersion: 3, events: moveEvents(accepted, sequence: 200), for: harness.owner
+        id: mutation.id, protocolVersion: 3, events: moveEvents(accepted, sequence: 200), for: harness.owner,
     )
     #expect(try reopened.pendingSyncQueue(for: harness.owner).isEmpty)
     #expect(reopened.loadSnapshot()?.tabs.map(\.id) == ["b", "a", "c"])
@@ -49,7 +51,7 @@ import Testing
             ids: ["d", "a"],
             destination: .init(spaceID: "one", placement: .temporary),
             beforeID: "new",
-            afterID: "b"
+            afterID: "b",
         ),
     ])
     #expect(operations.contains(.patchTab(id: "b", fields: .init(userTitleOverride: .set("Renamed")))))
@@ -146,13 +148,13 @@ import Testing
             entityID: "a",
             op: "delete",
             data: .deleted(id: "a"),
-            createdAt: ""
+            createdAt: "",
         ),
     ], cursor: 100, for: harness.owner)
     let surviving = try #require(store.loadSnapshot())
     store.saveSnapshot(
         moveSnapshot(["c", "a", "b"].map { moveTab($0) }),
-        syncMove: .init(tabIDs: ["a", "c", "missing"])
+        syncMove: .init(tabIDs: ["a", "c", "missing"]),
     )
     let pending = try harness.firstMutation(store)
     #expect(moveOperations(pending.operations) == [
@@ -180,7 +182,7 @@ import Testing
     try harness.database().write { db in
         try db
             .execute(
-                sql: "CREATE TRIGGER fail_intent BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END"
+                sql: "CREATE TRIGGER fail_intent BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END",
             )
     }
     store.saveSnapshot(original, syncMove: .init(tabIDs: ["a"]))
@@ -202,7 +204,7 @@ import Testing
         .moveTabs(
             ids: Array(group.prefix(1000)),
             destination: .init(spaceID: "one", placement: .temporary),
-            afterID: "anchor"
+            afterID: "anchor",
         ),
         .moveTabs(ids: [group[1000]], destination: .init(spaceID: "one", placement: .temporary), afterID: group[999]),
     ])
@@ -213,16 +215,14 @@ import Testing
 // MARK: - MoveIntentHarness
 
 private struct MoveIntentHarness {
-    // MARK: Lifecycle
-
-    init() throws { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
-
     // MARK: Internal
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("move-intent-\(UUID().uuidString)")
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
 
     var databaseURL: URL { directory.appendingPathComponent("test.sqlite") }
+
+    init() throws { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
 
     func store() throws -> BrowserSQLiteSessionStore { try BrowserSQLiteSessionStore(databaseURL: databaseURL) }
     func database() throws -> DatabaseQueue { try DatabaseQueue(path: databaseURL.path) }
@@ -235,7 +235,7 @@ private struct MoveIntentHarness {
             moveEvents(snapshot, sequence: 1),
             cursor: snapshot.tabs.count + 2,
             for: owner,
-            enableSemanticMutations: semantic
+            enableSemanticMutations: semantic,
         )
         // Local folders are absent from the server event schema.
         store.saveRemoteProjectionSnapshot(snapshot)
@@ -251,7 +251,7 @@ private struct MoveIntentHarness {
     func payloads() throws -> [Data] {
         try database().read { db in try Data.fetchAll(
             db,
-            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position"
+            sql: "SELECT payload FROM browser_sync_outbox ORDER BY position",
         ) }
     }
 }
@@ -271,7 +271,7 @@ private func moveOperations(_ operations: [BrowserSyncSemanticOperation]) -> [Br
 
 private func moveSnapshot(
     _ tabs: [BrowserTabSessionSnapshotTab],
-    folders: [BrowserPinnedTabFolderSessionSnapshot]? = nil
+    folders: [BrowserPinnedTabFolderSessionSnapshot]? = nil,
 ) -> BrowserTabSessionSnapshot {
     BrowserTabSessionSnapshot(spaces: ["one", "two"].map {
         BrowserSpaceSessionSnapshot(id: $0, title: $0, systemImageName: "circle")
@@ -280,7 +280,7 @@ private func moveSnapshot(
 
 private func moveTab(
     _ id: String, space: String = "one", url: String? = nil, title: String? = nil,
-    placement: BrowserTabPlacement = .temporary, home: String? = nil, folder: String? = nil
+    placement: BrowserTabPlacement = .temporary, home: String? = nil, folder: String? = nil,
 ) -> BrowserTabSessionSnapshotTab {
     BrowserTabSessionSnapshotTab(
         id: id,
@@ -289,7 +289,7 @@ private func moveTab(
         userTitleOverride: title,
         placement: placement,
         spaceID: space,
-        pinnedFolderID: folder
+        pinnedFolderID: folder,
     )
 }
 
@@ -303,7 +303,7 @@ private func moveEvents(_ snapshot: BrowserTabSessionSnapshot, sequence: Int) ->
                     systemImageName: space.systemImageName,
                     rank: space.rank,
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
-                    selectedTabID: space.selectedTabID
+                    selectedTabID: space.selectedTabID,
                 ))
             } else if let tab = change.tabData {
                 .tab(.init(
@@ -316,7 +316,7 @@ private func moveEvents(_ snapshot: BrowserTabSessionSnapshot, sequence: Int) ->
                     title: tab.title,
                     userTitleOverride: tab.userTitleOverride,
                     faviconURLString: tab.faviconURLString,
-                    lastActivityAt: tab.lastActivityAt
+                    lastActivityAt: tab.lastActivityAt,
                 ))
             } else {
                 .unknown
@@ -328,7 +328,7 @@ private func moveEvents(_ snapshot: BrowserTabSessionSnapshot, sequence: Int) ->
             entityID: change.entityID,
             op: change.op.rawValue,
             data: data,
-            createdAt: ""
+            createdAt: "",
         )
     }
 }

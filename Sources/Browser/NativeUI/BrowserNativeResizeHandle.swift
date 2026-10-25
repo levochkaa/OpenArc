@@ -1,19 +1,8 @@
+// BrowserNativeResizeHandle.swift
+
 import AppKit
 
 final class BrowserNativeResizeHandle: NSView {
-    // MARK: Lifecycle
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.splitter)
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    isolated deinit { hoverTask?.cancel()
-        popCursor()
-    }
-
     // MARK: Internal
 
     override var isHidden: Bool {
@@ -40,6 +29,29 @@ final class BrowserNativeResizeHandle: NSView {
     var onCollapse: () -> Void = {}
     private(set) var isResizing = false
 
+    // MARK: Private
+
+    private var tracking: NSTrackingArea?
+    private var hoverTask: Task<Void, Never>?
+    private var hovering = false
+    private var highlighted = false
+    private var pushedCursor = false
+    private var snapped = false
+    private var startX: CGFloat = 0
+    private var startWidth: CGFloat = 0
+    private var lastProposedWidth: CGFloat?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.splitter)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    isolated deinit { hoverTask?.cancel()
+        popCursor()
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking {
@@ -48,7 +60,7 @@ final class BrowserNativeResizeHandle: NSView {
         let tracking = NSTrackingArea(
             rect: .zero,
             options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
-            owner: self
+            owner: self,
         )
         addTrackingArea(tracking)
         self.tracking = tracking
@@ -58,7 +70,9 @@ final class BrowserNativeResizeHandle: NSView {
         hovering = true
         hoverTask?.cancel()
         hoverTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: BrowserChromeLayout.sidebarResizeHoverDelayNanoseconds) } catch {
+            do {
+                try await Task.sleep(nanoseconds: BrowserChromeLayout.sidebarResizeHoverDelayNanoseconds)
+            } catch {
                 return
             }
             guard let self, hovering, !isResizing else { return }
@@ -126,23 +140,11 @@ final class BrowserNativeResizeHandle: NSView {
         if shouldSnap, !snapped, hapticsEnabled {
             NSHapticFeedbackManager.defaultPerformer.perform(
                 .alignment,
-                performanceTime: .now
+                performanceTime: .now,
             )
         }
         snapped = shouldSnap
     }
-
-    // MARK: Private
-
-    private var tracking: NSTrackingArea?
-    private var hoverTask: Task<Void, Never>?
-    private var hovering = false
-    private var highlighted = false
-    private var pushedCursor = false
-    private var snapped = false
-    private var startX: CGFloat = 0
-    private var startWidth: CGFloat = 0
-    private var lastProposedWidth: CGFloat?
 
     private func screenPoint(_ event: NSEvent) -> NSPoint { window?
         .convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow

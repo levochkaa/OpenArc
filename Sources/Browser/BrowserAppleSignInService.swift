@@ -1,3 +1,5 @@
+// BrowserAppleSignInService.swift
+
 import AppKit
 import AuthenticationServices
 import Foundation
@@ -5,6 +7,10 @@ import Foundation
 // MARK: - BrowserAppleSignInService
 
 @MainActor final class BrowserAppleSignInService: NSObject, BrowserAppleIdentityProviding {
+    // MARK: Private
+
+    private var continuation: CheckedContinuation<String, Error>?
+
     // MARK: Internal
 
     func requestIdentityToken() async throws -> String {
@@ -21,10 +27,6 @@ import Foundation
             controller.performRequests()
         }
     }
-
-    // MARK: Private
-
-    private var continuation: CheckedContinuation<String, Error>?
 }
 
 // MARK: ASAuthorizationControllerDelegate
@@ -32,7 +34,7 @@ import Foundation
 extension BrowserAppleSignInService: ASAuthorizationControllerDelegate {
     nonisolated func authorizationController(
         controller _: ASAuthorizationController,
-        didCompleteWithAuthorization authorization: ASAuthorization
+        didCompleteWithAuthorization authorization: ASAuthorization,
     ) {
         Task { @MainActor in
             guard
@@ -52,7 +54,7 @@ extension BrowserAppleSignInService: ASAuthorizationControllerDelegate {
 
     nonisolated func authorizationController(
         controller _: ASAuthorizationController,
-        didCompleteWithError error: Error
+        didCompleteWithError error: Error,
     ) {
         Task { @MainActor in
             continuation?.resume(throwing: error)

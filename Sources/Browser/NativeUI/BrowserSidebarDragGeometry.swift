@@ -1,3 +1,5 @@
+// BrowserSidebarDragGeometry.swift
+
 import AppKit
 
 // MARK: - BrowserSidebarDragRowGeometry
@@ -31,7 +33,23 @@ struct BrowserSidebarDropProposal: Equatable {
 /// Rebuilt from a completed native layout, never inferred from old preferences.
 /// Sibling identity describes the insertion; geometry only describes its visible affordance.
 @MainActor struct BrowserSidebarDragGeometry {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    struct Slot {
+        let proposal: BrowserSidebarDropProposal
+        let hitFrame: CGRect
+        let focusY: CGFloat
+        let priority: Int
+    }
+
+    let listViewport: CGRect
+    let appFrame: CGRect?
+    let appEntryFrame: CGRect?
+    let spaceHeaderFrame: CGRect?
+    let rowWidth: CGFloat
+    let rows: [BrowserSidebarDragRowGeometry]
+    private(set) var slots: [Slot]
+    let snapDistance: CGFloat
 
     init(
         tree: BrowserSidebarTabTree,
@@ -42,7 +60,7 @@ struct BrowserSidebarDropProposal: Equatable {
         appFrame: CGRect?,
         rowWidth: CGFloat,
         spacing: CGFloat = BrowserChromeLayout.sidebarListSpacing,
-        appEntryFrame: CGRect? = nil
+        appEntryFrame: CGRect? = nil,
     ) {
         self.listViewport = listViewport
         self.appFrame = appFrame
@@ -75,7 +93,7 @@ struct BrowserSidebarDropProposal: Equatable {
                 x: frame.minX + 6,
                 y: y - thickness / 2,
                 width: max(frame.width - 12, 0),
-                height: thickness
+                height: thickness,
             )
             // A clipped/offscreen insertion line must never advertise a hidden drop.
             guard rect.width > 0, rect.minY >= listViewport.minY, rect.maxY <= listViewport.maxY else { return nil }
@@ -87,12 +105,13 @@ struct BrowserSidebarDropProposal: Equatable {
             frame: CGRect,
             focus: CGFloat,
             size: CGSize,
-            priority: Int
+            priority: Int,
         ) {
             guard let feedback else { return }
             let hitFrame: CGRect =
                 switch feedback {
-                case .app, .space: frame
+                case .app,
+                     .space: frame
                 default: frame.intersection(listViewport)
                 }
             guard !hitFrame.isNull, hitFrame.height > 0, hitFrame.width > 0 else { return }
@@ -100,7 +119,7 @@ struct BrowserSidebarDropProposal: Equatable {
                 proposal: .init(destination: destination, feedback: feedback, previewSize: size),
                 hitFrame: hitFrame,
                 focusY: focus,
-                priority: priority
+                priority: priority,
             ))
         }
         for row in visible {
@@ -127,7 +146,7 @@ struct BrowserSidebarDropProposal: Equatable {
                     frame: CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height / 2),
                     focus: above,
                     size: size,
-                    priority: 2
+                    priority: 2,
                 )
                 append(
                     after(row),
@@ -135,7 +154,7 @@ struct BrowserSidebarDropProposal: Equatable {
                     frame: CGRect(x: frame.minX, y: frame.midY, width: frame.width, height: frame.height / 2),
                     focus: below,
                     size: size,
-                    priority: 2
+                    priority: 2,
                 )
             case .folder(let id):
                 let edge = min(8, frame.height / 4)
@@ -145,7 +164,7 @@ struct BrowserSidebarDropProposal: Equatable {
                     frame: CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: edge),
                     focus: above,
                     size: size,
-                    priority: 1
+                    priority: 1,
                 )
                 let inside = BrowserSidebarDropContainer.pinned(row.container.spaceID!, folderID: id)
                 append(
@@ -155,11 +174,11 @@ struct BrowserSidebarDropProposal: Equatable {
                         x: frame.minX,
                         y: frame.minY + edge,
                         width: frame.width,
-                        height: frame.height - edge
+                        height: frame.height - edge,
                     ),
                     focus: frame.midY,
                     size: CGSize(width: max(frame.width - indent, 1), height: size.height),
-                    priority: 0
+                    priority: 0,
                 )
                 let descendants = tree.descendantFolderIDs(including: id)
                 let block = visible.filter { candidate in
@@ -174,7 +193,7 @@ struct BrowserSidebarDropProposal: Equatable {
                     frame: CGRect(x: frame.minX, y: bottom, width: frame.width, height: spacing),
                     focus: gapY,
                     size: size,
-                    priority: 1
+                    priority: 1,
                 )
             }
         }
@@ -186,7 +205,7 @@ struct BrowserSidebarDropProposal: Equatable {
                 frame: header.frame,
                 focus: header.frame.midY,
                 size: CGSize(width: rowWidth, height: BrowserChromeLayout.sidebarRowHeight),
-                priority: 0
+                priority: 0,
             )
         }
         // Empty sections are supplied as actual insertion gaps by the view, not fabricated row estimates.
@@ -209,7 +228,7 @@ struct BrowserSidebarDropProposal: Equatable {
                     frame: hit,
                     focus: hit.midY,
                     size: frame.size,
-                    priority: 0
+                    priority: 0,
                 )
             }
             let originalCount = tree.items(in: .app).count
@@ -222,7 +241,7 @@ struct BrowserSidebarDropProposal: Equatable {
                     x: appFrame.minX,
                     y: appFrame.minY + originalHeight - 6,
                     width: appFrame.width,
-                    height: 6
+                    height: 6,
                 )
                 append(
                     .init(container: .app),
@@ -230,7 +249,7 @@ struct BrowserSidebarDropProposal: Equatable {
                     frame: entry,
                     focus: entry.midY,
                     size: last.size,
-                    priority: 0
+                    priority: 0,
                 )
             }
         }
@@ -246,24 +265,6 @@ struct BrowserSidebarDropProposal: Equatable {
         self.snapDistance = snap
     }
 
-    // MARK: Internal
-
-    struct Slot {
-        let proposal: BrowserSidebarDropProposal
-        let hitFrame: CGRect
-        let focusY: CGFloat
-        let priority: Int
-    }
-
-    let listViewport: CGRect
-    let appFrame: CGRect?
-    let appEntryFrame: CGRect?
-    let spaceHeaderFrame: CGRect?
-    let rowWidth: CGFloat
-    let rows: [BrowserSidebarDragRowGeometry]
-    private(set) var slots: [Slot]
-    let snapDistance: CGFloat
-
     mutating func addEmptySection(_ container: BrowserSidebarDropContainer, frame: CGRect) {
         let line = CGRect(x: frame.minX + 6, y: frame.midY - 1, width: max(frame.width - 12, 0), height: 2)
         guard line.minY >= listViewport.minY, line.maxY <= listViewport.maxY else { return }
@@ -273,12 +274,12 @@ struct BrowserSidebarDropProposal: Equatable {
                 feedback: .line(line),
                 previewSize: CGSize(
                     width: frame.width,
-                    height: BrowserChromeLayout.sidebarRowHeight
-                )
+                    height: BrowserChromeLayout.sidebarRowHeight,
+                ),
             ),
             hitFrame: frame,
             focusY: frame.midY,
-            priority: 2
+            priority: 2,
         ))
     }
 
@@ -318,7 +319,8 @@ struct BrowserSidebarDropProposal: Equatable {
             return retained.proposal
         }
         return candidates.min {
-            let a = abs(point.y - $0.focusY), b = abs(point.y - $1.focusY)
+            let a = abs(point.y - $0.focusY)
+            let b = abs(point.y - $1.focusY)
             if abs(a - b) > 0.25 {
                 return a < b
             }
@@ -330,8 +332,10 @@ struct BrowserSidebarDropProposal: Equatable {
 
     private func sameFeedbackKind(_ lhs: BrowserSidebarDropFeedback, _ rhs: BrowserSidebarDropFeedback) -> Bool {
         switch (lhs, rhs) {
-        case (.app, .app), (.line, .line): true
-        case (.folder(let a), .folder(let b)), (.space(let a), .space(let b)): a == b
+        case (.app, .app),
+             (.line, .line): true
+        case (.folder(let a), .folder(let b)),
+             (.space(let a), .space(let b)): a == b
         default: false
         }
     }

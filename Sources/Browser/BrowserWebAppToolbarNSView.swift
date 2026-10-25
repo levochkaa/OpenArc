@@ -1,14 +1,63 @@
+// BrowserWebAppToolbarNSView.swift
+
 import AppKit
 import Combine
 
 final class BrowserWebAppToolbarNSView: NSView {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    var actions: BrowserWebAppViewActions
+
+    var windowControlsWidth: CGFloat = 0 { didSet { windowControls.showsInSidebar = windowControlsWidth > 0
+        needsLayout = true
+    } }
+
+    // MARK: Private
+
+    private let model: BrowserChromeModel
+    private let preferences: BrowserWebAppPreferences
+    private let configuration: BrowserWebAppConfiguration
+    private let extensionsPresenter: BrowserNativeExtensionPopoverPresenter
+    private let windowControls = BrowserWindowControlsHostView()
+    private let back = BrowserNativeChromeButton(
+        symbol: "arrow.backward",
+        title: BrowserStrings.navigationBack,
+        pressEffect: .left,
+        action: {},
+    )
+    private let reload = BrowserNativeChromeButton(
+        symbol: "arrow.clockwise",
+        title: BrowserStrings.navigationRefresh,
+        pressEffect: .rotateClockwise,
+        action: {},
+    )
+    private let extensions = BrowserNativeChromeButton(
+        symbol: "puzzlepiece.extension",
+        title: BrowserStrings.extensionsSectionTitle,
+        pressEffect: .compress,
+        action: {},
+    )
+    private let more = BrowserNativeChromeButton(
+        symbol: "ellipsis",
+        title: BrowserStrings.webAppMoreAction,
+        pressEffect: .compress,
+        action: {},
+    )
+    private let heading = BrowserNativeControls.label(
+        "",
+        size: 12.5,
+        weight: .medium,
+        color: BrowserChromeColors.primaryText,
+    )
+    private var observations = Set<AnyCancellable>()
 
     init(
         model: BrowserChromeModel,
         preferences: BrowserWebAppPreferences,
         configuration: BrowserWebAppConfiguration,
-        actions: BrowserWebAppViewActions
+        actions: BrowserWebAppViewActions,
     ) {
         self.model = model
         self.preferences = preferences
@@ -56,16 +105,6 @@ final class BrowserWebAppToolbarNSView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // MARK: Internal
-
-    override var isFlipped: Bool { true }
-
-    var actions: BrowserWebAppViewActions
-
-    var windowControlsWidth: CGFloat = 0 { didSet { windowControls.showsInSidebar = windowControlsWidth > 0
-        needsLayout = true
-    } }
-
     override func layout() {
         super.layout()
         let padding = BrowserChromeLayout.bookmarksBarHorizontalPadding
@@ -78,7 +117,7 @@ final class BrowserWebAppToolbarNSView: NSView {
             x: padding + (windowControlsWidth > 0 ? windowControlsWidth + spacing : 0),
             y: y,
             width: size,
-            height: size
+            height: size,
         )
         reload.frame = back.frame.offsetBy(dx: size + spacing, dy: 0)
         more.frame = NSRect(x: bounds.width - padding - size, y: y, width: size, height: size)
@@ -88,13 +127,13 @@ final class BrowserWebAppToolbarNSView: NSView {
         let titleWidth = min(
             ceil(heading.intrinsicContentSize.width),
             BrowserWebAppLayout.titleMaximumWidth,
-            max(bounds.width - sideReserve * 2, 0)
+            max(bounds.width - sideReserve * 2, 0),
         )
         heading.frame = NSRect(
             x: (bounds.width - titleWidth) / 2,
             y: (bounds.height - 17) / 2,
             width: titleWidth,
-            height: 17
+            height: 17,
         )
     }
 
@@ -112,7 +151,7 @@ final class BrowserWebAppToolbarNSView: NSView {
             model.canStopLoading ? "xmark" : "arrow.clockwise",
             title: model.canStopLoading
                 ? BrowserStrings.navigationStopLoading
-                : BrowserStrings.navigationRefresh
+                : BrowserStrings.navigationRefresh,
         )
         reload.isEnabled = model.canStopLoading || model.canReload
         reload.tooltipShortcut = model.canStopLoading ? nil : model.shortcutStore.shortcut(for: .reload)
@@ -132,45 +171,6 @@ final class BrowserWebAppToolbarNSView: NSView {
 
     func closePopovers() { extensionsPresenter.close() }
 
-    // MARK: Private
-
-    private let model: BrowserChromeModel
-    private let preferences: BrowserWebAppPreferences
-    private let configuration: BrowserWebAppConfiguration
-    private let extensionsPresenter: BrowserNativeExtensionPopoverPresenter
-    private let windowControls = BrowserWindowControlsHostView()
-    private let back = BrowserNativeChromeButton(
-        symbol: "arrow.backward",
-        title: BrowserStrings.navigationBack,
-        pressEffect: .left,
-        action: {}
-    )
-    private let reload = BrowserNativeChromeButton(
-        symbol: "arrow.clockwise",
-        title: BrowserStrings.navigationRefresh,
-        pressEffect: .rotateClockwise,
-        action: {}
-    )
-    private let extensions = BrowserNativeChromeButton(
-        symbol: "puzzlepiece.extension",
-        title: BrowserStrings.extensionsSectionTitle,
-        pressEffect: .compress,
-        action: {}
-    )
-    private let more = BrowserNativeChromeButton(
-        symbol: "ellipsis",
-        title: BrowserStrings.webAppMoreAction,
-        pressEffect: .compress,
-        action: {}
-    )
-    private let heading = BrowserNativeControls.label(
-        "",
-        size: 12.5,
-        weight: .medium,
-        color: BrowserChromeColors.primaryText
-    )
-    private var observations = Set<AnyCancellable>()
-
     private func moreMenu() -> NSMenu {
         let model = model
         let menu = BrowserNativeMenus.menu()
@@ -183,13 +183,13 @@ final class BrowserWebAppToolbarNSView: NSView {
             BrowserStrings.webAppOpenInBrowserAction,
             to: menu,
             enabled: model.currentTab != nil,
-            action: actions.openInBrowser
+            action: actions.openInBrowser,
         )
         menu.addItem(.separator())
         BrowserNativeMenus.add(
             BrowserStrings.webAppUninstallAction(configuration.name),
             to: menu,
-            action: actions.uninstall
+            action: actions.uninstall,
         )
         menu.addItem(.separator())
         let zoom = BrowserNativeMenus.submenu(BrowserStrings.webAppZoomMenu(model.zoomPercent), in: menu)
@@ -197,25 +197,25 @@ final class BrowserWebAppToolbarNSView: NSView {
             BrowserStrings.webAppZoomOutAction,
             to: zoom,
             enabled: model.zoomPercent != BrowserChromeModel.zoomPercentages.first,
-            action: model.zoomOut
+            action: model.zoomOut,
         )
         BrowserNativeMenus.add(
             BrowserStrings.webAppZoomResetAction,
             to: zoom,
             enabled: model.zoomPercent != 100,
-            action: model.resetZoom
+            action: model.resetZoom,
         )
         BrowserNativeMenus.add(
             BrowserStrings.webAppZoomInAction,
             to: zoom,
             enabled: model.zoomPercent != BrowserChromeModel.zoomPercentages.last,
-            action: model.zoomIn
+            action: model.zoomIn,
         )
         BrowserNativeMenus.add(
             BrowserStrings.menuPrint,
             to: menu,
             enabled: model.canPrintPage,
-            action: model.printCurrentPage
+            action: model.printCurrentPage,
         )
         BrowserNativeMenus
             .add(BrowserStrings.menuFind, to: menu, enabled: model.canPresentFindInPage) {
@@ -234,7 +234,7 @@ final class BrowserWebAppToolbarNSView: NSView {
             BrowserStrings.webAppCastAction,
             to: menu,
             enabled: model.canCastPage,
-            action: model.castCurrentPage
+            action: model.castCurrentPage,
         )
         return menu
     }

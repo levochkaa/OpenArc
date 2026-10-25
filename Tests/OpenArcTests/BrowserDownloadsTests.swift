@@ -1,3 +1,5 @@
+// BrowserDownloadsTests.swift
+
 import Foundation
 import Testing
 
@@ -17,7 +19,7 @@ import Testing
         receivedBytes: 50,
         totalBytes: 100,
         currentSpeedBytesPerSecond: 10,
-        state: .inProgress
+        state: .inProgress,
     ))
 
     #expect(model.items.count == 1)
@@ -32,7 +34,7 @@ import Testing
         receivedBytes: 100,
         totalBytes: 100,
         currentSpeedBytesPerSecond: 0,
-        state: .completed
+        state: .completed,
     ))
 
     #expect(model.items.count == 1)
@@ -54,7 +56,7 @@ import Testing
         receivedBytes: 25,
         totalBytes: 100,
         currentSpeedBytesPerSecond: 5,
-        state: .inProgress
+        state: .inProgress,
     ))
     model.apply(BrowserDownloadUpdate(
         id: "done",
@@ -64,7 +66,7 @@ import Testing
         receivedBytes: 100,
         totalBytes: 100,
         currentSpeedBytesPerSecond: 0,
-        state: .completed
+        state: .completed,
     ))
 
     model.clearFinishedDownloads()

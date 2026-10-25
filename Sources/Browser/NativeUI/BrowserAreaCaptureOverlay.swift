@@ -1,3 +1,5 @@
+// BrowserAreaCaptureOverlay.swift
+
 import AppKit
 
 // MARK: - BrowserAreaCaptureOverlay
@@ -6,19 +8,6 @@ import AppKit
 /// Escape, a click without a drag or a click beside the page cancels. The
 /// result is the outlined part as fractions of the page frame, y downward.
 final class BrowserAreaCaptureOverlay: NSView {
-    // MARK: Lifecycle
-
-    init(pageFrame: CGRect) {
-        self.pageFrame = pageFrame
-        super.init(frame: .zero)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.group)
-        setAccessibilityLabel(BrowserStrings.captureAreaAccessibilityLabel)
-        setAccessibilityIdentifier("browser.capture-area")
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
     // MARK: Internal
 
     /// Smaller drags count as a click.
@@ -32,6 +21,21 @@ final class BrowserAreaCaptureOverlay: NSView {
     let pageFrame: CGRect
     private(set) var selection: CGRect?
     var onFinish: (CGRect?) -> Void = { _ in }
+
+    // MARK: Private
+
+    private var start: CGPoint?
+
+    init(pageFrame: CGRect) {
+        self.pageFrame = pageFrame
+        super.init(frame: .zero)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(BrowserStrings.captureAreaAccessibilityLabel)
+        setAccessibilityIdentifier("browser.capture-area")
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func draw(_: NSRect) {
         let dim = NSBezierPath(rect: pageFrame)
@@ -71,7 +75,7 @@ final class BrowserAreaCaptureOverlay: NSView {
             x: min(start.x, point.x),
             y: min(start.y, point.y),
             width: abs(point.x - start.x),
-            height: abs(point.y - start.y)
+            height: abs(point.y - start.y),
         )
         needsDisplay = true
     }
@@ -99,7 +103,7 @@ final class BrowserAreaCaptureOverlay: NSView {
             x: (rect.minX - pageFrame.minX) / pageFrame.width,
             y: (rect.minY - pageFrame.minY) / pageFrame.height,
             width: rect.width / pageFrame.width,
-            height: rect.height / pageFrame.height
+            height: rect.height / pageFrame.height,
         )
     }
 
@@ -111,14 +115,10 @@ final class BrowserAreaCaptureOverlay: NSView {
         onFinish(fraction(for: selection))
     }
 
-    // MARK: Private
-
-    private var start: CGPoint?
-
     private func clamped(_ point: CGPoint) -> CGPoint {
         CGPoint(
             x: min(max(point.x, pageFrame.minX), pageFrame.maxX),
-            y: min(max(point.y, pageFrame.minY), pageFrame.maxY)
+            y: min(max(point.y, pageFrame.minY), pageFrame.maxY),
         )
     }
 }

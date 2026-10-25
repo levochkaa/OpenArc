@@ -1,21 +1,10 @@
+// BrowserMobileProfileRegistry.swift
+
 import CryptoKit
 import Foundation
 
 /// One durable document per app profile, shared by every connected UIKit scene.
 @MainActor final class BrowserMobileProfileRegistry {
-    // MARK: Lifecycle
-
-    init(
-        directory: URL = .applicationSupportDirectory,
-        syncSessionFactory: @escaping (BrowserSQLiteSessionStore, BrowserMobileProfileDocument)
-            -> BrowserMobileSyncSession = {
-                BrowserMobileSyncSession(store: $0, document: $1)
-            }
-    ) {
-        self.directory = directory
-        self.syncSessionFactory = syncSessionFactory
-    }
-
     // MARK: Internal
 
     static let shared = BrowserMobileProfileRegistry()
@@ -23,13 +12,32 @@ import Foundation
 
     private(set) var syncSession: BrowserMobileSyncSession?
 
+    // MARK: Private
+
+    private let directory: URL
+    private let syncSessionFactory: (BrowserSQLiteSessionStore, BrowserMobileProfileDocument)
+        -> BrowserMobileSyncSession
+    private var current: BrowserMobileProfileDocument?
+    private var opening: Task<BrowserMobileProfileDocument, Error>?
+
+    init(
+        directory: URL = .applicationSupportDirectory,
+        syncSessionFactory: @escaping (BrowserSQLiteSessionStore, BrowserMobileProfileDocument)
+            -> BrowserMobileSyncSession = {
+                BrowserMobileSyncSession(store: $0, document: $1)
+            },
+    ) {
+        self.directory = directory
+        self.syncSessionFactory = syncSessionFactory
+    }
+
     static func legacySpaceID(filename: String) -> String {
         "mobile-import-" + SHA256.hash(data: Data(filename.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     static func importLegacySessions(
         _ imports: [(String, BrowserMobileSession)],
-        into store: BrowserSQLiteSessionStore
+        into store: BrowserSQLiteSessionStore,
     ) throws {
         for (_, session) in imports {
             try session.validate()
@@ -46,7 +54,7 @@ import Foundation
                     id: spaceID,
                     title: "Imported Window \(spaces.count + 1)",
                     systemImageName: "globe",
-                    selectedTabIndex: session.tabs.firstIndex { $0.id == session.selectedTabID }
+                    selectedTabIndex: session.tabs.firstIndex { $0.id == session.selectedTabID },
                 ))
                 for tab in session.tabs {
                     // Two old independent scenes may contain the same copied ID.
@@ -63,7 +71,7 @@ import Foundation
                         // Reload them from the page instead of freezing them
                         // as shared overrides across future navigations.
                         userTitleOverride: nil,
-                        spaceID: spaceID
+                        spaceID: spaceID,
                     ))
                 }
             }
@@ -74,6 +82,21 @@ import Foundation
             }
             return BrowserTabSessionSnapshot(spaces: spaces, pinnedTabFolders: existing?.pinnedTabFolders, tabs: tabs)
         }
+    }
+
+    private static func readLegacySessions(directory: URL) async throws -> [(String, BrowserMobileSession)] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+        let urls = try FileManager.default
+            .contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        var imports = [(String, BrowserMobileSession)]()
+        for url in urls {
+            if let session = try await BrowserMobileFileSessionStore(fileURL: url).load() {
+                imports.append((url.lastPathComponent, session))
+            }
+        }
+        return imports
     }
 
     func document() async throws -> BrowserMobileProfileDocument {
@@ -98,7 +121,7 @@ import Foundation
             }
             let document = try BrowserMobileProfileDocument(
                 store: store,
-                loadSnapshot: { try store.loadSnapshotStrict() }, downloads: downloads
+                loadSnapshot: { try store.loadSnapshotStrict() }, downloads: downloads,
             )
             syncSession = syncSessionFactory(store, document)
             return document
@@ -113,28 +136,5 @@ import Foundation
             opening = nil
             throw error
         }
-    }
-
-    // MARK: Private
-
-    private let directory: URL
-    private let syncSessionFactory: (BrowserSQLiteSessionStore, BrowserMobileProfileDocument)
-        -> BrowserMobileSyncSession
-    private var current: BrowserMobileProfileDocument?
-    private var opening: Task<BrowserMobileProfileDocument, Error>?
-
-    private static func readLegacySessions(directory: URL) async throws -> [(String, BrowserMobileSession)] {
-        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
-        let urls = try FileManager.default
-            .contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "json" }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        var imports = [(String, BrowserMobileSession)]()
-        for url in urls {
-            if let session = try await BrowserMobileFileSessionStore(fileURL: url).load() {
-                imports.append((url.lastPathComponent, session))
-            }
-        }
-        return imports
     }
 }

@@ -1,8 +1,10 @@
+// BrowserMobileSession.swift
+
 import Foundation
 
 // MARK: - BrowserMobileSession
 
-struct BrowserMobileSession: Codable, Equatable, Sendable {
+struct BrowserMobileSession: Codable, Equatable {
     var version = 1
     var tabs: [BrowserMobileSessionTab]
     var selectedTabID: String?
@@ -28,7 +30,7 @@ struct BrowserMobileSession: Codable, Equatable, Sendable {
 
 // MARK: - BrowserMobileSessionTab
 
-struct BrowserMobileSessionTab: Codable, Equatable, Sendable {
+struct BrowserMobileSessionTab: Codable, Equatable {
     let id: String
     var urlString: String
     var title: String

@@ -1,18 +1,18 @@
+// BrowserContentEdgeDragRegions.swift
+
 import AppKit
 import QuartzCore
 
 // MARK: - BrowserSidebarLocalMonitorCleanup
 
 private final class BrowserSidebarLocalMonitorCleanup: @unchecked Sendable {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    var monitor: Any?
 
     deinit {
         remove()
     }
-
-    // MARK: Internal
-
-    var monitor: Any?
 
     func set(_ monitor: Any?) {
         remove()
@@ -32,17 +32,6 @@ private final class BrowserSidebarLocalMonitorCleanup: @unchecked Sendable {
 // MARK: - BrowserSidebarHoverOverlayDismissNSView
 
 final class BrowserSidebarHoverOverlayDismissNSView: NSView {
-    // MARK: Lifecycle
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        postsFrameChangedNotifications = true
-    }
-
-    @available(*, unavailable) required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
     // MARK: Internal
 
     var isPresented = false
@@ -52,8 +41,21 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
     var onDismiss: () -> Void = {}
     var trackingArea: NSTrackingArea?
 
+    // MARK: Private
+
+    private let localMonitorCleanup = BrowserSidebarLocalMonitorCleanup()
+
     var sidebarFrameInWindow: CGRect {
         convert(sidebarFrame, to: nil)
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        postsFrameChangedNotifications = true
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func hitTest(_: NSPoint) -> NSView? {
@@ -84,7 +86,7 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
             rect: .zero,
             options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
             owner: self,
-            userInfo: nil
+            userInfo: nil,
         )
         addTrackingArea(trackingArea)
         self.trackingArea = trackingArea
@@ -109,7 +111,7 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
         sidebarFrame: CGRect,
         allowsPointerSyncDismissal: Bool,
         onPointerMovement: @escaping () -> Void,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
     ) {
         let shouldRefreshTracking = self.isPresented != isPresented
         let shouldSyncPointer = shouldRefreshTracking
@@ -131,10 +133,6 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
             schedulePointerSync()
         }
     }
-
-    // MARK: Private
-
-    private let localMonitorCleanup = BrowserSidebarLocalMonitorCleanup()
 
     private func schedulePointerSync() {
         guard allowsPointerSyncDismissal else {
@@ -180,7 +178,7 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
         }
 
         localMonitorCleanup.set(NSEvent.addLocalMonitorForEvents(
-            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown],
         ) { [weak self] event in
             guard let self else {
                 return event
@@ -204,7 +202,7 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
             locationInTargetWindow = event.locationInWindow
         } else {
             let screenRect = sourceWindow.convertToScreen(
-                NSRect(origin: event.locationInWindow, size: .zero)
+                NSRect(origin: event.locationInWindow, size: .zero),
             )
             locationInTargetWindow = targetWindow.convertFromScreen(screenRect).origin
         }

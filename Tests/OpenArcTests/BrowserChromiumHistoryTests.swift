@@ -1,3 +1,5 @@
+// BrowserChromiumHistoryTests.swift
+
 import Foundation
 import GRDB
 import Testing
@@ -10,14 +12,14 @@ import Testing
         title: "Example Docs",
         visitCount: 4,
         typedCount: 2,
-        lastVisitTime: 2
+        lastVisitTime: 2,
     )
     try harness.insertHistory(
         urlString: "https://other.example.com",
         title: "Other",
         visitCount: 10,
         typedCount: 0,
-        lastVisitTime: 3
+        lastVisitTime: 3,
     )
 
     let store = BrowserChromiumHistoryStore(profileDirectoryCandidates: [harness.profileDirectoryURL])
@@ -33,7 +35,12 @@ import Testing
 // MARK: - ChromiumHistoryHarness
 
 private struct ChromiumHistoryHarness {
-    // MARK: Lifecycle
+    // MARK: Internal
+
+    let directoryURL: URL
+    let profileDirectoryURL: URL
+    let historyURL: URL
+    let dbQueue: DatabaseQueue
 
     init() throws {
         self.directoryURL = FileManager.default
@@ -55,24 +62,17 @@ private struct ChromiumHistoryHarness {
                   last_visit_time INTEGER NOT NULL,
                   hidden INTEGER DEFAULT 0 NOT NULL
                 )
-                """
+                """,
             )
         }
     }
-
-    // MARK: Internal
-
-    let directoryURL: URL
-    let profileDirectoryURL: URL
-    let historyURL: URL
-    let dbQueue: DatabaseQueue
 
     func insertHistory(
         urlString: String,
         title: String,
         visitCount: Int,
         typedCount: Int,
-        lastVisitTime: Int
+        lastVisitTime: Int,
     ) throws {
         try dbQueue.write { db in
             try db.execute(
@@ -80,7 +80,7 @@ private struct ChromiumHistoryHarness {
                 INSERT INTO urls (url, title, visit_count, typed_count, last_visit_time, hidden)
                 VALUES (?, ?, ?, ?, ?, 0)
                 """,
-                arguments: [urlString, title, visitCount, typedCount, lastVisitTime]
+                arguments: [urlString, title, visitCount, typedCount, lastVisitTime],
             )
         }
     }

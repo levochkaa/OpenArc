@@ -1,3 +1,5 @@
+// BrowserWebKitEngine.swift
+
 import Foundation
 import UIKit
 import WebKit
@@ -6,11 +8,72 @@ import WebKit
 
 /// Each scene owns its engine and views; persistent tab IDs belong to the model.
 @MainActor final class BrowserWebKitEngine: NSObject, BrowserMobileEngine {
-    // MARK: Lifecycle
+    // MARK: Private
 
-    init(dataStore: WKWebsiteDataStore = .default()) {
-        self.dataStore = dataStore
-        super.init()
+    private enum RetryLoad {
+        case url(URL)
+        case html(String, URL?)
+    }
+
+    private struct PendingDialog {
+        let request: BrowserMobileJavaScriptDialog
+        let generation: Int
+        let completion: @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void
+    }
+
+    private struct PendingAuthentication {
+        let request: BrowserMobileHTTPAuthentication
+        let generation: Int
+        let webViewID: ObjectIdentifier
+        let completion: @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    }
+
+    private final class DownloadHandoff {
+        // MARK: Internal
+
+        let runtimeID: String
+        let generation: Int
+        weak var coordinator: BrowserMobileDownloads?
+        let sourceURL: URL?
+
+        init(record: Record, coordinator: BrowserMobileDownloads, sourceURL: URL?) {
+            self.runtimeID = record.id
+            self.generation = record.generation
+            self.coordinator = coordinator
+            self.sourceURL = sourceURL
+        }
+    }
+
+    private final class Record {
+        // MARK: Internal
+
+        let id: String
+        var webView: WKWebView?
+        var state: BrowserMobilePageState
+        var lastEmitted: BrowserMobilePageState?
+        var observations = [NSKeyValueObservation]()
+        var retryLoad: RetryLoad
+        var committedState: BrowserMobilePageState?
+        var committedRetryLoad: RetryLoad?
+        var isRestoringDownloadedDocument = false
+        var generation = 0
+        var currentNavigation: WKNavigation?
+        // Weak keys retain generation information while WebKit can deliver that
+        // navigation, without an ever-growing set of canceled navigation IDs.
+        let navigationGenerations = NSMapTable<WKNavigation, NSNumber>.weakToStrongObjects()
+        var allowsPageMetadata = false
+        var hasStartedCurrentNavigation = false
+        var hasCommittedDialogDocument = false
+        var isReplacingDialogDocument = false
+        // Keep the accepted document URL independently of WKWebView.url and
+        // WKFrameInfo, which can already report a fragment target before policy.
+        var dialogDocumentURL: URL?
+
+        init(id: String, url: URL?) {
+            self.id = id
+            self.state = BrowserMobilePageState(url: url)
+            self.retryLoad = .url(url ?? URL(string: "about:blank")!)
+        }
     }
 
     // MARK: Internal
@@ -26,6 +89,92 @@ import WebKit
                 cancelHTTPAuthentication(abort: false)
             }
         }
+    }
+
+    private let dataStore: WKWebsiteDataStore
+    private var records = [String: Record]()
+    private var idsByWebView = [ObjectIdentifier: String]()
+    private weak var mountedWebView: WKWebView?
+    private var isShutDown = false
+    private var selectedRuntimeID: String?
+    private var isDialogPresentationActive = false
+    private var pendingDialog: PendingDialog?
+    private var isFinishingDialog = false
+    private var pendingAuthentication: PendingAuthentication?
+    private var isFinishingAuthentication = false
+    private var downloads: BrowserMobileDownloads?
+    private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
+    private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
+
+    init(dataStore: WKWebsiteDataStore = .default()) {
+        self.dataStore = dataStore
+        super.init()
+    }
+
+    private static func authenticationOrigin(_ space: URLProtectionSpace) -> String? {
+        let unsafeHostScalars = CharacterSet.whitespacesAndNewlines
+            .union(.controlCharacters)
+            .union(CharacterSet(charactersIn: "/\\?#@"))
+        guard space.authenticationMethod == NSURLAuthenticationMethodHTTPBasic, !space.isProxy(),
+              let scheme = space.protocol?.lowercased(), scheme == "http" || scheme == "https",
+              !space.host.isEmpty, (0...65535).contains(space.port),
+              !space.host.unicodeScalars.contains(where: unsafeHostScalars.contains)
+        else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = space.host
+        if space.port > 0, !(scheme == "http" && space.port == 80), !(scheme == "https" && space.port == 443) {
+            components.port = space.port
+        }
+        guard let url = components.url, url.host?.isEmpty == false else { return nil }
+        return url.absoluteString
+    }
+
+    private static func dialogOrigin(_ frame: WKFrameInfo) -> String {
+        let origin = frame.securityOrigin
+        guard !origin.host.isEmpty, !origin.protocol.isEmpty else {
+            return String(localized: "Unknown origin", table: "Mobile")
+        }
+        var components = URLComponents()
+        components.scheme = origin.protocol
+        components.host = origin.host
+        if origin.port > 0,
+           !(origin.protocol == "https" && origin.port == 443),
+           !(origin.protocol == "http" && origin.port == 80)
+        {
+            components.port = origin.port
+        }
+        return components.string ?? origin.host
+    }
+
+    private static func isFragmentNavigation(from previous: URL?, to next: URL?) -> Bool {
+        guard let previous, let next, previous != next,
+              var previousParts = URLComponents(url: previous, resolvingAgainstBaseURL: false),
+              var nextParts = URLComponents(url: next, resolvingAgainstBaseURL: false)
+        else { return false }
+        previousParts.fragment = nil
+        nextParts.fragment = nil
+        return previousParts == nextParts
+    }
+
+    private static func isAllowed(_ url: URL) -> Bool {
+        switch url.scheme?.lowercased() {
+        case "http",
+             "https": url.host?.isEmpty == false
+        case "about": url.absoluteString.lowercased().split(separator: "#").first == "about:blank"
+        default: false
+        }
+    }
+
+    private static func isAllowed(_ action: WKNavigationAction) -> Bool {
+        guard let url = action.request.url else { return false }
+        if Self.isAllowed(url) {
+            return true
+        }
+        // srcdoc is an embedded HTML document, not an address the browser can
+        // open as a top-level page or external application.
+        return action.targetFrame?.isMainFrame == false
+            && url.absoluteString.lowercased().split(separator: "#").first == "about:srcdoc"
     }
 
     func setDownloads(_ downloads: BrowserMobileDownloads?) {
@@ -208,7 +357,7 @@ import WebKit
         kind: BrowserMobileJavaScriptDialog.Kind,
         message: String,
         origin: String,
-        completion: @escaping @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void
+        completion: @escaping @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void,
     ) {
         guard !isShutDown, !isFinishingDialog, !isFinishingAuthentication, isDialogPresentationActive,
               pendingAuthentication == nil, let record = record(for: webView),
@@ -218,7 +367,7 @@ import WebKit
             return
         }
         let request = BrowserMobileJavaScriptDialog(
-            id: UUID(), runtimeID: record.id, origin: origin, message: message, kind: kind
+            id: UUID(), runtimeID: record.id, origin: origin, message: message, kind: kind,
         )
         dismissFindInPage()
         pendingDialog = PendingDialog(request: request, generation: record.generation, completion: completion)
@@ -238,7 +387,7 @@ import WebKit
     func requestHTTPAuthentication(
         in webView: WKWebView,
         challenge: URLAuthenticationChallenge,
-        completion: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        completion: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void,
     ) {
         guard let origin = Self.authenticationOrigin(challenge.protectionSpace) else {
             // Preserve WKNavigationDelegate's default for every unsupported
@@ -257,12 +406,12 @@ import WebKit
         }
         let request = BrowserMobileHTTPAuthentication(
             id: UUID(), runtimeID: record.id, origin: origin,
-            realm: challenge.protectionSpace.realm, previousFailureCount: challenge.previousFailureCount
+            realm: challenge.protectionSpace.realm, previousFailureCount: challenge.previousFailureCount,
         )
         dismissFindInPage()
         pendingAuthentication = PendingAuthentication(
             request: request, generation: record.generation, webViewID: ObjectIdentifier(webView),
-            completion: completion
+            completion: completion,
         )
         onEvent?(.httpAuthenticationRequested(request))
     }
@@ -292,158 +441,6 @@ import WebKit
         return webView
     }
 
-    // MARK: Private
-
-    private enum RetryLoad {
-        case url(URL)
-        case html(String, URL?)
-    }
-
-    private struct PendingDialog {
-        let request: BrowserMobileJavaScriptDialog
-        let generation: Int
-        let completion: @MainActor (BrowserMobileJavaScriptDialogResponse) -> Void
-    }
-
-    private struct PendingAuthentication {
-        let request: BrowserMobileHTTPAuthentication
-        let generation: Int
-        let webViewID: ObjectIdentifier
-        let completion: @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
-    }
-
-    private final class DownloadHandoff {
-        // MARK: Lifecycle
-
-        init(record: Record, coordinator: BrowserMobileDownloads, sourceURL: URL?) {
-            self.runtimeID = record.id
-            self.generation = record.generation
-            self.coordinator = coordinator
-            self.sourceURL = sourceURL
-        }
-
-        // MARK: Internal
-
-        let runtimeID: String
-        let generation: Int
-        weak var coordinator: BrowserMobileDownloads?
-        let sourceURL: URL?
-    }
-
-    private final class Record {
-        // MARK: Lifecycle
-
-        init(id: String, url: URL?) {
-            self.id = id
-            self.state = BrowserMobilePageState(url: url)
-            self.retryLoad = .url(url ?? URL(string: "about:blank")!)
-        }
-
-        // MARK: Internal
-
-        let id: String
-        var webView: WKWebView?
-        var state: BrowserMobilePageState
-        var lastEmitted: BrowserMobilePageState?
-        var observations = [NSKeyValueObservation]()
-        var retryLoad: RetryLoad
-        var committedState: BrowserMobilePageState?
-        var committedRetryLoad: RetryLoad?
-        var isRestoringDownloadedDocument = false
-        var generation = 0
-        var currentNavigation: WKNavigation?
-        // Weak keys retain generation information while WebKit can deliver that
-        // navigation, without an ever-growing set of canceled navigation IDs.
-        let navigationGenerations = NSMapTable<WKNavigation, NSNumber>.weakToStrongObjects()
-        var allowsPageMetadata = false
-        var hasStartedCurrentNavigation = false
-        var hasCommittedDialogDocument = false
-        var isReplacingDialogDocument = false
-        // Keep the accepted document URL independently of WKWebView.url and
-        // WKFrameInfo, which can already report a fragment target before policy.
-        var dialogDocumentURL: URL?
-    }
-
-    private let dataStore: WKWebsiteDataStore
-    private var records = [String: Record]()
-    private var idsByWebView = [ObjectIdentifier: String]()
-    private weak var mountedWebView: WKWebView?
-    private var isShutDown = false
-    private var selectedRuntimeID: String?
-    private var isDialogPresentationActive = false
-    private var pendingDialog: PendingDialog?
-    private var isFinishingDialog = false
-    private var pendingAuthentication: PendingAuthentication?
-    private var isFinishingAuthentication = false
-    private var downloads: BrowserMobileDownloads?
-    private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
-    private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
-
-    private static func authenticationOrigin(_ space: URLProtectionSpace) -> String? {
-        let unsafeHostScalars = CharacterSet.whitespacesAndNewlines
-            .union(.controlCharacters)
-            .union(CharacterSet(charactersIn: "/\\?#@"))
-        guard space.authenticationMethod == NSURLAuthenticationMethodHTTPBasic, !space.isProxy(),
-              let scheme = space.protocol?.lowercased(), scheme == "http" || scheme == "https",
-              !space.host.isEmpty, (0...65535).contains(space.port),
-              !space.host.unicodeScalars.contains(where: unsafeHostScalars.contains)
-        else { return nil }
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = space.host
-        if space.port > 0, !(scheme == "http" && space.port == 80), !(scheme == "https" && space.port == 443) {
-            components.port = space.port
-        }
-        guard let url = components.url, url.host?.isEmpty == false else { return nil }
-        return url.absoluteString
-    }
-
-    private static func dialogOrigin(_ frame: WKFrameInfo) -> String {
-        let origin = frame.securityOrigin
-        guard !origin.host.isEmpty, !origin.protocol.isEmpty else {
-            return String(localized: "Unknown origin", table: "Mobile")
-        }
-        var components = URLComponents()
-        components.scheme = origin.protocol
-        components.host = origin.host
-        if origin.port > 0,
-           !(origin.protocol == "https" && origin.port == 443),
-           !(origin.protocol == "http" && origin.port == 80)
-        {
-            components.port = origin.port
-        }
-        return components.string ?? origin.host
-    }
-
-    private static func isFragmentNavigation(from previous: URL?, to next: URL?) -> Bool {
-        guard let previous, let next, previous != next,
-              var previousParts = URLComponents(url: previous, resolvingAgainstBaseURL: false),
-              var nextParts = URLComponents(url: next, resolvingAgainstBaseURL: false)
-        else { return false }
-        previousParts.fragment = nil
-        nextParts.fragment = nil
-        return previousParts == nextParts
-    }
-
-    private static func isAllowed(_ url: URL) -> Bool {
-        switch url.scheme?.lowercased() {
-        case "http", "https": url.host?.isEmpty == false
-        case "about": url.absoluteString.lowercased().split(separator: "#").first == "about:blank"
-        default: false
-        }
-    }
-
-    private static func isAllowed(_ action: WKNavigationAction) -> Bool {
-        guard let url = action.request.url else { return false }
-        if Self.isAllowed(url) {
-            return true
-        }
-        // srcdoc is an embedded HTML document, not an address the browser can
-        // open as a top-level page or external application.
-        return action.targetFrame?.isMainFrame == false
-            && url.absoluteString.lowercased().split(separator: "#").first == "about:srcdoc"
-    }
-
     private func canPresentHTTPAuthentication(_ record: Record) -> Bool {
         guard !isShutDown, isDialogPresentationActive, onEvent != nil,
               records[record.id] === record, selectedRuntimeID == record.id, record.state.error == nil,
@@ -468,7 +465,7 @@ import WebKit
     /// renders the server's 401 document at the challenged address, as
     /// Chromium does after Cancel, and Reload can prompt again.
     private func finishHTTPAuthentication(
-        _ pending: PendingAuthentication, response: BrowserMobileHTTPAuthenticationResponse?
+        _ pending: PendingAuthentication, response: BrowserMobileHTTPAuthenticationResponse?,
     ) {
         guard pendingAuthentication?.request.id == pending.request.id else { return }
         pendingAuthentication = nil
@@ -498,7 +495,7 @@ import WebKit
     }
 
     private func finishJavaScriptDialog(
-        _ pending: PendingDialog, response: BrowserMobileJavaScriptDialogResponse
+        _ pending: PendingDialog, response: BrowserMobileJavaScriptDialogResponse,
     ) {
         guard pendingDialog?.request.id == pending.request.id else { return }
         // Remove ownership before either callback can reenter or answer twice.
@@ -511,7 +508,7 @@ import WebKit
 
     private func ensureWebView(
         _ record: Record,
-        configuration suppliedConfiguration: WKWebViewConfiguration? = nil
+        configuration suppliedConfiguration: WKWebViewConfiguration? = nil,
     ) -> WKWebView {
         if let webView = record.webView {
             return webView
@@ -544,7 +541,7 @@ import WebKit
     }
 
     private func observe(
-        _ keyPath: KeyPath<WKWebView, some Any>, webView: WKWebView, id: String
+        _ keyPath: KeyPath<WKWebView, some Any>, webView: WKWebView, id: String,
     ) -> NSKeyValueObservation {
         webView.observe(keyPath, options: [.new]) { [weak self, weak webView] _, _ in
             Task { @MainActor [weak self, weak webView] in
@@ -558,7 +555,7 @@ import WebKit
     private func navigate(record: Record, url: URL) {
         guard Self.isAllowed(url) else {
             record.state.error = NSLocalizedString(
-                "This address is not supported. Enter an http or https address.", comment: "Unsupported mobile URL."
+                "This address is not supported. Enter an http or https address.", comment: "Unsupported mobile URL.",
             )
             emit(record)
             return
@@ -706,7 +703,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         didReceive challenge: URLAuthenticationChallenge,
-        completionHandler: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        completionHandler: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void,
     ) {
         requestHTTPAuthentication(in: webView, challenge: challenge, completion: completionHandler)
     }
@@ -714,7 +711,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void,
     ) {
         guard let record = record(for: webView), !isShutDown else {
             decisionHandler(.cancel)
@@ -732,7 +729,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             let sourceURL = isGeneratedDownload ? record.committedState?.url : navigationAction.request.url
             actionDownloads.setObject(
                 DownloadHandoff(record: record, coordinator: downloads, sourceURL: sourceURL),
-                forKey: navigationAction
+                forKey: navigationAction,
             )
             decisionHandler(.download)
             return
@@ -742,7 +739,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             if navigationAction.targetFrame?.isMainFrame != false {
                 record.state.error = NSLocalizedString(
                     "This link requires an unsupported app or browser page. Open another web address.",
-                    comment: "Unsupported mobile navigation."
+                    comment: "Unsupported mobile navigation.",
                 )
                 emit(record)
             }
@@ -751,7 +748,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         }
         if let frame = navigationAction.targetFrame, frame.isMainFrame {
             record.isReplacingDialogDocument = !Self.isFragmentNavigation(
-                from: record.dialogDocumentURL, to: navigationAction.request.url
+                from: record.dialogDocumentURL, to: navigationAction.request.url,
             )
             if record.isReplacingDialogDocument, selectedRuntimeID == record.id {
                 dismissFindInPage()
@@ -775,7 +772,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse,
-        decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
+        decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void,
     ) {
         guard let record = record(for: webView), !isShutDown else {
             decisionHandler(.cancel)
@@ -800,7 +797,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         }
         responseDownloads.setObject(
             DownloadHandoff(record: record, coordinator: downloads, sourceURL: navigationResponse.response.url),
-            forKey: navigationResponse
+            forKey: navigationResponse,
         )
         decisionHandler(.download)
     }
@@ -885,7 +882,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         record.hasStartedCurrentNavigation = false
         record.state.isLoading = false
         record.state.error = NSLocalizedString(
-            "The page stopped responding. Tap Reload to try again.", comment: "WebKit process recovery."
+            "The page stopped responding. Tap Reload to try again.", comment: "WebKit process recovery.",
         )
         emit(record)
     }
@@ -898,7 +895,7 @@ extension BrowserWebKitEngine: WKUIDelegate {
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor () -> Void
+        completionHandler: @escaping @MainActor () -> Void,
     ) {
         requestJavaScriptDialog(in: webView, kind: .alert, message: message, origin: Self.dialogOrigin(frame)) { _ in
             completionHandler()
@@ -909,7 +906,7 @@ extension BrowserWebKitEngine: WKUIDelegate {
         _ webView: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor (Bool) -> Void
+        completionHandler: @escaping @MainActor (Bool) -> Void,
     ) {
         requestJavaScriptDialog(in: webView, kind: .confirm, message: message, origin: Self.dialogOrigin(frame)) {
             response in
@@ -926,10 +923,10 @@ extension BrowserWebKitEngine: WKUIDelegate {
         runJavaScriptTextInputPanelWithPrompt prompt: String,
         defaultText: String?,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor (String?) -> Void
+        completionHandler: @escaping @MainActor (String?) -> Void,
     ) {
         requestJavaScriptDialog(
-            in: webView, kind: .prompt(defaultText: defaultText), message: prompt, origin: Self.dialogOrigin(frame)
+            in: webView, kind: .prompt(defaultText: defaultText), message: prompt, origin: Self.dialogOrigin(frame),
         ) { response in
             switch response {
             case .accept(let text): completionHandler(text ?? "")
@@ -942,7 +939,7 @@ extension BrowserWebKitEngine: WKUIDelegate {
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
-        windowFeatures _: WKWindowFeatures
+        windowFeatures _: WKWindowFeatures,
     ) -> WKWebView? {
         guard record(for: webView) != nil, navigationAction.targetFrame == nil else { return nil }
         return adoptPopup(configuration: configuration, url: navigationAction.request.url)

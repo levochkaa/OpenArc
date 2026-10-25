@@ -1,3 +1,5 @@
+// BrowserSitePermissions.swift
+
 import AVFoundation
 import CoreLocation
 import Foundation
@@ -6,7 +8,7 @@ import Foundation
 // MARK: - BrowserSitePermissionKind
 
 /// What a page asks for, as Chrome names it in its prompts.
-enum BrowserSitePermissionKind: String, Codable, CaseIterable, Sendable {
+enum BrowserSitePermissionKind: String, Codable, CaseIterable {
     case camera
     case microphone
     case location
@@ -66,7 +68,7 @@ enum BrowserSitePermissionKind: String, Codable, CaseIterable, Sendable {
 // MARK: - BrowserSitePermissionRequest
 
 /// A page's pending request, identified by the engine's request number.
-struct BrowserSitePermissionRequest: Identifiable, Equatable, Sendable {
+struct BrowserSitePermissionRequest: Identifiable, Equatable {
     static let peekTabIDPrefix = "peek:"
 
     let id: Int
@@ -103,7 +105,7 @@ struct BrowserSitePermissionRequest: Identifiable, Equatable, Sendable {
 // MARK: - BrowserSitePermissionDecision
 
 /// A remembered camera or microphone answer for one origin of one profile.
-struct BrowserSitePermissionDecision: Codable, Equatable, Sendable {
+struct BrowserSitePermissionDecision: Codable, Equatable {
     let profileID: String
     let origin: String
     let kind: BrowserSitePermissionKind
@@ -115,7 +117,7 @@ struct BrowserSitePermissionDecision: Codable, Equatable, Sendable {
     static func remembered(
         for request: BrowserSitePermissionRequest,
         profileID: String,
-        in decisions: [BrowserSitePermissionDecision]
+        in decisions: [BrowserSitePermissionDecision],
     ) -> Bool? {
         guard let origin = BrowserSitePermissionRequest.origin(ofURLString: request.origin) else { return nil }
         var isComplete = true
@@ -139,7 +141,7 @@ struct BrowserSitePermissionDecision: Codable, Equatable, Sendable {
         _ allowed: Bool,
         for request: BrowserSitePermissionRequest,
         profileID: String,
-        in decisions: [BrowserSitePermissionDecision]
+        in decisions: [BrowserSitePermissionDecision],
     ) -> [BrowserSitePermissionDecision] {
         guard let origin = BrowserSitePermissionRequest.origin(ofURLString: request.origin) else { return decisions }
         let kinds = Set(request.kinds.filter(\.isMediaCapture))
@@ -160,7 +162,8 @@ enum BrowserNotificationAuthorization {
             let center = UNUserNotificationCenter.current()
             let settings = await center.notificationSettings()
             switch settings.authorizationStatus {
-            case .authorized, .provisional:
+            case .authorized,
+                 .provisional:
                 completion(true)
             case .denied:
                 completion(false)
@@ -188,7 +191,7 @@ enum BrowserMediaCaptureAuthorization {
 
     @MainActor static func request(
         _ kinds: [BrowserSitePermissionKind],
-        completion: @escaping @MainActor (Bool) -> Void
+        completion: @escaping @MainActor (Bool) -> Void,
     ) {
         var mediaTypes = [AVMediaType]()
         if kinds.contains(.camera) {
@@ -204,7 +207,7 @@ enum BrowserMediaCaptureAuthorization {
 
     @MainActor private static func request(
         _ mediaTypes: ArraySlice<AVMediaType>,
-        completion: @escaping @MainActor (Bool) -> Void
+        completion: @escaping @MainActor (Bool) -> Void,
     ) {
         guard let mediaType = mediaTypes.first else {
             completion(true)
@@ -249,6 +252,26 @@ enum BrowserLocationAuthorization {
 
     static let shared = LocationAuthorizationRequester()
 
+    // MARK: Private
+
+    private lazy var manager: CLLocationManager = {
+        let manager = CLLocationManager()
+        manager.delegate = self
+        return manager
+    }()
+
+    private var waitingRequests = [@MainActor (Bool) -> Void]()
+
+    /// Nil until the user answers macOS.
+    private var granted: Bool? {
+        switch manager.authorizationStatus {
+        case .authorizedAlways,
+             .authorizedWhenInUse: true
+        case .notDetermined: nil
+        default: false
+        }
+    }
+
     func request(completion: @escaping @MainActor (Bool) -> Void) {
         if let granted {
             completion(granted)
@@ -263,25 +286,6 @@ enum BrowserLocationAuthorization {
     /// Also called once when the manager starts, with the current status.
     nonisolated func locationManagerDidChangeAuthorization(_: CLLocationManager) {
         MainActor.assumeIsolated { answerWaitingRequests() }
-    }
-
-    // MARK: Private
-
-    private lazy var manager: CLLocationManager = {
-        let manager = CLLocationManager()
-        manager.delegate = self
-        return manager
-    }()
-
-    private var waitingRequests = [@MainActor (Bool) -> Void]()
-
-    /// Nil until the user answers macOS.
-    private var granted: Bool? {
-        switch manager.authorizationStatus {
-        case .authorizedAlways, .authorizedWhenInUse: true
-        case .notDetermined: nil
-        default: false
-        }
     }
 
     private func answerWaitingRequests() {

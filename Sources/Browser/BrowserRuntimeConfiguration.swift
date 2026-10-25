@@ -1,7 +1,16 @@
+// BrowserRuntimeConfiguration.swift
+
 import Foundation
 
 @objcMembers public final class BrowserRuntimeConfiguration: NSObject {
-    // MARK: Lifecycle
+    // MARK: Public
+
+    public let helperExecutablePath: String
+    public let frameworkPath: String
+    public let mainBundlePath: String
+    public let rootCachePath: String
+    public let cachePath: String
+    public let sessionStoragePath: String
 
     private init(
         helperExecutablePath: String,
@@ -9,7 +18,7 @@ import Foundation
         mainBundlePath: String,
         rootCachePath: String,
         cachePath: String,
-        sessionStoragePath: String
+        sessionStoragePath: String,
     ) {
         self.helperExecutablePath = helperExecutablePath
         self.frameworkPath = frameworkPath
@@ -19,15 +28,6 @@ import Foundation
         self.sessionStoragePath = sessionStoragePath
         super.init()
     }
-
-    // MARK: Public
-
-    public let helperExecutablePath: String
-    public let frameworkPath: String
-    public let mainBundlePath: String
-    public let rootCachePath: String
-    public let cachePath: String
-    public let sessionStoragePath: String
 
     @objc(currentConfiguration) public static func currentConfiguration() -> BrowserRuntimeConfiguration? {
         let fileManager = FileManager.default
@@ -53,7 +53,7 @@ import Foundation
         let sessionStoragePath = browserSupportPath
             .appendingPathComponent(
                 BrowserRuntimeIdentity.sessionDirectoryName(suffix: runtimeSuffix),
-                isDirectory: true
+                isDirectory: true,
             )
         let rootCacheDirectory = BrowserRuntimeIdentity.rootCacheDirectoryName(suffix: runtimeSuffix)
         let rootCachePath = browserSupportPath
@@ -70,7 +70,7 @@ import Foundation
 
         BrowserNativeMessagingHostInstaller.installApplePasswordManagerHostIfAvailable(
             in: rootCachePath,
-            fileManager: fileManager
+            fileManager: fileManager,
         )
 
         return BrowserRuntimeConfiguration(
@@ -79,7 +79,7 @@ import Foundation
             mainBundlePath: bundlePath,
             rootCachePath: rootCachePath.path,
             cachePath: cachePath.path,
-            sessionStoragePath: sessionStoragePath.path
+            sessionStoragePath: sessionStoragePath.path,
         )
     }
 }

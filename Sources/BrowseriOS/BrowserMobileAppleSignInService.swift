@@ -1,3 +1,5 @@
+// BrowserMobileAppleSignInService.swift
+
 import AuthenticationServices
 import UIKit
 
@@ -11,7 +13,18 @@ import UIKit
 // MARK: - BrowserMobileAppleSignInService
 
 @MainActor final class BrowserMobileAppleSignInService: NSObject, BrowserAppleIdentityProviding {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private struct Pending {
+        let id: UUID
+        let window: UIWindow
+        let request: any BrowserMobileAppleAuthorizationRequest
+        let continuation: CheckedContinuation<String, Error>
+    }
+
+    private weak var presentationWindow: UIWindow?
+    private let requestFactory: @MainActor (UIWindow) -> any BrowserMobileAppleAuthorizationRequest
+    private var pending: Pending?
 
     init(requestFactory: (@MainActor (UIWindow) -> any BrowserMobileAppleAuthorizationRequest)? = nil) {
         self.requestFactory = requestFactory ?? { BrowserMobileNativeAppleAuthorizationRequest(window: $0) }
@@ -21,7 +34,7 @@ import UIKit
                 self,
                 selector: #selector(sceneDeactivated(_:)),
                 name: name,
-                object: nil
+                object: nil,
             )
         }
     }
@@ -57,19 +70,6 @@ import UIKit
         guard let id = pending?.id else { return }
         cancel(id: id)
     }
-
-    // MARK: Private
-
-    private struct Pending {
-        let id: UUID
-        let window: UIWindow
-        let request: any BrowserMobileAppleAuthorizationRequest
-        let continuation: CheckedContinuation<String, Error>
-    }
-
-    private weak var presentationWindow: UIWindow?
-    private let requestFactory: @MainActor (UIWindow) -> any BrowserMobileAppleAuthorizationRequest
-    private var pending: Pending?
 
     private func cancel(id: UUID) {
         guard let attempt = pending, attempt.id == id else { return }
@@ -114,7 +114,11 @@ enum BrowserMobileAppleSignInError: LocalizedError {
     BrowserMobileAppleAuthorizationRequest, ASAuthorizationControllerDelegate,
     ASAuthorizationControllerPresentationContextProviding
 {
-    // MARK: Lifecycle
+    // MARK: Private
+
+    private let window: UIWindow
+    private var controller: ASAuthorizationController?
+    private var completion: (@MainActor (Result<String, Error>) -> Void)?
 
     init(window: UIWindow) {
         self.window = window
@@ -144,7 +148,7 @@ enum BrowserMobileAppleSignInError: LocalizedError {
 
     func authorizationController(
         controller: ASAuthorizationController,
-        didCompleteWithAuthorization authorization: ASAuthorization
+        didCompleteWithAuthorization authorization: ASAuthorization,
     ) {
         guard controller === self.controller else { return }
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
@@ -160,12 +164,6 @@ enum BrowserMobileAppleSignInError: LocalizedError {
         guard controller === self.controller else { return }
         finish(.failure(error))
     }
-
-    // MARK: Private
-
-    private let window: UIWindow
-    private var controller: ASAuthorizationController?
-    private var completion: (@MainActor (Result<String, Error>) -> Void)?
 
     private func finish(_ result: Result<String, Error>) {
         let callback = completion

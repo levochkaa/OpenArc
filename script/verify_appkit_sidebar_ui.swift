@@ -1,3 +1,5 @@
+// verify_appkit_sidebar_ui.swift
+
 import AppKit
 import ApplicationServices
 import Carbon
@@ -42,7 +44,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(
         size as! AXValue,
         .cgSize,
-        &dimensions
+        &dimensions,
     ) else { return nil }
     return CGRect(origin: point, size: dimensions)
 }
@@ -92,7 +94,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     defer { TISSelectInputSource(keyboard) }
     try require(
         TISSelectInputSource(TISCopyCurrentASCIICapableKeyboardInputSource().takeRetainedValue()) == noErr,
-        "Cannot select ASCII input"
+        "Cannot select ASCII input",
     )
     try require(app.activate(), "Cannot activate browser")
     func elements() -> [AXUIElement] { (attribute(ax, kAXWindowsAttribute) as? [AXUIElement] ?? [])
@@ -113,10 +115,10 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     }
     func press(_ element: AXUIElement) throws { try require(
         AXUIElementPerformAction(element, kAXPressAction as CFString) == .success,
-        "Cannot press \(id(element))"
+        "Cannot press \(id(element))",
     ) }
     func type(_ text: String, endingWith code: Int? = nil) throws {
-        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let escaped = text.replacing("\\", with: "\\\\").replacing("\"", with: "\\\"")
         try runAppleScript("keystroke \"\(escaped)\"" + (code.map { "\nkey code \($0)" } ?? ""), pid: pid)
     }
     func open(_ title: String) throws {
@@ -124,18 +126,18 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         try "<html><head><title>\(title)</title></head><body><h1>\(title)</h1></body></html>".write(
             to: fixture,
             atomically: true,
-            encoding: .utf8
+            encoding: .utf8,
         )
         try runAppleScript("click menu item \"New Tab\" of menu 1 of menu bar item \"File\" of menu bar 1", pid: pid)
         try waitFor("focused command field") { element("browser.command.query").flatMap { attribute(
             $0,
-            kAXFocusedAttribute
+            kAXFocusedAttribute,
         ) as? Bool } == true }
         try type(fixture.absoluteString, endingWith: 36)
         try waitFor("tab \(title)") { row(title) != nil }
     }
     func editField(for row: AXUIElement) -> AXUIElement? {
-        element(id(row).replacingOccurrences(of: "browser.sidebar.tab.", with: "browser.sidebar.rename-tab."))
+        element(id(row).replacing("browser.sidebar.tab.", with: "browser.sidebar.rename-tab."))
     }
     func clickAt(_ point: CGPoint, button: CGMouseButton = .left) {
         let down: CGEventType = button == .right ? .rightMouseDown : .leftMouseDown
@@ -162,7 +164,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
                 mouseEventSource: nil,
                 mouseType: .leftMouseDragged,
                 mouseCursorPosition: point,
-                mouseButton: .left
+                mouseButton: .left,
             )?.post(tap: .cghidEventTap)
         }
         CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?
@@ -236,7 +238,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try require(pinnedAFrame.minY < newTabFrame.minY, "Folder must include the active temporary tab")
     try require(
         pinnedCFrame.minY < newTabFrame.minY,
-        "Folder must include the clicked pinned tab"
+        "Folder must include the clicked pinned tab",
     )
     print("PASS sidebar folder: context menu includes clicked and active tabs")
 
@@ -247,7 +249,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         mouseEventSource: nil,
         mouseType: .mouseMoved,
         mouseCursorPosition: CGPoint(x: activeFrame.midX, y: activeFrame.midY),
-        mouseButton: .left
+        mouseButton: .left,
     )?.post(tap: .cghidEventTap)
     try waitFor("Clear appears on hover") { element("browser.sidebar.clear-temporary") != nil }
     try press(element("browser.sidebar.clear-temporary")!)
@@ -262,7 +264,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try waitFor("native downloads popover") { element("browser.downloads.popover") != nil }
     try require(
         element("browser.downloads.clear-finished").flatMap { attribute($0, kAXEnabledAttribute) as? Bool } == false,
-        "Empty downloads must disable Clear Finished"
+        "Empty downloads must disable Clear Finished",
     )
     try runAppleScript("key code 53", pid: pid)
     try waitFor("Escape closes downloads") { element("browser.downloads.popover") == nil }
@@ -276,7 +278,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try waitFor("new space appears") { spaceButtons().count == existingSpaceIDs.count + 1 }
     guard let newSpaceButton = spaceButtons().first(where: { !existingSpaceIDs.contains(id($0)) })
     else { throw UIError.failed("Missing new space") }
-    let newSpaceID = id(newSpaceButton).replacingOccurrences(of: "browser.sidebar.select-space.", with: "")
+    let newSpaceID = id(newSpaceButton).replacing("browser.sidebar.select-space.", with: "")
     let newHeaderID = "browser.sidebar.space-header." + newSpaceID
     try press(element(newHeaderID)!)
     let renameSpaceID = "browser.sidebar.rename-space." + newSpaceID
@@ -299,7 +301,9 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     print("PASS spaces: create, rename, mouse swipe, context-menu delete")
 }
 
-do { try MainActor.assumeIsolated { try verifySidebar() } }
-catch { fputs("FAIL \(error)\n", stderr)
+do {
+    try MainActor.assumeIsolated { try verifySidebar() }
+} catch {
+    fputs("FAIL \(error)\n", stderr)
     exit(1)
 }

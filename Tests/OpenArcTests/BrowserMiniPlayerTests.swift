@@ -1,3 +1,5 @@
+// BrowserMiniPlayerTests.swift
+
 import AppKit
 import Testing
 
@@ -9,7 +11,9 @@ import Testing
 
     @Test func tabsOffScreenWithSoundGetMiniPlayersThatStayWhilePaused() {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
-        let (x, y, z) = (f.id("x"), f.id("y"), f.id("z"))
+        let x = f.id("x")
+        let y = f.id("y")
+        let z = f.id("z")
         f.model.selectTab(id: x)
         play(f, x, audible: true)
         #expect(f.model.audibleTabIDs == [x])
@@ -43,7 +47,8 @@ import Testing
 
     @Test func aVideoInPictureInPictureHasNoMiniPlayer() {
         let f = SidebarDragFixture(temporary: ["x", "y"])
-        let (x, y) = (f.id("x"), f.id("y"))
+        let x = f.id("x")
+        let y = f.id("y")
         f.model.selectTab(id: x)
         play(f, x, audible: true, video: true)
         f.model.selectTab(id: y)
@@ -53,7 +58,8 @@ import Testing
 
     @Test func controlsReachTheEngineAndBackToTabShowsTheTab() throws {
         let f = SidebarDragFixture(temporary: ["x", "y"])
-        let (x, y) = (f.id("x"), f.id("y"))
+        let x = f.id("x")
+        let y = f.id("y")
         f.model.selectTab(id: y)
         play(f, x, audible: true)
         let stack = BrowserMiniPlayerStackNSView(frame: NSRect(x: 0, y: 0, width: 212, height: 32))
@@ -88,7 +94,7 @@ import Testing
                 isPlaying: id == "a",
                 hasPreviousTrack: false,
                 hasNextTrack: true,
-                isMuted: false
+                isMuted: false,
             )
         }
         stack.update(items: items)
@@ -131,7 +137,7 @@ import Testing
         _ id: String,
         audible: Bool,
         playing: Bool = true,
-        video: Bool = false
+        video: Bool = false,
     ) {
         f.driver.onMediaStateChanged?(id, BrowserTabMediaState(
             isPlaying: playing,
@@ -139,7 +145,7 @@ import Testing
             video: video,
             hasPreviousTrack: false,
             hasNextTrack: true,
-            title: "Song"
+            title: "Song",
         ))
     }
 
