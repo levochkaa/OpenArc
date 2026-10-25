@@ -95,6 +95,7 @@ import Foundation
     private(set) var pictureInPictureRequests = [(tabID: String, active: Bool)]()
     private(set) var castCount = 0
     var webAppManifestPayloadJSON: String?
+    var selectedText: String?
     private(set) var webAppManifestRequestCount = 0
     private(set) var zoomLevels = [Double]()
     private(set) var audioMuteRequests = [(tabID: String, muted: Bool)]()
@@ -285,6 +286,10 @@ import Foundation
     func requestActiveTabWebAppManifest() -> String? {
         webAppManifestRequestCount += 1
         return webAppManifestPayloadJSON
+    }
+
+    func requestActiveTabSelectedText() -> String? {
+        selectedText
     }
 
     func setActiveTabZoomLevel(_ zoomLevel: Double) {

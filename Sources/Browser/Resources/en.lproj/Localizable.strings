@@ -283,6 +283,7 @@
 "browser.menu.select_next_space" = "Next Space";
 "browser.menu.select_previous_space" = "Previous Space";
 "browser.menu.copy_link_as_markdown" = "Copy URL as Markdown";
+"browser.menu.copy_link_as_quote" = "Copy URL as Quote";
 "browser.menu.reveal_current_tab" = "Reveal Current Tab";
 "browser.menu.open_extensions" = "Open Extensions";
 "browser.settings.downloads" = "Downloads";

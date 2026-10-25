@@ -209,6 +209,9 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)requestActiveTabWebAppManifestWithCompletion:
     (void (^)(NSString * _Nullable payloadJSON))completion
     NS_SWIFT_NAME(requestActiveTabWebAppManifest(completion:));
+/// The text selected in the active page, or nil without a selection.
+- (void)requestActiveTabSelectedTextWithCompletion:(void (^)(NSString * _Nullable text))completion
+    NS_SWIFT_NAME(requestActiveTabSelectedText(completion:));
 - (void)setActiveTabZoomLevel:(double)zoomLevel;
 /// NAN without an attached page or off the UI thread.
 - (double)zoomLevelForTabWithID:(NSString *)tabID NS_SWIFT_NAME(zoomLevel(forTabWithID:));

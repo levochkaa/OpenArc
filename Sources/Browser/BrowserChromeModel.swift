@@ -526,6 +526,12 @@ enum BrowserWindowMode: Equatable {
         selectedTab != nil
     }
 
+    /// A web page can be quoted; whether text is selected is known only on copying.
+    var canCopySelectedTextAsQuoteLink: Bool {
+        selectedTab.flatMap { URLComponents(string: $0.urlString)?.scheme?.lowercased() }
+            .map { ["http", "https"].contains($0) } ?? false
+    }
+
     var canInstallSelectedSiteAsApp: Bool {
         guard
             !windowMode.isIncognito,
@@ -2096,6 +2102,21 @@ enum BrowserWindowMode: Equatable {
             BrowserMarkdownLink.text(title: selectedTab.displayTitle, urlString: selectedTab.urlString),
             forType: .string
         )
+    }
+
+    /// Copy URL as Quote with no server: a link that opens the page at
+    /// the selected text and highlights it, as a text fragment Chromium and
+    /// Safari follow.
+    @discardableResult func copySelectedTextAsQuoteLink() async -> Bool {
+        guard let tab = selectedTab else { return false }
+        let text = await tabDriver.requestActiveTabSelectedText() ?? ""
+        guard selectedTabID == tab.id,
+              let link = BrowserQuoteLink.urlString(pageURLString: tab.urlString, quote: text)
+        else { return false }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(link, forType: .URL)
+        return pasteboard.setString(link, forType: .string)
     }
 
     @discardableResult func copyTabLink(forTabID tabID: String) -> Bool {
@@ -4157,6 +4178,8 @@ enum BrowserWindowMode: Equatable {
             canPrintPage
         case .copyLink, .copyLinkAsMarkdown:
             canCopySelectedTabLink
+        case .copyLinkAsQuote:
+            canCopySelectedTextAsQuoteLink
         case .findInPage:
             canPresentFindInPage
         case .findAndReplace, .jumpToSelection:
@@ -6689,6 +6712,8 @@ extension BrowserCommandID {
             ["copy link", "copy url", "copy address", "copy current url"]
         case .copyLinkAsMarkdown:
             ["copy markdown", "markdown link", "copy url as markdown", "copy link as markdown"]
+        case .copyLinkAsQuote:
+            ["copy quote", "quote link", "copy url as quote", "link to highlight", "link to text"]
         case .findInPage:
             ["find", "find in page", "search page"]
         case .findAndReplace:
@@ -6835,6 +6860,8 @@ extension BrowserCommandID {
             "link"
         case .copyLinkAsMarkdown:
             "text.badge.plus"
+        case .copyLinkAsQuote:
+            "text.quote"
         case .findInPage:
             "doc.text.magnifyingglass"
         case .findAndReplace:
@@ -7038,6 +7065,50 @@ private enum BrowserTabPreviewCapture {
         let image = NSImage(size: view.bounds.size)
         image.addRepresentation(bitmap)
         return image
+    }
+}
+
+// MARK: - BrowserQuoteLink
+
+enum BrowserQuoteLink {
+    // MARK: Internal
+
+    /// Chromium links a highlight by its exact text up to this length.
+    static let exactTextLimit = 300
+
+    /// The page's address with a text fragment for the quote: its exact text,
+    /// or its first and last words when it is long or spans paragraphs.
+    /// Nil without words or for a page that is not on the web.
+    static func urlString(pageURLString: String, quote: String) -> String? {
+        let lines = quote.split(whereSeparator: \.isNewline)
+            .map { line in line.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            .filter { line in !line.isEmpty }
+        guard let first = lines.first, let last = lines.last,
+              var components = URLComponents(string: pageURLString),
+              ["http", "https"].contains(components.scheme?.lowercased() ?? "")
+        else { return nil }
+        let text = lines.joined(separator: " ")
+        let directive: String
+        if lines.count == 1, text.count <= exactTextLimit {
+            directive = encoded(text)
+        } else {
+            let start = first.split(separator: " ").prefix(4).joined(separator: " ")
+            let end = last.split(separator: " ").suffix(4).joined(separator: " ")
+            directive = encoded(start) + "," + encoded(end)
+        }
+        // The page's own fragment stays; an earlier highlight does not.
+        let fragment = components.percentEncodedFragment?.components(separatedBy: ":~:").first ?? ""
+        components.percentEncodedFragment = fragment + ":~:text=" + directive
+        return components.string
+    }
+
+    // MARK: Private
+
+    /// Percent-encodes the characters that separate text fragment parts.
+    private static func encoded(_ text: String) -> String {
+        var allowed = CharacterSet.urlFragmentAllowed
+        allowed.remove(charactersIn: "&,-#%")
+        return text.addingPercentEncoding(withAllowedCharacters: allowed) ?? text
     }
 }
 

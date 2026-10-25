@@ -354,6 +354,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.copySelectedTabLinkAsMarkdown()
     }
 
+    public func copySelectedTextAsQuoteLink(_: Any?) {
+        guard let model = activeChromeModel else { return }
+        Task { @MainActor in
+            if await !model.copySelectedTextAsQuoteLink() {
+                NSSound.beep()
+            }
+        }
+    }
+
     public func selectNextTab(_: Any?) {
         activeChromeModel?.selectAdjacentSidebarItem(offset: 1)
     }
@@ -681,6 +690,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canRevealSelectedTab ?? false
         case #selector(copySelectedTabLinkAsMarkdown(_:)):
             return activeChromeModel?.canCopySelectedTabLink ?? false
+        case #selector(copySelectedTextAsQuoteLink(_:)):
+            return activeChromeModel?.canCopySelectedTextAsQuoteLink ?? false
         case #selector(viewDownloads(_:)):
             return activeChromeModel?.onToggleDownloads != nil
         case #selector(goToLastSidebarItem(_:)), #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)):
@@ -1147,6 +1158,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             makeMenuItem(
                 descriptor: shortcutStore.descriptor(for: .copyLinkAsMarkdown),
                 action: #selector(copySelectedTabLinkAsMarkdown(_:))
+            )
+        )
+        editMenu.addItem(
+            makeMenuItem(
+                descriptor: shortcutStore.descriptor(for: .copyLinkAsQuote),
+                action: #selector(copySelectedTextAsQuoteLink(_:))
             )
         )
         editMenu.addItem(
@@ -2140,6 +2157,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return true
         case .copyLinkAsMarkdown:
             return activeChromeModel?.copySelectedTabLinkAsMarkdown() ?? false
+        case .copyLinkAsQuote:
+            guard activeChromeModel?.canCopySelectedTextAsQuoteLink == true else { return false }
+            copySelectedTextAsQuoteLink(nil)
+            return true
         case .revealCurrentTab:
             return activeChromeModel?.revealSelectedTabInSidebar() ?? false
         case .openExtensions:

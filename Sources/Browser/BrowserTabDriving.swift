@@ -110,6 +110,8 @@ struct BrowserTabVisibleLayout: Equatable, Sendable {
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String)
     func castActiveTab()
     func requestActiveTabWebAppManifest() async -> String?
+    /// The text selected in the active page; empty or nil without a selection.
+    func requestActiveTabSelectedText() async -> String?
     func setActiveTabZoomLevel(_ zoomLevel: Double)
     /// The page's current zoom level, or nil without an attached page.
     func zoomLevel(forTabWithID tabID: String) -> Double?

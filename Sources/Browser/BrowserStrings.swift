@@ -1419,6 +1419,11 @@ enum BrowserStrings {
         comment: "Edit menu and command title that copies the page as a Markdown link."
     )
 
+    static let menuCopyLinkAsQuote = NSLocalizedString(
+        "browser.menu.copy_link_as_quote",
+        comment: "Edit menu and command title that copies a link to the text selected in the page."
+    )
+
     static let menuSelectNextTab = NSLocalizedString(
         "browser.menu.select_next_tab",
         comment: "View menu and command title that selects the next item in the sidebar."

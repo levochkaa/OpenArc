@@ -439,6 +439,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case printPage
     case copyLink
     case copyLinkAsMarkdown
+    case copyLinkAsQuote
     case findInPage
     case findAndReplace
     case findNext
@@ -645,6 +646,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.selectPreviousSpace
         case .copyLinkAsMarkdown:
             BrowserCommands.copyLinkAsMarkdown
+        case .copyLinkAsQuote:
+            BrowserCommands.copyLinkAsQuote
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             BrowserCommands.goToSidebarItem(sidebarItemIndex)
@@ -793,6 +796,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .selectPreviousSpace
         case .copyLinkAsMarkdown:
             .copyLinkAsMarkdown
+        case .copyLinkAsQuote:
+            .copyLinkAsQuote
         case .goToSidebarItem1, .goToSidebarItem2, .goToSidebarItem3, .goToSidebarItem4,
              .goToSidebarItem5, .goToSidebarItem6, .goToSidebarItem7, .goToSidebarItem8:
             .goToSidebarItem(sidebarItemIndex)

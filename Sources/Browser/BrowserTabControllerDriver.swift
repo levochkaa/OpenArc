@@ -190,6 +190,14 @@ import Foundation
         }
     }
 
+    func requestActiveTabSelectedText() async -> String? {
+        await withCheckedContinuation { continuation in
+            controller.requestActiveTabSelectedText { text in
+                continuation.resume(returning: text)
+            }
+        }
+    }
+
     func resolveSitePermissionRequest(_ id: Int, allowed: Bool?) {
         controller.resolveSitePermissionRequest(id, allowed: allowed.map { NSNumber(value: $0) })
     }

@@ -553,6 +553,13 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .option, .shift])
     )
 
+    /// Copy URL as Quote is Control-Shift-Command-C.
+    static let copyLinkAsQuote = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuCopyLinkAsQuote,
+        helpTitle: BrowserStrings.menuCopyLinkAsQuote,
+        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .control, .shift])
+    )
+
     /// Go to last Sidebar Item is Command-9.
     static let goToLastSidebarItem = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuGoToLastSidebarItem,
@@ -685,6 +692,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case revealCurrentTab
     case openExtensions
     case copyLinkAsMarkdown
+    case copyLinkAsQuote
     /// Go to Sidebar Item N, counted from 0.
     case goToSidebarItem(Int)
     case goToLastSidebarItem

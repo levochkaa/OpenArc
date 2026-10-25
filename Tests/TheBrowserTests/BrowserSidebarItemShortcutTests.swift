@@ -116,6 +116,55 @@ import Testing
         ))
     }
 
+    @Test func quoteLinksHighlightTheSelectedText() {
+        let page = "https://example.com/a?b=1"
+        #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: "  Hello,   world - again & more ")
+            == "https://example.com/a?b=1#:~:text=Hello%2C%20world%20%2D%20again%20%26%20more")
+        // The page's own fragment stays; an earlier highlight is replaced.
+        #expect(BrowserQuoteLink.urlString(pageURLString: "https://e.com/#intro:~:text=old", quote: "new")
+            == "https://e.com/#intro:~:text=new")
+        // Long quotes and quotes across paragraphs keep their first and last words.
+        let long = Array(repeating: "word", count: 80).joined(separator: " ") + " the very end"
+        #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: "One two three four five\nsix seven")
+            == "https://example.com/a?b=1#:~:text=One%20two%20three%20four,six%20seven")
+        #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: long)?
+            .hasSuffix("#:~:text=word%20word%20word%20word,word%20the%20very%20end") == true)
+        #expect(BrowserQuoteLink.urlString(pageURLString: page, quote: " \n ") == nil)
+        #expect(BrowserQuoteLink.urlString(pageURLString: "tb://settings", quote: "x") == nil)
+        #expect(BrowserCommands.copyLinkAsQuote.shortcut == BrowserKeyboardShortcut(
+            "c",
+            modifiers: [.command, .control, .shift]
+        ))
+    }
+
+    @Test func copyURLAsQuoteCopiesALinkToTheSelection() async {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.canCopySelectedTextAsQuoteLink)
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.pasteboardItems?.map { item in
+            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+                item.data(forType: type).map { (type, $0) }
+            })
+        } ?? []
+        defer {
+            pasteboard.clearContents()
+            pasteboard.writeObjects(saved.map { types in
+                let item = NSPasteboardItem()
+                for (type, data) in types {
+                    item.setData(data, forType: type)
+                }
+                return item
+            })
+        }
+        f.driver.selectedText = "Example text"
+        #expect(await f.model.copySelectedTextAsQuoteLink())
+        #expect(pasteboard.string(forType: .string) == "https://x.example#:~:text=Example%20text")
+        #expect(pasteboard.string(forType: .URL) == "https://x.example#:~:text=Example%20text")
+        f.driver.selectedText = ""
+        #expect(await !f.model.copySelectedTextAsQuoteLink())
+    }
+
     @Test func openLocationEditsTheFocusedPaneURL() {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         #expect(BrowserCommands.openLocation.shortcut == BrowserKeyboardShortcut("l"))

@@ -60,7 +60,8 @@ constexpr char kPageLayoutMetricsMethod[] = "Page.getLayoutMetrics";
 constexpr char kPageCaptureScreenshotMethod[] = "Page.captureScreenshot";
 // CEF creates a page in well under a second; a page missing this long is lost.
 constexpr double kBrowserCreationTimeoutSeconds = 30;
-constexpr char kWebAppManifestMethod[] = "Runtime.evaluate";
+constexpr char kRuntimeEvaluateMethod[] = "Runtime.evaluate";
+constexpr char kSelectedTextExpression[] = "String(window.getSelection())";
 
 constexpr char kWebAppManifestExpression[] = R"JS(
 (async () => {
@@ -1611,10 +1612,11 @@ class RegionScreenshotObserver final : public CefDevToolsMessageObserver {
   IMPLEMENT_REFCOUNTING(RegionScreenshotObserver);
 };
 
-class WebAppManifestObserver final : public CefDevToolsMessageObserver {
+/// Evaluates an expression in the page and returns its string value.
+class RuntimeEvaluateObserver final : public CefDevToolsMessageObserver {
  public:
-  explicit WebAppManifestObserver(void (^completion)(NSString *))
-      : completion_([completion copy]) {}
+  RuntimeEvaluateObserver(const char *expression, void (^completion)(NSString *))
+      : expression_(expression), completion_([completion copy]) {}
 
   void Start(CefRefPtr<CefBrowserHost> host) {
     if (!host) {
@@ -1624,12 +1626,12 @@ class WebAppManifestObserver final : public CefDevToolsMessageObserver {
 
     registration_ = host->AddDevToolsMessageObserver(this);
     CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
-    params->SetString("expression", kWebAppManifestExpression);
+    params->SetString("expression", expression_);
     params->SetBool("returnByValue", true);
     params->SetBool("awaitPromise", true);
 
     message_id_ = NextDevToolsMessageID();
-    if (host->ExecuteDevToolsMethod(message_id_, kWebAppManifestMethod,
+    if (host->ExecuteDevToolsMethod(message_id_, kRuntimeEvaluateMethod,
                                     params) == 0) {
       Finish(nil);
     }
@@ -1673,10 +1675,11 @@ class WebAppManifestObserver final : public CefDevToolsMessageObserver {
   }
 
   int message_id_ = 0;
+  const char *expression_;
   CefRefPtr<CefRegistration> registration_;
   void (^completion_)(NSString *);
 
-  IMPLEMENT_REFCOUNTING(WebAppManifestObserver);
+  IMPLEMENT_REFCOUNTING(RuntimeEvaluateObserver);
 };
 
 void SyncBrowserViewFrame(BrowserTabHostView *hostView,
@@ -4205,9 +4208,20 @@ void WatchClickModifiers();
   }
 
   CefRefPtr<CefBrowserHost> host = it->second.browser->GetHost();
-  CefRefPtr<WebAppManifestObserver> observer =
-      new WebAppManifestObserver(completion);
+  CefRefPtr<RuntimeEvaluateObserver> observer =
+      new RuntimeEvaluateObserver(kWebAppManifestExpression, completion);
   observer->Start(host);
+}
+
+- (void)requestActiveTabSelectedTextWithCompletion:(void (^)(NSString *))completion {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    completion(nil);
+    return;
+  }
+  CefRefPtr<RuntimeEvaluateObserver> observer =
+      new RuntimeEvaluateObserver(kSelectedTextExpression, completion);
+  observer->Start(it->second.browser->GetHost());
 }
 
 - (void)setAudioMuted:(BOOL)muted forTabWithID:(NSString *)tabID {
