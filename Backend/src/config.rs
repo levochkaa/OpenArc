@@ -191,7 +191,7 @@ fn sign_in_config(
         google,
         github,
         smtp: smtp_config(&present, issues),
-        email_from: endpoint("OPENARC_EMAIL_FROM", "OpenArc <login@openarc.su>"),
+        email_from: endpoint("OPENARC_EMAIL_FROM", "OpenArc <support@openarc.su>"),
         endpoints: ProviderEndpoints {
             apple_keys: endpoint("OPENARC_APPLE_KEYS_URL", crate::auth::APPLE_KEYS_URL),
             apple_authorize: endpoint("OPENARC_APPLE_AUTHORIZE_URL", "https://appleid.apple.com/auth/authorize"),
