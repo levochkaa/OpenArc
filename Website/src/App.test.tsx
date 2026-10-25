@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
-const releasesApiUrl = "https://updates.openarc.app/v1/releases";
+const releasesApiUrl = "https://api.openarc.su/v1/releases";
 
 const releaseResponse = {
   releases: [
@@ -22,7 +22,7 @@ const releaseResponse = {
           contentType: "text/plain",
           size: 96,
           downloadCount: 4,
-          downloadURL: "https://updates.openarc.app/downloads/OpenArc-1.4.0.sha256",
+          downloadURL: "https://api.openarc.su/downloads/OpenArc-1.4.0.sha256",
         },
         {
           id: 201,
@@ -30,7 +30,7 @@ const releaseResponse = {
           contentType: "application/x-apple-diskimage",
           size: 125_829_120,
           downloadCount: 42,
-          downloadURL: "https://updates.openarc.app/downloads/OpenArc-1.4.0.dmg",
+          downloadURL: "https://api.openarc.su/downloads/OpenArc-1.4.0.dmg",
         },
       ],
     },
@@ -84,7 +84,7 @@ describe("App", () => {
 
   it("loads release notes and points landing download actions at the latest stable installer asset", async () => {
     const fetchMock = mockFetchResponse(releaseResponse);
-    const installerDownloadURL = "https://updates.openarc.app/downloads/OpenArc-1.4.0.dmg";
+    const installerDownloadURL = "https://api.openarc.su/downloads/OpenArc-1.4.0.dmg";
 
     render(<App />);
 
@@ -140,7 +140,7 @@ describe("App", () => {
               contentType: "application/zip",
               size: 8_388_608,
               downloadCount: 7,
-              downloadURL: "https://updates.openarc.app/downloads/OpenArc-1.4.0-symbols.zip",
+              downloadURL: "https://api.openarc.su/downloads/OpenArc-1.4.0-symbols.zip",
             },
             {
               id: 203,
@@ -148,7 +148,7 @@ describe("App", () => {
               contentType: "application/x-apple-diskimage",
               size: 125_829_120,
               downloadCount: 42,
-              downloadURL: "https://updates.openarc.app/downloads/OpenArc-1.4.0.dmg",
+              downloadURL: "https://api.openarc.su/downloads/OpenArc-1.4.0.dmg",
             },
           ],
         },
@@ -160,12 +160,12 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
         "href",
-        "https://updates.openarc.app/downloads/OpenArc-1.4.0.dmg",
+        "https://api.openarc.su/downloads/OpenArc-1.4.0.dmg",
       );
     });
     expect(screen.getByRole("link", { name: /download latest/i })).toHaveAttribute(
       "href",
-      "https://updates.openarc.app/downloads/OpenArc-1.4.0.dmg",
+      "https://api.openarc.su/downloads/OpenArc-1.4.0.dmg",
     );
   });
 

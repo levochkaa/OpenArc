@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: Backend API for OpenArc authentication, device registration, sync, and app updates.
 servers:
-  - url: https://updates.openarc.app
+  - url: https://api.openarc.su
   - url: http://localhost:3000
 tags:
   - name: System

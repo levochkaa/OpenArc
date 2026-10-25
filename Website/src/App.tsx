@@ -30,7 +30,7 @@ type ReleasesResponse = {
 type ReleasesState = "loading" | "ready" | "error";
 
 const fallbackDownloadUrl = "https://github.com/levochkaa/OpenArc/releases/latest";
-const releasesApiUrl = import.meta.env.VITE_RELEASES_API_URL ?? "https://updates.openarc.app/v1/releases";
+const releasesApiUrl = import.meta.env.VITE_RELEASES_API_URL ?? "https://api.openarc.su/v1/releases";
 const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
