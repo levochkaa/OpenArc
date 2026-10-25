@@ -92,10 +92,14 @@ updates_dir="${SPARKLE_UPDATES_DIR:-$release_root/sparkle-updates}"
 work_dir="$release_root/work/$tag"
 archive_name="OpenArc-$short_version-$build_version.zip"
 archive_path="$updates_dir/$archive_name"
-generated_notes_path="$updates_dir/$archive_name.md"
-public_base_url="${OPENARC_UPDATE_PUBLIC_BASE_URL:-https://updates.openarc.app}"
+# generate_appcast pairs release notes by the archive's name without .zip.
+generated_notes_path="$updates_dir/${archive_name%.zip}.md"
+public_base_url="${OPENARC_UPDATE_PUBLIC_BASE_URL:-https://api.openarc.su}"
 download_url_prefix="${OPENARC_UPDATE_DOWNLOAD_URL_PREFIX:-$public_base_url/downloads}"
 release_notes_url_prefix="${OPENARC_UPDATE_RELEASE_NOTES_URL_PREFIX:-$public_base_url/downloads}"
+# A prefix without a trailing slash loses its last path component.
+download_url_prefix="${download_url_prefix%/}/"
+release_notes_url_prefix="${release_notes_url_prefix%/}/"
 maximum_versions="${SPARKLE_MAXIMUM_VERSIONS:-1}"
 maximum_deltas="${SPARKLE_MAXIMUM_DELTAS:-5}"
 sparkle_key_account="${SPARKLE_KEY_ACCOUNT:-OpenArc}"
@@ -144,8 +148,11 @@ if [[ ! -f "$appcast_path" ]]; then
   exit 1
 fi
 
-mapfile -t delta_assets < <(find "$updates_dir" -maxdepth 1 -type f -name '*.delta' -print)
-assets=("$archive_path" "$generated_notes_path" "$appcast_path" "${delta_assets[@]}")
+# macOS ships bash 3.2, which has no mapfile.
+assets=("$archive_path" "$generated_notes_path" "$appcast_path")
+while IFS= read -r delta_asset; do
+  assets+=("$delta_asset")
+done < <(find "$updates_dir" -maxdepth 1 -type f -name '*.delta' -print)
 
 if [[ "$publish" == true ]]; then
   if ! command -v gh >/dev/null 2>&1; then
