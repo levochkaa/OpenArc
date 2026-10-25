@@ -231,7 +231,7 @@ mod tests {
         Config::parse(&HashMap::from([
             ("DATABASE_URL".to_string(), "postgres://test@127.0.0.1/test".to_string()),
             ("JWT_SECRET".to_string(), "test-secret-with-at-least-thirty-two-bytes".to_string()),
-            ("APPLE_CLIENT_IDS".to_string(), "com.thebrowser.desktop,com.thebrowser.mobile".to_string()),
+            ("APPLE_CLIENT_IDS".to_string(), "com.openarc.desktop,com.openarc.mobile".to_string()),
         ]))
         .unwrap()
     }
@@ -254,7 +254,7 @@ mod tests {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let key = EncodingKey::from_secret(b"test-secret-with-at-least-thirty-two-bytes");
         let sign = |claims: serde_json::Value| encode(&Header::new(Algorithm::HS256), &claims, &key).unwrap();
-        let base = serde_json::json!({"sub": "u", "iss": "thebrowser-sync", "aud": "thebrowser-clients", "iat": now});
+        let base = serde_json::json!({"sub": "u", "iss": "openarc-sync", "aud": "openarc-clients", "iat": now});
         let mut future = base.clone();
         future["nbf"] = (now + 60).into();
         future["exp"] = (now + 120).into();

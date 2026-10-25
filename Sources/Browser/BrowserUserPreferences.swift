@@ -5,14 +5,14 @@ import Foundation
 // MARK: - BrowserSettingsRoute
 
 enum BrowserSettingsRoute {
-    static let rootURL = URL(string: "tb://settings/")!
-    static let searchEnginesURL = URL(string: "tb://settings/searchEngines")!
-    static let privacyURL = URL(string: "tb://settings/privacy")!
-    static let passwordManagerURL = URL(string: "tb://password-manager/passwords")!
-    static let paymentsURL = URL(string: "tb://settings/payments")!
-    static let notificationsURL = URL(string: "tb://settings/content/notifications")!
-    static let languageURL = URL(string: "tb://settings/languages")!
-    static let extensionShortcutsURL = URL(string: "tb://extensions/shortcuts")!
+    static let rootURL = URL(string: "openarc://settings/")!
+    static let searchEnginesURL = URL(string: "openarc://settings/searchEngines")!
+    static let privacyURL = URL(string: "openarc://settings/privacy")!
+    static let passwordManagerURL = URL(string: "openarc://password-manager/passwords")!
+    static let paymentsURL = URL(string: "openarc://settings/payments")!
+    static let notificationsURL = URL(string: "openarc://settings/content/notifications")!
+    static let languageURL = URL(string: "openarc://settings/languages")!
+    static let extensionShortcutsURL = URL(string: "openarc://extensions/shortcuts")!
 }
 
 // MARK: - BrowserAISearchProvider

@@ -6,9 +6,9 @@ import OSLog
 // MARK: - BrowserInternalPageRouting
 
 enum BrowserInternalPageRouting {
-    static let settingsURL = URL(string: "tb://settings/")!
-    static let historyURL = URL(string: "tb://history")!
-    static let bookmarksURL = URL(string: "tb://bookmarks/")!
+    static let settingsURL = URL(string: "openarc://settings/")!
+    static let historyURL = URL(string: "openarc://history")!
+    static let bookmarksURL = URL(string: "openarc://bookmarks/")!
 }
 
 // MARK: - BrowserWindowMode
@@ -403,7 +403,7 @@ enum BrowserWindowMode: Equatable {
     /// An incognito window's camera and microphone answers, kept until it
     /// closes. Only `sitePermissionDecisions` writes it.
     var incognitoSitePermissionDecisions = [BrowserSitePermissionDecision]()
-    /// Asks macOS to let TheBrowser show notifications; tests replace it.
+    /// Asks macOS to let OpenArc show notifications; tests replace it.
     var requestSystemNotificationAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void =
         BrowserNotificationAuthorization.request
     /// UI-only: the window's site control center, opened by Open Extensions.
@@ -2954,7 +2954,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private static let automaticArchivalLogger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "AutomaticArchival"
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "AutomaticArchival"
     )
 
     /// Answers this window's waiting requests that another window's answer covers.
@@ -4293,31 +4293,31 @@ enum BrowserWindowMode: Equatable {
         let pages = [
             (
                 title: "Open Settings",
-                detail: "tb://settings",
+                detail: "openarc://settings",
                 aliases: ["settings", "chrome://settings", "arc://settings", "dia://settings"],
-                urlString: "tb://settings/"
+                urlString: "openarc://settings/"
             ),
             (
                 title: "Open Bookmarks",
-                detail: "tb://bookmarks",
+                detail: "openarc://bookmarks",
                 aliases: ["bookmarks", "chrome://bookmarks", "arc://bookmarks", "dia://bookmarks"],
-                urlString: "tb://bookmarks/"
+                urlString: "openarc://bookmarks/"
             ),
             (
                 title: "Open History",
-                detail: "tb://history",
+                detail: "openarc://history",
                 aliases: ["history", "chrome://history", "arc://history", "dia://history"],
-                urlString: "tb://history"
+                urlString: "openarc://history"
             ),
             (
                 title: "Open Extensions",
-                detail: "tb://extensions",
+                detail: "openarc://extensions",
                 aliases: ["extensions", "chrome://extensions", "arc://extensions", "dia://extensions"],
-                urlString: "tb://extensions/"
+                urlString: "openarc://extensions/"
             ),
             (
                 title: "Open Passwords",
-                detail: "tb://password-manager/passwords",
+                detail: "openarc://password-manager/passwords",
                 aliases: [
                     "passwords",
                     "password manager",
@@ -4326,7 +4326,7 @@ enum BrowserWindowMode: Equatable {
                     "arc://password-manager/passwords",
                     "dia://password-manager/passwords",
                 ],
-                urlString: "tb://password-manager/passwords"
+                urlString: "openarc://password-manager/passwords"
             ),
         ]
 

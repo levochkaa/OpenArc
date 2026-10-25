@@ -21,9 +21,9 @@ struct BrowserAboutInfo {
 
 enum BrowserAboutResources {
     static let chromiumProjectURL = URL(string: "https://www.chromium.org/chromium-projects/")!
-    static let chromiumCreditsLinkURL = URL(string: "tb://credits/")!
+    static let chromiumCreditsLinkURL = URL(string: "openarc://credits/")!
 
-    static var theBrowserCreditsURL: URL {
+    static var openArcCreditsURL: URL {
         Bundle.main.url(forResource: "Credits", withExtension: "html")
             ?? URL(fileURLWithPath: "Credits.html")
     }
@@ -110,7 +110,7 @@ final class BrowserAboutView: NSView, NSTextViewDelegate {
         append(BrowserStrings.aboutMadePossibleChromiumProjectSuffix)
         append(BrowserStrings.aboutOpenSourceSoftwareLinkTitle, link: BrowserAboutResources.chromiumCreditsLinkURL)
         append(BrowserStrings.aboutMadePossibleOtherPrefix)
-        append(BrowserStrings.aboutOpenSourceSoftwareLinkTitle, link: BrowserAboutResources.theBrowserCreditsURL)
+        append(BrowserStrings.aboutOpenSourceSoftwareLinkTitle, link: BrowserAboutResources.openArcCreditsURL)
         append(BrowserStrings.aboutMadePossibleSuffix)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center

@@ -29,7 +29,7 @@ type StoredTab = {
   urlString: string; pinnedURLString: string | null; userTitleOverride: string | null;
 };
 
-const testDatabaseURL = process.env.THEBROWSER_SYNC_TEST_DATABASE_URL;
+const testDatabaseURL = process.env.OPENARC_SYNC_TEST_DATABASE_URL;
 
 describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
   skip: testDatabaseURL ? false : "Run ./script/test_local_sync.sh for an isolated PostgreSQL integration run",
@@ -47,7 +47,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
     assert.ok(testDatabaseURL);
     const url = new URL(testDatabaseURL);
     assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(url.hostname), "Only loopback test databases are allowed");
-    assert.match(url.pathname, /^\/thebrowser_sync_test_[a-z0-9_]+$/, "Use a dedicated disposable test database");
+    assert.match(url.pathname, /^\/openarc_sync_test_[a-z0-9_]+$/, "Use a dedicated disposable test database");
     pool = new pg.Pool({ connectionString: testDatabaseURL, max: 10 });
     const databaseName = await pool.query("SELECT current_database() AS name");
     assert.equal(databaseName.rows[0].name, url.pathname.slice(1));

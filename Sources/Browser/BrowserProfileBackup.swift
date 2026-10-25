@@ -41,7 +41,7 @@ final class BrowserProfileBackupArchiver {
 
         try fileManager.createDirectory(at: backupDirectoryURL, withIntermediateDirectories: true)
         let stagingURL = fileManager.temporaryDirectory
-            .appendingPathComponent("TheBrowserProfileBackup-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("OpenArcProfileBackup-\(UUID().uuidString)", isDirectory: true)
         defer {
             try? fileManager.removeItem(at: stagingURL)
         }

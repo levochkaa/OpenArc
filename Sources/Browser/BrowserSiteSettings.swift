@@ -3,7 +3,7 @@ import Foundation
 // MARK: - BrowserSiteSettingKind
 
 /// A per-site setting the site control center lists in its Settings
-/// section. Camera and microphone are TheBrowser's remembered answers;
+/// section. Camera and microphone are OpenArc's remembered answers;
 /// the others are Chromium's content settings for the page.
 enum BrowserSiteSettingKind: String, CaseIterable, Sendable {
     case camera
@@ -22,8 +22,8 @@ enum BrowserSiteSettingKind: String, CaseIterable, Sendable {
 
     // MARK: Internal
 
-    /// Kinds whose value TheBrowser stores itself.
-    var isRememberedByTheBrowser: Bool {
+    /// Kinds whose value OpenArc stores itself.
+    var isRememberedByOpenArc: Bool {
         self == .camera || self == .microphone
     }
 
@@ -167,7 +167,7 @@ extension BrowserChromeModel {
     /// Chromium's page for every setting of the site.
     func openAllSiteSettings(forURLString urlString: String) {
         guard let origin = BrowserSitePermissionRequest.origin(ofURLString: urlString),
-              var components = URLComponents(string: "tb://settings/content/siteDetails")
+              var components = URLComponents(string: "openarc://settings/content/siteDetails")
         else { return }
         components.queryItems = [URLQueryItem(name: "site", value: origin)]
         if let url = components.url {

@@ -1,5 +1,5 @@
-//! TheBrowser sync server: `thebrowser-sync-server [serve]` runs the API,
-//! `thebrowser-sync-server migrate` applies pending migrations.
+//! OpenArc sync server: `openarc-sync-server [serve]` runs the API,
+//! `openarc-sync-server migrate` applies pending migrations.
 
 mod app;
 #[cfg(test)]
@@ -95,7 +95,7 @@ async fn serve() -> anyhow::Result<()> {
     let listener = TcpListener::bind((config.host.as_str(), config.port)).await?;
     let address = listener.local_addr()?;
     // Test harnesses read this line to find an ephemeral port.
-    println!("TheBrowser sync server listening on http://{address}");
+    println!("OpenArc sync server listening on http://{address}");
     axum::serve(listener, router(state)).with_graceful_shutdown(shutdown_signal()).await?;
     pool.close();
     Ok(())

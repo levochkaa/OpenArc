@@ -1,12 +1,12 @@
 [package]
-name = "thebrowser-sync-server"
+name = "openarc-sync-server"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "TheBrowser authentication, device registration, sync and update server."
+description = "OpenArc authentication, device registration, sync and update server."
 
 [[bin]]
-name = "thebrowser-sync-server"
+name = "openarc-sync-server"
 path = "src/main.rs"
 
 [dependencies]

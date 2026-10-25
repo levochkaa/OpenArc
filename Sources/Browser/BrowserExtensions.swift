@@ -313,7 +313,7 @@ enum BrowserExtensionProfileSnapshotStore {
 // MARK: - BrowserExtensionRouting
 
 enum BrowserExtensionRouting {
-    static let extensionsURLString = "tb://extensions/"
+    static let extensionsURLString = "openarc://extensions/"
     static let chromeWebStoreURLString = "https://chromewebstore.google.com/"
     static let chromeWebStoreDetailBaseURLString = "https://chromewebstore.google.com/detail/"
 
@@ -447,7 +447,7 @@ private struct BrowserExtensionPreferencesEntry: Decodable {
 
         // Chrome component extensions such as the Web Store app and PDF viewer
         // live in the same preferences map but should not be shown as installed
-        // user extensions in TheBrowser chrome.
+        // user extensions in OpenArc chrome.
         if location == 5 {
             return false
         }

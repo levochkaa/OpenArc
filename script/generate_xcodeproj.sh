@@ -4,14 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/script/xcode_env.sh"
 PROJECT_SPEC="$ROOT_DIR/project.yml"
-PROJECT_PATH="$ROOT_DIR/TheBrowser.xcodeproj"
+PROJECT_PATH="$ROOT_DIR/OpenArc.xcodeproj"
 
 if [[ ! -f "$PROJECT_SPEC" ]]; then
   echo "error: missing project spec at $PROJECT_SPEC" >&2
   exit 1
 fi
 
-echo "Generating TheBrowser.xcodeproj from project.yml"
+echo "Generating OpenArc.xcodeproj from project.yml"
 if [[ -d "$PROJECT_PATH" ]]; then
   chmod -R u+w "$PROJECT_PATH"
   rm -rf "$PROJECT_PATH"

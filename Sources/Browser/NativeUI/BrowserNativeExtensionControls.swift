@@ -30,7 +30,7 @@ import Combine
         access.addItem(.separator())
         BrowserNativeMenus.add(BrowserStrings.extensionsSiteAccessLearnMore, to: access, action: {})
         menu.addItem(.separator())
-        BrowserNativeMenus.add(BrowserStrings.extensionsRemoveFromTheBrowser, to: menu, action: onRemove)
+        BrowserNativeMenus.add(BrowserStrings.extensionsRemoveFromOpenArc, to: menu, action: onRemove)
         BrowserNativeMenus.add(
             isPinned ? BrowserStrings.extensionsUnpinAction : BrowserStrings.extensionsPinAction,
             to: menu,

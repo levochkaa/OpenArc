@@ -13,13 +13,13 @@ if [[ ! -x node_modules/.bin/tsx ]]; then
   exit 1
 fi
 docker info >/dev/null
-THEBROWSER_SYNC_SERVER_BINARY="$("$repo_root/script/build_sync_server.sh")"
-export THEBROWSER_SYNC_SERVER_BINARY
+OPENARC_SYNC_SERVER_BINARY="$("$repo_root/script/build_sync_server.sh")"
+export OPENARC_SYNC_SERVER_BINARY
 
 test_id="$(node -p 'require("node:crypto").randomBytes(8).toString("hex")')"
-container_name="thebrowser-swift-sync-test-$test_id"
-database_name="thebrowser_sync_test_$test_id"
-fixture_directory="$(mktemp -d "${TMPDIR:-/tmp}/thebrowser-swift-sync.XXXXXX")"
+container_name="openarc-swift-sync-test-$test_id"
+database_name="openarc_sync_test_$test_id"
+fixture_directory="$(mktemp -d "${TMPDIR:-/tmp}/openarc-swift-sync.XXXXXX")"
 fixture_path="$fixture_directory/fixture.json"
 report_path="$fixture_directory/completed.json"
 fixture_log="$fixture_directory/fixture.log"
@@ -47,7 +47,7 @@ trap 'exit 143' TERM
 
 # This disposable database has no persistent volume and only a loopback port.
 container_id="$(docker run --detach --rm --name "$container_name" \
-  --label thebrowser.sync-test=true --publish 127.0.0.1::5432 \
+  --label openarc.sync-test=true --publish 127.0.0.1::5432 \
   --env "POSTGRES_DB=$database_name" --env POSTGRES_USER=sync_test \
   --env POSTGRES_PASSWORD=disposable-local-test-password postgres:17)"
 
@@ -64,7 +64,7 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 database_port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "$container_id")"
-export THEBROWSER_SYNC_TEST_DATABASE_URL="postgres://sync_test:disposable-local-test-password@127.0.0.1:$database_port/$database_name"
+export OPENARC_SYNC_TEST_DATABASE_URL="postgres://sync_test:disposable-local-test-password@127.0.0.1:$database_port/$database_name"
 node --import tsx tests/swift-sync-fixture.ts "$fixture_path" "$report_path" >"$fixture_log" 2>&1 &
 fixture_pid=$!
 
@@ -81,9 +81,9 @@ fi
 
 cd "$repo_root"
 # Xcode forwards TEST_RUNNER_ variables to the hostless test process.
-export TEST_RUNNER_THEBROWSER_SYNC_HTTP_FIXTURE="$fixture_path"
-export THEBROWSER_SYNC_HTTP_FIXTURE="$fixture_path"
-./build.sh test -- -only-testing:TheBrowserTests/BrowserSyncHTTPIntegrationTests
+export TEST_RUNNER_OPENARC_SYNC_HTTP_FIXTURE="$fixture_path"
+export OPENARC_SYNC_HTTP_FIXTURE="$fixture_path"
+./build.sh test -- -only-testing:OpenArcTests/BrowserSyncHTTPIntegrationTests
 
 # A filtered or skipped suite must not make this explicit integration run green.
 node --input-type=module - "$report_path" <<'JS'

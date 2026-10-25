@@ -1,5 +1,5 @@
-#ifndef THEBROWSER_SHARED_CLIENT_MANAGER_H_
-#define THEBROWSER_SHARED_CLIENT_MANAGER_H_
+#ifndef OPENARC_SHARED_CLIENT_MANAGER_H_
+#define OPENARC_SHARED_CLIENT_MANAGER_H_
 
 #include <list>
 
@@ -30,4 +30,4 @@ class ClientManager {
 
 }  // namespace shared
 
-#endif  // THEBROWSER_SHARED_CLIENT_MANAGER_H_
+#endif  // OPENARC_SHARED_CLIENT_MANAGER_H_

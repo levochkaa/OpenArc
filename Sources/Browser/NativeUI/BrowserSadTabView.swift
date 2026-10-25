@@ -41,7 +41,7 @@ final class BrowserSadTabView: BrowserNativeSurface, NSTextViewDelegate {
     // MARK: Internal
 
     /// The address of the message's "reload" link.
-    static let reloadLink = URL(string: "thebrowser-sad-tab:reload")!
+    static let reloadLink = URL(string: "openarc-sad-tab:reload")!
 
     override var isFlipped: Bool { true }
 

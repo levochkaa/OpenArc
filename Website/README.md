@@ -1,4 +1,4 @@
-# TheBrowser Landing
+# OpenArc Landing
 
 React landing page for the macOS browser.
 
@@ -9,4 +9,4 @@ npm run build
 ```
 
 Release notes and historical downloads are loaded from
-`VITE_RELEASES_API_URL`, defaulting to `https://updates.thebrowser.app/v1/releases`.
+`VITE_RELEASES_API_URL`, defaulting to `https://updates.openarc.app/v1/releases`.

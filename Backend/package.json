@@ -1,5 +1,5 @@
 {
-  "name": "thebrowser-sync-server-tests",
+  "name": "openarc-sync-server-tests",
   "version": "0.1.0",
   "private": true,
   "description": "Black-box HTTP tests for the Rust sync server: the PostgreSQL integration suite and the Swift HTTP fixture.",

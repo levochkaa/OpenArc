@@ -50,7 +50,7 @@ extension BrowserChromeModel {
             }
             return
         }
-        // Notifications also need the system's permission for TheBrowser. A
+        // Notifications also need the system's permission for OpenArc. A
         // system refusal leaves the site unanswered: Chromium would keep a
         // Block after the user turns notifications on in System Settings.
         requestSystemNotificationAuthorization { [weak self] granted in

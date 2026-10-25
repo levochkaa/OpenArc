@@ -21,7 +21,7 @@ CEF_SRC="$CHROMIUM_SRC/cef"
 GN_BIN="$CHROMIUM_SRC/buildtools/mac/gn"
 BINARY_DISTRIB_DIR="$CEF_SRC/binary_distrib"
 CHROMIUM_SRC_OVERRIDES="$ROOT_DIR/Chromium/chromium_src"
-CHROMIUM_FORK_MARKER=".thebrowser-chromium-fork"
+CHROMIUM_FORK_MARKER=".openarc-chromium-fork"
 FALLBACK_CEF_CHECKOUT="0d9d52a65c74c729e568ebf8506141a1e754eaeb"
 FALLBACK_CHROMIUM_CHECKOUT="refs/tags/148.0.7778.180"
 DEFAULT_CEF_BRANCH="7778"
@@ -61,17 +61,17 @@ export_chromium_checkout() {
 }
 
 EXPLICIT_CEF_BRANCH="${CEF_BRANCH+x}"
-EXPLICIT_CHROMIUM_CHECKOUT="${THEBROWSER_CHROMIUM_CHECKOUT+x}"
+EXPLICIT_CHROMIUM_CHECKOUT="${OPENARC_CHROMIUM_CHECKOUT+x}"
 CEF_BRANCH="${CEF_BRANCH:-$DEFAULT_CEF_BRANCH}"
 DEFAULT_CEF_CHECKOUT="$(export_cef_commit_hash)"
 DEFAULT_CEF_CHECKOUT="${DEFAULT_CEF_CHECKOUT:-$FALLBACK_CEF_CHECKOUT}"
 DEFAULT_CHROMIUM_CHECKOUT="$(export_chromium_checkout)"
 DEFAULT_CHROMIUM_CHECKOUT="${DEFAULT_CHROMIUM_CHECKOUT:-$FALLBACK_CHROMIUM_CHECKOUT}"
-CEF_CHECKOUT="${THEBROWSER_CEF_CHECKOUT:-}"
+CEF_CHECKOUT="${OPENARC_CEF_CHECKOUT:-}"
 if [[ -z "$CEF_CHECKOUT" && -z "$EXPLICIT_CEF_BRANCH" ]]; then
   CEF_CHECKOUT="$DEFAULT_CEF_CHECKOUT"
 fi
-CHROMIUM_CHECKOUT="${THEBROWSER_CHROMIUM_CHECKOUT:-}"
+CHROMIUM_CHECKOUT="${OPENARC_CHROMIUM_CHECKOUT:-}"
 if [[ -z "$CHROMIUM_CHECKOUT" && -z "$EXPLICIT_CEF_BRANCH" ]]; then
   CHROMIUM_CHECKOUT="$DEFAULT_CHROMIUM_CHECKOUT"
 fi
@@ -372,7 +372,7 @@ resume_source_checkout() {
     rsync -a --delete "$SOURCE_ROOT/cef/" "$CEF_SRC/"
   fi
 
-  if [[ "${THEBROWSER_CEF_CLOBBER_OUT:-0}" == "1" ]]; then
+  if [[ "${OPENARC_CEF_CLOBBER_OUT:-0}" == "1" ]]; then
     rm -rf "$CHROMIUM_SRC/out"
   fi
   mkdir -p "$CHROMIUM_SRC/out"
@@ -476,7 +476,7 @@ validate_generated_configuration() {
   local configuration="$1"
   local out_dir="$CHROMIUM_SRC/out/${configuration}_GN_${PROJECT_ARCH}"
 
-  if [[ "${THEBROWSER_CHROMIUM_ALLOW_NON_PRODUCTION_GN:-0}" == "1" ]]; then
+  if [[ "${OPENARC_CHROMIUM_ALLOW_NON_PRODUCTION_GN:-0}" == "1" ]]; then
     echo "warning: skipping $configuration Chromium production GN validation by explicit override" >&2
     return
   fi
@@ -537,7 +537,7 @@ validate_generated_configurations() {
 
 create_projects() {
   require_source_checkout
-  local gn_defines="${THEBROWSER_CHROMIUM_GN_DEFINES:-$DEFAULT_CHROMIUM_GN_DEFINES}"
+  local gn_defines="${OPENARC_CHROMIUM_GN_DEFINES:-$DEFAULT_CHROMIUM_GN_DEFINES}"
   apply_cef_patch_overrides
 
   (
@@ -725,7 +725,7 @@ copy_component_libraries_to_export() {
 
 strip_cef_framework_binaries() {
   local framework_dir="$1"
-  if [[ "${THEBROWSER_CEF_STRIP_LOCAL_SYMBOLS:-1}" != "1" ]]; then
+  if [[ "${OPENARC_CEF_STRIP_LOCAL_SYMBOLS:-1}" != "1" ]]; then
     return
   fi
 
@@ -916,19 +916,19 @@ Defaults:
   Chromium checkout comes from the same exported cef_version.h when available,
   then falls back to refs/tags/148.0.7778.180.
   Existing Chromium out/ build directories are preserved by default. Set
-  THEBROWSER_CEF_CLOBBER_OUT=1 only when an explicit full CEF rebuild is wanted.
+  OPENARC_CEF_CLOBBER_OUT=1 only when an explicit full CEF rebuild is wanted.
   Chromium GN defaults: official optimized build with PGO and ThinLTO,
   is_component_build=false, dcheck_always_on=false for Release, symbol_level=0,
   and no dSYMs. PGO profiles are downloaded during checkout/resume. Set
-  THEBROWSER_CHROMIUM_GN_DEFINES only when intentionally overriding this
+  OPENARC_CHROMIUM_GN_DEFINES only when intentionally overriding this
   production arm64 runtime shape. Non-production generated configs are rejected
-  before compilation unless THEBROWSER_CHROMIUM_ALLOW_NON_PRODUCTION_GN=1.
+  before compilation unless OPENARC_CHROMIUM_ALLOW_NON_PRODUCTION_GN=1.
   build automatically syncs the built CEF framework into ThirdParty/cef/export.
   Use sync-built to refresh export from an already-built out/ directory without
   rebuilding. distrib Debug/Release uses the same sync path for single-config
   refreshes because CEF's macOS make_distrib expects both sample-app layouts.
   CEF exports strip local Mach-O symbols by default. Set
-  THEBROWSER_CEF_STRIP_LOCAL_SYMBOLS=0 only when intentionally keeping them.
+  OPENARC_CEF_STRIP_LOCAL_SYMBOLS=0 only when intentionally keeping them.
   GCLIENT_JOBS=4
   Source checkout: ThirdParty/cef/source
   Chromium checkout mode: --no-chromium-history
@@ -938,9 +938,9 @@ Defaults:
 
 With no configurations, build/package uses both Debug and Release. Use package
 Debug for a development-only CEF export without Release artifacts, or package
-Debug Release for a full export. Set THEBROWSER_CEF_CHECKOUT and
-THEBROWSER_CHROMIUM_CHECKOUT when intentionally moving the fork base. Setting
-CEF_BRANCH without THEBROWSER_CEF_CHECKOUT intentionally follows that branch and
+Debug Release for a full export. Set OPENARC_CEF_CHECKOUT and
+OPENARC_CHROMIUM_CHECKOUT when intentionally moving the fork base. Setting
+CEF_BRANCH without OPENARC_CEF_CHECKOUT intentionally follows that branch and
 uses its compatibility file. package runs CEF patch/project generation before
 applying Chromium/chromium_src overrides so local overrides do not break CEF
 patch application.

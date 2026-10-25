@@ -74,11 +74,11 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
 }
 
 @MainActor func verifyWebApp() throws {
-    guard CommandLine.arguments.count == 2 else { throw UIError.failed("Pass the built TheBrowser.app bundle") }
+    guard CommandLine.arguments.count == 2 else { throw UIError.failed("Pass the built OpenArc.app bundle") }
     let host = URL(fileURLWithPath: CommandLine.arguments[1]).resolvingSymlinksInPath()
     let temporary = FileManager.default
         .temporaryDirectory
-        .appendingPathComponent("TheBrowser-WebApp-\(UUID().uuidString)")
+        .appendingPathComponent("OpenArc-WebApp-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
     try "<html><head><title>Native Web App Fixture</title></head><body>Native Web App Fixture. Find this sample.</body></html>"
@@ -111,12 +111,12 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     let contents = fixtureBundle.appendingPathComponent("Contents")
     try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
     let info: [String: Any] = [
-        "CFBundleIdentifier": "com.thebrowser.native-webapp-verification",
+        "CFBundleIdentifier": "com.openarc.native-webapp-verification",
         "CFBundleName": "Native Web App", "CFBundlePackageType": "APPL", "CFBundleVersion": "1",
-        "TheBrowserWebAppIdentifier": "native-ui-verification-\(UUID().uuidString)",
-        "TheBrowserWebAppName": "Native Web App", "TheBrowserWebAppStartURL": url, "TheBrowserWebAppScopeURL": url,
-        "TheBrowserWebAppProfileDirectoryName": "Default", "TheBrowserWebAppProfileName": "Verification",
-        "TheBrowserHostBundlePath": host.path,
+        "OpenArcWebAppIdentifier": "native-ui-verification-\(UUID().uuidString)",
+        "OpenArcWebAppName": "Native Web App", "OpenArcWebAppStartURL": url, "OpenArcWebAppScopeURL": url,
+        "OpenArcWebAppProfileDirectoryName": "Default", "OpenArcWebAppProfileName": "Verification",
+        "OpenArcHostBundlePath": host.path,
     ]
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         .write(to: contents.appendingPathComponent("Info.plist"))

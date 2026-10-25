@@ -1,5 +1,5 @@
-#ifndef THEBROWSER_SHARED_BROWSER_UTIL_H_
-#define THEBROWSER_SHARED_BROWSER_UTIL_H_
+#ifndef OPENARC_SHARED_BROWSER_UTIL_H_
+#define OPENARC_SHARED_BROWSER_UTIL_H_
 
 #include "include/cef_client.h"
 
@@ -11,5 +11,5 @@ void CreateBrowser(CefRefPtr<CefClient> client,
 
 }  // namespace shared
 
-#endif  // THEBROWSER_SHARED_BROWSER_UTIL_H_
+#endif  // OPENARC_SHARED_BROWSER_UTIL_H_
 

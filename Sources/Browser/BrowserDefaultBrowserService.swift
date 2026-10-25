@@ -24,7 +24,7 @@ struct BrowserDefaultBrowserService {
     typealias DefaultHandlerLookup = (_ scheme: String) -> String?
     typealias DefaultHandlerSetter = (_ scheme: String, _ bundleIdentifier: String) -> OSStatus
 
-    static let defaultBundleIdentifier = "com.levochkaa.TheBrowser"
+    static let defaultBundleIdentifier = "com.levochkaa.OpenArc"
     static let webURLSchemes = ["http", "https"]
 
     let bundleIdentifier: String
@@ -56,7 +56,7 @@ struct BrowserDefaultBrowserService {
 
     private static func defaultHandlerBundleIdentifier(for scheme: String) -> String? {
         guard
-            let url = URL(string: "\(scheme)://thebrowser.default-handler-check"),
+            let url = URL(string: "\(scheme)://openarc.default-handler-check"),
             let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: url)
         else {
             return nil

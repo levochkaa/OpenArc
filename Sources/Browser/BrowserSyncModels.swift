@@ -24,7 +24,7 @@ struct BrowserSyncConfiguration {
         .environment) -> BrowserSyncConfiguration?
     {
         guard
-            let rawBaseURL = environment["THEBROWSER_SYNC_BASE_URL"],
+            let rawBaseURL = environment["OPENARC_SYNC_BASE_URL"],
             let baseURL = URL(string: rawBaseURL)
         else {
             return nil

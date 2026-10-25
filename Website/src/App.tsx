@@ -29,8 +29,8 @@ type ReleasesResponse = {
 
 type ReleasesState = "loading" | "ready" | "error";
 
-const fallbackDownloadUrl = "https://github.com/levochkaa/TheBrowser/releases/latest";
-const releasesApiUrl = import.meta.env.VITE_RELEASES_API_URL ?? "https://updates.thebrowser.app/v1/releases";
+const fallbackDownloadUrl = "https://github.com/levochkaa/OpenArc/releases/latest";
+const releasesApiUrl = import.meta.env.VITE_RELEASES_API_URL ?? "https://updates.openarc.app/v1/releases";
 const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
@@ -132,9 +132,9 @@ function App() {
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero-art" aria-hidden="true" />
         <nav className="topbar" aria-label="Primary">
-          <a className="brand" href="#top" aria-label="TheBrowser home">
+          <a className="brand" href="#top" aria-label="OpenArc home">
             <span className="brand-mark" aria-hidden="true" />
-            <span>TheBrowser</span>
+            <span>OpenArc</span>
           </a>
           <div className="nav-pill">
             <a href="#workflow">Workflow</a>
@@ -151,7 +151,7 @@ function App() {
             <span>focused work</span>
           </h1>
           <p className="hero-text">
-            TheBrowser turns tabs into organized spaces, shared pinned tools,
+            OpenArc turns tabs into organized spaces, shared pinned tools,
             and fast command navigation. Chromium power, local-first control,
             and a calmer way to work on macOS.
           </p>
@@ -248,7 +248,7 @@ function App() {
           <p className="section-label">Inside the build</p>
           <h2>Real browser power, Mac-native shape.</h2>
           <p>
-            TheBrowser starts with the daily-driver fundamentals: Chromium,
+            OpenArc starts with the daily-driver fundamentals: Chromium,
             extension support, passkeys, downloads, page find, state that
             survives relaunches, and workspace structure that does not require
             a hosted account.

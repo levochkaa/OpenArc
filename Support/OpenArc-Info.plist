@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>OpenArc</string>
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>OpenArc</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Websites you allow can use your camera.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Websites you allow can use your microphone.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>Websites you allow can know your location.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Websites you allow can know your location.</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>CFBundleURLName</key>
+      <string>Web URLs</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>http</string>
+        <string>https</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.levochkaa.OpenArc</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>tb</string>
+      </array>
+    </dict>
+  </array>
+  <key>LSEnvironment</key>
+  <dict>
+    <key>MallocNanoZone</key>
+    <string>0</string>
+  </dict>
+  <key>LSMinimumSystemVersion</key>
+  <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026 OpenArc. All rights reserved.</string>
+  <key>OpenArcSentryDSN</key>
+  <string>$(OPENARC_SENTRY_DSN)</string>
+  <key>OpenArcSentryEnvironment</key>
+  <string>$(OPENARC_SENTRY_ENVIRONMENT)</string>
+  <key>OpenArcSentryProfilesSampleRate</key>
+  <string>$(OPENARC_SENTRY_PROFILES_SAMPLE_RATE)</string>
+  <key>OpenArcSentryTracesSampleRate</key>
+  <string>$(OPENARC_SENTRY_TRACES_SAMPLE_RATE)</string>
+  <key>OpenArcSentryUsageAnalyticsEnabled</key>
+  <string>$(OPENARC_SENTRY_USAGE_ANALYTICS_ENABLED)</string>
+  <key>SUAllowsAutomaticUpdates</key>
+  <true/>
+  <key>SUAutomaticallyUpdate</key>
+  <true/>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <key>SUFeedURL</key>
+  <string>$(OPENARC_SPARKLE_FEED_URL)</string>
+  <key>SUPublicEDKey</key>
+  <string>$(OPENARC_SPARKLE_PUBLIC_KEY)</string>
+  <key>SUScheduledCheckInterval</key>
+  <integer>3600</integer>
+  <key>SUScheduledImpatientCheckInterval</key>
+  <integer>86400</integer>
+</dict>
+</plist>

@@ -15,11 +15,11 @@
 - Before running the `Build` action, run SwiftFormat on every `.swift` file changed in the current task, using the repository `.swiftformat` configuration.
 - When changing CEF, Chromium, or `Chromium/chromium_src` override files, rebuild and export both `Debug` and `Release` CEF artifacts before running the `Build` action. The app build may stage `Release` CEF even for a `Debug` app build.
 - CEF/Chromium rebuilds must match the currently exported baseline from `ThirdParty/cef/export/include/cef_version.h` unless the user explicitly asks to move the CEF/Chromium base. Do not float `CEF_BRANCH` to a newer head for routine override rebuilds. Apply upstream CEF patches/project generation before applying `Chromium/chromium_src` overrides.
-- Do not clobber Chromium `out/` build directories during CEF checkout/resume/package flows unless the user explicitly asks for a clean rebuild. Preserve existing CEF build cache by default; use `THEBROWSER_CEF_CLOBBER_OUT=1` only for intentional full rebuilds.
-- Before finishing any task, run the `Build` action to verify the project compiles successfully in the console only. Do not launch `TheBrowser` or `TheBrowser Helper`, and do not check whether their processes started.
+- Do not clobber Chromium `out/` build directories during CEF checkout/resume/package flows unless the user explicitly asks for a clean rebuild. Preserve existing CEF build cache by default; use `OPENARC_CEF_CLOBBER_OUT=1` only for intentional full rebuilds.
+- Before finishing any task, run the `Build` action to verify the project compiles successfully in the console only. Do not launch `OpenArc` or `OpenArc Helper`, and do not check whether their processes started.
 - If the `Build` action emits warnings, fix those warnings before treating the task as complete.
 - After a successful `Build` action and before finishing any task, run the `Test` action to verify the test suite passes in the console. Run tests through `./build.sh test`, the same root script used by the Codex `Test` action, and not by calling `xcodebuild test` directly.
-- `build.sh` builds in every checkout share resolved Swift package graphs and one compilation cache under `~/Library/Caches/TheBrowserBuild`. Debug info records the checkout path as `/^root` (Swift) or `/^src` (Objective-C++), so in LLDB run `settings set target.source-map /^root <checkout> /^src <checkout>` before full-path breakpoints or source listing; `./build.sh debug` sets it.
+- `build.sh` builds in every checkout share resolved Swift package graphs and one compilation cache under `~/Library/Caches/OpenArcBuild`. Debug info records the checkout path as `/^root` (Swift) or `/^src` (Objective-C++), so in LLDB run `settings set target.source-map /^root <checkout> /^src <checkout>` before full-path breakpoints or source listing; `./build.sh debug` sets it.
 
 ## Commit Workflow
 

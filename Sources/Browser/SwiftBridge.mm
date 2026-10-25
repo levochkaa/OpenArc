@@ -4,7 +4,7 @@
 
 #import <Sparkle/Sparkle.h>
 
-#import "TheBrowser-Swift.h"
+#import "OpenArc-Swift.h"
 
 #include "Shared/ClientManager.h"
 #include "include/cef_version.h"

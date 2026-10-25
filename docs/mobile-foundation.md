@@ -30,7 +30,7 @@ Tabs expose selection, creation, swipe/context-menu close and captured-ID action
 
 ## Verification and remaining work
 
-Use `./build.sh ios-build` and `./build.sh ios-test --ios-destination 'platform=iOS Simulator,id=UUID'`. To look at the app, `./script/run_ios_simulator.sh iphone|ipad [--skip-build]` builds it and launches it on a dedicated `TheBrowser iPhone` or `TheBrowser iPad` simulator, creating the device on the newest supporting iOS runtime when missing. Mobile output uses `.build/xcode-ios`; desktop Build/Test remain mandatory. The separate `BrowserMobileTestHost` has no browser bootstrap and supplies a real UIWindowScene for console UIKit/WebKit tests. Tests must not launch the TheBrowser product or move the user's desktop pointer.
+Use `./build.sh ios-build` and `./build.sh ios-test --ios-destination 'platform=iOS Simulator,id=UUID'`. To look at the app, `./script/run_ios_simulator.sh iphone|ipad [--skip-build]` builds it and launches it on a dedicated `OpenArc iPhone` or `OpenArc iPad` simulator, creating the device on the newest supporting iOS runtime when missing. Mobile output uses `.build/xcode-ios`; desktop Build/Test remain mandatory. The separate `BrowserMobileTestHost` has no browser bootstrap and supplies a real UIWindowScene for console UIKit/WebKit tests. Tests must not launch the OpenArc product or move the user's desktop pointer.
 
 Proof is split between actual local WebKit navigation, model/file/scene regressions and native controller layout/input checks. On 2026-10-03, Xcode 26.6 / iOS Simulator 26.5 passed all 26 test declarations (29 parameterized runs) on both iPhone 17 Pro and iPad Air (5th generation), without failures, skips or compiler warnings. The composed case uses actual UIKit address submission, a localhost WebKit page and link, Back/Forward, tab actions, atomic JSON and a fresh workspace/engine restore. Desktop Build/Test also passed: 570 tests, 15 opt-in skips, zero failures. Compilation alone does not prove WebKit or UI behavior; manually operated product/Stage Manager/device flows remain unverified. Scene tests call the real registry directly; AppDelegate/SceneDelegate wiring is compile-verified, not an observed OS disconnect/reconnect/discard flow.
 
@@ -63,7 +63,7 @@ A failed archive/restore SQL transaction retains the fixed archive/action IDs in
 
 SQLite reads use a timestamp/ID keyset and a maximum of 100 entries; UIKit displays 50-entry pages with Older/Newer controls. Archive list/search/clear/delete reads and writes use asynchronous GRDB operations, with SQL work on the database queue. Committed archive changes reset open lists to the first page. Selection and action callbacks revalidate current IDs. Missing-Space choice waits for its native picker dismissal before restoring and dismissing the Archive sheet. Errors, empty state, Dynamic Type and native iPad popover anchoring are present.
 
-The choices above are TheBrowser policies.
+The choices above are OpenArc policies.
 
 Archive records and compact receipts have no automatic expiry; retention and desktop durable Archive remain separate work. Local activity, attached-window protection and opt-in mobile Auto-Archive are defined below. The shared conditional protocol, durable queue and attempt/retry policy are defined in [sync expiry](sync-expiry.md). Native callback execution does not establish physical gesture quality or OS scene behavior.
 
@@ -78,7 +78,7 @@ The profile document serializes Archive mutations across windows. Restore, anoth
 
 The migration separates legacy active content from receipts and removes consumed payloads from the active table. Receipts use SHA-256 over a canonical encoding to recognize an exact insert; a consumed restore also remembers its fresh tab ID. An old insert cannot recreate cleared content, and a delayed same-ID restore cannot reinstall its old snapshot. Compact receipts and permanent sync tombstones remain. Logical content removal is not a secure-erasure claim for SQLite free pages, WAL files or backups. Migration still runs in the existing synchronous store-open path; opening a very large legacy archive has not been profiled.
 
-The native mobile interaction and captured confirmation scope above are TheBrowser's own design.
+The native mobile interaction and captured confirmation scope above are OpenArc's own design.
 
 ## Tab activity and attached windows
 
@@ -94,11 +94,11 @@ The shared client applies the same date maximum while replaying pending v2/v3/v4
 
 The maximum covers activity reported to the server. A completely offline device's current use remains unknown to other devices, and selection leases protect only attached windows in the local profile. The [reported-activity policy](sync-expiry.md) preserves available divergent local content when a server expiry arrives; Restore creates a new identity. Mobile Auto-Archive uses this conditional path after an explicit timing choice. Local activity capture still uses whole seconds; synchronous snapshot persistence and unprofiled large-profile activity cost remain existing limits.
 
-The lifecycle and lease rules above are TheBrowser policy. Scene-registry callbacks and controlled clocks are testable independently of OS scene delivery.
+The lifecycle and lease rules above are OpenArc policy. Scene-registry callbacks and controlled clocks are testable independently of OS scene delivery.
 
 ## Opt-in mobile Auto-Archive
 
-The native Archive sheet includes an Auto-Archive menu with Off, 12 hours and 1/3/7/30 days. Off is the initial state; the stored 30-day interval alone does not turn the feature on. The shared profile saves enabled state and interval atomically and updates all attached windows. An error leaves the old choice/checkmark active; Retry repeats the failed choice. Unreadable settings block expiry until a successful reload. These preferences are local to the profile and are not synced. The feature's default is a TheBrowser choice.
+The native Archive sheet includes an Auto-Archive menu with Off, 12 hours and 1/3/7/30 days. Off is the initial state; the stored 30-day interval alone does not turn the feature on. The shared profile saves enabled state and interval atomically and updates all attached windows. An error leaves the old choice/checkmark active; Retry repeats the failed choice. Unreadable settings block expiry until a successful reload. These preferences are local to the profile and are not synced. The feature's default is an OpenArc choice.
 
 One profile document supplies selection protection and readiness to the shared sync scheduler. Admission waits for every attached scene to finish logical restoration, including a second scene still loading its profile, and requires at least one active scene. Attached background selections remain protected. Pending/failed local writes or an Archive mutation block the pass; lazy WebKit load completion is not the hydration criterion. Active selections receive limited five-minute activity refresh even when this device's Auto-Archive is Off, because another device may use a shorter interval.
 

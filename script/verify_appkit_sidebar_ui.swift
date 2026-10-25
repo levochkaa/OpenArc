@@ -75,7 +75,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
 
 @MainActor func verifySidebar() throws {
     guard CommandLine.arguments.count == 2
-    else { throw UIError.failed("Pass the running isolated TheBrowser.app path") }
+    else { throw UIError.failed("Pass the running isolated OpenArc.app path") }
     let bundle = URL(fileURLWithPath: CommandLine.arguments[1]).resolvingSymlinksInPath()
     guard let app = NSWorkspace.shared
         .runningApplications

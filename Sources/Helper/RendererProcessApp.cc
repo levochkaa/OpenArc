@@ -225,7 +225,7 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
  public:
   void OnRegisterCustomSchemes(
       CefRawPtr<CefSchemeRegistrar> registrar) override {
-    RegisterTheBrowserCustomSchemes(registrar);
+    RegisterOpenArcCustomSchemes(registrar);
   }
 
   CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {

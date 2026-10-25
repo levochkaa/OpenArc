@@ -10,5 +10,5 @@ if ! command -v cargo >/dev/null 2>&1; then
   echo "The sync server needs Rust (cargo); install it with rustup." >&2
   exit 1
 fi
-cargo build --quiet --bin thebrowser-sync-server >&2
-echo "$PWD/target/debug/thebrowser-sync-server"
+cargo build --quiet --bin openarc-sync-server >&2
+echo "$PWD/target/debug/openarc-sync-server"

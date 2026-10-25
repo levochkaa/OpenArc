@@ -26,6 +26,6 @@ Background targets never select another tab. The app CEF focus handler rejects n
 
 SQLite/model tests cover local FIFO writes and reopen, ordinary creation before callbacks, canceled creation, pinned/Favorite reopen, remote supersession before and after allocation, explicit local precedence, live-page preservation and redirects. A localhost scenario uses both real coordinators, session stores, server and PostgreSQL for remote A→B, local C and pending-child deletion.
 
-The actual Objective-C++ queue, CEF bootstrap and focus hooks are compiled and reviewed against the pinned sources. Fake-driver tests do not prove physical CEF navigation, load timing or native focus. No TheBrowser/Helper launch or vendor CEF/Chromium change is part of this slice.
+The actual Objective-C++ queue, CEF bootstrap and focus hooks are compiled and reviewed against the pinned sources. Fake-driver tests do not prove physical CEF navigation, load timing or native focus. No OpenArc/Helper launch or vendor CEF/Chromium change is part of this slice.
 
 Cancelable page close remains a separate defect: CEF can cancel `CloseBrowser(false)` after `beforeunload`, while the model and extension controllers already abandon that runtime identity. The bridge also keeps its closing gate set. This slice does not establish a functioning “stay on page” flow; that needs coordinated close approval before removing the logical tab.

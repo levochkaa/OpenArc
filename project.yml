@@ -1,4 +1,4 @@
-name: TheBrowser
+name: OpenArc
 options:
   bundleIdPrefix: com.levochkaa
   minimumXcodeGenVersion: 2.45.3
@@ -25,13 +25,13 @@ settings:
     LM_ENABLE_LINK_GENERATION: NO
     SWIFT_EMIT_CONST_VALUE_PROTOCOLS: ""
     SWIFT_VERSION: "6.0"
-    THEBROWSER_SENTRY_DSN: ""
-    THEBROWSER_SENTRY_ENVIRONMENT: development
-    THEBROWSER_SENTRY_TRACES_SAMPLE_RATE: "0.2"
-    THEBROWSER_SENTRY_PROFILES_SAMPLE_RATE: "0.0"
-    THEBROWSER_SENTRY_USAGE_ANALYTICS_ENABLED: YES
-    THEBROWSER_SPARKLE_FEED_URL: https://updates.thebrowser.app/appcast.xml
-    THEBROWSER_SPARKLE_PUBLIC_KEY: K2RmhxJLUxN8YeRS4I7Tz7cYrzkbcZB1axGePxRHflM=
+    OPENARC_SENTRY_DSN: ""
+    OPENARC_SENTRY_ENVIRONMENT: development
+    OPENARC_SENTRY_TRACES_SAMPLE_RATE: "0.2"
+    OPENARC_SENTRY_PROFILES_SAMPLE_RATE: "0.0"
+    OPENARC_SENTRY_USAGE_ANALYTICS_ENABLED: YES
+    OPENARC_SPARKLE_FEED_URL: https://updates.openarc.app/appcast.xml
+    OPENARC_SPARKLE_PUBLIC_KEY: K2RmhxJLUxN8YeRS4I7Tz7cYrzkbcZB1axGePxRHflM=
 targetTemplates:
   BrowserSyncCore:
     sources:
@@ -131,35 +131,35 @@ packages:
   ZIPFoundation:
     path: Packages/ZIPFoundation
 targets:
-  TheBrowserWebAppLauncher:
+  OpenArcWebAppLauncher:
     type: tool
     platform: macOS
-    productName: "TheBrowser Web App Launcher"
+    productName: "OpenArc Web App Launcher"
     sources:
       - path: Sources/WebAppLauncher
     settings:
       base:
-        PRODUCT_NAME: "TheBrowser Web App Launcher"
-        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser.web-app-launcher
+        PRODUCT_NAME: "OpenArc Web App Launcher"
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.web-app-launcher
         OTHER_LDFLAGS:
           - -framework
           - Foundation
-  TheBrowserHelper:
+  OpenArcHelper:
     templates:
       - ChromiumTarget
     type: application
     platform: macOS
-    productName: "TheBrowser Helper"
+    productName: "OpenArc Helper"
     sources:
       - path: Sources/Helper
       - path: Sources/Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser.helper
-        PRODUCT_NAME: "TheBrowser Helper"
-        INFOPLIST_FILE: Support/TheBrowserHelper-Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.helper
+        PRODUCT_NAME: "OpenArc Helper"
+        INFOPLIST_FILE: Support/OpenArcHelper-Info.plist
         SWIFT_EMIT_LOC_STRINGS: NO
-  TheBrowser:
+  OpenArc:
     templates:
       - ChromiumTarget
     type: application
@@ -170,8 +170,8 @@ targets:
       - path: Backend/openapi.yaml
         group: Sources/Browser/OpenAPI
     dependencies:
-      - target: TheBrowserHelper
-      - target: TheBrowserWebAppLauncher
+      - target: OpenArcHelper
+      - target: OpenArcWebAppLauncher
       - package: DomainParser
       - package: Gzip
       - package: GRDB
@@ -185,12 +185,12 @@ targets:
         package: SwiftOpenAPIGenerator
     settings:
       base:
-        PRODUCT_NAME: TheBrowser
-        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser
-        INFOPLIST_FILE: Support/TheBrowser-Info.plist
+        PRODUCT_NAME: OpenArc
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc
+        INFOPLIST_FILE: Support/OpenArc-Info.plist
         ENABLE_APP_INTENTS_METADATA_GENERATION: NO
-        SWIFT_OBJC_BRIDGING_HEADER: Sources/Browser/TheBrowser-Bridging-Header.h
-        # TheBrowser-Swift.h imports the bridging header by name. Compile caching would otherwise
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/Browser/OpenArc-Bridging-Header.h
+        # OpenArc-Swift.h imports the bridging header by name. Compile caching would otherwise
         # write its prefix-mapped /^root path, which the Objective-C++ sources cannot open.
         OTHER_SWIFT_FLAGS:
           - $(inherited)
@@ -208,9 +208,9 @@ targets:
           - Sparkle
       configs:
         Debug:
-          CODE_SIGN_ENTITLEMENTS: Support/TheBrowser-Debug.entitlements
+          CODE_SIGN_ENTITLEMENTS: Support/OpenArc-Debug.entitlements
         Release:
-          CODE_SIGN_ENTITLEMENTS: Support/TheBrowser.entitlements
+          CODE_SIGN_ENTITLEMENTS: Support/OpenArc.entitlements
           GCC_PREPROCESSOR_DEFINITIONS:
             - $(inherited)
             - __STDC_CONSTANT_MACROS
@@ -223,8 +223,8 @@ targets:
         script: |
           mkdir -p "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
           ditto \
-            "$BUILT_PRODUCTS_DIR/TheBrowser Web App Launcher" \
-            "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/TheBrowser Web App Launcher"
+            "$BUILT_PRODUCTS_DIR/OpenArc Web App Launcher" \
+            "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/OpenArc Web App Launcher"
       - name: Stage Sparkle Framework
         shell: /bin/bash
         basedOnDependencyAnalysis: false
@@ -238,12 +238,12 @@ targets:
           "$SRCROOT/script/stage_cef_bundle.sh" \
             "${CEF_RUNTIME_CONFIGURATION:-Release}" \
             "$TARGET_BUILD_DIR/$FULL_PRODUCT_NAME" \
-            "$BUILT_PRODUCTS_DIR/TheBrowser Helper.app"
+            "$BUILT_PRODUCTS_DIR/OpenArc Helper.app"
     scheme:
       gatherCoverageData: false
       testTargets:
-        - TheBrowserTests
-  TheBrowserTests:
+        - OpenArcTests
+  OpenArcTests:
     templates:
       - ChromiumTarget
     type: bundle.unit-test
@@ -268,7 +268,7 @@ targets:
           - BrowserWindowSessions.swift
       - path: Backend/openapi.yaml
         group: Sources/Browser/OpenAPI
-      - path: Tests/TheBrowserTests
+      - path: Tests/OpenArcTests
     buildToolPlugins:
       - plugin: OpenAPIGenerator
         package: SwiftOpenAPIGenerator
@@ -276,7 +276,7 @@ targets:
       base:
         BUNDLE_LOADER: ""
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_NAME: TheBrowserTests
+        PRODUCT_NAME: OpenArcTests
         TEST_HOST: ""
     dependencies:
       - package: DomainParser
@@ -287,12 +287,12 @@ targets:
       - package: OpenAPIRuntime
       - package: OpenAPIURLSession
       - package: ZIPFoundation
-  TheBrowseriOS:
+  OpenArciOS:
     templates:
       - BrowserSyncCore
     type: application
     platform: iOS
-    productName: TheBrowser
+    productName: OpenArc
     sources:
       - path: Sources/BrowseriOS
       - path: Sources/Browser/BrowserNavigationResolver.swift
@@ -304,11 +304,11 @@ targets:
       - package: DomainParser
     settings:
       base:
-        PRODUCT_NAME: TheBrowser
-        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser.ios
-        INFOPLIST_FILE: Support/TheBrowseriOS-Info.plist
-        CODE_SIGN_ENTITLEMENTS: Support/TheBrowseriOS.entitlements
-        THEBROWSER_SYNC_BASE_URL: ""
+        PRODUCT_NAME: OpenArc
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.ios
+        INFOPLIST_FILE: Support/OpenArciOS-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Support/OpenArciOS.entitlements
+        OPENARC_SYNC_BASE_URL: ""
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_STRICT_CONCURRENCY: complete
@@ -316,7 +316,7 @@ targets:
     scheme:
       gatherCoverageData: false
       testTargets:
-        - TheBrowseriOSTests
+        - OpenArciOSTests
   BrowserMobileTestHost:
     type: application
     platform: iOS
@@ -328,13 +328,13 @@ targets:
     settings:
       base:
         PRODUCT_NAME: BrowserMobileTestHost
-        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.TheBrowser.ios-test-host
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.ios-test-host
         INFOPLIST_FILE: Support/BrowserMobileTestHost-Info.plist
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_STRICT_CONCURRENCY: complete
         SWIFT_EMIT_LOC_STRINGS: NO
-  TheBrowseriOSTests:
+  OpenArciOSTests:
     templates:
       - BrowserSyncCore
     type: bundle.unit-test
@@ -348,7 +348,7 @@ targets:
       - path: Sources/Browser/BrowserSearchEngine.swift
       - path: Sources/Browser/BrowserStrings.swift
       - path: Sources/Browser/Resources/en.lproj/Localizable.strings
-      - path: Tests/TheBrowseriOSTests
+      - path: Tests/OpenArciOSTests
     dependencies:
       - package: DomainParser
       - target: BrowserMobileTestHost
@@ -356,8 +356,8 @@ targets:
     settings:
       base:
         BUNDLE_LOADER: $(TEST_HOST)
-        INFOPLIST_FILE: Support/TheBrowseriOSTests-Info.plist
-        PRODUCT_NAME: TheBrowseriOSTests
+        INFOPLIST_FILE: Support/OpenArciOSTests-Info.plist
+        PRODUCT_NAME: OpenArciOSTests
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/BrowserMobileTestHost.app/BrowserMobileTestHost
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"

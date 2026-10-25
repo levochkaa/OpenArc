@@ -1,5 +1,5 @@
-#ifndef THEBROWSER_BROWSER_CLIENT_H_
-#define THEBROWSER_BROWSER_CLIENT_H_
+#ifndef OPENARC_BROWSER_CLIENT_H_
+#define OPENARC_BROWSER_CLIENT_H_
 
 #include "include/cef_client.h"
 #include "include/cef_permission_handler.h"
@@ -37,4 +37,4 @@ class BrowserClient : public CefClient,
 
 }  // namespace browser
 
-#endif  // THEBROWSER_BROWSER_CLIENT_H_
+#endif  // OPENARC_BROWSER_CLIENT_H_

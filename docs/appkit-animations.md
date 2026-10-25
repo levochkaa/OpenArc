@@ -25,7 +25,7 @@ The reference is the last SwiftUI implementation at `03d6aee`, before the AppKit
 | Tooltip identity/visibility | ease-out, 0.15 s | Opacity; existing 1 s activation delay and 0.3 s cooldown remain in the tooltip coordinator |
 | Update toast | ease-in-out, 0.18 s | Opacity and reserved sidebar-footer height |
 
-TheBrowser keeps its own timing where it differs on purpose:
+OpenArc keeps its own timing where it differs on purpose:
 
 - Pinned sidebar visibility stays at 0.18 s. The page is a live CEF view that relays out every frame, and a shorter slide reads as a jump.
 - Reorder and folder expansion keep the 0.28 s spring, because the drop landing shares that spring and travels farther.

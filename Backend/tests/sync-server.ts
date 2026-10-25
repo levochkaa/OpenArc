@@ -10,14 +10,14 @@ import { SignJWT } from "jose";
 // its own `migrate` command; access tokens are signed here with the same
 // secret, issuer and audience the server verifies.
 
-export const serverBinary = process.env.THEBROWSER_SYNC_SERVER_BINARY
-  ?? fileURLToPath(new URL("../target/debug/thebrowser-sync-server", import.meta.url));
+export const serverBinary = process.env.OPENARC_SYNC_SERVER_BINARY
+  ?? fileURLToPath(new URL("../target/debug/openarc-sync-server", import.meta.url));
 
 export const integrationEnvironment = {
-  APPLE_CLIENT_ID: "com.thebrowser.sync-integration-tests",
+  APPLE_CLIENT_ID: "com.openarc.sync-integration-tests",
   JWT_SECRET: "local-integration-only-secret-at-least-thirty-two-bytes",
-  JWT_ISSUER: "thebrowser-sync-integration-tests",
-  JWT_AUDIENCE: "thebrowser-sync-integration-clients"
+  JWT_ISSUER: "openarc-sync-integration-tests",
+  JWT_AUDIENCE: "openarc-sync-integration-clients"
 };
 
 export type SyncServer = { url: string; stop: () => Promise<void> };

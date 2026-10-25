@@ -20,7 +20,7 @@ The presenter checks its own attached foreground window. It preserves an existin
 
 ## Verification boundary
 
-Console tests run inside the dedicated BrowserMobileTestHost, not the TheBrowser product. Tests combine real WK JavaScript with the production model and actual UIKit alert presentation; response tests call the same presenter methods used by UIAlertAction handlers. Public dismissal APIs exercise either dismissal ordering. These are not physical taps on UIAlertAction buttons.
+Console tests run inside the dedicated BrowserMobileTestHost, not the OpenArc product. Tests combine real WK JavaScript with the production model and actual UIKit alert presentation; response tests call the same presenter methods used by UIAlertAction handlers. Public dismissal APIs exercise either dismissal ordering. These are not physical taps on UIAlertAction buttons.
 
 Engine tests distinguish actual script execution from direct lifecycle/completion boundary calls. Opaque iframe metadata comes from an actual WKScriptMessage; its modal response test invokes the delegate because sandbox modal admission belongs to WebKit. Scene tests call the production registry directly. Real OS background/Stage Manager behavior, native physical keyboard/accessibility action dispatch and app-owned scene delegate lifecycle remain unverified. Xcode 26.6 / iOS Simulator 26.5 passed 44 test declarations (54 runs) on both iPhone 17 Pro and iPad Air (5th generation), with zero failures or skips. System WebKit/RBS/haptics messages remain; the rapid frame/trait layout fixtures also emit unbalanced appearance-transition diagnostics. Those logs do not establish live resize/animation quality.
 

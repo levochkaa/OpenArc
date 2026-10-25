@@ -30,16 +30,16 @@ enum BrowserTelemetryEvent: String {
     // MARK: Internal
 
     static func startIfConfigured() {
-        guard !hasStarted, let dsn = infoString("TheBrowserSentryDSN"), isUsableConfigurationValue(dsn) else {
+        guard !hasStarted, let dsn = infoString("OpenArcSentryDSN"), isUsableConfigurationValue(dsn) else {
             return
         }
 
-        let tracesSampleRate = sampleRate(for: "TheBrowserSentryTracesSampleRate", defaultValue: 0.2)
-        let profilesSampleRate = sampleRate(for: "TheBrowserSentryProfilesSampleRate", defaultValue: 0)
+        let tracesSampleRate = sampleRate(for: "OpenArcSentryTracesSampleRate", defaultValue: 0.2)
+        let profilesSampleRate = sampleRate(for: "OpenArcSentryProfilesSampleRate", defaultValue: 0)
 
         SentrySDK.start { options in
             options.dsn = dsn
-            options.environment = infoString("TheBrowserSentryEnvironment") ?? "development"
+            options.environment = infoString("OpenArcSentryEnvironment") ?? "development"
             options.tracesSampleRate = NSNumber(value: tracesSampleRate)
             options.enableAutoPerformanceTracing = tracesSampleRate > 0
             if profilesSampleRate > 0 {
@@ -55,7 +55,7 @@ enum BrowserTelemetryEvent: String {
         }
 
         hasStarted = true
-        usageAnalyticsEnabled = boolInfoValue("TheBrowserSentryUsageAnalyticsEnabled", defaultValue: true)
+        usageAnalyticsEnabled = boolInfoValue("OpenArcSentryUsageAnalyticsEnabled", defaultValue: true)
         captureUsage(.appLaunch, properties: baseProperties)
     }
 

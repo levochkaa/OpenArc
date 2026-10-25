@@ -160,11 +160,11 @@ void ReplaceAll(std::string& value,
 
 std::string RewriteCreditsHTML(std::string html) {
   ReplaceAll(html, "chrome://credits/credits.css",
-             "tb://credits/credits.css");
+             "openarc://credits/credits.css");
   ReplaceAll(html, "chrome://resources/css/text_defaults.css",
-             "tb://credits/text_defaults.css");
+             "openarc://credits/text_defaults.css");
   ReplaceAll(html, "chrome://resources/css/text_defaults_md.css",
-             "tb://credits/text_defaults_md.css");
+             "openarc://credits/text_defaults_md.css");
   return html;
 }
 
@@ -197,10 +197,10 @@ CefRefPtr<CefResourceHandler> CreateBundledResourceHandler(
   return new StringResourceHandler(200, "OK", mime_type, std::move(contents));
 }
 
-class TheBrowserSchemeHandlerFactory
+class OpenArcSchemeHandlerFactory
     : public CefSchemeHandlerFactory {
  public:
-  explicit TheBrowserSchemeHandlerFactory(std::string credits_path)
+  explicit OpenArcSchemeHandlerFactory(std::string credits_path)
       : credits_path_(std::move(credits_path)) {}
 
   CefRefPtr<CefResourceHandler> Create(CefRefPtr<CefBrowser> browser,
@@ -209,7 +209,7 @@ class TheBrowserSchemeHandlerFactory
                                        CefRefPtr<CefRequest> request) override {
     CEF_REQUIRE_IO_THREAD();
 
-    if (RequestHost(request) != shared::kTheBrowserCreditsHost) {
+    if (RequestHost(request) != shared::kOpenArcCreditsHost) {
       return CreateNotFoundHandler();
     }
 
@@ -236,16 +236,16 @@ class TheBrowserSchemeHandlerFactory
  private:
   const std::string credits_path_;
 
-  IMPLEMENT_REFCOUNTING(TheBrowserSchemeHandlerFactory);
-  DISALLOW_COPY_AND_ASSIGN(TheBrowserSchemeHandlerFactory);
+  IMPLEMENT_REFCOUNTING(OpenArcSchemeHandlerFactory);
+  DISALLOW_COPY_AND_ASSIGN(OpenArcSchemeHandlerFactory);
 };
 
 }  // namespace
 
 void RegisterBrowserSchemeHandlers() {
   CefRegisterSchemeHandlerFactory(
-      shared::kTheBrowserScheme, "",
-      new TheBrowserSchemeHandlerFactory(BundledCefCreditsPath()));
+      shared::kOpenArcScheme, "",
+      new OpenArcSchemeHandlerFactory(BundledCefCreditsPath()));
 }
 
 }  // namespace browser

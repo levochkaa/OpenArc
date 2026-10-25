@@ -36,7 +36,7 @@ import Sparkle
         }
 
         guard isSparkleConfigured else {
-            NSLog("TheBrowser updates disabled: missing Sparkle feed URL or public EdDSA key.")
+            NSLog("OpenArc updates disabled: missing Sparkle feed URL or public EdDSA key.")
             return
         }
 
@@ -48,7 +48,7 @@ import Sparkle
         do {
             try updaterController?.updater.start()
         } catch {
-            NSLog("TheBrowser updates disabled: \(error.localizedDescription)")
+            NSLog("OpenArc updates disabled: \(error.localizedDescription)")
         }
     }
 
@@ -73,7 +73,7 @@ import Sparkle
     // MARK: Private
 
     private let preferencesStore: BrowserUserPreferencesStore
-    private let pathQueue = DispatchQueue(label: "com.levochkaa.TheBrowser.update-network-path")
+    private let pathQueue = DispatchQueue(label: "com.levochkaa.OpenArc.update-network-path")
     private var updaterController: SPUStandardUpdaterController?
     private var pathMonitor: NWPathMonitor?
     private var cancellables = Set<AnyCancellable>()
@@ -231,7 +231,7 @@ extension BrowserUpdateController: SPUUpdaterDelegate {
 
         guard preferencesStore.automaticUpdatesEnabled, isWiFiAvailable else {
             throw NSError(
-                domain: "com.levochkaa.TheBrowser.updates",
+                domain: "com.levochkaa.OpenArc.updates",
                 code: 1,
                 userInfo: [
                     NSLocalizedDescriptionKey: "Automatic updates are paused until Wi-Fi is available.",

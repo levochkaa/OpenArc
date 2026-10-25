@@ -1,5 +1,5 @@
-#ifndef THEBROWSER_BROWSER_SWIFT_BRIDGE_H_
-#define THEBROWSER_BROWSER_SWIFT_BRIDGE_H_
+#ifndef OPENARC_BROWSER_SWIFT_BRIDGE_H_
+#define OPENARC_BROWSER_SWIFT_BRIDGE_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,4 +41,4 @@ BOOL BrowserRemoveExtension(NSString* profile_path, NSString* extension_id);
 }
 #endif
 
-#endif  // THEBROWSER_BROWSER_SWIFT_BRIDGE_H_
+#endif  // OPENARC_BROWSER_SWIFT_BRIDGE_H_

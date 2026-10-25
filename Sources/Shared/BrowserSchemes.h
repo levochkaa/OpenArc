@@ -1,32 +1,32 @@
-#ifndef THEBROWSER_SHARED_BROWSER_SCHEMES_H_
-#define THEBROWSER_SHARED_BROWSER_SCHEMES_H_
+#ifndef OPENARC_SHARED_BROWSER_SCHEMES_H_
+#define OPENARC_SHARED_BROWSER_SCHEMES_H_
 
 #include "include/cef_app.h"
 
 namespace shared {
 
-extern const char kTheBrowserScheme[];
-extern const char kTheBrowserCreditsHost[];
-extern const char kTheBrowserCreditsURL[];
-extern const char kTheBrowserSettingsHost[];
-extern const char kTheBrowserSettingsURL[];
-extern const char kTheBrowserExtensionsHost[];
-extern const char kTheBrowserExtensionsURL[];
-extern const char kTheBrowserHistoryHost[];
-extern const char kTheBrowserHistoryURL[];
-extern const char kTheBrowserPasswordManagerHost[];
-extern const char kTheBrowserPasswordManagerURL[];
-extern const char kTheBrowserBookmarksHost[];
-extern const char kTheBrowserBookmarksURL[];
+extern const char kOpenArcScheme[];
+extern const char kOpenArcCreditsHost[];
+extern const char kOpenArcCreditsURL[];
+extern const char kOpenArcSettingsHost[];
+extern const char kOpenArcSettingsURL[];
+extern const char kOpenArcExtensionsHost[];
+extern const char kOpenArcExtensionsURL[];
+extern const char kOpenArcHistoryHost[];
+extern const char kOpenArcHistoryURL[];
+extern const char kOpenArcPasswordManagerHost[];
+extern const char kOpenArcPasswordManagerURL[];
+extern const char kOpenArcBookmarksHost[];
+extern const char kOpenArcBookmarksURL[];
 extern const char kChromiumSettingsURL[];
 extern const char kChromiumExtensionsURL[];
 extern const char kChromiumHistoryURL[];
 extern const char kChromiumPasswordManagerURL[];
 extern const char kChromiumBookmarksURL[];
 
-void RegisterTheBrowserCustomSchemes(
+void RegisterOpenArcCustomSchemes(
     CefRawPtr<CefSchemeRegistrar> registrar);
 
 }  // namespace shared
 
-#endif  // THEBROWSER_SHARED_BROWSER_SCHEMES_H_
+#endif  // OPENARC_SHARED_BROWSER_SCHEMES_H_

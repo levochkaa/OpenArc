@@ -1,5 +1,5 @@
-#ifndef THEBROWSER_SHARED_CLIENT_UTIL_H_
-#define THEBROWSER_SHARED_CLIENT_UTIL_H_
+#ifndef OPENARC_SHARED_CLIENT_UTIL_H_
+#define OPENARC_SHARED_CLIENT_UTIL_H_
 
 #include <string>
 
@@ -19,5 +19,5 @@ bool IsAlloyStyleEnabled();
 
 }  // namespace shared
 
-#endif  // THEBROWSER_SHARED_CLIENT_UTIL_H_
+#endif  // OPENARC_SHARED_CLIENT_UTIL_H_
 

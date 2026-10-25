@@ -117,7 +117,7 @@ final class BrowserSessionPersistenceStatusView: NSView {
         let panel = NSSavePanel()
         panel.title = BrowserStrings.sessionRecoverySaveCopy
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "TheBrowser-session.json"
+        panel.nameFieldStringValue = "OpenArc-session.json"
         panel.beginSheetModal(for: window) { [weak model, weak window] response in
             guard response == .OK, let url = panel.url, let model, let window else { return }
             do {

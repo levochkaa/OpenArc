@@ -36,13 +36,13 @@ if [[ ! -x node_modules/.bin/tsx ]]; then
   exit 1
 fi
 docker info >/dev/null
-THEBROWSER_SYNC_SERVER_BINARY="$("$repo_root/script/build_sync_server.sh")"
-export THEBROWSER_SYNC_SERVER_BINARY
+OPENARC_SYNC_SERVER_BINARY="$("$repo_root/script/build_sync_server.sh")"
+export OPENARC_SYNC_SERVER_BINARY
 
 test_id="$(node -p 'require("node:crypto").randomBytes(8).toString("hex")')"
-container_name="thebrowser-mobile-sync-test-$test_id"
-database_name="thebrowser_sync_test_$test_id"
-fixture_directory="$(mktemp -d "${TMPDIR:-/tmp}/thebrowser-mobile-sync.XXXXXX")"
+container_name="openarc-mobile-sync-test-$test_id"
+database_name="openarc_sync_test_$test_id"
+fixture_directory="$(mktemp -d "${TMPDIR:-/tmp}/openarc-mobile-sync.XXXXXX")"
 fixture_path="$fixture_directory/fixture.json"
 report_path="$fixture_directory/completed.json"
 fixture_log="$fixture_directory/fixture.log"
@@ -70,7 +70,7 @@ trap 'exit 143' TERM
 
 # This disposable database has no persistent volume and only a loopback port.
 container_id="$(docker run --detach --rm --name "$container_name" \
-  --label thebrowser.sync-test=true --publish 127.0.0.1::5432 \
+  --label openarc.sync-test=true --publish 127.0.0.1::5432 \
   --env "POSTGRES_DB=$database_name" --env POSTGRES_USER=sync_test \
   --env POSTGRES_PASSWORD=disposable-local-test-password postgres:17)"
 ready=false
@@ -86,8 +86,8 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 database_port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "$container_id")"
-export THEBROWSER_SYNC_TEST_DATABASE_URL="postgres://sync_test:disposable-local-test-password@127.0.0.1:$database_port/$database_name"
-THEBROWSER_SYNC_FIXTURE_SUITE=mobile node --import tsx tests/swift-sync-fixture.ts "$fixture_path" "$report_path" >"$fixture_log" 2>&1 &
+export OPENARC_SYNC_TEST_DATABASE_URL="postgres://sync_test:disposable-local-test-password@127.0.0.1:$database_port/$database_name"
+OPENARC_SYNC_FIXTURE_SUITE=mobile node --import tsx tests/swift-sync-fixture.ts "$fixture_path" "$report_path" >"$fixture_log" 2>&1 &
 fixture_pid=$!
 ready=false
 for ((attempt = 0; attempt < 100; attempt++)); do
@@ -114,13 +114,13 @@ assert.equal(new URL(fixture.controlURL).hostname, "127.0.0.1");
 assert.ok(typeof fixture.controlToken === "string" && fixture.controlToken.length > 0);
 const args = ["ios-test", ...process.argv.slice(3)];
 if (!args.includes("--")) args.push("--");
-args.push("-only-testing:TheBrowseriOSTests/BrowserMobileSyncHTTPIntegrationTests");
+args.push("-only-testing:OpenArciOSTests/BrowserMobileSyncHTTPIntegrationTests");
 const env = {
   ...process.env,
-  TEST_RUNNER_THEBROWSER_MOBILE_SYNC_CONTROL_URL: fixture.controlURL,
-  TEST_RUNNER_THEBROWSER_MOBILE_SYNC_CONTROL_TOKEN: fixture.controlToken
+  TEST_RUNNER_OPENARC_MOBILE_SYNC_CONTROL_URL: fixture.controlURL,
+  TEST_RUNNER_OPENARC_MOBILE_SYNC_CONTROL_TOKEN: fixture.controlToken
 };
-delete env.THEBROWSER_SYNC_TEST_DATABASE_URL;
+delete env.OPENARC_SYNC_TEST_DATABASE_URL;
 const result = spawnSync("./build.sh", args, { env, stdio: "inherit" });
 if (result.error) throw result.error;
 process.exit(result.status ?? 1);

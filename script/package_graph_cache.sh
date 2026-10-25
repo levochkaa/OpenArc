@@ -8,9 +8,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/script/xcode_env.sh"
-PROJECT_PATH="$ROOT_DIR/TheBrowser.xcodeproj"
+PROJECT_PATH="$ROOT_DIR/OpenArc.xcodeproj"
 WORKSPACE_RESOLVED_PATH="$PROJECT_PATH/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
-PACKAGE_GRAPH_CACHE_ROOT="$HOME/Library/Caches/TheBrowserBuild/PackageGraphs"
+PACKAGE_GRAPH_CACHE_ROOT="$HOME/Library/Caches/OpenArcBuild/PackageGraphs"
 PACKAGE_GRAPH_MAX_UNUSED_DAYS=14
 
 usage() {
@@ -27,7 +27,7 @@ EOF
 
 package_graph_key() {
   {
-    printf '%s\n' "thebrowser-package-graph-v1"
+    printf '%s\n' "openarc-package-graph-v1"
     xcodebuild -version
     awk '
       /^packages:[[:space:]]*$/ { capture = 1; print; next }

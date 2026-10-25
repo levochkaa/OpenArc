@@ -1,4 +1,4 @@
-"browser.app.name" = "TheBrowser";
+"browser.app.name" = "OpenArc";
 "browser.tab.new" = "New Tab";
 "browser.sidebar.new_tab" = "New Tab";
 "browser.space.default_title" = "Space %d";
@@ -146,8 +146,8 @@
 "browser.about.application_version" = "Version %@ (%@)";
 "browser.about.chromium_version" = "Chromium %@";
 "browser.about.unknown_version" = "Unknown";
-"browser.about.copyright" = "Copyright © 2026 TheBrowser. All rights reserved.";
-"browser.about.made_possible.prefix" = "TheBrowser is made possible by the ";
+"browser.about.copyright" = "Copyright © 2026 OpenArc. All rights reserved.";
+"browser.about.made_possible.prefix" = "OpenArc is made possible by the ";
 "browser.about.chromium_project_link" = "Chromium";
 "browser.about.made_possible.chromium_project_suffix" = " open source project, Chromium's ";
 "browser.about.open_source_software_link" = "open source software";
@@ -324,13 +324,13 @@
 "browser.web_app.uninstall_prompt.title" = "Uninstall Web App?";
 "browser.web_app.uninstall_prompt.message" = "Move %@ to the Trash? Its separate browsing data will remain on this Mac.";
 "browser.web_app.uninstall_prompt.uninstall" = "Move to Trash";
-"browser.web_app.info.installed_with" = "Installed with TheBrowser";
+"browser.web_app.info.installed_with" = "Installed with OpenArc";
 "browser.web_app.info.done_action" = "Done";
 "browser.web_app.error.applications_directory_unavailable" = "Your Applications folder is unavailable.";
-"browser.web_app.error.invalid_host_bundle" = "TheBrowser’s application bundle is invalid.";
+"browser.web_app.error.invalid_host_bundle" = "OpenArc’s application bundle is invalid.";
 "browser.web_app.error.invalid_name" = "Enter a valid app name.";
-"browser.web_app.error.missing_host_executable" = "TheBrowser’s executable could not be found.";
-"browser.web_app.error.missing_launcher_executable" = "TheBrowser’s web app launcher could not be found.";
+"browser.web_app.error.missing_host_executable" = "OpenArc’s executable could not be found.";
+"browser.web_app.error.missing_launcher_executable" = "OpenArc’s web app launcher could not be found.";
 "browser.web_app.error.bundle_signing_failed" = "The web app bundle could not be signed. %@";
 "browser.web_app.error.unsupported_url" = "Only HTTP and HTTPS pages can be installed as apps.";
 "browser.sidebar.clear_temporary_tabs" = "Clear";
@@ -377,7 +377,7 @@
 "browser.extensions.site_access.current_site" = "On %@";
 "browser.extensions.site_access.all_sites" = "On All Sites";
 "browser.extensions.site_access.learn_more" = "Learn More About Site Access";
-"browser.extensions.remove_from_thebrowser" = "Remove from TheBrowser";
+"browser.extensions.remove_from_openarc" = "Remove from OpenArc";
 "browser.extensions.pin" = "Pin";
 "browser.extensions.unpin" = "Unpin";
 "browser.extensions.manage_extension" = "Manage Extension";
@@ -396,7 +396,7 @@
 "browser.sync.account.sign_in_with_apple" = "Sign in with Apple";
 "browser.sync.account.sign_out" = "Sign Out";
 "browser.sync.account.signed_in" = "Signed in";
-"browser.sync.account.server_not_configured" = "Set THEBROWSER_SYNC_BASE_URL to enable sync.";
+"browser.sync.account.server_not_configured" = "Set OPENARC_SYNC_BASE_URL to enable sync.";
 "browser.sync.account.device" = "Device %@";
 "browser.sync.account.enable" = "Enable Sync for This Profile";
 "browser.sync.account.enable_detail" = "Sync this profile’s Spaces and tabs with this account. Existing local and account data will be combined. This profile will remain linked to this account after signing out.";
@@ -434,8 +434,8 @@
 "browser.settings.profiles.delete" = "Delete";
 "browser.settings.profiles.backup_created" = "Created backup %@.";
 "browser.settings.profiles.backup_failed" = "Backup failed: %@";
-"browser.settings.default_browser.prompt" = "TheBrowser works best as your default browser";
-"browser.settings.default_browser.action" = "Set TheBrowser as default";
+"browser.settings.default_browser.prompt" = "OpenArc works best as your default browser";
+"browser.settings.default_browser.action" = "Set OpenArc as default";
 "browser.settings.profiles.new_profile" = "New Profile";
 "browser.settings.profiles.directory" = "Chromium directory: %@";
 "browser.settings.search" = "Search";
@@ -479,7 +479,7 @@
 "browser.settings.content.show_bookmarks_bar" = "Show Bookmarks Bar";
 "browser.settings.content.more_settings" = "More Settings";
 "browser.settings.content.translate_site_prompts" = "Translate Site Prompts";
-"browser.settings.quit_warning.title" = "Quit TheBrowser?";
+"browser.settings.quit_warning.title" = "Quit OpenArc?";
 "browser.settings.quit_warning.message" = "You still have open tabs. Quit anyway?";
 "browser.settings.quit_warning.quit" = "Quit";
 "browser.settings.quit_warning.cancel" = "Cancel";

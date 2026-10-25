@@ -4,16 +4,16 @@ set -euo pipefail
 CEF_CONFIGURATION="${1:-Release}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CEF_ROOT="$ROOT_DIR/ThirdParty/cef/current"
-CHROMIUM_FORK_MARKER="$CEF_ROOT/.thebrowser-chromium-fork"
+CHROMIUM_FORK_MARKER="$CEF_ROOT/.openarc-chromium-fork"
 APP_CONFIGURATION="${CONFIGURATION:-Debug}"
 DEFAULT_PRODUCTS_DIR="$ROOT_DIR/.build/xcode/Build/Products/$APP_CONFIGURATION"
-APP_BUNDLE="${2:-$DEFAULT_PRODUCTS_DIR/TheBrowser.app}"
-HELPER_BUNDLE="${3:-$DEFAULT_PRODUCTS_DIR/TheBrowser Helper.app}"
+APP_BUNDLE="${2:-$DEFAULT_PRODUCTS_DIR/OpenArc.app}"
+HELPER_BUNDLE="${3:-$DEFAULT_PRODUCTS_DIR/OpenArc Helper.app}"
 APP_FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 APP_RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
-DEFAULT_APP_ENTITLEMENTS="Support/TheBrowser.entitlements"
+DEFAULT_APP_ENTITLEMENTS="Support/OpenArc.entitlements"
 if [[ "$APP_CONFIGURATION" == "Debug" ]]; then
-  DEFAULT_APP_ENTITLEMENTS="Support/TheBrowser-Debug.entitlements"
+  DEFAULT_APP_ENTITLEMENTS="Support/OpenArc-Debug.entitlements"
 fi
 APP_ENTITLEMENTS="${CODE_SIGN_ENTITLEMENTS:-$DEFAULT_APP_ENTITLEMENTS}"
 if [[ "$APP_ENTITLEMENTS" != /* ]]; then
@@ -23,8 +23,8 @@ CEF_FRAMEWORK_SOURCE="$CEF_ROOT/$CEF_CONFIGURATION/Chromium Embedded Framework.f
 CEF_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Chromium Embedded Framework.framework"
 SPARKLE_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Sparkle.framework"
 SENTRY_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Sentry.framework"
-HELPER_DEST="$APP_FRAMEWORKS_DIR/TheBrowser Helper.app"
-RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/TheBrowser Helper.app"
+HELPER_DEST="$APP_FRAMEWORKS_DIR/OpenArc Helper.app"
+RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/OpenArc Helper.app"
 
 validate_cef_configuration() {
   case "$CEF_CONFIGURATION" in
@@ -84,11 +84,11 @@ create_versioned_cef_framework() {
 create_helper_variant() {
   local name_suffix="$1"
   local bundle_suffix="$2"
-  local app_name="TheBrowser Helper${name_suffix}"
+  local app_name="OpenArc Helper${name_suffix}"
   local variant_bundle="$APP_FRAMEWORKS_DIR/${app_name}.app"
   local variant_binary_dir="$variant_bundle/Contents/MacOS"
   local variant_binary="$variant_binary_dir/${app_name}"
-  local base_binary="$variant_binary_dir/TheBrowser Helper"
+  local base_binary="$variant_binary_dir/OpenArc Helper"
   local plist="$variant_bundle/Contents/Info.plist"
 
   rm -rf "$variant_bundle"
@@ -97,7 +97,7 @@ create_helper_variant() {
 
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $app_name" "$plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $app_name" "$plist"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.levochkaa.TheBrowser.helper${bundle_suffix}" "$plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.levochkaa.OpenArc.helper${bundle_suffix}" "$plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleName $app_name" "$plist"
 }
 
@@ -130,10 +130,10 @@ sign_app_bundle() {
   # seal nested code here using the active Xcode identity when available.
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$CEF_FRAMEWORK_DEST"
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$HELPER_DEST"
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Alerts).app"
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (GPU).app"
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Plugin).app"
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Renderer).app"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (Alerts).app"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (GPU).app"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (Plugin).app"
+  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (Renderer).app"
   if [[ -d "$SPARKLE_FRAMEWORK_DEST" ]]; then
     /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$SPARKLE_FRAMEWORK_DEST"
   fi
@@ -156,7 +156,7 @@ if [[ ! -d "$HELPER_BUNDLE" ]]; then
 fi
 
 if [[ ! -f "$CHROMIUM_FORK_MARKER" ]]; then
-  echo "error: TheBrowser Chromium fork marker not found at $CHROMIUM_FORK_MARKER" >&2
+  echo "error: OpenArc Chromium fork marker not found at $CHROMIUM_FORK_MARKER" >&2
   echo "Run ./script/chromium_source.sh package $CEF_CONFIGURATION first, then ./script/chromium.sh root $CEF_CONFIGURATION." >&2
   exit 1
 fi
@@ -177,10 +177,10 @@ mkdir -p "$APP_FRAMEWORKS_DIR"
 mkdir -p "$APP_RESOURCES_DIR"
 rm -rf "$CEF_FRAMEWORK_DEST" "$HELPER_DEST"
 rm -rf "$RESOURCE_HELPER_DEST"
-rm -rf "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Alerts).app"
-rm -rf "$APP_FRAMEWORKS_DIR/TheBrowser Helper (GPU).app"
-rm -rf "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Plugin).app"
-rm -rf "$APP_FRAMEWORKS_DIR/TheBrowser Helper (Renderer).app"
+rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (Alerts).app"
+rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (GPU).app"
+rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (Plugin).app"
+rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (Renderer).app"
 
 ditto "$CEF_FRAMEWORK_SOURCE" "$CEF_FRAMEWORK_DEST"
 create_versioned_cef_framework "$CEF_FRAMEWORK_DEST"

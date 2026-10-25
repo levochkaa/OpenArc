@@ -3,15 +3,15 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
-report_path="${1:-$(mktemp "${TMPDIR:-/tmp}/thebrowser-sync-performance.XXXXXX")}"
+report_path="${1:-$(mktemp "${TMPDIR:-/tmp}/openarc-sync-performance.XXXXXX")}"
 report_path="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$report_path")"
-export THEBROWSER_SYNC_PERFORMANCE=1
-export TEST_RUNNER_THEBROWSER_SYNC_PERFORMANCE=1
-export THEBROWSER_SYNC_PERFORMANCE_REPORT="$report_path"
-export TEST_RUNNER_THEBROWSER_SYNC_PERFORMANCE_REPORT="$report_path"
-export THEBROWSER_SYNC_PERFORMANCE_RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
-export TEST_RUNNER_THEBROWSER_SYNC_PERFORMANCE_RUN_ID="$THEBROWSER_SYNC_PERFORMANCE_RUN_ID"
-./build.sh test -- -only-testing:TheBrowserTests/BrowserSyncPerformanceTests
+export OPENARC_SYNC_PERFORMANCE=1
+export TEST_RUNNER_OPENARC_SYNC_PERFORMANCE=1
+export OPENARC_SYNC_PERFORMANCE_REPORT="$report_path"
+export TEST_RUNNER_OPENARC_SYNC_PERFORMANCE_REPORT="$report_path"
+export OPENARC_SYNC_PERFORMANCE_RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+export TEST_RUNNER_OPENARC_SYNC_PERFORMANCE_RUN_ID="$OPENARC_SYNC_PERFORMANCE_RUN_ID"
+./build.sh test -- -only-testing:OpenArcTests/BrowserSyncPerformanceTests
 
 # A skipped test or wrong filter must not masquerade as a successful probe.
 python3 - "$report_path" <<'PY'
@@ -23,7 +23,7 @@ expected = {(phase, tabs, pending) for phase in ('capture', 'empty_pull', 'first
 expected |= {('drain', 1000, pending) for pending in (10, 100)}
 rows = report['results']
 assert report['schemaVersion'] == 1 and report['plannedCases'] == 29
-assert report['runID'] == os.environ['THEBROWSER_SYNC_PERFORMANCE_RUN_ID']
+assert report['runID'] == os.environ['OPENARC_SYNC_PERFORMANCE_RUN_ID']
 assert len(rows) == 29 and {(r['phase'], r['tabs'], r['pending']) for r in rows} == expected
 assert report['allCasesAccountedFor'] and report['completedCases'] > 0
 assert report['completedCases'] == sum(r['status'] == 'completed' for r in rows)

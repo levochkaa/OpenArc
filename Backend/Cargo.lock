@@ -1348,6 +1348,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "openarc-sync-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.23.1",
+ "brotli",
+ "bytes",
+ "chrono",
+ "deadpool-postgres",
+ "flate2",
+ "futures-util",
+ "hex",
+ "http-body",
+ "http-body-util",
+ "jsonwebtoken",
+ "postgres-types",
+ "rand 0.8.8",
+ "regex",
+ "reqwest",
+ "rsa",
+ "rustls",
+ "ryu-js",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha1",
+ "sha2 0.11.1",
+ "tokio",
+ "tokio-postgres",
+ "tokio-postgres-rustls",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "webpki-roots",
+]
+
+[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2186,47 +2227,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
-]
-
-[[package]]
-name = "thebrowser-sync-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.23.1",
- "brotli",
- "bytes",
- "chrono",
- "deadpool-postgres",
- "flate2",
- "futures-util",
- "hex",
- "http-body",
- "http-body-util",
- "jsonwebtoken",
- "postgres-types",
- "rand 0.8.8",
- "regex",
- "reqwest",
- "rsa",
- "rustls",
- "ryu-js",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha1",
- "sha2 0.11.1",
- "tokio",
- "tokio-postgres",
- "tokio-postgres-rustls",
- "tower",
- "tower-http 0.7.1",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "webpki-roots",
 ]
 
 [[package]]

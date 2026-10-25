@@ -11,6 +11,6 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 # Migrations and the OpenAPI contract are compiled into the binary.
-COPY --from=build /app/target/release/thebrowser-sync-server /usr/local/bin/thebrowser-sync-server
+COPY --from=build /app/target/release/openarc-sync-server /usr/local/bin/openarc-sync-server
 USER nobody
-CMD ["thebrowser-sync-server", "serve"]
+CMD ["openarc-sync-server", "serve"]

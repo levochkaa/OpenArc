@@ -3,17 +3,17 @@ set -euo pipefail
 
 usage() {
   echo "Usage: ./script/run_ios_simulator.sh iphone|ipad [--skip-build]"
-  echo "Builds the iOS app and launches it on a dedicated TheBrowser simulator."
+  echo "Builds the iOS app and launches it on a dedicated OpenArc simulator."
   echo "A missing device is created on the newest installed iOS runtime that supports it."
 }
 
 case "${1:-}" in
   iphone)
-    device_name="TheBrowser iPhone"
+    device_name="OpenArc iPhone"
     device_type="iPhone 17 Pro"
     ;;
   ipad)
-    device_name="TheBrowser iPad"
+    device_name="OpenArc iPad"
     device_type="iPad Air 11-inch (M4)"
     ;;
   --help | -h)
@@ -36,7 +36,7 @@ fi
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/script/xcode_env.sh"
 configuration="${CONFIGURATION:-Debug}"
-app="$repo_root/.build/xcode-ios/Build/Products/$configuration-iphonesimulator/TheBrowser.app"
+app="$repo_root/.build/xcode-ios/Build/Products/$configuration-iphonesimulator/OpenArc.app"
 
 if [[ "$skip_build" == false ]]; then
   "$repo_root/build.sh" ios-build --configuration "$configuration"

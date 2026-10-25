@@ -139,7 +139,7 @@ final class BrowserProfileStore: ObservableObject {
     }
 
     private var deletedProfilesURL: URL {
-        rootCacheURL.appendingPathComponent("TheBrowser Deleted Profiles.json", isDirectory: false)
+        rootCacheURL.appendingPathComponent("OpenArc Deleted Profiles.json", isDirectory: false)
     }
 
     private func loadLocalState() -> JSONObject {

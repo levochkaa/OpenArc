@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_DB: thebrowser
-      POSTGRES_USER: thebrowser
-      POSTGRES_PASSWORD: thebrowser
+      POSTGRES_DB: openarc
+      POSTGRES_USER: openarc
+      POSTGRES_PASSWORD: openarc
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U thebrowser -d thebrowser"]
+      test: ["CMD-SHELL", "pg_isready -U openarc -d openarc"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -18,21 +18,21 @@ services:
   api:
     build: .
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://thebrowser:thebrowser@postgres:5432/thebrowser}
+      DATABASE_URL: ${DATABASE_URL:-postgres://openarc:openarc@postgres:5432/openarc}
       PORT: ${PORT:-8080}
       HOST: ${HOST:-0.0.0.0}
-      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-com.levochkaa.TheBrowser}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-com.levochkaa.OpenArc}
       APPLE_CLIENT_IDS:
       JWT_SECRET: ${JWT_SECRET:-replace-with-at-least-32-random-bytes}
-      JWT_ISSUER: ${JWT_ISSUER:-thebrowser-sync}
-      JWT_AUDIENCE: ${JWT_AUDIENCE:-thebrowser-clients}
+      JWT_ISSUER: ${JWT_ISSUER:-openarc-sync}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-openarc-clients}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8080:8080"
-    command: ["thebrowser-sync-server", "serve"]
+    command: ["openarc-sync-server", "serve"]
 
   caddy:
     image: caddy:2

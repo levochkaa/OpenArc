@@ -1,5 +1,5 @@
-#ifndef THEBROWSER_SHARED_BROWSER_MEDIA_MESSAGES_H_
-#define THEBROWSER_SHARED_BROWSER_MEDIA_MESSAGES_H_
+#ifndef OPENARC_SHARED_BROWSER_MEDIA_MESSAGES_H_
+#define OPENARC_SHARED_BROWSER_MEDIA_MESSAGES_H_
 
 namespace shared {
 
@@ -7,13 +7,13 @@ namespace shared {
 // that can resume), video, has previous track, has next track (bools) and
 // the media session title (string), in that order. CEF has no audible
 // signal of its own.
-inline constexpr char kMediaStateMessage[] = "TheBrowser.MediaState";
+inline constexpr char kMediaStateMessage[] = "OpenArc.MediaState";
 inline constexpr int kMediaStateArgumentCount = 7;
 
 // A command for a frame's media, to the renderer: "play", "pause",
 // "previoustrack" or "nexttrack".
-inline constexpr char kMediaControlMessage[] = "TheBrowser.MediaControl";
+inline constexpr char kMediaControlMessage[] = "OpenArc.MediaControl";
 
 }  // namespace shared
 
-#endif  // THEBROWSER_SHARED_BROWSER_MEDIA_MESSAGES_H_
+#endif  // OPENARC_SHARED_BROWSER_MEDIA_MESSAGES_H_

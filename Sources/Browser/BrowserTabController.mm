@@ -6,7 +6,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import "Browser/SwiftBridge.h"
-#import "TheBrowser-Swift.h"
+#import "OpenArc-Swift.h"
 #include "Shared/BrowserMediaMessages.h"
 #include "Shared/BrowserSchemes.h"
 #include "Shared/ClientManager.h"
@@ -2645,20 +2645,20 @@ bool URLHasSchemeAndInternalHost(const CefString &url,
   }
 
   std::string host = LowercaseASCII(URLPartToString(parts.host));
-  if (host.empty() || host == shared::kTheBrowserCreditsHost) {
+  if (host.empty() || host == shared::kOpenArcCreditsHost) {
     return false;
   }
 
   return LowercaseASCII(URLPartToString(parts.scheme)) == scheme;
 }
 
-std::string TheBrowserURLForChromiumInternalURL(const CefString &url) {
+std::string OpenArcURLForChromiumInternalURL(const CefString &url) {
   std::string urlString = LowercaseASCII(url.ToString());
   if (urlString == "about:credits") {
-    return shared::kTheBrowserCreditsURL;
+    return shared::kOpenArcCreditsURL;
   }
   if (urlString == "about:settings") {
-    return shared::kTheBrowserSettingsURL;
+    return shared::kOpenArcSettingsURL;
   }
 
   CefURLParts parts;
@@ -2680,7 +2680,7 @@ std::string TheBrowserURLForChromiumInternalURL(const CefString &url) {
     path = "/";
   }
 
-  std::string redirectURL = std::string(shared::kTheBrowserScheme) + "://" +
+  std::string redirectURL = std::string(shared::kOpenArcScheme) + "://" +
                             host + path;
   std::string query = URLPartToString(parts.query);
   if (!query.empty()) {
@@ -2697,61 +2697,61 @@ bool IsChromiumInternalWindowURL(const CefString &url) {
   return URLHasSchemeAndInternalHost(url, "chrome");
 }
 
-bool IsTheBrowserExtensionsURL(const CefString &url) {
+bool IsOpenArcExtensionsURL(const CefString &url) {
   CefURLParts parts;
   if (!CefParseURL(url, parts)) {
     return false;
   }
 
   return LowercaseASCII(URLPartToString(parts.scheme)) ==
-             shared::kTheBrowserScheme &&
+             shared::kOpenArcScheme &&
          LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserExtensionsHost;
+             shared::kOpenArcExtensionsHost;
 }
 
-bool IsTheBrowserHistoryURL(const CefString &url) {
+bool IsOpenArcHistoryURL(const CefString &url) {
   CefURLParts parts;
   if (!CefParseURL(url, parts)) {
     return false;
   }
 
   return LowercaseASCII(URLPartToString(parts.scheme)) ==
-             shared::kTheBrowserScheme &&
+             shared::kOpenArcScheme &&
          LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserHistoryHost;
+             shared::kOpenArcHistoryHost;
 }
 
-bool IsTheBrowserPasswordManagerURL(const CefString &url) {
+bool IsOpenArcPasswordManagerURL(const CefString &url) {
   CefURLParts parts;
   if (!CefParseURL(url, parts)) {
     return false;
   }
 
   return LowercaseASCII(URLPartToString(parts.scheme)) ==
-             shared::kTheBrowserScheme &&
+             shared::kOpenArcScheme &&
          LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserPasswordManagerHost;
+             shared::kOpenArcPasswordManagerHost;
 }
 
-bool IsTheBrowserBookmarksURL(const CefString &url) {
+bool IsOpenArcBookmarksURL(const CefString &url) {
   CefURLParts parts;
   if (!CefParseURL(url, parts)) {
     return false;
   }
 
   return LowercaseASCII(URLPartToString(parts.scheme)) ==
-             shared::kTheBrowserScheme &&
+             shared::kOpenArcScheme &&
          LowercaseASCII(URLPartToString(parts.host)) ==
-             shared::kTheBrowserBookmarksHost;
+             shared::kOpenArcBookmarksHost;
 }
 
-bool IsTheBrowserInternalWindowURL(const CefString &url) {
-  return URLHasSchemeAndInternalHost(url, shared::kTheBrowserScheme);
+bool IsOpenArcInternalWindowURL(const CefString &url) {
+  return URLHasSchemeAndInternalHost(url, shared::kOpenArcScheme);
 }
 
-std::string ChromiumInternalWindowURLForTheBrowserURL(const CefString &url) {
+std::string ChromiumInternalWindowURLForOpenArcURL(const CefString &url) {
   CefURLParts parts;
-  if (!CefParseURL(url, parts) || !IsTheBrowserInternalWindowURL(url)) {
+  if (!CefParseURL(url, parts) || !IsOpenArcInternalWindowURL(url)) {
     return std::string();
   }
 
@@ -2775,7 +2775,7 @@ std::string ChromiumInternalWindowURLForTheBrowserURL(const CefString &url) {
 
 std::string DisplayURLStringForCommittedURL(const CefString &url) {
   if (IsChromiumInternalWindowURL(url)) {
-    std::string displayURL = TheBrowserURLForChromiumInternalURL(url);
+    std::string displayURL = OpenArcURLForChromiumInternalURL(url);
     if (!displayURL.empty()) {
       return displayURL;
     }
@@ -5288,23 +5288,23 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
   allow_next_chromium_internal_navigation_ = false;
 
   std::string redirectURL =
-      TheBrowserURLForChromiumInternalURL(request->GetURL());
+      OpenArcURLForChromiumInternalURL(request->GetURL());
   if (!redirectURL.empty()) {
     frame->LoadURL(redirectURL);
     return true;
   }
 
-  if (IsTheBrowserInternalWindowURL(request->GetURL())) {
+  if (IsOpenArcInternalWindowURL(request->GetURL())) {
     std::string chromiumInternalURL =
-        ChromiumInternalWindowURLForTheBrowserURL(request->GetURL());
+        ChromiumInternalWindowURLForOpenArcURL(request->GetURL());
     if (chromiumInternalURL.empty()) {
-      if (IsTheBrowserExtensionsURL(request->GetURL())) {
+      if (IsOpenArcExtensionsURL(request->GetURL())) {
         chromiumInternalURL = shared::kChromiumExtensionsURL;
-      } else if (IsTheBrowserHistoryURL(request->GetURL())) {
+      } else if (IsOpenArcHistoryURL(request->GetURL())) {
         chromiumInternalURL = shared::kChromiumHistoryURL;
-      } else if (IsTheBrowserPasswordManagerURL(request->GetURL())) {
+      } else if (IsOpenArcPasswordManagerURL(request->GetURL())) {
         chromiumInternalURL = shared::kChromiumPasswordManagerURL;
-      } else if (IsTheBrowserBookmarksURL(request->GetURL())) {
+      } else if (IsOpenArcBookmarksURL(request->GetURL())) {
         chromiumInternalURL = shared::kChromiumBookmarksURL;
       } else {
         chromiumInternalURL = shared::kChromiumSettingsURL;
@@ -5529,7 +5529,7 @@ bool RequestSitePermissionPrompt(BrowserTabController *controller,
 
 /// Camera and microphone from getUserMedia. Alloy-style CEF denies them by
 /// default, so they go to the page's prompt. Screen sharing needs a source
-/// picker TheBrowser does not have and keeps the default denial.
+/// picker OpenArc does not have and keeps the default denial.
 bool RequestSiteMediaAccess(BrowserTabController *controller,
                             NSString *tabID,
                             const CefString &requesting_origin,

@@ -74,7 +74,7 @@ if [[ "$build_app" == true ]]; then
 fi
 
 if [[ -z "$app_bundle" ]]; then
-  app_bundle="$ROOT_DIR/.build/xcode/Build/Products/Release/TheBrowser.app"
+  app_bundle="$ROOT_DIR/.build/xcode/Build/Products/Release/OpenArc.app"
 fi
 
 if [[ ! -d "$app_bundle" ]]; then
@@ -90,16 +90,16 @@ tag="${tag:-v$short_version-$build_version}"
 release_root="${RELEASE_OUTPUT_DIR:-$ROOT_DIR/.build/releases}"
 updates_dir="${SPARKLE_UPDATES_DIR:-$release_root/sparkle-updates}"
 work_dir="$release_root/work/$tag"
-archive_name="TheBrowser-$short_version-$build_version.zip"
+archive_name="OpenArc-$short_version-$build_version.zip"
 archive_path="$updates_dir/$archive_name"
 generated_notes_path="$updates_dir/$archive_name.md"
-public_base_url="${THEBROWSER_UPDATE_PUBLIC_BASE_URL:-https://updates.thebrowser.app}"
-download_url_prefix="${THEBROWSER_UPDATE_DOWNLOAD_URL_PREFIX:-$public_base_url/downloads}"
-release_notes_url_prefix="${THEBROWSER_UPDATE_RELEASE_NOTES_URL_PREFIX:-$public_base_url/downloads}"
+public_base_url="${OPENARC_UPDATE_PUBLIC_BASE_URL:-https://updates.openarc.app}"
+download_url_prefix="${OPENARC_UPDATE_DOWNLOAD_URL_PREFIX:-$public_base_url/downloads}"
+release_notes_url_prefix="${OPENARC_UPDATE_RELEASE_NOTES_URL_PREFIX:-$public_base_url/downloads}"
 maximum_versions="${SPARKLE_MAXIMUM_VERSIONS:-1}"
 maximum_deltas="${SPARKLE_MAXIMUM_DELTAS:-5}"
-sparkle_key_account="${SPARKLE_KEY_ACCOUNT:-TheBrowser}"
-release_title="${RELEASE_TITLE:-TheBrowser $short_version ($build_version)}"
+sparkle_key_account="${SPARKLE_KEY_ACCOUNT:-OpenArc}"
+release_title="${RELEASE_TITLE:-OpenArc $short_version ($build_version)}"
 release_notes_for_github="$work_dir/release-notes.md"
 
 rm -rf "$work_dir"
@@ -112,7 +112,7 @@ if [[ -n "$notes_file" ]]; then
   cp "$notes_file" "$generated_notes_path"
   cp "$notes_file" "$release_notes_for_github"
 else
-  printf 'TheBrowser %s (%s)\n' "$short_version" "$build_version" >"$generated_notes_path"
+  printf 'OpenArc %s (%s)\n' "$short_version" "$build_version" >"$generated_notes_path"
   cp "$generated_notes_path" "$release_notes_for_github"
 fi
 

@@ -1,5 +1,5 @@
-#ifndef THEBROWSER_SHARED_MAIN_H_
-#define THEBROWSER_SHARED_MAIN_H_
+#ifndef OPENARC_SHARED_MAIN_H_
+#define OPENARC_SHARED_MAIN_H_
 
 namespace shared {
 
@@ -7,5 +7,5 @@ int main(int argc, char* argv[]);
 
 }  // namespace shared
 
-#endif  // THEBROWSER_SHARED_MAIN_H_
+#endif  // OPENARC_SHARED_MAIN_H_
 

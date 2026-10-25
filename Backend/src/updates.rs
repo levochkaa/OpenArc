@@ -196,7 +196,7 @@ impl UpdatesService {
             .http
             .get(url)
             .header("Accept", accept)
-            .header("User-Agent", "TheBrowser Update Server")
+            .header("User-Agent", "OpenArc Update Server")
             .header("X-GitHub-Api-Version", "2026-03-10");
         if !self.config.github_release_token.is_empty() {
             request = request.bearer_auth(&self.config.github_release_token);
@@ -313,19 +313,19 @@ mod tests {
 
     #[test]
     fn preserves_normal_filenames_in_content_disposition() {
-        assert_eq!(content_disposition("TheBrowser-1.2.3.dmg"), "attachment; filename=\"TheBrowser-1.2.3.dmg\"");
+        assert_eq!(content_disposition("OpenArc-1.2.3.dmg"), "attachment; filename=\"OpenArc-1.2.3.dmg\"");
     }
 
     #[test]
     fn removes_header_injection_characters_from_content_disposition_filenames() {
-        let header = content_disposition("TheBrowser\r\nX-Injected: yes \"Beta\".dmg");
-        assert_eq!(header, "attachment; filename=\"TheBrowserX-Injected: yes Beta.dmg\"");
+        let header = content_disposition("OpenArc\r\nX-Injected: yes \"Beta\".dmg");
+        assert_eq!(header, "attachment; filename=\"OpenArcX-Injected: yes Beta.dmg\"");
         assert!(!header.contains(['\r', '\n']));
     }
 
     #[test]
     fn encodes_asset_names_like_encode_uri_component() {
-        assert_eq!(encode_uri_component("The Browser (1).dmg"), "The%20Browser%20(1).dmg");
+        assert_eq!(encode_uri_component("OpenArc Beta (1).dmg"), "OpenArc%20Beta%20(1).dmg");
         assert_eq!(encode_uri_component("ü/?#"), "%C3%BC%2F%3F%23");
     }
 }

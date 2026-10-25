@@ -6,7 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 
-NSString *const kHostBundlePathInfoKey = @"TheBrowserHostBundlePath";
+NSString *const kHostBundlePathInfoKey = @"OpenArcHostBundlePath";
 NSString *const kWebAppBundleArgumentPrefix = @"--web-app-bundle=";
 
 int main(int argc, const char *argv[]) {
@@ -19,7 +19,7 @@ int main(int argc, const char *argv[]) {
                                : nil;
     NSString *hostExecutablePath = hostBundle.executablePath;
     if (hostExecutablePath.length == 0) {
-      fprintf(stderr, "TheBrowser web app launcher: missing host executable\n");
+      fprintf(stderr, "OpenArc web app launcher: missing host executable\n");
       return 1;
     }
 
@@ -37,7 +37,7 @@ int main(int argc, const char *argv[]) {
     char **executionArguments =
         calloc(arguments.count + 1, sizeof(char *));
     if (executionArguments == NULL) {
-      fprintf(stderr, "TheBrowser web app launcher: unable to allocate arguments\n");
+      fprintf(stderr, "OpenArc web app launcher: unable to allocate arguments\n");
       return 1;
     }
 
@@ -47,7 +47,7 @@ int main(int argc, const char *argv[]) {
     }
 
     execv(hostExecutablePath.fileSystemRepresentation, executionArguments);
-    fprintf(stderr, "TheBrowser web app launcher: exec failed: %s\n",
+    fprintf(stderr, "OpenArc web app launcher: exec failed: %s\n",
             strerror(errno));
   }
 

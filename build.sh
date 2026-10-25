@@ -3,17 +3,17 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$ROOT_DIR/script/sparkle_tools.sh"
-PROJECT_NAME="TheBrowser"
-SCHEME="TheBrowser"
-APP_NAME="TheBrowser"
-HELPER_NAME="TheBrowser Helper"
+PROJECT_NAME="OpenArc"
+SCHEME="OpenArc"
+APP_NAME="OpenArc"
+HELPER_NAME="OpenArc Helper"
 CONFIGURATION="${CONFIGURATION:-Debug}"
 DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode"
-IOS_SCHEME="TheBrowseriOS"
+IOS_SCHEME="OpenArciOS"
 IOS_DERIVED_DATA_PATH="$ROOT_DIR/.build/xcode-ios"
-THEBROWSER_BUILD_CACHE_ROOT="$HOME/Library/Caches/TheBrowserBuild"
+OPENARC_BUILD_CACHE_ROOT="$HOME/Library/Caches/OpenArcBuild"
 source_packages_dir=""
-ios_destination="${THEBROWSER_IOS_DESTINATION:-}"
+ios_destination="${OPENARC_IOS_DESTINATION:-}"
 APP_BUNDLE="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 CODE_SIGNING_ALLOWED="${CODE_SIGNING_ALLOWED:-YES}"
@@ -27,8 +27,8 @@ action="build"
 full_output=0
 skip_build=0
 refresh_chromium_artifacts=0
-chromium_artifact_source="${THEBROWSER_CHROMIUM_ARTIFACT_SOURCE:-}"
-runtime_suffix="${THEBROWSER_RUNTIME_SUFFIX:-}"
+chromium_artifact_source="${OPENARC_CHROMIUM_ARTIFACT_SOURCE:-}"
+runtime_suffix="${OPENARC_RUNTIME_SUFFIX:-}"
 passthrough_args=()
 passthrough_arg_count=0
 
@@ -37,7 +37,7 @@ usage() {
 Usage: ./build.sh [action] [options] [-- extra-xcodebuild-args...]
 
 Actions:
-  build                 Build TheBrowser. This is the default action.
+  build                 Build OpenArc. This is the default action.
   test                  Build and run the test suite.
   ios-build             Build the UIKit app for iOS Simulator without launching it.
   ios-test              Run iOS tests in a dedicated UIKit test host on the specified simulator.
@@ -70,7 +70,7 @@ Worktree behavior:
   Codex worktree setup also runs prepare-worktree. Linked worktrees reuse the primary
   checkout's Chromium source/out, CEF export, CEF wrapper, and Sparkle tools while keeping app
   output local. All checkouts share resolved Swift package graphs and one compilation cache under
-  ~/Library/Caches/TheBrowserBuild, so a new worktree skips package resolution and reuses compiled
+  ~/Library/Caches/OpenArcBuild, so a new worktree skips package resolution and reuses compiled
   modules.
   Each worktree uses its own .build directory, runtime cache, session storage, and scoped
   process shutdown, so running one checkout does not stop another checkout's browser.
@@ -216,7 +216,7 @@ chromium_artifacts_ready() {
   local checkout_root="$1"
   local required_path
   local required_paths=(
-    "ThirdParty/cef/export/.thebrowser-chromium-fork"
+    "ThirdParty/cef/export/.openarc-chromium-fork"
     "ThirdParty/cef/export/include/cef_app.h"
     "ThirdParty/cef/export/Debug/Chromium Embedded Framework.framework"
     "ThirdParty/cef/export/Release/Chromium Embedded Framework.framework"
@@ -243,7 +243,7 @@ chromium_artifact_directory_ready() {
         [[ -d "$checkout_root/$relative_path/chromium/src/out/Release_GN_arm64/gen" ]]
       ;;
     ThirdParty/cef/export)
-      [[ -f "$checkout_root/$relative_path/.thebrowser-chromium-fork" ]] &&
+      [[ -f "$checkout_root/$relative_path/.openarc-chromium-fork" ]] &&
         [[ -f "$checkout_root/$relative_path/include/cef_app.h" ]] &&
         [[ -d "$checkout_root/$relative_path/Debug/Chromium Embedded Framework.framework" ]] &&
         [[ -d "$checkout_root/$relative_path/Release/Chromium Embedded Framework.framework" ]]
@@ -414,7 +414,7 @@ shared_cache_arguments() {
   [[ "$ROOT_DIR" != *[[:space:]]* ]] || return 0
   SHARED_CACHE_ARGS+=(
     COMPILATION_CACHE_ENABLE_CACHING=YES
-    "COMPILATION_CACHE_CAS_PATH=$THEBROWSER_BUILD_CACHE_ROOT/CompilationCache/$(xcode_build_version)"
+    "COMPILATION_CACHE_CAS_PATH=$OPENARC_BUILD_CACHE_ROOT/CompilationCache/$(xcode_build_version)"
     COMPILATION_CACHE_LIMIT_SIZE=20G
     SWIFT_ENABLE_PREFIX_MAPPING=YES
     SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES

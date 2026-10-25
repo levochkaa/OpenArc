@@ -8,8 +8,8 @@ source "$ROOT_DIR/script/xcode_env.sh"
 THIRD_PARTY_DIR="$ROOT_DIR/ThirdParty/cef"
 WRAPPER_BUILD_DIR="$ROOT_DIR/.build/cef-wrapper"
 LOCAL_CHROMIUM_FORK_CEF_ROOT="$THIRD_PARTY_DIR/export"
-CHROMIUM_FORK_CEF_ROOT="${THEBROWSER_CHROMIUM_FORK_CEF_ROOT:-$LOCAL_CHROMIUM_FORK_CEF_ROOT}"
-CHROMIUM_FORK_MARKER=".thebrowser-chromium-fork"
+CHROMIUM_FORK_CEF_ROOT="${OPENARC_CHROMIUM_FORK_CEF_ROOT:-$LOCAL_CHROMIUM_FORK_CEF_ROOT}"
+CHROMIUM_FORK_MARKER=".openarc-chromium-fork"
 
 case "$(uname -m)" in
   arm64)
@@ -51,9 +51,9 @@ resolved_chromium_fork_cef_root() {
 require_chromium_fork_cef_export() {
   if [[ -z "$CHROMIUM_FORK_CEF_ROOT" ]]; then
     cat >&2 <<'EOF'
-error: TheBrowser requires a Chromium fork CEF export.
+error: OpenArc requires a Chromium fork CEF export.
 Create the project-local export with ./script/chromium_source.sh package Debug,
-or set THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export.
+or set OPENARC_CHROMIUM_FORK_CEF_ROOT=/path/to/openarc-chromium/cef-export.
 Stock CEF downloads are intentionally disabled because full Chrome extension support is mandatory.
 EOF
     exit 1
@@ -72,7 +72,7 @@ EOF
 
   if [[ ! -f "$CHROMIUM_FORK_CEF_ROOT/$CHROMIUM_FORK_MARKER" ]]; then
     echo "error: Chromium fork CEF export is missing $CHROMIUM_FORK_MARKER: $CHROMIUM_FORK_CEF_ROOT" >&2
-    echo "The runtime must come from TheBrowser's Chromium fork, not a stock CEF bundle." >&2
+    echo "The runtime must come from OpenArc's Chromium fork, not a stock CEF bundle." >&2
     exit 1
   fi
 
@@ -102,7 +102,7 @@ use_chromium_fork_cef_export() {
   fi
   rm -f "$CURRENT_LINK"
   ln -s "$resolved_root" "$CURRENT_LINK"
-  echo "Using TheBrowser Chromium fork CEF export: $resolved_root"
+  echo "Using OpenArc Chromium fork CEF export: $resolved_root"
 }
 
 build_wrapper_library() {
@@ -205,10 +205,10 @@ Project-local source/export workflow:
     stages a binary export under ThirdParty/cef/export.
 
 Environment:
-	  THEBROWSER_CHROMIUM_FORK_CEF_ROOT=/path/to/thebrowser-chromium/cef-export
+	  OPENARC_CHROMIUM_FORK_CEF_ROOT=/path/to/openarc-chromium/cef-export
 	    Optional override. By default this script uses ThirdParty/cef/export.
-	    The export must come from TheBrowser's Chromium fork and include:
-	    .thebrowser-chromium-fork
+	    The export must come from OpenArc's Chromium fork and include:
+	    .openarc-chromium-fork
 	    include/cef_app.h
 	    libcef_dll/CMakeLists.txt
 	    Debug/Chromium Embedded Framework.framework for Debug builds

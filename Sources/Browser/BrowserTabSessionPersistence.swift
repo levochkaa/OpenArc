@@ -506,7 +506,7 @@ final class BrowserEphemeralSessionStore: BrowserTabSessionSnapshotStoring, Brow
 
 private enum BrowserSessionDiagnostics {
     static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc",
         category: "Session"
     )
 }

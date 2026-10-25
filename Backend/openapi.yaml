@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
-  title: TheBrowser Sync API
+  title: OpenArc Sync API
   version: 0.1.0
-  description: Backend API for TheBrowser authentication, device registration, sync, and app updates.
+  description: Backend API for OpenArc authentication, device registration, sync, and app updates.
 servers:
-  - url: https://updates.thebrowser.app
+  - url: https://updates.openarc.app
   - url: http://localhost:3000
 tags:
   - name: System

@@ -58,7 +58,7 @@ main {
   z-index: -2;
   background:
     linear-gradient(180deg, rgba(36, 102, 255, 0.2) 0%, rgba(247, 248, 251, 0) 38%, rgba(247, 248, 251, 0.6) 88%),
-    url("/thebrowser-power-hero.png") center bottom / cover no-repeat;
+    url("/openarc-power-hero.png") center bottom / cover no-repeat;
 }
 
 .hero::before {

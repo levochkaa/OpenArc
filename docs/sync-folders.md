@@ -2,7 +2,7 @@
 
 Protocol v4 adds account-scoped folder identities, nesting, pinned-tab membership and mixed folder/tab ordering to the existing authenticated sync endpoints. The macOS client captures folder actions, persists versioned operations in SQLite and projects the canonical tree into the AppKit model. The [mobile client](mobile-shared-sync.md) shares this protocol. Live desktop drag verification remains open.
 
-The reference is the user's explicit requirement for reliable bidirectional workspace sync and reorder. These conflict rules are TheBrowser's contract.
+The reference is the user's explicit requirement for reliable bidirectional workspace sync and reorder. These conflict rules are OpenArc's contract.
 
 ## Identities and containers
 

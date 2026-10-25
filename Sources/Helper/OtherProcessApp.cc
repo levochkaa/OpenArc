@@ -9,7 +9,7 @@ class OtherProcessApp : public CefApp {
  public:
   void OnRegisterCustomSchemes(
       CefRawPtr<CefSchemeRegistrar> registrar) override {
-    RegisterTheBrowserCustomSchemes(registrar);
+    RegisterOpenArcCustomSchemes(registrar);
   }
 
  private:

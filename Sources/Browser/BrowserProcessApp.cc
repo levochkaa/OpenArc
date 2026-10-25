@@ -144,7 +144,7 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
 
   void OnRegisterCustomSchemes(
       CefRawPtr<CefSchemeRegistrar> registrar) override {
-    shared::RegisterTheBrowserCustomSchemes(registrar);
+    shared::RegisterOpenArcCustomSchemes(registrar);
   }
 
   void OnContextInitialized() override {

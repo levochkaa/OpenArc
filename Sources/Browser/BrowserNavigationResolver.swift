@@ -231,7 +231,7 @@ struct BrowserNavigationResolver {
 enum BrowserInternalURLNormalizer {
     // MARK: Internal
 
-    static let canonicalScheme = "tb"
+    static let canonicalScheme = "openarc"
     static let chromiumScheme = "chrome"
     static let aliasSchemes: Set<String> = [canonicalScheme, chromiumScheme, "arc", "dia"]
 
@@ -249,11 +249,11 @@ enum BrowserInternalURLNormalizer {
         }
 
         if trimmedURLString.caseInsensitiveCompare("about:settings") == .orderedSame {
-            return "tb://settings/"
+            return "openarc://settings/"
         }
 
         if trimmedURLString.caseInsensitiveCompare("about:bookmarks") == .orderedSame {
-            return "tb://bookmarks/"
+            return "openarc://bookmarks/"
         }
 
         guard

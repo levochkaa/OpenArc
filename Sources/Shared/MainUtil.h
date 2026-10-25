@@ -1,5 +1,5 @@
-#ifndef THEBROWSER_SHARED_MAIN_UTIL_H_
-#define THEBROWSER_SHARED_MAIN_UTIL_H_
+#ifndef OPENARC_SHARED_MAIN_UTIL_H_
+#define OPENARC_SHARED_MAIN_UTIL_H_
 
 #include "include/cef_command_line.h"
 
@@ -17,5 +17,5 @@ ProcessType GetProcessType(const CefRefPtr<CefCommandLine>& command_line);
 
 }  // namespace shared
 
-#endif  // THEBROWSER_SHARED_MAIN_UTIL_H_
+#endif  // OPENARC_SHARED_MAIN_UTIL_H_
 

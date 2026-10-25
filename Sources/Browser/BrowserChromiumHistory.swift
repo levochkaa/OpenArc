@@ -53,7 +53,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching {
                     WHERE hidden = 0
                       AND (url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')
                       AND url NOT LIKE 'chrome://%'
-                      AND url NOT LIKE 'tb://%'
+                      AND url NOT LIKE 'openarc://%'
                       AND url NOT LIKE 'about:%'
                     ORDER BY typed_count DESC, visit_count DESC, last_visit_time DESC
                     LIMIT ?

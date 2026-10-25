@@ -139,7 +139,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
         try waitFor("menu \(title)") { menuItem() != nil }
         try press(menuItem()!)
     }
-    let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("thebrowser-site-controls.html")
+    let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("openarc-site-controls.html")
     try "<html><head><title>Native Site Controls</title></head><body>Native Site Controls</body></html>".write(
         to: fixture,
         atomically: true,

@@ -24,7 +24,7 @@ Both iOS targets compile the same Foundation wire types, v2/v3/v4 projections, i
 
 The Tabs controller exposes Account on both iPhone and iPad. Its sheet provides server configuration, Sign in with Apple, explicit Enable Sync consent, Pause/Resume, Sign Out, errors and Retry. The Apple provider anchors authorization to the caller's active window. Cancellation and stale-result guards prevent dismissed or superseded requests from writing credentials. Account state is shared across scenes; each presentation owns its sign-in attempt.
 
-Server selection uses `THEBROWSER_SYNC_BASE_URL` from the process environment, then the saved mobile server preference, then the packaged `TheBrowserSyncBaseURL` Info.plist value. The packaged value comes from the `THEBROWSER_SYNC_BASE_URL` build setting and is empty by default. The Account sheet saves a canonical root URL. HTTPS is required except for HTTP loopback testing; paths, credentials, query strings and fragments are rejected. No public server is selected implicitly.
+Server selection uses `OPENARC_SYNC_BASE_URL` from the process environment, then the saved mobile server preference, then the packaged `OpenArcSyncBaseURL` Info.plist value. The packaged value comes from the `OPENARC_SYNC_BASE_URL` build setting and is empty by default. The Account sheet saves a canonical root URL. HTTPS is required except for HTTP loopback testing; paths, credentials, query strings and fragments are rejected. No public server is selected implicitly.
 
 Mobile credentials use the explicit Keychain namespace `.profile("mobile")`. A profile binds durably to the normalized server URL and user ID after consent. Signing out preserves the owner, cursor, baseline and immutable queue, pauses sync and attempts to remove credentials. Another account or server cannot silently adopt those records. Local persistence failure blocks transport until the document's buffered writes commit successfully.
 
@@ -34,13 +34,13 @@ Sign Out invalidates requests, then atomically records the sign-in requirement a
 
 Old paused profiles cannot reveal whether the user paused or a past Keychain deletion failed. Migration therefore requires a fresh sign-in for those ambiguous records. Marker read errors fail closed. If both the database write and Keychain deletion fail, Sign Out reports both failures; durable protection after termination cannot be guaranteed.
 
-The iOS target declares `com.apple.developer.applesignin` in `Support/TheBrowseriOS.entitlements`. Signing capability, provisioning and cross-app Apple subject/account grouping still require verification with provisioned desktop and mobile clients. Adding the local entitlement does not provision an Apple account or establish production authentication.
+The iOS target declares `com.apple.developer.applesignin` in `Support/OpenArciOS.entitlements`. Signing capability, provisioning and cross-app Apple subject/account grouping still require verification with provisioned desktop and mobile clients. Adding the local entitlement does not provision an Apple account or establish production authentication.
 
 The backend accepts an optional explicit `APPLE_CLIENT_IDS` comma-list. Entries are trimmed and deduplicated; empty entries, wildcards, URL-shaped values and malformed identifiers fail configuration. The list replaces the single `APPLE_CLIENT_ID` fallback; it never adds a mobile audience automatically. Compose forwards the list only when configured. See `Backend/.env.example` for the setting and use the exact provisioned client IDs. JWT verification retains Apple's issuer and signing-key checks and requires an allowed audience. Local-JWKS tests exercise signed desktop/mobile audiences and rejected issuer/audience/expiry claims; they do not verify real Apple provisioning.
 
 ## Legacy sessions and scene state
 
-Before opening the new `MobileProfile/TheBrowser.sqlite`, the registry reads and validates every legacy `MobileSessions/*.json`. Each file becomes a separate Space with stable IDs, tab order and its selected index. Colliding IDs from separate files receive distinct IDs. Cached page titles are refreshed by WebKit; they do not become user rename overrides. Original JSON files, including those cached titles, are kept intact.
+Before opening the new `MobileProfile/OpenArc.sqlite`, the registry reads and validates every legacy `MobileSessions/*.json`. Each file becomes a separate Space with stable IDs, tab order and its selected index. Colliding IDs from separate files receive distinct IDs. Cached page titles are refreshed by WebKit; they do not become user rename overrides. Original JSON files, including those cached titles, are kept intact.
 
 `importSessionOnce` commits the logical snapshot and marker in one SQLite transaction. A failed marker write rolls back the imported rows; after successful import, deleting tabs and restarting cannot reimport them. A damaged/unsupported source blocks restoration and shows Retry without replacing either source or durable state. Import into an already account-bound profile fails closed, because existing tombstones require an explicit merge policy. Normal product import precedes account binding.
 
@@ -75,6 +75,6 @@ For the mobile HTTP suite, install Rust, install the backend test dependencies w
   --ios-destination 'platform=iOS Simulator,id=SIMULATOR-UUID'
 ```
 
-The wrapper invokes `./build.sh ios-test` with the mobile HTTP suite selected and checks its completion report. Running the ordinary iOS suite without its fixture environment intentionally skips these network scenarios. The dedicated UIKit test host is used; this command does not launch the TheBrowser product.
+The wrapper invokes `./build.sh ios-test` with the mobile HTTP suite selected and checks its completion report. Running the ordinary iOS suite without its fixture environment intentionally skips these network scenarios. The dedicated UIKit test host is used; this command does not launch the OpenArc product.
 
-The shared refactor also requires warning-free desktop `./build.sh build` followed by `./build.sh test` and the existing real Swift HTTP harness. Native menu method/control invocation does not prove physical taps, drag smoothness or OS Stage Manager lifecycle. The product TheBrowser/Helper launch prohibition remains in force.
+The shared refactor also requires warning-free desktop `./build.sh build` followed by `./build.sh test` and the existing real Swift HTTP harness. Native menu method/control invocation does not prove physical taps, drag smoothness or OS Stage Manager lifecycle. The product OpenArc/Helper launch prohibition remains in force.

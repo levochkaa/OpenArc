@@ -6,7 +6,7 @@ The server supports conditional expiry, and shared Swift clients durably queue i
 
 Automatic expiry uses activity reported to the server. A completely offline device can have newer activity that no other device knows about. An accepted server archive can therefore remove that identity when the device reconnects. The updated client must preserve its divergent local content before applying that deletion, alongside the server's canonical recovery content. Restore creates a fresh tab ID; stale edits must never resurrect the deleted ID.
 
-This policy is a TheBrowser design decision.
+This policy is an OpenArc design decision.
 
 ## Wire contract
 

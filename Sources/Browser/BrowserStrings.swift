@@ -855,7 +855,7 @@ enum BrowserStrings {
 
     static let aboutMadePossibleOtherPrefix = NSLocalizedString(
         "browser.about.made_possible.other_prefix",
-        comment: "Text between the Chromium credits link and TheBrowser credits link in the About window."
+        comment: "Text between the Chromium credits link and OpenArc credits link in the About window."
     )
 
     static let aboutMadePossibleSuffix = NSLocalizedString(
@@ -1591,7 +1591,7 @@ enum BrowserStrings {
 
     static let webAppInfoInstalledWith = NSLocalizedString(
         "browser.web_app.info.installed_with",
-        comment: "Footer in web app information identifying TheBrowser."
+        comment: "Footer in web app information identifying OpenArc."
     )
 
     static let webAppInfoDoneAction = NSLocalizedString(
@@ -1606,7 +1606,7 @@ enum BrowserStrings {
 
     static let webAppErrorInvalidHostBundle = NSLocalizedString(
         "browser.web_app.error.invalid_host_bundle",
-        comment: "Error shown when TheBrowser's host app bundle is invalid."
+        comment: "Error shown when OpenArc's host app bundle is invalid."
     )
 
     static let webAppErrorInvalidName = NSLocalizedString(
@@ -1616,12 +1616,12 @@ enum BrowserStrings {
 
     static let webAppErrorMissingHostExecutable = NSLocalizedString(
         "browser.web_app.error.missing_host_executable",
-        comment: "Error shown when TheBrowser's executable is unavailable for a web app shim."
+        comment: "Error shown when OpenArc's executable is unavailable for a web app shim."
     )
 
     static let webAppErrorMissingLauncherExecutable = NSLocalizedString(
         "browser.web_app.error.missing_launcher_executable",
-        comment: "Error shown when TheBrowser's dedicated web app launcher is unavailable."
+        comment: "Error shown when OpenArc's dedicated web app launcher is unavailable."
     )
 
     static let webAppErrorUnsupportedURL = NSLocalizedString(
@@ -1854,9 +1854,9 @@ enum BrowserStrings {
         comment: "Context menu item for learning about extension site access."
     )
 
-    static let extensionsRemoveFromTheBrowser = NSLocalizedString(
-        "browser.extensions.remove_from_thebrowser",
-        comment: "Context menu item for removing an extension from TheBrowser."
+    static let extensionsRemoveFromOpenArc = NSLocalizedString(
+        "browser.extensions.remove_from_openarc",
+        comment: "Context menu item for removing an extension from OpenArc."
     )
 
     static let extensionsPinAction = NSLocalizedString(
@@ -2123,12 +2123,12 @@ enum BrowserStrings {
 
     static let settingsDefaultBrowserPrompt = NSLocalizedString(
         "browser.settings.default_browser.prompt",
-        comment: "Settings row title prompting the user to set TheBrowser as default."
+        comment: "Settings row title prompting the user to set OpenArc as default."
     )
 
     static let settingsDefaultBrowserAction = NSLocalizedString(
         "browser.settings.default_browser.action",
-        comment: "Settings row button title for setting TheBrowser as default."
+        comment: "Settings row button title for setting OpenArc as default."
     )
 
     static let settingsSearch = NSLocalizedString(

@@ -21,7 +21,7 @@ enum BrowserSitePermissionKind: String, Codable, CaseIterable, Sendable {
     // MARK: Internal
 
     /// Camera and microphone: Alloy-style CEF leaves them to the app, so
-    /// TheBrowser remembers the answer. Chromium remembers the others.
+    /// OpenArc remembers the answer. Chromium remembers the others.
     var isMediaCapture: Bool {
         self == .camera || self == .microphone
     }
@@ -72,7 +72,7 @@ struct BrowserSitePermissionRequest: Identifiable, Equatable, Sendable {
     let origin: String
     let kinds: [BrowserSitePermissionKind]
     /// Camera or microphone through CEF's media access callback, which
-    /// TheBrowser answers from its remembered decisions.
+    /// OpenArc answers from its remembered decisions.
     let isMediaAccess: Bool
 
     /// The Peek card or small window that asks, whose tab ID is
@@ -150,7 +150,7 @@ struct BrowserSitePermissionDecision: Codable, Equatable, Sendable {
 
 // MARK: - BrowserNotificationAuthorization
 
-/// macOS's own permission for TheBrowser to show notifications, asked once
+/// macOS's own permission for OpenArc to show notifications, asked once
 /// when the first site is allowed to.
 enum BrowserNotificationAuthorization {
     static func request(completion: @escaping @Sendable (Bool) -> Void) {

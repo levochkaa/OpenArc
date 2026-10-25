@@ -16,7 +16,7 @@ import UIKit
         authSessionStore: any BrowserSyncAuthSessionStoring = BrowserAuthSessionStore(namespace: .profile("mobile")),
         identityProvider: any BrowserAppleIdentityProviding = BrowserMobileAppleSignInService(),
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        packagedServerURL: String? = Bundle.main.object(forInfoDictionaryKey: "TheBrowserSyncBaseURL") as? String,
+        packagedServerURL: String? = Bundle.main.object(forInfoDictionaryKey: "OpenArcSyncBaseURL") as? String,
         clientFactory: @escaping (BrowserSyncConfiguration) -> any BrowserMobileSyncRemoteServing = {
             BrowserRemoteSyncClient(configuration: $0)
         },
@@ -52,7 +52,7 @@ import UIKit
             )
         }
         observeAccount()
-        let initial = environment["THEBROWSER_SYNC_BASE_URL"]
+        let initial = environment["OPENARC_SYNC_BASE_URL"]
             ?? preferences.string(forKey: Self.configurationKey) ?? packagedServerURL
         if let initial, !initial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            !initial.contains("$(")

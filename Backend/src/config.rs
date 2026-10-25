@@ -76,16 +76,15 @@ impl Config {
             issues.push("JWT_SECRET: must contain at least 32 characters".to_string());
         }
 
-        let public_base_url = value("THEBROWSER_PUBLIC_BASE_URL");
+        let public_base_url = value("OPENARC_PUBLIC_BASE_URL");
         if let Some(url) = &public_base_url
             && url::Url::parse(url).is_err()
         {
-            issues.push("THEBROWSER_PUBLIC_BASE_URL: Invalid URL".to_string());
+            issues.push("OPENARC_PUBLIC_BASE_URL: Invalid URL".to_string());
         }
-        let update_appcast_asset =
-            value("THEBROWSER_UPDATE_APPCAST_ASSET").unwrap_or_else(|| "appcast.xml".to_string());
+        let update_appcast_asset = value("OPENARC_UPDATE_APPCAST_ASSET").unwrap_or_else(|| "appcast.xml".to_string());
         if update_appcast_asset.is_empty() {
-            issues.push("THEBROWSER_UPDATE_APPCAST_ASSET: must not be empty".to_string());
+            issues.push("OPENARC_UPDATE_APPCAST_ASSET: must not be empty".to_string());
         }
 
         if !issues.is_empty() {
@@ -97,8 +96,8 @@ impl Config {
             host,
             apple_client_ids,
             jwt_secret,
-            jwt_issuer: value("JWT_ISSUER").unwrap_or_else(|| "thebrowser-sync".to_string()),
-            jwt_audience: value("JWT_AUDIENCE").unwrap_or_else(|| "thebrowser-clients".to_string()),
+            jwt_issuer: value("JWT_ISSUER").unwrap_or_else(|| "openarc-sync".to_string()),
+            jwt_audience: value("JWT_AUDIENCE").unwrap_or_else(|| "openarc-clients".to_string()),
             cors_origin: value("CORS_ORIGIN").unwrap_or_default(),
             github_release_repository: value("GITHUB_RELEASE_REPOSITORY"),
             github_release_token: value("GITHUB_RELEASE_TOKEN").unwrap_or_default(),
@@ -200,12 +199,12 @@ pub fn parse_dotenv(text: &str) -> Vec<(String, String)> {
 mod tests {
     use super::*;
 
-    const DESKTOP: &str = "com.thebrowser.auth-test-desktop";
-    const MOBILE: &str = "com.thebrowser.auth-test-mobile";
+    const DESKTOP: &str = "com.openarc.auth-test-desktop";
+    const MOBILE: &str = "com.openarc.auth-test-mobile";
 
     fn required() -> HashMap<String, String> {
         HashMap::from([
-            ("DATABASE_URL".to_string(), "postgres://test:test@127.0.0.1:5432/thebrowser_auth_test".to_string()),
+            ("DATABASE_URL".to_string(), "postgres://test:test@127.0.0.1:5432/openarc_auth_test".to_string()),
             ("JWT_SECRET".to_string(), "local-auth-test-secret-at-least-thirty-two-bytes".to_string()),
         ])
     }
@@ -224,8 +223,8 @@ mod tests {
         assert_eq!(config.apple_client_ids, vec![DESKTOP]);
         assert_eq!(config.port, 8080);
         assert_eq!(config.host, "0.0.0.0");
-        assert_eq!(config.jwt_issuer, "thebrowser-sync");
-        assert_eq!(config.jwt_audience, "thebrowser-clients");
+        assert_eq!(config.jwt_issuer, "openarc-sync");
+        assert_eq!(config.jwt_audience, "openarc-clients");
         assert_eq!(config.update_appcast_asset, "appcast.xml");
     }
 
@@ -233,8 +232,7 @@ mod tests {
     fn trims_and_deduplicates_an_explicit_list_without_adding_the_fallback() {
         let list = format!(" {DESKTOP}, {MOBILE}, {DESKTOP} ");
         let config =
-            Config::parse(&with(&[("APPLE_CLIENT_ID", "com.thebrowser.unlisted"), ("APPLE_CLIENT_IDS", &list)]))
-                .unwrap();
+            Config::parse(&with(&[("APPLE_CLIENT_ID", "com.openarc.unlisted"), ("APPLE_CLIENT_IDS", &list)])).unwrap();
         assert_eq!(config.apple_client_ids, vec![DESKTOP, MOBILE]);
         assert_eq!(Config::parse(&with(&[("APPLE_CLIENT_IDS", MOBILE)])).unwrap().apple_client_ids, vec![MOBILE]);
     }
@@ -249,10 +247,10 @@ mod tests {
             format!("{DESKTOP},"),
             format!("{DESKTOP}, ,{MOBILE}"),
             "*".to_string(),
-            "com.thebrowser.*".to_string(),
+            "com.openarc.*".to_string(),
             "https://example.test".to_string(),
-            "com..thebrowser".to_string(),
-            "com.thebrowser mobile".to_string(),
+            "com..openarc".to_string(),
+            "com.openarc mobile".to_string(),
             format!("{DESKTOP};{MOBILE}"),
         ];
         for value in invalid_lists {
@@ -261,7 +259,7 @@ mod tests {
                 "{value:?}"
             );
         }
-        for value in ["", " ", "*", "com..thebrowser", &format!("{DESKTOP},{MOBILE}")] {
+        for value in ["", " ", "*", "com..openarc", &format!("{DESKTOP},{MOBILE}")] {
             assert!(Config::parse(&with(&[("APPLE_CLIENT_ID", value)])).is_err(), "{value:?}");
         }
     }
@@ -286,7 +284,7 @@ mod tests {
         short.insert("JWT_SECRET".to_string(), "short".to_string());
         assert!(Config::parse(&short).is_err());
         assert!(
-            Config::parse(&with(&[("APPLE_CLIENT_ID", DESKTOP), ("THEBROWSER_PUBLIC_BASE_URL", "not a url")])).is_err()
+            Config::parse(&with(&[("APPLE_CLIENT_ID", DESKTOP), ("OPENARC_PUBLIC_BASE_URL", "not a url")])).is_err()
         );
         assert!(Config::parse(&with(&[("APPLE_CLIENT_ID", DESKTOP), ("PORT", "-1")])).is_err());
         let config = Config::parse(&with(&[("APPLE_CLIENT_ID", DESKTOP), ("PORT", " 0x1F90 ")])).unwrap();

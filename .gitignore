@@ -9,7 +9,7 @@ Backend/target/
 Website/.screenshots/
 Website/.reference-screenshots/
 Website/node_modules/
-TheBrowser.xcodeproj/
+OpenArc.xcodeproj/
 ThirdParty/cef/*
 !ThirdParty/cef/.gitkeep
 

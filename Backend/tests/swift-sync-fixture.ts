@@ -12,11 +12,11 @@ import { issueAccessToken, migrate, startSyncServer } from "./sync-server.js";
 // every sync request use the production server. Fault controls live separately.
 const [fixturePath, reportPath] = process.argv.slice(2);
 assert.ok(fixturePath && reportPath, "Expected fixture and completion-report paths");
-const suite = process.env.THEBROWSER_SYNC_FIXTURE_SUITE ?? "desktop";
+const suite = process.env.OPENARC_SYNC_FIXTURE_SUITE ?? "desktop";
 assert.ok(suite === "desktop" || suite === "mobile", "Unknown Swift sync fixture suite");
-const databaseURL = new URL(process.env.THEBROWSER_SYNC_TEST_DATABASE_URL ?? "");
+const databaseURL = new URL(process.env.OPENARC_SYNC_TEST_DATABASE_URL ?? "");
 assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(databaseURL.hostname));
-assert.match(databaseURL.pathname, /^\/thebrowser_sync_test_[a-z0-9_]+$/);
+assert.match(databaseURL.pathname, /^\/openarc_sync_test_[a-z0-9_]+$/);
 const pool = new pg.Pool({ connectionString: databaseURL.toString(), max: 10 });
 const schema = await pool.query("SELECT to_regclass('public.app_users') AS table_name");
 assert.equal(schema.rows[0].table_name, null, "Swift HTTP tests require a fresh empty database");

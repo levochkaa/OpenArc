@@ -36,8 +36,8 @@ import Foundation
         let frameworksPath = URL(fileURLWithPath: bundlePath, isDirectory: true)
             .appendingPathComponent("Contents/Frameworks", isDirectory: true)
         let helperExecutablePath = frameworksPath
-            .appendingPathComponent("TheBrowser Helper.app", isDirectory: true)
-            .appendingPathComponent("Contents/MacOS/TheBrowser Helper", isDirectory: false)
+            .appendingPathComponent("OpenArc Helper.app", isDirectory: true)
+            .appendingPathComponent("Contents/MacOS/OpenArc Helper", isDirectory: false)
         let frameworkPath = frameworksPath
             .appendingPathComponent("Chromium Embedded Framework.framework", isDirectory: true)
         guard let applicationSupportPath = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -47,7 +47,7 @@ import Foundation
         }
 
         let browserSupportPath = applicationSupportPath
-            .appendingPathComponent("TheBrowser", isDirectory: true)
+            .appendingPathComponent("OpenArc", isDirectory: true)
         let runtimeSuffix = webAppConfiguration?.isolatedRuntimeSuffix
             ?? BrowserRuntimeIdentity.suffix(arguments: ProcessInfo.processInfo.arguments)
         let sessionStoragePath = browserSupportPath

@@ -25,13 +25,13 @@ const MUTATION: &str = "00000000-0000-4000-8000-000000000002";
 fn config(extra: &[(&str, &str)]) -> Config {
     let mut environment = HashMap::from([
         // Never connected: these tests stop before storage.
-        ("DATABASE_URL".to_string(), "postgres://test:test@127.0.0.1:1/thebrowser_test".to_string()),
-        ("APPLE_CLIENT_ID".to_string(), "com.thebrowser.tests".to_string()),
+        ("DATABASE_URL".to_string(), "postgres://test:test@127.0.0.1:1/openarc_test".to_string()),
+        ("APPLE_CLIENT_ID".to_string(), "com.openarc.tests".to_string()),
         ("JWT_SECRET".to_string(), "test-secret-with-at-least-thirty-two-bytes".to_string()),
-        ("JWT_ISSUER".to_string(), "thebrowser-sync-test".to_string()),
-        ("JWT_AUDIENCE".to_string(), "thebrowser-test-clients".to_string()),
-        ("THEBROWSER_PUBLIC_BASE_URL".to_string(), "https://updates.thebrowser.test".to_string()),
-        ("GITHUB_RELEASE_REPOSITORY".to_string(), "thebrowser/app".to_string()),
+        ("JWT_ISSUER".to_string(), "openarc-sync-test".to_string()),
+        ("JWT_AUDIENCE".to_string(), "openarc-test-clients".to_string()),
+        ("OPENARC_PUBLIC_BASE_URL".to_string(), "https://updates.openarc.test".to_string()),
+        ("GITHUB_RELEASE_REPOSITORY".to_string(), "openarc/app".to_string()),
     ]);
     for (key, value) in extra {
         environment.insert((*key).to_string(), (*value).to_string());
@@ -106,7 +106,7 @@ async fn serves_openapi_yaml_json_and_docs() {
     assert_eq!(status, StatusCode::OK);
     assert!(headers["content-type"].to_str().unwrap().contains("application/json"));
     let document: Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(document["info"]["title"], "TheBrowser Sync API");
+    assert_eq!(document["info"]["title"], "OpenArc Sync API");
     assert!(document["paths"]["/health"].is_object());
     assert_eq!(document["paths"]["/v1/sync/push"]["post"]["security"], json!([{"bearerAuth": []}]));
 
@@ -225,8 +225,8 @@ async fn fake_github() -> (String, Arc<Mutex<Vec<(String, String)>>>) {
             let accept =
                 request.headers().get("accept").and_then(|value| value.to_str().ok()).unwrap_or_default().to_string();
             recorded.lock().unwrap().push((request.uri().path().to_string(), accept));
-            if request.uri().path() == "/repos/thebrowser/app/releases/assets/12345" {
-                axum::Json(json!({"id": 12345, "name": "TheBrowser-1.0.0.dmg", "url": download_url,
+            if request.uri().path() == "/repos/openarc/app/releases/assets/12345" {
+                axum::Json(json!({"id": 12345, "name": "OpenArc-1.0.0.dmg", "url": download_url,
                     "content_type": "application/x-apple-diskimage", "size": 42}))
                 .into_response()
             } else {
@@ -247,7 +247,7 @@ async fn rejects_mismatched_release_asset_filenames_before_fetching_the_asset_bo
     let (status, _, _) = send(app_with_github(&github), request).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let calls = calls.lock().unwrap().clone();
-    assert!(calls.iter().any(|(path, _)| path == "/repos/thebrowser/app/releases/assets/12345"));
+    assert!(calls.iter().any(|(path, _)| path == "/repos/openarc/app/releases/assets/12345"));
     assert!(!calls.iter().any(|(path, _)| path == "/download/12345"));
     assert!(!calls.iter().any(|(_, accept)| accept == "application/octet-stream"));
     let (status, _, _) =
@@ -328,14 +328,14 @@ async fn bodies_follow_expresss_parsers() {
 
 #[tokio::test]
 async fn cors_answers_every_options_request_for_the_configured_origin() {
-    let cors = || app_with("http://127.0.0.1:1", &[("CORS_ORIGIN", "https://app.thebrowser.test")]);
+    let cors = || app_with("http://127.0.0.1:1", &[("CORS_ORIGIN", "https://app.openarc.test")]);
     let request = Request::options("/v1/sync/pull").body(Body::empty()).unwrap();
     let (status, headers, _) = send(cors(), request).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    assert_eq!(headers["access-control-allow-origin"], "https://app.thebrowser.test");
+    assert_eq!(headers["access-control-allow-origin"], "https://app.openarc.test");
     assert_eq!(headers["access-control-allow-methods"], "GET,HEAD,PUT,PATCH,POST,DELETE");
     let (_, headers, _) = send(cors(), Request::get("/health").body(Body::empty()).unwrap()).await;
-    assert_eq!(headers["access-control-allow-origin"], "https://app.thebrowser.test");
+    assert_eq!(headers["access-control-allow-origin"], "https://app.openarc.test");
     let (status, headers, _) = send(app(), Request::get("/health").body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::OK);
     assert!(headers.get("access-control-allow-origin").is_none());
@@ -361,8 +361,8 @@ mod apple {
     use rsa::pkcs1::EncodeRsaPrivateKey;
     use rsa::traits::PublicKeyParts;
 
-    const DESKTOP: &str = "com.thebrowser.auth-test-desktop";
-    const MOBILE: &str = "com.thebrowser.auth-test-mobile";
+    const DESKTOP: &str = "com.openarc.auth-test-desktop";
+    const MOBILE: &str = "com.openarc.auth-test-mobile";
 
     struct Fixture {
         auth: AuthService,
@@ -435,7 +435,7 @@ mod apple {
         let fixture = fixture().await;
         let mobile_upper = MOBILE.to_uppercase();
         let lookalike = format!("{MOBILE}.other");
-        for audience in ["com.thebrowser.unlisted", lookalike.as_str(), mobile_upper.as_str()] {
+        for audience in ["com.openarc.unlisted", lookalike.as_str(), mobile_upper.as_str()] {
             let token = token(&fixture, audience, "https://appleid.apple.com", false);
             assert!(fixture.auth.verify_apple_identity_token(&token).await.is_err(), "{audience}");
         }

@@ -34,7 +34,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     // MARK: Internal
 
-    static let databaseFileName = "TheBrowser.sqlite"
+    static let databaseFileName = "OpenArc.sqlite"
 
     /// New profile owners must distinguish an empty database from a failed read.
     func loadSnapshotStrict() throws -> BrowserTabSessionSnapshot? {
@@ -719,7 +719,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc",
         category: "SQLiteSession"
     )
 

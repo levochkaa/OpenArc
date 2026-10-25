@@ -4,7 +4,7 @@ import Foundation
 
 /// Keyboard navigation over the sidebar: Go to Sidebar Item 1–8, Go to
 /// last Sidebar Item and Next/Previous Tab. Favorites count first
-/// (Settings can exclude them; TheBrowser has no such option), then the rows of
+/// (Settings can exclude them; OpenArc has no such option), then the rows of
 /// the current Space.
 extension BrowserChromeModel {
     /// Tabs in the order the sidebar shows them: app tiles, the visible pinned

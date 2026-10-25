@@ -4,7 +4,7 @@
 
 #import <Sparkle/Sparkle.h>
 
-#import "TheBrowser-Swift.h"
+#import "OpenArc-Swift.h"
 
 #include <dlfcn.h>
 
@@ -56,6 +56,8 @@ ExtensionBridgeSymbols LoadExtensionBridgeSymbols() {
     return symbols;
   }
 
+  // The CEF build exports these under the project's former name until it is
+  // rebuilt with the renamed Chromium overrides.
   symbols.copy_installed_extensions_json =
       reinterpret_cast<CopyInstalledExtensionsJSONFunction>(
           dlsym(handle, "TheBrowserCopyInstalledExtensionsJSON"));

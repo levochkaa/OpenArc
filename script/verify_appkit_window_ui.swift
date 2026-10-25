@@ -125,7 +125,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     let title = "Window Fixture \(suffix)"
     let clicked = "Clicked \(suffix)"
     let typed = "Typed \(suffix)"
-    let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("thebrowser-window-\(suffix).html")
+    let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("openarc-window-\(suffix).html")
     try "<html><head><title>\(title)</title></head><body style='background:#eee;color:#222;font:24px system-ui;padding:80px' tabindex='0' onmousedown=\"document.title='\(clicked)'\" onkeydown=\"document.title='\(typed)'\">Native window interaction fixture</body></html>"
         .write(
             to: fixture,

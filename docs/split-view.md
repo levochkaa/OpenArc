@@ -1,6 +1,6 @@
 # Split View
 
-The iPad browser split is TheBrowser's own design.
+The iPad browser split is OpenArc's own design.
 
 ## Model
 
@@ -70,7 +70,7 @@ Dragging the row carries every pane as one group through the existing sidebar dr
 
 ## Commands and controls
 
-TheBrowser adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Shift+-`) and Separate Page from Split View as `BrowserCommandID`s, plus Separate All Tabs and Convert from the split menus, so they appear in the View menu, the command bar and the Settings shortcut list. Expand Current Split, Move Left/Right and Add Left/Right Split come from the Split View menu:
+OpenArc adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Shift+-`) and Separate Page from Split View as `BrowserCommandID`s, plus Separate All Tabs and Convert from the split menus, so they appear in the View menu, the command bar and the Settings shortcut list. Expand Current Split, Move Left/Right and Add Left/Right Split come from the Split View menu:
 
 | Command | Default | Available |
 | --- | --- | --- |

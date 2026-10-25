@@ -5,7 +5,7 @@ Measured 2026-10-03 on macOS 26.7 arm64 with Xcode 26.6, Debug configuration. Ba
 Run after the root Build:
 
 ```sh
-./script/test_sync_performance.sh /tmp/thebrowser-sync-perf.json
+./script/test_sync_performance.sh /tmp/openarc-sync-perf.json
 ```
 
 The opt-in Swift Testing probe uses real disposable SQLite stores with 10 Spaces, timestamps, titles and selected tabs. It plans 100/1,000/5,000 tabs × 0/10/100 pending move rows for capture, empty pull and first ACK, plus two queue-drain cases. Three zero-queue ACK cells are inapplicable. Setup and validation count toward a soft 60-second budget but stay outside operation timings. Each cell has one warmup and three fresh-clone samples. A current run ID and all 29 result records are mandatory; incomplete cells have no median.
@@ -30,11 +30,11 @@ Capture improved consistently for 1,000/5,000 tabs across both optimized runs. P
 
 Remaining costs include full snapshot writes and baseline coding, sorting/scanning entities per pending semantic operation, and replaying the queue tail after each ACK. No queue/receipt compaction or background persistence was introduced. Preserve FIFO ordering, account isolation, failed-write recovery and immutable payloads in the next architectural step.
 
-Raw reports: `/tmp/thebrowser-sync-perf-before.json`, `/tmp/thebrowser-sync-perf-after.json`, `/tmp/thebrowser-sync-perf-after-repeat.json`; matching `.log` files contain wrapper/test output. They are local artifacts, not committed fixtures. Test results: `.build/xcode/Logs/Test/Test-TheBrowser-2026.10.03_04-28-29-+0400.xcresult`, `04-34-49` and `04-37-12` with the same filename prefix/suffix. Normal Test skips this probe; timing is never a pass/fail threshold.
+Raw reports: `/tmp/openarc-sync-perf-before.json`, `/tmp/openarc-sync-perf-after.json`, `/tmp/openarc-sync-perf-after-repeat.json`; matching `.log` files contain wrapper/test output. They are local artifacts, not committed fixtures. Test results: `.build/xcode/Logs/Test/Test-OpenArc-2026.10.03_04-28-29-+0400.xcresult`, `04-34-49` and `04-37-12` with the same filename prefix/suffix. Normal Test skips this probe; timing is never a pass/fail threshold.
 
 ## Re-measured 2026-10-25
 
-Same probe on Xcode 27.1 / Swift 6.4, Debug, code at `88abd3f`; all 26 applicable cells completed (raw report `/tmp/thebrowser-sync-perf-2026-10-25.json`, local only). Medians in milliseconds:
+Same probe on Xcode 27.1 / Swift 6.4, Debug, code at `88abd3f`; all 26 applicable cells completed (raw report `/tmp/openarc-sync-perf-2026-10-25.json`, local only). Medians in milliseconds:
 
 | Operation | Tabs | Pending rows | ms |
 | --- | ---: | ---: | ---: |
@@ -47,7 +47,7 @@ Same probe on Xcode 27.1 / Swift 6.4, Debug, code at `88abd3f`; all 26 applicabl
 
 The drain stays quadratic: each ACK replays the remaining queue and rewrote every snapshot row (about 75 ms per ACK at 1,000 tabs).
 
-The next commit skips that rewrite when the projection equals the stored snapshot, including the local titles, icons and colors that snapshot equality ignores; an ACK of a change already shown locally is the usual case. Two rollback tests injected their failure into that rewrite, so they now inject it into the baseline write in the same transaction (`syncOutboxAckAndPullRollbackBaselineQueueProjectionAndCursorOnFailure`, `folderBootstrapRollsBackAdoptionVersionCursorAndProjectionOnDatabaseFailure`), and a new test proves an ACK of a shown change writes no tab rows. Medians after the change (same probe, raw report `/tmp/thebrowser-sync-perf-2026-10-25-skip.json`):
+The next commit skips that rewrite when the projection equals the stored snapshot, including the local titles, icons and colors that snapshot equality ignores; an ACK of a change already shown locally is the usual case. Two rollback tests injected their failure into that rewrite, so they now inject it into the baseline write in the same transaction (`syncOutboxAckAndPullRollbackBaselineQueueProjectionAndCursorOnFailure`, `folderBootstrapRollsBackAdoptionVersionCursorAndProjectionOnDatabaseFailure`), and a new test proves an ACK of a shown change writes no tab rows. Medians after the change (same probe, raw report `/tmp/openarc-sync-perf-2026-10-25-skip.json`):
 
 | Operation | Tabs | Pending rows | Before, ms | After, ms |
 | --- | ---: | ---: | ---: | ---: |

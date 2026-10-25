@@ -308,7 +308,7 @@ final class BrowserAuthSessionStore {
     // MARK: Lifecycle
 
     init(
-        service: String = Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser",
+        service: String = Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc",
         namespace: BrowserAuthSessionNamespace = .defaultProfile
     ) {
         self.service = "\(service).sync"
@@ -736,7 +736,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.TheBrowser", category: "Sync"
+        subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "Sync"
     )
 
     private let localStore: BrowserSQLiteSessionStore

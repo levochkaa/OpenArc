@@ -75,7 +75,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
 
 @MainActor func verify() throws {
     guard CommandLine.arguments.count == 2 else {
-        throw UIError.failed("Usage: xcrun swift script/verify_appkit_ui.swift /absolute/path/TheBrowser.app")
+        throw UIError.failed("Usage: xcrun swift script/verify_appkit_ui.swift /absolute/path/OpenArc.app")
     }
     let bundleURL = URL(fileURLWithPath: CommandLine.arguments[1]).resolvingSymlinksInPath()
     guard let app = NSWorkspace.shared.runningApplications.first(where: {
@@ -137,7 +137,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     }
     let fixture = FileManager.default
         .temporaryDirectory
-        .appendingPathComponent("thebrowser-native-ui-verification.html")
+        .appendingPathComponent("openarc-native-ui-verification.html")
     try "<html><head><title>Native UI Verification</title></head><body><h1>Native UI Verification</h1><p>needle one</p><p>needle two</p><input aria-label='Page input'></body></html>"
         .write(
             to: fixture,
@@ -221,7 +221,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     try waitFor("close button dismisses find") { field() == nil }
     print("PASS find: select-all on reopen, no matches, Escape, close")
 
-    try runAppleScript("click menu item 1 of menu 1 of menu bar item \"TheBrowser\" of menu bar 1", pid: pid)
+    try runAppleScript("click menu item 1 of menu 1 of menu bar item \"OpenArc\" of menu bar 1", pid: pid)
     try waitFor("native About credits") { element("browser.about.credits") != nil }
     try require(value(element("browser.about.credits"))?.contains("Chromium") == true, "About credits are missing")
     try runAppleScript("key code 13 using command down", pid: pid)
@@ -229,7 +229,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     print("PASS about: native window, selectable credits, close")
 
     try runAppleScript(
-        "click menu item \"Settings…\" of menu 1 of menu bar item \"TheBrowser\" of menu bar 1",
+        "click menu item \"Settings…\" of menu 1 of menu bar item \"OpenArc\" of menu bar 1",
         pid: pid
     )
     try waitFor("accounts page") { element("browser.settings.default-browser") != nil }

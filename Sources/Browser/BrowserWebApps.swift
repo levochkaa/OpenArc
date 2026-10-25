@@ -52,20 +52,20 @@ struct BrowserWebAppConfiguration: Equatable {
 
     // MARK: Internal
 
-    static let identifierInfoKey = "TheBrowserWebAppIdentifier"
-    static let nameInfoKey = "TheBrowserWebAppName"
-    static let startURLInfoKey = "TheBrowserWebAppStartURL"
-    static let scopeURLInfoKey = "TheBrowserWebAppScopeURL"
-    static let profileDirectoryNameInfoKey = "TheBrowserWebAppProfileDirectoryName"
-    static let profileNameInfoKey = "TheBrowserWebAppProfileName"
-    static let hostBundlePathInfoKey = "TheBrowserHostBundlePath"
-    static let manifestURLInfoKey = "TheBrowserWebAppManifestURL"
-    static let applicationIDURLInfoKey = "TheBrowserWebAppApplicationIDURL"
-    static let descriptionInfoKey = "TheBrowserWebAppDescription"
-    static let displayModeInfoKey = "TheBrowserWebAppDisplayMode"
-    static let themeColorInfoKey = "TheBrowserWebAppThemeColor"
-    static let backgroundColorInfoKey = "TheBrowserWebAppBackgroundColor"
-    static let iconURLInfoKey = "TheBrowserWebAppIconURL"
+    static let identifierInfoKey = "OpenArcWebAppIdentifier"
+    static let nameInfoKey = "OpenArcWebAppName"
+    static let startURLInfoKey = "OpenArcWebAppStartURL"
+    static let scopeURLInfoKey = "OpenArcWebAppScopeURL"
+    static let profileDirectoryNameInfoKey = "OpenArcWebAppProfileDirectoryName"
+    static let profileNameInfoKey = "OpenArcWebAppProfileName"
+    static let hostBundlePathInfoKey = "OpenArcHostBundlePath"
+    static let manifestURLInfoKey = "OpenArcWebAppManifestURL"
+    static let applicationIDURLInfoKey = "OpenArcWebAppApplicationIDURL"
+    static let descriptionInfoKey = "OpenArcWebAppDescription"
+    static let displayModeInfoKey = "OpenArcWebAppDisplayMode"
+    static let themeColorInfoKey = "OpenArcWebAppThemeColor"
+    static let backgroundColorInfoKey = "OpenArcWebAppBackgroundColor"
+    static let iconURLInfoKey = "OpenArcWebAppIconURL"
     static let bundleArgumentPrefix = "--web-app-bundle="
 
     let identifier: String
@@ -645,8 +645,8 @@ struct BrowserWebAppBundleInstaller {
 
     typealias BundleSigner = (URL, String) throws -> Void
 
-    static let installedAppsDirectoryName = "TheBrowser Apps"
-    static let launcherExecutableName = "TheBrowser Web App Launcher"
+    static let installedAppsDirectoryName = "OpenArc Apps"
+    static let launcherExecutableName = "OpenArc Web App Launcher"
 
     let hostBundleURL: URL
     let applicationsDirectoryURL: URL
@@ -784,11 +784,11 @@ struct BrowserWebAppBundleInstaller {
             allowedCharacters.contains(scalar) ? Character(scalar) : "-"
         }
         let name = String(scalars).trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? "TheBrowser Web App" : name
+        return name.isEmpty ? "OpenArc Web App" : name
     }
 
     private static func bundleIdentifier(for identifier: String) -> String {
-        "com.levochkaa.TheBrowser.webapp.\(identifier)"
+        "com.levochkaa.OpenArc.webapp.\(identifier)"
     }
 
     private static func signBundle(at bundleURL: URL, identifier: String) throws {
