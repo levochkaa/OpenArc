@@ -52,7 +52,7 @@ fn app_with(github_api: &str, extra: &[(&str, &str)]) -> Router {
     let pool = crate::db::pool(&config.database_url).unwrap();
     router(AppState {
         sync: Arc::new(SyncService::new(pool.clone(), auth.clone())),
-        sign_in: SignInService::new(pool, auth.clone(), config.clone(), http.clone()),
+        sign_in: SignInService::new(pool, auth.clone(), config.clone(), http.clone()).unwrap(),
         updates: UpdatesService::new(config.clone(), http, github_api),
         auth,
         config,

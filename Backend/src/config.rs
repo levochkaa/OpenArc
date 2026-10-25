@@ -32,10 +32,28 @@ pub struct SignInConfig {
     pub apple_services_id: Option<String>,
     pub google: Option<OAuthClient>,
     pub github: Option<OAuthClient>,
-    /// Sign-in codes are emailed through Resend.
-    pub resend_api_key: Option<String>,
+    /// The mail server that sends sign-in codes; any provider's SMTP works.
+    pub smtp: Option<SmtpConfig>,
     pub email_from: String,
     pub endpoints: ProviderEndpoints,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub security: SmtpSecurity,
+    pub credentials: Option<(String, String)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SmtpSecurity {
+    /// TLS from the first byte, usually port 465.
+    Tls,
+    /// A plain connection upgraded with STARTTLS, usually port 587.
+    StartTls,
+    /// No encryption, only to a mail server on this machine.
+    None,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,7 +72,6 @@ pub struct ProviderEndpoints {
     pub github_authorize: String,
     pub github_token: String,
     pub github_api: String,
-    pub resend_emails: String,
 }
 
 static APPLE_CLIENT_ID: LazyLock<Regex> =
@@ -173,7 +190,7 @@ fn sign_in_config(
         apple_services_id,
         google,
         github,
-        resend_api_key: present("OPENARC_RESEND_API_KEY"),
+        smtp: smtp_config(&present, issues),
         email_from: endpoint("OPENARC_EMAIL_FROM", "OpenArc <login@openarc.su>"),
         endpoints: ProviderEndpoints {
             apple_keys: endpoint("OPENARC_APPLE_KEYS_URL", crate::auth::APPLE_KEYS_URL),
@@ -183,9 +200,45 @@ fn sign_in_config(
             github_authorize: endpoint("OPENARC_GITHUB_AUTHORIZE_URL", "https://github.com/login/oauth/authorize"),
             github_token: endpoint("OPENARC_GITHUB_TOKEN_URL", "https://github.com/login/oauth/access_token"),
             github_api: endpoint("OPENARC_GITHUB_API_URL", "https://api.github.com"),
-            resend_emails: endpoint("OPENARC_RESEND_API_URL", "https://api.resend.com/emails"),
         },
     }
+}
+
+fn smtp_config(present: &dyn Fn(&str) -> Option<String>, issues: &mut Vec<String>) -> Option<SmtpConfig> {
+    let host = present("OPENARC_SMTP_HOST")?;
+    let port = present("OPENARC_SMTP_PORT").map(|text| text.trim().parse::<u16>());
+    if let Some(Err(_)) = &port {
+        issues.push("OPENARC_SMTP_PORT: expected a port number".to_string());
+    }
+    let port = port.and_then(Result::ok);
+    let security = match present("OPENARC_SMTP_SECURITY").as_deref().map(str::trim) {
+        Some("tls") => SmtpSecurity::Tls,
+        Some("starttls") => SmtpSecurity::StartTls,
+        Some("none") => SmtpSecurity::None,
+        Some(_) => {
+            issues.push("OPENARC_SMTP_SECURITY: expected tls, starttls or none".to_string());
+            SmtpSecurity::StartTls
+        }
+        None if port == Some(465) => SmtpSecurity::Tls,
+        None => SmtpSecurity::StartTls,
+    };
+    if security == SmtpSecurity::None && !matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1") {
+        issues.push("OPENARC_SMTP_SECURITY: none is only allowed for a mail server on this machine".to_string());
+    }
+    let credentials = match (present("OPENARC_SMTP_USERNAME"), present("OPENARC_SMTP_PASSWORD")) {
+        (Some(username), Some(password)) => Some((username, password)),
+        (None, None) => None,
+        _ => {
+            issues.push("OPENARC_SMTP_USERNAME and OPENARC_SMTP_PASSWORD: set both or neither".to_string());
+            None
+        }
+    };
+    let port = port.unwrap_or(match security {
+        SmtpSecurity::Tls => 465,
+        SmtpSecurity::StartTls => 587,
+        SmtpSecurity::None => 25,
+    });
+    Some(SmtpConfig { host, port, security, credentials })
 }
 
 /// A trimmed identifier made of dot-separated segments: no empty segments,
@@ -296,6 +349,50 @@ mod tests {
             environment.insert((*key).to_string(), (*value).to_string());
         }
         environment
+    }
+
+    /// A valid environment with these SMTP settings.
+    fn smtp(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        let mut environment = with(pairs);
+        environment.insert("APPLE_CLIENT_ID".to_string(), DESKTOP.to_string());
+        environment
+    }
+
+    #[test]
+    fn smtp_picks_starttls_or_tls_from_the_port_and_takes_credentials_in_pairs() {
+        let host = ("OPENARC_SMTP_HOST", "smtp.example.test");
+        assert_eq!(
+            Config::parse(&smtp(&[host])).unwrap().sign_in.smtp,
+            Some(SmtpConfig {
+                host: "smtp.example.test".to_string(),
+                port: 587,
+                security: SmtpSecurity::StartTls,
+                credentials: None,
+            })
+        );
+        let tls = Config::parse(&smtp(&[
+            host,
+            ("OPENARC_SMTP_PORT", "465"),
+            ("OPENARC_SMTP_USERNAME", "user"),
+            ("OPENARC_SMTP_PASSWORD", "secret"),
+        ]))
+        .unwrap()
+        .sign_in
+        .smtp
+        .unwrap();
+        assert_eq!((tls.port, tls.security), (465, SmtpSecurity::Tls));
+        assert_eq!(tls.credentials, Some(("user".to_string(), "secret".to_string())));
+        assert_eq!(Config::parse(&smtp(&[])).unwrap().sign_in.smtp, None);
+    }
+
+    #[test]
+    fn smtp_refuses_plain_text_to_other_machines_half_credentials_and_unknown_security() {
+        let host = ("OPENARC_SMTP_HOST", "smtp.example.test");
+        assert!(Config::parse(&smtp(&[host, ("OPENARC_SMTP_SECURITY", "none")])).is_err());
+        assert!(Config::parse(&smtp(&[("OPENARC_SMTP_HOST", "127.0.0.1"), ("OPENARC_SMTP_SECURITY", "none")])).is_ok());
+        assert!(Config::parse(&smtp(&[host, ("OPENARC_SMTP_USERNAME", "user")])).is_err());
+        assert!(Config::parse(&smtp(&[host, ("OPENARC_SMTP_SECURITY", "ssl")])).is_err());
+        assert!(Config::parse(&smtp(&[host, ("OPENARC_SMTP_PORT", "smtp")])).is_err());
     }
 
     #[test]

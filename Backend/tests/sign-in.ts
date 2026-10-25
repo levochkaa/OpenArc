@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer as createTCPServer, type Server as TCPServer, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import type pg from "pg";
 import { integrationEnvironment, type SyncServer } from "./sync-server.js";
 
-// Sign-in methods against stand-ins for Apple, Google, GitHub and Resend. The
+// Sign-in methods against stand-ins for Apple, Google, GitHub and a mail server. The
 // server under test runs unchanged; only the providers' endpoints point here.
 
 type Context = {
@@ -31,6 +32,56 @@ async function readBody(request: IncomingMessage): Promise<string> {
   return body;
 }
 
+type Email = { from: string; to: string[]; headers: Map<string, string>; text: string };
+
+/** Just enough SMTP to accept one message per transaction, without TLS or AUTH. */
+function startMailServer(received: Email[], sockets: Set<Socket>): TCPServer {
+  return createTCPServer((socket: Socket) => {
+    // The server under test pools its connection, which a restart resets.
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.on("close", () => sockets.delete(socket));
+    let buffer = "";
+    let data: string[] | undefined;
+    let from = "";
+    let to: string[] = [];
+    const reply = (line: string) => socket.write(`${line}\r\n`);
+    reply("220 mock ESMTP");
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      let index: number;
+      while ((index = buffer.indexOf("\r\n")) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 2);
+        if (data) {
+          if (line !== ".") {
+            data.push(line.startsWith("..") ? line.slice(1) : line);
+            continue;
+          }
+          const blank = data.indexOf("");
+          const headers = new Map<string, string>();
+          for (const header of data.slice(0, blank)) {
+            const colon = header.indexOf(":");
+            if (colon > 0) headers.set(header.slice(0, colon).toLowerCase(), header.slice(colon + 1).trim());
+          }
+          received.push({ from, to, headers, text: data.slice(blank + 1).join("\n") });
+          data = undefined;
+          reply("250 queued");
+          continue;
+        }
+        const command = line.slice(0, 4).toUpperCase();
+        if (command === "EHLO" || command === "HELO") reply("250 mock");
+        else if (command === "MAIL") { from = /<([^>]*)>/.exec(line)?.[1] ?? ""; to = []; reply("250 OK"); }
+        else if (command === "RCPT") { to.push(/<([^>]*)>/.exec(line)?.[1] ?? ""); reply("250 OK"); }
+        else if (command === "DATA") { data = []; reply("354 go ahead"); }
+        else if (command === "QUIT") { reply("221 bye"); socket.end(); }
+        else if (command === "RSET" || command === "NOOP") reply("250 OK");
+        else reply("502 not implemented");
+      }
+    });
+  });
+}
+
 function json(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
@@ -39,13 +90,15 @@ function json(response: ServerResponse, status: number, body: unknown) {
 export function registerSignInTests(context: Context) {
   describe("sign-in methods", () => {
     let mock: Server;
+    let mailServer: TCPServer;
+    const mailSockets = new Set<Socket>();
     let mockURL = "";
     let server: SyncServer;
     let appleKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
     const googleCodes = new Map<string, Record<string, unknown>>();
     const githubCodes = new Map<string, GithubUser>();
     const githubTokens = new Map<string, GithubUser>();
-    const emails: { to: string[]; subject: string; text: string }[] = [];
+    const emails: Email[] = [];
 
     before(async () => {
       const pair = await generateKeyPair("RS256");
@@ -80,16 +133,14 @@ export function registerSignInTests(context: Context) {
           return json(response, 200, url.pathname.endsWith("/emails") ? user.emails : { id: user.id, login: `user${user.id}` });
         }
         if (request.method === "GET" && url.pathname === "/apple/keys") return json(response, 200, { keys: [jwk] });
-        if (request.method === "POST" && url.pathname === "/resend/emails") {
-          assert.equal(request.headers.authorization, "Bearer resend-test-key");
-          emails.push(JSON.parse(body));
-          return json(response, 200, { id: `email-${emails.length}` });
-        }
         json(response, 404, {});
       });
       mock.listen(0, "127.0.0.1");
       await once(mock, "listening");
       mockURL = `http://127.0.0.1:${(mock.address() as AddressInfo).port}`;
+      mailServer = startMailServer(emails, mailSockets);
+      mailServer.listen(0, "127.0.0.1");
+      await once(mailServer, "listening");
       server = await context.startServer({
         OPENARC_PUBLIC_BASE_URL: publicBaseURL,
         OPENARC_APPLE_SERVICES_ID: servicesID,
@@ -101,14 +152,18 @@ export function registerSignInTests(context: Context) {
         OPENARC_GITHUB_CLIENT_SECRET: "github-secret",
         OPENARC_GITHUB_TOKEN_URL: `${mockURL}/github/token`,
         OPENARC_GITHUB_API_URL: `${mockURL}/github/api`,
-        OPENARC_RESEND_API_KEY: "resend-test-key",
-        OPENARC_RESEND_API_URL: `${mockURL}/resend/emails`
+        OPENARC_SMTP_HOST: "127.0.0.1",
+        OPENARC_SMTP_PORT: String((mailServer.address() as AddressInfo).port),
+        OPENARC_SMTP_SECURITY: "none",
+        OPENARC_EMAIL_FROM: "OpenArc <login@openarc.test>"
       });
     });
 
     after(async () => {
       await server?.stop();
       mock?.close();
+      for (const socket of mailSockets) socket.destroy();
+      mailServer?.close();
     });
 
     const call = async (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, { redirect: "manual", ...init });
@@ -149,10 +204,12 @@ export function registerSignInTests(context: Context) {
 
     async function emailedCode(address: string): Promise<string> {
       const sent = emails.at(-1);
+      assert.equal(sent?.from, "login@openarc.test");
       assert.deepEqual(sent?.to, [address]);
+      assert.equal(sent?.headers.get("to"), address);
       const code = /\b(\d{6})\b/.exec(sent?.text ?? "")?.[1];
       assert.ok(code, "the email carries a six-digit code");
-      assert.equal(sent?.subject, `${code} is your OpenArc code`);
+      assert.equal(sent?.headers.get("subject"), `${code} is your OpenArc code`);
       return code;
     }
 

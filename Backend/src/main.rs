@@ -90,7 +90,7 @@ async fn serve() -> anyhow::Result<()> {
     let auth = AuthService::with_apple_keys_url(&config, http.clone(), &config.sign_in.endpoints.apple_keys);
     let state = AppState {
         sync: Arc::new(SyncService::new(pool.clone(), auth.clone())),
-        sign_in: SignInService::new(pool.clone(), auth.clone(), config.clone(), http.clone()),
+        sign_in: SignInService::new(pool.clone(), auth.clone(), config.clone(), http.clone())?,
         updates: UpdatesService::new(config.clone(), http, GITHUB_API_URL),
         auth,
         config: config.clone(),

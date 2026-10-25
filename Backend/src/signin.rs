@@ -10,13 +10,16 @@
 //! verifier.
 
 use crate::auth::{ACCESS_TOKEN_SECONDS, AuthService, is_email};
-use crate::config::{Config, OAuthClient};
+use crate::config::{Config, OAuthClient, SmtpConfig, SmtpSecurity};
 use crate::error::{ApiError, ApiResult};
 use crate::sync::serialize_device;
 use anyhow::Context;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use deadpool_postgres::{Pool, Transaction};
+use lettre::message::{Mailbox, header::ContentType};
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -94,11 +97,28 @@ pub struct SignInService {
     auth: AuthService,
     config: Arc<Config>,
     http: reqwest::Client,
+    /// Sends sign-in codes; none when SMTP is not configured.
+    mail: Option<Mail>,
+}
+
+#[derive(Clone)]
+struct Mail {
+    transport: AsyncSmtpTransport<Tokio1Executor>,
+    from: Mailbox,
 }
 
 impl SignInService {
-    pub fn new(pool: Pool, auth: AuthService, config: Arc<Config>, http: reqwest::Client) -> Self {
-        Self { pool, auth, config, http }
+    /// Fails when the mail settings cannot work, so a bad configuration
+    /// stops startup instead of the first sign-in.
+    pub fn new(pool: Pool, auth: AuthService, config: Arc<Config>, http: reqwest::Client) -> anyhow::Result<Self> {
+        let mail = match &config.sign_in.smtp {
+            Some(smtp) => Some(Mail {
+                transport: smtp_transport(smtp)?,
+                from: config.sign_in.email_from.parse().context("OPENARC_EMAIL_FROM is not a valid mailbox")?,
+            }),
+            None => None,
+        };
+        Ok(Self { pool, auth, config, http, mail })
     }
 
     pub fn providers(&self) -> Value {
@@ -109,7 +129,7 @@ impl SignInService {
         if self.is_configured(WebProvider::Github) {
             providers.push("github");
         }
-        if self.config.sign_in.resend_api_key.is_some() {
+        if self.mail.is_some() {
             providers.push("email");
         }
         // Native Sign in with Apple needs no web configuration; the web flow,
@@ -377,12 +397,7 @@ impl SignInService {
 
     /// Emails a six-digit code, unless one went out too recently.
     pub async fn start_email(&self, body: &Value) -> ApiResult<Value> {
-        let api_key = self
-            .config
-            .sign_in
-            .resend_api_key
-            .as_deref()
-            .ok_or_else(|| ApiError::status(503, "Email sign-in is not configured"))?;
+        let mail = self.mail.as_ref().ok_or_else(|| ApiError::status(503, "Email sign-in is not configured"))?;
         let email =
             normalized_email(text(body, "email")).ok_or_else(|| ApiError::BadRequest("Invalid email".to_string()))?;
         let mut client = self.pool.get().await?;
@@ -423,32 +438,12 @@ impl SignInService {
         )
         .await?;
         // Sent before committing, so a failed send can be retried at once.
-        self.send_code(api_key, &email, &code).await.map_err(|error| {
+        send_code(mail, &email, &code).await.map_err(|error| {
             tracing::warn!(error = format!("{error:#}"), "sign-in email failed");
             ApiError::status(502, "The email could not be sent")
         })?;
         tx.commit().await?;
         Ok(json!({"expiresIn": EMAIL_CODE_SECONDS, "resendIn": EMAIL_RESEND_SECONDS}))
-    }
-
-    async fn send_code(&self, api_key: &str, email: &str, code: &str) -> anyhow::Result<()> {
-        let minutes = EMAIL_CODE_SECONDS / 60;
-        self.http
-            .post(&self.config.sign_in.endpoints.resend_emails)
-            .bearer_auth(api_key)
-            .json(&json!({
-                "from": self.config.sign_in.email_from,
-                "to": [email],
-                "subject": format!("{code} is your OpenArc code"),
-                "text": format!(
-                    "Your OpenArc sign-in code is {code}. It expires in {minutes} minutes.\n\n\
-                     If you did not try to sign in, you can ignore this email."
-                ),
-            }))
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(())
     }
 
     /// Signs in with an emailed code. Wrong codes count toward a limit that
@@ -490,6 +485,37 @@ impl SignInService {
     fn email_code_hash(&self, email: &str, code: &str) -> String {
         digest(&format!("{}:{email}:{code}", self.config.jwt_secret))
     }
+}
+
+// MARK: Mail
+
+fn smtp_transport(smtp: &SmtpConfig) -> anyhow::Result<AsyncSmtpTransport<Tokio1Executor>> {
+    let builder = match smtp.security {
+        SmtpSecurity::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(&smtp.host)?,
+        SmtpSecurity::StartTls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp.host)?,
+        SmtpSecurity::None => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&smtp.host),
+    };
+    let builder = builder.port(smtp.port).timeout(Some(std::time::Duration::from_secs(20)));
+    Ok(match &smtp.credentials {
+        Some((username, password)) => builder.credentials(Credentials::new(username.clone(), password.clone())),
+        None => builder,
+    }
+    .build())
+}
+
+async fn send_code(mail: &Mail, email: &str, code: &str) -> anyhow::Result<()> {
+    let minutes = EMAIL_CODE_SECONDS / 60;
+    let message = Message::builder()
+        .from(mail.from.clone())
+        .to(email.parse().context("invalid recipient")?)
+        .subject(format!("{code} is your OpenArc code"))
+        .header(ContentType::TEXT_PLAIN)
+        .body(format!(
+            "Your OpenArc sign-in code is {code}. It expires in {minutes} minutes.\n\n\
+             If you did not try to sign in, you can ignore this email.\n"
+        ))?;
+    mail.transport.send(message).await?;
+    Ok(())
 }
 
 // MARK: Cleanup
