@@ -68,7 +68,7 @@ import Testing
                     false
                 }
             })
-             == 1)
+            == 1)
         #expect(try !f.operations().contains {
             if case .deleteTab = $0 {
                 true

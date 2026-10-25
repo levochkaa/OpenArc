@@ -65,7 +65,7 @@ import UIKit
                     false
                 }
             })
-                 == 1)
+                == 1)
             #expect(f.activity(id) == 300 && f.activity("a") == 100.75)
             f.clock.now = 400
             let previous = try f.queue()

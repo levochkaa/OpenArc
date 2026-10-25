@@ -5148,7 +5148,7 @@ extension BrowserChromeModel {
                         id: space.id, title: space.title, systemImageName: space.systemImageName,
                         isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                         selectedTabIndex: nextTabs.count(where: { $0.spaceID == destination && $0.placement != .app })
-                             - 1,
+                            - 1,
                         colorName: space.colorName,
                     )
                 }, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: nextTabs, splitGroups: snapshot.splitGroups,
