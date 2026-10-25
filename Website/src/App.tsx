@@ -290,6 +290,12 @@ function App() {
           Download latest
         </a>
       </section>
+
+      <footer className="site-footer">
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <span>OpenArc is an independent project, not affiliated with The Browser Company.</span>
+      </footer>
     </main>
   );
 }
