@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">OpenArc monochrome mark</title>
+  <desc id="desc">A softly rounded A inside an open O, using the current text color.</desc>
+  <g stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M419.1 179.9 A180 180 0 1 1 281.1 77.8" stroke-width="42"/>
+    <path d="M180 337 L236.5 192.5 Q253 150.5 269.5 192.5 L326 337 M203.5 277 H302.5" stroke-width="36"/>
+  </g>
+</svg>

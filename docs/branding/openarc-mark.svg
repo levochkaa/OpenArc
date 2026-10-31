@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">OpenArc</title>
+  <desc id="desc">A softly rounded A inside an O that opens toward the upper right.</desc>
+  <defs>
+    <linearGradient id="orbit" x1="133" y1="414" x2="353" y2="93" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6650E8"/>
+      <stop offset="0.48" stop-color="#477BF2"/>
+      <stop offset="1" stop-color="#47DCC5"/>
+    </linearGradient>
+    <linearGradient id="arch" x1="205" y1="337" x2="285" y2="175" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5C43D8"/>
+      <stop offset="1" stop-color="#367CEA"/>
+    </linearGradient>
+  </defs>
+  <path d="M419.1 179.9 A180 180 0 1 1 281.1 77.8" stroke="url(#orbit)" stroke-width="42" stroke-linecap="round"/>
+  <path d="M180 337 L236.5 192.5 Q253 150.5 269.5 192.5 L326 337 M203.5 277 H302.5" stroke="url(#arch)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
