@@ -157,7 +157,6 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             button.tooltipShortcut = BrowserSpaceShortcuts.shortcut(forSpaceIndex: index)
             button.tooltipPlacement = .aboveCapsule
             button.isSelected = snapshot.selectedSpaceID == space.id
-            button.isEnabled = !isResizing
             button.setAccessibilityIdentifier("browser.sidebar.select-space.\(space.id)")
             button.onAction = { [weak state] in
                 state?.dismissRenamingIfNeeded()
@@ -191,8 +190,6 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         downloadsButton.isHidden = hidden
         createButton.isHidden = hidden
         scroll.isHidden = hidden
-        downloadsButton.isEnabled = !isResizing
-        createButton.isEnabled = !isResizing
         refreshDownloadsButton()
         needsLayout = true
     }
