@@ -22,6 +22,8 @@ final class BrowserNativeSidebarNSView: NSView {
     var onDragInteractionChange: (Bool) -> Void = { _ in }
     var headerHeightProvider: (() -> CGFloat)?
     var footerHeightProvider: ((CGFloat) -> CGFloat)?
+    /// The Space a swipe is moving toward and how far, nil when no swipe is on.
+    var onSpacePagerProgress: (String?, CGFloat) -> Void = { _, _ in }
     /// The footer's Space icons, which accept dragged tabs.
     weak var spaceDock: BrowserSpaceDockNSView?
 
@@ -688,6 +690,7 @@ final class BrowserNativeSidebarNSView: NSView {
             of: pagesContainer,
             animated: animated,
         )
+        reportSpacePagerProgress(selectedIndex: index, pageStride: pageStride)
         for page in pages.values {
             page.frame = NSRect(
                 x: CGFloat(page.index) * pageStride + inset,
@@ -699,12 +702,24 @@ final class BrowserNativeSidebarNSView: NSView {
         }
     }
 
+    /// Tells the window how far a swipe has gone toward the neighboring Space,
+    /// so the theme follows the finger.
+    private func reportSpacePagerProgress(selectedIndex: Int, pageStride: CGFloat) {
+        let translation = state.isSpacePagerDragging ? state.spacePagerDragTranslation : 0
+        let neighbor = selectedIndex + (translation > 0 ? -1 : 1)
+        guard translation != 0, pageStride > 0, state.snapshot.spaces.indices.contains(neighbor) else {
+            onSpacePagerProgress(nil, 0)
+            return
+        }
+        onSpacePagerProgress(state.snapshot.spaces[neighbor].id, min(abs(translation) / pageStride, 1))
+    }
+
     private func setFrame(_ rect: NSRect, of view: NSView, animated: Bool) {
         frameTransitions.setFrame(
             rect,
             of: view,
             animated: animated,
-            curve: view === pagesContainer ? .sidebar : .list,
+            curve: view === pagesContainer ? state.spacePagerCurve : .rowMove,
         )
     }
 
@@ -1346,7 +1361,7 @@ final class BrowserNativeSidebarNSView: NSView {
             guard let self else { return false }
             return beginDragging(item: payload.primary, sourceFrame: dragPreview.frame, value: value)
         }
-        landingAnimation.start(.list) { [weak self] progress in
+        landingAnimation.start(.landing) { [weak self] progress in
             guard let self else { return }
             dragPreview.frame = BrowserNativeAnimation.interpolate(from, to, progress)
             dragPreview.alphaValue = target == nil || !exact ? max(1 - progress, 0) : 1

@@ -9,29 +9,76 @@ enum BrowserChromeBackgroundMode: Hashable { case blurred, black }
 // MARK: - BrowserChromeBackgroundNSView
 
 final class BrowserChromeBackgroundNSView: NSView {
+    // MARK: Private
+
+    /// One theme's gradient and its texture above it.
+    private final class ThemeLayerView: NSView {
+        let gradient = CALayer()
+        let texture = CALayer()
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            gradient.contentsGravity = .resize
+            layer?.addSublayer(gradient)
+            layer?.addSublayer(texture)
+        }
+
+        @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
+
+        override func layout() {
+            super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            gradient.frame = bounds
+            texture.frame = bounds
+            CATransaction.commit()
+        }
+
+        func render(_ theme: BrowserSpaceTheme?, aspect: CGFloat, isDark: Bool) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if let theme {
+                gradient.contents = BrowserSpaceThemeRenderer.image(for: theme, aspect: aspect, isDark: isDark)
+                let strength = theme.noise * theme.texture.strength
+                texture.isHidden = strength <= 0
+                texture.opacity = Float(strength)
+                texture.backgroundColor = NSColor(patternImage: BrowserSpaceThemeTexture.tile(theme.texture)).cgColor
+            } else {
+                gradient.contents = nil
+                texture.isHidden = true
+            }
+            CATransaction.commit()
+        }
+    }
+
     // MARK: Internal
 
     var mode = BrowserChromeBackgroundMode.blurred { didSet { update() } }
 
-    // MARK: Private
-
     private let effect = NSVisualEffectView()
-    private let themeView = NSView()
-    private let textureView = NSView()
+    private let themeContainer = NSView()
+    private let currentTheme = ThemeLayerView()
+    private let incomingTheme = ThemeLayerView()
     private var theme: BrowserSpaceTheme?
+    private var incoming: BrowserSpaceTheme?
     private var renderedAspect: CGFloat = 0
     private var renderedIsDark = false
+
+    private var isDark: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         addSubview(effect)
-        addSubview(themeView)
-        addSubview(textureView)
+        addSubview(themeContainer)
+        themeContainer.wantsLayer = true
+        themeContainer.addSubview(currentTheme)
+        themeContainer.addSubview(incomingTheme)
+        incomingTheme.alphaValue = 0
         effect.blendingMode = .behindWindow
         effect.state = .active
-        themeView.wantsLayer = true
-        themeView.layer?.contentsGravity = .resize
-        textureView.wantsLayer = true
         update()
     }
 
@@ -40,14 +87,15 @@ final class BrowserChromeBackgroundNSView: NSView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
     override func layout() { super.layout()
         effect.frame = bounds
-        themeView.frame = bounds
-        textureView.frame = bounds
-        renderTheme()
+        themeContainer.frame = bounds
+        currentTheme.frame = bounds
+        incomingTheme.frame = bounds
+        renderThemes()
     }
 
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance()
         update()
-        renderTheme(force: true)
+        renderThemes(force: true)
     }
 
     override func draw(_: NSRect) {
@@ -58,20 +106,54 @@ final class BrowserChromeBackgroundNSView: NSView {
     }
 
     /// The selected Space's theme, nil for neutral. A different Space's theme
-    /// cross-fades; edits in progress apply at once.
+    /// cross-fades as its page slides in; edits in progress apply at once.
     func setTheme(_ theme: BrowserSpaceTheme?, animated: Bool) {
         let next = theme?.colors.isEmpty == true ? nil : theme
         guard next != self.theme else { return }
-        self.theme = next
         if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             let fade = CATransition()
             fade.type = .fade
-            fade.duration = 0.25
-            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
-            themeView.layer?.add(fade, forKey: "theme")
-            textureView.layer?.add(fade, forKey: "theme")
+            fade.duration = BrowserNativeAnimation.Curve.spaceSlide.duration
+            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
+            themeContainer.layer?.add(fade, forKey: "theme")
         }
-        renderTheme(force: true)
+        self.theme = next
+        incoming = nil
+        incomingTheme.alphaValue = 0
+        renderThemes(force: true)
+    }
+
+    /// During a swipe, blends in the theme of the Space it is moving toward.
+    func setSwipeTransition(toward theme: BrowserSpaceTheme?, progress: CGFloat) {
+        let next = theme?.colors.isEmpty == true ? nil : theme
+        guard progress > 0 else {
+            if incomingTheme.alphaValue != 0 {
+                incoming = nil
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                incomingTheme.alphaValue = 0
+                currentTheme.alphaValue = 1
+                CATransaction.commit()
+            }
+            return
+        }
+        if next != incoming || incomingTheme.alphaValue == 0 {
+            incoming = next
+            incomingTheme.render(next, aspect: max(bounds.width, 1) / max(bounds.height, 1), isDark: appliedDark(next))
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        incomingTheme.alphaValue = progress
+        currentTheme.alphaValue = 1 - progress
+        CATransaction.commit()
+    }
+
+    private func appliedDark(_ theme: BrowserSpaceTheme?) -> Bool {
+        switch theme?.mode {
+        case .light: false
+        case .dark: true
+        default: isDark
+        }
     }
 
     private func update() {
@@ -81,33 +163,15 @@ final class BrowserChromeBackgroundNSView: NSView {
         needsDisplay = true
     }
 
-    private func renderTheme(force: Bool = false) {
-        guard let theme, bounds.width > 0, bounds.height > 0 else {
-            themeView.layer?.contents = nil
-            textureView.isHidden = true
-            renderedAspect = 0
-            return
-        }
+    private func renderThemes(force: Bool = false) {
+        guard bounds.width > 0, bounds.height > 0 else { return }
         let aspect = bounds.width / bounds.height
-        let isDark =
-            switch theme.mode {
-            case .automatic: NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            case .light: false
-            case .dark: true
-            }
-        if force || abs(aspect - renderedAspect) > 0.005 || isDark != renderedIsDark {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            themeView.layer?.contents = BrowserSpaceThemeRenderer.image(for: theme, aspect: aspect, isDark: isDark)
-            let strength = theme.noise * theme.texture.strength
-            textureView.isHidden = strength <= 0
-            textureView.layer?.opacity = Float(strength)
-            textureView.layer?.backgroundColor = NSColor(patternImage: BrowserSpaceThemeTexture.tile(theme.texture))
-                .cgColor
-            CATransaction.commit()
-            renderedAspect = aspect
-            renderedIsDark = isDark
-        }
+        let isDark = appliedDark(theme)
+        guard force || abs(aspect - renderedAspect) > 0.005 || isDark != renderedIsDark else { return }
+        currentTheme.alphaValue = 1
+        currentTheme.render(theme, aspect: aspect, isDark: isDark)
+        renderedAspect = aspect
+        renderedIsDark = isDark
     }
 }
 

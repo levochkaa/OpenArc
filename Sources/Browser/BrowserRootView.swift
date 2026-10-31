@@ -183,6 +183,13 @@ final class BrowserRootView: NSView {
         sidebar.sidebar.state.drag.pageSplitDropResolver = { [weak content] point, tabID in
             content?.splitPaneBars.pageSplitDrop(atWindowPoint: point, draggedTabID: tabID)
         }
+        sidebar.sidebar.onSpacePagerProgress = { [weak self] spaceID, progress in
+            guard let self else { return }
+            background.setSwipeTransition(
+                toward: spaceID.flatMap { self.model.spaceThemesByID[$0] },
+                progress: progress,
+            )
+        }
         sidebar.onDragInteractionChange = { [weak self] in
             DispatchQueue.main.async { [weak self] in self?.refresh() }
         }

@@ -358,7 +358,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         guard window != nil else { return }
         appearanceProgress = 0
         alphaValue = 0
-        opacityAnimation.start(.list) { [weak self] progress in
+        opacityAnimation.start(.rowFade) { [weak self] progress in
             guard let self else { return }
             appearanceProgress = min(max(progress, 0), 1)
             alphaValue = dragOpacity * appearanceProgress
@@ -372,7 +372,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         isInteractionEnabled = false
         closeButton.isEnabled = false
         let from = appearanceProgress
-        opacityAnimation.start(.list) { [weak self] progress in
+        opacityAnimation.start(.rowFade) { [weak self] progress in
             guard let self else { return }
             appearanceProgress = from * min(max(1 - progress, 0), 1)
             alphaValue = dragOpacity * appearanceProgress

@@ -11,9 +11,14 @@ import Testing
         #expect(press.value(at: 0.13) > 1)
         #expect(press.value(at: press.duration) == 1)
         let sidebar = BrowserNativeAnimation.Curve.sidebar
-        #expect(abs(sidebar.value(at: 0.09) - 0.5) < 0.0001)
-        #expect(sidebar.value(at: 0.045) < 0.25)
-        #expect(sidebar.value(at: 0.135) > 0.75)
+        #expect(sidebar.duration == 0.08)
+        #expect(sidebar.value(at: 0.04) > 0.5, "Starts fast and eases out")
+        #expect(sidebar.value(at: 0.08) == 1)
+        let slide = BrowserNativeAnimation.Curve.spaceSlide
+        #expect(abs(slide.value(at: 1.0 / 60) - 0.216) < 0.05)
+        #expect(abs(slide.value(at: 4.0 / 60) - 0.76) < 0.05)
+        let settle = BrowserNativeAnimation.Curve.spaceSettle
+        #expect((0..<40).map { settle.value(at: Double($0) / 120) }.allSatisfy { $0 <= 1.0001 }, "No overshoot")
     }
 
     @Test func springsMatchTheirStiffnessAndDamping() {

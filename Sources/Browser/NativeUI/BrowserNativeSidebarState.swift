@@ -17,6 +17,8 @@ import AppKit
     var selectedSidebarTabIDs = Set<String>() { didSet { invalidate() } }
     var sidebarTabSelectionAnchorID: String?
     var spacePagerRawDragTranslation: CGFloat = 0
+    /// How the Space pager moves next: a slide, or settling after a swipe.
+    var spacePagerCurve = BrowserNativeAnimation.Curve.spaceSlide
     var renameDismissSuppressedUntil = Date.distantPast
 
     var isClearButtonHovered = false { didSet { invalidate() } }
@@ -232,6 +234,7 @@ import AppKit
         }
 
         let targetSpaceID = targetSpaceID(for: value, in: snapshot, pageWidth: pageWidth)
+        spacePagerCurve = .spaceSettle
         withSidebarAnimation {
             isSpacePagerDragging = false
             spacePagerRawDragTranslation = 0
@@ -263,6 +266,7 @@ import AppKit
             isSpacePagerDragging = true
         }
 
+        spacePagerCurve = .spaceSlide
         withoutSidebarDragAnimation {
             spacePagerRawDragTranslation += delta
             spacePagerDragTranslation = constrainedSpacePagerTranslation(
@@ -288,6 +292,7 @@ import AppKit
             in: snapshot,
             pageWidth: pageWidth,
         )
+        spacePagerCurve = .spaceSettle
         withSidebarAnimation {
             isSpacePagerDragging = false
             spacePagerRawDragTranslation = 0
@@ -337,7 +342,7 @@ import AppKit
             return translation
         }
 
-        let overscrollLimit = pageWidth * (canMoveToAdjacentSpace ? 0.2 : 0.14)
+        let overscrollLimit: CGFloat = 255
         let resistedOverflow = rubberBandDistance(
             magnitude - pageLimit,
             limit: overscrollLimit,
@@ -404,7 +409,7 @@ import AppKit
             return 0
         }
 
-        return limit * (1 - exp(-distance / limit))
+        return limit * (1 - 1 / (distance * 0.15 / limit + 1))
     }
 
     func renderedSnapshot(for snapshot: BrowserSidebarSnapshot) -> BrowserSidebarSnapshot {

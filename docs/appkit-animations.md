@@ -4,15 +4,16 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 
 | State change | Timing | Animated appearance or geometry |
 | --- | --- | --- |
-| Pinned sidebar visibility | ease-in-out, 0.18 s | Sidebar position, page origin and width, toolbars, find overlay and content hit regions |
+| Pinned sidebar visibility | 0.08 s, timing (0.25, 0.46, 0.45, 0.94) | Sidebar position, page origin and width, toolbars, find overlay and content hit regions |
 | Hover sidebar presentation | spring response 0.18 s, damping 0.8; reveal delay 0.5 s | Sidebar horizontal position only; floating background, corners, vertical inset and height are prepared offscreen first. Promotion to a pinned sidebar uses the pinned timing |
-| Bookmarks/site toolbar visibility and extension panel presentation | ease-in-out, 0.18 s | Reserved page geometry; bars move/fade from above, extension panel from the trailing edge |
-| Web-app toolbar visibility | ease-in-out, 0.18 s | Toolbar and page/find geometry |
+| Bookmarks/site toolbar visibility and extension panel presentation | 0.08 s, timing (0.25, 0.46, 0.45, 0.94) | Reserved page geometry; bars move/fade from above, extension panel from the trailing edge |
+| Web-app toolbar visibility | 0.08 s, timing (0.25, 0.46, 0.45, 0.94) | Toolbar and page/find geometry |
 | Chrome, folder, app-tile and space-button presses | spring response 0.18 s, damping 0.72 | Existing scale, icon translation and rotation; both pressing and releasing |
 | Sidebar row presses | spring response 0.2 s, damping 0.5 | Row scale to 0.985 and back, with a visible bounce |
 | Chrome and bookmark hover | ease-out, 0.1 s | Hover background |
-| App-tab reorder, pinned/temporary tab identities, pinned section/folder expansion | spring response 0.28 s, damping 0.82 | Row positions and insertion/removal opacity |
-| Space pager selection / settling | ease-in-out, 0.18 s | Horizontal page offset; direct pointer/trackpad movement remains immediate |
+| App-tab reorder, pinned/temporary tab identities, pinned section/folder expansion | 0.12 s, timing (0, 0, 0.58, 1) | Row positions; insertion/removal opacity over 0.1 s |
+| Space pager selection | 0.19 s, timing (0.215, 0.61, 0.355, 1) | Horizontal page offset and the theme cross-fade |
+| Space pager settling after a swipe | spring response 0.25 s, critically damped | Horizontal page offset; direct pointer/trackpad movement remains immediate, with the theme following the finger |
 | Drag-preview size | spring response 0.20 s, damping 0.86 | Tile/row dimensions around the mouse-down grab point; pointer position remains immediate |
 | Drop landing / cancellation | spring response 0.28 s, damping 0.82 | Preview travels to the final row/cell or merges into a collapsed container before the real rows are revealed |
 | Current-URL action visibility | ease-in-out, 0.12 s | Action opacity and trailing URL mask |
@@ -27,11 +28,10 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 
 These timings are chosen on purpose:
 
-- Pinned sidebar visibility stays at 0.18 s. The page is a live CEF view that relays out every frame, and a shorter slide reads as a jump.
-- Reorder and folder expansion keep the 0.28 s spring, because the drop landing shares that spring and travels farther.
+- Drop landing keeps its 0.28 s spring: it travels farther than a row move.
 - Find, the tab switcher and command scrolling keep 0.12 s ease-out; the timings are tuned with their keyboard flows.
 - The drag preview keeps its 0.2 s size spring; the preview changes size, not border and corner style.
-- Space headers slide with their pages, so there is nothing to cross-fade.
+- The command bar appears and leaves at once.
 
 `BrowserNativeAnimation` supplies the cubic easing and damped spring timing on the main run loop. The spring's response is its period parameter, not a fixed completion duration. Animation work respects Reduce Motion. Each owner retains its animation, cancels superseded work, and starts from the current displayed value.
 

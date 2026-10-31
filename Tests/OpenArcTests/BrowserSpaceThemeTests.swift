@@ -130,7 +130,7 @@ import Testing
               "baseColors": [{"red": 1, "green": 0.5, "blue": 0.25, "alpha": 1}, {"red": 0.9, "green": 0.9, "blue": 0.25, "alpha": 1}],
               "overlayColors": [{"red": 0, "green": 0, "blue": 0, "alpha": 0}, {"red": 1, "green": 0.3, "blue": 0.6, "alpha": 1}],
               "modifiers": {"noiseFactor": 0.5, "intensityFactor": 0.25, "overlay": "denim"},
-              "wheel": {"analogous": {}}}}}}}}}}}},
+              "wheel": {"analogous": {}}}}}}}}}}}}},
             "S2", {"id": "S2", "title": "Home", "containerIDs": []}],
           "items": [],
           "topAppsContainerIDs": []

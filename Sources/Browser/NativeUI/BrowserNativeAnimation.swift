@@ -15,10 +15,21 @@ import QuartzCore
         case easeInOut(Double)
         case easeOut(Double)
         case spring(response: Double, damping: Double)
+        /// A cubic timing curve through (x1, y1) and (x2, y2).
+        case bezier(Double, x1: Double, y1: Double, x2: Double, y2: Double)
 
         // MARK: Internal
 
-        static let sidebar = Curve.easeInOut(0.18)
+        /// Page, sidebar and bar geometry: 0.08 s, timing (0.25, 0.46, 0.45, 0.94).
+        static let sidebar = Curve.bezier(0.08, x1: 0.25, y1: 0.46, x2: 0.45, y2: 0.94)
+        /// Spaces sliding to a chosen Space; the theme cross-fades with the same curve.
+        static let spaceSlide = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
+        /// Spaces settling after a swipe: critically damped.
+        static let spaceSettle = Curve.spring(response: 0.25, damping: 0.995)
+        /// Row moves: 0.12 s, timing (0, 0, 0.58, 1).
+        static let rowMove = Curve.bezier(0.12, x1: 0, y1: 0, x2: 0.58, y2: 1)
+        /// Rows appearing and leaving: 0.1 s, timing (0, 0, 0.58, 1).
+        static let rowFade = Curve.bezier(0.1, x1: 0, y1: 0, x2: 0.58, y2: 1)
         /// Hover fills: 0.1 s, timing (0, 0, 0.58, 1).
         static let hover = Curve.easeOut(0.1)
         /// Element appearance: opacity over 0.15 s, timing (0, 0, 0.58, 1).
@@ -28,16 +39,34 @@ import QuartzCore
         static let rowPress = Curve.spring(response: 0.2, damping: 0.5)
         /// Floating sidebar slide: stiffness 1218, damping 55.9.
         static let floatingSidebar = Curve.spring(response: 0.18, damping: 0.8)
-        static let list = Curve.spring(response: 0.28, damping: 0.82)
+        /// A dropped row landing in place.
+        static let landing = Curve.spring(response: 0.28, damping: 0.82)
         static let dragPreview = Curve.spring(response: 0.2, damping: 0.86)
         static let copy = Curve.spring(response: 0.22, damping: 0.68)
 
         var duration: Double {
             switch self {
-            case .easeInOut(let duration),
+            case .bezier(let duration, _, _, _, _),
+                 .easeInOut(let duration),
                  .easeOut(let duration): duration
             case .spring(let response, let damping): -log(0.001) / (damping * 2 * .pi / response)
             }
+        }
+
+        private static func bezierValue(_ x: Double, x1: Double, y1: Double, x2: Double, y2: Double) -> Double {
+            var low = 0.0
+            var high = 1.0
+            for _ in 0..<18 {
+                let t = (low + high) / 2
+                let position = 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t
+                if position < x {
+                    low = t
+                } else {
+                    high = t
+                }
+            }
+            let t = (low + high) / 2
+            return 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t
         }
 
         func value(at elapsed: Double) -> Double {
@@ -53,29 +82,12 @@ import QuartzCore
                 let frequency = omega * sqrt(1 - damping * damping)
                 return 1 - exp(-damping * omega * elapsed)
                     * (cos(frequency * elapsed) + damping * omega / frequency * sin(frequency * elapsed))
-            case .easeInOut,
-                 .easeOut:
-                let x = elapsed / duration
-                let x1: Double =
-                    if case .easeInOut = self {
-                        0.42
-                    } else {
-                        0
-                    }
-                let x2 = 0.58
-                var low = 0.0
-                var high = 1.0
-                for _ in 0..<18 {
-                    let t = (low + high) / 2
-                    let position = 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t
-                    if position < x {
-                        low = t
-                    } else {
-                        high = t
-                    }
-                }
-                let t = (low + high) / 2
-                return 3 * (1 - t) * t * t + t * t * t
+            case .easeInOut:
+                return Self.bezierValue(elapsed / duration, x1: 0.42, y1: 0, x2: 0.58, y2: 1)
+            case .easeOut:
+                return Self.bezierValue(elapsed / duration, x1: 0, y1: 0, x2: 0.58, y2: 1)
+            case .bezier(_, let x1, let y1, let x2, let y2):
+                return Self.bezierValue(elapsed / duration, x1: x1, y1: y1, x2: x2, y2: y2)
             }
         }
     }
@@ -208,7 +220,7 @@ import QuartzCore
         _ frame: CGRect,
         of view: NSView,
         animated: Bool,
-        curve: BrowserNativeAnimation.Curve = .list,
+        curve: BrowserNativeAnimation.Curve = .rowMove,
     ) {
         transitions = transitions.filter { $0.value.view != nil }
         let id = ObjectIdentifier(view)
