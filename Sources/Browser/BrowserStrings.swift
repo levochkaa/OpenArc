@@ -2538,9 +2538,64 @@ enum BrowserStrings {
         comment: "Settings section title for Peek, the floating card for links.",
     )
 
-    static let settingsContentTab = NSLocalizedString(
-        "browser.settings.content",
-        comment: "Title for the content settings tab.",
+    static let settingsAdvancedTab = NSLocalizedString(
+        "browser.settings.advanced",
+        comment: "Settings pane with advanced options.",
+    )
+
+    static let settingsAdBlocker = NSLocalizedString(
+        "browser.settings.ad_blocker",
+        comment: "Settings section title of the ad blocker.",
+    )
+
+    static let settingsAdBlockerDetail = NSLocalizedString(
+        "browser.settings.ad_blocker.detail",
+        comment: "Explains where the ad blocker's rules come from.",
+    )
+
+    static let settingsAdBlockerTurnOffAll = NSLocalizedString(
+        "browser.settings.ad_blocker.turn_off_all",
+        comment: "Button that turns off all blocking.",
+    )
+
+    static let settingsBlockAds = NSLocalizedString(
+        "browser.settings.ad_blocker.ads",
+        comment: "Ad blocker toggle.",
+    )
+
+    static let settingsBlockTrackers = NSLocalizedString(
+        "browser.settings.ad_blocker.trackers",
+        comment: "Ad blocker toggle.",
+    )
+
+    static let settingsBlockCookieBanners = NSLocalizedString(
+        "browser.settings.ad_blocker.cookie_banners",
+        comment: "Ad blocker toggle.",
+    )
+
+    static let settingsYourData = NSLocalizedString(
+        "browser.settings.your_data",
+        comment: "Settings section with links to a profile's data.",
+    )
+
+    static let settingsToolbarFullURL = NSLocalizedString(
+        "browser.settings.toolbar_full_url",
+        comment: "Toggle: show the full address in the toolbar.",
+    )
+
+    static let settingsShareThemeWithWebsites = NSLocalizedString(
+        "browser.settings.share_theme_with_websites",
+        comment: "Toggle: websites can read the Space's colors.",
+    )
+
+    static let settingsExportData = NSLocalizedString(
+        "browser.settings.export_data",
+        comment: "Button that saves a copy of the tabs and Spaces.",
+    )
+
+    static let settingsExportDataDetail = NSLocalizedString(
+        "browser.settings.export_data.detail",
+        comment: "Label beside the button that saves a copy of the tabs and Spaces.",
     )
 
     static let settingsHapticFeedback = NSLocalizedString(

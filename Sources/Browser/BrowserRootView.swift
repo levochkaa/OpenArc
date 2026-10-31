@@ -436,6 +436,11 @@ final class BrowserRootView: NSView {
         previousLayoutState = state
         background.mode = chromeBackgroundMode
         background.setTheme(model.selectedSpaceTheme, animated: !isEditingSpaceTheme)
+        if window?.isMainWindow == true || BrowserContentBlockerEngine.pageStartScript == nil {
+            BrowserContentBlockerEngine.pageStartScript = preferences.sharesThemeWithWebsites
+                ? model.selectedSpaceTheme?.pageScript
+                : nil
+        }
         let libraryPresented = model.librarySection != nil
         if libraryPresented != wasLibraryPresented {
             wasLibraryPresented = libraryPresented

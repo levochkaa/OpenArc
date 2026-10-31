@@ -112,9 +112,10 @@ import Testing
         #expect(fixture.model.userPreferencesStore.batterySaverEnabled != oldValue)
         fixture.model.userPreferencesStore.batterySaverEnabled = oldValue
         try await waitUntil { toggle.state == (oldValue ? .on : .off) }
+        let profiles = fixture.controller(.profiles)
         let popup = try #require(find(
             "browser.settings.search-engine",
-            in: controller.view,
+            in: profiles.view,
         ) as? BrowserActionPopUpButton)
         popup.selectItem(withTitle: BrowserSearchEngine.brave.title)
         _ = popup.sendAction(popup.action, to: popup.target)
@@ -128,7 +129,7 @@ import Testing
         defer { fixture.cleanup() }
         let preferences = fixture.model.userPreferencesStore
         preferences.downloadDirectoryPath = nil
-        let controller = fixture.controller(.general)
+        let controller = fixture.controller(.profiles)
         _ = controller.view
         controller.viewWillAppear()
         let path = try #require(find("browser.settings.download-location.path", in: controller.view) as? NSTextField)
@@ -190,7 +191,7 @@ import Testing
         defer { fixture.cleanup() }
         let controller = fixture.controller(.general)
         controller.view.layoutSubtreeIfNeeded()
-        let ids = ["automatic-updates", "warn-before-quitting", "battery-saver", "search-suggestions"]
+        let ids = ["automatic-updates", "warn-before-quitting", "battery-saver", "block-ads"]
         let edges = try ids.map { id in
             let control = try #require(find("browser.settings.\(id)", in: controller.view))
             return control.convert(control.bounds, to: controller.view).maxX
@@ -308,12 +309,12 @@ import Testing
         #expect(find("browser.settings.link-routes.remove", in: controller.view) == nil)
     }
 
-    @Test func siteSearchesAreAddedEditedRestoredAndRemovedInGeneral() throws {
+    @Test func siteSearchesAreAddedEditedRestoredAndRemovedInProfiles() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let preferences = fixture.model.userPreferencesStore
         preferences.siteSearches = []
-        let controller = fixture.controller(.general)
+        let controller = fixture.controller(.profiles)
         let add = try #require(find("browser.settings.site-search.add", in: controller.view) as? BrowserActionButton)
         add.performClick(nil)
         let added = try #require(preferences.siteSearches.first)

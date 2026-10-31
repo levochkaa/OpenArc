@@ -121,6 +121,11 @@ struct BrowserSpaceTheme: Codable, Equatable {
             return NSColor(colorSpace: .extendedSRGB, components: components, count: 4)
         }
 
+        func cssValue(alpha: Double = 1) -> String {
+            let channel = { (value: Double) in Int((min(max(value, 0), 1) * 255).rounded()) }
+            return "rgba(\(channel(red)), \(channel(green)), \(channel(blue)), \(alpha))"
+        }
+
         func mixedWithWhite(_ amount: Double) -> Color {
             Color(red + (1 - red) * amount, green + (1 - green) * amount, blue + (1 - blue) * amount)
         }
@@ -174,6 +179,26 @@ struct BrowserSpaceTheme: Codable, Equatable {
     struct Palette: Equatable {
         let key: Color
         let isLightContent: Bool
+
+        /// The theme as CSS variables, for pages that adapt to the Space's colors.
+        var cssVariables: [(name: String, value: String)] {
+            let dark = !isLightContent
+            let colors: [(String, Color, Double)] = [
+                ("title", title, 1),
+                ("subtitle", dark ? shadedDark.mixedWithWhite(0.47) : shadedDark.mixedWithWhite(0.6), 1),
+                ("background", dark ? shadedDark.scaled(0.3) : shadedDark.mixedWithWhite(0.9), 1),
+                ("backgroundExtra", dark ? shadedDark.scaled(0.15) : shadedDark.mixedWithWhite(0.99), 1),
+                ("cutoutColor", dark ? shadedDark : tintedLight, 1),
+                ("focus", dark ? shadedDark.mixedWithWhite(0.195) : shadedDark.mixedWithWhite(0.5), dark ? 0.8075 : 1),
+                ("hover", dark ? shadedDark.mixedWithWhite(0.27) : shadedDark.mixedWithWhite(0.8), dark ? 0.48 : 1),
+                ("foregroundPrimary", dark ? tintedLight : key, 1),
+                ("foregroundSecondary", key, 1),
+                ("foregroundTertiary", dark ? key : tintedLight, 1),
+                ("maxContrastColor", dark ? tintedLight : shadedDark, 1),
+                ("minContrastColor", dark ? shadedDark : tintedLight, 1),
+            ]
+            return colors.map { ("--arc-palette-\($0.0)", $0.1.cssValue(alpha: $0.2)) }
+        }
 
         var tintedLight: Color { key.withLightness(0.94) }
         var shadedDark: Color { key.withLightness(key.hsl.lightness / 2) }
@@ -232,6 +257,24 @@ struct BrowserSpaceTheme: Codable, Equatable {
             let center = Self.padSize / 2
             return CGPoint(x: center + radius * cos(angle), y: center + radius * sin(angle))
         }
+    }
+
+    /// Sets the theme's variables on each new page; nil without a theme.
+    var pageScript: String? {
+        guard let palette, let key else { return nil }
+        var variables = palette.cssVariables
+        variables.append(("--arc-background-simple-color", key.cssValue()))
+        if colors.count > 1 {
+            variables.append(("--arc-background-gradient-color0", colors[0].cssValue()))
+            variables.append(("--arc-background-gradient-color1", colors[1].cssValue()))
+        }
+        if colors.count > 2 {
+            variables.append(("--arc-background-gradient-overlay-color0", "rgba(0, 0, 0, 0)"))
+            variables.append(("--arc-background-gradient-overlay-color1", colors[2].cssValue()))
+        }
+        let calls = variables.map { "s.setProperty('\($0.name)','\($0.value)');" }.joined()
+        return "(function(){function a(){var s=document.documentElement.style;\(calls)}"
+            + "if(document.documentElement){a();}else{document.addEventListener('readystatechange',a,{once:true});}})();"
     }
 
     init(

@@ -27,6 +27,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var profileStore: BrowserProfileStore?
     private var updateController: BrowserUpdateController?
     private let userPreferencesStore = BrowserUserPreferencesStore()
+    private var contentBlockerObservation: AnyCancellable?
     private let shortcutStore = BrowserShortcutStore()
     private var batterySaverController: BrowserBatterySaverController?
     private let defaultBrowserService = BrowserDefaultBrowserService()
@@ -152,6 +153,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         observeAppearancePreference()
         installLayoutIndependentKeyMonitor()
         startBatterySaverController()
+        startContentBlocker()
         app.delegate = self
         if let webAppConfiguration {
             createWebAppWindow(configuration: webAppConfiguration)
@@ -2290,6 +2292,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
 
         updateController = BrowserUpdateController(preferencesStore: userPreferencesStore)
+    }
+
+    /// Follows the ad blocker's switches, which may turn it on or off at any time.
+    private func startContentBlocker() {
+        let preferences = userPreferencesStore
+        BrowserContentBlocker.shared.update(settings: preferences.contentBlockerSettings)
+        contentBlockerObservation = preferences.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak preferences] in
+                guard let preferences else { return }
+                BrowserContentBlocker.shared.update(settings: preferences.contentBlockerSettings)
+            }
     }
 
     private func startBatterySaverController() {

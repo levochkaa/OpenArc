@@ -191,6 +191,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let sitePermissionDecisions = "browser.settings.sitePermissionDecisions"
         static let peeksLinksToOtherSites = "browser.settings.peeksLinksToOtherSites"
         static let folderPreviewsEnabled = "browser.settings.folderPreviewsEnabled"
+        static let blocksAds = "browser.settings.blocksAds"
+        static let blocksTrackers = "browser.settings.blocksTrackers"
+        static let blocksCookieBanners = "browser.settings.blocksCookieBanners"
+        static let contentBlockingExcludedHosts = "browser.settings.contentBlockingExcludedHosts"
+        static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
     }
 
@@ -261,6 +266,37 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var siteToolbarShowsFullURL: Bool {
         didSet { userDefaults.set(siteToolbarShowsFullURL, forKey: Key.siteToolbarShowsFullURL) }
+    }
+
+    @Published var blocksAds: Bool {
+        didSet { userDefaults.set(blocksAds, forKey: Key.blocksAds) }
+    }
+
+    @Published var blocksTrackers: Bool {
+        didSet { userDefaults.set(blocksTrackers, forKey: Key.blocksTrackers) }
+    }
+
+    @Published var blocksCookieBanners: Bool {
+        didSet { userDefaults.set(blocksCookieBanners, forKey: Key.blocksCookieBanners) }
+    }
+
+    /// Sites where nothing is blocked or hidden.
+    @Published var contentBlockingExcludedHosts: [String] {
+        didSet { userDefaults.set(contentBlockingExcludedHosts, forKey: Key.contentBlockingExcludedHosts) }
+    }
+
+    /// Lets pages read the Space's colors as CSS variables.
+    @Published var sharesThemeWithWebsites: Bool {
+        didSet { userDefaults.set(sharesThemeWithWebsites, forKey: Key.sharesThemeWithWebsites) }
+    }
+
+    var contentBlockerSettings: BrowserContentBlockerSettings {
+        BrowserContentBlockerSettings(
+            blocksAds: blocksAds,
+            blocksTrackers: blocksTrackers,
+            blocksCookieBanners: blocksCookieBanners,
+            excludedHosts: contentBlockingExcludedHosts,
+        )
     }
 
     @Published var blurredChromeBackgroundEnabled: Bool {
@@ -370,6 +406,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
             key: Key.siteURLToolbarEnabled,
             defaultValue: false,
         )
+        self.blocksAds = Self.loadBool(userDefaults, key: Key.blocksAds, defaultValue: false)
+        self.blocksTrackers = Self.loadBool(userDefaults, key: Key.blocksTrackers, defaultValue: false)
+        self.blocksCookieBanners = Self.loadBool(userDefaults, key: Key.blocksCookieBanners, defaultValue: false)
+        self.contentBlockingExcludedHosts = userDefaults.stringArray(forKey: Key.contentBlockingExcludedHosts) ?? []
+        self.sharesThemeWithWebsites = Self.loadBool(userDefaults, key: Key.sharesThemeWithWebsites, defaultValue: true)
         self.siteToolbarShowsFullURL = Self.loadBool(
             userDefaults,
             key: Key.siteToolbarShowsFullURL,

@@ -208,7 +208,7 @@ import Testing
         #expect(f.model.automaticArchivalSettingsError == nil)
         let controller = BrowserSettingsViewController(
             model: f.model, profileStore: BrowserProfileStore(rootCacheURL: f.directory),
-            currentProfileID: BrowserProfile.defaultProfile.id, accountStore: nil, pane: .general,
+            currentProfileID: BrowserProfile.defaultProfile.id, accountStore: nil, pane: .profiles,
             openProfile: { _ in }, openURL: { _ in },
         )
         let picker = try #require(desktopExpiryView(

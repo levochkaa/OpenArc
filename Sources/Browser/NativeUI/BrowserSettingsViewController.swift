@@ -8,8 +8,8 @@ import UniformTypeIdentifiers
 // MARK: - BrowserSettingsLayout
 
 enum BrowserSettingsLayout {
-    static let windowWidth: CGFloat = 760
-    static let windowHeight: CGFloat = 560
+    static let windowWidth: CGFloat = 684
+    static let windowHeight: CGFloat = 562
     static let contentPadding: CGFloat = 24
     static let contentSpacing: CGFloat = 16
     static let rowSpacing: CGFloat = 10
@@ -53,10 +53,10 @@ enum BrowserSettingsLayout {
 enum BrowserSettingsPane: String, CaseIterable, Hashable {
     case accounts
     case general
-    case links
     case profiles
+    case links
     case shortcuts
-    case content
+    case advanced
 
     // MARK: Internal
 
@@ -76,8 +76,8 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
             BrowserStrings.settingsProfilesTab
         case .shortcuts:
             BrowserStrings.settingsShortcutsTab
-        case .content:
-            BrowserStrings.settingsContentTab
+        case .advanced:
+            BrowserStrings.settingsAdvancedTab
         }
     }
 
@@ -93,8 +93,8 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
             "person.2"
         case .shortcuts:
             "keyboard"
-        case .content:
-            "doc.text"
+        case .advanced:
+            "gearshape.2"
         }
     }
 }
@@ -269,7 +269,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         case .links: configureLinks()
         case .profiles: configureProfiles()
         case .shortcuts: configureShortcuts()
-        case .content: configureContentSettings()
+        case .advanced: configureAdvanced()
         }
         syncControls()
     }
@@ -360,36 +360,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.batterySaverEnabled = $0 },
                 ),
             ]),
-            section(BrowserStrings.settingsSearch, rows: [
-                picker(
-                    "search-engine",
-                    BrowserStrings.settingsSearchEngine,
-                    options: BrowserSearchEngine.allCases,
-                    title: { $0.title },
-                    get: { preferences.searchEngine },
-                    set: { preferences.searchEngine = $0 },
-                ),
-                toggle(
-                    "search-suggestions",
-                    BrowserStrings.settingsSearchSuggestions,
-                    get: { preferences.searchEngineSuggestionsEnabled },
-                    set: { preferences.searchEngineSuggestionsEnabled = $0 },
-                ),
-                picker(
-                    "ai-search-provider",
-                    BrowserStrings.settingsAISearchProvider,
-                    options: BrowserAISearchProvider.allCases,
-                    title: { $0.title },
-                    get: { preferences.aiSearchProvider },
-                    set: { preferences.aiSearchProvider = $0 },
-                ),
-                link(BrowserStrings.settingsManageSearch, url: BrowserSettingsRoute.searchEnginesURL),
-            ]),
-            section(BrowserStrings.settingsSiteSearchTitle, body: siteSearchesBody),
-            section(BrowserStrings.settingsTemporaryTabsTitle, rows: automaticArchivalRows()),
-            section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
+            section(BrowserStrings.settingsAdBlocker, rows: adBlockerRows()),
         ])
-        refreshSiteSearches()
     }
 
     // MARK: Site permissions
@@ -397,7 +369,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     /// This profile's remembered camera and microphone answers, one row per
     /// site with Forget. Rebuilt only when the answers change.
     private func refreshSitePermissions() {
-        guard pane == .content else { return }
+        guard pane == .advanced else { return }
         let decisions = model.rememberedSitePermissions
         guard decisions != shownSitePermissions || sitePermissionsBody.arrangedSubviews.isEmpty else { return }
         shownSitePermissions = decisions
@@ -844,7 +816,49 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         return [localRow, synchronizedRow, description, errorRow]
     }
 
+    /// Blocking rules come from public filter lists, downloaded when a switch turns on.
+    private func adBlockerRows() -> [NSView] {
+        let preferences = preferences
+        let turnOffAll = BrowserActionButton(BrowserStrings.settingsAdBlockerTurnOffAll) {
+            preferences.blocksAds = false
+            preferences.blocksTrackers = false
+            preferences.blocksCookieBanners = false
+        }
+        turnOffAll.setAccessibilityIdentifier("browser.settings.ad-blocker.turn-off-all")
+        updateBindings.append { [weak turnOffAll, weak preferences] in
+            turnOffAll?.isEnabled = preferences?.contentBlockerSettings.isEnabled ?? false
+        }
+        return [
+            BrowserNativeControls.label(
+                BrowserStrings.settingsAdBlockerDetail,
+                size: 12,
+                color: .secondaryLabelColor,
+                wraps: true,
+            ),
+            toggle(
+                "block-ads",
+                BrowserStrings.settingsBlockAds,
+                get: { preferences.blocksAds },
+                set: { preferences.blocksAds = $0 },
+            ),
+            toggle(
+                "block-trackers",
+                BrowserStrings.settingsBlockTrackers,
+                get: { preferences.blocksTrackers },
+                set: { preferences.blocksTrackers = $0 },
+            ),
+            toggle(
+                "block-cookie-banners",
+                BrowserStrings.settingsBlockCookieBanners,
+                get: { preferences.blocksCookieBanners },
+                set: { preferences.blocksCookieBanners = $0 },
+            ),
+            row(BrowserStrings.settingsAdBlocker, control: turnOffAll),
+        ]
+    }
+
     private func configureProfiles() {
+        let preferences = preferences
         backupMessage.isHidden = true
         let newProfile = BrowserActionButton(BrowserStrings.settingsNewProfile) { [weak self] in
             guard let self else { return }
@@ -858,7 +872,35 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             section(BrowserStrings.settingsProfilesTab, body: profilesBody),
             backupMessage,
             BrowserNativeControls.stack([newProfile], orientation: .horizontal),
-            section(BrowserStrings.settingsProfilesTab, rows: [
+            section(BrowserStrings.settingsSearch, rows: [
+                picker(
+                    "search-engine",
+                    BrowserStrings.settingsSearchEngine,
+                    options: BrowserSearchEngine.allCases,
+                    title: { $0.title },
+                    get: { preferences.searchEngine },
+                    set: { preferences.searchEngine = $0 },
+                ),
+                toggle(
+                    "search-suggestions",
+                    BrowserStrings.settingsSearchSuggestions,
+                    get: { preferences.searchEngineSuggestionsEnabled },
+                    set: { preferences.searchEngineSuggestionsEnabled = $0 },
+                ),
+                picker(
+                    "ai-search-provider",
+                    BrowserStrings.settingsAISearchProvider,
+                    options: BrowserAISearchProvider.allCases,
+                    title: { $0.title },
+                    get: { preferences.aiSearchProvider },
+                    set: { preferences.aiSearchProvider = $0 },
+                ),
+                link(BrowserStrings.settingsManageSearch, url: BrowserSettingsRoute.searchEnginesURL),
+            ]),
+            section(BrowserStrings.settingsSiteSearchTitle, body: siteSearchesBody),
+            section(BrowserStrings.settingsTemporaryTabsTitle, rows: automaticArchivalRows()),
+            section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
+            section(BrowserStrings.settingsYourData, rows: [
                 link(BrowserStrings.settingsPrivacyAndSecurity, url: BrowserSettingsRoute.privacyURL),
                 link(BrowserStrings.settingsPasswords, url: BrowserSettingsRoute.passwordManagerURL),
                 link(BrowserStrings.settingsCreditCards, url: BrowserSettingsRoute.paymentsURL),
@@ -866,6 +908,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 link(BrowserStrings.settingsClearBrowsingData, url: BrowserSettingsRoute.privacyURL),
             ]),
         ])
+        refreshSiteSearches()
         refreshProfiles()
     }
 
@@ -894,10 +937,15 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         refreshShortcuts()
     }
 
-    private func configureContentSettings() {
+    private func configureAdvanced() {
         let preferences = preferences
+        let exportData = BrowserActionButton(BrowserStrings.settingsExportData) { [weak self] in
+            guard let self, let window = view.window else { return }
+            BrowserSessionRecoveryExporter.present(model: model, window: window)
+        }
+        exportData.setAccessibilityIdentifier("browser.settings.export-data")
         scrollView.setViews([
-            section(BrowserStrings.settingsContentTab, rows: [
+            section(BrowserStrings.settingsAdvancedTab, rows: [
                 toggle(
                     "haptic-feedback",
                     BrowserStrings.settingsHapticFeedback,
@@ -928,6 +976,18 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     get: { preferences.bookmarksBarVisible },
                     set: { preferences.bookmarksBarVisible = $0 },
                 ),
+                toggle(
+                    "toolbar-full-url",
+                    BrowserStrings.settingsToolbarFullURL,
+                    get: { preferences.siteToolbarShowsFullURL },
+                    set: { preferences.siteToolbarShowsFullURL = $0 },
+                ),
+                toggle(
+                    "share-theme-with-websites",
+                    BrowserStrings.settingsShareThemeWithWebsites,
+                    get: { preferences.sharesThemeWithWebsites },
+                    set: { preferences.sharesThemeWithWebsites = $0 },
+                ),
             ]),
             section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),
             section(
@@ -949,9 +1009,10 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     return BrowserNativeControls.padded(button, vertical: 8)
                 },
             ),
-            section(BrowserStrings.settingsContentTab, rows: [
+            section(BrowserStrings.settingsAdvancedTab, rows: [
                 link(BrowserStrings.settingsMoreSettings, url: BrowserSettingsRoute.rootURL),
                 link(BrowserStrings.settingsTranslateSitePrompts, url: BrowserSettingsRoute.languageURL),
+                row(BrowserStrings.settingsExportDataDetail, control: exportData),
             ]),
         ])
     }

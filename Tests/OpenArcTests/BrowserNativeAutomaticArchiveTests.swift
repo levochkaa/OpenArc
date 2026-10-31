@@ -261,7 +261,7 @@ import Testing
             profileStore: profiles,
             currentProfileID: BrowserProfile.defaultProfile.id,
             accountStore: nil,
-            pane: .general,
+            pane: .profiles,
             openProfile: { _ in },
             openURL: { _ in },
         )

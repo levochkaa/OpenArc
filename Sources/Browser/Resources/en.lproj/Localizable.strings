@@ -476,7 +476,6 @@
 "browser.settings.shortcuts.not_set" = "Not Set";
 "browser.settings.shortcuts.extension_shortcuts" = "Extension Shortcuts";
 "browser.settings.shortcuts.conflict" = "Shortcut already used by %@.";
-"browser.settings.content" = "Content";
 "browser.settings.content.haptic_feedback" = "Haptic Feedback";
 "browser.settings.content.restore_windows" = "Restore windows from previous session when opening the browser";
 "browser.settings.content.picture_in_picture" = "Picture in Picture when leaving a tab";
@@ -613,3 +612,15 @@
 "browser.library.empty_detail" = "Come back after you've found some cool stuff to save.";
 "browser.library.empty_media" = "Pictures in your download folder show up here.";
 "browser.library.search_format" = "Search %@…";
+"browser.settings.advanced" = "Advanced";
+"browser.settings.ad_blocker" = "Ad Blocker";
+"browser.settings.ad_blocker.detail" = "Rules come from the public EasyList, EasyPrivacy and Fanboy lists, which download when you turn on blocking and refresh weekly.";
+"browser.settings.ad_blocker.turn_off_all" = "Turn Off All";
+"browser.settings.ad_blocker.ads" = "Block Ads";
+"browser.settings.ad_blocker.trackers" = "Block Trackers";
+"browser.settings.ad_blocker.cookie_banners" = "Block Cookie Banners";
+"browser.settings.your_data" = "Your Data and Settings";
+"browser.settings.toolbar_full_url" = "Show full URL when the toolbar is on";
+"browser.settings.share_theme_with_websites" = "Allow websites to get your theme data";
+"browser.settings.export_data" = "Export Data";
+"browser.settings.export_data.detail" = "Save a copy of your tabs and Spaces";
