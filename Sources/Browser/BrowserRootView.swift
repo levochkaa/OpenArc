@@ -184,6 +184,15 @@ final class BrowserRootView: NSView {
         model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
         model.onOpenExtensions = { [weak self] in self?.openExtensions() }
         model.onEditSpaceTheme = { [weak self] in self?.presentSpaceThemeEditor(spaceID: $0) }
+        model.onShareURL = { [weak self] url in
+            guard let self else { return }
+            popoverAnchor.frame = CGRect(x: bounds.midX, y: 40, width: 1, height: 1)
+            NSSharingServicePicker(items: [url]).show(
+                relativeTo: popoverAnchor.bounds,
+                of: popoverAnchor,
+                preferredEdge: .minY,
+            )
+        }
         model.onEditSpaceCreationTheme = { [weak self] _ in self?.presentSpaceCreationThemeEditor() }
         sidebar.sidebar.state.drag.pageSplitDropResolver = { [weak content] point, tabID in
             content?.splitPaneBars.pageSplitDrop(atWindowPoint: point, draggedTabID: tabID)

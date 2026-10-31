@@ -1431,6 +1431,26 @@ enum BrowserStrings {
         comment: "Tabs menu and command title that expands every folder of the Space.",
     )
 
+    static let menuInspectElements = NSLocalizedString(
+        "browser.menu.inspect_elements",
+        comment: "Menu item.",
+    )
+
+    static let menuJavaScriptConsole = NSLocalizedString(
+        "browser.menu.javascript_console",
+        comment: "Menu item.",
+    )
+
+    static let menuManageSpaces = NSLocalizedString(
+        "browser.menu.manage_spaces",
+        comment: "Menu item.",
+    )
+
+    static let menuShareTab = NSLocalizedString(
+        "browser.menu.share_tab",
+        comment: "Menu item.",
+    )
+
     static let menuViewLibrary = NSLocalizedString(
         "browser.menu.view_library",
         comment: "Menu item that opens the Library.",

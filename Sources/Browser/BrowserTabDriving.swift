@@ -27,7 +27,7 @@ struct BrowserTabVisibleLayout: Equatable {
     let fractions: [Double]?
 }
 
-// MARK: - BrowserTabDriving
+// MARK: - BrowserPageContextCommand
 
 /// What a page's context menu asks the window to do, with a URL or text.
 enum BrowserPageContextCommand: String {
@@ -38,6 +38,8 @@ enum BrowserPageContextCommand: String {
     case savePage
     case viewSource
 }
+
+// MARK: - BrowserTabDriving
 
 @MainActor protocol BrowserTabDriving: AnyObject {
     var onPageContextCommand: ((BrowserPageContextCommand, String) -> Void)? { get set }
@@ -115,6 +117,10 @@ enum BrowserPageContextCommand: String {
     func printActiveTab()
     /// Opens the page's Developer Tools in their own window.
     func showDevToolsForActiveTab()
+    /// Developer Tools with the element picker on.
+    func inspectElementsInActiveTab()
+    /// Developer Tools on their Console panel.
+    func showJavaScriptConsoleForActiveTab()
     /// The page in a small window of its own.
     func showLittleWindow(withURLString urlString: String)
     /// Peek card over the window.

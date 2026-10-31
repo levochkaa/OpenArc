@@ -290,15 +290,6 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(sharesThemeWithWebsites, forKey: Key.sharesThemeWithWebsites) }
     }
 
-    var contentBlockerSettings: BrowserContentBlockerSettings {
-        BrowserContentBlockerSettings(
-            blocksAds: blocksAds,
-            blocksTrackers: blocksTrackers,
-            blocksCookieBanners: blocksCookieBanners,
-            excludedHosts: contentBlockingExcludedHosts,
-        )
-    }
-
     @Published var blurredChromeBackgroundEnabled: Bool {
         didSet { userDefaults.set(blurredChromeBackgroundEnabled, forKey: Key.blurredChromeBackgroundEnabled) }
     }
@@ -370,6 +361,15 @@ final class BrowserUserPreferencesStore: ObservableObject {
     }
 
     private let userDefaults: UserDefaults
+
+    var contentBlockerSettings: BrowserContentBlockerSettings {
+        BrowserContentBlockerSettings(
+            blocksAds: blocksAds,
+            blocksTrackers: blocksTrackers,
+            blocksCookieBanners: blocksCookieBanners,
+            excludedHosts: contentBlockingExcludedHosts,
+        )
+    }
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -476,6 +476,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case restoreLastClosedTab
     case stopLoading
     case developerTools
+    case shareTab
+    case manageSpaces
+    case javaScriptConsole
+    case inspectElements
     case viewSource
     case zoomIn
     case zoomOut
@@ -573,6 +577,14 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.stopLoading
         case .developerTools:
             BrowserCommands.developerTools
+        case .shareTab:
+            BrowserCommands.shareTab
+        case .manageSpaces:
+            BrowserCommands.manageSpaces
+        case .javaScriptConsole:
+            BrowserCommands.javaScriptConsole
+        case .inspectElements:
+            BrowserCommands.inspectElements
         case .viewSource:
             BrowserCommands.viewSource
         case .zoomIn:
@@ -733,6 +745,14 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .stopLoading
         case .developerTools:
             .developerTools
+        case .shareTab:
+            .shareTab
+        case .manageSpaces:
+            .manageSpaces
+        case .javaScriptConsole:
+            .javaScriptConsole
+        case .inspectElements:
+            .inspectElements
         case .viewSource:
             .viewSource
         case .zoomIn:

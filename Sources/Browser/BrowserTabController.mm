@@ -4622,6 +4622,57 @@ void WatchClickModifiers();
   ShowBrowserDevToolsOnUI(it->second.browser);
 }
 
+- (void)inspectElementsInActiveTab {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
+    return;
+  }
+  CefRefPtr<CefBrowser> browser = it->second.browser;
+  ShowBrowserDevToolsOnUI(browser);
+  CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+  if (!host) {
+    return;
+  }
+  // Turns on the picker that the Elements panel's own button starts.
+  host->ExecuteDevToolsMethod(0, "DOM.enable", nullptr);
+  host->ExecuteDevToolsMethod(0, "Overlay.enable", nullptr);
+  CefRefPtr<CefDictionaryValue> highlight = CefDictionaryValue::Create();
+  highlight->SetBool("showInfo", true);
+  CefRefPtr<CefDictionaryValue> content = CefDictionaryValue::Create();
+  content->SetInt("r", 111);
+  content->SetInt("g", 168);
+  content->SetInt("b", 220);
+  content->SetDouble("a", 0.66);
+  highlight->SetDictionary("contentColor", content);
+  CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+  params->SetString("mode", "searchForNode");
+  params->SetDictionary("highlightConfig", highlight);
+  host->ExecuteDevToolsMethod(0, "Overlay.setInspectMode", params);
+}
+
+- (void)showJavaScriptConsoleForActiveTab {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
+    return;
+  }
+  CefRefPtr<CefBrowser> browser = it->second.browser;
+  CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+  if (!host) {
+    return;
+  }
+  // Developer Tools open on the panel saved in this preference.
+  CefRefPtr<CefRequestContext> context = host->GetRequestContext();
+  if (context) {
+    CefRefPtr<CefDictionaryValue> preferences = CefDictionaryValue::Create();
+    preferences->SetString("panel-selected-tab", "\"console\"");
+    CefRefPtr<CefValue> value = CefValue::Create();
+    value->SetDictionary(preferences);
+    CefString error;
+    context->SetPreference("devtools.preferences", value, error);
+  }
+  ShowBrowserDevToolsOnUI(browser);
+}
+
 - (void)castActiveTab {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);

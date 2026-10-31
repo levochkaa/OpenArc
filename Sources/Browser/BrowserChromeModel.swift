@@ -351,6 +351,8 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var spaceThemesByID = [String: BrowserSpaceTheme]()
     /// Save As from a page's menu; the application owns the save panel.
     var onSavePageRequest: (() -> Void)?
+    /// UI-only: shows the share sheet in the window.
+    var onShareURL: ((URL) -> Void)?
     /// Opens a link in an incognito window; the application owns those windows.
     var onOpenLinkInIncognito: ((URL) -> Void)?
     /// UI-only: opens the window's theme editor for a Space.
@@ -745,6 +747,10 @@ enum BrowserWindowMode: Equatable {
         guard supportsSpaces, let selectedSpaceID else { return nil }
         return spaceThemesByID[selectedSpaceID]
     }
+
+    var canShareSelectedTab: Bool { selectedTab.flatMap { URL(string: $0.urlString) } != nil && onShareURL != nil }
+
+    var canShowDeveloperToolsForCommand: Bool { selectedTabID != nil }
 
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
@@ -2673,6 +2679,34 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// Developer Tools with the element picker on.
+    @discardableResult func inspectElements() -> Bool {
+        guard selectedTabID != nil else { return false }
+        tabDriver.inspectElementsInActiveTab()
+        return true
+    }
+
+    /// Developer Tools on their Console panel.
+    @discardableResult func showJavaScriptConsole() -> Bool {
+        guard selectedTabID != nil else { return false }
+        tabDriver.showJavaScriptConsoleForActiveTab()
+        return true
+    }
+
+    /// The Library's Spaces section.
+    @discardableResult func openSpacesInLibrary() -> Bool {
+        guard supportsSpaces else { return false }
+        openLibrary(section: .spaces)
+        return true
+    }
+
+    /// The system's share sheet for the current page.
+    @discardableResult func shareSelectedTab() -> Bool {
+        guard let url = selectedTab.flatMap({ URL(string: $0.urlString) }), let onShareURL else { return false }
+        onShareURL(url)
+        return true
+    }
+
     @discardableResult func showDeveloperTools() -> Bool {
         guard canShowDeveloperTools else { return false }
         tabDriver.showDevToolsForActiveTab()
@@ -3201,6 +3235,14 @@ enum BrowserWindowMode: Equatable {
             canResetZoom
         case .stopLoading:
             canStopLoading
+        case .inspectElements:
+            canShowDeveloperToolsForCommand
+        case .javaScriptConsole:
+            canShowDeveloperToolsForCommand
+        case .manageSpaces:
+            supportsSpaces
+        case .shareTab:
+            canShareSelectedTab
         case .developerTools:
             canShowDeveloperTools
         case .viewSource:
@@ -6869,6 +6911,14 @@ extension BrowserCommandID {
             ["actual size", "reset zoom", "zoom 100"]
         case .stopLoading:
             ["stop", "stop loading"]
+        case .inspectElements:
+            ["inspect", "inspect elements", "element picker"]
+        case .javaScriptConsole:
+            ["console", "javascript console", "js console"]
+        case .manageSpaces:
+            ["manage spaces", "spaces"]
+        case .shareTab:
+            ["share", "share page", "share tab"]
         case .developerTools:
             ["developer tools", "devtools", "inspect", "web inspector", "console"]
         case .viewSource:
@@ -7031,6 +7081,14 @@ extension BrowserCommandID {
             "1.magnifyingglass"
         case .stopLoading:
             "xmark"
+        case .inspectElements:
+            "cursorarrow.rays"
+        case .javaScriptConsole:
+            "terminal"
+        case .manageSpaces:
+            "square.on.square"
+        case .shareTab:
+            "square.and.arrow.up"
         case .developerTools:
             "hammer"
         case .viewSource:

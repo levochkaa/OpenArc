@@ -275,6 +275,9 @@ import Foundation
         printCount += 1
     }
 
+    func inspectElementsInActiveTab() {}
+    func showJavaScriptConsoleForActiveTab() {}
+
     func showDevToolsForActiveTab() {
         devToolsCount += 1
     }

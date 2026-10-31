@@ -548,14 +548,14 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         setAccessibilityLabel("\(BrowserStrings.splitViewButtonTitle): \(title)")
     }
 
-    func updateNewTab(isPresented: Bool, isResizing: Bool, descriptor: BrowserCommandDescriptor) {
+    func updateNewTab(isPresented: Bool, isResizing: Bool, descriptor _: BrowserCommandDescriptor) {
         let wasSelected = selected
         kind = .newTab
         title = BrowserStrings.sidebarNewTab
         indent = 0
         selected = isPresented
-        tooltipTitle = descriptor.helpTitle
-        tooltipShortcut = descriptor.shortcut
+        tooltipTitle = nil
+        tooltipShortcut = nil
         symbol.image = Self.symbol("plus", size: BrowserChromeLayout.sidebarNewTabSymbolSize, weight: .regular)
         symbol.contentTintColor = BrowserChromeColors.secondaryText
         setAccessibilityIdentifier("browser.sidebar.new-tab")

@@ -653,3 +653,7 @@
 "browser.context.print" = "Print…";
 "browser.context.view_source" = "View Page Source";
 "browser.context.inspect" = "Inspect";
+"browser.menu.inspect_elements" = "Inspect Elements";
+"browser.menu.javascript_console" = "JavaScript Console";
+"browser.menu.manage_spaces" = "Manage Spaces…";
+"browser.menu.share_tab" = "Share…";

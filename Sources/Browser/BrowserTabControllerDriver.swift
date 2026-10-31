@@ -164,6 +164,14 @@ import Foundation
         controller.showDevToolsForActiveTab()
     }
 
+    func inspectElementsInActiveTab() {
+        controller.inspectElementsInActiveTab()
+    }
+
+    func showJavaScriptConsoleForActiveTab() {
+        controller.showJavaScriptConsoleForActiveTab()
+    }
+
     func showLittleWindow(withURLString urlString: String) {
         controller.showLittleWindow(withURLString: urlString)
     }

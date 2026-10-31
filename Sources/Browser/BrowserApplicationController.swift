@@ -402,6 +402,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.toggleDownloads()
     }
 
+    public func inspectElements(_: Any?) {
+        activeChromeModel?.inspectElements()
+    }
+
+    public func showJavaScriptConsole(_: Any?) {
+        activeChromeModel?.showJavaScriptConsole()
+    }
+
     public func viewLibrary(_: Any?) {
         activeChromeModel?.toggleLibrary()
     }
@@ -1330,6 +1338,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         viewMenu.addItem(.separator())
         viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .inspectElements),
+            action: #selector(inspectElements(_:)),
+        ))
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .javaScriptConsole),
+            action: #selector(showJavaScriptConsole(_:)),
+        ))
+        viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .developerTools),
             action: #selector(showDeveloperTools(_:)),
         ))
@@ -1962,6 +1978,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard let model = activeChromeModel, model.canStopLoading else { return false }
             model.stopLoadingCurrentTab()
             return true
+        case .inspectElements:
+            return activeChromeModel?.inspectElements() ?? false
+        case .javaScriptConsole:
+            return activeChromeModel?.showJavaScriptConsole() ?? false
+        case .manageSpaces:
+            return activeChromeModel?.openSpacesInLibrary() ?? false
+        case .shareTab:
+            return activeChromeModel?.shareSelectedTab() ?? false
         case .developerTools:
             return activeChromeModel?.showDeveloperTools() ?? false
         case .viewSource:

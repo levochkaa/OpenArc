@@ -191,6 +191,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)clearCookiesAndReloadActiveTab;
 - (void)stopLoadingActiveTab;
 - (void)showDevToolsForActiveTab;
+- (void)inspectElementsInActiveTab;
+- (void)showJavaScriptConsoleForActiveTab;
 /// Peek: opens the page in a floating card over the window.
 - (void)showPeekWithURLString:(NSString *)urlString;
 /// Opens the page in a small window of its own.

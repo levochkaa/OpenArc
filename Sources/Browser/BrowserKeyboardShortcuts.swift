@@ -143,6 +143,30 @@ enum BrowserCommands {
     )
 
     /// Developer Tools is Option-Command-I.
+    static let inspectElements = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuInspectElements,
+        helpTitle: BrowserStrings.menuInspectElements,
+        shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .option]),
+    )
+
+    static let javaScriptConsole = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuJavaScriptConsole,
+        helpTitle: BrowserStrings.menuJavaScriptConsole,
+        shortcut: BrowserKeyboardShortcut("j", modifiers: [.command, .option]),
+    )
+
+    static let manageSpaces = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuManageSpaces,
+        helpTitle: BrowserStrings.menuManageSpaces,
+        shortcut: .unassigned,
+    )
+
+    static let shareTab = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuShareTab,
+        helpTitle: BrowserStrings.menuShareTab,
+        shortcut: .unassigned,
+    )
+
     static let developerTools = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuDeveloperTools,
         helpTitle: BrowserStrings.menuDeveloperTools,
@@ -637,6 +661,10 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case restoreLastClosedTab
     case stopLoading
     case developerTools
+    case shareTab
+    case manageSpaces
+    case javaScriptConsole
+    case inspectElements
     case viewSource
     case zoomIn
     case zoomOut
