@@ -1,6 +1,6 @@
 # SQLite sync performance
 
-Measured 2026-10-03 on macOS 26.7 arm64 with Xcode 26.6, Debug configuration. Baseline production code: `3a8cde9`; optimized code at `5bbbb58` reuses one ISO8601 formatter per capture/projection pass and indexes Space selection once. The protocol, queue contents and conflict rules are unchanged.
+Measured 2026-10-03 on macOS 26.7 arm64 with Xcode 26.6, Debug configuration. Baseline production code: `03cc4d5`; optimized code at `a538c52` reuses one ISO8601 formatter per capture/projection pass and indexes Space selection once. The protocol, queue contents and conflict rules are unchanged.
 
 Run after the root Build:
 
@@ -34,7 +34,7 @@ Raw reports: `/tmp/openarc-sync-perf-before.json`, `/tmp/openarc-sync-perf-after
 
 ## Re-measured 2026-10-25
 
-Same probe on Xcode 27.1 / Swift 6.4, Debug, code at `4be80de`; all 26 applicable cells completed (raw report `/tmp/openarc-sync-perf-2026-10-25.json`, local only). Medians in milliseconds:
+Same probe on Xcode 27.1 / Swift 6.4, Debug, code at `edaddaf`; all 26 applicable cells completed (raw report `/tmp/openarc-sync-perf-2026-10-25.json`, local only). Medians in milliseconds:
 
 | Operation | Tabs | Pending rows | ms |
 | --- | ---: | ---: | ---: |

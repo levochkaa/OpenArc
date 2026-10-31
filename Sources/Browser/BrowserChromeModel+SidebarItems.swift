@@ -5,9 +5,8 @@ import Foundation
 // MARK: - Sidebar items
 
 /// Keyboard navigation over the sidebar: Go to Sidebar Item 1–8, Go to
-/// last Sidebar Item and Next/Previous Tab. Favorites count first
-/// (Settings can exclude them; OpenArc has no such option), then the rows of
-/// the current Space.
+/// last Sidebar Item and Next/Previous Tab. Favorites count first, then the
+/// rows of the current Space.
 extension BrowserChromeModel {
     /// Tabs in the order the sidebar shows them: app tiles, the visible pinned
     /// rows, then temporary tabs. A Split View is one item, as it is one row.

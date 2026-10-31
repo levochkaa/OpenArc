@@ -127,8 +127,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         detail.isHidden = !hasDetail
     }
 
-    /// `selectionColor` fills the selected row, white on it, for
-    /// a site search.
+    /// `selectionColor` fills the selected row, white on it, for a site search.
     func update(
         suggestion: BrowserCommandSuggestion,
         selected: Bool,

@@ -794,7 +794,7 @@ import Testing
     #expect(BrowserSplitPaneLayout.paneIndex(at: CGPoint(x: 10, y: 500), in: [], orientation: .vertical) == nil)
 }
 
-@Test func pageDropEdgesUseArcZoneSizes() {
+@Test func pageDropEdgesUseTheirZoneSizes() {
     let page = CGRect(x: 0, y: 0, width: 900, height: 600)
     #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 79, y: 300), in: page) == .leading)
     #expect(BrowserSplitPaneLayout.pageDropEdge(at: CGPoint(x: 81, y: 300), in: page) == nil, "At most 80 pt wide")

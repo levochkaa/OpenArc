@@ -120,8 +120,8 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("t"),
     )
 
-    /// Open Location is Command-L and starts from the
-    /// current URL; the compact current-page bar does the same here.
+    /// Open Location is Command-L and starts from the current URL in the
+    /// compact current-page bar.
     static let openLocation = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuOpenLocation,
         helpTitle: BrowserStrings.menuOpenLocation,
@@ -135,14 +135,14 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("t", modifiers: [.command, .shift]),
     )
 
-    /// View menu: Stop Loading is Command-period.
+    /// Stop Loading is Command-period.
     static let stopLoading = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.navigationStopLoading,
         helpTitle: BrowserStrings.navigationStopLoading,
         shortcut: BrowserKeyboardShortcut("."),
     )
 
-    /// View menu: Developer Tools is Option-Command-I.
+    /// Developer Tools is Option-Command-I.
     static let developerTools = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuDeveloperTools,
         helpTitle: BrowserStrings.menuDeveloperTools,
@@ -156,7 +156,7 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("u", modifiers: [.command, .option]),
     )
 
-    /// View menu: Zoom In, Zoom Out and Zoom to Actual Size are
+    /// Zoom In, Zoom Out and Zoom to Actual Size are
     /// Command-+, Command-- and Command-0; Command-= is the unshifted + key.
     static let zoomIn = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.webAppZoomInAction,
@@ -316,7 +316,7 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("=", modifiers: [.control, .shift]),
     )
 
-    /// View menu: Close this Split Pane is Control-Shift--.
+    /// Close this Split Pane is Control-Shift--.
     static let closeSplitPane = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCloseSplitPane,
         helpTitle: BrowserStrings.menuCloseSplitPane,
@@ -404,7 +404,7 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("b", modifiers: [.command, .shift]),
     )
 
-    /// View menu: Show/Hide Toolbar is Command-Shift-D.
+    /// Show/Hide Toolbar is Command-Shift-D.
     static let toggleSiteToolbar = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuShowToolbar,
         helpTitle: BrowserStrings.menuShowToolbar,
@@ -456,16 +456,15 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
-    /// New Folder…; folders hold at least one tab, so the new
-    /// folder takes the selected tab.
+    /// New Folder…; folders hold at least one tab, so the new folder takes the
+    /// selected tab.
     static let newFolder = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.pinnedTabFolderNewAction,
         helpTitle: BrowserStrings.pinnedTabFolderNewAction,
         shortcut: .unassigned,
     )
 
-    /// Capture Full Page has no default.
-    /// Capture… is Shift-Command-2.
+    /// Capture… is Shift-Command-2. Capture Full Page has no default.
     static let captureArea = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCaptureArea,
         helpTitle: BrowserStrings.menuCaptureArea,
@@ -484,15 +483,14 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
-    /// Window menu: View Downloads is Command-Shift-J.
+    /// View Downloads is Command-Shift-J.
     static let viewDownloads = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuViewDownloads,
         helpTitle: BrowserStrings.menuViewDownloads,
         shortcut: BrowserKeyboardShortcut("j", modifiers: [.command, .shift]),
     )
 
-    /// Next/Previous Tab are
-    /// Command-}/{; the primary Option-Command-arrow keys are not mapped.
+    /// Next/Previous Tab are Command-}/{.
     static let selectNextTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextTab,
         helpTitle: BrowserStrings.menuSelectNextTab,
@@ -505,7 +503,7 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("[", modifiers: [.command, .shift]),
     )
 
-    /// Tabs menu: Next/Previous Tab are Option-Command-Down/Up.
+    /// Next/Previous Tab (Alternate) are Option-Command-Down/Up.
     static let selectNextTabAlternate = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextTabAlternate,
         helpTitle: BrowserStrings.menuSelectNextTabAlternate,
@@ -518,7 +516,7 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.upArrow, modifiers: [.command, .option]),
     )
 
-    /// Spaces menu: Next/Previous Space are Option-Command-Right/Left.
+    /// Next/Previous Space are Option-Command-Right/Left.
     static let selectNextSpace = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextSpace,
         helpTitle: BrowserStrings.menuSelectNextSpace,
@@ -531,8 +529,8 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.leftArrow, modifiers: [.command, .option]),
     )
 
-    /// Reveal Current Tab leaves out Control-Space, which macOS uses to switch
-    /// input sources, so it has no default here.
+    /// Reveal Current Tab has no default: macOS uses Control-Space to switch
+    /// input sources.
     static let revealCurrentTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuRevealCurrentTab,
         helpTitle: BrowserStrings.menuRevealCurrentTab,
@@ -546,7 +544,7 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("e"),
     )
 
-    /// Edit menu: Copy URL as Markdown is Option-Shift-Command-C.
+    /// Copy URL as Markdown is Option-Shift-Command-C.
     static let copyLinkAsMarkdown = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuCopyLinkAsMarkdown,
         helpTitle: BrowserStrings.menuCopyLinkAsMarkdown,

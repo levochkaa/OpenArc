@@ -275,7 +275,7 @@ final class BrowserContentNSView: NSView {
         needsLayout = true
     }
 
-    /// The crash page over each page on screen whose renderer crashed.
+    /// Crash page over each page on screen whose renderer crashed.
     func refreshCrashPages() {
         guard let model = captureModel else { return }
         let codes = model.crashedTabErrorCodes

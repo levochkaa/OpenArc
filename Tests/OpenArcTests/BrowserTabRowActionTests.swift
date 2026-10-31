@@ -233,7 +233,7 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct BrowserZoomCommandTests {
-    @Test func zoomFollowsTheSelectedTabAndUsesArcKeys() {
+    @Test func zoomFollowsTheSelectedTabAndUsesTheZoomKeys() {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         f.model.selectTab(id: f.id("x"))
         #expect(!f.model.canResetZoom)

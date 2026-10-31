@@ -26,8 +26,7 @@ import AppKit
         var isBefore: Bool { self == .leading || self == .top }
     }
 
-    /// Panes are as far apart as the content is from the window edge, as in
-    /// a single page: the gap equals the content inset.
+    /// Panes are as far apart as the content is from the window edge.
     static let paneGap: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
 
     /// Accent border drawn inside the focused pane while a split is shown.
@@ -35,14 +34,14 @@ import AppKit
 
     // MARK: Pane bar
 
-    /// Each pane shows its own bar above the page while a split is visible, as
-    /// Per-pane top bar (32 pt).
+    /// Each pane shows its own bar above the page while a split is visible
+    /// (32 pt).
     @objc static let paneBarHeight: CGFloat = 32
 
     // MARK: Dividers
 
     /// A divider drag never shrinks a pane below this length, unless the two
-    /// neighbors together are too short for it.
+    /// neighbors together are too short for it. It stops at 220 pt.
     static let minimumPaneLength: CGFloat = 220
 
     /// The divider snaps to equal neighbors within this distance.

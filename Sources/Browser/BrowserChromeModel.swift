@@ -1128,7 +1128,7 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
-    /// A link rule's match: shows the Space and opens the link as its tab.
+    /// Link route: shows the Space and opens the link as its tab.
     /// False when the Space is gone, so the link can open as usual.
     @discardableResult func openURL(_ url: URL, inSpaceWithID spaceID: String) -> Bool {
         guard canCreateTab, supportsSpaces, spaces.contains(where: { $0.id == spaceID }) else { return false }
@@ -2307,7 +2307,6 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
-    /// Mute Tab / Unmute Tab.
     /// The engine side of an answer to a site permission request.
     func resolveSitePermissionInEngine(_ id: Int, allowed: Bool?) {
         tabDriver.resolveSitePermissionRequest(id, allowed: allowed)

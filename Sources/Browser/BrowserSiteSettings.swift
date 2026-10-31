@@ -4,9 +4,9 @@ import Foundation
 
 // MARK: - BrowserSiteSettingKind
 
-/// A per-site setting the site control center lists in its Settings
-/// section. Camera and microphone are OpenArc's remembered answers;
-/// the others are Chromium's content settings for the page.
+/// A per-site setting the site control center lists. Camera and microphone
+/// are OpenArc's remembered answers; the others are Chromium's content
+/// settings for the page.
 enum BrowserSiteSettingKind: String, CaseIterable {
     case camera
     case microphone

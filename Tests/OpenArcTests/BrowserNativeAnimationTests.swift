@@ -16,8 +16,8 @@ import Testing
         #expect(sidebar.value(at: 0.135) > 0.75)
     }
 
-    @Test func arcSpringsMatchTheirStiffnessAndDamping() {
-        // The springs have unit mass: stiffness = ω², damping = 2ζω.
+    @Test func springsMatchTheirStiffnessAndDamping() {
+        // Springs have unit mass: stiffness = ω², damping = 2ζω.
         for (curve, stiffness, damping) in [
             (BrowserNativeAnimation.Curve.rowPress, 986.96, 31.42),
             (.floatingSidebar, 1218.47, 55.85),

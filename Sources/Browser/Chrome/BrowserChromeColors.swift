@@ -12,7 +12,7 @@ enum BrowserChromeColors {
     static let rowHover = adaptive(light: rgba(0, 0, 0, 0.06), dark: rgba(255, 255, 255, 0.08))
     static let rowSelected = adaptive(light: rgba(0, 0, 0, 0.11), dark: rgba(255, 255, 255, 0.14))
     static let splitFocusedPaneBorder = NSColor.controlAccentColor
-    /// Member chips of a Split View row, filled with white at 7 %.
+    /// Member chips of a Split View row; dark mode fills them with white at 7 %.
     static let splitChip = adaptive(light: rgba(0, 0, 0, 0.05), dark: rgba(255, 255, 255, 0.07))
     static let splitChipFocused = adaptive(light: rgba(0, 0, 0, 0.1), dark: rgba(255, 255, 255, 0.16))
     static let currentURLRow = adaptive(light: rgba(0, 0, 0, 0.06), dark: rgba(255, 255, 255, 0.1))

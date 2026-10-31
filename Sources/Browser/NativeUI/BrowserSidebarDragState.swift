@@ -29,16 +29,14 @@ import AppKit
     }
 
     /// A dragged tab combines with the tab row it rests on into a Split View
-    /// after a short pause; the pause keeps ordinary reorders unaffected. The
-    /// exact delay is unknown.
+    /// after a short pause; the pause keeps ordinary reorders unaffected.
     static let splitDropDelay: TimeInterval = 0.5
 
     /// The middle of a row, away from the insertion edges, offers the split.
     static let splitDropBandFraction: CGFloat = 0.5
 
-    /// A drag resting on a Space's dock icon switches to that Space; the sidebar
-    /// started sliding within 0.1 s in a live probe. The pause keeps a drag
-    /// passing over the dock from switching Spaces.
+    /// A drag resting on a Space's dock icon switches to that Space. The pause
+    /// keeps a drag passing over the dock from switching Spaces.
     static let dockSpringDelay: TimeInterval = 0.1
 
     private(set) var phase = Phase.idle

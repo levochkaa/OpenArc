@@ -570,7 +570,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         )
     }
 
-    /// Links pane: the small window, Peek and link rules.
+    /// Links pane: the small window, Peek and link routes.
     private func configureLinks() {
         let preferences = preferences
         scrollView.setViews([
@@ -618,7 +618,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     // MARK: Link routes
 
-    /// Link rules: one row per rule, in order, then Add Rule.
+    /// Link routes: one row per rule, in order, then Add Rule.
     private func refreshLinkRoutes() {
         linkRouteFields.removeAll()
         let detail = BrowserNativeControls.label(

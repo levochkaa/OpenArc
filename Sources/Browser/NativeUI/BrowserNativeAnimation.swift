@@ -26,7 +26,7 @@ import QuartzCore
         static let press = Curve.spring(response: 0.18, damping: 0.72)
         /// Press on sidebar rows: stiffness 987, damping 31.4.
         static let rowPress = Curve.spring(response: 0.2, damping: 0.5)
-        /// The floating sidebar's slide: stiffness 1218, damping 55.9.
+        /// Floating sidebar slide: stiffness 1218, damping 55.9.
         static let floatingSidebar = Curve.spring(response: 0.18, damping: 0.8)
         static let list = Curve.spring(response: 0.28, damping: 0.82)
         static let dragPreview = Curve.spring(response: 0.2, damping: 0.86)

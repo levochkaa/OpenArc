@@ -6,8 +6,6 @@ The server supports conditional expiry, and shared Swift clients durably queue i
 
 Automatic expiry uses activity reported to the server. A completely offline device can have newer activity that no other device knows about. An accepted server archive can therefore remove that identity when the device reconnects. The updated client must preserve its divergent local content before applying that deletion, alongside the server's canonical recovery content. Restore creates a fresh tab ID; stale edits must never resurrect the deleted ID.
 
-This policy is an OpenArc design decision.
-
 ## Wire contract
 
 Version 5 uses the existing authenticated `POST /v1/sync/push`, account lock and permanent mutation receipts. It accepts expiry operations only; ordinary create/patch/move/delete operations remain v4. Discover version 5 through `supportedPushVersions` before creating these requests. Do not convert an expiry request to an ordinary delete on an older server.

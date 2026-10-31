@@ -224,8 +224,8 @@ import AppKit
         makeFirstResponder(hostLabel)
     }
 
-    /// `⌘L` edits the small window's address, `⌘O` opens the page as a tab and `⇧⌘O`
-    /// shows Open In. The app asks before its own shortcuts.
+    /// `⌘L` edits the small window's address, `⌘O` opens the page as a tab and
+    /// `⇧⌘O` shows Open In. The app asks before its own shortcuts.
     @objc func handleShortcut(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags
             .intersection(.deviceIndependentFlagsMask)

@@ -1355,7 +1355,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         ))
         viewMenuItem.submenu = viewMenu
 
-        // Tabs menu.
+        // Tabs menu with OpenArc's tab actions.
         let tabsMenu = NSMenu(title: BrowserStrings.menuTabs)
         for (commandID, action) in [
             (BrowserCommandID.togglePinTab, #selector(togglePinTab(_:))),
@@ -3092,7 +3092,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         NSWorkspace.shared.open(url)
     }
 
-    /// Opens the link by its link rule. False when the Space's window is closed or cannot
+    /// Applies a link route. False when the Space's window is closed or cannot
     /// take the link, which then opens as usual.
     private func openRoutedLink(_ url: URL, to destination: BrowserLinkRoute.Destination) -> Bool {
         guard !isTerminationRequested else { return false }

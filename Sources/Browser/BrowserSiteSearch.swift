@@ -15,8 +15,7 @@ struct BrowserSiteSearch: Codable, Equatable, Identifiable {
 
     static let queryPlaceholder = "%s"
 
-    /// The site searches seeded into a new profile, with the chip
-    /// colors shown for them.
+    /// The site searches seeded into a new profile, with their chip colors.
     static let arcDefaults: [BrowserSiteSearch] = [
         .init(
             name: "Google Drive",

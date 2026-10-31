@@ -141,8 +141,8 @@ enum BrowserAppearancePreference: String, CaseIterable, Codable, Identifiable {
 
 // MARK: - BrowserSidebarPosition
 
-/// Window edge of the sidebar, left or right; the right one
-/// follows Zen, where the window controls move with the sidebar.
+/// Window edge of the sidebar. The right one follows Zen, where the window
+/// controls move with the sidebar.
 enum BrowserSidebarPosition: String, CaseIterable, Codable, Identifiable {
     case left
     case right
@@ -281,7 +281,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
     }
 
     /// Links from other apps open in a small window. Off by
-    /// default here, so links keep opening as tabs unless the user opts in.
+    /// default, so links keep opening as tabs unless the user opts in.
     @Published var littleArcEnabled: Bool {
         didSet { userDefaults.set(littleArcEnabled, forKey: Key.littleArcEnabled) }
     }

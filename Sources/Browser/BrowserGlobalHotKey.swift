@@ -6,8 +6,8 @@ import Carbon.HIToolbox
 // MARK: - BrowserGlobalHotKey
 
 /// A shortcut that works while another app is active, such as
-/// Option-Command-N for the small window. Carbon hot keys need no Accessibility
-/// permission; the system delivers them on the main thread.
+/// Option-Command-N for the small window. Carbon hot keys need no
+/// Accessibility permission; the system delivers them on the main thread.
 @MainActor final class BrowserGlobalHotKey {
     // MARK: Private
 

@@ -12,8 +12,6 @@ import AppKit
 @MainActor final class BrowserPageTopWindowDrag {
     // MARK: Internal
 
-    /// The strip ends 36 pt below the page's top, as set after a live
-    /// probe (2026-10-25).
     static let regionHeight: CGFloat = 36
     /// Movement that turns a press into a window drag.
     static let dragThreshold: CGFloat = 3

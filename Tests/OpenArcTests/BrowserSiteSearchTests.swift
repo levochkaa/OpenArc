@@ -104,7 +104,7 @@ private let gitLab = BrowserSiteSearch(
     let imported = try BrowserSiteSearchImport.load(webDataURL: webData)
     #expect(imported.map(\.keyword) == ["@y", "@t", "g"])
     #expect(imported[0].urlTemplate == "https://www.youtube.com/results?search_query=%s")
-    // The color follows the site, whatever its keyword.
+    // The chip color follows the site, whatever its keyword.
     #expect(imported[0].colorHex == "FF2600")
     #expect(imported[1].colorHex == nil)
     #expect(imported[2].urlTemplate == "https://www.google.com/search?q=%s&ie=UTF-8")
@@ -131,7 +131,7 @@ private let gitLab = BrowserSiteSearch(
     #expect(BrowserSiteSearchImport.merge([wikipediaBang], into: [duckDuckGo]).map(\.keyword) == ["d", "w"])
 }
 
-@Test func siteSearchesStartWithArcsSetAndPersist() throws {
+@Test func siteSearchesStartWithTheDefaultSetAndPersist() throws {
     let suite = "BrowserSiteSearchTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }

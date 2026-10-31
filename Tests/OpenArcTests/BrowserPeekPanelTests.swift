@@ -43,7 +43,7 @@ import Testing
             .object(forKey: BrowserUserPreferencesStore.peekEnabledKey) != nil)
     }
 
-    @Test func littleArcIsOptInAndOpensAStandaloneWindow() throws {
+    @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")
         f.model.userPreferencesStore.littleArcEnabled = true

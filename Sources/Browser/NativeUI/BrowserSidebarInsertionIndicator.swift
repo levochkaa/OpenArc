@@ -2,8 +2,8 @@
 
 import AppKit
 
-/// A single insertion cue with a hollow leading ring in the row margin, as in
-/// sidebar drags. The dragged row may cover the middle of the gap; its text is never
+/// A single insertion cue with a hollow leading ring in the row margin.
+/// The dragged row may cover the middle of the gap; its text is never
 /// crossed by the line, and the line starts at the ring's outer edge.
 final class BrowserSidebarInsertionIndicator: NSView {
     // MARK: Private

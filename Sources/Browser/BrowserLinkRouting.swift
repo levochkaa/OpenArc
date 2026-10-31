@@ -4,10 +4,10 @@ import Foundation
 
 // MARK: - BrowserLinkRoute
 
-/// A link rule sends links from other apps to a
-/// Space or to the small window. The first matching rule wins; a link no rule
-/// matches, or whose Space's window is closed, opens as before. One could let a rule
-/// list several conditions; here each rule has one, and more rules cover more.
+/// A rule that sends links from other apps to a Space or to the small
+/// window. The first matching rule wins; a link no rule matches, or whose
+/// Space's window is closed, opens as before. Each rule has one condition,
+/// and more rules cover more.
 struct BrowserLinkRoute: Codable, Equatable, Identifiable {
     // MARK: Internal
 
@@ -22,7 +22,6 @@ struct BrowserLinkRoute: Codable, Equatable, Identifiable {
     enum Destination: Codable, Hashable {
         /// A profile's Space. Space IDs repeat across profiles, so both are kept.
         case space(profileID: String, spaceID: String)
-        /// The small window.
         case littleWindow
     }
 

@@ -4,8 +4,8 @@ import AppKit
 
 // MARK: - BrowserSpaceColor
 
-/// Space theme: a light tint over the
-/// neutral window background. A Space without one stays neutral.
+/// Space theme: a light tint over the neutral window background. A Space
+/// without one stays neutral.
 enum BrowserSpaceColor: String, CaseIterable {
     case blue
     case purple

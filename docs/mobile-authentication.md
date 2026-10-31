@@ -81,5 +81,4 @@ WebKit engine with disposable SQLite, outbox and nonpersistent website data.
   does not clear WebKit's per-session site authentication.
 - No password autofill, saved site credentials, or Keychain integration.
 - Tests call presenter and workspace methods directly; physical typing and real
-  OS scene deactivation were not exercised. The site authentication UI was not
-  observed.
+  OS scene deactivation were not exercised.

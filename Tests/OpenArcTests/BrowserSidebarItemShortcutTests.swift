@@ -54,7 +54,7 @@ import Testing
         #expect(f.model.selectedTabID == f.id("y"), "Selecting the split it is already in keeps the pane")
     }
 
-    @Test func arrowShortcutsSwitchSpacesAndTabsLikeArc() {
+    @Test func arrowShortcutsSwitchSpacesAndTabs() {
         #expect(BrowserCommands.selectNextSpace.shortcut.displayText == "\u{2325}\u{2318}\u{2192}")
         #expect(BrowserCommands.selectPreviousTabAlternate.shortcut.displayText == "\u{2325}\u{2318}\u{2191}")
         #expect(BrowserCommandID.selectNextTabAlternate.layoutIndependentCommand == .selectNextTab)
@@ -190,7 +190,7 @@ import Testing
         #expect(f.model.currentPageCommandBarModel.query == "https://x.example")
     }
 
-    @Test func commandsUseArcDefaultsAndAreOfferedOnlyForExistingItems() {
+    @Test func commandsUseTheirDefaultsAndAreOfferedOnlyForExistingItems() {
         #expect(BrowserCommandID.goToSidebarItem1.defaultDescriptor.shortcut == BrowserKeyboardShortcut("1"))
         #expect(BrowserCommandID.goToSidebarItem8.defaultDescriptor.shortcut == BrowserKeyboardShortcut("8"))
         #expect(BrowserCommandID.goToLastSidebarItem.defaultDescriptor.shortcut == BrowserKeyboardShortcut("9"))

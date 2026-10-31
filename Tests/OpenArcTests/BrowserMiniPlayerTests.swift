@@ -81,7 +81,7 @@ import Testing
         #expect(f.model.selectedTabID == x)
     }
 
-    @Test func playersLayOutArcsControlsAndGrowUpwardOnHover() throws {
+    @Test func playersLayOutTheirControlsAndGrowUpwardOnHover() throws {
         let stack = BrowserMiniPlayerStackNSView(frame: .zero)
         var heightChanges = 0
         stack.onHeightChange = { heightChanges += 1 }

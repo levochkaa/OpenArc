@@ -63,6 +63,4 @@ public result → WebKit FileList and real HTTP delivery. It does not prove phys
 Files selection, external/security-scoped providers, Photos/camera, capture and
 all accept filters, directory upload, drag-to-upload, OS scene delivery or actual
 background suspension. Workspace lifecycle calls are controlled test actions.
-This is WebKit contract and
-OpenArc verification.
 

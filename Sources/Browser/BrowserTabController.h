@@ -87,8 +87,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
            openPeekURLString:(NSString *)urlString
                inSpaceWithID:(NSString *)spaceID;
 // Asked on the main thread before a link click in a tab's page; YES cancels
-// the navigation and opens the link in Peek instead (the Peek setting for links to
-// other sites from pinned tabs).
+// the navigation and opens the link in Peek instead (the setting for links
+// to other sites from pinned tabs).
 - (BOOL)browserTabController:(BrowserTabController *)controller
     shouldPeekNavigationFromTabWithID:(NSString *)tabID
                           toURLString:(NSString *)urlString;

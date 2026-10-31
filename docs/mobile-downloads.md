@@ -14,7 +14,7 @@ Generated downloads use a safe source-page URL when available. The coordinator a
 
 The profile owns transfers independently of a tab, engine or mounted scene. Once adopted, a transfer can finish after its source tab or engine closes. This does not grant background execution or survival across process termination.
 
-The disk actor assigns each download a UUID directory and a sanitized display filename, limited to 200 UTF-8 bytes. Equal filenames occupy different directories without overwriting one another; the app does not add numeric filename suffixes. WebKit receives a nonexistent destination inside an existing writable directory.
+The disk actor assigns each download a UUID directory and a sanitized display filename, limited to 200 UTF-8 bytes. Equal filenames occupy different directories without overwriting one another; the app adds no numeric filename suffixes. WebKit receives a nonexistent destination inside an existing writable directory.
 
 A finished transfer enters **Saving…** until its completed record is atomically written to `downloads.json`. Completed entries record the actual file size. The manifest is limited to 8 MiB. A commit failure keeps the file and a retryable pending completion in the running process; Retry repeats persistence without downloading again or duplicating the entry. Initial storage-load and cleanup failures also expose Retry.
 
@@ -64,7 +64,6 @@ The original download/export slice passed root and mobile Build/Test gates on 20
 
 Hosted tests inspect real picker configuration, invoke its native delegate callbacks and present/dismiss a real full-screen covering controller. Confirmation tests verify the presented alert and call the same production callback installed on its native action. They do not operate the physical Files UI or establish provider-copy completion after forced teardown. Simulated notifications and multiple windows in the test host's scene do not prove real OS multi-scene or background-delivery behavior.
 
-Clear Completed passed root and mobile Build/Test gates with 235 declarations / 270 runs and five opt-in HTTP skips on each simulator. Its implementation is an explicit OpenArc interaction.
+Clear Completed passed root and mobile Build/Test gates with 235 declarations / 270 runs and five opt-in HTTP skips on each simulator.
 
 Active-transfer restart/resume, guaranteed background delivery, redownload, custom download authentication and dedicated Wallet handling remain follow-ups. Real Files-provider interaction and device lifecycle behavior need separate verification.
-

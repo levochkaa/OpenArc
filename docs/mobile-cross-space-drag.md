@@ -2,7 +2,7 @@
 
 ## Interaction contract
 
-The mobile sidebar offers a destination palette while dragging a local tab or selected group. Hovering the Space button uses Apple's [UISpringLoadedInteraction](https://developer.apple.com/documentation/uikit/uispringloadedinteraction) to open a child UIKit controller over the sidebar. The ordinary Space menu keeps its existing tap behavior. This is a designed iPhone/iPad interaction. The Apple contract and Xcode 26.6 headers were checked on 2026-10-03.
+The mobile sidebar offers a destination palette while dragging a local tab or selected group. Hovering the Space button uses Apple's [UISpringLoadedInteraction](https://developer.apple.com/documentation/uikit/uispringloadedinteraction) to open a child UIKit controller over the sidebar. The ordinary Space menu keeps its existing tap behavior. The Apple contract and Xcode 26.6 headers were checked on 2026-10-03.
 
 The palette lists each other Space with Pinned and Today destinations. A group containing a folder cannot enter Today; that target remains visible but unavailable. A drop appends the ordered roots to the chosen section. Empty destinations are valid. The palette captures target Space IDs when opened, so subsequent rename/reorder cannot redirect the drop to another Space.
 

@@ -1,7 +1,5 @@
 # Split View
 
-The iPad browser split is OpenArc's own design.
-
 ## Model
 
 `BrowserChromeModel.splitGroups` holds local groups. A group stores member tab sync IDs in pane order, an orientation (`horizontal` side by side, `vertical` stacked), optional pane fractions and the last focused member. Sync IDs are used because runtime IDs change when a dormant tab reopens.
@@ -29,7 +27,7 @@ Every pane of a visible split has its own 32 pt bar above the page (`BrowserSpli
 
 ### Divider
 
-A `BrowserSplitDividerView` fills each gap above the pane views. Dragging resizes the two neighbors live in the controller; the sizes reach the model once, on release, through `BrowserTabControllerDelegate.didResizeSplitWithTabIDs:fractions:` → `BrowserTabDriving.onSplitResized` → `setSplitFractions`, so the session store sees one change per drag. The model ignores a report whose tab IDs are no longer the selected split's panes. Rules:
+A `BrowserSplitDividerView` fills each gap above the pane views. Dragging resizes the two neighbors live in the controller; the sizes reach the model once, on release, through `BrowserTabControllerDelegate.didResizeSplitWithTabIDs:fractions:` → `BrowserTabDriving.onSplitResized` → `setSplitFractions`, so the session store sees one change per drag. The model ignores a report whose tab IDs are no longer the selected split's panes. The rules:
 
 - A pane never shrinks below 220 pt unless its neighbors together are shorter.
 - Within 14 pt of the point where the two neighbors are equal, the divider snaps there.
@@ -70,7 +68,7 @@ Dragging the row carries every pane as one group through the existing sidebar dr
 
 ## Commands and controls
 
-OpenArc adds Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Shift+-`) and Separate Page from Split View as `BrowserCommandID`s, plus Separate All Tabs and Convert from the split menus, so they appear in the View menu, the command bar and the Settings shortcut list. Expand Current Split, Move Left/Right and Add Left/Right Split come from the Split View menu:
+Add Split View (`Ctrl+Shift+=`), Close this Split Pane (`Ctrl+Shift+-`), Separate Page from Split View, Separate All Tabs and Convert are `BrowserCommandID`s, so they appear in the View menu, the command bar and the Settings shortcut list. Expand Current Split, Move Left/Right and Add Left/Right Split come from the Split View Menu:
 
 | Command | Default | Available |
 | --- | --- | --- |
@@ -100,6 +98,6 @@ Split groups never enter sync payloads: a split-only edit queues no sync mutatio
 
 Open Location (`⌘L`) edits the focused pane's URL, because the focused pane is the selected tab.
 
-Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, pane bars with grip reorder and window controls, dividers, the one-row sidebar entry, drop-to-split on rows and page edges, pane replacement from a drop in a pane's middle, commands with shortcuts, pane moves and expansion, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
+Implemented: model, actions, validation, persistence, archive/expiry protection, engine pane layout, click focus, the focused-pane ring, pane bars with grip reorder and window controls, dividers, the one-row sidebar entry, drop-to-split on rows and page edges, pane replacement from a drop in a pane's middle, commands with default shortcuts, pane moves and expansion, View menu, command bar actions, tab context menu items and the Split View button, with tests. The engine layout and ring are covered through the fake driver and build; the commands and menus have model and dispatch tests. Not implemented yet:
 
 1. iPad browser split in UIKit/WebKit.

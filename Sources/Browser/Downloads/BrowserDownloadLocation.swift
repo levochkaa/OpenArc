@@ -5,8 +5,8 @@ import Foundation
 // MARK: - BrowserDownloadLocation
 
 /// Where the engine saves downloads: the folder chosen in Settings while it
-/// exists, otherwise the user's Downloads folder. The location is not kept
-/// per profile; OpenArc keeps one for the app.
+/// exists, otherwise the user's Downloads folder. OpenArc keeps one location
+/// for the app.
 @objc final class BrowserDownloadLocation: NSObject {
     /// Called by the engine on its own thread; `UserDefaults` is thread-safe.
     @objc static func directoryPath() -> String {
