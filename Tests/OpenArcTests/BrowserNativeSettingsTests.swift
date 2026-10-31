@@ -160,6 +160,10 @@ import Testing
         #expect(preferences.downloadDirectoryPath == nil)
     }
 
+    @Test func accountsPaneExistsOnlyWithTheHostedService() {
+        #expect(BrowserSettingsPane.available.contains(.accounts) == BrowserHostedService.isEnabled)
+    }
+
     @Test func everyPaneLaysOutNativeContentWithinTheViewport() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

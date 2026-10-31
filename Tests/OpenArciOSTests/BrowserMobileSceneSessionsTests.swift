@@ -215,6 +215,14 @@ import UIKit
     #expect(saved?.tabs.first?.urlString == "https://example.com/final")
 }
 
+@MainActor @Test func mobileProfileRegistryCreatesASyncSessionOnlyWithTheHostedService() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-local-only-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = BrowserMobileProfileRegistry(directory: directory)
+    _ = try await registry.document()
+    #expect((registry.syncSession != nil) == BrowserHostedService.isEnabled)
+}
+
 @MainActor @Test func mobileSceneSyncActivityUsesSharedRegistryAndRejectsStaleAttachments() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-scene-sync-\(UUID())")
     let suite = "mobile-scene-sync-\(UUID())"
@@ -261,7 +269,7 @@ import UIKit
     let tabs = BrowserMobileTabsViewController(workspace: replacement.workspace)
     tabs.loadViewIfNeeded()
     let accountButton = try #require(tabs.navigationItem.leftBarButtonItems?.last)
-    #expect(accountButton.accessibilityIdentifier == "browser.account" && accountButton.isEnabled)
+    #expect(accountButton.accessibilityIdentifier == "browser.account" && !accountButton.isHidden)
     scenes.discard(sessionIDs: ["first", "second"])
     await scenes.waitForPendingOperations()
     #expect(!runtime.isForeground)

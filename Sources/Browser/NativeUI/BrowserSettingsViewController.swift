@@ -60,6 +60,10 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
 
     // MARK: Internal
 
+    static var available: [Self] {
+        allCases.filter { $0 != .accounts || BrowserHostedService.isEnabled }
+    }
+
     var title: String {
         switch self {
         case .accounts:
@@ -293,6 +297,16 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     private func configureGeneral() {
         let preferences = preferences
+        let updateChannelRow = picker(
+            "update-channel",
+            BrowserStrings.settingsUpdateChannel,
+            detail: BrowserStrings.settingsUpdateChannelDetail,
+            options: BrowserUpdateChannel.allCases,
+            title: { $0.title },
+            get: { preferences.updateChannel },
+            set: { preferences.updateChannel = $0 },
+        )
+        updateChannelRow.isHidden = !BrowserHostedService.isEnabled
         scrollView.setViews([
             section(BrowserStrings.settingsGeneralTab, rows: [
                 toggle(
@@ -302,15 +316,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     get: { preferences.automaticUpdatesEnabled },
                     set: { preferences.automaticUpdatesEnabled = $0 },
                 ),
-                picker(
-                    "update-channel",
-                    BrowserStrings.settingsUpdateChannel,
-                    detail: BrowserStrings.settingsUpdateChannelDetail,
-                    options: BrowserUpdateChannel.allCases,
-                    title: { $0.title },
-                    get: { preferences.updateChannel },
-                    set: { preferences.updateChannel = $0 },
-                ),
+                updateChannelRow,
                 picker(
                     "appearance",
                     BrowserStrings.settingsAppearance,

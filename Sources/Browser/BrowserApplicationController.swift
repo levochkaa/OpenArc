@@ -2332,7 +2332,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         currentProfileID: String,
         accountStore: BrowserAccountStore?,
     ) -> [SettingsPane] {
-        BrowserSettingsPane.allCases.map { pane in
+        BrowserSettingsPane.available.map { pane in
             BrowserSettingsViewController(
                 model: model,
                 profileStore: profileStore,
@@ -2546,9 +2546,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let authSessionStore = BrowserAuthSessionStore(namespace: profile.isDefault
             ? .defaultProfile
             : .profile(profile.id))
-        let syncClient = BrowserSyncConfiguration.current().map { configuration in
-            BrowserRemoteSyncClient(configuration: configuration)
-        }
+        let syncClient = BrowserHostedService.isEnabled
+            ? BrowserSyncConfiguration.current().map { BrowserRemoteSyncClient(configuration: $0) }
+            : nil
         let syncCoordinator: BrowserSyncService? =
             if let sqliteSessionStore, let syncClient {
                 BrowserSyncService(

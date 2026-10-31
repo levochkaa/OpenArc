@@ -249,6 +249,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var terminalRefreshTask: Task<Void, Never>?
 
     private var archiveButton = UIBarButtonItem()
+    private var accountButton = UIBarButtonItem()
     private weak var presentedArchive: BrowserMobileArchiveViewController?
 
     var sidebarDragHasHoverProjection: Bool { isApplyingHoverProjection }
@@ -324,7 +325,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 self?.didSelectTab?()
             },
         )
-        let accountButton = UIBarButtonItem(
+        accountButton = UIBarButtonItem(
             title: String(localized: "Account", table: "Mobile"), image: UIImage(systemName: "person.crop.circle"),
             primaryAction: UIAction { [weak self] _ in self?.showAccount() },
         )
@@ -507,7 +508,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
         let canEdit = workspace.isReady && (workspace.profileDocument?.canEdit ?? true)
         navigationItem.leftBarButtonItem?.isEnabled = canEdit && !isSelectingRows
-        navigationItem.leftBarButtonItems?.last?.isEnabled = workspace.syncSession != nil
+        accountButton.isHidden = workspace.syncSession == nil
         updateSelectionButton()
         if let document = workspace.profileDocument {
             var configuration = UIButton.Configuration.plain()

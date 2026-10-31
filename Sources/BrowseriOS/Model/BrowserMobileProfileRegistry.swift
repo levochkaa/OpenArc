@@ -16,15 +16,15 @@ import Foundation
 
     private let directory: URL
     private let syncSessionFactory: (BrowserSQLiteSessionStore, BrowserMobileProfileDocument)
-        -> BrowserMobileSyncSession
+        -> BrowserMobileSyncSession?
     private var current: BrowserMobileProfileDocument?
     private var opening: Task<BrowserMobileProfileDocument, Error>?
 
     init(
         directory: URL = .applicationSupportDirectory,
         syncSessionFactory: @escaping (BrowserSQLiteSessionStore, BrowserMobileProfileDocument)
-            -> BrowserMobileSyncSession = {
-                BrowserMobileSyncSession(store: $0, document: $1)
+            -> BrowserMobileSyncSession? = {
+                BrowserHostedService.isEnabled ? BrowserMobileSyncSession(store: $0, document: $1) : nil
             },
     ) {
         self.directory = directory

@@ -22,6 +22,8 @@ Both iOS targets compile the same Foundation wire types, v2/v3/v4 projections, i
 
 ## Account and server configuration
 
+`BrowserHostedService.isEnabled` is off, so the registry creates no sync session and Account is hidden. The rest of this document describes the app with it on.
+
 The Tabs controller exposes Account on both iPhone and iPad. Its sheet provides server configuration, Sign in with Apple, explicit Enable Sync consent, Pause/Resume, Sign Out, errors and Retry. The Apple provider anchors authorization to the caller's active window. Cancellation and stale-result guards prevent dismissed or superseded requests from writing credentials. Account state is shared across scenes; each presentation owns its sign-in attempt.
 
 Server selection uses `OPENARC_SYNC_BASE_URL` from the process environment, then the saved mobile server preference, then the packaged `OpenArcSyncBaseURL` Info.plist value. The packaged value comes from the `OPENARC_SYNC_BASE_URL` build setting, `https://api.openarc.su` unless a build sets another or leaves it empty. The Account sheet saves a canonical root URL. HTTPS is required except for HTTP loopback testing; paths, credentials, query strings and fragments are rejected.

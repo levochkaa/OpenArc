@@ -29,6 +29,11 @@ import Sparkle
         updaterController?.updater.canCheckForUpdates ?? false
     }
 
+    /// Only the server can serve a second channel.
+    private var updateChannel: BrowserUpdateChannel {
+        BrowserHostedService.isEnabled ? preferencesStore.updateChannel : .stable
+    }
+
     private var configuredFeedURL: URL? {
         guard
             let feedURLString = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
@@ -46,7 +51,7 @@ import Sparkle
             return nil
         }
 
-        guard preferencesStore.updateChannel == .beta else {
+        guard updateChannel == .beta else {
             return configuredFeedURL.absoluteString
         }
 
@@ -221,7 +226,7 @@ extension BrowserUpdateController: SPUUpdaterDelegate {
     }
 
     func allowedChannels(for _: SPUUpdater) -> Set<String> {
-        preferencesStore.updateChannel == .beta ? ["beta"] : []
+        updateChannel == .beta ? ["beta"] : []
     }
 
     func updater(_: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
