@@ -20,9 +20,9 @@ Website: [openarc.su](https://openarc.su)
 
 ## Building
 
-You need an Apple Silicon Mac with macOS 26, Xcode 27.1 at `/Applications/Xcode-27.1.0.app`, and [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) (`brew install xcodegen swiftformat`).
+You need an Apple Silicon Mac with macOS 26, Xcode 27.1 at `/Applications/Xcode-27.1.0.app` for the apps, Xcode 26.6 at `/Applications/Xcode-26.6.0.app` for CEF, and [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) (`brew install xcodegen swiftformat`).
 
-The Mac app needs OpenArc's own CEF build, because full Chrome extension support depends on its Chromium overrides. Build it once. It checks out about 70 GB of Chromium and takes several hours:
+The Mac app needs OpenArc's own CEF build, because full Chrome extension support depends on its Chromium overrides. Build it once. It checks out about 70 GB of Chromium and takes several hours. The script uses Xcode 26.6, because Chromium 148 does not build with the macOS 27 SDK:
 
 ```bash
 ./script/chromium_source.sh package Debug Release
@@ -37,13 +37,21 @@ Then:
 ./build.sh ios-build   # build the iOS app for the simulator
 ```
 
+`build.sh` signs with the project's Apple team by default. Without access to that team, sign with your own or turn signing off:
+
+```bash
+DEVELOPMENT_TEAM=YOURTEAMID ./build.sh build
+./build.sh build --no-code-signing
+./build.sh test --no-code-signing
+```
+
 `./build.sh --help` lists every action. Builds sync with `https://api.openarc.su`, the `OPENARC_SYNC_BASE_URL` build setting. Setting `OPENARC_SYNC_BASE_URL` in the environment points the app at another server, for example one from `Backend/README.md` running locally; an empty value turns sync off.
 
 [docs/releasing.md](docs/releasing.md) covers signing, notarization and the Stable and Beta update channels.
 
 ## Contributing
 
-Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, conventions and pull requests.
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, conventions and pull requests. [SECURITY.md](SECURITY.md) covers reporting vulnerabilities.
 
 ## License
 

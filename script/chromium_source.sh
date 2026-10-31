@@ -7,6 +7,8 @@ if [[ $# -gt 0 ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Chromium 148 supports only the macOS 26 SDKs. Xcode 27 fails on its SDK.
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-26.6.0.app/Contents/Developer}"
 source "$ROOT_DIR/script/xcode_env.sh"
 THIRD_PARTY_DIR="$ROOT_DIR/ThirdParty/cef"
 SOURCE_ROOT="$THIRD_PARTY_DIR/source"
