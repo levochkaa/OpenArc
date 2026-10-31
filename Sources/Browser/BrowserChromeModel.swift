@@ -347,8 +347,10 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
     /// sidebar scrolls the selected row into view.
     @Published var sidebarRevealRequestID = 0
-    /// Space themes as a light window tint, by Space ID. Local.
-    @Published private(set) var spaceColorsByID = [String: String]()
+    /// Space themes by Space ID. Local.
+    @Published private(set) var spaceThemesByID = [String: BrowserSpaceTheme]()
+    /// UI-only: opens the window's theme editor for a Space.
+    var onEditSpaceTheme: ((String) -> Void)?
     /// Change Icon: the symbol shown instead of a tab's favicon, by sync
     /// ID so it survives a dormant tab reopening under a new runtime ID. Local.
     private(set) var tabIconsBySyncID = [String: String]()
@@ -726,10 +728,10 @@ enum BrowserWindowMode: Equatable {
 
     var canCaptureArea: Bool { canCreateTab && selectedTab?.creationState == .ready && onBeginAreaCapture != nil }
 
-    /// The tint of the selected Space, or nil for the neutral window.
-    var selectedSpaceColor: BrowserSpaceColor? {
+    /// The theme of the selected Space, or nil for the neutral window.
+    var selectedSpaceTheme: BrowserSpaceTheme? {
         guard supportsSpaces, let selectedSpaceID else { return nil }
-        return spaceColorsByID[selectedSpaceID].flatMap(BrowserSpaceColor.init(rawValue:))
+        return spaceThemesByID[selectedSpaceID]
     }
 
     private var canAdmitLocalAutomaticArchive: Bool {
@@ -1702,15 +1704,23 @@ enum BrowserWindowMode: Equatable {
         return changed
     }
 
-    /// Space color; nil keeps the window neutral.
-    @discardableResult func setColor(_ color: BrowserSpaceColor?, forSpaceID spaceID: String) -> Bool {
-        guard spaces.contains(where: { $0.id == spaceID }), spaceColorsByID[spaceID] != color?.rawValue else {
-            return false
+    /// Space theme; nil keeps the window neutral. `persist` is false during a
+    /// gesture in the theme editor, whose final change saves.
+    @discardableResult func setTheme(
+        _ theme: BrowserSpaceTheme?,
+        forSpaceID spaceID: String,
+        persist: Bool = true,
+    ) -> Bool {
+        guard spaces.contains(where: { $0.id == spaceID }) else { return false }
+        let next = theme?.colors.isEmpty == true ? nil : theme
+        let changed = spaceThemesByID[spaceID] != next
+        guard changed || persist else { return false }
+        if changed {
+            spaceThemesByID[spaceID] = next
+            locallyColoredSpaceIDs.insert(spaceID)
         }
-        spaceColorsByID[spaceID] = color?.rawValue
-        locallyColoredSpaceIDs.insert(spaceID)
-        persistCurrentSessionIfAllowed()
-        return true
+        if persist { persistCurrentSessionIfAllowed() }
+        return changed
     }
 
     func icon(forTabID tabID: String) -> String? {
@@ -2684,7 +2694,7 @@ enum BrowserWindowMode: Equatable {
         // A deferred launch projection carries this device's stored colors,
         // except for Spaces whose color was chosen since, None included.
         for space in snapshot.spaces ?? [] where !locallyColoredSpaceIDs.contains(space.id) {
-            spaceColorsByID[space.id] = space.colorName
+            spaceThemesByID[space.id] = space.colorName.flatMap(BrowserSpaceTheme.init(stored:))
         }
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
         selectedSpaceID = selectedSpaceID.flatMap { selectedSpaceID in
@@ -3665,8 +3675,10 @@ enum BrowserWindowMode: Equatable {
         isRestoringSession = true
         hasCreatedInitialTab = true
         spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
-        spaceColorsByID = Dictionary(
-            (snapshot.spaces ?? []).compactMap { space in space.colorName.map { (space.id, $0) } },
+        spaceThemesByID = Dictionary(
+            (snapshot.spaces ?? []).compactMap { space in
+                space.colorName.flatMap(BrowserSpaceTheme.init(stored:)).map { (space.id, $0) }
+            },
             uniquingKeysWith: { first, _ in first },
         )
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
@@ -3914,7 +3926,7 @@ enum BrowserWindowMode: Equatable {
                     systemImageName: space.systemImageName,
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                     selectedTabIndex: selectedTabIndex(inSpace: space.id),
-                    colorName: spaceColorsByID[space.id],
+                    colorName: spaceThemesByID[space.id]?.stored,
                 )
             },
             pinnedTabFolders: pinnedTabFolders.compactMap { tree.folders[$0.id] }.map { folder in

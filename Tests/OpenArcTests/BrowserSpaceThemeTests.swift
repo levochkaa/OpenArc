@@ -1,0 +1,288 @@
+// BrowserSpaceThemeTests.swift
+
+import AppKit
+import Testing
+
+// MARK: - BrowserSpaceThemeTests
+
+@Suite(.serialized)
+@MainActor struct BrowserSpaceThemeTests {
+    private static let orange = BrowserSpaceTheme.Color(1, 0.522, 0.344)
+
+    @Test func themesSurviveTheStoreButNotEquality() throws {
+        let directory = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("SpaceThemes-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let databaseURL = directory.appendingPathComponent("session.sqlite")
+        let stored = try #require(BrowserSpaceTheme(key: Self.orange).stored)
+        let snapshot = BrowserTabSessionSnapshot(
+            spaces: [
+                .init(id: "s", title: "Work", systemImageName: "star", colorName: stored),
+                .init(id: "t", title: "Home", systemImageName: "house"),
+            ],
+            tabs: [.init(id: "a", urlString: "https://a.example", spaceID: "s")],
+        )
+        do {
+            let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+            store.saveSnapshot(snapshot)
+        }
+        let reopened = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+        #expect(try #require(reopened.loadSnapshot()?.spaces).map(\.colorName) == [stored, nil])
+        #expect(
+            BrowserSpaceSessionSnapshot(id: "s", title: "Work", systemImageName: "star", colorName: stored)
+                == BrowserSpaceSessionSnapshot(id: "s", title: "Work", systemImageName: "star"),
+            "Themes are local, so sync checks ignore them",
+        )
+    }
+
+    @Test func colorNamesFromOlderVersionsBecomeThemes() throws {
+        let theme = try #require(BrowserSpaceTheme(stored: "teal"))
+        #expect(theme.colors.count == 1)
+        #expect(BrowserSpaceTheme(stored: "not a color") == nil)
+    }
+
+    @Test func storedThemesRoundTripWithStableBytes() throws {
+        var theme = BrowserSpaceTheme(key: Self.orange, colorCount: 3, wheel: .analogous)
+        theme.noise = 0.5
+        theme.texture = .denim
+        theme.mode = .dark
+        let stored = try #require(theme.stored)
+        #expect(BrowserSpaceTheme(stored: stored) == theme)
+        #expect(theme.stored == stored, "Same theme, same bytes, or each save looks like a change")
+    }
+
+    @Test func aSpacesThemeShowsWhileItIsSelected() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        let theme = BrowserSpaceTheme(key: Self.orange)
+        #expect(f.model.selectedSpaceTheme == nil, "Spaces start neutral")
+        #expect(f.model.setTheme(theme, forSpaceID: "s"))
+        #expect(!f.model.setTheme(theme, forSpaceID: "s"))
+        #expect(!f.model.setTheme(theme, forSpaceID: "missing"))
+        #expect(f.model.selectedSpaceTheme == theme)
+        let saved = try #require(f.store.savedSnapshots.last?.spaces)
+        #expect(saved.first { $0.id == "s" }?.colorName == theme.stored)
+        f.model.selectSpace(id: "t")
+        #expect(f.model.selectedSpaceTheme == nil)
+        f.model.selectSpace(id: "s")
+        #expect(f.model.setTheme(nil, forSpaceID: "s") && f.model.selectedSpaceTheme == nil)
+    }
+
+    @Test func aThemeWithoutColorsIsTheNeutralWindow() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.setTheme(BrowserSpaceTheme(key: Self.orange), forSpaceID: "s")
+        f.model.setTheme(BrowserSpaceTheme(), forSpaceID: "s")
+        #expect(f.model.selectedSpaceTheme == nil)
+    }
+
+    @Test func editsDuringAGestureDoNotSaveUntilItEnds() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        let before = f.store.savedSnapshots.count
+        var theme = BrowserSpaceTheme(key: Self.orange)
+        #expect(f.model.setTheme(theme, forSpaceID: "s", persist: false))
+        theme.intensity = 0.5
+        #expect(f.model.setTheme(theme, forSpaceID: "s", persist: false))
+        #expect(f.store.savedSnapshots.count == before)
+        f.model.setTheme(theme, forSpaceID: "s")
+        let saved = try #require(f.store.savedSnapshots.last?.spaces)
+        #expect(saved.first { $0.id == "s" }?.colorName == theme.stored)
+    }
+
+    @Test func theSpaceMenuOpensTheEditor() throws {
+        let space = BrowserChromeModel.Space(
+            id: "s", title: "Work", systemImageName: "star", isPinnedSectionCollapsed: false, selectedTabID: nil,
+        )
+        var opened = 0
+        let menu = BrowserNativeMenus.space(
+            space,
+            canDelete: true,
+            onRename: {},
+            onChangeIcon: { _ in },
+            onEditTheme: { opened += 1 },
+            onDelete: {},
+        )
+        let index = try #require(menu.items.firstIndex { $0.title == BrowserStrings.spaceEditThemeAction })
+        menu.performActionForItem(at: index)
+        #expect(opened == 1)
+    }
+
+    @Test func aThemeOnlyChangeIsNotDroppedAsADuplicateWrite() {
+        func write(_ color: String?) -> BrowserSessionWrite {
+            BrowserSessionWrite(
+                snapshot: .init(
+                    spaces: [.init(id: "s", title: "Work", systemImageName: "star", colorName: color)],
+                    tabs: [],
+                ),
+                origin: .local(syncMove: nil),
+            )
+        }
+        var buffer = BrowserSessionWriteBuffer()
+        let accepted = [buffer.append(write(nil)), buffer.append(write("teal"))]
+        #expect(accepted == [true, true] && buffer.writes.count == 2)
+    }
+
+    // MARK: Color rules
+
+    @Test func hueAndLightnessRoundTripThroughDisplayP3() {
+        let (hue, saturation, lightness) = Self.orange.hsl
+        #expect(abs(hue - 17.6) < 0.2)
+        #expect(abs(saturation - 0.816) < 0.005)
+        #expect(abs(lightness - 0.661) < 0.005)
+        let rebuilt = BrowserSpaceTheme.Color(hue: hue, saturation: saturation, lightness: lightness)
+        #expect(abs(rebuilt.red - Self.orange.red) < 0.002)
+        #expect(abs(rebuilt.green - Self.orange.green) < 0.002)
+        #expect(abs(rebuilt.blue - Self.orange.blue) < 0.002)
+    }
+
+    @Test func addedColorsFollowTheWheel() {
+        var theme = BrowserSpaceTheme(key: Self.orange)
+        theme.addColor()
+        #expect(abs(theme.colors[1].hsl.hue - 197.6) < 0.5, "One more color: the far side of the wheel")
+        theme.addColor()
+        #expect(abs(theme.colors[1].hsl.hue - 167.6) < 0.5)
+        #expect(abs(theme.colors[2].hsl.hue - 227.6) < 0.5)
+        #expect(!theme.canAddColor)
+        let analogous = BrowserSpaceTheme(key: Self.orange, colorCount: 3, wheel: .analogous)
+        #expect(abs(analogous.colors[1].hsl.hue - 57.6) < 0.5)
+        #expect(abs(analogous.colors[2].hsl.hue - 337.6) < 0.5)
+    }
+
+    @Test func removingEveryColorLeavesAnEmptyTheme() {
+        var theme = BrowserSpaceTheme(key: Self.orange, colorCount: 3, wheel: .analogous)
+        theme.removeColor()
+        #expect(theme.colors.count == 2)
+        theme.removeColor()
+        #expect(theme.colors.count == 1)
+        theme.removeColor()
+        #expect(theme.colors.isEmpty && theme.palette == nil && !theme.canAddColor)
+    }
+
+    @Test func aPresetsKnobSitsAtItsUsualDistanceFromTheCenter() throws {
+        let theme = BrowserSpaceTheme(key: Self.orange)
+        let knob = try #require(theme.knobPositions.first)
+        #expect(abs(hypot(knob.x - 170, knob.y - 170) - 84) < 1)
+        #expect(abs(atan2(knob.y - 170, knob.x - 170) * 180 / .pi - 17.6) < 0.5)
+    }
+
+    @Test func movingTheKnobSetsHueFromAngleAndLightnessFromDistance() {
+        var theme = BrowserSpaceTheme(key: Self.orange)
+        let center = theme.lightnessAtCenter
+        theme.moveKey(to: CGPoint(x: 170, y: 280))
+        let (hue, saturation, lightness) = theme.colors[0].hsl
+        #expect(abs(hue - 90) < 0.5)
+        #expect(abs(saturation - 0.816) < 0.01)
+        #expect(abs(lightness - (center + 110 * BrowserSpaceTheme.lightnessPerPoint)) < 0.005)
+    }
+
+    @Test func allKnobsMoveTogether() {
+        var theme = BrowserSpaceTheme(key: Self.orange, colorCount: 3, wheel: .analogous)
+        theme.moveKey(to: CGPoint(x: 280, y: 170))
+        #expect(abs(theme.colors[0].hsl.hue) < 0.5 || abs(theme.colors[0].hsl.hue - 360) < 0.5)
+        #expect(abs(theme.colors[1].hsl.hue - 40) < 0.5)
+        #expect(abs(theme.colors[2].hsl.hue - 320) < 0.5)
+    }
+
+    @Test func contentIsDarkOnBrightColorsAndLightOnDarkOnes() throws {
+        for (color, isLight) in [
+            (BrowserSpaceTheme.Color(0.5, 0.5, 0.5), true),
+            (BrowserSpaceTheme.Color(0.4, 0.4, 0.4), false),
+            (BrowserSpaceTheme.Color(0.4, 0.404, 0.537), false),
+            (BrowserSpaceTheme.Color(0.692, 0.427, 0.25), true),
+            (BrowserSpaceTheme.Color(0, 0, 0), false),
+        ] {
+            #expect(try #require(BrowserSpaceTheme(key: color).palette).isLightContent == isLight)
+        }
+    }
+
+    @Test func paletteMatchesTheKeyColor() throws {
+        let palette = try #require(BrowserSpaceTheme(key: Self.orange).palette)
+        #expect(abs(palette.tintedLight.hsl.lightness - 0.94) < 0.005)
+        #expect(abs(palette.shadedDark.hsl.lightness - 0.33) < 0.005)
+        #expect(abs(palette.title.red - 0.196) < 0.01, "Bright theme: dark title from the shaded color")
+    }
+
+    // MARK: Rendering
+
+    @Test func noColorsDrawsNothing() {
+        #expect(BrowserSpaceThemeRenderer.pixels(for: BrowserSpaceTheme(), aspect: 1.6, isDark: true) == nil)
+    }
+
+    @Test func coverageFollowsIntensity() {
+        var theme = BrowserSpaceTheme(key: Self.orange)
+        #expect(abs(theme.coverage - 0.75) < 0.001)
+        theme.intensity = 0
+        #expect(abs(theme.coverage - 0.2) < 0.001)
+    }
+
+    @Test func aGradientRunsFromTheKeyColorToTheSecondColor() throws {
+        let theme = BrowserSpaceTheme(key: Self.orange, colorCount: 2, wheel: .analogous)
+        let (values, width, height) = try #require(
+            BrowserSpaceThemeRenderer.pixels(for: theme, aspect: 1.6, isDark: true, width: 64),
+        )
+        #expect(width == 64 && height == 40)
+        func pixel(_ x: Int, _ y: Int) -> SIMD4<Float> {
+            let i = (y * width + x) * 4
+            return SIMD4(values[i], values[i + 1], values[i + 2], values[i + 3])
+        }
+        let start = pixel(0, 0)
+        let end = pixel(63, 39)
+        #expect(start.y < end.y, "Orange to yellow gains green along the axis")
+        #expect(abs(start.w - (0.75 + 0.25 * 0.175)) < 0.01, "Colors over the black backing")
+        #expect(pixel(63, 39) == pixel(63, 39))
+    }
+
+    @Test func aLightBackingIsWhiteAtHalfStrength() throws {
+        let theme = BrowserSpaceTheme(key: BrowserSpaceTheme.Color(0, 0, 0))
+        let dark = try #require(BrowserSpaceThemeRenderer.pixels(for: theme, aspect: 1, isDark: true, width: 16))
+        let light = try #require(BrowserSpaceThemeRenderer.pixels(for: theme, aspect: 1, isDark: false, width: 16))
+        #expect(dark.values[0] < 0.01)
+        #expect(abs(light.values[0] - 0.25 * 0.5) < 0.01)
+        #expect(abs(light.values[3] - (0.75 + 0.25 * 0.5)) < 0.01)
+    }
+
+    @Test func aThirdColorRisesFromTheBottom() throws {
+        let theme = BrowserSpaceTheme(key: Self.orange, colorCount: 3, wheel: .analogous)
+        let (values, width, height) = try #require(
+            BrowserSpaceThemeRenderer.pixels(for: theme, aspect: 1, isDark: true, width: 32),
+        )
+        let top = values[0 * 4 + 3]
+        let bottom = values[(height - 1) * width * 4 + 3]
+        #expect(bottom > top, "The overlay adds coverage toward the bottom edge")
+    }
+
+    @Test func texturesAreStableAndDarkenByTheirOwnAmount() {
+        for texture in BrowserSpaceTheme.Texture.allCases {
+            let first = BrowserSpaceThemeTexture.darkness(texture)
+            #expect(first == BrowserSpaceThemeTexture.darkness(texture), "Same pixels on each launch")
+            #expect(first.count == 200 * 200)
+            #expect(first.allSatisfy { $0 >= -0.01 && $0 <= 1 })
+            #expect(BrowserSpaceThemeTexture.tile(texture).size == NSSize(width: 100, height: 100))
+        }
+        #expect(BrowserSpaceTheme.Texture.tweed.next == .grain)
+    }
+
+    // MARK: Editor
+
+    @Test func presetsFillFivePagesOfNine() {
+        #expect(BrowserSpaceThemePresets.pages.count == 5)
+        #expect(BrowserSpaceThemePresets.pages.allSatisfy { $0.count == 9 })
+        #expect(BrowserSpaceThemePresets.pages[1].allSatisfy { $0.colors.count == 3 })
+    }
+
+    @Test func theEditorEditsAndUndoes() throws {
+        let editor = BrowserSpaceThemeEditorViewController(theme: BrowserSpaceTheme(key: Self.orange))
+        var changes = [(BrowserSpaceTheme, Bool)]()
+        editor.onChange = { changes.append(($0, $1)) }
+        _ = editor.view
+        let pad = try #require(editor.view.subviews.compactMap { $0 as? BrowserSpaceThemePadView }.first)
+        pad.onBeginGesture()
+        pad.onChange({ $0.addColor() }, true)
+        #expect(editor.theme.colors.count == 2)
+        #expect(changes.last?.1 == true)
+        editor.undo()
+        #expect(editor.theme.colors.count == 1)
+        editor.undo()
+        #expect(editor.theme.colors.count == 1, "Nothing more to undo")
+    }
+}

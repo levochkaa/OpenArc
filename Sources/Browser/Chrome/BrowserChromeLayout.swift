@@ -5,6 +5,8 @@ import AppKit
 // MARK: - BrowserChromeLayout
 
 enum BrowserChromeLayout {
+    /// Where the theme editor attaches beside the sidebar: the Space title's height.
+    static let spaceThemeEditorAnchorY: CGFloat = 99
     static let sidebarAnimationDuration = 0.18
     static let sidebarResizeHoverDelayNanoseconds: UInt64 = 500_000_000
     static let sidebarHoverRevealDelayNanoseconds: UInt64 = 500_000_000

@@ -12,31 +12,26 @@ final class BrowserChromeBackgroundNSView: NSView {
     // MARK: Internal
 
     var mode = BrowserChromeBackgroundMode.blurred { didSet { update() } }
-    /// The selected Space's color over the background, nil for neutral. Space
-    /// changes cross-fade.
-    var tint: NSColor? {
-        didSet {
-            guard tint != oldValue else { return }
-            let fade = CATransition()
-            fade.type = .fade
-            fade.duration = BrowserNativeAnimation.Curve.sidebar.duration
-            tintView.layer?.add(fade, forKey: "tint")
-            update()
-        }
-    }
 
     // MARK: Private
 
     private let effect = NSVisualEffectView()
-    private let tintView = NSView()
+    private let themeView = NSView()
+    private let textureView = NSView()
+    private var theme: BrowserSpaceTheme?
+    private var renderedAspect: CGFloat = 0
+    private var renderedIsDark = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         addSubview(effect)
-        addSubview(tintView)
+        addSubview(themeView)
+        addSubview(textureView)
         effect.blendingMode = .behindWindow
         effect.state = .active
-        tintView.wantsLayer = true
+        themeView.wantsLayer = true
+        themeView.layer?.contentsGravity = .resize
+        textureView.wantsLayer = true
         update()
     }
 
@@ -45,11 +40,14 @@ final class BrowserChromeBackgroundNSView: NSView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
     override func layout() { super.layout()
         effect.frame = bounds
-        tintView.frame = bounds
+        themeView.frame = bounds
+        textureView.frame = bounds
+        renderTheme()
     }
 
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance()
         update()
+        renderTheme(force: true)
     }
 
     override func draw(_: NSRect) {
@@ -59,12 +57,57 @@ final class BrowserChromeBackgroundNSView: NSView {
         }
     }
 
+    /// The selected Space's theme, nil for neutral. A different Space's theme
+    /// cross-fades; edits in progress apply at once.
+    func setTheme(_ theme: BrowserSpaceTheme?, animated: Bool) {
+        let next = theme?.colors.isEmpty == true ? nil : theme
+        guard next != self.theme else { return }
+        self.theme = next
+        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = 0.25
+            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
+            themeView.layer?.add(fade, forKey: "theme")
+            textureView.layer?.add(fade, forKey: "theme")
+        }
+        renderTheme(force: true)
+    }
+
     private func update() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         effect.isHidden = mode != .blurred
         effect.material = dark ? .hudWindow : .sidebar
-        tintView.layer?.backgroundColor = tint?.withAlphaComponent(BrowserSpaceColor.tintAlpha(dark: dark)).cgColor
         needsDisplay = true
+    }
+
+    private func renderTheme(force: Bool = false) {
+        guard let theme, bounds.width > 0, bounds.height > 0 else {
+            themeView.layer?.contents = nil
+            textureView.isHidden = true
+            renderedAspect = 0
+            return
+        }
+        let aspect = bounds.width / bounds.height
+        let isDark =
+            switch theme.mode {
+            case .automatic: NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            case .light: false
+            case .dark: true
+            }
+        if force || abs(aspect - renderedAspect) > 0.005 || isDark != renderedIsDark {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            themeView.layer?.contents = BrowserSpaceThemeRenderer.image(for: theme, aspect: aspect, isDark: isDark)
+            let strength = theme.noise * theme.texture.strength
+            textureView.isHidden = strength <= 0
+            textureView.layer?.opacity = Float(strength)
+            textureView.layer?.backgroundColor = NSColor(patternImage: BrowserSpaceThemeTexture.tile(theme.texture))
+                .cgColor
+            CATransaction.commit()
+            renderedAspect = aspect
+            renderedIsDark = isDark
+        }
     }
 }
 

@@ -51,7 +51,7 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
     let systemImageName: String
     let isPinnedSectionCollapsed: Bool
     let selectedTabIndex: Int?
-    /// The Space's window tint (`BrowserSpaceColor`), local like tab icons:
+    /// The Space's stored theme (`BrowserSpaceTheme`), local like tab icons:
     /// never synced, and ignored by equality so sync checks do not see it.
     let colorName: String?
 

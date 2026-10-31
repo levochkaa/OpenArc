@@ -1291,59 +1291,64 @@ enum BrowserStrings {
         comment: "Tabs menu and command title that returns a pinned tab to its pinned URL.",
     )
 
-    static let spaceChangeColorAction = NSLocalizedString(
-        "browser.space.change_color_action",
-        comment: "Space menu submenu that tints the window for the Space.",
+    static let spaceEditThemeAction = NSLocalizedString(
+        "browser.space.edit_theme_action",
+        comment: "Space menu action that opens the theme editor.",
     )
 
-    static let spaceColorNone = NSLocalizedString(
-        "browser.space.color.none",
-        comment: "Space color option that keeps the window neutral.",
+    static let spaceThemeEmpty = NSLocalizedString(
+        "browser.space.theme.empty",
+        comment: "Theme editor's pad when the Space has no color.",
     )
 
-    static let spaceColorBlue = NSLocalizedString(
-        "browser.space.color.blue",
-        comment: "Space color option.",
+    static let spaceThemeModeAutomatic = NSLocalizedString(
+        "browser.space.theme.mode_automatic",
+        comment: "Theme editor button: follow the system's light or dark mode.",
     )
 
-    static let spaceColorPurple = NSLocalizedString(
-        "browser.space.color.purple",
-        comment: "Space color option.",
+    static let spaceThemeModeLight = NSLocalizedString(
+        "browser.space.theme.mode_light",
+        comment: "Theme editor button: always use the light look.",
     )
 
-    static let spaceColorPink = NSLocalizedString(
-        "browser.space.color.pink",
-        comment: "Space color option.",
+    static let spaceThemeModeDark = NSLocalizedString(
+        "browser.space.theme.mode_dark",
+        comment: "Theme editor button: always use the dark look.",
     )
 
-    static let spaceColorRed = NSLocalizedString(
-        "browser.space.color.red",
-        comment: "Space color option.",
+    static let spaceThemeAddColor = NSLocalizedString(
+        "browser.space.theme.add_color",
+        comment: "Theme editor button that adds a color.",
     )
 
-    static let spaceColorOrange = NSLocalizedString(
-        "browser.space.color.orange",
-        comment: "Space color option.",
+    static let spaceThemeRemoveColor = NSLocalizedString(
+        "browser.space.theme.remove_color",
+        comment: "Theme editor button that removes a color.",
     )
 
-    static let spaceColorYellow = NSLocalizedString(
-        "browser.space.color.yellow",
-        comment: "Space color option.",
+    static let spaceThemeNextPage = NSLocalizedString(
+        "browser.space.theme.next_page",
+        comment: "Theme editor button that shows the next page of colors.",
     )
 
-    static let spaceColorGreen = NSLocalizedString(
-        "browser.space.color.green",
-        comment: "Space color option.",
+    static let spaceThemePreviousPage = NSLocalizedString(
+        "browser.space.theme.previous_page",
+        comment: "Theme editor button that shows the previous page of colors.",
     )
 
-    static let spaceColorTeal = NSLocalizedString(
-        "browser.space.color.teal",
-        comment: "Space color option.",
+    static let spaceThemeIntensity = NSLocalizedString(
+        "browser.space.theme.intensity",
+        comment: "Theme editor slider label: how strongly the colors cover the window.",
     )
 
-    static let spaceColorGray = NSLocalizedString(
-        "browser.space.color.gray",
-        comment: "Space color option.",
+    static let spaceThemeCycleTexture = NSLocalizedString(
+        "browser.space.theme.cycle_texture",
+        comment: "Theme editor dial tooltip.",
+    )
+
+    static let spaceThemeSetColor = NSLocalizedString(
+        "browser.space.theme.set_color",
+        comment: "Theme editor swatch button label.",
     )
 
     static let menuResetSpaceTabs = NSLocalizedString(

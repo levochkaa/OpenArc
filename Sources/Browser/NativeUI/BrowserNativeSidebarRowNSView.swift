@@ -597,23 +597,24 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     }
 
     private func updateSurface() {
+        let selectedFill = enclosingSpaceThemePalette?.selection ?? BrowserChromeColors.rowSelected
         selectionSurface.alphaScale = selected || !multiSelected ? 1 : 0.82
         selectionSurface.fill =
             switch kind {
             case .split,
                  .tab:
                 selected || multiSelected
-                    ? BrowserChromeColors.rowSelected
+                    ? selectedFill
                     : isHovered && !splitPinnedControls ? BrowserChromeColors.rowHover : nil
             case .newTab:
                 isResizing
                     ? nil
                     : selected
-                        ? BrowserChromeColors.rowSelected
+                        ? selectedFill
                         : isHovered ? BrowserChromeColors.rowHover : nil
             case .folder,
                  .space:
-                dropTargeted ? BrowserChromeColors.rowSelected : isHovered ? BrowserChromeColors.rowHover : nil
+                dropTargeted ? selectedFill : isHovered ? BrowserChromeColors.rowHover : nil
             case .appTab: nil
             }
     }
@@ -718,7 +719,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         )
         titleLabel.textColor = kind == .space || kind == .newTab
             ? BrowserChromeColors.sidebarDimText
-            : BrowserChromeColors.sidebarRowText
+            : enclosingSpaceThemePalette?.title.nsColor ?? BrowserChromeColors.sidebarRowText
         setAccessibilityLabel(title)
         if self.resetID != resetID || isResizing && !self.isResizing {
             resetInteraction()

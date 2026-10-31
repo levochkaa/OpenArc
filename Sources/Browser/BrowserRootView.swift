@@ -33,6 +33,7 @@ final class BrowserRootView: NSView {
     private let sessionRecovery = BrowserSessionPersistenceStatusView()
     /// Positions popovers whose own button is off screen.
     private let popoverAnchor = NSView()
+    private var spaceThemePopover: BrowserNativePopover?
     private let extensionResize = BrowserNativeResizeHandle()
     private var extensionPanel: BrowserExtensionSidePanelNSView?
     private let toolbarVisibility = BrowserNativeVisibilityAnimation()
@@ -103,6 +104,7 @@ final class BrowserRootView: NSView {
         }
     }
 
+    private var isEditingSpaceTheme: Bool { spaceThemePopover?.isShown == true }
     private var isSidebarPresented: Bool { model.isSidebarVisible || isSidebarHoverOverlayPresented }
     private var isSidebarHoverOverlayActive: Bool { !model.isSidebarVisible && isSidebarHoverOverlayPresented }
     private var isSidebarOverlayPresentation: Bool { !model.isSidebarVisible && isSidebarHoverOverlayChromeVisible }
@@ -177,6 +179,7 @@ final class BrowserRootView: NSView {
         model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
         model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
         model.onOpenExtensions = { [weak self] in self?.openExtensions() }
+        model.onEditSpaceTheme = { [weak self] in self?.presentSpaceThemeEditor(spaceID: $0) }
         sidebar.sidebar.state.drag.pageSplitDropResolver = { [weak content] point, tabID in
             content?.splitPaneBars.pageSplitDrop(atWindowPoint: point, draggedTabID: tabID)
         }
@@ -410,7 +413,14 @@ final class BrowserRootView: NSView {
         }
         previousLayoutState = state
         background.mode = chromeBackgroundMode
-        background.tint = model.selectedSpaceColor?.color
+        background.setTheme(model.selectedSpaceTheme, animated: !isEditingSpaceTheme)
+        let contentAppearance = model.selectedSpaceTheme?.palette.map {
+            NSAppearance(named: $0.isLightContent ? .aqua : .darkAqua)
+        } ?? nil
+        if toolbar.appearance?.name != contentAppearance?.name {
+            toolbar.appearance = contentAppearance
+            bookmarks.appearance = contentAppearance
+        }
         content.update(
             hostView: model.hostView,
             isContextReady: model.isContextReady,
@@ -509,6 +519,31 @@ final class BrowserRootView: NSView {
     /// Open Extensions opens the control center of the visible URL controls.
     /// With the sidebar hidden and no toolbar it points at the page's top
     /// corner on the sidebar side.
+    /// Opens the theme editor beside the sidebar, at the Space's title. The Space
+    /// is selected first, so edits show on the window at once.
+    private func presentSpaceThemeEditor(spaceID: String) {
+        model.selectSpace(id: spaceID)
+        spaceThemePopover?.performClose(nil)
+        let editor = BrowserSpaceThemeEditorViewController(theme: model.spaceThemesByID[spaceID])
+        editor.onChange = { [weak self] theme, commit in
+            guard let self else { return }
+            model.setTheme(theme, forSpaceID: spaceID, persist: commit)
+            if theme.colors.isEmpty || commit { refresh() }
+        }
+        let popover = BrowserNativePopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = editor
+        popover.contentSize = BrowserSpaceThemeEditorLayout.size
+        popover.appearance = NSAppearance(named: .darkAqua)
+        popover.setValue(true, forKey: "shouldHideAnchor")
+        spaceThemePopover = popover
+        let onLeft = preferences.sidebarPosition == .left
+        let x = onLeft ? sidebarLayoutWidth : bounds.width - sidebarLayoutWidth
+        popoverAnchor.frame = CGRect(x: x, y: BrowserChromeLayout.spaceThemeEditorAnchorY, width: 1, height: 1)
+        popover.show(relativeTo: popoverAnchor.bounds, of: popoverAnchor, preferredEdge: onLeft ? .maxX : .minX)
+    }
+
     private func openExtensions() {
         if showsSiteToolbar {
             toolbar.showControlCenter()

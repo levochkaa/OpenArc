@@ -2,10 +2,12 @@
 
 import AppKit
 
-final class BrowserSidebarChromeView: NSView {
+final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
+    override var isFlipped: Bool { true }
+
     // MARK: Internal
 
-    override var isFlipped: Bool { true }
+    private(set) var spaceThemePalette: BrowserSpaceTheme.Palette?
 
     let sidebar: BrowserNativeSidebarNSView
     let header: BrowserNativeSidebarHeaderNSView
@@ -120,12 +122,22 @@ final class BrowserSidebarChromeView: NSView {
             .pinnedTabFolders)
         background.isHidden = !isOverlayPresentation
         background.mode = model.userPreferencesStore.blurredChromeBackgroundEnabled ? .blurred : .black
-        // The floating sidebar carries the Space's tint like the window behind it.
-        background.tint = model.selectedSpaceColor?.color
+        // The floating sidebar carries the Space's theme like the window behind it.
+        background.setTheme(model.selectedSpaceTheme, animated: false)
+        applySpaceTheme()
         layer?.cornerRadius = isOverlayPresentation ? BrowserChromeLayout.sidebarOverlayCornerRadius : 0
         layer?.borderWidth = isOverlayPresentation ? BrowserChromeLayout.sidebarOverlayBorderWidth : 0
         layer?.borderColor = BrowserChromeColors.sidebarOverlayBorder.cgColor
         resize.hapticsEnabled = model.userPreferencesStore.hapticFeedbackEnabled
         needsLayout = true
+    }
+
+    /// Text and fills follow the theme: dark on bright colors, light on dark ones.
+    private func applySpaceTheme() {
+        spaceThemePalette = model.selectedSpaceTheme?.palette
+        let name: NSAppearance.Name? = spaceThemePalette.map { $0.isLightContent ? .aqua : .darkAqua }
+        if appearance?.name != name {
+            appearance = name.flatMap(NSAppearance.init(named:))
+        }
     }
 }
