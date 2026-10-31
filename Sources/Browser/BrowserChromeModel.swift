@@ -1263,6 +1263,7 @@ enum BrowserWindowMode: Equatable {
                 continue
             }
             var space = makeSpace()
+            spaceThemesByID[space.id] = arcSpace.theme
             if let title {
                 space.title = title
             }

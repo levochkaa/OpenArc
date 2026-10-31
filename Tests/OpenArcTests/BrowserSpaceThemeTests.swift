@@ -122,6 +122,28 @@ import Testing
         #expect(accepted == [true, true] && buffer.writes.count == 2)
     }
 
+    @Test func arcSpacesBringTheirThemes() throws {
+        let json = #"""
+        {"sidebar": {"containers": [{}, {
+          "spaces": ["S1", {"id": "S1", "title": "Work", "containerIDs": [], "customInfo": {"windowTheme": {"background":
+            {"single": {"_0": {"style": {"color": {"_0": {"blendedGradient": {"_0": {
+              "baseColors": [{"red": 1, "green": 0.5, "blue": 0.25, "alpha": 1}, {"red": 0.9, "green": 0.9, "blue": 0.25, "alpha": 1}],
+              "overlayColors": [{"red": 0, "green": 0, "blue": 0, "alpha": 0}, {"red": 1, "green": 0.3, "blue": 0.6, "alpha": 1}],
+              "modifiers": {"noiseFactor": 0.5, "intensityFactor": 0.25, "overlay": "denim"},
+              "wheel": {"analogous": {}}}}}}}}}}}},
+            "S2", {"id": "S2", "title": "Home", "containerIDs": []}],
+          "items": [],
+          "topAppsContainerIDs": []
+        }]}}
+        """#
+        let sidebar = try BrowserArcSidebar(data: Data(json.utf8))
+        let theme = try #require(sidebar.spaces.first?.theme)
+        #expect(theme.colors.count == 3)
+        #expect(theme.wheel == .analogous && theme.texture == .denim)
+        #expect(theme.noise == 0.5 && theme.intensity == 0.25)
+        #expect(sidebar.spaces.last?.theme == nil)
+    }
+
     // MARK: Color rules
 
     @Test func hueAndLightnessRoundTripThroughDisplayP3() {

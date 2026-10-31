@@ -36,6 +36,7 @@ struct BrowserArcSidebar: Equatable {
         var title: String?
         var icon: String?
         var pinned: [Node]
+        var theme: BrowserSpaceTheme?
     }
 
     // MARK: Private
@@ -115,6 +116,7 @@ struct BrowserArcSidebar: Equatable {
                 title: (space["title"] as? String).flatMap(Self.trimmed),
                 icon: Self.icon(in: space["customInfo"]),
                 pinned: pinnedID.map { reader.children(of: $0) } ?? [],
+                theme: Self.theme(in: space["customInfo"]),
             )
         }
         let favoritesID = Self.pairs(container["topAppsContainerIDs"] as? [Any] ?? [])
@@ -135,6 +137,50 @@ struct BrowserArcSidebar: Equatable {
 
     private static func icon(in customInfo: Any?) -> String? {
         ((customInfo as? [String: Any])?["iconType"] as? [String: Any])?["icon"] as? String
+    }
+
+    /// A Space's colors, intensity and texture, for themes in either stored form.
+    private static func theme(in customInfo: Any?) -> BrowserSpaceTheme? {
+        let windowTheme = (customInfo as? [String: Any])?["windowTheme"] as? [String: Any]
+        guard let background = windowTheme?["background"] as? [String: Any] else { return nil }
+        let single = (background["single"] as? [String: Any])?["_0"] as? [String: Any]
+        let dark = (background["appearanceBased"] as? [String: Any])?["dark"] as? [String: Any]
+        guard let source = single ?? dark,
+              let style = (source["style"] as? [String: Any])?["color"] as? [String: Any],
+              let colorType = style["_0"] as? [String: Any]
+        else { return nil }
+        func color(_ value: Any?) -> BrowserSpaceTheme.Color? {
+            guard let value = value as? [String: Any], value["alpha"] as? Double != 0,
+                  let red = value["red"] as? Double, let green = value["green"] as? Double,
+                  let blue = value["blue"] as? Double
+            else { return nil }
+            return BrowserSpaceTheme.Color(red, green, blue)
+        }
+        func payload(_ key: String) -> [String: Any]? {
+            (colorType[key] as? [String: Any])?["_0"] as? [String: Any]
+        }
+        let colors: [BrowserSpaceTheme.Color]
+        var details: [String: Any]
+        if let gradient = payload("blendedGradient") {
+            details = gradient
+            let base = (gradient["baseColors"] as? [Any] ?? []).compactMap(color)
+            let overlay = (gradient["overlayColors"] as? [Any] ?? []).compactMap(color)
+            colors = Array((base + overlay).prefix(BrowserSpaceTheme.maximumColors))
+        } else if let flat = payload("blendedSingleColor") ?? payload("basicColor") {
+            details = flat
+            colors = color(flat["color"]).map { [$0] } ?? []
+        } else {
+            return nil
+        }
+        guard let key = colors.first else { return nil }
+        var theme = BrowserSpaceTheme(key: key)
+        theme.colors = colors
+        if (details["wheel"] as? [String: Any])?["analogous"] != nil { theme.wheel = .analogous }
+        let modifiers = details["modifiers"] as? [String: Any]
+        theme.intensity = modifiers?["intensityFactor"] as? Double ?? 1
+        theme.noise = modifiers?["noiseFactor"] as? Double ?? 0
+        theme.texture = (modifiers?["overlay"] as? String).flatMap(BrowserSpaceTheme.Texture.init) ?? .grain
+        return theme
     }
 
     private static func trimmed(_ value: String) -> String? {
