@@ -17,6 +17,7 @@ final class BrowserSpaceDockNSView: BrowserNativeSurface {
     var onMove: (String, Int) -> Void = { _, _ in }
 
     var itemSize: CGFloat = BrowserChromeLayout.chromeButtonSize
+    var itemHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
     var itemSpacing: CGFloat = BrowserChromeLayout.chromeButtonSpacing
     var isReorderingEnabled = true
 
@@ -59,12 +60,12 @@ final class BrowserSpaceDockNSView: BrowserNativeSurface {
                 x: origin + CGFloat(slot) * (itemSize + itemSpacing),
                 y: 0,
                 width: itemSize,
-                height: itemSize,
+                height: itemHeight,
             )
         }
         if let draggedID, let dragged = items.first(where: { $0.id == draggedID }) {
             let x = min(max(dragX - itemSize / 2, origin), origin + contentWidth - itemSize)
-            dragged.button.frame = NSRect(x: x, y: 0, width: itemSize, height: itemSize)
+            dragged.button.frame = NSRect(x: x, y: 0, width: itemSize, height: itemHeight)
         }
     }
 

@@ -20,7 +20,7 @@ enum BrowserChromeLayout {
     static let sidebarRowCornerRadius: CGFloat = 12
     static let currentURLRowCornerRadius: CGFloat = 12
     static let sidebarRowHorizontalPadding: CGFloat = 10
-    static let sidebarTabTrailingPadding: CGFloat = 9
+    static let sidebarTabTrailingPadding: CGFloat = 8
     static let sidebarRowContentSpacing: CGFloat = 8
     static let sidebarFaviconSize: CGFloat = 16
     /// Icons center in this leading column and titles start after it.
@@ -42,10 +42,12 @@ enum BrowserChromeLayout {
     static let sidebarCurrentURLOverlayWidth: CGFloat = 76
     static let sidebarCurrentURLOverlaySolidWidth: CGFloat = 66
     static let sidebarCurrentURLOverlayFadeWidth: CGFloat = 10
-    static let sidebarCurrentURLButtonSpacing: CGFloat = 2
-    static let sidebarCurrentURLButtonSize: CGFloat = 26
-    static let sidebarCurrentURLButtonCornerRadius: CGFloat = 8
-    static let sidebarCurrentURLButtonSymbolSize: CGFloat = 12.5
+    static let sidebarCurrentURLButtonSpacing: CGFloat = 0
+    static let sidebarCurrentURLButtonTrailingPadding: CGFloat = 5
+    static let sidebarCurrentURLTextLeading: CGFloat = 11
+    static let sidebarCurrentURLButtonSize: CGFloat = 28
+    static let sidebarCurrentURLButtonCornerRadius: CGFloat = 9
+    static let sidebarCurrentURLButtonSymbolSize: CGFloat = 14
     static let sidebarCurrentURLExtensionIconSize: CGFloat = 16
     static let siteControlPopoverWidth: CGFloat = 284
     static let siteControlPopoverPadding: CGFloat = 16
@@ -72,10 +74,13 @@ enum BrowserChromeLayout {
     static let sidebarMiniPlayerButtonSize: CGFloat = 24
     static let sidebarMiniPlayerInset: CGFloat = 10
     static let sidebarMiniPlayerSpacing: CGFloat = 6
+    /// Ends past the title's trailing edge, which it then cuts short.
+    static let sidebarCloseButtonTrailingPadding: CGFloat = 6
     static let sidebarCloseButtonLeadingSpacing: CGFloat = 4
-    static let sidebarCloseCornerRadius: CGFloat = 7
+    static let sidebarCloseCornerRadius: CGFloat = 6
     static let sidebarCloseSymbolSize: CGFloat = 11
     static let sidebarDividerHeight: CGFloat = 12
+    static let sidebarClearFontSize: CGFloat = 10
     static let sidebarDividerInset: CGFloat = 10
     static let sidebarDividerThickness: CGFloat = 0.5
     static let sidebarDropIndicatorThickness: CGFloat = 2
@@ -94,21 +99,25 @@ enum BrowserChromeLayout {
     static let sidebarBottomChromeTopSpacing: CGFloat = sidebarSectionSpacing / 2
     static let sidebarResizeHitWidth: CGFloat = sidebarOuterPadding
     static let sidebarHoverRevealWidth: CGFloat = browserContentEdgeInset
-    static let sidebarHoverOverlayEdgeInset: CGFloat = browserContentEdgeInset
+    static let sidebarHoverOverlayEdgeInset: CGFloat = 5
     static let detachedSidebarWindowBorderInset: CGFloat = 1
     static let sidebarOverlayBorderWidth: CGFloat = 1
-    static let sidebarOverlayCornerRadius: CGFloat = leadingContentCornerRadius
+    static let sidebarOverlayCornerRadius: CGFloat = 12
     /// The sidebar edge snaps to the default width within 14 pt.
     static let sidebarSnapThreshold: CGFloat = 14
     /// Dragging the sidebar edge below this width hides the sidebar (82 pt).
     static let sidebarCollapseDragWidth: CGFloat = 82
     static let browserContentEdgeInset: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
+    static let contentShadowRadius: CGFloat = 3
+    static let contentShadowOpacity: Float = 0.25
+    static let contentShadowOffset: CGFloat = 1
     /// Header and dock buttons, 34 pt apart.
     static let sidebarChromeButtonSize: CGFloat = 32
     static let sidebarChromeButtonSpacing: CGFloat = 2
     static let sidebarChromeButtonCornerRadius: CGFloat = 6
     static let sidebarChromeSymbolSize: CGFloat = 15.5
-    static let sidebarCreateSpaceSymbolSize: CGFloat = 18.5
+    /// A Space's dock item is wider than the buttons, so the icons stay 34 pt apart.
+    static let sidebarDockItemWidth: CGFloat = 34
     /// Lifts the header buttons so their center lines up with the window controls.
     static let sidebarHeaderButtonY: CGFloat = -0.5
     /// The reload button reaches past the URL field's trailing edge.
@@ -182,17 +191,36 @@ enum BrowserChromeLayout {
     static let findBarFieldCornerRadius: CGFloat = 8
     static let findBarSymbolSize: CGFloat = 13
     static let findBarContentSpacing: CGFloat = 6
-    static let tooltipCornerRadius: CGFloat = 12
-    static let tooltipVerticalGap: CGFloat = 8
-    static let tooltipHorizontalPadding: CGFloat = 12
-    static let tooltipVerticalPadding: CGFloat = 10
-    static let tooltipContentSpacing: CGFloat = 10
-    static let tooltipKeySpacing: CGFloat = 6
-    static let tooltipKeyHeight: CGFloat = 22
-    static let tooltipKeyHorizontalPadding: CGFloat = 7
-    static let tooltipBorderWidth: CGFloat = 0.5
-    static let tooltipAnchorXFraction: CGFloat = 0.75
-    static let tooltipAnchorYFraction: CGFloat = 0.75
+    static let tooltipCornerRadius: CGFloat = 14
+    static let tooltipTopLeadingCornerRadius: CGFloat = 3
+    /// The panel's room for the shadows around the bubble.
+    static let tooltipPanelMargin: CGFloat = 32.5
+    static let tooltipTitleFontSize: CGFloat = 12
+    static let tooltipCaptionFontSize: CGFloat = 11
+    static let tooltipKeyFontSize: CGFloat = 11
+    static let tooltipOuterShadowRadius: CGFloat = 10
+    static let tooltipOuterShadowOpacity: Float = 0.15
+    static let tooltipOuterShadowOffset: CGFloat = 2.5
+    static let tooltipInnerShadowRadius: CGFloat = 2.5
+    static let tooltipInnerShadowOpacity: Float = 0.18
+    static let tooltipVerticalGap: CGFloat = 3.5
+    static let tooltipHorizontalPadding: CGFloat = 10
+    /// Around one line of text, and around a title with a caption.
+    static let tooltipVerticalPadding: CGFloat = 6.5
+    static let tooltipCaptionVerticalPadding: CGFloat = 7
+    static let tooltipContentSpacing: CGFloat = 6
+    static let tooltipKeySpacing: CGFloat = 3
+    static let tooltipKeyHeight: CGFloat = 19
+    static let tooltipKeyCornerRadius: CGFloat = 4
+    static let tooltipKeyFaceCornerRadius: CGFloat = 3
+    static let tooltipKeyFaceInset: CGFloat = 1
+    static let tooltipKeyFaceHeight: CGFloat = 15.5
+    static let tooltipKeyHorizontalPadding: CGFloat = 4
+    static let tooltipBorderWidth: CGFloat = 1
+    static let tooltipAnchorXFraction: CGFloat = 0.8
+    /// A sidebar row's tooltip starts near the row's middle.
+    static let sidebarRowTooltipAnchorXFraction: CGFloat = 0.49
+    static let tooltipAnchorYFraction: CGFloat = 0.8125
     static let tooltipViewportPadding: CGFloat = 8
     static let tooltipMaximumWidth: CGFloat = 360
 }

@@ -278,7 +278,7 @@ import Testing
         row.layoutSubtreeIfNeeded()
         #expect(!row.closeButton.isHidden)
         #expect(row.titleLabel.frame.width < oldWidth)
-        #expect(row.titleLabel.frame.maxX < row.closeButton.frame.minX)
+        #expect(row.titleLabel.frame.maxX <= row.closeButton.frame.minX)
         #expect(row.titleLabel.lineBreakMode == .byTruncatingTail)
         #expect(row.titleLabel.cell?.isScrollable == false)
         #expect(row.titleLabel.cell?.wraps == false)

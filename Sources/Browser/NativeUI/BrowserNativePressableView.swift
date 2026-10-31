@@ -42,6 +42,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
     weak var dragCoordinateView: NSView?
     var tooltipTitle: String?
     var tooltipCaption: String?
+    var tooltipAnchorXFraction = BrowserChromeLayout.tooltipAnchorXFraction
     var tooltipShortcut: BrowserKeyboardShortcut?
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
     var permitsTooltip = true
@@ -227,6 +228,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
                 caption: tooltipCaption,
                 shortcut: tooltipShortcut,
                 placement: tooltipPlacement,
+                anchorXFraction: tooltipAnchorXFraction,
             )
         } else {
             BrowserNativeTooltipPresenter.shared.end(id: tooltipID)

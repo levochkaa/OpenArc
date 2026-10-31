@@ -109,15 +109,6 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     var contentIndent: CGFloat { indent }
 
-    private var isSelectionVisible: Bool {
-        switch kind {
-        case .split,
-             .tab: selected || multiSelected
-        case .newTab: selected && !isResizing
-        default: false
-        }
-    }
-
     private var hasRenameChanged: Bool {
         renameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             != initialRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -218,7 +209,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         let height = bounds.height
         let closeSize = BrowserChromeLayout.sidebarCloseButtonSize
         closeButton.frame = NSRect(
-            x: max(bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding - closeSize, 0),
+            x: max(bounds.width - BrowserChromeLayout.sidebarCloseButtonTrailingPadding - closeSize, 0),
             y: (height - closeSize) / 2,
             width: closeSize,
             height: closeSize,
@@ -262,9 +253,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             muteButton.frame = NSRect(x: titleX - 1, y: (height - muteSize) / 2, width: muteSize, height: muteSize)
             titleX = muteButton.frame.maxX
         }
-        let trailingControl = closeButton.isHidden ? nil : closeButton.frame.minX
-        let trailing = trailingControl.map { $0 - BrowserChromeLayout.sidebarCloseButtonLeadingSpacing }
-            ?? bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
+        let trailing = closeButton.isHidden
+            ? bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
+            : closeButton.frame.minX
         let titleWidth = max(trailing - titleX, 0)
         // Share the rename field's frame so the title glyphs stay centered and do not jump on rename.
         // The pinned URL caption lifts the title to keep the two-line stack centered.
@@ -311,27 +302,16 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             ).fill()
             return
         }
-        let background: NSColor =
-            if kind == .tab || kind == .split {
-                selected || multiSelected || (pinnedIconHovered && splitPinnedControls)
-                    ? .clear
-                    : isHovered ? BrowserChromeColors.rowHover : .clear
-            } else if kind == .newTab {
-                isResizing || selected ? .clear : isHovered ? BrowserChromeColors.rowHover : .clear
-            } else {
-                dropTargeted ? BrowserChromeColors.rowSelected : isHovered ? BrowserChromeColors.rowHover : .clear
-            }
-        let leading = kind == .tab && splitPinnedControls && isHovered && !pinnedIconHovered && !selected &&
-            !multiSelected
-            ? indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize - BrowserChromeLayout
-                .sidebarPinnedURLTextHoverOverlap
-            : indent
-        background.setFill()
-        NSBezierPath(
-            roundedRect: NSRect(x: leading, y: 0, width: max(bounds.width - leading, 0), height: bounds.height),
-            xRadius: BrowserChromeLayout.sidebarRowCornerRadius,
-            yRadius: BrowserChromeLayout.sidebarRowCornerRadius,
-        ).fill()
+        if kind == .tab, splitPinnedControls, isHovered, !pinnedIconHovered, !selected, !multiSelected {
+            let leading = indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize
+                - BrowserChromeLayout.sidebarPinnedURLTextHoverOverlap
+            BrowserChromeColors.rowHover.setFill()
+            NSBezierPath(
+                roundedRect: NSRect(x: leading, y: 0, width: max(bounds.width - leading, 0), height: bounds.height),
+                xRadius: BrowserChromeLayout.sidebarRowCornerRadius,
+                yRadius: BrowserChromeLayout.sidebarRowCornerRadius,
+            ).fill()
+        }
         if pinnedIconHovered, splitPinnedControls {
             BrowserChromeColors.rowHover.setFill()
             let rect = NSRect(
@@ -370,6 +350,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     func setDropHighlighted(_ value: Bool) {
         guard dropTargeted != value else { return }
         dropTargeted = value
+        updateSurface()
         needsDisplay = true
     }
 
@@ -438,7 +419,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         title = tab.displayTitle
         favicon.update(url: tab.faviconURL, pageURLString: tab.urlString)
         tooltipTitle = tab.displayTitle
-        tooltipCaption = appTile ? nil : BrowserURLDisplayFormatter.displayString(for: tab.urlString)
+        tooltipCaption = !appTile && selected ? BrowserStrings.tabRenameTooltipCaption : nil
+        tooltipAnchorXFraction = BrowserChromeLayout.sidebarRowTooltipAnchorXFraction
         tooltipShortcut = nil
         closeButton.configureSymbol(selected && pinnedURLRow ? "minus" : "xmark", title: closeDescriptor.helpTitle)
         closeButton.tooltipShortcut = selected ? closeDescriptor.shortcut : nil
@@ -614,6 +596,28 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
     }
 
+    private func updateSurface() {
+        selectionSurface.alphaScale = selected || !multiSelected ? 1 : 0.82
+        selectionSurface.fill =
+            switch kind {
+            case .split,
+                 .tab:
+                selected || multiSelected
+                    ? BrowserChromeColors.rowSelected
+                    : isHovered && !splitPinnedControls ? BrowserChromeColors.rowHover : nil
+            case .newTab:
+                isResizing
+                    ? nil
+                    : selected
+                        ? BrowserChromeColors.rowSelected
+                        : isHovered ? BrowserChromeColors.rowHover : nil
+            case .folder,
+                 .space:
+                dropTargeted ? BrowserChromeColors.rowSelected : isHovered ? BrowserChromeColors.rowHover : nil
+            case .appTab: nil
+            }
+    }
+
     private func updateDisclosureTransform() {
         let angle = kind == .space && hasPinnedTabs && isHovered && !isRenaming ? .pi / 2 * disclosureProgress : 0
         symbol.wantsLayer = true
@@ -740,8 +744,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         titleLabel.isHidden = kind == .appTab || (kind == .split && splitName == nil) || isRenaming
         renameField.isHidden = !isRenaming
         folderFill.isHidden = kind != .folder
-        selectionSurface.isHidden = !isSelectionVisible
-        selectionSurface.isMuted = !selected
+        updateSurface()
         let isTab = kind == .tab || kind == .appTab
         favicon.isHidden = !isTab || tabIcon != nil
         symbol.isHidden = (isTab && tabIcon == nil) || (kind == .split && splitName == nil)
@@ -793,25 +796,20 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
 // MARK: - BrowserNativeSidebarSelectionSurface
 
-/// The selected row's pill. A layer gives it a continuous curve and a shadow
-/// that reaches past the row.
+/// A row's hover or selection pill, with a continuous curve and a short fade.
 private final class BrowserNativeSidebarSelectionSurface: NSView {
     // MARK: Internal
 
     override var wantsUpdateLayer: Bool { true }
 
-    /// Rows selected along with the active one are a little fainter.
-    var isMuted = false { didSet { needsDisplay = true } }
+    var fill: NSColor? { didSet { if fill != oldValue { needsDisplay = true } } }
+    var alphaScale: CGFloat = 1 { didSet { if alphaScale != oldValue { needsDisplay = true } } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = BrowserChromeLayout.sidebarRowCornerRadius
         layer?.cornerCurve = .continuous
-        layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = 0.15
-        layer?.shadowRadius = 1
-        layer?.shadowOffset = CGSize(width: 0, height: -1)
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -819,19 +817,18 @@ private final class BrowserNativeSidebarSelectionSurface: NSView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
 
     override func updateLayer() {
-        let color = BrowserChromeColors.rowSelected
-        let fill = isMuted ? color.withAlphaComponent(0.82 * color.alphaComponent) : color
-        layer?.backgroundColor = fill.cgColor
-    }
-
-    override func layout() {
-        super.layout()
-        layer?.shadowPath = CGPath(
-            roundedRect: bounds,
-            cornerWidth: BrowserChromeLayout.sidebarRowCornerRadius,
-            cornerHeight: BrowserChromeLayout.sidebarRowCornerRadius,
-            transform: nil,
-        )
+        guard let layer else { return }
+        let color = fill.map { $0.withAlphaComponent($0.alphaComponent * alphaScale).cgColor } ?? NSColor.clear.cgColor
+        guard color != layer.backgroundColor else { return }
+        if window != nil, let from = layer.presentation()?.backgroundColor ?? layer.backgroundColor {
+            let fade = CABasicAnimation(keyPath: "backgroundColor")
+            fade.fromValue = from
+            fade.toValue = color
+            fade.duration = 0.1
+            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0, 0, 0.58, 1)
+            layer.add(fade, forKey: "backgroundColor")
+        }
+        layer.backgroundColor = color
     }
 }
 

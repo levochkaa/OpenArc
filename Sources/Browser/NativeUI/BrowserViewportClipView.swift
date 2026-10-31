@@ -57,6 +57,7 @@ final class BrowserViewportClipView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.cornerRadius = max(cornerRadius, 0)
+        layer.cornerCurve = .continuous
         layer.maskedCorners = maskedCorners
         CATransaction.commit()
     }

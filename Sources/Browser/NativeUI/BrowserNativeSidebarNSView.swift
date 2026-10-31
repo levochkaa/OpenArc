@@ -1726,7 +1726,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         addSubview(button)
         button.addSubview(title)
         button.addSubview(indicator)
-        title.font = .systemFont(ofSize: 11.5, weight: .medium)
+        title.font = .systemFont(ofSize: BrowserChromeLayout.sidebarClearFontSize, weight: .bold)
         indicator.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(
                 pointSize: 8,

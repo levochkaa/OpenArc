@@ -14,6 +14,8 @@ class BrowserNativeSurface: NSView {
     var strokeColor = NSColor.clear { didSet { needsDisplay = true } }
     var cornerRadius: CGFloat = 0 { didSet { needsDisplay = true } }
     var roundsTopLeadingCorner = true { didSet { needsDisplay = true } }
+    /// The top leading corner's radius while `roundsTopLeadingCorner` is off.
+    var topLeadingCornerRadius: CGFloat = 0 { didSet { needsDisplay = true } }
     var strokeWidth: CGFloat = 1 { didSet { needsDisplay = true } }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -30,7 +32,15 @@ class BrowserNativeSurface: NSView {
         } else {
             let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
             path = NSBezierPath()
-            path.move(to: NSPoint(x: rect.minX, y: rect.minY))
+            let leading = min(topLeadingCornerRadius, radius)
+            path.move(to: NSPoint(x: rect.minX, y: rect.minY + leading))
+            if leading > 0 {
+                path.appendArc(
+                    from: NSPoint(x: rect.minX, y: rect.minY),
+                    to: NSPoint(x: rect.minX + leading, y: rect.minY),
+                    radius: leading,
+                )
+            }
             path.line(to: NSPoint(x: rect.maxX - radius, y: rect.minY))
             path.appendArc(
                 from: NSPoint(x: rect.maxX, y: rect.minY),
@@ -44,7 +54,7 @@ class BrowserNativeSurface: NSView {
             )
             path.appendArc(
                 from: NSPoint(x: rect.minX, y: rect.maxY),
-                to: NSPoint(x: rect.minX, y: rect.minY),
+                to: NSPoint(x: rect.minX, y: rect.minY + leading),
                 radius: radius,
             )
             path.close()
@@ -73,8 +83,12 @@ struct BrowserNativeChromeButtonStyle {
         cornerRadius: BrowserChromeLayout.sidebarChromeButtonCornerRadius,
         symbolSize: BrowserChromeLayout.sidebarChromeSymbolSize,
         symbolWeight: .regular,
-        foreground: BrowserChromeColors.sidebarNavigationForeground,
-        hoverBackground: BrowserChromeColors.rowHover,
+        foreground: BrowserChromeColors.sidebarChromeForeground,
+        hoverBackground: BrowserChromeColors.sidebarChromeHover,
+        pressedBackground: BrowserChromeColors.sidebarChromePressed,
+        pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
+        disabledForeground: BrowserChromeColors.sidebarChromeDisabledForeground,
+        compressesBackground: false,
     )
     static let sidebarDockSpace = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarChromeButtonSize,
@@ -82,23 +96,22 @@ struct BrowserNativeChromeButtonStyle {
         symbolSize: BrowserChromeLayout.sidebarChromeSymbolSize,
         symbolWeight: .regular,
         foreground: BrowserChromeColors.sidebarDockForeground,
-        hoverBackground: BrowserChromeColors.rowHover,
+        hoverBackground: BrowserChromeColors.sidebarChromeHover,
+        pressedBackground: BrowserChromeColors.sidebarChromePressed,
+        pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
+        compressesBackground: false,
     )
     static let sidebarDockAction = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarChromeButtonSize,
         cornerRadius: BrowserChromeLayout.sidebarChromeButtonCornerRadius,
         symbolSize: BrowserChromeLayout.sidebarChromeSymbolSize,
         symbolWeight: .regular,
-        foreground: BrowserChromeColors.secondaryText,
-        hoverBackground: BrowserChromeColors.rowHover,
-    )
-    static let sidebarDockCreate = BrowserNativeChromeButtonStyle(
-        size: BrowserChromeLayout.sidebarChromeButtonSize,
-        cornerRadius: BrowserChromeLayout.sidebarChromeButtonCornerRadius,
-        symbolSize: BrowserChromeLayout.sidebarCreateSpaceSymbolSize,
-        symbolWeight: .regular,
-        foreground: BrowserChromeColors.secondaryText,
-        hoverBackground: BrowserChromeColors.rowHover,
+        foreground: BrowserChromeColors.sidebarChromeForeground,
+        hoverBackground: BrowserChromeColors.sidebarChromeHover,
+        pressedBackground: BrowserChromeColors.sidebarChromePressed,
+        pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
+        compressesBackground: false,
+        usesDrawnGlyphs: true,
     )
     static let bookmark = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.bookmarksBarControlSize,
@@ -112,8 +125,8 @@ struct BrowserNativeChromeButtonStyle {
         size: BrowserChromeLayout.sidebarCurrentURLButtonSize,
         cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
         symbolSize: BrowserChromeLayout.sidebarCurrentURLButtonSymbolSize,
-        symbolWeight: .bold,
-        foreground: BrowserChromeColors.currentURLText,
+        symbolWeight: .regular,
+        foreground: BrowserChromeColors.sidebarChromeForeground,
         hoverBackground: BrowserChromeColors.currentURLButtonHover,
         pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
     )
@@ -124,7 +137,10 @@ struct BrowserNativeChromeButtonStyle {
         symbolWeight: .bold,
         foreground: BrowserChromeColors.rowCloseForeground,
         hoverBackground: BrowserChromeColors.rowCloseHover,
+        pressedBackground: BrowserChromeColors.sidebarChromePressed,
+        pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
         pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
+        usesDrawnGlyphs: true,
     )
     static let miniPlayer = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarMiniPlayerButtonSize,
@@ -151,7 +167,44 @@ struct BrowserNativeChromeButtonStyle {
     let symbolWeight: NSFont.Weight
     let foreground: NSColor
     let hoverBackground: NSColor
+    var pressedBackground: NSColor?
+    var pressedForeground: NSColor?
+    var disabledForeground: NSColor?
     var pressedScale: CGFloat = 1
+    var compressesBackground = true
+    /// Plus and cross as 2 pt bars rather than symbols.
+    var usesDrawnGlyphs = false
+}
+
+// MARK: - BrowserNativeBarGlyph
+
+/// Plus and cross drawn from two 14 x 2 pt rounded bars.
+enum BrowserNativeBarGlyph {
+    static func image(symbol: String) -> NSImage? {
+        let rotation: CGFloat
+        switch symbol {
+        case "plus": rotation = 0
+        case "xmark": rotation = 45
+        default: return nil
+        }
+        let side: CGFloat = 14
+        let thickness: CGFloat = 2
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let transform = NSAffineTransform()
+            transform.translateX(by: rect.midX, yBy: rect.midY)
+            transform.rotate(byDegrees: rotation)
+            transform.translateX(by: -rect.midX, yBy: -rect.midY)
+            transform.concat()
+            NSColor.black.setFill()
+            let bar = NSRect(x: 0, y: (side - thickness) / 2, width: side, height: thickness)
+            NSBezierPath(roundedRect: bar, xRadius: 1, yRadius: 1).fill()
+            let post = NSRect(x: (side - thickness) / 2, y: 0, width: thickness, height: side)
+            NSBezierPath(roundedRect: post, xRadius: 1, yRadius: 1).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 }
 
 // MARK: - BrowserNativeChromeButton
@@ -245,8 +298,7 @@ final class BrowserNativeChromeButton: NSButton {
         setButtonType(.momentaryChange)
         isBordered = false
         imagePosition = .imageOnly
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
-            .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: style.symbolWeight))
+        image = Self.image(symbol: symbol, title: title, style: style)
         self.tooltipTitle = title
         setAccessibilityLabel(title)
         target = self
@@ -307,8 +359,16 @@ final class BrowserNativeChromeButton: NSButton {
     override func draw(_: NSRect) {
         let progress = isEnabled ? pressProgress : 0
         if hoverProgress > 0 && isEnabled {
-            style.hoverBackground.withAlphaComponent(style.hoverBackground.alphaComponent * hoverProgress).setFill()
-            let backgroundCompression = style.pressedScale == 1 ? 0.05 : 1 - style.pressedScale
+            let hoverAlpha = style.hoverBackground.alphaComponent
+            let pressedAlpha = style.pressedBackground?.alphaComponent ?? hoverAlpha
+            style.hoverBackground
+                .withAlphaComponent(
+                    (hoverAlpha + (pressedAlpha - hoverAlpha) * progress) * hoverProgress,
+                )
+                .setFill()
+            let backgroundCompression = !style.compressesBackground
+                ? 0
+                : style.pressedScale == 1 ? 0.05 : 1 - style.pressedScale
             let rect = bounds.insetBy(
                 dx: bounds.width * backgroundCompression / 2 * progress,
                 dy: bounds.height * backgroundCompression / 2 * progress,
@@ -321,10 +381,10 @@ final class BrowserNativeChromeButton: NSButton {
         }
         let foreground = isSelected ? BrowserChromeColors.primaryText : style.foreground
         contentTintColor = !isEnabled
-            ? BrowserChromeColors.buttonDisabledForeground
+            ? style.disabledForeground ?? BrowserChromeColors.buttonDisabledForeground
             : foreground.blended(
                 withFraction: min(max(progress, 0), 1),
-                of: BrowserChromeColors.chromeButtonPressedForeground,
+                of: style.pressedForeground ?? BrowserChromeColors.chromeButtonPressedForeground,
             ) ?? foreground
         if let oldSymbolCell, symbolProgress < 1 {
             NSGraphicsContext.saveGraphicsState()
@@ -362,6 +422,14 @@ final class BrowserNativeChromeButton: NSButton {
         }
     }
 
+    private static func image(symbol: String, title: String, style: BrowserNativeChromeButtonStyle) -> NSImage? {
+        if style.usesDrawnGlyphs, let glyph = BrowserNativeBarGlyph.image(symbol: symbol) {
+            return glyph
+        }
+        return NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
+            .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: style.symbolWeight))
+    }
+
     func configureSymbol(_ name: String, title: String) {
         let changed = symbolName != name
         symbolName = name
@@ -374,8 +442,7 @@ final class BrowserNativeChromeButton: NSButton {
             } completion: { [weak self] in self?.oldSymbolCell = nil }
         }
         self.title = title
-        image = NSImage(systemSymbolName: name, accessibilityDescription: title)?
-            .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: style.symbolWeight))
+        image = Self.image(symbol: name, title: title, style: style)
         imagePosition = .imageOnly
         setAccessibilityLabel(title)
         tooltipTitle = title

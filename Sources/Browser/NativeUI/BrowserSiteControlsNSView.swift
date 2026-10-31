@@ -87,7 +87,8 @@ final class BrowserSiteControlsNSView: NSView {
         let count = CGFloat(pinned.count + 3)
         return count * BrowserChromeLayout.sidebarCurrentURLButtonSize + (count - 1) * BrowserChromeLayout
             .sidebarCurrentURLButtonSpacing
-            + BrowserChromeLayout.sidebarTabTrailingPadding + BrowserChromeLayout.sidebarCloseButtonLeadingSpacing
+            + BrowserChromeLayout.sidebarCurrentURLButtonTrailingPadding + BrowserChromeLayout
+            .sidebarCloseButtonLeadingSpacing
     }
 
     init(model: BrowserChromeModel, mode: Mode) {
@@ -210,7 +211,7 @@ final class BrowserSiteControlsNSView: NSView {
             let size = BrowserChromeLayout.sidebarCurrentURLButtonSize
             let spacing = BrowserChromeLayout.sidebarCurrentURLButtonSpacing
             siteButton.frame = NSRect(
-                x: bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding - size,
+                x: bounds.width - BrowserChromeLayout.sidebarCurrentURLButtonTrailingPadding - size,
                 y: (bounds.height - size) / 2,
                 width: size,
                 height: size,
@@ -612,9 +613,9 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
         super.layout()
         textContainer.frame = bounds
         label.frame = NSRect(
-            x: BrowserChromeLayout.sidebarRowHorizontalPadding,
+            x: BrowserChromeLayout.sidebarCurrentURLTextLeading,
             y: (bounds.height - 17) / 2,
-            width: max(bounds.width - BrowserChromeLayout.sidebarRowHorizontalPadding * 2, 0),
+            width: max(bounds.width - BrowserChromeLayout.sidebarCurrentURLTextLeading * 2, 0),
             height: 17,
         )
         if maskedTrailingWidth > 0, bounds.width > 0 {

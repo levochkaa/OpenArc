@@ -50,6 +50,9 @@ final class BrowserContentNSView: NSView {
 
     // MARK: Private
 
+    private let pageShadow = CALayer()
+    private var pageShadowRadius: CGFloat = 0
+
     private var areaCaptureTabID: String?
     private weak var captureModel: BrowserChromeModel?
     private var permissionObservation: AnyCancellable?
@@ -81,6 +84,11 @@ final class BrowserContentNSView: NSView {
     init(hostView: NSView) {
         self.viewport = BrowserViewportClipView(hostView: hostView)
         super.init(frame: .zero)
+        wantsLayer = true
+        pageShadow.shadowColor = NSColor.black.cgColor
+        pageShadow.shadowRadius = BrowserChromeLayout.contentShadowRadius
+        pageShadow.shadowOffset = CGSize(width: 0, height: BrowserChromeLayout.contentShadowOffset)
+        layer?.addSublayer(pageShadow)
         addSubview(viewport)
         addSubview(splitPaneBars)
         splitPaneBars.hostView = hostView
@@ -128,6 +136,7 @@ final class BrowserContentNSView: NSView {
     override func layout() {
         super.layout()
         cancelAreaCaptureIfStale()
+        updatePageShadow()
         viewport.frame = bounds
         splitPaneBars.frame = bounds
         splitPaneBars.refresh()
@@ -255,6 +264,8 @@ final class BrowserContentNSView: NSView {
             sidebarPosition: sidebarPosition,
         )
         viewport.updateClipping(cornerRadius: clipping.radius, maskedCorners: clipping.corners)
+        pageShadowRadius = clipping.radius
+        updatePageShadow()
         for overlay in [loading, failure] {
             overlay.layer?.cornerRadius = clipping.radius
             overlay.layer?.maskedCorners = clipping.corners
@@ -309,6 +320,20 @@ final class BrowserContentNSView: NSView {
         permissionPrompt.update(request: request)
         permissionPrompt.isHidden = false
         needsLayout = true
+    }
+
+    private func updatePageShadow() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pageShadow.frame = bounds
+        pageShadow.shadowOpacity = pageShadowRadius > 0 ? BrowserChromeLayout.contentShadowOpacity : 0
+        pageShadow.shadowPath = CGPath(
+            roundedRect: bounds,
+            cornerWidth: pageShadowRadius,
+            cornerHeight: pageShadowRadius,
+            transform: nil,
+        )
+        CATransaction.commit()
     }
 
     /// The page part of a split pane, or the whole content outside a split.

@@ -33,7 +33,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private let createButton = BrowserNativeChromeButton(
         symbol: "plus",
         title: BrowserStrings.spaceNewAction,
-        style: .sidebarDockCreate,
+        style: .sidebarDockAction,
         pressEffect: .compress,
         action: {},
     )
@@ -107,11 +107,13 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         createButton.frame = NSRect(x: max(bounds.width - size, 0), y: y, width: size, height: size)
         downloadDot.frame = NSRect(x: size - 11, y: y + 6, width: 5, height: 5)
         scroll.frame = NSRect(x: reserve, y: y, width: max(bounds.width - reserve * 2, 0), height: size)
-        let contentWidth = CGFloat(spaces.count) * size + CGFloat(max(spaces.count - 1, 0)) * spacing
+        let itemWidth = BrowserChromeLayout.sidebarDockItemWidth
+        let contentWidth = CGFloat(spaces.count) * itemWidth
         let width = max(contentWidth, scroll.contentSize.width)
         spacesContainer.frame = NSRect(x: 0, y: 0, width: width, height: size)
-        spacesContainer.itemSize = size
-        spacesContainer.itemSpacing = spacing
+        spacesContainer.itemSize = itemWidth
+        spacesContainer.itemHeight = size
+        spacesContainer.itemSpacing = 0
         spacesContainer.needsLayout = true
     }
 
