@@ -68,6 +68,12 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
               didCloseTabWithID:(NSString *)tabID;
 
 @optional
+
+/// A page's context menu asked for something only the window can do. The command
+/// is the raw value of `BrowserPageContextCommand`.
+- (void)browserTabController:(BrowserTabController *)controller
+    performPageContextCommand:(NSString *)command
+                     argument:(NSString *)argument;
 // Emitted before didCloseTabWithID for a confirmed manual request.
 - (void)browserTabController:(BrowserTabController *)controller
     didFinishCloseRequestForTabWithID:(NSString *)tabID

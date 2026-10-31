@@ -169,6 +169,7 @@ final class BrowserRootView: NSView {
         ] {
             addSubview(view)
         }
+        library.isHidden = true
         find.bind(to: model)
         content.bindTabCreation(to: model)
         pageTopDrag.pageView = { [weak content] in content?.viewport }
@@ -446,6 +447,13 @@ final class BrowserRootView: NSView {
             wasLibraryPresented = libraryPresented
             if libraryPresented {
                 library.isHidden = false
+            } else {
+                // Off screen after its slide, and out of reach of the keyboard and accessibility.
+                let duration = BrowserNativeAnimation.Curve.library.duration
+                DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+                    guard let self, model.librarySection == nil else { return }
+                    library.isHidden = true
+                }
             }
             sidebar.isHidden = libraryPresented
             animateNextLayout = true

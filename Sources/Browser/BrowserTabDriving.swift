@@ -29,7 +29,18 @@ struct BrowserTabVisibleLayout: Equatable {
 
 // MARK: - BrowserTabDriving
 
+/// What a page's context menu asks the window to do, with a URL or text.
+enum BrowserPageContextCommand: String {
+    case openInSplitView
+    case openInIncognito
+    case copyLinkToHighlight
+    case searchForSelection
+    case savePage
+    case viewSource
+}
+
 @MainActor protocol BrowserTabDriving: AnyObject {
+    var onPageContextCommand: ((BrowserPageContextCommand, String) -> Void)? { get set }
     var hostView: NSView { get }
     var onTabCreated: ((String, String, String, Bool) -> Void)? { get set }
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)? { get set }

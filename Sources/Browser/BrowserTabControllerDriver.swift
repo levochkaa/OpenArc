@@ -24,6 +24,7 @@ import Foundation
     var peekSpaces: (() -> [BrowserPeekSpace])?
     var onOpenPeekInSpace: ((String, String) -> Void)?
     var onOpenPeekInSplitView: ((String) -> Void)?
+    var onPageContextCommand: ((BrowserPageContextCommand, String) -> Void)?
     var onPeekClosedByUser: ((String, Bool) -> Void)?
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
@@ -315,6 +316,17 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         standalone: Bool,
     ) {
         MainActor.assumeIsolated { onPeekClosedByUser?(urlString, standalone) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        performPageContextCommand command: String,
+        argument: String,
+    ) {
+        MainActor.assumeIsolated {
+            guard let command = BrowserPageContextCommand(rawValue: command) else { return }
+            onPageContextCommand?(command, argument)
+        }
     }
 
     nonisolated func browserTabController(_: BrowserTabController, openPeekURLStringInSplitView urlString: String) {

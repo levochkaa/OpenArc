@@ -349,6 +349,10 @@ enum BrowserWindowMode: Equatable {
     @Published var sidebarRevealRequestID = 0
     /// Space themes by Space ID. Local.
     @Published private(set) var spaceThemesByID = [String: BrowserSpaceTheme]()
+    /// Save As from a page's menu; the application owns the save panel.
+    var onSavePageRequest: (() -> Void)?
+    /// Opens a link in an incognito window; the application owns those windows.
+    var onOpenLinkInIncognito: ((URL) -> Void)?
     /// UI-only: opens the window's theme editor for a Space.
     var onEditSpaceTheme: ((String) -> Void)?
     /// UI-only: opens the theme editor for the Space being created, beside this view.
@@ -895,6 +899,9 @@ enum BrowserWindowMode: Equatable {
             guard let self, let url = URL(string: urlString), !openURLInSplitView(url) else { return }
             openURLInNewTab(url)
         }
+        tabDriver.onPageContextCommand = { [weak self] command, argument in
+            self?.handlePageContextCommand(command, argument: argument)
+        }
         tabDriver.onSitePermissionRequested = { [weak self] request in
             self?.handleSitePermissionRequest(request)
         }
@@ -1121,6 +1128,26 @@ enum BrowserWindowMode: Equatable {
 
     func openURLInNewTab(_ url: URL) {
         createTab(withURLString: url.absoluteString)
+    }
+
+    /// Runs what a page's context menu asked for.
+    func handlePageContextCommand(_ command: BrowserPageContextCommand, argument: String) {
+        switch command {
+        case .openInSplitView:
+            guard let url = URL(string: argument), !openURLInSplitView(url) else { return }
+            openURLInNewTab(url)
+        case .openInIncognito:
+            if let url = URL(string: argument) { onOpenLinkInIncognito?(url) }
+        case .copyLinkToHighlight:
+            Task { [weak self] in _ = await self?.copySelectedTextAsQuoteLink() }
+        case .searchForSelection:
+            let search = userPreferencesStore.searchEngine.searchURLString(for: argument)
+            if let url = URL(string: search) { openURLInNewTab(url) }
+        case .savePage:
+            if canSavePage { onSavePageRequest?() }
+        case .viewSource:
+            _ = viewSourceOfSelectedTab()
+        }
     }
 
     /// Link drop on the sidebar: each link opens as a background tab at

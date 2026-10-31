@@ -61,6 +61,7 @@ import Foundation
     var peekSpaces: (() -> [BrowserPeekSpace])?
     var onOpenPeekInSpace: ((String, String) -> Void)?
     var onOpenPeekInSplitView: ((String) -> Void)?
+    var onPageContextCommand: ((BrowserPageContextCommand, String) -> Void)?
     var onPeekClosedByUser: ((String, Bool) -> Void)?
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
     var onSitePermissionRequestDismissed: ((Int) -> Void)?

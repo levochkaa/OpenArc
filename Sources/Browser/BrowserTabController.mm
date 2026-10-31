@@ -29,6 +29,8 @@
 
 #include "include/cef_browser.h"
 #include "include/cef_command_ids.h"
+#include "include/cef_context_menu_handler.h"
+#include "include/cef_image.h"
 #include "include/cef_cookie.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_download_handler.h"
@@ -2892,7 +2894,199 @@ CefRefPtr<CefResourceRequestHandler> ContentBlockHandlerIfEnabled() {
 
 }  // namespace
 
+/// Menu commands the page's context menu adds to CEF's own.
+enum PageContextMenuCommand {
+  kContextOpenLinkInNewTab = MENU_ID_USER_FIRST,
+  kContextOpenLinkInSplitView,
+  kContextOpenLinkInLittleWindow,
+  kContextOpenLinkInIncognito,
+  kContextSaveLink,
+  kContextCopyLinkAddress,
+  kContextOpenMediaInNewTab,
+  kContextSaveMedia,
+  kContextCopyImage,
+  kContextCopyMediaAddress,
+  kContextCopyLinkToHighlight,
+  kContextSearchForSelection,
+  kContextSavePage,
+  kContextPrint,
+  kContextViewSource,
+  kContextInspect,
+};
+
+CefString LocalizedMenuTitle(NSString *key) {
+  return CefString(NSLocalizedString(key, nil).UTF8String);
+}
+
+/// Copies a page's image as a picture once it has downloaded.
+class CopyImageCallback final : public CefDownloadImageCallback {
+ public:
+  void OnDownloadImageFinished(const CefString &, int, CefRefPtr<CefImage> image) override {
+    if (!image) {
+      return;
+    }
+    int width = 0;
+    int height = 0;
+    CefRefPtr<CefBinaryValue> png = image->GetAsPNG(1.0, true, width, height);
+    if (!png) {
+      return;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:png->GetSize()];
+    png->GetData(data.mutableBytes, data.length, 0);
+    NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    [pasteboard setData:data forType:NSPasteboardTypePNG];
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(CopyImageCallback);
+};
+
+/// Builds the menu from what lies under the pointer: a link, an image or video,
+/// selected text, an editable field, or the page itself.
+void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model, bool allowsLinkTargets) {
+  model->Clear();
+  const auto flags = params->GetTypeFlags();
+  const bool hasLink = (flags & CM_TYPEFLAG_LINK) != 0;
+  const bool hasSelection = (flags & CM_TYPEFLAG_SELECTION) != 0;
+  const bool isEditable = (flags & CM_TYPEFLAG_EDITABLE) != 0;
+  const auto mediaType = params->GetMediaType();
+  const bool hasImage = mediaType == CM_MEDIATYPE_IMAGE;
+  const bool hasPlayer = mediaType == CM_MEDIATYPE_VIDEO || mediaType == CM_MEDIATYPE_AUDIO;
+  const auto separate = [&model]() {
+    if (model->GetCount() > 0) {
+      model->AddSeparator();
+    }
+  };
+  if (hasLink) {
+    model->AddItem(kContextOpenLinkInNewTab, LocalizedMenuTitle(@"browser.context.open_link_new_tab"));
+    if (allowsLinkTargets) {
+      model->AddItem(kContextOpenLinkInSplitView, LocalizedMenuTitle(@"browser.context.open_link_split_view"));
+      model->AddItem(kContextOpenLinkInLittleWindow, LocalizedMenuTitle(@"browser.context.open_link_little_window"));
+      model->AddItem(kContextOpenLinkInIncognito, LocalizedMenuTitle(@"browser.context.open_link_incognito"));
+    }
+    separate();
+    model->AddItem(kContextSaveLink, LocalizedMenuTitle(@"browser.context.save_link"));
+    model->AddItem(kContextCopyLinkAddress, LocalizedMenuTitle(@"browser.context.copy_link"));
+  }
+  if (hasImage || hasPlayer) {
+    separate();
+    model->AddItem(kContextOpenMediaInNewTab,
+                   LocalizedMenuTitle(hasImage ? @"browser.context.open_image_new_tab" : @"browser.context.open_media_new_tab"));
+    model->AddItem(kContextSaveMedia,
+                   LocalizedMenuTitle(hasImage ? @"browser.context.save_image" : @"browser.context.save_media"));
+    if (hasImage) {
+      model->AddItem(kContextCopyImage, LocalizedMenuTitle(@"browser.context.copy_image"));
+    }
+    model->AddItem(kContextCopyMediaAddress,
+                   LocalizedMenuTitle(hasImage ? @"browser.context.copy_image_address" : @"browser.context.copy_media_address"));
+  }
+  if (isEditable) {
+    separate();
+    std::vector<CefString> suggestions;
+    if (params->GetDictionarySuggestions(suggestions) && !suggestions.empty()) {
+      int index = 0;
+      for (const auto &suggestion : suggestions) {
+        if (MENU_ID_SPELLCHECK_SUGGESTION_0 + index > MENU_ID_SPELLCHECK_SUGGESTION_LAST) {
+          break;
+        }
+        model->AddItem(MENU_ID_SPELLCHECK_SUGGESTION_0 + index, suggestion);
+        ++index;
+      }
+      model->AddSeparator();
+    }
+    const auto edit = params->GetEditStateFlags();
+    const auto addEdit = [&](int command, NSString *key, cef_context_menu_edit_state_flags_t flag) {
+      model->AddItem(command, LocalizedMenuTitle(key));
+      model->SetEnabled(command, (edit & flag) != 0);
+    };
+    addEdit(MENU_ID_UNDO, @"browser.context.undo", CM_EDITFLAG_CAN_UNDO);
+    addEdit(MENU_ID_REDO, @"browser.context.redo", CM_EDITFLAG_CAN_REDO);
+    model->AddSeparator();
+    addEdit(MENU_ID_CUT, @"browser.context.cut", CM_EDITFLAG_CAN_CUT);
+    addEdit(MENU_ID_COPY, @"browser.context.copy", CM_EDITFLAG_CAN_COPY);
+    addEdit(MENU_ID_PASTE, @"browser.context.paste", CM_EDITFLAG_CAN_PASTE);
+    addEdit(MENU_ID_PASTE_MATCH_STYLE, @"browser.context.paste_match_style", CM_EDITFLAG_CAN_PASTE);
+    addEdit(MENU_ID_SELECT_ALL, @"browser.context.select_all", CM_EDITFLAG_CAN_SELECT_ALL);
+  } else if (hasSelection) {
+    separate();
+    model->AddItem(MENU_ID_COPY, LocalizedMenuTitle(@"browser.context.copy"));
+    if (allowsLinkTargets) {
+      model->AddItem(kContextCopyLinkToHighlight, LocalizedMenuTitle(@"browser.context.copy_link_to_highlight"));
+    }
+    NSString *selection = ToNSString(params->GetSelectionText().ToString());
+    selection = [selection stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (selection.length > 40) {
+      selection = [[selection substringToIndex:40] stringByAppendingString:@"…"];
+    }
+    NSString *format = NSLocalizedString(@"browser.context.search_for_selection", nil);
+    model->AddItem(kContextSearchForSelection, CefString([NSString stringWithFormat:format, selection].UTF8String));
+  }
+  if (!hasLink && !hasImage && !hasPlayer && !hasSelection && !isEditable) {
+    model->AddItem(MENU_ID_BACK, LocalizedMenuTitle(@"browser.context.back"));
+    model->AddItem(MENU_ID_FORWARD, LocalizedMenuTitle(@"browser.context.forward"));
+    model->AddItem(MENU_ID_RELOAD, LocalizedMenuTitle(@"browser.context.reload"));
+    model->AddSeparator();
+    if (allowsLinkTargets) {
+      model->AddItem(kContextSavePage, LocalizedMenuTitle(@"browser.context.save_page"));
+    }
+    model->AddItem(kContextPrint, LocalizedMenuTitle(@"browser.context.print"));
+    model->AddSeparator();
+    if (allowsLinkTargets) {
+      model->AddItem(kContextViewSource, LocalizedMenuTitle(@"browser.context.view_source"));
+    }
+  } else if (hasSelection && !isEditable && !hasLink) {
+    model->AddItem(kContextPrint, LocalizedMenuTitle(@"browser.context.print"));
+  }
+  separate();
+  model->AddItem(kContextInspect, LocalizedMenuTitle(@"browser.context.inspect"));
+}
+
+/// Runs a command that does not need the window; false hands it to the caller.
+bool RunBasicPageContextCommand(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefContextMenuParams> params,
+                                int command) {
+  CefRefPtr<CefBrowserHost> host = browser->GetHost();
+  if (!host) {
+    return false;
+  }
+  const auto copyToPasteboard = [](const CefString &value) {
+    NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    [pasteboard setString:ToNSString(value.ToString()) forType:NSPasteboardTypeString];
+  };
+  switch (command) {
+    case kContextSaveLink:
+      host->StartDownload(params->GetLinkUrl());
+      return true;
+    case kContextCopyLinkAddress:
+      copyToPasteboard(params->GetLinkUrl());
+      return true;
+    case kContextSaveMedia:
+      host->StartDownload(params->GetSourceUrl());
+      return true;
+    case kContextCopyImage:
+      host->DownloadImage(params->GetSourceUrl(), false, 0, false, new CopyImageCallback());
+      return true;
+    case kContextCopyMediaAddress:
+      copyToPasteboard(params->GetSourceUrl());
+      return true;
+    case kContextPrint:
+      host->Print();
+      return true;
+    case kContextInspect: {
+      CefWindowInfo windowInfo;
+      windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+      host->ShowDevTools(windowInfo, nullptr, CefBrowserSettings(), CefPoint(params->GetXCoord(), params->GetYCoord()));
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
 class BrowserTabClient final : public CefClient,
+                               public CefContextMenuHandler,
                                public CefDisplayHandler,
                                public CefDownloadHandler,
                                public CefFocusHandler,
@@ -2908,6 +3102,7 @@ class BrowserTabClient final : public CefClient,
   BrowserTabClient(BrowserTabController *controller, const std::string &tabID)
       : controller_(controller), tab_id_(tabID) {}
 
+  CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
@@ -2944,6 +3139,17 @@ class BrowserTabClient final : public CefClient,
                             bool /*isLoading*/,
                             bool canGoBack,
                             bool canGoForward) override;
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
+                           CefRefPtr<CefFrame>,
+                           CefRefPtr<CefContextMenuParams> params,
+                           CefRefPtr<CefMenuModel> model) override {
+    BuildPageContextMenu(params, model, true);
+  }
+  bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
+                            CefRefPtr<CefFrame> frame,
+                            CefRefPtr<CefContextMenuParams> params,
+                            int command_id,
+                            EventFlags event_flags) override;
   void OnLoadStart(CefRefPtr<CefBrowser> browser,
                    CefRefPtr<CefFrame> frame,
                    TransitionType transition_type) override;
@@ -3040,6 +3246,7 @@ class BrowserTabClient final : public CefClient,
 /// new windows to tabs and closes cards on Escape. The client manager tracks
 /// it, so quitting waits for it like a tab.
 class BrowserPeekClient final : public CefClient,
+                                public CefContextMenuHandler,
                                 public CefDisplayHandler,
                                 public CefDownloadHandler,
                                 public CefFocusHandler,
@@ -3052,6 +3259,7 @@ class BrowserPeekClient final : public CefClient,
   BrowserPeekClient(BrowserTabController *controller, int sessionID)
       : controller_(controller), session_id_(sessionID) {}
 
+  CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
@@ -3061,6 +3269,26 @@ class BrowserPeekClient final : public CefClient,
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
 
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
+                           CefRefPtr<CefFrame>,
+                           CefRefPtr<CefContextMenuParams> params,
+                           CefRefPtr<CefMenuModel> model) override {
+    BuildPageContextMenu(params, model, false);
+  }
+  bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
+                            CefRefPtr<CefFrame>,
+                            CefRefPtr<CefContextMenuParams> params,
+                            int command_id,
+                            EventFlags) override {
+    if (RunBasicPageContextCommand(browser, params, command_id)) {
+      return true;
+    }
+    if (command_id == kContextOpenLinkInNewTab) {
+      [controller_ showPeekWithURLString:ToNSString(params->GetLinkUrl().ToString())];
+      return true;
+    }
+    return false;
+  }
   void OnLoadStart(CefRefPtr<CefBrowser> browser,
                    CefRefPtr<CefFrame> frame,
                    TransitionType transition_type) override;
@@ -5337,6 +5565,59 @@ void BrowserTabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
   [controller handleNavigationStateChangeForTabID:ToNSString(tab_id_)
                                         canGoBack:canGoBack
                                      canGoForward:canGoForward];
+}
+
+bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
+                                            CefRefPtr<CefFrame>,
+                                            CefRefPtr<CefContextMenuParams> params,
+                                            int command_id,
+                                            EventFlags) {
+  CEF_REQUIRE_UI_THREAD();
+  if (RunBasicPageContextCommand(browser, params, command_id)) {
+    return true;
+  }
+  BrowserTabController *controller = controller_;
+  if (controller == nil) {
+    return false;
+  }
+  id<BrowserTabControllerDelegate> delegate = controller.delegate;
+  if (![delegate respondsToSelector:@selector(browserTabController:performPageContextCommand:argument:)]) {
+    delegate = nil;
+  }
+  NSString *link = ToNSString(params->GetLinkUrl().ToString());
+  switch (command_id) {
+    case kContextOpenLinkInNewTab:
+      [controller createTabWithURLString:link makeActive:NO];
+      return true;
+    case kContextOpenLinkInSplitView:
+      [delegate browserTabController:controller performPageContextCommand:@"openInSplitView" argument:link];
+      return true;
+    case kContextOpenLinkInLittleWindow:
+      [controller showLittleWindowWithURLString:link];
+      return true;
+    case kContextOpenLinkInIncognito:
+      [delegate browserTabController:controller performPageContextCommand:@"openInIncognito" argument:link];
+      return true;
+    case kContextOpenMediaInNewTab:
+      [controller createTabWithURLString:ToNSString(params->GetSourceUrl().ToString()) makeActive:NO];
+      return true;
+    case kContextCopyLinkToHighlight:
+      [delegate browserTabController:controller performPageContextCommand:@"copyLinkToHighlight" argument:@""];
+      return true;
+    case kContextSearchForSelection:
+      [delegate browserTabController:controller
+           performPageContextCommand:@"searchForSelection"
+                            argument:ToNSString(params->GetSelectionText().ToString())];
+      return true;
+    case kContextSavePage:
+      [delegate browserTabController:controller performPageContextCommand:@"savePage" argument:@""];
+      return true;
+    case kContextViewSource:
+      [delegate browserTabController:controller performPageContextCommand:@"viewSource" argument:@""];
+      return true;
+    default:
+      return false;
+  }
 }
 
 static NSArray<NSString *> *g_content_block_generic_selectors = nil;

@@ -2294,6 +2294,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
         updateController = BrowserUpdateController(preferencesStore: userPreferencesStore)
     }
 
+    /// What a page's context menu needs from the application.
+    private func connectPageCommands(to model: BrowserChromeModel) {
+        model.onSavePageRequest = { [weak self] in self?.saveCurrentPage(nil) }
+        model.onOpenLinkInIncognito = { [weak self] url in
+            guard let self else { return }
+            createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow)
+            incognitoWindowSessions.last?.chromeModel.openURLInNewTab(url)
+        }
+    }
+
     /// Follows the ad blocker's switches, which may turn it on or off at any time.
     private func startContentBlocker() {
         let preferences = userPreferencesStore
@@ -2665,6 +2675,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             accountStore: accountStore,
             profile: profile,
         )
+        connectPageCommands(to: chromeModel)
         profileWindowSessions.append(session)
         window.contentView = contentView
         window.makeKeyAndOrderFront(nil)
@@ -2840,6 +2851,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let shouldEnterFullscreen = sourceWindow?.styleMask.contains(.fullScreen) == true
         let session = BrowserIncognitoWindowSession(window: window, chromeModel: chromeModel)
         incognitoWindowSessions.append(session)
+        connectPageCommands(to: chromeModel)
         window.contentView = contentView
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
