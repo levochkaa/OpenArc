@@ -2,9 +2,9 @@
 
 ## Scope and references
 
-This is the first working iPhone/iPad slice, not the full mobile app. The required path is address/search → page loading → navigation → tabs → persistence → restoration. Mobile Spaces/pins, archive, search and gestures come later. The iPad layout is our own design.
+This is the first working iPhone/iPad slice, not the full mobile app. The required path is address/search → page loading → navigation → tabs → persistence → restoration. The iPad layout is our own design.
 
-The old `7c4ed73` SwiftUI shell was not carried forward. Its default-store-only engine, regenerated restoration IDs and silent persistence errors were unsuitable. The new target reuses the desktop URL resolver, search-engine definitions and translations, plus existing DomainParser credits. Desktop CEF flags stay on macOS targets; mobile commands do not stage CEF or Sparkle.
+The old SwiftUI shell was not carried forward. Its default-store-only engine, regenerated restoration IDs and silent persistence errors were unsuitable. The new target reuses the desktop URL resolver, search-engine definitions and translations, plus existing DomainParser credits. Desktop CEF flags stay on macOS targets; mobile commands do not stage CEF or Sparkle.
 
 ## Ownership and navigation
 
@@ -106,4 +106,4 @@ Sync-bound profiles use successful full pulls, an empty outbox and canonical ent
 
 Never-bound SQLite profiles instead perform local Archive transactions in passes of at most 100, at 60-second intervals while an eligible scene is active and on explicit wakes. Each entry is checked again for activity, placement, protection and ownership. A failed write stops the pass and uses the existing bounded local persistence Retry with fixed action IDs. Once bound, Pause/logout/offline never restore local unconditional expiry. Synchronized desktop profiles remain Off until native desktop Archive restoration exists; their prior never-bound local behavior is retained.
 
-No background-execution entitlement or cross-device lease is introduced. All-background/disconnected scenes stop admission; completely offline unreported activity remains unknowable. Timer callback tests, hosted menu actions, real WebKit tests and localhost HTTP flows have distinct proof boundaries. Large-profile candidate/import performance, OS background delivery and physical interaction remain unverified.
+No background-execution entitlement or cross-device lease is introduced. All-background/disconnected scenes stop admission; completely offline unreported activity remains unknowable. Timer callback tests, hosted menu actions, real WebKit tests and localhost HTTP flows have distinct proof boundaries. Large-profile candidate/import performance, OS background delivery and physical interaction remain unverified unless explicitly recorded there.

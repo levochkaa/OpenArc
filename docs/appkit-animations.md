@@ -1,6 +1,6 @@
 # AppKit animation contracts
 
-The reference is the last SwiftUI implementation at `03d6aee`, before the AppKit migration. The timing parameters below belong to specific state changes; ordinary model notifications and live sidebar resizing must not restart them.
+The reference is the last SwiftUI implementation at `0681b65`, before the AppKit migration. The timing parameters below belong to specific state changes; ordinary model notifications and live sidebar resizing must not restart them.
 
 | State change | Timing | Animated appearance or geometry |
 | --- | --- | --- |
