@@ -30,7 +30,7 @@ settings:
     OPENARC_SENTRY_TRACES_SAMPLE_RATE: "0.2"
     OPENARC_SENTRY_PROFILES_SAMPLE_RATE: "0.0"
     OPENARC_SENTRY_USAGE_ANALYTICS_ENABLED: YES
-    OPENARC_SPARKLE_FEED_URL: https://api.openarc.su/appcast.xml
+    OPENARC_SPARKLE_FEED_URL: https://github.com/levochkaa/OpenArc/releases/latest/download/appcast.xml
     OPENARC_SYNC_BASE_URL: https://api.openarc.su
     OPENARC_SPARKLE_PUBLIC_KEY: K2RmhxJLUxN8YeRS4I7Tz7cYrzkbcZB1axGePxRHflM=
 targetTemplates:
