@@ -11,7 +11,7 @@ Include the affected version, the steps to reproduce and what an attacker gains.
 
 ## Scope
 
-- The Mac and iOS apps, including the Chromium overrides in `Chromium/chromium_src`.
+- The Mac app, including the Chromium overrides in `Chromium/chromium_src`.
 - The sync server code in `Backend`.
 - The update feed and release signing.
 

@@ -1,6 +1,6 @@
 # OpenArc
 
-OpenArc is an open-source browser for macOS, iPhone and iPad. The Mac app runs Chromium through the Chromium Embedded Framework with a native AppKit interface; the iOS app uses WebKit and UIKit. It keeps the browser as a workspace: a sidebar of Spaces, pinned tabs and folders, a command bar and split view. It runs locally, with no account: everything stays on your device.
+OpenArc is an open-source browser for macOS. It runs Chromium through the Chromium Embedded Framework with a native AppKit interface. It keeps the browser as a workspace: a sidebar of Spaces, pinned tabs and folders, a command bar and split view. It runs locally, with no account: everything stays on your device.
 
 OpenArc was created by [Lev Poznyakov](https://github.com/levochkaa). It is in development; 0.1.0 is the first release.
 
@@ -10,7 +10,7 @@ OpenArc was created by [Lev Poznyakov](https://github.com/levochkaa). It is in d
 | --- | --- |
 | `Sources/Browser` | macOS app: Swift and AppKit, Objective-C++ where it talks to CEF |
 | `Sources/Helper`, `Sources/Shared` | CEF helper processes and code shared with them |
-| `Sources/BrowseriOS` | iPhone and iPad app |
+| `Sources/BrowseriOS` | iPhone and iPad app, in development and not released |
 | `Chromium/chromium_src` | Overrides applied to the Chromium and CEF checkout |
 | `Backend` | Rust server for accounts and sync, unused while they are off ([README](Backend/README.md)) |
 | `Website` | Privacy policy, terms and an undeployed landing page |

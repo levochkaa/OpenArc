@@ -19,16 +19,6 @@ body:
         3. Drag it into a folder
     validations:
       required: true
-  - type: dropdown
-    id: platform
-    attributes:
-      label: Platform
-      options:
-        - Mac
-        - iPhone
-        - iPad
-    validations:
-      required: true
   - type: input
     id: version
     attributes:
