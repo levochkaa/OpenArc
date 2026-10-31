@@ -490,6 +490,13 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("j", modifiers: [.command, .shift]),
     )
 
+    /// View Library is Command-Shift-L.
+    static let viewLibrary = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuViewLibrary,
+        helpTitle: BrowserStrings.menuViewLibrary,
+        shortcut: BrowserKeyboardShortcut("l", modifiers: [.command, .shift]),
+    )
+
     /// Next/Previous Tab are Command-}/{.
     static let selectNextTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextTab,
@@ -683,6 +690,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case captureFullPage
     case captureArea
     case viewDownloads
+    case viewLibrary
     case selectNextTab
     case selectPreviousTab
     case selectNextSpace

@@ -353,6 +353,8 @@ enum BrowserWindowMode: Equatable {
     var onEditSpaceTheme: ((String) -> Void)?
     /// UI-only: opens the theme editor for the Space being created, beside this view.
     var onEditSpaceCreationTheme: ((NSView) -> Void)?
+    /// The Library's section while it replaces the sidebar, nil when closed.
+    @Published var librarySection: BrowserLibrarySection?
     /// A Space being set up in the sidebar. Its theme shows on the window at once.
     @Published private(set) var spaceCreationDraft: BrowserSpaceCreationDraft?
     /// Change Icon: the symbol shown instead of a tab's favicon, by sync
@@ -426,6 +428,7 @@ enum BrowserWindowMode: Equatable {
 
     /// Spaces colored in this session; a stored projection never overrides them.
     private var locallyColoredSpaceIDs = Set<String>()
+    private var lastLibrarySection = BrowserLibrarySection.archive
 
     /// Tabs whose video was sent to Picture in Picture on leaving them.
     private var pictureInPictureTabIDs = Set<String>()
@@ -1349,6 +1352,25 @@ enum BrowserWindowMode: Equatable {
         selectSpace(id: space.id)
         BrowserTelemetry.captureUsage(.spaceCreated, properties: telemetryProperties)
         persistCurrentSessionIfAllowed()
+    }
+
+    func openLibrary(section: BrowserLibrarySection = .archive) {
+        guard supportsSpaces else { return }
+        librarySection = section
+    }
+
+    func closeLibrary() {
+        librarySection = nil
+    }
+
+    /// Opens the Library on the section used last, or closes it.
+    func toggleLibrary() {
+        if librarySection == nil {
+            openLibrary(section: lastLibrarySection)
+        } else {
+            lastLibrarySection = librarySection ?? lastLibrarySection
+            closeLibrary()
+        }
     }
 
     /// Opens the sidebar page that sets up a Space. Nothing changes until it is created.
@@ -3193,6 +3215,8 @@ enum BrowserWindowMode: Equatable {
             canClearTemporaryTabs
         case .viewDownloads:
             onToggleDownloads != nil
+        case .viewLibrary:
+            supportsSpaces
         case .togglePinTab:
             canTogglePinSelectedTab
         case .duplicateTab:
@@ -6860,6 +6884,8 @@ extension BrowserCommandID {
             ["clear temporary tabs", "clear temp tabs", "temporary tabs"]
         case .viewDownloads:
             ["downloads", "view downloads", "show downloads", "downloaded files"]
+        case .viewLibrary:
+            ["library", "media", "view library", "manage spaces"]
         case .togglePinTab:
             ["pin tab", "unpin tab", "pin", "unpin"]
         case .duplicateTab:
@@ -7019,6 +7045,8 @@ extension BrowserCommandID {
             "xmark.circle"
         case .viewDownloads:
             "arrow.down.circle"
+        case .viewLibrary:
+            "books.vertical"
         case .togglePinTab:
             "pin"
         case .duplicateTab:

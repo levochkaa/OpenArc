@@ -469,6 +469,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case captureFullPage
     case captureArea
     case viewDownloads
+    case viewLibrary
     case selectNextTab
     case selectPreviousTab
     case selectNextTabAlternate
@@ -617,6 +618,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.toggleSiteToolbar
         case .viewDownloads:
             BrowserCommands.viewDownloads
+        case .viewLibrary:
+            BrowserCommands.viewLibrary
         case .togglePinTab:
             BrowserCommands.togglePinTab
         case .duplicateTab:
@@ -775,6 +778,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .toggleSiteToolbar
         case .viewDownloads:
             .viewDownloads
+        case .viewLibrary:
+            .viewLibrary
         case .togglePinTab:
             .togglePinTab
         case .duplicateTab:

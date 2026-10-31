@@ -400,6 +400,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.toggleDownloads()
     }
 
+    public func viewLibrary(_: Any?) {
+        activeChromeModel?.toggleLibrary()
+    }
+
     public func selectNextSpace(_: Any?) {
         activeChromeModel?.selectNextSpace()
     }
@@ -813,6 +817,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCopySelectedTextAsQuoteLink ?? false
         case #selector(viewDownloads(_:)):
             return activeChromeModel?.onToggleDownloads != nil
+        case #selector(viewLibrary(_:)):
+            return activeChromeModel?.supportsSpaces ?? false
         case #selector(goToLastSidebarItem(_:)),
              #selector(selectNextTab(_:)),
              #selector(selectPreviousTab(_:)):
@@ -1263,6 +1269,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .viewDownloads),
             action: #selector(viewDownloads(_:)),
+        ))
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .viewLibrary),
+            action: #selector(viewLibrary(_:)),
         ))
 
         viewMenu.addItem(.separator())
@@ -2159,6 +2169,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return true
         case .viewDownloads:
             return activeChromeModel?.toggleDownloads() ?? false
+        case .viewLibrary:
+            activeChromeModel?.toggleLibrary()
+            return activeChromeModel != nil
         case .selectNextSpace,
              .selectPreviousSpace:
             guard let model = activeChromeModel, !model.isWebApp, model.supportsSpaces, model.spaces.count > 1 else {

@@ -33,6 +33,8 @@ final class BrowserRootView: NSView {
     private let sessionRecovery = BrowserSessionPersistenceStatusView()
     /// Positions popovers whose own button is off screen.
     private let popoverAnchor = NSView()
+    private lazy var library = BrowserLibraryNSView(model: model)
+    private var wasLibraryPresented = false
     private var spaceThemePopover: BrowserNativePopover?
     private let extensionResize = BrowserNativeResizeHandle()
     private var extensionPanel: BrowserExtensionSidePanelNSView?
@@ -65,8 +67,8 @@ final class BrowserRootView: NSView {
     private var windowGeometry: BrowserWindowChromeLayout {
         .init(
             windowSize: bounds.size,
-            sidebarWidth: model.sidebarWidth,
-            isSidebarVisible: model.isSidebarVisible,
+            sidebarWidth: model.librarySection == nil ? model.sidebarWidth : BrowserLibraryLayout.width,
+            isSidebarVisible: model.isSidebarVisible || model.librarySection != nil,
             isHoverSidebarPresented: isSidebarHoverOverlayPresented,
             isOverlayChromeVisible: isSidebarHoverOverlayChromeVisible,
             isFullscreen: isWindowFullscreen,
@@ -150,6 +152,7 @@ final class BrowserRootView: NSView {
             margins,
             toolbar,
             bookmarks,
+            library,
             sidebar,
             extensionResize,
             revealEdge,
@@ -309,8 +312,19 @@ final class BrowserRootView: NSView {
             width: recoveryWidth,
             height: recoveryHeight,
         )
+        let libraryWidth = model.librarySection == .spaces ? bounds.width : BrowserLibraryLayout.width
+        let libraryShown = model.librarySection != nil
         var targets: [(NSView, CGRect)] = [
             (content, geometry.contentFrame), (find, geometry.contentFrame), (sidebar, geometry.sidebarFrame),
+            (
+                library,
+                CGRect(
+                    x: libraryShown ? 0 : -libraryWidth,
+                    y: 0,
+                    width: libraryWidth,
+                    height: bounds.height,
+                ),
+            ),
             (
                 toolbar,
                 showsSiteToolbar
@@ -422,6 +436,17 @@ final class BrowserRootView: NSView {
         previousLayoutState = state
         background.mode = chromeBackgroundMode
         background.setTheme(model.selectedSpaceTheme, animated: !isEditingSpaceTheme)
+        let libraryPresented = model.librarySection != nil
+        if libraryPresented != wasLibraryPresented {
+            wasLibraryPresented = libraryPresented
+            if libraryPresented {
+                library.isHidden = false
+            }
+            sidebar.isHidden = libraryPresented
+            animateNextLayout = true
+            nextLayoutCurve = .library
+        }
+        library.refresh()
         let contentAppearance = model.selectedSpaceTheme?.palette.map {
             NSAppearance(named: $0.isLightContent ? .aqua : .darkAqua)
         } ?? nil
@@ -584,7 +609,21 @@ final class BrowserRootView: NSView {
     /// View Downloads opens the sidebar footer's list. With the sidebar hidden or
     /// without the footer button, the list points at the page's bottom corner on
     /// the sidebar side instead.
+    /// Downloads live in the Library; without Spaces, in an incognito window, they
+    /// stay in a popover over the page.
     private func toggleDownloads() {
+        guard model.supportsSpaces else {
+            showDownloadsPopover()
+            return
+        }
+        if model.librarySection == .downloads {
+            model.closeLibrary()
+        } else {
+            model.openLibrary(section: .downloads)
+        }
+    }
+
+    private func showDownloadsPopover() {
         let footer = sidebar.footer
         // Without Spaces, as in an incognito window, the footer has no Downloads button.
         let showsButton = (model.isSidebarVisible || isSidebarHoverOverlayActive) && model.supportsSpaces

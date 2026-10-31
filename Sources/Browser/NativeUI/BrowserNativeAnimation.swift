@@ -24,6 +24,8 @@ import QuartzCore
         static let sidebar = Curve.bezier(0.08, x1: 0.25, y1: 0.46, x2: 0.45, y2: 0.94)
         /// Spaces sliding to a chosen Space; the theme cross-fades with the same curve.
         static let spaceSlide = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
+        /// The Library sliding in from the window edge.
+        static let library = Curve.bezier(0.27, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
         /// Spaces settling after a swipe: critically damped.
         static let spaceSettle = Curve.spring(response: 0.25, damping: 0.995)
         /// Row moves: 0.12 s, timing (0, 0, 0.58, 1).

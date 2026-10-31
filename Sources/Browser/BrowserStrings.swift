@@ -1431,6 +1431,91 @@ enum BrowserStrings {
         comment: "Tabs menu and command title that expands every folder of the Space.",
     )
 
+    static let menuViewLibrary = NSLocalizedString(
+        "browser.menu.view_library",
+        comment: "Menu item that opens the Library.",
+    )
+
+    static let libraryMedia = NSLocalizedString(
+        "browser.library.media",
+        comment: "Library section with pictures.",
+    )
+
+    static let libraryDownloads = NSLocalizedString(
+        "browser.library.downloads",
+        comment: "Library section with downloads.",
+    )
+
+    static let librarySpaces = NSLocalizedString(
+        "browser.library.spaces",
+        comment: "Library section with all Spaces.",
+    )
+
+    static let libraryArchive = NSLocalizedString(
+        "browser.library.archive",
+        comment: "Library section with archived tabs.",
+    )
+
+    static let libraryBack = NSLocalizedString(
+        "browser.library.back",
+        comment: "Button that leaves the Library.",
+    )
+
+    static let libraryFilter = NSLocalizedString(
+        "browser.library.filter",
+        comment: "Pop-up button that filters a Library section.",
+    )
+
+    static let libraryFilterAll = NSLocalizedString(
+        "browser.library.filter_all",
+        comment: "Library filter choice that shows everything.",
+    )
+
+    static let libraryFilterImages = NSLocalizedString(
+        "browser.library.filter_images",
+        comment: "Library filter choice for downloaded images.",
+    )
+
+    static let libraryFilterDocuments = NSLocalizedString(
+        "browser.library.filter_documents",
+        comment: "Library filter choice for downloaded documents.",
+    )
+
+    static let libraryFilterArchives = NSLocalizedString(
+        "browser.library.filter_archives",
+        comment: "Library filter choice for downloaded archives.",
+    )
+
+    static let libraryToday = NSLocalizedString(
+        "browser.library.today",
+        comment: "Heading over tabs archived today.",
+    )
+
+    static let libraryYesterday = NSLocalizedString(
+        "browser.library.yesterday",
+        comment: "Heading over tabs archived yesterday.",
+    )
+
+    static let libraryRevealInFinder = NSLocalizedString(
+        "browser.library.reveal_in_finder",
+        comment: "Library row menu item.",
+    )
+
+    static let libraryEmptyTitle = NSLocalizedString(
+        "browser.library.empty_title",
+        comment: "Title of an empty Library section.",
+    )
+
+    static let libraryEmptyDetail = NSLocalizedString(
+        "browser.library.empty_detail",
+        comment: "Detail of an empty Library section.",
+    )
+
+    static let libraryEmptyMedia = NSLocalizedString(
+        "browser.library.empty_media",
+        comment: "Detail of the empty Media section of the Library.",
+    )
+
     static let menuViewDownloads = NSLocalizedString(
         "browser.menu.view_downloads",
         comment: "View menu and command title that opens the downloads list.",
@@ -2624,6 +2709,16 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front.",
     )
+
+    static func librarySearch(_ section: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.library.search_format",
+                comment: "Search field placeholder in a Library section; the argument is the section's name.",
+            ),
+            section,
+        )
+    }
 
     static func syncAccountCodeSent(to email: String) -> String {
         String(

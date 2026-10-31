@@ -24,8 +24,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private let scroll = NSScrollView()
     private let spacesContainer = BrowserSpaceDockNSView()
     private let downloadsButton = BrowserNativeChromeButton(
-        symbol: "arrow.down.circle",
-        title: BrowserStrings.downloadsTitle,
+        symbol: "archivebox",
+        title: BrowserStrings.menuViewLibrary,
         style: .sidebarDockAction,
         pressEffect: .compress,
         action: {},
@@ -68,7 +68,14 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         scroll.automaticallyAdjustsContentInsets = false
         downloadsButton.setAccessibilityIdentifier("browser.sidebar.downloads")
         downloadsButton.tooltipPlacement = .aboveCapsule
-        downloadsButton.onAction = { [weak self] in self?.toggleDownloads() }
+        downloadsButton.onAction = { [weak state] in
+            guard let model = state?.model else { return }
+            if model.downloadsModel.hasActiveDownloads {
+                model.openLibrary(section: .downloads)
+            } else {
+                model.toggleLibrary()
+            }
+        }
         createButton.setAccessibilityIdentifier("browser.sidebar.create-space")
         createButton.tooltipPlacement = .aboveCapsule
         createButton.onAction = { [weak self] in self?.toggleCreateMenu() }

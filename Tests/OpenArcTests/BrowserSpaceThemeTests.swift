@@ -382,3 +382,35 @@ import Testing
         #expect(removed)
     }
 }
+
+// MARK: - BrowserLibraryTests
+
+@Suite(.serialized)
+@MainActor struct BrowserLibraryTests {
+    @Test func theLibraryOpensOnItsLastSectionAndClosesAgain() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        #expect(f.model.librarySection == nil)
+        f.model.toggleLibrary()
+        #expect(f.model.librarySection == .archive)
+        f.model.librarySection = .spaces
+        f.model.toggleLibrary()
+        #expect(f.model.librarySection == nil)
+        f.model.toggleLibrary()
+        #expect(f.model.librarySection == .spaces, "It comes back where it was")
+        f.model.closeLibrary()
+        #expect(f.model.librarySection == nil)
+    }
+
+    @Test func theLibraryCommandIsAvailableAndBoundToCommandShiftL() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        #expect(f.model.isCommandBarActionAvailable(.viewLibrary))
+        #expect(BrowserCommands.viewLibrary.shortcut == BrowserKeyboardShortcut("l", modifiers: [.command, .shift]))
+    }
+
+    @Test func allSectionsHaveTitlesAndSymbols() {
+        for section in BrowserLibrarySection.allCases {
+            #expect(!section.title.isEmpty)
+            #expect(NSImage(systemSymbolName: section.symbol, accessibilityDescription: nil) != nil)
+        }
+    }
+}
