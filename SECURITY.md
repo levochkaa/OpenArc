@@ -12,7 +12,7 @@ Include the affected version, the steps to reproduce and what an attacker gains.
 ## Scope
 
 - The Mac and iOS apps, including the Chromium overrides in `Chromium/chromium_src`.
-- The sync and update server in `Backend` and its deployment at `api.openarc.su`.
+- The sync server code in `Backend`.
 - The update feed and release signing.
 
 Report bugs in Chromium, CEF or WebKit to those projects, unless OpenArc's overrides or configuration cause them.

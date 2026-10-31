@@ -1,10 +1,8 @@
 # OpenArc
 
-OpenArc is an open-source browser for macOS, iPhone and iPad. The Mac app runs Chromium through the Chromium Embedded Framework with a native AppKit interface; the iOS app uses WebKit and UIKit. It keeps the browser as a workspace: a sidebar of Spaces, pinned tabs and folders, a command bar, split view, and sync between devices.
+OpenArc is an open-source browser for macOS, iPhone and iPad. The Mac app runs Chromium through the Chromium Embedded Framework with a native AppKit interface; the iOS app uses WebKit and UIKit. It keeps the browser as a workspace: a sidebar of Spaces, pinned tabs and folders, a command bar and split view. It runs locally, with no account: everything stays on your device.
 
 OpenArc was created by [Lev Poznyakov](https://github.com/levochkaa). It is in development; 0.1.0 is the first release.
-
-Website: [openarc.su](https://openarc.su)
 
 ## Repository
 
@@ -14,8 +12,8 @@ Website: [openarc.su](https://openarc.su)
 | `Sources/Helper`, `Sources/Shared` | CEF helper processes and code shared with them |
 | `Sources/BrowseriOS` | iPhone and iPad app |
 | `Chromium/chromium_src` | Overrides applied to the Chromium and CEF checkout |
-| `Backend` | Rust sync and update server ([README](Backend/README.md)) |
-| `Website` | Landing page |
+| `Backend` | Rust server for accounts and sync, unused while they are off ([README](Backend/README.md)) |
+| `Website` | Privacy policy, terms and an undeployed landing page |
 | `docs` | Design notes for individual features |
 
 ## Building
@@ -45,9 +43,11 @@ DEVELOPMENT_TEAM=YOURTEAMID ./build.sh build
 ./build.sh test --no-code-signing
 ```
 
-`./build.sh --help` lists every action. Builds sync with `https://api.openarc.su`, the `OPENARC_SYNC_BASE_URL` build setting. Setting `OPENARC_SYNC_BASE_URL` in the environment points the app at another server, for example one from `Backend/README.md` running locally; an empty value turns sync off.
+`./build.sh --help` lists every action.
 
-[docs/releasing.md](docs/releasing.md) covers signing, notarization and the Stable and Beta update channels.
+Accounts and sync are off: `BrowserHostedService.isEnabled` in `Sources/Browser/BrowserSyncPlatformConfiguration.swift` turns them on. To try them, set it to `true` and set `OPENARC_SYNC_BASE_URL` in the environment to a server from `Backend/README.md` running locally.
+
+[docs/releasing.md](docs/releasing.md) covers signing, notarization and updates.
 
 ## Contributing
 
