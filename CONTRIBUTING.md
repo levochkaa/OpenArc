@@ -5,7 +5,7 @@ Thanks for helping. Bug reports, fixes, features, docs, forks and extensions are
 ## Before you start
 
 - Search the issues first. For a larger change, open an issue describing it so we can agree on the approach before you write it.
-- Report security problems privately through GitHub's security advisories, not in a public issue.
+- Report security problems privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
 ## Setup
 

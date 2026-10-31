@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in OpenArc does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a new Space
+        2. Pin a tab
+        3. Drag it into a folder
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Mac
+        - iPhone
+        - iPad
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OpenArc version
+      description: Settings → General, or the commit if you built it yourself.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+      placeholder: macOS 26.7
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove personal data first.
