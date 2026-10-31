@@ -631,7 +631,7 @@ final class BrowserNativeSidebarNSView: NSView {
         appGrid.isHidden = !showsApps
         let appFrame = NSRect(
             x: 0,
-            y: header.frame.maxY + BrowserChromeLayout.sidebarSectionSpacing,
+            y: header.frame.maxY + BrowserChromeLayout.sidebarListTopSpacing,
             width: width,
             height: appHeight,
         )
@@ -642,7 +642,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 setFrame(appFrames[index], of: tile, animated: animated)
             }
         }
-        let top = (showsApps ? appFrame.maxY : header.frame.maxY) + BrowserChromeLayout.sidebarListSpacing
+        let top = (showsApps ? appFrame.maxY : header.frame.maxY) + BrowserChromeLayout.sidebarListTopSpacing
         footer.frame = NSRect(
             x: 0,
             y: max(content.bounds.height - footerHeight, top),
@@ -1430,7 +1430,7 @@ final class BrowserNativeSidebarNSView: NSView {
             frameTransitions.freezeFrame(of: pagerClip)
             reservedAppHeight = max(
                 pagerClip.frame.minY - header.frame.maxY
-                    - BrowserChromeLayout.sidebarSectionSpacing - BrowserChromeLayout.sidebarListSpacing,
+                    - BrowserChromeLayout.sidebarListTopSpacing * 2,
                 0,
             )
         }
@@ -1648,14 +1648,11 @@ private final class BrowserNativeSidebarPage: NSView {
 
     func layoutRows(animated: Bool) {
         hasLaidOutRows = true
-        let headerHeight = header.isHidden
-            ? 0
-            : BrowserChromeLayout.sidebarRowHeight + BrowserChromeLayout.sidebarListSpacing
+        let headerHeight = header.isHidden ? 0 : BrowserChromeLayout.sidebarRowHeight
         header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: BrowserChromeLayout.sidebarRowHeight)
         scroll.frame = NSRect(x: 0, y: headerHeight, width: bounds.width, height: max(bounds.height - headerHeight, 0))
         topDivider.frame = NSRect(x: 0, y: headerHeight, width: bounds.width, height: 1)
-        let endInset = BrowserChromeLayout.sidebarListSpacing / 2 + BrowserChromeLayout
-            .sidebarDropIndicatorThickness / 2
+        let endInset = BrowserChromeLayout.sidebarListEndInset
         var y: CGFloat = endInset
         frames = [:]
         for entry in entries {
@@ -1772,10 +1769,10 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             height: 8,
         )
         line.frame = NSRect(
-            x: 0,
-            y: (bounds.height - 1) / 2,
-            width: max(bounds.width - width * clearProgress, 0),
-            height: 1,
+            x: BrowserChromeLayout.sidebarDividerInset,
+            y: (bounds.height - BrowserChromeLayout.sidebarDividerThickness) / 2,
+            width: max(bounds.width - BrowserChromeLayout.sidebarDividerInset * 2 - width * clearProgress, 0),
+            height: BrowserChromeLayout.sidebarDividerThickness,
         )
     }
 

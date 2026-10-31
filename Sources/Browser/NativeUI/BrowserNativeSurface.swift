@@ -68,6 +68,38 @@ struct BrowserNativeChromeButtonStyle {
         foreground: BrowserChromeColors.secondaryText,
         hoverBackground: BrowserChromeColors.rowHover,
     )
+    static let sidebarNavigation = BrowserNativeChromeButtonStyle(
+        size: BrowserChromeLayout.sidebarChromeButtonSize,
+        cornerRadius: BrowserChromeLayout.sidebarChromeButtonCornerRadius,
+        symbolSize: BrowserChromeLayout.sidebarChromeSymbolSize,
+        symbolWeight: .regular,
+        foreground: BrowserChromeColors.sidebarNavigationForeground,
+        hoverBackground: BrowserChromeColors.rowHover,
+    )
+    static let sidebarDockSpace = BrowserNativeChromeButtonStyle(
+        size: BrowserChromeLayout.sidebarChromeButtonSize,
+        cornerRadius: BrowserChromeLayout.sidebarChromeButtonCornerRadius,
+        symbolSize: BrowserChromeLayout.sidebarChromeSymbolSize,
+        symbolWeight: .regular,
+        foreground: BrowserChromeColors.sidebarDockForeground,
+        hoverBackground: BrowserChromeColors.rowHover,
+    )
+    static let sidebarDockAction = BrowserNativeChromeButtonStyle(
+        size: BrowserChromeLayout.sidebarChromeButtonSize,
+        cornerRadius: BrowserChromeLayout.sidebarChromeButtonCornerRadius,
+        symbolSize: BrowserChromeLayout.sidebarChromeSymbolSize,
+        symbolWeight: .regular,
+        foreground: BrowserChromeColors.secondaryText,
+        hoverBackground: BrowserChromeColors.rowHover,
+    )
+    static let sidebarDockCreate = BrowserNativeChromeButtonStyle(
+        size: BrowserChromeLayout.sidebarChromeButtonSize,
+        cornerRadius: BrowserChromeLayout.sidebarChromeButtonCornerRadius,
+        symbolSize: BrowserChromeLayout.sidebarCreateSpaceSymbolSize,
+        symbolWeight: .regular,
+        foreground: BrowserChromeColors.secondaryText,
+        hoverBackground: BrowserChromeColors.rowHover,
+    )
     static let bookmark = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.bookmarksBarControlSize,
         cornerRadius: BrowserChromeLayout.bookmarksBarItemCornerRadius,

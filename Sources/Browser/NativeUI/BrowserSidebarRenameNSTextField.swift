@@ -34,7 +34,7 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
         focusRingType = .none
         isEditable = true
         isSelectable = true
-        font = .systemFont(ofSize: 12.5, weight: .medium)
+        font = .systemFont(ofSize: BrowserChromeLayout.sidebarRowFontSize)
         textColor = activeTextColor
         cell?.usesSingleLineMode = true
         cell?.wraps = false
@@ -126,7 +126,7 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
         editor.insertionPointColor = activeTextColor
         editor.textColor = activeTextColor
         editor.drawsBackground = false
-        editor.font = .systemFont(ofSize: 12.5, weight: .medium)
+        editor.font = .systemFont(ofSize: BrowserChromeLayout.sidebarRowFontSize)
         editor.textContainerInset = NSSize(width: 0, height: 0.5)
     }
 }

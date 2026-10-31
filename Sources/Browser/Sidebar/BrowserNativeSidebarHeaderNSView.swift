@@ -18,24 +18,28 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
     private let toggle = BrowserNativeChromeButton(
         symbol: "sidebar.left",
         title: BrowserStrings.sidebarHide,
+        style: .sidebarNavigation,
         pressEffect: .compress,
         action: {},
     )
     private let back = BrowserNativeChromeButton(
         symbol: "arrow.backward",
         title: BrowserStrings.navigationBack,
+        style: .sidebarNavigation,
         pressEffect: .left,
         action: {},
     )
     private let forward = BrowserNativeChromeButton(
         symbol: "arrow.forward",
         title: BrowserStrings.navigationForward,
+        style: .sidebarNavigation,
         pressEffect: .right,
         action: {},
     )
     private let reload = BrowserNativeChromeButton(
         symbol: "arrow.clockwise",
         title: BrowserStrings.navigationRefresh,
+        style: .sidebarNavigation,
         pressEffect: .rotateClockwise,
         action: {},
     )
@@ -101,19 +105,31 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
 
     override func layout() {
         super.layout()
-        let size = BrowserChromeLayout.chromeButtonSize
+        let size = BrowserChromeLayout.sidebarChromeButtonSize
+        let spacing = BrowserChromeLayout.sidebarChromeButtonSpacing
+        let buttonY = BrowserChromeLayout.sidebarHeaderButtonY
         let controlsWidth = windowControls.intrinsicContentSize.width
-        windowControls.frame = NSRect(x: 0, y: 0, width: controlsWidth, height: size)
-        toggle.frame = NSRect(
-            x: controlsWidth + BrowserChromeLayout.windowControlsTrailingGap,
+        windowControls.frame = NSRect(
+            x: BrowserChromeLayout.sidebarWindowControlsLeading,
             y: 0,
+            width: controlsWidth,
+            height: size,
+        )
+        toggle.frame = NSRect(
+            x: controlsWidth > 0 ? windowControls.frame.maxX + BrowserChromeLayout.sidebarWindowControlsToggleGap : 0,
+            y: buttonY,
             width: size,
             height: size,
         )
-        reload.frame = NSRect(x: bounds.width - size, y: 0, width: size, height: size)
-        forward.frame = reload.frame.offsetBy(dx: -(size + BrowserChromeLayout.chromeButtonSpacing), dy: 0)
-        back.frame = forward.frame.offsetBy(dx: -(size + BrowserChromeLayout.chromeButtonSpacing), dy: 0)
-        var y = size
+        reload.frame = NSRect(
+            x: bounds.width + BrowserChromeLayout.sidebarHeaderTrailingOverhang - size,
+            y: buttonY,
+            width: size,
+            height: size,
+        )
+        forward.frame = reload.frame.offsetBy(dx: -(size + spacing), dy: 0)
+        back.frame = forward.frame.offsetBy(dx: -(size + spacing), dy: 0)
+        var y = BrowserChromeLayout.chromeButtonSize
         if !profile.isHidden {
             y += BrowserChromeLayout.sidebarSectionSpacing
             profile.frame = NSRect(x: 0, y: y, width: bounds.width, height: 28)

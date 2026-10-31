@@ -26,12 +26,14 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private let downloadsButton = BrowserNativeChromeButton(
         symbol: "arrow.down.circle",
         title: BrowserStrings.downloadsTitle,
+        style: .sidebarDockAction,
         pressEffect: .compress,
         action: {},
     )
     private let createButton = BrowserNativeChromeButton(
         symbol: "plus",
         title: BrowserStrings.spaceNewAction,
+        style: .sidebarDockCreate,
         pressEffect: .compress,
         action: {},
     )
@@ -97,18 +99,19 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         super.layout()
         let toastHeight = toast.height(for: max(bounds.width - 4, 0)) * toastProgress
         toast.frame = NSRect(x: 2, y: 0, width: max(bounds.width - 4, 0), height: toastHeight)
-        let y = toastHeight + BrowserChromeLayout.sidebarSectionSpacing
-        let size = BrowserChromeLayout.chromeButtonSize
-        let reserve = size + BrowserChromeLayout.chromeButtonSpacing
+        let y = toastHeight + BrowserChromeLayout.sidebarDockTopInset
+        let size = BrowserChromeLayout.sidebarChromeButtonSize
+        let spacing = BrowserChromeLayout.sidebarChromeButtonSpacing
+        let reserve = size + spacing
         downloadsButton.frame = NSRect(x: 0, y: y, width: size, height: size)
         createButton.frame = NSRect(x: max(bounds.width - size, 0), y: y, width: size, height: size)
-        downloadDot.frame = NSRect(x: size - 10, y: y + 5, width: 5, height: 5)
+        downloadDot.frame = NSRect(x: size - 11, y: y + 6, width: 5, height: 5)
         scroll.frame = NSRect(x: reserve, y: y, width: max(bounds.width - reserve * 2, 0), height: size)
-        let contentWidth = CGFloat(spaces.count) * size + CGFloat(max(spaces.count - 1, 0)) * BrowserChromeLayout
-            .chromeButtonSpacing
+        let contentWidth = CGFloat(spaces.count) * size + CGFloat(max(spaces.count - 1, 0)) * spacing
         let width = max(contentWidth, scroll.contentSize.width)
         spacesContainer.frame = NSRect(x: 0, y: 0, width: width, height: size)
         spacesContainer.itemSize = size
+        spacesContainer.itemSpacing = spacing
         spacesContainer.needsLayout = true
     }
 
@@ -142,6 +145,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             let button = buttons[space.id] ?? BrowserNativeChromeButton(
                 symbol: space.systemImageName,
                 title: space.title,
+                style: .sidebarDockSpace,
                 pressEffect: .compress,
                 action: {},
             )
@@ -195,9 +199,9 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
 
     func height(for width: CGFloat) -> CGFloat {
         let toastHeight = toast.height(for: max(width - 4, 0)) * toastProgress
-        return toastHeight + BrowserChromeLayout.sidebarSectionSpacing + (state.model.supportsSpaces
-            ? BrowserChromeLayout.chromeButtonSize
-            : 0)
+        guard state.model.supportsSpaces else { return toastHeight + BrowserChromeLayout.sidebarSectionSpacing }
+        return toastHeight + BrowserChromeLayout.sidebarDockTopInset + BrowserChromeLayout.sidebarChromeButtonSize
+            + BrowserChromeLayout.sidebarDockBottomInset
     }
 
     func popoverDidClose(_: Notification) { refreshDownloadsButton() }

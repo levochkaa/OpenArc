@@ -152,7 +152,7 @@ enum BrowserWindowMode: Equatable {
         case localLifetime(BrowserTemporaryTabLifetime)
     }
 
-    nonisolated static let defaultSidebarWidth: CGFloat = 224
+    nonisolated static let defaultSidebarWidth: CGFloat = 228
     nonisolated static let minSidebarWidth: CGFloat = defaultSidebarWidth
     /// The sidebar is capped at 500 pt. The minimum stays at the default,
     /// because the sidebar header has no compact layout.

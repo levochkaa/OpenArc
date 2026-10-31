@@ -12,22 +12,33 @@ enum BrowserChromeLayout {
     static let sidebarOuterPadding: CGFloat = 8
     static let sidebarSectionSpacing: CGFloat = 10
     static let sidebarListSpacing: CGFloat = 5
+    /// From the header to the Space title.
+    static let sidebarListTopSpacing: CGFloat = 8
+    /// From the Space title to the first row.
+    static let sidebarListEndInset: CGFloat = 5
     static let sidebarRowHeight: CGFloat = 36
-    static let sidebarRowCornerRadius: CGFloat = 10
+    static let sidebarRowCornerRadius: CGFloat = 12
     static let currentURLRowCornerRadius: CGFloat = 12
-    static let sidebarRowHorizontalPadding: CGFloat = 11
-    static let sidebarTabTrailingPadding: CGFloat = 7
+    static let sidebarRowHorizontalPadding: CGFloat = 10
+    static let sidebarTabTrailingPadding: CGFloat = 9
     static let sidebarRowContentSpacing: CGFloat = 8
-    static let sidebarFaviconSize: CGFloat = 14
+    static let sidebarFaviconSize: CGFloat = 16
+    /// Icons center in this leading column and titles start after it.
+    static let sidebarRowLeadingColumnWidth: CGFloat = sidebarRowHeight
+    /// Labels draw their text 2 pt inside their frame.
+    static let sidebarRowTitleX: CGFloat = sidebarRowLeadingColumnWidth - 2
+    static let sidebarRowFontSize: CGFloat = 14
+    static let sidebarSpaceFontSize: CGFloat = 13
+    static let sidebarSpaceSymbolSize: CGFloat = 14
     static let sidebarPinnedURLIconButtonSize: CGFloat = sidebarRowHeight
     static let sidebarPinnedURLTextHoverOverlap: CGFloat = 4
     static let sidebarPinnedFolderTabIndent: CGFloat = 16
-    static let sidebarPinnedFolderIconSize: CGFloat = 18
+    static let sidebarPinnedFolderIconSize: CGFloat = 21
     static let sidebarPinnedFolderBadgeIconSize: CGFloat = 7.5
     static let sidebarButtonPressedScale: CGFloat = 0.985
     static let sidebarRenameActivationGraceInterval: TimeInterval = 0.25
     static let sidebarCloseButtonPressedScale: CGFloat = 0.92
-    static let sidebarNewTabSymbolSize: CGFloat = 14
+    static let sidebarNewTabSymbolSize: CGFloat = 15.5
     static let sidebarCurrentURLOverlayWidth: CGFloat = 76
     static let sidebarCurrentURLOverlaySolidWidth: CGFloat = 66
     static let sidebarCurrentURLOverlayFadeWidth: CGFloat = 10
@@ -51,9 +62,9 @@ enum BrowserChromeLayout {
     static let extensionSidePanelHeaderHorizontalPadding: CGFloat = 10
     static let extensionSidePanelHeaderIconSize: CGFloat = 16
     static let extensionSidePanelCloseButtonSize: CGFloat = 24
-    static let appTabGridSpacing: CGFloat = 5
+    static let appTabGridSpacing: CGFloat = 8
     static let appTabIconSize: CGFloat = 18
-    static let sidebarCloseButtonSize: CGFloat = 22
+    static let sidebarCloseButtonSize: CGFloat = 24
     /// Mini player: a 32 pt row of 24 pt controls, 66 pt with the
     /// title row it shows on hover.
     static let sidebarMiniPlayerHeight: CGFloat = 32
@@ -64,7 +75,9 @@ enum BrowserChromeLayout {
     static let sidebarCloseButtonLeadingSpacing: CGFloat = 4
     static let sidebarCloseCornerRadius: CGFloat = 7
     static let sidebarCloseSymbolSize: CGFloat = 11
-    static let sidebarDividerHeight: CGFloat = 14
+    static let sidebarDividerHeight: CGFloat = 12
+    static let sidebarDividerInset: CGFloat = 10
+    static let sidebarDividerThickness: CGFloat = 0.5
     static let sidebarDropIndicatorThickness: CGFloat = 2
     static let sidebarEmptySectionDropZoneHeight: CGFloat = 14
     static let sidebarTabDragCoordinateSpaceName = "BrowserSidebarTabDragCoordinateSpace"
@@ -90,6 +103,20 @@ enum BrowserChromeLayout {
     /// Dragging the sidebar edge below this width hides the sidebar (82 pt).
     static let sidebarCollapseDragWidth: CGFloat = 82
     static let browserContentEdgeInset: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
+    /// Header and dock buttons, 34 pt apart.
+    static let sidebarChromeButtonSize: CGFloat = 32
+    static let sidebarChromeButtonSpacing: CGFloat = 2
+    static let sidebarChromeButtonCornerRadius: CGFloat = 6
+    static let sidebarChromeSymbolSize: CGFloat = 15.5
+    static let sidebarCreateSpaceSymbolSize: CGFloat = 18.5
+    /// Lifts the header buttons so their center lines up with the window controls.
+    static let sidebarHeaderButtonY: CGFloat = -0.5
+    /// The reload button reaches past the URL field's trailing edge.
+    static let sidebarHeaderTrailingOverhang: CGFloat = 2
+    static let sidebarWindowControlsLeading: CGFloat = 5
+    static let sidebarWindowControlsToggleGap: CGFloat = -2
+    static let sidebarDockTopInset: CGFloat = 9
+    static let sidebarDockBottomInset: CGFloat = 1
     static let chromeButtonSize: CGFloat = 28
     static let chromeButtonSymbolSize: CGFloat = 13.5
     static let chromeButtonCornerRadius: CGFloat = 9

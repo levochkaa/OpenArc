@@ -584,8 +584,8 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
     private let textContainer = NSView()
     private let label = BrowserNativeControls.label(
         "",
-        size: 12.5,
-        weight: .medium,
+        size: 13,
+        weight: .regular,
         color: BrowserChromeColors.currentURLText,
     )
     private let textMask = CAGradientLayer()

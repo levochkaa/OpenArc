@@ -326,7 +326,7 @@ import Testing
         let symbol = try inkBounds(0..<Int(30 * scale))
         let text = try inkBounds(Int(30 * scale)..<Int(115 * scale))
         #expect(abs(symbol.midY - text.midY) <= scale * 0.75)
-        #expect((text.minX - symbol.maxX) / scale <= 12)
+        #expect((text.minX - symbol.maxX) / scale <= 14)
         #expect(!window.isVisible)
         let data = try #require(bitmap.representation(using: .png, properties: [:]))
         try data.write(to: URL(fileURLWithPath: "/tmp/openarc-new-tab-native.png"))

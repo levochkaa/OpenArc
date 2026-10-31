@@ -692,7 +692,7 @@ import Testing
         )
         let proposal = try #require(geometry.proposal(at: CGPoint(x: 180, y: 20), previous: nil))
         #expect(proposal.destination.beforeItem == nil)
-        #expect(proposal.previewSize.width == 109.5)
+        #expect(proposal.previewSize.width == (224 - BrowserChromeLayout.appTabGridSpacing) / 2)
         #expect(proposal.feedback == .app)
     }
 
