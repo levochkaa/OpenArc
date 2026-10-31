@@ -99,6 +99,14 @@ create_helper_variant() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $app_name" "$plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.levochkaa.OpenArc.helper${bundle_suffix}" "$plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleName $app_name" "$plist"
+
+  # macOS sets one default notification style per bundle. As in Chromium, the
+  # main app shows banners and this helper shows notifications that stay until
+  # dismissed, under the app's own name.
+  if [[ "$name_suffix" == " (Alerts)" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName OpenArc" "$plist"
+    /usr/libexec/PlistBuddy -c "Add :NSUserNotificationAlertStyle string alert" "$plist"
+  fi
 }
 
 signing_identity() {
