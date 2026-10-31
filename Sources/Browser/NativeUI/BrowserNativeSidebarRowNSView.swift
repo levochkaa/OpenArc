@@ -89,6 +89,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private var disclosureProgress = 1.0
 
     private var baseSymbol = ""
+    private var showsSpaceTitleAtLeadingEdge = false
     private var title = ""
     private var initialRenameTitle = ""
     private var suppressNextBlur = false
@@ -247,6 +248,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             height: badgeSize,
         )
         var titleX = indent + BrowserChromeLayout.sidebarRowTitleX
+        if kind == .space, showsSpaceTitleAtLeadingEdge {
+            // A Space without its own icon shows only its name, until hovered.
+            titleX = BrowserChromeLayout.sidebarSpaceTitleXWithoutIcon
+        }
         if !muteButton.isHidden {
             // The speaker sits between the icon and the title.
             let muteSize: CGFloat = 26
@@ -333,10 +338,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     }
 
     private static func symbol(_ name: String, size: CGFloat, weight: NSFont.Weight = .semibold) -> NSImage? {
-        NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(
-            pointSize: size,
-            weight: weight,
-        ))
+        BrowserIconImage.image(named: name, pointSize: size, weight: weight)
     }
 
     /// Split drop preview: the row splits into two halves and the half
@@ -784,6 +786,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                 disclosure ? "chevron.right" : baseSymbol,
                 size: BrowserChromeLayout.sidebarSpaceSymbolSize,
             )
+            showsSpaceTitleAtLeadingEdge = !disclosure && baseSymbol == BrowserChromeModel.defaultSpaceIconName
+            symbol.isHidden = showsSpaceTitleAtLeadingEdge
             symbol.contentTintColor = disclosure ? BrowserChromeColors.secondaryText : BrowserChromeColors.primaryText
             updateDisclosureTransform()
         }
@@ -948,8 +952,7 @@ final class BrowserNativeSidebarSplitChipView: NSView {
         favicon.isHidden = icon != nil
         symbol.isHidden = icon == nil
         symbol.image = icon.flatMap {
-            NSImage(systemSymbolName: $0, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
+            BrowserIconImage.image(named: $0, pointSize: 12)
         }
         symbol.contentTintColor = BrowserChromeColors.primaryText
         titleLabel.stringValue = tab.displayTitle

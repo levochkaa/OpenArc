@@ -258,7 +258,7 @@ import AppKit
         menu.addItem(header)
         for space in spacesProvider?() ?? [] {
             let item = BrowserNativeMenuItem(space.title) { [weak self] in self?.onOpenInSpace?(space.id) }
-            item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
+            item.image = BrowserIconImage.image(named: space.systemImageName, pointSize: 13)
             menu.addItem(item)
         }
     }

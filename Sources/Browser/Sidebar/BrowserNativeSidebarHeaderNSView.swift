@@ -53,6 +53,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
     )
     private var observations = Set<AnyCancellable>()
     private var showsURL = true
+    private var showsNavigation = true
 
     var preferredHeight: CGFloat {
         let profileHeight: CGFloat = model.showsProfileIndicator ? 28 + BrowserChromeLayout.sidebarSectionSpacing : 0
@@ -146,9 +147,16 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
 
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 
-    func configure(showsWindowControls: Bool, showsURL: Bool, isResizing: Bool, toggleTitle: String) {
+    func configure(
+        showsWindowControls: Bool,
+        showsURL: Bool,
+        showsNavigation: Bool? = nil,
+        isResizing: Bool,
+        toggleTitle: String,
+    ) {
         windowControls.showsInSidebar = showsWindowControls
         self.showsURL = showsURL
+        self.showsNavigation = showsNavigation ?? showsURL
         toggle.configureSymbol("sidebar.left", title: toggleTitle)
         urlControls.isHidden = !showsURL
         urlControls.isSidebarResizing = isResizing
@@ -174,7 +182,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         reload.isEnabled = model.canStopLoading || model.canReload
         reload.pressEffect = model.canStopLoading ? .compress : .rotateClockwise
         for button in [back, forward, reload] {
-            button.isHidden = !showsURL
+            button.isHidden = !showsNavigation
         }
         profile.isHidden = !model.showsProfileIndicator
         profileName.stringValue = model.profileDisplayName

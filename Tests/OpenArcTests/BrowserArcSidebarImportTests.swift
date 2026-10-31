@@ -39,7 +39,7 @@ import Testing
         #expect(sidebar.spaces.first?.icon == "briefcase")
         let docs = BrowserArcSidebar.Node.folder(
             title: "Docs",
-            icon: "flash",
+            icon: "bolt.fill",
             children: [
                 .tab(title: nil, savedTitle: "Docs", urlString: "https://docs.example"),
                 .folder(title: "Empty", icon: nil, children: []),
@@ -72,7 +72,7 @@ import Testing
         let folders = f.model.pinnedTabFolders.filter { $0.spaceID == work.id }
         #expect(folders.map(\.title) == ["Docs", "Empty"])
         #expect(folders.last?.parentFolderID == folders.first?.id, "Nested folders keep their parent")
-        #expect(folders.first?.systemImageName == nil, "Arc icons that are not SF Symbols fall back")
+        #expect(folders.first?.systemImageName == "bolt.fill", "Arc's icons come over as the closest symbols")
         #expect(workTabs[1].pinnedFolderID == folders.first?.id)
         #expect(f.model.appTabs.map(\.urlString).contains("https://calendar.example"))
         #expect(f.driver.createdTabRequests.count == createdBefore, "Imported tabs stay dormant until selected")

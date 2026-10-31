@@ -37,6 +37,9 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         pressEffect: .compress,
         action: {},
     )
+    private let createMenu = BrowserFloatingMenu()
+    private let createGlyphAnimation = BrowserNativeAnimation()
+    private var createGlyphAngle: CGFloat = 0
     private let downloadDot = BrowserNativeDownloadIndicator()
     private let downloadsController: BrowserDownloadsViewController
     private let popover = BrowserNativePopover()
@@ -68,11 +71,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         downloadsButton.onAction = { [weak self] in self?.toggleDownloads() }
         createButton.setAccessibilityIdentifier("browser.sidebar.create-space")
         createButton.tooltipPlacement = .aboveCapsule
-        createButton.onAction = { [weak state] in
-            state?.dismissRenamingIfNeeded()
-            state?.clearSidebarTabSelection()
-            state?.model.createNewSpace()
-        }
+        createButton.onAction = { [weak self] in self?.toggleCreateMenu() }
+        createMenu.onClose = { [weak self] in self?.setCreateMenuOpen(false) }
         toast.onInstall = { [weak updateController] in updateController?.installDownloadedUpdateNow() }
         toast.onDismiss = { [weak updateController] in updateController?.dismissToast() }
         popover.behavior = .transient
@@ -155,7 +155,12 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
                 buttons[space.id] = button
                 spacesContainer.addSubview(button)
             }
-            button.configureSymbol(space.systemImageName, title: space.title)
+            button.configureSymbol(
+                space.systemImageName == BrowserChromeModel.defaultSpaceIconName
+                    ? BrowserNativeBarGlyph.spaceDot
+                    : space.systemImageName,
+                title: space.title,
+            )
             button.tooltipShortcut = BrowserSpaceShortcuts.shortcut(forSpaceIndex: index)
             button.tooltipPlacement = .aboveCapsule
             button.isSelected = snapshot.selectedSpaceID == space.id
@@ -218,6 +223,68 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             popover.show(relativeTo: anchor.rect, of: anchor.view, preferredEdge: anchor.edge)
         }
         refreshDownloadsButton()
+    }
+
+    /// New Space, New Folder, New Split and New Tab, above the plus button.
+    private func toggleCreateMenu() {
+        guard !createMenu.isShown else {
+            createMenu.close()
+            return
+        }
+        let state = state
+        let model = state.model
+        state.dismissRenamingIfNeeded()
+        let shortcuts = model.shortcutStore
+        func keys(_ command: BrowserCommandID) -> String? {
+            let shortcut = shortcuts.shortcut(for: command)
+            return shortcut == .unassigned ? nil : shortcut.displayText
+        }
+        createMenu.show(items: [
+            .action(
+                symbol: "rectangle.stack.badge.plus",
+                title: BrowserStrings.dockMenuNewSpace,
+                shortcut: keys(.newSpace),
+                isEnabled: model.isCommandBarActionAvailable(.newSpace),
+                identifier: "browser.sidebar.create-menu.space",
+            ) { [weak state] in
+                state?.clearSidebarTabSelection()
+                state?.withSidebarAnimation { state?.model.beginCreatingSpace() }
+            },
+            .action(
+                symbol: "folder",
+                title: BrowserStrings.dockMenuNewFolder,
+                shortcut: keys(.newFolder),
+                isEnabled: model.isCommandBarActionAvailable(.newFolder),
+                identifier: "browser.sidebar.create-menu.folder",
+            ) { [weak state] in _ = state?.model.createFolderFromSelectedTab() },
+            .separator,
+            .action(
+                symbol: "rectangle.split.2x1",
+                title: BrowserStrings.dockMenuNewSplit,
+                shortcut: keys(.addSplitView),
+                isEnabled: model.isCommandBarActionAvailable(.addSplitView),
+                identifier: "browser.sidebar.create-menu.split",
+            ) { [weak state] in state?.model.presentSplitViewCommandBar() },
+            .action(
+                symbol: "plus.square",
+                title: BrowserStrings.dockMenuNewTab,
+                shortcut: keys(.newTab),
+                isEnabled: model.isCommandBarActionAvailable(.newTab),
+                identifier: "browser.sidebar.create-menu.tab",
+            ) { [weak state] in state?.model.presentCommandBar() },
+        ], above: createButton)
+        setCreateMenuOpen(true)
+    }
+
+    /// The plus turns into a cross while its menu is open.
+    private func setCreateMenuOpen(_ open: Bool) {
+        let from = createGlyphAngle
+        let to: CGFloat = open ? 45 : 0
+        createGlyphAnimation.start(.spring(response: 0.3, damping: 0.6)) { [weak self] progress in
+            guard let self else { return }
+            createGlyphAngle = from + (to - from) * progress
+            createButton.setBarGlyphRotation(createGlyphAngle)
+        }
     }
 
     private func refreshToast() {

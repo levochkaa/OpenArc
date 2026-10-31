@@ -75,6 +75,37 @@ struct BrowserArcSidebar: Equatable {
         }
     }
 
+    private static let arcIconSymbols = [
+        "planet": "globe.americas.fill",
+        "barbell": "dumbbell.fill",
+        "flash": "bolt.fill",
+        "star": "star.fill",
+        "heart": "heart.fill",
+        "flag": "flag.fill",
+        "bookmark": "bookmark.fill",
+        "bell": "bell.fill",
+        "lightbulb": "lightbulb.fill",
+        "folder": "folder.fill",
+        "calendar": "calendar",
+        "envelope": "envelope.fill",
+        "book": "book.fill",
+        "terminal": "terminal.fill",
+        "moon": "moon.fill",
+        "sun": "sun.max.fill",
+        "leaf": "leaf.fill",
+        "cloud": "cloud.fill",
+        "paw": "pawprint.fill",
+        "gift": "gift.fill",
+        "bed": "bed.double.fill",
+        "airplane": "airplane",
+        "music": "music.note",
+        "palette": "paintpalette.fill",
+        "video": "video.fill",
+        "code": "chevron.left.forwardslash.chevron.right",
+        "map": "map.fill",
+        "flame": "flame.fill",
+    ]
+
     /// Arc keeps the file in its Application Support folder.
     static var defaultFileURL: URL? {
         FileManager.default
@@ -135,8 +166,12 @@ struct BrowserArcSidebar: Equatable {
         stride(from: 0, to: array.count - 1, by: 2).map { (array[$0], array[$0 + 1]) }
     }
 
+    /// Arc's own icon names, as the closest symbols; emoji come over as they are.
     private static func icon(in customInfo: Any?) -> String? {
-        ((customInfo as? [String: Any])?["iconType"] as? [String: Any])?["icon"] as? String
+        let iconType = (customInfo as? [String: Any])?["iconType"] as? [String: Any]
+        if let emoji = iconType?["emoji_v2"] as? String { return BrowserIconImage.name(emoji: emoji) }
+        guard let name = iconType?["icon"] as? String else { return nil }
+        return arcIconSymbols[name] ?? name
     }
 
     /// A Space's colors, intensity and texture, for themes in either stored form.

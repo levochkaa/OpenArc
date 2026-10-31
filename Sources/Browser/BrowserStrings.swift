@@ -1291,6 +1291,71 @@ enum BrowserStrings {
         comment: "Tabs menu and command title that returns a pinned tab to its pinned URL.",
     )
 
+    static let iconPickerSearch = NSLocalizedString(
+        "browser.icon_picker.search",
+        comment: "Placeholder of the icon picker's search field.",
+    )
+
+    static let iconPickerEmoji = NSLocalizedString(
+        "browser.icon_picker.emoji",
+        comment: "Icon picker tab with emoji.",
+    )
+
+    static let iconPickerIcon = NSLocalizedString(
+        "browser.icon_picker.icon",
+        comment: "Icon picker tab with symbols.",
+    )
+
+    static let spaceCreationTitle = NSLocalizedString(
+        "browser.space.creation.title",
+        comment: "Title of the sidebar page that creates a Space.",
+    )
+
+    static let spaceCreationDetail = NSLocalizedString(
+        "browser.space.creation.detail",
+        comment: "Description on the sidebar page that creates a Space.",
+    )
+
+    static let spaceCreationNamePlaceholder = NSLocalizedString(
+        "browser.space.creation.name_placeholder",
+        comment: "Placeholder of the new Space's name field.",
+    )
+
+    static let spaceCreationTheme = NSLocalizedString(
+        "browser.space.creation.theme",
+        comment: "Button that opens the theme editor for a new Space.",
+    )
+
+    static let spaceCreationCreate = NSLocalizedString(
+        "browser.space.creation.create",
+        comment: "Button that creates the new Space.",
+    )
+
+    static let spaceCreationCancel = NSLocalizedString(
+        "browser.space.creation.cancel",
+        comment: "Button that leaves the page without creating a Space.",
+    )
+
+    static let dockMenuNewSpace = NSLocalizedString(
+        "browser.dock_menu.new_space",
+        comment: "Item of the menu on the sidebar's plus button.",
+    )
+
+    static let dockMenuNewFolder = NSLocalizedString(
+        "browser.dock_menu.new_folder",
+        comment: "Item of the menu on the sidebar's plus button.",
+    )
+
+    static let dockMenuNewSplit = NSLocalizedString(
+        "browser.dock_menu.new_split",
+        comment: "Item of the menu on the sidebar's plus button.",
+    )
+
+    static let dockMenuNewTab = NSLocalizedString(
+        "browser.dock_menu.new_tab",
+        comment: "Item of the menu on the sidebar's plus button.",
+    )
+
     static let spaceEditThemeAction = NSLocalizedString(
         "browser.space.edit_theme_action",
         comment: "Space menu action that opens the theme editor.",

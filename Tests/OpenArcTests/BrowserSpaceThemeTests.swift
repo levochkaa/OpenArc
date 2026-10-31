@@ -308,3 +308,77 @@ import Testing
         #expect(editor.theme.colors.count == 1, "Nothing more to undo")
     }
 }
+
+// MARK: - BrowserSpaceCreationTests
+
+@Suite(.serialized)
+@MainActor struct BrowserSpaceCreationTests {
+    private static let orange = BrowserSpaceTheme.Color(1, 0.522, 0.344)
+
+    @Test func nothingChangesUntilTheSpaceIsCreated() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        let spaces = f.model.spaces.count
+        f.model.beginCreatingSpace()
+        #expect(f.model.spaces.count == spaces)
+        #expect(f.model.spaceCreationDraft != nil)
+        #expect(!f.model.commitCreatingSpace(), "A Space needs a name")
+        f.model.updateSpaceCreationDraft { $0.title = "  Work  " }
+        f.model.updateSpaceCreationDraft { $0.icon = BrowserIconImage.name(emoji: "🌴") }
+        let theme = BrowserSpaceTheme(key: Self.orange)
+        f.model.updateSpaceCreationDraft { $0.theme = theme }
+        #expect(f.model.selectedSpaceTheme == theme, "The draft's theme shows on the window")
+        #expect(f.model.commitCreatingSpace())
+        #expect(f.model.spaceCreationDraft == nil)
+        #expect(f.model.spaces.count == spaces + 1)
+        let created = try #require(f.model.spaces.last)
+        #expect(created.title == "Work")
+        #expect(created.systemImageName == "emoji:🌴")
+        #expect(f.model.selectedSpaceID == created.id)
+        #expect(f.model.selectedSpaceTheme == theme)
+    }
+
+    @Test func cancellingLeavesEverythingAsItWas() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        let spaces = f.model.spaces.count
+        let selected = f.model.selectedSpaceID
+        f.model.beginCreatingSpace()
+        f.model.updateSpaceCreationDraft { $0.theme = BrowserSpaceTheme(key: Self.orange) }
+        f.model.cancelCreatingSpace()
+        #expect(f.model.spaces.count == spaces && f.model.selectedSpaceID == selected)
+        #expect(f.model.selectedSpaceTheme == nil)
+    }
+
+    @Test func iconNamesDrawSymbolsAndEmoji() {
+        #expect(BrowserIconImage.emoji(from: BrowserIconImage.name(emoji: "😀")) == "😀")
+        #expect(BrowserIconImage.emoji(from: "star.fill") == nil)
+        #expect(BrowserIconImage.isValid("star.fill") && BrowserIconImage.isValid("emoji:😀"))
+        #expect(!BrowserIconImage.isValid("no.such.symbol.name"))
+        let emoji = BrowserIconImage.image(named: "emoji:😀", pointSize: 16)
+        #expect(emoji?.isTemplate == false && (emoji?.size.width ?? 0) > 0)
+        #expect(BrowserIconImage.image(named: "star.fill", pointSize: 16) != nil)
+    }
+
+    @Test func everyCatalogIconExistsAndEmojiSearchFindsNames() {
+        for name in BrowserSpaceIconCatalog.systemImageNames {
+            #expect(NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil, "Missing symbol \(name)")
+        }
+        #expect(BrowserSpaceIconCatalog.systemImageNames.count == 56)
+        #expect(BrowserSpaceIconCatalog.emojiCategories.count == 8)
+        #expect(BrowserSpaceIconCatalog.emojiCategories.allSatisfy { !$0.emoji.isEmpty })
+        #expect(BrowserSpaceIconCatalog.searchName(ofEmoji: "🌴").contains("palm"))
+    }
+
+    @Test func aFolderMenuOffersThePickerAndRemovalOnlyWhenAnIconIsSet() {
+        let menu = NSMenu()
+        BrowserNativeMenus.addIconMenu("Change Icon", to: menu, selected: nil, noIconTitle: "Remove") { _ in }
+        #expect(menu.items.map(\.title) == ["Change Icon…"])
+        let withIcon = NSMenu()
+        var removed = false
+        BrowserNativeMenus.addIconMenu("Change Icon", to: withIcon, selected: "star.fill", noIconTitle: "Remove") {
+            removed = $0 == nil
+        }
+        #expect(withIcon.items.map(\.title) == ["Change Icon…", "Remove"])
+        withIcon.performActionForItem(at: 1)
+        #expect(removed)
+    }
+}

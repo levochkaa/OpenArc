@@ -43,6 +43,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private var reservedAppHeight: CGFloat = 0
     private var isProjectingAppGrid = false
     private let pagerClip = BrowserNativeSurface()
+    private let creationPage = BrowserSpaceCreationView()
     private let pagesContainer = BrowserNativeSurface()
     private let bottomDivider = BrowserNativeSurface()
     private let dragIndicator = BrowserSidebarInsertionIndicator()
@@ -69,6 +70,9 @@ final class BrowserNativeSidebarNSView: NSView {
     private let frameTransitions = BrowserNativeFrameTransitions()
 
     private var renderedSnapshot: BrowserSidebarSnapshot { state.renderedSnapshot(for: state.snapshot) }
+    private var frameTransitionsAreRunning: Bool {
+        pagesContainer.frame != frameTransitions.targetFrame(of: pagesContainer)
+    }
 
     init(state: BrowserNativeSidebarState, header: NSView, footer: NSView) {
         self.state = state
@@ -100,6 +104,23 @@ final class BrowserNativeSidebarNSView: NSView {
         emptyAppGuide.isHidden = true
         frameTransitions.onFrameChange = { [weak self] in self?.needsLayout = true }
         pagerClip.addSubview(pagesContainer)
+        pagesContainer.addSubview(creationPage)
+        creationPage.isHidden = true
+        creationPage.onTitleChange = { [weak state] title in
+            state?.model.updateSpaceCreationDraft { $0.title = title }
+        }
+        creationPage.onChooseIcon = { [weak state] anchor in
+            BrowserIconPickerPresenter.shared.show(relativeTo: anchor.bounds, of: anchor, edge: .maxY) { name in
+                state?.model.updateSpaceCreationDraft { $0.icon = name }
+            }
+        }
+        creationPage.onChooseTheme = { [weak state] anchor in state?.model.onEditSpaceCreationTheme?(anchor) }
+        creationPage.onCreate = { [weak state] in
+            state?.withSidebarAnimation { _ = state?.model.commitCreatingSpace() }
+        }
+        creationPage.onCancel = { [weak state] in
+            state?.withSidebarAnimation { state?.model.cancelCreatingSpace() }
+        }
         pagerClip.wantsLayer = true
         pagerClip.layer?.masksToBounds = true
         bottomDivider.strokeWidth = 0
@@ -310,7 +331,18 @@ final class BrowserNativeSidebarNSView: NSView {
             configure(row: tile, tab: tab, section: .app, indent: 0)
         }
         hasRenderedAppTiles = true
-        scrollObserver.isEnabled = snapshot.spaces.count > 1 && !state.isSidebarResizing && !state.isDraggingSidebarItem
+        let draft = state.model.spaceCreationDraft
+        scrollObserver.isEnabled = snapshot.spaces.count > 1 && !state.isSidebarResizing
+            && !state.isDraggingSidebarItem && draft == nil
+        let wasCreating = !creationPage.isHidden
+        if let draft {
+            creationPage.update(draft: draft)
+            creationPage.isHidden = false
+            state.spacePagerCurve = .spaceSlide
+            if !wasCreating {
+                DispatchQueue.main.async { [weak creationPage] in creationPage?.focusName() }
+            }
+        }
         bottomDivider.alphaValue = state.isBottomChromeDividerVisible(in: snapshot) ? 1 : 0
         layoutContent(animated: animated)
         synchronizeGeometry()
@@ -605,7 +637,7 @@ final class BrowserNativeSidebarNSView: NSView {
 
         header.frame = NSRect(x: 0, y: 0, width: width, height: headerHeight)
         let appTabs = renderedSnapshot.appTabs
-        let showsApps = state.model
+        let showsApps = state.model.spaceCreationDraft == nil && state.model
             .supportsAppTabs && (!appTabs.isEmpty || (state.drag.isDragging && reservedAppHeight > 0))
         let offersEmptyAppDrop = state.model.supportsAppTabs && state.model.appTabs.isEmpty && state.drag.isDragging
             && state.draggedTabID != nil && state.draggedTabIDs.count == 1
@@ -678,19 +710,31 @@ final class BrowserNativeSidebarNSView: NSView {
             animated: animated,
         )
         scrollObserver.frame = pagerClip.frame
-        let index = state.selectedSpaceIndex(in: state.snapshot) ?? 0
+        let selectedIndex = state.selectedSpaceIndex(in: state.snapshot) ?? 0
+        let isCreatingSpace = state.model.spaceCreationDraft != nil
+        // The Space being created is a page after the last one.
+        let index = isCreatingSpace ? state.snapshot.spaces.count : selectedIndex
         let x = state.spacePagerOffset(selectedIndex: index, pageWidth: pageStride)
         setFrame(
             NSRect(
                 x: x,
                 y: 0,
-                width: pageStride * CGFloat(state.snapshot.spaces.count),
+                width: pageStride * CGFloat(state.snapshot.spaces.count + 1),
                 height: pagerClip.bounds.height,
             ),
             of: pagesContainer,
             animated: animated,
         )
-        reportSpacePagerProgress(selectedIndex: index, pageStride: pageStride)
+        creationPage.frame = NSRect(
+            x: CGFloat(state.snapshot.spaces.count) * pageStride + inset,
+            y: 0,
+            width: width,
+            height: pagerClip.bounds.height,
+        )
+        if !isCreatingSpace, !creationPage.isHidden, !frameTransitionsAreRunning {
+            creationPage.isHidden = true
+        }
+        reportSpacePagerProgress(selectedIndex: selectedIndex, pageStride: pageStride)
         for page in pages.values {
             page.frame = NSRect(
                 x: CGFloat(page.index) * pageStride + inset,

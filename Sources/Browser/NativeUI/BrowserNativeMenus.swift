@@ -78,7 +78,7 @@ import AppKit
     }
 
     static func space(
-        _ space: BrowserChromeModel.Space,
+        _: BrowserChromeModel.Space,
         canDelete: Bool,
         canResetTabs: Bool = false,
         onRename: @escaping () -> Void,
@@ -88,8 +88,7 @@ import AppKit
         onDelete: @escaping () -> Void,
     ) -> NSMenu {
         let menu = menu()
-        let icons = submenu(BrowserStrings.spaceChangeIconAction, in: menu)
-        addIcons(to: icons, selected: space.systemImageName, action: onChangeIcon)
+        addIconPicker(BrowserStrings.spaceChangeIconAction, to: menu, action: onChangeIcon)
         add(BrowserStrings.spaceRenameAction, to: menu, action: onRename)
         if let onEditTheme {
             add(BrowserStrings.spaceEditThemeAction, to: menu, action: onEditTheme)
@@ -109,10 +108,13 @@ import AppKit
     ) -> NSMenu {
         let menu = menu()
         add(BrowserStrings.pinnedTabFolderRenameAction, to: menu, action: onRename)
-        let icons = submenu(BrowserStrings.pinnedTabFolderChangeIconAction, in: menu)
-        add(BrowserStrings.pinnedTabFolderNoIconAction, to: icons) { onChangeIcon(nil) }
-        icons.addItem(.separator())
-        addIcons(to: icons, selected: folder.systemImageName) { onChangeIcon($0) }
+        addIconMenu(
+            BrowserStrings.pinnedTabFolderChangeIconAction,
+            to: menu,
+            selected: folder.systemImageName,
+            noIconTitle: BrowserStrings.pinnedTabFolderNoIconAction,
+            action: onChangeIcon,
+        )
         if let onDelete {
             menu.addItem(.separator())
             add(BrowserStrings.pinnedTabFolderDeleteAction, to: menu, action: onDelete)
@@ -120,7 +122,7 @@ import AppKit
         return menu
     }
 
-    /// An icon submenu with a No Icon choice, as folders use.
+    /// Opens the icon picker, and offers to remove an icon already chosen.
     static func addIconMenu(
         _ title: String,
         to menu: NSMenu,
@@ -128,18 +130,17 @@ import AppKit
         noIconTitle: String,
         action: @escaping (String?) -> Void,
     ) {
-        let icons = submenu(title, in: menu)
-        add(noIconTitle, to: icons) { action(nil) }
-        icons.addItem(.separator())
-        addIcons(to: icons, selected: selected) { action($0) }
+        addIconPicker(title, to: menu) { action($0) }
+        if selected != nil {
+            add(noIconTitle, to: menu) { action(nil) }
+        }
     }
 
     // MARK: Private
 
-    private static func addIcons(to menu: NSMenu, selected: String?, action: @escaping (String) -> Void) {
-        for name in BrowserSpaceIconCatalog.systemImageNames {
-            let item = add(name, to: menu) { action(name) }
-            item.image = NSImage(systemSymbolName: selected == name ? "checkmark" : name, accessibilityDescription: nil)
+    private static func addIconPicker(_ title: String, to menu: NSMenu, action: @escaping (String) -> Void) {
+        add(title + "…", to: menu) {
+            BrowserIconPickerPresenter.shared.showAtPointer(onPick: action)
         }
     }
 }

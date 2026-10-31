@@ -582,3 +582,16 @@
 "browser.space.theme.intensity" = "Intensity";
 "browser.space.theme.cycle_texture" = "Cycle noise texture";
 "browser.space.theme.set_color" = "Set Space Color";
+"browser.icon_picker.search" = "Search";
+"browser.icon_picker.emoji" = "Emoji";
+"browser.icon_picker.icon" = "Icon";
+"browser.space.creation.title" = "Create a Space";
+"browser.space.creation.detail" = "Separate your tabs for life, work, projects, and more.";
+"browser.space.creation.name_placeholder" = "Space name…";
+"browser.space.creation.theme" = "Choose a Theme";
+"browser.space.creation.create" = "Create Space";
+"browser.space.creation.cancel" = "Cancel";
+"browser.dock_menu.new_space" = "New Space";
+"browser.dock_menu.new_folder" = "New Folder";
+"browser.dock_menu.new_split" = "New Split";
+"browser.dock_menu.new_tab" = "New Tab";

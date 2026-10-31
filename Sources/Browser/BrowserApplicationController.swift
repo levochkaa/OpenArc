@@ -1474,7 +1474,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 keyEquivalent: shortcut?.keyEquivalent ?? "",
             )
             item.keyEquivalentModifierMask = shortcut?.modifiers ?? []
-            item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
+            item.image = BrowserIconImage.image(named: space.systemImageName, pointSize: 13)
             item.tag = index
             item.target = self
             menu.insertItem(item, at: position)
@@ -2191,7 +2191,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.resetSpaceTabs() ?? false
         case .newSpace:
             guard let model = activeChromeModel, model.supportsSpaces, !model.isWebApp else { return false }
-            model.createNewSpace()
+            model.beginCreatingSpace()
             return true
         case .newFolder:
             return activeChromeModel?.createFolderFromSelectedTab() ?? false

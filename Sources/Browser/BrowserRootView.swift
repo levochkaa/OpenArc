@@ -180,6 +180,7 @@ final class BrowserRootView: NSView {
         model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
         model.onOpenExtensions = { [weak self] in self?.openExtensions() }
         model.onEditSpaceTheme = { [weak self] in self?.presentSpaceThemeEditor(spaceID: $0) }
+        model.onEditSpaceCreationTheme = { [weak self] _ in self?.presentSpaceCreationThemeEditor() }
         sidebar.sidebar.state.drag.pageSplitDropResolver = { [weak content] point, tabID in
             content?.splitPaneBars.pageSplitDrop(atWindowPoint: point, draggedTabID: tabID)
         }
@@ -530,13 +531,25 @@ final class BrowserRootView: NSView {
     /// is selected first, so edits show on the window at once.
     private func presentSpaceThemeEditor(spaceID: String) {
         model.selectSpace(id: spaceID)
-        spaceThemePopover?.performClose(nil)
-        let editor = BrowserSpaceThemeEditorViewController(theme: model.spaceThemesByID[spaceID])
-        editor.onChange = { [weak self] theme, commit in
-            guard let self else { return }
-            model.setTheme(theme, forSpaceID: spaceID, persist: commit)
-            if theme.colors.isEmpty || commit { refresh() }
+        showSpaceThemeEditor(theme: model.spaceThemesByID[spaceID]) { [weak self] theme, commit in
+            self?.model.setTheme(theme, forSpaceID: spaceID, persist: commit)
         }
+    }
+
+    /// The Space being created has no ID yet; its draft holds the theme.
+    private func presentSpaceCreationThemeEditor() {
+        showSpaceThemeEditor(theme: model.spaceCreationDraft?.theme) { [weak self] theme, _ in
+            self?.model.updateSpaceCreationDraft { $0.theme = theme.colors.isEmpty ? nil : theme }
+        }
+    }
+
+    private func showSpaceThemeEditor(
+        theme: BrowserSpaceTheme?,
+        onChange: @escaping (BrowserSpaceTheme, Bool) -> Void,
+    ) {
+        spaceThemePopover?.performClose(nil)
+        let editor = BrowserSpaceThemeEditorViewController(theme: theme)
+        editor.onChange = onChange
         let popover = BrowserNativePopover()
         popover.behavior = .transient
         popover.animates = true

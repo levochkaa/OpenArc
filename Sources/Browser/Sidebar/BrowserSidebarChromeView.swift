@@ -103,7 +103,8 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
         header.urlControls.onURLFrameChange = onURLFrameChange
         header.configure(
             showsWindowControls: showsWindowControls,
-            showsURL:!model.userPreferencesStore.siteURLToolbarEnabled,
+            showsURL:!model.userPreferencesStore.siteURLToolbarEnabled && model.spaceCreationDraft == nil,
+            showsNavigation:!model.userPreferencesStore.siteURLToolbarEnabled,
             isResizing: isResizing,
             toggleTitle: model.isSidebarVisible
                 ? BrowserStrings.sidebarHide

@@ -351,6 +351,10 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var spaceThemesByID = [String: BrowserSpaceTheme]()
     /// UI-only: opens the window's theme editor for a Space.
     var onEditSpaceTheme: ((String) -> Void)?
+    /// UI-only: opens the theme editor for the Space being created, beside this view.
+    var onEditSpaceCreationTheme: ((NSView) -> Void)?
+    /// A Space being set up in the sidebar. Its theme shows on the window at once.
+    @Published private(set) var spaceCreationDraft: BrowserSpaceCreationDraft?
     /// Change Icon: the symbol shown instead of a tab's favicon, by sync
     /// ID so it survives a dormant tab reopening under a new runtime ID. Local.
     private(set) var tabIconsBySyncID = [String: String]()
@@ -730,6 +734,7 @@ enum BrowserWindowMode: Equatable {
 
     /// The theme of the selected Space, or nil for the neutral window.
     var selectedSpaceTheme: BrowserSpaceTheme? {
+        if let spaceCreationDraft { return spaceCreationDraft.theme }
         guard supportsSpaces, let selectedSpaceID else { return nil }
         return spaceThemesByID[selectedSpaceID]
     }
@@ -1267,7 +1272,7 @@ enum BrowserWindowMode: Equatable {
             if let title {
                 space.title = title
             }
-            if let icon = arcSpace.icon, NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil {
+            if let icon = arcSpace.icon, BrowserIconImage.isValid(icon) {
                 space.systemImageName = icon
             }
             spaces.append(space)
@@ -1344,6 +1349,41 @@ enum BrowserWindowMode: Equatable {
         selectSpace(id: space.id)
         BrowserTelemetry.captureUsage(.spaceCreated, properties: telemetryProperties)
         persistCurrentSessionIfAllowed()
+    }
+
+    /// Opens the sidebar page that sets up a Space. Nothing changes until it is created.
+    func beginCreatingSpace() {
+        guard supportsSpaces, !isShuttingDown, spaceCreationDraft == nil else { return }
+        spaceCreationDraft = BrowserSpaceCreationDraft()
+    }
+
+    func updateSpaceCreationDraft(_ change: (inout BrowserSpaceCreationDraft) -> Void) {
+        guard var draft = spaceCreationDraft else { return }
+        change(&draft)
+        spaceCreationDraft = draft
+    }
+
+    func cancelCreatingSpace() {
+        spaceCreationDraft = nil
+    }
+
+    /// Makes the Space from the page's choices and moves to it.
+    @discardableResult func commitCreatingSpace() -> Bool {
+        guard let draft = spaceCreationDraft,
+              let title = sanitizedSpaceTitle(from: draft.title)
+        else { return false }
+        spaceCreationDraft = nil
+        var space = makeSpace()
+        space.title = title
+        if let icon = draft.icon {
+            space.systemImageName = icon
+        }
+        spaces.append(space)
+        spaceThemesByID[space.id] = draft.theme
+        selectSpace(id: space.id)
+        BrowserTelemetry.captureUsage(.spaceCreated, properties: telemetryProperties)
+        persistCurrentSessionIfAllowed()
+        return true
     }
 
     func canDeleteSpace(id spaceID: String) -> Bool {
@@ -3095,6 +3135,146 @@ enum BrowserWindowMode: Equatable {
         pictureInPictureTabIDs.contains(tabID)
     }
 
+    func isCommandBarActionAvailable(_ commandID: BrowserCommandID) -> Bool {
+        switch commandID {
+        case .openSettings,
+             .setAsDefaultBrowser:
+            true
+        case .newTab:
+            canCreateTab
+        case .openLocation:
+            canOpenLocation
+        case .zoomIn:
+            canZoomIn
+        case .zoomOut:
+            canZoomOut
+        case .resetZoom:
+            canResetZoom
+        case .stopLoading:
+            canStopLoading
+        case .developerTools:
+            canShowDeveloperTools
+        case .viewSource:
+            canViewSource
+        case .restoreLastClosedTab:
+            canRestoreLastClosedTab
+        case .newIncognitoWindow:
+            !isShuttingDown
+        case .newLittleWindow:
+            canOpenLittleWindow
+        case .openHistory:
+            canCreateTab && !isShuttingDown
+        case .toggleBookmark:
+            selectedTab?.urlString.isEmpty == false
+        case .archiveTab:
+            canArchiveSelectedTab
+        case .viewArchive:
+            canBrowseArchive
+        case .clearArchive:
+            canBrowseArchive && !isArchiveOperationInFlight
+        case .savePage:
+            canSavePage
+        case .printPage:
+            canPrintPage
+        case .copyLink,
+             .copyLinkAsMarkdown:
+            canCopySelectedTabLink
+        case .copyLinkAsQuote:
+            canCopySelectedTextAsQuoteLink
+        case .findInPage:
+            canPresentFindInPage
+        case .findAndReplace,
+             .jumpToSelection:
+            false
+        case .findNext,
+             .findPrevious:
+            canStepThroughFindMatches
+        case .clearTemporaryTabs:
+            canClearTemporaryTabs
+        case .viewDownloads:
+            onToggleDownloads != nil
+        case .togglePinTab:
+            canTogglePinSelectedTab
+        case .duplicateTab:
+            selectedTabID.map { canDuplicateTab(id: $0) } ?? false
+        case .renameTab:
+            canRenameSelectedTab
+        case .resetTabToPinnedURL:
+            canResetSelectedTabToPinnedURL
+        case .resetSpaceTabs:
+            canResetSpaceTabs()
+        case .collapseAllFolders:
+            canSetActiveSpaceFoldersExpanded(false)
+        case .expandAllFolders:
+            canSetActiveSpaceFoldersExpanded(true)
+        case .newSpace:
+            supportsSpaces && !isShuttingDown
+        case .newFolder:
+            canCreateFolderFromSelectedTab
+        case .captureFullPage:
+            canCreateTab && selectedTabID != nil
+        case .captureArea:
+            canCaptureArea
+        case .goToLastSidebarItem,
+             .selectNextTab,
+             .selectPreviousTab:
+            !sidebarItemTabIDs.isEmpty
+        case .selectNextTabAlternate,
+             .selectPreviousTabAlternate:
+            // The command bar lists Next/Previous Tab once.
+            false
+        case .selectNextSpace,
+             .selectPreviousSpace:
+            supportsSpaces && spaces.count > 1
+        case .revealCurrentTab:
+            canRevealSelectedTab
+        case .openExtensions:
+            canOpenExtensions
+        case .goToSidebarItem1,
+             .goToSidebarItem2,
+             .goToSidebarItem3,
+             .goToSidebarItem4,
+             .goToSidebarItem5,
+             .goToSidebarItem6,
+             .goToSidebarItem7,
+             .goToSidebarItem8:
+            sidebarItemTabIDs.count > commandID.sidebarItemIndex
+        case .goBack:
+            canGoBack
+        case .goForward:
+            canGoForward
+        case .clearCacheAndRefresh,
+             .clearCookiesAndRefresh,
+             .forceReload,
+             .reload:
+            canReload
+        case .addSplitView:
+            canAddSplitView
+        case .closeSplitPane,
+             .separateSplitView,
+             .separateTabFromSplit,
+             .toggleSplitOrientation:
+            selectedSplitGroup != nil && !isShuttingDown
+        case .focusSplitPane1,
+             .focusSplitPane2,
+             .focusSplitPane3,
+             .focusSplitPane4:
+            selectedSplitGroup.map { splitPaneTabIDs(of: $0).count > commandID.splitPaneIndex } == true
+        case .expandCurrentSplit,
+             .focusNextSplitPane,
+             .focusPreviousSplitPane:
+            selectedSplitGroup != nil
+        case .toggleSidebar:
+            true
+        case .toggleSidebarPosition:
+            !isWebApp
+        case .toggleBookmarksBar:
+            true
+        case .toggleSiteToolbar:
+            !isWebApp
+        }
+    }
+
     /// Chromium writes the pasteboard only for a selection that differs from
     /// the find text, so nothing happens without one, as in Chrome.
     private func awaitSelectionForFind(changedFrom before: Int, tabID: String, attempts: Int) {
@@ -4189,146 +4369,6 @@ enum BrowserWindowMode: Equatable {
         ] + commandID.commandBarSearchAliases + descriptor.shortcut.commandBarSearchAliases)
             .map(normalizedCommandSearchText)
             .joined(separator: " ")
-    }
-
-    private func isCommandBarActionAvailable(_ commandID: BrowserCommandID) -> Bool {
-        switch commandID {
-        case .openSettings,
-             .setAsDefaultBrowser:
-            true
-        case .newTab:
-            canCreateTab
-        case .openLocation:
-            canOpenLocation
-        case .zoomIn:
-            canZoomIn
-        case .zoomOut:
-            canZoomOut
-        case .resetZoom:
-            canResetZoom
-        case .stopLoading:
-            canStopLoading
-        case .developerTools:
-            canShowDeveloperTools
-        case .viewSource:
-            canViewSource
-        case .restoreLastClosedTab:
-            canRestoreLastClosedTab
-        case .newIncognitoWindow:
-            !isShuttingDown
-        case .newLittleWindow:
-            canOpenLittleWindow
-        case .openHistory:
-            canCreateTab && !isShuttingDown
-        case .toggleBookmark:
-            selectedTab?.urlString.isEmpty == false
-        case .archiveTab:
-            canArchiveSelectedTab
-        case .viewArchive:
-            canBrowseArchive
-        case .clearArchive:
-            canBrowseArchive && !isArchiveOperationInFlight
-        case .savePage:
-            canSavePage
-        case .printPage:
-            canPrintPage
-        case .copyLink,
-             .copyLinkAsMarkdown:
-            canCopySelectedTabLink
-        case .copyLinkAsQuote:
-            canCopySelectedTextAsQuoteLink
-        case .findInPage:
-            canPresentFindInPage
-        case .findAndReplace,
-             .jumpToSelection:
-            false
-        case .findNext,
-             .findPrevious:
-            canStepThroughFindMatches
-        case .clearTemporaryTabs:
-            canClearTemporaryTabs
-        case .viewDownloads:
-            onToggleDownloads != nil
-        case .togglePinTab:
-            canTogglePinSelectedTab
-        case .duplicateTab:
-            selectedTabID.map { canDuplicateTab(id: $0) } ?? false
-        case .renameTab:
-            canRenameSelectedTab
-        case .resetTabToPinnedURL:
-            canResetSelectedTabToPinnedURL
-        case .resetSpaceTabs:
-            canResetSpaceTabs()
-        case .collapseAllFolders:
-            canSetActiveSpaceFoldersExpanded(false)
-        case .expandAllFolders:
-            canSetActiveSpaceFoldersExpanded(true)
-        case .newSpace:
-            supportsSpaces && !isShuttingDown
-        case .newFolder:
-            canCreateFolderFromSelectedTab
-        case .captureFullPage:
-            canCreateTab && selectedTabID != nil
-        case .captureArea:
-            canCaptureArea
-        case .goToLastSidebarItem,
-             .selectNextTab,
-             .selectPreviousTab:
-            !sidebarItemTabIDs.isEmpty
-        case .selectNextTabAlternate,
-             .selectPreviousTabAlternate:
-            // The command bar lists Next/Previous Tab once.
-            false
-        case .selectNextSpace,
-             .selectPreviousSpace:
-            supportsSpaces && spaces.count > 1
-        case .revealCurrentTab:
-            canRevealSelectedTab
-        case .openExtensions:
-            canOpenExtensions
-        case .goToSidebarItem1,
-             .goToSidebarItem2,
-             .goToSidebarItem3,
-             .goToSidebarItem4,
-             .goToSidebarItem5,
-             .goToSidebarItem6,
-             .goToSidebarItem7,
-             .goToSidebarItem8:
-            sidebarItemTabIDs.count > commandID.sidebarItemIndex
-        case .goBack:
-            canGoBack
-        case .goForward:
-            canGoForward
-        case .clearCacheAndRefresh,
-             .clearCookiesAndRefresh,
-             .forceReload,
-             .reload:
-            canReload
-        case .addSplitView:
-            canAddSplitView
-        case .closeSplitPane,
-             .separateSplitView,
-             .separateTabFromSplit,
-             .toggleSplitOrientation:
-            selectedSplitGroup != nil && !isShuttingDown
-        case .focusSplitPane1,
-             .focusSplitPane2,
-             .focusSplitPane3,
-             .focusSplitPane4:
-            selectedSplitGroup.map { splitPaneTabIDs(of: $0).count > commandID.splitPaneIndex } == true
-        case .expandCurrentSplit,
-             .focusNextSplitPane,
-             .focusPreviousSplitPane:
-            selectedSplitGroup != nil
-        case .toggleSidebar:
-            true
-        case .toggleSidebarPosition:
-            !isWebApp
-        case .toggleBookmarksBar:
-            true
-        case .toggleSiteToolbar:
-            !isWebApp
-        }
     }
 
     private func internalPageSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {

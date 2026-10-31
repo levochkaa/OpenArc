@@ -180,10 +180,22 @@ struct BrowserNativeChromeButtonStyle {
 
 /// Plus and cross drawn from two 14 x 2 pt rounded bars.
 enum BrowserNativeBarGlyph {
-    static func image(symbol: String) -> NSImage? {
+    /// A Space without its own icon shows as a dot in the dock.
+    static let spaceDot = "space.dot"
+
+    static func image(symbol: String, rotation extra: CGFloat = 0) -> NSImage? {
+        if symbol == spaceDot {
+            let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+                NSColor.black.setFill()
+                NSBezierPath(ovalIn: rect).fill()
+                return true
+            }
+            image.isTemplate = true
+            return image
+        }
         let rotation: CGFloat
         switch symbol {
-        case "plus": rotation = 0
+        case "plus": rotation = extra
         case "xmark": rotation = 45
         default: return nil
         }
@@ -423,11 +435,22 @@ final class BrowserNativeChromeButton: NSButton {
     }
 
     private static func image(symbol: String, title: String, style: BrowserNativeChromeButtonStyle) -> NSImage? {
-        if style.usesDrawnGlyphs, let glyph = BrowserNativeBarGlyph.image(symbol: symbol) {
+        if let glyph = BrowserNativeBarGlyph.image(symbol: symbol),
+           style.usesDrawnGlyphs || symbol == BrowserNativeBarGlyph.spaceDot
+        {
             return glyph
         }
-        return NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
-            .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: style.symbolWeight))
+        return BrowserIconImage.image(
+            named: symbol,
+            pointSize: style.symbolSize,
+            weight: style.symbolWeight,
+            description: title,
+        )
+    }
+
+    /// Turns a drawn plus by some degrees.
+    func setBarGlyphRotation(_ degrees: CGFloat) {
+        image = BrowserNativeBarGlyph.image(symbol: symbolName, rotation: degrees)
     }
 
     func configureSymbol(_ name: String, title: String) {
