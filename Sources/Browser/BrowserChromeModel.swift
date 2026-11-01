@@ -936,7 +936,7 @@ enum BrowserWindowMode: Equatable {
         }
         tabDriver.onStatusChanged = { [weak self] tabID, status in
             guard let self, tabID == selectedTabID else { return }
-            self.linkStatus = status.isEmpty ? nil : BrowserURLDisplayFormatter.fullDisplayString(for: status)
+            self.linkStatus = status.isEmpty ? nil : status
         }
         tabDriver.onTabCloseConfirmationPresented = { [weak self] tabID in
             // The page asks the user, so its row stays while the question is open.

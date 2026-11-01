@@ -27,7 +27,7 @@ import QuartzCore
         /// The Library sliding in from the window edge.
         static let libraryOpen = Curve.spring(response: 0.2, damping: 0.995)
         /// The Library leaving.
-        static let library = Curve.spring(response: 0.19, damping: 0.995)
+        static let library = Curve.spring(response: 0.2, damping: 0.995)
         /// Spaces sliding to a chosen Space or settling after a swipe: critically damped.
         static let spaceSelect = Curve.spring(response: 0.2, damping: 0.995)
         /// A pinned row's title making room for its caption, and the caption fading.
@@ -63,6 +63,8 @@ import QuartzCore
         static let sidebarToLibrary = Curve.bezier(0.045, x1: 0, y1: 0, x2: 1, y2: 1)
         /// The sidebar coming back from the Library.
         static let sidebarFromLibrary = Curve.bezier(0.36, x1: 0.15, y1: 0.8, x2: 0.2, y2: 1)
+        /// The address of the link under the pointer appearing.
+        static let linkStatus = Curve.easeOut(0.2)
         /// The update pill rising into place and fading in.
         static let toastAppear = Curve.spring(response: 0.6, damping: 0.4)
         /// The update pill opening into a card under the pointer.

@@ -526,7 +526,7 @@ final class BrowserSiteControlsNSView: NSView {
             actionHovered = ([copyButton, splitButton, siteButton] as [NSView] + Array(extensionButtons.values))
                 .contains { $0.frame.contains(point) }
         }
-        urlButton.permitsTooltip = !actionHovered && !isSidebarResizing
+        urlButton.permitsTooltip = !actionHovered && !isSidebarResizing && !urlButton.isSearchPresented
         urlButton.refreshTooltip()
         let targetWidth = sidebar && show ? sidebarActionWidth : 0
         if actionWidthTarget != targetWidth {
@@ -577,7 +577,9 @@ final class BrowserSiteControlsNSView: NSView {
         extensionPopovers.openExtension(
             id: id,
             relativeTo: extensionButtons[id] ?? siteButton,
-            preferredEdge: mode == .toolbar ? .minY : model.userPreferencesStore.sidebarPosition == .right ? .minX : .maxX,
+            preferredEdge: mode == .toolbar
+                ? .minY
+                : model.userPreferencesStore.sidebarPosition == .right ? .minX : .maxX,
         )
     }
 

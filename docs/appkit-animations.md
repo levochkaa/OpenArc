@@ -24,7 +24,7 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Reload and Stop | Stop after 0.5 s of loading; dissolve, ease-in-out, 0.1 s | Opacity, in place |
 | Space pager selection and settling after a swipe | spring response 0.2 s, critically damped; committed before the tab switch, 0.05 s after a click or a swipe's release, whose velocity carries on; the theme fades 0.02 s after the slide starts | Horizontal page offset; a swipe moves the page by half of the scroll delta, turns it when quick (under 0.5 s) or past the middle |
 | Theme cross-fade | 0.19 s, timing (0.215, 0.61, 0.355, 1) | Between Spaces |
-| Library | spring response 0.2 s in; response 0.19 s out; both critically damped | Slides from the window edge and moves the page |
+| Library | spring response 0.2 s, critically damped, both ways | Slides from the window edge and moves the page |
 | Sidebar around the Library | 0.045 s linear out; 0.36 s, timing (0.15, 0.8, 0.2, 1), 0.05 s after the Library starts leaving, back | Opacity, and a scale to 0.95 about the middle of the Library's width and the window's height |
 | Drag preview | none | Keeps the look and size it started with until the drop; the pointer position stays with the mouse-down grab point |
 | Drop landing / cancellation | 0.12 s, timing (0.25, 0.1, 0.25, 1) | Preview travels to the final row/cell or merges into a collapsed container before the real rows are revealed |
@@ -39,6 +39,7 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Peek | card opens on stiffness 657.7, damping 44.37 and closes on 779.82, 49.99; the page behind uses the other one | The card grows from a strip around the pointer, wide as the page; the page dims to 0.3 and scales to 0.988 |
 | Command selection scroll | ease-in-out, 0.05 s | Minimum scroll needed to reveal the row, clamped to document bounds; no forced centering |
 | Tooltip visibility | at once after continuous hover: 0.43 s on buttons, 1.48 s on rows; out 0.3 s when the pointer leaves, 0.1 s otherwise; timing (0, 0, 0.58, 1) | Opacity; fades as soon as the pointer leaves; after a row's tooltip the next rows show none until the pointer has been away for 0.3 s |
+| Link address pill | ease-out 0.2 s in, after 0.45 s on the link; 0.1 s out | Opacity |
 | Update pill rising | spring, response 0.6, damping 0.4 | 32 pt slide and opacity on the same spring, room reserved at once |
 | Update pill opening, closing | spring, response 0.33, damping 0.7; response 0.21, damping 0.9 | Height, after 0.3 s of hover; content opacity follows |
 | Page loading bar | pulse 1.63 s up and down, twice; spring response 0.8 s, damping 0.92 to open; highlight 0.73 s of a 1.13 s cycle, linear; 0.33 s to close, timing (0.42, 0, 1, 1) | Opacity and width above the page; Reduce Motion shows a steady bar |

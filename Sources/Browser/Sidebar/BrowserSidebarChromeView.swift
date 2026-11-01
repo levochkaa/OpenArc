@@ -38,7 +38,7 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
         self.model = model
         let state = BrowserNativeSidebarState(
             model: model,
-            snapshot: model.sidebarSnapshot,
+            snapshot: model.presentedSidebarSnapshot,
             sidebarWidth: model.sidebarWidth,
         )
         self.header = BrowserNativeSidebarHeaderNSView(model: model)
@@ -98,7 +98,7 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
     }
 
     func refresh() {
-        let snapshot = model.sidebarSnapshot
+        let snapshot = model.presentedSidebarSnapshot
         let previous = sidebar.state.snapshot
         header.onToggleSidebar = onToggleSidebar
         header.urlControls.onURLFrameChange = onURLFrameChange

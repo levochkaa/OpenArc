@@ -41,6 +41,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var didConfirmTerminationWarning = false
     private var layoutIndependentKeyMonitor: Any?
     private var shortcutStoreCancellable: AnyCancellable?
+    private var reservedShortcutMonitor: Any?
     private var appearancePreferenceCancellable: AnyCancellable?
     private var littleWindowHotKeyCancellable: AnyCancellable?
     private weak var lastKeyProfileWindow: NSWindow?
@@ -153,6 +154,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         observeShortcutStore()
         observeAppearancePreference()
         installLayoutIndependentKeyMonitor()
+        installReservedShortcutMonitor()
         startBatterySaverController()
         app.delegate = self
         if let webAppConfiguration {
@@ -2358,6 +2360,19 @@ NSMenuDelegate, NSUserInterfaceValidations {
         model.onOpenLinkInIncognito = { [weak self] url in
             guard let self else { return }
             createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, firstURL: url)
+        }
+    }
+
+    /// Pages cannot keep these keys anyway, and asking the page first costs a few frames
+    /// before a tab's row or a new window can start to move.
+    private func installReservedShortcutMonitor() {
+        reservedShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            guard modifiers == .command || modifiers == [.command, .shift],
+                  ["w", "t", "n"].contains(event.charactersIgnoringModifiers?.lowercased()),
+                  NSApp.modalWindow == nil, event.window?.attachedSheet == nil
+            else { return event }
+            return NSApp.mainMenu?.performKeyEquivalent(with: event) == true ? nil : event
         }
     }
 

@@ -202,6 +202,7 @@ final class BrowserRootView: NSView {
         model.onSpaceWillSelect = { [weak self] in self?.beginSpaceTransition(to: $0) }
         model.onTabRowsChanged = { [weak self] in
             self?.refresh()
+            self?.layoutSubtreeIfNeeded()
             CATransaction.flush()
         }
         model.onOpenExtensions = { [weak self] in self?.openExtensions() }
@@ -645,7 +646,7 @@ final class BrowserRootView: NSView {
             let changed = zip(previousLayoutState, state).enumerated().filter { $0.element.0 != $0.element.1 }
             nextLayoutCurve = changed.map(\.offset) == [1] ? .floatingSidebar : .sidebar
             if changed.map(\.offset) == [0] {
-                nextLayoutDelay = model.isSidebarVisible ? 0.035 : 0.015
+                nextLayoutDelay = model.isSidebarVisible ? 0.075 : 0.015
             }
             // The toolbar and bookmarks bar appear and leave at once.
             if Set(changed.map(\.offset)).isSubset(of: [2, 3]) {
