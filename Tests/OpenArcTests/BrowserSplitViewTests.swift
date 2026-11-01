@@ -949,3 +949,77 @@ private func splitStoreSnapshot(
     #expect(f.model.closeAppTabProcess(id: app, forceClose: true))
     #expect(f.model.tabs.first { $0.id == app }?.urlString == "https://home.example/")
 }
+
+@Test @MainActor func aNestedFolderGoesInsideAndOpensItsParent() throws {
+    let f = SidebarDragFixture(
+        pinned: [("one", "top")],
+        folders: [.init(id: "top", spaceID: "s", title: "Top", isExpanded: false)],
+    )
+    let nested = try #require(f.model.createNestedFolder(inFolderID: "top"))
+    let folder = try #require(f.model.pinnedTabFolders.first { $0.id == nested })
+    #expect(folder.parentFolderID == "top")
+    #expect(f.model.pinnedTabFolders.first { $0.id == "top" }?.isExpanded == true)
+}
+
+@Test @MainActor func aDuplicatedFolderCopiesItsPagesAndFolders() throws {
+    let f = SidebarDragFixture(pinned: [("a", nil), ("one", "top"), ("two", "inner")], folders: [
+        .init(id: "top", spaceID: "s", title: "Top"),
+        .init(id: "inner", spaceID: "s", parentFolderID: "top", title: "Inner"),
+    ])
+    let tabCount = f.model.tabs.count
+    let copyID = try #require(f.model.duplicateFolder(id: "top"))
+    let copy = try #require(f.model.pinnedTabFolders.first { $0.id == copyID })
+    #expect(copy.title == "Top" && copy.parentFolderID == nil)
+    #expect(f.model.tabs.count == tabCount + 2)
+    #expect(f.model.tabs.filter { $0.pinnedFolderID == copyID }.map(\.urlString) == ["https://one.example"])
+    let inner = try #require(f.model.pinnedTabFolders.first { $0.parentFolderID == copyID })
+    #expect(inner.title == "Inner" && inner.id != "inner")
+    #expect(f.model.tabs.first { $0.pinnedFolderID == inner.id }?.urlString == "https://two.example")
+    #expect(f.model.tabs.first { $0.syncID == "one" }?.pinnedFolderID == "top", "The original stays")
+}
+
+@Test @MainActor func aFolderTurnsIntoASpaceWithItsContents() throws {
+    let f = SidebarDragFixture(pinned: [("a", nil), ("one", "top"), ("two", "inner")], folders: [
+        .init(id: "top", spaceID: "s", title: "Top"),
+        .init(id: "inner", spaceID: "s", parentFolderID: "top", title: "Inner"),
+    ])
+    let before = f.model.spaces.count
+    #expect(f.model.turnFolderIntoSpace(id: "top"))
+    #expect(f.model.spaces.count == before + 1)
+    let space = try #require(f.model.spaces.last)
+    #expect(space.title == "Top")
+    #expect(f.model.selectedSpaceID == space.id)
+    #expect(!f.model.pinnedTabFolders.contains { $0.id == "top" })
+    let one = try #require(f.model.tabs.first { $0.syncID == "one" })
+    #expect(one.spaceID == space.id && one.pinnedFolderID == nil && one.placement == .spacePinned)
+    let inner = try #require(f.model.pinnedTabFolders.first { $0.id == "inner" })
+    #expect(inner.spaceID == space.id && inner.parentFolderID == nil)
+    #expect(f.model.tabs.first { $0.syncID == "two" }?.pinnedFolderID == "inner")
+    #expect(f.model.tabs.first { $0.syncID == "a" }?.spaceID == "s", "The rest of the old Space stays")
+}
+
+@Test @MainActor func aFolderMovesToAnotherSpace() {
+    let f = SidebarDragFixture(pinned: [("one", "top")], folders: [.init(id: "top", spaceID: "s", title: "Top")])
+    let other = "t"
+    #expect(f.model.spacesForMovingFolder(id: "top").map(\.id) == [other])
+    f.model.moveFolder(id: "top", toSpaceID: other)
+    #expect(f.model.pinnedTabFolders.first { $0.id == "top" }?.spaceID == other)
+    #expect(f.model.tabs.first { $0.syncID == "one" }?.spaceID == other)
+}
+
+@Test @MainActor func emptyFoldersMoveAndTurnIntoASpaceToo() throws {
+    let f = SidebarDragFixture(folders: [
+        .init(id: "top", spaceID: "s", title: "Top"),
+        .init(id: "inner", spaceID: "s", parentFolderID: "top", title: "Inner"),
+    ])
+    f.model.moveFolder(id: "top", toSpaceID: "t")
+    #expect(f.model.pinnedTabFolders.first { $0.id == "top" }?.spaceID == "t")
+    #expect(f.model.pinnedTabFolders.first { $0.id == "inner" }?.spaceID == "t")
+    #expect(f.model.pinnedTabFolders.first { $0.id == "inner" }?.parentFolderID == "top")
+    #expect(f.model.turnFolderIntoSpace(id: "top"))
+    let space = try #require(f.model.spaces.last)
+    #expect(space.title == "Top")
+    let inner = try #require(f.model.pinnedTabFolders.first { $0.id == "inner" })
+    #expect(inner.spaceID == space.id && inner.parentFolderID == nil, "A nested folder outlives its parent")
+    #expect(!f.model.pinnedTabFolders.contains { $0.id == "top" })
+}

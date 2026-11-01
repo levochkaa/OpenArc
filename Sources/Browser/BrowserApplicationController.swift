@@ -542,7 +542,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func createFolderFromSelectedTab(_: Any?) {
-        activeChromeModel?.createFolderFromSelectedTab()
+        activeChromeModel?.createFolderInSelectedSpace()
     }
 
     public func captureFullPage(_: Any?) {
@@ -958,7 +958,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(expandAllFolders(_:)):
             return activeChromeModel?.canSetActiveSpaceFoldersExpanded(true) ?? false
         case #selector(createFolderFromSelectedTab(_:)):
-            return activeChromeModel?.canCreateFolderFromSelectedTab ?? false
+            return activeChromeModel?.canCreateFolder ?? false
         case #selector(captureFullPage(_:)):
             return activeChromeModel.map { $0.canCreateTab && $0.selectedTabID != nil } ?? false
         case #selector(captureArea(_:)),
@@ -2737,7 +2737,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             model.beginCreatingSpace()
             return true
         case .newFolder:
-            return activeChromeModel?.createFolderFromSelectedTab() ?? false
+            return activeChromeModel?.createFolderInSelectedSpace() != nil
         case .captureFullPage:
             return activeChromeModel?.captureFullPageSelectedTabToPasteboard() ?? false
         case .captureArea:

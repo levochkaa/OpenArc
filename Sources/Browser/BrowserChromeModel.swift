@@ -384,6 +384,8 @@ enum BrowserWindowMode: Equatable {
     @Published var passwordPrompt: BrowserPasswordPrompt?
     var passwordStore: BrowserPasswordStoring?
     var addressStore: BrowserAddressStoring?
+    /// A folder just made from the menu: the sidebar opens its name for editing.
+    @Published var folderToRename: String?
     var cardStore: BrowserCardStoring?
     /// Asks the Mac's owner before a card goes into a page.
     var authenticateCardUse: @MainActor (String) async -> Bool = BrowserCardAuthentication.ask
@@ -1852,6 +1854,107 @@ enum BrowserWindowMode: Equatable {
         applyPinnedTree(tree)
         persistCurrentSessionIfAllowed()
         return folderID
+    }
+
+    // MARK: Folder menu
+
+    /// New Nested Folder: an empty folder at the top of this one.
+    func createNestedFolder(inFolderID parentID: String) -> String? {
+        guard let parent = pinnedTabFolders.first(where: { $0.id == parentID }),
+              let folderID = createEmptyPinnedFolder(
+                  title: BrowserStrings.pinnedTabFolderDefaultTitle,
+                  inSpaceID: parent.spaceID,
+              )
+        else { return nil }
+        movePinnedTabFolder(withID: folderID, toRootSectionIndex: 0, targetParentFolderID: parentID)
+        if let index = pinnedTabFolders.firstIndex(where: { $0.id == parentID }) {
+            pinnedTabFolders[index].isExpanded = true
+        }
+        persistCurrentSessionIfAllowed()
+        return folderID
+    }
+
+    /// Spaces a folder can go to.
+    func spacesForMovingFolder(id folderID: String) -> [Space] {
+        guard supportsSpaces, let folder = pinnedTabFolders.first(where: { $0.id == folderID }) else { return [] }
+        return spaces.filter { $0.id != folder.spaceID }
+    }
+
+    /// Duplicate: a copy right below the folder. Its pages come in unloaded.
+    @discardableResult func duplicateFolder(id folderID: String) -> String? {
+        guard let source = pinnedTabFolders.first(where: { $0.id == folderID }) else { return nil }
+        let container = BrowserSidebarDropContainer.pinned(source.spaceID, folderID: source.parentFolderID)
+        let siblings = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot()).items(in: container)
+        guard let position = siblings.firstIndex(of: .folder(folderID)),
+              let copyID = copyFolder(source)
+        else { return nil }
+        movePinnedTabFolder(
+            withID: copyID,
+            toRootSectionIndex: position + 1,
+            targetSpaceID: source.spaceID,
+            targetParentFolderID: source.parentFolderID,
+        )
+        persistCurrentSessionIfAllowed()
+        return copyID
+    }
+
+    /// Move to: an empty folder has no pages for the sidebar's move plan to carry.
+    func moveFolder(id folderID: String, toSpaceID spaceID: String) {
+        guard spaces.contains(where: { $0.id == spaceID }) else { return }
+        let descendants = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+            .descendantFolderIDs(including: folderID)
+        movePinnedTabFolder(withID: folderID, toRootSectionIndex: 0, targetSpaceID: spaceID)
+        guard pinnedTabFolders.first(where: { $0.id == folderID })?.spaceID != spaceID else { return }
+        for index in pinnedTabFolders.indices where descendants.contains(pinnedTabFolders[index].id) {
+            pinnedTabFolders[index].spaceID = spaceID
+        }
+        if let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }) {
+            pinnedTabFolders[index].parentFolderID = nil
+        }
+        var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+        let root = BrowserSidebarDropContainer.pinned(spaceID)
+        tree.children[root] = [.folder(folderID)] + tree.items(in: root).filter { $0 != .folder(folderID) }
+        applyPinnedTree(tree)
+        persistCurrentSessionIfAllowed()
+    }
+
+    /// Turn into Space: a new Space with the folder's name and icon, whose pinned rows are
+    /// what the folder held. The folder itself is gone.
+    @discardableResult func turnFolderIntoSpace(id folderID: String) -> Bool {
+        guard supportsSpaces, !isShuttingDown,
+              let folder = pinnedTabFolders.first(where: { $0.id == folderID })
+        else { return false }
+        let order = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+            .items(in: .pinned(folder.spaceID, folderID: folderID))
+        var space = makeSpace()
+        if let title = sanitizedSpaceTitle(from: folder.title) {
+            space.title = title
+        }
+        if let icon = folder.systemImageName {
+            space.systemImageName = icon
+        }
+        spaces.append(space)
+        spaceThemesByID[space.id] = spaceThemesByID[folder.spaceID]
+        spaceProfilesByID[space.id] = spaceProfilesByID[folder.spaceID]
+        moveFolder(id: folderID, toSpaceID: space.id)
+        for (index, item) in order.enumerated() {
+            switch item {
+            case .tab(let id):
+                moveTab(withID: id, toPlacement: .spacePinned, atSectionIndex: index, targetSpaceID: space.id)
+            case .folder(let id):
+                if let folderIndex = pinnedTabFolders.firstIndex(where: { $0.id == id }) {
+                    pinnedTabFolders[folderIndex].parentFolderID = nil
+                }
+            }
+        }
+        pinnedTabFolders.removeAll { $0.id == folderID }
+        var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+        tree.children[.pinned(space.id)] = order
+        applyPinnedTree(tree)
+        selectSpace(id: space.id)
+        BrowserTelemetry.captureUsage(.spaceCreated, properties: telemetryProperties)
+        persistCurrentSessionIfAllowed()
+        return true
     }
 
     /// Makes a live folder list exactly these pages: a new one comes in unloaded, and
@@ -3730,7 +3833,7 @@ enum BrowserWindowMode: Equatable {
         case .newSpace:
             supportsSpaces && !isShuttingDown
         case .newFolder:
-            canCreateFolderFromSelectedTab
+            canCreateFolder
         case .captureFullPage:
             canCreateTab && selectedTabID != nil
         case .captureArea:
@@ -3847,6 +3950,45 @@ enum BrowserWindowMode: Equatable {
             tabDriver.deselectActiveTab()
         }
         updateWindowTitle()
+    }
+
+    private func copyFolder(_ source: PinnedTabFolder) -> String? {
+        guard let copyID = createEmptyPinnedFolder(title: source.title, inSpaceID: source.spaceID) else { return nil }
+        setIcon(source.systemImageName, forPinnedTabFolderID: copyID)
+        let items = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+            .items(in: .pinned(source.spaceID, folderID: source.id))
+        var order = [BrowserSidebarItemID]()
+        for item in items {
+            switch item {
+            case .tab(let id):
+                guard let tab = tabs.first(where: { $0.id == id }) else { continue }
+                let home = tab.pinnedURLString ?? tab.urlString
+                let tabID = UUID().uuidString
+                restoredTabCreationIDs.insert(tabID)
+                tabs.append(Tab(
+                    id: tabID,
+                    syncID: tabSyncIDProvider(),
+                    spaceID: source.spaceID,
+                    title: tab.title,
+                    userTitleOverride: tab.userTitleOverride,
+                    urlString: home,
+                    pinnedURLString: home,
+                    placement: .spacePinned,
+                    pinnedFolderID: copyID,
+                    lastActivityAt: dateProvider(),
+                ))
+                order.append(.tab(tabID))
+            case .folder(let id):
+                guard let nested = pinnedTabFolders.first(where: { $0.id == id }), let nestedID = copyFolder(nested)
+                else { continue }
+                movePinnedTabFolder(withID: nestedID, toRootSectionIndex: order.count, targetParentFolderID: copyID)
+                order.append(.folder(nestedID))
+            }
+        }
+        var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+        tree.children[.pinned(source.spaceID, folderID: copyID)] = order
+        applyPinnedTree(tree)
+        return copyID
     }
 
     private func hasNoPage(_ id: String) -> Bool {

@@ -434,7 +434,7 @@ final class BrowserNativeSidebarNSView: NSView {
         if let newTab = page.frames["new-tab"] {
             let frame = page.document.convert(newTab, to: content)
             let spacing = BrowserChromeLayout.sidebarListSpacing
-            if state.snapshot.spacePinnedTabs(in: id).isEmpty {
+            if state.snapshot.visiblePinnedRows(in: id, revealedTabIDsByFolderID: [:]).isEmpty {
                 geometry.addEmptySection(
                     .pinned(id),
                     frame: CGRect(x: frame.minX, y: frame.minY - spacing, width: frame.width, height: spacing),
@@ -936,7 +936,7 @@ final class BrowserNativeSidebarNSView: NSView {
             space: space,
             renaming: state.renamingSpaceID == space.id,
             collapsed: snapshot.isPinnedSectionCollapsed(in: space.id),
-            hasPinnedTabs: !snapshot.spacePinnedTabs(in: space.id).isEmpty,
+            hasPinnedTabs: !snapshot.visiblePinnedRows(in: space.id, revealedTabIDsByFolderID: [:]).isEmpty,
             dropTargeted: state.isSpaceHeaderDropTarget(spaceID: space.id),
             isResizing: state.isSidebarResizing,
             resetID: state.tabRowInteractionResetID,
@@ -960,7 +960,6 @@ final class BrowserNativeSidebarNSView: NSView {
             state.finishSpacePagerDrag(value, in: state.snapshot, pageWidth: pagerClip.bounds.width)
         }
 
-        let pinned = snapshot.spacePinnedTabs(in: space.id)
         let temporary = snapshot.temporaryTabs(in: space.id)
         let pinnedRows = snapshot.visiblePinnedRows(
             in: space.id,
@@ -976,7 +975,7 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         let collapsed = model.supportsSpaces && snapshot.isPinnedSectionCollapsed(in: space.id)
         if !collapsed {
-            for row in pinnedRows where !pinned.isEmpty {
+            for row in pinnedRows {
                 switch row {
                 case .tab(let tabRow):
                     guard showsRow(for: tabRow.tab) else { continue }
@@ -992,7 +991,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 }
             }
         }
-        if !pinned.isEmpty {
+        if !pinnedRows.isEmpty {
             entries.append(.divider)
         }
         if model.windowMode.isSpaceless {
@@ -1054,6 +1053,25 @@ final class BrowserNativeSidebarNSView: NSView {
                     folder,
                     onRename: { row?.onBeginRename() },
                     onChangeIcon: { model.setIcon($0, forPinnedTabFolderID: folder.id) },
+                    onNewNested: { [weak state] in
+                        state?.withSidebarAnimation {
+                            if let id = model.createNestedFolder(inFolderID: folder.id) {
+                                state?.beginRenamingPinnedTabFolder(id: id)
+                            }
+                        }
+                    },
+                    onTurnIntoSpace: model.supportsSpaces
+                        ? { [weak state] in
+                            state?.withSidebarAnimation { _ = model.turnFolderIntoSpace(id: folder.id) }
+                        }
+                        : nil,
+                    onDuplicate: { [weak state] in
+                        state?.withSidebarAnimation { _ = model.duplicateFolder(id: folder.id) }
+                    },
+                    moveTargets: model.spacesForMovingFolder(id: folder.id),
+                    onMove: { [weak state] spaceID in
+                        state?.withSidebarAnimation { model.moveFolder(id: folder.id, toSpaceID: spaceID) }
+                    },
                     onDelete: { [weak state] in
                         state?.withSidebarAnimation { _ = model.deletePinnedTabFolder(id: folder.id) }
                     },
@@ -1530,8 +1548,8 @@ final class BrowserNativeSidebarNSView: NSView {
                 }
             },
             onManageSpaces: { model.openSpacesInLibrary() },
-            canCreateFolder: model.canCreateFolderFromSelectedTab,
-            onNewFolder: { model.createFolderFromSelectedTab() },
+            canCreateFolder: model.canCreateFolder,
+            onNewFolder: { model.createFolderInSelectedSpace() },
             onNewGitHubLiveFolder: { model.createGitHubLiveFolder(inSpaceID: space.id) },
             exportTargets: state.snapshot.spaces.filter { $0.id != space.id },
             onExport: { targetID in model.exportSpace(id: space.id, intoFolderInSpaceID: targetID) },
@@ -1633,6 +1651,10 @@ final class BrowserNativeSidebarNSView: NSView {
 
     /// Starts renaming the selected row once per Rename Tab request.
     private func renameSelectedRowIfRequested() {
+        if let folderID = state.model.folderToRename {
+            state.model.folderToRename = nil
+            DispatchQueue.main.async { [weak self] in self?.state.beginRenamingPinnedTabFolder(id: folderID) }
+        }
         let request = state.model.sidebarRenameRequestID
         guard request != handledRenameRequestID else { return }
         handledRenameRequestID = request

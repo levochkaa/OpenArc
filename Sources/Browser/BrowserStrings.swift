@@ -1702,6 +1702,14 @@ enum BrowserStrings {
     static let cardFillReason = NSLocalizedString("browser.card.fill_reason", comment: "System authentication dialog.")
     static let settingsCards = NSLocalizedString("browser.settings.cards", comment: "Settings section.")
     static let cardNoneSaved = NSLocalizedString("browser.card.none_saved", comment: "Settings, empty list.")
+    static let pinnedTabFolderNewNestedAction = NSLocalizedString(
+        "browser.pinned_tab_folder.new_nested",
+        comment: "Folder menu.",
+    )
+    static let pinnedTabFolderTurnIntoSpaceAction = NSLocalizedString(
+        "browser.pinned_tab_folder.turn_into_space",
+        comment: "Folder menu. The folder's name.",
+    )
     static let addressSaveTitle = NSLocalizedString("browser.address.save_title", comment: "Prompt.")
     static let addressFillTitle = NSLocalizedString("browser.address.fill_title", comment: "Prompt.")
     static let addressFillDetail = NSLocalizedString("browser.address.fill_detail", comment: "Prompt's detail.")

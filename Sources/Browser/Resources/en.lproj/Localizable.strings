@@ -6,12 +6,12 @@
 "browser.space.change_icon_action" = "Change Space Icon";
 "browser.space.new_action" = "New Space";
 "browser.space.delete_action" = "Delete Space";
-"browser.pinned_tab_folder.default_title" = "New Folder";
+"browser.pinned_tab_folder.default_title" = "Untitled";
 "browser.pinned_tab_folder.new_action" = "New Folder";
-"browser.pinned_tab_folder.rename_action" = "Rename Folder...";
-"browser.pinned_tab_folder.change_icon_action" = "Change Folder Icon";
+"browser.pinned_tab_folder.rename_action" = "Rename...";
+"browser.pinned_tab_folder.change_icon_action" = "Change Icon";
 "browser.pinned_tab_folder.no_icon_action" = "No Icon";
-"browser.pinned_tab_folder.delete_action" = "Delete Folder and Contents";
+"browser.pinned_tab_folder.delete_action" = "Delete";
 "browser.pinned_tab.back_to_pinned_url" = "Back to Pinned URL";
 "browser.pinned_tab.replace_url_with_current_action" = "Replace Pinned URL with Current";
 "browser.pinned_tab.edit_url_action" = "Edit Pinned URL...";
@@ -784,3 +784,5 @@
 "browser.card.fill_reason" = "fill a saved card";
 "browser.settings.cards" = "Cards";
 "browser.card.none_saved" = "No saved cards";
+"browser.pinned_tab_folder.new_nested" = "New Nested Folder";
+"browser.pinned_tab_folder.turn_into_space" = "Turn “%@” into Space";

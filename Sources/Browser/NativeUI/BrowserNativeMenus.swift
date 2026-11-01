@@ -145,10 +145,27 @@ import AppKit
         _ folder: BrowserChromeModel.PinnedTabFolder,
         onRename: @escaping () -> Void,
         onChangeIcon: @escaping (String?) -> Void,
+        onNewNested: (() -> Void)? = nil,
+        onTurnIntoSpace: (() -> Void)? = nil,
+        onDuplicate: (() -> Void)? = nil,
+        moveTargets: [BrowserChromeModel.Space] = [],
+        onMove: @escaping (String) -> Void = { _ in },
         onDelete: (() -> Void)? = nil,
     ) -> NSMenu {
         let menu = menu()
-        add(BrowserStrings.pinnedTabFolderRenameAction, to: menu, action: onRename)
+        if let onNewNested {
+            add(BrowserStrings.pinnedTabFolderNewNestedAction, to: menu, action: onNewNested)
+        }
+        if let onTurnIntoSpace {
+            add(
+                String(format: BrowserStrings.pinnedTabFolderTurnIntoSpaceAction, folder.title),
+                to: menu,
+                action: onTurnIntoSpace,
+            )
+        }
+        if !menu.items.isEmpty {
+            menu.addItem(.separator())
+        }
         addIconMenu(
             BrowserStrings.pinnedTabFolderChangeIconAction,
             to: menu,
@@ -156,6 +173,20 @@ import AppKit
             noIconTitle: BrowserStrings.pinnedTabFolderNoIconAction,
             action: onChangeIcon,
         )
+        add(BrowserStrings.pinnedTabFolderRenameAction, to: menu, action: onRename)
+        if onDuplicate != nil || !moveTargets.isEmpty {
+            menu.addItem(.separator())
+        }
+        if let onDuplicate {
+            add(BrowserStrings.tabDuplicateAction, to: menu, action: onDuplicate)
+        }
+        if !moveTargets.isEmpty {
+            let submenu = submenu(BrowserStrings.tabMoveToSpaceAction, in: menu)
+            for space in moveTargets {
+                let item = add(space.title, to: submenu) { onMove(space.id) }
+                item.image = NSImage(systemSymbolName: space.systemImageName, accessibilityDescription: nil)
+            }
+        }
         if let onDelete {
             menu.addItem(.separator())
             add(BrowserStrings.pinnedTabFolderDeleteAction, to: menu, action: onDelete)

@@ -75,14 +75,19 @@ extension BrowserChromeModel {
 
     /// New Folder puts the selected tab of the selected Space into a new
     /// pinned folder; split panes keep their split instead.
-    var canCreateFolderFromSelectedTab: Bool {
-        guard let tab = selectedTabValue, tab.placement != .app, tab.spaceID == selectedSpaceID else { return false }
-        return splitGroup(containingTabID: tab.id) == nil
-    }
+    var canCreateFolder: Bool { supportsSpaces && selectedSpaceID != nil }
 
-    @discardableResult func createFolderFromSelectedTab() -> Bool {
-        guard canCreateFolderFromSelectedTab, let selectedTabID else { return false }
-        return createPinnedTabFolder(containingTabIDs: [selectedTabID]) != nil
+    /// New Folder: empty, after the Space's pinned rows, with its name ready to type over.
+    @discardableResult func createFolderInSelectedSpace() -> String? {
+        guard canCreateFolder, let selectedSpaceID,
+              let folderID = createEmptyPinnedFolder(
+                  title: BrowserStrings.pinnedTabFolderDefaultTitle,
+                  inSpaceID: selectedSpaceID,
+              )
+        else { return nil }
+        movePinnedTabFolder(withID: folderID, toRootSectionIndex: .max, targetSpaceID: selectedSpaceID)
+        folderToRename = folderID
+        return folderID
     }
 
     /// Collapse/Expand All Folders for the selected Space.

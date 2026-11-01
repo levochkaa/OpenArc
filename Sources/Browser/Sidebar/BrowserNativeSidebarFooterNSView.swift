@@ -300,7 +300,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
                 shortcut: keys(.newFolder),
                 isEnabled: model.isCommandBarActionAvailable(.newFolder),
                 identifier: "browser.sidebar.create-menu.folder",
-            ) { [weak state] in _ = state?.model.createFolderFromSelectedTab() },
+            ) { [weak state] in _ = state?.model.createFolderInSelectedSpace() },
             .separator,
             .action(
                 symbol: "rectangle.split.2x1",
@@ -363,7 +363,9 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             active ? "arrow.down.circle.fill" : "archivebox",
             title: active ? BrowserStrings.downloadsTitle : BrowserStrings.menuViewLibrary,
         )
-        downloadsButton.tooltipShortcut = state.model.shortcutStore.shortcut(for: active ? .viewDownloads : .viewLibrary)
+        downloadsButton.tooltipShortcut = state.model
+            .shortcutStore
+            .shortcut(for: active ? .viewDownloads : .viewLibrary)
         downloadsButton.isSelected = popover.isShown || active
         downloadDot.isHidden = !active || !state.model.supportsSpaces
     }
