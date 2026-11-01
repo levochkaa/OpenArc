@@ -87,7 +87,7 @@ import Testing
     }
 }
 
-@Test func localServersStartInDeveloperModeUntilTurnedOff() {
+@Test @MainActor func localServersStartInDeveloperModeUntilTurnedOff() {
     var hosts = BrowserDeveloperModeHosts()
     #expect(hosts.isEnabled(host: "localhost"))
     #expect(hosts.isEnabled(host: "127.0.0.1"))
