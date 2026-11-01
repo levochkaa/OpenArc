@@ -489,16 +489,16 @@ final class BrowserSiteControlsNSView: NSView {
     private func refreshHover() {
         let sidebar = mode == .sidebar
         let show = !sidebar || showsSidebarActions
-        copyVisibility.setVisible(show, view: copyButton, curve: .easeInOut(0.12))
-        siteVisibility.setVisible(show, view: siteButton, curve: .easeInOut(0.12))
-        splitVisibility.setVisible(show, view: splitButton, curve: .easeInOut(0.12))
+        copyVisibility.setVisible(show, view: copyButton, curve: .appearance)
+        siteVisibility.setVisible(show, view: siteButton, curve: .appearance)
+        splitVisibility.setVisible(show, view: splitButton, curve: .appearance)
         copyButton.isEnabled = model.currentTab != nil && !isSidebarResizing
         siteButton.isEnabled = model.currentTab != nil && !isSidebarResizing
         splitButton.isEnabled = (model.selectedSplitGroup != nil || model.canAddSplitView) && !isSidebarResizing
         for (id, button) in extensionButtons {
             let visibility = extensionVisibilities[id] ?? BrowserNativeVisibilityAnimation()
             extensionVisibilities[id] = visibility
-            visibility.setVisible(show, view: button, curve: .easeInOut(0.12))
+            visibility.setVisible(show, view: button, curve: .appearance)
             button.isInteractionEnabled = !isSidebarResizing
         }
         urlButton.isSearchPresented = sidebar && model.currentPageCommandBarModel.isPresented
@@ -519,7 +519,7 @@ final class BrowserSiteControlsNSView: NSView {
                 actionAnimation.cancel()
                 urlButton.maskedTrailingWidth = targetWidth
             } else {
-                actionAnimation.start(.easeInOut(0.12)) { [weak self] progress in
+                actionAnimation.start(.appearance) { [weak self] progress in
                     self?.urlButton.maskedTrailingWidth = from + (targetWidth - from) * progress
                 }
             }

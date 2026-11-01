@@ -11,17 +11,21 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Chrome, folder, app-tile and space-button presses | spring response 0.18 s, damping 0.72 | Existing scale, icon translation and rotation; both pressing and releasing |
 | Sidebar row presses | spring response 0.2 s, damping 0.5 | Row scale to 0.985 and back, with a visible bounce |
 | Chrome and bookmark hover | ease-out, 0.1 s | Hover background |
-| App-tab reorder, pinned/temporary tab identities, pinned section/folder expansion | 0.12 s, timing (0, 0, 0.58, 1) | Row positions; insertion/removal opacity over 0.1 s |
+| App-tab reorder, pinned/temporary tab identities, pinned section expansion | 0.12 s, timing (0, 0, 0.58, 1) | Row positions; insertion/removal opacity over 0.1 s |
+| Folder collapse / expand | 0.2 s, timing (0, 0, 0.58, 1) / 0.25 s, timing (0.25, 0.1, 0.25, 1) | Row positions |
+| Folder icon | 0.25 s, timing (0.25, 0.1, 0.25, 1) | Panels swing in perspective, shades fade; tilted while collapsed |
+| Floating menu | 0.1 s in, 0.07 s out, timing (0.215, 0.61, 0.355, 1); fade 0.05 s in | Scale 0.95 around the tail, opacity |
 | Space pager selection | 0.19 s, timing (0.215, 0.61, 0.355, 1) | Horizontal page offset and the theme cross-fade |
 | Space pager settling after a swipe | spring response 0.25 s, critically damped | Horizontal page offset; direct pointer/trackpad movement remains immediate, with the theme following the finger |
 | Drag-preview size | spring response 0.20 s, damping 0.86 | Tile/row dimensions around the mouse-down grab point; pointer position remains immediate |
 | Drop landing / cancellation | spring response 0.28 s, damping 0.82 | Preview travels to the final row/cell or merges into a collapsed container before the real rows are revealed |
-| Current-URL action visibility | ease-in-out, 0.12 s | Action opacity and trailing URL mask |
+| Current-URL action visibility | 0.15 s, timing (0, 0, 0.58, 1) | Action opacity and trailing URL mask |
 | Copy feedback icon | spring response 0.22 s, damping 0.68 | Link/checkmark replacement, opacity and scale from/to 0.58; reset still occurs after 1 s |
 | Pinned URL caption | ease-out, 0.16 s | Title displacement, caption movement from below and opacity |
 | Pinned section disclosure | ease-in-out, 0.14 s | Chevron rotation when collapsed changes |
 | Clear visibility | ease-in-out, 0.18 s | Opacity and divider length; Clear hover text uses ease-in-out, 0.12 s |
-| Find and tab-switcher visibility / selected switcher card | ease-out, 0.12 s | Panel opacity / selected card colors |
+| Find visibility | 0.25 s, timing (0.25, 0.1, 0.25, 1) | Panel opacity |
+| Tab-switcher visibility / selected switcher card | ease-out, 0.12 s | Panel opacity / selected card colors |
 | Command selection scroll | ease-out, 0.12 s | Minimum scroll needed to reveal the row, clamped to document bounds; no forced centering |
 | Tooltip identity/visibility | ease-out, 0.15 s | Opacity; existing 1 s activation delay and 0.3 s cooldown remain in the tooltip coordinator |
 | Update toast | ease-in-out, 0.18 s | Opacity and reserved sidebar-footer height |
@@ -30,7 +34,7 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 These timings are chosen on purpose:
 
 - Drop landing keeps its 0.28 s spring: it travels farther than a row move.
-- Find, the tab switcher and command scrolling keep 0.12 s ease-out; the timings are tuned with their keyboard flows.
+- The tab switcher and command scrolling keep 0.12 s ease-out; the timings are tuned with their keyboard flows.
 - The drag preview keeps its 0.2 s size spring; the preview changes size, not border and corner style.
 - The command bar appears and leaves at once.
 

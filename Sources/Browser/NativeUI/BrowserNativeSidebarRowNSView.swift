@@ -63,7 +63,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     // MARK: Private
 
     private let selectionSurface = BrowserNativeSidebarSelectionSurface()
-    private let folderFill = NSImageView()
+    private let folderIcon = BrowserFolderIconView()
+    private var folderIconID: String?
     private let favicon = BrowserFaviconNSView()
     private var splitChips = [BrowserNativeSidebarSplitChipView]()
     private let symbol = NSImageView()
@@ -120,7 +121,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         pressCurve = .rowPress
         for view in [
             selectionSurface,
-            folderFill,
+            folderIcon,
             favicon,
             symbol,
             badge,
@@ -133,7 +134,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             addSubview(view)
         }
         muteButton.onAction = { [weak self] in self?.onToggleMute() }
-        for image in [folderFill, symbol, badge] {
+        for image in [symbol, badge] {
             image.imageScaling = .scaleProportionallyUpOrDown
             image.setAccessibilityElement(false)
         }
@@ -239,7 +240,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         let iconFrame = NSRect(x: iconX, y: (height - iconHeight) / 2, width: iconWidth, height: iconHeight)
         favicon.frame = iconFrame
         symbol.frame = iconFrame
-        folderFill.frame = iconFrame
+        folderIcon.frame = iconFrame
         let badgeSize = BrowserChromeLayout.sidebarPinnedFolderBadgeIconSize
         badge.frame = NSRect(
             x: iconFrame.midX - badgeSize / 2,
@@ -450,10 +451,13 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         indent = CGFloat(max(indentLevel, 0)) * BrowserChromeLayout.sidebarPinnedFolderTabIndent
         self.dropTargeted = dropTargeted
         baseSymbol = "folder"
-        symbol.image = Self.symbol(baseSymbol, size: BrowserChromeLayout.sidebarPinnedFolderIconSize)
-        symbol.contentTintColor = BrowserChromeColors.sidebarRowText
-        folderFill.image = Self.symbol("folder.fill", size: BrowserChromeLayout.sidebarPinnedFolderIconSize)
-        folderFill.contentTintColor = BrowserChromeColors.sidebarFolderFill
+        folderIcon.setColors(
+            stroke: BrowserChromeColors.sidebarFolderStroke,
+            backFill: BrowserChromeColors.sidebarFolderBack,
+            frontFill: BrowserChromeColors.sidebarFolderFill,
+        )
+        folderIcon.setTilted(!folder.isExpanded, animated: window != nil && folderIconID == folder.id)
+        folderIconID = folder.id
         badge.image = folder.systemImageName.map { Self.symbol(
             $0,
             size: BrowserChromeLayout.sidebarPinnedFolderBadgeIconSize,
@@ -746,11 +750,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private func refreshAppearance() {
         titleLabel.isHidden = kind == .appTab || (kind == .split && splitName == nil) || isRenaming
         renameField.isHidden = !isRenaming
-        folderFill.isHidden = kind != .folder
+        folderIcon.isHidden = kind != .folder
         updateSurface()
         let isTab = kind == .tab || kind == .appTab
         favicon.isHidden = !isTab || tabIcon != nil
-        symbol.isHidden = (isTab && tabIcon == nil) || (kind == .split && splitName == nil)
+        symbol.isHidden = (isTab && tabIcon == nil) || (kind == .split && splitName == nil) || kind == .folder
         for chip in splitChips {
             chip.isHidden = kind != .split
             chip.isInteractionEnabled = !isResizing
@@ -878,7 +882,6 @@ final class BrowserNativeSidebarSplitChipView: NSView {
     // MARK: Private
 
     private let selectionSurface = BrowserNativeSidebarSelectionSurface()
-    private let folderFill = NSImageView()
     private let favicon = BrowserFaviconNSView()
     private let symbol = NSImageView()
     private let titleLabel = BrowserNativeControls.label("", size: 12.5, weight: .medium)

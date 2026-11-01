@@ -770,7 +770,7 @@ final class BrowserNativeSidebarNSView: NSView {
             rect,
             of: view,
             animated: animated,
-            curve: view === pagesContainer ? state.spacePagerCurve : .rowMove,
+            curve: view === pagesContainer ? state.spacePagerCurve : state.rowMoveCurve,
         )
     }
 
@@ -888,6 +888,7 @@ final class BrowserNativeSidebarNSView: NSView {
                     guard let state else { return }
                     self?.folderPreview.dismiss()
                     state.dismissRenamingIfNeeded()
+                    state.animateRows(with: folder.isExpanded ? .folderCollapse : .standard)
                     state.withSidebarAnimation {
                         if folder.isExpanded {
                             state.revealedPinnedFolderTabIDsByFolderID[folder.id] = nil

@@ -30,6 +30,10 @@ import QuartzCore
         static let spaceSettle = Curve.spring(response: 0.25, damping: 0.995)
         /// Row moves: 0.12 s, timing (0, 0, 0.58, 1).
         static let rowMove = Curve.bezier(0.12, x1: 0, y1: 0, x2: 0.58, y2: 1)
+        /// Rows closing up under a folder that collapses.
+        static let folderCollapse = Curve.bezier(0.2, x1: 0, y1: 0, x2: 0.58, y2: 1)
+        /// Rows making room for a folder that expands, and the find bar's fade.
+        static let standard = Curve.bezier(0.25, x1: 0.25, y1: 0.1, x2: 0.25, y2: 1)
         /// Rows appearing and leaving: 0.1 s, timing (0, 0, 0.58, 1).
         static let rowFade = Curve.bezier(0.1, x1: 0, y1: 0, x2: 0.58, y2: 1)
         /// Hover fills: 0.1 s, timing (0, 0, 0.58, 1).

@@ -51,10 +51,7 @@ enum BrowserFloatingMenuItem {
         parent.addChildWindow(panel, ordered: .above)
         panel.orderFront(nil)
         self.panel = panel
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.1
-            panel.animator().alphaValue = 1
-        }
+        animate(panel: panel, content: content, opening: true)
         monitor = NSEvent.addLocalMonitorForEvents(matching: [
             .leftMouseDown,
             .rightMouseDown,
@@ -78,9 +75,47 @@ enum BrowserFloatingMenuItem {
         }
         guard let panel else { return }
         self.panel = nil
-        panel.parent?.removeChildWindow(panel)
-        panel.orderOut(nil)
         onClose()
+        let parent = panel.parent
+        let finish: @MainActor @Sendable () -> Void = {
+            parent?.removeChildWindow(panel)
+            panel.orderOut(nil)
+        }
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let content = panel.contentView else {
+            finish()
+            return
+        }
+        animate(panel: panel, content: content, opening: false, completion: finish)
+    }
+
+    /// Rises slightly from its tail while fading in; leaves faster than it came.
+    private func animate(panel: NSPanel, content: NSView, opening: Bool, completion: (@MainActor @Sendable () -> Void)? = nil) {
+        let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let ease = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
+        let duration = reducesMotion ? 0 : opening ? 0.1 : 0.07
+        content.wantsLayer = true
+        if let layer = content.layer, !reducesMotion {
+            // Scales around the tail so the menu stays attached to its button.
+            let tail = CGPoint(x: content.bounds.width > 0 ? 1 - 30 / content.bounds.width : 1, y: 1)
+            let frame = layer.frame
+            layer.anchorPoint = tail
+            layer.position = CGPoint(x: frame.minX + frame.width * tail.x, y: frame.minY + frame.height * tail.y)
+            let scale = CABasicAnimation(keyPath: "transform.scale")
+            scale.fromValue = opening ? 0.95 : 1
+            scale.toValue = opening ? 1 : 0.95
+            scale.duration = duration
+            scale.timingFunction = ease
+            scale.fillMode = .forwards
+            scale.isRemovedOnCompletion = false
+            layer.add(scale, forKey: "menu.scale")
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = opening && !reducesMotion ? 0.05 : duration
+            context.timingFunction = ease
+            panel.animator().alphaValue = opening ? 1 : 0
+        } completionHandler: {
+            MainActor.assumeIsolated { completion?() }
+        }
     }
 }
 

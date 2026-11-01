@@ -127,7 +127,7 @@ final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
 
     func update(query: String, isPresented: Bool, canStep: Bool, focusRequestID: Int, blockedLeadingInset: CGFloat) {
         self.blockedLeadingInset = blockedLeadingInset
-        visibility.setVisible(isPresented, view: panel, curve: .easeOut(0.12))
+        visibility.setVisible(isPresented, view: panel, curve: .standard)
         previousButton.isEnabled = canStep
         nextButton.isEnabled = canStep
         queryField.sync(text: query, shouldFocus: isPresented, focusRequestID: focusRequestID)

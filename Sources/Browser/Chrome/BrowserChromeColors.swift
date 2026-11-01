@@ -13,6 +13,8 @@ enum BrowserChromeColors {
     static let rowSelected = adaptive(light: rgba(0, 0, 0, 0.11), dark: rgba(255, 255, 255, 0.2))
     static let sidebarRowText = adaptive(light: rgb(0, 0, 0), dark: rgb(217, 217, 217))
     static let sidebarDimText = adaptive(light: rgba(0, 0, 0, 0.45), dark: rgba(255, 255, 255, 0.45))
+    static let sidebarFolderStroke = adaptive(light: rgb(40, 40, 40), dark: rgb(240, 240, 240))
+    static let sidebarFolderBack = adaptive(light: rgb(150, 150, 150), dark: rgb(150, 150, 150))
     static let sidebarFolderFill = adaptive(light: rgb(255, 255, 255), dark: rgb(0, 0, 0))
     static let sidebarChromeForeground = adaptive(light: rgba(0, 0, 0, 0.59), dark: rgba(255, 255, 255, 0.59))
     static let sidebarChromeDisabledForeground = adaptive(light: rgba(0, 0, 0, 0.25), dark: rgba(255, 255, 255, 0.25))
