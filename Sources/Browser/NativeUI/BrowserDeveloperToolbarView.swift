@@ -36,7 +36,10 @@ final class BrowserDeveloperToolbarView: NSView {
         }
         self.actions = [
             [button("link", BrowserStrings.tabCopyURLAction) { [weak model] in _ = model?.copySelectedTabLink() }],
-            [button("camera", BrowserCommands.captureArea.helpTitle) { [weak model] in model?.beginAreaCapture() }],
+            [
+                button("photo.artframe", BrowserStrings.captureInPortraitMode) {},
+                button("camera", BrowserCommands.captureArea.helpTitle) { [weak model] in model?.beginAreaCapture() },
+            ],
             [
                 button("apple.terminal", BrowserStrings.menuJavaScriptConsole) { [weak model] in
                     model?.showJavaScriptConsole()
@@ -54,6 +57,11 @@ final class BrowserDeveloperToolbarView: NSView {
             ],
         ]
         super.init(frame: .zero)
+        let portrait = actions[1][0]
+        portrait.onAction = { [weak model, weak portrait] in
+            model?.portraitCaptureAnchor = portrait
+            model?.beginPortraitCapture()
+        }
         wantsLayer = true
         appearance = NSAppearance(named: .darkAqua)
         lock.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?

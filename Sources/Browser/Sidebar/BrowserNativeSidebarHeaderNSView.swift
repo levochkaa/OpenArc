@@ -30,9 +30,9 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         action: {},
     )
     private lazy var reloadMenu = BrowserNativeChromeButton(
-        symbol: "chevron.compact.down",
+        symbol: "chevron.down",
         title: BrowserStrings.developerReloadOptions,
-        style: .sidebarNavigation,
+        style: .miniPlayer,
         pressEffect: .compress,
         action: { [weak self] in self?.showReloadMenu() },
     )

@@ -325,21 +325,29 @@ extension BrowserChromeModel {
     /// Opens the command bar; the page or tab chosen there becomes a new pane,
     /// after the selected split's last pane or, for Add Left/Right Split,
     /// next to the focused pane.
-    func presentSplitViewCommandBar(insertion: SplitInsertion = .end) {
+    func presentSplitViewCommandBar(
+        insertion: SplitInsertion = .end,
+        orientation: BrowserTabSplitOrientation = .horizontal,
+    ) {
         guard canAddSplitView, let selectedTabID else { return }
         presentCommandBar()
         pendingSplitAnchorTabID = commandBarModel.isPresented ? selectedTabID : nil
         pendingSplitInsertion = insertion
+        pendingSplitOrientation = orientation
     }
 
     /// Consumes the split anchor left by `presentSplitViewCommandBar()`.
-    func takePendingSplitAnchor() -> (anchorID: String, insertion: SplitInsertion)? {
+    func takePendingSplitAnchor()
+        -> (anchorID: String, insertion: SplitInsertion, orientation: BrowserTabSplitOrientation)?
+    {
+        let orientation = pendingSplitOrientation
         defer {
             pendingSplitAnchorTabID = nil
             pendingSplitInsertion = .end
+            pendingSplitOrientation = .horizontal
         }
         guard let anchorID = pendingSplitAnchorTabID, tabs.contains(where: { $0.id == anchorID }) else { return nil }
-        return (anchorID, pendingSplitInsertion)
+        return (anchorID, pendingSplitInsertion, orientation)
     }
 
     /// Move Left/Right in the Split View Menu: the focused pane trades

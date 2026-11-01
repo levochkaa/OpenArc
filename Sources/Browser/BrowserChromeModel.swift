@@ -328,6 +328,7 @@ enum BrowserWindowMode: Equatable {
     var pendingSplitAnchorTabID: String?
     /// Where the pending pane goes relative to its anchor (Add Left/Right Split).
     var pendingSplitInsertion = SplitInsertion.end
+    var pendingSplitOrientation = BrowserTabSplitOrientation.horizontal
     /// UI-only: the visible split's pane frames in the engine host view, in pane
     /// order, as the engine last laid them out. Not published: it changes on
     /// every frame of a divider drag, and pane bars listen through
@@ -485,6 +486,8 @@ enum BrowserWindowMode: Equatable {
 
     /// Capture in Portrait Mode: the window shows its options once it has the picture.
     var onPortraitCapture: ((Data) -> Void)?
+    /// The button the options hang from; without one they sit over the page's middle.
+    weak var portraitCaptureAnchor: NSView?
 
     /// Answers this window's waiting requests that another window's answer covers.
     private var sitePermissionDecisionsObservation: AnyCancellable?
@@ -3565,6 +3568,14 @@ enum BrowserWindowMode: Equatable {
             canShowDeveloperToolsForCommand
         case .manageSpaces:
             supportsSpaces
+        case .addBottomSplit:
+            canAddSplitView
+        case .addTopSplit:
+            canAddSplitView
+        case .addRightSplit:
+            canAddSplitView
+        case .addLeftSplit:
+            canAddSplitView
         case .capturePortrait:
             canCaptureArea
         case .blankWindow:
@@ -4801,7 +4812,12 @@ enum BrowserWindowMode: Equatable {
         let pending = takePendingSplitAnchor()
         createTab(withURLString: resolvedURLString)
         if let pending, let tabID = selectedTabID, tabID != pending.anchorID {
-            openInSplitView(tabID: tabID, anchorTabID: pending.anchorID, insertion: pending.insertion)
+            openInSplitView(
+                tabID: tabID,
+                anchorTabID: pending.anchorID,
+                insertion: pending.insertion,
+                orientation: pending.orientation,
+            )
         }
     }
 
@@ -4821,6 +4837,7 @@ enum BrowserWindowMode: Equatable {
             tabID: tab.id,
             anchorTabID: pending.anchorID,
             insertion: pending.insertion,
+            orientation: pending.orientation,
         ) {
             return
         }
@@ -7464,6 +7481,14 @@ extension BrowserCommandID {
             ["console", "javascript console", "js console"]
         case .manageSpaces:
             ["manage spaces", "spaces"]
+        case .addBottomSplit:
+            ["add bottom split", "split bottom"]
+        case .addTopSplit:
+            ["add top split", "split top"]
+        case .addRightSplit:
+            ["add right split", "split right"]
+        case .addLeftSplit:
+            ["add left split", "split left"]
         case .capturePortrait:
             ["portrait", "capture in portrait mode", "screenshot"]
         case .blankWindow:
@@ -7654,6 +7679,14 @@ extension BrowserCommandID {
             "terminal"
         case .manageSpaces:
             "square.on.square"
+        case .addBottomSplit:
+            "rectangle.bottomhalf.inset.filled"
+        case .addTopSplit:
+            "rectangle.tophalf.inset.filled"
+        case .addRightSplit:
+            "rectangle.righthalf.inset.filled"
+        case .addLeftSplit:
+            "rectangle.lefthalf.inset.filled"
         case .capturePortrait:
             "person.crop.rectangle"
         case .blankWindow:

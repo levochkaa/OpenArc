@@ -21,6 +21,8 @@ enum BrowserSiteSettingKind: String, CaseIterable {
     case localFonts
     case idleDetection
     case autoPictureInPicture
+    /// OpenArc's own, not Chromium's.
+    case developerMode
 
     // MARK: Internal
 
@@ -52,6 +54,7 @@ enum BrowserSiteSettingKind: String, CaseIterable {
         case .localFonts: BrowserStrings.siteSettingLocalFonts
         case .idleDetection: BrowserStrings.siteSettingIdleDetection
         case .autoPictureInPicture: BrowserStrings.siteSettingAutoPictureInPicture
+        case .developerMode: BrowserStrings.siteSettingDeveloperMode
         }
     }
 
@@ -70,6 +73,7 @@ enum BrowserSiteSettingKind: String, CaseIterable {
         case .localFonts: "textformat"
         case .idleDetection: "moon.zzz"
         case .autoPictureInPicture: "pip"
+        case .developerMode: "hammer"
         }
     }
 
@@ -77,6 +81,7 @@ enum BrowserSiteSettingKind: String, CaseIterable {
     /// and sound.
     var choices: [BrowserSiteSettingValue] {
         switch self {
+        case .developerMode: [.on, .off]
         case .popups,
              .sound: [.allow, .block]
         default: [.allow, .block, .ask]
@@ -92,6 +97,8 @@ enum BrowserSiteSettingValue: String {
     case ask
     /// The profile's default, which removes the site's own value.
     case `default`
+    case on
+    case off
 
     // MARK: Internal
 
@@ -101,6 +108,8 @@ enum BrowserSiteSettingValue: String {
         case .block: BrowserStrings.sitePermissionBlockedState
         case .ask,
              .default: BrowserStrings.siteSettingAskState
+        case .on: BrowserStrings.siteSettingOn
+        case .off: BrowserStrings.siteSettingOff
         }
     }
 
@@ -110,6 +119,8 @@ enum BrowserSiteSettingValue: String {
         case .block: BrowserStrings.sitePermissionBlock
         case .ask,
              .default: BrowserStrings.siteSettingAskAction
+        case .on: BrowserStrings.siteSettingTurnOn
+        case .off: BrowserStrings.siteSettingTurnOff
         }
     }
 }
@@ -133,12 +144,28 @@ extension BrowserChromeModel {
         let remembered = rememberedSitePermissions.filter { $0.origin == origin }
         let chromium = siteSettingsInEngine(forURLString: urlString)
         return BrowserSiteSettingKind.allCases.compactMap { kind in
+            if let own = ownSiteSettingValue(kind, urlString: urlString) {
+                return own.isEmpty ? nil : BrowserSiteSettingRow(kind: kind, value: own[0])
+            }
             if let permission = kind.permissionKind {
                 return remembered.last { $0.kind == permission }.map {
                     BrowserSiteSettingRow(kind: kind, value: $0.allowed ? .allow : .block)
                 }
             }
             return chromium[kind].map { BrowserSiteSettingRow(kind: kind, value: $0) }
+        }
+    }
+
+    /// nil for Chromium's settings. An empty list hides the row.
+    private func ownSiteSettingValue(_ kind: BrowserSiteSettingKind, urlString: String) -> [BrowserSiteSettingValue]? {
+        let preferences = userPreferencesStore
+        let host = Self.developerModeHost(ofURLString: urlString)
+        switch kind {
+        case .developerMode:
+            guard let host else { return [] }
+            return [preferences.developerModeHosts.isEnabled(host: host) ? .on : .off]
+        default:
+            return nil
         }
     }
 
@@ -149,6 +176,13 @@ extension BrowserChromeModel {
         value: BrowserSiteSettingValue,
         forURLString urlString: String,
     ) {
+        if kind == .developerMode {
+            if let host = Self.developerModeHost(ofURLString: urlString) {
+                userPreferencesStore.developerModeHosts.set(value == .on, host: host)
+                objectWillChange.send()
+            }
+            return
+        }
         guard let origin = BrowserSitePermissionRequest.origin(ofURLString: urlString) else { return }
         guard let permission = kind.permissionKind else {
             setSiteSettingInEngine(kind, value: value, forURLString: urlString)

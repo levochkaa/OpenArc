@@ -755,3 +755,9 @@
 "browser.capture.portrait" = "Capture in Portrait Mode";
 "browser.live_folders.menu" = "Live Folders";
 "browser.live_folders.github" = "GitHub";
+"browser.site_setting.developer_mode" = "Developer Mode";
+"browser.site_setting.on" = "On";
+"browser.site_setting.off" = "Off";
+"browser.site_setting.turn_on" = "On";
+"browser.site_setting.turn_off" = "Off";
+"browser.settings.sound_effects" = "Play sound effects";

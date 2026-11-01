@@ -194,6 +194,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
         static let developerModeHosts = "browser.settings.developerModeHosts"
+        static let soundEffectsEnabled = "browser.settings.soundEffectsEnabled"
         static let gitHubLiveFolderIDs = "browser.settings.gitHubLiveFolderIDs"
         static let recentPagesPreviewsEnabled = "browser.settings.recentPagesPreviewsEnabled"
         static let appIcon = "browser.settings.appIcon"
@@ -289,6 +290,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var gitHubLiveFolderIDs: Set<String> {
         didSet { userDefaults.set(Array(gitHubLiveFolderIDs), forKey: Key.gitHubLiveFolderIDs) }
+    }
+
+    @Published var soundEffectsEnabled: Bool {
+        didSet { userDefaults.set(soundEffectsEnabled, forKey: Key.soundEffectsEnabled) }
     }
 
     @Published var developerModeHosts: BrowserDeveloperModeHosts {
@@ -436,6 +441,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
             defaultValue: true,
         )
         self.gitHubLiveFolderIDs = Set(userDefaults.stringArray(forKey: Key.gitHubLiveFolderIDs) ?? [])
+        self.soundEffectsEnabled = Self.loadBool(userDefaults, key: Key.soundEffectsEnabled, defaultValue: true)
         self.developerModeHosts = userDefaults.data(forKey: Key.developerModeHosts)
             .flatMap { try? JSONDecoder().decode(BrowserDeveloperModeHosts.self, from: $0) } ?? .init()
         self.developerReloadBehavior = userDefaults.string(forKey: Key.developerReloadBehavior)
@@ -590,6 +596,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case clearCacheAndRefresh
     case clearCookiesAndRefresh
     case addSplitView
+    case addTopSplit
+    case addBottomSplit
+    case addLeftSplit
+    case addRightSplit
     case closeSplitPane
     case separateTabFromSplit
     case separateSplitView
@@ -632,6 +642,14 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.shareTab
         case .manageSpaces:
             BrowserCommands.manageSpaces
+        case .addBottomSplit:
+            BrowserCommands.addBottomSplit
+        case .addTopSplit:
+            BrowserCommands.addTopSplit
+        case .addRightSplit:
+            BrowserCommands.addRightSplit
+        case .addLeftSplit:
+            BrowserCommands.addLeftSplit
         case .capturePortrait:
             BrowserCommands.capturePortrait
         case .blankWindow:
@@ -820,6 +838,14 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .shareTab
         case .manageSpaces:
             .manageSpaces
+        case .addBottomSplit:
+            .addBottomSplit
+        case .addTopSplit:
+            .addTopSplit
+        case .addRightSplit:
+            .addRightSplit
+        case .addLeftSplit:
+            .addLeftSplit
         case .capturePortrait:
             .capturePortrait
         case .blankWindow:

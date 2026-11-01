@@ -967,6 +967,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         scrollView.setViews([
             section(BrowserStrings.settingsAdvancedTab, rows: [
                 toggle(
+                    "sound-effects",
+                    BrowserStrings.settingsSoundEffects,
+                    get: { preferences.soundEffectsEnabled },
+                    set: { preferences.soundEffectsEnabled = $0 },
+                ),
+                toggle(
                     "haptic-feedback",
                     BrowserStrings.settingsHapticFeedback,
                     get: { preferences.hapticFeedbackEnabled },

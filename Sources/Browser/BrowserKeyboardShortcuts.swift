@@ -209,6 +209,30 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
+    static let addLeftSplit = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitAddLeft,
+        helpTitle: BrowserStrings.splitAddLeft,
+        shortcut: .unassigned,
+    )
+
+    static let addRightSplit = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitAddRight,
+        helpTitle: BrowserStrings.splitAddRight,
+        shortcut: .unassigned,
+    )
+
+    static let addTopSplit = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitAddTop,
+        helpTitle: BrowserStrings.splitAddTop,
+        shortcut: .unassigned,
+    )
+
+    static let addBottomSplit = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.splitAddBottom,
+        helpTitle: BrowserStrings.splitAddBottom,
+        shortcut: .unassigned,
+    )
+
     static let manageSpaces = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuManageSpaces,
         helpTitle: BrowserStrings.menuManageSpaces,
@@ -723,6 +747,10 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case developerTools
     case shareTab
     case manageSpaces
+    case addBottomSplit
+    case addTopSplit
+    case addRightSplit
+    case addLeftSplit
     case capturePortrait
     case blankWindow
     case viewMedia

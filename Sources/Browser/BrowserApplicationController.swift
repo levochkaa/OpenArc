@@ -2448,6 +2448,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.showJavaScriptConsole() ?? false
         case .manageSpaces:
             return activeChromeModel?.openSpacesInLibrary() ?? false
+        case .addBottomSplit:
+            activeChromeModel?.presentSplitViewCommandBar(insertion: .after, orientation: .vertical)
+            return true
+        case .addTopSplit:
+            activeChromeModel?.presentSplitViewCommandBar(insertion: .before, orientation: .vertical)
+            return true
+        case .addRightSplit:
+            activeChromeModel?.presentSplitViewCommandBar(insertion: .after, orientation: .horizontal)
+            return true
+        case .addLeftSplit:
+            activeChromeModel?.presentSplitViewCommandBar(insertion: .before, orientation: .horizontal)
+            return true
         case .capturePortrait:
             return activeChromeModel?.beginPortraitCapture() ?? false
         case .blankWindow:

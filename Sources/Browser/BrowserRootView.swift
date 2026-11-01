@@ -208,6 +208,7 @@ final class BrowserRootView: NSView {
             guard let png = notification.object as? Data else { return }
             MainActor.assumeIsolated {
                 guard let self, self.window?.isMainWindow == true else { return }
+                self.playCaptureSound()
                 self.showCaptureToast { $0.showCopied(png: png) }
             }
         }
@@ -633,15 +634,29 @@ final class BrowserRootView: NSView {
         }
     }
 
+    /// Uses the sound macOS plays for its own screenshots.
+    private func playCaptureSound() {
+        guard preferences.soundEffectsEnabled else { return }
+        let path = "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif"
+        NSSound(contentsOfFile: path, byReference: true)?.play()
+    }
+
     private func presentPortraitCapture(png: Data) {
         portraitCapture?.removeFromSuperview()
         let card = BrowserPortraitCaptureView(pagePNG: png)
         card.onFinish = { [weak self] in self?.dismissPortraitCapture() }
         let page = windowGeometry.contentFrame
-        card.frame.origin = CGPoint(
-            x: page.midX - BrowserPortraitCaptureView.size.width / 2,
-            y: page.midY - BrowserPortraitCaptureView.size.height / 2,
-        )
+        let size = BrowserPortraitCaptureView.size
+        if let anchor = model.portraitCaptureAnchor, anchor.window === window {
+            let frame = convert(anchor.bounds, from: anchor)
+            card.frame.origin = CGPoint(
+                x: min(frame.midX - size.width / 2, bounds.width - size.width - 8),
+                y: frame.maxY + 8,
+            )
+        } else {
+            card.frame.origin = CGPoint(x: page.midX - size.width / 2, y: page.midY - size.height / 2)
+        }
+        model.portraitCaptureAnchor = nil
         addSubview(card, positioned: .above, relativeTo: nil)
         portraitCapture = card
         portraitCaptureMonitor = NSEvent.addLocalMonitorForEvents(matching: [

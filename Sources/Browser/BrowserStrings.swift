@@ -1681,6 +1681,21 @@ enum BrowserStrings {
         "browser.live_folders.github",
         comment: "GitHub live folder's name.",
     )
+    static let siteSettingDeveloperMode = NSLocalizedString(
+        "browser.site_setting.developer_mode",
+        comment: "Site setting.",
+    )
+    static let siteSettingOn = NSLocalizedString("browser.site_setting.on", comment: "Site setting's state.")
+    static let siteSettingOff = NSLocalizedString("browser.site_setting.off", comment: "Site setting's state.")
+    static let siteSettingTurnOn = NSLocalizedString(
+        "browser.site_setting.turn_on",
+        comment: "Site setting's menu item.",
+    )
+    static let siteSettingTurnOff = NSLocalizedString(
+        "browser.site_setting.turn_off",
+        comment: "Site setting's menu item.",
+    )
+    static let settingsSoundEffects = NSLocalizedString("browser.settings.sound_effects", comment: "Settings toggle.")
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")
