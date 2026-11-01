@@ -33,14 +33,13 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Tab-switcher visibility / selected switcher card | immediate, after 0.07 s | Panel and card colors |
 | Mini player hover | ease-in-out, 0.2 s to grow; ease-out, 0.17 s to shrink | Height, title and close button opacity; the player itself appears and leaves at once |
 | Peek | card opens on stiffness 657.7, damping 44.37 and closes on 779.82, 49.99; the page behind uses the other one | The card grows from a strip around the pointer, wide as the page; the page dims to 0.3 and scales to 0.988 |
-| Command selection scroll | ease-out, 0.12 s | Minimum scroll needed to reveal the row, clamped to document bounds; no forced centering |
+| Command selection scroll | ease-in-out, 0.07 s | Minimum scroll needed to reveal the row, clamped to document bounds; no forced centering |
 | Tooltip visibility | at once after 0.43 s of continuous hover; out 0.3 s when the pointer leaves, 0.1 s otherwise; timing (0, 0, 0.58, 1) | Opacity; fades as soon as the pointer leaves; the next target stays warm for 0.3 s |
 | Update toast | ease-in-out, 0.18 s | Opacity and reserved sidebar-footer height |
-| Page loading bar | pulse 1.63 s, twice; spring response 0.8 s, damping 0.92 to open; highlight 0.73 s of a 1.13 s cycle, linear; 0.33 s to close, timing (0.42, 0, 1, 1) | Opacity and width above the page; Reduce Motion shows a steady bar |
+| Page loading bar | pulse 1.63 s up and down, twice; spring response 0.8 s, damping 0.92 to open; highlight 0.73 s of a 1.13 s cycle, linear; 0.33 s to close, timing (0.42, 0, 1, 1) | Opacity and width above the page; Reduce Motion shows a steady bar |
 
 These timings are chosen on purpose:
 
-- Command scrolling keeps 0.12 s ease-out; the timing is tuned with its keyboard flow.
 - The command bar appears and leaves at once.
 
 `BrowserNativeAnimation` supplies the cubic easing and damped spring timing on the main run loop. The spring's response is its period parameter, not a fixed completion duration. Animation work respects Reduce Motion. Each owner retains its animation, cancels superseded work, and starts from the current displayed value.

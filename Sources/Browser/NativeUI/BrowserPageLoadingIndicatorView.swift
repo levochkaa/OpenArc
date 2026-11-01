@@ -110,13 +110,13 @@ final class BrowserPageLoadingIndicatorView: NSView {
         guard !reducesMotion else { return }
 
         let opacity = CAKeyframeAnimation(keyPath: "opacity")
-        opacity.values = [0, 0.72, 0, 0]
+        opacity.values = [0, 0.72, 0]
         let width = CAKeyframeAnimation(keyPath: "bounds.size.width")
-        width.values = [42, 48, 42, 42]
+        width.values = [42, 48, 42]
         for animation in [opacity, width] {
-            animation.keyTimes = [0, 0.386, 0.772, 1]
+            animation.keyTimes = [0, 0.5, 1]
             let ease = CAMediaTimingFunction(controlPoints: 0.3, 0, 0.7, 1)
-            animation.timingFunctions = [ease, ease, CAMediaTimingFunction(name: .linear)]
+            animation.timingFunctions = [ease, ease]
             animation.duration = Timing.pulse
             animation.repeatCount = .infinity
         }

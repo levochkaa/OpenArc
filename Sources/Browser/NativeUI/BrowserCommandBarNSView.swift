@@ -419,7 +419,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             clip.scroll(to: NSPoint(x: 0, y: target))
             scrollView.reflectScrolledClipView(clip)
         } else if abs(target - from) > 0.5 {
-            scrollAnimation.start(.easeOut(0.12)) { [weak self] progress in
+            scrollAnimation.start(.easeInOut(0.07)) { [weak self] progress in
                 guard let self else { return }
                 clip.scroll(to: NSPoint(x: 0, y: from + (target - from) * progress))
                 scrollView.reflectScrolledClipView(clip)
