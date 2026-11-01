@@ -611,6 +611,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         openNewWindow()
     }
 
+    public func createBlankWindow(_: Any?) {
+        createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, blank: true)
+    }
+
     public func createNewIncognitoWindow(_: Any?) {
         createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow)
     }
@@ -1252,7 +1256,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         ))
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .blankWindow),
-            action: #selector(createNewWindow(_:)),
+            action: #selector(createBlankWindow(_:)),
         ))
         let newIncognitoWindowItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newIncognitoWindow),
@@ -2422,7 +2426,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case .manageSpaces:
             return activeChromeModel?.openSpacesInLibrary() ?? false
         case .blankWindow:
-            return openNewWindow()
+            createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, blank: true)
+            return true
         case .viewMedia:
             return activeChromeModel.map { $0.openLibrary(section: .media)
                 return true
@@ -3372,7 +3377,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         return "\(BrowserStrings.applicationName) - \(profile.displayName)"
     }
 
-    private func createIncognitoWindow(copyingFullscreenFrom sourceWindow: NSWindow?, firstURL: URL? = nil) {
+    private func createIncognitoWindow(
+        copyingFullscreenFrom sourceWindow: NSWindow?,
+        firstURL: URL? = nil,
+        blank: Bool = false,
+    ) {
         configureUpdateControllerIfNeeded()
         guard let updateController else {
             return
@@ -3397,16 +3406,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
             store: BrowserChromiumBookmarkStore(profileDirectoryCandidates: profileDirectoryCandidates),
         )
         let ephemeralSessionStore = BrowserEphemeralSessionStore()
+        // A blank window browses as its profile; an incognito one leaves nothing behind.
+        let blankProfilePath = blank ? profileDirectoryCandidates.first?.path : nil
         let chromeModel = BrowserChromeModel(
-            tabDriver: BrowserTabControllerDriver(usesEphemeralRequestContext: true),
+            tabDriver: blankProfilePath.map { BrowserTabControllerDriver(profileCachePath: $0) }
+                ?? BrowserTabControllerDriver(usesEphemeralRequestContext: true),
             sessionSnapshotStore: ephemeralSessionStore,
             sessionPreferencesStore: ephemeralSessionStore,
             userPreferencesStore: userPreferencesStore,
             shortcutStore: shortcutStore,
             bookmarksModel: bookmarksModel,
-            historyStore: BrowserEmptyHistoryStore(),
+            historyStore: blank
+                ? BrowserChromiumHistoryStore(profileDirectoryCandidates: profileDirectoryCandidates)
+                : BrowserEmptyHistoryStore(),
             extensionManager: BrowserEmptyExtensionManager(),
-            windowMode: .incognito,
+            windowMode: blank ? .blank : .incognito,
             commandHandler: { [weak self] commandID, owner in
                 self?.performCommandBarCommand(commandID, from: owner)
             },
@@ -3425,7 +3439,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             backing: .buffered,
             defer: false,
         )
-        window.title = BrowserStrings.menuNewIncognitoWindow
+        window.title = blank ? BrowserStrings.menuBlankWindow : BrowserStrings.menuNewIncognitoWindow
         window.delegate = self
         window.browserUndoManager = chromeModel.undoManager
         window.minSize = NSSize(width: 960, height: 640)
@@ -3458,6 +3472,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         if hasReceivedBrowserContext {
             chromeModel.handleContextReady()
+            if blank {
+                chromeModel.presentCommandBar()
+            }
         }
 
         if shouldEnterFullscreen {

@@ -982,7 +982,7 @@ final class BrowserNativeSidebarNSView: NSView {
         if !pinned.isEmpty {
             entries.append(.divider)
         }
-        if model.isIncognito {
+        if model.windowMode.isSpaceless {
             entries.append(.incognito)
         }
         entries.append(.newTab)
@@ -1086,7 +1086,10 @@ final class BrowserNativeSidebarNSView: NSView {
             }
             return false
         }
-        page.incognito.isHidden = !model.isIncognito
+        page.incognito.isHidden = !model.windowMode.isSpaceless
+        page.incognito.stringValue = model.isIncognito
+            ? BrowserStrings.incognitoTabsTitle
+            : BrowserStrings.blankWindowTabsTitle
         page.scroll.isScrollingEnabled = !state.isSpacePagerDragging
     }
 

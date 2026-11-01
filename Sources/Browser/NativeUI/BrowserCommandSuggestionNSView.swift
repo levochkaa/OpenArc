@@ -154,8 +154,8 @@ final class BrowserCommandSuggestionNSView: NSButton {
         detail.stringValue = suggestion.detailText ?? ""
         badgeLabel.stringValue = suggestion.shortcut?.displayText ?? ""
         badge.isHidden = suggestion.shortcut == nil
-        if let favicon {
-            icon.image = favicon
+        if let image = favicon ?? suggestion.iconData.flatMap(NSImage.init(data:)) {
+            icon.image = image
             icon.contentTintColor = nil
         } else {
             icon.image = NSImage(systemSymbolName: suggestion.systemImageName, accessibilityDescription: nil)?

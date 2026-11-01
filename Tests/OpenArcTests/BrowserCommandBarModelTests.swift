@@ -598,3 +598,45 @@ private struct RejectingDomainParser: BrowserDomainParsing {
         nil
     }
 }
+
+@MainActor @Test func anEmptyQueryOffersRecentPagesAndKeepsThePlaceholder() {
+    let recent = BrowserCommandSuggestion(
+        kind: .history,
+        displayText: "Example",
+        resolvedURLString: "https://example.com/",
+    )
+    let model = BrowserCommandBarModel(
+        suggestionProvider: BrowserEmptySuggestionProviderForTests(),
+        recentPagesProvider: { _ in [recent] },
+        submitHandler: { _ in },
+    )
+    model.present()
+    #expect(model.suggestions == [recent])
+    #expect(model.selectedSuggestion == recent)
+    #expect(model.previewDisplayText == nil)
+}
+
+@MainActor @Test func aCommandThatAnswersTheQueryComesBeforeTheSearch() {
+    let command = BrowserCommandSuggestion(
+        kind: .command,
+        displayText: "Edit Theme…",
+        resolvedURLString: "",
+    )
+    let model = BrowserCommandBarModel(
+        suggestionProvider: BrowserEmptySuggestionProviderForTests(),
+        localSuggestionProvider: { _, _ in [command] },
+        aiSearchEnabledProvider: { false },
+        submitHandler: { _ in },
+    )
+    model.present()
+    model.query = "theme"
+    #expect(model.suggestions.first?.kind == .command)
+    #expect(model.suggestions.dropFirst().first?.kind == .search)
+    #expect(!model.suggestions.contains { $0.kind == .aiSearch })
+}
+
+// MARK: - BrowserEmptySuggestionProviderForTests
+
+private struct BrowserEmptySuggestionProviderForTests: BrowserSuggestionProviding {
+    func suggestions(for _: String, maximumCount _: Int) -> [String] { [] }
+}

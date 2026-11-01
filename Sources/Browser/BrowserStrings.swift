@@ -1640,6 +1640,10 @@ enum BrowserStrings {
         "browser.settings.show_ai_search_suggestion",
         comment: "Settings toggle for the AI row in the command bar.",
     )
+    static let blankWindowTabsTitle = NSLocalizedString(
+        "browser.sidebar.blank_window_tabs",
+        comment: "Title above a blank window's tabs.",
+    )
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")

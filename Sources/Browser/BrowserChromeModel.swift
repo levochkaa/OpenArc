@@ -18,6 +18,8 @@ enum BrowserInternalPageRouting {
 enum BrowserWindowMode: Equatable {
     case normal
     case incognito
+    /// A window of the profile with its own tabs, outside its Spaces and not saved.
+    case blank
     case webApp(BrowserWebAppConfiguration)
 
     // MARK: Internal
@@ -35,13 +37,20 @@ enum BrowserWindowMode: Equatable {
     }
 
     var persistsSession: Bool {
-        !isIncognito && !isWebApp
+        self == .normal
+    }
+
+    /// Whether the window lists only its own tabs.
+    var isSpaceless: Bool {
+        self != .normal
     }
 
     var telemetryValue: String {
         switch self {
         case .normal:
             "normal"
+        case .blank:
+            "blank"
         case .incognito:
             "incognito"
         case .webApp:
@@ -257,6 +266,9 @@ enum BrowserWindowMode: Equatable {
         aiSearchEnabledProvider: { [weak self] in
             self?.userPreferencesStore.showsAISearchSuggestion ?? false
         },
+        recentPagesProvider: { [weak self] maximumCount in
+            self?.historyStore.recentSuggestions(maximumCount: maximumCount) ?? []
+        },
         siteSearchesProvider: { [weak self] in
             self?.userPreferencesStore.siteSearches ?? []
         },
@@ -285,6 +297,9 @@ enum BrowserWindowMode: Equatable {
         },
         aiSearchEnabledProvider: { [weak self] in
             self?.userPreferencesStore.showsAISearchSuggestion ?? false
+        },
+        recentPagesProvider: { [weak self] maximumCount in
+            self?.historyStore.recentSuggestions(maximumCount: maximumCount) ?? []
         },
         siteSearchesProvider: { [weak self] in
             self?.userPreferencesStore.siteSearches ?? []
@@ -677,15 +692,15 @@ enum BrowserWindowMode: Equatable {
     }
 
     var showsProfileIndicator: Bool {
-        !windowMode.isIncognito && !windowMode.isWebApp && availableProfileCount > 1 && !profile.isDefault
+        windowMode == .normal && availableProfileCount > 1 && !profile.isDefault
     }
 
     var supportsSpaces: Bool {
-        !windowMode.isIncognito && !windowMode.isWebApp
+        windowMode == .normal
     }
 
     var supportsAppTabs: Bool {
-        !windowMode.isIncognito && !windowMode.isWebApp
+        windowMode == .normal
     }
 
     var appTabs: [Tab] {
@@ -4326,6 +4341,8 @@ enum BrowserWindowMode: Equatable {
 
         ensureDefaultSpace()
         hasCreatedInitialTab = true
+        // A blank window starts with no page and asks where to go.
+        guard windowMode != .blank || firstTabURLString != nil else { return }
         createTab(withURLString: firstTabURLString ?? newTabURLString, registersUndo: false)
     }
 

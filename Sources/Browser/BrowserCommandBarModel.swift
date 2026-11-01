@@ -26,6 +26,8 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     let commandID: BrowserCommandID?
     let shortcut: BrowserKeyboardShortcut?
     var tabIDs: [String]
+    /// The page's icon from the browser's own records.
+    var iconData: Data?
 
     var tabID: String? {
         tabIDs.first
@@ -178,6 +180,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     // MARK: Internal
 
     static let maximumSuggestions = 10
+    static let maximumRecentPages = 5
     nonisolated static let maximumVisibleSuggestions = 5
 
     @Published private(set) var isPresented = false
@@ -204,6 +207,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     private let localSuggestionProvider: (String, Int) -> [BrowserCommandSuggestion]
     private let remoteSuggestionsEnabledProvider: () -> Bool
     private let aiSearchEnabledProvider: () -> Bool
+    private let recentPagesProvider: (Int) -> [BrowserCommandSuggestion]
     private let aiSearchProviderProvider: () -> BrowserAISearchProvider
     private let siteSearchesProvider: () -> [BrowserSiteSearch]
 
@@ -236,7 +240,10 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     }
 
     var previewDisplayText: String? {
-        guard let selectedSuggestion, selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
+        // Before anything is typed, the field keeps its placeholder over the recent pages.
+        guard !query.isEmpty, let selectedSuggestion, selectedSuggestion.kind != .aiSearch,
+              selectedSuggestion.kind != .command
+        else {
             return nil
         }
 
@@ -260,6 +267,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
         aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
         aiSearchEnabledProvider: @escaping () -> Bool = { true },
+        recentPagesProvider: @escaping (Int) -> [BrowserCommandSuggestion] = { _ in [] },
         siteSearchesProvider: @escaping () -> [BrowserSiteSearch] = { [] },
         submitHandler: @escaping (String) -> Void,
         openTabHandler: @escaping ([String]) -> Void = { _ in },
@@ -275,6 +283,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
         self.aiSearchProviderProvider = aiSearchProviderProvider
         self.aiSearchEnabledProvider = aiSearchEnabledProvider
+        self.recentPagesProvider = recentPagesProvider
         self.siteSearchesProvider = siteSearchesProvider
     }
 
@@ -405,6 +414,12 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
                         resolvedURLString: urlString,
                     )]
             } ?? []
+            selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
+            return
+        }
+        // Before anything is typed, the latest pages are one key away.
+        if trimmedQuery.isEmpty {
+            suggestions = recentPagesProvider(Self.maximumRecentPages)
             selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
             return
         }

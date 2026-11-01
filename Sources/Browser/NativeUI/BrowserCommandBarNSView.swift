@@ -336,7 +336,9 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             symbol.contentTintColor = nil
         } else {
             symbol.image = NSImage(
-                systemSymbolName: model.selectedSuggestion?.systemImageName ?? "magnifyingglass",
+                systemSymbolName: model.query.isEmpty
+                    ? "magnifyingglass"
+                    : model.selectedSuggestion?.systemImageName ?? "magnifyingglass",
                 accessibilityDescription: nil,
             )?
                 .withSymbolConfiguration(.init(pointSize: style.symbolSize, weight: .semibold))

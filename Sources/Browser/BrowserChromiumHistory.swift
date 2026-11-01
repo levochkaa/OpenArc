@@ -7,6 +7,12 @@ import GRDB
 
 protocol BrowserHistorySearching {
     func suggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion]
+    /// The pages to offer before anything is typed, latest first.
+    func recentSuggestions(maximumCount: Int) -> [BrowserCommandSuggestion]
+}
+
+extension BrowserHistorySearching {
+    func recentSuggestions(maximumCount _: Int) -> [BrowserCommandSuggestion] { [] }
 }
 
 // MARK: - BrowserEmptyHistoryStore
@@ -80,6 +86,47 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching {
 
     // MARK: Internal
 
+    func recentSuggestions(maximumCount: Int) -> [BrowserCommandSuggestion] {
+        guard maximumCount > 0, let historyURL = existingHistoryURL else { return [] }
+        do {
+            var configuration = Configuration()
+            configuration.readonly = true
+            configuration.busyMode = .timeout(0.1)
+            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: configuration)
+            defer { try? dbQueue.close() }
+            let rows = try dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT url, title
+                    FROM urls
+                    WHERE hidden = 0
+                      AND url NOT LIKE 'chrome://%'
+                      AND url NOT LIKE 'chrome-extension://%'
+                      AND url NOT LIKE 'openarc://%'
+                      AND url NOT LIKE 'about:%'
+                    ORDER BY last_visit_time DESC
+                    LIMIT ?
+                    """,
+                    arguments: [maximumCount],
+                )
+            }
+            return withIcons(rows.compactMap { row in
+                let urlString: String = row["url"]
+                guard !urlString.isEmpty else { return nil }
+                let title: String = row["title"]
+                return BrowserCommandSuggestion(
+                    kind: .history,
+                    displayText: Self.displayTitle(title: title, urlString: urlString),
+                    detailText: BrowserURLDisplayFormatter.displayString(for: urlString),
+                    resolvedURLString: urlString,
+                )
+            })
+        } catch {
+            return []
+        }
+    }
+
     func suggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard
@@ -115,7 +162,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching {
                 )
             }
 
-            return rows.compactMap { row in
+            return withIcons(rows.compactMap { row in
                 let urlString: String = row["url"]
                 guard !urlString.isEmpty else {
                     return nil
@@ -128,9 +175,39 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching {
                     detailText: BrowserURLDisplayFormatter.displayString(for: urlString),
                     resolvedURLString: urlString,
                 )
-            }
+            })
         } catch {
             return []
+        }
+    }
+
+    /// Chromium keeps page icons beside the history, so a row's icon needs no network.
+    private func withIcons(_ suggestions: [BrowserCommandSuggestion]) -> [BrowserCommandSuggestion] {
+        guard let historyURL = existingHistoryURL else { return suggestions }
+        let path = historyURL.deletingLastPathComponent().appendingPathComponent("Favicons").path
+        guard FileManager.default.fileExists(atPath: path) else { return suggestions }
+        var configuration = Configuration()
+        configuration.readonly = true
+        configuration.busyMode = .timeout(0.1)
+        guard let dbQueue = try? DatabaseQueue(path: path, configuration: configuration) else { return suggestions }
+        defer { try? dbQueue.close() }
+        return suggestions.map { suggestion in
+            var suggestion = suggestion
+            suggestion.iconData = try? dbQueue.read { db in
+                try Data.fetchOne(
+                    db,
+                    sql: """
+                    SELECT b.image_data
+                    FROM favicon_bitmaps b
+                    JOIN icon_mapping m ON m.icon_id = b.icon_id
+                    WHERE m.page_url = ?
+                    ORDER BY b.width DESC
+                    LIMIT 1
+                    """,
+                    arguments: [suggestion.resolvedURLString],
+                )
+            }
+            return suggestion
         }
     }
 
