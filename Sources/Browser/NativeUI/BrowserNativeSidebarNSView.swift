@@ -1360,6 +1360,7 @@ final class BrowserNativeSidebarNSView: NSView {
             subject: tab.displayTitle,
             in: menu,
         )
+        menu.addItem(.separator())
         BrowserNativeMenus.addIconMenu(
             BrowserStrings.tabChangeIconAction,
             to: menu,
@@ -1393,8 +1394,8 @@ final class BrowserNativeSidebarNSView: NSView {
                 }
             }
         }
-        addSplitItems(for: tab, to: menu)
-        addArrangeItems(for: tab, to: menu)
+        let hasSplitItems = addSplitItems(for: tab, to: menu)
+        addArrangeItems(for: tab, to: menu, startsGroup: !hasSplitItems)
         menu.addItem(.separator())
         if tab.placement == .spacePinned {
             BrowserNativeMenus.add(BrowserStrings.tabRemovePinAction, to: menu) { [weak state] in
@@ -1443,13 +1444,15 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     /// Duplicate and Move to.
-    private func addArrangeItems(for tab: BrowserChromeModel.Tab, to menu: NSMenu) {
+    private func addArrangeItems(for tab: BrowserChromeModel.Tab, to menu: NSMenu, startsGroup: Bool) {
         let model = state.model
         let state = state
         let spaces = model.spacesForMovingTab(id: tab.id)
         let canDuplicate = tab.placement == .app || tab.spaceID == state.snapshot.selectedSpaceID
         guard canDuplicate || !spaces.isEmpty else { return }
-        menu.addItem(.separator())
+        if startsGroup {
+            menu.addItem(.separator())
+        }
         if canDuplicate {
             BrowserNativeMenus.add(BrowserStrings.tabDuplicateAction, to: menu) { [weak state] in
                 state?.withSidebarAnimation { _ = model.duplicateTab(id: tab.id) }
@@ -1467,21 +1470,28 @@ final class BrowserNativeSidebarNSView: NSView {
 
     /// Open in Split View joins the row to the selected tab's split; a
     /// split member also offers the split row actions.
-    private func addSplitItems(for tab: BrowserChromeModel.Tab, to menu: NSMenu) {
+    @discardableResult private func addSplitItems(for tab: BrowserChromeModel.Tab, to menu: NSMenu) -> Bool {
         let model = state.model
         let state = state
         let group = model.splitGroup(containingTabID: tab.id)
         let canOpen = model.selectedTabID.map { selected in
             selected != tab.id && model.canAddSplitView && !model.splitPaneTabIDs(forTabID: selected).contains(tab.id)
         } ?? false
-        guard canOpen || group != nil else { return }
+        // The shown tab has nothing to join: it asks for a page, as the menu bar does.
+        let canAdd = model.selectedTabID == tab.id && model.canAddSplitView
+        guard canOpen || canAdd || group != nil else { return false }
         menu.addItem(.separator())
+        if canAdd {
+            BrowserNativeMenus.add(BrowserStrings.menuAddSplitView, to: menu) {
+                model.presentSplitViewCommandBar()
+            }
+        }
         if canOpen {
             BrowserNativeMenus.add(BrowserStrings.splitOpenInSplitViewAction, to: menu) { [weak state] in
                 state?.withSidebarAnimation { _ = model.openInSplitView(tabID: tab.id) }
             }
         }
-        guard let group else { return }
+        guard let group else { return true }
         BrowserNativeMenus.add(BrowserStrings.splitSeparateTabAction, to: menu) { [weak state] in
             state?.withSidebarAnimation { _ = model.separateTabFromSplit(tabID: tab.id) }
         }
@@ -1495,6 +1505,7 @@ final class BrowserNativeSidebarNSView: NSView {
         ) {
             _ = model.setSplitOrientation(vertical ? .horizontal : .vertical, groupID: group.id)
         }
+        return true
     }
 
     private func spaceMenu(_ space: BrowserChromeModel.Space) -> NSMenu {
