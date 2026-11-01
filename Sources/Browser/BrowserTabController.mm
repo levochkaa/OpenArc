@@ -3059,6 +3059,9 @@ class BrowserTabClient final : public CefClient,
   void OnTitleChange(CefRefPtr<CefBrowser> browser,
                      const CefString &title) override;
 
+  void OnStatusMessage(CefRefPtr<CefBrowser> browser,
+                       const CefString &value) override;
+
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                           const std::vector<CefString> &icon_urls) override;
   bool OnBeforeDownload(
@@ -5119,6 +5122,10 @@ void WatchClickModifiers();
                       browser, confirmed));
                 }];
     current->second.closeConfirmation = confirmation;
+    id<BrowserTabControllerDelegate> delegate = controller.delegate;
+    if ([delegate respondsToSelector:@selector(browserTabController:willConfirmCloseForTabWithID:)]) {
+      [delegate browserTabController:controller willConfirmCloseForTabWithID:tabID];
+    }
     [confirmation present];
   });
   return YES;
@@ -5527,6 +5534,18 @@ void BrowserTabClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
 
   [controller handleTitleChange:ToNSString(title.ToString())
                        forTabID:ToNSString(tab_id_)];
+}
+
+void BrowserTabClient::OnStatusMessage(CefRefPtr<CefBrowser>,
+                                       const CefString &value) {
+  CEF_REQUIRE_UI_THREAD();
+  BrowserTabController *controller = controller_;
+  id<BrowserTabControllerDelegate> delegate = controller.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didChangeStatus:forTabWithID:)]) {
+    [delegate browserTabController:controller
+                   didChangeStatus:ToNSString(value.ToString())
+                      forTabWithID:ToNSString(tab_id_)];
+  }
 }
 
 void BrowserTabClient::OnFaviconURLChange(
@@ -6138,6 +6157,7 @@ void BrowserPeekClient::OnLoadStart(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> f
   if (frame && frame->IsMain()) {
     [controller_ cancelMediaSitePermissionsForTabID:PeekSitePermissionTabID(session_id_)];
     RunPageStartScripts(frame);
+    [[controller_ peekPanelForSessionID:session_id_] revealPage];
   }
 }
 

@@ -275,6 +275,26 @@ import Testing
         #expect(try f.store.loadArchivePage().entries.isEmpty)
     }
 
+    @Test func closingRowLeavesAtOnceAndComesBackWhenThePageAsksOrRefuses() throws {
+        let f = try ConfirmedCloseFixture()
+        defer { f.close() }
+        let tab = try createHistoryTab(in: f, path: "leaving")
+        #expect(f.model.closeTab(id: tab.id))
+        let request = try #require(f.driver.confirmedCloseRequests.last)
+        #expect(f.model.tabs.contains { $0.id == tab.id }, "The engine has not answered yet")
+        #expect(!f.model.presentedSidebarSnapshot.temporaryTabs.contains { $0.id == tab.id })
+        #expect(f.model.presentedSidebarSnapshot.selectedTabID != tab.id)
+        f.driver.onTabCloseConfirmationPresented?(tab.id)
+        #expect(f.model.presentedSidebarSnapshot.temporaryTabs.contains { $0.id == tab.id })
+        f.finish(request, .cancelled)
+        #expect(f.model.presentedSidebarSnapshot.temporaryTabs.contains { $0.id == tab.id })
+        #expect(f.model.closeTab(id: tab.id))
+        let second = try #require(f.driver.confirmedCloseRequests.last)
+        f.finish(second, .cancelled)
+        #expect(f.model.presentedSidebarSnapshot.temporaryTabs.contains { $0.id == tab.id })
+        #expect(f.model.presentedSidebarSnapshot.selectedTabID == f.model.selectedTabID)
+    }
+
     @Test(arguments: [BrowserTabCloseOutcome.cancelled, .closed])
     func newerCreationDuringPendingUndoDoesNotReviveAnObsoleteRedoBranch(outcome: BrowserTabCloseOutcome) throws {
         let f = try ConfirmedCloseFixture()

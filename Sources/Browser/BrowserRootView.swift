@@ -28,6 +28,7 @@ final class BrowserRootView: NSView {
     private let revealEdge = BrowserNativeSidebarRevealEdge()
     private let find = BrowserFindBarNSView()
     private let pageLoadingIndicator = BrowserPageLoadingIndicatorView()
+    private let linkStatus = BrowserLinkStatusView()
     private let command: BrowserCommandBarNSView
     private let currentPageCommand: BrowserCommandBarNSView
     private let sidebarDismiss = BrowserSidebarHoverOverlayDismissNSView()
@@ -73,7 +74,6 @@ final class BrowserRootView: NSView {
     private var shortcutStore: BrowserShortcutStore { model.shortcutStore }
     private var commandBarModel: BrowserCommandBarModel { model.commandBarModel }
     private var currentPageCommandBarModel: BrowserCommandBarModel { model.currentPageCommandBarModel }
-    private var sidebarSnapshot: BrowserSidebarSnapshot { model.sidebarSnapshot }
     private var windowGeometry: BrowserWindowChromeLayout {
         .init(
             windowSize: bounds.size,
@@ -184,6 +184,7 @@ final class BrowserRootView: NSView {
             addSubview(view)
         }
         library.isHidden = true
+        addSubview(linkStatus)
         addSubview(libraryScrollObserver)
         bindLibrarySwipes()
         find.bind(to: model)
@@ -199,7 +200,7 @@ final class BrowserRootView: NSView {
         model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
         model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
         model.onSpaceWillSelect = { [weak self] in self?.beginSpaceTransition(to: $0) }
-        model.onTabRestored = { [weak self] in
+        model.onTabRowsChanged = { [weak self] in
             self?.refresh()
             CATransaction.flush()
         }
@@ -681,6 +682,15 @@ final class BrowserRootView: NSView {
             nextLayoutCurve = libraryPresented ? .libraryOpen : .library
         }
         library.refresh()
+        let page = windowGeometry.contentFrame
+        let inset = BrowserLinkStatusView.inset
+        let statusWidth = linkStatus.update(status: model.linkStatus, maximumWidth: max(page.width * 0.6, 1))
+        linkStatus.frame = CGRect(
+            x: page.minX + inset,
+            y: page.maxY - BrowserLinkStatusView.height - inset,
+            width: statusWidth,
+            height: BrowserLinkStatusView.height,
+        )
         libraryScrollObserver.isEnabled = libraryPresented && model.librarySection != .spaces
         let contentAppearance = model.selectedSpaceTheme?.palette.map {
             NSAppearance(named: $0.isLightContent ? .aqua : .darkAqua)

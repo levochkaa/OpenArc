@@ -49,7 +49,9 @@ import Foundation
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabClosed: ((String) -> Void)?
+    var onStatusChanged: ((String, String) -> Void)?
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)?
+    var onTabCloseConfirmationPresented: ((String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?

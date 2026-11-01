@@ -714,6 +714,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(createNewWindow(_:)):
             return !isTerminationRequested
         case #selector(togglePictureInPicture(_:)):
+            if let title = activeChromeModel?.pictureInPictureMenuTitle {
+                (item as? NSMenuItem)?.title = title
+            }
             return activeChromeModel?.canTogglePictureInPicture ?? false
         case #selector(createNewIncognitoWindow(_:)):
             return !isTerminationRequested

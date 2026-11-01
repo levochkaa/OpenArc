@@ -12,7 +12,9 @@ import Foundation
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)?
+    var onTabCloseConfirmationPresented: ((String) -> Void)?
     var onTabClosed: ((String) -> Void)?
+    var onStatusChanged: ((String, String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
@@ -308,7 +310,9 @@ import Foundation
         onTabCreationStateChanged = nil
         onTabUpdated = nil
         onTabCloseRequestFinished = nil
+        onTabCloseConfirmationPresented = nil
         onTabClosed = nil
+        onStatusChanged = nil
         onNavigationStateChanged = nil
         onLoadingStateChanged = nil
         onFindResultChanged = nil
@@ -453,6 +457,18 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
             )
             : nil
         MainActor.assumeIsolated { onMediaStateChanged?(tabID, state) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didChangeStatus status: String,
+        forTabWithID tabID: String,
+    ) {
+        MainActor.assumeIsolated { onStatusChanged?(tabID, status) }
+    }
+
+    nonisolated func browserTabController(_: BrowserTabController, willConfirmCloseForTabWithID tabID: String) {
+        MainActor.assumeIsolated { onTabCloseConfirmationPresented?(tabID) }
     }
 
     nonisolated func browserTabController(

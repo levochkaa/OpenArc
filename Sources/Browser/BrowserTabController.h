@@ -74,6 +74,13 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)browserTabController:(BrowserTabController *)controller
     performPageContextCommand:(NSString *)command
                      argument:(NSString *)argument;
+// The address of the link under the pointer, empty when there is none.
+- (void)browserTabController:(BrowserTabController *)controller
+             didChangeStatus:(NSString *)status
+                forTabWithID:(NSString *)tabID;
+// The page asks the user before closing, on the main thread.
+- (void)browserTabController:(BrowserTabController *)controller
+    willConfirmCloseForTabWithID:(NSString *)tabID;
 // Emitted before didCloseTabWithID for a confirmed manual request.
 - (void)browserTabController:(BrowserTabController *)controller
     didFinishCloseRequestForTabWithID:(NSString *)tabID

@@ -3,18 +3,23 @@
 import AppKit
 
 extension BrowserChromeModel {
-    var sidebarSnapshot: BrowserSidebarSnapshot {
+    var sidebarSnapshot: BrowserSidebarSnapshot { makeSidebarSnapshot(leaving: []) }
+
+    /// What the sidebar shows: without the rows of tabs on their way out.
+    var presentedSidebarSnapshot: BrowserSidebarSnapshot { makeSidebarSnapshot(leaving: tabsLeavingSidebar) }
+
+    private func makeSidebarSnapshot(leaving: Set<String>) -> BrowserSidebarSnapshot {
         var snapshot = BrowserSidebarSnapshot(
             spaces: spaces,
             selectedSpaceID: selectedSpaceID,
             activeSpace: activeSpace,
             isActiveSpacePinnedSectionCollapsed: isActiveSpacePinnedSectionCollapsed,
-            allTabs: tabs,
+            allTabs: leaving.isEmpty ? tabs : tabs.filter { !leaving.contains($0.id) },
             pinnedTabFolders: pinnedTabFolders,
             appTabs: appTabs,
             spacePinnedTabs: spacePinnedTabs,
-            temporaryTabs: temporaryTabs,
-            selectedTabID: selectedTabID,
+            temporaryTabs: leaving.isEmpty ? temporaryTabs : temporaryTabs.filter { !leaving.contains($0.id) },
+            selectedTabID: leaving.isEmpty ? selectedTabID : sidebarSelectedTabID,
             archivableTabIDs: Set((spacePinnedTabs + temporaryTabs).dropLast().map(\.id)),
             canGoBack: canGoBack,
             canGoForward: canGoForward,

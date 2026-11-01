@@ -45,6 +45,11 @@ final class BrowserNativeSidebarNSView: NSView {
     private let content = BrowserNativeSidebarBackground()
     private let appGrid = BrowserNativeSidebarBackground()
     private let emptyAppGuide = BrowserNativeNoninteractiveSurface()
+    private let emptyAppGuideLabel = BrowserNativeControls.label(
+        BrowserStrings.sidebarDragToAddFavorites,
+        size: 12,
+        color: BrowserChromeColors.sidebarDimText,
+    )
     private var emptyAppEntryFrame: CGRect?
     private var reservedAppHeight: CGFloat = 0
     private var isProjectingAppGrid = false
@@ -105,10 +110,12 @@ final class BrowserNativeSidebarNSView: NSView {
         ] {
             content.addSubview(view)
         }
-        emptyAppGuide.cornerRadius = 2
+        emptyAppGuide.cornerRadius = 8
         emptyAppGuide.fillColor = BrowserChromeColors.rowHover
         emptyAppGuide.strokeColor = BrowserChromeColors.sidebarOverlayBorder
         emptyAppGuide.isHidden = true
+        emptyAppGuideLabel.alignment = .center
+        emptyAppGuide.addSubview(emptyAppGuideLabel)
         frameTransitions.onFrameChange = { [weak self] in self?.needsLayout = true }
         pagerClip.addSubview(pagesContainer)
         pagesContainer.addSubview(creationPage)
@@ -497,6 +504,9 @@ final class BrowserNativeSidebarNSView: NSView {
         state.drag.updateDockTarget(spaceDock?.spaceID(atWindowPoint: point))
         state.drag.updatePointer(content.convert(point, from: nil))
         state.drag.updatePageDrop(atWindowPoint: point)
+        if state.model.appTabs.isEmpty {
+            needsLayout = true
+        }
     }
 
     func finishDragging(atWindowPoint point: CGPoint) {
@@ -667,14 +677,29 @@ final class BrowserNativeSidebarNSView: NSView {
             .supportsAppTabs && (!appTabs.isEmpty || (state.drag.isDragging && reservedAppHeight > 0))
         let offersEmptyAppDrop = state.model.supportsAppTabs && state.model.appTabs.isEmpty && state.drag.isDragging
             && state.draggedTabID != nil && state.draggedTabIDs.count == 1
+        // The list stays put until the tab is carried up to where the guide appears.
+        let showsEmptyAppGuide = offersEmptyAppDrop && state.drag.pointer.y < header.frame.maxY
+            + BrowserChromeLayout.sidebarListTopSpacing + BrowserChromeLayout.sidebarEmptySectionDropZoneHeight
         emptyAppGuide.frame = CGRect(
             x: 0,
-            y: header.frame.maxY,
+            y: header.frame.maxY + BrowserChromeLayout.sidebarListTopSpacing,
             width: width,
-            height: BrowserChromeLayout.sidebarListSpacing,
+            height: showsEmptyAppGuide ? BrowserChromeLayout.sidebarEmptySectionDropZoneHeight : 0,
         )
-        emptyAppEntryFrame = offersEmptyAppDrop ? emptyAppGuide.frame.insetBy(dx: 0, dy: -4) : nil
-        emptyAppGuide.isHidden = !offersEmptyAppDrop || showsApps
+        emptyAppGuideLabel.frame = emptyAppGuide.bounds.insetBy(
+            dx: 8,
+            dy: (emptyAppGuide.bounds.height - 16) / 2,
+        )
+        emptyAppEntryFrame = offersEmptyAppDrop
+            ? CGRect(
+                x: 0,
+                y: header.frame.maxY,
+                width: width,
+                height: BrowserChromeLayout.sidebarListTopSpacing + BrowserChromeLayout
+                    .sidebarEmptySectionDropZoneHeight,
+            )
+            : nil
+        emptyAppGuide.isHidden = !showsEmptyAppGuide || showsApps
         let appLayout = BrowserSidebarAppTabGridLayout(spacing: BrowserChromeLayout.appTabGridSpacing)
         var appHeight = showsApps
             ? max(
@@ -702,7 +727,8 @@ final class BrowserNativeSidebarNSView: NSView {
                 setFrame(appFrames[index], of: tile, animated: animated)
             }
         }
-        let top = (showsApps ? appFrame.maxY : header.frame.maxY) + BrowserChromeLayout.sidebarListTopSpacing
+        let aboveList = showsApps ? appFrame.maxY : showsEmptyAppGuide ? emptyAppGuide.frame.maxY : header.frame.maxY
+        let top = aboveList + BrowserChromeLayout.sidebarListTopSpacing
         footer.frame = NSRect(
             x: 0,
             y: max(content.bounds.height - footerHeight, top),

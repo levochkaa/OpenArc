@@ -214,7 +214,6 @@ import AppKit
         return NSRect(x: parent.midX - width / 2, y: parent.midY - height / 2, width: width, height: height).integral
     }
 
-    /// The small window, centered on the main screen.
     @objc(presentStandalone) static func presentStandalone() -> BrowserPeekPanel {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         let size = NSSize(width: min(820, screen.width - 80), height: min(640, screen.height - 80))
@@ -226,6 +225,10 @@ import AppKit
         )
         .integral
         let panel = BrowserPeekPanel(contentRect: frame, standalone: true)
+        // An empty page paints white before it has anything to show.
+        panel.hostView.wantsLayer = true
+        panel.hostView.alphaValue = 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak panel] in panel?.hostView.alphaValue = 1 }
         panel.makeKeyAndOrderFront(nil)
         // The window would focus the address field; the page takes the keys.
         panel.focusPage()
@@ -259,6 +262,12 @@ import AppKit
             BrowserInternalURLNormalizer.canonicalURLString(for: resolution.resolvedURLString)
                 ?? resolution.resolvedURLString
         }
+    }
+
+    /// The small window, centered on the main screen.
+    /// The page has started to arrive, so its first paint is near.
+    @objc func revealPage() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.hostView.alphaValue = 1 }
     }
 
     @objc(updateWithURLString:) func update(urlString: String) {

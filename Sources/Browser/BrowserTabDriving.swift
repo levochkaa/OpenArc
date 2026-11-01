@@ -50,7 +50,9 @@ enum BrowserPageContextCommand: String {
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)? { get set }
     var onTabUpdated: ((String, String?, String?, String?) -> Void)? { get set }
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)? { get set }
+    var onTabCloseConfirmationPresented: ((String) -> Void)? { get set }
     var onTabClosed: ((String) -> Void)? { get set }
+    var onStatusChanged: ((String, String) -> Void)? { get set }
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)? { get set }
     var onLoadingStateChanged: ((String, Bool) -> Void)? { get set }
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)? { get set }

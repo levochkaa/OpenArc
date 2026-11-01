@@ -673,4 +673,6 @@
 "browser.menu.unmute_all_tabs" = "Unmute All Tabs";
 "browser.menu.new_window" = "New Window";
 "browser.menu.open_picture_in_picture" = "Open Picture in Picture";
+"browser.menu.close_picture_in_picture" = "Close Picture in Picture";
+"browser.sidebar.drag_to_add_favorites" = "Drag to add Favorites";
 "browser.context.picture_in_picture" = "Picture in Picture";

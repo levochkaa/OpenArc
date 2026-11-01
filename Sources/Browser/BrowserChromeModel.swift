@@ -197,6 +197,11 @@ enum BrowserWindowMode: Equatable {
     )
 
     @Published private(set) var tabs = [Tab]()
+    /// Tabs whose close the engine is still confirming. Their rows go at once, and the model
+    /// keeps them until the engine answers, so a page that refuses loses nothing.
+    @Published private(set) var tabsLeavingSidebar = Set<String>()
+    /// The address of the link under the pointer in the shown tab.
+    @Published private(set) var linkStatus: String?
     @Published private(set) var spaces = [Space]()
     @Published private(set) var pinnedTabFolders = [PinnedTabFolder]()
     @Published private(set) var selectedSpaceID: String? {
@@ -346,8 +351,8 @@ enum BrowserWindowMode: Equatable {
     var onOpenExtensions: (() -> Void)?
     /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.
     var onRevealSidebar: (() -> Void)?
-    /// Called when a restored tab has its row, so the rows move ahead of the work that follows.
-    var onTabRestored: (() -> Void)?
+    /// Called when a tab's row comes or goes, so the rows move ahead of the work that follows.
+    var onTabRowsChanged: (() -> Void)?
     /// Called before a Space is selected, so its motion can start ahead of the tab switch.
     var onSpaceWillSelect: ((String) -> Void)?
     /// UI-only: bumped by `renameSelectedTab()`, the only writer, so the
@@ -789,6 +794,22 @@ enum BrowserWindowMode: Equatable {
         canCreateTab && selectedTabID.flatMap { tabMediaStates[$0]?.video } == true
     }
 
+    /// The tab the sidebar shows as selected: the one that takes over while the selected tab's
+    /// row has already gone.
+    var sidebarSelectedTabID: String? {
+        guard let selectedTabID, tabsLeavingSidebar.contains(selectedTabID),
+              let closing = tabs.first(where: { $0.id == selectedTabID })
+        else { return selectedTabID }
+        return fallbackTabID(afterClosingDormantTab: closing, excluding: tabsLeavingSidebar)
+    }
+
+    /// The menu says what the command will do now.
+    var pictureInPictureMenuTitle: String {
+        selectedTabID.map(isInPictureInPicture) == true
+            ? BrowserStrings.menuClosePictureInPicture
+            : BrowserStrings.menuOpenPictureInPicture
+    }
+
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
             !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
@@ -912,6 +933,14 @@ enum BrowserWindowMode: Equatable {
                 urlString: urlString,
                 faviconURLString: faviconURLString,
             )
+        }
+        tabDriver.onStatusChanged = { [weak self] tabID, status in
+            guard let self, tabID == selectedTabID else { return }
+            self.linkStatus = status.isEmpty ? nil : BrowserURLDisplayFormatter.fullDisplayString(for: status)
+        }
+        tabDriver.onTabCloseConfirmationPresented = { [weak self] tabID in
+            // The page asks the user, so its row stays while the question is open.
+            self?.tabsLeavingSidebar.remove(tabID)
         }
         tabDriver.onTabCloseRequestFinished = { [weak self] tabID, requestID, outcome in
             self?.handleTabCloseRequestFinished(id: tabID, requestID: requestID, outcome: outcome)
@@ -3517,7 +3546,14 @@ enum BrowserWindowMode: Equatable {
         tabDriver.closeTab(withID: tab.id, forceClose: true)
         guard wasSelected else { return }
         clearSelectedTab(newID, forSpaceID: tab.spaceID)
-        let fallback = fallbackTabID(afterClosingDormantTab: tabs[index], excluding: [newID])
+        // The window shows another tab of its own, not an empty page.
+        let elsewhere = Set(tabs.map(\.id).filter(isPageInAnotherWindow))
+        let fallback = fallbackTabID(afterClosingDormantTab: tabs[index], excluding: elsewhere.union([newID]))
+        if let fallback, hasNoPage(fallback) {
+            selectTab(id: fallback)
+            updateWindowTitle()
+            return
+        }
         selectedTabID = fallback
         findResultMatchCount = nil
         if let fallback {
@@ -3729,11 +3765,16 @@ enum BrowserWindowMode: Equatable {
             completion: completion,
         )
         closingTabIDs.insert(id)
+        if tab.placement == .temporary, !unloadsPersistentTab, localAutomaticCandidate == nil {
+            tabsLeavingSidebar.insert(id)
+            onTabRowsChanged?()
+        }
         guard tabDriver.requestCloseTab(withID: id, requestID: requestID) else {
             if pendingTabCloseRequests[id]?.requestID == requestID {
                 pendingTabCloseRequests.removeValue(forKey: id)
                 closingTabIDs.remove(id)
             }
+            tabsLeavingSidebar.remove(id)
             return false
         }
         return true
@@ -3747,6 +3788,7 @@ enum BrowserWindowMode: Equatable {
     ) -> Bool {
         guard let closingIndex = tabs.firstIndex(where: { $0.id == id }) else { return false }
         let closingTab = tabs[closingIndex]
+        tabsLeavingSidebar.remove(id)
         let undoSnapshot = tabUndoSnapshot(forClosingTabAt: closingIndex)
         let precloseSnapshot: BrowserTabSessionSnapshot? = createsArchive && canBrowseArchive && closingTab
             .placement == .temporary
@@ -5592,7 +5634,7 @@ extension BrowserChromeModel {
             )])
             isSessionClosurePrepared = false
             publishArchivedTab(entry: entry, restored: restored, outgoing: outgoing, outgoingDate: outgoingDate)
-            onTabRestored?()
+            onTabRowsChanged?()
             archiveRevision &+= 1
             sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
             sessionPreferencesStore.saveSelectedTabIndex(next.tabs.firstIndex { $0.id == syncID })
@@ -6140,6 +6182,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         guard let request = pendingTabCloseRequests[id], request.requestID == requestID else { return }
         pendingTabCloseRequests.removeValue(forKey: id)
         closingTabIDs.remove(id)
+        tabsLeavingSidebar.remove(id)
         defer {
             if request.localAutomaticCandidate != nil {
                 continueLocalAutomaticArchiveSweep()
@@ -6203,6 +6246,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         crashedTabErrorCodes.removeValue(forKey: id)
         tabsNeedingReloadAfterCrash.remove(id)
         closingTabIDs.remove(id)
+        tabsLeavingSidebar.remove(id)
         let closedTab = tabs.first { $0.id == id }
         // An already-removed or unknown identity has no model change to save.
         // Duplicate close receipts must not echo a finished remote projection.

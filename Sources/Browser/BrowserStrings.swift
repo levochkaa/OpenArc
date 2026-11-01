@@ -1556,9 +1556,19 @@ enum BrowserStrings {
         comment: "Command that brings back the sound of every open tab.",
     )
 
+    static let menuClosePictureInPicture = NSLocalizedString(
+        "browser.menu.close_picture_in_picture",
+        comment: "Command that brings the page's video back from its floating window.",
+    )
+
     static let menuOpenPictureInPicture = NSLocalizedString(
         "browser.menu.open_picture_in_picture",
         comment: "Command that moves the page's video to a floating window, or back.",
+    )
+
+    static let sidebarDragToAddFavorites = NSLocalizedString(
+        "browser.sidebar.drag_to_add_favorites",
+        comment: "Shown where a dragged tab can become the first Favorite.",
     )
 
     static let menuManageSpaces = NSLocalizedString(
