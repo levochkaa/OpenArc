@@ -194,6 +194,10 @@ import Foundation
         }
     }
 
+    func setMediaVolume(_ volume: Double, forTabWithID tabID: String) {
+        controller.setMediaVolume(volume, forTabWithID: tabID)
+    }
+
     func goToHistoryOffsetInActiveTab(_ offset: Int) {
         controller.goToHistoryOffset(inActiveTab: offset)
     }

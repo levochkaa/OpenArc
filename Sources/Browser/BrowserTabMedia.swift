@@ -32,6 +32,7 @@ struct BrowserMiniPlayerItem: Equatable {
     let hasPreviousTrack: Bool
     let hasNextTrack: Bool
     let isMuted: Bool
+    var volume = 1.0
 }
 
 // MARK: - BrowserMediaAction
@@ -85,6 +86,7 @@ extension BrowserChromeModel {
                 hasPreviousTrack: state.hasPreviousTrack,
                 hasNextTrack: state.hasNextTrack,
                 isMuted: isTabMuted(id: id),
+                volume: tabMediaVolumes[id] ?? 1,
             )
         }
     }
@@ -118,6 +120,11 @@ extension BrowserChromeModel {
     }
 
     /// The mini player's close button: hidden until the tab plays anew.
+    func setMediaVolume(_ volume: Double, tabID: String) {
+        tabMediaVolumes[tabID] = volume
+        setMediaVolumeInEngine(volume, tabID: tabID)
+    }
+
     func dismissMiniPlayer(tabID: String) {
         guard tabMediaStates[tabID] != nil else { return }
         dismissedMiniPlayerTabIDs.insert(tabID)

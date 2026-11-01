@@ -289,6 +289,7 @@ import Foundation
     }
 
     func goToHistoryOffsetInActiveTab(_: Int) {}
+    func setMediaVolume(_: Double, forTabWithID _: String) {}
     func evaluateJavaScript(
         _: String,
         inTabWithID _: String,

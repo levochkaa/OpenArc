@@ -150,6 +150,9 @@ final class BrowserNativeSidebarNSView: NSView {
         dragPreview.isHidden = true
         registerForDraggedTypes([.URL, .fileURL, .string])
         miniPlayers.onHeightChange = { [weak self] in self?.needsLayout = true }
+        miniPlayers.onVolumeChange = { [weak state] tabID, volume in
+            state?.model.setMediaVolume(volume, tabID: tabID)
+        }
         miniPlayers.onAction = { [weak state] tabID, action in
             guard let model = state?.model else { return }
             switch action {

@@ -1644,6 +1644,23 @@ enum BrowserStrings {
         "browser.sidebar.blank_window_tabs",
         comment: "Title above a blank window's tabs.",
     )
+    static let captureToastCopied = NSLocalizedString("browser.capture.toast_copied", comment: "Note after a capture.")
+    static let captureToastSave = NSLocalizedString(
+        "browser.capture.toast_save",
+        comment: "Button that saves a capture.",
+    )
+    static let captureToastHintLeading = NSLocalizedString(
+        "browser.capture.toast_hint_leading",
+        comment: "Text before the keys.",
+    )
+    static let captureToastHintTrailing = NSLocalizedString(
+        "browser.capture.toast_hint_trailing",
+        comment: "Text after the keys.",
+    )
+    static let captureFileName = NSLocalizedString(
+        "browser.capture.file_name",
+        comment: "Default name of a saved capture.",
+    )
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")

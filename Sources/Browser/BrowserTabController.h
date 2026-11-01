@@ -201,6 +201,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)visitNavigationEntriesForActiveTab:(void (^)(NSArray<NSDictionary<NSString *, NSString *> *> *entries,
                                                      NSInteger currentIndex))completion;
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset;
+/// Scales the tab's audio and video elements, in every frame and in pages to come.
+- (void)setMediaVolume:(double)volume forTabWithID:(NSString *)tabID;
 /// Answers with the expression's value as text, or nil if the page has no answer.
 - (void)evaluateJavaScript:(NSString *)code
               inTabWithID:(NSString *)tabID

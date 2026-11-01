@@ -1453,6 +1453,7 @@ void CopyBase64PNGToPasteboardOnMain(const std::string &base64_png) {
     NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
     [pasteboard clearContents];
     [pasteboard setData:pngData forType:NSPasteboardTypePNG];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"BrowserCaptureDidCopy" object:pngData];
   });
 }
 
@@ -3392,6 +3393,7 @@ struct TabRecord {
                        requestID:(NSString *)requestID
                          outcome:(BrowserTabCloseRequestOutcome)outcome;
 - (void)handleTitleChange:(NSString *)title forTabID:(NSString *)tabID;
+- (void)applyMediaVolumeForTabID:(NSString *)tabID toFrame:(CefRefPtr<CefFrame>)frame;
 - (void)handleAddressChange:(NSString *)urlString forTabID:(NSString *)tabID;
 - (void)handleFaviconURLChange:(nullable NSString *)faviconURLString
                       forTabID:(NSString *)tabID;
@@ -3626,7 +3628,25 @@ class BrowserNavigationEntryCollector : public CefNavigationEntryVisitor {
 
 }  // namespace
 
+namespace {
+
+// The engine has no per-tab level, so a page's own elements carry it. A later
+// element or one the page resets gets it again when it starts to play.
+std::string BrowserMediaVolumeScript(double volume) {
+  const std::string level = std::to_string(volume);
+  return "(()=>{globalThis.__openarcMediaVolume=" + level +
+         ";for(const m of document.querySelectorAll('audio,video'))m.volume=" + level +
+         ";if(!globalThis.__openarcMediaVolumeListens){globalThis.__openarcMediaVolumeListens=true;"
+         "document.addEventListener('play',e=>{if(e.target&&'volume' in e.target)"
+         "e.target.volume=globalThis.__openarcMediaVolume},true);"
+         "document.addEventListener('volumechange',e=>{const t=e.target;"
+         "if(t&&t.volume>globalThis.__openarcMediaVolume)t.volume=globalThis.__openarcMediaVolume},true)}})();";
+}
+
+}  // namespace
+
 @implementation BrowserTabController {
+  NSMutableDictionary<NSString *, NSNumber *> *_mediaVolumes;
   __weak BrowserTabHostView *_hostView;
   std::map<std::string, TabRecord> _tabRecords;
   CefRefPtr<CefRequestContext> _requestContext;
@@ -4185,6 +4205,33 @@ class BrowserNavigationEntryCollector : public CefNavigationEntryVisitor {
   }
   CefRefPtr<CefNavigationEntryVisitor> visitor = new BrowserNavigationEntryCollector(completion);
   it->second.browser->GetHost()->GetNavigationEntries(visitor, false);
+}
+
+- (void)setMediaVolume:(double)volume forTabWithID:(NSString *)tabID {
+  if (_mediaVolumes == nil) {
+    _mediaVolumes = [NSMutableDictionary dictionary];
+  }
+  _mediaVolumes[tabID] = @(volume);
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return;
+  }
+  std::vector<CefString> identifiers;
+  it->second.browser->GetFrameIdentifiers(identifiers);
+  const std::string script = BrowserMediaVolumeScript(volume);
+  for (const CefString &identifier : identifiers) {
+    CefRefPtr<CefFrame> frame = it->second.browser->GetFrameByIdentifier(identifier);
+    if (frame) {
+      frame->ExecuteJavaScript(script, frame->GetURL(), 0);
+    }
+  }
+}
+
+- (void)applyMediaVolumeForTabID:(NSString *)tabID toFrame:(CefRefPtr<CefFrame>)frame {
+  NSNumber *volume = _mediaVolumes[tabID];
+  if (volume != nil && frame) {
+    frame->ExecuteJavaScript(BrowserMediaVolumeScript(volume.doubleValue), frame->GetURL(), 0);
+  }
 }
 
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset {
@@ -5881,6 +5928,7 @@ void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
                                    TransitionType) {
   CEF_REQUIRE_UI_THREAD();
   if (frame && frame->IsMain()) {
+    [controller_ applyMediaVolumeForTabID:ToNSString(tab_id_) toFrame:frame];
     NSString *loadStart = controller_.pageLoadStartScript;
     if (loadStart.length > 0) {
       frame->ExecuteJavaScript(loadStart.UTF8String, frame->GetURL(), 0);

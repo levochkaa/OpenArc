@@ -24,6 +24,11 @@ final class BrowserRootView: NSView {
     private var librarySwipeStart: CFTimeInterval = 0
     private let toolbar: BrowserSiteControlsNSView
     private lazy var developerToolbar = BrowserDeveloperToolbarView(model: model)
+    private static let captureHintSeenKey = "browser.capture.hintSeen"
+    private let captureToast = BrowserCaptureToastView()
+    private var captureDragMonitor: Any?
+    private var captureDragStart: NSEvent?
+    private var isCaptureDragging = false
     private let bookmarks: BrowserBookmarksBarNSView
     private let margins = BrowserNativeWindowMargins()
     private let revealEdge = BrowserNativeSidebarRevealEdge()
@@ -191,10 +196,32 @@ final class BrowserRootView: NSView {
         library.isHidden = true
         addSubview(linkStatus)
         addSubview(developerToolbar, positioned: .below, relativeTo: content)
+        addSubview(captureToast)
+        NotificationCenter.default.addObserver(
+            forName: BrowserCaptureToastView.didCopyNotification,
+            object: nil,
+            queue: .main,
+        ) { [weak self] notification in
+            guard let png = notification.object as? Data else { return }
+            MainActor.assumeIsolated {
+                guard let self, self.window?.isMainWindow == true else { return }
+                self.showCaptureToast { $0.showCopied(png: png) }
+            }
+        }
+        installCaptureDragMonitor()
         addSubview(libraryScrollObserver)
         bindLibrarySwipes()
         find.bind(to: model)
         content.bindTabCreation(to: model)
+        let beginCapture = model.onBeginAreaCapture
+        model.onBeginAreaCapture = { [weak self] in
+            let began = beginCapture?() ?? false
+            if began, let self, !isCaptureDragging, !UserDefaults.standard.bool(forKey: Self.captureHintSeenKey) {
+                UserDefaults.standard.set(true, forKey: Self.captureHintSeenKey)
+                showCaptureToast { $0.showHint(keysText: "⇧⌘") }
+            }
+            return began
+        }
         pageTopDrag.pageView = { [weak content] in content?.viewport }
         pageTopDrag.region = { [weak self] in self?.pageTopDragRegion }
         sessionRecovery.onRetry = { [weak model] in model?.retrySessionPersistence() }
@@ -327,6 +354,7 @@ final class BrowserRootView: NSView {
         for overlay in [command, currentPageCommand, tabEvents, tabSwitcher, sidebarDismiss] {
             overlay.frame = bounds
         }
+        layoutCaptureToast()
         let onRight = preferences.sidebarPosition == .right
         libraryScrollObserver.frame = CGRect(
             x: onRight ? bounds.width - BrowserLibraryLayout.width : 0,
@@ -598,6 +626,79 @@ final class BrowserRootView: NSView {
         needsLayout = true
         if !opens {
             hideLibraryAfterSlide()
+        }
+    }
+
+    private func showCaptureToast(_ configure: (BrowserCaptureToastView) -> Void) {
+        captureToast.fill = model.selectedSpaceTheme?.palette?.tintedLight.nsColor ?? NSColor(white: 0.93, alpha: 1)
+        configure(captureToast)
+        addSubview(captureToast, positioned: .above, relativeTo: nil)
+        layoutCaptureToast()
+    }
+
+    private func layoutCaptureToast() {
+        let width = captureToast.preferredWidth
+        captureToast.frame = CGRect(
+            x: bounds.width - width - 8,
+            y: 8,
+            width: width,
+            height: BrowserCaptureToastView.height,
+        )
+    }
+
+    /// Holding Shift-Command and dragging on the page captures that part. A click
+    /// with those keys stays the page's own.
+    private func installCaptureDragMonitor() {
+        captureDragMonitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .leftMouseDown,
+            .leftMouseDragged,
+            .leftMouseUp,
+        ]) {
+            [weak self] event in
+            guard let self, event.window === window else { return event }
+            return handleCaptureDrag(event)
+        }
+    }
+
+    private func handleCaptureDrag(_ event: NSEvent) -> NSEvent? {
+        switch event.type {
+        case .leftMouseDown:
+            isCaptureDragging = false
+            let keys = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            guard keys == [.command, .shift], model.canCaptureArea,
+                  content.frame.contains(convert(event.locationInWindow, from: nil))
+            else {
+                captureDragStart = nil
+                return event
+            }
+            captureDragStart = event
+            return nil
+        case .leftMouseDragged:
+            guard let start = captureDragStart else { return event }
+            if !isCaptureDragging {
+                let distance = hypot(
+                    event.locationInWindow.x - start.locationInWindow.x,
+                    event.locationInWindow.y - start.locationInWindow.y,
+                )
+                guard distance >= 4, model.beginAreaCapture(), let overlay = content.areaCapture else { return nil }
+                isCaptureDragging = true
+                overlay.mouseDown(with: start)
+            }
+            content.areaCapture?.mouseDragged(with: event)
+            return nil
+        case .leftMouseUp:
+            guard let start = captureDragStart else { return event }
+            captureDragStart = nil
+            if isCaptureDragging {
+                isCaptureDragging = false
+                content.areaCapture?.mouseUp(with: event)
+                return nil
+            }
+            // Only a click: it was the page's after all.
+            window?.sendEvent(start)
+            return event
+        default:
+            return event
         }
     }
 

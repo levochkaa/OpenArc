@@ -13,9 +13,12 @@ final class BrowserMiniPlayerNSView: NSView {
 
     enum Action: Equatable { case backToTab, previousTrack, playPause, nextTrack, toggleMute, close }
 
+    private static let volumeRowHeight: CGFloat = 32
+
     override var isFlipped: Bool { true }
 
     var onAction: (Action) -> Void = { _ in }
+    var onVolumeChange: (Double) -> Void = { _ in }
     /// The pointer entered or left; the stack grows the player upward.
     var onExpansionChange: () -> Void = {}
 
@@ -24,6 +27,8 @@ final class BrowserMiniPlayerNSView: NSView {
 
     // MARK: Private
 
+    private let volumeSlider = BrowserMiniPlayerVolumeSlider()
+    private var showsVolume = false
     private let material = NSVisualEffectView()
     private let outline = BrowserNativeSurface()
     private let titleLabel = BrowserNativeControls.label(
@@ -75,7 +80,7 @@ final class BrowserMiniPlayerNSView: NSView {
     private let expansionAnimation = BrowserNativeAnimation()
 
     var preferredHeight: CGFloat {
-        BrowserChromeLayout.sidebarMiniPlayerHeight
+        (showsVolume ? Self.volumeRowHeight : 0) + BrowserChromeLayout.sidebarMiniPlayerHeight
             + (BrowserChromeLayout.sidebarMiniPlayerExpandedHeight - BrowserChromeLayout.sidebarMiniPlayerHeight)
             * expansion
     }
@@ -126,6 +131,10 @@ final class BrowserMiniPlayerNSView: NSView {
         ] as [NSView] {
             outline.addSubview(view)
         }
+        outline.addSubview(volumeSlider)
+        volumeSlider.isHidden = true
+        volumeSlider.onChange = { [weak self] in self?.onVolumeChange($0) }
+        muteButton.onLongPress = { [weak self] in self?.setShowsVolume(true) }
         tabButton.setAccessibilityIdentifier("browser.mini-player.tab")
         previousButton.setAccessibilityIdentifier("browser.mini-player.previous")
         playButton.setAccessibilityIdentifier("browser.mini-player.play-pause")
@@ -157,6 +166,7 @@ final class BrowserMiniPlayerNSView: NSView {
     }
 
     override func mouseExited(with _: NSEvent) {
+        setShowsVolume(false)
         setExpanded(false)
     }
 
@@ -166,12 +176,19 @@ final class BrowserMiniPlayerNSView: NSView {
         outline.frame = bounds
         let size = BrowserChromeLayout.sidebarMiniPlayerButtonSize
         let inset = BrowserChromeLayout.sidebarMiniPlayerInset
-        let controlsY = bounds.height - (BrowserChromeLayout.sidebarMiniPlayerHeight + size) / 2
+        let volumeRow: CGFloat = showsVolume ? Self.volumeRowHeight : 0
+        let controlsY = bounds.height - volumeRow - (BrowserChromeLayout.sidebarMiniPlayerHeight + size) / 2
         let controls: [NSView] = [tabButton, previousButton, playButton, nextButton, muteButton]
         let step = max(bounds.width - inset * 2 - size, 0) / CGFloat(controls.count - 1)
         for (index, view) in controls.enumerated() {
             view.frame = NSRect(x: inset + CGFloat(index) * step, y: controlsY, width: size, height: size)
         }
+        volumeSlider.frame = NSRect(
+            x: inset,
+            y: bounds.height - Self.volumeRowHeight,
+            width: bounds.width - inset * 2,
+            height: 24,
+        )
         favicon.frame = tabButton.bounds.insetBy(dx: 4, dy: 4)
         let titleRowY = (BrowserChromeLayout.sidebarMiniPlayerHeight - size) / 2
         closeButton.frame = NSRect(x: bounds.width - inset - size, y: titleRowY, width: size, height: size)
@@ -198,6 +215,7 @@ final class BrowserMiniPlayerNSView: NSView {
             item.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
             title: item.isMuted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction,
         )
+        volumeSlider.value = item.volume
         previousButton.isEnabled = item.hasPreviousTrack
         nextButton.isEnabled = item.hasNextTrack
     }
@@ -218,6 +236,15 @@ final class BrowserMiniPlayerNSView: NSView {
         } completion: { [weak self] in
             self?.applyExpansion(to, final: true)
         }
+    }
+
+    /// Holding the speaker opens a level slider under the controls.
+    private func setShowsVolume(_ shows: Bool) {
+        guard shows != showsVolume else { return }
+        showsVolume = shows
+        volumeSlider.isHidden = !shows
+        needsLayout = true
+        onExpansionChange()
     }
 
     private func applyExpansion(_ value: CGFloat, final: Bool) {
@@ -244,6 +271,7 @@ final class BrowserMiniPlayerStackNSView: NSView {
     override var isFlipped: Bool { true }
 
     var onAction: (String, BrowserMiniPlayerNSView.Action) -> Void = { _, _ in }
+    var onVolumeChange: (String, Double) -> Void = { _, _ in }
     /// The players' heights changed; the sidebar lays the stack out again.
     var onHeightChange: () -> Void = {}
 
@@ -303,6 +331,10 @@ final class BrowserMiniPlayerStackNSView: NSView {
 
     private func makePlayer() -> BrowserMiniPlayerNSView {
         let player = BrowserMiniPlayerNSView()
+        player.onVolumeChange = { [weak self, weak player] volume in
+            guard let id = player?.item?.tabID else { return }
+            self?.onVolumeChange(id, volume)
+        }
         player.onAction = { [weak self, weak player] action in
             guard let id = player?.item?.tabID else { return }
             self?.onAction(id, action)
@@ -318,5 +350,50 @@ final class BrowserMiniPlayerStackNSView: NSView {
         players.reduce(CGFloat(players.count - 1) * BrowserChromeLayout.sidebarMiniPlayerSpacing) { total, player in
             total + (expanded ? player.preferredHeight : BrowserChromeLayout.sidebarMiniPlayerHeight)
         }
+    }
+}
+
+// MARK: - BrowserMiniPlayerVolumeSlider
+
+/// A thin track with a white knob; the filled part takes the accent color.
+private final class BrowserMiniPlayerVolumeSlider: NSView {
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    var onChange: (Double) -> Void = { _ in }
+    var value = 1.0 { didSet { needsDisplay = true } }
+
+    override func draw(_: NSRect) {
+        let knob: CGFloat = 18
+        let track = NSRect(x: 0, y: (bounds.height - 4) / 2, width: bounds.width, height: 4)
+        NSColor.separatorColor.setFill()
+        NSBezierPath(roundedRect: track, xRadius: 2, yRadius: 2).fill()
+        let x = (bounds.width - knob) * value
+        NSColor.controlAccentColor.setFill()
+        NSBezierPath(
+            roundedRect: NSRect(x: 0, y: track.minY, width: x + knob / 2, height: 4),
+            xRadius: 2,
+            yRadius: 2,
+        ).fill()
+        NSColor.white.setFill()
+        let oval = NSBezierPath(ovalIn: NSRect(x: x, y: (bounds.height - knob) / 2, width: knob, height: knob))
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+        shadow.shadowBlurRadius = 2
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        NSGraphicsContext.saveGraphicsState()
+        shadow.set()
+        oval.fill()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    override func mouseDown(with event: NSEvent) { update(event) }
+    override func mouseDragged(with event: NSEvent) { update(event) }
+
+    private func update(_ event: NSEvent) {
+        let x = convert(event.locationInWindow, from: nil).x
+        value = min(max((x - 9) / max(bounds.width - 18, 1), 0), 1)
+        onChange(value)
     }
 }

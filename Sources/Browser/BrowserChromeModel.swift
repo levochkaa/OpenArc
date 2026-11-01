@@ -380,6 +380,7 @@ enum BrowserWindowMode: Equatable {
     /// sidebar starts renaming the selected row.
     @Published var sidebarRenameRequestID = 0
     @Published var sidebarSpaceRenameRequestID = 0
+    @Published var tabMediaVolumes = [String: Double]()
     /// Asks the window's controls to open an extension, anchored to the address row.
     var onOpenExtensionRequest: ((String) -> Void)?
     /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
@@ -2797,6 +2798,10 @@ enum BrowserWindowMode: Equatable {
             selectTab(id: id)
             navigateSelectedTab(toURLString: urlString)
         }
+    }
+
+    func setMediaVolumeInEngine(_ volume: Double, tabID: String) {
+        tabDriver.setMediaVolume(volume, forTabWithID: tabID)
     }
 
     /// Right-clicking back or forward lists the pages that way.

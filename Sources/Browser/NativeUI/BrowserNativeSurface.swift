@@ -279,8 +279,9 @@ final class BrowserNativeChromeButton: NSButton {
     var tooltipShortcut: BrowserKeyboardShortcut?
     /// A right click that shows something other than a menu.
     var onSecondaryClick: (() -> Void)?
+    /// A press held past half a second, instead of the action.
+    var onLongPress: (() -> Void)?
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
-
     var isSelected = false { didSet { needsDisplay = true } }
     /// A drag rests on the button, as on a Space's dock icon; it shows the
     /// hover background, since a drag sends no mouse-entered events.
@@ -291,6 +292,8 @@ final class BrowserNativeChromeButton: NSButton {
             }
         }
     }
+
+    private var didLongPress = false
 
     // MARK: Private
 
@@ -389,7 +392,18 @@ final class BrowserNativeChromeButton: NSButton {
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func mouseDown(with event: NSEvent) {
+        didLongPress = false
+        var hold: DispatchWorkItem?
+        if onLongPress != nil {
+            let work = DispatchWorkItem { [weak self] in
+                self?.didLongPress = true
+                self?.onLongPress?()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+            hold = work
+        }
         super.mouseDown(with: event)
+        hold?.cancel()
         onRelease?()
     }
 
@@ -684,7 +698,9 @@ final class BrowserNativeChromeButton: NSButton {
             BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
             // NSMenu runs a nested tracking loop; release before entering it.
             highlight(false)
-            onAction()
+            if !didLongPress {
+                onAction()
+            }
             if let window {
                 hovered = visibleRect.contains(convert(
                     window.convertPoint(fromScreen: NSEvent.mouseLocation),
