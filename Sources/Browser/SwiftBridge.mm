@@ -48,29 +48,6 @@ int BrowserHasOpenBrowsers(void) {
   return shared::ClientManager::GetInstance()->HasBrowsers() ? 1 : 0;
 }
 
-/// Chromium's own sign-in window closes on a later turn of the run loop, and crashes the app if
-/// its page has gone by then. Escape cancels it while the page is alive. Nonzero if there was one.
-int BrowserCancelChromiumSignInWindows(void) {
-  int cancelled = 0;
-  for (NSWindow *window in NSApp.windows) {
-    if (![NSStringFromClass(window.class) isEqualToString:@"NativeWidgetMacNSWindow"]) continue;
-    for (NSEventType type : {NSEventTypeKeyDown, NSEventTypeKeyUp}) {
-      [window sendEvent:[NSEvent keyEventWithType:type
-                                         location:NSZeroPoint
-                                    modifierFlags:0
-                                        timestamp:NSProcessInfo.processInfo.systemUptime
-                                     windowNumber:window.windowNumber
-                                          context:nil
-                                       characters:@"\x1b"
-                      charactersIgnoringModifiers:@"\x1b"
-                                        isARepeat:NO
-                                          keyCode:53]];
-    }
-    cancelled = 1;
-  }
-  return cancelled;
-}
-
 namespace {
 
 class BrowserTraceEnd final : public CefEndTracingCallback {
@@ -102,13 +79,7 @@ int BrowserEndTrace(const char* path, void (^completion)(void)) {
 }
 
 void BrowserCloseAllBrowsers(void) {
-  if (!BrowserCancelChromiumSignInWindows()) {
-    shared::ClientManager::GetInstance()->CloseAllBrowsers(false);
-    return;
-  }
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-    shared::ClientManager::GetInstance()->CloseAllBrowsers(false);
-  });
+  shared::ClientManager::GetInstance()->CloseAllBrowsers(false);
 }
 
 void BrowserPrepareApplicationForCefShutdown(void) {

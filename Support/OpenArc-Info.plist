@@ -24,6 +24,8 @@
   <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
   <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>Websites you allow can sign in with a passkey on your phone or tablet.</string>
   <key>NSCameraUsageDescription</key>
   <string>Websites you allow can use your camera.</string>
   <key>NSMicrophoneUsageDescription</key>

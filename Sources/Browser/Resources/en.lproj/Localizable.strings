@@ -817,3 +817,9 @@
 "browser.mail_preview.loading" = "Checking your mail…";
 "browser.mail_preview.sign_in" = "Sign in to Gmail to see your mail";
 "browser.mail_preview.empty" = "No unread mail";
+"browser.auth.title" = "Sign in to %@";
+"browser.auth.private" = "Your connection to this site is private.";
+"browser.auth.not_private" = "Your connection to this site is not private.";
+"browser.auth.username" = "Username";
+"browser.auth.password" = "Password";
+"browser.auth.sign_in" = "Sign in";

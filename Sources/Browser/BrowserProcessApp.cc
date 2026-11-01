@@ -9,49 +9,11 @@ namespace browser {
 
 namespace {
 
-constexpr bool kEnablePasskeysAndWebAuthentication = false;
-
 constexpr char kDisableBackgroundingOccludedWindowsSwitch[] =
     "disable-backgrounding-occluded-windows";
-constexpr char kDisableBlinkFeaturesSwitch[] = "disable-blink-features";
+constexpr char kDisableChromeLoginPromptSwitch[] = "disable-chrome-login-prompt";
 constexpr char kDisableFeaturesSwitch[] = "disable-features";
 constexpr char kImmersiveReadAnythingFeature[] = "ImmersiveReadAnything";
-constexpr const char* kPasskeyAndWebAuthenticationChromiumFeatures[] = {
-    "AuthenticatorPasswordsOnlyImmediateRequests",
-    "AutofillReintroduceHybridPasskeyDropdownItem",
-    "DelaysSuggestionsOnAutofocusWaitingForPasskeys",
-    "PasskeyUnlockManager",
-    "WebAuthentication",
-    "WebAuthenticationAmbientSignin",
-    "WebAuthenticationCable",
-    "WebAuthenticationCableExtensionAnywhere",
-    "WebAuthenticationConditionalUI",
-    "WebAuthenticationICloudKeychainForActiveWithDrive",
-    "WebAuthenticationICloudKeychainForActiveWithoutDrive",
-    "WebAuthenticationICloudKeychainForGoogle",
-    "WebAuthenticationICloudKeychainForInactiveWithDrive",
-    "WebAuthenticationICloudKeychainForInactiveWithoutDrive",
-    "WebAuthenticationImmediateGet",
-    "WebAuthenticationNewRefreshFlow",
-    "WebAuthenticationSignalApiHidePasskeys",
-    "WebAuthenticationUseInsecureSoftwareUnexportableKeys",
-    "WebAuthnDoNotAlwaysTerminateStateMachineDuringIdentityChange",
-    "WebAuthnEnableRefreshingStateOfGpmEnclaveController",
-    "WebAuthnHmacSecretMcExtension",
-    "WebAuthnImmediateRequestRateLimit",
-    "WebAuthnUsePasskeyFromAnotherDeviceInContextMenu",
-};
-constexpr const char* kPasskeyAndWebAuthenticationBlinkFeatures[] = {
-    "WebAuth",
-    "WebAuthAuthenticatorAttachment",
-    "WebAuthenticationAmbient",
-    "WebAuthenticationAttestationFormats",
-    "WebAuthenticationChallengeUrl",
-    "WebAuthenticationImmediateGet",
-    "WebAuthenticationRemoteDesktopSupport",
-    "WebAuthenticationSupplementalPubKeys",
-};
-
 bool FeatureListContains(const std::string& features,
                          const std::string& feature) {
   size_t start = 0;
@@ -95,26 +57,6 @@ void DisableChromiumFeature(CefRefPtr<CefCommandLine> command_line,
                                   feature);
 }
 
-template <size_t feature_count>
-void AppendCommaSeparatedSwitchValues(
-    CefRefPtr<CefCommandLine> command_line,
-    const char* switch_name,
-    const char* const (&features)[feature_count]) {
-  for (const char* feature : features) {
-    AppendCommaSeparatedSwitchValue(command_line, switch_name, feature);
-  }
-}
-
-void DisablePasskeysAndWebAuthentication(
-    CefRefPtr<CefCommandLine> command_line) {
-  AppendCommaSeparatedSwitchValues(
-      command_line, kDisableFeaturesSwitch,
-      kPasskeyAndWebAuthenticationChromiumFeatures);
-  AppendCommaSeparatedSwitchValues(
-      command_line, kDisableBlinkFeaturesSwitch,
-      kPasskeyAndWebAuthenticationBlinkFeatures);
-}
-
 class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
  public:
   void OnBeforeCommandLineProcessing(
@@ -130,12 +72,13 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
     // reveal a blank layer before the active tab paints again.
     command_line->AppendSwitch(kDisableBackgroundingOccludedWindowsSwitch);
 
-    if (!kEnablePasskeysAndWebAuthentication) {
-      // Temporarily keep passkeys/WebAuthn out of the browser process until the
-      // app ships with the required Apple browser entitlement in its
-      // provisioning and can safely present related privacy prompts.
-      DisablePasskeysAndWebAuthentication(command_line);
-    }
+    // Sites' password requests reach GetAuthCredentials, for OpenArc's own sheet.
+    // Chromium's window closes a turn after its page and can crash the app then.
+    command_line->AppendSwitch(kDisableChromeLoginPromptSwitch);
+
+    // Passkeys: phones and USB keys work as they are. Chromium itself leaves out
+    // iCloud Keychain and Touch ID without Apple's entitlements. Bluetooth for
+    // phones needs NSBluetoothAlwaysUsageDescription, or macOS kills the app.
   }
 
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {

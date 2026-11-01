@@ -1,6 +1,5 @@
 #import "Browser/BrowserTabController.h"
 
-#import "Browser/SwiftBridge.h"
 #import <AuthenticationServices/AuthenticationServices.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Sparkle/Sparkle.h>
@@ -3039,16 +3038,6 @@ bool RunBasicPageContextCommand(CefRefPtr<CefBrowser> browser,
   }
 }
 
-void CloseBrowserAfterSignInWindows(CefRefPtr<CefBrowser> browser, bool force) {
-  if (!BrowserCancelChromiumSignInWindows()) {
-    browser->GetHost()->CloseBrowser(force);
-    return;
-  }
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-    if (browser->IsValid()) browser->GetHost()->CloseBrowser(force);
-  });
-}
-
 /// One GET, read to the end. A 401 fails it here instead of opening Chromium's password window.
 class BrowserTextRequestClient final : public CefURLRequestClient {
  public:
@@ -3203,6 +3192,14 @@ class BrowserTabClient final : public CefClient,
                   const CefString &default_prompt_text,
                   CefRefPtr<CefJSDialogCallback> callback,
                   bool &suppress_message) override;
+  bool GetAuthCredentials(CefRefPtr<CefBrowser> browser,
+                          const CefString &origin_url,
+                          bool isProxy,
+                          const CefString &host,
+                          int port,
+                          const CefString &realm,
+                          const CefString &scheme,
+                          CefRefPtr<CefAuthCallback> callback) override;
   void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
   bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
@@ -3289,6 +3286,14 @@ class BrowserPeekClient final : public CefClient,
                   const CefString &default_prompt_text,
                   CefRefPtr<CefJSDialogCallback> callback,
                   bool &suppress_message) override;
+  bool GetAuthCredentials(CefRefPtr<CefBrowser> browser,
+                          const CefString &origin_url,
+                          bool isProxy,
+                          const CefString &host,
+                          int port,
+                          const CefString &realm,
+                          const CefString &scheme,
+                          CefRefPtr<CefAuthCallback> callback) override;
   void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
 
   void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
@@ -3465,6 +3470,10 @@ struct TabRecord {
                       defaultText:(NSString *)defaultText
                          callback:(CefRefPtr<CefJSDialogCallback>)callback;
 - (void)cancelPageDialogForTabID:(NSString *)tabID;
+- (void)presentAuthDialogForTabID:(NSString *)tabID
+                             host:(NSString *)host
+                           origin:(NSString *)origin
+                         callback:(CefRefPtr<CefAuthCallback>)callback;
 - (void)cancelDialogsForTabID:(NSString *)tabID;
 - (void)noteRendererProcessID:(int)processID forTabID:(NSString *)tabID;
 - (void)finishCloseDialogForTabID:(NSString *)tabID
@@ -3767,6 +3776,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   NSArray<NSValue *> *_reportedSplitPaneFrames;
   NSMutableDictionary<NSNumber *, BrowserPeekSession *> *_peekSessions;
   NSMutableDictionary<NSString *, BrowserJavaScriptDialog *> *_pageDialogs;
+  NSMutableDictionary<NSString *, BrowserAuthDialog *> *_authDialogs;
   int _nextPeekSessionID;
   int _peekCardSessionID;
   std::map<int, PendingSitePermission> _sitePermissions;
@@ -5436,7 +5446,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   // Retain the latest pending navigation. Cancel must not drop an address
   // accepted before this close, including the initial deferred engine load.
   if (it->second.browser) {
-    CloseBrowserAfterSignInWindows(it->second.browser, false);
+    it->second.browser->GetHost()->CloseBrowser(false);
   } else {
     const BOOL wasActive = [_activeTabID isEqualToString:tabID];
     _tabRecords.erase(it);
@@ -5597,8 +5607,40 @@ std::string BrowserMediaVolumeScript(double volume) {
   }
 }
 
+- (void)presentAuthDialogForTabID:(NSString *)tabID
+                             host:(NSString *)host
+                           origin:(NSString *)origin
+                         callback:(CefRefPtr<CefAuthCallback>)callback {
+  if (_authDialogs == nil) {
+    _authDialogs = [NSMutableDictionary dictionary];
+  }
+  if (_authDialogs[tabID] != nil) {
+    callback->Cancel();
+    return;
+  }
+  __weak BrowserTabController *weakSelf = self;
+  BrowserAuthDialog *dialog = [[BrowserAuthDialog alloc]
+      initWithWindow:[self dialogWindowForTabID:tabID]
+                host:host
+              origin:origin
+          completion:^(BOOL accepted, NSString *username, NSString *password) {
+            BrowserTabController *owner = weakSelf;
+            if (owner) {
+              [owner->_authDialogs removeObjectForKey:tabID];
+            }
+            if (accepted) {
+              callback->Continue(ToStdString(username), ToStdString(password));
+            } else {
+              callback->Cancel();
+            }
+          }];
+  _authDialogs[tabID] = dialog;
+  [dialog present];
+}
+
 - (void)cancelDialogsForTabID:(NSString *)tabID {
   [_pageDialogs[tabID] cancel];
+  [_authDialogs[tabID] cancel];
 }
 
 - (void)resetCloseDialogForTabID:(NSString *)tabID browser:(CefRefPtr<CefBrowser>)browser {
@@ -5640,7 +5682,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   CefRefPtr<CefBrowser> browser = it->second.browser;
   [self invalidateCloseRequestForTabID:tabID];
   if (browser) {
-    if (browser->IsValid()) CloseBrowserAfterSignInWindows(browser, forceClose);
+    if (browser->IsValid()) browser->GetHost()->CloseBrowser(forceClose);
     return;
   }
 
@@ -6504,6 +6546,47 @@ bool BrowserTabClient::OnBeforeUnloadDialog(
   BrowserTabController *controller = controller_;
   return controller && [controller handleBeforeUnloadForTabID:ToNSString(tab_id_)
                                                      browser:browser callback:callback];
+}
+
+namespace {
+
+/// Called off the main thread: the sheet waits for the main one.
+bool RequestAuthDialog(BrowserTabController *controller,
+                       NSString *tabID,
+                       const CefString &origin_url,
+                       const CefString &host,
+                       CefRefPtr<CefAuthCallback> callback) {
+  if (!controller) return false;
+  NSString *origin = ToNSString(origin_url.ToString());
+  NSString *hostName = ToNSString(host.ToString());
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [controller presentAuthDialogForTabID:tabID host:hostName origin:origin callback:callback];
+  });
+  return true;
+}
+
+}  // namespace
+
+bool BrowserTabClient::GetAuthCredentials(CefRefPtr<CefBrowser>,
+                                          const CefString &origin_url,
+                                          bool,
+                                          const CefString &host,
+                                          int,
+                                          const CefString &,
+                                          const CefString &,
+                                          CefRefPtr<CefAuthCallback> callback) {
+  return RequestAuthDialog(controller_, ToNSString(tab_id_), origin_url, host, callback);
+}
+
+bool BrowserPeekClient::GetAuthCredentials(CefRefPtr<CefBrowser>,
+                                           const CefString &origin_url,
+                                           bool,
+                                           const CefString &host,
+                                           int,
+                                           const CefString &,
+                                           const CefString &,
+                                           CefRefPtr<CefAuthCallback> callback) {
+  return RequestAuthDialog(controller_, [NSString stringWithFormat:@"peek-%d", session_id_], origin_url, host, callback);
 }
 
 bool BrowserPeekClient::OnJSDialog(CefRefPtr<CefBrowser>,

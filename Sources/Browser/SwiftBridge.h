@@ -9,7 +9,6 @@ void BrowserCreateApplication(void);
 void BrowserContextInitialized(void);
 int BrowserHasOpenBrowsers(void);
 void BrowserCloseAllBrowsers(void);
-int BrowserCancelChromiumSignInWindows(void);
 int BrowserBeginTrace(void);
 /// Writes the trace to `path`; `completion` runs on the main thread.
 int BrowserEndTrace(const char* path, void (^completion)(void));

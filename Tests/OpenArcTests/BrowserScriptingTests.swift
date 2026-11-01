@@ -601,3 +601,25 @@ private let testCardJSON = #"{"cc-name":"Test Person","cc-number":"4242 4242 424
     #expect(BrowserTaskManagerSampler.cpuPercent(from: nil, to: new, elapsed: 1.5) == 0)
     #expect(BrowserTaskManagerSampler.usage(of: getpid()) != nil, "The kernel answers for this process")
 }
+
+@Test func aSignInSaysWhetherItsPasswordIsSafe() {
+    #expect(BrowserAuthDialog.isConnectionPrivate(origin: "https://a.example/"))
+    #expect(BrowserAuthDialog.isConnectionPrivate(origin: "http://127.0.0.1:8765/"))
+    #expect(BrowserAuthDialog.isConnectionPrivate(origin: "http://localhost/"))
+    #expect(!BrowserAuthDialog.isConnectionPrivate(origin: "http://a.example/"))
+}
+
+@Test @MainActor func aSignInWithoutAWindowDeclinesOnce() {
+    var answers = 0
+    let dialog = BrowserAuthDialog(
+        window: nil,
+        host: "a.example",
+        origin: "https://a.example",
+    ) { accepted, user, password in
+        answers += 1
+        #expect(!accepted && user.isEmpty && password.isEmpty)
+    }
+    dialog.present()
+    dialog.cancel()
+    #expect(answers == 1)
+}
