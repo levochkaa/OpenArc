@@ -1974,11 +1974,16 @@ void ClearCookiesAndReloadBrowser(
     return;
   }
 
+  // Only this site's cookies: an empty URL would delete every cookie in the
+  // profile and sign the user out everywhere.
+  CefRefPtr<CefFrame> frame = browser->GetMainFrame();
+  const std::string url = frame ? frame->GetURL().ToString() : std::string();
+  const bool is_web = url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
   CefRefPtr<CefCookieManager> cookie_manager =
       request_context->GetCookieManager(nullptr);
-  if (!cookie_manager ||
+  if (!is_web || !cookie_manager ||
       !cookie_manager->DeleteCookies(
-          CefString(), CefString(),
+          url, CefString(),
           new ReloadBrowserDeleteCookiesCallback(browser))) {
     ReloadBrowser(browser, false);
   }
