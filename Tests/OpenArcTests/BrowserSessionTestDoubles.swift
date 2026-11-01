@@ -697,6 +697,7 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Senda
     // MARK: Internal
 
     let hostView = NSView(frame: .zero)
+    var onContentSizeChange: ((NSSize) -> Void)?
 
     private(set) var openedURLStrings = [String]()
     private(set) var closedPopupIDs = [String]()
@@ -706,7 +707,7 @@ final class FakeSuggestionProvider: BrowserSuggestionProviding, @unchecked Senda
 
     private var nextPopupNumber = 0
 
-    func openPopup(urlString: String) -> String {
+    func openPopup(urlString: String, activeTab _: BrowserExtensionPopupPage?) -> String {
         openedURLStrings.append(urlString)
         nextPopupNumber += 1
         return "popup-\(nextPopupNumber)"

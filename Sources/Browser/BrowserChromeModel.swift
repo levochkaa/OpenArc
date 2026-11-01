@@ -2612,8 +2612,11 @@ enum BrowserWindowMode: Equatable {
                 return nil
             }
 
-            let popupID = extensionActionPopupDriver.openPopup(urlString: urlString)
-            return BrowserExtensionActionPopup(
+            let popupID = extensionActionPopupDriver.openPopup(
+                urlString: urlString,
+                activeTab: currentTab.map { .init(urlString: $0.urlString, title: $0.displayTitle) },
+            )
+            let popup = BrowserExtensionActionPopup(
                 id: popupID,
                 extensionID: browserExtension.id,
                 title: browserExtension.name,
@@ -2622,6 +2625,10 @@ enum BrowserWindowMode: Equatable {
                     extensionActionPopupDriver?.closePopup(id: popupID)
                 },
             )
+            extensionActionPopupDriver.onContentSizeChange = { [weak popup] size in
+                popup?.onContentSizeChange?(size)
+            }
+            return popup
         case .sidePanel:
             openExtensionSidePanel(id: id)
             return nil

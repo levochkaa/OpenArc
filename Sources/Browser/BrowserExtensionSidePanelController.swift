@@ -61,6 +61,10 @@ import Foundation
 // MARK: - BrowserExtensionActionPopupController
 
 @MainActor final class BrowserExtensionActionPopupController: NSObject, BrowserExtensionActionPopupDriving {
+    // MARK: Internal
+
+    var onContentSizeChange: ((NSSize) -> Void)?
+
     // MARK: Private
 
     private let browserHostView: BrowserTabHostView
@@ -82,9 +86,14 @@ import Foundation
         )
         super.init()
         controller.delegate = self
+        controller.autoResizesPages = true
+        controller.onPageContentSizeChange = { [weak self] size in
+            MainActor.assumeIsolated { self?.onContentSizeChange?(size) }
+        }
     }
 
-    func openPopup(urlString: String) -> String {
+    func openPopup(urlString: String, activeTab: BrowserExtensionPopupPage?) -> String {
+        controller.pageLoadStartScript = activeTab?.script
         if let activePopupID {
             controller.selectTab(withID: activePopupID)
             controller.navigateActiveTab(toURLString: urlString)

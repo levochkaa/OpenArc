@@ -79,6 +79,16 @@ import AppKit
         popover.delegate = self
         popover.contentViewController = controller
         popover.contentSize = controller.preferredContentSize
+        // A vibrant popover would blend the page with what lies behind it.
+        popover.appearance = NSAppearance(named: anchor.effectiveAppearance
+            .bestMatch(
+                from: [.aqua, .darkAqua, .vibrantLight, .vibrantDark],
+            )
+            .map { $0 == .darkAqua || $0 == .vibrantDark ? .darkAqua : .aqua } ?? .aqua)
+        popup.onContentSizeChange = { [weak popover, weak controller] size in
+            controller?.preferredContentSize = size
+            popover?.contentSize = size
+        }
         popupController = controller
         action = popover
         anchor.isHidden = false

@@ -62,8 +62,9 @@ enum BrowserChromeLayout {
     static let extensionTileSize: CGFloat = 52
     static let extensionTileCornerRadius: CGFloat = 12
     static let extensionTileIconSize: CGFloat = 24
-    static let extensionActionPopupWidth: CGFloat = 380
-    static let extensionActionPopupHeight: CGFloat = 520
+    /// The size until the page reports its own.
+    static let extensionActionPopupWidth: CGFloat = 320
+    static let extensionActionPopupHeight: CGFloat = 200
     static let extensionActionPopupCornerRadius: CGFloat = 12
     static let extensionSidePanelWidth: CGFloat = 360
     static let extensionSidePanelHeaderHeight: CGFloat = 38

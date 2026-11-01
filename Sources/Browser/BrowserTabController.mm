@@ -3056,6 +3056,8 @@ class BrowserTabClient final : public CefClient,
                        CefRefPtr<CefFrame> frame,
                        const CefString &url) override;
 
+  bool OnAutoResize(CefRefPtr<CefBrowser> browser,
+                    const CefSize& new_size) override;
   void OnTitleChange(CefRefPtr<CefBrowser> browser,
                      const CefString &title) override;
 
@@ -3716,10 +3718,16 @@ void WatchClickModifiers();
     windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   }
 
+  CefBrowserSettings browserSettings;
+  if (_autoResizesPages) {
+    // A popup's page has no window behind it to show through.
+    browserSettings.background_color = CefColorSetARGB(255, 255, 255, 255);
+  }
+
   // CEF's initial URL is loaded after OnAfterCreated. Bootstrap without one so
   // that a newer queued target cannot be overwritten by that original load.
   const bool accepted = CefBrowserHost::CreateBrowser(
-      windowInfo, client, CefString(), CefBrowserSettings(), nullptr,
+      windowInfo, client, CefString(), browserSettings, nullptr,
       requestContext);
   if (accepted) {
     [self watchBrowserCreationForTabID:tabID];
@@ -5800,6 +5808,10 @@ void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
                                    TransitionType) {
   CEF_REQUIRE_UI_THREAD();
   if (frame && frame->IsMain()) {
+    NSString *loadStart = controller_.pageLoadStartScript;
+    if (loadStart.length > 0) {
+      frame->ExecuteJavaScript(loadStart.UTF8String, frame->GetURL(), 0);
+    }
     [controller_ cancelMediaSitePermissionsForTabID:ToNSString(tab_id_)];
     [controller_ resetMediaForTabID:ToNSString(tab_id_)];
     RunPageStartScripts(frame);
@@ -6018,7 +6030,20 @@ void BrowserTabClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     return;
   }
 
+  if (controller.autoResizesPages) {
+    browser->GetHost()->SetAutoResizeEnabled(true, CefSize(25, 25), CefSize(800, 600));
+  }
   [controller handleBrowserCreated:browser forTabID:ToNSString(tab_id_)];
+}
+
+bool BrowserTabClient::OnAutoResize(CefRefPtr<CefBrowser> browser,
+                                    const CefSize& new_size) {
+  CEF_REQUIRE_UI_THREAD();
+  BrowserTabController *controller = controller_;
+  if (controller.onPageContentSizeChange != nil) {
+    controller.onPageContentSizeChange(NSMakeSize(new_size.width, new_size.height));
+  }
+  return true;
 }
 
 bool BrowserTabClient::DoClose(CefRefPtr<CefBrowser> browser) {

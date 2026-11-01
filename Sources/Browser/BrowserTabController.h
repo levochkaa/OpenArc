@@ -159,6 +159,11 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 
 @interface BrowserTabController : NSObject
 
+/// Runs in this controller's pages as they start to load.
+@property(nonatomic, copy, nullable) NSString *pageLoadStartScript;
+/// Pages size themselves to their content, as an extension's popup does.
+@property(nonatomic) BOOL autoResizesPages;
+@property(nonatomic, copy, nullable) void (^onPageContentSizeChange)(NSSize size);
 @property(nonatomic, weak, nullable) id<BrowserTabControllerDelegate> delegate;
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView;

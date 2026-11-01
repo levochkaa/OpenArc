@@ -442,3 +442,10 @@ private func writeSecurePreferences(_ json: String, in profileDirectory: URL) th
         allTabsClosedHandler: {},
     )
 }
+
+@Test func extensionPopupLearnsItsPageThroughAnEscapedScript() throws {
+    let page = BrowserExtensionPopupPage(urlString: "https://example.com/?q=\"x\"", title: "A </script> title")
+    let script = try #require(page.script)
+    #expect(script.contains(#""url":"https:\/\/example.com\/?q=\"x\"""#))
+    #expect(script.contains("api.query ="))
+}
