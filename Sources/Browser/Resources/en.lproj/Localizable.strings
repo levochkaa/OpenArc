@@ -732,3 +732,8 @@
 "browser.space.export_into_folder" = "Export “%@” into Folder";
 "browser.menu.allow_javascript_from_apple_events" = "Allow JavaScript from Apple Events";
 "browser.script.javascript_turned_off" = "Running JavaScript from AppleScript is turned off. Turn it on in View > Developer > Allow JavaScript from Apple Events.";
+"browser.menu.developer_mode_on" = "Turn on Developer Mode for this site";
+"browser.menu.developer_mode_off" = "Turn off Developer Mode for this site";
+"browser.developer.reload_options" = "Reload options";
+"browser.developer.reload" = "Reload";
+"browser.developer.reload_ignore_cache" = "Refresh (Ignore Cache)";

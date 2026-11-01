@@ -89,6 +89,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private let disclosureAnimation = BrowserNativeAnimation()
     private var captionProgress = 0.0
     private var captionTarget = false
+    private var developerHost: String?
+    private let developerBorder = BrowserDeveloperRowBorder()
     private var disclosureProgress = 1.0
 
     private var baseSymbol = ""
@@ -129,6 +131,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             badge,
             titleLabel,
             captionLabel,
+            developerBorder,
             renameField,
             muteButton,
             closeButton,
@@ -209,6 +212,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     override func layout() {
         super.layout()
+        developerBorder.frame = NSRect(x: indent, y: 0, width: max(bounds.width - indent, 0), height: bounds.height)
         selectionSurface.frame = NSRect(x: indent, y: 0, width: max(bounds.width - indent, 0), height: bounds.height)
         let height = bounds.height
         let closeSize = BrowserChromeLayout.sidebarCloseButtonSize
@@ -397,8 +401,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         muted: Bool = false,
         audible: Bool = false,
         icon: String? = nil,
+        developerHost: String? = nil,
     ) {
         kind = appTile ? .appTab : .tab
+        self.developerHost = appTile ? nil : developerHost
         tabIcon = icon
         if let icon {
             symbol.image = Self.symbol(
@@ -762,7 +768,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             chip.isInteractionEnabled = !isResizing
         }
         badge.isHidden = kind != .folder || badge.image == nil
-        let showCaption = kind == .tab && pinnedIconHovered && !isRenaming
+        let showCaption = kind == .tab && (pinnedIconHovered || developerHost != nil) && !isRenaming
+        developerBorder.isHidden = kind != .tab || developerHost == nil || !selected
         if showCaption != captionTarget {
             captionTarget = showCaption
             let from = captionProgress
@@ -783,7 +790,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                 } completion: { [weak self] in self?.captionLabel.isHidden = !showCaption }
             }
         }
-        captionLabel.stringValue = BrowserStrings.pinnedTabBackToPinnedURL
+        captionLabel.stringValue = pinnedIconHovered ? BrowserStrings.pinnedTabBackToPinnedURL : developerHost ?? ""
         closeButton.isHidden = !(kind == .space || kind == .tab) || !isHovered || isRenaming || isResizing
         muteButton.isHidden = kind != .tab || !(isMuted || isAudible) || isRenaming || isResizing
         if kind == .space {
@@ -958,5 +965,47 @@ final class BrowserNativeSidebarSplitChipView: NSView {
         closeButton.setAccessibilityIdentifier("browser.sidebar.split-member.close.\(tab.id)")
         setAccessibilityLabel(tab.displayTitle)
         setAccessibilityIdentifier("browser.sidebar.split-member.\(tab.id)")
+    }
+}
+
+// MARK: - BrowserDeveloperRowBorder
+
+/// The hazard-tape edge of a selected row whose site is in Developer Mode.
+private final class BrowserDeveloperRowBorder: NSView {
+    private let base = CAShapeLayer()
+    private let dashes = CAShapeLayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        for shape in [base, dashes] {
+            shape.fillColor = nil
+            shape.lineWidth = 2
+            layer?.addSublayer(shape)
+        }
+        base.strokeColor = NSColor.black.cgColor
+        dashes.strokeColor = NSColor.systemYellow.cgColor
+        dashes.lineDashPattern = [6, 6]
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // MARK: Internal
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        let radius = BrowserChromeLayout.sidebarRowCornerRadius
+        let path = CGPath(
+            roundedRect: bounds.insetBy(dx: 1, dy: 1),
+            cornerWidth: radius,
+            cornerHeight: radius,
+            transform: nil,
+        )
+        for shape in [base, dashes] {
+            shape.frame = bounds
+            shape.path = path
+        }
     }
 }

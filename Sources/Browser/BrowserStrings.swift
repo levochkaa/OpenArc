@@ -1619,6 +1619,23 @@ enum BrowserStrings {
         "browser.script.javascript_turned_off",
         comment: "Error for a script that runs JavaScript while the setting is off.",
     )
+    static let menuTurnOnDeveloperMode = NSLocalizedString(
+        "browser.menu.developer_mode_on",
+        comment: "Developer menu item.",
+    )
+    static let menuTurnOffDeveloperMode = NSLocalizedString(
+        "browser.menu.developer_mode_off",
+        comment: "Developer menu item.",
+    )
+    static let developerReloadOptions = NSLocalizedString(
+        "browser.developer.reload_options",
+        comment: "Tooltip of the reload options button.",
+    )
+    static let developerReload = NSLocalizedString("browser.developer.reload", comment: "Reload option.")
+    static let developerReloadIgnoreCache = NSLocalizedString(
+        "browser.developer.reload_ignore_cache",
+        comment: "Reload option.",
+    )
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")

@@ -29,6 +29,13 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         pressEffect: .left,
         action: {},
     )
+    private lazy var reloadMenu = BrowserNativeChromeButton(
+        symbol: "chevron.compact.down",
+        title: BrowserStrings.developerReloadOptions,
+        style: .sidebarNavigation,
+        pressEffect: .compress,
+        action: { [weak self] in self?.showReloadMenu() },
+    )
     private let forward = BrowserNativeChromeButton(
         symbol: "arrow.forward",
         title: BrowserStrings.navigationForward,
@@ -68,7 +75,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         self.model = model
         self.urlControls = BrowserSiteControlsNSView(model: model, mode: .sidebar)
         super.init(frame: .zero)
-        for view in [windowControls, toggle, back, forward, reload, profile, urlControls] {
+        for view in [windowControls, toggle, back, forward, reload, reloadMenu, profile, urlControls] {
             addSubview(view)
         }
         profile.addSubview(profileIcon)
@@ -97,7 +104,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
                 if self?.reloadSymbol.showsStop == true {
                     model?.stopLoadingCurrentTab()
                 } else {
-                    model?.reloadCurrentTab()
+                    model?.reloadRespectingDeveloperMode()
                 }
             }
         for publisher in [
@@ -129,12 +136,14 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
             width: size,
             height: size,
         )
+        let menuWidth: CGFloat = model.isDeveloperModeOn ? 14 : 0
         reload.frame = NSRect(
-            x: bounds.width + BrowserChromeLayout.sidebarHeaderTrailingOverhang - size,
+            x: bounds.width + BrowserChromeLayout.sidebarHeaderTrailingOverhang - size - menuWidth,
             y: buttonY,
             width: size,
             height: size,
         )
+        reloadMenu.frame = NSRect(x: reload.frame.maxX - 4, y: buttonY, width: menuWidth + 4, height: size)
         forward.frame = reload.frame.offsetBy(dx: -(size + spacing), dy: 0)
         back.frame = forward.frame.offsetBy(dx: -(size + spacing), dy: 0)
         var y = BrowserChromeLayout.chromeButtonSize
@@ -170,6 +179,25 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         refresh()
     }
 
+    /// Developer Mode's Reload can skip the cache or clear cookies; the choice stays.
+    private func showReloadMenu() {
+        let menu = BrowserNativeMenus.menu()
+        let shortcuts = model.shortcutStore
+        let preferences = model.userPreferencesStore
+        func add(_ title: String, _ behavior: BrowserDeveloperReloadBehavior, shortcut: BrowserKeyboardShortcut?) {
+            let item = BrowserNativeMenus.add(title, to: menu, shortcut: shortcut) { [weak model] in
+                preferences.developerReloadBehavior = behavior
+                model?.reloadRespectingDeveloperMode()
+            }
+            item.state = preferences.developerReloadBehavior == behavior ? .on : .off
+        }
+        add(BrowserStrings.developerReload, .reload, shortcut: shortcuts.shortcut(for: .reload))
+        add(BrowserStrings.developerReloadIgnoreCache, .ignoreCache, shortcut: shortcuts.shortcut(for: .forceReload))
+        menu.addItem(.separator())
+        add(shortcuts.descriptor(for: .clearCookiesAndRefresh).menuTitle, .clearCookies, shortcut: nil)
+        menu.popUp(positioning: nil, at: NSPoint(x: reloadMenu.frame.minX, y: reloadMenu.frame.maxY + 4), in: self)
+    }
+
     private func refresh() {
         let shortcuts = model.shortcutStore
         toggle.tooltipShortcut = shortcuts.shortcut(for: .toggleSidebar)
@@ -193,6 +221,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         for button in [back, forward, reload] {
             button.isHidden = !showsNavigation
         }
+        reloadMenu.isHidden = !showsNavigation || !model.isDeveloperModeOn
         profile.isHidden = !model.showsProfileIndicator
         profileName.stringValue = model.profileDisplayName
         needsLayout = true

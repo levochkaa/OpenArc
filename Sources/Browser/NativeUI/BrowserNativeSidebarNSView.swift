@@ -1117,6 +1117,7 @@ final class BrowserNativeSidebarNSView: NSView {
             muted: state.snapshot.mutedTabIDs.contains(tab.id),
             audible: state.snapshot.audibleTabIDs.contains(tab.id),
             icon: state.snapshot.tabIcons[tab.id],
+            developerHost: model.developerModeHost(forTabURLString: tab.urlString),
         )
         let muted = state.snapshot.mutedTabIDs.contains(tab.id)
         row.onToggleMute = { model.setTabMuted(!muted, id: tab.id) }

@@ -193,6 +193,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let folderPreviewsEnabled = "browser.settings.folderPreviewsEnabled"
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
+        static let developerModeHosts = "browser.settings.developerModeHosts"
+        static let developerReloadBehavior = "browser.settings.developerReloadBehavior"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
         static let newDocumentsApp = "browser.settings.newDocumentsApp"
     }
@@ -269,6 +271,16 @@ final class BrowserUserPreferencesStore: ObservableObject {
     }
 
     /// Lets pages read the Space's colors as CSS variables.
+    @Published var developerModeHosts: BrowserDeveloperModeHosts {
+        didSet {
+            userDefaults.set(try? JSONEncoder().encode(developerModeHosts), forKey: Key.developerModeHosts)
+        }
+    }
+
+    @Published var developerReloadBehavior: BrowserDeveloperReloadBehavior {
+        didSet { userDefaults.set(developerReloadBehavior.rawValue, forKey: Key.developerReloadBehavior) }
+    }
+
     @Published var allowsJavaScriptFromAppleEvents: Bool {
         didSet { userDefaults.set(allowsJavaScriptFromAppleEvents, forKey: Key.allowsJavaScriptFromAppleEvents) }
     }
@@ -392,6 +404,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
             key: Key.siteURLToolbarEnabled,
             defaultValue: false,
         )
+        self.developerModeHosts = userDefaults.data(forKey: Key.developerModeHosts)
+            .flatMap { try? JSONDecoder().decode(BrowserDeveloperModeHosts.self, from: $0) } ?? .init()
+        self.developerReloadBehavior = userDefaults.string(forKey: Key.developerReloadBehavior)
+            .flatMap(BrowserDeveloperReloadBehavior.init(rawValue:)) ?? .reload
         self.allowsJavaScriptFromAppleEvents = Self.loadBool(
             userDefaults,
             key: Key.allowsJavaScriptFromAppleEvents,

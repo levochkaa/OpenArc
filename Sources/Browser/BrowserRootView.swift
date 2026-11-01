@@ -23,6 +23,7 @@ final class BrowserRootView: NSView {
     private var librarySwipeTranslation: CGFloat = 0
     private var librarySwipeStart: CFTimeInterval = 0
     private let toolbar: BrowserSiteControlsNSView
+    private lazy var developerToolbar = BrowserDeveloperToolbarView(model: model)
     private let bookmarks: BrowserBookmarksBarNSView
     private let margins = BrowserNativeWindowMargins()
     private let revealEdge = BrowserNativeSidebarRevealEdge()
@@ -88,6 +89,7 @@ final class BrowserRootView: NSView {
             showsBookmarksBar: showsBookmarksBar,
             extensionSidePanelWidth: isExtensionSidePanelPresented ? model.extensionSidePanelWidth : nil,
             sidebarPosition: preferences.sidebarPosition,
+            developerToolbarHeight: showsDeveloperToolbar ? BrowserDeveloperToolbarView.height : 0,
         )
     }
 
@@ -106,6 +108,7 @@ final class BrowserRootView: NSView {
 
     private var showsBookmarksBar: Bool { model.isContextReady && preferences.bookmarksBarVisible }
     private var showsSiteToolbar: Bool { model.isContextReady && preferences.siteURLToolbarEnabled }
+    private var showsDeveloperToolbar: Bool { model.isContextReady && model.isDeveloperModeOn }
     private var isExtensionSidePanelPresented: Bool {
         model.extensionSidePanel != nil && model.extensionSidePanelHostView != nil
     }
@@ -187,6 +190,7 @@ final class BrowserRootView: NSView {
         }
         library.isHidden = true
         addSubview(linkStatus)
+        addSubview(developerToolbar, positioned: .below, relativeTo: content)
         addSubview(libraryScrollObserver)
         bindLibrarySwipes()
         find.bind(to: model)
@@ -361,8 +365,16 @@ final class BrowserRootView: NSView {
         )
         let libraryWidth = model.librarySection == .spaces ? bounds.width : BrowserLibraryLayout.width
         let libraryShown = model.librarySection != nil
+        developerToolbar.isHidden = !showsDeveloperToolbar
         var targets: [(NSView, CGRect)] = [
             (content, pageFrameDuringLibrarySwipe(geometry.contentFrame)), (find, geometry.contentFrame),
+            // It reaches behind the page so the page's rounded corners show the bar.
+            (
+                developerToolbar,
+                geometry.developerToolbarFrame.union(
+                    geometry.developerToolbarFrame.offsetBy(dx: 0, dy: BrowserChromeLayout.leadingContentCornerRadius),
+                ),
+            ),
             // The Library takes the sidebar's place: the sidebar keeps its size while it fades.
             (sidebar, libraryShown || libraryFollowsSwipe ? sidebar.frame : geometry.sidebarFrame),
             (
@@ -697,6 +709,7 @@ final class BrowserRootView: NSView {
             isSidebarHoverOverlayPresented,
             showsBookmarksBar,
             showsSiteToolbar,
+            showsDeveloperToolbar,
             isExtensionSidePanelPresented,
             preferences.sidebarPosition == .right,
         ]
@@ -775,6 +788,7 @@ final class BrowserRootView: NSView {
         sidebar.isOverlayPresentation = isSidebarOverlayPresentation
         sidebar.refresh()
         toolbarVisibility.setVisible(showsSiteToolbar, view: toolbar, curve: .sidebar)
+        developerToolbar.refresh()
         toolbar.refresh()
         bookmarksVisibility.setVisible(showsBookmarksBar, view: bookmarks, curve: .sidebar)
         bookmarks.refresh()

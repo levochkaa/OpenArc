@@ -451,25 +451,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
         key == "appleScriptWindows" || key == "appleScriptTabs"
     }
 
-    func insertInAppleScriptTabs(_ tab: BrowserScriptTab) {
-        guard let url = tab.pendingURLString.flatMap(URL.init(string:)) else {
-            littleWindowModel?.openNewLittleWindow()
-            return
-        }
-        littleWindowModel?.openInLittleWindow(url)
-    }
-
-    func insertInAppleScriptWindows(_ scriptWindow: BrowserScriptWindow) {
-        if scriptWindow.mode == "incognito" {
-            createIncognitoWindow(copyingFullscreenFrom: nil)
-            if let session = incognitoWindowSessions.last {
-                scriptWindow.attach(window: session.window, model: session.chromeModel)
-            }
-        } else if openNewWindow(), let session = profileWindowSessions.last {
-            scriptWindow.attach(window: session.window, model: session.chromeModel)
-        }
-    }
-
     public func shareCurrentTab(_: Any?) {
         activeChromeModel?.shareSelectedTab()
     }
@@ -504,6 +485,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
               let preference = BrowserAppearancePreference(rawValue: raw)
         else { return }
         userPreferencesStore.appearancePreference = preference
+    }
+
+    public func toggleDeveloperMode(_: Any?) {
+        activeChromeModel?.toggleDeveloperMode()
     }
 
     public func toggleJavaScriptFromAppleEvents(_: Any?) {
@@ -889,6 +874,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
              #selector(toggleWebAppToolbarInFullscreen(_:)),
              #selector(uninstallCurrentWebApp(_:)):
             return webAppWindowSession != nil && !isTerminationRequested
+        case #selector(toggleDeveloperMode(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = activeChromeModel?.isDeveloperModeOn == true
+                    ? BrowserStrings.menuTurnOffDeveloperMode
+                    : BrowserStrings.menuTurnOnDeveloperMode
+            }
+            return activeChromeModel?.canToggleDeveloperMode ?? false
         case #selector(toggleJavaScriptFromAppleEvents(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.state = userPreferencesStore.allowsJavaScriptFromAppleEvents ? .on : .off
@@ -1008,6 +1000,25 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return updateController?.canCheckForUpdates ?? false
         default:
             return true
+        }
+    }
+
+    func insertInAppleScriptTabs(_ tab: BrowserScriptTab) {
+        guard let url = tab.pendingURLString.flatMap(URL.init(string:)) else {
+            littleWindowModel?.openNewLittleWindow()
+            return
+        }
+        littleWindowModel?.openInLittleWindow(url)
+    }
+
+    func insertInAppleScriptWindows(_ scriptWindow: BrowserScriptWindow) {
+        if scriptWindow.mode == "incognito" {
+            createIncognitoWindow(copyingFullscreenFrom: nil)
+            if let session = incognitoWindowSessions.last {
+                scriptWindow.attach(window: session.window, model: session.chromeModel)
+            }
+        } else if openNewWindow(), let session = profileWindowSessions.last {
+            scriptWindow.attach(window: session.window, model: session.chromeModel)
         }
     }
 
@@ -1879,6 +1890,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         network.target = self
         menu.addItem(network)
         menu.addItem(javaScript)
+        let developerMode = NSMenuItem(
+            title: BrowserStrings.menuTurnOnDeveloperMode,
+            action: #selector(toggleDeveloperMode(_:)),
+            keyEquivalent: "d",
+        )
+        developerMode.keyEquivalentModifierMask = [.control]
+        developerMode.target = self
+        menu.addItem(developerMode)
         let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
         item.submenu = menu
         viewMenu.addItem(item)

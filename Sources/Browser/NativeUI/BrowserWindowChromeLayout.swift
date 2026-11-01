@@ -16,6 +16,7 @@ struct BrowserWindowChromeLayout {
     let showsBookmarksBar: Bool
     let extensionSidePanelWidth: CGFloat?
     var sidebarPosition = BrowserSidebarPosition.left
+    var developerToolbarHeight: CGFloat = 0
 
     var edgeInset: CGFloat { isFullscreen ? 0 : BrowserChromeLayout.browserContentEdgeInset }
     var sidebarReservedWidth: CGFloat { isSidebarVisible ? sidebarWidth : 0 }
@@ -48,7 +49,10 @@ struct BrowserWindowChromeLayout {
         }
     }
 
-    var contentMinY: CGFloat { chromeTopInset + siteToolbarReservedHeight + bookmarksBarReservedHeight }
+    var contentMinY: CGFloat {
+        chromeTopInset + siteToolbarReservedHeight + bookmarksBarReservedHeight + developerToolbarHeight
+    }
+
     var extensionReservedWidth: CGFloat {
         extensionSidePanelWidth.map { $0 + BrowserChromeLayout.sidebarOuterPadding } ?? 0
     }
@@ -63,6 +67,12 @@ struct BrowserWindowChromeLayout {
         )
     }
 
+    var developerToolbarFrame: CGRect { CGRect(
+        x: contentMinX,
+        y: contentMinY - developerToolbarHeight,
+        width: barWidth,
+        height: developerToolbarHeight,
+    ) }
     var toolbarFrame: CGRect { CGRect(
         x: contentMinX,
         y: chromeTopInset,
