@@ -66,7 +66,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         scroll.hasVerticalScroller = false
         scroll.documentView = spacesContainer
         scroll.automaticallyAdjustsContentInsets = false
-        downloadsButton.setAccessibilityIdentifier("browser.sidebar.downloads")
+        downloadsButton.setAccessibilityIdentifier("browser.sidebar.library")
         downloadsButton.tooltipPlacement = .aboveCapsule
         downloadsButton.onAction = { [weak state] in
             guard let model = state?.model else { return }
@@ -331,8 +331,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private func refreshDownloadsButton() {
         let active = state.model.downloadsModel.hasActiveDownloads
         downloadsButton.configureSymbol(
-            active ? "arrow.down.circle.fill" : "arrow.down.circle",
-            title: BrowserStrings.downloadsTitle,
+            active ? "arrow.down.circle.fill" : "archivebox",
+            title: active ? BrowserStrings.downloadsTitle : BrowserStrings.menuViewLibrary,
         )
         downloadsButton.isSelected = popover.isShown || active
         downloadDot.isHidden = !active || !state.model.supportsSpaces
