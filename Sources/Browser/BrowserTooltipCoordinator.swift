@@ -154,7 +154,7 @@ enum BrowserTooltipMeasuredSizeResolver {
     private var cooldownTask: Task<Void, Never>?
 
     init(
-        activationDelayNanoseconds: UInt64 = 1_000_000_000,
+        activationDelayNanoseconds: UInt64 = 430_000_000,
         cooldownDelayNanoseconds: UInt64 = 300_000_000,
     ) {
         self.activationDelayNanoseconds = activationDelayNanoseconds
@@ -212,10 +212,7 @@ enum BrowserTooltipMeasuredSizeResolver {
 
         activationTask?.cancel()
         activationTask = nil
-
-        guard hoveredTooltipID == nil else {
-            return
-        }
+        activeTooltipID = nil
 
         cooldownTask?.cancel()
         cooldownTask = Task { [weak self] in

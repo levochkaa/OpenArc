@@ -496,12 +496,9 @@ private final class BrowserNativeTooltipPanelView: NSView {
             panel.parent?.removeChildWindow(panel)
             window.addChildWindow(panel, ordered: .above)
         }
-        let from = panel.isVisible ? panel.alphaValue : 0
-        panel.alphaValue = from
+        visibilityAnimation.cancel()
+        panel.alphaValue = 1
         panel.orderFront(nil)
-        visibilityAnimation.start(.tooltipIn) { [weak panel] progress in
-            panel?.alphaValue = from + (1 - from) * progress
-        }
     }
 
     private func hide(curve: BrowserNativeAnimation.Curve = .tooltipOut) {

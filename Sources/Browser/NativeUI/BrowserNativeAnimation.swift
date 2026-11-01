@@ -22,12 +22,18 @@ import QuartzCore
 
         /// Page, sidebar and bar geometry: 0.08 s, timing (0.25, 0.46, 0.45, 0.94).
         static let sidebar = Curve.bezier(0.08, x1: 0.25, y1: 0.46, x2: 0.45, y2: 0.94)
-        /// Spaces sliding to a chosen Space; the theme cross-fades with the same curve.
+        /// The theme cross-fading to a chosen Space.
         static let spaceSlide = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
         /// The Library sliding in from the window edge.
-        static let library = Curve.bezier(0.27, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
+        static let libraryOpen = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
+        /// The Library leaving.
+        static let library = Curve.bezier(0.22, x1: 0.25, y1: 0.1, x2: 0.25, y2: 1)
+        /// Spaces sliding to a chosen Space: critically damped.
+        static let spaceSelect = Curve.spring(response: 0.22, damping: 0.995)
         /// Spaces settling after a swipe: critically damped.
         static let spaceSettle = Curve.spring(response: 0.25, damping: 0.995)
+        /// A pinned row's title making room for its caption, and the caption fading.
+        static let caption = Curve.easeInOut(0.1)
         /// Rows placed by a drag: 0.12 s, timing (0, 0, 0.58, 1).
         static let rowMove = Curve.bezier(0.12, x1: 0, y1: 0, x2: 0.58, y2: 1)
         /// Rows making room when a tab opens or closes: 0.12 s, timing (0.25, 0.1, 0.25, 1).
@@ -42,8 +48,6 @@ import QuartzCore
         static let disclosure = Curve.spring(response: 0.3, damping: 0.6)
         /// A dock button pressed and released: 0.13 s, timing (0.215, 0.61, 0.355, 1).
         static let dockPress = Curve.bezier(0.13, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
-        /// A tooltip appearing.
-        static let tooltipIn = Curve.easeOut(0.05)
         /// A tooltip replaced or dismissed by a press.
         static let tooltipOut = Curve.easeOut(0.1)
         /// A tooltip left behind by the pointer.
@@ -52,15 +56,22 @@ import QuartzCore
         static let hover = Curve.easeOut(0.1)
         /// Element appearance: opacity over 0.15 s, timing (0, 0, 0.58, 1).
         static let appearance = Curve.easeOut(0.15)
-        static let press = Curve.spring(response: 0.18, damping: 0.72)
+        static let press = Curve.spring(response: 0.23, damping: 0.72)
         /// Press on sidebar rows: stiffness 987, damping 31.4.
         static let rowPress = Curve.spring(response: 0.2, damping: 0.5)
         /// Floating sidebar slide: stiffness 1218, damping 55.9.
         static let floatingSidebar = Curve.spring(response: 0.18, damping: 0.8)
-        /// A dropped row landing in place.
-        static let landing = Curve.spring(response: 0.28, damping: 0.82)
-        static let dragPreview = Curve.spring(response: 0.2, damping: 0.86)
-        static let copy = Curve.spring(response: 0.22, damping: 0.68)
+        /// A dropped row landing in place, with the rows making room for it.
+        static let landing = rowList
+        /// The drag preview changing size between a row and a tile.
+        static let dragPreview = Curve.bezier(0.3, x1: 0, y1: 0, x2: 0.58, y2: 1)
+        /// The copy button's link turning into a check: the first leaves, then the next arrives.
+        static let copy = Curve.bezier(0.4, x1: 0, y1: 0, x2: 1, y2: 1)
+        /// The check turning back into a link.
+        static let copyReset = Curve.bezier(0.3, x1: 0, y1: 0, x2: 1, y2: 1)
+        /// A mini player growing on hover and shrinking back.
+        static let miniPlayerGrow = Curve.easeInOut(0.2)
+        static let miniPlayerShrink = Curve.easeOut(0.17)
 
         var duration: Double {
             switch self {
@@ -85,6 +96,36 @@ import QuartzCore
             }
             let t = (low + high) / 2
             return 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t
+        }
+
+        /// The same motion for Core Animation, from `fromValue` to `toValue`.
+        func layerAnimation(keyPath: String) -> CABasicAnimation {
+            let animation: CABasicAnimation
+            switch self {
+            case .spring(let response, let damping):
+                let omega = 2 * Double.pi / response
+                let spring = CASpringAnimation(keyPath: keyPath)
+                spring.mass = 1
+                spring.stiffness = omega * omega
+                spring.damping = 2 * damping * omega
+                animation = spring
+            case .easeInOut:
+                animation = CABasicAnimation(keyPath: keyPath)
+                animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.42, 0, 0.58, 1)
+            case .easeOut:
+                animation = CABasicAnimation(keyPath: keyPath)
+                animation.timingFunction = CAMediaTimingFunction(controlPoints: 0, 0, 0.58, 1)
+            case .bezier(_, let x1, let y1, let x2, let y2):
+                animation = CABasicAnimation(keyPath: keyPath)
+                animation.timingFunction = CAMediaTimingFunction(
+                    controlPoints: Float(x1),
+                    Float(y1),
+                    Float(x2),
+                    Float(y2),
+                )
+            }
+            animation.duration = duration
+            return animation
         }
 
         func value(at elapsed: Double) -> Double {
@@ -145,12 +186,16 @@ import QuartzCore
             return
         }
         isRunning = true
-        let start = CACurrentMediaTime()
         updates(0)
+        // The clock starts at the first tick: work done in the same turn of the
+        // run loop must not eat the opening frames.
+        var start: CFTimeInterval?
         let timer = Timer(timeInterval: 1 / 120, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let elapsed = CACurrentMediaTime() - start
+                let now = CACurrentMediaTime()
+                let elapsed = now - (start ?? now)
+                start = start ?? now
                 updates(curve.value(at: elapsed))
                 if elapsed >= curve.duration {
                     self.cancel()
@@ -210,11 +255,16 @@ import QuartzCore
         let animation: BrowserNativeAnimation
     }
 
+    private static let slideKey = "browser.slide."
+
     // MARK: Internal
 
     var onFrameChange: () -> Void = {}
 
     private var transitions = [ObjectIdentifier: Transition]()
+    private let slidingViews = NSHashTable<NSView>.weakObjects()
+    private var slideCount = 0
+    private var leaving = [ObjectIdentifier: (view: NSView?, target: CGRect)]()
 
     func targetFrame(of view: NSView) -> CGRect { transitions[ObjectIdentifier(view)]?.target ?? view.frame }
 
@@ -232,6 +282,76 @@ import QuartzCore
             transition.view?.frame = transition.target
             transition.view?.layoutSubtreeIfNeeded()
         }
+        for view in slidingViews.allObjects {
+            for key in view.layer?.animationKeys() ?? [] where key.hasPrefix(Self.slideKey) {
+                view.layer?.removeAnimation(forKey: key)
+            }
+        }
+        slidingViews.removeAllObjects()
+    }
+
+    /// Moves a view out of its superview without the main thread. AppKit stops showing a
+    /// view above its siblings once its frame is outside, so the frame stays until
+    /// `endSlideOut`.
+    func slideOut(_ view: NSView, to frame: CGRect, curve: BrowserNativeAnimation.Curve) {
+        view.wantsLayer = true
+        let animation = curve.layerAnimation(keyPath: "position")
+        animation.isAdditive = true
+        animation.fromValue = NSValue(point: .zero)
+        animation.toValue = NSValue(point: CGPoint(x: frame.minX - view.frame.minX, y: frame.minY - view.frame.minY))
+        animation.fillMode = .forwards
+        animation.isRemovedOnCompletion = false
+        slideCount &+= 1
+        view.layer?.add(animation, forKey: "\(Self.slideKey)\(slideCount)")
+        slidingViews.add(view)
+        leaving[ObjectIdentifier(view)] = (view, frame)
+    }
+
+    /// Ends every `slideOut`. A view still on its way stays where it is on screen, so
+    /// that a new move can continue from there.
+    func endSlideOuts(atTarget: Bool) {
+        for (view, target) in leaving.values {
+            guard let view else { continue }
+            var origin = target.origin
+            if !atTarget, let layer = view.layer, let shown = layer.presentation() {
+                origin = CGPoint(
+                    x: view.frame.minX + shown.position.x - layer.position.x,
+                    y: view.frame.minY + shown.position.y - layer.position.y,
+                )
+            }
+            for key in view.layer?.animationKeys() ?? [] where key.hasPrefix(Self.slideKey) {
+                view.layer?.removeAnimation(forKey: key)
+            }
+            view.frame = CGRect(origin: origin, size: target.size)
+        }
+        leaving.removeAll()
+    }
+
+    /// Moves a view without the main thread: its frame is final at once, and an additive
+    /// animation on its layer carries the rest of the way. A busy main thread cannot stall
+    /// it, and a move made during another adds to it, so a row never jumps.
+    func slide(
+        _ view: NSView,
+        to frame: CGRect,
+        animated: Bool,
+        curve: BrowserNativeAnimation.Curve,
+    ) {
+        let from = view.frame
+        guard animated, view.window != nil, from != .zero, from.origin != frame.origin,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else {
+            view.frame = frame
+            return
+        }
+        view.wantsLayer = true
+        view.frame = frame
+        let animation = curve.layerAnimation(keyPath: "position")
+        animation.isAdditive = true
+        animation.fromValue = NSValue(point: CGPoint(x: from.minX - frame.minX, y: from.minY - frame.minY))
+        animation.toValue = NSValue(point: .zero)
+        slideCount &+= 1
+        view.layer?.add(animation, forKey: "\(Self.slideKey)\(slideCount)")
+        slidingViews.add(view)
     }
 
     func setFrame(

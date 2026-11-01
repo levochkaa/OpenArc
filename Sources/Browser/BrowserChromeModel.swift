@@ -166,7 +166,7 @@ enum BrowserWindowMode: Equatable {
     nonisolated static let defaultSpaceID = BrowserSessionDefaults.defaultSpaceID
     nonisolated static let defaultSpaceIconName = BrowserSessionDefaults.defaultSpaceIconName
     nonisolated static let tabSwitcherMaximumEntries = 5
-    nonisolated static let tabSwitcherPresentationDelayNanoseconds: UInt64 = 180_000_000
+    nonisolated static let tabSwitcherPresentationDelayNanoseconds: UInt64 = 70_000_000
     nonisolated static let zoomPercentages = [
         25,
         33,

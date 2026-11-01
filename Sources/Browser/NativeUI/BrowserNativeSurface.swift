@@ -88,7 +88,6 @@ struct BrowserNativeChromeButtonStyle {
         pressedBackground: BrowserChromeColors.sidebarChromePressed,
         pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
         disabledForeground: BrowserChromeColors.sidebarChromeDisabledForeground,
-        compressesBackground: false,
     )
     static let sidebarDockSpace = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarChromeButtonSize,
@@ -97,10 +96,8 @@ struct BrowserNativeChromeButtonStyle {
         symbolWeight: .regular,
         foreground: BrowserChromeColors.sidebarDockForeground,
         hoverBackground: BrowserChromeColors.sidebarChromeHover,
-        pressedBackground: BrowserChromeColors.sidebarChromePressed,
         pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
         pressedScale: 0.95,
-        compressesBackground: false,
         hoverCurve: .standard,
         pressCurve: .dockPress,
     )
@@ -111,10 +108,8 @@ struct BrowserNativeChromeButtonStyle {
         symbolWeight: .regular,
         foreground: BrowserChromeColors.sidebarChromeForeground,
         hoverBackground: BrowserChromeColors.sidebarChromeHover,
-        pressedBackground: BrowserChromeColors.sidebarChromePressed,
         pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
         pressedScale: 0.95,
-        compressesBackground: false,
         usesDrawnGlyphs: true,
         hoverCurve: .standard,
         pressCurve: .dockPress,
@@ -230,6 +225,16 @@ enum BrowserNativeBarGlyph {
     }
 }
 
+// MARK: - BrowserNativeChromeButtonCell
+
+/// A button's tracking loop highlights the cell without telling the button.
+private final class BrowserNativeChromeButtonCell: NSButtonCell {
+    override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView) {
+        super.highlight(flag, withFrame: cellFrame, in: controlView)
+        (controlView as? BrowserNativeChromeButton)?.cellDidChangeHighlight()
+    }
+}
+
 // MARK: - BrowserNativeChromeButton
 
 /// Native target/action button with the same geometry and press treatment as browser chrome.
@@ -240,6 +245,11 @@ final class BrowserNativeChromeButton: NSButton {
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: style.size, height: style.size)
+    }
+
+    override class var cellClass: AnyClass? {
+        get { BrowserNativeChromeButtonCell.self }
+        set {}
     }
 
     override var isHidden: Bool {
@@ -282,7 +292,9 @@ final class BrowserNativeChromeButton: NSButton {
     private let closeBars = [CALayer(), CALayer()]
     /// The angle of the close bars: 45° is a cross, 0° a minus.
     private var closeBarsAngle = CGFloat.pi / 4
-    private var oldSymbolCell: NSCell?
+    private var oldSymbol: NSBitmapImageRep?
+    private var restingSymbol: NSBitmapImageRep?
+    private var pressedSymbol: NSBitmapImageRep?
     private var symbolName: String
     private var symbolProgress = 1.0
     private let symbolAnimation = BrowserNativeAnimation()
@@ -306,6 +318,31 @@ final class BrowserNativeChromeButton: NSButton {
                 self?.needsDisplay = true
             }
         }
+    }
+
+    private var restingTint: NSColor {
+        isSelected ? BrowserChromeColors.primaryText : style.foreground
+    }
+
+    private var pressedTint: NSColor {
+        style.pressedForeground ?? BrowserChromeColors.chromeButtonPressedForeground
+    }
+
+    /// The check replaces the link quickly, slowing down. The link's return is gentler.
+    private var symbolOutProgress: CGFloat {
+        if symbolName == "checkmark" {
+            let linear = min(symbolProgress / 0.25, 1)
+            return 1 - pow(1 - linear, 2)
+        }
+        let linear = min(symbolProgress / 0.4, 1)
+        return linear * linear * (3 - 2 * linear)
+    }
+
+    /// The new symbol arrives after a pause, slowing into place. The link is back sooner.
+    private var symbolInProgress: CGFloat {
+        let start = symbolName == "checkmark" ? 0.45 : 0.11
+        let linear = min(max((symbolProgress - start) / (1 - start), 0), 1)
+        return 1 - pow(1 - linear, 3)
     }
 
     private var drawsCloseBarsNow: Bool {
@@ -355,13 +392,18 @@ final class BrowserNativeChromeButton: NSButton {
         if let hoverTrackingArea {
             removeTrackingArea(hoverTrackingArea)
         }
-        let area = NSTrackingArea(
-            rect: .zero,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-        )
+        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect]
+        if hovered {
+            // A new area does not know the pointer is inside and would never report it leaving.
+            options.insert(.assumeInside)
+        }
+        let area = NSTrackingArea(rect: .zero, options: options, owner: self)
         addTrackingArea(area)
         hoverTrackingArea = area
+        // An area replaced while the pointer crosses it reports nothing.
+        if hovered, let window, !bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) {
+            endHover()
+        }
     }
 
     override func mouseEntered(with _: NSEvent) { hovered = true
@@ -377,10 +419,7 @@ final class BrowserNativeChromeButton: NSButton {
         needsDisplay = true
     }
 
-    override func mouseExited(with _: NSEvent) { hovered = false
-        BrowserNativeTooltipPresenter.shared.end(id: tooltipID)
-        needsDisplay = true
-    }
+    override func mouseExited(with _: NSEvent) { endHover() }
 
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
@@ -409,44 +448,50 @@ final class BrowserNativeChromeButton: NSButton {
                 yRadius: style.cornerRadius,
             ).fill()
         }
-        let foreground = isSelected ? BrowserChromeColors.primaryText : style.foreground
+        let foreground = restingTint
         contentTintColor = !isEnabled
             ? style.disabledForeground ?? BrowserChromeColors.buttonDisabledForeground
             : foreground.blended(
                 withFraction: min(max(progress, 0), 1),
                 of: style.pressedForeground ?? BrowserChromeColors.chromeButtonPressedForeground,
             ) ?? foreground
-        if let oldSymbolCell, symbolProgress < 1 {
+        if let oldSymbol, symbolProgress < 1 {
             NSGraphicsContext.saveGraphicsState()
             let oldTransform = AffineTransform(translationByX: bounds.midX, byY: bounds.midY)
             var transform = oldTransform
-            transform.scale(1 - 0.42 * symbolProgress)
+            transform.scale(1 - 0.8 * symbolOutProgress)
             transform.translate(x: -bounds.midX, y: -bounds.midY)
             (transform as NSAffineTransform).concat()
-            NSGraphicsContext.current?.cgContext.setAlpha(max(1 - symbolProgress, 0))
-            oldSymbolCell.drawInterior(withFrame: bounds, in: self)
+            draw(snapshot: oldSymbol, alpha: 1 - symbolOutProgress)
             NSGraphicsContext.restoreGraphicsState()
         }
         NSGraphicsContext.saveGraphicsState()
         let transform = AffineTransform(translationByX: bounds.midX, byY: bounds.midY)
         var effect = transform
         let rowScale = 1 - (1 - style.pressedScale) * progress
-        effect.scale(rowScale * (0.58 + 0.42 * symbolProgress))
+        effect.scale(rowScale * (0.2 + 0.8 * symbolInProgress))
         switch pressEffect {
         case .up: effect.translate(x: 0, y: 2 * progress)
         case .down: effect.translate(x: 0, y: -2 * progress)
         case .left: effect.translate(x: -2 * progress, y: 0)
         case .right: effect.translate(x: 2 * progress, y: 0)
-        case .rotateClockwise: effect.rotate(byDegrees: -90 * progress)
+        case .rotateClockwise: effect.rotate(byDegrees: 90 * progress)
         case .compress: effect.scale(1 - (style.pressedScale == 1 ? 0.1 : 0) * progress)
         case .none: break
         }
         effect.translate(x: -bounds.midX, y: -bounds.midY)
         (effect as NSAffineTransform).concat()
-        NSGraphicsContext.current?.cgContext.setAlpha(min(max(symbolProgress, 0), 1))
         syncCloseBars()
         if !drawsCloseBarsNow {
-            cell?.drawInterior(withFrame: bounds, in: self)
+            let alpha = min(symbolInProgress * 2, 1)
+            if progress != 0 || symbolProgress < 1, let restingSymbol {
+                draw(snapshot: restingSymbol, alpha: alpha)
+                if let pressedSymbol {
+                    draw(snapshot: pressedSymbol, alpha: alpha * progress)
+                }
+            } else {
+                cell?.drawInterior(withFrame: bounds, in: self)
+            }
         }
         NSGraphicsContext.restoreGraphicsState()
         if window?.firstResponder === self {
@@ -471,6 +516,8 @@ final class BrowserNativeChromeButton: NSButton {
 
     /// Turns a drawn plus by some degrees.
     func setBarGlyphRotation(_ degrees: CGFloat) {
+        restingSymbol = nil
+        pressedSymbol = nil
         image = BrowserNativeBarGlyph.image(symbol: symbolName, rotation: degrees)
     }
 
@@ -478,12 +525,12 @@ final class BrowserNativeChromeButton: NSButton {
         let changed = symbolName != name
         symbolName = name
         if changed, window != nil, ["link", "checkmark"].contains(name) {
-            oldSymbolCell = cell?.copy() as? NSCell
+            oldSymbol = snapshotOfSymbol(tint: restingTint)
             symbolProgress = 0
-            symbolAnimation.start(.copy) { [weak self] progress in
+            symbolAnimation.start(name == "checkmark" ? .copy : .copyReset) { [weak self] progress in
                 self?.symbolProgress = progress
                 self?.needsDisplay = true
-            } completion: { [weak self] in self?.oldSymbolCell = nil }
+            } completion: { [weak self] in self?.oldSymbol = nil }
         }
         if changed {
             updateCloseBars(animated: window != nil)
@@ -493,6 +540,46 @@ final class BrowserNativeChromeButton: NSButton {
         imagePosition = .imageOnly
         setAccessibilityLabel(title)
         tooltipTitle = title
+        if changed {
+            pressedSymbol = nil
+            restingSymbol = symbolProgress < 1 ? snapshotOfSymbol(tint: restingTint) : nil
+        }
+    }
+
+    fileprivate func cellDidChangeHighlight() { updatePressAnimation() }
+
+    private func endHover() {
+        hovered = false
+        BrowserNativeTooltipPresenter.shared.end(id: tooltipID)
+        needsDisplay = true
+    }
+
+    /// AppKit places a symbol differently once the context is scaled, so a symbol in
+    /// motion draws this picture of itself at rest.
+    private func snapshotOfSymbol(tint: NSColor) -> NSBitmapImageRep? {
+        guard window != nil, let cell, let picture = bitmapImageRepForCachingDisplay(in: bounds),
+              let context = NSGraphicsContext(bitmapImageRep: picture)?.cgContext
+        else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        context.translateBy(x: 0, y: bounds.height)
+        context.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        contentTintColor = tint
+        cell.drawInterior(withFrame: bounds, in: self)
+        return picture
+    }
+
+    private func draw(snapshot: NSBitmapImageRep, alpha: CGFloat) {
+        guard alpha > 0 else { return }
+        snapshot.draw(
+            in: bounds,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: alpha,
+            respectFlipped: true,
+            hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)],
+        )
     }
 
     /// Keeps the bars on the button's layer, so they turn smoothly even while the main
@@ -547,6 +634,10 @@ final class BrowserNativeChromeButton: NSButton {
         let target = isEnabled && isHighlighted
         guard target != pressTarget else { return }
         pressTarget = target
+        if target {
+            restingSymbol = snapshotOfSymbol(tint: restingTint)
+            pressedSymbol = snapshotOfSymbol(tint: pressedTint)
+        }
         let from = pressProgress
         let to = target ? 1.0 : 0.0
         pressAnimation.start(style.pressCurve) { [weak self] progress in

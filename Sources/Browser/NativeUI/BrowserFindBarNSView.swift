@@ -34,7 +34,6 @@ final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
 
     // MARK: Private
 
-    private let visibility = BrowserNativeVisibilityAnimation()
     private let panel = NSVisualEffectView()
     private let tint = BrowserNativeSurface()
     private let fieldBackground = BrowserNativeSurface()
@@ -127,7 +126,7 @@ final class BrowserFindBarNSView: NSView, NSTextFieldDelegate {
 
     func update(query: String, isPresented: Bool, canStep: Bool, focusRequestID: Int, blockedLeadingInset: CGFloat) {
         self.blockedLeadingInset = blockedLeadingInset
-        visibility.setVisible(isPresented, view: panel, curve: .standard)
+        panel.isHidden = !isPresented
         previousButton.isEnabled = canStep
         nextButton.isEnabled = canStep
         queryField.sync(text: query, shouldFocus: isPresented, focusRequestID: focusRequestID)

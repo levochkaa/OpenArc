@@ -354,7 +354,7 @@ final class BrowserSiteControlsNSView: NSView {
         copyTask?.cancel()
         copyTask = Task { [weak self] in
             do {
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+                try await Task.sleep(nanoseconds: 1_200_000_000)
             } catch {
                 return
             }

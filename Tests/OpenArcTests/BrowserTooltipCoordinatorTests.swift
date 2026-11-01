@@ -132,12 +132,32 @@ import Testing
     await expectActiveTooltip(firstTooltipID, in: coordinator)
 
     coordinator.setHovering(false, for: firstTooltipID)
-    await expectActiveTooltip(nil, in: coordinator)
+    #expect(coordinator.activeTooltipID == nil)
+    try? await Task.sleep(nanoseconds: 80_000_000)
 
     coordinator.setHovering(true, for: secondTooltipID)
     #expect(coordinator.activeTooltipID == nil)
 
     await expectActiveTooltip(secondTooltipID, in: coordinator)
+}
+
+@Test
+@MainActor func leavingHidesAtOnceAndKeepsTheNextTargetWarmDuringCooldown() async {
+    let coordinator = BrowserTooltipCoordinator(
+        activationDelayNanoseconds: 20_000_000,
+        cooldownDelayNanoseconds: 5_000_000_000,
+    )
+    let firstTooltipID = UUID()
+    let secondTooltipID = UUID()
+
+    coordinator.setHovering(true, for: firstTooltipID)
+    await expectActiveTooltip(firstTooltipID, in: coordinator)
+
+    coordinator.setHovering(false, for: firstTooltipID)
+    #expect(coordinator.activeTooltipID == nil)
+
+    coordinator.setHovering(true, for: secondTooltipID)
+    #expect(coordinator.activeTooltipID == secondTooltipID)
 }
 
 @MainActor private func expectActiveTooltip(

@@ -28,7 +28,6 @@ final class BrowserRootView: NSView {
     private let sidebarInteraction = BrowserPassthroughInteractionNSView()
     private let tabEvents = BrowserTabSwitcherEventNSView()
     private let tabSwitcher = BrowserTabSwitcherNSView()
-    private let tabSwitcherVisibility = BrowserNativeVisibilityAnimation()
     private let fullscreenReader = BrowserWindowFullscreenReaderNSView()
     private let pageTopDrag = BrowserPageTopWindowDrag()
     private let sessionRecovery = BrowserSessionPersistenceStatusView()
@@ -45,6 +44,7 @@ final class BrowserRootView: NSView {
     private var observations = Set<AnyCancellable>()
     private var revealTask: Task<Void, Never>?
     private var previousLayoutState: [Bool]?
+    private let presentationMotion = BrowserNativeFrameTransitions()
     private var animateNextLayout = false
     private var nextLayoutCurve = BrowserNativeAnimation.Curve.sidebar
     private let frameAnimation = BrowserNativeAnimation()
@@ -378,30 +378,58 @@ final class BrowserRootView: NSView {
         }
         lastFrameTargets = targetFrames
         frameAnimation.cancel()
+        presentationMotion.endSlideOuts(atTarget: !animate)
         isAnimatingFrames = animate
-        let starts = targets.map(\.0.frame)
-        let updates: @MainActor (Double) -> Void = { [weak self] progress in
+        // Keep hit regions and anchored panels on the same geometry as the page.
+        let updateHitRegions = { [weak self] (page: CGRect) in
             guard let self else { return }
-            for (index, target) in targets.enumerated() {
-                target.0.frame = BrowserNativeAnimation.interpolate(starts[index], target.1, progress)
+            if preferences.sidebarPosition == .right {
+                let minX = min(max(page.maxX, extensionPanel?.frame.maxX ?? 0), bounds.width)
+                sidebarInteraction.frame = NSRect(x: minX, y: 0, width: bounds.width - minX, height: bounds.height)
+            } else {
+                sidebarInteraction.frame.size.width = max(page.minX, 0)
+            }
+        }
+        guard animate else {
+            for (view, frame) in targets {
+                view.frame = frame
             }
             for (view, _) in targets {
                 view.layoutSubtreeIfNeeded()
             }
-            // Keep hit regions and anchored panels on the same geometry as the page.
-            if preferences.sidebarPosition == .right {
-                let minX = min(max(content.frame.maxX, extensionPanel?.frame.maxX ?? 0), bounds.width)
-                sidebarInteraction.frame = NSRect(x: minX, y: 0, width: bounds.width - minX, height: bounds.height)
+            updateHitRegions(geometry.contentFrame)
+            finishPresentationAnimation()
+            return
+        }
+        // Everything moves on the render server: resizing the page takes longer than a
+        // frame, so stepping frames on the main thread would stutter. The page resizes
+        // once, and until then stays large enough to leave no gap while it moves.
+        let page = geometry.contentFrame
+        let pageWhileMoving = CGRect(
+            origin: page.origin,
+            size: CGSize(width: max(content.frame.width, page.width), height: max(content.frame.height, page.height)),
+        )
+        for (view, frame) in targets {
+            if !frame.intersects(bounds), view.frame.intersects(bounds) {
+                presentationMotion.slideOut(view, to: frame, curve: curve)
             } else {
-                sidebarInteraction.frame.size.width = max(content.frame.minX, 0)
+                presentationMotion.slide(
+                    view,
+                    to: view === content ? pageWhileMoving : frame,
+                    animated: true,
+                    curve: curve,
+                )
             }
         }
-        if animate {
-            frameAnimation.start(curve, updates: updates) { [weak self] in
-                self?.finishPresentationAnimation()
-            }
-        } else {
-            updates(1)
+        for (view, _) in targets {
+            view.layoutSubtreeIfNeeded()
+        }
+        updateHitRegions(page)
+        frameAnimation.start(curve, updates: { _ in }) { [weak self] in
+            guard let self else { return }
+            presentationMotion.endSlideOuts(atTarget: true)
+            content.frame = page
+            content.layoutSubtreeIfNeeded()
             finishPresentationAnimation()
         }
     }
@@ -482,7 +510,7 @@ final class BrowserRootView: NSView {
             }
             sidebar.isHidden = libraryPresented
             animateNextLayout = true
-            nextLayoutCurve = .library
+            nextLayoutCurve = libraryPresented ? .libraryOpen : .library
         }
         library.refresh()
         let contentAppearance = model.selectedSpaceTheme?.palette.map {
@@ -532,11 +560,9 @@ final class BrowserRootView: NSView {
         extensionResize.hapticsEnabled = preferences.hapticFeedbackEnabled
         revealEdge.isHidden = model.isSidebarVisible || isSidebarPresented
         tabEvents.isEnabled = model.selectedTabID != nil
-        tabSwitcherVisibility.setVisible(
-            model.tabSwitcherState?.isVisible == true,
-            view: tabSwitcher,
-            curve: .easeOut(0.12),
-        )
+        // The switcher appears and leaves at once, like the command bar.
+        tabSwitcher.isHidden = model.tabSwitcherState?.isVisible != true
+        tabSwitcher.alphaValue = 1
         if let state = model.tabSwitcherState {
             tabSwitcher.update(state: state)
         }

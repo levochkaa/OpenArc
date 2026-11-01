@@ -11,7 +11,7 @@ enum BrowserChromeLayout {
     static let spaceThemeEditorAnchorY: CGFloat = 99
     static let sidebarAnimationDuration = 0.18
     static let sidebarResizeHoverDelayNanoseconds: UInt64 = 500_000_000
-    static let sidebarHoverRevealDelayNanoseconds: UInt64 = 500_000_000
+    static let sidebarHoverRevealDelayNanoseconds: UInt64 = 70_000_000
     static let leadingContentCornerRadius: CGFloat = BrowserWindowGeometry.browserContentCornerRadius
     static let sidebarOuterPadding: CGFloat = 8
     static let sidebarSectionSpacing: CGFloat = 10

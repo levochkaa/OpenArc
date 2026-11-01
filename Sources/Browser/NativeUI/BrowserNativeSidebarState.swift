@@ -19,7 +19,7 @@ import AppKit
     var spacePagerRawDragTranslation: CGFloat = 0
     /// How the Space pager moves next: a slide, or settling after a swipe.
     private(set) var rowMoveCurve = BrowserNativeAnimation.Curve.rowList
-    var spacePagerCurve = BrowserNativeAnimation.Curve.spaceSlide
+    var spacePagerCurve = BrowserNativeAnimation.Curve.spaceSelect
     var renameDismissSuppressedUntil = Date.distantPast
 
     var isClearButtonHovered = false { didSet { invalidate() } }
@@ -277,7 +277,7 @@ import AppKit
             isSpacePagerDragging = true
         }
 
-        spacePagerCurve = .spaceSlide
+        spacePagerCurve = .spaceSelect
         withoutSidebarDragAnimation {
             spacePagerRawDragTranslation += delta
             spacePagerDragTranslation = constrainedSpacePagerTranslation(

@@ -70,10 +70,10 @@ final class BrowserNativeSidebarNSView: NSView {
     private var isLayingOut = false
     private let frameTransitions = BrowserNativeFrameTransitions()
 
+    private var pagerSlideEnd: CFTimeInterval = 0
+
     private var renderedSnapshot: BrowserSidebarSnapshot { state.renderedSnapshot(for: state.snapshot) }
-    private var frameTransitionsAreRunning: Bool {
-        pagesContainer.frame != frameTransitions.targetFrame(of: pagesContainer)
-    }
+    private var frameTransitionsAreRunning: Bool { CACurrentMediaTime() < pagerSlideEnd }
 
     init(state: BrowserNativeSidebarState, header: NSView, footer: NSView) {
         self.state = state
@@ -348,7 +348,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 selected: draft.profileDirectory ?? state.model.profileDirectories?.windowProfile,
             )
             creationPage.isHidden = false
-            state.spacePagerCurve = .spaceSlide
+            state.spacePagerCurve = .spaceSelect
             if !wasCreating {
                 DispatchQueue.main.async { [weak creationPage] in creationPage?.focusName() }
             }
@@ -752,7 +752,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 width: width,
                 height: pagerClip.bounds.height,
             )
-            page.layoutRows(animated: animated)
+            page.layoutRows(animated: animated, curve: state.rowMoveCurve)
         }
     }
 
@@ -769,12 +769,19 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     private func setFrame(_ rect: NSRect, of view: NSView, animated: Bool) {
-        frameTransitions.setFrame(
-            rect,
-            of: view,
-            animated: animated,
-            curve: view === pagesContainer ? state.spacePagerCurve : state.rowMoveCurve,
-        )
+        guard view === pagesContainer else {
+            frameTransitions.setFrame(rect, of: view, animated: animated, curve: state.rowMoveCurve)
+            return
+        }
+        // The tab switch that comes with a Space stalls the main thread.
+        let curve = state.spacePagerCurve
+        if animated, view.frame.origin != rect.origin {
+            pagerSlideEnd = CACurrentMediaTime() + curve.duration
+            DispatchQueue.main.asyncAfter(deadline: .now() + curve.duration) { [weak self] in
+                self?.needsLayout = true
+            }
+        }
+        frameTransitions.slide(view, to: rect, animated: animated, curve: curve)
     }
 
     private func configure(
@@ -1724,7 +1731,7 @@ private final class BrowserNativeSidebarPage: NSView {
         return row
     }
 
-    func layoutRows(animated: Bool) {
+    func layoutRows(animated: Bool, curve: BrowserNativeAnimation.Curve) {
         hasLaidOutRows = true
         let headerHeight = header.isHidden ? 0 : BrowserChromeLayout.sidebarRowHeight
         header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: BrowserChromeLayout.sidebarRowHeight)
@@ -1752,7 +1759,7 @@ private final class BrowserNativeSidebarPage: NSView {
                     } else {
                         frame
                     }
-                frameTransitions.setFrame(rect, of: view, animated: animated)
+                frameTransitions.slide(view, to: rect, animated: animated, curve: curve)
             }
             y += entry.height + BrowserChromeLayout.sidebarListSpacing
         }

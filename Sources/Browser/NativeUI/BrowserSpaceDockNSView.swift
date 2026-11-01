@@ -99,7 +99,7 @@ final class BrowserSpaceDockNSView: BrowserNativeSurface {
         guard let draggedID else {
             let point = convert(event.locationInWindow, from: nil)
             if item(at: point) == pressedIndex, button.isEnabled {
-                button.performClick(nil)
+                button.sendAction(button.action, to: button.target)
             }
             return
         }

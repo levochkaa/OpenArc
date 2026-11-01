@@ -773,7 +773,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                 captionLabel.isHidden = !showCaption
                 captionLabel.alphaValue = to
             } else {
-                captionAnimation.start(.easeOut(0.16)) { [weak self] progress in
+                captionAnimation.start(.caption) { [weak self] progress in
                     guard let self else { return }
                     captionProgress = from + (to - from) * progress
                     captionLabel.alphaValue = captionProgress

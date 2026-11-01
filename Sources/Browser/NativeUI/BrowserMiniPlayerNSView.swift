@@ -69,10 +69,15 @@ final class BrowserMiniPlayerNSView: NSView {
         action: {},
     )
     private var tracking: NSTrackingArea?
-    private var collapseWork: DispatchWorkItem?
+
+    /// How far it has grown, from 0 to 1.
+    private var expansion: CGFloat = 0
+    private let expansionAnimation = BrowserNativeAnimation()
 
     var preferredHeight: CGFloat {
-        isExpanded ? BrowserChromeLayout.sidebarMiniPlayerExpandedHeight : BrowserChromeLayout.sidebarMiniPlayerHeight
+        BrowserChromeLayout.sidebarMiniPlayerHeight
+            + (BrowserChromeLayout.sidebarMiniPlayerExpandedHeight - BrowserChromeLayout.sidebarMiniPlayerHeight)
+            * expansion
     }
 
     override init(frame frameRect: NSRect) {
@@ -138,11 +143,11 @@ final class BrowserMiniPlayerNSView: NSView {
         if let tracking {
             removeTrackingArea(tracking)
         }
-        let area = NSTrackingArea(
-            rect: .zero,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-        )
+        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect]
+        if isExpanded {
+            options.insert(.assumeInside)
+        }
+        let area = NSTrackingArea(rect: .zero, options: options, owner: self)
         addTrackingArea(area)
         tracking = area
     }
@@ -151,12 +156,8 @@ final class BrowserMiniPlayerNSView: NSView {
         setExpanded(true)
     }
 
-    /// The player waits a moment before collapsing, so the pointer can cross the gap.
     override func mouseExited(with _: NSEvent) {
-        collapseWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.setExpanded(false) }
-        collapseWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        setExpanded(false)
     }
 
     override func layout() {
@@ -202,12 +203,31 @@ final class BrowserMiniPlayerNSView: NSView {
     }
 
     func setExpanded(_ expanded: Bool) {
-        collapseWork?.cancel()
-        collapseWork = nil
         guard expanded != isExpanded else { return }
         isExpanded = expanded
-        titleLabel.isHidden = !expanded
-        closeButton.isHidden = !expanded
+        titleLabel.isHidden = false
+        closeButton.isHidden = false
+        let from = expansion
+        let to: CGFloat = expanded ? 1 : 0
+        guard window != nil else {
+            applyExpansion(to, final: true)
+            return
+        }
+        expansionAnimation.start(expanded ? .miniPlayerGrow : .miniPlayerShrink) { [weak self] progress in
+            self?.applyExpansion(from + (to - from) * progress, final: false)
+        } completion: { [weak self] in
+            self?.applyExpansion(to, final: true)
+        }
+    }
+
+    private func applyExpansion(_ value: CGFloat, final: Bool) {
+        expansion = value
+        titleLabel.alphaValue = value
+        closeButton.alphaValue = value
+        if final {
+            titleLabel.isHidden = !isExpanded
+            closeButton.isHidden = !isExpanded
+        }
         needsLayout = true
         onExpansionChange()
     }

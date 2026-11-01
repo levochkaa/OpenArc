@@ -119,9 +119,6 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
     let tabID: String
     private(set) var isSelected = false
 
-    // MARK: Private
-
-    private let selectionAnimation = BrowserNativeAnimation()
     private let title = NSTextField(labelWithString: "")
     private let url = NSTextField(labelWithString: "")
     private let preview = BrowserTabPreviewNSView()
@@ -157,7 +154,6 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
     }
 
     func update(entry: BrowserChromeModel.TabSwitcherEntry, selected: Bool) {
-        let changed = isSelected != selected
         isSelected = selected
         title.stringValue = entry.tab.displayTitle
         url.stringValue = BrowserURLDisplayFormatter.displayString(for: entry.tab.urlString)
@@ -165,17 +161,8 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
         preview.title = entry.tab.displayTitle
         let fill = selected ? BrowserChromeColors.rowSelected : BrowserChromeColors.commandBarFieldTint
         let stroke = selected ? BrowserChromeColors.primaryText.withAlphaComponent(0.38) : .clear
-        if changed, window != nil {
-            let oldFill = fillColor
-            let oldStroke = strokeColor
-            selectionAnimation.start(.easeOut(0.12)) { [weak self] progress in
-                self?.fillColor = oldFill.blended(withFraction: progress, of: fill) ?? fill
-                self?.strokeColor = oldStroke.blended(withFraction: progress, of: stroke) ?? stroke
-            }
-        } else if !selectionAnimation.isRunning {
-            fillColor = fill
-            strokeColor = stroke
-        }
+        fillColor = fill
+        strokeColor = stroke
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(entry.tab.displayTitle)
