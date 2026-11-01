@@ -363,6 +363,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             active ? "arrow.down.circle.fill" : "archivebox",
             title: active ? BrowserStrings.downloadsTitle : BrowserStrings.menuViewLibrary,
         )
+        downloadsButton.tooltipShortcut = state.model.shortcutStore.shortcut(for: active ? .viewDownloads : .viewLibrary)
         downloadsButton.isSelected = popover.isShown || active
         downloadDot.isHidden = !active || !state.model.supportsSpaces
     }

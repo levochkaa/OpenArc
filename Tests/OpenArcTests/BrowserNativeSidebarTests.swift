@@ -265,9 +265,9 @@ import Testing
         var ended = [Bool]()
         state.onLibrarySwipe = { progress.append($0) }
         state.onLibrarySwipeEnded = { ended.append($0) }
-        state.updateSpacePagerScroll(by: 240, in: state.snapshot, pageWidth: 240)
+        state.updateSpacePagerScroll(by: 417, in: state.snapshot, pageWidth: 240)
         #expect(state.spacePagerDragTranslation == 0, "The page stays while the Library comes")
-        #expect(progress == [0.5])
+        #expect(progress == [0.5], "A swipe covers the Library's width at half of the scroll")
         state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
         #expect(ended == [true])
         #expect(!state.isSpacePagerDragging)
@@ -275,6 +275,10 @@ import Testing
         try await Task.sleep(nanoseconds: 550_000_000)
         state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
         #expect(ended == [true, false], "A slow swipe has to pass the middle")
+        state.updateSpacePagerScroll(by: 420, in: state.snapshot, pageWidth: 240)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
+        #expect(ended == [true, false, true], "The middle is the Library's, not the sidebar's")
     }
 
     @Test func slowSwipeTurnsThePageOnlyPastTheMiddle() async throws {

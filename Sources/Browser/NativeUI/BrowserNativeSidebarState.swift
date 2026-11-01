@@ -328,7 +328,7 @@ import QuartzCore
                 )
             if pullsLibrary || isLibrarySwipeActive {
                 isLibrarySwipeActive = true
-                onLibrarySwipe(pullsLibrary ? min(spacePagerRawDragTranslation / pageWidth, 1) : 0)
+                onLibrarySwipe(pullsLibrary ? min(spacePagerRawDragTranslation / BrowserLibraryLayout.width, 1) : 0)
             }
         }
     }
@@ -352,7 +352,7 @@ import QuartzCore
             isSpacePagerDragging = false
             spacePagerRawDragTranslation = 0
             spacePagerDragTranslation = 0
-            onLibrarySwipeEnded(turnsPage && translation > 0)
+            onLibrarySwipeEnded(translation > 0 && (isQuick || translation >= BrowserLibraryLayout.width / 2))
             return
         }
         let targetSpaceID = targetSpaceID(

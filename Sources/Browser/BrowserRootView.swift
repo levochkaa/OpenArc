@@ -18,8 +18,9 @@ final class BrowserRootView: NSView {
     private let sidebar: BrowserSidebarChromeView
     private var sidebarLibraryEnd = 0
     private let libraryScrollObserver = BrowserSpacePagerScrollNSView()
-    /// The Library follows a swipe instead of the layout.
-    private var libraryFollowsSwipe = false
+    /// While a swipe pulls the Library: 0 is the sidebar in place, 1 the Library.
+    private var librarySwipeProgress: CGFloat?
+    private var libraryFollowsSwipe: Bool { librarySwipeProgress != nil }
     private var librarySwipeTranslation: CGFloat = 0
     private var librarySwipeStart: CFTimeInterval = 0
     private let toolbar: BrowserSiteControlsNSView
@@ -77,8 +78,8 @@ final class BrowserRootView: NSView {
     private var windowGeometry: BrowserWindowChromeLayout {
         .init(
             windowSize: bounds.size,
-            sidebarWidth: model.librarySection == nil ? model.sidebarWidth : BrowserLibraryLayout.width,
-            isSidebarVisible: model.isSidebarVisible || model.librarySection != nil,
+            sidebarWidth: reservedSidebarWidth(swipeProgress: librarySwipeProgress),
+            isSidebarVisible: model.isSidebarVisible || model.librarySection != nil || libraryFollowsSwipe,
             isHoverSidebarPresented: isSidebarHoverOverlayPresented,
             isOverlayChromeVisible: isSidebarHoverOverlayChromeVisible,
             isFullscreen: isWindowFullscreen,
@@ -317,8 +318,13 @@ final class BrowserRootView: NSView {
         for overlay in [command, currentPageCommand, tabEvents, tabSwitcher, sidebarDismiss] {
             overlay.frame = bounds
         }
-        libraryScrollObserver.frame = CGRect(x: 0, y: 0, width: BrowserLibraryLayout.width, height: bounds.height)
         let onRight = preferences.sidebarPosition == .right
+        libraryScrollObserver.frame = CGRect(
+            x: onRight ? bounds.width - BrowserLibraryLayout.width : 0,
+            y: 0,
+            width: BrowserLibraryLayout.width,
+            height: bounds.height,
+        )
         sidebarInteraction.frame = NSRect(
             x: onRight ? bounds.width - sidebarLayoutWidth : 0,
             y: 0,
@@ -351,9 +357,9 @@ final class BrowserRootView: NSView {
         let libraryWidth = model.librarySection == .spaces ? bounds.width : BrowserLibraryLayout.width
         let libraryShown = model.librarySection != nil
         var targets: [(NSView, CGRect)] = [
-            (content, geometry.contentFrame), (find, geometry.contentFrame),
+            (content, pageFrameDuringLibrarySwipe(geometry.contentFrame)), (find, geometry.contentFrame),
             // The Library takes the sidebar's place: the sidebar keeps its size while it fades.
-            (sidebar, libraryShown ? sidebar.frame : geometry.sidebarFrame),
+            (sidebar, libraryShown || libraryFollowsSwipe ? sidebar.frame : geometry.sidebarFrame),
             (
                 pageLoadingIndicator,
                 CGRect(
@@ -365,12 +371,7 @@ final class BrowserRootView: NSView {
             ),
             (
                 library,
-                CGRect(
-                    x: libraryFollowsSwipe ? library.frame.minX : libraryShown ? 0 : -libraryWidth,
-                    y: 0,
-                    width: libraryWidth,
-                    height: bounds.height,
-                ),
+                libraryFrame(width: libraryWidth, progress: librarySwipeProgress ?? (libraryShown ? 1 : 0)),
             ),
             (
                 toolbar,
@@ -463,6 +464,32 @@ final class BrowserRootView: NSView {
 
     private func sidebarFrame(in _: CGSize) -> CGRect { windowGeometry.sidebarFrame }
 
+    private func reservedSidebarWidth(swipeProgress: CGFloat?) -> CGFloat {
+        guard let swipeProgress else {
+            return model.librarySection == nil ? model.sidebarWidth : BrowserLibraryLayout.width
+        }
+        let start = model.isSidebarVisible ? model.sidebarWidth : 0
+        return start + (BrowserLibraryLayout.width - start) * swipeProgress
+    }
+
+    private func libraryFrame(width: CGFloat, progress: CGFloat) -> CGRect {
+        let away = width * (1 - progress)
+        return CGRect(
+            x: preferences.sidebarPosition == .right ? bounds.width - width + away : -away,
+            y: 0,
+            width: width,
+            height: bounds.height,
+        )
+    }
+
+    /// Resizing the page takes longer than a frame, so during a swipe it only moves.
+    /// It keeps the size it has with the sidebar, and the layout resizes it at the end.
+    private func pageFrameDuringLibrarySwipe(_ page: CGRect) -> CGRect {
+        guard let librarySwipeProgress else { return page }
+        let moved = reservedSidebarWidth(swipeProgress: librarySwipeProgress) - reservedSidebarWidth(swipeProgress: 0)
+        return CGRect(origin: page.origin, size: CGSize(width: page.width + moved, height: page.height))
+    }
+
     /// Off screen after its slide, and out of reach of the keyboard and accessibility.
     private func hideLibraryAfterSlide() {
         DispatchQueue.main.asyncAfter(deadline: .now() + BrowserNativeAnimation.Curve.library.duration) { [weak self] in
@@ -482,14 +509,13 @@ final class BrowserRootView: NSView {
                 librarySwipeTranslation = 0
             }
             librarySwipeTranslation = min(librarySwipeTranslation + delta * 0.5, 0)
-            let distance = max(model.sidebarWidth, 1)
-            followLibrarySwipe(progress: 1 - min(-librarySwipeTranslation / distance, 1))
+            followLibrarySwipe(progress: 1 - min(-librarySwipeTranslation / BrowserLibraryLayout.width, 1))
         }
         libraryScrollObserver.onScrollReleased = { [weak self] in
             guard let self, libraryFollowsSwipe else { return }
             let isQuick = CACurrentMediaTime() - librarySwipeStart < 0.5
             let closes = librarySwipeTranslation < 0
-                && (isQuick || -librarySwipeTranslation >= model.sidebarWidth / 2)
+                && (isQuick || -librarySwipeTranslation >= BrowserLibraryLayout.width / 2)
             finishLibrarySwipe(opens: !closes)
         }
         libraryScrollObserver.onScrollEnded = { [weak self] in
@@ -498,31 +524,57 @@ final class BrowserRootView: NSView {
         }
     }
 
-    /// `progress` 1 is the Library in place. The sidebar gives way over the first third.
+    /// `progress` 1 is the Library in place. The page's edge follows the swipe from the
+    /// start, and the sidebar fades and shrinks away over the first half.
     private func followLibrarySwipe(progress: CGFloat) {
-        libraryFollowsSwipe = true
+        librarySwipeProgress = progress
         library.isHidden = false
-        let width = BrowserLibraryLayout.width
-        library.frame = CGRect(x: -width * (1 - progress), y: 0, width: width, height: bounds.height)
         sidebar.isHidden = false
-        sidebar.alphaValue = max(1 - progress * 3, 0)
+        sidebar.alphaValue = max(1 - progress * 2, 0)
+        setSidebarLayerTransform(sidebarSwipeTransform(progress: progress))
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+    }
+
+    private func sidebarSwipeTransform(progress: CGFloat) -> CATransform3D {
+        let anchor = CGPoint(
+            x: preferences.sidebarPosition == .right ? sidebar.bounds.width - 354 : 354,
+            y: sidebar.bounds.height / 2,
+        )
+        let scale = 1 - 0.1 * min(progress, 0.5)
+        var transform = CATransform3DMakeTranslation(anchor.x, anchor.y, 0)
+        transform = CATransform3DScale(transform, scale, scale, 1)
+        return CATransform3DTranslate(transform, -anchor.x, -anchor.y, 0)
+    }
+
+    private func setSidebarLayerTransform(_ transform: CATransform3D) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        sidebar.layer?.transform = transform
+        CATransaction.commit()
     }
 
     private func finishLibrarySwipe(opens: Bool) {
-        libraryFollowsSwipe = false
+        librarySwipeProgress = nil
         if opens != (model.librarySection != nil) {
             model.toggleLibrary()
             return
         }
         // The swipe changed nothing: everything goes back where it was.
         let opacity = sidebar.alphaValue
+        let transform = sidebar.layer?.transform ?? CATransform3DIdentity
         sidebar.alphaValue = 1
+        setSidebarLayerTransform(CATransform3DIdentity)
         sidebar.isHidden = opens
-        if !opens, opacity < 1 {
+        if !opens {
             let fade = BrowserNativeAnimation.Curve.library.layerAnimation(keyPath: "opacity")
             fade.fromValue = opacity
             fade.toValue = 1
             sidebar.layer?.add(fade, forKey: "browser.sidebar.library.fade")
+            let scale = BrowserNativeAnimation.Curve.library.layerAnimation(keyPath: "transform")
+            scale.fromValue = transform
+            scale.toValue = CATransform3DIdentity
+            sidebar.layer?.add(scale, forKey: "browser.sidebar.library.scale")
         }
         animateNextLayout = true
         nextLayoutCurve = opens ? .libraryOpen : .library
@@ -550,12 +602,14 @@ final class BrowserRootView: NSView {
         var small = CATransform3DMakeTranslation(center.x, center.y, 0)
         small = CATransform3DScale(small, 0.95, 0.95, 1)
         small = CATransform3DTranslate(small, -center.x, -center.y, 0)
-        // A swipe may have started the fade already.
+        // A swipe may have started the fade and the shrink already.
         let swipeOpacity = sidebar.alphaValue
         sidebar.alphaValue = 1
+        let swipeTransform = CATransform3DIsIdentity(layer.transform) ? nil : layer.transform
+        setSidebarLayerTransform(CATransform3DIdentity)
         let curve: BrowserNativeAnimation.Curve = presented ? .sidebarToLibrary : .sidebarFromLibrary
         let scale = curve.layerAnimation(keyPath: "transform")
-        scale.fromValue = presented ? layer.presentation()?.transform ?? CATransform3DIdentity : small
+        scale.fromValue = swipeTransform ?? (presented ? layer.presentation()?.transform ?? CATransform3DIdentity : small)
         scale.toValue = presented ? small : CATransform3DIdentity
         let fade = curve.layerAnimation(keyPath: "opacity")
         fade.fromValue = swipeOpacity < 1 ? Float(swipeOpacity) : layer.presentation()?.opacity ?? (presented ? 1 : 0)

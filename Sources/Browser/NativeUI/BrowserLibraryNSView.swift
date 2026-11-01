@@ -44,6 +44,8 @@ enum BrowserLibraryLayout {
     static let searchHeight: CGFloat = 36
     static let filterWidth: CGFloat = 73
     static let spaceCardWidth: CGFloat = 240
+    /// The first window control's corner: lower and further in than on the sidebar.
+    static let windowControlsOrigin = CGPoint(x: 16, y: 21)
 }
 
 // MARK: - BrowserLibraryNSView
@@ -167,10 +169,8 @@ final class BrowserLibraryNSView: NSView, NSSearchFieldDelegate {
         backButton.frame = NSRect(x: 8, y: height - 40, width: 32, height: 32)
         let controlsWidth = windowControls.intrinsicContentSize.width
         windowControls.frame = NSRect(
-            x: BrowserChromeLayout.sidebarWindowControlsLeading,
-            y: 0,
-            width: controlsWidth,
-            height: BrowserChromeLayout.chromeButtonSize,
+            origin: BrowserLibraryLayout.windowControlsOrigin,
+            size: NSSize(width: controlsWidth, height: BrowserWindowControlsLayout.controlsHeight),
         )
         let listX = BrowserLibraryLayout.columnWidth
         listBackground.frame = NSRect(x: listX, y: 0, width: max(bounds.width - listX, 0), height: height)

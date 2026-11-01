@@ -81,11 +81,17 @@ final class BrowserSpacePagerScrollNSView: NSView {
     private func handleScrollWheel(_ event: NSEvent) -> NSEvent? {
         guard
             isEnabled,
+            !isHiddenOrHasHiddenAncestor,
             let window,
             event.window === window,
             bounds.contains(convert(event.locationInWindow, from: nil))
         else {
             finishHorizontalScrollIfNeeded()
+            return event
+        }
+
+        // The tail of a gesture another view tracked starts nothing here.
+        guard isTrackingHorizontalScroll || event.momentumPhase.isEmpty else {
             return event
         }
 
