@@ -284,6 +284,7 @@ import Foundation
 
     func inspectElementsInActiveTab() {}
     func showJavaScriptConsoleForActiveTab() {}
+    func showNetworkInspectorForActiveTab() {}
 
     func showDevToolsForActiveTab() {
         devToolsCount += 1

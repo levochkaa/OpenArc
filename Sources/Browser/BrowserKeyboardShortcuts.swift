@@ -246,7 +246,7 @@ enum BrowserCommands {
     static let toggleBookmark = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.bookmarksAddCurrentPage,
         helpTitle: BrowserStrings.bookmarksAddCurrentPage,
-        shortcut: BrowserKeyboardShortcut("d"),
+        shortcut: .unassigned,
     )
 
     static let archiveTab = BrowserCommandDescriptor(
@@ -280,8 +280,8 @@ enum BrowserCommands {
     )
 
     static let copyLink = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.tabCopyLinkAction,
-        helpTitle: BrowserStrings.tabCopyLinkAction,
+        menuTitle: BrowserStrings.tabCopyURLAction,
+        helpTitle: BrowserStrings.tabCopyURLAction,
         shortcut: BrowserKeyboardShortcut("c", modifiers: [.command, .shift]),
     )
 
@@ -322,19 +322,19 @@ enum BrowserCommands {
     )
 
     static let goBack = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.navigationBack,
+        menuTitle: BrowserStrings.menuGoBack,
         helpTitle: BrowserStrings.navigationBack,
         shortcut: BrowserKeyboardShortcut("["),
     )
 
     static let goForward = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.navigationForward,
+        menuTitle: BrowserStrings.menuGoForward,
         helpTitle: BrowserStrings.navigationForward,
         shortcut: BrowserKeyboardShortcut("]"),
     )
 
     static let reload = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.navigationRefresh,
+        menuTitle: BrowserStrings.menuRefreshPage,
         helpTitle: BrowserStrings.navigationRefresh,
         shortcut: BrowserKeyboardShortcut("r"),
     )
@@ -463,7 +463,7 @@ enum BrowserCommands {
     static let togglePinTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuPinTab,
         helpTitle: BrowserStrings.menuPinTab,
-        shortcut: .unassigned,
+        shortcut: BrowserKeyboardShortcut("d"),
     )
 
     /// These commands have no default shortcut.

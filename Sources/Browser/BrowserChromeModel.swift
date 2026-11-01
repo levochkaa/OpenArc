@@ -358,6 +358,9 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: bumped by `renameSelectedTab()`, the only writer, so the
     /// sidebar starts renaming the selected row.
     @Published var sidebarRenameRequestID = 0
+    @Published var sidebarSpaceRenameRequestID = 0
+    /// Asks the window's controls to open an extension, anchored to the address row.
+    var onOpenExtensionRequest: ((String) -> Void)?
     /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
     /// sidebar scrolls the selected row into view.
     @Published var sidebarRevealRequestID = 0
@@ -2784,6 +2787,17 @@ enum BrowserWindowMode: Equatable {
     @discardableResult func inspectElements() -> Bool {
         guard selectedTabID != nil else { return false }
         tabDriver.inspectElementsInActiveTab()
+        return true
+    }
+
+    func requestExtensionOpen(id: String) {
+        onOpenExtensionRequest?(id)
+    }
+
+    /// Developer Tools on their Network panel.
+    @discardableResult func showNetworkInspector() -> Bool {
+        guard selectedTabID != nil else { return false }
+        tabDriver.showNetworkInspectorForActiveTab()
         return true
     }
 

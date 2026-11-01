@@ -179,6 +179,10 @@ import Foundation
         controller.showJavaScriptConsoleForActiveTab()
     }
 
+    func showNetworkInspectorForActiveTab() {
+        controller.showNetworkInspectorForActiveTab()
+    }
+
     func showLittleWindow(withURLString urlString: String) {
         controller.showLittleWindow(withURLString: urlString)
     }

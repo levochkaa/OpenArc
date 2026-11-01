@@ -66,6 +66,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private var dragPreviewIsAppTile = false
     private lazy var handledRevealRequestID = state.model.sidebarRevealRequestID
     private lazy var handledRenameRequestID = state.model.sidebarRenameRequestID
+    private lazy var handledSpaceRenameRequestID = state.model.sidebarSpaceRenameRequestID
     private var lastWindowDragPoint = CGPoint.zero
     private var acceptsLinkDrop = false
     private var reportedDragging = false
@@ -299,6 +300,7 @@ final class BrowserNativeSidebarNSView: NSView {
         defer {
             revealSelectedRowIfRequested()
             renameSelectedRowIfRequested()
+            renameSelectedSpaceIfRequested()
         }
         let snapshot = renderedSnapshot
         miniPlayers.update(items: snapshot.miniPlayers)
@@ -1328,7 +1330,7 @@ final class BrowserNativeSidebarNSView: NSView {
         let copy = model.shortcutStore.descriptor(for: .copyLink)
         let close = model.shortcutStore.descriptor(for: .archiveTab)
         BrowserNativeMenus
-            .add(copy.menuTitle, to: menu, shortcut: selected ? copy.shortcut : nil) {
+            .add(BrowserStrings.tabCopyLinkAction, to: menu, shortcut: selected ? copy.shortcut : nil) {
                 _ = model.copyTabLink(forTabID: tab.id)
             }
         BrowserNativeMenus.share(
@@ -1594,6 +1596,17 @@ final class BrowserNativeSidebarNSView: NSView {
         DispatchQueue.main.async { [weak self] in
             guard let self, let selectedID = state.snapshot.selectedTabID else { return }
             state.beginRenamingTab(id: selectedID)
+        }
+    }
+
+    /// Starts renaming the selected Space once per Rename Space request.
+    private func renameSelectedSpaceIfRequested() {
+        let request = state.model.sidebarSpaceRenameRequestID
+        guard request != handledSpaceRenameRequestID else { return }
+        handledSpaceRenameRequestID = request
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let spaceID = state.snapshot.selectedSpaceID else { return }
+            state.beginRenamingSpace(id: spaceID)
         }
     }
 

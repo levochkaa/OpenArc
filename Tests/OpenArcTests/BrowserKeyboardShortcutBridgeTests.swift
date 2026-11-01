@@ -49,7 +49,7 @@ import Testing
         modifierFlags: [.command],
         charactersIgnoringModifiers: "б",
     )
-    let toggleBookmarkCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+    let togglePinTabCommand = BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
         keyCode: 2,
         modifierFlags: [.command],
         charactersIgnoringModifiers: "в",
@@ -121,7 +121,7 @@ import Testing
     )
 
     #expect(settingsCommand == .openSettings)
-    #expect(toggleBookmarkCommand == .toggleBookmark)
+    #expect(togglePinTabCommand == .togglePinTab)
     #expect(newTabCommand == .newTab)
     #expect(openHistoryCommand == .openHistory)
     #expect(archiveTabCommand == .archiveTab)

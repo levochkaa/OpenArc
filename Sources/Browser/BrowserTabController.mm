@@ -4684,6 +4684,14 @@ void WatchClickModifiers();
 }
 
 - (void)showJavaScriptConsoleForActiveTab {
+  [self showDevToolsForActiveTabOnPanel:"\"console\""];
+}
+
+- (void)showNetworkInspectorForActiveTab {
+  [self showDevToolsForActiveTabOnPanel:"\"network\""];
+}
+
+- (void)showDevToolsForActiveTabOnPanel:(const char*)panel {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
   if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
@@ -4697,7 +4705,7 @@ void WatchClickModifiers();
   CefRefPtr<CefRequestContext> context = host->GetRequestContext();
   if (context) {
     CefRefPtr<CefDictionaryValue> preferences = CefDictionaryValue::Create();
-    preferences->SetString("panel-selected-tab", "\"console\"");
+    preferences->SetString("panel-selected-tab", panel);
     CefRefPtr<CefValue> value = CefValue::Create();
     value->SetDictionary(preferences);
     CefString error;

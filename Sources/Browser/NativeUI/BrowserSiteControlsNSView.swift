@@ -483,6 +483,16 @@ final class BrowserSiteControlsNSView: NSView {
         return menu
     }
 
+    /// From the menu bar: anchored to the site button, whichever extensions are pinned.
+    func openExtensionFromMenu(id: String) {
+        extensionPopovers.openExtension(
+            id: id,
+            relativeTo: extensionButtons[id] ??
+                (isHiddenOrHasHiddenAncestor ? window?.contentView ?? self : siteButton),
+            preferredEdge: mode == .toolbar ? .minY : .maxX,
+        )
+    }
+
     func closePopovers() { extensionPopovers.close() }
 
     /// Opens the site control center with its extensions, from the site

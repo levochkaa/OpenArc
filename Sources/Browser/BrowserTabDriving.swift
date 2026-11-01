@@ -125,6 +125,7 @@ enum BrowserPageContextCommand: String {
     func inspectElementsInActiveTab()
     /// Developer Tools on their Console panel.
     func showJavaScriptConsoleForActiveTab()
+    func showNetworkInspectorForActiveTab()
     /// The page in a small window of its own.
     func showLittleWindow(withURLString urlString: String)
     /// Peek card over the window.

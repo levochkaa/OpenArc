@@ -13,10 +13,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
     // MARK: Private
 
     private static let spacesMenuIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces")
+    private static let extensionsMenuIdentifier = NSUserInterfaceItemIdentifier("browser.menu.extensions")
+    private static let spaceProfileItemIdentifier = NSUserInterfaceItemIdentifier("browser.menu.space-profile")
     private static let spaceListEndIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces.list-end")
     private static let installWebAppMenuItemIdentifier = NSUserInterfaceItemIdentifier(
         "browser.install-web-app",
     )
+
+    private static var applicationInfo: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        let system = ProcessInfo.processInfo.operatingSystemVersionString
+        return "OpenArc \(version) (\(build))\nmacOS \(system)"
+    }
 
     private var aboutWindow: NSWindow?
     private var settingsWindowController: SettingsWindowController?
@@ -180,6 +190,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     public func menuNeedsUpdate(_ menu: NSMenu) {
         if menu.identifier == Self.spacesMenuIdentifier {
             updateSpacesMenu(menu)
+            return
+        }
+        if menu.identifier == Self.extensionsMenuIdentifier {
+            updateExtensionsMenu(menu)
             return
         }
         guard let installWebAppItem = menu.items.first(where: {
@@ -417,6 +431,47 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func viewLibrary(_: Any?) {
         activeChromeModel?.toggleLibrary()
+    }
+
+    public func shareCurrentTab(_: Any?) {
+        activeChromeModel?.shareSelectedTab()
+    }
+
+    public func manageSpaces(_: Any?) {
+        activeChromeModel?.openSpacesInLibrary()
+    }
+
+    public func editSpaceTheme(_: Any?) {
+        guard let model = activeChromeModel, let spaceID = model.selectedSpaceID else { return }
+        model.onEditSpaceTheme?(spaceID)
+    }
+
+    public func renameSpace(_: Any?) {
+        activeChromeModel?.sidebarSpaceRenameRequestID &+= 1
+    }
+
+    public func togglePinnedTabsCollapsed(_: Any?) {
+        activeChromeModel?.toggleActiveSpacePinnedSectionCollapsed()
+    }
+
+    public func castCurrentPage(_: Any?) {
+        activeChromeModel?.castCurrentPage()
+    }
+
+    public func showNetworkInspector(_: Any?) {
+        activeChromeModel?.showNetworkInspector()
+    }
+
+    public func chooseAppearance(_ sender: Any?) {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
+              let preference = BrowserAppearancePreference(rawValue: raw)
+        else { return }
+        userPreferencesStore.appearancePreference = preference
+    }
+
+    public func toggleStayOnTop(_: Any?) {
+        guard let window = activeBrowserWindow else { return }
+        window.level = window.level == .floating ? .normal : .floating
     }
 
     public func selectNextSpace(_: Any?) {
@@ -793,6 +848,32 @@ NSMenuDelegate, NSUserInterfaceValidations {
              #selector(toggleWebAppToolbarInFullscreen(_:)),
              #selector(uninstallCurrentWebApp(_:)):
             return webAppWindowSession != nil && !isTerminationRequested
+        case #selector(toggleStayOnTop(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.state = activeBrowserWindow?.level == .floating ? .on : .off
+            }
+            return activeBrowserWindow != nil
+        case #selector(chooseAppearance(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.state = menuItem.representedObject as? String == userPreferencesStore.appearancePreference
+                    .rawValue ? .on : .off
+            }
+            return true
+        case #selector(togglePinnedTabsCollapsed(_:)):
+            if let menuItem = item as? NSMenuItem, let model = activeChromeModel {
+                menuItem.title = model.isActiveSpacePinnedSectionCollapsed
+                    ? BrowserStrings.menuExpandPinnedTabs
+                    : BrowserStrings.menuCollapsePinnedTabs
+            }
+            return activeChromeModel?.supportsSpaces == true
+        case #selector(editSpaceTheme(_:)), #selector(manageSpaces(_:)), #selector(renameSpace(_:)):
+            return activeChromeModel.map { !$0.isWebApp && $0.supportsSpaces } ?? false
+        case #selector(castCurrentPage(_:)):
+            return activeChromeModel?.canCastPage ?? false
+        case #selector(showNetworkInspector(_:)):
+            return activeChromeModel?.canShowDeveloperTools ?? false
+        case #selector(shareCurrentTab(_:)):
+            return activeChromeModel?.currentTab != nil
         case #selector(toggleBookmarksBar(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
@@ -847,7 +928,19 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCopySelectedTextAsQuoteLink ?? false
         case #selector(viewDownloads(_:)):
             return activeChromeModel?.onToggleDownloads != nil
+        case #selector(toggleSidebar(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = activeChromeModel?.isSidebarVisible == false
+                    ? BrowserStrings.menuShowSidebar
+                    : BrowserStrings.menuHideSidebar
+            }
+            return activeChromeModel != nil
         case #selector(viewLibrary(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = activeChromeModel?.librarySection == nil
+                    ? BrowserStrings.menuViewLibrary
+                    : BrowserStrings.menuCloseLibrary
+            }
             return activeChromeModel?.supportsSpaces ?? false
         case #selector(goToLastSidebarItem(_:)),
              #selector(selectNextTab(_:)),
@@ -1028,7 +1121,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let tabsMenuItem = NSMenuItem()
         tabsMenuItem.title = BrowserStrings.menuTabs
         menubar.addItem(tabsMenuItem)
+        addArchiveMenu(to: menubar)
+        addExtensionsMenu(to: menubar)
         addWindowMenu(to: menubar, app: app)
+        addLibraryItems(toWindowMenuOf: app)
+        addHelpMenu(to: menubar, app: app)
         app.mainMenu = menubar
 
         let appMenu = NSMenu()
@@ -1063,6 +1160,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         setAsDefaultBrowserMenuItem = setAsDefaultBrowserItem
         updateSetAsDefaultBrowserMenuItem(setAsDefaultBrowserItem)
         appMenu.addItem(setAsDefaultBrowserItem)
+        appMenu.addItem(BrowserNativeMenuItem(BrowserStrings.menuImportFromBrowser) { [weak self] in
+            self?.presentSettingsWindow(pane: .general)
+        })
         addStandardApplicationItems(to: appMenu, app: app, appName: appName)
         let quitItem = NSMenuItem(
             title: BrowserStrings.quitMenuItem(appName: appName),
@@ -1093,6 +1193,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .newWindow),
             action: #selector(createNewWindow(_:)),
         ))
+        fileMenu.addItem(BrowserNativeMenuItem(
+            BrowserStrings.menuBlankWindow,
+            shortcut: BrowserKeyboardShortcut("n", modifiers: [.control, .command]),
+        ) { [weak self] in
+            self?.openNewWindow()
+        })
         let newIncognitoWindowItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newIncognitoWindow),
             action: #selector(createNewIncognitoWindow(_:)),
@@ -1122,15 +1228,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(archiveCurrentTab(_:)),
         )
         fileMenu.addItem(archiveTabItem)
-
-        for item in BrowserArchiveCommandRouting.menuItems(
-            shortcutResolver: shortcutStore,
-            viewAction: #selector(showArchive(_:)),
-            clearAction: #selector(clearArchive(_:)),
-            target: self,
-        ) {
-            fileMenu.addItem(item)
-        }
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .shareTab),
+            action: #selector(shareCurrentTab(_:)),
+        ))
+        fileMenu.addItem(BrowserNativeMenuItem(BrowserStrings.menuNewProfile) { [weak self] in
+            self?.presentSettingsWindow(pane: .profiles)
+        })
 
         let savePageItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .savePage),
@@ -1228,7 +1332,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 target: self,
             ),
         )
-        editMenu.addItem(.separator())
+        editMenu.addItem(
+            makeStandardMenuItem(
+                title: BrowserStrings.menuDelete,
+                action: #selector(NSText.delete(_:)),
+                keyEquivalent: "",
+                modifiers: [],
+            ),
+        )
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuSelectAll,
@@ -1280,35 +1391,38 @@ NSMenuDelegate, NSUserInterfaceValidations {
             ),
         )
         findMenuItem.submenu = findMenu
+        addTextServicesMenus(to: editMenu)
         editMenuItem.submenu = editMenu
 
         let viewMenu = NSMenu(title: BrowserStrings.menuView)
-        let backItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .goBack),
-            action: #selector(goBack(_:)),
+        addAppearanceMenu(to: viewMenu)
+        viewMenu.addItem(.separator())
+        let toggleSidebarItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .toggleSidebar),
+            action: #selector(toggleSidebar(_:)),
         )
-        viewMenu.addItem(backItem)
-
-        let forwardItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .goForward),
-            action: #selector(goForward(_:)),
-        )
-        viewMenu.addItem(forwardItem)
-
-        let historyItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .openHistory),
-            action: #selector(openHistory(_:)),
-        )
-        viewMenu.addItem(historyItem)
+        viewMenu.addItem(toggleSidebarItem)
         viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .viewDownloads),
-            action: #selector(viewDownloads(_:)),
+            descriptor: shortcutStore.descriptor(for: .toggleSidebarPosition),
+            action: #selector(toggleSidebarPosition(_:)),
         ))
         viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .viewLibrary),
-            action: #selector(viewLibrary(_:)),
+            descriptor: shortcutStore.descriptor(for: .toggleSiteToolbar),
+            action: #selector(toggleSiteToolbar(_:)),
         ))
-
+        let toggleBookmarksBarItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .toggleBookmarksBar),
+            action: #selector(toggleBookmarksBar(_:)),
+        )
+        toggleBookmarksBarItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
+        viewMenu.addItem(toggleBookmarksBarItem)
+        let collapsePinnedItem = NSMenuItem(
+            title: BrowserStrings.menuCollapsePinnedTabs,
+            action: #selector(togglePinnedTabsCollapsed(_:)),
+            keyEquivalent: "",
+        )
+        collapsePinnedItem.target = self
+        viewMenu.addItem(collapsePinnedItem)
         viewMenu.addItem(.separator())
 
         viewMenu.addItem(makeMenuItem(
@@ -1362,48 +1476,17 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         viewMenu.addItem(.separator())
         viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .inspectElements),
-            action: #selector(inspectElements(_:)),
-        ))
-        viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .togglePictureInPicture),
             action: #selector(togglePictureInPicture(_:)),
         ))
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .javaScriptConsole),
-            action: #selector(showJavaScriptConsole(_:)),
-        ))
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .developerTools),
-            action: #selector(showDeveloperTools(_:)),
-        ))
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .viewSource),
-            action: #selector(viewSource(_:)),
-        ))
-
-        viewMenu.addItem(.separator())
-
-        let toggleSidebarItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .toggleSidebar),
-            action: #selector(toggleSidebar(_:)),
+        let castItem = NSMenuItem(
+            title: BrowserStrings.menuCast,
+            action: #selector(castCurrentPage(_:)),
+            keyEquivalent: "",
         )
-        viewMenu.addItem(toggleSidebarItem)
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .toggleSidebarPosition),
-            action: #selector(toggleSidebarPosition(_:)),
-        ))
-
-        let toggleBookmarksBarItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .toggleBookmarksBar),
-            action: #selector(toggleBookmarksBar(_:)),
-        )
-        toggleBookmarksBarItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
-        viewMenu.addItem(toggleBookmarksBarItem)
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .toggleSiteToolbar),
-            action: #selector(toggleSiteToolbar(_:)),
-        ))
+        castItem.target = self
+        viewMenu.addItem(castItem)
+        addDeveloperMenu(to: viewMenu)
         viewMenu.addItem(.separator())
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .openExtensions),
@@ -1492,6 +1575,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
         spacesMenu.identifier = Self.spacesMenuIdentifier
         spacesMenu.delegate = self
         spacesMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newSpace),
+            action: #selector(createNewSpace(_:)),
+        ))
+        for (title, action) in [
+            (BrowserStrings.spaceEditThemeAction, #selector(editSpaceTheme(_:))),
+            (BrowserStrings.menuRenameSpace, #selector(renameSpace(_:))),
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            spacesMenu.addItem(item)
+        }
+        let changeProfileItem = NSMenuItem(title: BrowserStrings.menuChangeProfile, action: nil, keyEquivalent: "")
+        changeProfileItem.identifier = Self.spaceProfileItemIdentifier
+        changeProfileItem.submenu = NSMenu(title: BrowserStrings.menuChangeProfile)
+        spacesMenu.addItem(changeProfileItem)
+        spacesMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectNextSpace),
             action: #selector(selectNextSpace(_:)),
         ))
@@ -1501,18 +1600,240 @@ NSMenuDelegate, NSUserInterfaceValidations {
         ))
         spacesMenu.addItem(.separator())
         spacesMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .resetSpaceTabs),
-            action: #selector(resetSpaceTabs(_:)),
+            descriptor: shortcutStore.descriptor(for: .manageSpaces),
+            action: #selector(manageSpaces(_:)),
         ))
         spacesMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .newSpace),
-            action: #selector(createNewSpace(_:)),
+            descriptor: shortcutStore.descriptor(for: .resetSpaceTabs),
+            action: #selector(resetSpaceTabs(_:)),
         ))
         spacesMenuItem.submenu = spacesMenu
     }
 
+    /// Archive holds the page's history and the archived tabs.
+    private func addArchiveMenu(to menubar: NSMenu) {
+        let menu = NSMenu(title: BrowserStrings.menuArchive)
+        for (commandID, action) in [
+            (BrowserCommandID.goBack, #selector(goBack(_:))),
+            (.goForward, #selector(goForward(_:))),
+            (.openHistory, #selector(openHistory(_:))),
+        ] {
+            menu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
+        }
+        menu.addItem(.separator())
+        for item in BrowserArchiveCommandRouting.menuItems(
+            shortcutResolver: shortcutStore,
+            viewAction: #selector(showArchive(_:)),
+            clearAction: #selector(clearArchive(_:)),
+            target: self,
+        ) {
+            menu.addItem(item)
+        }
+        let item = NSMenuItem()
+        item.title = menu.title
+        item.submenu = menu
+        menubar.addItem(item)
+    }
+
+    /// One item per extension, filled when the menu opens.
+    private func addExtensionsMenu(to menubar: NSMenu) {
+        let menu = NSMenu(title: BrowserStrings.menuExtensions)
+        menu.identifier = Self.extensionsMenuIdentifier
+        menu.delegate = self
+        let item = NSMenuItem()
+        item.title = menu.title
+        item.submenu = menu
+        menubar.addItem(item)
+    }
+
+    private func updateExtensionsMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let model = activeChromeModel else { return }
+        model.refreshBrowserExtensions()
+        for browserExtension in model.browserExtensions where browserExtension.isEnabled {
+            let item = BrowserNativeMenuItem(browserExtension.name) { [weak model] in
+                model?.requestExtensionOpen(id: browserExtension.id)
+            }
+            item.image = browserExtension.iconData.flatMap { NSImage(data: $0) }
+            item.image?.size = NSSize(width: 16, height: 16)
+            menu.addItem(item)
+        }
+        if !menu.items.isEmpty {
+            menu.addItem(.separator())
+        }
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.extensionsAddAction) { [weak model] in
+            model?.openExtensionStore()
+        })
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuManageExtensions) { [weak model] in
+            model?.openExtensionsManager()
+        })
+    }
+
+    /// Stay On Top and the Library's sections, above the window list AppKit adds.
+    private func addLibraryItems(toWindowMenuOf app: NSApplication) {
+        guard let menu = app.windowsMenu else { return }
+        let stayOnTop = NSMenuItem(
+            title: BrowserStrings.menuStayOnTop,
+            action: #selector(toggleStayOnTop(_:)),
+            keyEquivalent: "",
+        )
+        stayOnTop.target = self
+        menu.insertItem(stayOnTop, at: 0)
+        let index = menu.items.lastIndex(where: \.isSeparatorItem) ?? menu.items.count
+        var items = [NSMenuItem.separator()]
+        items.append(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .viewLibrary),
+            action: #selector(viewLibrary(_:)),
+        ))
+        items.append(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .viewDownloads),
+            action: #selector(viewDownloads(_:)),
+        ))
+        items.append(BrowserNativeMenuItem(BrowserStrings.menuViewMedia) { [weak self] in
+            self?.activeChromeModel?.openLibrary(section: .media)
+        })
+        for (offset, item) in items.enumerated() {
+            menu.insertItem(item, at: index + offset)
+        }
+    }
+
+    private func addHelpMenu(to menubar: NSMenu, app: NSApplication) {
+        let menu = NSMenu(title: BrowserStrings.menuHelp)
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuKeyboardShortcuts) { [weak self] in
+            self?.presentSettingsWindow(pane: .shortcuts)
+        })
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuContactTeam) {
+            if let url = URL(string: "mailto:support@openarc.su") {
+                NSWorkspace.shared.open(url)
+            }
+        })
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuReportIssue) {
+            if let url = URL(string: "https://github.com/levochkaa/OpenArc/issues") {
+                NSWorkspace.shared.open(url)
+            }
+        })
+        menu.addItem(.separator())
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuRevealData) {
+            guard let path = BrowserRuntimeConfiguration.currentConfiguration()?.rootCachePath else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path, isDirectory: true)])
+        })
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuCopyInfo) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(Self.applicationInfo, forType: .string)
+        })
+        let item = NSMenuItem()
+        item.title = menu.title
+        item.submenu = menu
+        menubar.addItem(item)
+        app.helpMenu = menu
+    }
+
+    /// The system's text services, for fields in pages and in the app.
+    private func addTextServicesMenus(to editMenu: NSMenu) {
+        func add(_ title: String, _ items: [(String, Selector, String, NSEvent.ModifierFlags)]) {
+            let submenu = NSMenu(title: title)
+            for (itemTitle, action, key, modifiers) in items {
+                submenu.addItem(makeStandardMenuItem(
+                    title: itemTitle,
+                    action: action,
+                    keyEquivalent: key,
+                    modifiers: modifiers,
+                ))
+            }
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            editMenu.addItem(item)
+        }
+        add(BrowserStrings.menuSpellingAndGrammar, [
+            (
+                BrowserStrings.menuShowSpelling,
+                #selector(NSText.showGuessPanel(_:)),
+                ":",
+                [.command],
+            ),
+            (BrowserStrings.menuCheckDocument, #selector(NSText.checkSpelling(_:)), ";", [.command]),
+            (
+                BrowserStrings.menuCheckSpellingWhileTyping,
+                #selector(NSTextView.toggleContinuousSpellChecking(_:)),
+                "",
+                [],
+            ),
+            (BrowserStrings.menuCheckGrammar, #selector(NSTextView.toggleGrammarChecking(_:)), "", []),
+            (
+                BrowserStrings.menuCorrectSpelling,
+                #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)),
+                "",
+                [],
+            ),
+        ])
+        add(BrowserStrings.menuSubstitutions, [
+            (
+                BrowserStrings.menuShowSubstitutions,
+                #selector(NSTextView.orderFrontSubstitutionsPanel(_:)),
+                "",
+                [],
+            ),
+            (BrowserStrings.menuSmartCopyPaste, #selector(NSTextView.toggleSmartInsertDelete(_:)), "", []),
+            (BrowserStrings.menuSmartQuotes, #selector(NSTextView.toggleAutomaticQuoteSubstitution(_:)), "", []),
+            (BrowserStrings.menuSmartDashes, #selector(NSTextView.toggleAutomaticDashSubstitution(_:)), "", []),
+            (BrowserStrings.menuSmartLinks, #selector(NSTextView.toggleAutomaticLinkDetection(_:)), "", []),
+            (BrowserStrings.menuDataDetectors, #selector(NSTextView.toggleAutomaticDataDetection(_:)), "", []),
+            (BrowserStrings.menuTextReplacement, #selector(NSTextView.toggleAutomaticTextReplacement(_:)), "", []),
+        ])
+        add(BrowserStrings.menuTransformations, [
+            (BrowserStrings.menuMakeUpperCase, #selector(NSResponder.uppercaseWord(_:)), "", []),
+            (BrowserStrings.menuMakeLowerCase, #selector(NSResponder.lowercaseWord(_:)), "", []),
+            (BrowserStrings.menuCapitalize, #selector(NSResponder.capitalizeWord(_:)), "", []),
+        ])
+        add(BrowserStrings.menuSpeech, [
+            (BrowserStrings.menuStartSpeaking, #selector(NSTextView.startSpeaking(_:)), "", []),
+            (BrowserStrings.menuStopSpeaking, #selector(NSTextView.stopSpeaking(_:)), "", []),
+        ])
+    }
+
+    /// Automatic, Light or Dark, for the whole app and the pages in it.
+    private func addAppearanceMenu(to viewMenu: NSMenu) {
+        let menu = NSMenu(title: BrowserStrings.menuAppearance)
+        for preference in BrowserAppearancePreference.allCases {
+            let item = NSMenuItem(
+                title: preference.title,
+                action: #selector(chooseAppearance(_:)),
+                keyEquivalent: "",
+            )
+            item.representedObject = preference.rawValue
+            item.target = self
+            menu.addItem(item)
+        }
+        let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
+        item.submenu = menu
+        viewMenu.addItem(item)
+    }
+
+    private func addDeveloperMenu(to viewMenu: NSMenu) {
+        let menu = NSMenu(title: BrowserStrings.menuDeveloper)
+        for (commandID, action) in [
+            (BrowserCommandID.viewSource, #selector(viewSource(_:))),
+            (.developerTools, #selector(showDeveloperTools(_:))),
+            (.inspectElements, #selector(inspectElements(_:))),
+            (.javaScriptConsole, #selector(showJavaScriptConsole(_:))),
+        ] {
+            menu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
+        }
+        let network = NSMenuItem(
+            title: BrowserStrings.menuNetworkInspector,
+            action: #selector(showNetworkInspector(_:)),
+            keyEquivalent: "",
+        )
+        network.target = self
+        menu.addItem(network)
+        let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
+        item.submenu = menu
+        viewMenu.addItem(item)
+    }
+
     /// Rebuilds the Space list after the first separator of the Spaces menu.
     private func updateSpacesMenu(_ menu: NSMenu) {
+        updateSpaceProfileMenu(menu)
         for item in menu.items
             where item.action == #selector(selectSpaceFromMenu(_:)) || item.identifier == Self.spaceListEndIdentifier
         {
@@ -1539,6 +1860,28 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let end = NSMenuItem.separator()
         end.identifier = Self.spaceListEndIdentifier
         menu.insertItem(end, at: position)
+    }
+
+    private func updateSpaceProfileMenu(_ menu: NSMenu) {
+        guard let item = menu.items.first(where: { $0.identifier == Self.spaceProfileItemIdentifier }),
+              let submenu = item.submenu
+        else { return }
+        submenu.removeAllItems()
+        guard let model = activeChromeModel, let spaceID = model.selectedSpaceID,
+              let profiles = model.profileDirectories?.profiles(), !profiles.isEmpty
+        else {
+            item.isEnabled = false
+            return
+        }
+        item.isEnabled = true
+        let selected = model.profileDirectory(forSpaceID: spaceID)
+        for profile in profiles {
+            let choice = BrowserNativeMenuItem(profile.displayName) { [weak model] in
+                model?.setProfile(profile.id, forSpaceID: spaceID)
+            }
+            choice.state = profile.id == selected ? .on : .off
+            submenu.addItem(choice)
+        }
     }
 
     private func installWebAppMainMenu(for app: NSApplication, session: BrowserWebAppWindowSession) {
@@ -2386,7 +2729,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         controller.start()
     }
 
-    private func presentSettingsWindow() {
+    private func presentSettingsWindow(pane: BrowserSettingsPane? = nil) {
         guard
             let profileStore,
             let profileSession = activeProfileWindowSession ?? profileWindowSessions.first
@@ -2395,7 +2738,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
 
         if let settingsWindowController {
-            settingsWindowController.show()
+            settingsWindowController.show(pane: pane.map { Settings.PaneIdentifier($0.rawValue) })
             NSApp.activate(ignoringOtherApps: true)
             return
         }
@@ -2412,7 +2755,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             hidesToolbarForSingleItem: false,
         )
         self.settingsWindowController = settingsWindowController
-        settingsWindowController.show()
+        settingsWindowController.show(pane: pane.map { Settings.PaneIdentifier($0.rawValue) })
 
         if let settingsWindow = settingsWindowController.window {
             settingsWindow.isReleasedWhenClosed = false

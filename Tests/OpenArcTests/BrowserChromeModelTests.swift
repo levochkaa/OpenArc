@@ -2831,7 +2831,7 @@ import Testing
     let refreshShortcutSuggestion = try #require(
         model.commandBarModel.suggestions.first { $0.commandID == .reload },
     )
-    #expect(refreshShortcutSuggestion.displayText == BrowserStrings.navigationRefresh)
+    #expect(refreshShortcutSuggestion.displayText == BrowserStrings.menuRefreshPage)
     #expect(refreshShortcutSuggestion.shortcut == customReloadShortcut)
 
     model.commandBarModel.query = "back"

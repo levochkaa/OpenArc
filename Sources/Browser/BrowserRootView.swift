@@ -20,7 +20,6 @@ final class BrowserRootView: NSView {
     private let libraryScrollObserver = BrowserSpacePagerScrollNSView()
     /// While a swipe pulls the Library: 0 is the sidebar in place, 1 the Library.
     private var librarySwipeProgress: CGFloat?
-    private var libraryFollowsSwipe: Bool { librarySwipeProgress != nil }
     private var librarySwipeTranslation: CGFloat = 0
     private var librarySwipeStart: CFTimeInterval = 0
     private let toolbar: BrowserSiteControlsNSView
@@ -70,6 +69,8 @@ final class BrowserRootView: NSView {
     private var isSidebarHoverOverlayPointerSyncSuspended = false
     private var isSidebarRevealEdgeHovered = false
     private var currentURLRowWindowFrame: CGRect?
+
+    private var libraryFollowsSwipe: Bool { librarySwipeProgress != nil }
 
     private var preferences: BrowserUserPreferencesStore { model.userPreferencesStore }
     private var shortcutStore: BrowserShortcutStore { model.shortcutStore }
@@ -207,6 +208,10 @@ final class BrowserRootView: NSView {
             CATransaction.flush()
         }
         model.onOpenExtensions = { [weak self] in self?.openExtensions() }
+        model.onOpenExtensionRequest = { [weak self] id in
+            guard let self else { return }
+            (showsSiteToolbar ? toolbar : sidebar.header.urlControls).openExtensionFromMenu(id: id)
+        }
         model.onEditSpaceTheme = { [weak self] in self?.presentSpaceThemeEditor(spaceID: $0) }
         model.onShareURL = { [weak self] url in
             guard let self else { return }
@@ -609,7 +614,9 @@ final class BrowserRootView: NSView {
         setSidebarLayerTransform(CATransform3DIdentity)
         let curve: BrowserNativeAnimation.Curve = presented ? .sidebarToLibrary : .sidebarFromLibrary
         let scale = curve.layerAnimation(keyPath: "transform")
-        scale.fromValue = swipeTransform ?? (presented ? layer.presentation()?.transform ?? CATransform3DIdentity : small)
+        scale.fromValue = swipeTransform ?? (presented
+            ? layer.presentation()?.transform ?? CATransform3DIdentity
+            : small)
         scale.toValue = presented ? small : CATransform3DIdentity
         let fade = curve.layerAnimation(keyPath: "opacity")
         fade.fromValue = swipeOpacity < 1 ? Float(swipeOpacity) : layer.presentation()?.opacity ?? (presented ? 1 : 0)

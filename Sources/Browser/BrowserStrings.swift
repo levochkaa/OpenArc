@@ -1606,6 +1606,75 @@ enum BrowserStrings {
         comment: "Library section with archived tabs.",
     )
 
+    static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
+    static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
+    static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")
+    static let menuHideSidebar = NSLocalizedString("browser.menu.hide_sidebar", comment: "View menu item.")
+    static let menuShowSidebar = NSLocalizedString("browser.menu.show_sidebar", comment: "View menu item.")
+    static let menuCloseLibrary = NSLocalizedString("browser.menu.close_library", comment: "Window menu item.")
+    static let menuManageExtensions = NSLocalizedString(
+        "browser.menu.manage_extensions",
+        comment: "Extensions menu item.",
+    )
+    static let menuImportFromBrowser = NSLocalizedString("browser.menu.import_from_browser", comment: "App menu item.")
+    static let menuBlankWindow = NSLocalizedString("browser.menu.blank_window", comment: "File menu item.")
+    static let menuNewProfile = NSLocalizedString("browser.menu.new_profile", comment: "File menu item.")
+    static let menuDelete = NSLocalizedString("browser.menu.delete", comment: "Edit menu item.")
+    static let menuSpellingAndGrammar = NSLocalizedString("browser.menu.spelling", comment: "Edit submenu.")
+    static let menuShowSpelling = NSLocalizedString("browser.menu.show_spelling", comment: "Spelling menu item.")
+    static let menuCheckDocument = NSLocalizedString("browser.menu.check_document", comment: "Spelling menu item.")
+    static let menuCheckSpellingWhileTyping = NSLocalizedString(
+        "browser.menu.check_while_typing",
+        comment: "Spelling menu item.",
+    )
+    static let menuCheckGrammar = NSLocalizedString("browser.menu.check_grammar", comment: "Spelling menu item.")
+    static let menuCorrectSpelling = NSLocalizedString("browser.menu.correct_spelling", comment: "Spelling menu item.")
+    static let menuSubstitutions = NSLocalizedString("browser.menu.substitutions", comment: "Edit submenu.")
+    static let menuShowSubstitutions = NSLocalizedString(
+        "browser.menu.show_substitutions",
+        comment: "Substitutions menu item.",
+    )
+    static let menuSmartCopyPaste = NSLocalizedString(
+        "browser.menu.smart_copy_paste",
+        comment: "Substitutions menu item.",
+    )
+    static let menuSmartQuotes = NSLocalizedString("browser.menu.smart_quotes", comment: "Substitutions menu item.")
+    static let menuSmartDashes = NSLocalizedString("browser.menu.smart_dashes", comment: "Substitutions menu item.")
+    static let menuSmartLinks = NSLocalizedString("browser.menu.smart_links", comment: "Substitutions menu item.")
+    static let menuDataDetectors = NSLocalizedString("browser.menu.data_detectors", comment: "Substitutions menu item.")
+    static let menuTextReplacement = NSLocalizedString(
+        "browser.menu.text_replacement",
+        comment: "Substitutions menu item.",
+    )
+    static let menuTransformations = NSLocalizedString("browser.menu.transformations", comment: "Edit submenu.")
+    static let menuMakeUpperCase = NSLocalizedString("browser.menu.upper_case", comment: "Transformations menu item.")
+    static let menuMakeLowerCase = NSLocalizedString("browser.menu.lower_case", comment: "Transformations menu item.")
+    static let menuCapitalize = NSLocalizedString("browser.menu.capitalize", comment: "Transformations menu item.")
+    static let menuSpeech = NSLocalizedString("browser.menu.speech", comment: "Edit submenu.")
+    static let menuStartSpeaking = NSLocalizedString("browser.menu.start_speaking", comment: "Speech menu item.")
+    static let menuStopSpeaking = NSLocalizedString("browser.menu.stop_speaking", comment: "Speech menu item.")
+    static let menuAppearance = NSLocalizedString("browser.menu.appearance", comment: "View submenu.")
+    static let menuCollapsePinnedTabs = NSLocalizedString("browser.menu.collapse_pinned", comment: "View menu item.")
+    static let menuExpandPinnedTabs = NSLocalizedString("browser.menu.expand_pinned", comment: "View menu item.")
+    static let menuCast = NSLocalizedString("browser.menu.cast", comment: "View menu item.")
+    static let menuDeveloper = NSLocalizedString("browser.menu.developer", comment: "View submenu.")
+    static let menuNetworkInspector = NSLocalizedString(
+        "browser.menu.network_inspector",
+        comment: "Developer menu item.",
+    )
+    static let menuRenameSpace = NSLocalizedString("browser.menu.rename_space", comment: "Spaces menu item.")
+    static let menuChangeProfile = NSLocalizedString("browser.menu.change_profile", comment: "Spaces submenu.")
+    static let menuArchive = NSLocalizedString("browser.menu.archive", comment: "Menu bar title.")
+    static let menuExtensions = NSLocalizedString("browser.menu.extensions", comment: "Menu bar title.")
+    static let menuStayOnTop = NSLocalizedString("browser.menu.stay_on_top", comment: "Window menu item.")
+    static let menuViewMedia = NSLocalizedString("browser.menu.view_media", comment: "Window menu item.")
+    static let menuHelp = NSLocalizedString("browser.menu.help", comment: "Menu bar title.")
+    static let menuKeyboardShortcuts = NSLocalizedString("browser.menu.keyboard_shortcuts", comment: "Help menu item.")
+    static let menuContactTeam = NSLocalizedString("browser.menu.contact_team", comment: "Help menu item.")
+    static let menuReportIssue = NSLocalizedString("browser.menu.report_issue", comment: "Help menu item.")
+    static let menuRevealData = NSLocalizedString("browser.menu.reveal_data", comment: "Help menu item.")
+    static let menuCopyInfo = NSLocalizedString("browser.menu.copy_info", comment: "Help menu item.")
+
     static let libraryBack = NSLocalizedString(
         "browser.library.back",
         comment: "Button that leaves the Library.",
