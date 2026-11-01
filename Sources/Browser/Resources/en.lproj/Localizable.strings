@@ -813,3 +813,7 @@
 "browser.restore_data.note" = "Spaces, tabs, folders and Favorites. Passwords, history and cookies stay as they are.";
 "browser.restore_data.confirm" = "Go back to %@?";
 "browser.restore_data.confirm_detail" = "OpenArc will restart. Your sidebar as it is now is kept as a copy here, so you can come back to it.";
+"browser.settings.mail_previews" = "Preview unread mail on pinned Gmail tabs";
+"browser.mail_preview.loading" = "Checking your mail…";
+"browser.mail_preview.sign_in" = "Sign in to Gmail to see your mail";
+"browser.mail_preview.empty" = "No unread mail";

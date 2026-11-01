@@ -33,6 +33,7 @@ struct BrowserFolderPreviewItem: Equatable {
 
     // MARK: Private
 
+    private weak var shownRow: NSView?
     private var showWork: DispatchWorkItem?
     private var hideWork: DispatchWorkItem?
 
@@ -72,8 +73,15 @@ struct BrowserFolderPreviewItem: Equatable {
         }
     }
 
+    /// New items for the open list, when they arrive after it opened.
+    func refreshShown() {
+        guard let shownFolderID, let shownRow else { return }
+        show(folderID: shownFolderID, beside: shownRow)
+    }
+
     func show(folderID: String, beside row: NSView) {
         guard isEnabled(), let window = row.window else { return }
+        shownRow = row
         let items = items(folderID)
         guard !items.isEmpty else {
             dismiss()

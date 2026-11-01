@@ -350,6 +350,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.recentPagesPreviewsEnabled = $0 },
                 ),
                 toggle(
+                    "mail-previews",
+                    BrowserStrings.settingsMailPreviews,
+                    get: { preferences.mailPreviewsEnabled },
+                    set: { preferences.mailPreviewsEnabled = $0 },
+                ),
+                toggle(
                     "folder-previews",
                     BrowserStrings.settingsFolderPreviews,
                     get: { preferences.folderPreviewsEnabled },

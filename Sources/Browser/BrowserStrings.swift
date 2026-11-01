@@ -1732,6 +1732,10 @@ enum BrowserStrings {
         comment: "Alert. The copy's date.",
     )
     static let restoreDataConfirmDetail = NSLocalizedString("browser.restore_data.confirm_detail", comment: "Alert.")
+    static let settingsMailPreviews = NSLocalizedString("browser.settings.mail_previews", comment: "Settings toggle.")
+    static let mailPreviewLoading = NSLocalizedString("browser.mail_preview.loading", comment: "Preview row.")
+    static let mailPreviewSignIn = NSLocalizedString("browser.mail_preview.sign_in", comment: "Preview row.")
+    static let mailPreviewEmpty = NSLocalizedString("browser.mail_preview.empty", comment: "Preview row.")
     static let taskManagerTask = NSLocalizedString("browser.task_manager.task", comment: "Column.")
     static let taskManagerMemory = NSLocalizedString("browser.task_manager.memory", comment: "Column.")
     static let taskManagerCPU = NSLocalizedString("browser.task_manager.cpu", comment: "Column.")

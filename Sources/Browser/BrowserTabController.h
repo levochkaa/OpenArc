@@ -238,6 +238,11 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 /// Scales the tab's audio and video elements, in every frame and in pages to come.
 - (void)setMediaVolume:(double)volume forTabWithID:(NSString *)tabID;
 /// Answers with the expression's value as text, or nil if the page has no answer.
+/// A GET with this tab's profile and cookies. It never asks for a password; nil unless it answers 200.
+- (void)fetchText:(NSString *)urlString
+    firstPartyURLString:(NSString *)firstPartyURLString
+            inTabWithID:(NSString *)tabID
+             completion:(void (^)(NSString *_Nullable))completion;
 - (void)evaluateJavaScript:(NSString *)code
               inTabWithID:(NSString *)tabID
                completion:(void (^)(NSString *_Nullable value))completion;

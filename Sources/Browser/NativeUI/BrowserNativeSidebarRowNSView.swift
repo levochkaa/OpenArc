@@ -51,9 +51,23 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         style: .sidebarClose,
         action: {},
     )
+    /// Unread mail on a Gmail tab or Favorite.
+    var showsUnreadDot = false {
+        didSet {
+            guard showsUnreadDot != oldValue else { return }
+            if showsUnreadDot, unreadDot.superview == nil {
+                unreadDot.wantsLayer = true
+                unreadDot.layer?.backgroundColor = NSColor.systemRed.cgColor
+                unreadDot.layer?.cornerRadius = 4
+                addSubview(unreadDot)
+            }
+            unreadDot.isHidden = !showsUnreadDot
+            needsLayout = true
+        }
+    }
+
     private(set) var isMuted = false
     private(set) var isAudible = false
-
     /// Tab IDs of the split shown by this row, in pane order.
     private(set) var splitMemberIDs = [String]()
 
@@ -61,6 +75,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private(set) var splitName: BrowserSidebarSplitName?
 
     var dragOpacity: CGFloat = 1 { didSet { alphaValue = dragOpacity * appearanceProgress } }
+
+    private let unreadDot = NSView()
 
     // MARK: Private
 
@@ -212,6 +228,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     override func layout() {
         super.layout()
+        unreadDot.frame = NSRect(x: max(bounds.width - 12, 0), y: 4, width: 8, height: 8)
         developerBorder.frame = NSRect(x: indent, y: 0, width: max(bounds.width - indent, 0), height: bounds.height)
         selectionSurface.frame = NSRect(x: indent, y: 0, width: max(bounds.width - indent, 0), height: bounds.height)
         let height = bounds.height

@@ -1044,6 +1044,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         guard Date().timeIntervalSince(lastLiveFolderRefresh) > 300 else { return }
         lastLiveFolderRefresh = Date()
         for session in profileWindowSessions {
+            session.chromeModel.refreshMailPreviews()
+        }
+        for session in profileWindowSessions {
             session.chromeModel.refreshGitHubLiveFolders()
         }
     }
@@ -3348,6 +3351,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         chromeModel.passwordStore = BrowserKeychainPasswordStore(profileID: profile.id)
         chromeModel.addressStore = BrowserKeychainAddressStore(profileID: profile.id)
         chromeModel.cardStore = BrowserKeychainCardStore(profileID: profile.id)
+        chromeModel.mailPreviewFetcher = BrowserMailPreviewFetcher(
+            browser: BrowserHiddenPageBrowser(profileCachePath: profileDirectoryURL.path),
+        )
         chromeModel.liveFolderFetcher = BrowserGitHubLiveFolderFetcher(
             browser: BrowserHiddenPageBrowser(profileCachePath: profileDirectoryURL.path),
         )

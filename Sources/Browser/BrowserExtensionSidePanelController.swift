@@ -120,6 +120,17 @@ import Foundation
         }
     }
 
+    func fetchText(
+        urlString: String,
+        firstPartyURLString: String,
+        inPopupWithID id: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        controller.fetchText(urlString, firstPartyURLString: firstPartyURLString, inTabWithID: id) { value in
+            MainActor.assumeIsolated { completion(value) }
+        }
+    }
+
     func closeAllPopups() {
         activePopupID = nil
         controller.closeAllTabs()
@@ -279,7 +290,7 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
 // MARK: - BrowserHiddenPageBrowser
 
 /// Pages that load in a window that is never shown.
-@MainActor final class BrowserHiddenPageBrowser: BrowserLiveFolderBrowsing {
+@MainActor final class BrowserHiddenPageBrowser: BrowserMailFeedBrowsing {
     // MARK: Private
 
     private let browser: BrowserExtensionActionPopupController
@@ -308,6 +319,20 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
 
     func closePage(id: String) {
         browser.closePopup(id: id)
+    }
+
+    func fetchText(
+        urlString: String,
+        firstPartyURLString: String,
+        inPageWithID id: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        browser.fetchText(
+            urlString: urlString,
+            firstPartyURLString: firstPartyURLString,
+            inPopupWithID: id,
+            completion: completion,
+        )
     }
 
     func evaluate(_ code: String, inPageWithID id: String, completion: @escaping @MainActor (String?) -> Void) {

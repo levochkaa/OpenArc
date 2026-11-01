@@ -102,6 +102,9 @@ extension BrowserChromeModel {
 
     /// Pinned tabs and Favorites on these sites list the latest pages visited there on hover.
     func recentPagesPreviewID(forTab tab: Tab) -> String? {
+        if isMailPreviewTab(tab) {
+            return Self.recentPagesPreviewPrefix + tab.id
+        }
         guard tab.placement != .temporary, userPreferencesStore.recentPagesPreviewsEnabled,
               let host = URLComponents(string: tab.pinnedURLString ?? tab.urlString)?.host?.lowercased(),
               Self.recentPagesHosts.contains(host)
@@ -111,6 +114,9 @@ extension BrowserChromeModel {
 
     func recentPagesPreviewItems(previewID: String) -> [BrowserFolderPreviewItem] {
         let tabID = String(previewID.dropFirst(Self.recentPagesPreviewPrefix.count))
+        if let tab = tabs.first(where: { $0.id == tabID }), isMailPreviewTab(tab) {
+            return mailPreviewItems(tab: tab)
+        }
         guard let tab = tabs.first(where: { $0.id == tabID }),
               let host = URLComponents(string: tab.pinnedURLString ?? tab.urlString)?.host?.lowercased()
         else { return [] }

@@ -31,6 +31,7 @@
 #include "include/cef_command_ids.h"
 #include "include/cef_context_menu_handler.h"
 #include "include/cef_image.h"
+#include "include/cef_urlrequest.h"
 #include "include/cef_cookie.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_download_handler.h"
@@ -3048,6 +3049,46 @@ void CloseBrowserAfterSignInWindows(CefRefPtr<CefBrowser> browser, bool force) {
   });
 }
 
+/// One GET, read to the end. A 401 fails it here instead of opening Chromium's password window.
+class BrowserTextRequestClient final : public CefURLRequestClient {
+ public:
+  explicit BrowserTextRequestClient(void (^completion)(NSString *)) : completion_([completion copy]) {}
+
+  void Start(CefRefPtr<CefRequest> request, CefRefPtr<CefRequestContext> context) {
+    request_ = CefURLRequest::Create(request, this, context);
+  }
+
+  void OnRequestComplete(CefRefPtr<CefURLRequest> request) override {
+    CefRefPtr<CefResponse> response = request->GetResponse();
+    const bool succeeded = request->GetRequestStatus() == UR_SUCCESS && response && response->GetStatus() == 200;
+    NSString *text = succeeded ? ToNSString(body_) : nil;
+    void (^completion)(NSString *) = completion_;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      completion(text);
+    });
+    request_ = nullptr;
+  }
+  void OnUploadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+  void OnDownloadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+  void OnDownloadData(CefRefPtr<CefURLRequest>, const void *data, size_t data_length) override {
+    body_.append(static_cast<const char *>(data), data_length);
+  }
+  bool GetAuthCredentials(bool,
+                          const CefString &,
+                          int,
+                          const CefString &,
+                          const CefString &,
+                          CefRefPtr<CefAuthCallback>) override {
+    return false;
+  }
+
+ private:
+  void (^completion_)(NSString *);
+  CefRefPtr<CefURLRequest> request_;
+  std::string body_;
+  IMPLEMENT_REFCOUNTING(BrowserTextRequestClient);
+};
+
 class BrowserTabClient final : public CefClient,
                                public CefContextMenuHandler,
                                public CefDisplayHandler,
@@ -4411,6 +4452,24 @@ std::string BrowserMediaVolumeScript(double volume) {
     std::string script = "history.go(" + std::to_string(offset) + ");";
     frame->ExecuteJavaScript(script, frame->GetURL(), 0);
   }
+}
+
+- (void)fetchText:(NSString *)urlString
+    firstPartyURLString:(NSString *)firstPartyURLString
+            inTabWithID:(NSString *)tabID
+             completion:(void (^)(NSString *))completion {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    completion(nil);
+    return;
+  }
+  CefRefPtr<CefRequest> request = CefRequest::Create();
+  request->SetURL(ToStdString(urlString));
+  request->SetMethod("GET");
+  request->SetFirstPartyForCookies(ToStdString(firstPartyURLString));
+  request->SetFlags(UR_FLAG_ALLOW_STORED_CREDENTIALS | UR_FLAG_SKIP_CACHE);
+  CefRefPtr<BrowserTextRequestClient> client = new BrowserTextRequestClient(completion);
+  client->Start(request, it->second.browser->GetHost()->GetRequestContext());
 }
 
 - (void)evaluateJavaScript:(NSString *)code

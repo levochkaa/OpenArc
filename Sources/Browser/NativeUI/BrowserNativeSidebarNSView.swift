@@ -172,6 +172,10 @@ final class BrowserNativeSidebarNSView: NSView {
         appGrid.onEmptyClick = content.onEmptyClick
         appGrid.permitsWindowDrag = content.permitsWindowDrag
         state.onChange = { [weak self] animated in self?.refresh(animated: animated) }
+        state.model.onMailPreviewChanged = { [weak self] in
+            self?.refresh(animated: false)
+            self?.folderPreview.refreshShown()
+        }
         folderPreview.isEnabled = { [weak state] in
             guard let state else { return false }
             return !state.isDraggingSidebarItem && !state.isSidebarResizing
@@ -318,7 +322,9 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         let snapshot = renderedSnapshot
         miniPlayers.update(items: snapshot.miniPlayers)
+        // A list of recent pages or mail isn't a folder: leaving the sidebar for it must not close it.
         if let shown = folderPreview.shownFolderID,
+           !shown.hasPrefix(BrowserChromeModel.recentPagesPreviewPrefix),
            snapshot.pinnedTabFolder(withID: shown).map({ $0.isExpanded || $0.spaceID != snapshot.selectedSpaceID })
            ?? true
         {
@@ -1169,8 +1175,12 @@ final class BrowserNativeSidebarNSView: NSView {
         let muted = state.snapshot.mutedTabIDs.contains(tab.id)
         row.onToggleMute = { model.setTabMuted(!muted, id: tab.id) }
         let previewID = model.recentPagesPreviewID(forTab: tab)
+        row.showsUnreadDot = model.unreadMailCount(forTabID: tab.id) > 0
         row.onHoverChanged = { [weak self, weak row] hovered in
             guard let self, let row, let previewID else { return }
+            if hovered {
+                state.model.refreshMailPreview(forTabID: tab.id)
+            }
             folderPreview.rowHoverChanged(folderID: previewID, row: row, hovered: hovered)
         }
         row.dragOpacity = state.draggedTabIDs.contains(tab.id) ? 0 : 1

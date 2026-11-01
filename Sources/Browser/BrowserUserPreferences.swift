@@ -197,6 +197,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let soundEffectsEnabled = "browser.settings.soundEffectsEnabled"
         static let gitHubLiveFolderIDs = "browser.settings.gitHubLiveFolderIDs"
         static let recentPagesPreviewsEnabled = "browser.settings.recentPagesPreviewsEnabled"
+        static let mailPreviewsEnabled = "browser.settings.mailPreviewsEnabled"
         static let appIcon = "browser.settings.appIcon"
         static let showsAISearchSuggestion = "browser.settings.showsAISearchSuggestion"
         static let developerReloadBehavior = "browser.settings.developerReloadBehavior"
@@ -282,6 +283,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var appIcon: BrowserAppIcon {
         didSet { userDefaults.set(appIcon.rawValue, forKey: Key.appIcon) }
+    }
+
+    /// Off until asked for: it reads the subjects of unread mail, on this Mac only.
+    @Published var mailPreviewsEnabled: Bool {
+        didSet { userDefaults.set(mailPreviewsEnabled, forKey: Key.mailPreviewsEnabled) }
     }
 
     @Published var recentPagesPreviewsEnabled: Bool {
@@ -439,6 +445,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
             defaultValue: false,
         )
         self.appIcon = userDefaults.string(forKey: Key.appIcon).flatMap(BrowserAppIcon.init(rawValue:)) ?? .standard
+        self.mailPreviewsEnabled = Self.loadBool(userDefaults, key: Key.mailPreviewsEnabled, defaultValue: false)
         self.recentPagesPreviewsEnabled = Self.loadBool(
             userDefaults,
             key: Key.recentPagesPreviewsEnabled,
