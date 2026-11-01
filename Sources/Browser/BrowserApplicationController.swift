@@ -2331,8 +2331,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         model.onSavePageRequest = { [weak self] in self?.saveCurrentPage(nil) }
         model.onOpenLinkInIncognito = { [weak self] url in
             guard let self else { return }
-            createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow)
-            incognitoWindowSessions.last?.chromeModel.openURLInNewTab(url)
+            createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, firstURL: url)
         }
     }
 
@@ -2817,7 +2816,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         return "\(BrowserStrings.applicationName) - \(profile.displayName)"
     }
 
-    private func createIncognitoWindow(copyingFullscreenFrom sourceWindow: NSWindow?) {
+    private func createIncognitoWindow(copyingFullscreenFrom sourceWindow: NSWindow?, firstURL: URL? = nil) {
         configureUpdateControllerIfNeeded()
         guard let updateController else {
             return
@@ -2858,6 +2857,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             windowTitleHandler: { _ in },
             allTabsClosedHandler: {},
         )
+        chromeModel.firstTabURLString = firstURL?.absoluteString
 
         let rootView = BrowserRootView(model: chromeModel, updateController: updateController)
         let hostingView = rootView

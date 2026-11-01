@@ -70,6 +70,12 @@ final class BrowserMainWindow: NSWindow {
 
     var browserUndoManager: UndoManager?
 
+    /// A borderless window has no close button, so AppKit's own version only beeps.
+    override func performClose(_: Any?) {
+        guard delegate?.windowShouldClose?(self) ?? true else { return }
+        close()
+    }
+
     func configureBrowserChrome() {
         isOpaque = false
         backgroundColor = .clear

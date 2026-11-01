@@ -441,6 +441,9 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
+    /// The page a window with nothing to restore opens first, instead of the new tab page.
+    var firstTabURLString: String?
+
     /// Answers this window's waiting requests that another window's answer covers.
     private var sitePermissionDecisionsObservation: AnyCancellable?
 
@@ -4016,7 +4019,7 @@ enum BrowserWindowMode: Equatable {
 
         ensureDefaultSpace()
         hasCreatedInitialTab = true
-        createTab(withURLString: newTabURLString, registersUndo: false)
+        createTab(withURLString: firstTabURLString ?? newTabURLString, registersUndo: false)
     }
 
     private func restoreSessionIfAvailable() -> Bool {

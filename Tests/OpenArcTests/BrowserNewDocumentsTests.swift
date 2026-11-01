@@ -61,4 +61,23 @@ import Testing
         #expect(f.model.setAllTabsMuted(false))
         #expect(f.model.mutedTabSyncIDs.isEmpty)
     }
+
+    @Test func aWindowCanStartOnAGivenPage() throws {
+        let driver = FakeBrowserTabDriver()
+        let defaults = try #require(UserDefaults(suiteName: "BrowserNewDocumentsTests.\(UUID().uuidString)"))
+        let model = BrowserChromeModel(
+            tabDriver: driver,
+            sessionSnapshotStore: InMemorySessionSnapshotStore(loadedSnapshot: nil),
+            sessionPreferencesStore: InMemorySessionPreferencesStore(),
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(),
+            windowTitleHandler: { _ in },
+            allTabsClosedHandler: {},
+        )
+        model.firstTabURLString = "https://link.example/"
+        model.handleContextReady()
+        #expect(driver.createdTabRequests.map(\.urlString) == ["https://link.example/"])
+    }
 }
