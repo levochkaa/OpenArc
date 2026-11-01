@@ -197,6 +197,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)navigateActiveTabToURLString:(NSString *)urlString
     NS_SWIFT_NAME(navigateActiveTab(toURLString:));
 - (void)goBackActiveTab;
+/// The active tab's pages in history order, each with `url` and `title`.
+- (void)visitNavigationEntriesForActiveTab:(void (^)(NSArray<NSDictionary<NSString *, NSString *> *> *entries,
+                                                     NSInteger currentIndex))completion;
+- (void)goToHistoryOffsetInActiveTab:(NSInteger)offset;
 - (void)goForwardActiveTab;
 - (void)reloadActiveTab;
 - (void)reloadActiveTabIgnoringCache;

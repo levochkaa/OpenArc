@@ -86,6 +86,12 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         toggle.setAccessibilityIdentifier("browser.sidebar.toggle")
         back.onAction = { [weak model] in model?.goBack() }
         forward.onAction = { [weak model] in model?.goForward() }
+        back.onSecondaryClick = { [weak model, weak back] in
+            if let back { model?.showNavigationList(goingBack: true, below: back) }
+        }
+        forward.onSecondaryClick = { [weak model, weak forward] in
+            if let forward { model?.showNavigationList(goingBack: false, below: forward) }
+        }
         reload
             .onAction = { [weak self, weak model] in
                 if self?.reloadSymbol.showsStop == true {

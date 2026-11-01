@@ -284,6 +284,11 @@ import Foundation
 
     func inspectElementsInActiveTab() {}
     func showJavaScriptConsoleForActiveTab() {}
+    func navigationEntriesForActiveTab(completion: @escaping @MainActor ([BrowserNavigationEntry], Int) -> Void) {
+        completion([], 0)
+    }
+
+    func goToHistoryOffsetInActiveTab(_: Int) {}
     func showNetworkInspectorForActiveTab() {}
 
     func showDevToolsForActiveTab() {

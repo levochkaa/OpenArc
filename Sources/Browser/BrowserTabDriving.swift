@@ -104,6 +104,9 @@ enum BrowserPageContextCommand: String {
     @discardableResult func navigateTab(withID tabID: String, toURLString urlString: String) -> Bool
     func navigateActiveTab(toURLString urlString: String)
     func goBackActiveTab()
+    /// The active tab's history, oldest first, and the current page's index.
+    func navigationEntriesForActiveTab(completion: @escaping @MainActor ([BrowserNavigationEntry], Int) -> Void)
+    func goToHistoryOffsetInActiveTab(_ offset: Int)
     func goForwardActiveTab()
     func reloadActiveTab()
     func reloadActiveTabIgnoringCache()
@@ -163,4 +166,32 @@ enum BrowserPageContextCommand: String {
     @discardableResult func requestCloseTab(withID tabID: String, requestID: String) -> Bool
     func closeTab(withID tabID: String, forceClose: Bool)
     func prepareForCefShutdown()
+}
+
+// MARK: - BrowserNavigationEntry
+
+/// One page of a tab's history, as far from the current page as `offset`.
+struct BrowserNavigationEntry: Equatable {
+    let urlString: String
+    let title: String
+    var offset = 0
+
+    var displayTitle: String { title.isEmpty ? urlString : title }
+
+    var faviconURL: URL? {
+        guard let url = URL(string: urlString), let scheme = url.scheme, let host = url.host else { return nil }
+        return URL(string: "\(scheme)://\(host)/favicon.ico")
+    }
+
+    /// The pages one button leads to, nearest first.
+    static func list(_ entries: [Self], currentIndex: Int, goingBack: Bool) -> [Self] {
+        let indices = goingBack
+            ? Array((0..<min(currentIndex, entries.count)).reversed())
+            : Array(min(currentIndex + 1, entries.count)..<entries.count)
+        return indices.map { index in
+            var entry = entries[index]
+            entry.offset = index - currentIndex
+            return entry
+        }
+    }
 }

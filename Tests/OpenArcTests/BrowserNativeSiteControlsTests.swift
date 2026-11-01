@@ -3,6 +3,8 @@
 import AppKit
 import Testing
 
+// MARK: - BrowserNativeSiteControlsTests
+
 @Suite(.serialized)
 @MainActor struct BrowserNativeSiteControlsTests {
     // MARK: Internal
@@ -145,4 +147,17 @@ import Testing
         model.refreshBrowserExtensions()
         return model
     }
+}
+
+@Test func navigationListRunsFromTheNearestPageOutward() {
+    let pages = ["a", "b", "c", "d"].map { BrowserNavigationEntry(urlString: "https://\($0).example/", title: $0) }
+    let back = BrowserNavigationEntry.list(pages, currentIndex: 2, goingBack: true)
+    #expect(back.map(\.title) == ["b", "a"])
+    #expect(back.map(\.offset) == [-1, -2])
+    let forward = BrowserNavigationEntry.list(pages, currentIndex: 2, goingBack: false)
+    #expect(forward.map(\.title) == ["d"])
+    #expect(forward.map(\.offset) == [1])
+    #expect(BrowserNavigationEntry.list([], currentIndex: 0, goingBack: true).isEmpty)
+    #expect(BrowserNavigationEntry.list([], currentIndex: 0, goingBack: false).isEmpty)
+    #expect(pages[0].faviconURL?.absoluteString == "https://a.example/favicon.ico")
 }

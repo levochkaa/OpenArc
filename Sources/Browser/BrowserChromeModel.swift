@@ -2729,6 +2729,19 @@ enum BrowserWindowMode: Equatable {
         setExtension(id: id, isPinned: !isExtensionPinned(id: id))
     }
 
+    /// Right-clicking back or forward lists the pages that way.
+    func showNavigationList(goingBack: Bool, below anchor: NSView) {
+        tabDriver.navigationEntriesForActiveTab { [weak self, weak anchor] entries, currentIndex in
+            guard let self, let anchor else { return }
+            BrowserNavigationListPanel.show(
+                entries: BrowserNavigationEntry.list(entries, currentIndex: currentIndex, goingBack: goingBack),
+                below: anchor,
+            ) { [weak self] offset in
+                self?.tabDriver.goToHistoryOffsetInActiveTab(offset)
+            }
+        }
+    }
+
     func goBack() {
         guard canGoBack else {
             return

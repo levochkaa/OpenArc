@@ -277,6 +277,8 @@ final class BrowserNativeChromeButton: NSButton {
     var pressEffect: PressEffect
     var tooltipTitle: String?
     var tooltipShortcut: BrowserKeyboardShortcut?
+    /// A right click that shows something other than a menu.
+    var onSecondaryClick: (() -> Void)?
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
 
     var isSelected = false { didSet { needsDisplay = true } }
@@ -389,6 +391,16 @@ final class BrowserNativeChromeButton: NSButton {
     override func mouseDown(with event: NSEvent) {
         super.mouseDown(with: event)
         onRelease?()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let onSecondaryClick else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        if isEnabled {
+            onSecondaryClick()
+        }
     }
 
     override func highlight(_ flag: Bool) {

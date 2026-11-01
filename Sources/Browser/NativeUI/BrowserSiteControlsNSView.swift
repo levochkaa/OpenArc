@@ -141,6 +141,12 @@ final class BrowserSiteControlsNSView: NSView {
         reloadButton.setAccessibilityIdentifier("browser.site.reload")
         backButton.onAction = { [weak model] in model?.goBack() }
         forwardButton.onAction = { [weak model] in model?.goForward() }
+        backButton.onSecondaryClick = { [weak self] in
+            if let self { model.showNavigationList(goingBack: true, below: backButton) }
+        }
+        forwardButton.onSecondaryClick = { [weak self] in
+            if let self { model.showNavigationList(goingBack: false, below: forwardButton) }
+        }
         reloadButton.onAction = { [weak self] in self?.reloadOrStop() }
         copyButton.onAction = { [weak self] in self?.copyURL() }
         siteButton.onAction = { [weak self] in self?.showControlCenter() }

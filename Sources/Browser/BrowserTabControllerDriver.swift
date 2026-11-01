@@ -175,6 +175,19 @@ import Foundation
         controller.inspectElementsInActiveTab()
     }
 
+    func navigationEntriesForActiveTab(completion: @escaping @MainActor ([BrowserNavigationEntry], Int) -> Void) {
+        controller.visitNavigationEntries(forActiveTab: { entries, currentIndex in
+            let converted = entries.map {
+                BrowserNavigationEntry(urlString: $0["url"] ?? "", title: $0["title"] ?? "")
+            }
+            MainActor.assumeIsolated { completion(converted, currentIndex) }
+        })
+    }
+
+    func goToHistoryOffsetInActiveTab(_ offset: Int) {
+        controller.goToHistoryOffset(inActiveTab: offset)
+    }
+
     func showJavaScriptConsoleForActiveTab() {
         controller.showJavaScriptConsoleForActiveTab()
     }

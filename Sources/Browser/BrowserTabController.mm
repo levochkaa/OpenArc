@@ -3590,6 +3590,36 @@ namespace {
 void WatchClickModifiers();
 }  // namespace
 
+namespace {
+
+class BrowserNavigationEntryCollector : public CefNavigationEntryVisitor {
+ public:
+  explicit BrowserNavigationEntryCollector(
+      void (^completion)(NSArray<NSDictionary<NSString *, NSString *> *> *, NSInteger))
+      : completion_([completion copy]), entries_([NSMutableArray array]) {}
+
+  ~BrowserNavigationEntryCollector() override { completion_(entries_, current_); }
+
+  bool Visit(CefRefPtr<CefNavigationEntry> entry, bool current, int index, int) override {
+    if (current) {
+      current_ = index;
+    }
+    [entries_ addObject:@{
+      @"url" : ToNSString(entry->GetDisplayURL().ToString()),
+      @"title" : ToNSString(entry->GetTitle().ToString()),
+    }];
+    return true;
+  }
+
+ private:
+  void (^completion_)(NSArray<NSDictionary<NSString *, NSString *> *> *, NSInteger);
+  NSMutableArray<NSDictionary<NSString *, NSString *> *> *entries_;
+  NSInteger current_ = 0;
+  IMPLEMENT_REFCOUNTING(BrowserNavigationEntryCollector);
+};
+
+}  // namespace
+
 @implementation BrowserTabController {
   __weak BrowserTabHostView *_hostView;
   std::map<std::string, TabRecord> _tabRecords;
@@ -4138,6 +4168,30 @@ void WatchClickModifiers();
   auto it = _tabRecords.find(ToStdString(tabID));
   return it == _tabRecords.end() || it->second.isClosing ||
          ![_activeTabID isEqualToString:tabID];
+}
+
+- (void)visitNavigationEntriesForActiveTab:(void (^)(NSArray<NSDictionary<NSString *, NSString *> *> *,
+                                                     NSInteger))completion {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    completion(@[], 0);
+    return;
+  }
+  CefRefPtr<CefNavigationEntryVisitor> visitor = new BrowserNavigationEntryCollector(completion);
+  it->second.browser->GetHost()->GetNavigationEntries(visitor, false);
+}
+
+- (void)goToHistoryOffsetInActiveTab:(NSInteger)offset {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty() || !it->second.browser) {
+    return;
+  }
+  it->second.navigationPending = false;
+  CefRefPtr<CefFrame> frame = it->second.browser->GetMainFrame();
+  if (frame) {
+    std::string script = "history.go(" + std::to_string(offset) + ");";
+    frame->ExecuteJavaScript(script, frame->GetURL(), 0);
+  }
 }
 
 - (void)goBackActiveTab {
