@@ -40,6 +40,36 @@ struct BrowserDownloadProjectile {
     }
 }
 
+// MARK: - BrowserDownloadBinMotion
+
+/// With the sidebar hidden, a small bin slides in from the window's edge, and the badge bounces off its corner.
+enum BrowserDownloadBinMotion {
+    static let binSize: CGFloat = 46
+    static let binRestX: CGFloat = 31
+    static let binBottomInset: CGFloat = 29
+    static let badgeX: CGFloat = 71
+    static let badgeLandingBottomInset: CGFloat = 24
+    static let badgeRestBottomInset: CGFloat = 72
+    static let badgeDiameter: CGFloat = 20
+    /// The bin leaves this long after the download starts, and the badge a second later.
+    static let binLeavesAt: TimeInterval = 2.17
+    static let badgeLeavesAt: TimeInterval = 3.2
+
+    /// How far a settling spring still is from rest, from 1 down to 0. Measured: 0.29 s to its 1.5% overshoot.
+    static func spring(at time: TimeInterval) -> CGFloat {
+        guard time > 0 else { return 1 }
+        let stiffness = 18.0, damping = 0.8
+        let damped = stiffness * (1 - damping * damping).squareRoot()
+        return CGFloat(exp(-damping * stiffness * time) * cos(damped * time))
+    }
+
+    static func binX(at time: TimeInterval) -> CGFloat {
+        let settled = binRestX - (binRestX + binSize) * spring(at: time)
+        guard time > binLeavesAt else { return settled }
+        return settled - (binRestX + binSize) * min(CGFloat((time - binLeavesAt) / 0.12), 1)
+    }
+}
+
 // MARK: - BrowserDownloadFlightView
 
 /// A new download: a badge flies from the pointer into a thumbnail that sits on the archive button for a while.
@@ -62,6 +92,8 @@ final class BrowserDownloadFlightView: NSView {
     private let arrow = NSImageView()
     private let bin = NSView()
     private let preview = NSImageView()
+    private let sidebarlessBin = NSView()
+    private let sidebarlessIcon = NSImageView()
     private let animation = BrowserNativeAnimation()
     private var binCenter = CGPoint.zero
     private var dismissTimer: Timer?
@@ -94,6 +126,19 @@ final class BrowserDownloadFlightView: NSView {
         preview.layer?.masksToBounds = true
         bin.addSubview(preview)
         addSubview(bin)
+        sidebarlessBin.wantsLayer = true
+        sidebarlessBin.layer?.cornerRadius = 12
+        sidebarlessBin.isHidden = true
+        sidebarlessIcon.image = NSImage(systemSymbolName: "archivebox.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .medium))
+        sidebarlessIcon.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: BrowserDownloadBinMotion.binSize,
+            height: BrowserDownloadBinMotion.binSize,
+        )
+        sidebarlessBin.addSubview(sidebarlessIcon)
+        addSubview(sidebarlessBin)
         addSubview(badge)
         setAccessibilityElement(false)
     }
@@ -101,13 +146,16 @@ final class BrowserDownloadFlightView: NSView {
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        !bin.isHidden && bin.frame.contains(convert(point, from: superview)) ? self : nil
+        let location = convert(point, from: superview)
+        return (!bin.isHidden && bin.frame.contains(location))
+            || (!sidebarlessBin.isHidden && sidebarlessBin.frame.contains(location)) ? self : nil
     }
 
     override func mouseDown(with _: NSEvent) {}
 
     override func mouseUp(with event: NSEvent) {
-        if bin.frame.contains(convert(event.locationInWindow, from: nil)) {
+        let location = convert(event.locationInWindow, from: nil)
+        if bin.frame.contains(location) || sidebarlessBin.frame.contains(location) {
             dismiss()
             onOpen()
         }
@@ -118,6 +166,50 @@ final class BrowserDownloadFlightView: NSView {
         swipeTravel = event.phase == .began ? 0 : swipeTravel + event.scrollingDeltaX
         if swipeTravel < -24 {
             dismiss()
+        }
+    }
+
+    /// No sidebar, so no archive button: a bin comes in from the window's edge for a moment.
+    func launchWithoutSidebar(from source: CGPoint, tint: NSColor, fill: NSColor) {
+        previewTimer?.invalidate()
+        dismissTimer?.invalidate()
+        isHidden = false
+        bin.isHidden = true
+        badge.isHidden = false
+        badge.layer?.borderColor = tint.cgColor
+        arrow.contentTintColor = tint
+        sidebarlessBin.isHidden = false
+        sidebarlessBin.layer?.backgroundColor = fill.cgColor
+        sidebarlessIcon.contentTintColor = tint
+        let height = bounds.height
+        let motion = BrowserDownloadBinMotion.self
+        let landing = CGPoint(x: motion.badgeX, y: height - motion.badgeLandingBottomInset)
+        let projectile = BrowserDownloadProjectile(source: source, destination: landing)
+        let total = motion.badgeLeavesAt
+        animation.start(.bezier(total, x1: 0, y1: 0, x2: 1, y2: 1)) { [weak self] progress in
+            guard let self else { return }
+            let time = progress * total
+            sidebarlessBin.frame = CGRect(
+                x: motion.binX(at: time),
+                y: height - motion.binBottomInset - motion.binSize,
+                width: motion.binSize,
+                height: motion.binSize,
+            )
+            guard time >= projectile.duration else {
+                let size = max(projectile.diameter(at: time), motion.badgeDiameter)
+                placeBadge(center: projectile.center(at: time), size: size, projectile: projectile, time: time)
+                return
+            }
+            let travel = motion.badgeRestBottomInset - motion.badgeLandingBottomInset
+            let y = height - motion.badgeRestBottomInset + travel * motion.spring(at: time - projectile.duration)
+            placeBadge(
+                center: CGPoint(x: motion.badgeX, y: y),
+                size: motion.badgeDiameter,
+                projectile: projectile,
+                time: time,
+            )
+        } completion: { [weak self] in
+            self?.dismiss()
         }
     }
 
@@ -133,6 +225,7 @@ final class BrowserDownloadFlightView: NSView {
         previewTimer?.invalidate()
         dismissTimer?.invalidate()
         isHidden = false
+        sidebarlessBin.isHidden = true
         binCenter = center
         preview.image = NSWorkspace.shared.icon(
             for: UTType(filenameExtension: (fileName as NSString).pathExtension) ?? .data,
@@ -165,8 +258,20 @@ final class BrowserDownloadFlightView: NSView {
             badge.isHidden = true
             return
         }
-        let size = projectile.diameter(at: time)
-        let center = projectile.center(at: time)
+        placeBadge(
+            center: projectile.center(at: time),
+            size: projectile.diameter(at: time),
+            projectile: projectile,
+            time: time,
+        )
+    }
+
+    private func placeBadge(
+        center: CGPoint,
+        size: CGFloat,
+        projectile: BrowserDownloadProjectile,
+        time: TimeInterval,
+    ) {
         badge.frame = CGRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size)
         badge.layer?.cornerRadius = size / 2
         badge.layer?.borderWidth = size * 0.07
@@ -220,6 +325,7 @@ final class BrowserDownloadFlightView: NSView {
         animation.cancel()
         badge.isHidden = true
         bin.isHidden = true
+        sidebarlessBin.isHidden = true
         isHidden = true
     }
 }

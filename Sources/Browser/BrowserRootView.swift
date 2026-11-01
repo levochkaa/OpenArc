@@ -669,6 +669,8 @@ final class BrowserRootView: NSView {
         lastDownloadLaunchID = launch.id
         guard let window, window.isKeyWindow else { return }
         let pointer = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        let source = CGPoint(x: pointer.x, y: pointer.y - 19)
+        let tint = model.selectedSpaceTheme?.palette?.tintedLight.nsColor ?? .white
         // Above and to the right of the archive button, or the window's corner without a sidebar.
         var binCenter = CGPoint(x: 34, y: bounds.height - 37)
         if let button = sidebar.descendant(withIdentifier: "browser.sidebar.library"),
@@ -679,12 +681,23 @@ final class BrowserRootView: NSView {
         }
         downloadFlight.frame = bounds
         addSubview(downloadFlight, positioned: .above, relativeTo: nil)
+        guard model.isSidebarVisible else {
+            downloadFlight.launchWithoutSidebar(
+                from: source,
+                tint: tint,
+                fill: model.selectedSpaceTheme?.palette?.shadedDark.scaled(0.3).nsColor ?? NSColor(
+                    white: 0.12,
+                    alpha: 1,
+                ),
+            )
+            return
+        }
         let downloads = model.downloadsModel
         downloadFlight.launch(
-            from: CGPoint(x: pointer.x, y: pointer.y - 19),
+            from: source,
             toBinCenter: binCenter,
             fileName: launch.fileName,
-            tint: model.selectedSpaceTheme?.palette?.tintedLight.nsColor ?? .white,
+            tint: tint,
         ) {
             downloads.items.first { $0.id == launch.id && $0.state == .completed }?.fileURL
         }

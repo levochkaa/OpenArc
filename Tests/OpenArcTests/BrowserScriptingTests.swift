@@ -568,3 +568,12 @@ private let testCardJSON = #"{"cc-name":"Test Person","cc-number":"4242 4242 424
     ))
     #expect(downloads.items.first?.fileName == "report (1).txt")
 }
+
+@Test func theBinComesInFromTheEdgeSettlesAndLeaves() {
+    let motion = BrowserDownloadBinMotion.self
+    #expect(motion.binX(at: 0) == -motion.binSize, "It starts just outside the window")
+    let overshoot = motion.binX(at: 0.29)
+    #expect(overshoot > motion.binRestX && overshoot < motion.binRestX + 2, "Measured: about 1 pt past rest")
+    #expect(abs(motion.binX(at: 1) - motion.binRestX) < 0.1)
+    #expect(motion.binX(at: motion.binLeavesAt + 0.2) <= -motion.binSize + 0.1, "And out again")
+}
