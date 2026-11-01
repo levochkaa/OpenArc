@@ -894,6 +894,14 @@ enum BrowserKeyboardShortcutBridge {
         shortcutResolver: BrowserShortcutResolving? = nil,
     ) -> BrowserLayoutIndependentShortcutCommand? {
         let normalizedModifiers = modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // A focused page takes arrow keys with Command before the menu sees them.
+        if let arrow = arrowKeyEquivalent(for: keyCode) {
+            let modifiers = normalizedModifiers.subtracting([.numericPad, .function])
+            guard !modifiers.isDisjoint(with: [.command, .control]) else { return nil }
+            return shortcutMatches(shortcutResolver: shortcutResolver)
+                .first { $0.keyEquivalent == arrow && $0.modifiers == modifiers }?
+                .command
+        }
         guard !normalizedModifiers.isDisjoint(with: [.command, .control]),
               let usKeyEquivalent = usKeyEquivalent(for: keyCode),
               normalizedCharacters(from: charactersIgnoringModifiers) != usKeyEquivalent
@@ -911,6 +919,16 @@ enum BrowserKeyboardShortcutBridge {
     /// registered outside the app's key handling.
     static func physicalKeyCode(forKeyEquivalent keyEquivalent: String) -> UInt16? {
         (0..<128).first { usKeyEquivalent(for: $0) == keyEquivalent.lowercased() }
+    }
+
+    private static func arrowKeyEquivalent(for keyCode: UInt16) -> String? {
+        switch keyCode {
+        case 123: BrowserKeyboardShortcut.leftArrow
+        case 124: BrowserKeyboardShortcut.rightArrow
+        case 125: BrowserKeyboardShortcut.downArrow
+        case 126: BrowserKeyboardShortcut.upArrow
+        default: nil
+        }
     }
 
     private static func shortcutMatches(shortcutResolver: BrowserShortcutResolving?) -> [ShortcutMatch] {

@@ -54,6 +54,21 @@ import Testing
         #expect(f.model.selectedTabID == f.id("y"), "Selecting the split it is already in keeps the pane")
     }
 
+    @Test func arrowShortcutsGoAheadOfAFocusedPage() {
+        func command(_ keyCode: UInt16, _ flags: NSEvent.ModifierFlags) -> BrowserLayoutIndependentShortcutCommand? {
+            BrowserKeyboardShortcutBridge.commandForLayoutIndependentDispatch(
+                keyCode: keyCode,
+                modifierFlags: flags.union([.numericPad, .function]),
+                charactersIgnoringModifiers: "\u{F701}",
+            )
+        }
+        #expect(command(125, [.command, .option]) == .selectNextTab)
+        #expect(command(126, [.command, .option]) == .selectPreviousTab)
+        #expect(command(124, [.command, .option]) == .selectNextSpace)
+        #expect(command(125, [.command]) == nil, "Plain Command-Down stays with the page")
+        #expect(command(125, []) == nil)
+    }
+
     @Test func arrowShortcutsSwitchSpacesAndTabs() {
         #expect(BrowserCommands.selectNextSpace.shortcut.displayText == "\u{2325}\u{2318}\u{2192}")
         #expect(BrowserCommands.selectPreviousTabAlternate.shortcut.displayText == "\u{2325}\u{2318}\u{2191}")
