@@ -79,7 +79,7 @@ final class BrowserSiteControlsNSView: NSView {
     private let siteVisibility = BrowserNativeVisibilityAnimation()
     private let splitVisibility = BrowserNativeVisibilityAnimation()
     private let actionAnimation = BrowserNativeAnimation()
-    private var actionWidthTarget: CGFloat = 0
+    private var actionWidthTarget: CGFloat?
     private var didCopy = false
 
     private var hovered = false
@@ -96,8 +96,7 @@ final class BrowserSiteControlsNSView: NSView {
         let count = CGFloat(pinned.count + 2)
         return count * BrowserChromeLayout.sidebarCurrentURLButtonSize + (count - 1) * BrowserChromeLayout
             .sidebarCurrentURLButtonSpacing
-            + BrowserChromeLayout.sidebarCurrentURLButtonTrailingPadding + BrowserChromeLayout
-            .sidebarCloseButtonLeadingSpacing
+            + BrowserChromeLayout.sidebarCurrentURLButtonTrailingPadding
     }
 
     init(model: BrowserChromeModel, mode: Mode) {
@@ -528,21 +527,27 @@ final class BrowserSiteControlsNSView: NSView {
         }
         urlButton.permitsTooltip = !actionHovered && !isSidebarResizing && !urlButton.isSearchPresented
         urlButton.refreshTooltip()
-        let targetWidth = sidebar && show ? sidebarActionWidth : 0
-        if actionWidthTarget != targetWidth {
-            actionWidthTarget = targetWidth
-            let from = urlButton.maskedTrailingWidth
-            if window == nil || isSidebarResizing {
-                actionAnimation.cancel()
-                urlButton.maskedTrailingWidth = targetWidth
-            } else {
-                actionAnimation.start(.rowMove) { [weak self] progress in
-                    self?.urlButton.maskedTrailingWidth = from + (targetWidth - from) * progress
-                }
-            }
-        }
+        updateAddressFade(sidebar: sidebar, showsActions: show)
         urlButton.interactionChanged()
         needsLayout = true
+    }
+
+    /// The address makes room for the actions at once, and takes it back only
+    /// when they have faded out. The fade itself never moves on screen.
+    private func updateAddressFade(sidebar: Bool, showsActions: Bool) {
+        let resting = sidebar ? BrowserChromeLayout.sidebarCurrentURLRestingTrailingWidth : 0
+        let target = sidebar && showsActions ? sidebarActionWidth : resting
+        guard actionWidthTarget != target else { return }
+        let isFirst = actionWidthTarget == nil
+        actionWidthTarget = target
+        actionAnimation.cancel()
+        guard target == resting, !isFirst, window != nil, !isSidebarResizing else {
+            urlButton.maskedTrailingWidth = target
+            return
+        }
+        actionAnimation.start(.appearance, updates: { _ in }, completion: { [weak self] in
+            self?.urlButton.maskedTrailingWidth = target
+        })
     }
 
     private func resetCopyFeedback() {
@@ -631,12 +636,17 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
     override func layout() {
         super.layout()
         textContainer.frame = bounds
+        // The sidebar's address runs to the fade; the toolbar's is centered and truncated.
+        let leading = BrowserChromeLayout.sidebarCurrentURLTextLeading
         label.frame = NSRect(
-            x: BrowserChromeLayout.sidebarCurrentURLTextLeading,
+            x: leading,
             y: (bounds.height - 17) / 2,
-            width: max(bounds.width - BrowserChromeLayout.sidebarCurrentURLTextLeading * 2, 0),
+            width: max(bounds.width - leading - (isToolbar ? leading : 0), 0),
             height: 17,
         )
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
         if maskedTrailingWidth > 0, bounds.width > 0 {
             let fade = BrowserChromeLayout.sidebarCurrentURLOverlayFadeWidth
             let end = max(bounds.width - maskedTrailingWidth, 0) / bounds.width
@@ -661,6 +671,6 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
         label.stringValue = title
         setAccessibilityLabel(title)
         label.alignment = isToolbar ? .center : .left
-        label.lineBreakMode = isToolbar ? .byTruncatingMiddle : .byTruncatingTail
+        label.lineBreakMode = isToolbar ? .byTruncatingMiddle : .byClipping
     }
 }

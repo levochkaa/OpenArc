@@ -45,7 +45,9 @@ enum BrowserChromeLayout {
     static let sidebarNewTabSymbolSize: CGFloat = 15.5
     static let sidebarCurrentURLOverlayWidth: CGFloat = 76
     static let sidebarCurrentURLOverlaySolidWidth: CGFloat = 66
-    static let sidebarCurrentURLOverlayFadeWidth: CGFloat = 10
+    static let sidebarCurrentURLOverlayFadeWidth: CGFloat = 16
+    /// The address fades out this far from the row's end while the actions are away.
+    static let sidebarCurrentURLRestingTrailingWidth: CGFloat = 3
     static let sidebarCurrentURLButtonSpacing: CGFloat = 0
     static let sidebarCurrentURLButtonTrailingPadding: CGFloat = 5
     static let sidebarCurrentURLTextLeading: CGFloat = 11

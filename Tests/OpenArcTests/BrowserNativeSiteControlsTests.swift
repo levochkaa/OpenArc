@@ -111,11 +111,11 @@ import Testing
         view.mouseEntered(with: event)
         view.layoutSubtreeIfNeeded()
         #expect(!view.copyButton.isHidden)
-        #expect(view.urlButton.maskedTrailingWidth > 0)
+        #expect(view.urlButton.maskedTrailingWidth == 61, "The address makes room for the actions at once")
         view.isSidebarResizing = true
         #expect(view.copyButton.isHidden)
         #expect(!view.copyButton.isEnabled)
-        #expect(view.urlButton.maskedTrailingWidth == 0)
+        #expect(view.urlButton.maskedTrailingWidth == BrowserChromeLayout.sidebarCurrentURLRestingTrailingWidth)
     }
 
     // MARK: Private
