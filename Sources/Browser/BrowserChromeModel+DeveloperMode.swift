@@ -54,7 +54,7 @@ extension BrowserChromeModel {
         guard let host = Self.developerModeHost(ofURLString: urlString),
               userPreferencesStore.developerModeHosts.isEnabled(host: host)
         else { return nil }
-        return host
+        return URLComponents(string: urlString)?.port.map { "\(host):\($0)" } ?? host
     }
 
     var canToggleDeveloperMode: Bool {

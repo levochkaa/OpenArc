@@ -3,7 +3,10 @@
 import AppKit
 
 /// Shared extension popovers for browser chrome and installed web-app windows.
-@MainActor final class BrowserNativeExtensionPopoverPresenter: NSObject, NSPopoverDelegate {
+@MainActor final class BrowserNativeExtensionPopoverPresenter: NSObject, NSPopoverDelegate, NSWindowDelegate {
+    private static let actionWindowOffset = NSPoint(x: 40, y: 10)
+    private static let actionTitleBarHeight: CGFloat = 32
+
     // MARK: Internal
 
     var onPresentationChanged: () -> Void = {}
@@ -13,12 +16,13 @@ import AppKit
     private let model: BrowserChromeModel
     private let centerController: BrowserSiteControlCenterViewController
     private let center = BrowserNativePopover()
-    private var action: BrowserNativePopover?
+    private var action: NSPanel?
+    private var outsideClickMonitor: Any?
     private var popupController: BrowserExtensionActionPopupViewController?
     private weak var anchor: NSView?
     private var preferredEdge = NSRectEdge.minY
 
-    var isPresented: Bool { center.isShown || action?.isShown == true }
+    var isPresented: Bool { center.isShown || action?.isVisible == true }
 
     init(model: BrowserChromeModel) {
         self.model = model
@@ -54,6 +58,20 @@ import AppKit
 
     isolated deinit { popupController?.close() }
 
+    private static func place(_ panel: NSPanel, contentSize: NSSize, in parent: NSWindow?, content: NSView?) {
+        let bar = actionTitleBarHeight
+        let size = NSSize(width: contentSize.width, height: contentSize.height + bar)
+        var origin = panel.frame.origin
+        if let parent {
+            origin = NSPoint(
+                x: parent.frame.minX + actionWindowOffset.x,
+                y: parent.frame.maxY - actionWindowOffset.y - size.height,
+            )
+        }
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        content?.frame = NSRect(origin: .zero, size: contentSize)
+    }
+
     func refresh() { centerController.refresh() }
     func showControlCenter(relativeTo anchor: NSView, preferredEdge: NSRectEdge) {
         self.anchor = anchor
@@ -74,45 +92,69 @@ import AppKit
         self.preferredEdge = preferredEdge
         let controller = BrowserExtensionActionPopupViewController(popup: popup)
         _ = controller.view
-        let popover = BrowserNativePopover()
-        popover.behavior = .transient
-        popover.delegate = self
-        popover.contentViewController = controller
-        popover.contentSize = controller.preferredContentSize
-        // A vibrant popover would blend the page with what lies behind it.
-        popover.appearance = NSAppearance(named: anchor.effectiveAppearance
-            .bestMatch(
-                from: [.aqua, .darkAqua, .vibrantLight, .vibrantDark],
-            )
-            .map { $0 == .darkAqua || $0 == .vibrantDark ? .darkAqua : .aqua } ?? .aqua)
-        popup.onContentSizeChange = { [weak popover, weak controller] size in
+        // A small titled window of the page's size, near the browser window's corner.
+        // A click anywhere else in the app closes it.
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: controller.preferredContentSize),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false,
+        )
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = false
+        panel.isReleasedWhenClosed = false
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.hidesOnDeactivate = false
+        panel.delegate = self
+        let container = NSView(frame: NSRect(origin: .zero, size: controller.preferredContentSize))
+        container.addSubview(controller.view)
+        panel.contentView = container
+        let parent = anchor.window
+        popup.onContentSizeChange = { [weak panel, weak controller] size in
             controller?.preferredContentSize = size
-            popover?.contentSize = size
+            guard let panel else { return }
+            Self.place(panel, contentSize: size, in: parent, content: controller?.view)
         }
         popupController = controller
-        action = popover
+        action = panel
         anchor.isHidden = false
-        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: preferredEdge)
+        Self.place(panel, contentSize: controller.preferredContentSize, in: parent, content: controller.view)
+        parent?.addChildWindow(panel, ordered: .above)
+        panel.makeKeyAndOrderFront(nil)
+        outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .leftMouseDown,
+            .rightMouseDown,
+        ]) { [weak self] event in
+            guard let self, event.window !== action else { return event }
+            close()
+            return event
+        }
         onPresentationChanged()
     }
 
     func close() {
         center.performClose(nil)
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+            self.outsideClickMonitor = nil
+        }
         let old = action
         action = nil
         old?.delegate = nil
         popupController?.close()
         popupController = nil
-        old?.performClose(nil)
+        old?.parent?.removeChildWindow(old!)
+        old?.orderOut(nil)
         onPresentationChanged()
     }
 
-    func popoverDidClose(_ notification: Notification) {
-        if let popover = notification.object as? NSPopover, popover === action {
-            popupController?.close()
-            popupController = nil
-            action = nil
-        }
+    func windowWillClose(_ notification: Notification) {
+        guard notification.object as? NSPanel === action else { return }
+        close()
+    }
+
+    func popoverDidClose(_: Notification) {
         onPresentationChanged()
     }
 
