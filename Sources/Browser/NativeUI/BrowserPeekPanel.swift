@@ -347,6 +347,16 @@ import AppKit
         update(urlString: currentURLString)
     }
 
+    /// A prompt from the page's sign-in or checkout, over its top right corner.
+    func hostPrompt(_ prompt: NSView, height: CGFloat) {
+        guard let parent = hostView.superview else { return }
+        let page = hostView.frame
+        let width = min(BrowserPasswordPromptView.width, max(page.width - 24, 0))
+        parent.addSubview(prompt, positioned: .above, relativeTo: nil)
+        prompt.frame = NSRect(x: page.maxX - 12 - width, y: page.maxY - 12 - height, width: width, height: height)
+        prompt.autoresizingMask = [.minXMargin, .minYMargin]
+    }
+
     /// Shows the page's oldest waiting request, or hides the prompt for nil.
     func showSitePermissionRequest(_ request: BrowserSitePermissionRequest?) {
         guard let request else {

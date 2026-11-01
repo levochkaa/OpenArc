@@ -277,6 +277,11 @@ enum BrowserPasswordPrompt: Equatable {
     /// A secure page with a card form and saved cards. A card fills after a click and the Mac's owner confirming.
     case fillCard(tabID: String, frameID: String, urlString: String, cards: [BrowserSavedCard])
 
+    /// A page in a Peek or small window has this for its tab.
+    var peekSessionID: Int? {
+        tabID.hasPrefix("peek-") ? Int(tabID.dropFirst(5)) : nil
+    }
+
     var tabID: String {
         switch self {
         case .fill(let tabID, _, _, _),
@@ -335,6 +340,12 @@ extension BrowserChromeModel {
     /// A question about a closed tab, or a fill offer the tab has navigated away from, is over.
     func dropStalePasswordPrompt() {
         guard let prompt = passwordPrompt else { return }
+        if let session = prompt.peekSessionID {
+            if !isPeekSessionOpen(session) {
+                passwordPrompt = nil
+            }
+            return
+        }
         guard let tab = tabs.first(where: { $0.id == prompt.tabID }) else {
             passwordPrompt = nil
             return

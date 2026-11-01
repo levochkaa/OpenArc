@@ -490,3 +490,16 @@ private let testCardJSON = #"{"cc-name":"Test Person","cc-number":"4242 4242 424
     )
     #expect(model.passwordPrompt == nil)
 }
+
+@Test @MainActor func aPromptFromAPeekLastsAsLongAsThePeek() {
+    let (model, driver, _) = passwordModel()
+    driver.openPeekSessions = [7]
+    model.handlePasswordSubmitted(tabID: "peek-7", urlString: "https://example.com/", username: "me", password: "p")
+    #expect(model.passwordPrompt?.peekSessionID == 7)
+    model.dropStalePasswordPrompt()
+    #expect(model.passwordPrompt != nil, "No tab has this id, and that's not the end of it")
+    driver.openPeekSessions = []
+    model.dropStalePasswordPrompt()
+    #expect(model.passwordPrompt == nil)
+    #expect(BrowserPasswordPrompt.saveAddress(tabID: "t", address: .init(fields: [:])).peekSessionID == nil)
+}

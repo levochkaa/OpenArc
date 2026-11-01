@@ -309,6 +309,16 @@ import Foundation
         promptingPeekSessions = Set(oldest.keys)
     }
 
+    func isPeekSessionOpen(_ sessionID: Int) -> Bool {
+        controller.peekPanel(forSessionID: sessionID) != nil
+    }
+
+    func hostPrompt(_ prompt: NSView, height: CGFloat, inPeekSession sessionID: Int) -> Bool {
+        guard let panel = controller.peekPanel(forSessionID: sessionID) else { return false }
+        panel.hostPrompt(prompt, height: height)
+        return true
+    }
+
     func siteSettings(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue] {
         var settings = [BrowserSiteSettingKind: BrowserSiteSettingValue]()
         for (kind, value) in controller.siteSettings(forURLString: urlString) {

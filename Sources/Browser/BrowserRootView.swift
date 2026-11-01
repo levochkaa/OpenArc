@@ -654,17 +654,29 @@ final class BrowserRootView: NSView {
     /// Only over the tab that asked; the question waits while another one shows.
     private func refreshPasswordPrompt() {
         model.dropStalePasswordPrompt()
+        if let prompt = model.passwordPrompt, let session = prompt.peekSessionID {
+            passwordPrompt.update(prompt)
+            passwordPrompt.isHidden = !model.hostPasswordPrompt(
+                passwordPrompt,
+                height: passwordPrompt.preferredHeight,
+                inPeekSession: session,
+            )
+            return
+        }
         guard let prompt = model.passwordPrompt, model.isTabVisibleForPasswordPrompt(prompt.tabID) else {
             passwordPrompt.isHidden = true
             return
         }
         passwordPrompt.update(prompt)
+        passwordPrompt.autoresizingMask = []
         passwordPrompt.isHidden = false
         addSubview(passwordPrompt, positioned: .above, relativeTo: nil)
         layoutPasswordPrompt()
     }
 
     private func layoutPasswordPrompt() {
+        // In a Peek, the panel places it.
+        guard passwordPrompt.superview === self else { return }
         let page = windowGeometry.contentFrame
         passwordPrompt.frame = CGRect(
             x: page.maxX - BrowserPasswordPromptView.width - 12,

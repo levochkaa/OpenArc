@@ -175,6 +175,9 @@ enum BrowserPageContextCommand: String {
     /// The waiting requests of Peek cards and small windows, in arrival
     /// order; each card shows its oldest.
     func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest])
+    func isPeekSessionOpen(_ sessionID: Int) -> Bool
+    /// Puts a prompt over a Peek's page. False when the Peek is gone.
+    func hostPrompt(_ prompt: NSView, height: CGFloat, inPeekSession sessionID: Int) -> Bool
     /// Chromium's settings for a page that differ from the profile default.
     func siteSettings(forURLString urlString: String) -> [BrowserSiteSettingKind: BrowserSiteSettingValue]
     func setSiteSetting(_ kind: BrowserSiteSettingKind, value: BrowserSiteSettingValue, forURLString urlString: String)

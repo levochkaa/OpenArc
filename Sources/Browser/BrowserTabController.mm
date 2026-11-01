@@ -3218,6 +3218,11 @@ class BrowserPeekClient final : public CefClient,
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
 
+  bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame,
+                                CefProcessId source_process,
+                                CefRefPtr<CefProcessMessage> message) override;
+
   void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
                            CefRefPtr<CefFrame>,
                            CefRefPtr<CefContextMenuParams> params,
@@ -4311,15 +4316,21 @@ std::string BrowserMediaVolumeScript(double volume) {
   }
 }
 
+- (CefRefPtr<CefBrowser>)browserForCredentialTabID:(NSString *)tabID {
+  if ([tabID hasPrefix:@"peek-"]) {
+    BrowserPeekSession *session = _peekSessions[@([tabID substringFromIndex:5].intValue)];
+    return session.closing ? nullptr : session->_browser;
+  }
+  auto it = _tabRecords.find(ToStdString(tabID));
+  return it == _tabRecords.end() ? nullptr : it->second.browser;
+}
+
 - (void)fillAddressJSON:(NSString *)json
                 frameID:(NSString *)frameID
               urlPrefix:(NSString *)urlPrefix
            forTabWithID:(NSString *)tabID {
-  auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end() || !it->second.browser) {
-    return;
-  }
-  CefRefPtr<CefFrame> frame = it->second.browser->GetFrameByIdentifier(ToStdString(frameID));
+  CefRefPtr<CefBrowser> browser = [self browserForCredentialTabID:tabID];
+  CefRefPtr<CefFrame> frame = browser ? browser->GetFrameByIdentifier(ToStdString(frameID)) : nullptr;
   const std::string url = frame ? frame->GetURL().ToString() : std::string();
   const std::string prefix = ToStdString(urlPrefix);
   if (!frame || url.rfind(prefix, 0) != 0 ||
@@ -4336,11 +4347,8 @@ std::string BrowserMediaVolumeScript(double volume) {
                          frameID:(NSString *)frameID
                        urlPrefix:(NSString *)urlPrefix
                     forTabWithID:(NSString *)tabID {
-  auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end() || !it->second.browser) {
-    return;
-  }
-  CefRefPtr<CefFrame> frame = it->second.browser->GetFrameByIdentifier(ToStdString(frameID));
+  CefRefPtr<CefBrowser> browser = [self browserForCredentialTabID:tabID];
+  CefRefPtr<CefFrame> frame = browser ? browser->GetFrameByIdentifier(ToStdString(frameID)) : nullptr;
   // The frame may have gone somewhere else since the question: it gets nothing then.
   const std::string url = frame ? frame->GetURL().ToString() : std::string();
   const std::string prefix = ToStdString(urlPrefix);
@@ -6089,36 +6097,72 @@ void BrowserTabClient::OnFrameDetached(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame
   }
 }
 
+namespace {
+
+/// Passwords, addresses and cards reported by a page in a tab or a Peek.
+bool HandleCredentialMessage(BrowserTabController *controller,
+                             NSString *tabID,
+                             CefRefPtr<CefFrame> frame,
+                             CefProcessId source_process,
+                             CefRefPtr<CefProcessMessage> message) {
+  if (source_process != PID_RENDERER || !frame) {
+    return false;
+  }
+  const std::string name = message->GetName().ToString();
+  if (name == shared::kPasswordFormMessage) {
+    [controller handlePasswordFormInFrame:frame forTabID:tabID];
+    return true;
+  }
+  if (name == shared::kAddressFormMessage) {
+    [controller handleAddressFormInFrame:frame forTabID:tabID];
+    return true;
+  }
+  if (name == shared::kCardFormMessage) {
+    [controller handleCardFormInFrame:frame forTabID:tabID];
+    return true;
+  }
+  if (name == shared::kAddressSubmittedMessage) {
+    [controller handleAddressSubmittedInFrame:frame
+                                         json:ToNSString(message->GetArgumentList()->GetString(0).ToString())
+                                     forTabID:tabID];
+    return true;
+  }
+  if (name == shared::kPasswordSubmittedMessage) {
+    CefRefPtr<CefListValue> values = message->GetArgumentList();
+    // The frame's own address decides whose password this is, never the page's word.
+    [controller handlePasswordSubmittedInFrame:frame
+                                      username:ToNSString(values->GetString(0).ToString())
+                                      password:ToNSString(values->GetString(1).ToString())
+                                      forTabID:tabID];
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+bool BrowserPeekClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
+                                                 CefRefPtr<CefFrame> frame,
+                                                 CefProcessId source_process,
+                                                 CefRefPtr<CefProcessMessage> message) {
+  CEF_REQUIRE_UI_THREAD();
+  // A Peek has no tab for the model to compare a frame with, so only its page counts.
+  if (!frame || !frame->IsMain()) {
+    return false;
+  }
+  return HandleCredentialMessage(controller_,
+                                 [NSString stringWithFormat:@"peek-%d", session_id_],
+                                 frame,
+                                 source_process,
+                                 message);
+}
+
 bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
                                                 CefRefPtr<CefFrame> frame,
                                                 CefProcessId source_process,
                                                 CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_UI_THREAD();
-  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kPasswordFormMessage) {
-    [controller_ handlePasswordFormInFrame:frame forTabID:ToNSString(tab_id_)];
-    return true;
-  }
-  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kAddressFormMessage) {
-    [controller_ handleAddressFormInFrame:frame forTabID:ToNSString(tab_id_)];
-    return true;
-  }
-  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kCardFormMessage) {
-    [controller_ handleCardFormInFrame:frame forTabID:ToNSString(tab_id_)];
-    return true;
-  }
-  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kAddressSubmittedMessage) {
-    [controller_ handleAddressSubmittedInFrame:frame
-                                          json:ToNSString(message->GetArgumentList()->GetString(0).ToString())
-                                      forTabID:ToNSString(tab_id_)];
-    return true;
-  }
-  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kPasswordSubmittedMessage) {
-    CefRefPtr<CefListValue> values = message->GetArgumentList();
-    // The frame's own address decides whose password this is, never the page's word.
-    [controller_ handlePasswordSubmittedInFrame:frame
-                                       username:ToNSString(values->GetString(0).ToString())
-                                       password:ToNSString(values->GetString(1).ToString())
-                                       forTabID:ToNSString(tab_id_)];
+  if (HandleCredentialMessage(controller_, ToNSString(tab_id_), frame, source_process, message)) {
     return true;
   }
   if (source_process != PID_RENDERER || !frame || message->GetName() != shared::kMediaStateMessage) {

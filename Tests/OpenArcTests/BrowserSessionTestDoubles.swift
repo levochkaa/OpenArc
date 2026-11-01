@@ -140,6 +140,8 @@ import Foundation
     var onPasswordSubmitted: ((String, String, String, String) -> Void)?
     private(set) var filledPasswords = [(username: String, password: String, frameID: String, origin: String)]()
 
+    var openPeekSessions = Set<Int>()
+
     // MARK: Private
 
     private var pendingCreateRequests = [CreatedTabRequest]()
@@ -374,6 +376,14 @@ import Foundation
 
     func controlMedia(_ action: BrowserMediaAction, inTabWithID tabID: String) {
         mediaControls.append((tabID, action))
+    }
+
+    func isPeekSessionOpen(_ sessionID: Int) -> Bool {
+        openPeekSessions.contains(sessionID)
+    }
+
+    func hostPrompt(_: NSView, height _: CGFloat, inPeekSession sessionID: Int) -> Bool {
+        openPeekSessions.contains(sessionID)
     }
 
     func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest]) {

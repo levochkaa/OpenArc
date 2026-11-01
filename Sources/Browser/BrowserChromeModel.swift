@@ -2921,6 +2921,14 @@ enum BrowserWindowMode: Equatable {
             .filter { URLComponents(string: $0.resolvedURLString)?.host?.lowercased() == host }
     }
 
+    func isPeekSessionOpen(_ sessionID: Int) -> Bool {
+        tabDriver.isPeekSessionOpen(sessionID)
+    }
+
+    func hostPasswordPrompt(_ view: NSView, height: CGFloat, inPeekSession sessionID: Int) -> Bool {
+        tabDriver.hostPrompt(view, height: height, inPeekSession: sessionID)
+    }
+
     func fillAddressInEngine(json: String, frameID: String, origin: String, tabID: String) {
         tabDriver.fillAddress(json: json, frameID: frameID, origin: origin, tabID: tabID)
     }
