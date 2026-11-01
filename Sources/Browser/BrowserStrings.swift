@@ -1636,6 +1636,10 @@ enum BrowserStrings {
         "browser.developer.reload_ignore_cache",
         comment: "Reload option.",
     )
+    static let settingsShowAISearchSuggestion = NSLocalizedString(
+        "browser.settings.show_ai_search_suggestion",
+        comment: "Settings toggle for the AI row in the command bar.",
+    )
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")

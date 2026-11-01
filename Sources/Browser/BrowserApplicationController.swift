@@ -1250,12 +1250,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .newWindow),
             action: #selector(createNewWindow(_:)),
         ))
-        fileMenu.addItem(BrowserNativeMenuItem(
-            BrowserStrings.menuBlankWindow,
-            shortcut: BrowserKeyboardShortcut("n", modifiers: [.control, .command]),
-        ) { [weak self] in
-            self?.openNewWindow()
-        })
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .blankWindow),
+            action: #selector(createNewWindow(_:)),
+        ))
         let newIncognitoWindowItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newIncognitoWindow),
             action: #selector(createNewIncognitoWindow(_:)),
@@ -1890,14 +1888,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         network.target = self
         menu.addItem(network)
         menu.addItem(javaScript)
-        let developerMode = NSMenuItem(
-            title: BrowserStrings.menuTurnOnDeveloperMode,
+        menu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .toggleDeveloperMode),
             action: #selector(toggleDeveloperMode(_:)),
-            keyEquivalent: "d",
-        )
-        developerMode.keyEquivalentModifierMask = [.control]
-        developerMode.target = self
-        menu.addItem(developerMode)
+        ))
         let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
         item.submenu = menu
         viewMenu.addItem(item)
@@ -2427,6 +2421,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.showJavaScriptConsole() ?? false
         case .manageSpaces:
             return activeChromeModel?.openSpacesInLibrary() ?? false
+        case .blankWindow:
+            return openNewWindow()
+        case .viewMedia:
+            return activeChromeModel.map { $0.openLibrary(section: .media)
+                return true
+            } ?? false
+        case .networkInspector:
+            return activeChromeModel?.showNetworkInspector() ?? false
+        case .toggleDeveloperMode:
+            return activeChromeModel.map { $0.toggleDeveloperMode()
+                return true
+            } ?? false
+        case .editSpaceTheme:
+            return activeChromeModel
+                .flatMap { model in model.selectedSpaceID.map { model.onEditSpaceTheme?($0) } } != nil
         case .togglePictureInPicture:
             return activeChromeModel?.togglePictureInPicture() ?? false
         case .muteAllTabs:

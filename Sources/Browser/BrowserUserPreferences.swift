@@ -194,6 +194,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
         static let developerModeHosts = "browser.settings.developerModeHosts"
+        static let showsAISearchSuggestion = "browser.settings.showsAISearchSuggestion"
         static let developerReloadBehavior = "browser.settings.developerReloadBehavior"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
         static let newDocumentsApp = "browser.settings.newDocumentsApp"
@@ -271,6 +272,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
     }
 
     /// Lets pages read the Space's colors as CSS variables.
+    @Published var showsAISearchSuggestion: Bool {
+        didSet { userDefaults.set(showsAISearchSuggestion, forKey: Key.showsAISearchSuggestion) }
+    }
+
     @Published var developerModeHosts: BrowserDeveloperModeHosts {
         didSet {
             userDefaults.set(try? JSONEncoder().encode(developerModeHosts), forKey: Key.developerModeHosts)
@@ -404,6 +409,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
             key: Key.siteURLToolbarEnabled,
             defaultValue: false,
         )
+        self.showsAISearchSuggestion = Self.loadBool(
+            userDefaults,
+            key: Key.showsAISearchSuggestion,
+            defaultValue: false,
+        )
         self.developerModeHosts = userDefaults.data(forKey: Key.developerModeHosts)
             .flatMap { try? JSONDecoder().decode(BrowserDeveloperModeHosts.self, from: $0) } ?? .init()
         self.developerReloadBehavior = userDefaults.string(forKey: Key.developerReloadBehavior)
@@ -487,6 +497,11 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case developerTools
     case shareTab
     case manageSpaces
+    case blankWindow
+    case viewMedia
+    case networkInspector
+    case toggleDeveloperMode
+    case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs
     case unmuteAllTabs
@@ -594,6 +609,16 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.shareTab
         case .manageSpaces:
             BrowserCommands.manageSpaces
+        case .blankWindow:
+            BrowserCommands.blankWindow
+        case .viewMedia:
+            BrowserCommands.viewMedia
+        case .networkInspector:
+            BrowserCommands.networkInspector
+        case .toggleDeveloperMode:
+            BrowserCommands.toggleDeveloperMode
+        case .editSpaceTheme:
+            BrowserCommands.editSpaceTheme
         case .togglePictureInPicture:
             BrowserCommands.togglePictureInPicture
         case .muteAllTabs:
@@ -770,6 +795,16 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .shareTab
         case .manageSpaces:
             .manageSpaces
+        case .blankWindow:
+            .blankWindow
+        case .viewMedia:
+            .viewMedia
+        case .networkInspector:
+            .networkInspector
+        case .toggleDeveloperMode:
+            .toggleDeveloperMode
+        case .editSpaceTheme:
+            .editSpaceTheme
         case .togglePictureInPicture:
             .togglePictureInPicture
         case .muteAllTabs:

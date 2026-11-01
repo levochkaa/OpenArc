@@ -203,6 +203,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     private let suggestionDebounceNanoseconds: UInt64
     private let localSuggestionProvider: (String, Int) -> [BrowserCommandSuggestion]
     private let remoteSuggestionsEnabledProvider: () -> Bool
+    private let aiSearchEnabledProvider: () -> Bool
     private let aiSearchProviderProvider: () -> BrowserAISearchProvider
     private let siteSearchesProvider: () -> [BrowserSiteSearch]
 
@@ -258,6 +259,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         localSuggestionProvider: @escaping (String, Int) -> [BrowserCommandSuggestion] = { _, _ in [] },
         remoteSuggestionsEnabledProvider: @escaping () -> Bool = { true },
         aiSearchProviderProvider: @escaping () -> BrowserAISearchProvider = { .chatGPT },
+        aiSearchEnabledProvider: @escaping () -> Bool = { true },
         siteSearchesProvider: @escaping () -> [BrowserSiteSearch] = { [] },
         submitHandler: @escaping (String) -> Void,
         openTabHandler: @escaping ([String]) -> Void = { _ in },
@@ -272,6 +274,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         self.localSuggestionProvider = localSuggestionProvider
         self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
         self.aiSearchProviderProvider = aiSearchProviderProvider
+        self.aiSearchEnabledProvider = aiSearchEnabledProvider
         self.siteSearchesProvider = siteSearchesProvider
     }
 
@@ -502,11 +505,18 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             seenSuggestionKeys.insert(suggestionKey)
         }
 
-        if let primarySuggestion = primarySuggestion(for: query) {
-            appendSuggestion(primarySuggestion)
+        let primary = primarySuggestion(for: query)
+        // A command that answers the query comes before searching for it, unless it is an address.
+        if primary?.kind != .url, let command = localSuggestions.first(where: { Self.commandAnswers($0, query) }) {
+            appendSuggestion(command)
+        }
+        if let primary {
+            appendSuggestion(primary)
         }
 
-        appendSuggestion(aiSearchSuggestion(for: query))
+        if aiSearchEnabledProvider() {
+            appendSuggestion(aiSearchSuggestion(for: query))
+        }
 
         for localSuggestion in localSuggestions {
             appendSuggestion(localSuggestion)
@@ -543,6 +553,12 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         }
 
         return assembledSuggestions
+    }
+
+    private static func commandAnswers(_ suggestion: BrowserCommandSuggestion, _ query: String) -> Bool {
+        guard suggestion.kind == .command, query.count >= 2 else { return false }
+        let needle = query.lowercased()
+        return suggestion.displayText.lowercased().split(separator: " ").contains { $0.hasPrefix(needle) }
     }
 
     func aiSearchSuggestion(for query: String) -> BrowserCommandSuggestion {

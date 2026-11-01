@@ -20,8 +20,7 @@ final class BrowserDeveloperToolbarView: NSView {
     // MARK: Private
 
     private var tint: NSColor {
-        let key = model.selectedSpaceTheme?.palette?.key.nsColor ?? NSColor(white: 0.3, alpha: 1)
-        return key.blended(withFraction: 0.45, of: .black) ?? key
+        model.selectedSpaceTheme?.palette?.accentFill ?? NSColor(white: 0.3, alpha: 1)
     }
 
     init(model: BrowserChromeModel) {

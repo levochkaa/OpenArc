@@ -853,6 +853,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     get: { preferences.searchEngineSuggestionsEnabled },
                     set: { preferences.searchEngineSuggestionsEnabled = $0 },
                 ),
+                toggle(
+                    "ai-search-suggestion",
+                    BrowserStrings.settingsShowAISearchSuggestion,
+                    get: { preferences.showsAISearchSuggestion },
+                    set: { preferences.showsAISearchSuggestion = $0 },
+                ),
                 picker(
                     "ai-search-provider",
                     BrowserStrings.settingsAISearchProvider,

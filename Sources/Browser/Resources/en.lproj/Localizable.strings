@@ -737,3 +737,4 @@
 "browser.developer.reload_options" = "Reload options";
 "browser.developer.reload" = "Reload";
 "browser.developer.reload_ignore_cache" = "Refresh (Ignore Cache)";
+"browser.settings.show_ai_search_suggestion" = "Offer an AI answer in the command bar";

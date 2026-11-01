@@ -173,6 +173,36 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
+    static let editSpaceTheme = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.spaceEditThemeAction,
+        helpTitle: BrowserStrings.spaceEditThemeAction,
+        shortcut: .unassigned,
+    )
+
+    static let toggleDeveloperMode = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuTurnOnDeveloperMode,
+        helpTitle: BrowserStrings.menuTurnOnDeveloperMode,
+        shortcut: BrowserKeyboardShortcut("d", modifiers: [.control]),
+    )
+
+    static let networkInspector = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuNetworkInspector,
+        helpTitle: BrowserStrings.menuNetworkInspector,
+        shortcut: .unassigned,
+    )
+
+    static let viewMedia = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuViewMedia,
+        helpTitle: BrowserStrings.menuViewMedia,
+        shortcut: .unassigned,
+    )
+
+    static let blankWindow = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuBlankWindow,
+        helpTitle: BrowserStrings.menuBlankWindow,
+        shortcut: BrowserKeyboardShortcut("n", modifiers: [.control, .command]),
+    )
+
     static let manageSpaces = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuManageSpaces,
         helpTitle: BrowserStrings.menuManageSpaces,
@@ -687,6 +717,11 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case developerTools
     case shareTab
     case manageSpaces
+    case blankWindow
+    case viewMedia
+    case networkInspector
+    case toggleDeveloperMode
+    case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs
     case unmuteAllTabs

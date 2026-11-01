@@ -53,7 +53,7 @@ enum BrowserChromeColors {
     static let resizeHandle = adaptive(light: rgba(0, 0, 0, 0.14), dark: rgba(255, 255, 255, 0.16))
     static let resizeHandleHover = adaptive(light: rgba(0, 0, 0, 0.24), dark: rgba(255, 255, 255, 0.28))
     static let commandBarBackdropTint = adaptive(light: rgba(255, 255, 255, 0.38), dark: rgba(0, 0, 0, 0.34))
-    static let commandBarPanelTint = adaptive(light: rgba(255, 255, 255, 0.88), dark: rgba(0, 0, 0, 0.38))
+    static let commandBarPanelTint = adaptive(light: rgb(246, 246, 246), dark: rgb(26, 26, 26))
     static let commandBarPanelBorder = adaptive(light: rgba(0, 0, 0, 0.14), dark: rgba(255, 255, 255, 0.12))
     static let commandBarFieldTint = adaptive(light: rgba(0, 0, 0, 0.05), dark: rgba(255, 255, 255, 0.06))
     static let commandBarFieldBorder = adaptive(light: rgba(0, 0, 0, 0.08), dark: rgba(255, 255, 255, 0.08))

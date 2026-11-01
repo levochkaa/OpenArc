@@ -254,6 +254,9 @@ enum BrowserWindowMode: Equatable {
         aiSearchProviderProvider: { [weak self] in
             self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
         },
+        aiSearchEnabledProvider: { [weak self] in
+            self?.userPreferencesStore.showsAISearchSuggestion ?? false
+        },
         siteSearchesProvider: { [weak self] in
             self?.userPreferencesStore.siteSearches ?? []
         },
@@ -279,6 +282,9 @@ enum BrowserWindowMode: Equatable {
         },
         aiSearchProviderProvider: { [weak self] in
             self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
+        },
+        aiSearchEnabledProvider: { [weak self] in
+            self?.userPreferencesStore.showsAISearchSuggestion ?? false
         },
         siteSearchesProvider: { [weak self] in
             self?.userPreferencesStore.siteSearches ?? []
@@ -3459,6 +3465,16 @@ enum BrowserWindowMode: Equatable {
         case .javaScriptConsole:
             canShowDeveloperToolsForCommand
         case .manageSpaces:
+            supportsSpaces
+        case .blankWindow:
+            true
+        case .viewMedia:
+            supportsSpaces
+        case .networkInspector:
+            canShowDeveloperToolsForCommand
+        case .toggleDeveloperMode:
+            canToggleDeveloperMode
+        case .editSpaceTheme:
             supportsSpaces
         case .togglePictureInPicture:
             canTogglePictureInPicture
@@ -7345,6 +7361,16 @@ extension BrowserCommandID {
             ["console", "javascript console", "js console"]
         case .manageSpaces:
             ["manage spaces", "spaces"]
+        case .blankWindow:
+            ["blank window", "new window"]
+        case .viewMedia:
+            ["media", "view media", "images"]
+        case .networkInspector:
+            ["network", "network inspector", "requests"]
+        case .toggleDeveloperMode:
+            ["developer mode", "dev mode", "developer"]
+        case .editSpaceTheme:
+            ["theme", "edit theme", "color"]
         case .togglePictureInPicture:
             ["picture in picture", "pip", "floating video"]
         case .muteAllTabs:
@@ -7523,6 +7549,16 @@ extension BrowserCommandID {
             "terminal"
         case .manageSpaces:
             "square.on.square"
+        case .blankWindow:
+            "macwindow.badge.plus"
+        case .viewMedia:
+            "photo.on.rectangle"
+        case .networkInspector:
+            "network"
+        case .toggleDeveloperMode:
+            "hammer"
+        case .editSpaceTheme:
+            "paintpalette"
         case .togglePictureInPicture:
             "pip"
         case .muteAllTabs:

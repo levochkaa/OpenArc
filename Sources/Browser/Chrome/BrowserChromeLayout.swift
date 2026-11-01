@@ -138,7 +138,7 @@ enum BrowserChromeLayout {
     static let chromeButtonCornerRadius: CGFloat = 9
     static let chromeButtonSpacing: CGFloat = 6
     static let windowControlsTrailingGap: CGFloat = 5
-    static let commandBarWidth: CGFloat = 720
+    static let commandBarWidth: CGFloat = 763
     static let compactCommandBarMinimumSidebarMultiplier: CGFloat = 2
     static let compactCommandBarMaximumWindowFraction: CGFloat = 0.5
     static let compactCommandBarHorizontalViewportPadding: CGFloat = 12
@@ -149,20 +149,21 @@ enum BrowserChromeLayout {
     static let compactCommandBarSymbolSize: CGFloat = 13
     static let compactCommandBarTopGap: CGFloat = 0
     static let compactCommandBarTextFieldVerticalOffset: CGFloat = 4
-    static let commandBarCornerRadius: CGFloat = 20
+    static let commandBarCornerRadius: CGFloat = 14
     static let commandBarShadowRadius: CGFloat = 40
     static let commandBarTopInsetMinimum: CGFloat = 92
     static let commandBarTopInsetMaximum: CGFloat = 184
     static let commandBarTopInsetFraction: CGFloat = 0.22
     static let commandBarOuterPadding: CGFloat = 4
-    static let commandBarFieldHeight: CGFloat = 52
+    static let commandBarFieldHeight: CGFloat = 60
     static let commandBarFieldCornerRadius: CGFloat = 14
-    static let commandBarRowHorizontalPadding: CGFloat = 14
+    static let commandBarRowHorizontalPadding: CGFloat = 13
     static let commandBarRowContentSpacing: CGFloat = 12
     static let commandBarRowVerticalPadding: CGFloat = 12
+    static let commandBarFieldLeading: CGFloat = 22
     static let commandBarSymbolSize: CGFloat = 14
     static let commandBarSymbolWidth: CGFloat = 18
-    static let commandBarSuggestionRowHeight: CGFloat = 42
+    static let commandBarSuggestionRowHeight: CGFloat = 46
     static let commandBarSuggestionSpacing: CGFloat = 4
     static let commandBarSuggestionVerticalInset: CGFloat = commandBarOuterPadding * 2
     /// Scroll inset around the suggestion table. Table row rects include half the row spacing above and below,

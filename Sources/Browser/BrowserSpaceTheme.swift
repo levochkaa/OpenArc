@@ -180,6 +180,12 @@ struct BrowserSpaceTheme: Codable, Equatable {
         let key: Color
         let isLightContent: Bool
 
+        /// The fill of whatever carries the theme's color behind white content.
+        var accentFill: NSColor {
+            let color = key.nsColor
+            return color.blended(withFraction: 0.45, of: .black) ?? color
+        }
+
         /// The theme as CSS variables, for pages that adapt to the Space's colors.
         var cssVariables: [(name: String, value: String)] {
             let dark = !isLightContent

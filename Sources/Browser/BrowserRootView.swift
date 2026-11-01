@@ -789,6 +789,9 @@ final class BrowserRootView: NSView {
         sidebar.refresh()
         toolbarVisibility.setVisible(showsSiteToolbar, view: toolbar, curve: .sidebar)
         developerToolbar.refresh()
+        let selectionColor = model.selectedSpaceTheme?.palette?.accentFill
+        command.themeSelectionColor = selectionColor
+        currentPageCommand.themeSelectionColor = selectionColor
         toolbar.refresh()
         bookmarksVisibility.setVisible(showsBookmarksBar, view: bookmarks, curve: .sidebar)
         bookmarks.refresh()

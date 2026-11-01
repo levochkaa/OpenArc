@@ -13,11 +13,15 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     let queryField = BrowserCommandNSTextField()
     private(set) var displayedSuggestions = [BrowserCommandSuggestion]()
 
+    /// The selected row's fill, from the Space's theme.
+    var themeSelectionColor: NSColor?
+
     // MARK: Private
 
     private let model: BrowserCommandBarModel
     private let faviconCache: BrowserFaviconCache
     private var observations = Set<AnyCancellable>()
+
     private let panel = BrowserNativeMaterialPanel()
     private let symbol = NSImageView()
     private let siteChip = BrowserNativeSurface()
@@ -149,7 +153,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         panel.frame = geometry.panelFrame
         let outer = BrowserChromeLayout.commandBarOuterPadding
         let fieldHeight = geometry.inputHeight
-        let horizontal = BrowserChromeLayout.commandBarRowHorizontalPadding + outer * 2
+        let horizontal = BrowserChromeLayout.commandBarFieldLeading
         symbol.frame = NSRect(
             x: horizontal,
             y: outer + (fieldHeight - style.symbolSize) / 2,
@@ -392,7 +396,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             suggestion: suggestion,
             selected: model.selectedSuggestionID == suggestion.id,
             favicon: faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion)),
-            selectionColor: model.activeSiteSearch?.chipColor,
+            selectionColor: model.activeSiteSearch?.chipColor ?? themeSelectionColor,
         )
         view.onPress = { [weak model] in model?.submitSuggestion(id: suggestion.id) }
     }

@@ -21,6 +21,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
 
     // MARK: Private
 
+    private let tile = BrowserNativeSurface()
     private let icon = NSImageView()
     private let primary = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
@@ -37,7 +38,10 @@ final class BrowserCommandSuggestionNSView: NSButton {
         setButtonType(.momentaryChange)
         target = self
         action = #selector(pressed)
-        primary.font = .systemFont(ofSize: 15, weight: .medium)
+        tile.strokeWidth = 0
+        tile.cornerRadius = 6
+        addSubview(tile, positioned: .below, relativeTo: nil)
+        primary.font = .systemFont(ofSize: 15, weight: .semibold)
         primary.textColor = BrowserChromeColors.primaryText
         detail.font = .systemFont(ofSize: 12, weight: .medium)
         detail.textColor = BrowserChromeColors.secondaryText
@@ -88,10 +92,10 @@ final class BrowserCommandSuggestionNSView: NSButton {
     override func draw(_: NSRect) {
         if isSelectedSuggestion, let selectionColor {
             selectionColor.setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12).fill()
+            NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
         } else if isSelectedSuggestion || hovered {
             BrowserChromeColors.commandBarSuggestionSelected.setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12).fill()
+            NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
         }
     }
 
@@ -99,6 +103,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         super.layout()
         let padding = BrowserChromeLayout.commandBarRowHorizontalPadding
         let spacing = BrowserChromeLayout.commandBarRowContentSpacing
+        tile.frame = NSRect(x: 10, y: (bounds.height - 24) / 2, width: 24, height: 24)
         icon.frame = NSRect(
             x: padding,
             y: (bounds.height - 14) / 2,
@@ -137,6 +142,11 @@ final class BrowserCommandSuggestionNSView: NSButton {
         isSelectedSuggestion = selected
         self.selectionColor = selectionColor
         let tinted = selected && selectionColor != nil
+        let isCommand = suggestion.kind == .command
+        tile.isHidden = !isCommand
+        tile.fillColor = tinted ? .white : BrowserCommandSuggestionNSView.badgeFill
+        badge.fillColor = tinted ? .white : BrowserCommandSuggestionNSView.badgeFill
+        badgeLabel.textColor = tinted ? selectionColor : BrowserChromeColors.secondaryText
         primary.textColor = tinted ? .white : BrowserChromeColors.primaryText
         detail.textColor = tinted ? NSColor.white.withAlphaComponent(0.75) : BrowserChromeColors.secondaryText
         title = suggestion.displayText
@@ -150,7 +160,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         } else {
             icon.image = NSImage(systemSymbolName: suggestion.systemImageName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: BrowserChromeLayout.commandBarSymbolSize, weight: .semibold))
-            icon.contentTintColor = tinted ? .white : BrowserChromeColors.primaryText
+            icon.contentTintColor = tinted ? (isCommand ? selectionColor : .white) : BrowserChromeColors.primaryText
         }
         setAccessibilityLabel(suggestion.displayText)
         setAccessibilityHelp(suggestion.detailText)
