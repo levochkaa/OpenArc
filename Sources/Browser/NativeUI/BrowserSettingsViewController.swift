@@ -572,6 +572,14 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     get: { preferences.opensLittleWindowFromAnyApp },
                     set: { preferences.opensLittleWindowFromAnyApp = $0 },
                 ),
+                picker(
+                    "small-window-lifetime",
+                    BrowserStrings.settingsSmallWindowLifetime,
+                    options: BrowserSmallWindowLifetime.allCases,
+                    title: { $0.title },
+                    get: { preferences.smallWindowLifetime },
+                    set: { preferences.smallWindowLifetime = $0 },
+                ),
             ]),
             section(BrowserStrings.settingsPeekSection, rows: [
                 toggle(
@@ -899,6 +907,16 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             ]),
             section(BrowserStrings.settingsSiteSearchTitle, body: siteSearchesBody),
             section(BrowserStrings.settingsTemporaryTabsTitle, rows: automaticArchivalRows()),
+            section(BrowserStrings.settingsNewDocumentsTitle, rows: [
+                picker(
+                    "new-documents-app",
+                    BrowserStrings.settingsNewDocumentsApp,
+                    options: BrowserNewDocumentsApp.allCases,
+                    title: { $0.title },
+                    get: { preferences.newDocumentsApp },
+                    set: { preferences.newDocumentsApp = $0 },
+                ),
+            ]),
             section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
             section(BrowserStrings.settingsYourData, rows: [
                 link(BrowserStrings.settingsPrivacyAndSecurity, url: BrowserSettingsRoute.privacyURL),

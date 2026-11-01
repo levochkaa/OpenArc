@@ -1,0 +1,52 @@
+// BrowserNewDocumentsTests.swift
+
+import Foundation
+import Testing
+
+@MainActor struct BrowserNewDocumentsTests {
+    @Test func shortQueriesOfferNothing() {
+        #expect(BrowserNewDocument.matching("ne", app: .googleDocs).isEmpty)
+    }
+
+    @Test func thePreferredAppComesFirst() {
+        let google = BrowserNewDocument.matching("new", app: .googleDocs)
+        #expect(google.first == .googleDoc)
+        let notion = BrowserNewDocument.matching("new", app: .notion)
+        #expect(notion.first == .notionPage)
+        #expect(notion.count == google.count, "Every kind stays reachable")
+        #expect(Set(notion.map(\.urlString)).count == notion.count)
+    }
+
+    @Test func queriesNarrowTheList() {
+        let sheets = BrowserNewDocument.matching("SHEET", app: .word)
+        #expect(sheets.map(\.urlString) == ["https://sheet.new"])
+    }
+
+    @Test func choicesAreKept() throws {
+        let suite = "BrowserNewDocumentsTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = BrowserUserPreferencesStore(userDefaults: defaults)
+        #expect(first.newDocumentsApp == .googleDocs)
+        #expect(first.smallWindowLifetime == .twelveHours)
+        first.newDocumentsApp = .word
+        first.smallWindowLifetime = .never
+        let second = BrowserUserPreferencesStore(userDefaults: defaults)
+        #expect(second.newDocumentsApp == .word)
+        #expect(second.smallWindowLifetime == .never)
+    }
+
+    @Test func theCommandBarOpensADocument() async {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.userPreferencesStore.newDocumentsApp = .notion
+        f.model.presentCommandBar()
+        f.model.commandBarModel.query = "notion"
+        await f.model.commandBarModel.waitForPendingSuggestionLoad()
+        let matches = f.model
+            .commandBarModel
+            .suggestions
+            .filter { $0.resolvedURLString == "https://app.notion.com/new" }
+        #expect(matches.count == 1)
+        #expect(matches.first?.kind == .url)
+    }
+}

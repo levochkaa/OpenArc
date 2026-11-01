@@ -197,6 +197,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let contentBlockingExcludedHosts = "browser.settings.contentBlockingExcludedHosts"
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
+        static let newDocumentsApp = "browser.settings.newDocumentsApp"
     }
 
     // MARK: Internal
@@ -206,6 +207,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
     /// Read by the engine through `BrowserPeekSettings`.
     static let peekEnabledKey = "browser.settings.peekEnabled"
     static let littleWindowOptionCommandClickKey = "browser.settings.littleWindowOptionCommandClick"
+    /// Read by the engine through `BrowserPeekSettings`.
+    static let smallWindowLifetimeKey = "browser.settings.smallWindowLifetime"
 
     @Published var automaticUpdatesEnabled: Bool {
         didSet { userDefaults.set(automaticUpdatesEnabled, forKey: Key.automaticUpdatesEnabled) }
@@ -323,6 +326,14 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     /// Option-Command-N in any app opens a small window. Off by default:
     /// it takes the key combination from every other app.
+    @Published var smallWindowLifetime: BrowserSmallWindowLifetime {
+        didSet { userDefaults.set(smallWindowLifetime.rawValue, forKey: Self.smallWindowLifetimeKey) }
+    }
+
+    @Published var newDocumentsApp: BrowserNewDocumentsApp {
+        didSet { userDefaults.set(newDocumentsApp.rawValue, forKey: Key.newDocumentsApp) }
+    }
+
     @Published var opensLittleWindowFromAnyApp: Bool {
         didSet { userDefaults.set(opensLittleWindowFromAnyApp, forKey: Key.opensLittleWindowFromAnyApp) }
     }
@@ -431,6 +442,12 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
         self.opensOptionCommandClicksInLittleWindow = userDefaults.bool(forKey: Self.littleWindowOptionCommandClickKey)
         self.opensLittleWindowFromAnyApp = userDefaults.bool(forKey: Key.opensLittleWindowFromAnyApp)
+        self.smallWindowLifetime = userDefaults.object(forKey: Self.smallWindowLifetimeKey) == nil
+            ? .twelveHours
+            : BrowserSmallWindowLifetime(rawValue: userDefaults.double(forKey: Self.smallWindowLifetimeKey)) ??
+            .twelveHours
+        self.newDocumentsApp = userDefaults.string(forKey: Key.newDocumentsApp)
+            .flatMap(BrowserNewDocumentsApp.init(rawValue:)) ?? .googleDocs
         self.folderPreviewsEnabled = Self.loadBool(userDefaults, key: Key.folderPreviewsEnabled, defaultValue: true)
         self.peeksLinksToOtherSites = Self.loadBool(userDefaults, key: Key.peeksLinksToOtherSites, defaultValue: false)
         self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)

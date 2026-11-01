@@ -520,6 +520,96 @@ enum BrowserStrings {
         comment: "Site control center menu item that clears the cache and reloads.",
     )
 
+    static let newDocumentGoogleDoc = NSLocalizedString(
+        "browser.new_document.google_doc",
+        comment: "Command bar entry that opens a new Google Doc.",
+    )
+
+    static let newDocumentGoogleSheet = NSLocalizedString(
+        "browser.new_document.google_sheet",
+        comment: "Command bar entry that opens a new Google Sheet.",
+    )
+
+    static let newDocumentGoogleSlides = NSLocalizedString(
+        "browser.new_document.google_slides",
+        comment: "Command bar entry that opens new Google Slides.",
+    )
+
+    static let newDocumentWord = NSLocalizedString(
+        "browser.new_document.word",
+        comment: "Command bar entry that opens a new Word document.",
+    )
+
+    static let newDocumentNotion = NSLocalizedString(
+        "browser.new_document.notion",
+        comment: "Command bar entry that opens a new Notion page.",
+    )
+
+    static let newDocumentFigma = NSLocalizedString(
+        "browser.new_document.figma",
+        comment: "Command bar entry that opens a new Figma file.",
+    )
+
+    static let newDocumentFigJam = NSLocalizedString(
+        "browser.new_document.figjam",
+        comment: "Command bar entry that opens a new FigJam board.",
+    )
+
+    static let newDocumentMeeting = NSLocalizedString(
+        "browser.new_document.meeting",
+        comment: "Command bar entry that starts a new Google Meet.",
+    )
+
+    static let newDocumentsAppGoogleDocs = NSLocalizedString(
+        "browser.new_documents_app.google_docs",
+        comment: "Settings option: new documents open in Google Docs.",
+    )
+
+    static let newDocumentsAppWord = NSLocalizedString(
+        "browser.new_documents_app.word",
+        comment: "Settings option: new documents open in Word.",
+    )
+
+    static let newDocumentsAppNotion = NSLocalizedString(
+        "browser.new_documents_app.notion",
+        comment: "Settings option: new documents open in Notion.",
+    )
+
+    static let settingsNewDocumentsTitle = NSLocalizedString(
+        "browser.settings.new_documents.title",
+        comment: "Settings section about new documents.",
+    )
+
+    static let settingsNewDocumentsApp = NSLocalizedString(
+        "browser.settings.new_documents.app",
+        comment: "Settings picker for the app new documents open in.",
+    )
+
+    static let settingsSmallWindowLifetime = NSLocalizedString(
+        "browser.settings.small_window.lifetime",
+        comment: "Settings picker for how long an unused small window stays open.",
+    )
+
+    static let settingsSmallWindowLifetimeOneHour = NSLocalizedString(
+        "browser.settings.small_window.lifetime.one_hour",
+        comment: "Option: unused small windows close after one hour.",
+    )
+
+    static let settingsSmallWindowLifetimeTwelveHours = NSLocalizedString(
+        "browser.settings.small_window.lifetime.twelve_hours",
+        comment: "Option: unused small windows close after twelve hours.",
+    )
+
+    static let settingsSmallWindowLifetimeOneDay = NSLocalizedString(
+        "browser.settings.small_window.lifetime.one_day",
+        comment: "Option: unused small windows close after a day.",
+    )
+
+    static let settingsSmallWindowLifetimeNever = NSLocalizedString(
+        "browser.settings.small_window.lifetime.never",
+        comment: "Option: unused small windows stay open.",
+    )
+
     static let siteControlAllowAds = NSLocalizedString(
         "browser.site_control.allow_ads",
         comment: "Site control center menu item that turns the ad blocker off for this site.",

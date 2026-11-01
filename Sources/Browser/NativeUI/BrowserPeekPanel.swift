@@ -413,6 +413,12 @@ final class BrowserPeekAddressField: NSTextField {
 
 /// Read by the engine when a link asks for a new window.
 @objc final class BrowserPeekSettings: NSObject {
+    /// Seconds an unused small window stays open; 0 keeps it.
+    @objc static var smallWindowLifetime: TimeInterval {
+        let stored = UserDefaults.standard.object(forKey: BrowserUserPreferencesStore.smallWindowLifetimeKey)
+        return (stored as? Double) ?? BrowserSmallWindowLifetime.twelveHours.rawValue
+    }
+
     /// Peek for Shift-clicked links, on unless turned off in Settings.
     @objc static var isEnabled: Bool {
         UserDefaults.standard.object(forKey: BrowserUserPreferencesStore.peekEnabledKey) as? Bool ?? true

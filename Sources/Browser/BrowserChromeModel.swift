@@ -4447,6 +4447,9 @@ enum BrowserWindowMode: Equatable {
             ),
         )
 
+        suggestions
+            .append(contentsOf: newDocumentSuggestions(for: trimmedQuery).prefix(maximumCount - suggestions.count))
+
         let remainingAfterCommands = maximumCount - suggestions.count
         if remainingAfterCommands > 0 {
             suggestions.append(
@@ -4488,6 +4491,12 @@ enum BrowserWindowMode: Equatable {
         }
 
         return Array(suggestions.prefix(maximumCount))
+    }
+
+    private func newDocumentSuggestions(for query: String) -> [BrowserCommandSuggestion] {
+        BrowserNewDocument.matching(query, app: userPreferencesStore.newDocumentsApp).map {
+            BrowserCommandSuggestion(kind: .url, displayText: $0.title, resolvedURLString: $0.urlString)
+        }
     }
 
     private func commandActionSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {

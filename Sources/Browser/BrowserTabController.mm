@@ -3515,6 +3515,10 @@ struct TabRecord {
 /// attached loads when it does.
 @property(nonatomic, copy) NSString *initialURLString;
 @property(nonatomic) BOOL closing;
+/// A small window rather than a card over a page.
+@property(nonatomic) BOOL standalone;
+/// When a small window was last in front.
+@property(nonatomic, strong) NSDate *lastUsed;
 @end
 
 @implementation BrowserPeekSession {
@@ -3662,6 +3666,7 @@ void WatchClickModifiers();
   std::map<std::string, TabRecord> _tabRecords;
   CefRefPtr<CefRequestContext> _requestContext;
   std::map<std::string, CefRefPtr<CefRequestContext>> _spaceProfileContexts;
+  NSTimer *_smallWindowSweepTimer;
   NSString *_activeTabID;
   NSArray<NSString *> *_visibleLayoutTabIDs;
   BOOL _visibleLayoutVertical;
@@ -4383,6 +4388,35 @@ void WatchClickModifiers();
   [_peekSessions[@(_nextPeekSessionID)].panel focusAddressField];
 }
 
+/// Closes small windows that have not been in front for the chosen time.
+- (void)startSmallWindowSweep {
+  if (_smallWindowSweepTimer != nil) {
+    return;
+  }
+  __weak BrowserTabController *weakSelf = self;
+  _smallWindowSweepTimer = [NSTimer scheduledTimerWithTimeInterval:60
+                                                            repeats:YES
+                                                              block:^(NSTimer *) {
+                                                                [weakSelf sweepSmallWindows];
+                                                              }];
+}
+
+- (void)sweepSmallWindows {
+  const NSTimeInterval lifetime = BrowserPeekSettings.smallWindowLifetime;
+  NSDate *now = NSDate.date;
+  for (NSNumber *sessionID in _peekSessions.allKeys) {
+    BrowserPeekSession *session = _peekSessions[sessionID];
+    if (!session.standalone || session.closing) {
+      continue;
+    }
+    if (session.panel.isKeyWindow) {
+      session.lastUsed = now;
+    } else if (lifetime > 0 && [now timeIntervalSinceDate:session.lastUsed] >= lifetime) {
+      [self closePeekSession:sessionID.intValue];
+    }
+  }
+}
+
 - (void)navigatePeekSession:(int)sessionID toURLString:(NSString *)urlString {
   BrowserPeekSession *session = _peekSessions[@(sessionID)];
   if (session == nil || session.closing || urlString.length == 0) {
@@ -4434,11 +4468,15 @@ void WatchClickModifiers();
   BrowserPeekSession *session = [[BrowserPeekSession alloc] init];
   session.urlString = resolved;
   session.initialURLString = resolved;
+  session.standalone = standalone;
+  session.lastUsed = NSDate.date;
   session.panel = standalone ? [BrowserPeekPanel presentStandalone] : [BrowserPeekPanel presentOverWindow:window];
   [session.panel updateWithURLString:resolved];
   _peekSessions[@(sessionID)] = session;
   if (!standalone) {
     _peekCardSessionID = sessionID;
+  } else {
+    [self startSmallWindowSweep];
   }
   __weak BrowserTabController *weakSelf = self;
   session.panel.onClose = ^{
@@ -5225,6 +5263,8 @@ void WatchClickModifiers();
     [self invalidateCloseRequestForTabID:ToNSString(tabID)];
   }
   _tabRecords.clear();
+  [_smallWindowSweepTimer invalidate];
+  _smallWindowSweepTimer = nil;
   _requestContext = nullptr;
   _spaceProfileContexts.clear();
 }
