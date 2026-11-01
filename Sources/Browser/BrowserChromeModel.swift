@@ -364,6 +364,8 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: shows the share sheet in the window.
     var onShareURL: ((URL) -> Void)?
     /// Opens a link in an incognito window; the application owns those windows.
+    /// Applies new blocking settings and returns once pages get them.
+    var onContentBlockingChange: ((BrowserContentBlockerSettings) async -> Void)?
     var onOpenLinkInIncognito: ((URL) -> Void)?
     /// UI-only: opens the window's theme editor for a Space.
     var onEditSpaceTheme: ((String) -> Void)?

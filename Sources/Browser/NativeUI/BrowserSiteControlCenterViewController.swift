@@ -323,10 +323,29 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         let isWeb = model.currentTab
             .flatMap { BrowserSitePermissionRequest.origin(ofURLString: $0.urlString) }?
             .hasPrefix("http") == true
+        let preferences = model.userPreferencesStore
+        if isWeb, preferences.contentBlockerSettings.isEnabled,
+           let host = model.currentTab.flatMap({ URL(string: $0.urlString)?.host() })
+        {
+            let excluded = preferences.contentBlockerSettings.isExcluded(host: host)
+            let title = excluded ? BrowserStrings.siteControlBlockAds : BrowserStrings.siteControlAllowAds
+            BrowserNativeMenus.add(title, to: menu) { [weak self] in self?.setBlocking(!excluded, forHost: host) }
+        }
         BrowserNativeMenus.add(BrowserStrings.siteControlAllSiteSettings, to: menu, enabled: isWeb) { [weak self] in
             self?.onAction(.allSiteSettings)
         }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: more.bounds.maxY + 4), in: more)
+    }
+
+    /// Reloads once the new rules apply, so the page shows the choice at once.
+    private func setBlocking(_ excluded: Bool, forHost host: String) {
+        let preferences = model.userPreferencesStore
+        let settings = preferences.contentBlockerSettings.excluding(excluded, host: host)
+        preferences.contentBlockingExcludedHosts = settings.excludedHosts
+        Task { [model] in
+            await model.onContentBlockingChange?(settings)
+            model.reloadCurrentTab()
+        }
     }
 
     private func share(from button: NSView) {

@@ -88,6 +88,35 @@ struct BrowserContentBlockerSettings: Equatable {
     var excludedHosts = [String]()
 
     var isEnabled: Bool { blocksAds || blocksTrackers || blocksCookieBanners }
+
+    /// The form a site is kept in on the excluded list.
+    static func excludedName(forHost host: String) -> String {
+        let lowered = host.lowercased()
+        return lowered.hasPrefix("www.") ? String(lowered.dropFirst(4)) : lowered
+    }
+
+    /// Whether blocking is off for this site, including through a parent domain.
+    func isExcluded(host: String) -> Bool {
+        var parts = Self.excludedName(forHost: host).split(separator: ".")[...]
+        while !parts.isEmpty {
+            if excludedHosts.contains(parts.joined(separator: ".")) { return true }
+            parts = parts.dropFirst()
+        }
+        return false
+    }
+
+    /// Turns blocking off or back on for this site.
+    func excluding(_ excluded: Bool, host: String) -> Self {
+        var settings = self
+        let name = Self.excludedName(forHost: host)
+        if excluded {
+            guard !isExcluded(host: host) else { return self }
+            settings.excludedHosts.append(name)
+        } else {
+            settings.excludedHosts.removeAll { name == $0 || name.hasSuffix(".\($0)") }
+        }
+        return settings
+    }
 }
 
 // MARK: - BrowserContentBlocker

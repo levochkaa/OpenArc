@@ -659,3 +659,5 @@
 "browser.menu.share_tab" = "Share…";
 "browser.space.set_profile_action" = "Set Profile";
 "browser.space.creation.profile" = "Profile";
+"browser.site_control.allow_ads" = "Allow Ads on This Site";
+"browser.site_control.block_ads" = "Block Ads on This Site";

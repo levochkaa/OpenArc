@@ -520,6 +520,16 @@ enum BrowserStrings {
         comment: "Site control center menu item that clears the cache and reloads.",
     )
 
+    static let siteControlAllowAds = NSLocalizedString(
+        "browser.site_control.allow_ads",
+        comment: "Site control center menu item that turns the ad blocker off for this site.",
+    )
+
+    static let siteControlBlockAds = NSLocalizedString(
+        "browser.site_control.block_ads",
+        comment: "Site control center menu item that turns the ad blocker back on for this site.",
+    )
+
     static let siteControlClearCookies = NSLocalizedString(
         "browser.site_control.clear_cookies",
         comment: "Site control center menu item that clears cookies and reloads.",

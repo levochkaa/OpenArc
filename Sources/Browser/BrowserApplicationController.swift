@@ -2320,6 +2320,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     /// What a page's context menu needs from the application.
     private func connectPageCommands(to model: BrowserChromeModel) {
+        model.onContentBlockingChange = { settings in
+            BrowserContentBlocker.shared.update(settings: settings)
+            await BrowserContentBlocker.shared.waitForPendingWork()
+        }
         model.onSavePageRequest = { [weak self] in self?.saveCurrentPage(nil) }
         model.onOpenLinkInIncognito = { [weak self] url in
             guard let self else { return }
