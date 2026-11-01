@@ -1256,6 +1256,7 @@ enum BrowserWindowMode: Equatable {
             persistCurrentSessionIfAllowed()
         }
         guard !hasUncommittedSessionWrites else { return }
+        historyStore.prepareSearchIndex()
         automaticArchivalTimer?.invalidate()
         automaticArchivalTimer = nil
         webAppManifestLoadTask?.cancel()
@@ -2628,6 +2629,7 @@ enum BrowserWindowMode: Equatable {
     func presentFindBar() {
         guard canFindInPage else {
             return
+        historyStore.prepareSearchIndex()
         }
 
         commandBarModel.dismiss()
@@ -5345,28 +5347,22 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func openTabSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
-        let normalizedQuery = query
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-
-        return activeSpaceTabs
-            .filter { tab in
-                tab.id != selectedTabID
-                    && (
-                        normalizedCommandSearchText(tab.displayTitle).contains(normalizedQuery)
-                            || normalizedCommandSearchText(tab.urlString).contains(normalizedQuery)
-                    )
-            }
-            .prefix(maximumCount)
-            .map { tab in
-                BrowserCommandSuggestion(
-                    kind: .openTab,
-                    displayText: tab.displayTitle,
-                    detailText: BrowserURLDisplayFormatter.displayString(for: tab.urlString),
-                    resolvedURLString: tab.urlString,
-                    tabIDs: [tab.id],
-                )
-            }
+        let activeIDs = Set(activeSpaceTabs.map(\.id))
+        let candidates = tabs.filter { $0.id != selectedTabID && !$0.urlString.isEmpty }
+            .sorted { activeIDs.contains($0.id) && !activeIDs.contains($1.id) }
+        let index = BrowserSearchIndex(documents: candidates.map {
+            .init(title: $0.displayTitle, urlString: $0.urlString)
+        })
+        return index.search(query, limit: maximumCount).map { position in
+            let tab = candidates[position]
+            return BrowserCommandSuggestion(
+                kind: .openTab,
+                displayText: tab.displayTitle,
+                detailText: BrowserURLDisplayFormatter.displayString(for: tab.urlString),
+                resolvedURLString: tab.urlString,
+                tabIDs: [tab.id],
+            )
+        }
     }
 
     private func normalizedCommandSearchText(_ text: String) -> String {
