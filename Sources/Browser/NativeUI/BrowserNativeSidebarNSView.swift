@@ -1378,7 +1378,7 @@ final class BrowserNativeSidebarNSView: NSView {
         BrowserNativeMenus.add(muted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction, to: menu) {
             model.setTabMuted(!muted, id: tab.id)
         }
-        if tab.placement == .spacePinned {
+        if tab.placement.keepsPinnedURL {
             let pinned = BrowserNativeMenus.submenu(BrowserStrings.pinnedTabEditPageAction, in: menu)
             BrowserNativeMenus
                 .add(BrowserStrings.pinnedTabReplaceURLWithCurrentAction, to: pinned) {
@@ -1393,9 +1393,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 }
             }
         }
-        if section != .app {
-            addSplitItems(for: tab, to: menu)
-        }
+        addSplitItems(for: tab, to: menu)
         addArrangeItems(for: tab, to: menu)
         menu.addItem(.separator())
         if tab.placement == .spacePinned {

@@ -98,13 +98,26 @@ import Testing
         #expect(f.model.splitPaneTabIDs(of: group) == [f.id("a"), f.id("y")])
     }
 
-    @Test func favoritesCannotJoinASplit() {
+    @Test func aFavoriteKeepsItsTileAndACopyJoinsTheSplit() throws {
         let f = SidebarDragFixture(apps: ["app"])
+        let app = f.id("app")
         f.model.selectTab(id: f.id("x"))
-        #expect(!f.model.openInSplitView(tabID: f.id("app")))
-        f.model.selectTab(id: f.id("app"))
-        #expect(!f.model.openInSplitView(tabID: f.id("y")))
-        #expect(f.model.splitGroups.isEmpty)
+        #expect(f.model.openInSplitView(tabID: app))
+        let panes = f.model.splitPaneTabIDs(forTabID: f.id("x"))
+        #expect(panes.count == 2)
+        #expect(!panes.contains(app))
+        let copy = try #require(f.model.tabs.first { panes.contains($0.id) && $0.id != f.id("x") })
+        let favorite = try #require(f.model.tabs.first { $0.id == app })
+        #expect(copy.urlString == favorite.urlString)
+        #expect(copy.placement != .app)
+        #expect(favorite.placement == .app)
+        f.model.selectTab(id: app)
+        #expect(f.model.splitPaneTabIDs(forTabID: app) == [app], "Its tile shows it alone")
+
+        #expect(f.model.openInSplitView(tabID: f.id("y")), "From a selected Favorite too")
+        #expect(f.model.splitGroups.count == 2)
+        #expect(f.model.splitGroup(containingTabID: app) == nil)
+        #expect(f.model.splitGroup(containingTabID: f.id("y")) != nil)
     }
 
     @Test func restoredGroupsKeepPaneOrderOrientationAndSizes() throws {
@@ -565,12 +578,10 @@ import Testing
         #expect(f.model.splitGroups.isEmpty)
     }
 
-    @Test func addSplitViewIsUnavailableForFavoritesAndFullSplits() {
+    @Test func addSplitViewIsUnavailableForFullSplitsOnly() {
         let f = SidebarDragFixture(pinned: [], temporary: ["a", "b", "c", "d"], apps: ["app"])
         f.model.selectTab(id: f.id("app"))
-        #expect(!f.model.canAddSplitView)
-        f.model.presentSplitViewCommandBar()
-        #expect(f.model.pendingSplitAnchorTabID == nil)
+        #expect(f.model.canAddSplitView)
         f.model.selectTab(id: f.id("a"))
         #expect(f.model.canAddSplitView)
         for name in ["b", "c", "d"] {
@@ -926,4 +937,15 @@ private func splitStoreSnapshot(
         tabs: ids.map { BrowserTabSessionSnapshotTab(id: $0, urlString: "https://\($0).example", spaceID: "space") },
         splitGroups: groups,
     )
+}
+
+@Test @MainActor func aFavoriteKeepsItsPinnedURLThroughNavigationAndClosing() throws {
+    let f = SidebarDragFixture(apps: ["app"])
+    let app = f.id("app")
+    let home = try #require(f.model.tabs.first { $0.id == app }?.urlString)
+    #expect(f.model.setPinnedURLString("https://home.example/", forTabID: app))
+    #expect(f.model.tabs.first { $0.id == app }?.pinnedURLString == "https://home.example/")
+    #expect(f.model.tabs.first { $0.id == app }?.urlString == home, "The page stays until it is closed")
+    #expect(f.model.closeAppTabProcess(id: app, forceClose: true))
+    #expect(f.model.tabs.first { $0.id == app }?.urlString == "https://home.example/")
 }

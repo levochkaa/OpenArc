@@ -58,7 +58,7 @@ import Testing
         let request = try #require(f.driver.confirmedCloseRequests.last)
         f.model.setUserTitleOverride("Edited during unload", forTabID: id)
         f.driver.emitUpdate(id: id, title: "Latest loaded title", urlString: "https://example.com/latest")
-        if placement == .spacePinned {
+        if placement.keepsPinnedURL {
             #expect(f.model.setPinnedURLString("https://example.com/new-home", forTabID: id))
         }
         let current = try #require(f.model.tabs.first { $0.id == id })
@@ -71,7 +71,7 @@ import Testing
         f.recording.reset()
         f.finish(request, .closed)
         let retained = try #require(f.model.tabs.first { $0.syncID == "a" })
-        let expectedURL = placement == .spacePinned ? "https://example.com/new-home" : current.urlString
+        let expectedURL = placement.keepsPinnedURL ? "https://example.com/new-home" : current.urlString
         #expect(retained.id == id && retained.placement == placement)
         #expect(retained.urlString == expectedURL && retained.userTitleOverride == current.userTitleOverride)
         #expect(retained.pinnedURLString == current.pinnedURLString)
@@ -85,9 +85,6 @@ import Testing
         #expect(try !f.hasTombstone("a"))
         #expect(try !f.operations().contains(.deleteTab(id: "a")))
         #expect(try Array(f.evidence().queue.prefix(queueBefore.count)) == queueBefore)
-        if placement == .app {
-            #expect(try f.evidence().queue == queueBefore)
-        }
         let reopenedStore = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
         let persisted = try #require(try reopenedStore.loadSnapshotStrict()?.tabs.first { $0.id == "a" })
         #expect(persisted.urlString == expectedURL && persisted.placement == placement)
@@ -124,7 +121,7 @@ import Testing
         let request = try #require(f.driver.confirmedCloseRequests.last)
         f.model.moveTab(withID: id, toPlacement: destination, atSectionIndex: 0)
         f.driver.emitUpdate(id: id, urlString: "https://example.com/changed-after-move")
-        if destination == .spacePinned {
+        if destination.keepsPinnedURL {
             #expect(f.model.setPinnedURLString("https://example.com/moved-home", forTabID: id))
         }
         let current = try #require(f.model.tabs.first { $0.id == id })
@@ -157,7 +154,7 @@ import Testing
             #expect(f.model.canRestoreArchivedTab, "Retired reopen bookkeeping must not block future Archive actions")
         } else {
             #expect(retained.id == id && f.driver.createdTabRequests.count == creates)
-            #expect(retained.urlString == (destination == .spacePinned ? current.pinnedURLString : current.urlString))
+            #expect(retained.urlString == (destination.keepsPinnedURL ? current.pinnedURLString : current.urlString))
             f.model.selectTab(id: id)
             f.flushReady()
             #expect(f.model.tabs.first { $0.syncID == "a" }?.id != id)

@@ -39,6 +39,9 @@ enum BrowserTabPlacement: String, Codable, Equatable, Hashable {
     case temporary
     case spacePinned
     case app
+
+    /// Pinned tabs and Favorites come back to the page they were given.
+    var keepsPinnedURL: Bool { self == .spacePinned || self == .app }
 }
 
 // MARK: - BrowserSpaceSessionSnapshot

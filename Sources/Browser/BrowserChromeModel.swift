@@ -1410,7 +1410,7 @@ enum BrowserWindowMode: Equatable {
                 title: savedTitle ?? "",
                 userTitleOverride: sanitizedUserTitleOverride(from: title),
                 urlString: urlString,
-                pinnedURLString: placement == .spacePinned ? normalizedPinnedURLString(from: urlString) : nil,
+                pinnedURLString: placement.keepsPinnedURL ? normalizedPinnedURLString(from: urlString) : nil,
                 placement: placement,
                 pinnedFolderID: folderID,
                 lastActivityAt: now,
@@ -2090,7 +2090,7 @@ enum BrowserWindowMode: Equatable {
     @discardableResult func setPinnedURLString(_ urlString: String?, forTabID tabID: String) -> Bool {
         guard
             let index = tabs.firstIndex(where: { $0.id == tabID }),
-            tabs[index].placement == .spacePinned,
+            tabs[index].placement.keepsPinnedURL,
             let normalizedURLString = normalizedPinnedURLString(from: urlString),
             tabs[index].pinnedURLString != normalizedURLString
         else {
@@ -3271,6 +3271,16 @@ enum BrowserWindowMode: Equatable {
         }
 
         retireTabCreationCallbacks(id: id)
+        if let home = effectivePinnedURLString(forPinnedTab: tab), !areEquivalentPinnedURLStrings(tab.urlString, home),
+           let index = tabs.firstIndex(where: { $0.id == id })
+        {
+            tabs[index].title = ""
+            tabs[index].urlString = home
+            tabs[index].faviconURLString = nil
+            tabs[index].canGoBack = false
+            tabs[index].canGoForward = false
+            tabs[index].isLoading = false
+        }
         closedAppTabIDs.insert(id)
         removeTabFromSwitcherTracking(id)
         BrowserTelemetry.captureUsage(.tabClosed, properties: telemetryProperties(for: tab))
@@ -4306,7 +4316,7 @@ enum BrowserWindowMode: Equatable {
             ?? spaces.first?.id ?? Self.defaultSpaceID
         tab.placement = snapshot.placement
         tab.userTitleOverride = sanitizedUserTitleOverride(from: snapshot.userTitleOverride)
-        tab.pinnedURLString = snapshot.placement == .spacePinned
+        tab.pinnedURLString = snapshot.placement.keepsPinnedURL
             ? normalizedPinnedURLString(from: snapshot.pinnedURLString ?? snapshot.urlString)
             : nil
         tab.pinnedFolderID = snapshot.placement == .spacePinned ? snapshot.pinnedFolderID : nil
@@ -4574,7 +4584,7 @@ enum BrowserWindowMode: Equatable {
                 title: tabSnapshot.pageTitle ?? "",
                 userTitleOverride: tabSnapshot.userTitleOverride,
                 urlString: tabSnapshot.urlString,
-                pinnedURLString: placement == .spacePinned
+                pinnedURLString: placement.keepsPinnedURL
                     ? normalizedPinnedURLString(from: tabSnapshot.pinnedURLString ?? tabSnapshot.urlString)
                     : nil,
                 placement: placement,
@@ -5636,7 +5646,7 @@ enum BrowserWindowMode: Equatable {
                 : nil
             let restored = BrowserTabSessionSnapshotTab(
                 id: request.syncID, urlString: archived?.tab.urlString ?? original.urlString,
-                pinnedURLString: placement == .spacePinned ? original.pinnedURLString : nil,
+                pinnedURLString: placement.keepsPinnedURL ? original.pinnedURLString : nil,
                 userTitleOverride: archived?.tab.userTitleOverride ?? original.userTitleOverride,
                 placement: placement, spaceID: destination, pinnedFolderID: folderID,
                 lastActivityTimestamp: now,
@@ -6100,7 +6110,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     }
 
     func effectivePinnedURLString(forPinnedTab tab: Tab) -> String? {
-        guard tab.placement == .spacePinned else {
+        guard tab.placement.keepsPinnedURL else {
             return nil
         }
 
@@ -6108,7 +6118,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     }
 
     func pinnedURLString(for tab: Tab, movingTo placement: BrowserTabPlacement) -> String? {
-        guard placement == .spacePinned else {
+        guard placement.keepsPinnedURL else {
             return nil
         }
 

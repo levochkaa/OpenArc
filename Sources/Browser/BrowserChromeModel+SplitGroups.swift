@@ -223,10 +223,22 @@ extension BrowserChromeModel {
         insertion: SplitInsertion = .end,
         orientation: BrowserTabSplitOrientation = .horizontal,
     ) -> Bool {
-        guard let anchorID = anchorTabID ?? selectedTabID, anchorID != tabID,
-              let anchor = tabs.first(where: { $0.id == anchorID }), anchor.placement != .app,
-              let added = tabs.first(where: { $0.id == tabID }), added.placement != .app
+        guard let anchorID = anchorTabID ?? selectedTabID, canOpenInSplitView(tabID: tabID, anchorTabID: anchorID),
+              let anchor = tabs.first(where: { $0.id == anchorID }),
+              let added = tabs.first(where: { $0.id == tabID })
         else { return false }
+        // A Favorite keeps its tile: a copy of its page joins the split.
+        if anchor.placement == .app || added.placement == .app {
+            guard let anchorCopy = anchor.placement == .app ? duplicateTab(id: anchorID) : anchorID,
+                  let addedCopy = added.placement == .app ? duplicateTab(id: tabID) : tabID
+            else { return false }
+            return openInSplitView(
+                tabID: addedCopy,
+                anchorTabID: anchorCopy,
+                insertion: insertion,
+                orientation: orientation,
+            )
+        }
         let existing = splitGroup(containingTabID: anchorID)
         let paneIDs = existing.map { splitPaneTabIDs(of: $0) } ?? [anchorID]
         guard !paneIDs.contains(tabID), paneIDs.count < Self.maximumSplitPaneCount,
@@ -266,8 +278,8 @@ extension BrowserChromeModel {
     /// Whether `openInSplitView(tabID:anchorTabID:)` would accept the pair.
     func canOpenInSplitView(tabID: String, anchorTabID: String) -> Bool {
         guard anchorTabID != tabID,
-              let anchor = tabs.first(where: { $0.id == anchorTabID }), anchor.placement != .app,
-              let added = tabs.first(where: { $0.id == tabID }), added.placement != .app
+              tabs.contains(where: { $0.id == anchorTabID }),
+              tabs.contains(where: { $0.id == tabID })
         else { return false }
         let panes = splitPaneTabIDs(forTabID: anchorTabID)
         return !panes.contains(tabID) && panes.count < Self.maximumSplitPaneCount
@@ -316,9 +328,7 @@ extension BrowserChromeModel {
     /// "Add Split View": the selected tab, or the selected split, can take
     /// another pane.
     var canAddSplitView: Bool {
-        guard canCreateTab, let selectedTabID,
-              let selected = tabs.first(where: { $0.id == selectedTabID }), selected.placement != .app
-        else { return false }
+        guard canCreateTab, let selectedTabID else { return false }
         return splitPaneTabIDs(forTabID: selectedTabID).count < Self.maximumSplitPaneCount
     }
 
