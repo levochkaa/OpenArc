@@ -16,6 +16,7 @@ final class BrowserRootView: NSView {
     private let background = BrowserChromeBackgroundNSView()
     private let content: BrowserContentNSView
     private let sidebar: BrowserSidebarChromeView
+    private var sidebarLibraryEnd = 0
     private let toolbar: BrowserSiteControlsNSView
     private let bookmarks: BrowserBookmarksBarNSView
     private let margins = BrowserNativeWindowMargins()
@@ -335,7 +336,9 @@ final class BrowserRootView: NSView {
         let libraryWidth = model.librarySection == .spaces ? bounds.width : BrowserLibraryLayout.width
         let libraryShown = model.librarySection != nil
         var targets: [(NSView, CGRect)] = [
-            (content, geometry.contentFrame), (find, geometry.contentFrame), (sidebar, geometry.sidebarFrame),
+            (content, geometry.contentFrame), (find, geometry.contentFrame),
+            // The Library takes the sidebar's place: the sidebar keeps its size while it fades.
+            (sidebar, libraryShown ? sidebar.frame : geometry.sidebarFrame),
             (
                 pageLoadingIndicator,
                 CGRect(
@@ -445,6 +448,66 @@ final class BrowserRootView: NSView {
 
     private func sidebarFrame(in _: CGSize) -> CGRect { windowGeometry.sidebarFrame }
 
+    /// The sidebar shrinks a little and fades as the Library arrives, and comes back the same way.
+    private func transitionSidebar(forLibraryPresented presented: Bool) {
+        sidebarLibraryEnd += 1
+        guard window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let layer = sidebar.layer
+        else {
+            sidebar.isHidden = presented
+            return
+        }
+        let center = CGPoint(
+            x: preferences.sidebarPosition == .right
+                ? sidebar.bounds.width - BrowserLibraryLayout.width / 2
+                : BrowserLibraryLayout.width / 2,
+            y: sidebar.bounds.height / 2,
+        )
+        var small = CATransform3DMakeTranslation(center.x, center.y, 0)
+        small = CATransform3DScale(small, 0.95, 0.95, 1)
+        small = CATransform3DTranslate(small, -center.x, -center.y, 0)
+        let curve: BrowserNativeAnimation.Curve = presented ? .sidebarToLibrary : .sidebarFromLibrary
+        let scale = curve.layerAnimation(keyPath: "transform")
+        scale.fromValue = presented ? layer.presentation()?.transform ?? CATransform3DIdentity : small
+        scale.toValue = presented ? small : CATransform3DIdentity
+        let fade = curve.layerAnimation(keyPath: "opacity")
+        fade.fromValue = layer.presentation()?.opacity ?? (presented ? 1 : 0)
+        fade.toValue = presented ? 0 : 1
+        if presented {
+            for animation in [scale, fade] {
+                animation.fillMode = .forwards
+                animation.isRemovedOnCompletion = false
+            }
+            layer.add(scale, forKey: "browser.sidebar.library.scale")
+            layer.add(fade, forKey: "browser.sidebar.library.fade")
+        } else {
+            if sidebar.isHidden {
+                fade.fromValue = 0
+            }
+            sidebar.isHidden = false
+            layer.removeAnimation(forKey: "browser.sidebar.library.scale")
+            layer.removeAnimation(forKey: "browser.sidebar.library.fade")
+            // A group starts when the transaction commits, together with the Library's slide.
+            let delay: CFTimeInterval = 0.05
+            let group = CAAnimationGroup()
+            for animation in [scale, fade] {
+                animation.beginTime = delay
+                animation.fillMode = .backwards
+            }
+            group.animations = [scale, fade]
+            group.duration = curve.duration + delay
+            layer.add(group, forKey: "browser.sidebar.library.return")
+        }
+        guard presented else { return }
+        let end = sidebarLibraryEnd
+        DispatchQueue.main.asyncAfter(deadline: .now() + curve.duration) { [weak self] in
+            guard let self, sidebarLibraryEnd == end else { return }
+            sidebar.isHidden = true
+            layer.removeAnimation(forKey: "browser.sidebar.library.scale")
+            layer.removeAnimation(forKey: "browser.sidebar.library.fade")
+        }
+    }
+
     /// Committed at once, so the slide and the fade run while the tab switches.
     private func beginSpaceTransition(to spaceID: String) {
         let delay = sidebar.sidebar.slidePager(toSpaceID: spaceID)
@@ -531,7 +594,7 @@ final class BrowserRootView: NSView {
                     library.isHidden = true
                 }
             }
-            sidebar.isHidden = libraryPresented
+            transitionSidebar(forLibraryPresented: libraryPresented)
             animateNextLayout = true
             nextLayoutCurve = libraryPresented ? .libraryOpen : .library
         }
