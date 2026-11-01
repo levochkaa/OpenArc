@@ -74,6 +74,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private var splitPreviewRow: BrowserNativeSidebarRowNSView?
     private let scrollObserver = BrowserSpacePagerScrollNSView()
     private var pages = [String: BrowserNativeSidebarPage]()
+    private var staleRowHoverCheck: DispatchWorkItem?
     private var appTiles = [String: BrowserNativeSidebarRowNSView]()
     private var hasRenderedAppTiles = false
     private var tracking: NSTrackingArea?
@@ -668,6 +669,17 @@ final class BrowserNativeSidebarNSView: NSView {
         state.model.selectTab(id: id)
     }
 
+    /// The list moves under a still pointer when Favorites change. Runs once rows stop moving.
+    private func scheduleStaleRowHoverCheck() {
+        staleRowHoverCheck?.cancel()
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, let id = state.snapshot.selectedSpaceID else { return }
+            pages[id]?.rows.values.forEach { $0.endHoverIfPointerLeft() }
+        }
+        staleRowHoverCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: check)
+    }
+
     private func layoutContent(animated: Bool) {
         guard !isLayingOut else { return }
         isLayingOut = true
@@ -737,6 +749,7 @@ final class BrowserNativeSidebarNSView: NSView {
             height: appHeight,
         )
         setFrame(appFrame, of: appGrid, animated: animated)
+        scheduleStaleRowHoverCheck()
         let appFrames = appLayout.frames(for: appTabs.count, availableWidth: width)
         for (index, tab) in appTabs.enumerated() where appFrames.indices.contains(index) {
             if let tile = appTiles[tab.id] {

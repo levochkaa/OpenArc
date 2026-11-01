@@ -204,6 +204,15 @@ class BrowserNativePressableView: BrowserNativeSurface {
         }
     }
 
+    /// Tracking reports nothing when the view moves away from a still pointer.
+    func endHoverIfPointerLeft() {
+        guard isHovered, NSEvent.pressedMouseButtons == 0, let window else { return }
+        // Not `visibleRect`: a view that doesn't clip reports its scroll view's whole area.
+        if !bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) {
+            setHovered(false)
+        }
+    }
+
     func pointerMoved(_: NSEvent) {}
     func interactionChanged() { needsDisplay = true }
     func resetInteraction() {
