@@ -107,7 +107,7 @@ final class BrowserChromeBackgroundNSView: NSView {
 
     /// The selected Space's theme, nil for neutral. A different Space's theme
     /// cross-fades as its page slides in; edits in progress apply at once.
-    func setTheme(_ theme: BrowserSpaceTheme?, animated: Bool) {
+    func setTheme(_ theme: BrowserSpaceTheme?, animated: Bool, delay: CFTimeInterval = 0) {
         let next = theme?.colors.isEmpty == true ? nil : theme
         guard next != self.theme else { return }
         if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -115,6 +115,10 @@ final class BrowserChromeBackgroundNSView: NSView {
             fade.type = .fade
             fade.duration = BrowserNativeAnimation.Curve.spaceSlide.duration
             fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
+            if delay > 0 {
+                fade.beginTime = CACurrentMediaTime() + delay
+                fade.fillMode = .backwards
+            }
             themeContainer.layer?.add(fade, forKey: "theme")
         }
         self.theme = next

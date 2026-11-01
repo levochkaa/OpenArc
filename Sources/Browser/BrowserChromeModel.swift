@@ -346,6 +346,8 @@ enum BrowserWindowMode: Equatable {
     var onOpenExtensions: (() -> Void)?
     /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.
     var onRevealSidebar: (() -> Void)?
+    /// Called before a Space is selected, so its motion can start ahead of the tab switch.
+    var onSpaceWillSelect: ((String) -> Void)?
     /// UI-only: bumped by `renameSelectedTab()`, the only writer, so the
     /// sidebar starts renaming the selected row.
     @Published var sidebarRenameRequestID = 0
@@ -1562,6 +1564,7 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        onSpaceWillSelect?(spaceID)
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
         recordExplicitViewingActivity(ids: [selectedTabID])

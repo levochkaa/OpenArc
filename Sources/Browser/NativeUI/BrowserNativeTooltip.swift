@@ -345,6 +345,15 @@ private final class BrowserNativeTooltipPanelView: NSView {
 
     static let shared = BrowserNativeTooltipPresenter()
 
+    /// While a Space is swiped the rows pass under the pointer; they must not show tooltips.
+    var isSuppressed = false {
+        didSet {
+            if isSuppressed, let descriptor {
+                end(id: descriptor.id, detached: true)
+            }
+        }
+    }
+
     private var hoveredID: UUID?
     private weak var anchor: NSView?
     private var descriptor: Descriptor?
@@ -388,6 +397,7 @@ private final class BrowserNativeTooltipPanelView: NSView {
         placement: BrowserTooltipPlacement = .belowLeading,
         anchorXFraction: CGFloat = BrowserChromeLayout.tooltipAnchorXFraction,
     ) {
+        guard !isSuppressed else { return }
         let isAlreadyHovering = hoveredID == id
         hoveredID = id
         self.anchor = anchor

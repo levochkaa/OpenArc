@@ -257,6 +257,24 @@ import Testing
         #expect(!state.isSpacePagerDragging)
     }
 
+    @Test func slowSwipeTurnsThePageOnlyPastTheMiddle() async throws {
+        let (model, _) = makeModel()
+        let first = try #require(model.selectedSpaceID)
+        model.createNewSpace()
+        let second = try #require(model.selectedSpaceID)
+        model.selectSpace(id: first)
+        let state = BrowserNativeSidebarState(model: model, snapshot: snapshot(model), sidebarWidth: 240)
+        state.updateSpacePagerScroll(by: -200, in: state.snapshot, pageWidth: 240)
+        #expect(state.spacePagerDragTranslation == -100, "A swipe moves the page by half of the scroll")
+        try await Task.sleep(nanoseconds: 550_000_000)
+        state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
+        #expect(model.selectedSpaceID == first)
+        state.updateSpacePagerScroll(by: -260, in: state.snapshot, pageWidth: 240)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
+        #expect(model.selectedSpaceID == second)
+    }
+
     @Test func hoveredCloseButtonReservesSpaceAndTruncatesLongTitle() throws {
         let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 180, height: 36))
         row.update(tab: tab(), selected: true, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)

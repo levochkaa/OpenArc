@@ -9,6 +9,8 @@ import QuartzCore
 /// AppKit owns sidebar layout, row identity, scrolling, selection, rename editors and drag/drop.
 /// Header and footer share native chrome controls with the main toolbar.
 final class BrowserNativeSidebarNSView: NSView {
+    private static let spaceSelectionDelay: CFTimeInterval = 0.03
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -52,8 +54,8 @@ final class BrowserNativeSidebarNSView: NSView {
     private let dragEvents = BrowserSidebarDragEventSession()
 
     private let landingAnimation = BrowserNativeAnimation()
-    private let dragPreviewAnimation = BrowserNativeAnimation()
     private var dragPreviewTargetSize: CGSize?
+    private var dragPreviewIsAppTile = false
     private lazy var handledRevealRequestID = state.model.sidebarRevealRequestID
     private lazy var handledRenameRequestID = state.model.sidebarRenameRequestID
     private var lastWindowDragPoint = CGPoint.zero
@@ -200,7 +202,6 @@ final class BrowserNativeSidebarNSView: NSView {
             folderPreview.dismiss()
             dragEvents.stop()
             landingAnimation.cancel()
-            dragPreviewAnimation.cancel()
             state.clearTabDragState()
             return
         }
@@ -443,7 +444,6 @@ final class BrowserNativeSidebarNSView: NSView {
     ) -> Bool {
         folderPreview.dismiss()
         landingAnimation.cancel()
-        dragPreviewAnimation.cancel()
         dragEvents.stop()
         state.clearTabDragState()
         activateSingleDraggedTab(item)
@@ -610,6 +610,18 @@ final class BrowserNativeSidebarNSView: NSView {
         return next == nil ? [] : .copy
     }
 
+    /// Starts the slide to a Space before the model does the work of switching to it.
+    /// Returns how long the motion waits: a click shows its press first, a swipe goes on.
+    @discardableResult func slidePager(toSpaceID spaceID: String) -> CFTimeInterval {
+        guard let index = state.snapshot.spaces.firstIndex(where: { $0.id == spaceID }), window != nil else { return 0 }
+        state.pagerTargetSpaceID = spaceID
+        var rect = pagesContainer.frame
+        rect.origin.x = state.spacePagerOffset(selectedIndex: index, pageWidth: pagerClip.bounds.width)
+        let delay = state.hasSpacePagerReleaseVelocity ? 0 : Self.spaceSelectionDelay
+        setFrame(rect, of: pagesContainer, animated: true, delay: delay)
+        return delay
+    }
+
     /// A single dragged tab activates when the gesture starts; the tab stays
     /// active even if the drop is a no-op. Explicit multi-selections and
     /// folders keep the current tab.
@@ -720,7 +732,12 @@ final class BrowserNativeSidebarNSView: NSView {
             animated: animated,
         )
         scrollObserver.frame = pagerClip.frame
-        let selectedIndex = state.selectedSpaceIndex(in: state.snapshot) ?? 0
+        if state.pagerTargetSpaceID == state.snapshot.selectedSpaceID {
+            state.pagerTargetSpaceID = nil
+        }
+        let selectedIndex = state.pagerTargetSpaceID.flatMap { id in
+            state.snapshot.spaces.firstIndex { $0.id == id }
+        } ?? state.selectedSpaceIndex(in: state.snapshot) ?? 0
         let isCreatingSpace = state.model.spaceCreationDraft != nil
         // The Space being created is a page after the last one.
         let index = isCreatingSpace ? state.snapshot.spaces.count : selectedIndex
@@ -768,20 +785,29 @@ final class BrowserNativeSidebarNSView: NSView {
         onSpacePagerProgress(state.snapshot.spaces[neighbor].id, min(abs(translation) / pageStride, 1))
     }
 
-    private func setFrame(_ rect: NSRect, of view: NSView, animated: Bool) {
+    private func setFrame(_ rect: NSRect, of view: NSView, animated: Bool, delay: CFTimeInterval = 0) {
         guard view === pagesContainer else {
             frameTransitions.setFrame(rect, of: view, animated: animated, curve: state.rowMoveCurve)
             return
         }
         // The tab switch that comes with a Space stalls the main thread.
         let curve = state.spacePagerCurve
+        var initialVelocity: CGFloat = 0
         if animated, view.frame.origin != rect.origin {
-            pagerSlideEnd = CACurrentMediaTime() + curve.duration
-            DispatchQueue.main.asyncAfter(deadline: .now() + curve.duration) { [weak self] in
+            initialVelocity = state.takeSpacePagerReleaseVelocity() / (rect.minX - view.frame.minX)
+            pagerSlideEnd = CACurrentMediaTime() + delay + curve.duration
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + curve.duration) { [weak self] in
                 self?.needsLayout = true
             }
         }
-        frameTransitions.slide(view, to: rect, animated: animated, curve: curve)
+        frameTransitions.slide(
+            view,
+            to: rect,
+            animated: animated,
+            curve: curve,
+            initialVelocity: initialVelocity,
+            delay: delay,
+        )
     }
 
     private func configure(
@@ -791,6 +817,14 @@ final class BrowserNativeSidebarNSView: NSView {
     ) {
         let state = state
         let model = state.model
+        // A page keeps its own Space's colors while it slides in.
+        let palette = model.spaceThemesByID[space.id]?.palette
+        page.spaceThemePalette = palette
+        let pageAppearance = palette.flatMap { NSAppearance(named: $0.isLightContent ? .aqua : .darkAqua) }
+            ?? window?.effectiveAppearance
+        if page.appearance?.name != pageAppearance?.name {
+            page.appearance = pageAppearance
+        }
         page.document.menuProvider = { [weak self] in self?.spaceMenu(space) ?? NSMenu() }
         page.header.isHidden = !model.supportsSpaces
         page.header.update(
@@ -1409,7 +1443,6 @@ final class BrowserNativeSidebarNSView: NSView {
 
     private func endDragging(at point: CGPoint, cancelled: Bool) {
         dragEvents.stop()
-        dragPreviewAnimation.cancel()
         guard let payload = state.drag.payload else { return }
         let from = dragPreview.frame
         state.drag.release(at: point, cancel: cancelled)
@@ -1493,7 +1526,6 @@ final class BrowserNativeSidebarNSView: NSView {
 
     private func completeDragPresentation() {
         landingAnimation.cancel()
-        dragPreviewAnimation.cancel()
         dragEvents.stop()
         state.clearTabDragState()
         refresh()
@@ -1550,34 +1582,25 @@ final class BrowserNativeSidebarNSView: NSView {
         guard let payload = state.drag.payload else {
             dragEvents.stop()
             landingAnimation.cancel()
-            dragPreviewAnimation.cancel()
             dragPreview.isHidden = true
             return
         }
         guard state.drag.phase == .dragging else { return }
         dragPreview.onBeginDragSession = nil
         dragPreview.alphaValue = 1
+        // The preview keeps the look and size it started with until the drop.
+        if dragPreviewTargetSize == nil {
+            dragPreviewTargetSize = state.drag.previewSize
+            dragPreviewIsAppTile = state.drag.isAppPreview
+        }
+        let dragPreviewSize = dragPreviewTargetSize ?? state.drag.previewSize
         dragPreview.update(
             payload: payload,
             snapshot: state.snapshot,
-            appTile: state.drag.isAppPreview,
+            appTile: dragPreviewIsAppTile,
         )
-        let size = state.drag.previewSize
-        if dragPreview.isHidden || dragPreviewTargetSize == nil {
-            dragPreview.frame.size = size
-        } else if dragPreviewTargetSize != size {
-            let from = dragPreview.frame.size
-            dragPreviewAnimation.start(.dragPreview) { [weak self] progress in
-                guard let self else { return }
-                layoutDragPreview(size: CGSize(
-                    width: from.width + (size.width - from.width) * progress,
-                    height: from.height + (size.height - from.height) * progress,
-                ))
-            }
-        }
-        dragPreviewTargetSize = size
         dragPreview.isHidden = false
-        layoutDragPreview(size: dragPreview.frame.size)
+        layoutDragPreview(size: dragPreviewSize)
     }
 
     private func layoutDragPreview(size: CGSize) {
@@ -1629,9 +1652,7 @@ private final class BrowserNativeSidebarScrollView: NSScrollView {
 
 // MARK: - BrowserNativeSidebarPage
 
-private final class BrowserNativeSidebarPage: NSView {
-    // MARK: Internal
-
+private final class BrowserNativeSidebarPage: NSView, BrowserSpaceThemedChrome {
     enum Entry {
         case tab(
             BrowserChromeModel.Tab,
@@ -1668,6 +1689,10 @@ private final class BrowserNativeSidebarPage: NSView {
     }
 
     override var isFlipped: Bool { true }
+
+    // MARK: Internal
+
+    var spaceThemePalette: BrowserSpaceTheme.Palette?
 
     let spaceID: String
     var index = 0

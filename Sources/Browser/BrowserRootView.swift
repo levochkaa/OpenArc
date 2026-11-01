@@ -184,6 +184,7 @@ final class BrowserRootView: NSView {
         sidebar.onToggleSidebar = { [weak model] in model?.toggleSidebar() }
         model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
         model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
+        model.onSpaceWillSelect = { [weak self] in self?.beginSpaceTransition(to: $0) }
         model.onOpenExtensions = { [weak self] in self?.openExtensions() }
         model.onEditSpaceTheme = { [weak self] in self?.presentSpaceThemeEditor(spaceID: $0) }
         model.onShareURL = { [weak self] url in
@@ -435,6 +436,13 @@ final class BrowserRootView: NSView {
     }
 
     private func sidebarFrame(in _: CGSize) -> CGRect { windowGeometry.sidebarFrame }
+
+    /// Committed at once, so the slide and the fade run while the tab switches.
+    private func beginSpaceTransition(to spaceID: String) {
+        let delay = sidebar.sidebar.slidePager(toSpaceID: spaceID)
+        background.setTheme(model.spaceThemesByID[spaceID], animated: !isEditingSpaceTheme, delay: delay)
+        CATransaction.flush()
+    }
 
     private func updateURLFrame(_ frame: CGRect?) {
         guard frame != currentURLRowWindowFrame else { return }

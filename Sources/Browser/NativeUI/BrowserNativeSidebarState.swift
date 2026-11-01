@@ -1,11 +1,15 @@
 // BrowserNativeSidebarState.swift
 
 import AppKit
+import QuartzCore
 
 // MARK: - BrowserNativeSidebarState
 
 /// Selection, editing and space paging stay separate from the owned drag session.
 @MainActor final class BrowserNativeSidebarState {
+    private static let spacePagerScrollGain: CGFloat = 0.5
+    private static let spacePagerQuickSwipeDuration = 0.5
+
     // MARK: Internal
 
     let model: BrowserChromeModel
@@ -20,8 +24,9 @@ import AppKit
     /// How the Space pager moves next: a slide, or settling after a swipe.
     private(set) var rowMoveCurve = BrowserNativeAnimation.Curve.rowList
     var spacePagerCurve = BrowserNativeAnimation.Curve.spaceSelect
+    /// The Space the pager is already sliding to, before the snapshot says so.
+    var pagerTargetSpaceID: String?
     var renameDismissSuppressedUntil = Date.distantPast
-
     var isClearButtonHovered = false { didSet { invalidate() } }
     var activeTemporaryTabClearConfirmationTabID: String? { didSet { invalidate() } }
     var isSidebarHovered = false { didSet { invalidate() } }
@@ -38,8 +43,18 @@ import AppKit
     var tabRowInteractionResetID = 0 { didSet { invalidate() } }
     var topChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }
     var bottomChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }
-    var isSpacePagerDragging = false { didSet { invalidate() } }
+    var isSpacePagerDragging = false {
+        didSet {
+            BrowserNativeTooltipPresenter.shared.isSuppressed = isSpacePagerDragging
+            invalidate()
+        }
+    }
+
     var spacePagerDragTranslation: CGFloat = 0 { didSet { invalidate() } }
+
+    private var spacePagerScrollStart: CFTimeInterval = 0
+    private var spacePagerLastScroll: CFTimeInterval = 0
+    private var spacePagerScrollVelocity: CGFloat = 0
 
     // MARK: Private
 
@@ -58,6 +73,8 @@ import AppKit
     var draggedTabIDs: Set<String> { drag.hiddenTabIDs }
 
     var isDraggingSidebarItem: Bool { drag.isDragging }
+
+    var hasSpacePagerReleaseVelocity: Bool { spacePagerScrollVelocity != 0 }
 
     private var visibleSidebarTabIDs: [String] {
         guard let spaceID = snapshot.selectedSpaceID else { return [] }
@@ -245,7 +262,7 @@ import AppKit
         }
 
         let targetSpaceID = targetSpaceID(for: value, in: snapshot, pageWidth: pageWidth)
-        spacePagerCurve = .spaceSettle
+        spacePagerCurve = .spaceSelect
         withSidebarAnimation {
             isSpacePagerDragging = false
             spacePagerRawDragTranslation = 0
@@ -254,6 +271,12 @@ import AppKit
                 model.selectSpace(id: targetSpaceID)
             }
         }
+    }
+
+    /// The velocity a finished swipe hands to the slide, in points per second. Once.
+    func takeSpacePagerReleaseVelocity() -> CGFloat {
+        defer { spacePagerScrollVelocity = 0 }
+        return spacePagerScrollVelocity
     }
 
     func updateSpacePagerScroll(
@@ -272,14 +295,22 @@ import AppKit
             return
         }
 
+        let now = CACurrentMediaTime()
         if !isSpacePagerDragging {
             dismissRenamingIfNeeded()
             isSpacePagerDragging = true
+            spacePagerScrollStart = now
+            spacePagerLastScroll = now
         }
+        let moved = delta * Self.spacePagerScrollGain
+        // Events can arrive in a burst after a busy moment, so a frame is the shortest step.
+        let step = moved / max(now - spacePagerLastScroll, 1 / 60)
+        spacePagerScrollVelocity = spacePagerScrollVelocity == 0 ? step : (spacePagerScrollVelocity + step) / 2
+        spacePagerLastScroll = now
 
         spacePagerCurve = .spaceSelect
         withoutSidebarDragAnimation {
-            spacePagerRawDragTranslation += delta
+            spacePagerRawDragTranslation += moved
             spacePagerDragTranslation = constrainedSpacePagerTranslation(
                 spacePagerRawDragTranslation,
                 selectedIndex: selectedIndex,
@@ -298,12 +329,16 @@ import AppKit
             return
         }
 
+        // A quick swipe always turns the page; a slow one has to pass the middle.
+        let translation = spacePagerRawDragTranslation
+        let isQuick = CACurrentMediaTime() - spacePagerScrollStart < Self.spacePagerQuickSwipeDuration
+        let turnsPage = translation != 0 && (isQuick || abs(translation) >= pageWidth / 2)
         let targetSpaceID = targetSpaceID(
-            forProjectedTranslation: spacePagerRawDragTranslation,
+            forProjectedTranslation: turnsPage ? (translation < 0 ? -pageWidth : pageWidth) : 0,
             in: snapshot,
             pageWidth: pageWidth,
         )
-        spacePagerCurve = .spaceSettle
+        spacePagerCurve = .spaceSelect
         withSidebarAnimation {
             isSpacePagerDragging = false
             spacePagerRawDragTranslation = 0

@@ -5,7 +5,7 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | State change | Timing | Animated appearance or geometry |
 | --- | --- | --- |
 | Pinned sidebar visibility | 0.08 s, timing (0.25, 0.46, 0.45, 0.94) | Sidebar position, page origin and width, toolbars, find overlay and content hit regions |
-| Hover sidebar presentation | spring response 0.18 s, damping 0.8; reveal delay 0.07 s | Sidebar horizontal position only; the page stays put |
+| Hover sidebar presentation | spring response 0.17 s, damping 0.8; reveal delay 0.07 s | Sidebar horizontal position only; the page stays put |
 | Bookmarks/site toolbar visibility and extension panel presentation | 0.08 s, timing (0.25, 0.46, 0.45, 0.94) | Reserved page geometry; bars move/fade from above, extension panel from the trailing edge |
 | Web-app toolbar visibility | 0.08 s, timing (0.25, 0.46, 0.45, 0.94) | Toolbar and page/find geometry |
 | Chrome, folder and app-tile presses | spring response 0.23 s, damping 0.72 | Existing scale, icon translation and clockwise rotation; both directions |
@@ -19,10 +19,10 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Folder collapse / expand | 0.2 s, timing (0, 0, 0.58, 1) / 0.25 s, timing (0.25, 0.1, 0.25, 1) | Row positions |
 | Folder icon | 0.25 s, timing (0.25, 0.1, 0.25, 1) | Panels swing in perspective, shades fade; tilted while collapsed |
 | Floating menu | 0.1 s in, 0.07 s out, timing (0.215, 0.61, 0.355, 1); fade 0.05 s in | Scale 0.95 around the tail, opacity |
-| Space pager selection / settling after a swipe | spring response 0.22 s / 0.25 s, critically damped | Horizontal page offset; direct pointer/trackpad translation follows the input |
+| Space pager selection and settling after a swipe | spring response 0.2 s, critically damped; committed before the tab switch, 0.03 s after a click; a swipe's velocity carries on | Horizontal page offset; a swipe moves the page by half of the scroll delta, turns it when quick (under 0.5 s) or past the middle |
 | Theme cross-fade | 0.19 s, timing (0.215, 0.61, 0.355, 1) | Between Spaces |
-| Library | 0.19 s in, timing (0.215, 0.61, 0.355, 1); 0.22 s out, timing (0.25, 0.1, 0.25, 1) | Slides from the window edge and moves the page |
-| Drag-preview size | 0.3 s, timing (0, 0, 0.58, 1) | Tile/row dimensions around the mouse-down grab point; pointer position remains immediate |
+| Library | spring response 0.2 s, damping 0.95 in; response 0.19 s, critically damped out | Slides from the window edge and moves the page |
+| Drag preview | none | Keeps the look and size it started with until the drop; the pointer position stays with the mouse-down grab point |
 | Drop landing / cancellation | 0.12 s, timing (0.25, 0.1, 0.25, 1) | Preview travels to the final row/cell or merges into a collapsed container before the real rows are revealed |
 | Current-URL action visibility | 0.15 s, timing (0, 0, 0.58, 1) / 0.12 s, same timing | Action opacity while the pointer is in the sidebar / trailing URL mask |
 | Copy feedback icon | 0.4 s in; held 1.2 s; 0.3 s back | The link shrinks to 0.2 and fades in the first quarter, the check grows from 0.2 after a pause; on the way back the check leaves over 40 % and the link arrives from 11 % |
@@ -33,7 +33,7 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Tab-switcher visibility / selected switcher card | immediate, after 0.07 s | Panel and card colors |
 | Mini player hover | ease-in-out, 0.2 s to grow; ease-out, 0.17 s to shrink | Height, title and close button opacity; the player itself appears and leaves at once |
 | Peek | card opens on stiffness 657.7, damping 44.37 and closes on 779.82, 49.99; the page behind uses the other one | The card grows from a strip around the pointer, wide as the page; the page dims to 0.3 and scales to 0.988 |
-| Command selection scroll | ease-in-out, 0.07 s | Minimum scroll needed to reveal the row, clamped to document bounds; no forced centering |
+| Command selection scroll | ease-in-out, 0.05 s | Minimum scroll needed to reveal the row, clamped to document bounds; no forced centering |
 | Tooltip visibility | at once after 0.43 s of continuous hover; out 0.3 s when the pointer leaves, 0.1 s otherwise; timing (0, 0, 0.58, 1) | Opacity; fades as soon as the pointer leaves; the next target stays warm for 0.3 s |
 | Update toast | ease-in-out, 0.18 s | Opacity and reserved sidebar-footer height |
 | Page loading bar | pulse 1.63 s up and down, twice; spring response 0.8 s, damping 0.92 to open; highlight 0.73 s of a 1.13 s cycle, linear; 0.33 s to close, timing (0.42, 0, 1, 1) | Opacity and width above the page; Reduce Motion shows a steady bar |

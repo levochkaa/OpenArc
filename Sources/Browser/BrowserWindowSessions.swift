@@ -70,6 +70,11 @@ final class BrowserMainWindow: NSWindow {
 
     var browserUndoManager: UndoManager?
 
+    /// A borderless window would otherwise disable File > Close Window.
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        item.action == #selector(performClose(_:)) ? true : super.validateUserInterfaceItem(item)
+    }
+
     /// A borderless window has no close button, so AppKit's own version only beeps.
     override func performClose(_: Any?) {
         guard delegate?.windowShouldClose?(self) ?? true else { return }

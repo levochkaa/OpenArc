@@ -25,13 +25,11 @@ import QuartzCore
         /// The theme cross-fading to a chosen Space.
         static let spaceSlide = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
         /// The Library sliding in from the window edge.
-        static let libraryOpen = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
+        static let libraryOpen = Curve.spring(response: 0.2, damping: 0.95)
         /// The Library leaving.
-        static let library = Curve.bezier(0.22, x1: 0.25, y1: 0.1, x2: 0.25, y2: 1)
-        /// Spaces sliding to a chosen Space: critically damped.
-        static let spaceSelect = Curve.spring(response: 0.22, damping: 0.995)
-        /// Spaces settling after a swipe: critically damped.
-        static let spaceSettle = Curve.spring(response: 0.25, damping: 0.995)
+        static let library = Curve.spring(response: 0.19, damping: 0.995)
+        /// Spaces sliding to a chosen Space or settling after a swipe: critically damped.
+        static let spaceSelect = Curve.spring(response: 0.2, damping: 0.995)
         /// A pinned row's title making room for its caption, and the caption fading.
         static let caption = Curve.easeInOut(0.1)
         /// Rows placed by a drag: 0.12 s, timing (0, 0, 0.58, 1).
@@ -60,11 +58,9 @@ import QuartzCore
         /// Press on sidebar rows: stiffness 987, damping 31.4.
         static let rowPress = Curve.spring(response: 0.2, damping: 0.5)
         /// Floating sidebar slide: stiffness 1218, damping 55.9.
-        static let floatingSidebar = Curve.spring(response: 0.18, damping: 0.8)
+        static let floatingSidebar = Curve.spring(response: 0.17, damping: 0.8)
         /// A dropped row landing in place, with the rows making room for it.
         static let landing = rowList
-        /// The drag preview changing size between a row and a tile.
-        static let dragPreview = Curve.bezier(0.3, x1: 0, y1: 0, x2: 0.58, y2: 1)
         /// The copy button's link turning into a check: the first leaves, then the next arrives.
         static let copy = Curve.bezier(0.4, x1: 0, y1: 0, x2: 1, y2: 1)
         /// The check turning back into a link.
@@ -335,6 +331,8 @@ import QuartzCore
         to frame: CGRect,
         animated: Bool,
         curve: BrowserNativeAnimation.Curve,
+        initialVelocity: CGFloat = 0,
+        delay: CFTimeInterval = 0,
     ) {
         let from = view.frame
         guard animated, view.window != nil, from != .zero, from.origin != frame.origin,
@@ -346,6 +344,11 @@ import QuartzCore
         view.wantsLayer = true
         view.frame = frame
         let animation = curve.layerAnimation(keyPath: "position")
+        (animation as? CASpringAnimation)?.initialVelocity = initialVelocity
+        if delay > 0 {
+            animation.beginTime = CACurrentMediaTime() + delay
+            animation.fillMode = .backwards
+        }
         animation.isAdditive = true
         animation.fromValue = NSValue(point: CGPoint(x: from.minX - frame.minX, y: from.minY - frame.minY))
         animation.toValue = NSValue(point: .zero)

@@ -17,7 +17,7 @@ import Testing
         let slide = BrowserNativeAnimation.Curve.spaceSlide
         #expect(abs(slide.value(at: 1.0 / 60) - 0.216) < 0.05)
         #expect(abs(slide.value(at: 4.0 / 60) - 0.76) < 0.05)
-        let settle = BrowserNativeAnimation.Curve.spaceSettle
+        let settle = BrowserNativeAnimation.Curve.spaceSelect
         #expect((0..<40).map { settle.value(at: Double($0) / 120) }.allSatisfy { $0 <= 1.0001 }, "No overshoot")
     }
 
@@ -25,7 +25,7 @@ import Testing
         // Springs have unit mass: stiffness = ω², damping = 2ζω.
         for (curve, stiffness, damping) in [
             (BrowserNativeAnimation.Curve.rowPress, 986.96, 31.42),
-            (.floatingSidebar, 1218.47, 55.85),
+            (.floatingSidebar, 1366.02, 59.13),
         ] {
             guard case .spring(let response, let ratio) = curve else {
                 Issue.record("expected a spring")
