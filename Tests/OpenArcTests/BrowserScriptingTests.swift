@@ -349,3 +349,68 @@ private final class InMemoryPasswordStore: BrowserPasswordStoring {
     #expect(items.first { $0.name == "tl" }?.value == "ru")
     #expect(BrowserChromeModel.translatedPageURL(for: "openarc://settings", language: "ru") == nil)
 }
+
+// MARK: - InMemoryAddressStore
+
+private final class InMemoryAddressStore: BrowserAddressStoring {
+    var items = [BrowserSavedAddress]()
+
+    func addresses() -> [BrowserSavedAddress] { items }
+    func setAddresses(_ addresses: [BrowserSavedAddress]) { items = addresses }
+}
+
+@Test @MainActor func anAddressIsKeptAfterSavingAndFillsAfterAChoice() throws {
+    let (model, driver, _) = passwordModel()
+    let store = InMemoryAddressStore()
+    model.addressStore = store
+    let json = #"{"name":"Test Person","address-line1":"1 Example St","postal-code":"12345"}"#
+    model.handleAddressSubmitted(tabID: "t", urlString: "https://shop.example/checkout", json: json)
+    guard case .saveAddress(_, let address)? = model.passwordPrompt else {
+        Issue.record("No question")
+        return
+    }
+    #expect(address.summary == "Test Person, 1 Example St")
+    #expect(store.items.isEmpty)
+    model.answerPasswordPrompt(save: true)
+    #expect(store.items == [address])
+    model.handleAddressSubmitted(tabID: "t", urlString: "https://other.example/", json: json)
+    #expect(model.passwordPrompt == nil, "The same address asks nothing")
+    model.handleAddressFormFound(tabID: "t", frameID: "f", urlString: "https://other.example/order")
+    #expect(driver.filledAddresses.isEmpty, "Nothing fills by itself")
+    model.fillAddress(address)
+    #expect(driver.filledAddresses.first?.origin == "https://other.example")
+    #expect(try JSONDecoder().decode(
+        [String: String].self,
+        from: Data(#require(driver.filledAddresses.first?.json).utf8),
+    ) == address.fields)
+}
+
+@Test @MainActor func incognitoNeitherKeepsNorOffersAddresses() {
+    let (model, _, _) = passwordModel(mode: .incognito)
+    let store = InMemoryAddressStore()
+    store.items = [BrowserSavedAddress(fields: ["name": "A", "postal-code": "1"])]
+    model.addressStore = store
+    model.handleAddressFormFound(tabID: "t", frameID: "f", urlString: "https://example.com/")
+    #expect(model.passwordPrompt == nil)
+    model.handleAddressSubmitted(
+        tabID: "t",
+        urlString: "https://example.com/",
+        json: #"{"name":"B","postal-code":"2","tel":"3"}"#,
+    )
+    #expect(model.passwordPrompt == nil)
+}
+
+@Test @MainActor func aFrameFromAnotherSiteGetsNoAddress() {
+    let (model, driver, _) = passwordModel()
+    let store = InMemoryAddressStore()
+    store.items = [BrowserSavedAddress(fields: ["name": "A", "postal-code": "1"])]
+    model.addressStore = store
+    driver.emitCreatedTab(id: "t", urlString: "https://shop.example/checkout", isActive: true)
+    model.handleAddressFormFound(tabID: "t", frameID: "f", urlString: "https://ads.example/frame")
+    #expect(model.passwordPrompt == nil)
+    let json = #"{"name":"B","postal-code":"2","tel":"3"}"#
+    model.handleAddressSubmitted(tabID: "t", urlString: "https://ads.example/frame", json: json)
+    #expect(model.passwordPrompt == nil)
+    model.handleAddressFormFound(tabID: "t", frameID: "f", urlString: "https://shop.example/checkout")
+    #expect(model.passwordPrompt != nil)
+}

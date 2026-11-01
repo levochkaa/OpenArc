@@ -3247,6 +3247,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         syncCoordinator?.setSnapshotApplier(chromeModel)
         chromeModel.passwordStore = BrowserKeychainPasswordStore(profileID: profile.id)
+        chromeModel.addressStore = BrowserKeychainAddressStore(profileID: profile.id)
         chromeModel.liveFolderFetcher = BrowserGitHubLiveFolderFetcher(
             browser: BrowserHiddenPageBrowser(profileCachePath: profileDirectoryURL.path),
         )
@@ -3473,6 +3474,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         chromeModel.firstTabURLString = firstURL?.absoluteString
         if blank, let sourceProfile {
             chromeModel.passwordStore = BrowserKeychainPasswordStore(profileID: sourceProfile.id)
+            chromeModel.addressStore = BrowserKeychainAddressStore(profileID: sourceProfile.id)
         }
 
         let rootView = BrowserRootView(model: chromeModel, updateController: updateController)

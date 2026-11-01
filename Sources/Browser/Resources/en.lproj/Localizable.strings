@@ -774,3 +774,8 @@
 "browser.password.copy" = "Copy Password";
 "browser.password.none_saved" = "No saved passwords";
 "browser.menu.translate_page" = "Translate Page";
+"browser.address.save_title" = "Save this address?";
+"browser.address.fill_title" = "Fill an address";
+"browser.address.fill_detail" = "Only empty fields change";
+"browser.settings.addresses" = "Addresses";
+"browser.address.none_saved" = "No saved addresses";

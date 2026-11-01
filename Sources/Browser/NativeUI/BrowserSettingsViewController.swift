@@ -126,6 +126,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private var updateBindings = [() -> Void]()
     private var profileDeleteButtons = [(BrowserProfile, BrowserActionButton)]()
     private let passwordsBody = NSStackView()
+    private let addressesBody = NSStackView()
     private let shortcutsBody = NSStackView()
     private let profilesBody = NSStackView()
     private let accountsBody = NSStackView()
@@ -896,6 +897,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             ]),
             section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
             section(BrowserStrings.settingsPasswords, body: passwordsBody),
+            section(BrowserStrings.settingsAddresses, body: addressesBody),
             section(BrowserStrings.settingsYourData, rows: [
                 link(BrowserStrings.settingsPrivacyAndSecurity, url: BrowserSettingsRoute.privacyURL),
                 link(BrowserStrings.settingsCreditCards, url: BrowserSettingsRoute.paymentsURL),
@@ -905,7 +907,33 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         ])
         refreshSiteSearches()
         refreshPasswords()
+        refreshAddresses()
         refreshProfiles()
+    }
+
+    private func refreshAddresses() {
+        let store = model.addressStore
+        let addresses = store?.addresses() ?? []
+        guard !addresses.isEmpty else {
+            replaceRows(
+                [BrowserNativeControls.label(
+                    BrowserStrings.addressNoneSaved,
+                    size: 13,
+                    weight: .regular,
+                    color: .secondaryLabelColor,
+                )],
+                in: addressesBody,
+            )
+            return
+        }
+        replaceRows(addresses.map { address in
+            let text = BrowserNativeControls.label(address.summary, size: 13, weight: .regular, color: .labelColor)
+            let delete = BrowserActionButton(BrowserStrings.passwordDelete) { [weak self] in
+                store?.setAddresses(addresses.filter { $0 != address })
+                self?.refreshAddresses()
+            }
+            return BrowserNativeControls.stack([text, NSView(), delete], orientation: .horizontal, spacing: 8)
+        }, in: addressesBody)
     }
 
     private func refreshPasswords() {

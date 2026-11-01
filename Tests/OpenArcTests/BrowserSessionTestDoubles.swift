@@ -132,6 +132,9 @@ import Foundation
 
     private(set) var pictureInPictureToggleCount = 0
 
+    var onAddressFormFound: ((String, String, String) -> Void)?
+    var onAddressSubmitted: ((String, String, String) -> Void)?
+    private(set) var filledAddresses = [(json: String, frameID: String, origin: String)]()
     var onPasswordFormFound: ((String, String, String) -> Void)?
     var onPasswordSubmitted: ((String, String, String, String) -> Void)?
     private(set) var filledPasswords = [(username: String, password: String, frameID: String, origin: String)]()
@@ -141,6 +144,10 @@ import Foundation
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
     private var activeTabID: String?
+
+    func fillAddress(json: String, frameID: String, origin: String, tabID _: String) {
+        filledAddresses.append((json, frameID, origin))
+    }
 
     @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool {
         pageActions.append(action)

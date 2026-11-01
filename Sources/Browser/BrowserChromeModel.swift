@@ -383,6 +383,7 @@ enum BrowserWindowMode: Equatable {
     @Published var sidebarSpaceRenameRequestID = 0
     @Published var passwordPrompt: BrowserPasswordPrompt?
     var passwordStore: BrowserPasswordStoring?
+    var addressStore: BrowserAddressStoring?
     var liveFolderFetcher: BrowserGitHubLiveFolderFetcher?
     @Published var tabMediaVolumes = [String: Double]()
     /// Asks the window's controls to open an extension, anchored to the address row.
@@ -1013,6 +1014,12 @@ enum BrowserWindowMode: Equatable {
         }
         tabDriver.onSitePermissionRequestDismissed = { [weak self] id in
             self?.handleSitePermissionRequestDismissed(id: id)
+        }
+        tabDriver.onAddressFormFound = { [weak self] tabID, frameID, urlString in
+            self?.handleAddressFormFound(tabID: tabID, frameID: frameID, urlString: urlString)
+        }
+        tabDriver.onAddressSubmitted = { [weak self] tabID, urlString, json in
+            self?.handleAddressSubmitted(tabID: tabID, urlString: urlString, json: json)
         }
         tabDriver.onPasswordFormFound = { [weak self] tabID, frameID, urlString in
             self?.handlePasswordFormFound(tabID: tabID, frameID: frameID, urlString: urlString)
@@ -2906,6 +2913,10 @@ enum BrowserWindowMode: Equatable {
     func recentSuggestions(onHost host: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
         historyStore.suggestions(for: host, maximumCount: maximumCount)
             .filter { URLComponents(string: $0.resolvedURLString)?.host?.lowercased() == host }
+    }
+
+    func fillAddressInEngine(json: String, frameID: String, origin: String, tabID: String) {
+        tabDriver.fillAddress(json: json, frameID: frameID, origin: origin, tabID: tabID)
     }
 
     func fillPasswordInEngine(username: String, password: String, frameID: String, origin: String, tabID: String) {

@@ -1696,6 +1696,11 @@ enum BrowserStrings {
         comment: "Site setting's menu item.",
     )
     static let settingsSoundEffects = NSLocalizedString("browser.settings.sound_effects", comment: "Settings toggle.")
+    static let addressSaveTitle = NSLocalizedString("browser.address.save_title", comment: "Prompt.")
+    static let addressFillTitle = NSLocalizedString("browser.address.fill_title", comment: "Prompt.")
+    static let addressFillDetail = NSLocalizedString("browser.address.fill_detail", comment: "Prompt's detail.")
+    static let settingsAddresses = NSLocalizedString("browser.settings.addresses", comment: "Settings section.")
+    static let addressNoneSaved = NSLocalizedString("browser.address.none_saved", comment: "Settings, empty list.")
     static let passwordSaveTitle = NSLocalizedString("browser.password.save_title", comment: "Prompt; the site.")
     static let passwordUpdateTitle = NSLocalizedString("browser.password.update_title", comment: "Prompt; the site.")
     static let passwordFillTitle = NSLocalizedString("browser.password.fill_title", comment: "Prompt; the site.")

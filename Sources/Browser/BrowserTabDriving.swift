@@ -85,6 +85,10 @@ enum BrowserPageContextCommand: String {
     var onRenderProcessTerminated: ((String, Int) -> Void)? { get set }
     /// A tab's pages started playing media or changed it; nil when they stop.
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)? { get set }
+    /// Tab, frame and the frame's address: the page has an address form.
+    var onAddressFormFound: ((String, String, String) -> Void)? { get set }
+    /// Tab, the frame's address and the form's fields as JSON.
+    var onAddressSubmitted: ((String, String, String) -> Void)? { get set }
     /// Tab, frame and the frame's address.
     var onPasswordFormFound: ((String, String, String) -> Void)? { get set }
     /// Tab, the frame's address, username and password.
@@ -113,6 +117,7 @@ enum BrowserPageContextCommand: String {
     func goToHistoryOffsetInActiveTab(_ offset: Int)
     func setMediaVolume(_ volume: Double, forTabWithID tabID: String)
     func fillPassword(username: String, password: String, frameID: String, origin: String, tabID: String)
+    func fillAddress(json: String, frameID: String, origin: String, tabID: String)
     func evaluateJavaScript(
         _ code: String,
         inTabWithID tabID: String,

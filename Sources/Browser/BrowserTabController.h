@@ -69,6 +69,14 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 
 @optional
 - (void)browserTabController:(BrowserTabController *)controller
+    didFindAddressFormInTabWithID:(NSString *)tabID
+                          frameID:(NSString *)frameID
+                        urlString:(NSString *)urlString;
+- (void)browserTabController:(BrowserTabController *)controller
+    didSubmitAddressInTabWithID:(NSString *)tabID
+                      urlString:(NSString *)urlString
+                           json:(NSString *)json;
+- (void)browserTabController:(BrowserTabController *)controller
     didFindPasswordFormInTabWithID:(NSString *)tabID
                            frameID:(NSString *)frameID
                          urlString:(NSString *)urlString;
@@ -210,6 +218,11 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)visitNavigationEntriesForActiveTab:(void (^)(NSArray<NSDictionary<NSString *, NSString *> *> *entries,
                                                      NSInteger currentIndex))completion;
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset;
+/// Hands a saved address to a frame, if it is still on the origin in `urlPrefix`.
+- (void)fillAddressJSON:(NSString *)json
+                frameID:(NSString *)frameID
+              urlPrefix:(NSString *)urlPrefix
+           forTabWithID:(NSString *)tabID;
 /// Hands a saved sign-in to a frame, if it is still on the origin in `urlPrefix`.
 - (void)fillPasswordWithUsername:(NSString *)username
                         password:(NSString *)password

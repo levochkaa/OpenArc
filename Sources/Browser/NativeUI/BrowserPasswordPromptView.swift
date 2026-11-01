@@ -14,6 +14,7 @@ final class BrowserPasswordPromptView: NSView {
     var onNotNow: () -> Void = {}
     var onNever: () -> Void = {}
     var onFill: (BrowserSavedLogin) -> Void = { _ in }
+    var onFillAddress: (BrowserSavedAddress) -> Void = { _ in }
 
     private(set) var preferredHeight: CGFloat = 0
 
@@ -54,7 +55,12 @@ final class BrowserPasswordPromptView: NSView {
         let padding: CGFloat = 14
         title.frame = NSRect(x: padding, y: 12, width: bounds.width - padding * 2, height: 17)
         detail.frame = NSRect(x: padding, y: 31, width: bounds.width - padding * 2, height: 16)
-        if case .fill = shown {
+        let isList =
+            switch shown {
+            case .fill, .fillAddress: true
+            default: false
+            }
+        if isList {
             var y: CGFloat = 54
             for button in buttons {
                 button.frame = NSRect(x: padding, y: y, width: bounds.width - padding * 2, height: 28)
@@ -92,6 +98,23 @@ final class BrowserPasswordPromptView: NSView {
                 save,
             ]
             preferredHeight = 96
+        case .saveAddress(_, let address):
+            title.stringValue = BrowserStrings.addressSaveTitle
+            detail.stringValue = address.summary
+            buttons = [
+                BrowserActionButton(BrowserStrings.passwordNotNow) { [weak self] in self?.onNotNow() },
+                BrowserActionButton(BrowserStrings.passwordSave) { [weak self] in self?.onSave() },
+            ]
+            preferredHeight = 96
+        case .fillAddress(_, _, _, let addresses):
+            let shownAddresses = Array(addresses.prefix(3))
+            title.stringValue = BrowserStrings.addressFillTitle
+            detail.stringValue = BrowserStrings.addressFillDetail
+            buttons = shownAddresses.map { address in
+                BrowserActionButton(address.summary) { [weak self] in self?.onFillAddress(address) }
+            }
+            buttons.append(BrowserActionButton(BrowserStrings.passwordNotNow) { [weak self] in self?.onNotNow() })
+            preferredHeight = 54 + CGFloat(buttons.count) * 32 + 8
         case .fill(_, _, _, let logins):
             let shownLogins = Array(logins.prefix(3))
             title.stringValue = String(format: BrowserStrings.passwordFillTitle, shownLogins.first?.host ?? "")

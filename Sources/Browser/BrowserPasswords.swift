@@ -96,6 +96,75 @@ struct BrowserKeychainPasswordStore: BrowserPasswordStoring {
     }
 }
 
+// MARK: - BrowserSavedAddress
+
+/// Form fields by their `autocomplete` name.
+struct BrowserSavedAddress: Codable, Equatable, Identifiable {
+    var fields: [String: String]
+
+    var id: String { summary + (fields["tel"] ?? "") + (fields["email"] ?? "") }
+
+    var summary: String {
+        let name = fields["name"] ?? [fields["given-name"], fields["family-name"]]
+            .compactMap(\.self)
+            .joined(separator: " ")
+        let place = fields["street-address"] ?? fields["address-line1"] ?? fields["address-level2"] ?? ""
+        return [name, place].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    /// The same place and person typed again is not a new address.
+    func isCovered(by other: Self) -> Bool {
+        fields.allSatisfy { other.fields[$0.key] == $0.value }
+    }
+}
+
+// MARK: - BrowserAddressStoring
+
+protocol BrowserAddressStoring {
+    func addresses() -> [BrowserSavedAddress]
+    func setAddresses(_ addresses: [BrowserSavedAddress])
+}
+
+// MARK: - BrowserKeychainAddressStore
+
+/// One keychain item holds a profile's addresses: they are as personal as a password.
+struct BrowserKeychainAddressStore: BrowserAddressStoring {
+    private let query: [String: Any]
+
+    init(profileID: String) {
+        self.query = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.levochkaa.OpenArc.addresses." + profileID,
+            kSecAttrAccount as String: "addresses",
+        ]
+    }
+
+    func addresses() -> [BrowserSavedAddress] {
+        var request = query
+        request[kSecReturnData as String] = true
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess, let data = result as? Data else {
+            return []
+        }
+        return (try? JSONDecoder().decode([BrowserSavedAddress].self, from: data)) ?? []
+    }
+
+    func setAddresses(_ addresses: [BrowserSavedAddress]) {
+        guard !addresses.isEmpty else {
+            SecItemDelete(query as CFDictionary)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(addresses) else { return }
+        if SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecItemNotFound {
+            var item = query
+            item[kSecValueData as String] = data
+            item[kSecAttrLabel as String] = "OpenArc: addresses"
+            SecItemAdd(item as CFDictionary, nil)
+        }
+    }
+}
+
 // MARK: - BrowserPasswordPrompt
 
 enum BrowserPasswordPrompt: Equatable {
@@ -103,10 +172,17 @@ enum BrowserPasswordPrompt: Equatable {
     case save(tabID: String, login: BrowserSavedLogin, password: String, isUpdate: Bool)
     /// A page with a password field and saved sign-ins. Nothing fills until a click.
     case fill(tabID: String, frameID: String, urlString: String, logins: [BrowserSavedLogin])
+    /// After an order: keep this address?
+    case saveAddress(tabID: String, address: BrowserSavedAddress)
+    /// A page with an address form and saved addresses. Empty fields fill after a click.
+    case fillAddress(tabID: String, frameID: String, urlString: String, addresses: [BrowserSavedAddress])
 
     var tabID: String {
         switch self {
-        case .fill(let tabID, _, _, _), .save(let tabID, _, _, _): tabID
+        case .fill(let tabID, _, _, _),
+             .fillAddress(let tabID, _, _, _),
+             .save(let tabID, _, _, _),
+             .saveAddress(let tabID, _): tabID
         }
     }
 }
@@ -161,16 +237,60 @@ extension BrowserChromeModel {
             passwordPrompt = nil
             return
         }
-        if case .fill(_, _, let urlString, _) = prompt,
-           Self.passwordOrigin(ofURLString: tab.urlString) != Self.passwordOrigin(ofURLString: urlString)
+        let offeredURL: String? =
+            switch prompt {
+            case .fill(_, _, let urlString, _), .fillAddress(_, _, let urlString, _): urlString
+            case .save, .saveAddress: nil
+            }
+        if let offeredURL,
+           Self.passwordOrigin(ofURLString: tab.urlString) != Self.passwordOrigin(ofURLString: offeredURL)
         {
             passwordPrompt = nil
         }
     }
 
+    /// Addresses stay with the page the tab shows: a frame from elsewhere can't read or offer them.
+    private func isAddressFrame(urlString: String, ofTab tabID: String) -> Bool {
+        guard let origin = Self.passwordOrigin(ofURLString: urlString) else { return false }
+        guard let tab = tabs.first(where: { $0.id == tabID }) else { return true }
+        return Self.passwordOrigin(ofURLString: tab.urlString) == origin
+    }
+
+    func handleAddressSubmitted(tabID: String, urlString: String, json: String) {
+        guard offersPasswords, let store = addressStore, isAddressFrame(urlString: urlString, ofTab: tabID),
+              let data = json.data(using: .utf8),
+              let fields = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return }
+        let address = BrowserSavedAddress(fields: fields)
+        guard !store.addresses().contains(where: { address.isCovered(by: $0) }) else { return }
+        passwordPrompt = .saveAddress(tabID: tabID, address: address)
+    }
+
+    func handleAddressFormFound(tabID: String, frameID: String, urlString: String) {
+        guard offersPasswords, let store = addressStore, passwordPrompt == nil,
+              isAddressFrame(urlString: urlString, ofTab: tabID)
+        else { return }
+        let addresses = store.addresses()
+        guard !addresses.isEmpty else { return }
+        passwordPrompt = .fillAddress(tabID: tabID, frameID: frameID, urlString: urlString, addresses: addresses)
+    }
+
+    func fillAddress(_ address: BrowserSavedAddress) {
+        guard case .fillAddress(let tabID, let frameID, let urlString, _) = passwordPrompt,
+              let origin = Self.passwordOrigin(ofURLString: urlString),
+              let data = try? JSONEncoder().encode(address.fields),
+              let json = String(data: data, encoding: .utf8)
+        else { return }
+        passwordPrompt = nil
+        fillAddressInEngine(json: json, frameID: frameID, origin: origin, tabID: tabID)
+    }
+
     func answerPasswordPrompt(save: Bool) {
         if save, case .save(_, let login, let password, _) = passwordPrompt {
             _ = passwordStore?.save(password, for: login)
+        }
+        if save, case .saveAddress(_, let address) = passwordPrompt, let store = addressStore {
+            store.setAddresses(store.addresses() + [address])
         }
         passwordPrompt = nil
     }

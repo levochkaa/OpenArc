@@ -3451,6 +3451,10 @@ struct TabRecord {
 - (void)combineMediaForTabID:(NSString *)tabID record:(TabRecord &)record;
 - (void)notifySitePermissionDismissed:(NSInteger)requestID;
 - (void)handlePasswordFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID;
+- (void)handleAddressFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID;
+- (void)handleAddressSubmittedInFrame:(CefRefPtr<CefFrame>)frame
+                                 json:(NSString *)json
+                             forTabID:(NSString *)tabID;
 - (void)handlePasswordSubmittedInFrame:(CefRefPtr<CefFrame>)frame
                               username:(NSString *)username
                               password:(NSString *)password
@@ -4272,6 +4276,48 @@ std::string BrowserMediaVolumeScript(double volume) {
                             username:username
                             password:password];
   }
+}
+
+- (void)handleAddressFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didFindAddressFormInTabWithID:frameID:urlString:)]) {
+    [delegate browserTabController:self
+        didFindAddressFormInTabWithID:tabID
+                              frameID:ToNSString(frame->GetIdentifier().ToString())
+                            urlString:ToNSString(frame->GetURL().ToString())];
+  }
+}
+
+- (void)handleAddressSubmittedInFrame:(CefRefPtr<CefFrame>)frame
+                                 json:(NSString *)json
+                             forTabID:(NSString *)tabID {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didSubmitAddressInTabWithID:urlString:json:)]) {
+    [delegate browserTabController:self
+        didSubmitAddressInTabWithID:tabID
+                          urlString:ToNSString(frame->GetURL().ToString())
+                               json:json];
+  }
+}
+
+- (void)fillAddressJSON:(NSString *)json
+                frameID:(NSString *)frameID
+              urlPrefix:(NSString *)urlPrefix
+           forTabWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return;
+  }
+  CefRefPtr<CefFrame> frame = it->second.browser->GetFrameByIdentifier(ToStdString(frameID));
+  const std::string url = frame ? frame->GetURL().ToString() : std::string();
+  const std::string prefix = ToStdString(urlPrefix);
+  if (!frame || url.rfind(prefix, 0) != 0 ||
+      (url.size() > prefix.size() && url[prefix.size()] != '/' && url[prefix.size()] != ':')) {
+    return;
+  }
+  CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(shared::kAddressFillMessage);
+  message->GetArgumentList()->SetString(0, ToStdString(json));
+  frame->SendProcessMessage(PID_RENDERER, message);
 }
 
 - (void)fillPasswordWithUsername:(NSString *)username
@@ -6039,6 +6085,16 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
   CEF_REQUIRE_UI_THREAD();
   if (source_process == PID_RENDERER && frame && message->GetName() == shared::kPasswordFormMessage) {
     [controller_ handlePasswordFormInFrame:frame forTabID:ToNSString(tab_id_)];
+    return true;
+  }
+  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kAddressFormMessage) {
+    [controller_ handleAddressFormInFrame:frame forTabID:ToNSString(tab_id_)];
+    return true;
+  }
+  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kAddressSubmittedMessage) {
+    [controller_ handleAddressSubmittedInFrame:frame
+                                          json:ToNSString(message->GetArgumentList()->GetString(0).ToString())
+                                      forTabID:ToNSString(tab_id_)];
     return true;
   }
   if (source_process == PID_RENDERER && frame && message->GetName() == shared::kPasswordSubmittedMessage) {

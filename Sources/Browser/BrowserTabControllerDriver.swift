@@ -32,6 +32,8 @@ import Foundation
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
+    var onAddressFormFound: ((String, String, String) -> Void)?
+    var onAddressSubmitted: ((String, String, String) -> Void)?
     var onPasswordFormFound: ((String, String, String) -> Void)?
     var onPasswordSubmitted: ((String, String, String, String) -> Void)?
     var onRenderProcessTerminated: ((String, Int) -> Void)?
@@ -200,6 +202,10 @@ import Foundation
         controller.evaluateJavaScript(code, inTabWithID: tabID) { value in
             MainActor.assumeIsolated { completion(value) }
         }
+    }
+
+    func fillAddress(json: String, frameID: String, origin: String, tabID: String) {
+        controller.fillAddressJSON(json, frameID: frameID, urlPrefix: origin, forTabWithID: tabID)
     }
 
     func fillPassword(username: String, password: String, frameID: String, origin: String, tabID: String) {
@@ -656,6 +662,24 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
 // MARK: - Passwords
 
 extension BrowserTabControllerDriver {
+    @objc(browserTabController:didFindAddressFormInTabWithID:frameID:urlString:) nonisolated func browserTabController(
+        _: BrowserTabController,
+        didFindAddressFormInTabWithID tabID: String,
+        frameID: String,
+        urlString: String,
+    ) {
+        MainActor.assumeIsolated { onAddressFormFound?(tabID, frameID, urlString) }
+    }
+
+    @objc(browserTabController:didSubmitAddressInTabWithID:urlString:json:) nonisolated func browserTabController(
+        _: BrowserTabController,
+        didSubmitAddressInTabWithID tabID: String,
+        urlString: String,
+        json: String,
+    ) {
+        MainActor.assumeIsolated { onAddressSubmitted?(tabID, urlString, json) }
+    }
+
     @objc(browserTabController:didFindPasswordFormInTabWithID:frameID:urlString:) nonisolated func browserTabController(
         _: BrowserTabController,
         didFindPasswordFormInTabWithID tabID: String,
