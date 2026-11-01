@@ -1676,6 +1676,11 @@ enum BrowserStrings {
         comment: "Settings toggle for hover previews on some sites.",
     )
     static let captureInPortraitMode = NSLocalizedString("browser.capture.portrait", comment: "Menu item and button.")
+    static let liveFoldersMenu = NSLocalizedString("browser.live_folders.menu", comment: "Space submenu.")
+    static let liveFolderGitHubTitle = NSLocalizedString(
+        "browser.live_folders.github",
+        comment: "GitHub live folder's name.",
+    )
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")

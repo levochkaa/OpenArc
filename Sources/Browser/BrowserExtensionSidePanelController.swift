@@ -77,7 +77,7 @@ import Foundation
         browserHostView
     }
 
-    init(profileCachePath: String? = nil) {
+    init(profileCachePath: String? = nil, autoResizesPages: Bool = true) {
         self.browserHostView = BrowserTabHostView(frame: .zero)
         self.controller = BrowserTabController(
             hostView: browserHostView,
@@ -86,7 +86,7 @@ import Foundation
         )
         super.init()
         controller.delegate = self
-        controller.autoResizesPages = true
+        controller.autoResizesPages = autoResizesPages
         controller.onPageContentSizeChange = { [weak self] size in
             MainActor.assumeIsolated { self?.onContentSizeChange?(size) }
         }
@@ -112,6 +112,12 @@ import Foundation
 
         activePopupID = nil
         controller.closeTab(withID: id, forceClose: false)
+    }
+
+    func evaluate(_ code: String, inPopupWithID id: String, completion: @escaping @MainActor (String?) -> Void) {
+        controller.evaluateJavaScript(code, inTabWithID: id) { value in
+            MainActor.assumeIsolated { completion(value) }
+        }
     }
 
     func closeAllPopups() {
@@ -268,4 +274,43 @@ extension BrowserExtensionSidePanelController: BrowserTabControllerDelegate {
         currentSpeedBytesPerSecond _: Int64,
         stateRawValue _: String,
     ) {}
+}
+
+// MARK: - BrowserHiddenPageBrowser
+
+/// Pages that load in a window that is never shown.
+@MainActor final class BrowserHiddenPageBrowser: BrowserLiveFolderBrowsing {
+    // MARK: Private
+
+    private let browser: BrowserExtensionActionPopupController
+    private let hostWindow: NSWindow
+
+    // MARK: Internal
+
+    init(profileCachePath: String?) {
+        self.browser = BrowserExtensionActionPopupController(
+            profileCachePath: profileCachePath,
+            autoResizesPages: false,
+        )
+        self.hostWindow = NSWindow(
+            contentRect: NSRect(x: -4000, y: -4000, width: 1200, height: 800),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        hostWindow.isReleasedWhenClosed = false
+        hostWindow.contentView = browser.hostView
+    }
+
+    func openPage(urlString: String) -> String {
+        browser.openPopup(urlString: urlString, activeTab: nil)
+    }
+
+    func closePage(id: String) {
+        browser.closePopup(id: id)
+    }
+
+    func evaluate(_ code: String, inPageWithID id: String, completion: @escaping @MainActor (String?) -> Void) {
+        browser.evaluate(code, inPopupWithID: id, completion: completion)
+    }
 }

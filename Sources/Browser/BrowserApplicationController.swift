@@ -30,6 +30,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private var aboutWindow: NSWindow?
     private var settingsWindowController: SettingsWindowController?
+    private var lastLiveFolderRefresh = Date.distantPast
     private var archiveWindowControllers = [ObjectIdentifier: BrowserArchiveWindowController]()
     private var webAppWindowSession: BrowserWebAppWindowSession?
     private var incognitoWindowSessions = [BrowserIncognitoWindowSession]()
@@ -224,6 +225,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         for chromeModel in allChromeModels {
             chromeModel.handleApplicationDidBecomeActive()
         }
+        refreshLiveFoldersIfDue()
         BrowserTelemetry.captureUsage(.appBecameActive)
         if webAppConfiguration == nil {
             refreshSetAsDefaultBrowserMenuItem()
@@ -1031,6 +1033,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
         } else if openNewWindow(), let session = profileWindowSessions.last {
             scriptWindow.attach(window: session.window, model: session.chromeModel)
+        }
+    }
+
+    /// GitHub's list changes slowly: coming back to the app looks again, at most every few minutes.
+    private func refreshLiveFoldersIfDue() {
+        guard Date().timeIntervalSince(lastLiveFolderRefresh) > 300 else { return }
+        lastLiveFolderRefresh = Date()
+        for session in profileWindowSessions {
+            session.chromeModel.refreshGitHubLiveFolders()
         }
     }
 
@@ -3221,6 +3232,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             allTabsClosedHandler: {},
         )
         syncCoordinator?.setSnapshotApplier(chromeModel)
+        chromeModel.liveFolderFetcher = BrowserGitHubLiveFolderFetcher(
+            browser: BrowserHiddenPageBrowser(profileCachePath: profileDirectoryURL.path),
+        )
         if let source {
             let group = windowGroups[profile.id] ?? BrowserProfileWindowGroup()
             windowGroups[profile.id] = group

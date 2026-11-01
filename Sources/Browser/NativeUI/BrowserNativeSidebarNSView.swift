@@ -1523,6 +1523,7 @@ final class BrowserNativeSidebarNSView: NSView {
             onManageSpaces: { model.openSpacesInLibrary() },
             canCreateFolder: model.canCreateFolderFromSelectedTab,
             onNewFolder: { model.createFolderFromSelectedTab() },
+            onNewGitHubLiveFolder: { model.createGitHubLiveFolder(inSpaceID: space.id) },
             exportTargets: state.snapshot.spaces.filter { $0.id != space.id },
             onExport: { targetID in model.exportSpace(id: space.id, intoFolderInSpaceID: targetID) },
             onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },

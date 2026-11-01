@@ -753,3 +753,5 @@
 "browser.app_icon.forest" = "Forest";
 "browser.settings.recent_pages_previews" = "Preview recent pages on Linear, Notion and Figma";
 "browser.capture.portrait" = "Capture in Portrait Mode";
+"browser.live_folders.menu" = "Live Folders";
+"browser.live_folders.github" = "GitHub";

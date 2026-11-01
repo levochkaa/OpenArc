@@ -194,6 +194,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
         static let developerModeHosts = "browser.settings.developerModeHosts"
+        static let gitHubLiveFolderIDs = "browser.settings.gitHubLiveFolderIDs"
         static let recentPagesPreviewsEnabled = "browser.settings.recentPagesPreviewsEnabled"
         static let appIcon = "browser.settings.appIcon"
         static let showsAISearchSuggestion = "browser.settings.showsAISearchSuggestion"
@@ -284,6 +285,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var recentPagesPreviewsEnabled: Bool {
         didSet { userDefaults.set(recentPagesPreviewsEnabled, forKey: Key.recentPagesPreviewsEnabled) }
+    }
+
+    @Published var gitHubLiveFolderIDs: Set<String> {
+        didSet { userDefaults.set(Array(gitHubLiveFolderIDs), forKey: Key.gitHubLiveFolderIDs) }
     }
 
     @Published var developerModeHosts: BrowserDeveloperModeHosts {
@@ -430,6 +435,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
             key: Key.recentPagesPreviewsEnabled,
             defaultValue: true,
         )
+        self.gitHubLiveFolderIDs = Set(userDefaults.stringArray(forKey: Key.gitHubLiveFolderIDs) ?? [])
         self.developerModeHosts = userDefaults.data(forKey: Key.developerModeHosts)
             .flatMap { try? JSONDecoder().decode(BrowserDeveloperModeHosts.self, from: $0) } ?? .init()
         self.developerReloadBehavior = userDefaults.string(forKey: Key.developerReloadBehavior)

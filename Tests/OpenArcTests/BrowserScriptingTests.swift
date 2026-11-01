@@ -147,3 +147,44 @@ import Testing
     #expect(try model.recentPagesPreviewID(forTab: #require(model.tabs.first { $0.id == id })) != nil)
     #expect(!model.openRecentPagePreviewItem(id: "plain-tab-id"))
 }
+
+@Test @MainActor func aLiveFolderFollowsItsPages() throws {
+    let driver = FakeBrowserTabDriver()
+    let defaults = try #require(UserDefaults(suiteName: "OpenArcLiveFolderTests.\(UUID().uuidString)"))
+    let model = BrowserChromeModel(
+        tabDriver: driver,
+        sessionSnapshotStore: InMemorySessionSnapshotStore(),
+        sessionPreferencesStore: InMemorySessionPreferencesStore(),
+        commandBarSuggestionProvider: FakeSuggestionProvider(),
+        userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+        shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+        extensionManager: FakeBrowserExtensionManager(extensions: []),
+        windowTitleHandler: { _ in },
+        allTabsClosedHandler: {},
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let spaceID = try #require(model.selectedSpaceID)
+    let folderID = try #require(model.createEmptyPinnedFolder(title: "GitHub", inSpaceID: spaceID))
+    func urls() -> [String] { model.tabs.filter { $0.pinnedFolderID == folderID }.map(\.urlString) }
+    let a = BrowserLivePage(url: "https://github.com/o/r/pull/1", title: "One")
+    let b = BrowserLivePage(url: "https://github.com/o/r/pull/2", title: "Two")
+    model.syncLiveFolder(id: folderID, pages: [a, b])
+    #expect(urls() == [a.url, b.url])
+    model.syncLiveFolder(id: folderID, pages: [a, b])
+    #expect(urls() == [a.url, b.url], "A second round adds nothing")
+    model.syncLiveFolder(id: folderID, pages: [b])
+    driver.flushPendingCreateEvents()
+    #expect(urls() == [b.url])
+}
+
+@Test @MainActor func theGitHubAnswerBecomesAnOutcome() {
+    #expect(BrowserGitHubLiveFolderFetcher.outcome(for: nil) == nil)
+    #expect(BrowserGitHubLiveFolderFetcher.outcome(for: "") == nil)
+    #expect(BrowserGitHubLiveFolderFetcher.outcome(for: "SIGNED_OUT") == .signedOut)
+    #expect(BrowserGitHubLiveFolderFetcher.outcome(for: "nonsense") == .failed)
+    #expect(
+        BrowserGitHubLiveFolderFetcher.outcome(for: #"[{"url":"https://github.com/o/r/pull/1","title":"One"}]"#)
+            == .pages([.init(url: "https://github.com/o/r/pull/1", title: "One")]),
+    )
+}

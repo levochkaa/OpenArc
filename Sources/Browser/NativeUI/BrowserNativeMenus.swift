@@ -91,6 +91,7 @@ import AppKit
         onManageSpaces: (() -> Void)? = nil,
         canCreateFolder: Bool = false,
         onNewFolder: (() -> Void)? = nil,
+        onNewGitHubLiveFolder: (() -> Void)? = nil,
         exportTargets: [BrowserChromeModel.Space] = [],
         onExport: ((String) -> Void)? = nil,
         onResetTabs: @escaping () -> Void = {},
@@ -116,6 +117,10 @@ import AppKit
         if let onNewFolder {
             menu.addItem(.separator())
             add(BrowserStrings.dockMenuNewFolder, to: menu, enabled: canCreateFolder, action: onNewFolder)
+            if let onNewGitHubLiveFolder {
+                let live = submenu(BrowserStrings.liveFoldersMenu, in: menu)
+                add(BrowserStrings.liveFolderGitHubTitle, to: live, action: onNewGitHubLiveFolder)
+            }
         }
         if let onExport, !exportTargets.isEmpty {
             menu.addItem(.separator())

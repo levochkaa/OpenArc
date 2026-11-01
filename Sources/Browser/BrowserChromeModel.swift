@@ -380,6 +380,7 @@ enum BrowserWindowMode: Equatable {
     /// sidebar starts renaming the selected row.
     @Published var sidebarRenameRequestID = 0
     @Published var sidebarSpaceRenameRequestID = 0
+    var liveFolderFetcher: BrowserGitHubLiveFolderFetcher?
     @Published var tabMediaVolumes = [String: Double]()
     /// Asks the window's controls to open an extension, anchored to the address row.
     var onOpenExtensionRequest: ((String) -> Void)?
@@ -1792,6 +1793,66 @@ enum BrowserWindowMode: Equatable {
         movePinnedTabFolder(withID: folderID, toRootSectionIndex: 0, targetSpaceID: targetSpaceID)
         selectSpace(id: targetSpaceID)
         return deleteSpace(id: spaceID)
+    }
+
+    /// An empty folder at the top of a Space's pinned rows.
+    func createEmptyPinnedFolder(title: String, inSpaceID spaceID: String) -> String? {
+        guard spaces.contains(where: { $0.id == spaceID }) else { return nil }
+        let folderID = uniquePinnedTabFolderID()
+        pinnedTabFolders.append(PinnedTabFolder(
+            id: folderID,
+            spaceID: spaceID,
+            parentFolderID: nil,
+            title: title,
+            systemImageName: nil,
+            isExpanded: true,
+        ))
+        var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+        let root = BrowserSidebarDropContainer.pinned(spaceID)
+        tree.children[root] = [.folder(folderID)] + tree.items(in: root).filter { $0 != .folder(folderID) }
+        tree.children[.pinned(spaceID, folderID: folderID)] = []
+        applyPinnedTree(tree)
+        persistCurrentSessionIfAllowed()
+        return folderID
+    }
+
+    /// Makes a live folder list exactly these pages: a new one comes in unloaded, and
+    /// one that left goes away unless it is open in front of the user.
+    func syncLiveFolder(id folderID: String, pages: [BrowserLivePage]) {
+        guard let folder = pinnedTabFolders.first(where: { $0.id == folderID }) else { return }
+        let wanted = Set(pages.map(\.url))
+        for tab in tabs where tab.pinnedFolderID == folderID && !wanted.contains(tab.pinnedURLString ?? tab.urlString) {
+            if tab.id != selectedTabID {
+                closeTab(id: tab.id, registersUndo: false, reason: .structuralRemoval)
+            }
+        }
+        let existing = Set(tabs.filter { $0.pinnedFolderID == folderID }.map { $0.pinnedURLString ?? $0.urlString })
+        var added = false
+        for page in pages where !existing.contains(page.url) {
+            let tabID = UUID().uuidString
+            restoredTabCreationIDs.insert(tabID)
+            tabs.append(Tab(
+                id: tabID,
+                syncID: tabSyncIDProvider(),
+                spaceID: folder.spaceID,
+                title: page.title,
+                userTitleOverride: nil,
+                urlString: page.url,
+                pinnedURLString: page.url,
+                placement: .spacePinned,
+                pinnedFolderID: folderID,
+                lastActivityAt: dateProvider(),
+            ))
+            added = true
+        }
+        guard added else { return }
+        var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+        let order = pages.compactMap { page in
+            tabs.first { $0.pinnedFolderID == folderID && ($0.pinnedURLString ?? $0.urlString) == page.url }?.id
+        }
+        tree.children[.pinned(folder.spaceID, folderID: folderID)] = order.map(BrowserSidebarItemID.tab)
+        applyPinnedTree(tree)
+        persistCurrentSessionIfAllowed()
     }
 
     /// Explicit deletion removes the folder's current subtree. Empty folders
