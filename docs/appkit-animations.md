@@ -20,6 +20,8 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Folder collapse / expand | 0.2 s, timing (0, 0, 0.58, 1) / 0.25 s, timing (0.25, 0.1, 0.25, 1) | Row positions |
 | Folder icon | 0.25 s, timing (0.25, 0.1, 0.25, 1) | Panels swing in perspective, shades fade; tilted while collapsed |
 | Floating menu | 0.1 s in, 0.07 s out, timing (0.215, 0.61, 0.355, 1); fade 0.05 s in | Scale 0.95 around the tail, opacity |
+| Dock + menu trigger | on the press; a press longer than 0.3 s closes it again on release | |
+| Reload and Stop | Stop after 0.5 s of loading; dissolve, ease-in-out, 0.1 s | Opacity, in place |
 | Space pager selection and settling after a swipe | spring response 0.2 s, critically damped; committed before the tab switch, 0.05 s after a click or a swipe's release, whose velocity carries on; the theme fades 0.02 s after the slide starts | Horizontal page offset; a swipe moves the page by half of the scroll delta, turns it when quick (under 0.5 s) or past the middle |
 | Theme cross-fade | 0.19 s, timing (0.215, 0.61, 0.355, 1) | Between Spaces |
 | Library | spring response 0.2 s, damping 0.95 in; response 0.19 s, critically damped out | Slides from the window edge and moves the page |

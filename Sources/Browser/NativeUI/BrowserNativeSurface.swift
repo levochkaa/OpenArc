@@ -270,6 +270,9 @@ final class BrowserNativeChromeButton: NSButton {
     } }
     override var isHighlighted: Bool { didSet { updatePressAnimation() } }
 
+    /// Called when a press ends, after its tracking loop.
+    var onRelease: (() -> Void)?
+
     var onAction: () -> Void
     var pressEffect: PressEffect
     var tooltipTitle: String?
@@ -382,6 +385,11 @@ final class BrowserNativeChromeButton: NSButton {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        onRelease?()
+    }
 
     override func highlight(_ flag: Bool) {
         super.highlight(flag)

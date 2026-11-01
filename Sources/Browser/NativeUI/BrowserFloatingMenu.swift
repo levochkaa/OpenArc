@@ -22,12 +22,14 @@ enum BrowserFloatingMenuItem {
 
     private var panel: NSPanel?
     private var monitor: Any?
+    private weak var anchor: NSView?
 
     var isShown: Bool { panel != nil }
 
     func show(items: [BrowserFloatingMenuItem], above anchor: NSView) {
         close()
         guard let parent = anchor.window else { return }
+        self.anchor = anchor
         let content = BrowserFloatingMenuView(items: items) { [weak self] in self?.close() }
         let size = content.fittingSize
         let anchorRect = parent.convertToScreen(anchor.convert(anchor.bounds, to: nil))
@@ -63,7 +65,8 @@ enum BrowserFloatingMenuItem {
                 close()
                 return nil
             }
-            if event.window !== self.panel { close() }
+            // A press on the button that opened the menu is the button's to handle.
+            if event.window !== self.panel, !isOverAnchor(event) { close() }
             return event
         }
     }
@@ -88,8 +91,18 @@ enum BrowserFloatingMenuItem {
         animate(panel: panel, content: content, opening: false, completion: finish)
     }
 
+    private func isOverAnchor(_ event: NSEvent) -> Bool {
+        guard let anchor, event.window === anchor.window else { return false }
+        return anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil))
+    }
+
     /// Rises slightly from its tail while fading in; leaves faster than it came.
-    private func animate(panel: NSPanel, content: NSView, opening: Bool, completion: (@MainActor @Sendable () -> Void)? = nil) {
+    private func animate(
+        panel: NSPanel,
+        content: NSView,
+        opening: Bool,
+        completion: (@MainActor @Sendable () -> Void)? = nil,
+    ) {
         let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let ease = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
         let duration = reducesMotion ? 0 : opening ? 0.1 : 0.07

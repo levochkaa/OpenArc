@@ -6,6 +6,8 @@ import Combine
 // MARK: - BrowserNativeSidebarFooterNSView
 
 final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
+    private static let createMenuHoldDuration: CFTimeInterval = 0.3
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -30,6 +32,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         pressEffect: .compress,
         action: {},
     )
+    private var createMenuOpenedAt: CFTimeInterval = 0
     private let createButton = BrowserNativeChromeButton(
         symbol: "plus",
         title: BrowserStrings.spaceNewAction,
@@ -79,6 +82,9 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         createButton.setAccessibilityIdentifier("browser.sidebar.create-space")
         createButton.tooltipPlacement = .aboveCapsule
         createButton.onAction = { [weak self] in self?.toggleCreateMenu() }
+        // The menu opens on the press; a long press closes it again on release.
+        createButton.sendAction(on: .leftMouseDown)
+        createButton.onRelease = { [weak self] in self?.closeCreateMenuIfHeld() }
         createMenu.onClose = { [weak self] in self?.setCreateMenuOpen(false) }
         toast.onInstall = { [weak updateController] in updateController?.installDownloadedUpdateNow() }
         toast.onDismiss = { [weak updateController] in updateController?.dismissToast() }
@@ -242,6 +248,12 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     }
 
     /// New Space, New Folder, New Split and New Tab, above the plus button.
+    private func closeCreateMenuIfHeld() {
+        if CACurrentMediaTime() - createMenuOpenedAt > Self.createMenuHoldDuration {
+            createMenu.close()
+        }
+    }
+
     private func toggleCreateMenu() {
         guard !createMenu.isShown else {
             createMenu.close()
@@ -255,6 +267,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
             let shortcut = shortcuts.shortcut(for: command)
             return shortcut == .unassigned ? nil : shortcut.displayText
         }
+        createMenuOpenedAt = CACurrentMediaTime()
         createMenu.show(items: [
             .action(
                 symbol: "rectangle.stack.badge.plus",
