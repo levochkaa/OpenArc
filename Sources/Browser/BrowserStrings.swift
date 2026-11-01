@@ -1696,6 +1696,12 @@ enum BrowserStrings {
         comment: "Site setting's menu item.",
     )
     static let settingsSoundEffects = NSLocalizedString("browser.settings.sound_effects", comment: "Settings toggle.")
+    static let cardSaveTitle = NSLocalizedString("browser.card.save_title", comment: "Prompt.")
+    static let cardFillTitle = NSLocalizedString("browser.card.fill_title", comment: "Prompt.")
+    static let cardFillDetail = NSLocalizedString("browser.card.fill_detail", comment: "Prompt's detail.")
+    static let cardFillReason = NSLocalizedString("browser.card.fill_reason", comment: "System authentication dialog.")
+    static let settingsCards = NSLocalizedString("browser.settings.cards", comment: "Settings section.")
+    static let cardNoneSaved = NSLocalizedString("browser.card.none_saved", comment: "Settings, empty list.")
     static let addressSaveTitle = NSLocalizedString("browser.address.save_title", comment: "Prompt.")
     static let addressFillTitle = NSLocalizedString("browser.address.fill_title", comment: "Prompt.")
     static let addressFillDetail = NSLocalizedString("browser.address.fill_detail", comment: "Prompt's detail.")
@@ -2791,11 +2797,6 @@ enum BrowserStrings {
     static let settingsPasswords = NSLocalizedString(
         "browser.settings.profiles.passwords",
         comment: "Passwords settings link title.",
-    )
-
-    static let settingsCreditCards = NSLocalizedString(
-        "browser.settings.profiles.credit_cards",
-        comment: "Credit cards settings link title.",
     )
 
     static let settingsNotifications = NSLocalizedString(

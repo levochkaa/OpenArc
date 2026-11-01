@@ -199,7 +199,6 @@ import Testing
     #expect(BrowserSettingsRoute.searchEnginesURL.absoluteString == "openarc://settings/searchEngines")
     #expect(BrowserSettingsRoute.privacyURL.absoluteString == "openarc://settings/privacy")
     #expect(BrowserSettingsRoute.passwordManagerURL.absoluteString == "openarc://password-manager/passwords")
-    #expect(BrowserSettingsRoute.paymentsURL.absoluteString == "openarc://settings/payments")
     #expect(BrowserSettingsRoute.notificationsURL.absoluteString == "openarc://settings/content/notifications")
     #expect(BrowserSettingsRoute.rootURL.absoluteString == "openarc://settings/")
     #expect(BrowserSettingsRoute.languageURL.absoluteString == "openarc://settings/languages")

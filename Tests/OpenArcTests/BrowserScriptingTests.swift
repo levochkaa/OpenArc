@@ -414,3 +414,79 @@ private final class InMemoryAddressStore: BrowserAddressStoring {
     model.handleAddressFormFound(tabID: "t", frameID: "f", urlString: "https://shop.example/checkout")
     #expect(model.passwordPrompt != nil)
 }
+
+// MARK: - InMemoryCardStore
+
+private final class InMemoryCardStore: BrowserCardStoring {
+    var items = [BrowserSavedCard]()
+
+    func cards() -> [BrowserSavedCard] { items }
+    func setCards(_ cards: [BrowserSavedCard]) { items = cards }
+}
+
+private let testCardJSON = #"{"cc-name":"Test Person","cc-number":"4242 4242 4242 4242","cc-exp":"12/30"}"#
+
+@Test func aCardNeedsANumberThatPassesItsCheck() throws {
+    #expect(BrowserSavedCard(fields: ["cc-number": "4242 4242 4242 4241"]) == nil)
+    #expect(BrowserSavedCard(fields: ["cc-number": "1234"]) == nil)
+    #expect(BrowserSavedCard(fields: ["cc-name": "A"]) == nil)
+    let card = try #require(BrowserSavedCard(fields: ["cc-number": "4242-4242-4242-4242", "cc-exp": "12/30"]))
+    #expect(card.fields["cc-number"] == "4242424242424242")
+    #expect(card.summary == "•••• 4242, 12/30")
+}
+
+@Test @MainActor func aCardIsKeptAfterSavingAndAsksNothingAgain() {
+    let (model, _, _) = passwordModel()
+    let store = InMemoryCardStore()
+    model.cardStore = store
+    model.handleAddressSubmitted(tabID: "t", urlString: "http://shop.example/pay", json: testCardJSON)
+    #expect(model.passwordPrompt == nil, "No card from a page without encryption")
+    model.handleAddressSubmitted(tabID: "t", urlString: "https://shop.example/pay", json: testCardJSON)
+    guard case .saveCard(_, let card)? = model.passwordPrompt else {
+        Issue.record("No question")
+        return
+    }
+    #expect(store.items.isEmpty)
+    model.answerPasswordPrompt(save: true)
+    #expect(store.items == [card])
+    model.handleAddressSubmitted(tabID: "t", urlString: "https://other.example/", json: testCardJSON)
+    #expect(model.passwordPrompt == nil, "The same card asks nothing")
+}
+
+@Test @MainActor func aCardFillsOnlyAfterTheOwnerConfirms() async throws {
+    let (model, driver, _) = passwordModel()
+    let store = InMemoryCardStore()
+    let card = try #require(BrowserSavedCard(fields: ["cc-number": "4242424242424242"]))
+    store.items = [card]
+    model.cardStore = store
+    var answers = [false, true]
+    model.authenticateCardUse = { _ in answers.removeFirst() }
+    model.handleCardFormFound(tabID: "t", frameID: "f", urlString: "http://shop.example/pay")
+    #expect(model.passwordPrompt == nil)
+    for expected in [0, 1] {
+        model.handleCardFormFound(tabID: "t", frameID: "f", urlString: "https://shop.example/pay")
+        #expect(driver.filledAddresses.isEmpty || expected == 1, "Nothing fills by itself")
+        model.fillCard(card)
+        for _ in 0..<50 where driver.filledAddresses.count < expected {
+            await Task.yield()
+        }
+        await Task.yield()
+        #expect(driver.filledAddresses.count == expected)
+    }
+    #expect(driver.filledAddresses.first?.origin == "https://shop.example")
+}
+
+@Test @MainActor func incognitoNeitherKeepsNorOffersCards() throws {
+    let (model, _, _) = passwordModel(mode: .incognito)
+    let store = InMemoryCardStore()
+    store.items = try [#require(BrowserSavedCard(fields: ["cc-number": "4242424242424242"]))]
+    model.cardStore = store
+    model.handleCardFormFound(tabID: "t", frameID: "f", urlString: "https://example.com/")
+    #expect(model.passwordPrompt == nil)
+    model.handleAddressSubmitted(
+        tabID: "t",
+        urlString: "https://example.com/",
+        json: #"{"cc-number":"5555555555554444"}"#,
+    )
+    #expect(model.passwordPrompt == nil)
+}

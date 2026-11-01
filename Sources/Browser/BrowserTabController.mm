@@ -3452,6 +3452,7 @@ struct TabRecord {
 - (void)notifySitePermissionDismissed:(NSInteger)requestID;
 - (void)handlePasswordFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID;
 - (void)handleAddressFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID;
+- (void)handleCardFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID;
 - (void)handleAddressSubmittedInFrame:(CefRefPtr<CefFrame>)frame
                                  json:(NSString *)json
                              forTabID:(NSString *)tabID;
@@ -4285,6 +4286,16 @@ std::string BrowserMediaVolumeScript(double volume) {
         didFindAddressFormInTabWithID:tabID
                               frameID:ToNSString(frame->GetIdentifier().ToString())
                             urlString:ToNSString(frame->GetURL().ToString())];
+  }
+}
+
+- (void)handleCardFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didFindCardFormInTabWithID:frameID:urlString:)]) {
+    [delegate browserTabController:self
+        didFindCardFormInTabWithID:tabID
+                           frameID:ToNSString(frame->GetIdentifier().ToString())
+                         urlString:ToNSString(frame->GetURL().ToString())];
   }
 }
 
@@ -6089,6 +6100,10 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
   }
   if (source_process == PID_RENDERER && frame && message->GetName() == shared::kAddressFormMessage) {
     [controller_ handleAddressFormInFrame:frame forTabID:ToNSString(tab_id_)];
+    return true;
+  }
+  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kCardFormMessage) {
+    [controller_ handleCardFormInFrame:frame forTabID:ToNSString(tab_id_)];
     return true;
   }
   if (source_process == PID_RENDERER && frame && message->GetName() == shared::kAddressSubmittedMessage) {

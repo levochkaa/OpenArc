@@ -208,6 +208,7 @@ final class BrowserRootView: NSView {
         passwordPrompt.onNever = { [weak self] in self?.model.neverSavePasswordsFromPromptSite() }
         passwordPrompt.onFill = { [weak self] in self?.model.fillPassword($0) }
         passwordPrompt.onFillAddress = { [weak self] in self?.model.fillAddress($0) }
+        passwordPrompt.onFillCard = { [weak self] in self?.model.fillCard($0) }
         NotificationCenter.default.addObserver(
             forName: BrowserCaptureToastView.didCopyNotification,
             object: nil,

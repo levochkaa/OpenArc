@@ -73,6 +73,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                           frameID:(NSString *)frameID
                         urlString:(NSString *)urlString;
 - (void)browserTabController:(BrowserTabController *)controller
+    didFindCardFormInTabWithID:(NSString *)tabID
+                       frameID:(NSString *)frameID
+                     urlString:(NSString *)urlString;
+- (void)browserTabController:(BrowserTabController *)controller
     didSubmitAddressInTabWithID:(NSString *)tabID
                       urlString:(NSString *)urlString
                            json:(NSString *)json;

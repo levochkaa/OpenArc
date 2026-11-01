@@ -462,7 +462,6 @@
 "browser.settings.ai_search_provider.deepseek" = "DeepSeek";
 "browser.settings.profiles.privacy_and_security" = "Privacy and Security";
 "browser.settings.profiles.passwords" = "Passwords";
-"browser.settings.profiles.credit_cards" = "Credit Cards";
 "browser.settings.profiles.notifications" = "Notifications";
 "browser.settings.profiles.clear_browsing_data" = "Clear Browsing Data";
 "browser.settings.shortcuts" = "Shortcuts";
@@ -779,3 +778,9 @@
 "browser.address.fill_detail" = "Only empty fields change";
 "browser.settings.addresses" = "Addresses";
 "browser.address.none_saved" = "No saved addresses";
+"browser.card.save_title" = "Save this card?";
+"browser.card.fill_title" = "Fill a card";
+"browser.card.fill_detail" = "You'll confirm with Touch ID or your password";
+"browser.card.fill_reason" = "fill a saved card";
+"browser.settings.cards" = "Cards";
+"browser.card.none_saved" = "No saved cards";

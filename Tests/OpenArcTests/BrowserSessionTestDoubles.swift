@@ -133,6 +133,7 @@ import Foundation
     private(set) var pictureInPictureToggleCount = 0
 
     var onAddressFormFound: ((String, String, String) -> Void)?
+    var onCardFormFound: ((String, String, String) -> Void)?
     var onAddressSubmitted: ((String, String, String) -> Void)?
     private(set) var filledAddresses = [(json: String, frameID: String, origin: String)]()
     var onPasswordFormFound: ((String, String, String) -> Void)?

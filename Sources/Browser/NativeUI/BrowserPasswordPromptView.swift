@@ -15,6 +15,7 @@ final class BrowserPasswordPromptView: NSView {
     var onNever: () -> Void = {}
     var onFill: (BrowserSavedLogin) -> Void = { _ in }
     var onFillAddress: (BrowserSavedAddress) -> Void = { _ in }
+    var onFillCard: (BrowserSavedCard) -> Void = { _ in }
 
     private(set) var preferredHeight: CGFloat = 0
 
@@ -57,7 +58,7 @@ final class BrowserPasswordPromptView: NSView {
         detail.frame = NSRect(x: padding, y: 31, width: bounds.width - padding * 2, height: 16)
         let isList =
             switch shown {
-            case .fill, .fillAddress: true
+            case .fill, .fillAddress, .fillCard: true
             default: false
             }
         if isList {
@@ -106,6 +107,23 @@ final class BrowserPasswordPromptView: NSView {
                 BrowserActionButton(BrowserStrings.passwordSave) { [weak self] in self?.onSave() },
             ]
             preferredHeight = 96
+        case .saveCard(_, let card):
+            title.stringValue = BrowserStrings.cardSaveTitle
+            detail.stringValue = card.summary
+            buttons = [
+                BrowserActionButton(BrowserStrings.passwordNotNow) { [weak self] in self?.onNotNow() },
+                BrowserActionButton(BrowserStrings.passwordSave) { [weak self] in self?.onSave() },
+            ]
+            preferredHeight = 96
+        case .fillCard(_, _, _, let cards):
+            let shownCards = Array(cards.prefix(3))
+            title.stringValue = BrowserStrings.cardFillTitle
+            detail.stringValue = BrowserStrings.cardFillDetail
+            buttons = shownCards.map { card in
+                BrowserActionButton(card.summary) { [weak self] in self?.onFillCard(card) }
+            }
+            buttons.append(BrowserActionButton(BrowserStrings.passwordNotNow) { [weak self] in self?.onNotNow() })
+            preferredHeight = 54 + CGFloat(buttons.count) * 32 + 8
         case .fillAddress(_, _, _, let addresses):
             let shownAddresses = Array(addresses.prefix(3))
             title.stringValue = BrowserStrings.addressFillTitle

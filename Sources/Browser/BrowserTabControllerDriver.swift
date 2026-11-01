@@ -33,6 +33,7 @@ import Foundation
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
     var onAddressFormFound: ((String, String, String) -> Void)?
+    var onCardFormFound: ((String, String, String) -> Void)?
     var onAddressSubmitted: ((String, String, String) -> Void)?
     var onPasswordFormFound: ((String, String, String) -> Void)?
     var onPasswordSubmitted: ((String, String, String, String) -> Void)?
@@ -662,6 +663,15 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
 // MARK: - Passwords
 
 extension BrowserTabControllerDriver {
+    @objc(browserTabController:didFindCardFormInTabWithID:frameID:urlString:) nonisolated func browserTabController(
+        _: BrowserTabController,
+        didFindCardFormInTabWithID tabID: String,
+        frameID: String,
+        urlString: String,
+    ) {
+        MainActor.assumeIsolated { onCardFormFound?(tabID, frameID, urlString) }
+    }
+
     @objc(browserTabController:didFindAddressFormInTabWithID:frameID:urlString:) nonisolated func browserTabController(
         _: BrowserTabController,
         didFindAddressFormInTabWithID tabID: String,

@@ -186,20 +186,29 @@ constexpr char kMediaObserverScript[] = R"JS(
 // reads a field's value only when its form is being sent, and fills only what the
 // browser hands it after the user's click. It returns the fill function.
 constexpr char kPasswordObserverScript[] = R"JS(
-(function (reportForm, reportSubmit, reportAddressForm, reportAddressSubmit) {
+(function (reportForm, reportSubmit, reportAddressForm, reportAddressSubmit, reportCardForm) {
   'use strict';
   const addressKeys = ['name', 'given-name', 'family-name', 'organization', 'email', 'tel', 'street-address',
     'address-line1', 'address-line2', 'address-level1', 'address-level2', 'postal-code', 'country', 'country-name'];
   const addressPlaces = new Set(['street-address', 'address-line1', 'address-level2', 'postal-code']);
-  function addressFields(root) {
+  const cardKeys = ['cc-name', 'cc-given-name', 'cc-family-name', 'cc-number', 'cc-exp', 'cc-exp-month', 'cc-exp-year'];
+  function fieldsNamed(root, keys) {
     const found = {};
     for (const field of root.querySelectorAll('input,select,textarea')) {
       if (field.type === 'password' || field.type === 'hidden') continue;
       const tokens = String(field.autocomplete || '').toLowerCase().split(/\s+/);
-      const key = addressKeys.find((candidate) => tokens.includes(candidate));
+      const key = keys.find((candidate) => tokens.includes(candidate));
       if (key && !found[key]) found[key] = field;
     }
+    return found;
+  }
+  function addressFields(root) {
+    const found = fieldsNamed(root, addressKeys);
     return Object.keys(found).some((key) => addressPlaces.has(key)) ? found : null;
+  }
+  function cardFields(root) {
+    const found = fieldsNamed(root, cardKeys);
+    return found['cc-number'] && isSecureContext ? found : null;
   }
   function isVisible(field) {
     const box = field.getBoundingClientRect();
@@ -208,20 +217,24 @@ constexpr char kPasswordObserverScript[] = R"JS(
       box.bottom + scrollY > 0 && style.visibility === 'visible' && Number(style.opacity) > 0.05;
   }
   let addressAnnounced = false;
-  let lastAddress = '';
-  function sendAddress(root) {
-    const fields = addressFields(root);
+  let cardAnnounced = false;
+  const lastSent = new Set();
+  function sendFields(fields, minimum) {
     if (!fields) return;
     const values = {};
     for (const key of Object.keys(fields)) {
       const value = String(fields[key].value || '').trim();
       if (value && isVisible(fields[key])) values[key] = value;
     }
-    if (Object.keys(values).length < 3) return;
+    if (Object.keys(values).length < minimum) return;
     const text = JSON.stringify(values);
-    if (text === lastAddress) return;
-    lastAddress = text;
+    if (lastSent.has(text)) return;
+    lastSent.add(text);
     reportAddressSubmit(text);
+  }
+  function sendAddress(root) {
+    sendFields(addressFields(root), 3);
+    sendFields(cardFields(root), 1);
   }
   const Input = HTMLInputElement;
   const setValue = Object.getOwnPropertyDescriptor(Input.prototype, 'value').set;
@@ -260,7 +273,11 @@ constexpr char kPasswordObserverScript[] = R"JS(
       addressAnnounced = true;
       reportAddressForm();
     }
-    return announced && addressAnnounced;
+    if (!cardAnnounced && cardFields(document)) {
+      cardAnnounced = true;
+      reportCardForm();
+    }
+    return announced && addressAnnounced && cardAnnounced;
   }
   function watch() {
     if (announce() || !document.documentElement) return;
@@ -297,7 +314,7 @@ constexpr char kPasswordObserverScript[] = R"JS(
     field.dispatchEvent(new Event('change', { bubbles: true }));
   }
   function fillAddress(values) {
-    const fields = addressFields(document);
+    const fields = 'cc-number' in values ? cardFields(document) : addressFields(document);
     if (!fields) return;
     for (const key of Object.keys(fields)) {
       const value = values[key];
@@ -384,6 +401,8 @@ class PasswordReporter final : public CefV8Handler {
     }
     if (name == "reportForm") {
       frame->SendProcessMessage(PID_BROWSER, CefProcessMessage::Create(kPasswordFormMessage));
+    } else if (name == "reportCardForm") {
+      frame->SendProcessMessage(PID_BROWSER, CefProcessMessage::Create(kCardFormMessage));
     } else if (name == "reportAddressForm") {
       frame->SendProcessMessage(PID_BROWSER, CefProcessMessage::Create(kAddressFormMessage));
     } else if (name == "reportAddressSubmit") {
@@ -523,7 +542,8 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     CefV8ValueList arguments = {CefV8Value::CreateFunction("reportForm", reporter),
                                 CefV8Value::CreateFunction("reportSubmit", reporter),
                                 CefV8Value::CreateFunction("reportAddressForm", reporter),
-                                CefV8Value::CreateFunction("reportAddressSubmit", reporter)};
+                                CefV8Value::CreateFunction("reportAddressSubmit", reporter),
+                                CefV8Value::CreateFunction("reportCardForm", reporter)};
     CefRefPtr<CefV8Value> fill = factory->ExecuteFunctionWithContext(context, nullptr, arguments);
     if (fill && fill->IsFunction()) {
       password_fills_[frame->GetIdentifier().ToString()] = {context, fill};

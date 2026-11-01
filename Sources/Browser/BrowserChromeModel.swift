@@ -384,6 +384,9 @@ enum BrowserWindowMode: Equatable {
     @Published var passwordPrompt: BrowserPasswordPrompt?
     var passwordStore: BrowserPasswordStoring?
     var addressStore: BrowserAddressStoring?
+    var cardStore: BrowserCardStoring?
+    /// Asks the Mac's owner before a card goes into a page.
+    var authenticateCardUse: @MainActor (String) async -> Bool = BrowserCardAuthentication.ask
     var liveFolderFetcher: BrowserGitHubLiveFolderFetcher?
     @Published var tabMediaVolumes = [String: Double]()
     /// Asks the window's controls to open an extension, anchored to the address row.
@@ -1017,6 +1020,9 @@ enum BrowserWindowMode: Equatable {
         }
         tabDriver.onAddressFormFound = { [weak self] tabID, frameID, urlString in
             self?.handleAddressFormFound(tabID: tabID, frameID: frameID, urlString: urlString)
+        }
+        tabDriver.onCardFormFound = { [weak self] tabID, frameID, urlString in
+            self?.handleCardFormFound(tabID: tabID, frameID: frameID, urlString: urlString)
         }
         tabDriver.onAddressSubmitted = { [weak self] tabID, urlString, json in
             self?.handleAddressSubmitted(tabID: tabID, urlString: urlString, json: json)

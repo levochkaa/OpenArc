@@ -87,6 +87,8 @@ enum BrowserPageContextCommand: String {
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)? { get set }
     /// Tab, frame and the frame's address: the page has an address form.
     var onAddressFormFound: ((String, String, String) -> Void)? { get set }
+    /// Tab, frame and the frame's address: the page has a card form.
+    var onCardFormFound: ((String, String, String) -> Void)? { get set }
     /// Tab, the frame's address and the form's fields as JSON.
     var onAddressSubmitted: ((String, String, String) -> Void)? { get set }
     /// Tab, frame and the frame's address.

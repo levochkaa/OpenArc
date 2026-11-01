@@ -127,6 +127,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private var profileDeleteButtons = [(BrowserProfile, BrowserActionButton)]()
     private let passwordsBody = NSStackView()
     private let addressesBody = NSStackView()
+    private let cardsBody = NSStackView()
     private let shortcutsBody = NSStackView()
     private let profilesBody = NSStackView()
     private let accountsBody = NSStackView()
@@ -898,9 +899,9 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
             section(BrowserStrings.settingsPasswords, body: passwordsBody),
             section(BrowserStrings.settingsAddresses, body: addressesBody),
+            section(BrowserStrings.settingsCards, body: cardsBody),
             section(BrowserStrings.settingsYourData, rows: [
                 link(BrowserStrings.settingsPrivacyAndSecurity, url: BrowserSettingsRoute.privacyURL),
-                link(BrowserStrings.settingsCreditCards, url: BrowserSettingsRoute.paymentsURL),
                 link(BrowserStrings.settingsNotifications, url: BrowserSettingsRoute.notificationsURL),
                 link(BrowserStrings.settingsClearBrowsingData, url: BrowserSettingsRoute.privacyURL),
             ]),
@@ -908,7 +909,33 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         refreshSiteSearches()
         refreshPasswords()
         refreshAddresses()
+        refreshCards()
         refreshProfiles()
+    }
+
+    private func refreshCards() {
+        let store = model.cardStore
+        let cards = store?.cards() ?? []
+        guard !cards.isEmpty else {
+            replaceRows(
+                [BrowserNativeControls.label(
+                    BrowserStrings.cardNoneSaved,
+                    size: 13,
+                    weight: .regular,
+                    color: .secondaryLabelColor,
+                )],
+                in: cardsBody,
+            )
+            return
+        }
+        replaceRows(cards.map { card in
+            let text = BrowserNativeControls.label(card.summary, size: 13, weight: .regular, color: .labelColor)
+            let delete = BrowserActionButton(BrowserStrings.passwordDelete) { [weak self] in
+                store?.setCards(cards.filter { $0 != card })
+                self?.refreshCards()
+            }
+            return BrowserNativeControls.stack([text, NSView(), delete], orientation: .horizontal, spacing: 8)
+        }, in: cardsBody)
     }
 
     private func refreshAddresses() {
