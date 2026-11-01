@@ -384,6 +384,7 @@ enum BrowserWindowMode: Equatable {
     @Published var passwordPrompt: BrowserPasswordPrompt?
     var passwordStore: BrowserPasswordStoring?
     var addressStore: BrowserAddressStoring?
+    var restorePoints: BrowserSessionSnapshots?
     /// The latest download to start: the window shows it flying to the archive button.
     @Published private(set) var downloadLaunch: BrowserDownloadLaunch?
     /// A folder just made from the menu: the sidebar opens its name for editing.

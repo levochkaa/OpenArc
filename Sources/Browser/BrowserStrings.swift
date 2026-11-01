@@ -1722,6 +1722,16 @@ enum BrowserStrings {
     static let menuTroubleshooting = NSLocalizedString("browser.menu.troubleshooting", comment: "Help menu.")
     static let menuRecordTrace = NSLocalizedString("browser.menu.record_trace", comment: "Help menu.")
     static let menuTaskManager = NSLocalizedString("browser.menu.task_manager", comment: "Help menu.")
+    static let menuRestoreData = NSLocalizedString("browser.menu.restore_data", comment: "Help menu.")
+    static let restoreDataRestore = NSLocalizedString("browser.restore_data.restore", comment: "Button.")
+    static let restoreDataRestart = NSLocalizedString("browser.restore_data.restart", comment: "Button.")
+    static let restoreDataNone = NSLocalizedString("browser.restore_data.none", comment: "No copies yet.")
+    static let restoreDataNote = NSLocalizedString("browser.restore_data.note", comment: "Window's note.")
+    static let restoreDataConfirm = NSLocalizedString(
+        "browser.restore_data.confirm",
+        comment: "Alert. The copy's date.",
+    )
+    static let restoreDataConfirmDetail = NSLocalizedString("browser.restore_data.confirm_detail", comment: "Alert.")
     static let taskManagerTask = NSLocalizedString("browser.task_manager.task", comment: "Column.")
     static let taskManagerMemory = NSLocalizedString("browser.task_manager.memory", comment: "Column.")
     static let taskManagerCPU = NSLocalizedString("browser.task_manager.cpu", comment: "Column.")

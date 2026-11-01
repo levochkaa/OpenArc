@@ -49,6 +49,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var isTerminationRequested = false
     private var traceRecorder: BrowserTraceRecorder?
     private var taskManager: BrowserTaskManagerWindow?
+    private var restoreDataWindow: BrowserRestoreDataWindow?
     private var isQuitWarningPresented = false
     private var isSessionClosureConfirmationPresented = false
     private var didConfirmTerminationWarning = false
@@ -1781,6 +1782,43 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
+    private func presentRestoreData() {
+        if let restoreDataWindow {
+            restoreDataWindow.show()
+            return
+        }
+        guard let restorePoints = activeChromeModel?.restorePoints ?? profileWindowSessions.first?.chromeModel
+            .restorePoints
+        else { return }
+        let window = BrowserRestoreDataWindow(
+            snapshots: restorePoints,
+            relaunch: { [weak self] in self?.relaunchApplication() },
+            onClose: { [weak self] in self?.restoreDataWindow = nil },
+        )
+        restoreDataWindow = window
+        window.show()
+    }
+
+    /// Waits for this process to end, then opens the app again with the same arguments.
+    private func relaunchApplication() {
+        let waiter = Process()
+        waiter.executableURL = URL(fileURLWithPath: "/bin/sh")
+        waiter.arguments = [
+            "-c",
+            "pid=$1; app=$2; shift 2; while kill -0 \"$pid\" 2>/dev/null; do sleep 0.2; done; "
+                + "exec /usr/bin/open -n \"$app\" --args \"$@\"",
+            "sh",
+            String(ProcessInfo.processInfo.processIdentifier),
+            Bundle.main.bundlePath,
+        ] + CommandLine.arguments.dropFirst()
+        do {
+            try waiter.run()
+        } catch {
+            NSLog("OpenArc relaunch: \(error)")
+        }
+        beginApplicationTermination()
+    }
+
     private func presentTaskManager() {
         if let taskManager {
             taskManager.show()
@@ -1835,6 +1873,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             if let url = URL(string: "https://github.com/levochkaa/OpenArc/issues") {
                 NSWorkspace.shared.open(url)
             }
+        })
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuRestoreData) { [weak self] in
+            self?.presentRestoreData()
         })
         menu.addItem(.separator())
         let troubleshooting = NSMenu(title: BrowserStrings.menuTroubleshooting)
@@ -3221,10 +3262,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         let sessionSnapshotURL = sessionStorageDirectoryURL
             .appendingPathComponent(BrowserTabSessionSnapshotStore.snapshotFileName, isDirectory: false)
-        let sqliteSessionStore: BrowserSQLiteSessionStore? = source != nil ? nil : try? BrowserSQLiteSessionStore(
-            databaseURL: sessionStorageDirectoryURL
-                .appendingPathComponent(BrowserSQLiteSessionStore.databaseFileName, isDirectory: false),
-        )
+        let sessionDatabaseURL = sessionStorageDirectoryURL
+            .appendingPathComponent(BrowserSQLiteSessionStore.databaseFileName, isDirectory: false)
+        let restorePoints = BrowserSessionSnapshots(databaseURL: sessionDatabaseURL)
+        if source == nil {
+            restorePoints.prepareForLaunch()
+        }
+        let sqliteSessionStore: BrowserSQLiteSessionStore? = source != nil
+            ? nil
+            : try? BrowserSQLiteSessionStore(databaseURL: sessionDatabaseURL)
         let profileDirectoryCandidates = BrowserChromiumProfileDirectoryResolver.profileDirectoryCandidates(
             profileDirectoryURL: profileDirectoryURL,
         )
@@ -3298,6 +3344,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             allTabsClosedHandler: {},
         )
         syncCoordinator?.setSnapshotApplier(chromeModel)
+        chromeModel.restorePoints = restorePoints
         chromeModel.passwordStore = BrowserKeychainPasswordStore(profileID: profile.id)
         chromeModel.addressStore = BrowserKeychainAddressStore(profileID: profile.id)
         chromeModel.cardStore = BrowserKeychainCardStore(profileID: profile.id)

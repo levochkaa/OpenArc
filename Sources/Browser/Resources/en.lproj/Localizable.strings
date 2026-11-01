@@ -806,3 +806,10 @@
 "browser.task_manager.process_id" = "Process ID";
 "browser.task_manager.end_process" = "End Process";
 "browser.task_manager.browser" = "Browser";
+"browser.menu.restore_data" = "Restore Data";
+"browser.restore_data.restore" = "Restore";
+"browser.restore_data.restart" = "Restore and Restart";
+"browser.restore_data.none" = "No copies yet. One is kept each day OpenArc opens.";
+"browser.restore_data.note" = "Spaces, tabs, folders and Favorites. Passwords, history and cookies stay as they are.";
+"browser.restore_data.confirm" = "Go back to %@?";
+"browser.restore_data.confirm_detail" = "OpenArc will restart. Your sidebar as it is now is kept as a copy here, so you can come back to it.";
