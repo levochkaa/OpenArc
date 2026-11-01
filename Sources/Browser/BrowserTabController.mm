@@ -3476,6 +3476,8 @@ struct TabRecord {
                          callback:(CefRefPtr<CefAuthCallback>)callback;
 - (void)cancelDialogsForTabID:(NSString *)tabID;
 - (void)noteRendererProcessID:(int)processID forTabID:(NSString *)tabID;
+- (BOOL)isDialogTabVisible:(NSString *)tabID;
+- (void)presentWaitingDialogs;
 - (void)finishCloseDialogForTabID:(NSString *)tabID
                       requestID:(NSString *)requestID
                         browser:(CefRefPtr<CefBrowser>)browser
@@ -5581,9 +5583,31 @@ std::string BrowserMediaVolumeScript(double volume) {
             callback->Continue(accepted, ToStdString(text));
           }];
   _pageDialogs[tabID] = dialog;
-  dispatch_async(dispatch_get_main_queue(), ^{
-    [dialog present];
-  });
+  if ([self isDialogTabVisible:tabID]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [dialog present];
+    });
+  }
+}
+
+// A sheet covers the whole window, so a background page's dialog waits until
+// its tab is on screen. The page itself stays blocked meanwhile, as in Chrome.
+- (BOOL)isDialogTabVisible:(NSString *)tabID {
+  return [tabID hasPrefix:@"peek-"] || [_activeTabID isEqualToString:tabID] ||
+         [_visibleLayoutTabIDs containsObject:tabID];
+}
+
+- (void)presentWaitingDialogs {
+  for (NSString *tabID in _pageDialogs.allKeys) {
+    if ([self isDialogTabVisible:tabID] && [self dialogWindowForTabID:tabID].attachedSheet == nil) {
+      [_pageDialogs[tabID] present];
+    }
+  }
+  for (NSString *tabID in _authDialogs.allKeys) {
+    if ([self isDialogTabVisible:tabID] && [self dialogWindowForTabID:tabID].attachedSheet == nil) {
+      [_authDialogs[tabID] present];
+    }
+  }
 }
 
 - (void)cancelPageDialogForTabID:(NSString *)tabID {
@@ -5635,7 +5659,9 @@ std::string BrowserMediaVolumeScript(double volume) {
             }
           }];
   _authDialogs[tabID] = dialog;
-  [dialog present];
+  if ([self isDialogTabVisible:tabID]) {
+    [dialog present];
+  }
 }
 
 - (void)cancelDialogsForTabID:(NSString *)tabID {
@@ -6009,6 +6035,9 @@ void BrowserTabClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
                                      const CefString &title) {
   CEF_REQUIRE_UI_THREAD();
 
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self presentWaitingDialogs];
+  });
   BrowserTabController *controller = controller_;
   if (controller == nil) {
     return;
