@@ -1984,6 +1984,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.showJavaScriptConsole() ?? false
         case .manageSpaces:
             return activeChromeModel?.openSpacesInLibrary() ?? false
+        case .muteAllTabs:
+            return activeChromeModel?.setAllTabsMuted(true) ?? false
+        case .unmuteAllTabs:
+            return activeChromeModel?.setAllTabsMuted(false) ?? false
         case .shareTab:
             return activeChromeModel?.shareSelectedTab() ?? false
         case .developerTools:

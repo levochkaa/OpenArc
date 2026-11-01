@@ -1551,6 +1551,16 @@ enum BrowserStrings {
         comment: "Menu item.",
     )
 
+    static let menuMuteAllTabs = NSLocalizedString(
+        "browser.menu.mute_all_tabs",
+        comment: "Command that mutes every open tab.",
+    )
+
+    static let menuUnmuteAllTabs = NSLocalizedString(
+        "browser.menu.unmute_all_tabs",
+        comment: "Command that brings back the sound of every open tab.",
+    )
+
     static let menuManageSpaces = NSLocalizedString(
         "browser.menu.manage_spaces",
         comment: "Menu item.",

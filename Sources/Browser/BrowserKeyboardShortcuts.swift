@@ -155,6 +155,18 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("j", modifiers: [.command, .option]),
     )
 
+    static let muteAllTabs = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuMuteAllTabs,
+        helpTitle: BrowserStrings.menuMuteAllTabs,
+        shortcut: .unassigned,
+    )
+
+    static let unmuteAllTabs = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuUnmuteAllTabs,
+        helpTitle: BrowserStrings.menuUnmuteAllTabs,
+        shortcut: .unassigned,
+    )
+
     static let manageSpaces = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuManageSpaces,
         helpTitle: BrowserStrings.menuManageSpaces,
@@ -663,6 +675,8 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case developerTools
     case shareTab
     case manageSpaces
+    case muteAllTabs
+    case unmuteAllTabs
     case javaScriptConsole
     case inspectElements
     case viewSource

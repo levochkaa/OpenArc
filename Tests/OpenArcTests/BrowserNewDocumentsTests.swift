@@ -49,4 +49,16 @@ import Testing
         #expect(matches.count == 1)
         #expect(matches.first?.kind == .url)
     }
+
+    @Test func allTabsMuteAndUnmute() {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        #expect(f.model.isCommandBarActionAvailable(.muteAllTabs))
+        #expect(!f.model.isCommandBarActionAvailable(.unmuteAllTabs))
+        #expect(f.model.setAllTabsMuted(true))
+        #expect(f.model.mutedTabSyncIDs.count == f.model.tabs.count)
+        #expect(!f.model.isCommandBarActionAvailable(.muteAllTabs))
+        #expect(f.model.isCommandBarActionAvailable(.unmuteAllTabs))
+        #expect(f.model.setAllTabsMuted(false))
+        #expect(f.model.mutedTabSyncIDs.isEmpty)
+    }
 }

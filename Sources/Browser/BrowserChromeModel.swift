@@ -2468,6 +2468,15 @@ enum BrowserWindowMode: Equatable {
         tabDriver.setSiteSetting(kind, value: value, forURLString: urlString)
     }
 
+    /// Mutes or brings back the sound of every open tab.
+    @discardableResult func setAllTabsMuted(_ muted: Bool) -> Bool {
+        guard canCreateTab else { return false }
+        for tab in tabs {
+            setTabMuted(muted, id: tab.id)
+        }
+        return true
+    }
+
     func setTabMuted(_ muted: Bool, id: String) {
         guard let tab = tabs.first(where: { $0.id == id }),
               mutedTabSyncIDs.contains(tab.syncID) != muted else { return }
@@ -3282,6 +3291,10 @@ enum BrowserWindowMode: Equatable {
             canShowDeveloperToolsForCommand
         case .manageSpaces:
             supportsSpaces
+        case .muteAllTabs:
+            canCreateTab && tabs.contains { !mutedTabSyncIDs.contains($0.syncID) }
+        case .unmuteAllTabs:
+            canCreateTab && !mutedTabSyncIDs.isEmpty
         case .shareTab:
             canShareSelectedTab
         case .developerTools:
@@ -7021,6 +7034,10 @@ extension BrowserCommandID {
             ["console", "javascript console", "js console"]
         case .manageSpaces:
             ["manage spaces", "spaces"]
+        case .muteAllTabs:
+            ["mute all tabs", "silence", "sound off"]
+        case .unmuteAllTabs:
+            ["unmute all tabs", "sound on"]
         case .shareTab:
             ["share", "share page", "share tab"]
         case .developerTools:
@@ -7191,6 +7208,10 @@ extension BrowserCommandID {
             "terminal"
         case .manageSpaces:
             "square.on.square"
+        case .muteAllTabs:
+            "speaker.slash"
+        case .unmuteAllTabs:
+            "speaker.wave.2"
         case .shareTab:
             "square.and.arrow.up"
         case .developerTools:

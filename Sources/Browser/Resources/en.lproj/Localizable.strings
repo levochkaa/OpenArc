@@ -679,3 +679,5 @@
 "browser.settings.small_window.lifetime.twelve_hours" = "12 hours";
 "browser.settings.small_window.lifetime.one_day" = "24 hours";
 "browser.settings.small_window.lifetime.never" = "Never";
+"browser.menu.mute_all_tabs" = "Mute All Tabs";
+"browser.menu.unmute_all_tabs" = "Unmute All Tabs";
