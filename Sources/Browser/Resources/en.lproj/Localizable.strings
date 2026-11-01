@@ -730,3 +730,5 @@
 "browser.pinned_tab.edit_page" = "Edit Pinned Page";
 "browser.tab.remove_pin" = "Remove Pin";
 "browser.space.export_into_folder" = "Export “%@” into Folder";
+"browser.menu.allow_javascript_from_apple_events" = "Allow JavaScript from Apple Events";
+"browser.script.javascript_turned_off" = "Running JavaScript from AppleScript is turned off. Turn it on in View > Developer > Allow JavaScript from Apple Events.";

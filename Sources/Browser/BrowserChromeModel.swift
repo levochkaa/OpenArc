@@ -2758,6 +2758,26 @@ enum BrowserWindowMode: Equatable {
         setExtension(id: id, isPinned: !isExtensionPinned(id: id))
     }
 
+    func evaluateJavaScript(
+        _ code: String,
+        inTabWithID tabID: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        tabDriver.evaluateJavaScript(code, inTabWithID: tabID, completion: completion)
+    }
+
+    /// Sends a tab somewhere from a script. The selected tab keeps the durable path.
+    func navigateTab(id: String, toURLString urlString: String) {
+        if id == selectedTabID {
+            navigateSelectedTab(toURLString: urlString)
+            return
+        }
+        if !tabDriver.navigateTab(withID: id, toURLString: resolvedBrowserURLString(urlString)) {
+            selectTab(id: id)
+            navigateSelectedTab(toURLString: urlString)
+        }
+    }
+
     /// Right-clicking back or forward lists the pages that way.
     func showNavigationList(goingBack: Bool, below anchor: NSView) {
         tabDriver.navigationEntriesForActiveTab { [weak self, weak anchor] entries, currentIndex in

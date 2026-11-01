@@ -107,6 +107,11 @@ enum BrowserPageContextCommand: String {
     /// The active tab's history, oldest first, and the current page's index.
     func navigationEntriesForActiveTab(completion: @escaping @MainActor ([BrowserNavigationEntry], Int) -> Void)
     func goToHistoryOffsetInActiveTab(_ offset: Int)
+    func evaluateJavaScript(
+        _ code: String,
+        inTabWithID tabID: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    )
     func goForwardActiveTab()
     func reloadActiveTab()
     func reloadActiveTabIgnoringCache()

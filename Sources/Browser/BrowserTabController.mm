@@ -1702,9 +1702,15 @@ class RuntimeEvaluateObserver final : public CefDevToolsMessageObserver {
         success ? ParseDevToolsResultDictionary(result, result_size) : nullptr;
     CefRefPtr<CefDictionaryValue> resultDictionary =
         dictionary ? dictionary->GetDictionary("result") : nullptr;
-    NSString *payload = resultDictionary
-                            ? ToNSString(resultDictionary->GetString("value").ToString())
-                            : nil;
+    NSString *payload = nil;
+    if (resultDictionary) {
+      CefRefPtr<CefValue> value = resultDictionary->GetValue("value");
+      if (value && value->GetType() == VTYPE_STRING) {
+        payload = ToNSString(value->GetString().ToString());
+      } else if (value && value->GetType() != VTYPE_NULL && value->GetType() != VTYPE_INVALID) {
+        payload = ToNSString(CefWriteJSON(value, JSON_WRITER_DEFAULT).ToString());
+      }
+    }
     Finish(payload.length > 0 ? payload : nil);
   }
 
@@ -1727,7 +1733,7 @@ class RuntimeEvaluateObserver final : public CefDevToolsMessageObserver {
   }
 
   int message_id_ = 0;
-  const char *expression_;
+  std::string expression_;
   CefRefPtr<CefRegistration> registration_;
   void (^completion_)(NSString *);
 
@@ -4192,6 +4198,19 @@ class BrowserNavigationEntryCollector : public CefNavigationEntryVisitor {
     std::string script = "history.go(" + std::to_string(offset) + ");";
     frame->ExecuteJavaScript(script, frame->GetURL(), 0);
   }
+}
+
+- (void)evaluateJavaScript:(NSString *)code
+              inTabWithID:(NSString *)tabID
+               completion:(void (^)(NSString *))completion {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    completion(nil);
+    return;
+  }
+  CefRefPtr<RuntimeEvaluateObserver> observer =
+      new RuntimeEvaluateObserver(code.UTF8String, completion);
+  observer->Start(it->second.browser->GetHost());
 }
 
 - (void)goBackActiveTab {

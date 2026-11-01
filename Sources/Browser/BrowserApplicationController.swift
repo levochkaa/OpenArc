@@ -60,6 +60,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var profileStoreCancellable: AnyCancellable?
     private let webAppConfiguration: BrowserWebAppConfiguration?
 
+    /// Browser windows in front-to-back order.
+    var appleScriptWindows: [BrowserScriptWindow] {
+        let sessions: [(NSWindow, BrowserChromeModel)] = profileWindowSessions.map { ($0.window, $0.chromeModel) }
+            + incognitoWindowSessions.map { ($0.window, $0.chromeModel) }
+        return NSApp.orderedWindows.compactMap { window in
+            sessions.first { $0.0 === window }.map { BrowserScriptWindow(window: $0.0, model: $0.1) }
+        }
+    }
+
+    /// The application's tabs only take new ones, which open in the small window.
+    var appleScriptTabs: [BrowserScriptTab] { [] }
+
     private var shouldPresentQuitWarning: Bool {
         guard webAppConfiguration == nil, !didConfirmTerminationWarning, !isQuitWarningPresented else {
             return false
@@ -433,6 +445,31 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.toggleLibrary()
     }
 
+    // MARK: AppleScript
+
+    public func application(_: NSApplication, delegateHandlesKey key: String) -> Bool {
+        key == "appleScriptWindows" || key == "appleScriptTabs"
+    }
+
+    func insertInAppleScriptTabs(_ tab: BrowserScriptTab) {
+        guard let url = tab.pendingURLString.flatMap(URL.init(string:)) else {
+            littleWindowModel?.openNewLittleWindow()
+            return
+        }
+        littleWindowModel?.openInLittleWindow(url)
+    }
+
+    func insertInAppleScriptWindows(_ scriptWindow: BrowserScriptWindow) {
+        if scriptWindow.mode == "incognito" {
+            createIncognitoWindow(copyingFullscreenFrom: nil)
+            if let session = incognitoWindowSessions.last {
+                scriptWindow.attach(window: session.window, model: session.chromeModel)
+            }
+        } else if openNewWindow(), let session = profileWindowSessions.last {
+            scriptWindow.attach(window: session.window, model: session.chromeModel)
+        }
+    }
+
     public func shareCurrentTab(_: Any?) {
         activeChromeModel?.shareSelectedTab()
     }
@@ -467,6 +504,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
               let preference = BrowserAppearancePreference(rawValue: raw)
         else { return }
         userPreferencesStore.appearancePreference = preference
+    }
+
+    public func toggleJavaScriptFromAppleEvents(_: Any?) {
+        userPreferencesStore.allowsJavaScriptFromAppleEvents.toggle()
     }
 
     public func toggleStayOnTop(_: Any?) {
@@ -848,6 +889,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
              #selector(toggleWebAppToolbarInFullscreen(_:)),
              #selector(uninstallCurrentWebApp(_:)):
             return webAppWindowSession != nil && !isTerminationRequested
+        case #selector(toggleJavaScriptFromAppleEvents(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.state = userPreferencesStore.allowsJavaScriptFromAppleEvents ? .on : .off
+            }
+            return true
         case #selector(toggleStayOnTop(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.state = activeBrowserWindow?.level == .floating ? .on : .off
@@ -1819,6 +1865,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         ] {
             menu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
         }
+        let javaScript = NSMenuItem(
+            title: BrowserStrings.menuAllowJavaScriptFromAppleEvents,
+            action: #selector(toggleJavaScriptFromAppleEvents(_:)),
+            keyEquivalent: "",
+        )
+        javaScript.target = self
         let network = NSMenuItem(
             title: BrowserStrings.menuNetworkInspector,
             action: #selector(showNetworkInspector(_:)),
@@ -1826,6 +1878,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         network.target = self
         menu.addItem(network)
+        menu.addItem(javaScript)
         let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
         item.submenu = menu
         viewMenu.addItem(item)

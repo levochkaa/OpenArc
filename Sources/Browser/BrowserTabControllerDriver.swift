@@ -184,6 +184,16 @@ import Foundation
         })
     }
 
+    func evaluateJavaScript(
+        _ code: String,
+        inTabWithID tabID: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        controller.evaluateJavaScript(code, inTabWithID: tabID) { value in
+            MainActor.assumeIsolated { completion(value) }
+        }
+    }
+
     func goToHistoryOffsetInActiveTab(_ offset: Int) {
         controller.goToHistoryOffset(inActiveTab: offset)
     }

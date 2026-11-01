@@ -201,6 +201,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)visitNavigationEntriesForActiveTab:(void (^)(NSArray<NSDictionary<NSString *, NSString *> *> *entries,
                                                      NSInteger currentIndex))completion;
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset;
+/// Answers with the expression's value as text, or nil if the page has no answer.
+- (void)evaluateJavaScript:(NSString *)code
+              inTabWithID:(NSString *)tabID
+               completion:(void (^)(NSString *_Nullable value))completion;
 - (void)goForwardActiveTab;
 - (void)reloadActiveTab;
 - (void)reloadActiveTabIgnoringCache;

@@ -192,6 +192,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let peeksLinksToOtherSites = "browser.settings.peeksLinksToOtherSites"
         static let folderPreviewsEnabled = "browser.settings.folderPreviewsEnabled"
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
+        static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
         static let newDocumentsApp = "browser.settings.newDocumentsApp"
     }
@@ -268,6 +269,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
     }
 
     /// Lets pages read the Space's colors as CSS variables.
+    @Published var allowsJavaScriptFromAppleEvents: Bool {
+        didSet { userDefaults.set(allowsJavaScriptFromAppleEvents, forKey: Key.allowsJavaScriptFromAppleEvents) }
+    }
+
     @Published var sharesThemeWithWebsites: Bool {
         didSet { userDefaults.set(sharesThemeWithWebsites, forKey: Key.sharesThemeWithWebsites) }
     }
@@ -385,6 +390,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.siteURLToolbarEnabled = Self.loadBool(
             userDefaults,
             key: Key.siteURLToolbarEnabled,
+            defaultValue: false,
+        )
+        self.allowsJavaScriptFromAppleEvents = Self.loadBool(
+            userDefaults,
+            key: Key.allowsJavaScriptFromAppleEvents,
             defaultValue: false,
         )
         self.sharesThemeWithWebsites = Self.loadBool(userDefaults, key: Key.sharesThemeWithWebsites, defaultValue: true)

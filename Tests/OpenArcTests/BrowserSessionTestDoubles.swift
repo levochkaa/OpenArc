@@ -289,6 +289,14 @@ import Foundation
     }
 
     func goToHistoryOffsetInActiveTab(_: Int) {}
+    func evaluateJavaScript(
+        _: String,
+        inTabWithID _: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        completion(nil)
+    }
+
     func showNetworkInspectorForActiveTab() {}
 
     func showDevToolsForActiveTab() {

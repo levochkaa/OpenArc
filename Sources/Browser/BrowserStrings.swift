@@ -1611,6 +1611,14 @@ enum BrowserStrings {
         comment: "Pinned tab submenu.",
     )
     static let tabRemovePinAction = NSLocalizedString("browser.tab.remove_pin", comment: "Pinned tab menu item.")
+    static let menuAllowJavaScriptFromAppleEvents = NSLocalizedString(
+        "browser.menu.allow_javascript_from_apple_events",
+        comment: "Developer menu item.",
+    )
+    static let scriptJavaScriptTurnedOff = NSLocalizedString(
+        "browser.script.javascript_turned_off",
+        comment: "Error for a script that runs JavaScript while the setting is off.",
+    )
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")
