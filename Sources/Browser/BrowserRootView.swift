@@ -4,6 +4,8 @@ import AppKit
 import Combine
 import QuartzCore
 
+// MARK: - BrowserRootView
+
 final class BrowserRootView: NSView {
     private static let captureHintSeenKey = "browser.capture.hintSeen"
 
@@ -28,6 +30,8 @@ final class BrowserRootView: NSView {
     private lazy var developerToolbar = BrowserDeveloperToolbarView(model: model)
     private let captureToast = BrowserCaptureToastView()
     private let passwordPrompt = BrowserPasswordPromptView()
+    private let downloadFlight = BrowserDownloadFlightView()
+    private var lastDownloadLaunchID: String?
     private var portraitCapture: BrowserPortraitCaptureView?
     private var portraitCaptureMonitor: Any?
     private var captureDragMonitor: Any?
@@ -202,6 +206,9 @@ final class BrowserRootView: NSView {
         addSubview(developerToolbar, positioned: .below, relativeTo: content)
         addSubview(captureToast)
         addSubview(passwordPrompt)
+        addSubview(downloadFlight)
+        downloadFlight.isHidden = true
+        downloadFlight.onOpen = { [weak self] in self?.model.openLibrary(section: .downloads) }
         passwordPrompt.isHidden = true
         passwordPrompt.onSave = { [weak self] in self?.model.answerPasswordPrompt(save: true) }
         passwordPrompt.onNotNow = { [weak self] in self?.model.answerPasswordPrompt(save: false) }
@@ -370,6 +377,7 @@ final class BrowserRootView: NSView {
         }
         layoutCaptureToast()
         layoutPasswordPrompt()
+        layoutDownloadFlight()
         let onRight = preferences.sidebarPosition == .right
         libraryScrollObserver.frame = CGRect(
             x: onRight ? bounds.width - BrowserLibraryLayout.width : 0,
@@ -652,6 +660,36 @@ final class BrowserRootView: NSView {
     }
 
     /// Only over the tab that asked; the question waits while another one shows.
+    private func refreshDownloadFlight() {
+        // The sidebar's own overlays go back above everything as it updates.
+        if !downloadFlight.isHidden, subviews.last !== downloadFlight {
+            addSubview(downloadFlight, positioned: .above, relativeTo: nil)
+        }
+        guard let launch = model.downloadLaunch, launch.id != lastDownloadLaunchID else { return }
+        lastDownloadLaunchID = launch.id
+        guard let window, window.isKeyWindow else { return }
+        let pointer = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        // Above and to the right of the archive button, or the window's corner without a sidebar.
+        var binCenter = CGPoint(x: 34, y: bounds.height - 37)
+        if let button = sidebar.descendant(withIdentifier: "browser.sidebar.library"),
+           !button.isHiddenOrHasHiddenAncestor
+        {
+            let frame = button.convert(button.bounds, to: self)
+            binCenter = CGPoint(x: frame.midX + 10, y: frame.midY - 12)
+        }
+        downloadFlight.frame = bounds
+        addSubview(downloadFlight, positioned: .above, relativeTo: nil)
+        let downloads = model.downloadsModel
+        downloadFlight.launch(
+            from: CGPoint(x: pointer.x, y: pointer.y - 19),
+            toBinCenter: binCenter,
+            fileName: launch.fileName,
+            tint: model.selectedSpaceTheme?.palette?.tintedLight.nsColor ?? .white,
+        ) {
+            downloads.items.first { $0.id == launch.id && $0.state == .completed }?.fileURL
+        }
+    }
+
     private func refreshPasswordPrompt() {
         model.dropStalePasswordPrompt()
         if let prompt = model.passwordPrompt, let session = prompt.peekSessionID {
@@ -672,6 +710,10 @@ final class BrowserRootView: NSView {
         passwordPrompt.isHidden = false
         addSubview(passwordPrompt, positioned: .above, relativeTo: nil)
         layoutPasswordPrompt()
+    }
+
+    private func layoutDownloadFlight() {
+        downloadFlight.frame = bounds
     }
 
     private func layoutPasswordPrompt() {
@@ -992,6 +1034,7 @@ final class BrowserRootView: NSView {
         toolbarVisibility.setVisible(showsSiteToolbar, view: toolbar, curve: .sidebar)
         developerToolbar.refresh()
         refreshPasswordPrompt()
+        refreshDownloadFlight()
         let selectionColor = model.selectedSpaceTheme?.palette?.accentFill
         command.themeSelectionColor = selectionColor
         currentPageCommand.themeSelectionColor = selectionColor
@@ -1241,5 +1284,21 @@ final class BrowserRootView: NSView {
         guard !isWindowFullscreenTransitioning, isSidebarHoverOverlayPointerSyncSuspended else { return }
         isSidebarHoverOverlayPointerSyncSuspended = false
         refresh()
+    }
+}
+
+// MARK: - Finding a control by its identifier
+
+private extension NSView {
+    func descendant(withIdentifier identifier: String) -> NSView? {
+        if accessibilityIdentifier() == identifier {
+            return self
+        }
+        for view in subviews {
+            if let found = view.descendant(withIdentifier: identifier) {
+                return found
+            }
+        }
+        return nil
     }
 }

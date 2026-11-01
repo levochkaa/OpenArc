@@ -26,6 +26,13 @@ enum BrowserDownloadState: String, Equatable {
     }
 }
 
+// MARK: - BrowserDownloadLaunch
+
+struct BrowserDownloadLaunch: Equatable {
+    let id: String
+    let fileName: String
+}
+
 // MARK: - BrowserDownloadUpdate
 
 struct BrowserDownloadUpdate: Equatable {
@@ -110,7 +117,11 @@ struct BrowserDownloadItem: Identifiable, Equatable {
 
     func apply(_ update: BrowserDownloadUpdate) {
         let now = dateProvider()
-        let fileName = sanitizedFileName(update.fileName, fallbackURLString: update.urlString)
+        // A page may suggest nothing at first: the file on disk has the name that counts.
+        let savedName = update.fullPath.map { ($0 as NSString).lastPathComponent } ?? ""
+        let fileName = savedName.isEmpty
+            ? sanitizedFileName(update.fileName, fallbackURLString: update.urlString)
+            : savedName
 
         if let index = items.firstIndex(where: { $0.id == update.id }) {
             items[index].fileName = fileName

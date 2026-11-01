@@ -503,3 +503,68 @@ private let testCardJSON = #"{"cc-name":"Test Person","cc-number":"4242 4242 424
     #expect(model.passwordPrompt == nil)
     #expect(BrowserPasswordPrompt.saveAddress(tabID: "t", address: .init(fields: [:])).peekSessionID == nil)
 }
+
+@Test func aPageDialogNamesTheSiteLikeArc() {
+    #expect(BrowserJavaScriptDialog.siteName(forOrigin: "https://example.com/a?b=c") == "example.com")
+    #expect(BrowserJavaScriptDialog.siteName(forOrigin: "http://127.0.0.1:8765/") == "127.0.0.1:8765")
+    #expect(BrowserJavaScriptDialog.siteName(forOrigin: "") == nil)
+    #expect(BrowserJavaScriptDialog.siteName(forOrigin: "file:///tmp/a.html") == nil)
+}
+
+@Test @MainActor func aPageDialogWithoutAWindowDeclinesOnce() {
+    var answers = [(Bool, String)]()
+    let dialog = BrowserJavaScriptDialog(
+        window: nil,
+        kind: 2,
+        origin: "https://a.example",
+        message: "m",
+        defaultText: "d",
+    ) {
+        answers.append(($0, $1))
+    }
+    dialog.present()
+    dialog.cancel()
+    #expect(answers.count == 1)
+    #expect(answers.first?.0 == false && answers.first?.1 == "")
+}
+
+@Test func aDownloadFliesLikeAProjectileAndShrinks() {
+    let path = BrowserDownloadProjectile(source: CGPoint(x: 276, y: 131), destination: CGPoint(x: 36, y: 1023))
+    #expect(abs(path.duration - 1.05) < 0.01)
+    #expect(abs(path.center(at: 0).y - 131) < 0.01)
+    #expect(abs(path.center(at: path.duration).x - 36) < 0.01)
+    #expect(abs(path.center(at: path.duration).y - 1023) < 0.01)
+    #expect(path.center(at: 0.19).y < 90, "It rises first, by about 49 pt")
+    #expect(abs(path.center(at: 0.63).y - 329) < 8, "Against a reference frame")
+    #expect(path.diameter(at: 0.2) > path.diameter(at: 0))
+    #expect(path.diameter(at: path.duration) == 8)
+}
+
+@Test @MainActor func onlyANewDownloadLaunches() {
+    let (model, driver, _) = passwordModel()
+    func update(_ id: String, _ state: BrowserDownloadState) -> BrowserDownloadUpdate {
+        BrowserDownloadUpdate(
+            id: id, fileName: "f.txt", urlString: "https://a.example/f.txt", fullPath: "",
+            receivedBytes: 0, totalBytes: 1, currentSpeedBytesPerSecond: 0, state: state,
+        )
+    }
+    driver.onDownloadUpdated?(update("one", .inProgress))
+    #expect(model.downloadLaunch == BrowserDownloadLaunch(id: "one", fileName: "f.txt"))
+    driver.onDownloadUpdated?(update("two", .inProgress))
+    driver.onDownloadUpdated?(update("one", .completed))
+    #expect(model.downloadLaunch?.id == "two", "Progress on an older one launches nothing")
+}
+
+@Test @MainActor func aDownloadTakesTheNameOfTheFileOnDisk() {
+    let downloads = BrowserDownloadsModel()
+    downloads.apply(BrowserDownloadUpdate(
+        id: "a", fileName: "", urlString: "https://a.example/dl", fullPath: nil,
+        receivedBytes: 0, totalBytes: 1, currentSpeedBytesPerSecond: 0, state: .inProgress,
+    ))
+    #expect(downloads.items.first?.fileName == "dl")
+    downloads.apply(BrowserDownloadUpdate(
+        id: "a", fileName: "", urlString: "https://a.example/dl", fullPath: "/tmp/report (1).txt",
+        receivedBytes: 1, totalBytes: 1, currentSpeedBytesPerSecond: 0, state: .completed,
+    ))
+    #expect(downloads.items.first?.fileName == "report (1).txt")
+}

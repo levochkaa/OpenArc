@@ -384,6 +384,8 @@ enum BrowserWindowMode: Equatable {
     @Published var passwordPrompt: BrowserPasswordPrompt?
     var passwordStore: BrowserPasswordStoring?
     var addressStore: BrowserAddressStoring?
+    /// The latest download to start: the window shows it flying to the archive button.
+    @Published private(set) var downloadLaunch: BrowserDownloadLaunch?
     /// A folder just made from the menu: the sidebar opens its name for editing.
     @Published var folderToRename: String?
     var cardStore: BrowserCardStoring?
@@ -6515,7 +6517,11 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     }
 
     func handleDownloadUpdate(_ update: BrowserDownloadUpdate) {
+        let isNew = !downloadsModel.items.contains { $0.id == update.id }
         downloadsModel.apply(update)
+        if isNew {
+            downloadLaunch = BrowserDownloadLaunch(id: update.id, fileName: update.fileName)
+        }
     }
 
     func handleUpdatedTab(

@@ -786,3 +786,7 @@
 "browser.card.none_saved" = "No saved cards";
 "browser.pinned_tab_folder.new_nested" = "New Nested Folder";
 "browser.pinned_tab_folder.turn_into_space" = "Turn “%@” into Space";
+"browser.js_dialog.says" = "%@ says";
+"browser.js_dialog.page_says" = "This page says";
+"browser.js_dialog.ok" = "OK";
+"browser.js_dialog.cancel" = "Cancel";

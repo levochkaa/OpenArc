@@ -3145,6 +3145,13 @@ class BrowserTabClient final : public CefClient,
                             const CefString &message_text,
                             bool is_reload,
                             CefRefPtr<CefJSDialogCallback> callback) override;
+  bool OnJSDialog(CefRefPtr<CefBrowser> browser,
+                  const CefString &origin_url,
+                  JSDialogType dialog_type,
+                  const CefString &message_text,
+                  const CefString &default_prompt_text,
+                  CefRefPtr<CefJSDialogCallback> callback,
+                  bool &suppress_message) override;
   void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
   bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
@@ -3360,6 +3367,8 @@ struct TabRecord {
   MediaFrameState reportedMedia;
   std::string closeRequestID;
   CefRefPtr<CefJSDialogCallback> closeDialogCallback;
+  CefRefPtr<CefJSDialogCallback> pageDialogCallback;
+  __strong BrowserJavaScriptDialog *pageDialog;
   __strong BrowserBeforeUnloadConfirmation *closeConfirmation = nil;
 };
 
@@ -3389,6 +3398,13 @@ struct TabRecord {
                          browser:(CefRefPtr<CefBrowser>)browser
                         callback:(CefRefPtr<CefJSDialogCallback>)callback;
 - (void)resetCloseDialogForTabID:(NSString *)tabID browser:(CefRefPtr<CefBrowser>)browser;
+- (void)presentPageDialogForTabID:(NSString *)tabID
+                             kind:(NSInteger)kind
+                           origin:(NSString *)origin
+                          message:(NSString *)message
+                      defaultText:(NSString *)defaultText
+                         callback:(CefRefPtr<CefJSDialogCallback>)callback;
+- (void)cancelPageDialogForTabID:(NSString *)tabID;
 - (void)finishCloseDialogForTabID:(NSString *)tabID
                       requestID:(NSString *)requestID
                         browser:(CefRefPtr<CefBrowser>)browser
@@ -5437,6 +5453,57 @@ std::string BrowserMediaVolumeScript(double volume) {
   [self scheduleNavigationForTabID:tabID];
 }
 
+- (void)presentPageDialogForTabID:(NSString *)tabID
+                             kind:(NSInteger)kind
+                           origin:(NSString *)origin
+                          message:(NSString *)message
+                      defaultText:(NSString *)defaultText
+                         callback:(CefRefPtr<CefJSDialogCallback>)callback {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.pageDialogCallback) {
+    callback->Continue(false, CefString());
+    return;
+  }
+  it->second.pageDialogCallback = callback;
+  __weak BrowserTabController *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    BrowserTabController *controller = weakSelf;
+    if (!controller) return;
+    auto current = controller->_tabRecords.find(ToStdString(tabID));
+    if (current == controller->_tabRecords.end() || !current->second.pageDialogCallback) return;
+    BrowserJavaScriptDialog *dialog = [[BrowserJavaScriptDialog alloc]
+        initWithWindow:controller->_hostView.window
+                  kind:kind
+                origin:origin
+               message:message
+           defaultText:defaultText
+            completion:^(BOOL accepted, NSString *text) {
+              BrowserTabController *owner = weakSelf;
+              if (!owner) return;
+              auto record = owner->_tabRecords.find(ToStdString(tabID));
+              if (record == owner->_tabRecords.end() || !record->second.pageDialogCallback) return;
+              CefRefPtr<CefJSDialogCallback> reply = record->second.pageDialogCallback;
+              record->second.pageDialogCallback = nullptr;
+              record->second.pageDialog = nil;
+              reply->Continue(accepted, ToStdString(text));
+            }];
+    current->second.pageDialog = dialog;
+    [dialog present];
+  });
+}
+
+- (void)cancelPageDialogForTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) return;
+  if (it->second.pageDialog) {
+    [it->second.pageDialog cancel];
+  } else if (it->second.pageDialogCallback) {
+    CefRefPtr<CefJSDialogCallback> reply = it->second.pageDialogCallback;
+    it->second.pageDialogCallback = nullptr;
+    reply->Continue(false, CefString());
+  }
+}
+
 - (void)resetCloseDialogForTabID:(NSString *)tabID browser:(CefRefPtr<CefBrowser>)browser {
   auto it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end() || !it->second.closeDialogCallback ||
@@ -6337,9 +6404,29 @@ bool BrowserTabClient::OnBeforeUnloadDialog(
                                                      browser:browser callback:callback];
 }
 
+bool BrowserTabClient::OnJSDialog(CefRefPtr<CefBrowser>,
+                                  const CefString &origin_url,
+                                  JSDialogType dialog_type,
+                                  const CefString &message_text,
+                                  const CefString &default_prompt_text,
+                                  CefRefPtr<CefJSDialogCallback> callback,
+                                  bool &) {
+  CEF_REQUIRE_UI_THREAD();
+  BrowserTabController *controller = controller_;
+  if (!controller) return false;
+  [controller presentPageDialogForTabID:ToNSString(tab_id_)
+                                   kind:static_cast<NSInteger>(dialog_type)
+                                 origin:ToNSString(origin_url.ToString())
+                                message:ToNSString(message_text.ToString())
+                            defaultText:ToNSString(default_prompt_text.ToString())
+                               callback:callback];
+  return true;
+}
+
 void BrowserTabClient::OnResetDialogState(CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UI_THREAD();
   BrowserTabController *controller = controller_;
+  [controller cancelPageDialogForTabID:ToNSString(tab_id_)];
   [controller resetCloseDialogForTabID:ToNSString(tab_id_) browser:browser];
 }
 

@@ -1710,6 +1710,16 @@ enum BrowserStrings {
         "browser.pinned_tab_folder.turn_into_space",
         comment: "Folder menu. The folder's name.",
     )
+    nonisolated static let javaScriptDialogSays = NSLocalizedString(
+        "browser.js_dialog.says",
+        comment: "A page's alert. The site's name.",
+    )
+    nonisolated static let javaScriptDialogPageSays = NSLocalizedString(
+        "browser.js_dialog.page_says",
+        comment: "A page's alert with no site name.",
+    )
+    static let javaScriptDialogOK = NSLocalizedString("browser.js_dialog.ok", comment: "A page's alert.")
+    static let javaScriptDialogCancel = NSLocalizedString("browser.js_dialog.cancel", comment: "A page's alert.")
     static let addressSaveTitle = NSLocalizedString("browser.address.save_title", comment: "Prompt.")
     static let addressFillTitle = NSLocalizedString("browser.address.fill_title", comment: "Prompt.")
     static let addressFillDetail = NSLocalizedString("browser.address.fill_detail", comment: "Prompt's detail.")
