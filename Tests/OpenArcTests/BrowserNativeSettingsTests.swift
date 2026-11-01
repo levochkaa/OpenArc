@@ -191,7 +191,7 @@ import Testing
         defer { fixture.cleanup() }
         let controller = fixture.controller(.general)
         controller.view.layoutSubtreeIfNeeded()
-        let ids = ["automatic-updates", "warn-before-quitting", "battery-saver", "block-ads"]
+        let ids = ["automatic-updates", "warn-before-quitting", "battery-saver", "folder-previews"]
         let edges = try ids.map { id in
             let control = try #require(find("browser.settings.\(id)", in: controller.view))
             return control.convert(control.bounds, to: controller.view).maxX

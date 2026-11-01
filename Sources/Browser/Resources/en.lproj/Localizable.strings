@@ -611,12 +611,6 @@
 "browser.library.empty_media" = "Pictures in your download folder show up here.";
 "browser.library.search_format" = "Search %@…";
 "browser.settings.advanced" = "Advanced";
-"browser.settings.ad_blocker" = "Ad Blocker";
-"browser.settings.ad_blocker.detail" = "Rules come from the public EasyList, EasyPrivacy and Fanboy lists, which download when you turn on blocking and refresh weekly.";
-"browser.settings.ad_blocker.turn_off_all" = "Turn Off All";
-"browser.settings.ad_blocker.ads" = "Block Ads";
-"browser.settings.ad_blocker.trackers" = "Block Trackers";
-"browser.settings.ad_blocker.cookie_banners" = "Block Cookie Banners";
 "browser.settings.your_data" = "Your Data and Settings";
 "browser.settings.toolbar_full_url" = "Show full URL when the toolbar is on";
 "browser.settings.share_theme_with_websites" = "Allow websites to get your theme data";
@@ -657,8 +651,6 @@
 "browser.menu.share_tab" = "Share…";
 "browser.space.set_profile_action" = "Set Profile";
 "browser.space.creation.profile" = "Profile";
-"browser.site_control.allow_ads" = "Allow Ads on This Site";
-"browser.site_control.block_ads" = "Block Ads on This Site";
 "browser.new_document.google_doc" = "New Google Doc";
 "browser.new_document.google_sheet" = "New Google Sheet";
 "browser.new_document.google_slides" = "New Google Slides";

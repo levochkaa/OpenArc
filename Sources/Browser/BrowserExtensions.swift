@@ -28,10 +28,15 @@ struct BrowserExtension: Identifiable, Equatable {
 // MARK: - BrowserExtensionManaging
 
 @MainActor protocol BrowserExtensionManaging: AnyObject {
+    func enableDefaultExtensionsOnce()
     func installedExtensions() -> [BrowserExtension]
     func runAction(id: String) -> BrowserExtensionActionResult
     func setExtension(id: String, isEnabled: Bool) -> Bool
     func removeExtension(id: String) -> Bool
+}
+
+extension BrowserExtensionManaging {
+    func enableDefaultExtensionsOnce() {}
 }
 
 // MARK: - BrowserExtensionActionResult

@@ -610,16 +610,6 @@ enum BrowserStrings {
         comment: "Option: unused small windows stay open.",
     )
 
-    static let siteControlAllowAds = NSLocalizedString(
-        "browser.site_control.allow_ads",
-        comment: "Site control center menu item that turns the ad blocker off for this site.",
-    )
-
-    static let siteControlBlockAds = NSLocalizedString(
-        "browser.site_control.block_ads",
-        comment: "Site control center menu item that turns the ad blocker back on for this site.",
-    )
-
     static let siteControlClearCookies = NSLocalizedString(
         "browser.site_control.clear_cookies",
         comment: "Site control center menu item that clears cookies and reloads.",
@@ -2686,36 +2676,6 @@ enum BrowserStrings {
     static let settingsAdvancedTab = NSLocalizedString(
         "browser.settings.advanced",
         comment: "Settings pane with advanced options.",
-    )
-
-    static let settingsAdBlocker = NSLocalizedString(
-        "browser.settings.ad_blocker",
-        comment: "Settings section title of the ad blocker.",
-    )
-
-    static let settingsAdBlockerDetail = NSLocalizedString(
-        "browser.settings.ad_blocker.detail",
-        comment: "Explains where the ad blocker's rules come from.",
-    )
-
-    static let settingsAdBlockerTurnOffAll = NSLocalizedString(
-        "browser.settings.ad_blocker.turn_off_all",
-        comment: "Button that turns off all blocking.",
-    )
-
-    static let settingsBlockAds = NSLocalizedString(
-        "browser.settings.ad_blocker.ads",
-        comment: "Ad blocker toggle.",
-    )
-
-    static let settingsBlockTrackers = NSLocalizedString(
-        "browser.settings.ad_blocker.trackers",
-        comment: "Ad blocker toggle.",
-    )
-
-    static let settingsBlockCookieBanners = NSLocalizedString(
-        "browser.settings.ad_blocker.cookie_banners",
-        comment: "Ad blocker toggle.",
     )
 
     static let settingsYourData = NSLocalizedString(

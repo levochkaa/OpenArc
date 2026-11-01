@@ -192,6 +192,7 @@ rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (Renderer).app"
 
 ditto "$CEF_FRAMEWORK_SOURCE" "$CEF_FRAMEWORK_DEST"
 create_versioned_cef_framework "$CEF_FRAMEWORK_DEST"
+/usr/bin/python3 "$(dirname "$0")/brand_cef_resources.py" "$CEF_FRAMEWORK_DEST" OpenArc
 ditto "$HELPER_BUNDLE" "$HELPER_DEST"
 ditto "$CEF_ROOT/CREDITS.html" "$APP_RESOURCES_DIR/CEFCredits.html"
 

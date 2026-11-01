@@ -2821,104 +2821,6 @@ bool ShouldUseEmbeddedChromeRuntimeForURL(const std::string &) {
   return false;
 }
 
-namespace {
-
-/// The rules of the content blocker. Requests read them on the IO thread while
-/// settings replace them on the main thread, so a set is never changed in place.
-struct ContentBlockRules {
-  std::unordered_set<std::string> blocked;
-  std::unordered_set<std::string> third_party;
-  std::unordered_set<std::string> exceptions;
-  std::unordered_set<std::string> excluded_sites;
-};
-
-std::mutex g_content_block_mutex;
-std::shared_ptr<const ContentBlockRules> g_content_block_rules;
-
-std::shared_ptr<const ContentBlockRules> CurrentContentBlockRules() {
-  std::lock_guard<std::mutex> lock(g_content_block_mutex);
-  return g_content_block_rules;
-}
-
-/// Looks up a host and each of its parent domains.
-bool ContentBlockSetContainsHost(const std::unordered_set<std::string> &set, const std::string &host) {
-  std::string::size_type start = 0;
-  while (start != std::string::npos && start < host.size()) {
-    if (set.count(host.substr(start)) > 0) {
-      return true;
-    }
-    const auto dot = host.find('.', start);
-    start = dot == std::string::npos ? std::string::npos : dot + 1;
-  }
-  return false;
-}
-
-/// The last two labels, which treats sites under one registrable name as one party.
-std::string ContentBlockSiteName(const std::string &host) {
-  const auto last = host.rfind('.');
-  if (last == std::string::npos || last == 0) {
-    return host;
-  }
-  const auto previous = host.rfind('.', last - 1);
-  return previous == std::string::npos ? host : host.substr(previous + 1);
-}
-
-bool ContentBlockShouldBlock(const ContentBlockRules &rules, const std::string &host, const std::string &first_party) {
-  if (host.empty() || ContentBlockSetContainsHost(rules.excluded_sites, first_party)) {
-    return false;
-  }
-  if (ContentBlockSetContainsHost(rules.exceptions, host)) {
-    return false;
-  }
-  if (ContentBlockSetContainsHost(rules.blocked, host)) {
-    return true;
-  }
-  return ContentBlockSiteName(host) != ContentBlockSiteName(first_party) &&
-         ContentBlockSetContainsHost(rules.third_party, host);
-}
-
-std::string ContentBlockHost(const CefString &url) {
-  CefURLParts parts;
-  if (url.empty() || !CefParseURL(url, parts)) {
-    return "";
-  }
-  return CefString(&parts.host).ToString();
-}
-
-class ContentBlockRequestHandler final : public CefResourceRequestHandler {
- public:
-  ReturnValue OnBeforeResourceLoad(CefRefPtr<CefBrowser>,
-                                   CefRefPtr<CefFrame>,
-                                   CefRefPtr<CefRequest> request,
-                                   CefRefPtr<CefCallback>) override {
-    if (request->GetResourceType() == RT_MAIN_FRAME) {
-      return RV_CONTINUE;
-    }
-    const auto rules = CurrentContentBlockRules();
-    if (!rules) {
-      return RV_CONTINUE;
-    }
-    const std::string host = ContentBlockHost(request->GetURL());
-    const std::string first_party = ContentBlockHost(request->GetFirstPartyForCookies());
-    return ContentBlockShouldBlock(*rules, host, first_party) ? RV_CANCEL : RV_CONTINUE;
-  }
-
- private:
-  IMPLEMENT_REFCOUNTING(ContentBlockRequestHandler);
-};
-
-/// Hands out the shared handler only while blocking is on, so a browser with
-/// blocking off has no per-request cost.
-CefRefPtr<CefResourceRequestHandler> ContentBlockHandlerIfEnabled() {
-  if (!CurrentContentBlockRules()) {
-    return nullptr;
-  }
-  static CefRefPtr<CefResourceRequestHandler> handler = new ContentBlockRequestHandler();
-  return handler;
-}
-
-}  // namespace
-
 /// Menu commands the page's context menu adds to CEF's own.
 enum PageContextMenuCommand {
   kContextOpenLinkInNewTab = MENU_ID_USER_FIRST,
@@ -3186,15 +3088,6 @@ class BrowserTabClient final : public CefClient,
   void OnLoadStart(CefRefPtr<CefBrowser> browser,
                    CefRefPtr<CefFrame> frame,
                    TransitionType transition_type) override;
-  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser>,
-                                                                 CefRefPtr<CefFrame>,
-                                                                 CefRefPtr<CefRequest>,
-                                                                 bool,
-                                                                 bool,
-                                                                 const CefString &,
-                                                                 bool &) override {
-    return ContentBlockHandlerIfEnabled();
-  }
   bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                       CefRefPtr<CefFrame> frame,
                       CefRefPtr<CefRequest> request,
@@ -3325,15 +3218,6 @@ class BrowserPeekClient final : public CefClient,
   void OnLoadStart(CefRefPtr<CefBrowser> browser,
                    CefRefPtr<CefFrame> frame,
                    TransitionType transition_type) override;
-  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser>,
-                                                                 CefRefPtr<CefFrame>,
-                                                                 CefRefPtr<CefRequest>,
-                                                                 bool,
-                                                                 bool,
-                                                                 const CefString &,
-                                                                 bool &) override {
-    return ContentBlockHandlerIfEnabled();
-  }
   bool OnShowPermissionPrompt(
       CefRefPtr<CefBrowser> browser,
       uint64_t prompt_id,
@@ -5835,35 +5719,53 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
   }
 }
 
-static NSArray<NSString *> *g_content_block_generic_selectors = nil;
-static NSDictionary<NSString *, NSArray<NSString *> *> *g_content_block_selectors = nil;
-static NSSet<NSString *> *g_content_block_excluded = nil;
 static NSString *g_page_start_script = nil;
 
 
-/// Adds the page's hiding rules and the shared start script to a new document.
+/// The Web Store names Chrome on its buttons and asks every other browser to switch to it.
+static const char kWebStoreScript[] = R"JS((function(){
+if(window.__openArcWebStore)return;window.__openArcWebStore=true;
+var names=[[/Add to Chrome/g,'Add to OpenArc'],[/Remove from Chrome/g,'Remove from OpenArc']];
+function hide(element){
+  while(element.parentElement&&element.parentElement!==document.body&&element.parentElement.textContent.length<140)element=element.parentElement;
+  element.style.setProperty('display','none','important');
+}
+function fix(root){
+  var walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),node;
+  while(node=walker.nextNode()){
+    var text=node.nodeValue;
+    if(text.indexOf('Chrome')<0)continue;
+    if(text.indexOf('Switch to Chrome')>=0){hide(node.parentElement);continue;}
+    for(var i=0;i<names.length;i++)text=text.replace(names[i][0],names[i][1]);
+    if(text!==node.nodeValue)node.nodeValue=text;
+  }
+}
+function start(){
+  fix(document.documentElement);
+  new MutationObserver(function(list){
+    for(var i=0;i<list.length;i++){
+      var m=list[i];
+      if(m.type==='characterData'){fix(m.target.parentNode||document.documentElement);}
+      else for(var j=0;j<m.addedNodes.length;j++){
+        var n=m.addedNodes[j];
+        fix(n.nodeType===1?n:(n.parentNode||document.documentElement));
+      }
+    }
+  }).observe(document,{childList:true,subtree:true,characterData:true});
+}
+if(document.documentElement)start();else document.addEventListener('readystatechange',start,{once:true});
+})();)JS";
+
+/// Runs the shared start script in a new document.
 static void RunPageStartScripts(CefRefPtr<CefFrame> frame) {
-  NSString *url = ToNSString(frame->GetURL().ToString());
-  NSString *host = [NSURLComponents componentsWithString:url].host.lowercaseString;
-  NSString *style = [BrowserContentBlockerEngine cosmeticStyleForHost:host ?: @""];
-  NSString *start = BrowserContentBlockerEngine.pageStartScript;
-  if (!style && !start) {
-    return;
-  }
-  NSMutableString *script = [NSMutableString string];
+  NSString *start = BrowserPageScripts.pageStartScript;
   if (start) {
-    [script appendString:start];
+    frame->ExecuteJavaScript(start.UTF8String, frame->GetURL(), 0);
   }
-  if (style) {
-    NSData *encoded = [NSJSONSerialization dataWithJSONObject:@[ style ] options:0 error:nil];
-    NSString *literal = encoded ? [[NSString alloc] initWithData:encoded encoding:NSUTF8StringEncoding] : @"[\"\"]";
-    [script appendFormat:@";(function(){var css=%@[0];function add(){var s=document.createElement('style');"
-                          "s.textContent=css;(document.head||document.documentElement).appendChild(s);}"
-                          "if(document.documentElement){add();}else{"
-                          "document.addEventListener('readystatechange',add,{once:true});}})();",
-                         literal];
+  NSString *url = ToNSString(frame->GetURL().ToString());
+  if ([[NSURLComponents componentsWithString:url].host isEqualToString:@"chromewebstore.google.com"]) {
+    frame->ExecuteJavaScript(kWebStoreScript, frame->GetURL(), 0);
   }
-  frame->ExecuteJavaScript(script.UTF8String, frame->GetURL(), 0);
 }
 
 void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
@@ -6401,69 +6303,7 @@ bool BrowserPeekClient::OnBeforePopup(CefRefPtr<CefBrowser>,
 
 }  // namespace
 
-@implementation BrowserContentBlockerEngine
-
-+ (void)applyBlockedHosts:(NSArray<NSString *> *)blockedHosts
-          thirdPartyHosts:(NSArray<NSString *> *)thirdPartyHosts
-           exceptionHosts:(NSArray<NSString *> *)exceptionHosts
-            excludedSites:(NSArray<NSString *> *)excludedSites
-         genericSelectors:(NSArray<NSString *> *)genericSelectors
-          selectorsByHost:(NSDictionary<NSString *, NSArray<NSString *> *> *)selectorsByHost {
-  std::shared_ptr<ContentBlockRules> rules;
-  if (blockedHosts.count > 0 || thirdPartyHosts.count > 0 || selectorsByHost.count > 0 || genericSelectors.count > 0) {
-    rules = std::make_shared<ContentBlockRules>();
-    const auto fill = [](std::unordered_set<std::string> &set, NSArray<NSString *> *values) {
-      set.reserve(values.count);
-      for (NSString *value in values) {
-        set.insert(value.UTF8String);
-      }
-    };
-    fill(rules->blocked, blockedHosts);
-    fill(rules->third_party, thirdPartyHosts);
-    fill(rules->exceptions, exceptionHosts);
-    fill(rules->excluded_sites, excludedSites);
-  }
-  {
-    std::lock_guard<std::mutex> lock(g_content_block_mutex);
-    g_content_block_rules = rules;
-  }
-  g_content_block_generic_selectors = [genericSelectors copy];
-  g_content_block_selectors = [selectorsByHost copy];
-  g_content_block_excluded = [NSSet setWithArray:excludedSites];
-}
-
-+ (BOOL)blocksHost:(NSString *)host firstPartyHost:(NSString *)firstPartyHost {
-  const auto rules = CurrentContentBlockRules();
-  return rules && ContentBlockShouldBlock(*rules, host.UTF8String, firstPartyHost.UTF8String);
-}
-
-+ (NSString *)cosmeticStyleForHost:(NSString *)host {
-  if (host.length == 0) {
-    return nil;
-  }
-  NSMutableArray<NSString *> *selectors = [NSMutableArray arrayWithArray:g_content_block_generic_selectors ?: @[]];
-  NSString *candidate = host;
-  while (candidate.length > 0) {
-    if ([g_content_block_excluded containsObject:candidate]) {
-      return nil;
-    }
-    NSArray<NSString *> *own = g_content_block_selectors[candidate];
-    if (own) {
-      [selectors addObjectsFromArray:own];
-    }
-    const NSRange dot = [candidate rangeOfString:@"."];
-    candidate = dot.location == NSNotFound ? @"" : [candidate substringFromIndex:dot.location + 1];
-  }
-  if (selectors.count == 0) {
-    return nil;
-  }
-  // Each selector gets its own rule: one a browser cannot parse costs only itself.
-  NSMutableString *style = [NSMutableString string];
-  for (NSString *selector in selectors) {
-    [style appendFormat:@"%@{display:none!important}\n", selector];
-  }
-  return style;
-}
+@implementation BrowserPageScripts
 
 + (NSString *)pageStartScript {
   return g_page_start_script;

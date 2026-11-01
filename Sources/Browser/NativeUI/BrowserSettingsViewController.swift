@@ -360,7 +360,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.batterySaverEnabled = $0 },
                 ),
             ]),
-            section(BrowserStrings.settingsAdBlocker, rows: adBlockerRows()),
         ])
     }
 
@@ -822,47 +821,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             retry?.isEnabled = model.canRetryAutomaticTabArchivalSettings
         }
         return [localRow, synchronizedRow, description, errorRow]
-    }
-
-    /// Blocking rules come from public filter lists, downloaded when a switch turns on.
-    private func adBlockerRows() -> [NSView] {
-        let preferences = preferences
-        let turnOffAll = BrowserActionButton(BrowserStrings.settingsAdBlockerTurnOffAll) {
-            preferences.blocksAds = false
-            preferences.blocksTrackers = false
-            preferences.blocksCookieBanners = false
-        }
-        turnOffAll.setAccessibilityIdentifier("browser.settings.ad-blocker.turn-off-all")
-        updateBindings.append { [weak turnOffAll, weak preferences] in
-            turnOffAll?.isEnabled = preferences?.contentBlockerSettings.isEnabled ?? false
-        }
-        return [
-            BrowserNativeControls.label(
-                BrowserStrings.settingsAdBlockerDetail,
-                size: 12,
-                color: .secondaryLabelColor,
-                wraps: true,
-            ),
-            toggle(
-                "block-ads",
-                BrowserStrings.settingsBlockAds,
-                get: { preferences.blocksAds },
-                set: { preferences.blocksAds = $0 },
-            ),
-            toggle(
-                "block-trackers",
-                BrowserStrings.settingsBlockTrackers,
-                get: { preferences.blocksTrackers },
-                set: { preferences.blocksTrackers = $0 },
-            ),
-            toggle(
-                "block-cookie-banners",
-                BrowserStrings.settingsBlockCookieBanners,
-                get: { preferences.blocksCookieBanners },
-                set: { preferences.blocksCookieBanners = $0 },
-            ),
-            row(BrowserStrings.settingsAdBlocker, control: turnOffAll),
-        ]
     }
 
     private func configureProfiles() {

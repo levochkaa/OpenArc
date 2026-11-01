@@ -367,8 +367,6 @@ enum BrowserWindowMode: Equatable {
     var onSavePageRequest: (() -> Void)?
     /// UI-only: shows the share sheet in the window.
     var onShareURL: ((URL) -> Void)?
-    /// Applies new blocking settings and returns once pages get them.
-    var onContentBlockingChange: ((BrowserContentBlockerSettings) async -> Void)?
     var onOpenLinkInIncognito: ((URL) -> Void)?
     /// UI-only: opens the window's theme editor for a Space.
     var onEditSpaceTheme: ((String) -> Void)?
@@ -1113,6 +1111,7 @@ enum BrowserWindowMode: Equatable {
         }
 
         isContextReady = true
+        extensionManager.enableDefaultExtensionsOnce()
         restoreSidebarWidthIfNeeded()
         bookmarksModel.reload()
         refreshBrowserExtensions()

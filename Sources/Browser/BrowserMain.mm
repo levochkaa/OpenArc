@@ -36,6 +36,23 @@
 
 namespace shared {
 
+/// Chromium adds an extension to every profile once its manifest is in this folder, and
+/// remembers when the user removes it.
+static void BrowserWriteDefaultExtensionManifests(NSString* cache_root) {
+  NSString* folder = [cache_root stringByAppendingPathComponent:@"External Extensions"];
+  [NSFileManager.defaultManager createDirectoryAtPath:folder
+                          withIntermediateDirectories:YES
+                                           attributes:nil
+                                                error:nil];
+  NSString* manifest =
+      [folder stringByAppendingPathComponent:@"ddkjiahejlhfcafbddmgiahcphecmpfh.json"];
+  [@"{\"external_update_url\":\"https://clients2.google.com/service/update2/crx\"}\n"
+      writeToFile:manifest
+       atomically:YES
+         encoding:NSUTF8StringEncoding
+            error:nil];
+}
+
 int main(int argc, char* argv[]) {
   CefScopedLibraryLoader library_loader;
   if (!library_loader.LoadInMain()) {
@@ -74,6 +91,8 @@ int main(int argc, char* argv[]) {
         std::string(cache_root.UTF8String);
     CefString(&settings.cache_path) =
         std::string(cache_path.UTF8String);
+
+    BrowserWriteDefaultExtensionManifests(cache_root);
 
     if (!CefInitialize(main_args, settings, app, nullptr)) {
       return 1;

@@ -268,20 +268,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 
 @end
 
-/// Refuses requests to blocked hosts and hides elements on pages. It runs before
-/// each request, so its rules are swapped as a whole.
-@interface BrowserContentBlockerEngine : NSObject
-+ (void)applyBlockedHosts:(NSArray<NSString *> *)blockedHosts
-          thirdPartyHosts:(NSArray<NSString *> *)thirdPartyHosts
-           exceptionHosts:(NSArray<NSString *> *)exceptionHosts
-            excludedSites:(NSArray<NSString *> *)excludedSites
-         genericSelectors:(NSArray<NSString *> *)genericSelectors
-          selectorsByHost:(NSDictionary<NSString *, NSArray<NSString *> *> *)selectorsByHost
-    NS_SWIFT_NAME(apply(blockedHosts:thirdPartyHosts:exceptionHosts:excludedSites:genericSelectors:selectorsByHost:));
-/// True if a page on `firstPartyHost` may not load from `host`.
-+ (BOOL)blocksHost:(NSString *)host firstPartyHost:(NSString *)firstPartyHost;
-/// CSS that hides unwanted elements on a page, or nil.
-+ (nullable NSString *)cosmeticStyleForHost:(NSString *)host;
+/// Scripts the browser adds to pages.
+@interface BrowserPageScripts : NSObject
 /// A script to run at the start of each page, such as a Space's theme variables.
 @property(class, nonatomic, copy, nullable) NSString *pageStartScript;
 @end
