@@ -25,7 +25,7 @@ import QuartzCore
         /// The theme cross-fading to a chosen Space.
         static let spaceSlide = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
         /// The Library sliding in from the window edge.
-        static let libraryOpen = Curve.spring(response: 0.2, damping: 0.95)
+        static let libraryOpen = Curve.spring(response: 0.2, damping: 0.995)
         /// The Library leaving.
         static let library = Curve.spring(response: 0.19, damping: 0.995)
         /// Spaces sliding to a chosen Space or settling after a swipe: critically damped.
@@ -59,6 +59,10 @@ import QuartzCore
         static let rowPress = Curve.spring(response: 0.2, damping: 0.5)
         /// Floating sidebar slide: stiffness 1218, damping 55.9.
         static let floatingSidebar = Curve.spring(response: 0.17, damping: 0.8)
+        /// The sidebar leaving for the Library.
+        static let sidebarToLibrary = Curve.bezier(0.045, x1: 0, y1: 0, x2: 1, y2: 1)
+        /// The sidebar coming back from the Library.
+        static let sidebarFromLibrary = Curve.bezier(0.36, x1: 0.15, y1: 0.8, x2: 0.2, y2: 1)
         /// The update pill rising into place and fading in.
         static let toastAppear = Curve.spring(response: 0.6, damping: 0.4)
         /// The update pill opening into a card under the pointer.
@@ -82,7 +86,9 @@ import QuartzCore
             case .bezier(let duration, _, _, _, _),
                  .easeInOut(let duration),
                  .easeOut(let duration): duration
-            case .spring(let response, let damping): -log(0.001) / (damping * 2 * .pi / response)
+            case .spring(let response, let damping):
+                // Near critical damping the tail decays slower than the envelope alone.
+                -log(0.001) / (damping * 2 * .pi / response) * (damping >= 0.9 ? 1.5 : 1)
             }
         }
 

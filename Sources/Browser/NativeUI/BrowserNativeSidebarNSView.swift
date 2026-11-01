@@ -12,6 +12,8 @@ final class BrowserNativeSidebarNSView: NSView {
     private static let spaceSelectionDelay: CFTimeInterval = 0.05
     private static let swipeReleaseDelay: CFTimeInterval = 0.05
 
+    private static let leavingPageKey = "browser.page.leaving"
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -74,6 +76,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private let frameTransitions = BrowserNativeFrameTransitions()
 
     private var pagerSlideEnd: CFTimeInterval = 0
+    private var leavingPageX = [ObjectIdentifier: CGFloat]()
 
     private var renderedSnapshot: BrowserSidebarSnapshot { state.renderedSnapshot(for: state.snapshot) }
     private var frameTransitionsAreRunning: Bool { CACurrentMediaTime() < pagerSlideEnd }
@@ -754,7 +757,8 @@ final class BrowserNativeSidebarNSView: NSView {
             animated: animated,
         )
         creationPage.frame = NSRect(
-            x: CGFloat(state.snapshot.spaces.count) * pageStride + inset,
+            x: leavingPageX[ObjectIdentifier(creationPage)] ?? CGFloat(state.snapshot.spaces.count) * pageStride +
+                inset,
             y: 0,
             width: width,
             height: pagerClip.bounds.height,
@@ -765,7 +769,7 @@ final class BrowserNativeSidebarNSView: NSView {
         reportSpacePagerProgress(selectedIndex: selectedIndex, pageStride: pageStride)
         for page in pages.values {
             page.frame = NSRect(
-                x: CGFloat(page.index) * pageStride + inset,
+                x: leavingPageX[ObjectIdentifier(page)] ?? CGFloat(page.index) * pageStride + inset,
                 y: 0,
                 width: width,
                 height: pagerClip.bounds.height,
@@ -786,6 +790,53 @@ final class BrowserNativeSidebarNSView: NSView {
         onSpacePagerProgress(state.snapshot.spaces[neighbor].id, min(abs(translation) / pageStride, 1))
     }
 
+    /// A view whose frame lies outside the clip stops drawing its text, and a slide's frame is
+    /// final before anything has moved. So a leaving page stays inside the clip, shown at its
+    /// place in the row by a fixed offset, until the slide ends.
+    private func keepLeavingPagesDrawn(endingAt origin: CGPoint) {
+        let clip = pagerClip.bounds
+        let inside = BrowserChromeLayout.sidebarOuterPadding - origin.x
+        for page in Array(pages.values) + [creationPage] {
+            let id = ObjectIdentifier(page)
+            let natural = pagerX(of: page)
+            let width = page.frame.width
+            let staysVisible = NSRect(x: natural + origin.x, y: 0, width: width, height: 1).intersects(clip)
+            let isVisible = NSRect(x: natural + pagesContainer.frame.minX, y: 0, width: width, height: 1)
+                .intersects(clip)
+            if staysVisible {
+                if leavingPageX.removeValue(forKey: id) != nil {
+                    page.layer?.removeAnimation(forKey: Self.leavingPageKey)
+                    page.frame.origin.x = natural
+                    (page as? BrowserNativeSidebarPage)?.isLeaving = false
+                }
+            } else if !page.isHidden, isVisible || leavingPageX[id] != nil {
+                leavingPageX[id] = inside
+                page.frame.origin.x = inside
+                (page as? BrowserNativeSidebarPage)?.isLeaving = true
+                let offset = CABasicAnimation(keyPath: "position")
+                offset.isAdditive = true
+                offset.fromValue = NSValue(point: CGPoint(x: natural - inside, y: 0))
+                offset.toValue = offset.fromValue
+                offset.duration = 60
+                page.layer?.add(offset, forKey: Self.leavingPageKey)
+            }
+        }
+    }
+
+    private func endLeavingPages() {
+        for page in Array(pages.values) + [creationPage] where leavingPageX[ObjectIdentifier(page)] != nil {
+            page.layer?.removeAnimation(forKey: Self.leavingPageKey)
+            (page as? BrowserNativeSidebarPage)?.isLeaving = false
+        }
+        leavingPageX.removeAll()
+    }
+
+    /// Where a page sits in the row of pages.
+    private func pagerX(of page: NSView) -> CGFloat {
+        let index = (page as? BrowserNativeSidebarPage)?.index ?? state.snapshot.spaces.count
+        return CGFloat(index) * pagerClip.bounds.width + BrowserChromeLayout.sidebarOuterPadding
+    }
+
     private func setFrame(_ rect: NSRect, of view: NSView, animated: Bool, delay: CFTimeInterval = 0) {
         guard view === pagesContainer else {
             frameTransitions.setFrame(rect, of: view, animated: animated, curve: state.rowMoveCurve)
@@ -801,9 +852,15 @@ final class BrowserNativeSidebarNSView: NSView {
             if velocity != 0 {
                 start = Self.swipeReleaseDelay
             }
-            pagerSlideEnd = CACurrentMediaTime() + start + curve.duration
+            keepLeavingPagesDrawn(endingAt: rect.origin)
+            let end = CACurrentMediaTime() + start + curve.duration
+            pagerSlideEnd = end
             DispatchQueue.main.asyncAfter(deadline: .now() + start + curve.duration) { [weak self] in
-                self?.needsLayout = true
+                guard let self else { return }
+                needsLayout = true
+                if pagerSlideEnd == end {
+                    endLeavingPages()
+                }
             }
         }
         frameTransitions.slide(
@@ -1699,6 +1756,8 @@ private final class BrowserNativeSidebarPage: NSView, BrowserSpaceThemedChrome {
     // MARK: Internal
 
     var spaceThemePalette: BrowserSpaceTheme.Palette?
+    /// On its way out of the row of pages: it still shows, but sits where the new page is.
+    var isLeaving = false
 
     let spaceID: String
     var index = 0
@@ -1746,6 +1805,10 @@ private final class BrowserNativeSidebarPage: NSView, BrowserSpaceThemedChrome {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isLeaving ? nil : super.hitTest(point)
+    }
 
     func finishRowAnimations() { frameTransitions.finishAll() }
 
