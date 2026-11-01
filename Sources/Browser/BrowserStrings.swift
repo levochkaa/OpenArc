@@ -2408,11 +2408,6 @@ enum BrowserStrings {
         comment: "Button title for installing a downloaded update immediately.",
     )
 
-    static let updateDismissAction = NSLocalizedString(
-        "browser.updates.dismiss_action",
-        comment: "Accessibility label for dismissing the update toast.",
-    )
-
     static let settingsAppearance = NSLocalizedString(
         "browser.settings.general.appearance",
         comment: "Appearance setting title.",
@@ -3129,16 +3124,6 @@ enum BrowserStrings {
                 comment: "Shortcut conflict message with conflicting command title.",
             ),
             commandTitle,
-        )
-    }
-
-    static func updateReadyMessage(version: String) -> String {
-        String(
-            format: NSLocalizedString(
-                "browser.updates.ready.message",
-                comment: "Message shown when an update is ready. The argument is the update version.",
-            ),
-            version,
         )
     }
 

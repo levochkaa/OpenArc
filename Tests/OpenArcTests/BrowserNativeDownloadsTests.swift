@@ -61,29 +61,31 @@ import Testing
         #expect(controller.rows.count == 20)
     }
 
-    @Test func updateToastRoutesInstallAndDismissSeparately() throws {
+    @Test func updateToastOpensIntoACardWithItsActions() throws {
         let view = BrowserNativeUpdateToastView()
         var actions = [String]()
         view.onInstall = { actions.append("install") }
-        view.onDismiss = { actions.append("dismiss") }
-        view.update(.init(
-            title: "Update available",
-            message: "A new version is ready to install.",
-            actionTitle: "Relaunch",
-        ))
-        view.frame = NSRect(x: 0, y: 0, width: 240, height: view.height(for: 240))
+        view.onAutomaticUpdatesChanged = { actions.append("automatic \($0)") }
+        view.update(.init(title: "Update available", actionTitle: "Relaunch"))
+        view.isAutomaticUpdatesOn = false
+        #expect(view.displayHeight == BrowserNativeUpdateToastView.collapsedHeight)
+        view.setExpanded(true, animated: false)
+        #expect(view.displayHeight == BrowserNativeUpdateToastView.expandedHeight)
+        view.frame = NSRect(x: 0, y: 0, width: 212, height: view.displayHeight)
         view.layoutSubtreeIfNeeded()
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         let all = descendants(view)
         let install = try #require(all
             .first { $0.accessibilityIdentifier() == "browser.update.install" } as? BrowserNativePressableView)
-        let dismiss = try #require(all
-            .first { $0.accessibilityIdentifier() == "browser.update.dismiss" } as? BrowserNativeChromeButton)
+        let automatic = try #require(all
+            .first { $0.accessibilityIdentifier() == "browser.update.automatic" } as? NSButton)
         #expect(install.accessibilityPerformPress())
-        dismiss.performClick(nil)
-        #expect(actions == ["install", "dismiss"])
+        automatic.performClick(nil)
+        #expect(actions == ["install", "automatic true"])
         #expect(view.bounds.contains(install.convert(install.bounds, to: view)))
-        #expect(view.bounds.contains(dismiss.convert(dismiss.bounds, to: view)))
+        #expect(view.bounds.contains(automatic.convert(automatic.bounds, to: view)))
+        view.setExpanded(false, animated: false)
+        #expect(view.displayHeight == BrowserNativeUpdateToastView.collapsedHeight)
     }
 
     // MARK: Private

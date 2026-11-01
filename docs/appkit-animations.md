@@ -38,7 +38,8 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Peek | card opens on stiffness 657.7, damping 44.37 and closes on 779.82, 49.99; the page behind uses the other one | The card grows from a strip around the pointer, wide as the page; the page dims to 0.3 and scales to 0.988 |
 | Command selection scroll | ease-in-out, 0.05 s | Minimum scroll needed to reveal the row, clamped to document bounds; no forced centering |
 | Tooltip visibility | at once after continuous hover: 0.43 s on buttons, 1.48 s on rows; out 0.3 s when the pointer leaves, 0.1 s otherwise; timing (0, 0, 0.58, 1) | Opacity; fades as soon as the pointer leaves; after a row's tooltip the next rows show none until the pointer has been away for 0.3 s |
-| Update toast | ease-in-out, 0.18 s | Opacity and reserved sidebar-footer height |
+| Update pill rising | spring, response 0.6, damping 0.4 | 32 pt slide and opacity on the same spring, room reserved at once |
+| Update pill opening, closing | spring, response 0.33, damping 0.7; response 0.21, damping 0.9 | Height, after 0.3 s of hover; content opacity follows |
 | Page loading bar | pulse 1.63 s up and down, twice; spring response 0.8 s, damping 0.92 to open; highlight 0.73 s of a 1.13 s cycle, linear; 0.33 s to close, timing (0.42, 0, 1, 1) | Opacity and width above the page; Reduce Motion shows a steady bar |
 
 These timings are chosen on purpose:

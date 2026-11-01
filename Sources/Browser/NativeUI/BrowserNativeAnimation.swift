@@ -59,6 +59,12 @@ import QuartzCore
         static let rowPress = Curve.spring(response: 0.2, damping: 0.5)
         /// Floating sidebar slide: stiffness 1218, damping 55.9.
         static let floatingSidebar = Curve.spring(response: 0.17, damping: 0.8)
+        /// The update pill rising into place and fading in.
+        static let toastAppear = Curve.spring(response: 0.6, damping: 0.4)
+        /// The update pill opening into a card under the pointer.
+        static let toastExpand = Curve.spring(response: 0.33, damping: 0.7)
+        /// The update card closing back into a pill.
+        static let toastCollapse = Curve.spring(response: 0.21, damping: 0.9)
         /// A dropped row landing in place, with the rows making room for it.
         static let landing = rowList
         /// Reload and Stop dissolving into each other.

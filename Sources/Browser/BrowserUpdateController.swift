@@ -25,6 +25,11 @@ import Sparkle
     private var isAutomaticUpdatePolicyActive = false
     private var immediateInstallHandler: (() -> Void)?
 
+    var automaticUpdatesEnabled: Bool {
+        get { preferencesStore.automaticUpdatesEnabled }
+        set { preferencesStore.automaticUpdatesEnabled = newValue }
+    }
+
     var canCheckForUpdates: Bool {
         updaterController?.updater.canCheckForUpdates ?? false
     }
@@ -127,10 +132,6 @@ import Sparkle
         immediateInstallHandler()
     }
 
-    func dismissToast() {
-        toast = nil
-    }
-
     private func startNetworkPathMonitor() {
         guard pathMonitor == nil else {
             return
@@ -209,10 +210,9 @@ import Sparkle
         updaterController?.updater.checkForUpdatesInBackground()
     }
 
-    private func showDownloadedUpdateToast(for item: SUAppcastItem) {
+    private func showDownloadedUpdateToast() {
         toast = BrowserUpdateToast(
             title: BrowserStrings.updateReadyTitle,
-            message: BrowserStrings.updateReadyMessage(version: item.displayVersionString),
             actionTitle: BrowserStrings.updateRestartAction,
         )
     }
@@ -245,17 +245,17 @@ extension BrowserUpdateController: SPUUpdaterDelegate {
         }
     }
 
-    func updater(_: SPUUpdater, didDownloadUpdate item: SUAppcastItem) {
-        showDownloadedUpdateToast(for: item)
+    func updater(_: SPUUpdater, didDownloadUpdate _: SUAppcastItem) {
+        showDownloadedUpdateToast()
     }
 
     func updater(
         _: SPUUpdater,
-        willInstallUpdateOnQuit item: SUAppcastItem,
+        willInstallUpdateOnQuit _: SUAppcastItem,
         immediateInstallationBlock immediateInstallHandler: @escaping () -> Void,
     ) -> Bool {
         self.immediateInstallHandler = immediateInstallHandler
-        showDownloadedUpdateToast(for: item)
+        showDownloadedUpdateToast()
         return true
     }
 }

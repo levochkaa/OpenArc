@@ -421,10 +421,8 @@
 "browser.settings.general.appearance.dark" = "Dark";
 "browser.updates.channel.stable" = "Stable";
 "browser.updates.channel.beta" = "Beta";
-"browser.updates.ready.title" = "Update Ready";
-"browser.updates.ready.message" = "Version %@ will install after restart.";
-"browser.updates.restart_action" = "Restart";
-"browser.updates.dismiss_action" = "Dismiss";
+"browser.updates.ready.title" = "New OpenArc Version Available";
+"browser.updates.restart_action" = "Restart and Update";
 "browser.settings.general.warn_before_quitting" = "Warn Before Quitting";
 "browser.settings.general.blurred_background" = "Blur Browser Background";
 "browser.settings.general.battery_saver" = "Battery Saver";

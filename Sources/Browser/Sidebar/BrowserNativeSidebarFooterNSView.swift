@@ -8,6 +8,8 @@ import Combine
 final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private static let createMenuHoldDuration: CFTimeInterval = 0.3
 
+    private static let toastDockGap: CGFloat = 7.5
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -19,10 +21,9 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private let state: BrowserNativeSidebarState
     private let updateController: BrowserUpdateController
     private let toast = BrowserNativeUpdateToastView()
-    private let toastVisibility = BrowserNativeVisibilityAnimation()
-    private let toastAnimation = BrowserNativeAnimation()
-    private var toastTarget = false
-    private var toastProgress = 0.0
+
+    private let toastFade = BrowserNativeAnimation()
+    private var isToastShown = false
     private let scroll = NSScrollView()
     private let spacesContainer = BrowserSpaceDockNSView()
     private let downloadsButton = BrowserNativeChromeButton(
@@ -56,6 +57,11 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     /// The Space icons, for drops from the sidebar.
     var spaceDock: BrowserSpaceDockNSView { spacesContainer }
 
+    /// The room the toast keeps above the dock, taken at once so the list settles before it rises.
+    private var reservedToastHeight: CGFloat {
+        isToastShown ? toast.displayHeight + Self.toastDockGap : 0
+    }
+
     init(state: BrowserNativeSidebarState, updateController: BrowserUpdateController) {
         self.state = state
         self.updateController = updateController
@@ -64,6 +70,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         for view in [toast, scroll, downloadsButton, createButton, downloadDot] {
             addSubview(view)
         }
+        toast.isHidden = true
         scroll.drawsBackground = false
         scroll.hasHorizontalScroller = false
         scroll.hasVerticalScroller = false
@@ -87,7 +94,14 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         createButton.onRelease = { [weak self] in self?.closeCreateMenuIfHeld() }
         createMenu.onClose = { [weak self] in self?.setCreateMenuOpen(false) }
         toast.onInstall = { [weak updateController] in updateController?.installDownloadedUpdateNow() }
-        toast.onDismiss = { [weak updateController] in updateController?.dismissToast() }
+        toast.onAutomaticUpdatesChanged = { [weak updateController] enabled in
+            updateController?.automaticUpdatesEnabled = enabled
+        }
+        toast.onExpansionChanged = { [weak self] in
+            guard let self else { return }
+            needsLayout = true
+            onSizeChanged()
+        }
         popover.behavior = .transient
         popover.delegate = self
         popover.contentViewController = downloadsController
@@ -110,9 +124,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
 
     override func layout() {
         super.layout()
-        let toastHeight = toast.height(for: max(bounds.width - 4, 0)) * toastProgress
-        toast.frame = NSRect(x: 2, y: 0, width: max(bounds.width - 4, 0), height: toastHeight)
-        let y = toastHeight + BrowserChromeLayout.sidebarDockTopInset
+        toast.frame = NSRect(x: 0, y: 0, width: bounds.width, height: toast.displayHeight)
+        let y = reservedToastHeight + BrowserChromeLayout.sidebarDockTopInset
         let size = BrowserChromeLayout.sidebarChromeButtonSize
         let spacing = BrowserChromeLayout.sidebarChromeButtonSpacing
         let reserve = size + spacing
@@ -222,10 +235,12 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         needsLayout = true
     }
 
-    func height(for width: CGFloat) -> CGFloat {
-        let toastHeight = toast.height(for: max(width - 4, 0)) * toastProgress
-        guard state.model.supportsSpaces else { return toastHeight + BrowserChromeLayout.sidebarSectionSpacing }
-        return toastHeight + BrowserChromeLayout.sidebarDockTopInset + BrowserChromeLayout.sidebarChromeButtonSize
+    func height(for _: CGFloat) -> CGFloat {
+        guard state.model.supportsSpaces else {
+            return reservedToastHeight + BrowserChromeLayout.sidebarSectionSpacing
+        }
+        return reservedToastHeight + BrowserChromeLayout.sidebarDockTopInset
+            + BrowserChromeLayout.sidebarChromeButtonSize
             + BrowserChromeLayout.sidebarDockBottomInset
     }
 
@@ -321,19 +336,20 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         if let content = updateController.toast {
             toast.update(content)
         }
-        toastVisibility.setVisible(visible, view: toast, curve: .sidebar)
-        if toastTarget != visible {
-            toastTarget = visible
-            let from = toastProgress
-            let to = visible ? 1.0 : 0.0
-            if window == nil {
-                toastProgress = to
+        toast.isAutomaticUpdatesOn = updateController.automaticUpdatesEnabled
+        if isToastShown != visible {
+            isToastShown = visible
+            toastFade.cancel()
+            if visible {
+                toast.isHidden = false
+                toast.alphaValue = 1
+                toast.playAppear()
             } else {
-                toastAnimation.start(.sidebar) { [weak self] progress in
-                    guard let self else { return }
-                    toastProgress = from + (to - from) * progress
-                    needsLayout = true
-                    onSizeChanged()
+                toast.reset()
+                toastFade.start(.caption) { [weak self] progress in
+                    self?.toast.alphaValue = 1 - progress
+                } completion: { [weak self] in
+                    self?.toast.isHidden = true
                 }
             }
         }
