@@ -17,6 +17,11 @@ final class BrowserRootView: NSView {
     private let content: BrowserContentNSView
     private let sidebar: BrowserSidebarChromeView
     private var sidebarLibraryEnd = 0
+    private let libraryScrollObserver = BrowserSpacePagerScrollNSView()
+    /// The Library follows a swipe instead of the layout.
+    private var libraryFollowsSwipe = false
+    private var librarySwipeTranslation: CGFloat = 0
+    private var librarySwipeStart: CFTimeInterval = 0
     private let toolbar: BrowserSiteControlsNSView
     private let bookmarks: BrowserBookmarksBarNSView
     private let margins = BrowserNativeWindowMargins()
@@ -57,6 +62,8 @@ final class BrowserRootView: NSView {
     private var isWindowFullscreenTransitioning = false
     private var isSidebarHoverOverlayPresented = false
     private var isSidebarHoverOverlayChromeVisible = false
+    /// A floating sidebar being pinned keeps its background until the page has made room.
+    private var isSidebarOverlayPinning = false
     private var preservesSidebarHoverOverlayDuringFullscreenTransition = false
     private var isSidebarHoverOverlayPointerSyncSuspended = false
     private var isSidebarRevealEdgeHovered = false
@@ -112,7 +119,10 @@ final class BrowserRootView: NSView {
     private var isEditingSpaceTheme: Bool { spaceThemePopover?.isShown == true }
     private var isSidebarPresented: Bool { model.isSidebarVisible || isSidebarHoverOverlayPresented }
     private var isSidebarHoverOverlayActive: Bool { !model.isSidebarVisible && isSidebarHoverOverlayPresented }
-    private var isSidebarOverlayPresentation: Bool { !model.isSidebarVisible && isSidebarHoverOverlayChromeVisible }
+    private var isSidebarOverlayPresentation: Bool {
+        isSidebarOverlayPinning || !model.isSidebarVisible && isSidebarHoverOverlayChromeVisible
+    }
+
     private var showsWindowControlsInSidebarChrome: Bool {
         showsSidebarWindowControls || isSidebarHoverOverlayChromeVisible
     }
@@ -174,6 +184,8 @@ final class BrowserRootView: NSView {
             addSubview(view)
         }
         library.isHidden = true
+        addSubview(libraryScrollObserver)
+        bindLibrarySwipes()
         find.bind(to: model)
         content.bindTabCreation(to: model)
         pageTopDrag.pageView = { [weak content] in content?.viewport }
@@ -303,6 +315,7 @@ final class BrowserRootView: NSView {
         for overlay in [command, currentPageCommand, tabEvents, tabSwitcher, sidebarDismiss] {
             overlay.frame = bounds
         }
+        libraryScrollObserver.frame = CGRect(x: 0, y: 0, width: BrowserLibraryLayout.width, height: bounds.height)
         let onRight = preferences.sidebarPosition == .right
         sidebarInteraction.frame = NSRect(
             x: onRight ? bounds.width - sidebarLayoutWidth : 0,
@@ -351,7 +364,7 @@ final class BrowserRootView: NSView {
             (
                 library,
                 CGRect(
-                    x: libraryShown ? 0 : -libraryWidth,
+                    x: libraryFollowsSwipe ? library.frame.minX : libraryShown ? 0 : -libraryWidth,
                     y: 0,
                     width: libraryWidth,
                     height: bounds.height,
@@ -448,6 +461,75 @@ final class BrowserRootView: NSView {
 
     private func sidebarFrame(in _: CGSize) -> CGRect { windowGeometry.sidebarFrame }
 
+    /// Off screen after its slide, and out of reach of the keyboard and accessibility.
+    private func hideLibraryAfterSlide() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + BrowserNativeAnimation.Curve.library.duration) { [weak self] in
+            guard let self, model.librarySection == nil, !libraryFollowsSwipe else { return }
+            library.isHidden = true
+        }
+    }
+
+    private func bindLibrarySwipes() {
+        let state = sidebar.sidebar.state
+        state.onLibrarySwipe = { [weak self] progress in self?.followLibrarySwipe(progress: progress) }
+        state.onLibrarySwipeEnded = { [weak self] opens in self?.finishLibrarySwipe(opens: opens) }
+        libraryScrollObserver.onScrollDelta = { [weak self] delta in
+            guard let self else { return }
+            if !libraryFollowsSwipe {
+                librarySwipeStart = CACurrentMediaTime()
+                librarySwipeTranslation = 0
+            }
+            librarySwipeTranslation = min(librarySwipeTranslation + delta * 0.5, 0)
+            let distance = max(model.sidebarWidth, 1)
+            followLibrarySwipe(progress: 1 - min(-librarySwipeTranslation / distance, 1))
+        }
+        libraryScrollObserver.onScrollReleased = { [weak self] in
+            guard let self, libraryFollowsSwipe else { return }
+            let isQuick = CACurrentMediaTime() - librarySwipeStart < 0.5
+            let closes = librarySwipeTranslation < 0
+                && (isQuick || -librarySwipeTranslation >= model.sidebarWidth / 2)
+            finishLibrarySwipe(opens: !closes)
+        }
+        libraryScrollObserver.onScrollEnded = { [weak self] in
+            guard let self, libraryFollowsSwipe else { return }
+            finishLibrarySwipe(opens: model.librarySection != nil)
+        }
+    }
+
+    /// `progress` 1 is the Library in place. The sidebar gives way over the first third.
+    private func followLibrarySwipe(progress: CGFloat) {
+        libraryFollowsSwipe = true
+        library.isHidden = false
+        let width = BrowserLibraryLayout.width
+        library.frame = CGRect(x: -width * (1 - progress), y: 0, width: width, height: bounds.height)
+        sidebar.isHidden = false
+        sidebar.alphaValue = max(1 - progress * 3, 0)
+    }
+
+    private func finishLibrarySwipe(opens: Bool) {
+        libraryFollowsSwipe = false
+        if opens != (model.librarySection != nil) {
+            model.toggleLibrary()
+            return
+        }
+        // The swipe changed nothing: everything goes back where it was.
+        let opacity = sidebar.alphaValue
+        sidebar.alphaValue = 1
+        sidebar.isHidden = opens
+        if !opens, opacity < 1 {
+            let fade = BrowserNativeAnimation.Curve.library.layerAnimation(keyPath: "opacity")
+            fade.fromValue = opacity
+            fade.toValue = 1
+            sidebar.layer?.add(fade, forKey: "browser.sidebar.library.fade")
+        }
+        animateNextLayout = true
+        nextLayoutCurve = opens ? .libraryOpen : .library
+        needsLayout = true
+        if !opens {
+            hideLibraryAfterSlide()
+        }
+    }
+
     /// The sidebar shrinks a little and fades as the Library arrives, and comes back the same way.
     private func transitionSidebar(forLibraryPresented presented: Bool) {
         sidebarLibraryEnd += 1
@@ -466,12 +548,15 @@ final class BrowserRootView: NSView {
         var small = CATransform3DMakeTranslation(center.x, center.y, 0)
         small = CATransform3DScale(small, 0.95, 0.95, 1)
         small = CATransform3DTranslate(small, -center.x, -center.y, 0)
+        // A swipe may have started the fade already.
+        let swipeOpacity = sidebar.alphaValue
+        sidebar.alphaValue = 1
         let curve: BrowserNativeAnimation.Curve = presented ? .sidebarToLibrary : .sidebarFromLibrary
         let scale = curve.layerAnimation(keyPath: "transform")
         scale.fromValue = presented ? layer.presentation()?.transform ?? CATransform3DIdentity : small
         scale.toValue = presented ? small : CATransform3DIdentity
         let fade = curve.layerAnimation(keyPath: "opacity")
-        fade.fromValue = layer.presentation()?.opacity ?? (presented ? 1 : 0)
+        fade.fromValue = swipeOpacity < 1 ? Float(swipeOpacity) : layer.presentation()?.opacity ?? (presented ? 1 : 0)
         fade.toValue = presented ? 0 : 1
         if presented {
             for animation in [scale, fade] {
@@ -481,7 +566,7 @@ final class BrowserRootView: NSView {
             layer.add(scale, forKey: "browser.sidebar.library.scale")
             layer.add(fade, forKey: "browser.sidebar.library.fade")
         } else {
-            if sidebar.isHidden {
+            if sidebar.isHidden, swipeOpacity == 1 {
                 fade.fromValue = 0
             }
             sidebar.isHidden = false
@@ -529,9 +614,10 @@ final class BrowserRootView: NSView {
             style: .standard,
             faviconCandidate: nil,
         )
+        // A click on the sidebar dismisses this bar, as one on the page does.
         currentPageCommand.configure(
-            blockedLeadingInset: browserContentMinX,
-            blockedTrailingInset: blockedTrailingInset,
+            blockedLeadingInset: 0,
+            blockedTrailingInset: preferences.sidebarPosition == .right ? 0 : blockedTrailingInset,
             style: .compact(
                 anchorFrame: currentURLRowWindowFrame,
                 sidebarWidth: model.sidebarWidth,
@@ -565,6 +651,7 @@ final class BrowserRootView: NSView {
                 animateNextLayout = false
             }
             if model.isSidebarVisible,!previousLayoutState[0] {
+                isSidebarOverlayPinning = isSidebarHoverOverlayChromeVisible
                 finishSidebarHoverOverlayPromotionIfNeeded()
             }
         }
@@ -576,8 +663,8 @@ final class BrowserRootView: NSView {
                 ?? (effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black),
         )
         pageLoadingIndicator.setLoading(model.canStopLoading)
-        if window?.isMainWindow == true || BrowserContentBlockerEngine.pageStartScript == nil {
-            BrowserContentBlockerEngine.pageStartScript = preferences.sharesThemeWithWebsites
+        if window?.isMainWindow == true || BrowserPageScripts.pageStartScript == nil {
+            BrowserPageScripts.pageStartScript = preferences.sharesThemeWithWebsites
                 ? model.selectedSpaceTheme?.pageScript
                 : nil
         }
@@ -587,18 +674,14 @@ final class BrowserRootView: NSView {
             if libraryPresented {
                 library.isHidden = false
             } else {
-                // Off screen after its slide, and out of reach of the keyboard and accessibility.
-                let duration = BrowserNativeAnimation.Curve.library.duration
-                DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-                    guard let self, model.librarySection == nil else { return }
-                    library.isHidden = true
-                }
+                hideLibraryAfterSlide()
             }
             transitionSidebar(forLibraryPresented: libraryPresented)
             animateNextLayout = true
             nextLayoutCurve = libraryPresented ? .libraryOpen : .library
         }
         library.refresh()
+        libraryScrollObserver.isEnabled = libraryPresented && model.librarySection != .spaces
         let contentAppearance = model.selectedSpaceTheme?.palette.map {
             NSAppearance(named: $0.isLightContent ? .aqua : .darkAqua)
         } ?? nil
@@ -659,6 +742,7 @@ final class BrowserRootView: NSView {
 
     private func finishPresentationAnimation() {
         isAnimatingFrames = false
+        isSidebarOverlayPinning = false
         if !isExtensionSidePanelPresented {
             extensionPanel?.removeFromSuperview()
             extensionPanel = nil

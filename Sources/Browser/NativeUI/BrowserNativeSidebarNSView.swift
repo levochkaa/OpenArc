@@ -343,7 +343,7 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         hasRenderedAppTiles = true
         let draft = state.model.spaceCreationDraft
-        scrollObserver.isEnabled = snapshot.spaces.count > 1 && !state.isSidebarResizing
+        scrollObserver.isEnabled = !snapshot.spaces.isEmpty && !state.isSidebarResizing
             && !state.isDraggingSidebarItem && draft == nil
         let wasCreating = !creationPage.isHidden
         if let draft {

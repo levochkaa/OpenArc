@@ -246,15 +246,35 @@ import Testing
         let second = try #require(model.selectedSpaceID)
         model.selectSpace(id: first)
         let state = BrowserNativeSidebarState(model: model, snapshot: snapshot(model), sidebarWidth: 240)
-        state.updateSpacePagerScroll(by: 200, in: state.snapshot, pageWidth: 240)
-        #expect(state.spacePagerDragTranslation > 0)
-        #expect(state.spacePagerDragTranslation < 240 * 0.14)
-        state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
-        #expect(model.selectedSpaceID == first)
         state.updateSpacePagerScroll(by: -100, in: state.snapshot, pageWidth: 240)
         state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
         #expect(model.selectedSpaceID == second)
         #expect(!state.isSpacePagerDragging)
+        state.update(snapshot: snapshot(model), sidebarWidth: 240, isResizing: false)
+        state.updateSpacePagerScroll(by: -200, in: state.snapshot, pageWidth: 240)
+        #expect(state.spacePagerDragTranslation < 0)
+        #expect(state.spacePagerDragTranslation > -240 * 0.14)
+        state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
+        #expect(model.selectedSpaceID == second)
+    }
+
+    @Test func swipePastTheFirstSpacePullsTheLibrary() async throws {
+        let (model, _) = makeModel()
+        let state = BrowserNativeSidebarState(model: model, snapshot: snapshot(model), sidebarWidth: 240)
+        var progress = [CGFloat]()
+        var ended = [Bool]()
+        state.onLibrarySwipe = { progress.append($0) }
+        state.onLibrarySwipeEnded = { ended.append($0) }
+        state.updateSpacePagerScroll(by: 240, in: state.snapshot, pageWidth: 240)
+        #expect(state.spacePagerDragTranslation == 0, "The page stays while the Library comes")
+        #expect(progress == [0.5])
+        state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
+        #expect(ended == [true])
+        #expect(!state.isSpacePagerDragging)
+        state.updateSpacePagerScroll(by: 100, in: state.snapshot, pageWidth: 240)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        state.finishSpacePagerScroll(in: state.snapshot, pageWidth: 240)
+        #expect(ended == [true, false], "A slow swipe has to pass the middle")
     }
 
     @Test func slowSwipeTurnsThePageOnlyPastTheMiddle() async throws {

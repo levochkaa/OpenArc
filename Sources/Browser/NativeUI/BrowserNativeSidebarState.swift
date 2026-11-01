@@ -43,6 +43,10 @@ import QuartzCore
     var tabRowInteractionResetID = 0 { didSet { invalidate() } }
     var topChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }
     var bottomChromeDividerVisibilityBySpaceID = [String: Bool]() { didSet { invalidate() } }
+    /// A swipe past the first Space pulls the Library in: how far, from 0 to 1.
+    var onLibrarySwipe: (CGFloat) -> Void = { _ in }
+    /// The swipe ended, and whether the Library should open.
+    var onLibrarySwipeEnded: (Bool) -> Void = { _ in }
     var isSpacePagerDragging = false {
         didSet {
             BrowserNativeTooltipPresenter.shared.isSuppressed = isSpacePagerDragging
@@ -51,6 +55,8 @@ import QuartzCore
     }
 
     var spacePagerDragTranslation: CGFloat = 0 { didSet { invalidate() } }
+
+    private var isLibrarySwipeActive = false
 
     private var spacePagerScrollStart: CFTimeInterval = 0
     private var spacePagerLastScroll: CFTimeInterval = 0
@@ -286,7 +292,7 @@ import QuartzCore
     ) {
         guard
             pageWidth > 0,
-            snapshot.spaces.count > 1,
+            !snapshot.spaces.isEmpty,
             !isSidebarResizing,
             !isDraggingSidebarItem,
             let selectedIndex = selectedSpaceIndex(in: snapshot)
@@ -311,12 +317,19 @@ import QuartzCore
         spacePagerCurve = .spaceSelect
         withoutSidebarDragAnimation {
             spacePagerRawDragTranslation += moved
-            spacePagerDragTranslation = constrainedSpacePagerTranslation(
-                spacePagerRawDragTranslation,
-                selectedIndex: selectedIndex,
-                spaceCount: snapshot.spaces.count,
-                pageWidth: pageWidth,
-            )
+            let pullsLibrary = selectedIndex == 0 && spacePagerRawDragTranslation > 0 && model.supportsSpaces
+            spacePagerDragTranslation = pullsLibrary
+                ? 0
+                : constrainedSpacePagerTranslation(
+                    spacePagerRawDragTranslation,
+                    selectedIndex: selectedIndex,
+                    spaceCount: snapshot.spaces.count,
+                    pageWidth: pageWidth,
+                )
+            if pullsLibrary || isLibrarySwipeActive {
+                isLibrarySwipeActive = true
+                onLibrarySwipe(pullsLibrary ? min(spacePagerRawDragTranslation / pageWidth, 1) : 0)
+            }
         }
     }
 
@@ -333,6 +346,15 @@ import QuartzCore
         let translation = spacePagerRawDragTranslation
         let isQuick = CACurrentMediaTime() - spacePagerScrollStart < Self.spacePagerQuickSwipeDuration
         let turnsPage = translation != 0 && (isQuick || abs(translation) >= pageWidth / 2)
+        if isLibrarySwipeActive {
+            isLibrarySwipeActive = false
+            spacePagerScrollVelocity = 0
+            isSpacePagerDragging = false
+            spacePagerRawDragTranslation = 0
+            spacePagerDragTranslation = 0
+            onLibrarySwipeEnded(turnsPage && translation > 0)
+            return
+        }
         let targetSpaceID = targetSpaceID(
             forProjectedTranslation: turnsPage ? (translation < 0 ? -pageWidth : pageWidth) : 0,
             in: snapshot,
@@ -350,6 +372,10 @@ import QuartzCore
     }
 
     func resetSpacePagerDrag() {
+        if isLibrarySwipeActive {
+            isLibrarySwipeActive = false
+            onLibrarySwipeEnded(false)
+        }
         guard isSpacePagerDragging || spacePagerRawDragTranslation != 0 || spacePagerDragTranslation != 0 else {
             return
         }
