@@ -173,6 +173,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             configureUpdateControllerIfNeeded()
         }
         installMainMenu(for: app)
+        if webAppConfiguration == nil, userPreferencesStore.appIcon != .standard {
+            userPreferencesStore.appIcon.apply()
+        }
         observeShortcutStore()
         observeAppearancePreference()
         installLayoutIndependentKeyMonitor()

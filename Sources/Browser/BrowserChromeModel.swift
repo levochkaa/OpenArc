@@ -2804,6 +2804,11 @@ enum BrowserWindowMode: Equatable {
         tabDriver.setMediaVolume(volume, forTabWithID: tabID)
     }
 
+    func recentSuggestions(onHost host: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+        historyStore.suggestions(for: host, maximumCount: maximumCount)
+            .filter { URLComponents(string: $0.resolvedURLString)?.host?.lowercased() == host }
+    }
+
     /// Right-clicking back or forward lists the pages that way.
     func showNavigationList(goingBack: Bool, below anchor: NSView) {
         tabDriver.navigationEntriesForActiveTab { [weak self, weak anchor] entries, currentIndex in

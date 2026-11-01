@@ -56,6 +56,7 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
     case profiles
     case links
     case shortcuts
+    case icon
     case advanced
 
     // MARK: Internal
@@ -76,6 +77,8 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
             BrowserStrings.settingsProfilesTab
         case .shortcuts:
             BrowserStrings.settingsShortcutsTab
+        case .icon:
+            BrowserStrings.settingsIconTab
         case .advanced:
             BrowserStrings.settingsAdvancedTab
         }
@@ -93,6 +96,8 @@ enum BrowserSettingsPane: String, CaseIterable, Hashable {
             "person.2"
         case .shortcuts:
             "keyboard"
+        case .icon:
+            "app.badge"
         case .advanced:
             "gearshape.2"
         }
@@ -269,6 +274,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         case .links: configureLinks()
         case .profiles: configureProfiles()
         case .shortcuts: configureShortcuts()
+        case .icon: configureIcon()
         case .advanced: configureAdvanced()
         }
         syncControls()
@@ -333,6 +339,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     title: { $0.title },
                     get: { preferences.sidebarPosition },
                     set: { preferences.sidebarPosition = $0 },
+                ),
+                toggle(
+                    "recent-pages-previews",
+                    BrowserStrings.settingsRecentPagesPreviews,
+                    get: { preferences.recentPagesPreviewsEnabled },
+                    set: { preferences.recentPagesPreviewsEnabled = $0 },
                 ),
                 toggle(
                     "folder-previews",
@@ -892,6 +904,32 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         ])
         refreshSiteSearches()
         refreshProfiles()
+    }
+
+    private func configureIcon() {
+        let preferences = preferences
+        let body = NSStackView()
+        func rows() -> [NSView] {
+            BrowserAppIcon.allCases.map { icon in
+                let selected = preferences.appIcon == icon
+                let radio = BrowserActionButton("") { [weak self] in
+                    preferences.appIcon = icon
+                    icon.apply()
+                    self?.configureContent()
+                }
+                radio.setButtonType(.radio)
+                radio.state = selected ? .on : .off
+                let image = NSImageView(image: icon.image ?? NSImage())
+                image.imageScaling = .scaleProportionallyUpOrDown
+                image.widthAnchor.constraint(equalToConstant: 40).isActive = true
+                image.heightAnchor.constraint(equalToConstant: 40).isActive = true
+                let name = BrowserNativeControls.label(icon.title, size: 13, weight: .medium, color: .labelColor)
+                return BrowserNativeControls.stack([radio, image, name], orientation: .horizontal, spacing: 12)
+            }
+        }
+        let section = section(BrowserStrings.settingsIconTab, body: body)
+        replaceRows(rows(), in: body)
+        scrollView.setViews([section])
     }
 
     private func configureShortcuts() {

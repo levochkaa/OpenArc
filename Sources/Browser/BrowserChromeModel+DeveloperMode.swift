@@ -85,3 +85,52 @@ extension BrowserChromeModel {
         }
     }
 }
+
+// MARK: - BrowserChromeModel + recent pages preview
+
+extension BrowserChromeModel {
+    static let recentPagesPreviewPrefix = "recent-pages:"
+    private static let recentPagesHosts: Set = [
+        "linear.app",
+        "notion.so",
+        "www.notion.so",
+        "notion.com",
+        "www.notion.com",
+        "figma.com",
+        "www.figma.com",
+    ]
+
+    /// Pinned tabs and Favorites on these sites list the latest pages visited there on hover.
+    func recentPagesPreviewID(forTab tab: Tab) -> String? {
+        guard tab.placement != .temporary, userPreferencesStore.recentPagesPreviewsEnabled,
+              let host = URLComponents(string: tab.pinnedURLString ?? tab.urlString)?.host?.lowercased(),
+              Self.recentPagesHosts.contains(host)
+        else { return nil }
+        return Self.recentPagesPreviewPrefix + tab.id
+    }
+
+    func recentPagesPreviewItems(previewID: String) -> [BrowserFolderPreviewItem] {
+        let tabID = String(previewID.dropFirst(Self.recentPagesPreviewPrefix.count))
+        guard let tab = tabs.first(where: { $0.id == tabID }),
+              let host = URLComponents(string: tab.pinnedURLString ?? tab.urlString)?.host?.lowercased()
+        else { return [] }
+        return recentSuggestions(onHost: host, maximumCount: 8).map { suggestion in
+            BrowserFolderPreviewItem(
+                id: Self.recentPagesPreviewPrefix + tabID + "|" + suggestion.resolvedURLString,
+                title: suggestion.displayText,
+                urlString: suggestion.resolvedURLString,
+                faviconURL: tab.faviconURL,
+            )
+        }
+    }
+
+    /// `id` comes from `recentPagesPreviewItems`. False when it is some other item.
+    func openRecentPagePreviewItem(id: String) -> Bool {
+        guard id.hasPrefix(Self.recentPagesPreviewPrefix) else { return false }
+        let parts = id.dropFirst(Self.recentPagesPreviewPrefix.count).split(separator: "|", maxSplits: 1)
+        guard parts.count == 2 else { return false }
+        selectTab(id: String(parts[0]))
+        navigateTab(id: String(parts[0]), toURLString: String(parts[1]))
+        return true
+    }
+}

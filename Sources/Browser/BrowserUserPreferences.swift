@@ -194,6 +194,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
         static let developerModeHosts = "browser.settings.developerModeHosts"
+        static let recentPagesPreviewsEnabled = "browser.settings.recentPagesPreviewsEnabled"
+        static let appIcon = "browser.settings.appIcon"
         static let showsAISearchSuggestion = "browser.settings.showsAISearchSuggestion"
         static let developerReloadBehavior = "browser.settings.developerReloadBehavior"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
@@ -274,6 +276,14 @@ final class BrowserUserPreferencesStore: ObservableObject {
     /// Lets pages read the Space's colors as CSS variables.
     @Published var showsAISearchSuggestion: Bool {
         didSet { userDefaults.set(showsAISearchSuggestion, forKey: Key.showsAISearchSuggestion) }
+    }
+
+    @Published var appIcon: BrowserAppIcon {
+        didSet { userDefaults.set(appIcon.rawValue, forKey: Key.appIcon) }
+    }
+
+    @Published var recentPagesPreviewsEnabled: Bool {
+        didSet { userDefaults.set(recentPagesPreviewsEnabled, forKey: Key.recentPagesPreviewsEnabled) }
     }
 
     @Published var developerModeHosts: BrowserDeveloperModeHosts {
@@ -413,6 +423,12 @@ final class BrowserUserPreferencesStore: ObservableObject {
             userDefaults,
             key: Key.showsAISearchSuggestion,
             defaultValue: false,
+        )
+        self.appIcon = userDefaults.string(forKey: Key.appIcon).flatMap(BrowserAppIcon.init(rawValue:)) ?? .standard
+        self.recentPagesPreviewsEnabled = Self.loadBool(
+            userDefaults,
+            key: Key.recentPagesPreviewsEnabled,
+            defaultValue: true,
         )
         self.developerModeHosts = userDefaults.data(forKey: Key.developerModeHosts)
             .flatMap { try? JSONDecoder().decode(BrowserDeveloperModeHosts.self, from: $0) } ?? .init()

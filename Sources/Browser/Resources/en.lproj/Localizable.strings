@@ -744,3 +744,11 @@
 "browser.capture.toast_hint_leading" = "Next time, hold";
 "browser.capture.toast_hint_trailing" = "and drag your mouse to capture any time.";
 "browser.capture.file_name" = "OpenArc Capture";
+"browser.settings.icon_tab" = "Icon";
+"browser.app_icon.standard" = "The Original OpenArc";
+"browser.app_icon.ring" = "Ring";
+"browser.app_icon.monogram" = "Monogram";
+"browser.app_icon.neon" = "Neon";
+"browser.app_icon.candy" = "Candy";
+"browser.app_icon.forest" = "Forest";
+"browser.settings.recent_pages_previews" = "Preview recent pages on Linear, Notion and Figma";

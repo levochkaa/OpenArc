@@ -104,3 +104,46 @@ import Testing
     #expect(BrowserChromeModel.developerModeHost(ofURLString: "https://Example.com/a") == "example.com")
     #expect(BrowserChromeModel.developerModeHost(ofURLString: "openarc://settings") == nil)
 }
+
+@Test @MainActor func tabVolumeIsRememberedForTheMiniPlayer() throws {
+    let driver = FakeBrowserTabDriver()
+    let defaults = try #require(UserDefaults(suiteName: "OpenArcVolumeTests.\(UUID().uuidString)"))
+    let model = BrowserChromeModel(
+        tabDriver: driver,
+        sessionSnapshotStore: InMemorySessionSnapshotStore(),
+        sessionPreferencesStore: InMemorySessionPreferencesStore(),
+        commandBarSuggestionProvider: FakeSuggestionProvider(),
+        userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+        shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+        extensionManager: FakeBrowserExtensionManager(extensions: []),
+        windowTitleHandler: { _ in },
+        allTabsClosedHandler: {},
+    )
+    model.setMediaVolume(0.25, tabID: "tab")
+    #expect(model.tabMediaVolumes["tab"] == 0.25)
+}
+
+@Test @MainActor func onlyPinnedSiteTabsOfferARecentPagesPreview() throws {
+    let driver = FakeBrowserTabDriver()
+    let defaults = try #require(UserDefaults(suiteName: "OpenArcPreviewTests.\(UUID().uuidString)"))
+    let model = BrowserChromeModel(
+        tabDriver: driver,
+        sessionSnapshotStore: InMemorySessionSnapshotStore(
+            loadedSnapshot: .init(tabURLStrings: ["https://linear.app/team"]),
+        ),
+        sessionPreferencesStore: InMemorySessionPreferencesStore(),
+        commandBarSuggestionProvider: FakeSuggestionProvider(),
+        userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+        shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+        extensionManager: FakeBrowserExtensionManager(extensions: []),
+        windowTitleHandler: { _ in },
+        allTabsClosedHandler: {},
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let id = try #require(model.selectedTabID)
+    #expect(try model.recentPagesPreviewID(forTab: #require(model.tabs.first { $0.id == id })) == nil)
+    model.togglePinned(forTabID: id)
+    #expect(try model.recentPagesPreviewID(forTab: #require(model.tabs.first { $0.id == id })) != nil)
+    #expect(!model.openRecentPagePreviewItem(id: "plain-tab-id"))
+}

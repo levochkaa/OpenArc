@@ -173,11 +173,21 @@ final class BrowserNativeSidebarNSView: NSView {
         state.onChange = { [weak self] animated in self?.refresh(animated: animated) }
         folderPreview.isEnabled = { [weak state] in
             guard let state else { return false }
-            return state.model.userPreferencesStore.folderPreviewsEnabled && !state.isDraggingSidebarItem
-                && !state.isSidebarResizing
+            return !state.isDraggingSidebarItem && !state.isSidebarResizing
         }
-        folderPreview.items = { [weak state] folderID in state?.folderPreviewItems(folderID: folderID) ?? [] }
-        folderPreview.onSelect = { [weak state] tabID in state?.model.selectTab(id: tabID) }
+        folderPreview.items = { [weak state] id in
+            guard let state else { return [] }
+            if id.hasPrefix(BrowserChromeModel.recentPagesPreviewPrefix) {
+                return state.model.recentPagesPreviewItems(previewID: id)
+            }
+            return state.model.userPreferencesStore.folderPreviewsEnabled ? state.folderPreviewItems(folderID: id) : []
+        }
+        folderPreview.onSelect = { [weak state] id in
+            guard let model = state?.model else { return }
+            if !model.openRecentPagePreviewItem(id: id) {
+                model.selectTab(id: id)
+            }
+        }
         state.drag.onPresentationChange = { [weak self] in self?.updateDragPresentation() }
         state.drag.onLayoutChange = { [weak self] in self?.handleDragLayoutChange() }
         state.drag.onTargetChange = { [weak state] in
@@ -1127,6 +1137,11 @@ final class BrowserNativeSidebarNSView: NSView {
         )
         let muted = state.snapshot.mutedTabIDs.contains(tab.id)
         row.onToggleMute = { model.setTabMuted(!muted, id: tab.id) }
+        let previewID = model.recentPagesPreviewID(forTab: tab)
+        row.onHoverChanged = { [weak self, weak row] hovered in
+            guard let self, let row, let previewID else { return }
+            folderPreview.rowHoverChanged(folderID: previewID, row: row, hovered: hovered)
+        }
         row.dragOpacity = state.draggedTabIDs.contains(tab.id) ? 0 : 1
         row.onSelect = { [weak state] in
             guard let state else { return }
