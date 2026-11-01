@@ -346,6 +346,8 @@ enum BrowserWindowMode: Equatable {
     var onOpenExtensions: (() -> Void)?
     /// UI-only: shows a hidden sidebar over the page for Reveal Current Tab.
     var onRevealSidebar: (() -> Void)?
+    /// Called when a restored tab has its row, so the rows move ahead of the work that follows.
+    var onTabRestored: (() -> Void)?
     /// Called before a Space is selected, so its motion can start ahead of the tab switch.
     var onSpaceWillSelect: ((String) -> Void)?
     /// UI-only: bumped by `renameSelectedTab()`, the only writer, so the
@@ -5591,6 +5593,7 @@ extension BrowserChromeModel {
             )])
             isSessionClosurePrepared = false
             publishArchivedTab(entry: entry, restored: restored, outgoing: outgoing, outgoingDate: outgoingDate)
+            onTabRestored?()
             archiveRevision &+= 1
             sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
             sessionPreferencesStore.saveSelectedTabIndex(next.tabs.firstIndex { $0.id == syncID })

@@ -291,14 +291,22 @@ import QuartzCore
     /// Moves a view out of its superview without the main thread. AppKit stops showing a
     /// view above its siblings once its frame is outside, so the frame stays until
     /// `endSlideOut`.
-    func slideOut(_ view: NSView, to frame: CGRect, curve: BrowserNativeAnimation.Curve) {
+    func slideOut(
+        _ view: NSView,
+        to frame: CGRect,
+        curve: BrowserNativeAnimation.Curve,
+        delay: CFTimeInterval = 0,
+    ) {
         view.wantsLayer = true
         let animation = curve.layerAnimation(keyPath: "position")
         animation.isAdditive = true
         animation.fromValue = NSValue(point: .zero)
         animation.toValue = NSValue(point: CGPoint(x: frame.minX - view.frame.minX, y: frame.minY - view.frame.minY))
-        animation.fillMode = .forwards
+        animation.fillMode = .both
         animation.isRemovedOnCompletion = false
+        if delay > 0 {
+            animation.beginTime = CACurrentMediaTime() + delay
+        }
         slideCount &+= 1
         view.layer?.add(animation, forKey: "\(Self.slideKey)\(slideCount)")
         slidingViews.add(view)

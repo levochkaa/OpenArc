@@ -30,6 +30,8 @@ import AppKit
     private static let pageScale: CGFloat = 0.9881
     private static let pageOpacity: Float = 0.3
 
+    private static let closeDelay: TimeInterval = 0.035
+
     override var canBecomeKey: Bool { true }
 
     /// A small window rather than a Peek card.
@@ -373,10 +375,16 @@ import AppKit
         }
         isClosingAnimated = true
         stopWatchingParent()
-        let duration = animateClosing()
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-            self?.dismiss()
-            completion()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeDelay) { [weak self] in
+            guard let self else {
+                completion()
+                return
+            }
+            let duration = animateClosing()
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+                self?.dismiss()
+                completion()
+            }
         }
     }
 

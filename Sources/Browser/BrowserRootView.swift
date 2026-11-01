@@ -47,6 +47,7 @@ final class BrowserRootView: NSView {
     private let presentationMotion = BrowserNativeFrameTransitions()
     private var animateNextLayout = false
     private var nextLayoutCurve = BrowserNativeAnimation.Curve.sidebar
+    private var nextLayoutDelay: CFTimeInterval = 0
     private let frameAnimation = BrowserNativeAnimation()
     private var isAnimatingFrames = false
     private var lastFrameTargets = [ObjectIdentifier: CGRect]()
@@ -185,6 +186,10 @@ final class BrowserRootView: NSView {
         model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
         model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
         model.onSpaceWillSelect = { [weak self] in self?.beginSpaceTransition(to: $0) }
+        model.onTabRestored = { [weak self] in
+            self?.refresh()
+            CATransaction.flush()
+        }
         model.onOpenExtensions = { [weak self] in self?.openExtensions() }
         model.onEditSpaceTheme = { [weak self] in self?.presentSpaceThemeEditor(spaceID: $0) }
         model.onShareURL = { [weak self] url in
@@ -280,6 +285,8 @@ final class BrowserRootView: NSView {
         super.layout()
         let animate = animateNextLayout && window != nil && !isWindowFullscreenTransitioning
         let curve = nextLayoutCurve
+        let delay = nextLayoutDelay
+        nextLayoutDelay = 0
         animateNextLayout = false
         nextLayoutCurve = .sidebar
         background.frame = bounds
@@ -412,13 +419,14 @@ final class BrowserRootView: NSView {
         )
         for (view, frame) in targets {
             if !frame.intersects(bounds), view.frame.intersects(bounds) {
-                presentationMotion.slideOut(view, to: frame, curve: curve)
+                presentationMotion.slideOut(view, to: frame, curve: curve, delay: delay)
             } else {
                 presentationMotion.slide(
                     view,
                     to: view === content ? pageWhileMoving : frame,
                     animated: true,
                     curve: curve,
+                    delay: delay,
                 )
             }
         }
@@ -426,7 +434,7 @@ final class BrowserRootView: NSView {
             view.layoutSubtreeIfNeeded()
         }
         updateHitRegions(page)
-        frameAnimation.start(curve, updates: { _ in }) { [weak self] in
+        frameAnimation.start(.easeOut(curve.duration + delay), updates: { _ in }) { [weak self] in
             guard let self else { return }
             presentationMotion.endSlideOuts(atTarget: true)
             content.frame = page
@@ -486,6 +494,9 @@ final class BrowserRootView: NSView {
             // moves the page and keeps the shared ease.
             let changed = zip(previousLayoutState, state).enumerated().filter { $0.element.0 != $0.element.1 }
             nextLayoutCurve = changed.map(\.offset) == [1] ? .floatingSidebar : .sidebar
+            if changed.map(\.offset) == [0] {
+                nextLayoutDelay = model.isSidebarVisible ? 0.035 : 0.015
+            }
             // The toolbar and bookmarks bar appear and leave at once.
             if Set(changed.map(\.offset)).isSubset(of: [2, 3]) {
                 animateNextLayout = false
