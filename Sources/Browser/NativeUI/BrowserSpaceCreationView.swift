@@ -9,6 +9,7 @@ struct BrowserSpaceCreationDraft: Equatable {
     var title = ""
     var icon: String?
     var theme: BrowserSpaceTheme?
+    var profileDirectory: String?
 }
 
 // MARK: - BrowserSpaceCreationView
@@ -22,6 +23,7 @@ final class BrowserSpaceCreationView: NSView, NSTextFieldDelegate {
     var onTitleChange: (String) -> Void = { _ in }
     var onChooseIcon: (NSView) -> Void = { _ in }
     var onChooseTheme: (NSView) -> Void = { _ in }
+    var onChooseProfile: (String) -> Void = { _ in }
     var onCreate: () -> Void = {}
     var onCancel: () -> Void = {}
 
@@ -33,6 +35,9 @@ final class BrowserSpaceCreationView: NSView, NSTextFieldDelegate {
     private let nameRow = BrowserNativeSurface()
     private let nameField = NSTextField()
     private let iconButton = BrowserSpaceCreationIconButton()
+    private let profileRow = BrowserNativeSurface()
+    private let profileLabel = NSTextField(labelWithString: BrowserStrings.spaceCreationProfile)
+    private let profilePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let themeRow = BrowserSpaceCreationRowButton(
         symbol: "paintbrush.pointed.fill",
         title: BrowserStrings.spaceCreationTheme,
@@ -76,6 +81,19 @@ final class BrowserSpaceCreationView: NSView, NSTextFieldDelegate {
         }
         iconButton.setAccessibilityLabel(BrowserStrings.spaceChangeIconAction)
         nameRow.addSubview(iconButton)
+        profileRow.cornerRadius = BrowserChromeLayout.spaceCreationRowCornerRadius
+        profileRow.strokeWidth = 0
+        profileRow.fillColor = BrowserChromeColors.currentURLRow
+        addSubview(profileRow)
+        profileLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        profileRow.addSubview(profileLabel)
+        profilePopUp.isBordered = false
+        profilePopUp.controlSize = .small
+        profilePopUp.font = .systemFont(ofSize: 12, weight: .medium)
+        profilePopUp.target = self
+        profilePopUp.action = #selector(chooseProfile)
+        profilePopUp.setAccessibilityIdentifier("browser.sidebar.create-space-profile")
+        profileRow.addSubview(profilePopUp)
         themeRow.onClick = { [weak self] _ in
             guard let self else { return }
             onChooseTheme(themeRow)
@@ -101,9 +119,27 @@ final class BrowserSpaceCreationView: NSView, NSTextFieldDelegate {
         nameRow.frame = NSRect(x: 14, y: 190, width: inner, height: 36)
         iconButton.frame = NSRect(x: 8, y: 7, width: 22, height: 22)
         nameField.frame = NSRect(x: 34, y: 9, width: inner - 42, height: 18)
-        themeRow.frame = NSRect(x: 14, y: 234, width: inner, height: 36)
+        profileRow.frame = NSRect(x: 14, y: 234, width: inner, height: 36)
+        profileLabel.frame = NSRect(x: 12, y: 10, width: 50, height: 16)
+        profilePopUp.frame = NSRect(x: 62, y: 6, width: inner - 70, height: 24)
+        themeRow.frame = NSRect(x: 14, y: profileRow.isHidden ? 234 : 278, width: inner, height: 36)
         createButton.frame = NSRect(x: 14, y: bounds.height - 82, width: inner, height: 36)
         cancelButton.frame = NSRect(x: 14, y: bounds.height - 36, width: inner, height: 24)
+    }
+
+    /// The profile choice, shown once there is more than one to choose from.
+    func updateProfiles(_ profiles: [BrowserProfile], selected: String?) {
+        profileRow.isHidden = profiles.count < 2
+        profileLabel.textColor = BrowserChromeColors.sidebarRowText
+        profilePopUp.removeAllItems()
+        for profile in profiles {
+            profilePopUp.addItem(withTitle: profile.displayName)
+            profilePopUp.lastItem?.representedObject = profile.id
+        }
+        if let index = profiles.firstIndex(where: { $0.id == selected }) {
+            profilePopUp.selectItem(at: index)
+        }
+        needsLayout = true
     }
 
     func update(draft: BrowserSpaceCreationDraft) {
@@ -124,6 +160,12 @@ final class BrowserSpaceCreationView: NSView, NSTextFieldDelegate {
 
     func controlTextDidChange(_: Notification) {
         onTitleChange(nameField.stringValue)
+    }
+
+    @objc private func chooseProfile() {
+        if let id = profilePopUp.selectedItem?.representedObject as? String {
+            onChooseProfile(id)
+        }
     }
 
     @objc private func commit() {

@@ -22,7 +22,8 @@ struct BrowserProfile: Equatable, Identifiable {
 
     var displayName: String {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedName.isEmpty ? Self.defaultName : trimmedName
+        // Chromium writes its own placeholder name into the default profile.
+        return trimmedName.isEmpty || (isDefault && trimmedName == "Your Chromium") ? Self.defaultName : trimmedName
     }
 
     var isDefault: Bool {
@@ -408,4 +409,14 @@ final class BrowserProfileStore: ObservableObject {
 
         return directoryName
     }
+}
+
+// MARK: - BrowserSpaceProfileDirectories
+
+/// What a window needs to know about profiles to put a Space in another one.
+struct BrowserSpaceProfileDirectories {
+    let windowProfile: String
+    let profiles: () -> [BrowserProfile]
+    let cachePath: (String) -> String?
+    let createProfile: () -> String?
 }

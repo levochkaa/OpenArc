@@ -199,7 +199,12 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var spaces = [Space]()
     @Published private(set) var pinnedTabFolders = [PinnedTabFolder]()
-    @Published private(set) var selectedSpaceID: String?
+    @Published private(set) var selectedSpaceID: String? {
+        didSet {
+            tabDriver.profileCachePathForNewTabs = profileCachePath(forSpaceID: selectedSpaceID)
+        }
+    }
+
     @Published private(set) var tabSwitcherState: TabSwitcherState?
     @Published var isSidebarVisible = true
     @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
@@ -347,6 +352,11 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: bumped by `revealSelectedTabInSidebar()`, the only writer, so the
     /// sidebar scrolls the selected row into view.
     @Published var sidebarRevealRequestID = 0
+    /// Browser profile directories by Space ID, for Spaces that do not use the
+    /// window's own profile. Local.
+    @Published private(set) var spaceProfilesByID = [String: String]()
+    /// The application's profiles and where they keep their data.
+    var profileDirectories: BrowserSpaceProfileDirectories?
     /// Space themes by Space ID. Local.
     @Published private(set) var spaceThemesByID = [String: BrowserSpaceTheme]()
     /// Save As from a page's menu; the application owns the save panel.
@@ -466,6 +476,8 @@ enum BrowserWindowMode: Equatable {
     private var pendingSessionCompletions = [PendingSessionCompletion]()
     private var pendingHistoryRestore: PendingHistoryRestore?
     private var historyRestoreFailure: BrowserSessionPersistenceFailure?
+    /// Where each open page keeps its data, nil for the window's own profile.
+    private var engineProfilePathsByID = [String: String?]()
     private var closedAppTabIDs = Set<String>()
     private var closedPinnedTabIDs = Set<String>()
     /// Unloaded pinned tabs restored at launch; they reopen at the page they
@@ -633,7 +645,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     var showsProfileIndicator: Bool {
-        !windowMode.isIncognito && !windowMode.isWebApp && availableProfileCount > 1
+        !windowMode.isIncognito && !windowMode.isWebApp && availableProfileCount > 1 && !profile.isDefault
     }
 
     var supportsSpaces: Bool {
@@ -1406,6 +1418,24 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
+    /// The profile a Space's pages use, by directory name.
+    func profileDirectory(forSpaceID spaceID: String) -> String? {
+        spaceProfilesByID[spaceID] ?? profileDirectories?.windowProfile
+    }
+
+    /// Moves a Space to another profile. Its open pages reload there, since a page
+    /// cannot change the place it keeps its data.
+    @discardableResult func setProfile(_ directory: String?, forSpaceID spaceID: String) -> Bool {
+        guard spaces.contains(where: { $0.id == spaceID }) else { return false }
+        let next = directory == profileDirectories?.windowProfile ? nil : directory
+        guard spaceProfilesByID[spaceID] != next else { return false }
+        spaceProfilesByID[spaceID] = next
+        tabDriver.profileCachePathForNewTabs = profileCachePath(forSpaceID: selectedSpaceID)
+        reopenTabsInTheirProfiles()
+        persistCurrentSessionIfAllowed()
+        return true
+    }
+
     /// Opens the sidebar page that sets up a Space. Nothing changes until it is created.
     func beginCreatingSpace() {
         guard supportsSpaces, !isShuttingDown, spaceCreationDraft == nil else { return }
@@ -1435,6 +1465,9 @@ enum BrowserWindowMode: Equatable {
         }
         spaces.append(space)
         spaceThemesByID[space.id] = draft.theme
+        if draft.profileDirectory != profileDirectories?.windowProfile {
+            spaceProfilesByID[space.id] = draft.profileDirectory
+        }
         selectSpace(id: space.id)
         BrowserTelemetry.captureUsage(.spaceCreated, properties: telemetryProperties)
         persistCurrentSessionIfAllowed()
@@ -1635,6 +1668,7 @@ enum BrowserWindowMode: Equatable {
             temporaryTabsBySpaceID: tabsBySpaceID(for: .temporary, removingTabIDs: selectedTabIDs),
             appTabs: appTabs,
         )
+        reopenTabsInTheirProfiles()
         var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
         let moving = Set(selectedTabIDs.map(BrowserSidebarItemID.tab))
         var roots = originalRoots.filter { !moving.contains($0) }
@@ -1951,6 +1985,7 @@ enum BrowserWindowMode: Equatable {
         for id in tabsToLoad {
             loadUnloadedTabInPlace(id: id, persists: false)
         }
+        reopenTabsInTheirProfiles()
         persistCurrentSessionIfAllowed(syncMove: syncMove)
         return true
     }
@@ -2819,6 +2854,7 @@ enum BrowserWindowMode: Equatable {
         // except for Spaces whose color was chosen since, None included.
         for space in snapshot.spaces ?? [] where !locallyColoredSpaceIDs.contains(space.id) {
             spaceThemesByID[space.id] = space.colorName.flatMap(BrowserSpaceTheme.init(stored:))
+            spaceProfilesByID[space.id] = space.profileDirectory
         }
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
         selectedSpaceID = selectedSpaceID.flatMap { selectedSpaceID in
@@ -2841,7 +2877,10 @@ enum BrowserWindowMode: Equatable {
             guard let syncID = remoteTab.id,
                   !existingSyncIDs.contains(syncID), !pendingSyncIDs.contains(syncID)
             else { continue }
-            let engineID = tabDriver.createTab(withURLString: remoteTab.urlString, makeActive: false)
+            let engineID = createEngineTab(
+                withURLString: remoteTab.urlString, makeActive: false,
+                spaceID: remoteTab.placement == .app ? nil : remoteTab.spaceID,
+            )
             pendingRemoteTabCreations[engineID] = RemoteTabCreation(
                 snapshot: remoteTab, generation: remoteProjectionGeneration,
             )
@@ -3366,6 +3405,37 @@ enum BrowserWindowMode: Equatable {
         case .toggleSiteToolbar:
             !isWebApp
         }
+    }
+
+    /// Reopens pages whose Space now uses another profile, since a page cannot change
+    /// the place it keeps its data. Tabs without a page pick it up when they next load.
+    private func reopenTabsInTheirProfiles() {
+        guard canCreateTab else { return }
+        for tab in tabs where !closedAppTabIDs.contains(tab.id) && !closedPinnedTabIDs.contains(tab.id)
+            && !closingTabIDs.contains(tab.id)
+        {
+            let path = profileCachePath(forSpaceID: tab.placement == .app ? nil : tab.spaceID)
+            guard (engineProfilePathsByID[tab.id] ?? nil) != path else { continue }
+            loadUnloadedTabInPlace(id: tab.id, persists: false)
+            engineProfilePathsByID[tab.id] = nil
+            tabDriver.closeTab(withID: tab.id, forceClose: true)
+        }
+    }
+
+    private func profileCachePath(forSpaceID spaceID: String?) -> String? {
+        spaceID.flatMap { spaceProfilesByID[$0] }.flatMap { profileDirectories?.cachePath($0) }
+    }
+
+    /// Opens a page with the data of its Space's profile. Favorites belong to every
+    /// Space, so they pass no Space and stay in the window's own profile. Pages the
+    /// engine opens by itself, like links asking for a new tab, use the selected Space's.
+    private func createEngineTab(withURLString urlString: String, makeActive: Bool, spaceID: String?) -> String {
+        let path = profileCachePath(forSpaceID: spaceID)
+        tabDriver.profileCachePathForNewTabs = path
+        defer { tabDriver.profileCachePathForNewTabs = profileCachePath(forSpaceID: selectedSpaceID) }
+        let id = tabDriver.createTab(withURLString: urlString, makeActive: makeActive)
+        engineProfilePathsByID.updateValue(path, forKey: id)
+        return id
     }
 
     /// Chromium writes the pasteboard only for a selection that differs from
@@ -3949,6 +4019,10 @@ enum BrowserWindowMode: Equatable {
         isRestoringSession = true
         hasCreatedInitialTab = true
         spaces = restoredSpaces.isEmpty ? [makeDefaultSpace()] : restoredSpaces
+        spaceProfilesByID = Dictionary(
+            (snapshot.spaces ?? []).compactMap { space in space.profileDirectory.map { (space.id, $0) } },
+            uniquingKeysWith: { first, _ in first },
+        )
         spaceThemesByID = Dictionary(
             (snapshot.spaces ?? []).compactMap { space in
                 space.colorName.flatMap(BrowserSpaceTheme.init(stored:)).map { (space.id, $0) }
@@ -3975,9 +4049,10 @@ enum BrowserWindowMode: Equatable {
                 && !(tabSnapshot.id.map(splitMemberSyncIDs.contains) ?? false)
             let engineID = restoresUnloaded
                 ? UUID().uuidString
-                : tabDriver.createTab(
+                : createEngineTab(
                     withURLString: tabSnapshot.urlString,
                     makeActive: index == pendingRestoredSelectedTabIndex,
+                    spaceID: placement == .app ? nil : tabSnapshot.spaceID,
                 )
             restoredTabCreationIDs.insert(engineID)
             if restoresUnloaded {
@@ -4173,6 +4248,7 @@ enum BrowserWindowMode: Equatable {
                 isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                 selectedTabIndex: visible.firstIndex { $0.id == selectedSyncID },
                 colorName: space.colorName,
+                profileDirectory: space.profileDirectory,
             )
         }
         return BrowserTabSessionSnapshot(
@@ -4201,6 +4277,7 @@ enum BrowserWindowMode: Equatable {
                     isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                     selectedTabIndex: selectedTabIndex(inSpace: space.id),
                     colorName: spaceThemesByID[space.id]?.stored,
+                    profileDirectory: spaceProfilesByID[space.id],
                 )
             },
             pinnedTabFolders: pinnedTabFolders.compactMap { tree.folders[$0.id] }.map { folder in
@@ -4259,7 +4336,9 @@ enum BrowserWindowMode: Equatable {
             captureSelectedTabPreviewIfNeeded()
         }
         let resolvedURLString = resolvedBrowserURLString(urlString)
-        let tabID = tabDriver.createTab(withURLString: resolvedURLString, makeActive: makeActive)
+        let tabID = createEngineTab(
+            withURLString: resolvedURLString, makeActive: makeActive, spaceID: selectedSpaceID,
+        )
         let context = PendingCreatedTabContext(
             spaceID: selectedSpaceID,
             placement: .temporary,
@@ -4674,9 +4753,10 @@ enum BrowserWindowMode: Equatable {
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
 
-        let newTabID = tabDriver.createTab(
+        let newTabID = createEngineTab(
             withURLString: resolvedBrowserURLString(tab.urlString),
             makeActive: true,
+            spaceID: nil,
         )
         pendingReopenedAppTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = reidentifiedAppTab(
@@ -4716,9 +4796,10 @@ enum BrowserWindowMode: Equatable {
         let urlString = lastPageRestoreTabIDs.remove(id) != nil && !tab.urlString.isEmpty
             ? tab.urlString
             : pinnedURLString
-        let newTabID = tabDriver.createTab(
+        let newTabID = createEngineTab(
             withURLString: resolvedBrowserURLString(urlString),
             makeActive: true,
+            spaceID: tab.spaceID,
         )
         pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = reidentifiedPinnedTab(
@@ -4746,9 +4827,10 @@ enum BrowserWindowMode: Equatable {
         let tab = tabs[index]
         lastPageRestoreTabIDs.remove(id)
         let isSelected = selectedTabID == id
-        let newTabID = tabDriver.createTab(
+        let newTabID = createEngineTab(
             withURLString: resolvedBrowserURLString(tab.urlString),
             makeActive: isSelected,
+            spaceID: tab.placement == .app ? nil : tab.spaceID,
         )
         pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
         tabs[index] = Tab(
@@ -5074,6 +5156,7 @@ enum BrowserWindowMode: Equatable {
                         isPinnedSectionCollapsed: space.isPinnedSectionCollapsed,
                         selectedTabIndex: visible.firstIndex { $0.id == selectedID },
                         colorName: space.colorName,
+                        profileDirectory: space.profileDirectory,
                     )
                 }, pinnedTabFolders: current.pinnedTabFolders, tabs: nextTabs, splitGroups: current.splitGroups,
             )
@@ -5141,8 +5224,9 @@ enum BrowserWindowMode: Equatable {
         if let outgoingDate, let index = tabs.firstIndex(where: { $0.id == outgoing?.id }) {
             tabs[index].lastActivityAt = outgoingDate
         }
-        let runtimeID = tabDriver.createTab(
+        let runtimeID = createEngineTab(
             withURLString: resolvedBrowserURLString(restored.urlString), makeActive: shouldSelect,
+            spaceID: restored.placement == .app ? nil : restored.spaceID ?? request.snapshot.tab.spaceID,
         )
         restoredTabCreationIDs.insert(runtimeID)
         let tab = Tab(
@@ -5295,6 +5379,7 @@ extension BrowserChromeModel {
                         selectedTabIndex: nextTabs.count(where: { $0.spaceID == destination && $0.placement != .app })
                             - 1,
                         colorName: space.colorName,
+                        profileDirectory: space.profileDirectory,
                     )
                 }, pinnedTabFolders: snapshot.pinnedTabFolders, tabs: nextTabs, splitGroups: snapshot.splitGroups,
             )
@@ -5335,9 +5420,10 @@ extension BrowserChromeModel {
         dismissCommandBar()
         dismissFindBar()
         invalidateSelectedTabWebAppInstallMetadata()
-        let runtimeID = tabDriver.createTab(
+        let runtimeID = createEngineTab(
             withURLString: resolvedBrowserURLString(restored.urlString),
             makeActive: true,
+            spaceID: restored.spaceID,
         )
         restoredTabCreationIDs.insert(runtimeID)
         tabs.append(Tab(
@@ -5614,6 +5700,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     }
 
     func handleCreatedTab(id: String, title: String, urlString: String, isActive: Bool) {
+        if engineProfilePathsByID.index(forKey: id) == nil {
+            engineProfilePathsByID.updateValue(tabDriver.profileCachePathForNewTabs, forKey: id)
+        }
         if handleRemoteCreatedTab(id: id, title: title, urlString: urlString) {
             return
         }
@@ -5818,7 +5907,10 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         isCompletingTabClose = true
         defer { isCompletingTabClose = wasCompleting }
         let selected = selectedTabID == tab.id
-        let newID = tabDriver.createTab(withURLString: resolvedBrowserURLString(tab.urlString), makeActive: selected)
+        let newID = createEngineTab(
+            withURLString: resolvedBrowserURLString(tab.urlString), makeActive: selected,
+            spaceID: tab.placement == .app ? nil : tab.spaceID,
+        )
         // Both old and replacement allocation callbacks are placeholders. Neither
         // may manufacture another logical identity after a late/duplicate reply.
         retireTabCreationCallbacks(id: tab.id)
@@ -5900,6 +5992,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
     }
 
     func handleClosedTab(id: String) {
+        engineProfilePathsByID[id] = nil
         if discardedRemoteTabCreationIDs.contains(id) {
             return
         }

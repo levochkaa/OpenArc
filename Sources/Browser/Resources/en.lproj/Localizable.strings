@@ -657,3 +657,5 @@
 "browser.menu.javascript_console" = "JavaScript Console";
 "browser.menu.manage_spaces" = "Manage Spaces…";
 "browser.menu.share_tab" = "Share…";
+"browser.space.set_profile_action" = "Set Profile";
+"browser.space.creation.profile" = "Profile";

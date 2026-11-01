@@ -54,6 +54,9 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
     /// The Space's stored theme (`BrowserSpaceTheme`), local like tab icons:
     /// never synced, and ignored by equality so sync checks do not see it.
     let colorName: String?
+    /// The browser profile the Space's pages use, nil for the window's own. Local
+    /// like the theme.
+    let profileDirectory: String?
 
     init(
         id: String,
@@ -62,6 +65,7 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
         isPinnedSectionCollapsed: Bool = false,
         selectedTabIndex: Int? = nil,
         colorName: String? = nil,
+        profileDirectory: String? = nil,
     ) {
         self.id = id
         self.title = title
@@ -69,6 +73,7 @@ struct BrowserSpaceSessionSnapshot: Codable, Equatable {
         self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
         self.selectedTabIndex = selectedTabIndex
         self.colorName = colorName
+        self.profileDirectory = profileDirectory
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {

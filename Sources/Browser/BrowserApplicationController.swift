@@ -463,7 +463,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func createNewSpace(_: Any?) {
-        activeChromeModel?.createNewSpace()
+        activeChromeModel?.beginCreatingSpace()
     }
 
     /// A Spaces menu item; its tag is the Space's position.
@@ -2402,7 +2402,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 pane: pane,
                 canDeleteProfile: { [weak self] profile in
                     guard let self else { return false }
-                    return !profileWindowSessions.contains { $0.profile.id == profile.id }
+                    return !profileWindowSessions.contains {
+                        $0.profile.id == profile.id || $0.chromeModel.spaceProfilesByID.values.contains(profile.id)
+                    }
                 },
                 openProfile: { [weak self] profile in self?.openProfile(profile) },
                 openURL: { [weak self] url in self?.openBrowserInternalPage(url) },
@@ -2700,6 +2702,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
             profile: profile,
         )
         connectPageCommands(to: chromeModel)
+        if let store = profileStore {
+            chromeModel.profileDirectories = BrowserSpaceProfileDirectories(
+                windowProfile: profile.id,
+                profiles: { store.profiles },
+                cachePath: { directory in
+                    store.profile(withID: directory).map { store.profileDirectoryURL(for: $0).path }
+                },
+                createProfile: { store.createProfile().id },
+            )
+        }
         profileWindowSessions.append(session)
         window.contentView = contentView
         window.makeKeyAndOrderFront(nil)

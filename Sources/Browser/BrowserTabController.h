@@ -190,6 +190,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)clearCacheAndReloadActiveTab;
 - (void)clearCookiesAndReloadActiveTab;
 - (void)stopLoadingActiveTab;
+/// Where the next page keeps its data; nil uses the controller's own profile.
+@property(nonatomic, copy, nullable) NSString *profileCachePathForNewTabs;
 - (void)showDevToolsForActiveTab;
 - (void)inspectElementsInActiveTab;
 - (void)showJavaScriptConsoleForActiveTab;

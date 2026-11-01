@@ -115,6 +115,9 @@ final class BrowserNativeSidebarNSView: NSView {
             }
         }
         creationPage.onChooseTheme = { [weak state] anchor in state?.model.onEditSpaceCreationTheme?(anchor) }
+        creationPage.onChooseProfile = { [weak state] id in
+            state?.model.updateSpaceCreationDraft { $0.profileDirectory = id }
+        }
         creationPage.onCreate = { [weak state] in
             state?.withSidebarAnimation { _ = state?.model.commitCreatingSpace() }
         }
@@ -337,6 +340,10 @@ final class BrowserNativeSidebarNSView: NSView {
         let wasCreating = !creationPage.isHidden
         if let draft {
             creationPage.update(draft: draft)
+            creationPage.updateProfiles(
+                state.model.profileDirectories?.profiles() ?? [],
+                selected: draft.profileDirectory ?? state.model.profileDirectories?.windowProfile,
+            )
             creationPage.isHidden = false
             state.spacePagerCurve = .spaceSlide
             if !wasCreating {
@@ -1339,6 +1346,15 @@ final class BrowserNativeSidebarNSView: NSView {
             },
             onChangeIcon: { model.setIcon($0, forSpaceID: space.id) },
             onEditTheme: { model.onEditSpaceTheme?(space.id) },
+            profiles: model.profileDirectories?.profiles() ?? [],
+            selectedProfile: model.profileDirectory(forSpaceID: space.id),
+            onSetProfile: { model.setProfile($0, forSpaceID: space.id) },
+            onNewProfile: {
+                if let created = model.profileDirectories?.createProfile() {
+                    model.setProfile(created, forSpaceID: space.id)
+                }
+            },
+            onManageSpaces: { model.openSpacesInLibrary() },
             onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },
             onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
                 state?.clearSidebarTabSelection()

@@ -346,6 +346,7 @@ enum BrowserSyncOutboxProjection {
                 selectedTabIndex: selectedID.flatMap { id in currentTabs.firstIndex { $0 == id } },
                 // Colors are local; keep this device's.
                 colorName: previousSpace?.colorName,
+                profileDirectory: previousSpace?.profileDirectory,
             )
         }
         return BrowserTabSessionSnapshot(

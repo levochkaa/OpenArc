@@ -256,6 +256,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             // The tint chosen for a Space, local only.
             try db.execute(sql: "ALTER TABLE browser_spaces ADD COLUMN color_name TEXT")
         }
+        migrator.registerMigration("addSpaceProfiles") { db in
+            // The browser profile chosen for a Space, local only.
+            try db.execute(sql: "ALTER TABLE browser_spaces ADD COLUMN profile_directory TEXT")
+        }
         return migrator
     }
 
@@ -403,6 +407,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             && stored.tabs.map(\.pageTitle) == next.tabs.map(\.pageTitle)
             && stored.tabs.map(\.systemImageName) == next.tabs.map(\.systemImageName)
             && (stored.spaces ?? []).map(\.colorName) == (next.spaces ?? []).map(\.colorName)
+            && (stored.spaces ?? []).map(\.profileDirectory) == (next.spaces ?? []).map(\.profileDirectory)
     }
 
     /// New profile owners must distinguish an empty database from a failed read.
@@ -1326,6 +1331,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try db.columns(in: "browser_tabs").contains { $0.name == "page_title" }
     }
 
+    private func hasSpaceProfileColumn(_ db: Database) throws -> Bool {
+        try db.columns(in: "browser_spaces").contains { $0.name == "profile_directory" }
+    }
+
     private func hasSpaceColorColumn(_ db: Database) throws -> Bool {
         try db.columns(in: "browser_spaces").contains { $0.name == "color_name" }
     }
@@ -1352,10 +1361,13 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
 
         let spaceColorColumn = try hasSpaceColorColumn(db) ? ", color_name" : ""
+        let spaceProfileColumn = try hasSpaceProfileColumn(db) ? ", profile_directory" : ""
         let spaces = try Row.fetchAll(
             db,
             sql: """
-            SELECT id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index\(spaceColorColumn)
+            SELECT id, title, system_image_name, is_pinned_section_collapsed, selected_tab_index\(spaceColorColumn)\(
+                spaceProfileColumn
+            )
             FROM browser_spaces
             ORDER BY position ASC
             """,
@@ -1368,6 +1380,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 isPinnedSectionCollapsed: row["is_pinned_section_collapsed"],
                 selectedTabIndex: row["selected_tab_index"],
                 colorName: spaceColorColumn.isEmpty ? nil : row["color_name"],
+                profileDirectory: spaceProfileColumn.isEmpty ? nil : row["profile_directory"],
             )
         }
         let pinnedTabFolders = try Row.fetchAll(
@@ -1608,6 +1621,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         try db.execute(sql: "DELETE FROM browser_tabs")
 
         let writesSpaceColors = try hasSpaceColorColumn(db)
+        let writesSpaceProfiles = try hasSpaceProfileColumn(db)
         for (index, space) in (snapshot.spaces ?? []).enumerated() {
             try db.execute(
                 sql: """
@@ -1629,6 +1643,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 try db.execute(
                     sql: "UPDATE browser_spaces SET color_name = ? WHERE id = ?",
                     arguments: [color, space.id],
+                )
+            }
+            if writesSpaceProfiles, let profile = space.profileDirectory {
+                try db.execute(
+                    sql: "UPDATE browser_spaces SET profile_directory = ? WHERE id = ?",
+                    arguments: [profile, space.id],
                 )
             }
         }

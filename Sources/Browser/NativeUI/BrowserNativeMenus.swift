@@ -84,6 +84,11 @@ import AppKit
         onRename: @escaping () -> Void,
         onChangeIcon: @escaping (String) -> Void,
         onEditTheme: (() -> Void)? = nil,
+        profiles: [BrowserProfile] = [],
+        selectedProfile: String? = nil,
+        onSetProfile: ((String) -> Void)? = nil,
+        onNewProfile: (() -> Void)? = nil,
+        onManageSpaces: (() -> Void)? = nil,
         onResetTabs: @escaping () -> Void = {},
         onDelete: @escaping () -> Void,
     ) -> NSMenu {
@@ -92,6 +97,21 @@ import AppKit
         add(BrowserStrings.spaceRenameAction, to: menu, action: onRename)
         if let onEditTheme {
             add(BrowserStrings.spaceEditThemeAction, to: menu, action: onEditTheme)
+        }
+        if let onSetProfile, !profiles.isEmpty {
+            let submenu = submenu(BrowserStrings.spaceSetProfileAction, in: menu)
+            for profile in profiles {
+                let item = add(profile.displayName, to: submenu) { onSetProfile(profile.id) }
+                item.state = profile.id == selectedProfile ? .on : .off
+            }
+            if let onNewProfile {
+                submenu.addItem(.separator())
+                add(BrowserStrings.settingsNewProfile, to: submenu, action: onNewProfile)
+            }
+        }
+        if let onManageSpaces {
+            menu.addItem(.separator())
+            add(BrowserStrings.menuManageSpaces, to: menu, action: onManageSpaces)
         }
         menu.addItem(.separator())
         add(BrowserStrings.menuResetSpaceTabs, to: menu, enabled: canResetTabs, action: onResetTabs)

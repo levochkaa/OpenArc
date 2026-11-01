@@ -62,6 +62,8 @@ import Foundation
     var onOpenPeekInSpace: ((String, String) -> Void)?
     var onOpenPeekInSplitView: ((String) -> Void)?
     var onPageContextCommand: ((BrowserPageContextCommand, String) -> Void)?
+    var profileCachePathForNewTabs: String?
+    private(set) var createdTabProfilePaths = [String?]()
     var onPeekClosedByUser: ((String, Bool) -> Void)?
     var onSitePermissionRequested: ((BrowserSitePermissionRequest) -> Void)?
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
@@ -163,6 +165,7 @@ import Foundation
             isActive: isActive,
         )
         createdTabRequests.append(request)
+        createdTabProfilePaths.append(profileCachePathForNewTabs)
         pendingCreateRequests.append(request)
         return tabID
     }

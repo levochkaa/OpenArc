@@ -37,6 +37,32 @@ import Testing
         )
     }
 
+    @Test func spaceProfilesSurviveTheStoreButNotEquality() throws {
+        let directory = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("SpaceProfiles-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let databaseURL = directory.appendingPathComponent("session.sqlite")
+        do {
+            let store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+            store.saveSnapshot(BrowserTabSessionSnapshot(
+                spaces: [
+                    .init(id: "s", title: "Work", systemImageName: "star", profileDirectory: "Profile 2"),
+                    .init(id: "t", title: "Home", systemImageName: "house"),
+                ],
+                tabs: [.init(id: "a", urlString: "https://a.example", spaceID: "s")],
+            ))
+        }
+        let reopened = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
+        #expect(try #require(reopened.loadSnapshot()?.spaces).map(\.profileDirectory) == ["Profile 2", nil])
+        #expect(
+            BrowserSpaceSessionSnapshot(id: "s", title: "Work", systemImageName: "star", profileDirectory: "Profile 2")
+                == BrowserSpaceSessionSnapshot(id: "s", title: "Work", systemImageName: "star"),
+            "Profiles are local, so sync checks ignore them",
+        )
+    }
+
     @Test func colorNamesFromOlderVersionsBecomeThemes() throws {
         let theme = try #require(BrowserSpaceTheme(stored: "teal"))
         #expect(theme.colors.count == 1)
@@ -335,6 +361,78 @@ import Testing
         #expect(created.systemImageName == "emoji:🌴")
         #expect(f.model.selectedSpaceID == created.id)
         #expect(f.model.selectedSpaceTheme == theme)
+    }
+
+    @Test func aSpaceOnAnotherProfileOpensItsPagesThere() throws {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x"])
+        f.model.profileDirectories = BrowserSpaceProfileDirectories(
+            windowProfile: "Default",
+            profiles: { [] },
+            cachePath: { "/profiles/\($0)" },
+            createProfile: { nil },
+        )
+        let space = try #require(f.model.selectedSpaceID)
+        #expect(f.model.profileDirectory(forSpaceID: space) == "Default")
+        #expect(!f.model.setProfile("Default", forSpaceID: space), "Already there")
+        let requests = f.driver.createdTabRequests.count
+        let tab = try #require(f.model.tabs.first { $0.spaceID == space }?.id)
+        let syncID = try #require(f.model.tabs.first { $0.id == tab }?.syncID)
+
+        #expect(f.model.setProfile("Profile 2", forSpaceID: space))
+
+        #expect(f.model.profileDirectory(forSpaceID: space) == "Profile 2")
+        #expect(f.driver.createdTabRequests.count == requests + 1, "The page reopens in the new profile")
+        #expect(f.driver.createdTabProfilePaths.last == "/profiles/Profile 2")
+        let moved = try #require(f.model.tabs.first { $0.syncID == syncID })
+        #expect(moved.id != tab, "The old page goes away")
+        #expect(f.model.selectedTabID == moved.id)
+        f.driver.flushPendingCreateEvents()
+
+        f.model.createNewTab()
+        #expect(f.driver.createdTabProfilePaths.last == "/profiles/Profile 2", "New tabs follow the Space")
+
+        #expect(f.model.setProfile("Default", forSpaceID: space))
+        #expect(f.model.spaceProfilesByID[space] == nil, "The window's own profile needs no entry")
+        #expect(f.driver.createdTabProfilePaths.last == .some(nil))
+    }
+
+    @Test func aNewSpaceStartsOnTheChosenProfile() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.profileDirectories = BrowserSpaceProfileDirectories(
+            windowProfile: "Default",
+            profiles: { [] },
+            cachePath: { "/profiles/\($0)" },
+            createProfile: { nil },
+        )
+        f.model.beginCreatingSpace()
+        f.model.updateSpaceCreationDraft { $0.title = "Work" }
+        f.model.updateSpaceCreationDraft { $0.profileDirectory = "Profile 2" }
+        #expect(f.model.commitCreatingSpace())
+        let created = try #require(f.model.spaces.last)
+        #expect(f.model.spaceProfilesByID[created.id] == "Profile 2")
+        f.model.createNewTab()
+        #expect(f.driver.createdTabProfilePaths.last == "/profiles/Profile 2")
+    }
+
+    @Test func aTabMovedToASpaceOnAnotherProfileReopensThere() {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x", "y"])
+        f.model.profileDirectories = BrowserSpaceProfileDirectories(
+            windowProfile: "Default",
+            profiles: { [] },
+            cachePath: { "/profiles/\($0)" },
+            createProfile: { nil },
+        )
+        #expect(f.model.setProfile("Profile 2", forSpaceID: "t"))
+        let requests = f.driver.createdTabRequests.count
+        #expect(requests == 2, "Nothing is open in that Space yet")
+        let moving = f.id("y")
+
+        f.model.moveTab(withID: moving, toPlacement: .temporary, atSectionIndex: 0, targetSpaceID: "t")
+
+        #expect(f.driver.createdTabRequests.count == requests + 1)
+        #expect(f.driver.createdTabProfilePaths.last == "/profiles/Profile 2")
+        #expect(f.driver.closedTabRequests.map(\.id) == [moving])
+        #expect(f.model.tabs.first { $0.userTitleOverride == "y" }?.spaceID == "t")
     }
 
     @Test func cancellingLeavesEverythingAsItWas() {

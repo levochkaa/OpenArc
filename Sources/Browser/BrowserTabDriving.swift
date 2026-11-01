@@ -43,6 +43,8 @@ enum BrowserPageContextCommand: String {
 
 @MainActor protocol BrowserTabDriving: AnyObject {
     var onPageContextCommand: ((BrowserPageContextCommand, String) -> Void)? { get set }
+    /// Where the next page keeps its data, nil for the window's own profile.
+    var profileCachePathForNewTabs: String? { get set }
     var hostView: NSView { get }
     var onTabCreated: ((String, String, String, Bool) -> Void)? { get set }
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)? { get set }

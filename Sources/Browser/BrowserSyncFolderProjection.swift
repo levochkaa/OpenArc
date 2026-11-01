@@ -421,6 +421,7 @@ enum BrowserSyncFolderProjection {
                     .flatMap { id in newIDs[change.entityID, default: []].firstIndex { $0 == id } },
                 // Colors are local; keep this device's.
                 colorName: oldSpaces[change.entityID]?.colorName,
+                profileDirectory: oldSpaces[change.entityID]?.profileDirectory,
             )
         }
         return .init(

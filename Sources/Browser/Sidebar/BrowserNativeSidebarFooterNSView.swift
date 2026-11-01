@@ -186,6 +186,15 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
                 },
                 onChangeIcon: { model.setIcon($0, forSpaceID: space.id) },
                 onEditTheme: { model.onEditSpaceTheme?(space.id) },
+                profiles: model.profileDirectories?.profiles() ?? [],
+                selectedProfile: model.profileDirectory(forSpaceID: space.id),
+                onSetProfile: { model.setProfile($0, forSpaceID: space.id) },
+                onNewProfile: {
+                    if let created = model.profileDirectories?.createProfile() {
+                        model.setProfile(created, forSpaceID: space.id)
+                    }
+                },
+                onManageSpaces: { model.openSpacesInLibrary() },
                 onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },
                 onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
                     state?.clearSidebarTabSelection()

@@ -39,6 +39,11 @@ import Foundation
     /// Peek sessions showing a prompt.
     private var promptingPeekSessions = Set<Int>()
 
+    var profileCachePathForNewTabs: String? {
+        get { controller.profileCachePathForNewTabs }
+        set { controller.profileCachePathForNewTabs = newValue }
+    }
+
     var hostView: NSView {
         browserHostView
     }

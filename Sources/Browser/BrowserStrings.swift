@@ -1356,6 +1356,16 @@ enum BrowserStrings {
         comment: "Item of the menu on the sidebar's plus button.",
     )
 
+    static let spaceSetProfileAction = NSLocalizedString(
+        "browser.space.set_profile_action",
+        comment: "Space menu submenu that chooses the browser profile for the Space.",
+    )
+
+    static let spaceCreationProfile = NSLocalizedString(
+        "browser.space.creation.profile",
+        comment: "Label of the profile choice for a new Space.",
+    )
+
     static let spaceEditThemeAction = NSLocalizedString(
         "browser.space.edit_theme_action",
         comment: "Space menu action that opens the theme editor.",

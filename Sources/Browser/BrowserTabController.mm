@@ -3384,6 +3384,8 @@ struct MediaFrameState {
 };
 
 struct TabRecord {
+  // The data store of the tab's profile, fixed while the page lives.
+  CefRefPtr<CefRequestContext> requestContext;
   CefRefPtr<CefClient> client;
   CefRefPtr<CefBrowser> browser;
   BrowserTabEngineCreationState creationState =
@@ -3488,6 +3490,7 @@ struct TabRecord {
                               pending:(PendingSitePermission)pending;
 - (void)dismissSitePermissionPromptWithID:(uint64_t)promptID;
 - (CefRefPtr<CefRequestContext>)siteSettingsContext;
+- (CefRefPtr<CefRequestContext>)activeTabRequestContext;
 - (void)cancelSitePermissionsForTabID:(NSString *)tabID;
 - (void)cancelMediaSitePermissionsForTabID:(NSString *)tabID;
 - (void)handleMediaState:(const MediaFrameState &)state
@@ -3658,6 +3661,7 @@ void WatchClickModifiers();
   __weak BrowserTabHostView *_hostView;
   std::map<std::string, TabRecord> _tabRecords;
   CefRefPtr<CefRequestContext> _requestContext;
+  std::map<std::string, CefRefPtr<CefRequestContext>> _spaceProfileContexts;
   NSString *_activeTabID;
   NSArray<NSString *> *_visibleLayoutTabIDs;
   BOOL _visibleLayoutVertical;
@@ -3713,6 +3717,7 @@ void WatchClickModifiers();
 
   TabRecord record;
   record.client = client;
+  record.requestContext = [self requestContextForNewTab];
   record.latestURL = ToStdString(resolvedURLString);
   record.navigationPending = true;
   _tabRecords[tabKey] = record;
@@ -3744,6 +3749,7 @@ void WatchClickModifiers();
   it->second.creationState = BrowserTabEngineCreationStateCreating;
   it->second.creationTimedOut = false;
   it->second.client = new BrowserTabClient(self, ToStdString(tabID));
+  it->second.requestContext = [self requestContextForNewTab];
   NSString *resolvedURLString =
       urlString.length > 0 ? [urlString copy] : @"about:blank";
   it->second.latestURL = ToStdString(resolvedURLString);
@@ -3763,6 +3769,7 @@ void WatchClickModifiers();
     return;
   }
   CefRefPtr<CefClient> client = it->second.client;
+  CefRefPtr<CefRequestContext> requestContext = it->second.requestContext;
   [self.delegate browserTabController:self
        didChangeCreationStateForTabWithID:tabID
                                    state:BrowserTabEngineCreationStateCreating];
@@ -3781,7 +3788,7 @@ void WatchClickModifiers();
   // that a newer queued target cannot be overwritten by that original load.
   const bool accepted = CefBrowserHost::CreateBrowser(
       windowInfo, client, CefString(), CefBrowserSettings(), nullptr,
-      _requestContext);
+      requestContext);
   if (accepted) {
     [self watchBrowserCreationForTabID:tabID];
   } else {
@@ -4246,10 +4253,7 @@ void WatchClickModifiers();
     return;
   }
 
-  CefRefPtr<CefRequestContext> requestContext = _requestContext;
-  if (!requestContext) {
-    requestContext = CefRequestContext::GetGlobalContext();
-  }
+  CefRefPtr<CefRequestContext> requestContext = [self activeTabRequestContext];
   ClearHttpCacheAndReloadBrowserOnUI(it->second.browser, requestContext);
 }
 
@@ -4260,10 +4264,7 @@ void WatchClickModifiers();
     return;
   }
 
-  CefRefPtr<CefRequestContext> requestContext = _requestContext;
-  if (!requestContext) {
-    requestContext = CefRequestContext::GetGlobalContext();
-  }
+  CefRefPtr<CefRequestContext> requestContext = [self activeTabRequestContext];
   ClearCookiesAndReloadBrowserOnUI(it->second.browser, requestContext);
 }
 
@@ -4510,7 +4511,7 @@ void WatchClickModifiers();
   }
   const bool accepted = CefBrowserHost::CreateBrowser(
       windowInfo, new BrowserPeekClient(self, sessionID), ToStdString(resolved), CefBrowserSettings(), nullptr,
-      _requestContext);
+      [self activeTabRequestContext]);
   if (!accepted) {
     [session.panel dismiss];
     [_peekSessions removeObjectForKey:@(sessionID)];
@@ -4620,6 +4621,23 @@ void WatchClickModifiers();
   }
 
   ShowBrowserDevToolsOnUI(it->second.browser);
+}
+
+/// The next page's data store: its Space's profile, or the window's own.
+- (CefRefPtr<CefRequestContext>)requestContextForNewTab {
+  if (self.profileCachePathForNewTabs.length == 0) {
+    return _requestContext;
+  }
+  const std::string path = ToStdString(self.profileCachePathForNewTabs);
+  auto found = _spaceProfileContexts.find(path);
+  if (found != _spaceProfileContexts.end()) {
+    return found->second;
+  }
+  CefRequestContextSettings settings;
+  CefString(&settings.cache_path) = path;
+  CefRefPtr<CefRequestContext> context = CefRequestContext::CreateContext(settings, nullptr);
+  _spaceProfileContexts[path] = context;
+  return context;
 }
 
 - (void)inspectElementsInActiveTab {
@@ -4879,6 +4897,15 @@ void WatchClickModifiers();
 }
 
 - (CefRefPtr<CefRequestContext>)siteSettingsContext {
+  return [self activeTabRequestContext];
+}
+
+/// The data store of the page on screen, which its Space's profile decides.
+- (CefRefPtr<CefRequestContext>)activeTabRequestContext {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.requestContext) {
+    return it->second.requestContext;
+  }
   return _requestContext ? _requestContext : CefRequestContext::GetGlobalContext();
 }
 
@@ -5199,6 +5226,7 @@ void WatchClickModifiers();
   }
   _tabRecords.clear();
   _requestContext = nullptr;
+  _spaceProfileContexts.clear();
 }
 
 - (void)hostViewDidLayout {
