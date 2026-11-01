@@ -40,8 +40,9 @@ enum BrowserLibraryLayout {
     static let columnWidth: CGFloat = 105
     static let sectionSize = NSSize(width: 97, height: 80)
     static let sectionStride: CGFloat = 100
-    static let searchX: CGFloat = 113
+    static let searchX: CGFloat = 120
     static let searchHeight: CGFloat = 36
+    static let searchCornerRadius: CGFloat = 12
     static let filterWidth: CGFloat = 73
     static let spaceCardWidth: CGFloat = 240
     /// The first window control's corner: lower and further in than on the sidebar.
@@ -52,7 +53,7 @@ enum BrowserLibraryLayout {
 
 /// Replaces the sidebar with sections of saved things: media, downloads, Spaces
 /// and archived tabs. Spaces take the whole window, the others sit beside the page.
-final class BrowserLibraryNSView: NSView, NSSearchFieldDelegate {
+final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     // MARK: Private
 
     private enum Row {
@@ -76,7 +77,10 @@ final class BrowserLibraryNSView: NSView, NSSearchFieldDelegate {
         pressEffect: .left,
         action: {},
     )
-    private let searchField = NSSearchField()
+    private let searchPill = BrowserNativeSurface()
+    private let searchIcon = NSImageView()
+    private let searchField = NSTextField()
+    private let filterPill = BrowserNativeSurface()
     private let filterButton = NSPopUpButton(frame: .zero, pullsDown: true)
     private let scroll = NSScrollView()
     private let document = BrowserLibraryDocument()
@@ -117,15 +121,31 @@ final class BrowserLibraryNSView: NSView, NSSearchFieldDelegate {
         backButton.onAction = { [weak model] in model?.closeLibrary() }
         backButton.setAccessibilityIdentifier("browser.library.back")
         addSubview(backButton)
-        searchField.font = .systemFont(ofSize: 13)
+        for pill in [searchPill, filterPill] {
+            pill.strokeWidth = 0
+            pill.cornerRadius = BrowserLibraryLayout.searchCornerRadius
+            pill.fillColor = BrowserChromeColors.currentURLRow
+            addSubview(pill)
+        }
+        searchIcon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        searchIcon.contentTintColor = BrowserChromeColors.currentURLText
+        searchPill.addSubview(searchIcon)
+        searchField.font = .systemFont(ofSize: 14)
+        searchField.isBordered = false
+        searchField.drawsBackground = false
+        searchField.textColor = BrowserChromeColors.primaryText
         searchField.focusRingType = .none
         searchField.delegate = self
-        searchField.sendsSearchStringImmediately = true
+        searchField.cell?.isScrollable = true
         searchField.setAccessibilityIdentifier("browser.library.search")
-        addSubview(searchField)
-        addSubview(filterButton)
+        searchPill.addSubview(searchField)
+        filterPill.addSubview(filterButton)
         filterButton.isBordered = false
-        filterButton.bezelStyle = .recessed
+        (filterButton.cell as? NSPopUpButtonCell)?.arrowPosition = .noArrow
+        (filterButton.cell as? NSPopUpButtonCell)?.imagePosition = .imageLeading
+        filterButton.alignment = .center
+        filterButton.contentTintColor = BrowserChromeColors.currentURLText
         filterButton.font = .systemFont(ofSize: 13, weight: .medium)
         filterButton.setAccessibilityIdentifier("browser.library.filter")
         scroll.drawsBackground = false
@@ -181,19 +201,27 @@ final class BrowserLibraryNSView: NSView, NSSearchFieldDelegate {
         let showsFilter = model.librarySection == .archive || model.librarySection == .downloads
         let searchX = BrowserLibraryLayout.searchX
         let trailing = BrowserLibraryLayout.width - 8
-        let searchWidth = trailing - searchX - (showsFilter ? BrowserLibraryLayout.filterWidth + 4 : 0)
-        searchField.frame = NSRect(x: searchX, y: 12, width: searchWidth, height: 28)
-        filterButton.frame = NSRect(
+        let searchWidth = trailing - searchX - (showsFilter ? BrowserLibraryLayout.filterWidth + 3 : 0)
+        searchPill.frame = NSRect(x: searchX, y: 10, width: searchWidth, height: BrowserLibraryLayout.searchHeight)
+        searchIcon.frame = NSRect(x: 14, y: (BrowserLibraryLayout.searchHeight - 15) / 2, width: 15, height: 15)
+        searchField.frame = NSRect(
+            x: 44,
+            y: (BrowserLibraryLayout.searchHeight - 18) / 2,
+            width: max(searchWidth - 44 - 10, 0),
+            height: 18,
+        )
+        filterPill.frame = NSRect(
             x: trailing - BrowserLibraryLayout.filterWidth,
-            y: 8,
+            y: 10,
             width: BrowserLibraryLayout.filterWidth,
             height: BrowserLibraryLayout.searchHeight,
         )
+        filterButton.frame = filterPill.bounds
         scroll.frame = NSRect(x: listX, y: 52, width: BrowserLibraryLayout.width - listX, height: max(height - 52, 0))
         spacesScroll.frame = NSRect(x: listX, y: 0, width: max(bounds.width - listX, 0), height: height)
         emptyState.frame = NSRect(x: listX, y: 0, width: BrowserLibraryLayout.width - listX, height: height)
-        searchField.isHidden = showsSpaces
-        filterButton.isHidden = !showsFilter
+        searchPill.isHidden = showsSpaces
+        filterPill.isHidden = !showsFilter
         scroll.isHidden = showsSpaces
         spacesScroll.isHidden = !showsSpaces
         layoutDocument()
@@ -243,6 +271,10 @@ final class BrowserLibraryNSView: NSView, NSSearchFieldDelegate {
     private func reloadFilterMenu() {
         filterButton.removeAllItems()
         filterButton.addItem(withTitle: BrowserStrings.libraryFilter)
+        filterButton.menu?.items.first?.image = NSImage(
+            systemSymbolName: "line.3.horizontal.decrease.circle",
+            accessibilityDescription: nil,
+        )
         let options: [(title: String, value: String?)] =
             switch model.librarySection {
             case .archive:

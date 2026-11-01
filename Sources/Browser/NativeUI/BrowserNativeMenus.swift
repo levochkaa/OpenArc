@@ -78,7 +78,7 @@ import AppKit
     }
 
     static func space(
-        _: BrowserChromeModel.Space,
+        _ space: BrowserChromeModel.Space,
         canDelete: Bool,
         canResetTabs: Bool = false,
         onRename: @escaping () -> Void,
@@ -89,6 +89,10 @@ import AppKit
         onSetProfile: ((String) -> Void)? = nil,
         onNewProfile: (() -> Void)? = nil,
         onManageSpaces: (() -> Void)? = nil,
+        canCreateFolder: Bool = false,
+        onNewFolder: (() -> Void)? = nil,
+        exportTargets: [BrowserChromeModel.Space] = [],
+        onExport: ((String) -> Void)? = nil,
         onResetTabs: @escaping () -> Void = {},
         onDelete: @escaping () -> Void,
     ) -> NSMenu {
@@ -107,6 +111,18 @@ import AppKit
             if let onNewProfile {
                 submenu.addItem(.separator())
                 add(BrowserStrings.settingsNewProfile, to: submenu, action: onNewProfile)
+            }
+        }
+        if let onNewFolder {
+            menu.addItem(.separator())
+            add(BrowserStrings.dockMenuNewFolder, to: menu, enabled: canCreateFolder, action: onNewFolder)
+        }
+        if let onExport, !exportTargets.isEmpty {
+            menu.addItem(.separator())
+            let exportMenu = submenu(BrowserStrings.spaceExportAction(space.title), in: menu)
+            for target in exportTargets {
+                let item = add(target.title, to: exportMenu) { onExport(target.id) }
+                item.image = BrowserIconImage.image(named: target.systemImageName, pointSize: 13)
             }
         }
         if let onManageSpaces {

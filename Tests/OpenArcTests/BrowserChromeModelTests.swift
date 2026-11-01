@@ -3043,3 +3043,38 @@ private func isolatedUserDefaults() -> UserDefaults {
 private enum BrowserChromeModelTestError: Error {
     case missingTab
 }
+
+@Test @MainActor func exportingASpaceTurnsItIntoAFolderInAnother() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let target = try #require(model.selectedSpaceID)
+    model.createNewSpace()
+    let source = try #require(model.selectedSpaceID)
+    model.setTitle("Work", forSpaceID: source)
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let pinnedID = try #require(model.selectedTabID)
+    model.togglePinned(forTabID: pinnedID)
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let temporaryID = try #require(model.selectedTabID)
+
+    #expect(model.exportSpace(id: source, intoFolderInSpaceID: target))
+
+    #expect(!model.spaces.contains { $0.id == source })
+    #expect(model.selectedSpaceID == target)
+    let folder = try #require(model.pinnedTabFolders.first { $0.spaceID == target })
+    #expect(folder.title == "Work")
+    for id in [pinnedID, temporaryID] {
+        let tab = try #require(model.tabs.first { $0.id == id })
+        #expect(tab.spaceID == target)
+        #expect(tab.pinnedFolderID == folder.id)
+    }
+    #expect(!model.exportSpace(id: target, intoFolderInSpaceID: target))
+}

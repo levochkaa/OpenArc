@@ -1357,11 +1357,12 @@ final class BrowserNativeSidebarNSView: NSView {
             model.setTabMuted(!muted, id: tab.id)
         }
         if tab.placement == .spacePinned {
+            let pinned = BrowserNativeMenus.submenu(BrowserStrings.pinnedTabEditPageAction, in: menu)
             BrowserNativeMenus
-                .add(BrowserStrings.pinnedTabReplaceURLWithCurrentAction, to: menu) {
+                .add(BrowserStrings.pinnedTabReplaceURLWithCurrentAction, to: pinned) {
                     _ = model.replacePinnedURLWithCurrent(forTabID: tab.id)
                 }
-            BrowserNativeMenus.add(BrowserStrings.pinnedTabEditURLAction, to: menu) {
+            BrowserNativeMenus.add(BrowserStrings.pinnedTabEditURLAction, to: pinned) {
                 if let url = BrowserNativeMenus.prompt(
                     title: BrowserStrings.pinnedTabEditURLPromptTitle,
                     defaultValue: tab.pinnedURLString ?? tab.urlString,
@@ -1375,6 +1376,12 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         addArrangeItems(for: tab, to: menu)
         menu.addItem(.separator())
+        if tab.placement == .spacePinned {
+            BrowserNativeMenus.add(BrowserStrings.tabRemovePinAction, to: menu) { [weak state] in
+                state?.withSidebarAnimation { model.togglePinned(forTabID: tab.id) }
+            }
+            return menu
+        }
         BrowserNativeMenus.add(
             section == .app ? BrowserStrings.tabCloseAction : close.menuTitle,
             to: menu,
@@ -1492,6 +1499,10 @@ final class BrowserNativeSidebarNSView: NSView {
                 }
             },
             onManageSpaces: { model.openSpacesInLibrary() },
+            canCreateFolder: model.canCreateFolderFromSelectedTab,
+            onNewFolder: { model.createFolderFromSelectedTab() },
+            exportTargets: state.snapshot.spaces.filter { $0.id != space.id },
+            onExport: { targetID in model.exportSpace(id: space.id, intoFolderInSpaceID: targetID) },
             onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },
             onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
                 state?.clearSidebarTabSelection()

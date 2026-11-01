@@ -1740,6 +1740,35 @@ enum BrowserWindowMode: Equatable {
         return folderID
     }
 
+    /// Turns a Space into a folder at the top of another Space: its pinned rows and
+    /// folders and its temporary tabs move in together, and the Space goes away.
+    @discardableResult func exportSpace(id spaceID: String, intoFolderInSpaceID targetSpaceID: String) -> Bool {
+        guard spaceID != targetSpaceID, canDeleteSpace(id: spaceID),
+              let space = spaces.first(where: { $0.id == spaceID }),
+              spaces.contains(where: { $0.id == targetSpaceID })
+        else { return false }
+        if selectedSpaceID != spaceID {
+            selectSpace(id: spaceID)
+        }
+        let folders = pinnedTabFolders.filter { $0.spaceID == spaceID && $0.parentFolderID == nil }
+        var tabIDs = Set(tabs.filter {
+            $0.spaceID == spaceID && $0.placement != .app && ($0.placement == .temporary || $0.pinnedFolderID == nil)
+        }
+        .map(\.id))
+        if tabIDs.isEmpty, let nested = tabs.first(where: { $0.spaceID == spaceID && $0.placement == .spacePinned }) {
+            tabIDs = [nested.id]
+        }
+        guard let folderID = createPinnedTabFolder(containingTabIDs: tabIDs) else { return false }
+        setTitle(space.title, forPinnedTabFolderID: folderID)
+        setIcon(space.systemImageName, forPinnedTabFolderID: folderID)
+        for (index, folder) in folders.enumerated() where folder.id != folderID {
+            movePinnedTabFolder(withID: folder.id, toRootSectionIndex: index, targetParentFolderID: folderID)
+        }
+        movePinnedTabFolder(withID: folderID, toRootSectionIndex: 0, targetSpaceID: targetSpaceID)
+        selectSpace(id: targetSpaceID)
+        return deleteSpace(id: spaceID)
+    }
+
     /// Explicit deletion removes the folder's current subtree. Empty folders
     /// otherwise keep their identity when their last tab is moved or archived.
     @discardableResult func deletePinnedTabFolder(id folderID: String) -> Bool {

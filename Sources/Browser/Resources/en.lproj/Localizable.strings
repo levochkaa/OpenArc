@@ -727,3 +727,6 @@
 "browser.menu.show_sidebar" = "Show Sidebar";
 "browser.menu.close_library" = "Close Library";
 "browser.menu.manage_extensions" = "Manage Extensions…";
+"browser.pinned_tab.edit_page" = "Edit Pinned Page";
+"browser.tab.remove_pin" = "Remove Pin";
+"browser.space.export_into_folder" = "Export “%@” into Folder";

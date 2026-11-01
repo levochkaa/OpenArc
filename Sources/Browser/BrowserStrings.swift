@@ -1606,6 +1606,11 @@ enum BrowserStrings {
         comment: "Library section with archived tabs.",
     )
 
+    static let pinnedTabEditPageAction = NSLocalizedString(
+        "browser.pinned_tab.edit_page",
+        comment: "Pinned tab submenu.",
+    )
+    static let tabRemovePinAction = NSLocalizedString("browser.tab.remove_pin", comment: "Pinned tab menu item.")
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")
@@ -2948,6 +2953,13 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front.",
     )
+
+    static func spaceExportAction(_ name: String) -> String {
+        String(
+            format: NSLocalizedString("browser.space.export_into_folder", comment: "Space submenu; the Space's name."),
+            name,
+        )
+    }
 
     static func librarySearch(_ section: String) -> String {
         String(

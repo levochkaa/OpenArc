@@ -388,6 +388,13 @@ final class BrowserSiteControlsNSView: NSView {
             in: menu,
         )
         menu.items.last?.isEnabled = tab != nil
+        BrowserNativeMenus.add(
+            model.shortcutStore.descriptor(for: .captureArea).menuTitle,
+            to: menu,
+            enabled: tab != nil,
+        ) {
+            model.beginAreaCapture()
+        }
         BrowserNativeMenus
             .add(BrowserStrings.siteCaptureFullPageAction, to: menu, enabled: tab != nil) {
                 _ = model.captureFullPageSelectedTabToPasteboard()
