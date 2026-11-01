@@ -1287,6 +1287,41 @@ enum BrowserStrings {
         comment: "View menu and command title that moves the sidebar to the right window edge.",
     )
 
+    static let menuCustomizeToolbar = NSLocalizedString(
+        "browser.menu.customize_toolbar",
+        comment: "View menu command that starts customizing the top toolbar.",
+    )
+
+    static let toolbarCustomizeHint = NSLocalizedString(
+        "browser.toolbar.customize_hint",
+        comment: "Instruction at the top of the toolbar customization palette.",
+    )
+
+    static let toolbarRestoreDefaults = NSLocalizedString(
+        "browser.toolbar.restore_defaults",
+        comment: "Button restoring the default toolbar.",
+    )
+
+    static let toolbarCustomizeDone = NSLocalizedString(
+        "browser.toolbar.customize_done",
+        comment: "Button finishing toolbar customization.",
+    )
+
+    static let toolbarAddressItem = NSLocalizedString(
+        "browser.toolbar.address_item",
+        comment: "Palette name of the page address in the toolbar.",
+    )
+
+    static let toolbarFlexibleSpaceItem = NSLocalizedString(
+        "browser.toolbar.flexible_space_item",
+        comment: "Palette name of the empty space that stretches in the toolbar.",
+    )
+
+    static let toolbarPinnedExtensionsItem = NSLocalizedString(
+        "browser.toolbar.pinned_extensions_item",
+        comment: "Palette name of the pinned extension buttons in the toolbar.",
+    )
+
     static let menuShowToolbar = NSLocalizedString(
         "browser.menu.show_toolbar",
         comment: "View menu and command title that shows the page URL as a toolbar above the page.",

@@ -9,6 +9,29 @@ import Testing
 @MainActor struct BrowserNativeSiteControlsTests {
     // MARK: Internal
 
+    @Test func theToolbarFollowsItsConfiguration() throws {
+        let model = makeModel()
+        let preferences = model.userPreferencesStore
+        let view = BrowserSiteControlsNSView(model: model, mode: .toolbar)
+        view.frame = NSRect(x: 0, y: 0, width: 900, height: BrowserChromeLayout.siteToolbarHeight)
+        preferences.toolbarConfiguration = .init(items: [.siteControls, .address, .command(.toggleBookmark), .back])
+        view.refresh()
+        view.layoutSubtreeIfNeeded()
+        #expect(view.siteButton.frame.maxX < view.urlButton.frame.minX, "Order comes from the configuration")
+        #expect(!view.urlButton.isHidden)
+        #expect(
+            view.urlButton.frame.width > BrowserChromeLayout.siteToolbarURLButtonMaximumWidth,
+            "With no space, the address fills the bar",
+        )
+        let star = try #require(view.subviews
+            .first { $0.accessibilityIdentifier() == "browser.toolbar.command.toggleBookmark" })
+        #expect(view.urlButton.frame.maxX < star.frame.minX)
+        preferences.toolbarConfiguration = .init(items: [.back])
+        view.refresh()
+        #expect(view.urlButton.isHidden)
+        #expect(!view.subviews.contains { $0.accessibilityIdentifier() == "browser.toolbar.command.toggleBookmark" })
+    }
+
     @Test func toolbarKeepsURLWithinChromeAndHonorsFullURLPreference() throws {
         let model = makeModel()
         let view = BrowserSiteControlsNSView(model: model, mode: .toolbar)

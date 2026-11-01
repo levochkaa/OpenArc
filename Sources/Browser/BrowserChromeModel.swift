@@ -206,6 +206,7 @@ enum BrowserWindowMode: Equatable {
     )
 
     @Published private(set) var tabs = [Tab]()
+    @Published private(set) var isCustomizingToolbar = false
     /// Tabs whose close the engine is still confirming. Their rows go at once, and the model
     /// keeps them until the engine answers, so a page that refuses loses nothing.
     @Published private(set) var tabsLeavingSidebar = Set<String>()
@@ -1375,23 +1376,16 @@ enum BrowserWindowMode: Equatable {
         bookmarksModel.createFolderAndMoveBookmark(title: title, bookmarkID: bookmarkID)
     }
 
-    @discardableResult func deleteBookmark(id: String) -> Bool {
-        bookmarksModel.deleteBookmark(id: id)
+    /// The toolbar shows while it is being customized.
+    func beginToolbarCustomization() {
+        userPreferencesStore.siteURLToolbarEnabled = true
+        isCustomizingToolbar = true
     }
 
-    func openBookmarks(_ urlStrings: [String]) {
-        for urlString in urlStrings where !urlString.isEmpty {
-            createTab(withURLString: urlString)
-        }
-    }
+    func endToolbarCustomization() { isCustomizingToolbar = false }
 
-    func openBookmarksManager() {
-        openURLInNewTab(BrowserInternalPageRouting.bookmarksURL)
-    }
-
-    @discardableResult func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult {
-        bookmarksModel.importBookmarks(from: source)
-    }
+    /// A toolbar button runs its command as the command bar would.
+    func performToolbarCommand(_ id: BrowserCommandID) { commandHandler(id, self) }
 
     func isBookmarked(urlString: String) -> Bool {
         bookmarksModel.containsBookmark(urlString: urlString)
@@ -3948,7 +3942,8 @@ enum BrowserWindowMode: Equatable {
             !isWebApp
         case .toggleBookmarksBar:
             true
-        case .toggleSiteToolbar:
+        case .customizeToolbar,
+             .toggleSiteToolbar:
             !isWebApp
         }
     }
@@ -8042,6 +8037,8 @@ extension BrowserCommandID {
         case .collapseAllFolders:
             "folder"
         case .expandAllFolders:
+        case .customizeToolbar:
+            ["customize toolbar", "edit toolbar", "toolbar buttons", "add button to toolbar"]
             "folder.fill"
         case .newSpace:
             "plus.rectangle.on.rectangle"
@@ -8234,6 +8231,8 @@ private enum BrowserTabPreviewCapture {
 
 // MARK: - BrowserQuoteLink
 
+        case .customizeToolbar:
+            "slider.horizontal.below.rectangle"
 enum BrowserQuoteLink {
     // MARK: Internal
 

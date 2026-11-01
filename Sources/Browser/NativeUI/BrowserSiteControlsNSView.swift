@@ -81,6 +81,9 @@ final class BrowserSiteControlsNSView: NSView {
     private let actionAnimation = BrowserNativeAnimation()
     private var actionWidthTarget: CGFloat?
     private var didCopy = false
+    private var commandButtons = [BrowserCommandID: BrowserNativeChromeButton]()
+    private var toolbarOverlay: BrowserToolbarEditOverlay?
+    private var customizePanel: BrowserToolbarCustomizePanel?
 
     private var hovered = false
     private var tracking: NSTrackingArea?
@@ -98,6 +101,8 @@ final class BrowserSiteControlsNSView: NSView {
             .sidebarCurrentURLButtonSpacing
             + BrowserChromeLayout.sidebarCurrentURLButtonTrailingPadding
     }
+
+    private var toolbarItems: [BrowserToolbarItem] { model.userPreferencesStore.toolbarConfiguration.items }
 
     init(model: BrowserChromeModel, mode: Mode) {
         self.model = model
@@ -169,6 +174,7 @@ final class BrowserSiteControlsNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        refreshCustomization()
         if window == nil {
             closePopovers()
             resetCopyFeedback()
@@ -238,37 +244,7 @@ final class BrowserSiteControlsNSView: NSView {
                 )
             }
         } else {
-            let padding = BrowserChromeLayout.bookmarksBarHorizontalPadding
-            let size = BrowserChromeLayout.chromeButtonSize
-            let spacing = BrowserChromeLayout.chromeButtonSpacing
-            let available = max(bounds.width - padding * 2, 0)
-            let leftWidth = size * 3 + spacing * 2
-            let rightWidth = CGFloat(pinned.count + 2) * size + CGFloat(pinned.count + 1) * spacing
-            let clusterWidth = min(
-                BrowserChromeLayout.siteToolbarURLButtonMaximumWidth + size + spacing,
-                max(available - leftWidth - rightWidth - spacing * 2, 0),
-            )
-            let remainder = max(available - clusterWidth - spacing * 2, 0)
-            let leftArea = max(leftWidth, min(remainder / 2, remainder - rightWidth))
-            let y = (bounds.height - size) / 2
-            backButton.frame = NSRect(x: padding, y: y, width: size, height: size)
-            forwardButton.frame = backButton.frame.offsetBy(dx: size + spacing, dy: 0)
-            reloadButton.frame = forwardButton.frame.offsetBy(dx: size + spacing, dy: 0)
-            copyButton.frame = NSRect(x: padding + leftArea + spacing, y: y, width: size, height: size)
-            urlButton.frame = NSRect(
-                x: copyButton.frame.maxX + spacing,
-                y: y,
-                width: max(clusterWidth - size - spacing, 0),
-                height: size,
-            )
-            siteButton.frame = NSRect(x: bounds.width - padding - size, y: y, width: size, height: size)
-            splitButton.frame = siteButton.frame.offsetBy(dx: -(size + spacing), dy: 0)
-            for (index, browserExtension) in pinned.enumerated() {
-                extensionButtons[browserExtension.id]?.frame = splitButton.frame.offsetBy(
-                    dx: -CGFloat(pinned.count - index) * (size + spacing),
-                    dy: 0,
-                )
-            }
+            layoutToolbarItems()
         }
         publishURLFrame()
     }
@@ -289,9 +265,11 @@ final class BrowserSiteControlsNSView: NSView {
         urlButton.tooltipTitle = mode == .sidebar
             ? tab.map { BrowserURLDisplayFormatter.fullDisplayString(for: $0.urlString) } ?? BrowserStrings.newTabTitle
             : nil
-        backButton.isHidden = mode == .sidebar
-        forwardButton.isHidden = mode == .sidebar
-        reloadButton.isHidden = mode == .sidebar
+        if mode == .sidebar {
+            backButton.isHidden = true
+            forwardButton.isHidden = true
+            reloadButton.isHidden = true
+        }
         backButton.isEnabled = model.canGoBack
         forwardButton.isEnabled = model.canGoForward
         backButton.tooltipShortcut = model.shortcutStore.shortcut(for: .goBack)
@@ -335,8 +313,19 @@ final class BrowserSiteControlsNSView: NSView {
             button.menuProvider = { [weak self] in self?.extensionMenu(browserExtension) ?? NSMenu() }
         }
         extensionPopovers.refresh()
+        refreshToolbarItems()
         refreshHover()
         needsLayout = true
+    }
+
+    /// Follows the toolbar, which may still be sliding into place.
+    private func positionCustomizePanel() {
+        guard let customizePanel, let window else { return }
+        let frame = window.convertToScreen(convert(bounds, to: nil))
+        customizePanel.setFrameTopLeftPoint(NSPoint(
+            x: frame.midX - customizePanel.frame.width / 2,
+            y: frame.minY - 8,
+        ))
     }
 
     func publishURLFrame() {
@@ -426,6 +415,11 @@ final class BrowserSiteControlsNSView: NSView {
             shortcut: model.shortcutStore.shortcut(for: .toggleBookmarksBar),
         ) {
             preferences.bookmarksBarVisible.toggle()
+        }
+        if mode == .toolbar {
+            BrowserNativeMenus.add(BrowserStrings.menuCustomizeToolbar, to: menu) { [weak model] in
+                model?.beginToolbarCustomization()
+            }
         }
         return menu
     }
@@ -524,20 +518,174 @@ final class BrowserSiteControlsNSView: NSView {
         )
     }
 
+    /// The item's own view, for those that have one.
+    private func view(for item: BrowserToolbarItem) -> NSView? {
+        switch item {
+        case .back: backButton
+        case .forward: forwardButton
+        case .reload: reloadButton
+        case .copyLink: copyButton
+        case .address: urlButton
+        case .splitView: splitButton
+        case .siteControls: siteButton
+        case .command(let id): commandButtons[id]
+        case .flexibleSpace, .pinnedExtensions: nil
+        }
+    }
+
+    private func layoutToolbarItems() {
+        let padding = BrowserChromeLayout.bookmarksBarHorizontalPadding
+        let size = BrowserChromeLayout.chromeButtonSize
+        let spacing = BrowserChromeLayout.chromeButtonSpacing
+        let customizing = model.isCustomizingToolbar
+        let items = toolbarItems.filter { customizing || $0 != .pinnedExtensions || !pinned.isEmpty }
+        let extensionsWidth = max(
+            CGFloat(pinned.count) * size + CGFloat(max(pinned.count - 1, 0)) * spacing,
+            customizing
+                ? size
+                : 0,
+        )
+        let hasFlexible = items.contains(.flexibleSpace)
+        let fixedWidth = items.reduce(CGFloat(0)) { total, item in
+            switch item {
+            case .address, .flexibleSpace: total
+            case .pinnedExtensions: total + extensionsWidth
+            default: total + size
+            }
+        }
+        let gaps = spacing * CGFloat(max(items.count - 1, 0))
+        let free = max(bounds.width - padding * 2 - fixedWidth - gaps, 0)
+        // The address stops at its maximum only if a flexible space takes the rest.
+        let addressWidth = hasFlexible ? min(free, BrowserChromeLayout.siteToolbarURLButtonMaximumWidth) : free
+        let widths: [CGFloat?] = items.map { item in
+            switch item {
+            case .flexibleSpace: nil
+            case .address: addressWidth
+            case .pinnedExtensions: extensionsWidth
+            default: size
+            }
+        }
+        let spans = BrowserToolbarConfiguration.spans(
+            for: widths,
+            spacing: spacing,
+            padding: padding,
+            length: bounds.width,
+            flexibleMinimum: customizing ? 28 : 0,
+        )
+        let y = (bounds.height - size) / 2
+        for (item, span) in zip(items, spans) {
+            let frame = NSRect(x: span.start, y: y, width: span.width, height: size)
+            view(for: item)?.frame = frame
+            if item == .pinnedExtensions {
+                for (index, browserExtension) in pinned.enumerated() {
+                    extensionButtons[browserExtension.id]?.frame = NSRect(
+                        x: span.start + CGFloat(index) * (size + spacing),
+                        y: y,
+                        width: size,
+                        height: size,
+                    )
+                }
+            }
+        }
+        toolbarOverlay?.frame = bounds
+        positionCustomizePanel()
+        toolbarOverlay?.entries = zip(items, spans).map { item, span in
+            (item, NSRect(x: span.start, y: y, width: span.width, height: size))
+        }
+    }
+
+    private func refreshToolbarItems() {
+        guard mode == .toolbar else { return }
+        let items = toolbarItems
+        backButton.isHidden = !items.contains(.back)
+        forwardButton.isHidden = !items.contains(.forward)
+        reloadButton.isHidden = !items.contains(.reload)
+        urlButton.isHidden = !items.contains(.address)
+        let commands = items.compactMap { item -> BrowserCommandID? in
+            if case .command(let id) = item { return id }
+            return nil
+        }
+        for id in Set(commandButtons.keys).subtracting(commands) {
+            commandButtons.removeValue(forKey: id)?.removeFromSuperview()
+        }
+        for id in commands {
+            let descriptor = model.shortcutStore.descriptor(for: id)
+            let button = commandButtons[id] ?? BrowserNativeChromeButton(
+                symbol: id.commandBarSystemImageName,
+                title: descriptor.menuTitle,
+                style: .chrome,
+                pressEffect: .compress,
+                action: { [weak model] in model?.performToolbarCommand(id) },
+            )
+            if commandButtons[id] == nil {
+                commandButtons[id] = button
+                addSubview(button)
+                button.setAccessibilityIdentifier("browser.toolbar.command.\(id.rawValue)")
+            }
+            if id == .toggleBookmark {
+                let bookmarked = model.currentTab.map { model.isBookmarked(urlString: $0.urlString) } ?? false
+                button.configureSymbol(bookmarked ? "star.fill" : "star", title: descriptor.menuTitle)
+                button.isSelected = bookmarked
+            }
+            button.tooltipShortcut = model.shortcutStore.shortcut(for: id)
+            button.isEnabled = model.isCommandBarActionAvailable(id)
+        }
+        refreshCustomization()
+    }
+
+    private func refreshCustomization() {
+        guard model.isCustomizingToolbar, window != nil else {
+            toolbarOverlay?.removeFromSuperview()
+            toolbarOverlay = nil
+            if let customizePanel {
+                customizePanel.parent?.removeChildWindow(customizePanel)
+                customizePanel.orderOut(nil)
+                self.customizePanel = nil
+            }
+            return
+        }
+        let preferences = model.userPreferencesStore
+        if toolbarOverlay == nil {
+            let overlay = BrowserToolbarEditOverlay(frame: bounds)
+            overlay.onMove = { from, to in preferences.toolbarConfiguration.move(from: from, to: to) }
+            overlay.onInsert = { item, index in preferences.toolbarConfiguration.insert(item, at: index) }
+            overlay.onRemove = { index in preferences.toolbarConfiguration.remove(at: index) }
+            addSubview(overlay, positioned: .above, relativeTo: nil)
+            toolbarOverlay = overlay
+        } else if let toolbarOverlay, subviews.last !== toolbarOverlay {
+            addSubview(toolbarOverlay, positioned: .above, relativeTo: nil)
+        }
+        if customizePanel == nil, let window {
+            let panel = BrowserToolbarCustomizePanel(
+                shortcutStore: model.shortcutStore,
+                onReset: { preferences.toolbarConfiguration = .standard },
+                onDone: { [weak model] in model?.endToolbarCustomization() },
+                onRemove: { index in preferences.toolbarConfiguration.remove(at: index) },
+            )
+            panel.update(available: preferences.toolbarConfiguration.availableItems)
+            window.addChildWindow(panel, ordered: .above)
+            customizePanel = panel
+            positionCustomizePanel()
+        } else {
+            customizePanel?.update(available: preferences.toolbarConfiguration.availableItems)
+        }
+    }
+
     private func refreshHover() {
         let sidebar = mode == .sidebar
         let show = !sidebar || showsSidebarActions
-        copyVisibility.setVisible(show, view: copyButton, curve: .appearance)
-        siteVisibility.setVisible(show, view: siteButton, curve: .appearance)
+        let items = toolbarItems
+        copyVisibility.setVisible(sidebar ? show : items.contains(.copyLink), view: copyButton, curve: .appearance)
+        siteVisibility.setVisible(sidebar ? show : items.contains(.siteControls), view: siteButton, curve: .appearance)
         // The sidebar's address row has no Split View button; the toolbar does.
-        splitVisibility.setVisible(!sidebar, view: splitButton, curve: .appearance)
+        splitVisibility.setVisible(!sidebar && items.contains(.splitView), view: splitButton, curve: .appearance)
         copyButton.isEnabled = model.currentTab != nil && !isSidebarResizing
         siteButton.isEnabled = model.currentTab != nil && !isSidebarResizing
         splitButton.isEnabled = (model.selectedSplitGroup != nil || model.canAddSplitView) && !isSidebarResizing
         for (id, button) in extensionButtons {
             let visibility = extensionVisibilities[id] ?? BrowserNativeVisibilityAnimation()
             extensionVisibilities[id] = visibility
-            visibility.setVisible(show, view: button, curve: .appearance)
+            visibility.setVisible(sidebar ? show : items.contains(.pinnedExtensions), view: button, curve: .appearance)
             button.isInteractionEnabled = !isSidebarResizing
         }
         urlButton.isSearchPresented = sidebar && model.currentPageCommandBarModel.isPresented

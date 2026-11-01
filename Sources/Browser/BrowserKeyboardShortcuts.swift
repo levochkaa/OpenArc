@@ -525,6 +525,12 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("d", modifiers: [.command, .shift]),
     )
 
+    static let customizeToolbar = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuCustomizeToolbar,
+        helpTitle: BrowserStrings.menuCustomizeToolbar,
+        shortcut: .unassigned,
+    )
+
     /// Pin/Unpin Tab has no default: Command-D is Add Bookmark.
     static let togglePinTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuPinTab,
@@ -812,6 +818,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case toggleSidebarPosition
     case toggleBookmarksBar
     case toggleSiteToolbar
+    case customizeToolbar
     case togglePinTab
     case duplicateTab
     case renameTab

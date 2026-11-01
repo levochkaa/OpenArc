@@ -180,6 +180,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let windowDraggingFromPageTopEnabled = "browser.settings.windowDraggingFromPageTopEnabled"
         static let bookmarksBarVisible = "browser.settings.bookmarksBarVisible"
         static let siteURLToolbarEnabled = "browser.settings.siteURLToolbarEnabled"
+        static let toolbarConfiguration = "browser.settings.toolbarConfiguration"
         static let siteToolbarShowsFullURL = "browser.settings.siteToolbarShowsFullURL"
         static let blurredChromeBackgroundEnabled = "browser.settings.blurredChromeBackgroundEnabled"
         static let batterySaverEnabled = "browser.settings.batterySaverEnabled"
@@ -266,6 +267,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var bookmarksBarVisible: Bool {
         didSet { userDefaults.set(bookmarksBarVisible, forKey: Key.bookmarksBarVisible) }
+    }
+
+    @Published var toolbarConfiguration: BrowserToolbarConfiguration {
+        didSet { userDefaults.set(toolbarConfiguration.storedValues, forKey: Key.toolbarConfiguration) }
     }
 
     @Published var siteURLToolbarEnabled: Bool {
@@ -434,6 +439,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
             defaultValue: true,
         )
         self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: true)
+        self.toolbarConfiguration = userDefaults.stringArray(forKey: Key.toolbarConfiguration)
+            .map(BrowserToolbarConfiguration.init(storedValues:)) ?? .standard
         self.siteURLToolbarEnabled = Self.loadBool(
             userDefaults,
             key: Key.siteURLToolbarEnabled,
@@ -628,6 +635,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case toggleSidebarPosition
     case toggleBookmarksBar
     case toggleSiteToolbar
+    case customizeToolbar
 
     // MARK: Internal
 
@@ -773,6 +781,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.toggleBookmarksBar
         case .toggleSiteToolbar:
             BrowserCommands.toggleSiteToolbar
+        case .customizeToolbar:
+            BrowserCommands.customizeToolbar
         case .viewDownloads:
             BrowserCommands.viewDownloads
         case .viewLibrary:
@@ -971,6 +981,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .toggleBookmarksBar
         case .toggleSiteToolbar:
             .toggleSiteToolbar
+        case .customizeToolbar:
+            .customizeToolbar
         case .viewDownloads:
             .viewDownloads
         case .viewLibrary:

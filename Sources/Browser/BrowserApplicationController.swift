@@ -411,6 +411,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     public func showDeveloperTools(_: Any?) {
         activeChromeModel?.showDeveloperTools()
     }
+    public func customizeToolbar(_: Any?) {
+        activeChromeModel?.beginToolbarCustomization()
+    }
+
 
     public func viewSource(_: Any?) {
         activeChromeModel?.viewSourceOfSelectedTab()
@@ -945,6 +949,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canOpenExtensions ?? false
         case #selector(togglePinTab(_:)):
             if let menuItem = item as? NSMenuItem, let model = activeChromeModel {
+        case #selector(customizeToolbar(_:)):
+            return activeChromeModel?.isWebApp == false
                 menuItem.title = model.pinToggleTitle
             }
             return activeChromeModel?.canTogglePinSelectedTab ?? false
@@ -1505,6 +1511,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         toggleBookmarksBarItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
         viewMenu.addItem(toggleBookmarksBarItem)
         let collapsePinnedItem = NSMenuItem(
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .customizeToolbar),
+            action: #selector(customizeToolbar(_:)),
+        ))
             title: BrowserStrings.menuCollapsePinnedTabs,
             action: #selector(togglePinnedTabsCollapsed(_:)),
             keyEquivalent: "",
@@ -2800,6 +2810,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel != nil
         case .selectNextSpace,
              .selectPreviousSpace:
+        case .customizeToolbar:
+            guard activeChromeModel?.isWebApp == false else { return false }
+            customizeToolbar(nil)
+            return true
             guard let model = activeChromeModel, !model.isWebApp, model.supportsSpaces, model.spaces.count > 1 else {
                 return false
             }

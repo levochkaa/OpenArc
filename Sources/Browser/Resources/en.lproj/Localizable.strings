@@ -77,6 +77,13 @@
 "browser.settings.site_permissions.blocked" = "Blocked";
 "browser.bookmarks.add_current_page" = "Add Bookmark";
 "browser.bookmarks.remove_current_page" = "Remove Bookmark";
+"browser.menu.customize_toolbar" = "Customize Toolbar...";
+"browser.toolbar.customize_hint" = "Drag items onto the toolbar to add them, along it to reorder, or off it to remove.";
+"browser.toolbar.restore_defaults" = "Restore Defaults";
+"browser.toolbar.customize_done" = "Done";
+"browser.toolbar.address_item" = "Address";
+"browser.toolbar.flexible_space_item" = "Flexible Space";
+"browser.toolbar.pinned_extensions_item" = "Pinned Extensions";
 "browser.bookmarks.rename_action" = "Rename...";
 "browser.bookmarks.edit_action" = "Edit...";
 "browser.bookmarks.edit_title" = "Edit Bookmark";
