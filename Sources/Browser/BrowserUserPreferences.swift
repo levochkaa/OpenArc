@@ -513,6 +513,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case developerTools
     case shareTab
     case manageSpaces
+    case capturePortrait
     case blankWindow
     case viewMedia
     case networkInspector
@@ -625,6 +626,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.shareTab
         case .manageSpaces:
             BrowserCommands.manageSpaces
+        case .capturePortrait:
+            BrowserCommands.capturePortrait
         case .blankWindow:
             BrowserCommands.blankWindow
         case .viewMedia:
@@ -811,6 +814,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .shareTab
         case .manageSpaces:
             .manageSpaces
+        case .capturePortrait:
+            .capturePortrait
         case .blankWindow:
             .blankWindow
         case .viewMedia:

@@ -147,6 +147,12 @@ import Foundation
         controller.saveActiveTab(withSuggestedName: suggestedName)
     }
 
+    func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void) {
+        controller.captureActiveTabPicture { data in
+            MainActor.assumeIsolated { completion(data) }
+        }
+    }
+
     func captureFullPageActiveTabToPasteboard() {
         controller.captureFullPageActiveTabToPasteboard()
     }

@@ -547,6 +547,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.captureFullPageSelectedTabToPasteboard()
     }
 
+    public func capturePortrait(_: Any?) {
+        activeChromeModel?.beginPortraitCapture()
+    }
+
     public func captureArea(_: Any?) {
         activeChromeModel?.beginAreaCapture()
     }
@@ -955,7 +959,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCreateFolderFromSelectedTab ?? false
         case #selector(captureFullPage(_:)):
             return activeChromeModel.map { $0.canCreateTab && $0.selectedTabID != nil } ?? false
-        case #selector(captureArea(_:)):
+        case #selector(captureArea(_:)),
+             #selector(capturePortrait(_:)):
             return activeChromeModel?.canCaptureArea ?? false
         case #selector(createNewSpace(_:)):
             return activeChromeModel.map { $0.supportsSpaces && !$0.isWebApp } ?? false
@@ -1310,6 +1315,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .captureFullPage),
             action: #selector(captureFullPage(_:)),
+        ))
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .capturePortrait),
+            action: #selector(capturePortrait(_:)),
         ))
 
         let installWebAppItem = NSMenuItem(
@@ -2428,6 +2437,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.showJavaScriptConsole() ?? false
         case .manageSpaces:
             return activeChromeModel?.openSpacesInLibrary() ?? false
+        case .capturePortrait:
+            return activeChromeModel?.beginPortraitCapture() ?? false
         case .blankWindow:
             createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, blank: true)
             return true

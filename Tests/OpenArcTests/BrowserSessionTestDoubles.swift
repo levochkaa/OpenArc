@@ -266,6 +266,10 @@ import Foundation
         saveSuggestedNames.append(suggestedName)
     }
 
+    func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void) {
+        completion(nil)
+    }
+
     func captureFullPageActiveTabToPasteboard() {
         captureFullPageToPasteboardCount += 1
     }

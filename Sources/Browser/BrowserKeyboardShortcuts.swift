@@ -203,6 +203,12 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("n", modifiers: [.control, .command]),
     )
 
+    static let capturePortrait = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.captureInPortraitMode,
+        helpTitle: BrowserStrings.captureInPortraitMode,
+        shortcut: .unassigned,
+    )
+
     static let manageSpaces = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuManageSpaces,
         helpTitle: BrowserStrings.menuManageSpaces,
@@ -717,6 +723,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case developerTools
     case shareTab
     case manageSpaces
+    case capturePortrait
     case blankWindow
     case viewMedia
     case networkInspector

@@ -482,6 +482,9 @@ enum BrowserWindowMode: Equatable {
     /// The Space an additional window starts on.
     var firstSpaceID: String?
 
+    /// Capture in Portrait Mode: the window shows its options once it has the picture.
+    var onPortraitCapture: ((Data) -> Void)?
+
     /// Answers this window's waiting requests that another window's answer covers.
     private var sitePermissionDecisionsObservation: AnyCancellable?
 
@@ -2550,6 +2553,16 @@ enum BrowserWindowMode: Equatable {
         tabDriver.focusActivePage()
     }
 
+    @discardableResult func beginPortraitCapture() -> Bool {
+        guard canCaptureArea else { return false }
+        tabDriver.captureActiveTabPicture { [weak self] png in
+            if let png {
+                self?.onPortraitCapture?(png)
+            }
+        }
+        return true
+    }
+
     @discardableResult func captureFullPageSelectedTabToPasteboard() -> Bool {
         guard selectedTabID != nil else {
             return false
@@ -3491,6 +3504,8 @@ enum BrowserWindowMode: Equatable {
             canShowDeveloperToolsForCommand
         case .manageSpaces:
             supportsSpaces
+        case .capturePortrait:
+            canCaptureArea
         case .blankWindow:
             true
         case .viewMedia:
@@ -7388,6 +7403,8 @@ extension BrowserCommandID {
             ["console", "javascript console", "js console"]
         case .manageSpaces:
             ["manage spaces", "spaces"]
+        case .capturePortrait:
+            ["portrait", "capture in portrait mode", "screenshot"]
         case .blankWindow:
             ["blank window", "new window"]
         case .viewMedia:
@@ -7576,6 +7593,8 @@ extension BrowserCommandID {
             "terminal"
         case .manageSpaces:
             "square.on.square"
+        case .capturePortrait:
+            "person.crop.rectangle"
         case .blankWindow:
             "macwindow.badge.plus"
         case .viewMedia:

@@ -121,6 +121,7 @@ enum BrowserPageContextCommand: String {
     func stopLoadingActiveTab()
     func saveActiveTab(withSuggestedName suggestedName: String?)
     func captureFullPageActiveTabToPasteboard()
+    func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void)
     /// A Cocoa action for the active page's own view; false without one.
     @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool
     func focusActivePage()

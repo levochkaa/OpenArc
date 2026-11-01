@@ -5,6 +5,8 @@ import Combine
 import QuartzCore
 
 final class BrowserRootView: NSView {
+    private static let captureHintSeenKey = "browser.capture.hintSeen"
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -24,8 +26,9 @@ final class BrowserRootView: NSView {
     private var librarySwipeStart: CFTimeInterval = 0
     private let toolbar: BrowserSiteControlsNSView
     private lazy var developerToolbar = BrowserDeveloperToolbarView(model: model)
-    private static let captureHintSeenKey = "browser.capture.hintSeen"
     private let captureToast = BrowserCaptureToastView()
+    private var portraitCapture: BrowserPortraitCaptureView?
+    private var portraitCaptureMonitor: Any?
     private var captureDragMonitor: Any?
     private var captureDragStart: NSEvent?
     private var isCaptureDragging = false
@@ -243,6 +246,7 @@ final class BrowserRootView: NSView {
             guard let self else { return }
             (showsSiteToolbar ? toolbar : sidebar.header.urlControls).openExtensionFromMenu(id: id)
         }
+        model.onPortraitCapture = { [weak self] in self?.presentPortraitCapture(png: $0) }
         model.onEditSpaceTheme = { [weak self] in self?.presentSpaceThemeEditor(spaceID: $0) }
         model.onShareURL = { [weak self] url in
             guard let self else { return }
@@ -626,6 +630,43 @@ final class BrowserRootView: NSView {
         needsLayout = true
         if !opens {
             hideLibraryAfterSlide()
+        }
+    }
+
+    private func presentPortraitCapture(png: Data) {
+        portraitCapture?.removeFromSuperview()
+        let card = BrowserPortraitCaptureView(pagePNG: png)
+        card.onFinish = { [weak self] in self?.dismissPortraitCapture() }
+        let page = windowGeometry.contentFrame
+        card.frame.origin = CGPoint(
+            x: page.midX - BrowserPortraitCaptureView.size.width / 2,
+            y: page.midY - BrowserPortraitCaptureView.size.height / 2,
+        )
+        addSubview(card, positioned: .above, relativeTo: nil)
+        portraitCapture = card
+        portraitCaptureMonitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .leftMouseDown,
+            .keyDown,
+        ]) { [weak self, weak card] event in
+            guard let self, let card else { return event }
+            if event.type == .keyDown {
+                guard event.keyCode == 53 else { return event }
+                dismissPortraitCapture()
+                return nil
+            }
+            if event.window === window, !card.frame.contains(convert(event.locationInWindow, from: nil)) {
+                dismissPortraitCapture()
+            }
+            return event
+        }
+    }
+
+    private func dismissPortraitCapture() {
+        portraitCapture?.removeFromSuperview()
+        portraitCapture = nil
+        if let portraitCaptureMonitor {
+            NSEvent.removeMonitor(portraitCaptureMonitor)
+            self.portraitCaptureMonitor = nil
         }
     }
 

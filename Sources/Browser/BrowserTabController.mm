@@ -1603,13 +1603,24 @@ class RegionScreenshotObserver final : public CefDevToolsMessageObserver {
     registration_ = nullptr;
     std::string pngData = dictionary->GetString("data").ToString();
     if (!pngData.empty()) {
-      CopyBase64PNGToPasteboardOnMain(pngData);
+      if (completion_ != nil) {
+        NSString *base64 = ToNSString(pngData);
+        void (^completion)(NSData *) = completion_;
+        dispatch_async(dispatch_get_main_queue(), ^{
+          completion([[NSData alloc] initWithBase64EncodedString:base64 options:0]);
+        });
+      } else {
+        CopyBase64PNGToPasteboardOnMain(pngData);
+      }
     }
   }
 
   void OnDevToolsAgentDetached(CefRefPtr<CefBrowser>) override {
     registration_ = nullptr;
   }
+
+  /// With a completion the picture goes there instead of the clipboard.
+  void (^completion_)(NSData *) = nil;
 
  private:
   void CaptureRegion(CefRefPtr<CefBrowser> browser,
@@ -4399,6 +4410,18 @@ std::string BrowserMediaVolumeScript(double volume) {
                             observer->Start(host);
                           },
                           host, fraction)));
+}
+
+- (void)captureActiveTabPictureWithCompletion:(void (^)(NSData *))completion {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    completion(nil);
+    return;
+  }
+  CefRefPtr<RegionScreenshotObserver> observer =
+      new RegionScreenshotObserver(CGRectMake(0, 0, 1, 1));
+  observer->completion_ = [completion copy];
+  observer->Start(it->second.browser->GetHost());
 }
 
 - (void)pasteAndMatchStyleActiveTab {

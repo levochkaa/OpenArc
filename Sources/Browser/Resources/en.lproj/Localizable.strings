@@ -752,3 +752,4 @@
 "browser.app_icon.candy" = "Candy";
 "browser.app_icon.forest" = "Forest";
 "browser.settings.recent_pages_previews" = "Preview recent pages on Linear, Notion and Figma";
+"browser.capture.portrait" = "Capture in Portrait Mode";

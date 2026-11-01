@@ -251,6 +251,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     NS_SWIFT_NAME(setSiteSetting(_:value:forURLString:));
 - (void)saveActiveTabWithSuggestedName:(nullable NSString *)suggestedName;
 - (void)captureFullPageActiveTabToPasteboard;
+/// The visible page as PNG data, for the caller instead of the clipboard.
+- (void)captureActiveTabPictureWithCompletion:(void (^)(NSData *_Nullable png))completion;
 /// Sends a Cocoa action such as `copyToFindPboard:` to the active page's
 /// Chromium view, wherever the window's focus is. NO without such a view.
 - (BOOL)sendActionToActivePage:(SEL)action NS_SWIFT_NAME(sendActionToActivePage(_:));
