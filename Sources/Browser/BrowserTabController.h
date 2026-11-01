@@ -141,6 +141,7 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                               video:(BOOL)video
                    hasPreviousTrack:(BOOL)hasPreviousTrack
                        hasNextTrack:(BOOL)hasNextTrack
+                   pictureInPicture:(BOOL)pictureInPicture
                               title:(NSString *)title;
 
 @end
@@ -204,6 +205,7 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 /// Closes every Peek card and small window of this window's pages.
 - (void)closeAllPeeks;
 - (void)setPictureInPicture:(BOOL)active forTabWithID:(NSString *)tabID;
+- (void)togglePictureInPictureInActiveTab;
 - (void)setAudioMuted:(BOOL)muted forTabWithID:(NSString *)tabID;
 /// Answers a site permission request: YES allows, NO blocks and nil
 /// dismisses it without an answer. Unknown or withdrawn requests are ignored.

@@ -2236,7 +2236,13 @@ constexpr char kEnterPictureInPictureScript[] =
     "(() => { const video = Array.from(document.querySelectorAll('video')).find("
     "v => !v.paused && !v.ended && v.readyState > 2 && !v.disablePictureInPicture); "
     "if (video && !document.pictureInPictureElement) "
-    "video.requestPictureInPicture().catch(() => {}); })()";
+    "return video.requestPictureInPicture().catch(() => {}); })()";
+constexpr char kTogglePictureInPictureScript[] =
+    "(() => { if (document.pictureInPictureElement) return document.exitPictureInPicture().catch(() => {}); "
+    "const videos = Array.from(document.querySelectorAll('video')).filter("
+    "v => !v.disablePictureInPicture && v.readyState > 0); "
+    "const video = videos.find(v => !v.paused) || videos[0]; "
+    "if (video) return video.requestPictureInPicture().catch(() => {}); })()";
 constexpr char kExitPictureInPictureScript[] =
     "document.pictureInPictureElement && document.exitPictureInPicture().catch(() => {})";
 
@@ -2256,14 +2262,16 @@ void EvaluateInPage(CefRefPtr<CefBrowser> browser, std::string expression, bool 
 /// requests Picture in Picture with one.
 class PictureInPictureProbe final : public CefDevToolsMessageObserver {
  public:
+  explicit PictureInPictureProbe(void (^done)(void)) : done_(done) {}
+
   void Start(CefRefPtr<CefBrowserHost> host) {
     registration_ = host->AddDevToolsMessageObserver(this);
     CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
     params->SetString("expression", kHasPlayingVideoScript);
     params->SetBool("returnByValue", true);
-    message_id_ = NextDevToolsMessageID();
-    if (host->ExecuteDevToolsMethod(message_id_, "Runtime.evaluate", params) == 0) {
-      registration_ = nullptr;
+    probe_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(probe_id_, "Runtime.evaluate", params) == 0) {
+      Finish();
     }
   }
 
@@ -2272,56 +2280,68 @@ class PictureInPictureProbe final : public CefDevToolsMessageObserver {
                               bool success,
                               const void *result,
                               size_t result_size) override {
-    if (message_id != message_id_) {
+    if (message_id == enter_id_) {
+      Finish();
+      return;
+    }
+    if (message_id != probe_id_) {
       return;
     }
 
     CefRefPtr<CefDictionaryValue> dictionary =
         success ? ParseDevToolsResultDictionary(result, result_size) : nullptr;
     CefRefPtr<CefDictionaryValue> value = dictionary ? dictionary->GetDictionary("result") : nullptr;
-    const bool hasPlayingVideo = value && value->GetBool("value");
-    registration_ = nullptr;
-    if (hasPlayingVideo) {
-      EvaluateInPage(browser, kEnterPictureInPictureScript, true);
+    CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+    if (!(value && value->GetBool("value")) || !host) {
+      Finish();
+      return;
+    }
+    // Waits for the request to settle, since the page must stay visible until then.
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("expression", kEnterPictureInPictureScript);
+    params->SetBool("userGesture", true);
+    params->SetBool("awaitPromise", true);
+    enter_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(enter_id_, "Runtime.evaluate", params) == 0) {
+      Finish();
     }
   }
 
   void OnDevToolsAgentDetached(CefRefPtr<CefBrowser>) override {
-    registration_ = nullptr;
+    Finish();
   }
 
  private:
-  int message_id_ = 0;
+  void Finish() {
+    registration_ = nullptr;
+    if (done_) {
+      done_();
+      done_ = nil;
+    }
+  }
+
+  int probe_id_ = 0;
+  int enter_id_ = -1;
+  void (^done_)(void);
   CefRefPtr<CefRegistration> registration_;
 
   IMPLEMENT_REFCOUNTING(PictureInPictureProbe);
 };
 
-void SetPictureInPicture(CefRefPtr<CefBrowser> browser, bool active) {
+void SetPictureInPicture(CefRefPtr<CefBrowser> browser, bool active, void (^done)(void)) {
   CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
   if (!host) {
+    done();
     return;
   }
 
   if (active) {
-    CefRefPtr<PictureInPictureProbe> probe = new PictureInPictureProbe();
+    CefRefPtr<PictureInPictureProbe> probe = new PictureInPictureProbe(done);
     probe->Start(host);
   } else {
     EvaluateInPage(browser, kExitPictureInPictureScript, false);
+    done();
   }
-}
-
-void SetPictureInPictureOnUI(CefRefPtr<CefBrowser> browser, bool active) {
-  if (!browser) {
-    return;
-  }
-
-  if (CefCurrentlyOn(TID_UI)) {
-    SetPictureInPicture(browser, active);
-    return;
-  }
-
-  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(&SetPictureInPicture, browser, active)));
 }
 
 // DevTools open in their own CEF window without a client, so none of the
@@ -2909,6 +2929,7 @@ enum PageContextMenuCommand {
   kContextCopyLinkAddress,
   kContextOpenMediaInNewTab,
   kContextSaveMedia,
+  kContextPictureInPicture,
   kContextCopyImage,
   kContextCopyMediaAddress,
   kContextCopyLinkToHighlight,
@@ -2973,6 +2994,10 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     separate();
     model->AddItem(kContextSaveLink, LocalizedMenuTitle(@"browser.context.save_link"));
     model->AddItem(kContextCopyLinkAddress, LocalizedMenuTitle(@"browser.context.copy_link"));
+  }
+  if (mediaType == CM_MEDIATYPE_VIDEO) {
+    separate();
+    model->AddItem(kContextPictureInPicture, LocalizedMenuTitle(@"browser.context.picture_in_picture"));
   }
   if (hasImage || hasPlayer) {
     separate();
@@ -3061,6 +3086,9 @@ bool RunBasicPageContextCommand(CefRefPtr<CefBrowser> browser,
     [pasteboard setString:ToNSString(value.ToString()) forType:NSPasteboardTypeString];
   };
   switch (command) {
+    case kContextPictureInPicture:
+      EvaluateInPage(browser, kTogglePictureInPictureScript, true);
+      return true;
     case kContextSaveLink:
       host->StartDownload(params->GetLinkUrl());
       return true;
@@ -3378,17 +3406,21 @@ struct MediaFrameState {
   bool video = false;
   bool hasPreviousTrack = false;
   bool hasNextTrack = false;
+  bool pictureInPicture = false;
   std::string title;
 
   bool operator==(const MediaFrameState &other) const {
     return audible == other.audible && playing == other.playing && paused == other.paused &&
            video == other.video &&
            hasPreviousTrack == other.hasPreviousTrack && hasNextTrack == other.hasNextTrack &&
+           pictureInPicture == other.pictureInPicture &&
            title == other.title;
   }
 };
 
 struct TabRecord {
+  // Stays visible under the active tab while its video moves to Picture in Picture.
+  bool keptVisibleForPictureInPicture = false;
   // The data store of the tab's profile, fixed while the page lives.
   CefRefPtr<CefRequestContext> requestContext;
   CefRefPtr<CefClient> client;
@@ -4377,7 +4409,40 @@ void WatchClickModifiers();
     return;
   }
 
-  SetPictureInPictureOnUI(it->second.browser, active);
+  // A hidden page has no surface to show, and the request would never settle, so
+  // the page stays visible under the next tab until it has moved to the window.
+  const std::string tabKey = ToStdString(tabID);
+  it->second.keptVisibleForPictureInPicture = active;
+  __weak BrowserTabController *weakSelf = self;
+  __block BOOL finished = NO;
+  void (^done)(void) = ^{
+    if (finished) {
+      return;
+    }
+    finished = YES;
+    [weakSelf finishPictureInPictureAttemptForTabKey:tabKey];
+  };
+  CefRefPtr<CefBrowser> browser = it->second.browser;
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(^(CefRefPtr<CefBrowser> target) {
+    SetPictureInPicture(target, active, done);
+  }, browser)));
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), done);
+}
+
+- (void)togglePictureInPictureInActiveTab {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.browser) {
+    EvaluateInPage(it->second.browser, kTogglePictureInPictureScript, true);
+  }
+}
+
+- (void)finishPictureInPictureAttemptForTabKey:(const std::string &)tabKey {
+  auto it = _tabRecords.find(tabKey);
+  if (it == _tabRecords.end() || !it->second.keptVisibleForPictureInPicture) {
+    return;
+  }
+  it->second.keptVisibleForPictureInPicture = false;
+  [self updateBrowserVisibilityFocusingActiveTab:NO];
 }
 
 - (void)showPeekWithURLString:(NSString *)urlString {
@@ -4826,6 +4891,7 @@ void WatchClickModifiers();
     combined.audible = combined.audible || entry.second.audible;
     combined.playing = combined.playing || entry.second.playing;
     combined.video = combined.video || entry.second.video;
+    combined.pictureInPicture = combined.pictureInPicture || entry.second.pictureInPicture;
   }
   combined.paused = !combined.playing && !record.mediaFrames.empty();
   [self reportMedia:combined forTabID:tabID record:record];
@@ -4849,7 +4915,7 @@ void WatchClickModifiers();
   record.reportedMedia = state;
   id<BrowserTabControllerDelegate> delegate = self.delegate;
   SEL selector = @selector(browserTabController:
-                     didChangeMediaStateForTabWithID:audible:playing:paused:video:hasPreviousTrack:hasNextTrack:title:);
+                     didChangeMediaStateForTabWithID:audible:playing:paused:video:hasPreviousTrack:hasNextTrack:pictureInPicture:title:);
   if ([delegate respondsToSelector:selector]) {
     [delegate browserTabController:self
         didChangeMediaStateForTabWithID:tabID
@@ -4859,6 +4925,7 @@ void WatchClickModifiers();
                                   video:state.video
                        hasPreviousTrack:state.hasPreviousTrack
                            hasNextTrack:state.hasNextTrack
+                       pictureInPicture:state.pictureInPicture
                                   title:ToNSString(state.title)];
   }
 }
@@ -5493,7 +5560,11 @@ void WatchClickModifiers();
 
     NSView *browserView = BrowserViewForBrowser(entry.second.browser);
     if (browserView != nil) {
-      browserView.hidden = YES;
+      const bool keptVisible = entry.second.keptVisibleForPictureInPicture;
+      browserView.hidden = !keptVisible;
+      if (keptVisible) {
+        [browserView.superview addSubview:browserView positioned:NSWindowBelow relativeTo:nil];
+      }
     }
   }
 
@@ -5823,7 +5894,8 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
   state.video = values->GetBool(3);
   state.hasPreviousTrack = values->GetBool(4);
   state.hasNextTrack = values->GetBool(5);
-  state.title = values->GetString(6).ToString();
+  state.pictureInPicture = values->GetBool(6);
+  state.title = values->GetString(7).ToString();
   [controller_ handleMediaState:state frameID:frame->GetIdentifier().ToString() forTabID:ToNSString(tab_id_)];
   return true;
 }

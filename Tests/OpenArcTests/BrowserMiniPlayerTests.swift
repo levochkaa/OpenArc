@@ -45,6 +45,54 @@ import Testing
         #expect(f.model.tabMediaStates[x] == nil)
     }
 
+    @Test func closingThePictureInPictureWindowBringsTheMiniPlayerBack() {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x", "y"])
+        let x = f.id("x")
+        f.model.selectTab(id: x)
+        var state = BrowserTabMediaState(
+            isPlaying: true, audible: true, video: true, hasPreviousTrack: false, hasNextTrack: false, title: "",
+        )
+        f.model.handleMediaStateChange(tabID: x, state: state)
+        f.model.selectTab(id: f.id("y"))
+        state.inPictureInPicture = true
+        f.model.handleMediaStateChange(tabID: x, state: state)
+        #expect(f.model.isInPictureInPicture(tabID: x))
+        #expect(f.model.miniPlayerTabIDs.isEmpty)
+        state.inPictureInPicture = false
+        state.isPlaying = false
+        f.model.handleMediaStateChange(tabID: x, state: state)
+        #expect(!f.model.isInPictureInPicture(tabID: x))
+        #expect(f.model.miniPlayerTabIDs == [x], "Closing pauses the video and leaves the tab where it is")
+    }
+
+    @Test func backToTabInThePictureInPictureWindowShowsTheTab() {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x", "y"])
+        let x = f.id("x")
+        f.model.selectTab(id: x)
+        var state = BrowserTabMediaState(
+            isPlaying: true, audible: true, video: true, hasPreviousTrack: false, hasNextTrack: false, title: "",
+        )
+        f.model.handleMediaStateChange(tabID: x, state: state)
+        f.model.selectTab(id: f.id("y"))
+        state.inPictureInPicture = true
+        f.model.handleMediaStateChange(tabID: x, state: state)
+        state.inPictureInPicture = false
+        f.model.handleMediaStateChange(tabID: x, state: state)
+        #expect(f.model.selectedTabID == x, "It keeps playing, so the window asked for the tab")
+    }
+
+    @Test func pictureInPictureCanBeOpenedByHand() {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x"])
+        let x = f.id("x")
+        f.model.selectTab(id: x)
+        #expect(!f.model.togglePictureInPicture(), "Nothing to move without a video")
+        f.model.handleMediaStateChange(tabID: x, state: BrowserTabMediaState(
+            isPlaying: true, audible: false, video: true, hasPreviousTrack: false, hasNextTrack: false, title: "",
+        ))
+        #expect(f.model.togglePictureInPicture())
+        #expect(f.driver.pictureInPictureToggleCount == 1)
+    }
+
     @Test func aVideoInPictureInPictureHasNoMiniPlayer() {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         let x = f.id("x")

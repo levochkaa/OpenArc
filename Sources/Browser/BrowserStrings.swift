@@ -1566,6 +1566,11 @@ enum BrowserStrings {
         comment: "Command that brings back the sound of every open tab.",
     )
 
+    static let menuOpenPictureInPicture = NSLocalizedString(
+        "browser.menu.open_picture_in_picture",
+        comment: "Command that moves the page's video to a floating window, or back.",
+    )
+
     static let menuManageSpaces = NSLocalizedString(
         "browser.menu.manage_spaces",
         comment: "Menu item.",

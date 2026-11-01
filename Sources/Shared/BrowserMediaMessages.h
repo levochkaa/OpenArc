@@ -8,7 +8,7 @@ namespace shared {
 // the media session title (string), in that order. CEF has no audible
 // signal of its own.
 inline constexpr char kMediaStateMessage[] = "OpenArc.MediaState";
-inline constexpr int kMediaStateArgumentCount = 7;
+inline constexpr int kMediaStateArgumentCount = 8;
 
 // A command for a frame's media, to the renderer: "play", "pause",
 // "previoustrack" or "nexttrack".

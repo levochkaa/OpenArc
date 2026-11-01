@@ -14,6 +14,8 @@ struct BrowserTabMediaState: Equatable {
     /// The page's Media Session handles these tracks.
     var hasPreviousTrack: Bool
     var hasNextTrack: Bool
+    /// The page has a video in the Picture in Picture window.
+    var inPictureInPicture = false
     /// The Media Session title, or empty.
     var title: String
 }
@@ -88,6 +90,11 @@ extension BrowserChromeModel {
     }
 
     func handleMediaStateChange(tabID: String, state: BrowserTabMediaState?) {
+        if tabMediaStates[tabID]?.inPictureInPicture == true, state?.inPictureInPicture != true {
+            // The window closed: the tab has a mini player again. Its close button pauses
+            // the video, so one that keeps playing came back through "back to tab".
+            pictureInPictureDidEnd(tabID: tabID, showsTab: state?.isPlaying == true)
+        }
         guard let state else {
             tabMediaStates.removeValue(forKey: tabID)
             tabMediaStartOrder.removeValue(forKey: tabID)

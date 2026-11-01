@@ -128,6 +128,8 @@ import Foundation
     /// Site settings by URL; `.default` removes one.
     var siteSettingsByURL = [String: [BrowserSiteSettingKind: BrowserSiteSettingValue]]()
 
+    private(set) var pictureInPictureToggleCount = 0
+
     // MARK: Private
 
     private var pendingCreateRequests = [CreatedTabRequest]()
@@ -291,6 +293,10 @@ import Foundation
 
     func closePeeks() {
         closePeeksCount += 1
+    }
+
+    func togglePictureInPictureInActiveTab() {
+        pictureInPictureToggleCount += 1
     }
 
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String) {

@@ -783,6 +783,10 @@ enum BrowserWindowMode: Equatable {
     /// The tab on screen, for bringing an additional window back at launch.
     var selectedTabSyncID: String? { tabs.first { $0.id == selectedTabID }?.syncID }
 
+    var canTogglePictureInPicture: Bool {
+        canCreateTab && selectedTabID.flatMap { tabMediaStates[$0]?.video } == true
+    }
+
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
             !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
@@ -3300,8 +3304,21 @@ enum BrowserWindowMode: Equatable {
     }
 
     /// Whether leaving the tab moved its video to Picture in Picture.
+    func pictureInPictureDidEnd(tabID: String, showsTab: Bool) {
+        pictureInPictureTabIDs.remove(tabID)
+        guard showsTab, selectedTabID != tabID, !isShuttingDown else { return }
+        selectTab(id: tabID)
+        hostView.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @discardableResult func togglePictureInPicture() -> Bool {
+        guard canTogglePictureInPicture else { return false }
+        tabDriver.togglePictureInPictureInActiveTab()
+        return true
+    }
+
     func isInPictureInPicture(tabID: String) -> Bool {
-        pictureInPictureTabIDs.contains(tabID)
+        pictureInPictureTabIDs.contains(tabID) || tabMediaStates[tabID]?.inPictureInPicture == true
     }
 
     func isCommandBarActionAvailable(_ commandID: BrowserCommandID) -> Bool {
@@ -3327,6 +3344,8 @@ enum BrowserWindowMode: Equatable {
             canShowDeveloperToolsForCommand
         case .manageSpaces:
             supportsSpaces
+        case .togglePictureInPicture:
+            canTogglePictureInPicture
         case .muteAllTabs:
             canCreateTab && tabs.contains { !mutedTabSyncIDs.contains($0.syncID) }
         case .unmuteAllTabs:
@@ -3616,6 +3635,12 @@ enum BrowserWindowMode: Equatable {
         pictureInPictureTabIDs.formIntersection(tabs.map(\.id))
         pictureInPictureTabIDs.insert(oldID)
         tabDriver.setPictureInPicture(true, forTabWithID: oldID)
+        // A page that refuses, or has no video, keeps its mini player.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self, tabMediaStates[oldID]?.inPictureInPicture != true else { return }
+            pictureInPictureTabIDs.remove(oldID)
+            objectWillChange.send()
+        }
     }
 
     private func localAutomaticArchivalOwnershipAllowsClose() -> Bool {
@@ -7188,6 +7213,8 @@ extension BrowserCommandID {
             ["console", "javascript console", "js console"]
         case .manageSpaces:
             ["manage spaces", "spaces"]
+        case .togglePictureInPicture:
+            ["picture in picture", "pip", "floating video"]
         case .muteAllTabs:
             ["mute all tabs", "silence", "sound off"]
         case .unmuteAllTabs:
@@ -7364,6 +7391,8 @@ extension BrowserCommandID {
             "terminal"
         case .manageSpaces:
             "square.on.square"
+        case .togglePictureInPicture:
+            "pip"
         case .muteAllTabs:
             "speaker.slash"
         case .unmuteAllTabs:

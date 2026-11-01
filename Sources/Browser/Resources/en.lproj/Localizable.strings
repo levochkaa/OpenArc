@@ -682,3 +682,5 @@
 "browser.menu.mute_all_tabs" = "Mute All Tabs";
 "browser.menu.unmute_all_tabs" = "Unmute All Tabs";
 "browser.menu.new_window" = "New Window";
+"browser.menu.open_picture_in_picture" = "Open Picture in Picture";
+"browser.context.picture_in_picture" = "Picture in Picture";

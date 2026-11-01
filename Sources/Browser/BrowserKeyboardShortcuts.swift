@@ -167,6 +167,12 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
+    static let togglePictureInPicture = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuOpenPictureInPicture,
+        helpTitle: BrowserStrings.menuOpenPictureInPicture,
+        shortcut: .unassigned,
+    )
+
     static let manageSpaces = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuManageSpaces,
         helpTitle: BrowserStrings.menuManageSpaces,
@@ -681,6 +687,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case developerTools
     case shareTab
     case manageSpaces
+    case togglePictureInPicture
     case muteAllTabs
     case unmuteAllTabs
     case javaScriptConsole

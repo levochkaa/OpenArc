@@ -522,6 +522,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.toggleCommandBar()
     }
 
+    public func togglePictureInPicture(_: Any?) {
+        activeChromeModel?.togglePictureInPicture()
+    }
+
     public func createNewWindow(_: Any?) {
         openNewWindow()
     }
@@ -711,6 +715,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canOpenLocation ?? false
         case #selector(createNewWindow(_:)):
             return !isTerminationRequested
+        case #selector(togglePictureInPicture(_:)):
+            return activeChromeModel?.canTogglePictureInPicture ?? false
         case #selector(createNewIncognitoWindow(_:)):
             return !isTerminationRequested
         case #selector(createNewLittleWindow(_:)):
@@ -1357,6 +1363,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(inspectElements(_:)),
         ))
         viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .togglePictureInPicture),
+            action: #selector(togglePictureInPicture(_:)),
+        ))
+        viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .javaScriptConsole),
             action: #selector(showJavaScriptConsole(_:)),
         ))
@@ -1999,6 +2009,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.showJavaScriptConsole() ?? false
         case .manageSpaces:
             return activeChromeModel?.openSpacesInLibrary() ?? false
+        case .togglePictureInPicture:
+            return activeChromeModel?.togglePictureInPicture() ?? false
         case .muteAllTabs:
             return activeChromeModel?.setAllTabsMuted(true) ?? false
         case .unmuteAllTabs:

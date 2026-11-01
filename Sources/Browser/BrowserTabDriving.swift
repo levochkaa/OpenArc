@@ -133,6 +133,7 @@ enum BrowserPageContextCommand: String {
     func closePeeks()
     /// Moves the page's playing video into Picture in Picture, or back.
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String)
+    func togglePictureInPictureInActiveTab()
     func castActiveTab()
     func requestActiveTabWebAppManifest() async -> String?
     /// The text selected in the active page; empty or nil without a selection.

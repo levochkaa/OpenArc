@@ -495,6 +495,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case developerTools
     case shareTab
     case manageSpaces
+    case togglePictureInPicture
     case muteAllTabs
     case unmuteAllTabs
     case javaScriptConsole
@@ -601,6 +602,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.shareTab
         case .manageSpaces:
             BrowserCommands.manageSpaces
+        case .togglePictureInPicture:
+            BrowserCommands.togglePictureInPicture
         case .muteAllTabs:
             BrowserCommands.muteAllTabs
         case .unmuteAllTabs:
@@ -775,6 +778,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .shareTab
         case .manageSpaces:
             .manageSpaces
+        case .togglePictureInPicture:
+            .togglePictureInPicture
         case .muteAllTabs:
             .muteAllTabs
         case .unmuteAllTabs:

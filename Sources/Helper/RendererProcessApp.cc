@@ -75,6 +75,7 @@ constexpr char kMediaObserverScript[] = R"JS(
         video = video || (media instanceof VideoElement && media.videoWidth > 0);
       } else if (resumable(media)) {
         paused = true;
+        video = video || (media instanceof VideoElement && media.videoWidth > 0);
       } else if (!media.isConnected) {
         tracked.delete(media);
       }
@@ -90,7 +91,8 @@ constexpr char kMediaObserverScript[] = R"JS(
     }
     const metadata = navigator.mediaSession && navigator.mediaSession.metadata;
     const state = [audible, playing, paused && !playing, video, actions.has('previoustrack'),
-      actions.has('nexttrack'), metadata && metadata.title ? String(metadata.title) : ''];
+      actions.has('nexttrack'), !!document.pictureInPictureElement,
+      metadata && metadata.title ? String(metadata.title) : ''];
     const key = stringify(state);
     if (key !== last) {
       last = key;
@@ -140,6 +142,8 @@ constexpr char kMediaObserverScript[] = R"JS(
   });
   window.addEventListener('play', (event) => track(event.target), true);
   window.addEventListener('playing', (event) => track(event.target), true);
+  window.addEventListener('enterpictureinpicture', (event) => track(event.target), true);
+  window.addEventListener('leavepictureinpicture', (event) => track(event.target), true);
   return function control(action) {
     const handler = actions.get(action);
     if (action === 'pause') {

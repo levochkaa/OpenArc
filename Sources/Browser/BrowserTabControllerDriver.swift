@@ -193,6 +193,10 @@ import Foundation
         controller.closeAllPeeks()
     }
 
+    func togglePictureInPictureInActiveTab() {
+        controller.togglePictureInPictureInActiveTab()
+    }
+
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String) {
         controller.setPictureInPicture(active, forTabWithID: tabID)
     }
@@ -434,6 +438,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         video: Bool,
         hasPreviousTrack: Bool,
         hasNextTrack: Bool,
+        pictureInPicture: Bool,
         title: String,
     ) {
         let state = playing || paused
@@ -443,6 +448,7 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
                 video: video,
                 hasPreviousTrack: hasPreviousTrack,
                 hasNextTrack: hasNextTrack,
+                inPictureInPicture: pictureInPicture,
                 title: title,
             )
             : nil
