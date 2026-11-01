@@ -141,6 +141,7 @@ struct BrowserNativeChromeButtonStyle {
         pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
         pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
         usesDrawnGlyphs: true,
+        drawsCloseBars: true,
     )
     static let miniPlayer = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarMiniPlayerButtonSize,
@@ -174,6 +175,8 @@ struct BrowserNativeChromeButtonStyle {
     var compressesBackground = true
     /// Plus and cross as 2 pt bars rather than symbols.
     var usesDrawnGlyphs = false
+    /// Draws its cross and minus as two bars that turn into each other.
+    var drawsCloseBars = false
 }
 
 // MARK: - BrowserNativeBarGlyph
@@ -268,6 +271,9 @@ final class BrowserNativeChromeButton: NSButton {
 
     // MARK: Private
 
+    private let closeBars = [CALayer(), CALayer()]
+    /// The angle of the close bars: 45° is a cross, 0° a minus.
+    private var closeBarsAngle = CGFloat.pi / 4
     private var oldSymbolCell: NSCell?
     private var symbolName: String
     private var symbolProgress = 1.0
@@ -292,6 +298,10 @@ final class BrowserNativeChromeButton: NSButton {
                 self?.needsDisplay = true
             }
         }
+    }
+
+    private var drawsCloseBarsNow: Bool {
+        style.drawsCloseBars && ["xmark", "minus"].contains(symbolName)
     }
 
     init(
@@ -426,7 +436,10 @@ final class BrowserNativeChromeButton: NSButton {
         effect.translate(x: -bounds.midX, y: -bounds.midY)
         (effect as NSAffineTransform).concat()
         NSGraphicsContext.current?.cgContext.setAlpha(min(max(symbolProgress, 0), 1))
-        cell?.drawInterior(withFrame: bounds, in: self)
+        syncCloseBars()
+        if !drawsCloseBarsNow {
+            cell?.drawInterior(withFrame: bounds, in: self)
+        }
         NSGraphicsContext.restoreGraphicsState()
         if window?.firstResponder === self {
             NSFocusRingPlacement.only.set()
@@ -464,11 +477,62 @@ final class BrowserNativeChromeButton: NSButton {
                 self?.needsDisplay = true
             } completion: { [weak self] in self?.oldSymbolCell = nil }
         }
+        if changed {
+            updateCloseBars(animated: window != nil)
+        }
         self.title = title
         image = Self.image(symbol: name, title: title, style: style)
         imagePosition = .imageOnly
         setAccessibilityLabel(title)
         tooltipTitle = title
+    }
+
+    /// Keeps the bars on the button's layer, so they turn smoothly even while the main
+    /// thread is busy switching tabs.
+    private func syncCloseBars() {
+        guard style.drawsCloseBars else { return }
+        wantsLayer = true
+        guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, bar) in closeBars.enumerated() {
+            if bar.superlayer == nil {
+                bar.cornerRadius = 1
+                bar.bounds = CGRect(x: 0, y: 0, width: 14, height: 2)
+                bar.setValue(index == 0 ? closeBarsAngle : -closeBarsAngle, forKeyPath: "transform.rotation.z")
+                layer.addSublayer(bar)
+            }
+            bar.position = CGPoint(x: bounds.midX, y: bounds.midY)
+            bar.isHidden = !drawsCloseBarsNow
+            bar.backgroundColor = (contentTintColor ?? style.foreground).cgColor
+            bar.contentsScale = window?.backingScaleFactor ?? 2
+        }
+        CATransaction.commit()
+    }
+
+    private func updateCloseBars(animated: Bool) {
+        guard style.drawsCloseBars, ["xmark", "minus"].contains(symbolName) else { return }
+        syncCloseBars()
+        let target = symbolName == "minus" ? 0 : CGFloat.pi / 4
+        closeBarsAngle = target
+        let moves = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        for (index, bar) in closeBars.enumerated() {
+            let angle = index == 0 ? target : -target
+            if moves {
+                let spring = CASpringAnimation(keyPath: "transform.rotation.z")
+                spring.mass = 1
+                spring.stiffness = 438.649
+                spring.damping = 25.1327
+                spring.fromValue = bar.presentation()?.value(forKeyPath: "transform.rotation.z")
+                spring.toValue = angle
+                spring.duration = spring.settlingDuration
+                bar.add(spring, forKey: "turn")
+            }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            bar.setValue(angle, forKeyPath: "transform.rotation.z")
+            CATransaction.commit()
+        }
     }
 
     private func updatePressAnimation() {

@@ -829,14 +829,6 @@ private final class BrowserNativeSidebarSelectionSurface: NSView {
         guard let layer else { return }
         let color = fill.map { $0.withAlphaComponent($0.alphaComponent * alphaScale).cgColor } ?? NSColor.clear.cgColor
         guard color != layer.backgroundColor else { return }
-        if window != nil, let from = layer.presentation()?.backgroundColor ?? layer.backgroundColor {
-            let fade = CABasicAnimation(keyPath: "backgroundColor")
-            fade.fromValue = from
-            fade.toValue = color
-            fade.duration = 0.1
-            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0, 0, 0.58, 1)
-            layer.add(fade, forKey: "backgroundColor")
-        }
         layer.backgroundColor = color
     }
 }

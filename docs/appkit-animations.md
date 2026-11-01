@@ -11,6 +11,8 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Chrome, folder, app-tile and space-button presses | spring response 0.18 s, damping 0.72 | Existing scale, icon translation and rotation; both pressing and releasing |
 | Sidebar row presses | spring response 0.2 s, damping 0.5 | Row scale to 0.985 and back, with a visible bounce |
 | Chrome and bookmark hover | ease-out, 0.1 s | Hover background |
+| Sidebar row hover and selection | immediate | Row background |
+| Row close button, cross to minus | spring response 0.3 s, damping 0.6 | The two bars turn; the overshoot shows |
 | App-tab reorder, pinned/temporary tab identities, pinned section expansion | 0.12 s, timing (0, 0, 0.58, 1) | Row positions; insertion/removal opacity over 0.1 s |
 | Folder collapse / expand | 0.2 s, timing (0, 0, 0.58, 1) / 0.25 s, timing (0.25, 0.1, 0.25, 1) | Row positions |
 | Folder icon | 0.25 s, timing (0.25, 0.1, 0.25, 1) | Panels swing in perspective, shades fade; tilted while collapsed |
