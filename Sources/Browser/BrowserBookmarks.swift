@@ -106,6 +106,47 @@ struct BrowserBookmarkItem: Identifiable, Equatable {
 
         return children.flatMap(\.flattenedBookmarkURLStrings)
     }
+
+    static func find(id: String, in items: [BrowserBookmarkItem]) -> BrowserBookmarkItem? {
+        for item in items {
+            if item.id == id { return item }
+            if let found = find(id: id, in: item.children) { return found }
+        }
+        return nil
+    }
+
+    /// The folder holding `id`, nil for the bar itself; `.none` when it is not there.
+    static func parentFolderID(of id: String, in items: [BrowserBookmarkItem]) -> String?? {
+        if items.contains(where: { $0.id == id }) { return .some(nil) }
+        for item in items where item.isFolder {
+            if item.children.contains(where: { $0.id == id }) { return .some(item.id) }
+            if let found = parentFolderID(of: id, in: item.children) { return found }
+        }
+        return .none
+    }
+
+    func contains(id: String) -> Bool {
+        self.id == id || children.contains { $0.contains(id: id) }
+    }
+}
+
+// MARK: - BrowserBookmarkClipboardItem
+
+/// A bookmark or folder tree on the pasteboard, without the IDs of its source.
+struct BrowserBookmarkClipboardItem: Codable, Equatable {
+    let title: String
+    let urlString: String?
+    let children: [BrowserBookmarkClipboardItem]
+
+    init(title: String, urlString: String?, children: [BrowserBookmarkClipboardItem] = []) {
+        self.title = title
+        self.urlString = urlString
+        self.children = children
+    }
+
+    init(_ item: BrowserBookmarkItem) {
+        self.init(title: item.title, urlString: item.urlString, children: item.children.map(Self.init))
+    }
 }
 
 // MARK: - BrowserBookmarkImportResult
@@ -128,11 +169,20 @@ protocol BrowserBookmarkStoring {
     func updateBookmarkAddress(id: String, urlString: String) -> Bool
     func moveBookmark(id: String, toFolderID: String?) -> Bool
     func createFolder(title: String) -> String?
+    /// `index` counts the destination's current children, as a drop indicator shows them.
+    func moveBookmark(id: String, toFolderID: String?, atIndex index: Int) -> Bool
+    /// Unlike `addBookmark`, keeps duplicates, as a drop or paste asks for this exact place.
+    func insertBookmark(title: String, urlString: String, toFolderID: String?, atIndex index: Int?) -> String?
+    func insertFolder(title: String, toFolderID: String?, atIndex index: Int?) -> String?
     func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult
     func importSafariBookmarks(from sourceURL: URL) -> BrowserBookmarkImportResult
 }
 
 extension BrowserBookmarkStoring {
+    func moveBookmark(id _: String, toFolderID _: String?, atIndex _: Int) -> Bool { false }
+    func insertBookmark(title _: String, urlString _: String, toFolderID _: String?, atIndex _: Int?) -> String? { nil }
+    func insertFolder(title _: String, toFolderID _: String?, atIndex _: Int?) -> String? { nil }
+
     func importSafariBookmarks(from _: URL) -> BrowserBookmarkImportResult {
         BrowserBookmarkImportResult(source: .safari, importedCount: 0, sourceWasAvailable: false)
     }
@@ -280,6 +330,48 @@ struct BrowserEmptyBookmarkStore: BrowserBookmarkStoring {
         return folderID
     }
 
+    @discardableResult func moveBookmark(id: String, toFolderID: String?, atIndex index: Int) -> Bool {
+        guard store.moveBookmark(id: id, toFolderID: toFolderID, atIndex: index) else {
+            return false
+        }
+
+        reload()
+        return true
+    }
+
+    @discardableResult func insertBookmark(
+        title: String,
+        urlString: String,
+        toFolderID: String?,
+        atIndex index: Int?,
+    ) -> String? {
+        guard let id = store.insertBookmark(title: title, urlString: urlString, toFolderID: toFolderID, atIndex: index)
+        else { return nil }
+        reload()
+        return id
+    }
+
+    @discardableResult func insertFolder(title: String, toFolderID: String?, atIndex index: Int?) -> String? {
+        guard let id = store.insertFolder(title: title, toFolderID: toFolderID, atIndex: index) else { return nil }
+        reload()
+        return id
+    }
+
+    /// Pastes a bookmark or a whole folder. Returns false if anything could not be added.
+    @discardableResult func insert(
+        copyOf item: BrowserBookmarkClipboardItem,
+        toFolderID: String?,
+        atIndex index: Int?,
+    ) -> Bool {
+        let didInsert = insertTree(item, toFolderID: toFolderID, atIndex: index)
+        reload()
+        return didInsert
+    }
+
+    func item(withID id: String) -> BrowserBookmarkItem? {
+        BrowserBookmarkItem.find(id: id, in: bookmarkBarItems)
+    }
+
     @discardableResult func createFolderAndMoveBookmark(title: String, bookmarkID: String) -> Bool {
         guard let folderID = store.createFolder(title: title) else {
             return false
@@ -323,6 +415,17 @@ struct BrowserEmptyBookmarkStore: BrowserBookmarkStoring {
                     resolvedURLString: item.urlString ?? "",
                 )
             }
+    }
+
+    private func insertTree(_ item: BrowserBookmarkClipboardItem, toFolderID: String?, atIndex index: Int?) -> Bool {
+        if let urlString = item.urlString {
+            return store.insertBookmark(title: item.title, urlString: urlString, toFolderID: toFolderID, atIndex: index)
+                != nil
+        }
+        guard let folderID = store.insertFolder(title: item.title, toFolderID: toFolderID, atIndex: index) else {
+            return false
+        }
+        return item.children.map { insertTree($0, toFolderID: folderID, atIndex: nil) }.allSatisfy(\.self)
     }
 }
 

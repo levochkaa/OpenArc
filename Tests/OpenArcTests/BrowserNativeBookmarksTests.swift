@@ -44,7 +44,11 @@ import Testing
                 .allSatisfy { $0.frame.width <= BrowserChromeLayout.bookmarksBarItemMaximumWidth })
             let scroll = try #require(view.subviews.compactMap { $0 as? NSScrollView }.first)
             #expect(scroll.frame.maxX < view.star.frame.minX)
-            #expect(try #require(scroll.documentView).frame.width > scroll.frame.width)
+            #expect(!view.chevron.isHidden, "What doesn't fit goes under the chevron")
+            #expect(!view.overflowItems.isEmpty)
+            #expect(try #require(scroll.documentView).frame.width <= scroll.frame.width)
+            let hidden = view.overflowItems.compactMap { view.buttons[$0.id] }
+            try #expect(hidden.allSatisfy(\.isHidden))
         }
     }
 
@@ -75,9 +79,15 @@ import Testing
                 .init(id: "root", title: "Root"), .init(id: "nested", title: "Root / Nested"),
             ])
             let view = BrowserBookmarksBarNSView(model: model)
-            let leafMenu = try #require(view.folderMenu(folder).items.first?.submenu)
-            #expect(leafMenu.items.map(\.title) == ["Leaf"])
-            leafMenu.performActionForItem(at: 0)
+            let list = BrowserBookmarkFolderListView(
+                interactions: view.interactions,
+                folderID: "nested",
+                baseIndex: 0,
+                level: 1,
+            )
+            list.update(nested.children)
+            #expect(list.items.map(\.title) == ["Leaf"])
+            try #require(list.rows["leaf"]).onClick(nil)
             #expect(driver.activeTabNavigationURLStrings.last == "https://leaf.example")
             let folderID = try #require(model.createBookmarkFolder(title: "Delete me"))
             _ = model.createBookmarkFolder(title: "Keep me")
@@ -90,6 +100,34 @@ import Testing
             view.refresh()
             #expect(model.bookmarksModel.bookmarkBarItems.map(\.displayTitle) == ["Keep me"])
         }
+    }
+
+    @Test func aDropBetweenItemsOrInsideAFolderIsReadFromThePointer() {
+        let page = BrowserBookmarkItem(
+            id: "a",
+            kind: .bookmark,
+            title: "A",
+            urlString: "https://a.example",
+            children: [],
+        )
+        let folder = BrowserBookmarkItem(id: "f", kind: .folder, title: "F", urlString: nil, children: [])
+        let spans: [(item: BrowserBookmarkItem, start: CGFloat, end: CGFloat)] = [(page, 0, 100), (folder, 100, 200)]
+        #expect(BrowserBookmarkDrop.location(at: 10, spans: spans, folderID: nil) == .between(folderID: nil, index: 0))
+        #expect(BrowserBookmarkDrop.location(at: 90, spans: spans, folderID: nil) == .between(folderID: nil, index: 1))
+        #expect(BrowserBookmarkDrop.location(at: 110, spans: spans, folderID: nil) == .between(folderID: nil, index: 1))
+        #expect(BrowserBookmarkDrop.location(at: 150, spans: spans, folderID: nil) == .into(folderID: "f"))
+        #expect(BrowserBookmarkDrop.location(at: 190, spans: spans, folderID: nil) == .between(folderID: nil, index: 2))
+        #expect(BrowserBookmarkDrop.location(at: 500, spans: spans, folderID: "p", baseIndex: 3) == .between(
+            folderID: "p",
+            index: 5,
+        ))
+    }
+
+    @Test func aTypedAddressGetsASchemeAndNonsenseIsRefused() {
+        #expect(BrowserBookmarkEditor.normalizedAddress(" example.com/a ") == "https://example.com/a")
+        #expect(BrowserBookmarkEditor.normalizedAddress("http://example.com") == "http://example.com")
+        #expect(BrowserBookmarkEditor.normalizedAddress("   ") == nil)
+        #expect(BrowserBookmarkEditor.normalizedAddress("not an address") == nil)
     }
 
     // MARK: Private

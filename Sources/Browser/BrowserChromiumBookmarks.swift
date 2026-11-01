@@ -274,6 +274,67 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
         return writeDocument(document)
     }
 
+    @discardableResult func moveBookmark(id: String, toFolderID: String?, atIndex index: Int) -> Bool {
+        guard toFolderID != id else {
+            return false
+        }
+
+        var document = loadDocumentOrDefault()
+        guard mutateBookmarkBar(in: &document, mutation: { children in
+            guard let source = location(ofNodeWithID: id, in: children, parentID: nil), let movingNode = removeNode(
+                withID: id,
+                from: &children,
+            ) else {
+                return false
+            }
+            if let toFolderID, containsNode(withID: toFolderID, in: movingNode) {
+                _ = insertNode(movingNode, toFolderID: source.parentID, at: source.index, in: &children)
+                return false
+            }
+            // The node leaves its old place first, which shifts later siblings down.
+            let target = source.parentID == toFolderID && source.index < index ? index - 1 : index
+            return insertNode(movingNode, toFolderID: toFolderID, at: target, in: &children)
+        }) else {
+            return false
+        }
+
+        return writeDocument(document)
+    }
+
+    @discardableResult func insertBookmark(
+        title: String,
+        urlString: String,
+        toFolderID: String?,
+        atIndex index: Int?,
+    ) -> String? {
+        guard !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        var document = loadDocumentOrDefault()
+        var nextID = nextBookmarkID(in: document)
+        let id = nextAvailableID(&nextID)
+        let node = makeURLNode(title: title, urlString: urlString, id: id)
+        guard mutateBookmarkBar(in: &document, mutation: { children in
+            insertNode(node, toFolderID: toFolderID, at: index, in: &children)
+        }), writeDocument(document) else {
+            return nil
+        }
+        return id
+    }
+
+    @discardableResult func insertFolder(title: String, toFolderID: String?, atIndex index: Int?) -> String? {
+        var document = loadDocumentOrDefault()
+        var nextID = nextBookmarkID(in: document)
+        let id = nextAvailableID(&nextID)
+        let node = makeFolderNode(title: title, children: [], id: id)
+        guard mutateBookmarkBar(in: &document, mutation: { children in
+            insertNode(node, toFolderID: toFolderID, at: index, in: &children)
+        }), writeDocument(document) else {
+            return nil
+        }
+        return id
+    }
+
     @discardableResult func createFolder(title: String) -> String? {
         var document = loadDocumentOrDefault()
         var nextID = nextBookmarkID(in: document)
@@ -627,6 +688,55 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
             return true
         }
 
+        return false
+    }
+
+    private func location(
+        ofNodeWithID id: String,
+        in children: [BookmarkDocument],
+        parentID: String?,
+    ) -> (parentID: String?, index: Int)? {
+        for (index, child) in children.enumerated() {
+            if child[Key.id] as? String == id {
+                return (parentID, index)
+            }
+            if let found = location(
+                ofNodeWithID: id,
+                in: child[Key.children] as? [BookmarkDocument] ?? [],
+                parentID: child[Key.id] as? String,
+            ) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    /// Inserts into the bar or a folder at `index`, or at the end when it is nil.
+    private func insertNode(
+        _ node: BookmarkDocument,
+        toFolderID folderID: String?,
+        at index: Int?,
+        in children: inout [BookmarkDocument],
+    ) -> Bool {
+        guard let folderID else {
+            children.insert(node, at: min(max(index ?? children.count, 0), children.count))
+            return true
+        }
+        for childIndex in children.indices {
+            var child = children[childIndex]
+            var childChildren = child[Key.children] as? [BookmarkDocument] ?? []
+            let isTarget = child[Key.id] as? String == folderID && child[Key.type] as? String == NodeType.folder
+            guard isTarget
+                ? { childChildren.insert(node, at: min(max(index ?? childChildren.count, 0), childChildren.count))
+                    return true
+                }()
+                : insertNode(node, toFolderID: folderID, at: index, in: &childChildren)
+            else { continue }
+            child[Key.children] = childChildren
+            child[Key.dateModified] = chromiumTimestamp()
+            children[childIndex] = child
+            return true
+        }
         return false
     }
 

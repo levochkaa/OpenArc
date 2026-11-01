@@ -690,6 +690,103 @@ enum BrowserStrings {
         comment: "Tooltip for removing the selected page from bookmarks.",
     )
 
+    static let bookmarksEditAction = NSLocalizedString(
+        "browser.bookmarks.edit_action",
+        comment: "Context menu title that edits a bookmark's name, address and folder.",
+    )
+
+    static let bookmarksEditTitle = NSLocalizedString(
+        "browser.bookmarks.edit_title",
+        comment: "Title of the window that edits a bookmark.",
+    )
+
+    static let bookmarksRenameFolderTitle = NSLocalizedString(
+        "browser.bookmarks.rename_folder_title",
+        comment: "Title of the window that edits a bookmark folder.",
+    )
+
+    static let bookmarksAddPageAction = NSLocalizedString(
+        "browser.bookmarks.add_page_action",
+        comment: "Context menu title that adds a bookmark at this place.",
+    )
+
+    static let bookmarksAddPageTitle = NSLocalizedString(
+        "browser.bookmarks.add_page_title",
+        comment: "Title of the window that adds a bookmark.",
+    )
+
+    static let bookmarksAddFolderAction = NSLocalizedString(
+        "browser.bookmarks.add_folder_action",
+        comment: "Context menu title that adds a bookmark folder at this place.",
+    )
+
+    static let bookmarksNameField = NSLocalizedString(
+        "browser.bookmarks.name_field",
+        comment: "Label of the bookmark name field.",
+    )
+
+    static let bookmarksURLField = NSLocalizedString(
+        "browser.bookmarks.url_field",
+        comment: "Label of the bookmark address field.",
+    )
+
+    static let bookmarksFolderField = NSLocalizedString(
+        "browser.bookmarks.folder_field",
+        comment: "Label of the folder chooser when editing a bookmark.",
+    )
+
+    static let bookmarksOpenInNewTab = NSLocalizedString(
+        "browser.bookmarks.open_new_tab",
+        comment: "Context menu title that opens a bookmark in a new tab.",
+    )
+
+    static let bookmarksOpenInLittleWindow = NSLocalizedString(
+        "browser.bookmarks.open_little_window",
+        comment: "Context menu title that opens a bookmark in a small window.",
+    )
+
+    static let bookmarksOpenInSplitView = NSLocalizedString(
+        "browser.bookmarks.open_split_view",
+        comment: "Context menu title that opens a bookmark in Split View.",
+    )
+
+    static let bookmarksOpenInIncognito = NSLocalizedString(
+        "browser.bookmarks.open_incognito",
+        comment: "Context menu title that opens a bookmark in an incognito window.",
+    )
+
+    static let bookmarksCut = NSLocalizedString(
+        "browser.bookmarks.cut",
+        comment: "Context menu title that cuts a bookmark.",
+    )
+
+    static let bookmarksCopy = NSLocalizedString(
+        "browser.bookmarks.copy",
+        comment: "Context menu title that copies a bookmark.",
+    )
+
+    static let bookmarksPaste = NSLocalizedString(
+        "browser.bookmarks.paste",
+        comment: "Context menu title that pastes a bookmark.",
+    )
+
+    static let bookmarksSave = NSLocalizedString("browser.bookmarks.save", comment: "Button that saves a bookmark.")
+
+    static let bookmarksCancel = NSLocalizedString(
+        "browser.bookmarks.cancel",
+        comment: "Button that closes the bookmark editor without saving.",
+    )
+
+    static let bookmarksEmptyFolder = NSLocalizedString(
+        "browser.bookmarks.empty_folder",
+        comment: "Shown in a bookmark folder with nothing in it.",
+    )
+
+    static let bookmarksMoreItems = NSLocalizedString(
+        "browser.bookmarks.more_items",
+        comment: "Tooltip of the button listing bookmarks that do not fit in the bar.",
+    )
+
     static let bookmarksRenameAction = NSLocalizedString(
         "browser.bookmarks.rename_action",
         comment: "Context menu title for renaming a bookmark.",

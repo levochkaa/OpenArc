@@ -859,6 +859,11 @@ enum BrowserWindowMode: Equatable {
 
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
+    /// The bar's "Add Page" starts from the page on screen.
+    var pageForNewBookmark: (title: String, urlString: String) {
+        (currentTab?.title ?? "", currentTab?.urlString ?? "")
+    }
+
             !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
             !isApplyingRemoteSync && !isReconcilingRemoteProjection && !isArchiveOperationInFlight &&
             !isCompletingTabClose && !undoManager.isTabTransitionPending && pendingTabCloseRequests.isEmpty
@@ -1409,6 +1414,39 @@ enum BrowserWindowMode: Equatable {
         )
             -> Tab?
         {
+    @discardableResult func moveBookmark(id: String, toFolderID: String?, atIndex index: Int) -> Bool {
+        bookmarksModel.moveBookmark(id: id, toFolderID: toFolderID, atIndex: index)
+    }
+
+    @discardableResult func insertBookmark(
+        title: String,
+        urlString: String,
+        toFolderID: String?,
+        atIndex index: Int? = nil,
+    ) -> Bool {
+        bookmarksModel.insertBookmark(title: title, urlString: urlString, toFolderID: toFolderID, atIndex: index) != nil
+    }
+
+    @discardableResult func insertBookmarkFolder(
+        title: String,
+        toFolderID: String?,
+        atIndex index: Int? = nil,
+    ) -> Bool {
+        bookmarksModel.insertFolder(title: title, toFolderID: toFolderID, atIndex: index) != nil
+    }
+
+    func openBookmarkInLittleWindow(urlString: String) {
+        if let url = URL(string: urlString) { openInLittleWindow(url) }
+    }
+
+    func openBookmarkInIncognito(urlString: String) {
+        if let url = URL(string: urlString) { onOpenLinkInIncognito?(url) }
+    }
+
+    func openBookmarkInSplitView(urlString: String) {
+        if let url = URL(string: urlString) { _ = openURLInSplitView(url) }
+    }
+
             guard case .tab(let title, let savedTitle, let urlString) = node else { return nil }
             let id = UUID().uuidString
             restoredTabCreationIDs.insert(id)

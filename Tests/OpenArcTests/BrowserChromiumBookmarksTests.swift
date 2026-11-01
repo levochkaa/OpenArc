@@ -4,6 +4,49 @@ import Foundation
 import Testing
 import ZIPFoundation
 
+@Test func bookmarksMoveToAnExactPlaceAndFoldersNeverEnterThemselves() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("BookmarkPlaces-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = BrowserChromiumBookmarkStore(profileDirectoryCandidates: [directory])
+    let a = try #require(store.insertBookmark(
+        title: "A",
+        urlString: "https://a.example",
+        toFolderID: nil,
+        atIndex: nil,
+    ))
+    let b = try #require(store.insertBookmark(
+        title: "B",
+        urlString: "https://b.example",
+        toFolderID: nil,
+        atIndex: nil,
+    ))
+    let c = try #require(store.insertBookmark(
+        title: "C",
+        urlString: "https://c.example",
+        toFolderID: nil,
+        atIndex: nil,
+    ))
+    func titles() -> [String] { store.loadBookmarkBarItems().map(\.title) }
+
+    #expect(store.moveBookmark(id: a, toFolderID: nil, atIndex: 2))
+    #expect(titles() == ["B", "A", "C"], "Index 2 means before C, counted with A still in place")
+    #expect(store.moveBookmark(id: c, toFolderID: nil, atIndex: 0))
+    #expect(titles() == ["C", "B", "A"])
+
+    let folder = try #require(store.insertFolder(title: "F", toFolderID: nil, atIndex: 1))
+    #expect(titles() == ["C", "F", "B", "A"])
+    #expect(store.moveBookmark(id: b, toFolderID: folder, atIndex: 0))
+    let inner = try #require(store.insertFolder(title: "G", toFolderID: folder, atIndex: 0))
+    #expect(!store.moveBookmark(id: folder, toFolderID: inner, atIndex: 0))
+    let tree = store.loadBookmarkBarItems()
+    #expect(tree.map(\.title) == ["C", "F", "A"], "A refused move leaves everything in place")
+    #expect(tree[1].children.map(\.title) == ["G", "B"])
+
+    #expect(store.insertBookmark(title: "A again", urlString: "https://a.example", toFolderID: nil, atIndex: 0) != nil)
+    #expect(titles().first == "A again", "A drop or paste keeps duplicates")
+}
+
 @Test func chromiumBookmarkStoreAddsAndReloadsBookmarkBarItems() throws {
     let harness = try ChromiumBookmarkHarness()
     defer { harness.cleanup() }
