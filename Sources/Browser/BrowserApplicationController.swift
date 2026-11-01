@@ -23,6 +23,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var archiveWindowControllers = [ObjectIdentifier: BrowserArchiveWindowController]()
     private var webAppWindowSession: BrowserWebAppWindowSession?
     private var incognitoWindowSessions = [BrowserIncognitoWindowSession]()
+    private var windowGroups = [String: BrowserProfileWindowGroup]()
+    private var didRecordAdditionalWindows = false
     private var profileWindowSessions = [BrowserProfileWindowSession]()
     private var profileStore: BrowserProfileStore?
     private var updateController: BrowserUpdateController?
@@ -255,6 +257,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             let session = profileWindowSessions.remove(at: index)
             archiveWindowControllers.removeValue(forKey: ObjectIdentifier(session.chromeModel))?.close()
             session.chromeModel.prepareForTermination()
+            removeFromWindowGroup(session)
             updateProfilePresentationForOpenWindows()
             return
         }
@@ -272,10 +275,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         for chromeModel in allChromeModels {
             chromeModel.handleContextReady()
         }
+        restoreAdditionalWindows()
         openPendingNavigationURLsIfPossible()
     }
 
     public func handleApplicationWillTerminate() {
+        recordAdditionalWindows()
         batterySaverController?.stop()
         for chromeModel in allChromeModels {
             chromeModel.prepareForTermination()
@@ -517,6 +522,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.toggleCommandBar()
     }
 
+    public func createNewWindow(_: Any?) {
+        openNewWindow()
+    }
+
     public func createNewIncognitoWindow(_: Any?) {
         createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow)
     }
@@ -700,6 +709,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canRestoreLastClosedTab ?? false
         case #selector(openLocation(_:)):
             return activeChromeModel?.canOpenLocation ?? false
+        case #selector(createNewWindow(_:)):
+            return !isTerminationRequested
         case #selector(createNewIncognitoWindow(_:)):
             return !isTerminationRequested
         case #selector(createNewLittleWindow(_:)):
@@ -1069,6 +1080,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(restoreLastClosedTab(_:)),
         ))
 
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newWindow),
+            action: #selector(createNewWindow(_:)),
+        ))
         let newIncognitoWindowItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newIncognitoWindow),
             action: #selector(createNewIncognitoWindow(_:)),
@@ -2013,6 +2028,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
             model.presentCurrentPageCommandBar()
             return true
+        case .newWindow:
+            return openNewWindow()
         case .newIncognitoWindow:
             guard webAppWindowSession == nil else {
                 return false
@@ -2581,10 +2598,80 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
     }
 
+    /// Opens another window of the active profile, with the same Spaces and its own pages.
+    @discardableResult private func openNewWindow() -> Bool {
+        guard !isTerminationRequested,
+              let runtimeConfiguration = BrowserRuntimeConfiguration.currentConfiguration()
+        else { return false }
+        let lastUsed = profileWindowSessions.first { $0.window === lastKeyProfileWindow }
+        guard let source = activeProfileWindowSession ?? lastUsed ?? profileWindowSessions.first else {
+            createProfileWindow(
+                for: profileStore?.defaultProfile ?? .defaultProfile,
+                runtimeConfiguration: runtimeConfiguration,
+                copyingFullscreenFrom: nil,
+            )
+            return true
+        }
+        createProfileWindow(
+            for: source.profile,
+            runtimeConfiguration: runtimeConfiguration,
+            copyingFullscreenFrom: source.window,
+            besides: source,
+        )
+        return true
+    }
+
+    /// Remembers the open extra windows once, before quitting starts closing them.
+    private func recordAdditionalWindows() {
+        guard !didRecordAdditionalWindows else { return }
+        didRecordAdditionalWindows = true
+        let records = profileWindowSessions.filter(\.chromeModel.isAdditionalWindow).map { session in
+            BrowserAdditionalWindowRecord(
+                profileID: session.profile.id,
+                frame: NSStringFromRect(session.window.frame),
+                spaceID: session.chromeModel.selectedSpaceID,
+                selectedTabSyncID: session.chromeModel.selectedTabSyncID,
+            )
+        }
+        BrowserAdditionalWindowRecord.save(records, to: .standard)
+    }
+
+    private func restoreAdditionalWindows() {
+        let records = BrowserAdditionalWindowRecord.load(from: .standard)
+        BrowserAdditionalWindowRecord.save([], to: .standard)
+        guard userPreferencesStore.restoreWindowsOnLaunch,
+              let runtimeConfiguration = BrowserRuntimeConfiguration.currentConfiguration()
+        else { return }
+        for record in records {
+            guard let source = profileWindowSessions.first(where: { $0.profile.id == record.profileID }) else {
+                continue
+            }
+            createProfileWindow(
+                for: source.profile,
+                runtimeConfiguration: runtimeConfiguration,
+                copyingFullscreenFrom: nil,
+                besides: source,
+                restoring: record,
+            )
+        }
+        profileWindowSessions.first?.window.makeKeyAndOrderFront(nil)
+    }
+
+    private func removeFromWindowGroup(_ session: BrowserProfileWindowSession) {
+        guard let group = windowGroups[session.profile.id] else { return }
+        group.remove(session.chromeModel)
+        if group.models.count < 2 {
+            group.models.forEach(group.remove)
+            windowGroups[session.profile.id] = nil
+        }
+    }
+
     private func createProfileWindow(
         for profile: BrowserProfile,
         runtimeConfiguration: BrowserRuntimeConfiguration,
         copyingFullscreenFrom sourceWindow: NSWindow?,
+        besides source: BrowserProfileWindowSession? = nil,
+        restoring record: BrowserAdditionalWindowRecord? = nil,
     ) {
         configureUpdateControllerIfNeeded()
         guard let updateController else {
@@ -2602,7 +2689,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         let sessionSnapshotURL = sessionStorageDirectoryURL
             .appendingPathComponent(BrowserTabSessionSnapshotStore.snapshotFileName, isDirectory: false)
-        let sqliteSessionStore = try? BrowserSQLiteSessionStore(
+        let sqliteSessionStore: BrowserSQLiteSessionStore? = source != nil ? nil : try? BrowserSQLiteSessionStore(
             databaseURL: sessionStorageDirectoryURL
                 .appendingPathComponent(BrowserSQLiteSessionStore.databaseFileName, isDirectory: false),
         )
@@ -2616,7 +2703,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let authSessionStore = BrowserAuthSessionStore(namespace: profile.isDefault
             ? .defaultProfile
             : .profile(profile.id))
-        let syncClient = BrowserHostedService.isEnabled
+        let syncClient = BrowserHostedService.isEnabled && source == nil
             ? BrowserSyncConfiguration.current().map { BrowserRemoteSyncClient(configuration: $0) }
             : nil
         let syncCoordinator: BrowserSyncService? =
@@ -2633,20 +2720,37 @@ NSMenuDelegate, NSUserInterfaceValidations {
             } else {
                 nil
             }
-        let accountStore = BrowserAccountStore(
+        let accountStore = source?.accountStore ?? BrowserAccountStore(
             syncClient: syncClient,
             authSessionStore: authSessionStore,
             syncCoordinator: syncCoordinator,
             webSignInService: BrowserWebSignInService(),
             deviceIdentity: .init(name: Host.current().localizedName ?? "Mac", platform: "macOS"),
         )
+        let sessionStore: BrowserTabSessionSnapshotStoring =
+            if let shared = source?.chromeModel.sharedSessionStore {
+                shared
+            } else if let sqliteSessionStore {
+                sqliteSessionStore
+            } else {
+                BrowserTabSessionSnapshotStore(snapshotURL: sessionSnapshotURL)
+            }
+        // Each window remembers its own Space and sidebar width.
+        let preferencesStore: BrowserSessionPreferencesStoring =
+            if source != nil {
+                BrowserEphemeralSessionStore()
+            } else if let sqliteSessionStore {
+                sqliteSessionStore
+            } else {
+                BrowserSessionPreferencesStore()
+            }
         let chromeModel = BrowserChromeModel(
             tabDriver: BrowserTabControllerDriver(profileCachePath: profileDirectoryURL.path),
-            sessionSnapshotStore: sqliteSessionStore ?? BrowserTabSessionSnapshotStore(snapshotURL: sessionSnapshotURL),
-            sessionPreferencesStore: sqliteSessionStore ?? BrowserSessionPreferencesStore(),
+            sessionSnapshotStore: sessionStore,
+            sessionPreferencesStore: preferencesStore,
             userPreferencesStore: userPreferencesStore,
             shortcutStore: shortcutStore,
-            bookmarksModel: bookmarksModel,
+            bookmarksModel: source?.chromeModel.bookmarksModel ?? bookmarksModel,
             historyStore: historyStore,
             extensionManager: BrowserChromiumExtensionManager(profileDirectoryURL: profileDirectoryURL),
             extensionSidePanelDriver: BrowserExtensionSidePanelController(profileCachePath: profileDirectoryURL.path),
@@ -2662,6 +2766,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
             allTabsClosedHandler: {},
         )
         syncCoordinator?.setSnapshotApplier(chromeModel)
+        if let source {
+            let group = windowGroups[profile.id] ?? BrowserProfileWindowGroup()
+            windowGroups[profile.id] = group
+            group.add(source.chromeModel)
+            group.add(chromeModel)
+            chromeModel.isAdditionalWindow = true
+            chromeModel.firstSpaceID = record?.spaceID ?? source.chromeModel.selectedSpaceID
+            chromeModel.setSidebarWidth(source.chromeModel.sidebarWidth)
+        }
         if NSApp.isActive {
             chromeModel.handleApplicationDidBecomeActive()
         } else {
@@ -2685,7 +2798,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         window.isReleasedWhenClosed = false
         window.configureBrowserChrome()
 
-        if let sourceWindow, !sourceWindow.styleMask.contains(.fullScreen) {
+        if let record {
+            window.setFrame(NSRectFromString(record.frame), display: false)
+        } else if let sourceWindow, !sourceWindow.styleMask.contains(.fullScreen) {
             let sourceFrame = sourceWindow.frame
             window.setFrameOrigin(NSPoint(x: sourceFrame.minX + 28, y: sourceFrame.minY - 28))
         } else {
@@ -2735,6 +2850,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         if hasReceivedBrowserContext {
             chromeModel.handleContextReady()
             openPendingNavigationURLsIfPossible()
+            if let syncID = record?.selectedTabSyncID {
+                chromeModel.selectTab(syncID: syncID)
+            } else if source != nil, record == nil {
+                chromeModel.presentCommandBar()
+            }
         }
 
         if shouldEnterFullscreen {

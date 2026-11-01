@@ -1,0 +1,68 @@
+// BrowserProfileWindowGroup.swift
+
+import Foundation
+
+// MARK: - BrowserProfileWindowGroup
+
+/// The windows of one profile. They show the same sidebar, and each keeps its own
+/// selection and pages: every saved session goes to the others, and a tab's page lives
+/// in one window at a time.
+@MainActor final class BrowserProfileWindowGroup {
+    // MARK: Internal
+
+    private(set) var models = [BrowserChromeModel]()
+
+    func add(_ model: BrowserChromeModel) {
+        guard !models.contains(where: { $0 === model }) else { return }
+        models.append(model)
+        model.windowGroup = self
+    }
+
+    /// The window that remains in charge of expiring tabs is always the oldest.
+    func remove(_ model: BrowserChromeModel) {
+        models.removeAll { $0 === model }
+        model.windowGroup = nil
+        models.first?.isAdditionalWindow = false
+    }
+
+    func sessionDidChange(_ snapshot: BrowserTabSessionSnapshot, from sender: BrowserChromeModel) {
+        for model in models where model !== sender {
+            model.applyPeerSnapshot(snapshot)
+        }
+    }
+
+    /// Takes the tab's page away from whichever window has it.
+    func pageWillOpen(syncID: String, in sender: BrowserChromeModel) {
+        for model in models where model !== sender {
+            model.releasePage(forSyncID: syncID)
+        }
+    }
+
+    func hasPageElsewhere(syncID: String, than sender: BrowserChromeModel) -> Bool {
+        models.contains { $0 !== sender && $0.hasPage(forSyncID: syncID) }
+    }
+}
+
+// MARK: - BrowserAdditionalWindowRecord
+
+/// An extra window to bring back at the next launch.
+struct BrowserAdditionalWindowRecord: Codable, Equatable {
+    static let defaultsKey = "browser.windows.additional"
+
+    let profileID: String
+    let frame: String
+    let spaceID: String?
+    let selectedTabSyncID: String?
+
+    static func load(from defaults: UserDefaults) -> [Self] {
+        defaults.data(forKey: defaultsKey).flatMap { try? JSONDecoder().decode([Self].self, from: $0) } ?? []
+    }
+
+    static func save(_ records: [Self], to defaults: UserDefaults) {
+        if records.isEmpty {
+            defaults.removeObject(forKey: defaultsKey)
+        } else if let data = try? JSONEncoder().encode(records) {
+            defaults.set(data, forKey: defaultsKey)
+        }
+    }
+}

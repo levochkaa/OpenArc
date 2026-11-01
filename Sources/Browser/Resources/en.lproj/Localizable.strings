@@ -681,3 +681,4 @@
 "browser.settings.small_window.lifetime.never" = "Never";
 "browser.menu.mute_all_tabs" = "Mute All Tabs";
 "browser.menu.unmute_all_tabs" = "Unmute All Tabs";
+"browser.menu.new_window" = "New Window";

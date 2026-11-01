@@ -363,7 +363,6 @@ enum BrowserWindowMode: Equatable {
     var onSavePageRequest: (() -> Void)?
     /// UI-only: shows the share sheet in the window.
     var onShareURL: ((URL) -> Void)?
-    /// Opens a link in an incognito window; the application owns those windows.
     /// Applies new blocking settings and returns once pages get them.
     var onContentBlockingChange: ((BrowserContentBlockerSettings) async -> Void)?
     var onOpenLinkInIncognito: ((URL) -> Void)?
@@ -380,7 +379,6 @@ enum BrowserWindowMode: Equatable {
     private(set) var tabIconsBySyncID = [String: String]()
     /// Set by the window's content view, which outlines the area to capture.
     var onBeginAreaCapture: (() -> Bool)?
-
     /// Pages' pending permission requests in arrival order. Only the methods
     /// in `BrowserChromeModel+SitePermissions.swift` write it.
     @Published var sitePermissionRequests = [BrowserSitePermissionRequest]() {
@@ -444,6 +442,14 @@ enum BrowserWindowMode: Equatable {
     /// The page a window with nothing to restore opens first, instead of the new tab page.
     var firstTabURLString: String?
 
+    /// The profile's other windows, once it has more than one.
+    var windowGroup: BrowserProfileWindowGroup?
+    /// Opens beside another window of the profile: its tabs start without pages, and
+    /// the first window keeps expiring them.
+    var isAdditionalWindow = false
+    /// The Space an additional window starts on.
+    var firstSpaceID: String?
+
     /// Answers this window's waiting requests that another window's answer covers.
     private var sitePermissionDecisionsObservation: AnyCancellable?
 
@@ -483,6 +489,7 @@ enum BrowserWindowMode: Equatable {
     private var historyRestoreFailure: BrowserSessionPersistenceFailure?
     /// Where each open page keeps its data, nil for the window's own profile.
     private var engineProfilePathsByID = [String: String?]()
+    private var isApplyingPeerSnapshot = false
     private var closedAppTabIDs = Set<String>()
     private var closedPinnedTabIDs = Set<String>()
     /// Unloaded pinned tabs restored at launch; they reopen at the page they
@@ -520,6 +527,10 @@ enum BrowserWindowMode: Equatable {
     private var tabSwitcherPresentationTask: Task<Void, Never>?
     private var tabSwitcherSessionID = UUID()
     private var webAppManifestLoadTask: Task<Void, Never>?
+
+    /// Opens a link in an incognito window; the application owns those windows.
+    /// The session store, shared with the profile's other windows.
+    var sharedSessionStore: BrowserTabSessionSnapshotStoring { sessionSnapshotStore }
 
     var hasUncommittedSessionWrites: Bool {
         !hasDiscardedSessionForClosure && (!sessionWriteBuffer.writes.isEmpty || sessionPersistenceFailure != nil)
@@ -768,6 +779,9 @@ enum BrowserWindowMode: Equatable {
     var canShareSelectedTab: Bool { selectedTab.flatMap { URL(string: $0.urlString) } != nil && onShareURL != nil }
 
     var canShowDeveloperToolsForCommand: Bool { selectedTabID != nil }
+
+    /// The tab on screen, for bringing an additional window back at launch.
+    var selectedTabSyncID: String? { tabs.first { $0.id == selectedTabID }?.syncID }
 
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
@@ -1967,6 +1981,7 @@ enum BrowserWindowMode: Equatable {
                 switch moved.placement {
                 case .app: closedAppTabIDs.insert(id)
                 case .spacePinned: closedPinnedTabIDs.insert(id)
+                case .temporary where windowGroup != nil: markWithoutPage(id, placement: .temporary)
                 case .temporary: tabsToLoad.append(id)
                 }
             }
@@ -2198,7 +2213,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func archiveExpiredTemporaryTabs() {
-        guard canAdmitLocalAutomaticArchive, localAutomaticArchiveCandidates.isEmpty,
+        guard !isAdditionalWindow, canAdmitLocalAutomaticArchive, localAutomaticArchiveCandidates.isEmpty,
               localAutomaticArchivalOwnershipAllowsClose() else { return }
         localAutomaticArchiveCandidates = Array(tabs.lazy
             .filter { self.isLocalAutomaticArchiveEligible($0) }
@@ -2866,11 +2881,14 @@ enum BrowserWindowMode: Equatable {
         }
         // A deferred launch projection carries this device's stored colors,
         // except for Spaces whose color was chosen since, None included.
-        for space in snapshot.spaces ?? [] where !locallyColoredSpaceIDs.contains(space.id) {
+        for space in snapshot.spaces ?? [] where isApplyingPeerSnapshot || !locallyColoredSpaceIDs.contains(space.id) {
             spaceThemesByID[space.id] = space.colorName.flatMap(BrowserSpaceTheme.init(stored:))
             spaceProfilesByID[space.id] = space.profileDirectory
         }
         pinnedTabFolders = restoredPinnedTabFolders(from: snapshot)
+        if isApplyingPeerSnapshot {
+            splitGroups = restoredSplitGroups(from: snapshot)
+        }
         selectedSpaceID = selectedSpaceID.flatMap { selectedSpaceID in
             spaces.contains(where: { $0.id == selectedSpaceID }) ? selectedSpaceID : nil
         } ?? spaces.first?.id
@@ -2879,6 +2897,17 @@ enum BrowserWindowMode: Equatable {
             guard let remoteTab = remoteTabsByID[tabs[index].syncID] else { continue }
             var tab = tabs[index]
             applyRemoteTabMetadata(remoteTab, to: &tab)
+            if isApplyingPeerSnapshot, hasNoPage(tab.id) {
+                // The window with the page knows where it is now.
+                if tab.urlString != remoteTab.urlString {
+                    tab.urlString = remoteTab.urlString
+                    tab.faviconURLString = nil
+                }
+                tab.title = remoteTab.pageTitle ?? tab.title
+            }
+            if isApplyingPeerSnapshot {
+                tabIconsBySyncID[tab.syncID] = remoteTab.systemImageName
+            }
             tabs[index] = tab
         }
         for index in spaces.indices {
@@ -2891,6 +2920,10 @@ enum BrowserWindowMode: Equatable {
             guard let syncID = remoteTab.id,
                   !existingSyncIDs.contains(syncID), !pendingSyncIDs.contains(syncID)
             else { continue }
+            if isApplyingPeerSnapshot {
+                appendTabWithoutPage(remoteTab, syncID: syncID)
+                continue
+            }
             let engineID = createEngineTab(
                 withURLString: remoteTab.urlString, makeActive: false,
                 spaceID: remoteTab.placement == .app ? nil : remoteTab.spaceID,
@@ -3079,7 +3112,7 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
-        if closedPinnedTabIDs.contains(id), tab.placement == .spacePinned {
+        if closedPinnedTabIDs.contains(id), tab.placement != .app {
             reopenClosedPinnedTab(id: id)
             return
         }
@@ -3306,6 +3339,8 @@ enum BrowserWindowMode: Equatable {
             canViewSource
         case .restoreLastClosedTab:
             canRestoreLastClosedTab
+        case .newWindow:
+            !isShuttingDown
         case .newIncognitoWindow:
             !isShuttingDown
         case .newLittleWindow:
@@ -3422,6 +3457,100 @@ enum BrowserWindowMode: Equatable {
             true
         case .toggleSiteToolbar:
             !isWebApp
+        }
+    }
+
+    /// Follows a session saved by another window of this profile.
+    func applyPeerSnapshot(_ snapshot: BrowserTabSessionSnapshot) {
+        // A window still starting up reads the store when it is ready.
+        guard isContextReady, !isRestoringSession, !isShuttingDown else { return }
+        isApplyingPeerSnapshot = true
+        defer { isApplyingPeerSnapshot = false }
+        applyRemoteSyncSnapshot(snapshot)
+    }
+
+    func selectTab(syncID: String) {
+        guard let id = tabs.first(where: { $0.syncID == syncID })?.id else { return }
+        selectTab(id: id)
+    }
+
+    func hasPage(forSyncID syncID: String) -> Bool {
+        tabs.first { $0.syncID == syncID }.map { !hasNoPage($0.id) && !closingTabIDs.contains($0.id) } ?? false
+    }
+
+    /// Another window opened this tab: its page closes here and the row stays, ready to
+    /// reopen at the same address.
+    func releasePage(forSyncID syncID: String) {
+        guard !isShuttingDown, let index = tabs.firstIndex(where: { $0.syncID == syncID }),
+              !hasNoPage(tabs[index].id), !closingTabIDs.contains(tabs[index].id)
+        else { return }
+        let tab = tabs[index]
+        let wasSelected = selectedTabID == tab.id
+        let newID = UUID().uuidString
+        retireTabCreationCallbacks(id: tab.id)
+        tabs[index] = reidentifiedTab(from: tab, id: newID)
+        markWithoutPage(newID, placement: tab.placement)
+        replaceTabRuntimeReferences(oldID: tab.id, newID: newID, spaceID: tab.spaceID, selectsInSpace: false)
+        tabDriver.closeTab(withID: tab.id, forceClose: true)
+        guard wasSelected else { return }
+        clearSelectedTab(newID, forSpaceID: tab.spaceID)
+        let fallback = fallbackTabID(afterClosingDormantTab: tabs[index], excluding: [newID])
+        selectedTabID = fallback
+        findResultMatchCount = nil
+        if let fallback {
+            tabDriver.selectTab(withID: fallback)
+            setSelectedTabID(fallback, forSpaceID: tab.spaceID)
+            recordSelectedTab(fallback)
+        } else {
+            tabDriver.deselectActiveTab()
+        }
+        updateWindowTitle()
+    }
+
+    private func hasNoPage(_ id: String) -> Bool {
+        closedPinnedTabIDs.contains(id) || closedAppTabIDs.contains(id)
+    }
+
+    private func isPageInAnotherWindow(_ id: String) -> Bool {
+        guard let syncID = tabs.first(where: { $0.id == id })?.syncID else { return false }
+        return windowGroup?.hasPageElsewhere(syncID: syncID, than: self) ?? false
+    }
+
+    private func markWithoutPage(_ id: String, placement: BrowserTabPlacement) {
+        if placement == .app {
+            closedAppTabIDs.insert(id)
+        } else {
+            closedPinnedTabIDs.insert(id)
+            lastPageRestoreTabIDs.insert(id)
+        }
+    }
+
+    private func reidentifiedTab(from tab: Tab, id: String, lastActivityAt: Date? = nil) -> Tab {
+        Tab(
+            id: id, syncID: tab.syncID, spaceID: tab.spaceID, title: tab.title,
+            userTitleOverride: tab.userTitleOverride, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
+            faviconURLString: tab.faviconURLString, placement: tab.placement, pinnedFolderID: tab.pinnedFolderID,
+            pinnedSiblingRank: tab.pinnedSiblingRank, lastActivityAt: lastActivityAt ?? tab.lastActivityAt,
+        )
+    }
+
+    private func appendTabWithoutPage(_ snapshot: BrowserTabSessionSnapshotTab, syncID: String) {
+        let id = UUID().uuidString
+        var tab = Tab(
+            id: id, syncID: syncID, spaceID: Self.defaultSpaceID, title: snapshot.pageTitle ?? "",
+            urlString: snapshot.urlString, lastActivityAt: lastActivityDate(from: snapshot) ?? dateProvider(),
+        )
+        applyRemoteTabMetadata(snapshot, to: &tab)
+        tabIconsBySyncID[syncID] = snapshot.systemImageName
+        tabs.append(tab)
+        markWithoutPage(id, placement: snapshot.placement)
+    }
+
+    /// Panes of a split are on screen together, so the others open with the one chosen.
+    private func loadSplitSiblings(ofTabWithID id: String) {
+        guard windowGroup != nil else { return }
+        for sibling in splitPaneTabIDs(forTabID: id) where sibling != id && hasNoPage(sibling) {
+            loadUnloadedTabInPlace(id: sibling, persists: false)
         }
     }
 
@@ -3843,7 +3972,7 @@ enum BrowserWindowMode: Equatable {
             // activity. Keep it when publishing the live-engine projection.
             tab.lastActivityAt = activity
         }
-        if tab.creationState != .ready, !tab.hasPendingLocalNavigation,
+        if !isApplyingPeerSnapshot, tab.creationState != .ready, !tab.hasPendingLocalNavigation,
            tab.urlString != snapshot.urlString
         {
             tabDriver.navigateTab(withID: tab.id, toURLString: resolvedBrowserURLString(snapshot.urlString))
@@ -3893,6 +4022,14 @@ enum BrowserWindowMode: Equatable {
             selectActiveTabForSelectedSpace()
         }
         updateWindowTitle()
+        if isApplyingPeerSnapshot {
+            needsRemoteFallbackPublication = false
+            remoteProjectionSnapshot = nil
+            isApplyingRemoteSync = false
+            hasLocalChangesDuringRemoteProjection = false
+            reopenTabsInTheirProfiles()
+            return
+        }
         let origin: BrowserSessionWrite.Origin = needsRemoteFallbackPublication
             ? .local(syncMove: nil)
             : .remoteProjection
@@ -4023,7 +4160,9 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func restoreSessionIfAvailable() -> Bool {
-        guard windowMode.persistsSession, userPreferencesStore.restoreWindowsOnLaunch,
+        // An additional window must see the session whatever the launch setting says:
+        // saving an empty list would close the other window's tabs.
+        guard windowMode.persistsSession, userPreferencesStore.restoreWindowsOnLaunch || isAdditionalWindow,
               let snapshot = sessionSnapshotStore.loadSnapshot()
         else {
             return false
@@ -4052,7 +4191,8 @@ enum BrowserWindowMode: Equatable {
         let selectedSpaceIndex = sessionPreferencesStore.loadSelectedSpaceIndex(
             spaceCount: spaces.count,
         ) ?? 0
-        selectedSpaceID = spaces.indices.contains(selectedSpaceIndex) ? spaces[selectedSpaceIndex].id : spaces.first?.id
+        selectedSpaceID = firstSpaceID.flatMap { id in spaces.first { $0.id == id }?.id }
+            ?? (spaces.indices.contains(selectedSpaceIndex) ? spaces[selectedSpaceIndex].id : spaces.first?.id)
         pendingRestoredSelectedTabIndex = sessionPreferencesStore.loadSelectedTabIndex(
             tabCount: snapshot.tabs.count,
         )
@@ -4063,8 +4203,10 @@ enum BrowserWindowMode: Equatable {
             // Pinned tabs come back unloaded, with their last title,
             // and load when first shown. The shown tab and split panes load now;
             // Favorites, a handful of app tiles that often notify, stay loaded.
-            let restoresUnloaded = placement == .spacePinned && index != pendingRestoredSelectedTabIndex
-                && !(tabSnapshot.id.map(splitMemberSyncIDs.contains) ?? false)
+            let restoresUnloaded = isAdditionalWindow || (
+                placement == .spacePinned && index != pendingRestoredSelectedTabIndex
+                    && !(tabSnapshot.id.map(splitMemberSyncIDs.contains) ?? false)
+            )
             let engineID = restoresUnloaded
                 ? UUID().uuidString
                 : createEngineTab(
@@ -4074,8 +4216,7 @@ enum BrowserWindowMode: Equatable {
                 )
             restoredTabCreationIDs.insert(engineID)
             if restoresUnloaded {
-                closedPinnedTabIDs.insert(engineID)
-                lastPageRestoreTabIDs.insert(engineID)
+                markWithoutPage(engineID, placement: placement)
             }
             if let syncID = tabSnapshot.id, let icon = tabSnapshot.systemImageName {
                 tabIconsBySyncID[syncID] = icon
@@ -4151,7 +4292,7 @@ enum BrowserWindowMode: Equatable {
 
     private func persistCurrentSessionIfAllowed(syncMove: BrowserSyncMoveIntent? = nil) {
         guard isContextReady, isPersistenceEnabled, !isRestoringSession, !isReconcilingRemoteProjection,
-              !isCompletingTabClose
+              !isCompletingTabClose, !isApplyingPeerSnapshot
         else {
             return
         }
@@ -4216,6 +4357,9 @@ enum BrowserWindowMode: Equatable {
         sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
         let selectedSyncID = selectedTab?.syncID
         if let snapshot = writes.last?.snapshot {
+            if !isApplyingPeerSnapshot {
+                windowGroup?.sessionDidChange(snapshot, from: self)
+            }
             sessionPreferencesStore.saveSelectedTabIndex(snapshot.tabs.firstIndex { $0.id == selectedSyncID })
             if schedulesPush, !isApplyingRemoteSync {
                 syncCoordinator?.schedulePush(snapshot: snapshot)
@@ -4780,6 +4924,7 @@ enum BrowserWindowMode: Equatable {
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
 
+        windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
         let newTabID = createEngineTab(
             withURLString: resolvedBrowserURLString(tab.urlString),
             makeActive: true,
@@ -4807,9 +4952,8 @@ enum BrowserWindowMode: Equatable {
         guard
             canCreateTab,
             let index = tabs.firstIndex(where: { $0.id == id }),
-            tabs[index].placement == .spacePinned,
-            closedPinnedTabIDs.contains(id),
-            let pinnedURLString = effectivePinnedURLString(forPinnedTab: tabs[index])
+            tabs[index].placement != .app,
+            closedPinnedTabIDs.contains(id)
         else {
             return
         }
@@ -4822,21 +4966,25 @@ enum BrowserWindowMode: Equatable {
         // unloaded opens its pinned URL.
         let urlString = lastPageRestoreTabIDs.remove(id) != nil && !tab.urlString.isEmpty
             ? tab.urlString
-            : pinnedURLString
+            : effectivePinnedURLString(forPinnedTab: tab) ?? tab.urlString
+        windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
         let newTabID = createEngineTab(
             withURLString: resolvedBrowserURLString(urlString),
             makeActive: true,
             spaceID: tab.spaceID,
         )
         pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
-        tabs[index] = reidentifiedPinnedTab(
-            from: tab,
-            id: newTabID,
-            urlString: urlString,
-            lastActivityAt: advancedActivityDate(after: tab.lastActivityAt),
-        )
+        tabs[index] = tab.placement == .spacePinned
+            ? reidentifiedPinnedTab(
+                from: tab,
+                id: newTabID,
+                urlString: urlString,
+                lastActivityAt: advancedActivityDate(after: tab.lastActivityAt),
+            )
+            : reidentifiedTab(from: tab, id: newTabID, lastActivityAt: advancedActivityDate(after: tab.lastActivityAt))
         closedPinnedTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
+        loadSplitSiblings(ofTabWithID: newTabID)
 
         selectedSpaceID = tab.spaceID
         selectedTabID = newTabID
@@ -4853,6 +5001,9 @@ enum BrowserWindowMode: Equatable {
         guard canCreateTab, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let tab = tabs[index]
         lastPageRestoreTabIDs.remove(id)
+        closedPinnedTabIDs.remove(id)
+        closedAppTabIDs.remove(id)
+        windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
         let isSelected = selectedTabID == id
         let newTabID = createEngineTab(
             withURLString: resolvedBrowserURLString(tab.urlString),
@@ -4860,12 +5011,7 @@ enum BrowserWindowMode: Equatable {
             spaceID: tab.placement == .app ? nil : tab.spaceID,
         )
         pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
-        tabs[index] = Tab(
-            id: newTabID, syncID: tab.syncID, spaceID: tab.spaceID, title: tab.title,
-            userTitleOverride: tab.userTitleOverride, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
-            faviconURLString: tab.faviconURLString, placement: tab.placement, pinnedFolderID: tab.pinnedFolderID,
-            pinnedSiblingRank: tab.pinnedSiblingRank, lastActivityAt: tab.lastActivityAt,
-        )
+        tabs[index] = reidentifiedTab(from: tab, id: newTabID)
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID, selectsInSpace: false)
         if isSelected {
             tabDriver.selectTab(withID: newTabID)
@@ -6060,7 +6206,11 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             {
                 // An unloaded fallback loads like a click instead of showing a blank page.
                 selectedTabID = nil
-                selectTab(id: fallback)
+                if isPageInAnotherWindow(fallback) {
+                    tabDriver.deselectActiveTab()
+                } else {
+                    selectTab(id: fallback)
+                }
             } else if let selectedTabID {
                 tabDriver.selectTab(withID: selectedTabID)
                 scheduleSelectedTabWebAppManifestLoad()
@@ -6360,15 +6510,16 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         } ?? sidebarTabs(forSpaceID: selectedSpaceID).first?.id
         // An unloaded tab has no page to show: the Space's remembered tab, or
         // its first, loads through the same path as a click.
-        if let candidate, closedPinnedTabIDs.contains(candidate) || closedAppTabIDs.contains(candidate),
-           !isApplyingRemoteSync, !isReconcilingRemoteProjection
+        if let candidate, hasNoPage(candidate), !isApplyingRemoteSync, !isReconcilingRemoteProjection,
+           !(isAdditionalWindow && isRestoringSession), !isPageInAnotherWindow(candidate)
         {
             selectTab(id: candidate)
             if let selectedTabID, tabs.first(where: { $0.id == selectedTabID })?.spaceID == selectedSpaceID {
                 return
             }
         }
-        let fallbackTabID = candidate
+        // A tab whose page is in another window stays there until it is clicked.
+        let fallbackTabID = windowGroup != nil && candidate.map(hasNoPage) == true ? nil : candidate
 
         if selectedTabID != fallbackTabID {
             captureSelectedTabPreviewIfNeeded()
@@ -7047,6 +7198,8 @@ extension BrowserCommandID {
             ["developer tools", "devtools", "inspect", "web inspector", "console"]
         case .viewSource:
             ["view source", "page source", "source code", "html"]
+        case .newWindow:
+            ["new window", "open window"]
         case .newIncognitoWindow:
             ["incognito", "private window", "new private window"]
         case .newLittleWindow:
@@ -7221,6 +7374,8 @@ extension BrowserCommandID {
             "hammer"
         case .viewSource:
             "chevron.left.forwardslash.chevron.right"
+        case .newWindow:
+            "macwindow"
         case .newIncognitoWindow:
             "eye.slash"
         case .newLittleWindow:

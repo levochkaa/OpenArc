@@ -1035,6 +1035,11 @@ enum BrowserStrings {
         comment: "New Tab menu item title.",
     )
 
+    static let menuNewWindow = NSLocalizedString(
+        "browser.menu.new_window",
+        comment: "Menu command that opens another window with the same Spaces.",
+    )
+
     static let menuNewIncognitoWindow = NSLocalizedString(
         "browser.menu.new_incognito_window",
         comment: "New Incognito Window menu item title.",

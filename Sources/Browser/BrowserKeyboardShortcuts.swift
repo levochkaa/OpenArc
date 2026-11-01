@@ -212,6 +212,12 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("0"),
     )
 
+    static let newWindow = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuNewWindow,
+        helpTitle: BrowserStrings.menuNewWindow,
+        shortcut: BrowserKeyboardShortcut("n"),
+    )
+
     static let newIncognitoWindow = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNewIncognitoWindow,
         helpTitle: BrowserStrings.menuNewIncognitoWindow,
@@ -683,6 +689,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case zoomIn
     case zoomOut
     case resetZoom
+    case newWindow
     case newIncognitoWindow
     case newLittleWindow
     case openHistory

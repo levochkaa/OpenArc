@@ -503,6 +503,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case zoomIn
     case zoomOut
     case resetZoom
+    case newWindow
     case newIncognitoWindow
     case newLittleWindow
     case openHistory
@@ -616,6 +617,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.zoomOut
         case .resetZoom:
             BrowserCommands.resetZoom
+        case .newWindow:
+            BrowserCommands.newWindow
         case .newIncognitoWindow:
             BrowserCommands.newIncognitoWindow
         case .newLittleWindow:
@@ -788,6 +791,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .zoomOut
         case .resetZoom:
             .resetZoom
+        case .newWindow:
+            .newWindow
         case .newIncognitoWindow:
             .newIncognitoWindow
         case .newLittleWindow:
