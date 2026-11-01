@@ -21,6 +21,7 @@ final class BrowserRootView: NSView {
     private let margins = BrowserNativeWindowMargins()
     private let revealEdge = BrowserNativeSidebarRevealEdge()
     private let find = BrowserFindBarNSView()
+    private let pageLoadingIndicator = BrowserPageLoadingIndicatorView()
     private let command: BrowserCommandBarNSView
     private let currentPageCommand: BrowserCommandBarNSView
     private let sidebarDismiss = BrowserSidebarHoverOverlayDismissNSView()
@@ -157,6 +158,7 @@ final class BrowserRootView: NSView {
             extensionResize,
             revealEdge,
             find,
+            pageLoadingIndicator,
             sidebarDismiss,
             sidebarInteraction,
             command,
@@ -327,6 +329,15 @@ final class BrowserRootView: NSView {
         var targets: [(NSView, CGRect)] = [
             (content, geometry.contentFrame), (find, geometry.contentFrame), (sidebar, geometry.sidebarFrame),
             (
+                pageLoadingIndicator,
+                CGRect(
+                    x: geometry.contentFrame.midX - BrowserPageLoadingIndicatorView.size.width / 2,
+                    y: 3,
+                    width: BrowserPageLoadingIndicatorView.size.width,
+                    height: BrowserPageLoadingIndicatorView.size.height,
+                ),
+            ),
+            (
                 library,
                 CGRect(
                     x: libraryShown ? 0 : -libraryWidth,
@@ -446,6 +457,11 @@ final class BrowserRootView: NSView {
         previousLayoutState = state
         background.mode = chromeBackgroundMode
         background.setTheme(model.selectedSpaceTheme, animated: !isEditingSpaceTheme)
+        pageLoadingIndicator.setColor(
+            model.selectedSpaceTheme?.palette?.title.nsColor
+                ?? (effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black),
+        )
+        pageLoadingIndicator.setLoading(model.canStopLoading)
         if window?.isMainWindow == true || BrowserContentBlockerEngine.pageStartScript == nil {
             BrowserContentBlockerEngine.pageStartScript = preferences.sharesThemeWithWebsites
                 ? model.selectedSpaceTheme?.pageScript

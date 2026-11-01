@@ -25,6 +25,7 @@ The reference is the last SwiftUI implementation at `1249546`, before the AppKit
 | Command selection scroll | ease-out, 0.12 s | Minimum scroll needed to reveal the row, clamped to document bounds; no forced centering |
 | Tooltip identity/visibility | ease-out, 0.15 s | Opacity; existing 1 s activation delay and 0.3 s cooldown remain in the tooltip coordinator |
 | Update toast | ease-in-out, 0.18 s | Opacity and reserved sidebar-footer height |
+| Page loading bar | pulse 1.63 s, twice; spring response 0.8 s, damping 0.92 to open; highlight 0.73 s of a 1.13 s cycle, linear; 0.33 s to close, timing (0.42, 0, 1, 1) | Opacity and width above the page; Reduce Motion shows a steady bar |
 
 These timings are chosen on purpose:
 
