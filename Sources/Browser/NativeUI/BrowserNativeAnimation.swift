@@ -28,14 +28,26 @@ import QuartzCore
         static let library = Curve.bezier(0.27, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
         /// Spaces settling after a swipe: critically damped.
         static let spaceSettle = Curve.spring(response: 0.25, damping: 0.995)
-        /// Row moves: 0.12 s, timing (0, 0, 0.58, 1).
+        /// Rows placed by a drag: 0.12 s, timing (0, 0, 0.58, 1).
         static let rowMove = Curve.bezier(0.12, x1: 0, y1: 0, x2: 0.58, y2: 1)
+        /// Rows making room when a tab opens or closes: 0.12 s, timing (0.25, 0.1, 0.25, 1).
+        static let rowList = Curve.bezier(0.12, x1: 0.25, y1: 0.1, x2: 0.25, y2: 1)
         /// Rows closing up under a folder that collapses.
         static let folderCollapse = Curve.bezier(0.2, x1: 0, y1: 0, x2: 0.58, y2: 1)
         /// Rows making room for a folder that expands, and the find bar's fade.
         static let standard = Curve.bezier(0.25, x1: 0.25, y1: 0.1, x2: 0.25, y2: 1)
-        /// Rows appearing and leaving: 0.1 s, timing (0, 0, 0.58, 1).
-        static let rowFade = Curve.bezier(0.1, x1: 0, y1: 0, x2: 0.58, y2: 1)
+        /// Rows appearing and leaving: 0.12 s, timing (0.25, 0.1, 0.25, 1).
+        static let rowFade = Curve.bezier(0.12, x1: 0.25, y1: 0.1, x2: 0.25, y2: 1)
+        /// The chevron turning open or closed, with its overshoot.
+        static let disclosure = Curve.spring(response: 0.3, damping: 0.6)
+        /// A dock button pressed and released: 0.13 s, timing (0.215, 0.61, 0.355, 1).
+        static let dockPress = Curve.bezier(0.13, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
+        /// A tooltip appearing.
+        static let tooltipIn = Curve.easeOut(0.05)
+        /// A tooltip replaced or dismissed by a press.
+        static let tooltipOut = Curve.easeOut(0.1)
+        /// A tooltip left behind by the pointer.
+        static let tooltipFade = Curve.easeOut(0.3)
         /// Hover fills: 0.1 s, timing (0, 0, 0.58, 1).
         static let hover = Curve.easeOut(0.1)
         /// Element appearance: opacity over 0.15 s, timing (0, 0, 0.58, 1).

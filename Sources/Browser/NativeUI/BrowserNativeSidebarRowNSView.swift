@@ -102,7 +102,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             guard oldValue != collapsed else { return }
             let from = disclosureProgress
             let to = collapsed ? 0.0 : 1.0
-            disclosureAnimation.start(.easeInOut(0.14)) { [weak self] progress in
+            disclosureAnimation.start(.disclosure) { [weak self] progress in
                 self?.disclosureProgress = from + (to - from) * progress
                 self?.updateDisclosureTransform()
             }

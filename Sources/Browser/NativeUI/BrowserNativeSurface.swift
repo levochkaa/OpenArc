@@ -99,7 +99,10 @@ struct BrowserNativeChromeButtonStyle {
         hoverBackground: BrowserChromeColors.sidebarChromeHover,
         pressedBackground: BrowserChromeColors.sidebarChromePressed,
         pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
+        pressedScale: 0.95,
         compressesBackground: false,
+        hoverCurve: .standard,
+        pressCurve: .dockPress,
     )
     static let sidebarDockAction = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarChromeButtonSize,
@@ -110,8 +113,11 @@ struct BrowserNativeChromeButtonStyle {
         hoverBackground: BrowserChromeColors.sidebarChromeHover,
         pressedBackground: BrowserChromeColors.sidebarChromePressed,
         pressedForeground: BrowserChromeColors.sidebarChromePressedForeground,
+        pressedScale: 0.95,
         compressesBackground: false,
         usesDrawnGlyphs: true,
+        hoverCurve: .standard,
+        pressCurve: .dockPress,
     )
     static let bookmark = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.bookmarksBarControlSize,
@@ -177,6 +183,8 @@ struct BrowserNativeChromeButtonStyle {
     var usesDrawnGlyphs = false
     /// Draws its cross and minus as two bars that turn into each other.
     var drawsCloseBars = false
+    var hoverCurve = BrowserNativeAnimation.Curve.hover
+    var pressCurve = BrowserNativeAnimation.Curve.press
 }
 
 // MARK: - BrowserNativeBarGlyph
@@ -293,7 +301,7 @@ final class BrowserNativeChromeButton: NSButton {
             guard oldValue != hovered else { return }
             let from = hoverProgress
             let to = hovered ? 1.0 : 0.0
-            hoverAnimation.start(.hover) { [weak self] progress in
+            hoverAnimation.start(style.hoverCurve) { [weak self] progress in
                 self?.hoverProgress = from + (to - from) * progress
                 self?.needsDisplay = true
             }
@@ -541,7 +549,7 @@ final class BrowserNativeChromeButton: NSButton {
         pressTarget = target
         let from = pressProgress
         let to = target ? 1.0 : 0.0
-        pressAnimation.start(.press) { [weak self] progress in
+        pressAnimation.start(style.pressCurve) { [weak self] progress in
             self?.pressProgress = from + (to - from) * progress
             self?.needsDisplay = true
         }

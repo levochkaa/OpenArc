@@ -15,6 +15,7 @@ final class BrowserNativeSidebarNSView: NSView {
 
     let state: BrowserNativeSidebarState
     let header: NSView
+    var onHoverChanged: (Bool) -> Void = { _ in }
     let footer: NSView
     var headerHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
     var footerHeight: CGFloat = BrowserChromeLayout.chromeButtonSize
@@ -230,6 +231,7 @@ final class BrowserNativeSidebarNSView: NSView {
     override func mouseEntered(with _: NSEvent) {
         if !state.isSidebarResizing {
             state.isSidebarHovered = true
+            onHoverChanged(true)
         }
     }
 
@@ -237,6 +239,7 @@ final class BrowserNativeSidebarNSView: NSView {
         if !state.isSidebarResizing {
             state.isSidebarHovered = false
             state.isClearButtonHovered = false
+            onHoverChanged(false)
         }
     }
 
@@ -1852,7 +1855,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
     }
 
     func update(showsClear: Bool, includesActive: Bool, descriptor: BrowserCommandDescriptor) {
-        visibility.setVisible(showsClear, view: button, curve: .sidebar)
+        visibility.setVisible(showsClear, view: button, curve: .hover)
         if clearTarget != showsClear {
             clearTarget = showsClear
             let from = clearProgress

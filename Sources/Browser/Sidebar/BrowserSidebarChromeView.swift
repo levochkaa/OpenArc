@@ -51,6 +51,7 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
         addSubview(sidebar)
         addSubview(resize)
         sidebar.headerHeightProvider = { [weak header] in header?.preferredHeight ?? 0 }
+        sidebar.onHoverChanged = { [weak header] hovered in header?.urlControls.isSidebarHovered = hovered }
         sidebar.footerHeightProvider = { [weak footer] width in footer?.height(for: width) ?? 0 }
         footer.onSizeChanged = { [weak sidebar] in sidebar?.refresh(animated: true) }
         sidebar.spaceDock = footer.spaceDock

@@ -18,7 +18,7 @@ import AppKit
     var sidebarTabSelectionAnchorID: String?
     var spacePagerRawDragTranslation: CGFloat = 0
     /// How the Space pager moves next: a slide, or settling after a swipe.
-    private(set) var rowMoveCurve = BrowserNativeAnimation.Curve.rowMove
+    private(set) var rowMoveCurve = BrowserNativeAnimation.Curve.rowList
     var spacePagerCurve = BrowserNativeAnimation.Curve.spaceSlide
     var renameDismissSuppressedUntil = Date.distantPast
 
@@ -82,6 +82,7 @@ import AppKit
         self.snapshot = snapshot
         self.sidebarWidth = sidebarWidth
         self.drag = BrowserSidebarDragState(model: model)
+        drag.onWillCommitDrop = { [weak self] in self?.animateRows(with: .rowMove) }
         updateRevealedPinnedFolderTabs(for: snapshot)
     }
 
@@ -90,7 +91,7 @@ import AppKit
     func animateRows(with curve: BrowserNativeAnimation.Curve) {
         rowMoveCurve = curve
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.rowMoveCurve = .rowMove
+            self?.rowMoveCurve = .rowList
         }
     }
 

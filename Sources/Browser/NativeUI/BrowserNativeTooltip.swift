@@ -360,7 +360,7 @@ private final class BrowserNativeTooltipPanelView: NSView {
             if id == descriptor?.id, id != nil {
                 show()
             } else {
-                hide()
+                hide(curve: .tooltipFade)
             }
         }
         NotificationCenter.default.addObserver(
@@ -499,15 +499,15 @@ private final class BrowserNativeTooltipPanelView: NSView {
         let from = panel.isVisible ? panel.alphaValue : 0
         panel.alphaValue = from
         panel.orderFront(nil)
-        visibilityAnimation.start(.appearance) { [weak panel] progress in
+        visibilityAnimation.start(.tooltipIn) { [weak panel] progress in
             panel?.alphaValue = from + (1 - from) * progress
         }
     }
 
-    private func hide() {
+    private func hide(curve: BrowserNativeAnimation.Curve = .tooltipOut) {
         guard let panel else { return }
         let from = panel.alphaValue
-        visibilityAnimation.start(.appearance) { [weak panel] progress in
+        visibilityAnimation.start(curve) { [weak panel] progress in
             panel?.alphaValue = from * (1 - progress)
         } completion: { [weak panel] in
             guard let panel else { return }

@@ -41,6 +41,13 @@ final class BrowserSiteControlsNSView: NSView {
         }
     }
 
+    /// The actions show while the pointer is anywhere in the sidebar.
+    var isSidebarHovered = false {
+        didSet {
+            if oldValue != isSidebarHovered { refreshHover() }
+        }
+    }
+
     // MARK: Private
 
     private let backButton = BrowserNativeChromeButton(
@@ -73,13 +80,14 @@ final class BrowserSiteControlsNSView: NSView {
     private let actionAnimation = BrowserNativeAnimation()
     private var actionWidthTarget: CGFloat = 0
     private var didCopy = false
+
     private var hovered = false
     private var tracking: NSTrackingArea?
     private var lastReportedFrame: CGRect?
     private var frameUpdateScheduled = false
 
     private var showsSidebarActions: Bool {
-        (hovered || extensionPopovers.isPresented) && !isSidebarResizing && model
+        (hovered || isSidebarHovered || extensionPopovers.isPresented) && !isSidebarResizing && model
             .currentTab != nil
     }
 
@@ -519,7 +527,7 @@ final class BrowserSiteControlsNSView: NSView {
                 actionAnimation.cancel()
                 urlButton.maskedTrailingWidth = targetWidth
             } else {
-                actionAnimation.start(.appearance) { [weak self] progress in
+                actionAnimation.start(.rowMove) { [weak self] progress in
                     self?.urlButton.maskedTrailingWidth = from + (targetWidth - from) * progress
                 }
             }

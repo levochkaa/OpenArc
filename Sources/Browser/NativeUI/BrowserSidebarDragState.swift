@@ -58,6 +58,7 @@ import AppKit
     var onPresentationChange: () -> Void = {}
     var onLayoutChange: () -> Void = {}
     var onTargetChange: () -> Void = {}
+    var onWillCommitDrop: () -> Void = {}
 
     // MARK: Private
 
@@ -256,7 +257,8 @@ import AppKit
                 )
             } else {
                 !cancel && proposal.map {
-                    model.commitSidebarDrop(payload: payload, destination: $0.destination)
+                    onWillCommitDrop()
+                    return model.commitSidebarDrop(payload: payload, destination: $0.destination)
                 } == true
             }
         resetSplitDrop()
