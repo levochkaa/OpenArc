@@ -1671,6 +1671,50 @@ class RegionScreenshotObserver final : public CefDevToolsMessageObserver {
 
 /// Evaluates an expression in the page and returns its string value.
 class RuntimeEvaluateObserver final : public CefDevToolsMessageObserver {
+// Runs one DevTools method and hands back its result as JSON, or nil.
+class DevToolsMethodObserver final : public CefDevToolsMessageObserver {
+ public:
+  DevToolsMethodObserver(const char *method, const char *params_json, void (^completion)(NSString *))
+      : method_(method), params_json_(params_json), completion_([completion copy]) {}
+
+  void Start(CefRefPtr<CefBrowserHost> host) {
+    CefRefPtr<CefValue> parsed = CefParseJSON(params_json_, JSON_PARSER_RFC);
+    CefRefPtr<CefDictionaryValue> params =
+        parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary() : CefDictionaryValue::Create();
+    if (!host) {
+      Finish(nil);
+      return;
+    }
+    registration_ = host->AddDevToolsMessageObserver(this);
+    message_id_ = NextDevToolsMessageID();
+    if (host->ExecuteDevToolsMethod(message_id_, method_, params) == 0) {
+      Finish(nil);
+      return;
+    }
+    CefRefPtr<DevToolsMethodObserver> observer(this);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+      observer->Finish(nil);
+    });
+  }
+
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser>,
+                              int message_id,
+                              bool success,
+                              const void *result,
+                              size_t result_size) override {
+    if (message_id != message_id_) {
+      return;
+    }
+    NSString *payload = nil;
+    if (result && result_size > 0) {
+      payload = [[NSString alloc] initWithBytes:result length:result_size encoding:NSUTF8StringEncoding];
+    }
+    Finish(success ? payload : nil);
+  }
+
+  IMPLEMENT_REFCOUNTING(DevToolsMethodObserver);
+};
+
  public:
   RuntimeEvaluateObserver(const char *expression, void (^completion)(NSString *))
       : expression_(expression), completion_([completion copy]) {}
@@ -4503,6 +4547,38 @@ std::string BrowserMediaVolumeScript(double volume) {
   if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
+- (void)executeDevToolsMethod:(NSString *)method
+                       params:(NSString *)paramsJSON
+                  inTabWithID:(NSString *)tabID
+                   completion:(void (^)(NSString *))completion {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    completion(nil);
+    return;
+  }
+  CefRefPtr<DevToolsMethodObserver> observer =
+      new DevToolsMethodObserver(method.UTF8String, paramsJSON.UTF8String, completion);
+  observer->Start(it->second.browser->GetHost());
+}
+
+- (BOOL)fillPasswordInMainFrameWithUsername:(NSString *)username
+                                   password:(NSString *)password
+                                  urlPrefix:(NSString *)urlPrefix
+                               forTabWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  CefRefPtr<CefFrame> frame =
+      it != _tabRecords.end() && it->second.browser ? it->second.browser->GetMainFrame() : nullptr;
+  if (!frame) {
+    return NO;
+  }
+  [self fillPasswordWithUsername:username
+                        password:password
+                         frameID:ToNSString(frame->GetIdentifier().ToString())
+                       urlPrefix:urlPrefix
+                    forTabWithID:tabID];
+  return YES;
+}
+
 
   if (it->second.browser && it->second.browser->CanGoBack()) {
     it->second.navigationPending = false;

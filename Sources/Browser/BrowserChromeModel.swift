@@ -1419,6 +1419,19 @@ enum BrowserWindowMode: Equatable {
         atIndex index: Int? = nil,
     ) -> Bool {
         bookmarksModel.insertBookmark(title: title, urlString: urlString, toFolderID: toFolderID, atIndex: index) != nil
+    func executeDevTools(
+        method: String,
+        paramsJSON: String,
+        tabID: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        tabDriver.executeDevTools(method: method, paramsJSON: paramsJSON, tabID: tabID, completion: completion)
+    }
+
+    func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool {
+        tabDriver.fillPasswordInMainFrame(username: username, password: password, origin: origin, tabID: tabID)
+    }
+
     }
 
     @discardableResult func insertBookmarkFolder(

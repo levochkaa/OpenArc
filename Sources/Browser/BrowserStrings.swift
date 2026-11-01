@@ -1287,6 +1287,31 @@ enum BrowserStrings {
         comment: "View menu and command title that moves the sidebar to the right window edge.",
     )
 
+    static let settingsAgentAccess = NSLocalizedString(
+        "browser.settings.agent_access",
+        comment: "Settings toggle that lets local programs and AI agents control the browser.",
+    )
+
+    static let settingsAgentAccessDetail = NSLocalizedString(
+        "browser.settings.agent_access_detail",
+        comment: "Explains agent access in Settings.",
+    )
+
+    static let agentSignInDetail = NSLocalizedString(
+        "browser.agent.signin_detail",
+        comment: "Explains that the agent never sees the password.",
+    )
+
+    static let agentSignInAllow = NSLocalizedString(
+        "browser.agent.signin_allow",
+        comment: "Button allowing an agent's sign-in.",
+    )
+
+    static let agentSignInDeny = NSLocalizedString(
+        "browser.agent.signin_deny",
+        comment: "Button refusing an agent's sign-in.",
+    )
+
     static let menuCustomizeToolbar = NSLocalizedString(
         "browser.menu.customize_toolbar",
         comment: "View menu command that starts customizing the top toolbar.",
@@ -3246,6 +3271,17 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front.",
     )
+
+    static func agentSignInPrompt(username: String, host: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.agent.signin_prompt",
+                comment: "Asks before an agent signs in with a saved password. First value: username. Second: site.",
+            ),
+            username,
+            host,
+        )
+    }
 
     static func spaceExportAction(_ name: String) -> String {
         String(

@@ -74,6 +74,7 @@ sign "$frameworks/OpenArc Helper (Plugin).app"
 sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-GPU.entitlements" "$frameworks/OpenArc Helper (GPU).app"
 sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-Renderer.entitlements" "$frameworks/OpenArc Helper (Renderer).app"
 sign "$app/Contents/Resources/OpenArc Web App Launcher"
+sign "$app/Contents/Resources/bin/openarc"
 
 # A development build embeds its development profile, which a Developer ID
 # signature must not carry.

@@ -309,6 +309,26 @@ import Foundation
         promptingPeekSessions = Set(oldest.keys)
     }
 
+    func executeDevTools(
+        method: String,
+        paramsJSON: String,
+        tabID: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        controller.executeDevToolsMethod(method, params: paramsJSON, inTabWithID: tabID) { result in
+            MainActor.assumeIsolated { completion(result) }
+        }
+    }
+
+    func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool {
+        controller.fillPasswordInMainFrame(
+            withUsername: username,
+            password: password,
+            urlPrefix: origin,
+            forTabWithID: tabID,
+        )
+    }
+
     func rendererProcessIDsByTabID() -> [String: Int32] {
         controller.rendererProcessIDsByTabID().mapValues(\.int32Value)
     }

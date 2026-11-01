@@ -254,6 +254,15 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)stopLoadingActiveTab;
 /// Where the next page keeps its data; nil uses the controller's own profile.
 @property(nonatomic, copy, nullable) NSString *profileCachePathForNewTabs;
+/// Runs a DevTools method on a tab's page. The result is JSON, or nil on failure.
+- (void)executeDevToolsMethod:(NSString *)method
+                       params:(NSString *)paramsJSON
+                  inTabWithID:(NSString *)tabID
+                   completion:(void (^)(NSString *_Nullable))completion;
+- (BOOL)fillPasswordInMainFrameWithUsername:(NSString *)username
+                                   password:(NSString *)password
+                                  urlPrefix:(NSString *)urlPrefix
+                               forTabWithID:(NSString *)tabID;
 - (void)showDevToolsForActiveTab;
 - (void)inspectElementsInActiveTab;
 - (void)showJavaScriptConsoleForActiveTab;

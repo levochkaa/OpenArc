@@ -181,6 +181,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let bookmarksBarVisible = "browser.settings.bookmarksBarVisible"
         static let siteURLToolbarEnabled = "browser.settings.siteURLToolbarEnabled"
         static let toolbarConfiguration = "browser.settings.toolbarConfiguration"
+        static let agentAccessEnabled = "browser.settings.agentAccessEnabled"
         static let siteToolbarShowsFullURL = "browser.settings.siteToolbarShowsFullURL"
         static let blurredChromeBackgroundEnabled = "browser.settings.blurredChromeBackgroundEnabled"
         static let batterySaverEnabled = "browser.settings.batterySaverEnabled"
@@ -267,6 +268,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var bookmarksBarVisible: Bool {
         didSet { userDefaults.set(bookmarksBarVisible, forKey: Key.bookmarksBarVisible) }
+    }
+
+    /// Off until the person turns it on: it lets local programs drive the browser.
+    @Published var agentAccessEnabled: Bool {
+        didSet { userDefaults.set(agentAccessEnabled, forKey: Key.agentAccessEnabled) }
     }
 
     @Published var toolbarConfiguration: BrowserToolbarConfiguration {
@@ -439,6 +445,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
             defaultValue: true,
         )
         self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: true)
+        self.agentAccessEnabled = Self.loadBool(userDefaults, key: Key.agentAccessEnabled, defaultValue: false)
         self.toolbarConfiguration = userDefaults.stringArray(forKey: Key.toolbarConfiguration)
             .map(BrowserToolbarConfiguration.init(storedValues:)) ?? .standard
         self.siteURLToolbarEnabled = Self.loadBool(

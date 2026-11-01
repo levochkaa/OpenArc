@@ -77,6 +77,12 @@
 "browser.settings.site_permissions.blocked" = "Blocked";
 "browser.bookmarks.add_current_page" = "Add Bookmark";
 "browser.bookmarks.remove_current_page" = "Remove Bookmark";
+"browser.settings.agent_access" = "Let agents control OpenArc";
+"browser.settings.agent_access_detail" = "Programs you run on this Mac can open pages, read them and click through the `openarc` command or its MCP server. Saved passwords need your OK each time, and they are never shown to the program. Turning this on links the command into ~/.local/bin.";
+"browser.agent.signin_prompt" = "Sign in to %2$@ as %1$@?";
+"browser.agent.signin_detail" = "An agent is asking to sign in with this saved password. OpenArc fills it in, and the agent never sees it.";
+"browser.agent.signin_allow" = "Sign In";
+"browser.agent.signin_deny" = "Don't Allow";
 "browser.menu.customize_toolbar" = "Customize Toolbar...";
 "browser.toolbar.customize_hint" = "Drag items onto the toolbar to add them, along it to reorder, or off it to remove.";
 "browser.toolbar.restore_defaults" = "Restore Defaults";

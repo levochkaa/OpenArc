@@ -1091,6 +1091,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.pictureInPictureEnabled = $0 },
                 ),
                 toggle(
+                    "agent-access",
+                    BrowserStrings.settingsAgentAccess,
+                    detail: BrowserStrings.settingsAgentAccessDetail,
+                    get: { preferences.agentAccessEnabled },
+                    set: { preferences.agentAccessEnabled = $0 },
+                ),
+                toggle(
                     "window-dragging-from-page-top",
                     BrowserStrings.settingsWindowDraggingFromPageTop,
                     get: { preferences.windowDraggingFromPageTopEnabled },

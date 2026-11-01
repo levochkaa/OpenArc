@@ -64,6 +64,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var profileStoreCancellable: AnyCancellable?
     private let webAppConfiguration: BrowserWebAppConfiguration?
 
+    private var agentServer: BrowserAgentServer?
+    private var agentAccessObservation: AnyCancellable?
+
     /// Browser windows in front-to-back order.
     var appleScriptWindows: [BrowserScriptWindow] {
         let sessions: [(NSWindow, BrowserChromeModel)] = profileWindowSessions.map { ($0.window, $0.chromeModel) }
@@ -306,6 +309,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func handleBrowserContextInitialized() {
         hasReceivedBrowserContext = true
+        startAgentAccessObservation()
+            MainActor.assumeIsolated {
+                _ = self?.allChromeModels.first {
+                }
+            }
+        }
         for chromeModel in allChromeModels {
             chromeModel.handleContextReady()
         }
@@ -316,6 +325,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     public func handleApplicationWillTerminate() {
         recordAdditionalWindows()
         batterySaverController?.stop()
+        agentServer?.stop()
         for chromeModel in allChromeModels {
             chromeModel.prepareForTermination()
         }
@@ -1047,6 +1057,65 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     /// GitHub's list changes slowly: coming back to the app looks again, at most every few minutes.
     private func refreshLiveFoldersIfDue() {
+    /// Runs the local socket for `openarc` while the setting is on.
+    private func startAgentAccessObservation() {
+        agentAccessObservation = userPreferencesStore.$agentAccessEnabled
+            .receive(on: RunLoop.main)
+            .sink { [weak self] enabled in
+                MainActor.assumeIsolated { self?.updateAgentServer(enabled: enabled) }
+            }
+    }
+
+    private func updateAgentServer(enabled: Bool) {
+        agentServer?.stop()
+        agentServer = nil
+        guard enabled else { return }
+        let service = BrowserAgentService(
+            models: { [weak self] in
+                guard let self else { return [] }
+                let sessions = profileWindowSessions
+                let key = sessions.first { $0.window === lastKeyProfileWindow }
+                return ([key].compactMap(\.self) + sessions.filter { $0 !== key }).map(\.chromeModel)
+            },
+            approveSignIn: { username, host in
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = BrowserStrings.agentSignInPrompt(username: username, host: host)
+                alert.informativeText = BrowserStrings.agentSignInDetail
+                alert.addButton(withTitle: BrowserStrings.agentSignInAllow)
+                alert.addButton(withTitle: BrowserStrings.agentSignInDeny)
+                return alert.runModal() == .alertFirstButtonReturn
+            },
+        )
+        let socketArgument = ProcessInfo.processInfo.arguments.first { $0.hasPrefix("--agent-socket=") }
+        let path = socketArgument.map { String($0.dropFirst("--agent-socket=".count)) } ?? BrowserAgentServer
+            .defaultSocketPath
+        let server = BrowserAgentServer(path: path) { line in
+            await service.respond(toLine: line)
+        }
+        if server.start() {
+            agentServer = server
+            installAgentCommandLineTool()
+        }
+    }
+
+    /// Links `openarc` where shells look. Never replaces a file it didn't make.
+    private func installAgentCommandLineTool() {
+        guard let tool = Bundle.main.resourceURL?.appendingPathComponent("bin/openarc"),
+              FileManager.default.isExecutableFile(atPath: tool.path)
+        else { return }
+        let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin")
+        let link = directory.appendingPathComponent("openarc")
+        if let existing = try? FileManager.default.destinationOfSymbolicLink(atPath: link.path) {
+            guard existing != tool.path, existing.hasSuffix("Contents/Resources/bin/openarc") else { return }
+            try? FileManager.default.removeItem(at: link)
+        } else if FileManager.default.fileExists(atPath: link.path) {
+            return
+        }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? FileManager.default.createSymbolicLink(at: link, withDestinationURL: tool)
+    }
+
         guard Date().timeIntervalSince(lastLiveFolderRefresh) > 300 else { return }
         lastLiveFolderRefresh = Date()
         for session in profileWindowSessions {

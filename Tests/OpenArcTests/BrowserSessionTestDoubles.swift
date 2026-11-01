@@ -145,6 +145,10 @@ import Foundation
 
     // MARK: Private
 
+    var devToolsMethods = [String]()
+    var devToolsResults = [String: String]()
+    var mainFrameFills = [(username: String, password: String)]()
+
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
     private var activeTabID: String?
@@ -159,6 +163,21 @@ import Foundation
         pageActions.append(action)
         return pageActionResult
     }
+    func executeDevTools(
+        method: String,
+        paramsJSON _: String,
+        tabID _: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        devToolsMethods.append(method)
+        completion(devToolsResults[method] ?? "{}")
+    }
+
+    func fillPasswordInMainFrame(username: String, password: String, origin _: String, tabID _: String) -> Bool {
+        mainFrameFills.append((username, password))
+        return true
+    }
+
 
     func focusActivePage() {
         pageFocusCount += 1

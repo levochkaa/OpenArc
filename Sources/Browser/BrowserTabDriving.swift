@@ -203,6 +203,14 @@ struct BrowserNavigationEntry: Equatable {
 
     var faviconURL: URL? {
         guard let url = URL(string: urlString), let scheme = url.scheme, let host = url.host else { return nil }
+    func executeDevTools(
+        method: String,
+        paramsJSON: String,
+        tabID: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    )
+    func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool
+    /// Tells extensions which pages are this window's tabs.
         return URL(string: "\(scheme)://\(host)/favicon.ico")
     }
 

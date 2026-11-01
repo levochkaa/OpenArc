@@ -145,6 +145,17 @@ targets:
         OTHER_LDFLAGS:
           - -framework
           - Foundation
+  OpenArcAgentCLI:
+    type: tool
+    platform: macOS
+    productName: openarc
+    sources:
+      - path: Sources/AgentCLI
+    settings:
+      base:
+        PRODUCT_NAME: openarc
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.agent-cli
+        SWIFT_VERSION: "6.0"
   OpenArcHelper:
     templates:
       - ChromiumTarget
@@ -173,6 +184,8 @@ targets:
     dependencies:
       - target: OpenArcHelper
       - target: OpenArcWebAppLauncher
+      - target: OpenArcAgentCLI
+        embed: false
       - package: DomainParser
       - package: Gzip
       - package: GRDB
@@ -226,6 +239,12 @@ targets:
           ditto \
             "$BUILT_PRODUCTS_DIR/OpenArc Web App Launcher" \
             "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/OpenArc Web App Launcher"
+      - name: Stage Agent Command Line Tool
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        script: |
+          mkdir -p "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/bin"
+          ditto "$BUILT_PRODUCTS_DIR/openarc" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/bin/openarc"
       - name: Stage Sparkle Framework
         shell: /bin/bash
         basedOnDependencyAnalysis: false
