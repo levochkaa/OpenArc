@@ -194,6 +194,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
         static let developerModeHosts = "browser.settings.developerModeHosts"
+        static let passwordNeverOrigins = "browser.settings.passwordNeverOrigins"
         static let soundEffectsEnabled = "browser.settings.soundEffectsEnabled"
         static let gitHubLiveFolderIDs = "browser.settings.gitHubLiveFolderIDs"
         static let recentPagesPreviewsEnabled = "browser.settings.recentPagesPreviewsEnabled"
@@ -294,6 +295,10 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var soundEffectsEnabled: Bool {
         didSet { userDefaults.set(soundEffectsEnabled, forKey: Key.soundEffectsEnabled) }
+    }
+
+    @Published var passwordNeverOrigins: Set<String> {
+        didSet { userDefaults.set(Array(passwordNeverOrigins), forKey: Key.passwordNeverOrigins) }
     }
 
     @Published var developerModeHosts: BrowserDeveloperModeHosts {
@@ -442,6 +447,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         )
         self.gitHubLiveFolderIDs = Set(userDefaults.stringArray(forKey: Key.gitHubLiveFolderIDs) ?? [])
         self.soundEffectsEnabled = Self.loadBool(userDefaults, key: Key.soundEffectsEnabled, defaultValue: true)
+        self.passwordNeverOrigins = Set(userDefaults.stringArray(forKey: Key.passwordNeverOrigins) ?? [])
         self.developerModeHosts = userDefaults.data(forKey: Key.developerModeHosts)
             .flatMap { try? JSONDecoder().decode(BrowserDeveloperModeHosts.self, from: $0) } ?? .init()
         self.developerReloadBehavior = userDefaults.string(forKey: Key.developerReloadBehavior)

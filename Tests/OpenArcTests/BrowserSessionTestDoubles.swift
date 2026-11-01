@@ -132,6 +132,10 @@ import Foundation
 
     private(set) var pictureInPictureToggleCount = 0
 
+    var onPasswordFormFound: ((String, String, String) -> Void)?
+    var onPasswordSubmitted: ((String, String, String, String) -> Void)?
+    private(set) var filledPasswords = [(username: String, password: String, frameID: String, origin: String)]()
+
     // MARK: Private
 
     private var pendingCreateRequests = [CreatedTabRequest]()
@@ -294,6 +298,10 @@ import Foundation
 
     func goToHistoryOffsetInActiveTab(_: Int) {}
     func setMediaVolume(_: Double, forTabWithID _: String) {}
+    func fillPassword(username: String, password: String, frameID: String, origin: String, tabID _: String) {
+        filledPasswords.append((username, password, frameID, origin))
+    }
+
     func evaluateJavaScript(
         _: String,
         inTabWithID _: String,

@@ -381,6 +381,8 @@ enum BrowserWindowMode: Equatable {
     /// sidebar starts renaming the selected row.
     @Published var sidebarRenameRequestID = 0
     @Published var sidebarSpaceRenameRequestID = 0
+    @Published var passwordPrompt: BrowserPasswordPrompt?
+    var passwordStore: BrowserPasswordStoring?
     var liveFolderFetcher: BrowserGitHubLiveFolderFetcher?
     @Published var tabMediaVolumes = [String: Double]()
     /// Asks the window's controls to open an extension, anchored to the address row.
@@ -1011,6 +1013,12 @@ enum BrowserWindowMode: Equatable {
         }
         tabDriver.onSitePermissionRequestDismissed = { [weak self] id in
             self?.handleSitePermissionRequestDismissed(id: id)
+        }
+        tabDriver.onPasswordFormFound = { [weak self] tabID, frameID, urlString in
+            self?.handlePasswordFormFound(tabID: tabID, frameID: frameID, urlString: urlString)
+        }
+        tabDriver.onPasswordSubmitted = { [weak self] tabID, urlString, username, password in
+            self?.handlePasswordSubmitted(tabID: tabID, urlString: urlString, username: username, password: password)
         }
         tabDriver.onMediaStateChanged = { [weak self] tabID, state in
             self?.handleMediaStateChange(tabID: tabID, state: state)
@@ -2884,6 +2892,10 @@ enum BrowserWindowMode: Equatable {
     func recentSuggestions(onHost host: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
         historyStore.suggestions(for: host, maximumCount: maximumCount)
             .filter { URLComponents(string: $0.resolvedURLString)?.host?.lowercased() == host }
+    }
+
+    func fillPasswordInEngine(username: String, password: String, frameID: String, origin: String, tabID: String) {
+        tabDriver.fillPassword(username: username, password: password, frameID: frameID, origin: origin, tabID: tabID)
     }
 
     /// Right-clicking back or forward lists the pages that way.

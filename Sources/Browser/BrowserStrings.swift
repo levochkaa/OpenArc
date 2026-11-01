@@ -1696,6 +1696,21 @@ enum BrowserStrings {
         comment: "Site setting's menu item.",
     )
     static let settingsSoundEffects = NSLocalizedString("browser.settings.sound_effects", comment: "Settings toggle.")
+    static let passwordSaveTitle = NSLocalizedString("browser.password.save_title", comment: "Prompt; the site.")
+    static let passwordUpdateTitle = NSLocalizedString("browser.password.update_title", comment: "Prompt; the site.")
+    static let passwordFillTitle = NSLocalizedString("browser.password.fill_title", comment: "Prompt; the site.")
+    static let passwordFillDetail = NSLocalizedString("browser.password.fill_detail", comment: "Prompt's detail.")
+    static let passwordNoUsername = NSLocalizedString(
+        "browser.password.no_username",
+        comment: "A sign-in with no username.",
+    )
+    static let passwordSave = NSLocalizedString("browser.password.save", comment: "Button.")
+    static let passwordUpdate = NSLocalizedString("browser.password.update", comment: "Button.")
+    static let passwordNotNow = NSLocalizedString("browser.password.not_now", comment: "Button.")
+    static let passwordNever = NSLocalizedString("browser.password.never", comment: "Button.")
+    static let passwordDelete = NSLocalizedString("browser.password.delete", comment: "Button in Settings.")
+    static let passwordCopy = NSLocalizedString("browser.password.copy", comment: "Button in Settings.")
+    static let passwordNoneSaved = NSLocalizedString("browser.password.none_saved", comment: "Settings, empty list.")
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")

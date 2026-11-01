@@ -3450,6 +3450,11 @@ struct TabRecord {
 - (void)reportMedia:(const MediaFrameState &)state forTabID:(NSString *)tabID record:(TabRecord &)record;
 - (void)combineMediaForTabID:(NSString *)tabID record:(TabRecord &)record;
 - (void)notifySitePermissionDismissed:(NSInteger)requestID;
+- (void)handlePasswordFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID;
+- (void)handlePasswordSubmittedInFrame:(CefRefPtr<CefFrame>)frame
+                              username:(NSString *)username
+                              password:(NSString *)password
+                              forTabID:(NSString *)tabID;
 
 @end
 
@@ -4243,6 +4248,53 @@ std::string BrowserMediaVolumeScript(double volume) {
   if (volume != nil && frame) {
     frame->ExecuteJavaScript(BrowserMediaVolumeScript(volume.doubleValue), frame->GetURL(), 0);
   }
+}
+
+- (void)handlePasswordFormInFrame:(CefRefPtr<CefFrame>)frame forTabID:(NSString *)tabID {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didFindPasswordFormInTabWithID:frameID:urlString:)]) {
+    [delegate browserTabController:self
+        didFindPasswordFormInTabWithID:tabID
+                               frameID:ToNSString(frame->GetIdentifier().ToString())
+                             urlString:ToNSString(frame->GetURL().ToString())];
+  }
+}
+
+- (void)handlePasswordSubmittedInFrame:(CefRefPtr<CefFrame>)frame
+                              username:(NSString *)username
+                              password:(NSString *)password
+                              forTabID:(NSString *)tabID {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didSubmitPasswordInTabWithID:urlString:username:password:)]) {
+    [delegate browserTabController:self
+        didSubmitPasswordInTabWithID:tabID
+                           urlString:ToNSString(frame->GetURL().ToString())
+                            username:username
+                            password:password];
+  }
+}
+
+- (void)fillPasswordWithUsername:(NSString *)username
+                        password:(NSString *)password
+                         frameID:(NSString *)frameID
+                       urlPrefix:(NSString *)urlPrefix
+                    forTabWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return;
+  }
+  CefRefPtr<CefFrame> frame = it->second.browser->GetFrameByIdentifier(ToStdString(frameID));
+  // The frame may have gone somewhere else since the question: it gets nothing then.
+  const std::string url = frame ? frame->GetURL().ToString() : std::string();
+  const std::string prefix = ToStdString(urlPrefix);
+  if (!frame || url.rfind(prefix, 0) != 0 ||
+      (url.size() > prefix.size() && url[prefix.size()] != '/' && url[prefix.size()] != ':')) {
+    return;
+  }
+  CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(shared::kPasswordFillMessage);
+  message->GetArgumentList()->SetString(0, ToStdString(username));
+  message->GetArgumentList()->SetString(1, ToStdString(password));
+  frame->SendProcessMessage(PID_RENDERER, message);
 }
 
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset {
@@ -5985,6 +6037,19 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
                                                 CefProcessId source_process,
                                                 CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_UI_THREAD();
+  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kPasswordFormMessage) {
+    [controller_ handlePasswordFormInFrame:frame forTabID:ToNSString(tab_id_)];
+    return true;
+  }
+  if (source_process == PID_RENDERER && frame && message->GetName() == shared::kPasswordSubmittedMessage) {
+    CefRefPtr<CefListValue> values = message->GetArgumentList();
+    // The frame's own address decides whose password this is, never the page's word.
+    [controller_ handlePasswordSubmittedInFrame:frame
+                                       username:ToNSString(values->GetString(0).ToString())
+                                       password:ToNSString(values->GetString(1).ToString())
+                                       forTabID:ToNSString(tab_id_)];
+    return true;
+  }
   if (source_process != PID_RENDERER || !frame || message->GetName() != shared::kMediaStateMessage) {
     return false;
   }

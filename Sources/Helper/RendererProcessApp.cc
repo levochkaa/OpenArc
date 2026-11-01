@@ -181,6 +181,89 @@ constexpr char kMediaObserverScript[] = R"JS(
 })
 )JS";
 
+// Notices password fields and sign-ins in the page's main world. The two
+// report functions are closure arguments, so the page cannot reach them. It
+// reads a field's value only when its form is being sent, and fills only what the
+// browser hands it after the user's click. It returns the fill function.
+constexpr char kPasswordObserverScript[] = R"JS(
+(function (reportForm, reportSubmit) {
+  'use strict';
+  const Input = HTMLInputElement;
+  const setValue = Object.getOwnPropertyDescriptor(Input.prototype, 'value').set;
+  const textTypes = new Set(['text', 'email', 'tel', '']);
+  const listen = window.addEventListener.bind(window);
+  let announced = false;
+  let last = '';
+  const passwords = (root) => Array.from(root.querySelectorAll('input[type="password"]'));
+  function usernameField(password) {
+    const root = password.form || document;
+    const inputs = Array.from(root.querySelectorAll('input'));
+    const named = inputs.find((i) => /username|email/.test(i.autocomplete || '') && textTypes.has(i.type));
+    if (named) return named;
+    const index = inputs.indexOf(password);
+    for (let i = index - 1; i >= 0; i--) {
+      if (textTypes.has(inputs[i].type)) return inputs[i];
+    }
+    return null;
+  }
+  function send(root) {
+    const password = passwords(root).find((field) => field.value);
+    if (!password) return;
+    const user = usernameField(password);
+    const username = user ? String(user.value) : '';
+    const key = username + '\n' + password.value;
+    if (key === last) return;
+    last = key;
+    reportSubmit(username, String(password.value));
+  }
+  function announce() {
+    if (!announced && document.querySelector('input[type="password"]')) {
+      announced = true;
+      reportForm();
+    }
+    return announced;
+  }
+  function watch() {
+    if (announce() || !document.documentElement) return;
+    const observer = new MutationObserver(() => {
+      if (announce()) observer.disconnect();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['type'] });
+  }
+  listen('submit', (event) => send(event.target), true);
+  listen('click', (event) => {
+    const target = event.target;
+    const button = target && target.closest && target.closest('button,input[type="submit"],[role="button"]');
+    if (button && (!button.type || button.type === 'submit' || button.getAttribute('role') === 'button')) {
+      send(button.form || document);
+    }
+  }, true);
+  listen('keydown', (event) => {
+    const target = event.target;
+    if (event.key === 'Enter' && target instanceof Input && target.type === 'password') {
+      send(target.form || document);
+    }
+  }, true);
+  if (document.readyState === 'loading') {
+    listen('DOMContentLoaded', watch, { once: true });
+  } else {
+    watch();
+  }
+  function put(field, value) {
+    setValue.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  return function fill(username, password) {
+    const field = passwords(document)[0];
+    if (!field) return;
+    const user = usernameField(field);
+    if (user && username) put(user, username);
+    put(field, password);
+  };
+})
+)JS";
+
 /// Pages whose media the sidebar follows; extension, DevTools and internal
 /// pages are left alone.
 bool ObservesMedia(const std::string& url) {
@@ -225,6 +308,34 @@ class MediaStateReporter final : public CefV8Handler {
   IMPLEMENT_REFCOUNTING(MediaStateReporter);
 };
 
+/// The password observer's report functions.
+class PasswordReporter final : public CefV8Handler {
+ public:
+  bool Execute(const CefString& name,
+               CefRefPtr<CefV8Value>,
+               const CefV8ValueList& arguments,
+               CefRefPtr<CefV8Value>&,
+               CefString&) override {
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+    if (!frame) {
+      return true;
+    }
+    if (name == "reportForm") {
+      frame->SendProcessMessage(PID_BROWSER, CefProcessMessage::Create(kPasswordFormMessage));
+    } else if (arguments.size() == 2 && arguments[0]->IsString() && arguments[1]->IsString()) {
+      CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(kPasswordSubmittedMessage);
+      message->GetArgumentList()->SetString(0, arguments[0]->GetStringValue());
+      message->GetArgumentList()->SetString(1, arguments[1]->GetStringValue());
+      frame->SendProcessMessage(PID_BROWSER, message);
+    }
+    return true;
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(PasswordReporter);
+};
+
 class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
  public:
   void OnRegisterCustomSchemes(
@@ -244,6 +355,7 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     if (!frame || !ObservesMedia(frame->GetURL().ToString()) || !context->IsSame(frame->GetV8Context())) {
       return;
     }
+    InstallPasswordObserver(frame, context);
     CefRefPtr<CefV8Value> factory;
     CefRefPtr<CefV8Exception> exception;
     if (!context->Eval(kMediaObserverScript, CefString(), 0, factory, exception) || !factory ||
@@ -269,6 +381,10 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     if (control != controls_.end() && control->second.context->IsSame(context)) {
       controls_.erase(control);
     }
+    auto fill = password_fills_.find(id);
+    if (fill != password_fills_.end() && fill->second.context->IsSame(context)) {
+      password_fills_.erase(fill);
+    }
     // A page that leaves while playing stops playing.
     auto active = active_frames_.find(id);
     if (active != active_frames_.end()) {
@@ -289,6 +405,16 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
                                 CefRefPtr<CefFrame> frame,
                                 CefProcessId,
                                 CefRefPtr<CefProcessMessage> message) override {
+    if (frame && message->GetName() == kPasswordFillMessage) {
+      auto fill = password_fills_.find(frame->GetIdentifier().ToString());
+      if (fill != password_fills_.end()) {
+        CefRefPtr<CefListValue> values = message->GetArgumentList();
+        CefV8ValueList arguments = {CefV8Value::CreateString(values->GetString(0)),
+                                    CefV8Value::CreateString(values->GetString(1))};
+        fill->second.function->ExecuteFunctionWithContext(fill->second.context, nullptr, arguments);
+      }
+      return true;
+    }
     if (!frame || message->GetName() != kMediaControlMessage) {
       return false;
     }
@@ -307,6 +433,25 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     CefRefPtr<CefV8Value> function;
   };
 
+  void InstallPasswordObserver(CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) {
+    // The browser decides by the frame's address when a message arrives: this
+    // early a new document may not report its address yet.
+    CefRefPtr<CefV8Value> factory;
+    CefRefPtr<CefV8Exception> exception;
+    if (!context->Eval(kPasswordObserverScript, CefString(), 0, factory, exception) || !factory ||
+        !factory->IsFunction()) {
+      return;
+    }
+    CefRefPtr<CefV8Handler> reporter = new PasswordReporter();
+    CefV8ValueList arguments = {CefV8Value::CreateFunction("reportForm", reporter),
+                                CefV8Value::CreateFunction("reportSubmit", reporter)};
+    CefRefPtr<CefV8Value> fill = factory->ExecuteFunctionWithContext(context, nullptr, arguments);
+    if (fill && fill->IsFunction()) {
+      password_fills_[frame->GetIdentifier().ToString()] = {context, fill};
+    }
+  }
+
+  std::map<std::string, MediaControl> password_fills_;
   std::map<std::string, MediaControl> controls_;
   // Frames whose last report said they were playing, by frame identifier.
   std::map<std::string, bool> active_frames_;

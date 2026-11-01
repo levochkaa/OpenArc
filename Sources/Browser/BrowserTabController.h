@@ -68,6 +68,15 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
               didCloseTabWithID:(NSString *)tabID;
 
 @optional
+- (void)browserTabController:(BrowserTabController *)controller
+    didFindPasswordFormInTabWithID:(NSString *)tabID
+                           frameID:(NSString *)frameID
+                         urlString:(NSString *)urlString;
+- (void)browserTabController:(BrowserTabController *)controller
+    didSubmitPasswordInTabWithID:(NSString *)tabID
+                       urlString:(NSString *)urlString
+                        username:(NSString *)username
+                        password:(NSString *)password;
 
 /// A page's context menu asked for something only the window can do. The command
 /// is the raw value of `BrowserPageContextCommand`.
@@ -201,6 +210,12 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)visitNavigationEntriesForActiveTab:(void (^)(NSArray<NSDictionary<NSString *, NSString *> *> *entries,
                                                      NSInteger currentIndex))completion;
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset;
+/// Hands a saved sign-in to a frame, if it is still on the origin in `urlPrefix`.
+- (void)fillPasswordWithUsername:(NSString *)username
+                        password:(NSString *)password
+                         frameID:(NSString *)frameID
+                       urlPrefix:(NSString *)urlPrefix
+                    forTabWithID:(NSString *)tabID;
 /// Scales the tab's audio and video elements, in every frame and in pages to come.
 - (void)setMediaVolume:(double)volume forTabWithID:(NSString *)tabID;
 /// Answers with the expression's value as text, or nil if the page has no answer.

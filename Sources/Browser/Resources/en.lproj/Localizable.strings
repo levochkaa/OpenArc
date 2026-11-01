@@ -761,3 +761,15 @@
 "browser.site_setting.turn_on" = "On";
 "browser.site_setting.turn_off" = "Off";
 "browser.settings.sound_effects" = "Play sound effects";
+"browser.password.save_title" = "Save password for %@?";
+"browser.password.update_title" = "Update password for %@?";
+"browser.password.fill_title" = "Sign in to %@";
+"browser.password.fill_detail" = "Choose a saved account to fill";
+"browser.password.no_username" = "No username";
+"browser.password.save" = "Save";
+"browser.password.update" = "Update";
+"browser.password.not_now" = "Not Now";
+"browser.password.never" = "Never";
+"browser.password.delete" = "Delete";
+"browser.password.copy" = "Copy Password";
+"browser.password.none_saved" = "No saved passwords";

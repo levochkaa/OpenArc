@@ -32,6 +32,8 @@ import Foundation
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
+    var onPasswordFormFound: ((String, String, String) -> Void)?
+    var onPasswordSubmitted: ((String, String, String, String) -> Void)?
     var onRenderProcessTerminated: ((String, Int) -> Void)?
 
     // MARK: Private
@@ -198,6 +200,16 @@ import Foundation
         controller.evaluateJavaScript(code, inTabWithID: tabID) { value in
             MainActor.assumeIsolated { completion(value) }
         }
+    }
+
+    func fillPassword(username: String, password: String, frameID: String, origin: String, tabID: String) {
+        controller.fillPassword(
+            withUsername: username,
+            password: password,
+            frameID: frameID,
+            urlPrefix: origin,
+            forTabWithID: tabID,
+        )
     }
 
     func setMediaVolume(_ volume: Double, forTabWithID tabID: String) {
@@ -638,5 +650,29 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
                 state: state,
             ))
         }
+    }
+}
+
+// MARK: - Passwords
+
+extension BrowserTabControllerDriver {
+    @objc(browserTabController:didFindPasswordFormInTabWithID:frameID:urlString:) nonisolated func browserTabController(
+        _: BrowserTabController,
+        didFindPasswordFormInTabWithID tabID: String,
+        frameID: String,
+        urlString: String,
+    ) {
+        MainActor.assumeIsolated { onPasswordFormFound?(tabID, frameID, urlString) }
+    }
+
+    @objc(browserTabController:didSubmitPasswordInTabWithID:urlString:username:password:)
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didSubmitPasswordInTabWithID tabID: String,
+        urlString: String,
+        username: String,
+        password: String,
+    ) {
+        MainActor.assumeIsolated { onPasswordSubmitted?(tabID, urlString, username, password) }
     }
 }

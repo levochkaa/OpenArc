@@ -239,3 +239,105 @@ import Testing
     #expect(pending.orientation == .vertical)
     #expect(model.pendingSplitOrientation == .horizontal)
 }
+
+// MARK: - InMemoryPasswordStore
+
+private final class InMemoryPasswordStore: BrowserPasswordStoring {
+    var items = [BrowserSavedLogin: String]()
+
+    func allLogins() -> [BrowserSavedLogin] { Array(items.keys) }
+    func password(for login: BrowserSavedLogin) -> String? { items[login] }
+    func save(_ password: String, for login: BrowserSavedLogin) -> Bool {
+        items[login] = password
+        return true
+    }
+
+    func delete(_ login: BrowserSavedLogin) { items[login] = nil }
+}
+
+// MARK: - BrowserSavedLogin + Hashable
+
+@MainActor private func passwordModel(mode: BrowserWindowMode = .normal)
+    -> (BrowserChromeModel, FakeBrowserTabDriver, InMemoryPasswordStore)
+{
+    let driver = FakeBrowserTabDriver()
+    let defaults = UserDefaults(suiteName: "OpenArcPasswordTests.\(UUID().uuidString)")!
+    let model = BrowserChromeModel(
+        tabDriver: driver,
+        sessionSnapshotStore: InMemorySessionSnapshotStore(),
+        sessionPreferencesStore: InMemorySessionPreferencesStore(),
+        commandBarSuggestionProvider: FakeSuggestionProvider(),
+        userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+        shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+        extensionManager: FakeBrowserExtensionManager(extensions: []),
+        windowMode: mode,
+        windowTitleHandler: { _ in },
+        allTabsClosedHandler: {},
+    )
+    let store = InMemoryPasswordStore()
+    model.passwordStore = store
+    return (model, driver, store)
+}
+
+@Test @MainActor func aSubmittedPasswordIsKeptOnlyAfterSaving() {
+    let (model, _, store) = passwordModel()
+    let login = BrowserSavedLogin(origin: "https://example.com", username: "me")
+    model.handlePasswordSubmitted(tabID: "t", urlString: "https://Example.com/login?x=1", username: "me", password: "p")
+    #expect(model.passwordPrompt == .save(tabID: "t", login: login, password: "p", isUpdate: false))
+    #expect(store.items.isEmpty)
+    model.answerPasswordPrompt(save: false)
+    #expect(store.items.isEmpty)
+    #expect(model.passwordPrompt == nil)
+    model.handlePasswordSubmitted(tabID: "t", urlString: "https://example.com/", username: "me", password: "p")
+    model.answerPasswordPrompt(save: true)
+    #expect(store.items[login] == "p")
+    model.handlePasswordSubmitted(tabID: "t", urlString: "https://example.com/", username: "me", password: "p")
+    #expect(model.passwordPrompt == nil, "The same password asks nothing")
+    model.handlePasswordSubmitted(tabID: "t", urlString: "https://example.com/", username: "me", password: "q")
+    #expect(model.passwordPrompt == .save(tabID: "t", login: login, password: "q", isUpdate: true))
+    model.neverSavePasswordsFromPromptSite()
+    model.handlePasswordSubmitted(tabID: "t", urlString: "https://example.com/", username: "you", password: "r")
+    #expect(model.passwordPrompt == nil, "Never holds for the site")
+}
+
+@Test @MainActor func aSavedPasswordFillsOnlyItsOriginAfterAChoice() {
+    let (model, driver, store) = passwordModel()
+    let login = BrowserSavedLogin(origin: "https://example.com", username: "me")
+    store.items[login] = "secret"
+    store.items[BrowserSavedLogin(origin: "https://other.example", username: "them")] = "theirs"
+    model.handlePasswordFormFound(tabID: "t", frameID: "f", urlString: "https://example.com/login")
+    #expect(driver.filledPasswords.isEmpty, "Nothing fills by itself")
+    #expect(model.passwordPrompt == .fill(
+        tabID: "t",
+        frameID: "f",
+        urlString: "https://example.com/login",
+        logins: [login],
+    ))
+    model.fillPassword(BrowserSavedLogin(origin: "https://other.example", username: "them"))
+    #expect(driver.filledPasswords.isEmpty, "Another site's password never goes to this frame")
+    model.fillPassword(login)
+    #expect(driver.filledPasswords.count == 1)
+    #expect(driver.filledPasswords.first?.password == "secret")
+    #expect(driver.filledPasswords.first?.origin == "https://example.com")
+    model.handlePasswordFormFound(tabID: "t", frameID: "f", urlString: "https://unknown.example/")
+    #expect(model.passwordPrompt == nil)
+    model.handlePasswordFormFound(tabID: "t", frameID: "f", urlString: "file:///tmp/a.html")
+    #expect(model.passwordPrompt == nil)
+}
+
+@Test @MainActor func incognitoNeitherKeepsNorOffersPasswords() {
+    let (model, _, store) = passwordModel(mode: .incognito)
+    store.items[BrowserSavedLogin(origin: "https://example.com", username: "me")] = "secret"
+    model.handlePasswordSubmitted(tabID: "t", urlString: "https://example.com/", username: "you", password: "p")
+    #expect(model.passwordPrompt == nil)
+    model.handlePasswordFormFound(tabID: "t", frameID: "f", urlString: "https://example.com/")
+    #expect(model.passwordPrompt == nil)
+}
+
+@Test @MainActor func aPromptEndsWithItsTab() {
+    let (model, _, _) = passwordModel()
+    model.handlePasswordSubmitted(tabID: "gone", urlString: "https://example.com/", username: "me", password: "p")
+    #expect(model.passwordPrompt != nil)
+    model.dropStalePasswordPrompt()
+    #expect(model.passwordPrompt == nil, "No password stays in memory for a closed tab")
+}

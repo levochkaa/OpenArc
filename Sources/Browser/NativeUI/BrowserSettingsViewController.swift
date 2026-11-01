@@ -125,6 +125,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private var observations = Set<AnyCancellable>()
     private var updateBindings = [() -> Void]()
     private var profileDeleteButtons = [(BrowserProfile, BrowserActionButton)]()
+    private let passwordsBody = NSStackView()
     private let shortcutsBody = NSStackView()
     private let profilesBody = NSStackView()
     private let accountsBody = NSStackView()
@@ -894,16 +895,54 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 ),
             ]),
             section(BrowserStrings.settingsDownloadsTitle, rows: [downloadLocationRow()]),
+            section(BrowserStrings.settingsPasswords, body: passwordsBody),
             section(BrowserStrings.settingsYourData, rows: [
                 link(BrowserStrings.settingsPrivacyAndSecurity, url: BrowserSettingsRoute.privacyURL),
-                link(BrowserStrings.settingsPasswords, url: BrowserSettingsRoute.passwordManagerURL),
                 link(BrowserStrings.settingsCreditCards, url: BrowserSettingsRoute.paymentsURL),
                 link(BrowserStrings.settingsNotifications, url: BrowserSettingsRoute.notificationsURL),
                 link(BrowserStrings.settingsClearBrowsingData, url: BrowserSettingsRoute.privacyURL),
             ]),
         ])
         refreshSiteSearches()
+        refreshPasswords()
         refreshProfiles()
+    }
+
+    private func refreshPasswords() {
+        let store = model.passwordStore
+        let logins = store?.allLogins() ?? []
+        guard !logins.isEmpty else {
+            replaceRows(
+                [BrowserNativeControls.label(
+                    BrowserStrings.passwordNoneSaved,
+                    size: 13,
+                    weight: .regular,
+                    color: .secondaryLabelColor,
+                )],
+                in: passwordsBody,
+            )
+            return
+        }
+        replaceRows(logins.map { login in
+            let host = BrowserNativeControls.label(login.host, size: 13, weight: .medium, color: .labelColor)
+            let name = BrowserNativeControls.label(
+                login.username,
+                size: 12,
+                weight: .regular,
+                color: .secondaryLabelColor,
+            )
+            let text = BrowserNativeControls.stack([host, name], orientation: .vertical, spacing: 1)
+            let copy = BrowserActionButton(BrowserStrings.passwordCopy) {
+                guard let password = store?.password(for: login) else { return }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(password, forType: .string)
+            }
+            let delete = BrowserActionButton(BrowserStrings.passwordDelete) { [weak self] in
+                store?.delete(login)
+                self?.refreshPasswords()
+            }
+            return BrowserNativeControls.stack([text, NSView(), copy, delete], orientation: .horizontal, spacing: 8)
+        }, in: passwordsBody)
     }
 
     private func configureIcon() {

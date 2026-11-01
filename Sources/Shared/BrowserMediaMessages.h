@@ -14,6 +14,13 @@ inline constexpr int kMediaStateArgumentCount = 8;
 // "previoustrack" or "nexttrack".
 inline constexpr char kMediaControlMessage[] = "OpenArc.MediaControl";
 
+// To the browser: the frame has a password field.
+inline constexpr char kPasswordFormMessage[] = "OpenArc.PasswordForm";
+// To the browser: a form with a password was sent: username and password.
+inline constexpr char kPasswordSubmittedMessage[] = "OpenArc.PasswordSubmitted";
+// To the renderer: put these in the frame's sign-in fields: username and password.
+inline constexpr char kPasswordFillMessage[] = "OpenArc.PasswordFill";
+
 }  // namespace shared
 
 #endif  // OPENARC_SHARED_BROWSER_MEDIA_MESSAGES_H_

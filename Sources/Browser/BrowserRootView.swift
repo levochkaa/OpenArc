@@ -27,6 +27,7 @@ final class BrowserRootView: NSView {
     private let toolbar: BrowserSiteControlsNSView
     private lazy var developerToolbar = BrowserDeveloperToolbarView(model: model)
     private let captureToast = BrowserCaptureToastView()
+    private let passwordPrompt = BrowserPasswordPromptView()
     private var portraitCapture: BrowserPortraitCaptureView?
     private var portraitCaptureMonitor: Any?
     private var captureDragMonitor: Any?
@@ -200,6 +201,12 @@ final class BrowserRootView: NSView {
         addSubview(linkStatus)
         addSubview(developerToolbar, positioned: .below, relativeTo: content)
         addSubview(captureToast)
+        addSubview(passwordPrompt)
+        passwordPrompt.isHidden = true
+        passwordPrompt.onSave = { [weak self] in self?.model.answerPasswordPrompt(save: true) }
+        passwordPrompt.onNotNow = { [weak self] in self?.model.answerPasswordPrompt(save: false) }
+        passwordPrompt.onNever = { [weak self] in self?.model.neverSavePasswordsFromPromptSite() }
+        passwordPrompt.onFill = { [weak self] in self?.model.fillPassword($0) }
         NotificationCenter.default.addObserver(
             forName: BrowserCaptureToastView.didCopyNotification,
             object: nil,
@@ -360,6 +367,7 @@ final class BrowserRootView: NSView {
             overlay.frame = bounds
         }
         layoutCaptureToast()
+        layoutPasswordPrompt()
         let onRight = preferences.sidebarPosition == .right
         libraryScrollObserver.frame = CGRect(
             x: onRight ? bounds.width - BrowserLibraryLayout.width : 0,
@@ -639,6 +647,29 @@ final class BrowserRootView: NSView {
         guard preferences.soundEffectsEnabled else { return }
         let path = "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif"
         NSSound(contentsOfFile: path, byReference: true)?.play()
+    }
+
+    /// Only over the tab that asked; the question waits while another one shows.
+    private func refreshPasswordPrompt() {
+        model.dropStalePasswordPrompt()
+        guard let prompt = model.passwordPrompt, model.isTabVisibleForPasswordPrompt(prompt.tabID) else {
+            passwordPrompt.isHidden = true
+            return
+        }
+        passwordPrompt.update(prompt)
+        passwordPrompt.isHidden = false
+        addSubview(passwordPrompt, positioned: .above, relativeTo: nil)
+        layoutPasswordPrompt()
+    }
+
+    private func layoutPasswordPrompt() {
+        let page = windowGeometry.contentFrame
+        passwordPrompt.frame = CGRect(
+            x: page.maxX - BrowserPasswordPromptView.width - 12,
+            y: page.minY + 12,
+            width: BrowserPasswordPromptView.width,
+            height: passwordPrompt.preferredHeight,
+        )
     }
 
     private func presentPortraitCapture(png: Data) {
@@ -946,6 +977,7 @@ final class BrowserRootView: NSView {
         sidebar.refresh()
         toolbarVisibility.setVisible(showsSiteToolbar, view: toolbar, curve: .sidebar)
         developerToolbar.refresh()
+        refreshPasswordPrompt()
         let selectionColor = model.selectedSpaceTheme?.palette?.accentFill
         command.themeSelectionColor = selectionColor
         currentPageCommand.themeSelectionColor = selectionColor

@@ -85,6 +85,10 @@ enum BrowserPageContextCommand: String {
     var onRenderProcessTerminated: ((String, Int) -> Void)? { get set }
     /// A tab's pages started playing media or changed it; nil when they stop.
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)? { get set }
+    /// Tab, frame and the frame's address.
+    var onPasswordFormFound: ((String, String, String) -> Void)? { get set }
+    /// Tab, the frame's address, username and password.
+    var onPasswordSubmitted: ((String, String, String, String) -> Void)? { get set }
     /// The prompt of a Peek card or small window was answered: true
     /// allows, false blocks, nil closes it without an answer.
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)? { get set }
@@ -108,6 +112,7 @@ enum BrowserPageContextCommand: String {
     func navigationEntriesForActiveTab(completion: @escaping @MainActor ([BrowserNavigationEntry], Int) -> Void)
     func goToHistoryOffsetInActiveTab(_ offset: Int)
     func setMediaVolume(_ volume: Double, forTabWithID tabID: String)
+    func fillPassword(username: String, password: String, frameID: String, origin: String, tabID: String)
     func evaluateJavaScript(
         _ code: String,
         inTabWithID tabID: String,
