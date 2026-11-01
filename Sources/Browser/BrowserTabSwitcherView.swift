@@ -7,7 +7,6 @@ import AppKit
 final class BrowserTabSwitcherEventNSView: NSView {
     // MARK: Private
 
-    private static let tabKeyCode: UInt16 = 48
     private static let escapeKeyCode: UInt16 = 53
 
     // MARK: Internal
@@ -31,18 +30,6 @@ final class BrowserTabSwitcherEventNSView: NSView {
         } else {
             installLocalMonitorIfNeeded()
         }
-    }
-
-    private static func isOptionTabEvent(_ event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        return event.keyCode == tabKeyCode
-            && modifiers.contains(.option)
-            && !modifiers.contains(.command)
-            && !modifiers.contains(.control)
-    }
-
-    private static func isOptionReleasedEvent(_ event: NSEvent) -> Bool {
-        !event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option)
     }
 
     private func installLocalMonitorIfNeeded() {
@@ -77,7 +64,7 @@ final class BrowserTabSwitcherEventNSView: NSView {
 
         switch event.type {
         case .keyDown:
-            if Self.isOptionTabEvent(event) {
+            if BrowserTabSwitcherKeys.isSwitcherTab(event) {
                 return onTab(event.modifierFlags.contains(.shift)) ? nil : event
             }
 
@@ -87,7 +74,7 @@ final class BrowserTabSwitcherEventNSView: NSView {
 
             return event
         case .flagsChanged:
-            return Self.isOptionReleasedEvent(event) && onCommit() ? nil : event
+            return BrowserTabSwitcherKeys.isControlReleased(event) && onCommit() ? nil : event
         default:
             return event
         }

@@ -2,6 +2,25 @@
 
 import AppKit
 
+// MARK: - BrowserTabSwitcherKeys
+
+/// Control-Tab opens the switcher and moves through it, Shift goes back, and releasing Control picks the tab.
+enum BrowserTabSwitcherKeys {
+    private static let tabKeyCode: UInt16 = 48
+
+    static func isSwitcherTab(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return event.keyCode == tabKeyCode
+            && modifiers.contains(.control)
+            && !modifiers.contains(.command)
+            && !modifiers.contains(.option)
+    }
+
+    static func isControlReleased(_ event: NSEvent) -> Bool {
+        !event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.control)
+    }
+}
+
 // MARK: - BrowserTabSwitcherLayout
 
 struct BrowserTabSwitcherLayout {
