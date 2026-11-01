@@ -47,6 +47,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var pendingNavigationURLs = [URL]()
     private var hasReceivedBrowserContext = false
     private var isTerminationRequested = false
+    private var traceRecorder: BrowserTraceRecorder?
+    private var taskManager: BrowserTaskManagerWindow?
     private var isQuitWarningPresented = false
     private var isSessionClosureConfirmationPresented = false
     private var didConfirmTerminationWarning = false
@@ -1779,8 +1781,48 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
+    private func presentTaskManager() {
+        if let taskManager {
+            taskManager.show()
+            return
+        }
+        let manager = BrowserTaskManagerWindow(
+            pages: { [weak self] in
+                var pages = [pid_t: [String]]()
+                for model in self?.allChromeModels ?? [] {
+                    pages.merge(model.taskManagerPages()) { $0 + $1 }
+                }
+                return pages
+            },
+            onClose: { [weak self] in self?.taskManager = nil },
+        )
+        taskManager = manager
+        manager.show()
+    }
+
+    private func presentTraceRecorder() {
+        if let traceRecorder {
+            traceRecorder.show()
+            return
+        }
+        let recorder = BrowserTraceRecorder(
+            beginTrace: { BrowserBeginTrace() != 0 },
+            endTrace: { path, completion in
+                path.withCString { BrowserEndTrace($0, completion) != 0 }
+            },
+            onClose: { [weak self] in self?.traceRecorder = nil },
+        )
+        traceRecorder = recorder
+        recorder.show()
+    }
+
     private func addHelpMenu(to menubar: NSMenu, app: NSApplication) {
         let menu = NSMenu(title: BrowserStrings.menuHelp)
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuGettingStarted) {
+            if let url = URL(string: "https://github.com/levochkaa/OpenArc#readme") {
+                NSWorkspace.shared.open(url)
+            }
+        })
         menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuKeyboardShortcuts) { [weak self] in
             self?.presentSettingsWindow(pane: .shortcuts)
         })
@@ -1795,14 +1837,24 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
         })
         menu.addItem(.separator())
-        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuRevealData) {
+        let troubleshooting = NSMenu(title: BrowserStrings.menuTroubleshooting)
+        troubleshooting.addItem(BrowserNativeMenuItem(BrowserStrings.menuRecordTrace) { [weak self] in
+            self?.presentTraceRecorder()
+        })
+        troubleshooting.addItem(BrowserNativeMenuItem(BrowserStrings.menuTaskManager) { [weak self] in
+            self?.presentTaskManager()
+        })
+        troubleshooting.addItem(BrowserNativeMenuItem(BrowserStrings.menuRevealData) {
             guard let path = BrowserRuntimeConfiguration.currentConfiguration()?.rootCachePath else { return }
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path, isDirectory: true)])
         })
-        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuCopyInfo) {
+        troubleshooting.addItem(BrowserNativeMenuItem(BrowserStrings.menuCopyInfo) {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(Self.applicationInfo, forType: .string)
         })
+        let troubleshootingItem = NSMenuItem(title: troubleshooting.title, action: nil, keyEquivalent: "")
+        troubleshootingItem.submenu = troubleshooting
+        menu.addItem(troubleshootingItem)
         let item = NSMenuItem()
         item.title = menu.title
         item.submenu = menu

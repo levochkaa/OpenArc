@@ -3026,6 +3026,16 @@ enum BrowserWindowMode: Equatable {
             .filter { URLComponents(string: $0.resolvedURLString)?.host?.lowercased() == host }
     }
 
+    /// Each renderer's process and the tabs it shows.
+    func taskManagerPages() -> [Int32: [String]] {
+        var pages = [Int32: [String]]()
+        for (tabID, processID) in tabDriver.rendererProcessIDsByTabID() {
+            guard let tab = tabs.first(where: { $0.id == tabID }) else { continue }
+            pages[processID, default: []].append(tab.displayTitle)
+        }
+        return pages.mapValues { $0.sorted() }
+    }
+
     func isPeekSessionOpen(_ sessionID: Int) -> Bool {
         tabDriver.isPeekSessionOpen(sessionID)
     }

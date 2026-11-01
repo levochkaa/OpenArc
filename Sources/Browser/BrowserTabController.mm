@@ -3387,6 +3387,7 @@ struct TabRecord {
   MediaFrameState reportedMedia;
   std::string closeRequestID;
   CefRefPtr<CefJSDialogCallback> closeDialogCallback;
+  int rendererProcessID = 0;
   __strong BrowserBeforeUnloadConfirmation *closeConfirmation = nil;
 };
 
@@ -3424,6 +3425,7 @@ struct TabRecord {
                          callback:(CefRefPtr<CefJSDialogCallback>)callback;
 - (void)cancelPageDialogForTabID:(NSString *)tabID;
 - (void)cancelDialogsForTabID:(NSString *)tabID;
+- (void)noteRendererProcessID:(int)processID forTabID:(NSString *)tabID;
 - (void)finishCloseDialogForTabID:(NSString *)tabID
                       requestID:(NSString *)requestID
                         browser:(CefRefPtr<CefBrowser>)browser
@@ -5519,6 +5521,23 @@ std::string BrowserMediaVolumeScript(double volume) {
   [_pageDialogs[tabID] cancel];
 }
 
+- (NSDictionary<NSString *, NSNumber *> *)rendererProcessIDsByTabID {
+  NSMutableDictionary<NSString *, NSNumber *> *result = [NSMutableDictionary dictionary];
+  for (const auto &entry : _tabRecords) {
+    if (entry.second.rendererProcessID > 0) {
+      result[ToNSString(entry.first)] = @(entry.second.rendererProcessID);
+    }
+  }
+  return result;
+}
+
+- (void)noteRendererProcessID:(int)processID forTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end()) {
+    it->second.rendererProcessID = processID;
+  }
+}
+
 - (void)cancelDialogsForTabID:(NSString *)tabID {
   [_pageDialogs[tabID] cancel];
 }
@@ -6249,6 +6268,11 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
                                                 CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_UI_THREAD();
   if (HandleCredentialMessage(controller_, ToNSString(tab_id_), frame, source_process, message)) {
+    return true;
+  }
+  if (source_process == PID_RENDERER && frame && frame->IsMain() &&
+      message->GetName() == shared::kRendererProcessMessage) {
+    [controller_ noteRendererProcessID:message->GetArgumentList()->GetInt(0) forTabID:ToNSString(tab_id_)];
     return true;
   }
   if (source_process != PID_RENDERER || !frame || message->GetName() != shared::kMediaStateMessage) {

@@ -176,6 +176,7 @@ enum BrowserPageContextCommand: String {
     /// order; each card shows its oldest.
     func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest])
     func isPeekSessionOpen(_ sessionID: Int) -> Bool
+    func rendererProcessIDsByTabID() -> [String: Int32]
     /// Puts a prompt over a Peek's page. False when the Peek is gone.
     func hostPrompt(_ prompt: NSView, height: CGFloat, inPeekSession sessionID: Int) -> Bool
     /// Chromium's settings for a page that differ from the profile default.

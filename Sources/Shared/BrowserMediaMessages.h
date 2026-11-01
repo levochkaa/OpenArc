@@ -20,6 +20,8 @@ inline constexpr char kPasswordFormMessage[] = "OpenArc.PasswordForm";
 inline constexpr char kPasswordSubmittedMessage[] = "OpenArc.PasswordSubmitted";
 // To the renderer: put these in the frame's sign-in fields: username and password.
 inline constexpr char kPasswordFillMessage[] = "OpenArc.PasswordFill";
+// To the browser: the renderer's process ID, for the Task Manager.
+inline constexpr char kRendererProcessMessage[] = "OpenArc.RendererProcess";
 // To the browser: the frame has an address form.
 inline constexpr char kAddressFormMessage[] = "OpenArc.AddressForm";
 // To the browser: the frame has a card form.

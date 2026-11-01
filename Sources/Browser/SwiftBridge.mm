@@ -7,6 +7,7 @@
 #import "OpenArc-Swift.h"
 
 #include "Shared/ClientManager.h"
+#include "include/cef_trace.h"
 #include "include/cef_version.h"
 
 namespace {
@@ -68,6 +69,36 @@ int BrowserCancelChromiumSignInWindows(void) {
     cancelled = 1;
   }
   return cancelled;
+}
+
+namespace {
+
+class BrowserTraceEnd final : public CefEndTracingCallback {
+ public:
+  explicit BrowserTraceEnd(void (^completion)(void)) : completion_(completion) {}
+  void OnEndTracingComplete(const CefString&) override {
+    void (^completion)(void) = completion_;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      completion();
+    });
+  }
+
+ private:
+  void (^completion_)(void);
+  IMPLEMENT_REFCOUNTING(BrowserTraceEnd);
+};
+
+}  // namespace
+
+int BrowserBeginTrace(void) {
+  return CefBeginTracing("toplevel,benchmark,blink,cc,gpu,renderer.scheduler,v8,viz,disabled-by-default-devtools.timeline",
+                         nullptr)
+             ? 1
+             : 0;
+}
+
+int BrowserEndTrace(const char* path, void (^completion)(void)) {
+  return CefEndTracing(path, new BrowserTraceEnd([completion copy])) ? 1 : 0;
 }
 
 void BrowserCloseAllBrowsers(void) {

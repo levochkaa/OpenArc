@@ -577,3 +577,27 @@ private let testCardJSON = #"{"cc-name":"Test Person","cc-number":"4242 4242 424
     #expect(abs(motion.binX(at: 1) - motion.binRestX) < 0.1)
     #expect(motion.binX(at: motion.binLeavesAt + 0.2) <= -motion.binSize + 0.1, "And out again")
 }
+
+@Test func aTraceIsNamedForItsTimeAndKeepsThePlainWords() throws {
+    let date = Date(timeIntervalSince1970: 0)
+    let name = try BrowserTraceRecorder.fileName(at: date, timeZone: #require(TimeZone(secondsFromGMT: 0)))
+    #expect(name == "OpenArc Trace 1970-01-01 00.00.00")
+}
+
+@Test @MainActor func theTaskManagerGroupsTabsByProcess() {
+    let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+    f.driver.rendererProcessIDs = [f.id("x"): 10, f.id("y"): 10, f.id("z"): 20, "gone": 30]
+    let pages = f.model.taskManagerPages()
+    #expect(pages[10]?.count == 2)
+    #expect(pages[20]?.count == 1)
+    #expect(pages[30] == nil, "A tab that's gone has no row")
+}
+
+@Test func taskManagerCPUIsThePartOfTheElapsedTime() {
+    typealias Usage = BrowserTaskManagerSampler.Usage
+    let old = Usage(memoryBytes: 1, cpuNanoseconds: 1_000_000_000)
+    let new = Usage(memoryBytes: 1, cpuNanoseconds: 1_750_000_000)
+    #expect(BrowserTaskManagerSampler.cpuPercent(from: old, to: new, elapsed: 1.5) == 50)
+    #expect(BrowserTaskManagerSampler.cpuPercent(from: nil, to: new, elapsed: 1.5) == 0)
+    #expect(BrowserTaskManagerSampler.usage(of: getpid()) != nil, "The kernel answers for this process")
+}

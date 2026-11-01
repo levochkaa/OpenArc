@@ -309,6 +309,10 @@ import Foundation
         promptingPeekSessions = Set(oldest.keys)
     }
 
+    func rendererProcessIDsByTabID() -> [String: Int32] {
+        controller.rendererProcessIDsByTabID().mapValues(\.int32Value)
+    }
+
     func isPeekSessionOpen(_ sessionID: Int) -> Bool {
         controller.peekPanel(forSessionID: sessionID) != nil
     }

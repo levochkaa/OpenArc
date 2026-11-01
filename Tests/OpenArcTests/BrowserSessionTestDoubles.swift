@@ -140,6 +140,7 @@ import Foundation
     var onPasswordSubmitted: ((String, String, String, String) -> Void)?
     private(set) var filledPasswords = [(username: String, password: String, frameID: String, origin: String)]()
 
+    var rendererProcessIDs = [String: Int32]()
     var openPeekSessions = Set<Int>()
 
     // MARK: Private
@@ -147,6 +148,8 @@ import Foundation
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
     private var activeTabID: String?
+
+    func rendererProcessIDsByTabID() -> [String: Int32] { rendererProcessIDs }
 
     func fillAddress(json: String, frameID: String, origin: String, tabID _: String) {
         filledAddresses.append((json, frameID, origin))

@@ -222,6 +222,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)visitNavigationEntriesForActiveTab:(void (^)(NSArray<NSDictionary<NSString *, NSString *> *> *entries,
                                                      NSInteger currentIndex))completion;
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset;
+/// The renderer behind each tab, for the Task Manager.
+- (NSDictionary<NSString *, NSNumber *> *)rendererProcessIDsByTabID;
 /// Hands a saved address to a frame, if it is still on the origin in `urlPrefix`.
 - (void)fillAddressJSON:(NSString *)json
                 frameID:(NSString *)frameID

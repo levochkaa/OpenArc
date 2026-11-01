@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include <map>
 #include <string>
 
@@ -438,6 +440,11 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
   void OnContextCreated(CefRefPtr<CefBrowser>,
                         CefRefPtr<CefFrame> frame,
                         CefRefPtr<CefV8Context> context) override {
+    if (frame && frame->IsMain() && context->IsSame(frame->GetV8Context())) {
+      CefRefPtr<CefProcessMessage> process = CefProcessMessage::Create(kRendererProcessMessage);
+      process->GetArgumentList()->SetInt(0, getpid());
+      frame->SendProcessMessage(PID_BROWSER, process);
+    }
     // CEF reports every world; extensions' content scripts get their own,
     // which must not replace the page's observer.
     if (!frame || !ObservesMedia(frame->GetURL().ToString()) || !context->IsSame(frame->GetV8Context())) {
