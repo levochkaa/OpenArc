@@ -41,11 +41,13 @@ struct BrowserNativeTooltipMetrics {
         )
         let measuredTextWidth = max(textWidth - 4, 1)
         func textHeight(_ string: String, font: NSFont) -> CGFloat {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = Self.lineBreakMode(for: string)
             let measured = (string as NSString)
                 .boundingRect(
                     with: NSSize(width: measuredTextWidth, height: CGFloat.greatestFiniteMagnitude),
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: [.font: font],
+                    attributes: [.font: font, .paragraphStyle: paragraph],
                 )
                 .height
             return min(ceil(measured), ceil((font.ascender - font.descender + font.leading) * 2))
@@ -64,6 +66,11 @@ struct BrowserNativeTooltipMetrics {
             ),
             height: bubbleHeight + border,
         )
+    }
+
+    /// A URL has no words to wrap on: it would stop at its first `?` or `/` and clip what follows.
+    static func lineBreakMode(for string: String) -> NSLineBreakMode {
+        string.contains(where: \.isWhitespace) ? .byWordWrapping : .byCharWrapping
     }
 }
 
@@ -95,6 +102,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         captionLabel.textColor = BrowserChromeColors.tooltipCaption
         for label in [titleLabel, captionLabel] {
             label.maximumNumberOfLines = 2
+            label.cell?.truncatesLastVisibleLine = true
             addSubview(label)
         }
         configure(title: title, caption: caption, shortcut: shortcut, placement: placement)
@@ -185,6 +193,7 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         placement: BrowserTooltipPlacement,
     ) {
         titleLabel.stringValue = title
+        titleLabel.lineBreakMode = BrowserNativeTooltipMetrics.lineBreakMode(for: title)
         captionLabel.stringValue = caption ?? ""
         captionLabel.isHidden = caption == nil
         self.caption = caption

@@ -93,7 +93,7 @@ final class BrowserSiteControlsNSView: NSView {
     }
 
     private var sidebarActionWidth: CGFloat {
-        let count = CGFloat(pinned.count + 3)
+        let count = CGFloat(pinned.count + 2)
         return count * BrowserChromeLayout.sidebarCurrentURLButtonSize + (count - 1) * BrowserChromeLayout
             .sidebarCurrentURLButtonSpacing
             + BrowserChromeLayout.sidebarCurrentURLButtonTrailingPadding + BrowserChromeLayout
@@ -226,9 +226,8 @@ final class BrowserSiteControlsNSView: NSView {
                 height: size,
             )
             copyButton.frame = siteButton.frame.offsetBy(dx: -(size + spacing), dy: 0)
-            splitButton.frame = copyButton.frame.offsetBy(dx: -(size + spacing), dy: 0)
             for (index, browserExtension) in pinned.enumerated() {
-                extensionButtons[browserExtension.id]?.frame = splitButton.frame.offsetBy(
+                extensionButtons[browserExtension.id]?.frame = copyButton.frame.offsetBy(
                     dx: -CGFloat(pinned.count - index) * (size + spacing),
                     dy: 0,
                 )
@@ -491,9 +490,15 @@ final class BrowserSiteControlsNSView: NSView {
     /// button or from `anchor` while these controls are off screen.
     func showControlCenter(anchor: NSView? = nil, preferredEdge: NSRectEdge? = nil) {
         guard model.currentTab != nil, !isSidebarResizing else { return }
+        // From the keyboard the button may still be hidden, and a popover needs a shown view.
+        if anchor == nil {
+            siteButton.isHidden = false
+        }
+        // In the sidebar it opens over the page, away from the window's edge.
+        let beside: NSRectEdge = model.userPreferencesStore.sidebarPosition == .right ? .minX : .maxX
         extensionPopovers.showControlCenter(
             relativeTo: anchor ?? siteButton,
-            preferredEdge: preferredEdge ?? (mode == .toolbar ? .minY : .minX),
+            preferredEdge: preferredEdge ?? (mode == .toolbar ? .minY : beside),
         )
     }
 
@@ -502,7 +507,8 @@ final class BrowserSiteControlsNSView: NSView {
         let show = !sidebar || showsSidebarActions
         copyVisibility.setVisible(show, view: copyButton, curve: .appearance)
         siteVisibility.setVisible(show, view: siteButton, curve: .appearance)
-        splitVisibility.setVisible(show, view: splitButton, curve: .appearance)
+        // The sidebar's address row has no Split View button; the toolbar does.
+        splitVisibility.setVisible(!sidebar, view: splitButton, curve: .appearance)
         copyButton.isEnabled = model.currentTab != nil && !isSidebarResizing
         siteButton.isEnabled = model.currentTab != nil && !isSidebarResizing
         splitButton.isEnabled = (model.selectedSplitGroup != nil || model.canAddSplitView) && !isSidebarResizing
@@ -571,7 +577,7 @@ final class BrowserSiteControlsNSView: NSView {
         extensionPopovers.openExtension(
             id: id,
             relativeTo: extensionButtons[id] ?? siteButton,
-            preferredEdge: mode == .toolbar ? .minY : .minX,
+            preferredEdge: mode == .toolbar ? .minY : model.userPreferencesStore.sidebarPosition == .right ? .minX : .maxX,
         )
     }
 
