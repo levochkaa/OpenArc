@@ -1,11 +1,11 @@
 #import "Browser/BrowserTabController.h"
 
+#import "Browser/SwiftBridge.h"
 #import <AuthenticationServices/AuthenticationServices.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Sparkle/Sparkle.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-#import "Browser/SwiftBridge.h"
 #import "OpenArc-Swift.h"
 #include "Shared/BrowserMediaMessages.h"
 #include "Shared/BrowserSchemes.h"
@@ -3038,6 +3038,16 @@ bool RunBasicPageContextCommand(CefRefPtr<CefBrowser> browser,
   }
 }
 
+void CloseBrowserAfterSignInWindows(CefRefPtr<CefBrowser> browser, bool force) {
+  if (!BrowserCancelChromiumSignInWindows()) {
+    browser->GetHost()->CloseBrowser(force);
+    return;
+  }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    if (browser->IsValid()) browser->GetHost()->CloseBrowser(force);
+  });
+}
+
 class BrowserTabClient final : public CefClient,
                                public CefContextMenuHandler,
                                public CefDisplayHandler,
@@ -3210,6 +3220,7 @@ class BrowserPeekClient final : public CefClient,
                                 public CefLifeSpanHandler,
                                 public CefLoadHandler,
                                 public CefRequestHandler,
+                                public CefJSDialogHandler,
                                 public CefPermissionHandler {
  public:
   BrowserPeekClient(BrowserTabController *controller, int sessionID)
@@ -3229,6 +3240,15 @@ class BrowserPeekClient final : public CefClient,
                                 CefRefPtr<CefFrame> frame,
                                 CefProcessId source_process,
                                 CefRefPtr<CefProcessMessage> message) override;
+  CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
+  bool OnJSDialog(CefRefPtr<CefBrowser> browser,
+                  const CefString &origin_url,
+                  JSDialogType dialog_type,
+                  const CefString &message_text,
+                  const CefString &default_prompt_text,
+                  CefRefPtr<CefJSDialogCallback> callback,
+                  bool &suppress_message) override;
+  void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
 
   void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
                            CefRefPtr<CefFrame>,
@@ -3367,8 +3387,6 @@ struct TabRecord {
   MediaFrameState reportedMedia;
   std::string closeRequestID;
   CefRefPtr<CefJSDialogCallback> closeDialogCallback;
-  CefRefPtr<CefJSDialogCallback> pageDialogCallback;
-  __strong BrowserJavaScriptDialog *pageDialog;
   __strong BrowserBeforeUnloadConfirmation *closeConfirmation = nil;
 };
 
@@ -3405,6 +3423,7 @@ struct TabRecord {
                       defaultText:(NSString *)defaultText
                          callback:(CefRefPtr<CefJSDialogCallback>)callback;
 - (void)cancelPageDialogForTabID:(NSString *)tabID;
+- (void)cancelDialogsForTabID:(NSString *)tabID;
 - (void)finishCloseDialogForTabID:(NSString *)tabID
                       requestID:(NSString *)requestID
                         browser:(CefRefPtr<CefBrowser>)browser
@@ -3704,6 +3723,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   NSArray<NSString *> *_reportedSplitPaneTabIDs;
   NSArray<NSValue *> *_reportedSplitPaneFrames;
   NSMutableDictionary<NSNumber *, BrowserPeekSession *> *_peekSessions;
+  NSMutableDictionary<NSString *, BrowserJavaScriptDialog *> *_pageDialogs;
   int _nextPeekSessionID;
   int _peekCardSessionID;
   std::map<int, PendingSitePermission> _sitePermissions;
@@ -5355,7 +5375,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   // Retain the latest pending navigation. Cancel must not drop an address
   // accepted before this close, including the initial deferred engine load.
   if (it->second.browser) {
-    it->second.browser->GetHost()->CloseBrowser(false);
+    CloseBrowserAfterSignInWindows(it->second.browser, false);
   } else {
     const BOOL wasActive = [_activeTabID isEqualToString:tabID];
     _tabRecords.erase(it);
@@ -5453,55 +5473,54 @@ std::string BrowserMediaVolumeScript(double volume) {
   [self scheduleNavigationForTabID:tabID];
 }
 
+/// A tab's window, or a Peek's own panel for its `peek-N` id.
+- (NSWindow *)dialogWindowForTabID:(NSString *)tabID {
+  if ([tabID hasPrefix:@"peek-"]) {
+    BrowserPeekSession *session = _peekSessions[@([tabID substringFromIndex:5].intValue)];
+    return session.closing ? nil : session.panel;
+  }
+  return _hostView.window;
+}
+
 - (void)presentPageDialogForTabID:(NSString *)tabID
                              kind:(NSInteger)kind
                            origin:(NSString *)origin
                           message:(NSString *)message
                       defaultText:(NSString *)defaultText
                          callback:(CefRefPtr<CefJSDialogCallback>)callback {
-  auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end() || it->second.pageDialogCallback) {
+  if (_pageDialogs == nil) {
+    _pageDialogs = [NSMutableDictionary dictionary];
+  }
+  if (_pageDialogs[tabID] != nil) {
     callback->Continue(false, CefString());
     return;
   }
-  it->second.pageDialogCallback = callback;
   __weak BrowserTabController *weakSelf = self;
+  BrowserJavaScriptDialog *dialog = [[BrowserJavaScriptDialog alloc]
+      initWithWindow:[self dialogWindowForTabID:tabID]
+                kind:kind
+              origin:origin
+             message:message
+         defaultText:defaultText
+          completion:^(BOOL accepted, NSString *text) {
+            BrowserTabController *owner = weakSelf;
+            if (owner) {
+              [owner->_pageDialogs removeObjectForKey:tabID];
+            }
+            callback->Continue(accepted, ToStdString(text));
+          }];
+  _pageDialogs[tabID] = dialog;
   dispatch_async(dispatch_get_main_queue(), ^{
-    BrowserTabController *controller = weakSelf;
-    if (!controller) return;
-    auto current = controller->_tabRecords.find(ToStdString(tabID));
-    if (current == controller->_tabRecords.end() || !current->second.pageDialogCallback) return;
-    BrowserJavaScriptDialog *dialog = [[BrowserJavaScriptDialog alloc]
-        initWithWindow:controller->_hostView.window
-                  kind:kind
-                origin:origin
-               message:message
-           defaultText:defaultText
-            completion:^(BOOL accepted, NSString *text) {
-              BrowserTabController *owner = weakSelf;
-              if (!owner) return;
-              auto record = owner->_tabRecords.find(ToStdString(tabID));
-              if (record == owner->_tabRecords.end() || !record->second.pageDialogCallback) return;
-              CefRefPtr<CefJSDialogCallback> reply = record->second.pageDialogCallback;
-              record->second.pageDialogCallback = nullptr;
-              record->second.pageDialog = nil;
-              reply->Continue(accepted, ToStdString(text));
-            }];
-    current->second.pageDialog = dialog;
     [dialog present];
   });
 }
 
 - (void)cancelPageDialogForTabID:(NSString *)tabID {
-  auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end()) return;
-  if (it->second.pageDialog) {
-    [it->second.pageDialog cancel];
-  } else if (it->second.pageDialogCallback) {
-    CefRefPtr<CefJSDialogCallback> reply = it->second.pageDialogCallback;
-    it->second.pageDialogCallback = nullptr;
-    reply->Continue(false, CefString());
-  }
+  [_pageDialogs[tabID] cancel];
+}
+
+- (void)cancelDialogsForTabID:(NSString *)tabID {
+  [_pageDialogs[tabID] cancel];
 }
 
 - (void)resetCloseDialogForTabID:(NSString *)tabID browser:(CefRefPtr<CefBrowser>)browser {
@@ -5543,7 +5562,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   CefRefPtr<CefBrowser> browser = it->second.browser;
   [self invalidateCloseRequestForTabID:tabID];
   if (browser) {
-    if (browser->IsValid()) browser->GetHost()->CloseBrowser(forceClose);
+    if (browser->IsValid()) CloseBrowserAfterSignInWindows(browser, forceClose);
     return;
   }
 
@@ -6404,6 +6423,30 @@ bool BrowserTabClient::OnBeforeUnloadDialog(
                                                      browser:browser callback:callback];
 }
 
+bool BrowserPeekClient::OnJSDialog(CefRefPtr<CefBrowser>,
+                                   const CefString &origin_url,
+                                   JSDialogType dialog_type,
+                                   const CefString &message_text,
+                                   const CefString &default_prompt_text,
+                                   CefRefPtr<CefJSDialogCallback> callback,
+                                   bool &) {
+  CEF_REQUIRE_UI_THREAD();
+  BrowserTabController *controller = controller_;
+  if (!controller) return false;
+  [controller presentPageDialogForTabID:[NSString stringWithFormat:@"peek-%d", session_id_]
+                                   kind:static_cast<NSInteger>(dialog_type)
+                                 origin:ToNSString(origin_url.ToString())
+                                message:ToNSString(message_text.ToString())
+                            defaultText:ToNSString(default_prompt_text.ToString())
+                               callback:callback];
+  return true;
+}
+
+void BrowserPeekClient::OnResetDialogState(CefRefPtr<CefBrowser>) {
+  CEF_REQUIRE_UI_THREAD();
+  [controller_ cancelPageDialogForTabID:[NSString stringWithFormat:@"peek-%d", session_id_]];
+}
+
 bool BrowserTabClient::OnJSDialog(CefRefPtr<CefBrowser>,
                                   const CefString &origin_url,
                                   JSDialogType dialog_type,
@@ -6483,6 +6526,7 @@ void BrowserTabClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
     return;
   }
 
+  [controller cancelDialogsForTabID:ToNSString(tab_id_)];
   [controller handleBrowserClosed:browser forTabID:ToNSString(tab_id_)];
 }
 
@@ -6711,6 +6755,7 @@ bool BrowserPeekClient::DoClose(CefRefPtr<CefBrowser> browser) {
 void BrowserPeekClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UI_THREAD();
   shared::ClientManager::GetInstance()->OnBeforeClose(browser);
+  [controller_ cancelDialogsForTabID:[NSString stringWithFormat:@"peek-%d", session_id_]];
   [controller_ handlePeekClosed:browser session:session_id_];
 }
 
