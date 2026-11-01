@@ -3459,6 +3459,8 @@ struct TabRecord {
 
 @end
 
+@class BrowserPeekSession;
+
 @interface BrowserTabController ()
 
 - (void)startBrowserCreationForTabID:(NSString *)tabID
@@ -3485,6 +3487,7 @@ struct TabRecord {
 - (void)handlePeekAddressChange:(NSString *)urlString session:(int)sessionID;
 - (void)closePeekSession:(int)sessionID;
 - (void)closePeekSessionByUser:(int)sessionID;
+- (void)closePeekBrowserForSession:(BrowserPeekSession *)session;
 - (BOOL)isPeekSessionStandalone:(int)sessionID;
 - (BOOL)isPeekSessionEditingAddress:(int)sessionID;
 - (void)presentPeekWithURLString:(NSString *)urlString standalone:(BOOL)standalone;
@@ -4540,7 +4543,7 @@ void WatchClickModifiers();
   session.initialURLString = resolved;
   session.standalone = standalone;
   session.lastUsed = NSDate.date;
-  session.panel = standalone ? [BrowserPeekPanel presentStandalone] : [BrowserPeekPanel presentOverWindow:window];
+  session.panel = standalone ? [BrowserPeekPanel presentStandalone] : [BrowserPeekPanel presentOverWindow:window page:_hostView];
   [session.panel updateWithURLString:resolved];
   _peekSessions[@(sessionID)] = session;
   if (!standalone) {
@@ -4639,10 +4642,17 @@ void WatchClickModifiers();
     return;
   }
   session.closing = YES;
-  [session.panel dismiss];
   if (_peekCardSessionID == sessionID) {
     _peekCardSessionID = 0;
   }
+  // The page stays in the card until the card has closed around it.
+  __weak BrowserTabController *weakSelf = self;
+  [session.panel dismissWithCompletion:^{
+    [weakSelf closePeekBrowserForSession:session];
+  }];
+}
+
+- (void)closePeekBrowserForSession:(BrowserPeekSession *)session {
   if (session->_browser) {
     session->_browser->GetHost()->CloseBrowser(true);
   }
@@ -4663,9 +4673,19 @@ void WatchClickModifiers();
   }
 }
 
+/// Everything is going away, so nothing waits for an animation.
 - (void)closeAllPeeks {
   for (NSNumber *sessionID in _peekSessions.allKeys) {
-    [self closePeekSession:sessionID.intValue];
+    BrowserPeekSession *session = _peekSessions[sessionID];
+    if (session == nil || session.closing) {
+      continue;
+    }
+    session.closing = YES;
+    [session.panel dismiss];
+    if (_peekCardSessionID == sessionID.intValue) {
+      _peekCardSessionID = 0;
+    }
+    [self closePeekBrowserForSession:session];
   }
 }
 

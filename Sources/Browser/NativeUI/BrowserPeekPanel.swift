@@ -18,6 +18,17 @@ import AppKit
     /// The card covers this share of the window and leaves the page
     /// visible around it.
     static let windowFraction: CGFloat = 0.84
+    /// The card's width against the page behind it.
+    static let pageWidthFraction: CGFloat = 0.804
+
+    // MARK: Private
+
+    private static let stripHeight: CGFloat = 133.5
+    private static let cardOpens = (stiffness: CGFloat(657.7), damping: CGFloat(44.37))
+    private static let cardCloses = (stiffness: CGFloat(779.82), damping: CGFloat(49.99))
+    /// How far the page behind steps back, about its center.
+    private static let pageScale: CGFloat = 0.9881
+    private static let pageOpacity: Float = 0.3
 
     override var canBecomeKey: Bool { true }
 
@@ -64,13 +75,25 @@ import AppKit
     )
     let hostLabel = BrowserPeekAddressField(string: "")
 
-    // MARK: Private
-
     private var parentMonitor: Any?
     private var currentURLString = ""
+    private var card = NSVisualEffectView()
+    /// Holds the card, and moves and scales it as one.
+    private let cardHost = NSView()
+    private let cardMask = CALayer()
+    private let cardShadow = CALayer()
+    private var openingTransform = CATransform3DIdentity
+    /// The page behind the card, which dims and steps back.
+    private weak var pageBehind: NSView?
+    private var isClosingAnimated = false
 
     /// The engine keeps a loading page from taking the keys meanwhile.
     @objc var isEditingAddress: Bool { hostLabel.currentEditor() != nil }
+
+    /// The card on screen, without the clear part of the panel.
+    var cardScreenFrame: NSRect {
+        isStandalone ? frame : convertToScreen(cardHost.convert(cardHost.bounds, to: nil))
+    }
 
     private init(contentRect: NSRect, standalone: Bool) {
         self.isStandalone = standalone
@@ -90,11 +113,12 @@ import AppKit
             hidesOnDeactivate = false
             minSize = NSSize(width: 480, height: 360)
             closeButton.isHidden = true
+            animationBehavior = .none
         } else {
             isOpaque = false
             backgroundColor = .clear
-            hasShadow = true
-            animationBehavior = .utilityWindow
+            hasShadow = false
+            animationBehavior = .none
         }
         isMovableByWindowBackground = false
         let card = NSVisualEffectView()
@@ -104,8 +128,20 @@ import AppKit
         card.layer?.cornerRadius = standalone ? 0 : Self.cornerRadius
         card.layer?.masksToBounds = true
         card.autoresizingMask = [.width, .height]
-        card.frame = NSRect(origin: .zero, size: contentRect.size)
-        contentView = card
+        self.card = card
+        if standalone {
+            card.frame = NSRect(origin: .zero, size: contentRect.size)
+            contentView = card
+        } else {
+            let content = NSView(frame: NSRect(origin: .zero, size: contentRect.size))
+            contentView = content
+            cardHost.frame = content.bounds
+            cardHost.autoresizingMask = [.width, .height]
+            cardHost.wantsLayer = true
+            content.addSubview(cardHost)
+            card.frame = cardHost.bounds
+            cardHost.addSubview(card)
+        }
         for view in [closeButton, hostLabel, splitButton, openButton, hostView, permissionPrompt] {
             card.addSubview(view)
         }
@@ -163,7 +199,13 @@ import AppKit
     }
 
     /// The card's frame for a parent window, centered over its content.
-    static func frame(over window: NSWindow) -> NSRect {
+    static func frame(over window: NSWindow, page: NSView? = nil) -> NSRect {
+        if let page, page.window === window {
+            let area = window.convertToScreen(page.convert(page.bounds, to: nil))
+            let width = (area.width * pageWidthFraction).rounded()
+            let height = area.height - 4
+            return NSRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height).integral
+        }
         let parent = window.frame
         let width = (parent.width * windowFraction).rounded()
         let height = (parent.height * windowFraction).rounded()
@@ -189,14 +231,23 @@ import AppKit
         return panel
     }
 
-    @objc(presentOverWindow:) static func present(over window: NSWindow) -> BrowserPeekPanel {
-        let frame = frame(over: window)
-        let panel = BrowserPeekPanel(contentRect: frame, standalone: false)
+    /// The panel covers the parent window and its clear part lets clicks through, so
+    /// the card can grow beyond its final size without resizing the page in it.
+    @objc(presentOverWindow:page:) static func present(over window: NSWindow, page: NSView?) -> BrowserPeekPanel {
+        let cardFrame = frame(over: window, page: page)
+        let panel = BrowserPeekPanel(contentRect: window.frame, standalone: false)
         window.addChildWindow(panel, ordered: .above)
-        panel.setFrame(frame, display: true)
+        panel.setFrame(window.frame, display: false)
+        panel.pageBehind = page
+        panel.placeCard(screenFrame: cardFrame)
         panel.makeKeyAndOrderFront(nil)
         panel.watchParent(window)
+        panel.animateOpening(from: NSEvent.mouseLocation)
         return panel
+    }
+
+    static func present(over window: NSWindow) -> BrowserPeekPanel {
+        present(over: window, page: nil)
     }
 
     /// Typed text becomes a URL or a search with the chosen search engine.
@@ -305,8 +356,217 @@ import AppKit
 
     @objc func dismiss() {
         stopWatchingParent()
+        restorePageBehind()
         parent?.removeChildWindow(self)
         orderOut(nil)
+    }
+
+    /// Closes the card back into its strip, then runs `completion` with the page out
+    /// of view. A small window and Reduce Motion close at once.
+    @objc func dismiss(completion: @escaping @MainActor @Sendable () -> Void) {
+        guard !isStandalone, isVisible, !isClosingAnimated,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else {
+            dismiss()
+            completion()
+            return
+        }
+        isClosingAnimated = true
+        stopWatchingParent()
+        let duration = animateClosing()
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            self?.dismiss()
+            completion()
+        }
+    }
+
+    private func placeCard(screenFrame: NSRect) {
+        guard let content = contentView else { return }
+        let local = content.convert(convertFromScreen(screenFrame), from: nil)
+        cardHost.autoresizingMask = []
+        cardHost.frame = local
+        card.frame = cardHost.bounds
+        layoutCard()
+        cardMask.backgroundColor = NSColor.black.cgColor
+        cardMask.cornerRadius = Self.cornerRadius
+        cardMask.anchorPoint = .zero
+        cardMask.frame = cardHost.bounds
+        cardHost.layer?.mask = cardMask
+        cardHost.layer?.masksToBounds = false
+        cardShadow.frame = local
+        cardShadow.shadowColor = NSColor.black.cgColor
+        cardShadow.shadowOpacity = 0.3
+        cardShadow.shadowRadius = 24
+        cardShadow.shadowOffset = CGSize(width: 0, height: -8)
+        cardShadow.shadowPath = CGPath(
+            roundedRect: CGRect(origin: .zero, size: local.size),
+            cornerWidth: Self.cornerRadius,
+            cornerHeight: Self.cornerRadius,
+            transform: nil,
+        )
+        content.wantsLayer = true
+        if cardShadow.superlayer == nil, let hostLayer = cardHost.layer {
+            content.layer?.insertSublayer(cardShadow, below: hostLayer)
+        }
+    }
+
+    /// The strip the card grows from: the card's top, wide as the page, around the pointer.
+    private func stripTransform(pointer: NSPoint) -> CATransform3D {
+        guard let page = pageBehind, let pageWindow = page.window else { return CATransform3DIdentity }
+        let area = pageWindow.convertToScreen(page.convert(page.bounds, to: nil))
+        let size = cardHost.bounds.size
+        let scale = size.width > 0 ? max(area.width / size.width, 1) : 1
+        let onScreen = cardScreenFrame
+        let halfStrip = Self.stripHeight * scale / 2
+        let target = min(max(pointer.y, area.minY + halfStrip), area.maxY - halfStrip - 4)
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        // The strip's middle, in the card, before any transform.
+        let stripMiddle = size.height - Self.stripHeight / 2
+        let dy = (target - onScreen.minY) - (center.y + scale * (stripMiddle - center.y))
+        var transform = CATransform3DMakeTranslation(0, dy, 0)
+        transform = CATransform3DTranslate(transform, center.x, center.y, 0)
+        transform = CATransform3DScale(transform, scale, scale, 1)
+        return CATransform3DTranslate(transform, -center.x, -center.y, 0)
+    }
+
+    private func pageTransform(_ page: NSView) -> CATransform3D {
+        let center = CGPoint(x: page.bounds.midX, y: page.bounds.midY)
+        var transform = CATransform3DMakeTranslation(center.x, center.y, 0)
+        transform = CATransform3DScale(transform, Self.pageScale, Self.pageScale, 1)
+        return CATransform3DTranslate(transform, -center.x, -center.y, 0)
+    }
+
+    private func spring(
+        _ keyPath: String,
+        from: Any?,
+        to: Any?,
+        _ parameters: (stiffness: CGFloat, damping: CGFloat),
+    ) -> CASpringAnimation {
+        let animation = CASpringAnimation(keyPath: keyPath)
+        animation.mass = 1
+        animation.stiffness = parameters.stiffness
+        animation.damping = parameters.damping
+        animation.fromValue = from
+        animation.toValue = to
+        animation.duration = animation.settlingDuration
+        return animation
+    }
+
+    private func animateOpening(from pointer: NSPoint) {
+        guard let hostLayer = cardHost.layer,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else {
+            setPageBehind(dimmed: true, animated: false)
+            return
+        }
+        let size = cardHost.bounds.size
+        let start = stripTransform(pointer: pointer)
+        openingTransform = start
+        let strip = CGRect(x: 0, y: size.height - Self.stripHeight, width: size.width, height: Self.stripHeight)
+        let identity = NSValue(caTransform3D: CATransform3DIdentity)
+        hostLayer.add(
+            spring("transform", from: NSValue(caTransform3D: start), to: identity, Self.cardOpens),
+            forKey: "open",
+        )
+        cardMask.add(
+            spring(
+                "bounds",
+                from: NSValue(rect: CGRect(origin: .zero, size: strip.size)),
+                to: NSValue(rect: CGRect(origin: .zero, size: size)),
+                Self.cardOpens,
+            ),
+            forKey: "open.bounds",
+        )
+        cardMask.add(
+            spring("position", from: NSValue(point: strip.origin), to: NSValue(point: .zero), Self.cardOpens),
+            forKey: "open.position",
+        )
+        cardMask.add(spring("cornerRadius", from: 0, to: Self.cornerRadius, Self.cardOpens), forKey: "open.corner")
+        cardShadow.add(spring("shadowOpacity", from: 0, to: 0.3, Self.cardOpens), forKey: "open.shadow")
+        setPageBehind(dimmed: true, animated: true)
+    }
+
+    /// Returns how long the closing runs.
+    private func animateClosing() -> TimeInterval {
+        guard let hostLayer = cardHost.layer else { return 0 }
+        let size = cardHost.bounds.size
+        let end = openingTransform
+        let strip = CGRect(x: 0, y: size.height - Self.stripHeight, width: size.width, height: Self.stripHeight)
+        let move = spring(
+            "transform",
+            from: NSValue(caTransform3D: CATransform3DIdentity),
+            to: NSValue(caTransform3D: end),
+            Self.cardCloses,
+        )
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        hostLayer.transform = end
+        hostLayer.opacity = 0
+        cardShadow.shadowOpacity = 0
+        cardMask.bounds = CGRect(origin: .zero, size: strip.size)
+        cardMask.position = strip.origin
+        cardMask.cornerRadius = 0
+        hostLayer.add(move, forKey: "close")
+        hostLayer.add(spring("opacity", from: 1, to: 0, Self.cardCloses), forKey: "close.opacity")
+        cardMask.add(
+            spring(
+                "bounds",
+                from: NSValue(rect: CGRect(origin: .zero, size: size)),
+                to: NSValue(rect: CGRect(origin: .zero, size: strip.size)),
+                Self.cardCloses,
+            ),
+            forKey: "close.bounds",
+        )
+        cardMask.add(
+            spring("position", from: NSValue(point: .zero), to: NSValue(point: strip.origin), Self.cardCloses),
+            forKey: "close.position",
+        )
+        cardMask.add(spring("cornerRadius", from: Self.cornerRadius, to: 0, Self.cardCloses), forKey: "close.corner")
+        cardShadow.add(spring("shadowOpacity", from: 0.3, to: 0, Self.cardCloses), forKey: "close.shadow")
+        CATransaction.commit()
+        setPageBehind(dimmed: false, animated: true)
+        return move.settlingDuration
+    }
+
+    private func setPageBehind(dimmed: Bool, animated: Bool) {
+        guard let page = pageBehind, let layer = page.layer else { return }
+        let transform = dimmed ? pageTransform(page) : CATransform3DIdentity
+        let opacity: Float = dimmed ? Self.pageOpacity : 1
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if animated {
+            // The page moves on the spring the card does not use.
+            let parameters = dimmed ? Self.cardCloses : Self.cardOpens
+            let fromTransform = layer.presentation()?.transform ?? layer.transform
+            let fromOpacity = layer.presentation()?.opacity ?? layer.opacity
+            layer.add(
+                spring(
+                    "transform",
+                    from: NSValue(caTransform3D: fromTransform),
+                    to: NSValue(caTransform3D: transform),
+                    parameters,
+                ),
+                forKey: "peek.page",
+            )
+            layer.add(spring("opacity", from: fromOpacity, to: opacity, parameters), forKey: "peek.page.opacity")
+        }
+        layer.transform = transform
+        layer.opacity = opacity
+        CATransaction.commit()
+    }
+
+    private func restorePageBehind() {
+        guard let layer = pageBehind?.layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if !isClosingAnimated {
+            layer.removeAnimation(forKey: "peek.page")
+            layer.removeAnimation(forKey: "peek.page.opacity")
+        }
+        layer.transform = CATransform3DIdentity
+        layer.opacity = 1
+        CATransaction.commit()
+        pageBehind = nil
     }
 
     private func beginEditingAddress() {
@@ -334,7 +594,6 @@ import AppKit
     /// The bar keeps its place on resize; the small window leaves room for the
     /// traffic lights instead of a Close button.
     private func layoutCard() {
-        guard let card = contentView else { return }
         let bounds = card.bounds
         let size = BrowserChromeLayout.sidebarCurrentURLButtonSize
         let y = bounds.height - Self.barHeight + ((Self.barHeight - size) / 2).rounded()

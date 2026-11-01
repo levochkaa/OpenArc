@@ -23,7 +23,9 @@ import Testing
         let panel = BrowserPeekPanel.present(over: window)
         defer { panel.dismiss() }
         #expect(panel.parent === window)
-        #expect(panel.hostView.frame.height == panel.frame.height - BrowserPeekPanel.barHeight)
+        #expect(panel.frame == window.frame, "It covers the window so the card can grow past its size")
+        #expect(panel.cardScreenFrame == expected)
+        #expect(panel.hostView.frame.height == expected.height - BrowserPeekPanel.barHeight)
         panel.update(urlString: "https://www.example.com/page")
         #expect(panel.hostLabel.stringValue == "example.com")
 
