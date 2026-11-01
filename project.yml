@@ -304,6 +304,7 @@ targets:
       - path: Sources/Browser/BrowserStrings.swift
       - path: Sources/Browser/Resources/en.lproj/Localizable.strings
       - path: Sources/Browser/Resources/Credits.html
+      - path: Sources/Browser/Resources/GettingStarted.html
     dependencies:
       - package: DomainParser
     settings:

@@ -1856,9 +1856,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private func addHelpMenu(to menubar: NSMenu, app: NSApplication) {
         let menu = NSMenu(title: BrowserStrings.menuHelp)
-        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuGettingStarted) {
-            if let url = URL(string: "https://github.com/levochkaa/OpenArc#readme") {
-                NSWorkspace.shared.open(url)
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuGettingStarted) { [weak self] in
+            if let url = Bundle.main.url(forResource: "GettingStarted", withExtension: "html") {
+                self?.activeChromeModel?.openURLInNewTab(url)
             }
         })
         menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuKeyboardShortcuts) { [weak self] in
