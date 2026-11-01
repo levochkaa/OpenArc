@@ -36,6 +36,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         pressEffect: .right,
         action: {},
     )
+    private lazy var reloadSymbol = BrowserReloadSymbolState { [weak self] in self?.refresh() }
     private let reload = BrowserNativeChromeButton(
         symbol: "arrow.clockwise",
         title: BrowserStrings.navigationRefresh,
@@ -86,8 +87,8 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         back.onAction = { [weak model] in model?.goBack() }
         forward.onAction = { [weak model] in model?.goForward() }
         reload
-            .onAction = { [weak model] in
-                if model?.canStopLoading == true {
+            .onAction = { [weak self, weak model] in
+                if self?.reloadSymbol.showsStop == true {
                     model?.stopLoadingCurrentTab()
                 } else {
                     model?.reloadCurrentTab()
@@ -172,15 +173,17 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         forward.tooltipTitle = shortcuts.descriptor(for: .goForward).helpTitle
         back.isEnabled = model.canGoBack
         forward.isEnabled = model.canGoForward
+        reloadSymbol.update(isLoading: model.canStopLoading)
+        let showsStop = reloadSymbol.showsStop
         reload.configureSymbol(
-            model.canStopLoading ? "xmark" : "arrow.clockwise",
-            title: model.canStopLoading
+            showsStop ? "xmark" : "arrow.clockwise",
+            title: showsStop
                 ? BrowserStrings.navigationStopLoading
                 : shortcuts.descriptor(for: .reload).helpTitle,
         )
-        reload.tooltipShortcut = model.canStopLoading ? nil : shortcuts.shortcut(for: .reload)
+        reload.tooltipShortcut = showsStop ? nil : shortcuts.shortcut(for: .reload)
         reload.isEnabled = model.canStopLoading || model.canReload
-        reload.pressEffect = model.canStopLoading ? .compress : .rotateClockwise
+        reload.pressEffect = showsStop ? .compress : .rotateClockwise
         for button in [back, forward, reload] {
             button.isHidden = !showsNavigation
         }

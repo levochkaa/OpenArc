@@ -61,6 +61,8 @@ import QuartzCore
         static let floatingSidebar = Curve.spring(response: 0.17, damping: 0.8)
         /// A dropped row landing in place, with the rows making room for it.
         static let landing = rowList
+        /// Reload and Stop dissolving into each other.
+        static let reloadDissolve = Curve.easeInOut(0.1)
         /// The copy button's link turning into a check: the first leaves, then the next arrives.
         static let copy = Curve.bezier(0.4, x1: 0, y1: 0, x2: 1, y2: 1)
         /// The check turning back into a link.

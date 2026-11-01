@@ -8,9 +8,11 @@ import QuartzCore
 /// One reusable native row for tabs, favorites, folders, space headers, Split
 /// Views and New Tab.
 final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFieldDelegate {
+    enum Kind { case tab, appTab, folder, space, newTab, split }
+
     // MARK: Internal
 
-    enum Kind { case tab, appTab, folder, space, newTab, split }
+    override var tooltipTarget: BrowserTooltipCoordinator.Target { .row }
 
     override var dragContentBounds: CGRect { CGRect(
         x: indent,

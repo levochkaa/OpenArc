@@ -440,7 +440,7 @@ final class BrowserRootView: NSView {
     /// Committed at once, so the slide and the fade run while the tab switches.
     private func beginSpaceTransition(to spaceID: String) {
         let delay = sidebar.sidebar.slidePager(toSpaceID: spaceID)
-        background.setTheme(model.spaceThemesByID[spaceID], animated: !isEditingSpaceTheme, delay: delay)
+        background.setTheme(model.spaceThemesByID[spaceID], animated: !isEditingSpaceTheme, delay: delay + 0.02)
         CATransaction.flush()
     }
 
@@ -486,6 +486,10 @@ final class BrowserRootView: NSView {
             // moves the page and keeps the shared ease.
             let changed = zip(previousLayoutState, state).enumerated().filter { $0.element.0 != $0.element.1 }
             nextLayoutCurve = changed.map(\.offset) == [1] ? .floatingSidebar : .sidebar
+            // The toolbar and bookmarks bar appear and leave at once.
+            if Set(changed.map(\.offset)).isSubset(of: [2, 3]) {
+                animateNextLayout = false
+            }
             if model.isSidebarVisible,!previousLayoutState[0] {
                 finishSidebarHoverOverlayPromotionIfNeeded()
             }

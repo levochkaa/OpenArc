@@ -71,6 +71,9 @@ class BrowserNativePressableView: BrowserNativeSurface {
 
     var dragContentBounds: CGRect { bounds }
 
+    /// Rows wait longer than buttons before showing a tooltip.
+    var tooltipTarget: BrowserTooltipCoordinator.Target { .button }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -229,6 +232,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
                 shortcut: tooltipShortcut,
                 placement: tooltipPlacement,
                 anchorXFraction: tooltipAnchorXFraction,
+                target: tooltipTarget,
             )
         } else {
             BrowserNativeTooltipPresenter.shared.end(id: tooltipID)

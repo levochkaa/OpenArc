@@ -396,6 +396,7 @@ private final class BrowserNativeTooltipPanelView: NSView {
         shortcut: BrowserKeyboardShortcut? = nil,
         placement: BrowserTooltipPlacement = .belowLeading,
         anchorXFraction: CGFloat = BrowserChromeLayout.tooltipAnchorXFraction,
+        target: BrowserTooltipCoordinator.Target = .button,
     ) {
         guard !isSuppressed else { return }
         let isAlreadyHovering = hoveredID == id
@@ -414,7 +415,7 @@ private final class BrowserNativeTooltipPanelView: NSView {
                 show()
             }
         } else {
-            coordinator.setHovering(true, for: id)
+            coordinator.setHovering(true, for: id, target: target)
         }
     }
 

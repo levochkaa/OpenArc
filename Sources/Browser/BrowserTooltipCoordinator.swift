@@ -139,6 +139,10 @@ enum BrowserTooltipMeasuredSizeResolver {
 // MARK: - BrowserTooltipCoordinator
 
 @MainActor final class BrowserTooltipCoordinator: ObservableObject {
+    /// What the tooltip belongs to: a button's shows sooner, and after a row's tooltip
+    /// the next rows stay quiet until the pointer has been away from rows for a moment.
+    enum Target { case button, row }
+
     // MARK: Internal
 
     @Published private(set) var activeTooltipID: UUID?
@@ -146,18 +150,21 @@ enum BrowserTooltipMeasuredSizeResolver {
     // MARK: Private
 
     private let activationDelayNanoseconds: UInt64
+    private let rowActivationDelayNanoseconds: UInt64
     private let cooldownDelayNanoseconds: UInt64
 
     private var hoveredTooltipID: UUID?
-    private var isWarm = false
+    private var hasShownRowTooltip = false
     private var activationTask: Task<Void, Never>?
     private var cooldownTask: Task<Void, Never>?
 
     init(
         activationDelayNanoseconds: UInt64 = 430_000_000,
+        rowActivationDelayNanoseconds: UInt64 = 1_480_000_000,
         cooldownDelayNanoseconds: UInt64 = 300_000_000,
     ) {
         self.activationDelayNanoseconds = activationDelayNanoseconds
+        self.rowActivationDelayNanoseconds = rowActivationDelayNanoseconds
         self.cooldownDelayNanoseconds = cooldownDelayNanoseconds
     }
 
@@ -166,24 +173,19 @@ enum BrowserTooltipMeasuredSizeResolver {
         cooldownTask?.cancel()
     }
 
-    func setHovering(_ isHovering: Bool, for tooltipID: UUID) {
+    func setHovering(_ isHovering: Bool, for tooltipID: UUID, target: Target = .button) {
         if isHovering {
-            beginHover(for: tooltipID)
+            beginHover(for: tooltipID, target: target)
         } else {
             endHover(for: tooltipID)
         }
     }
 
-    private func beginHover(for tooltipID: UUID) {
-        cooldownTask?.cancel()
-        cooldownTask = nil
+    private func beginHover(for tooltipID: UUID, target: Target) {
         hoveredTooltipID = tooltipID
-
-        if isWarm {
-            activationTask?.cancel()
-            activationTask = nil
-            activeTooltipID = tooltipID
-            return
+        if target == .button {
+            cooldownTask?.cancel()
+            cooldownTask = nil
         }
 
         guard activeTooltipID != tooltipID else {
@@ -191,18 +193,29 @@ enum BrowserTooltipMeasuredSizeResolver {
         }
 
         activationTask?.cancel()
+        activationTask = nil
+        guard target == .button || !hasShownRowTooltip else {
+            cooldownTask?.cancel()
+            cooldownTask = nil
+            return
+        }
+        let delay = target == .row ? rowActivationDelayNanoseconds : activationDelayNanoseconds
         activationTask = Task { [weak self] in
             guard let self else {
                 return
             }
 
             do {
-                try await Task.sleep(nanoseconds: activationDelayNanoseconds)
+                try await Task.sleep(nanoseconds: delay)
             } catch {
                 return
             }
 
-            activateTooltipIfStillHovered(tooltipID)
+            guard hoveredTooltipID == tooltipID else {
+                return
+            }
+            activeTooltipID = tooltipID
+            hasShownRowTooltip = hasShownRowTooltip || target == .row
         }
     }
 
@@ -226,25 +239,7 @@ enum BrowserTooltipMeasuredSizeResolver {
                 return
             }
 
-            resetIfNoTooltipIsHovered()
+            hasShownRowTooltip = false
         }
-    }
-
-    private func activateTooltipIfStillHovered(_ tooltipID: UUID) {
-        guard hoveredTooltipID == tooltipID else {
-            return
-        }
-
-        activeTooltipID = tooltipID
-        isWarm = true
-    }
-
-    private func resetIfNoTooltipIsHovered() {
-        guard hoveredTooltipID == nil else {
-            return
-        }
-
-        activeTooltipID = nil
-        isWarm = false
     }
 }

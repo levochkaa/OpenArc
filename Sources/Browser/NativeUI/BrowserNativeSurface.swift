@@ -320,6 +320,9 @@ final class BrowserNativeChromeButton: NSButton {
         }
     }
 
+    /// Reload and Stop dissolve into each other in place.
+    private var symbolCrossfades: Bool { ["xmark", "arrow.clockwise"].contains(symbolName) }
+
     private var restingTint: NSColor {
         isSelected ? BrowserChromeColors.primaryText : style.foreground
     }
@@ -330,6 +333,9 @@ final class BrowserNativeChromeButton: NSButton {
 
     /// The check replaces the link quickly, slowing down. The link's return is gentler.
     private var symbolOutProgress: CGFloat {
+        if symbolCrossfades {
+            return symbolProgress
+        }
         if symbolName == "checkmark" {
             let linear = min(symbolProgress / 0.25, 1)
             return 1 - pow(1 - linear, 2)
@@ -340,6 +346,9 @@ final class BrowserNativeChromeButton: NSButton {
 
     /// The new symbol arrives after a pause, slowing into place. The link is back sooner.
     private var symbolInProgress: CGFloat {
+        if symbolCrossfades {
+            return symbolProgress
+        }
         let start = symbolName == "checkmark" ? 0.45 : 0.11
         let linear = min(max((symbolProgress - start) / (1 - start), 0), 1)
         return 1 - pow(1 - linear, 3)
@@ -459,7 +468,7 @@ final class BrowserNativeChromeButton: NSButton {
             NSGraphicsContext.saveGraphicsState()
             let oldTransform = AffineTransform(translationByX: bounds.midX, byY: bounds.midY)
             var transform = oldTransform
-            transform.scale(1 - 0.8 * symbolOutProgress)
+            transform.scale(symbolCrossfades ? 1 : 1 - 0.8 * symbolOutProgress)
             transform.translate(x: -bounds.midX, y: -bounds.midY)
             (transform as NSAffineTransform).concat()
             draw(snapshot: oldSymbol, alpha: 1 - symbolOutProgress)
@@ -469,7 +478,7 @@ final class BrowserNativeChromeButton: NSButton {
         let transform = AffineTransform(translationByX: bounds.midX, byY: bounds.midY)
         var effect = transform
         let rowScale = 1 - (1 - style.pressedScale) * progress
-        effect.scale(rowScale * (0.2 + 0.8 * symbolInProgress))
+        effect.scale(rowScale * (symbolCrossfades ? 1 : 0.2 + 0.8 * symbolInProgress))
         switch pressEffect {
         case .up: effect.translate(x: 0, y: 2 * progress)
         case .down: effect.translate(x: 0, y: -2 * progress)
@@ -483,7 +492,7 @@ final class BrowserNativeChromeButton: NSButton {
         (effect as NSAffineTransform).concat()
         syncCloseBars()
         if !drawsCloseBarsNow {
-            let alpha = min(symbolInProgress * 2, 1)
+            let alpha = symbolCrossfades ? symbolProgress : min(symbolInProgress * 2, 1)
             if progress != 0 || symbolProgress < 1, let restingSymbol {
                 draw(snapshot: restingSymbol, alpha: alpha)
                 if let pressedSymbol {
@@ -524,10 +533,14 @@ final class BrowserNativeChromeButton: NSButton {
     func configureSymbol(_ name: String, title: String) {
         let changed = symbolName != name
         symbolName = name
-        if changed, window != nil, ["link", "checkmark"].contains(name) {
+        let dissolves = changed && !style.drawsCloseBars && symbolCrossfades
+        if changed, window != nil, dissolves || ["link", "checkmark"].contains(name) {
             oldSymbol = snapshotOfSymbol(tint: restingTint)
             symbolProgress = 0
-            symbolAnimation.start(name == "checkmark" ? .copy : .copyReset) { [weak self] progress in
+            let curve: BrowserNativeAnimation.Curve = dissolves
+                ? .reloadDissolve
+                : name == "checkmark" ? .copy : .copyReset
+            symbolAnimation.start(curve) { [weak self] progress in
                 self?.symbolProgress = progress
                 self?.needsDisplay = true
             } completion: { [weak self] in self?.oldSymbol = nil }

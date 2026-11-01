@@ -27,6 +27,7 @@ final class BrowserWebAppToolbarNSView: NSView {
         pressEffect: .left,
         action: {},
     )
+    private lazy var reloadSymbol = BrowserReloadSymbolState { [weak self] in self?.refresh() }
     private let reload = BrowserNativeChromeButton(
         symbol: "arrow.clockwise",
         title: BrowserStrings.navigationRefresh,
@@ -74,8 +75,8 @@ final class BrowserWebAppToolbarNSView: NSView {
         extensions.setAccessibilityIdentifier("browser.webapp.extensions")
         more.setAccessibilityIdentifier("browser.webapp.more")
         back.onAction = { [weak model] in model?.goBack() }
-        reload.onAction = { [weak model] in
-            if model?.canStopLoading == true {
+        reload.onAction = { [weak self, weak model] in
+            if self?.reloadSymbol.showsStop == true {
                 model?.stopLoadingCurrentTab()
             } else {
                 model?.reloadCurrentTab()
@@ -147,15 +148,17 @@ final class BrowserWebAppToolbarNSView: NSView {
     func refresh() {
         back.isEnabled = model.canGoBack
         back.tooltipShortcut = model.shortcutStore.shortcut(for: .goBack)
+        reloadSymbol.update(isLoading: model.canStopLoading)
+        let showsStop = reloadSymbol.showsStop
         reload.configureSymbol(
-            model.canStopLoading ? "xmark" : "arrow.clockwise",
-            title: model.canStopLoading
+            showsStop ? "xmark" : "arrow.clockwise",
+            title: showsStop
                 ? BrowserStrings.navigationStopLoading
                 : BrowserStrings.navigationRefresh,
         )
         reload.isEnabled = model.canStopLoading || model.canReload
-        reload.tooltipShortcut = model.canStopLoading ? nil : model.shortcutStore.shortcut(for: .reload)
-        reload.pressEffect = model.canStopLoading ? .compress : .rotateClockwise
+        reload.tooltipShortcut = showsStop ? nil : model.shortcutStore.shortcut(for: .reload)
+        reload.pressEffect = showsStop ? .compress : .rotateClockwise
         extensions.isEnabled = model.isContextReady
         heading.stringValue =
             if let tab = model.currentTab {

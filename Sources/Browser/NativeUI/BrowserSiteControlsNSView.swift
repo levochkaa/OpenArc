@@ -62,6 +62,7 @@ final class BrowserSiteControlsNSView: NSView {
         pressEffect: .right,
         action: {},
     )
+    private lazy var reloadSymbol = BrowserReloadSymbolState { [weak self] in self?.refresh() }
     private let reloadButton = BrowserNativeChromeButton(
         symbol: "arrow.clockwise",
         title: BrowserStrings.navigationRefresh,
@@ -291,14 +292,16 @@ final class BrowserSiteControlsNSView: NSView {
         forwardButton.isEnabled = model.canGoForward
         backButton.tooltipShortcut = model.shortcutStore.shortcut(for: .goBack)
         forwardButton.tooltipShortcut = model.shortcutStore.shortcut(for: .goForward)
+        reloadSymbol.update(isLoading: model.canStopLoading)
+        let showsStop = reloadSymbol.showsStop
         reloadButton.configureSymbol(
-            model.canStopLoading ? "xmark" : "arrow.clockwise",
-            title: model.canStopLoading
+            showsStop ? "xmark" : "arrow.clockwise",
+            title: showsStop
                 ? BrowserStrings.navigationStopLoading
                 : BrowserStrings.navigationRefresh,
         )
-        reloadButton.tooltipShortcut = model.canStopLoading ? nil : model.shortcutStore.shortcut(for: .reload)
-        reloadButton.pressEffect = model.canStopLoading ? .compress : .rotateClockwise
+        reloadButton.tooltipShortcut = showsStop ? nil : model.shortcutStore.shortcut(for: .reload)
+        reloadButton.pressEffect = showsStop ? .compress : .rotateClockwise
         reloadButton.isEnabled = model.canStopLoading || model.canReload
         copyButton.configureSymbol(didCopy ? "checkmark" : "link", title: BrowserStrings.tabCopyURLAction)
         copyButton.tooltipShortcut = model.shortcutStore.shortcut(for: .copyLink)
@@ -546,7 +549,7 @@ final class BrowserSiteControlsNSView: NSView {
     }
 
     private func reloadOrStop() {
-        if model.canStopLoading {
+        if reloadSymbol.showsStop {
             model.stopLoadingCurrentTab()
         } else {
             model.reloadCurrentTab()

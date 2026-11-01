@@ -102,7 +102,7 @@ import Testing
 }
 
 @Test
-@MainActor func warmStateMakesNextTooltipAppearImmediately() async {
+@MainActor func nextButtonWaitsItsOwnDelay() async {
     let coordinator = BrowserTooltipCoordinator(
         activationDelayNanoseconds: 20_000_000,
         cooldownDelayNanoseconds: 30_000_000,
@@ -114,27 +114,7 @@ import Testing
     await expectActiveTooltip(firstTooltipID, in: coordinator)
 
     coordinator.setHovering(false, for: firstTooltipID)
-    coordinator.setHovering(true, for: secondTooltipID)
-
-    #expect(coordinator.activeTooltipID == secondTooltipID)
-}
-
-@Test
-@MainActor func leavingAllTooltipTargetsResetsWarmStateAfterCooldown() async {
-    let coordinator = BrowserTooltipCoordinator(
-        activationDelayNanoseconds: 20_000_000,
-        cooldownDelayNanoseconds: 20_000_000,
-    )
-    let firstTooltipID = UUID()
-    let secondTooltipID = UUID()
-
-    coordinator.setHovering(true, for: firstTooltipID)
-    await expectActiveTooltip(firstTooltipID, in: coordinator)
-
-    coordinator.setHovering(false, for: firstTooltipID)
     #expect(coordinator.activeTooltipID == nil)
-    try? await Task.sleep(nanoseconds: 80_000_000)
-
     coordinator.setHovering(true, for: secondTooltipID)
     #expect(coordinator.activeTooltipID == nil)
 
@@ -142,22 +122,29 @@ import Testing
 }
 
 @Test
-@MainActor func leavingHidesAtOnceAndKeepsTheNextTargetWarmDuringCooldown() async {
+@MainActor func rowsWaitLongerAndStayQuietAfterOneTooltip() async {
     let coordinator = BrowserTooltipCoordinator(
-        activationDelayNanoseconds: 20_000_000,
-        cooldownDelayNanoseconds: 5_000_000_000,
+        activationDelayNanoseconds: 5_000_000,
+        rowActivationDelayNanoseconds: 40_000_000,
+        cooldownDelayNanoseconds: 30_000_000,
     )
-    let firstTooltipID = UUID()
-    let secondTooltipID = UUID()
+    let firstRow = UUID()
+    let secondRow = UUID()
 
-    coordinator.setHovering(true, for: firstTooltipID)
-    await expectActiveTooltip(firstTooltipID, in: coordinator)
+    coordinator.setHovering(true, for: firstRow, target: .row)
+    try? await Task.sleep(nanoseconds: 15_000_000)
+    #expect(coordinator.activeTooltipID == nil)
+    await expectActiveTooltip(firstRow, in: coordinator)
 
-    coordinator.setHovering(false, for: firstTooltipID)
+    coordinator.setHovering(false, for: firstRow)
+    coordinator.setHovering(true, for: secondRow, target: .row)
+    try? await Task.sleep(nanoseconds: 80_000_000)
     #expect(coordinator.activeTooltipID == nil)
 
-    coordinator.setHovering(true, for: secondTooltipID)
-    #expect(coordinator.activeTooltipID == secondTooltipID)
+    coordinator.setHovering(false, for: secondRow)
+    try? await Task.sleep(nanoseconds: 60_000_000)
+    coordinator.setHovering(true, for: firstRow, target: .row)
+    await expectActiveTooltip(firstRow, in: coordinator)
 }
 
 @MainActor private func expectActiveTooltip(

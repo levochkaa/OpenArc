@@ -100,7 +100,8 @@ final class BrowserSpacePagerScrollNSView: NSView {
             didSendScrollRelease = false
         }
 
-        if horizontalDelta != 0, !didSendScrollRelease {
+        // The event that starts a gesture only arms it.
+        if horizontalDelta != 0, !didSendScrollRelease, !event.phase.contains(.began) {
             onScrollDelta(horizontalDelta)
         }
 

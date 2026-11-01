@@ -9,7 +9,8 @@ import QuartzCore
 /// AppKit owns sidebar layout, row identity, scrolling, selection, rename editors and drag/drop.
 /// Header and footer share native chrome controls with the main toolbar.
 final class BrowserNativeSidebarNSView: NSView {
-    private static let spaceSelectionDelay: CFTimeInterval = 0.03
+    private static let spaceSelectionDelay: CFTimeInterval = 0.05
+    private static let swipeReleaseDelay: CFTimeInterval = 0.05
 
     // MARK: Internal
 
@@ -611,13 +612,13 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     /// Starts the slide to a Space before the model does the work of switching to it.
-    /// Returns how long the motion waits: a click shows its press first, a swipe goes on.
+    /// Returns how long the motion waits, a moment after a click or a swipe's release.
     @discardableResult func slidePager(toSpaceID spaceID: String) -> CFTimeInterval {
         guard let index = state.snapshot.spaces.firstIndex(where: { $0.id == spaceID }), window != nil else { return 0 }
         state.pagerTargetSpaceID = spaceID
         var rect = pagesContainer.frame
         rect.origin.x = state.spacePagerOffset(selectedIndex: index, pageWidth: pagerClip.bounds.width)
-        let delay = state.hasSpacePagerReleaseVelocity ? 0 : Self.spaceSelectionDelay
+        let delay = state.hasSpacePagerReleaseVelocity ? Self.swipeReleaseDelay : Self.spaceSelectionDelay
         setFrame(rect, of: pagesContainer, animated: true, delay: delay)
         return delay
     }
@@ -793,10 +794,15 @@ final class BrowserNativeSidebarNSView: NSView {
         // The tab switch that comes with a Space stalls the main thread.
         let curve = state.spacePagerCurve
         var initialVelocity: CGFloat = 0
+        var start = delay
         if animated, view.frame.origin != rect.origin {
-            initialVelocity = state.takeSpacePagerReleaseVelocity() / (rect.minX - view.frame.minX)
-            pagerSlideEnd = CACurrentMediaTime() + delay + curve.duration
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay + curve.duration) { [weak self] in
+            let velocity = state.takeSpacePagerReleaseVelocity()
+            initialVelocity = velocity / (rect.minX - view.frame.minX)
+            if velocity != 0 {
+                start = Self.swipeReleaseDelay
+            }
+            pagerSlideEnd = CACurrentMediaTime() + start + curve.duration
+            DispatchQueue.main.asyncAfter(deadline: .now() + start + curve.duration) { [weak self] in
                 self?.needsLayout = true
             }
         }
@@ -806,7 +812,7 @@ final class BrowserNativeSidebarNSView: NSView {
             animated: animated,
             curve: curve,
             initialVelocity: initialVelocity,
-            delay: delay,
+            delay: start,
         )
     }
 
