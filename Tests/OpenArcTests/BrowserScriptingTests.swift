@@ -341,3 +341,11 @@ private final class InMemoryPasswordStore: BrowserPasswordStoring {
     model.dropStalePasswordPrompt()
     #expect(model.passwordPrompt == nil, "No password stays in memory for a closed tab")
 }
+
+@Test @MainActor func aPageTranslatesThroughGoogleWithItsAddressIntact() throws {
+    let url = try #require(BrowserChromeModel.translatedPageURL(for: "https://example.com/a?b=c&d=e", language: "ru"))
+    let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+    #expect(items.first { $0.name == "u" }?.value == "https://example.com/a?b=c&d=e")
+    #expect(items.first { $0.name == "tl" }?.value == "ru")
+    #expect(BrowserChromeModel.translatedPageURL(for: "openarc://settings", language: "ru") == nil)
+}

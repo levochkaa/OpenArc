@@ -1075,6 +1075,20 @@ enum BrowserWindowMode: Equatable {
         updateWindowTitle()
     }
 
+    /// The engine has no translator, so the page opens in Google's, in the system language.
+    static func translatedPageURL(for urlString: String, language: String) -> URL? {
+        guard let scheme = URLComponents(string: urlString)?.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else { return nil }
+        var components = URLComponents(string: "https://translate.google.com/translate")
+        components?.queryItems = [
+            .init(name: "sl", value: "auto"),
+            .init(name: "tl", value: language),
+            .init(name: "u", value: urlString),
+        ]
+        return components?.url
+    }
+
     /// Use Selection to Find: the page copies its selection to the find
     /// pasteboard, read after a short round trip because Chromium writes it
     /// asynchronously and reports nothing when the text is unchanged.
@@ -2898,6 +2912,15 @@ enum BrowserWindowMode: Equatable {
         tabDriver.fillPassword(username: username, password: password, frameID: frameID, origin: origin, tabID: tabID)
     }
 
+    @discardableResult func translateCurrentPage() -> Bool {
+        let language = Locale.preferredLanguages.first.map { String($0.prefix(2)) } ?? "en"
+        guard let tab = currentTab, let url = Self.translatedPageURL(for: tab.urlString, language: language) else {
+            return false
+        }
+        navigateTab(id: tab.id, toURLString: url.absoluteString)
+        return true
+    }
+
     /// Right-clicking back or forward lists the pages that way.
     func showNavigationList(goingBack: Bool, below anchor: NSView) {
         tabDriver.navigationEntriesForActiveTab { [weak self, weak anchor] entries, currentIndex in
@@ -3580,6 +3603,8 @@ enum BrowserWindowMode: Equatable {
             canShowDeveloperToolsForCommand
         case .manageSpaces:
             supportsSpaces
+        case .translatePage:
+            currentTab?.urlString.hasPrefix("http") == true
         case .addBottomSplit:
             canAddSplitView
         case .addTopSplit:
@@ -7493,6 +7518,8 @@ extension BrowserCommandID {
             ["console", "javascript console", "js console"]
         case .manageSpaces:
             ["manage spaces", "spaces"]
+        case .translatePage:
+            ["translate", "translate page"]
         case .addBottomSplit:
             ["add bottom split", "split bottom"]
         case .addTopSplit:
@@ -7691,6 +7718,8 @@ extension BrowserCommandID {
             "terminal"
         case .manageSpaces:
             "square.on.square"
+        case .translatePage:
+            "character.book.closed"
         case .addBottomSplit:
             "rectangle.bottomhalf.inset.filled"
         case .addTopSplit:

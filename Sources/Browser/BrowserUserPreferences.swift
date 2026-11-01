@@ -531,6 +531,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case developerTools
     case shareTab
     case manageSpaces
+    case translatePage
     case capturePortrait
     case blankWindow
     case viewMedia
@@ -648,6 +649,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.shareTab
         case .manageSpaces:
             BrowserCommands.manageSpaces
+        case .translatePage:
+            BrowserCommands.translatePage
         case .addBottomSplit:
             BrowserCommands.addBottomSplit
         case .addTopSplit:
@@ -844,6 +847,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .shareTab
         case .manageSpaces:
             .manageSpaces
+        case .translatePage:
+            .translatePage
         case .addBottomSplit:
             .addBottomSplit
         case .addTopSplit:

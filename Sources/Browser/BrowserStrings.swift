@@ -1711,6 +1711,7 @@ enum BrowserStrings {
     static let passwordDelete = NSLocalizedString("browser.password.delete", comment: "Button in Settings.")
     static let passwordCopy = NSLocalizedString("browser.password.copy", comment: "Button in Settings.")
     static let passwordNoneSaved = NSLocalizedString("browser.password.none_saved", comment: "Settings, empty list.")
+    static let menuTranslatePage = NSLocalizedString("browser.menu.translate_page", comment: "Command.")
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
     static let menuRefreshPage = NSLocalizedString("browser.menu.refresh_page", comment: "View menu item.")

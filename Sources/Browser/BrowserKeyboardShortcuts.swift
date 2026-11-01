@@ -233,6 +233,12 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
+    static let translatePage = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuTranslatePage,
+        helpTitle: BrowserStrings.menuTranslatePage,
+        shortcut: .unassigned,
+    )
+
     static let manageSpaces = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuManageSpaces,
         helpTitle: BrowserStrings.menuManageSpaces,
@@ -747,6 +753,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case developerTools
     case shareTab
     case manageSpaces
+    case translatePage
     case addBottomSplit
     case addTopSplit
     case addRightSplit

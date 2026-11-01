@@ -2448,6 +2448,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.showJavaScriptConsole() ?? false
         case .manageSpaces:
             return activeChromeModel?.openSpacesInLibrary() ?? false
+        case .translatePage:
+            return activeChromeModel?.translateCurrentPage() ?? false
         case .addBottomSplit:
             activeChromeModel?.presentSplitViewCommandBar(insertion: .after, orientation: .vertical)
             return true

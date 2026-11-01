@@ -773,3 +773,4 @@
 "browser.password.delete" = "Delete";
 "browser.password.copy" = "Copy Password";
 "browser.password.none_saved" = "No saved passwords";
+"browser.menu.translate_page" = "Translate Page";
