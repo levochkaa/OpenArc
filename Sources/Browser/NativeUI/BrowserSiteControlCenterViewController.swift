@@ -317,6 +317,14 @@ final class BrowserSiteControlCenterViewController: NSViewController {
                 self?.onAction(.clearCookies)
             }
         menu.addItem(.separator())
+        if model.canToggleDeveloperMode {
+            BrowserNativeMenus.add(
+                model.isDeveloperModeOn
+                    ? BrowserStrings.menuTurnOffDeveloperMode
+                    : BrowserStrings.menuTurnOnDeveloperMode,
+                to: menu,
+            ) { [weak model] in model?.toggleDeveloperMode() }
+        }
         BrowserNativeMenus.add(BrowserStrings.extensionsManageAction, to: menu) { [weak self] in self?.onManage() }
         BrowserNativeMenus.add(BrowserStrings.extensionsAddAction, to: menu) { [weak self] in self?.onAdd() }
         menu.addItem(.separator())

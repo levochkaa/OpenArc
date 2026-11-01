@@ -4,6 +4,8 @@ import AppKit
 import Foundation
 import Testing
 
+// MARK: - BrowserScriptingTests
+
 @MainActor struct BrowserScriptingTests {
     // MARK: Internal
 
@@ -83,4 +85,22 @@ import Testing
         window.isReleasedWhenClosed = false
         return (model, driver, BrowserScriptWindow(window: window, model: model))
     }
+}
+
+@Test func localServersStartInDeveloperModeUntilTurnedOff() {
+    var hosts = BrowserDeveloperModeHosts()
+    #expect(hosts.isEnabled(host: "localhost"))
+    #expect(hosts.isEnabled(host: "127.0.0.1"))
+    #expect(!hosts.isEnabled(host: "example.com"))
+    hosts.set(false, host: "localhost")
+    #expect(!hosts.isEnabled(host: "localhost"))
+    hosts.set(true, host: "localhost")
+    #expect(hosts.isEnabled(host: "localhost"))
+    #expect(hosts.enabled.isEmpty, "A default host needs no entry of its own")
+    hosts.set(true, host: "example.com")
+    #expect(hosts.isEnabled(host: "example.com"))
+    hosts.set(false, host: "example.com")
+    #expect(!hosts.isEnabled(host: "example.com"))
+    #expect(BrowserChromeModel.developerModeHost(ofURLString: "https://Example.com/a") == "example.com")
+    #expect(BrowserChromeModel.developerModeHost(ofURLString: "openarc://settings") == nil)
 }
