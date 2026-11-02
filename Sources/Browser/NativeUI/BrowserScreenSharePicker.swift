@@ -228,6 +228,8 @@ struct BrowserScreenShareSource: Equatable {
             )
             documentView.addSubview(tile)
         }
+        // The document isn't flipped, so its first row is at the far end.
+        documentView.scroll(NSPoint(x: 0, y: documentView.frame.height))
         if let first = tiles.first, selected == nil {
             selected = first.source
             first.isChosen = true
