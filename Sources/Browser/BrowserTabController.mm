@@ -4528,13 +4528,15 @@ std::string BrowserMediaVolumeScript(double volume) {
   client->Start(request, it->second.browser->GetHost()->GetRequestContext());
 }
 
-- (void)evaluateJavaScript:(NSString *)code
-              inTabWithID:(NSString *)tabID
-               completion:(void (^)(NSString *))completion {
-  auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end() || !it->second.browser) {
-    completion(nil);
-    return;
+- (NSInteger)importCookies:(NSArray<NSDictionary<NSString *, id> *> *)cookies {
+  CefRefPtr<CefCookieManager> manager = CefCookieManager::GetGlobalManager(nullptr);
+  if (!_tabRecords.empty()) {
+    for (const auto &entry : _tabRecords) {
+      if (entry.second.browser) {
+        manager = entry.second.browser->GetHost()->GetRequestContext()->GetCookieManager(nullptr);
+        break;
+      }
+    }
   }
   CefRefPtr<RuntimeEvaluateObserver> observer =
       new RuntimeEvaluateObserver(code.UTF8String, completion);

@@ -1317,6 +1317,161 @@ enum BrowserStrings {
         comment: "Trailing label on a command bar row for an open tab.",
     )
 
+    static let onboardingWelcomeTitle = NSLocalizedString(
+        "browser.onboarding.welcome_title",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingWelcomeSubtitle = NSLocalizedString(
+        "browser.onboarding.welcome_subtitle",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingGetStarted = NSLocalizedString(
+        "browser.onboarding.get_started",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingImportTitle = NSLocalizedString(
+        "browser.onboarding.import_title",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingImportSubtitle = NSLocalizedString(
+        "browser.onboarding.import_subtitle",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingImportNothingFound = NSLocalizedString(
+        "browser.onboarding.import_nothing",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingImportKeychainNote = NSLocalizedString(
+        "browser.onboarding.import_note",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingImport = NSLocalizedString("browser.onboarding.import", comment: "First-run welcome window.")
+
+    static let onboardingContinue = NSLocalizedString(
+        "browser.onboarding.continue",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingSkip = NSLocalizedString("browser.onboarding.skip", comment: "First-run welcome window.")
+
+    static let onboardingNotNow = NSLocalizedString("browser.onboarding.not_now", comment: "First-run welcome window.")
+
+    static let onboardingItemSpaces = NSLocalizedString(
+        "browser.onboarding.item_spaces",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingItemBookmarks = NSLocalizedString(
+        "browser.onboarding.item_bookmarks",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingItemPasswords = NSLocalizedString(
+        "browser.onboarding.item_passwords",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingItemHistory = NSLocalizedString(
+        "browser.onboarding.item_history",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingItemSignIns = NSLocalizedString(
+        "browser.onboarding.item_signins",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingItemExtensions = NSLocalizedString(
+        "browser.onboarding.item_extensions",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingItemSiteSearches = NSLocalizedString(
+        "browser.onboarding.item_site_searches",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingLookTitle = NSLocalizedString(
+        "browser.onboarding.look_title",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingLookSubtitle = NSLocalizedString(
+        "browser.onboarding.look_subtitle",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingSidebarLeft = NSLocalizedString(
+        "browser.onboarding.sidebar_left",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingSidebarRight = NSLocalizedString(
+        "browser.onboarding.sidebar_right",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingShowToolbar = NSLocalizedString(
+        "browser.onboarding.show_toolbar",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingDefaultTitle = NSLocalizedString(
+        "browser.onboarding.default_title",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingDefaultSubtitle = NSLocalizedString(
+        "browser.onboarding.default_subtitle",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingDefaultDone = NSLocalizedString(
+        "browser.onboarding.default_done",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingSetDefault = NSLocalizedString(
+        "browser.onboarding.set_default",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingDoneTitle = NSLocalizedString(
+        "browser.onboarding.done_title",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingStart = NSLocalizedString("browser.onboarding.start", comment: "First-run welcome window.")
+
+    static let onboardingTipCommandBar = NSLocalizedString(
+        "browser.onboarding.tip_command_bar",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingTipSidebar = NSLocalizedString(
+        "browser.onboarding.tip_sidebar",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingTipSplit = NSLocalizedString(
+        "browser.onboarding.tip_split",
+        comment: "First-run welcome window.",
+    )
+
+    static let onboardingTipToolbar = NSLocalizedString(
+        "browser.onboarding.tip_toolbar",
+        comment: "First-run welcome window.",
+    )
+
+    static let menuShowWelcome = NSLocalizedString("browser.menu.show_welcome", comment: "First-run welcome window.")
+
     static let menuCustomizeToolbar = NSLocalizedString(
         "browser.menu.customize_toolbar",
         comment: "View menu command that starts customizing the top toolbar.",
@@ -3276,6 +3431,16 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front.",
     )
+
+    static func onboardingImportResult(_ parts: [String]) -> String {
+        parts.isEmpty
+            ? NSLocalizedString("browser.onboarding.import_nothing_done", comment: "Result when nothing was imported.")
+            : parts.joined(separator: " · ")
+    }
+
+    static func onboardingImportCount(_ count: Int, _ item: String) -> String {
+        "\(count) \(item.lowercased())"
+    }
 
     static func agentSignInPrompt(username: String, host: String) -> String {
         String(

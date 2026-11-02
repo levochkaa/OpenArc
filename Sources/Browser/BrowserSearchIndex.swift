@@ -4,7 +4,7 @@ import Foundation
 
 // MARK: - BrowserSearchDocument
 
-struct BrowserSearchDocument {
+struct BrowserSearchDocument: Codable {
     var title: String
     var urlString: String
     var visitCount = 0

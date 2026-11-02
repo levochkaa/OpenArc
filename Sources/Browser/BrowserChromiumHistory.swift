@@ -11,11 +11,14 @@ protocol BrowserHistorySearching {
     func recentSuggestions(maximumCount: Int) -> [BrowserCommandSuggestion]
     /// Reads the history into memory, so typing doesn't wait for the disk.
     func prepareSearchIndex()
+    /// Keeps pages from another browser searchable beside this one's history.
+    func importDocuments(_ documents: [BrowserSearchDocument])
 }
 
 extension BrowserHistorySearching {
     func recentSuggestions(maximumCount _: Int) -> [BrowserCommandSuggestion] { [] }
     func prepareSearchIndex() {}
+    func importDocuments(_: [BrowserSearchDocument]) {}
 }
 
 // MARK: - BrowserEmptyHistoryStore
@@ -54,6 +57,11 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
             .max { lhs, rhs in
                 modificationDate(for: lhs) < modificationDate(for: rhs)
             }
+    }
+
+    private var importedDocumentsURL: URL? {
+        (existingHistoryURL?.deletingLastPathComponent() ?? profileDirectoryCandidates.first)?
+            .appendingPathComponent("OpenArcImportedHistory.json")
     }
 
     init(profileDirectoryCandidates: [URL], fileManager: FileManager = .default) {
@@ -174,6 +182,13 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         }
     }
 
+    func importDocuments(_ documents: [BrowserSearchDocument]) {
+        guard let url = importedDocumentsURL, let data = try? JSONEncoder().encode(documents) else { return }
+        try? data.write(to: url, options: [.atomic])
+        indexedModificationDate = nil
+        prepareSearchIndex()
+    }
+
     /// Reads the newest pages off the main thread. A file that hasn't changed since
     /// the last read keeps the index it has.
     func prepareSearchIndex() {
@@ -181,8 +196,13 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         let modified = modificationDate(for: historyURL)
         guard modified != indexedModificationDate else { return }
         isBuildingIndex = true
+        let importedURL = importedDocumentsURL
         Task.detached(priority: .utility) { [weak self] in
-            let documents = Self.loadDocuments(from: historyURL)
+            let own = Self.loadDocuments(from: historyURL)
+            let imported = importedURL.flatMap { try? Data(contentsOf: $0) }
+                .flatMap { try? JSONDecoder().decode([BrowserSearchDocument].self, from: $0) } ?? []
+            let urls = Set(own?.map(\.urlString) ?? [])
+            let documents = own.map { $0 + imported.filter { !urls.contains($0.urlString) } }
             let index = documents.map(BrowserSearchIndex.init(documents:))
             await MainActor.run { [weak self] in
                 guard let self else { return }

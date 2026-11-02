@@ -65,6 +65,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private let webAppConfiguration: BrowserWebAppConfiguration?
 
     private var agentServer: BrowserAgentServer?
+    private var onboardingController: BrowserOnboardingWindowController?
     private var agentAccessObservation: AnyCancellable?
 
     /// Browser windows in front-to-back order.
@@ -310,6 +311,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     public func handleBrowserContextInitialized() {
         hasReceivedBrowserContext = true
         startAgentAccessObservation()
+        presentOnboardingIfNeeded()
             MainActor.assumeIsolated {
                 _ = self?.allChromeModels.first {
                 }
@@ -1055,8 +1057,36 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
-    /// GitHub's list changes slowly: coming back to the app looks again, at most every few minutes.
-    private func refreshLiveFoldersIfDue() {
+    /// Only for someone new: an existing session marks it done without showing it.
+    private func presentOnboardingIfNeeded() {
+        let forced = ProcessInfo.processInfo.arguments.contains("--show-onboarding")
+        guard forced || !userPreferencesStore.onboardingCompleted else { return }
+        let isNew = allChromeModels.allSatisfy { $0.tabs.count <= 1 && $0.bookmarksModel.bookmarkBarItems.isEmpty }
+        if isNew || forced {
+            // After the first window has come forward, which would otherwise cover it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                MainActor.assumeIsolated { self?.showOnboarding() }
+            }
+        } else {
+            userPreferencesStore.onboardingCompleted = true
+        }
+    }
+
+    private func showOnboarding() {
+        let controller = BrowserOnboardingWindowController(preferences: userPreferencesStore)
+        controller.importItems = { [weak self] items, profile in
+            await self?.activeChromeModel?.importProfile(profile, items: items) ?? ""
+        }
+        controller.setAsDefault = { [weak self] in self?.setAsDefaultBrowser(nil) }
+        controller.isDefaultBrowser = { [weak self] in self?.defaultBrowserService.isDefaultBrowser ?? false }
+        controller.onFinish = { [weak self] in
+            self?.userPreferencesStore.onboardingCompleted = true
+            self?.onboardingController = nil
+        }
+        onboardingController = controller
+        controller.show()
+    }
+
     /// Runs the local socket for `openarc` while the setting is on.
     private func startAgentAccessObservation() {
         agentAccessObservation = userPreferencesStore.$agentAccessEnabled
@@ -1942,6 +1972,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             if let url = Bundle.main.url(forResource: "GettingStarted", withExtension: "html") {
                 self?.activeChromeModel?.openURLInNewTab(url)
             }
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuShowWelcome) { [weak self] in
+            self?.showOnboarding()
+        })
         })
         menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuKeyboardShortcuts) { [weak self] in
             self?.presentSettingsWindow(pane: .shortcuts)

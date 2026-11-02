@@ -145,6 +145,7 @@ import Foundation
 
     // MARK: Private
 
+    var importedCookies = [BrowserImportedCookie]()
     var devToolsMethods = [String]()
     var devToolsResults = [String: String]()
     var mainFrameFills = [(username: String, password: String)]()
@@ -171,6 +172,11 @@ import Foundation
     ) {
         devToolsMethods.append(method)
         completion(devToolsResults[method] ?? "{}")
+    }
+
+    @discardableResult func importCookies(_ cookies: [BrowserImportedCookie]) -> Int {
+        importedCookies.append(contentsOf: cookies)
+        return cookies.count
     }
 
     func fillPasswordInMainFrame(username: String, password: String, origin _: String, tabID _: String) -> Bool {

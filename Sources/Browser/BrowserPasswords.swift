@@ -298,7 +298,7 @@ enum BrowserPasswordPrompt: Equatable {
 
 extension BrowserChromeModel {
     /// The scheme, host and any port: what a saved password belongs to.
-    static func passwordOrigin(ofURLString urlString: String) -> String? {
+    nonisolated static func passwordOrigin(ofURLString urlString: String) -> String? {
         guard let components = URLComponents(string: urlString),
               let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
               let host = components.host?.lowercased(), !host.isEmpty

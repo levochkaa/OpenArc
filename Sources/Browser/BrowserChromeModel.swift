@@ -1420,6 +1420,82 @@ enum BrowserWindowMode: Equatable {
         atIndex index: Int? = nil,
     ) -> Bool {
         bookmarksModel.insertBookmark(title: title, urlString: urlString, toFolderID: toFolderID, atIndex: index) != nil
+    /// Copies what the person chose from another browser, and reports it in one line.
+    func importProfile(
+        _ profile: BrowserProfileImporter,
+        items: Set<BrowserOnboardingImportItem>,
+    ) async -> String {
+        var parts = [String]()
+        if items.contains(.spaces), profile.source == .arc, canImportArcSidebar,
+           let url = BrowserArcSidebar.defaultFileURL,
+           let result = try? importArcSidebar(BrowserArcSidebar.load(from: url)), !result.isEmpty
+        {
+            parts.append(BrowserStrings.arcImportResult(
+                spaces: result.spaceCount,
+                pinnedTabs: result.pinnedTabCount,
+                folders: result.folderCount,
+                favorites: result.favoriteCount,
+            ))
+        }
+        if items.contains(.bookmarks) {
+            let result = importBookmarks(from: profile.source)
+            if result.importedCount > 0 {
+                parts.append(BrowserStrings.onboardingImportCount(
+                    result.importedCount,
+                    BrowserStrings.onboardingItemBookmarks,
+                ))
+            }
+        }
+        if items.contains(.siteSearches), let imported = BrowserSiteSearchImport.load(from: profile.source) {
+            userPreferencesStore.siteSearches = BrowserSiteSearchImport.merge(
+                imported,
+                into: userPreferencesStore.siteSearches,
+            )
+            if !imported.isEmpty {
+                parts.append(BrowserStrings.onboardingImportCount(
+                    imported.count,
+                    BrowserStrings.onboardingItemSiteSearches,
+                ))
+            }
+        }
+        if items.contains(.history) {
+            let documents = await Task.detached(priority: .userInitiated) { profile.history() }.value
+            historyStore.importDocuments(documents)
+            if !documents.isEmpty {
+                parts.append(BrowserStrings.onboardingImportCount(
+                    documents.count,
+                    BrowserStrings.onboardingItemHistory,
+                ))
+            }
+        }
+        if items.contains(.passwords) || items.contains(.signIns), let key = try? profile.encryptionKey() {
+            if items.contains(.passwords), let passwordStore {
+                let logins = await Task.detached(priority: .userInitiated) { profile.logins(key: key) }.value
+                let saved = logins.filter { passwordStore.save($0.password, for: $0.login) }.count
+                if saved > 0 {
+                    parts.append(BrowserStrings.onboardingImportCount(saved, BrowserStrings.onboardingItemPasswords))
+                }
+            }
+            if items.contains(.signIns) {
+                let cookies = await Task.detached(priority: .userInitiated) { profile.cookies(key: key) }.value
+                let set = tabDriver.importCookies(cookies)
+                if set > 0 {
+                    parts.append(BrowserStrings.onboardingImportCount(set, BrowserStrings.onboardingItemSignIns))
+                }
+            }
+        }
+        if items.contains(.extensions) {
+            let urls = profile.extensionStoreURLs()
+            for url in urls {
+                openURLInNewTab(url)
+            }
+            if !urls.isEmpty {
+                parts.append(BrowserStrings.onboardingImportCount(urls.count, BrowserStrings.onboardingItemExtensions))
+            }
+        }
+        return BrowserStrings.onboardingImportResult(parts)
+    }
+
     func executeDevTools(
         method: String,
         paramsJSON: String,
