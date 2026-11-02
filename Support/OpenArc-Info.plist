@@ -26,6 +26,8 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>NSBluetoothAlwaysUsageDescription</key>
   <string>Websites you allow can sign in with a passkey on your phone or tablet.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Websites you allow can show your screen or a window, as in a video call.</string>
   <key>NSCameraUsageDescription</key>
   <string>Websites you allow can use your camera.</string>
   <key>NSMicrophoneUsageDescription</key>

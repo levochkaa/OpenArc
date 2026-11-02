@@ -119,6 +119,13 @@
 "browser.onboarding.tip_toolbar" = "Show or hide the toolbar";
 "browser.menu.show_welcome" = "Welcome to OpenArc...";
 "browser.onboarding.import_nothing_done" = "Nothing was imported.";
+"browser.screen_share.title" = "Share your screen with %@";
+"browser.screen_share.screens" = "Entire Screen";
+"browser.screen_share.windows" = "Windows";
+"browser.screen_share.share" = "Share";
+"browser.screen_share.cancel" = "Cancel";
+"browser.screen_share.needs_permission" = "Turn on OpenArc under Screen & System Audio Recording to choose a window. You can still share the entire screen.";
+"browser.screen_share.open_settings" = "Open System Settings";
 "browser.menu.customize_toolbar" = "Customize Toolbar...";
 "browser.toolbar.customize_hint" = "Drag items onto the toolbar to add them, along it to reorder, or off it to remove.";
 "browser.toolbar.restore_defaults" = "Restore Defaults";

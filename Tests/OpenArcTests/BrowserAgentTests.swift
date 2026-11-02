@@ -137,3 +137,8 @@ private final class OneLoginStore: BrowserPasswordStoring {
     #expect(line.contains("is not an address"))
     #expect(driver.targetedNavigationRequests.isEmpty)
 }
+
+@Test func screenShareSourcesUseChromiumsNames() {
+    #expect(BrowserScreenShareSource.screen(id: 1, title: "Screen").mediaID == "screen:1:0")
+    #expect(BrowserScreenShareSource.window(id: 9, title: "Doc", app: "Pages").mediaID == "window:9:0")
+}

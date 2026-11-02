@@ -1472,6 +1472,41 @@ enum BrowserStrings {
 
     static let menuShowWelcome = NSLocalizedString("browser.menu.show_welcome", comment: "First-run welcome window.")
 
+    static let screenShareTitle = NSLocalizedString(
+        "browser.screen_share.title",
+        comment: "Window that chooses what a website can capture.",
+    )
+
+    static let screenShareScreens = NSLocalizedString(
+        "browser.screen_share.screens",
+        comment: "Window that chooses what a website can capture.",
+    )
+
+    static let screenShareWindows = NSLocalizedString(
+        "browser.screen_share.windows",
+        comment: "Window that chooses what a website can capture.",
+    )
+
+    static let screenShareAction = NSLocalizedString(
+        "browser.screen_share.share",
+        comment: "Window that chooses what a website can capture.",
+    )
+
+    static let screenShareCancel = NSLocalizedString(
+        "browser.screen_share.cancel",
+        comment: "Window that chooses what a website can capture.",
+    )
+
+    static let screenShareNeedsPermission = NSLocalizedString(
+        "browser.screen_share.needs_permission",
+        comment: "Window that chooses what a website can capture.",
+    )
+
+    static let screenShareOpenSettings = NSLocalizedString(
+        "browser.screen_share.open_settings",
+        comment: "Window that chooses what a website can capture.",
+    )
+
     static let menuCustomizeToolbar = NSLocalizedString(
         "browser.menu.customize_toolbar",
         comment: "View menu command that starts customizing the top toolbar.",

@@ -27,6 +27,7 @@ using SetExtensionTabsFunction = void (*)(const char* window_key,
 using TranslatePageFunction = int (*)(int browser_id, const char* language);
 using RevertTranslationFunction = void (*)(int browser_id);
 using TranslationStateFunction = int (*)(int browser_id);
+using SetNextDesktopMediaIDFunction = void (*)(const char* media_id);
 
 struct ExtensionBridgeSymbols {
   CopyInstalledExtensionsJSONFunction copy_installed_extensions_json = nullptr;
@@ -39,6 +40,7 @@ struct ExtensionBridgeSymbols {
   TranslatePageFunction translate_page = nullptr;
   RevertTranslationFunction revert_translation = nullptr;
   TranslationStateFunction translation_state = nullptr;
+  SetNextDesktopMediaIDFunction set_next_desktop_media_id = nullptr;
 };
 
 void* ChromiumEmbeddedFrameworkHandle() {
@@ -93,6 +95,8 @@ ExtensionBridgeSymbols LoadExtensionBridgeSymbols() {
       dlsym(handle, "OpenArcRevertTranslation"));
   symbols.translation_state = reinterpret_cast<TranslationStateFunction>(
       dlsym(handle, "OpenArcTranslationState"));
+  symbols.set_next_desktop_media_id = reinterpret_cast<SetNextDesktopMediaIDFunction>(
+      dlsym(handle, "OpenArcSetNextDesktopMediaID"));
   return symbols;
 }
 
@@ -140,6 +144,13 @@ void BrowserRevertTranslation(int browser_id) {
   const ExtensionBridgeSymbols& symbols = GetExtensionBridgeSymbols();
   if (symbols.revert_translation) {
     symbols.revert_translation(browser_id);
+  }
+}
+
+void BrowserSetNextDesktopMediaID(NSString* media_id) {
+  const ExtensionBridgeSymbols& symbols = GetExtensionBridgeSymbols();
+  if (symbols.set_next_desktop_media_id && media_id) {
+    symbols.set_next_desktop_media_id(media_id.UTF8String);
   }
 }
 

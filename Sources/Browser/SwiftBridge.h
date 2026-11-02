@@ -49,6 +49,8 @@ int BrowserTranslatePage(int browser_id, NSString* language);
 void BrowserRevertTranslation(int browser_id);
 /// 0: not translated, 1: translating, 2: translated.
 int BrowserTranslationState(int browser_id);
+/// The screen or window the next screen share captures, as "screen:1:0" or "window:9:0".
+void BrowserSetNextDesktopMediaID(NSString* media_id);
 
 #endif
 

@@ -3536,6 +3536,9 @@ struct TabRecord {
                            origin:(NSString *)origin
                          callback:(CefRefPtr<CefAuthCallback>)callback;
 - (void)cancelDialogsForTabID:(NSString *)tabID;
+- (void)presentScreenSharePickerForTabID:(NSString *)tabID
+                                  origin:(NSString *)origin
+                                callback:(CefRefPtr<CefMediaAccessCallback>)callback;
 - (BOOL)isDialogTabVisible:(NSString *)tabID;
 - (void)presentWaitingDialogs;
 - (void)noteRendererProcessID:(int)processID forTabID:(NSString *)tabID;
@@ -3840,6 +3843,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   NSMutableDictionary<NSNumber *, BrowserPeekSession *> *_peekSessions;
   NSMutableDictionary<NSString *, BrowserJavaScriptDialog *> *_pageDialogs;
   NSMutableDictionary<NSString *, BrowserAuthDialog *> *_authDialogs;
+  NSMutableDictionary<NSString *, BrowserScreenSharePicker *> *_screenSharePickers;
   NSString *_lastExtensionTabsJSON;
   BOOL _lastExtensionTabsFocused;
   int _nextPeekSessionID;
@@ -5870,6 +5874,37 @@ std::string BrowserMediaVolumeScript(double volume) {
 - (void)cancelDialogsForTabID:(NSString *)tabID {
   [_pageDialogs[tabID] cancel];
   [_authDialogs[tabID] cancel];
+  [_screenSharePickers[tabID] cancel];
+}
+
+- (void)presentScreenSharePickerForTabID:(NSString *)tabID
+                                  origin:(NSString *)origin
+                                callback:(CefRefPtr<CefMediaAccessCallback>)callback {
+  if (_screenSharePickers == nil) {
+    _screenSharePickers = [NSMutableDictionary dictionary];
+  }
+  if (_screenSharePickers[tabID] != nil) {
+    callback->Cancel();
+    return;
+  }
+  __weak BrowserTabController *weakSelf = self;
+  BrowserScreenSharePicker *picker = [[BrowserScreenSharePicker alloc]
+      initWithWindow:[self dialogWindowForTabID:tabID]
+              origin:origin
+          completion:^(NSString *mediaID) {
+            BrowserTabController *owner = weakSelf;
+            if (owner) {
+              [owner->_screenSharePickers removeObjectForKey:tabID];
+            }
+            if (mediaID) {
+              BrowserSetNextDesktopMediaID(mediaID);
+              callback->Continue(CEF_MEDIA_PERMISSION_DESKTOP_VIDEO_CAPTURE);
+            } else {
+              callback->Cancel();
+            }
+          }];
+  _screenSharePickers[tabID] = picker;
+  [picker present];
 }
 
 - (void)resetCloseDialogForTabID:(NSString *)tabID browser:(CefRefPtr<CefBrowser>)browser {
@@ -6993,6 +7028,12 @@ bool RequestSiteMediaAccess(BrowserTabController *controller,
                             const CefString &requesting_origin,
                             uint32_t requested_permissions,
                             CefRefPtr<CefMediaAccessCallback> callback) {
+  if (controller != nil && (requested_permissions & CEF_MEDIA_PERMISSION_DESKTOP_VIDEO_CAPTURE)) {
+    [controller presentScreenSharePickerForTabID:tabID
+                                          origin:ToNSString(requesting_origin.ToString())
+                                        callback:callback];
+    return true;
+  }
   if (controller == nil || requested_permissions == 0 ||
       (requested_permissions & ~kDeviceMediaPermissions) != 0) {
     return false;
