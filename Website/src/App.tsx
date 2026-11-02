@@ -112,13 +112,11 @@ const agentLines = [
   ["", "OpenArc asks you. The agent never sees the password."],
 ];
 
-const details = [
-  ["Chrome extensions", "Your extensions, from the Chrome Web Store, with the tabs API they expect."],
-  ["Passkeys", "Touch ID, your phone or a security key."],
-  ["Translation", "In place, on the page you are reading."],
-  ["Peek and Little windows", "Look at a link without losing where you were."],
-  ["Picture in Picture", "Video follows you across Spaces and tabs."],
-  ["Your toolbar", "Hide it, or drag exactly the buttons you want onto it."],
+const facts = [
+  ["Your Arc, imported in a minute.", "Import"],
+  ["Chrome extensions just work.", "Extensions"],
+  ["Passkeys with Touch ID or your phone.", "Passkeys"],
+  ["Every command in one bar.", "⌘T"],
 ];
 
 function usePrefersReducedMotion() {
@@ -293,68 +291,87 @@ function App() {
     <main>
       <section className="hero" aria-labelledby="hero-title">
         <nav className="topbar" aria-label="Primary">
-          <a className="brand" href="#top" aria-label="OpenArc home">
-            <span className="brand-mark" aria-hidden="true" />
-            <span>OpenArc</span>
+          <a className="logo" href="#top" aria-label="OpenArc home">
+            <LogoMark />
           </a>
-          <div className="nav-pill">
-            <a href="#spaces">Tour</a>
-            <a href="#agents">Agents</a>
+          <div className="topbar-links">
             <a href="#releases">Releases</a>
+            <a href={sourceUrl}>Source</a>
             <a href={latestDownloadUrl}>Download</a>
           </div>
         </nav>
         <div className="hero-copy" id="top">
-          <h1 id="hero-title">The browser you loved, still open.</h1>
-          <p className="hero-text">
-            A free, open-source browser for Mac with the sidebar, Spaces and command bar you already know. Bring your
-            whole Arc across in a minute and keep going.
-          </p>
+          <h1 id="hero-title">
+            <span className="quote-mark" aria-hidden="true">
+              “
+            </span>
+            The browser you loved, still open.
+            <span className="quote-mark" aria-hidden="true">
+              ”
+            </span>
+          </h1>
+          <p className="hero-byline">Free · Open source · For Mac</p>
           <div className="hero-actions" aria-label="Download actions">
-            <a className="button primary" href={latestDownloadUrl}>
+            <a className="button" href={latestDownloadUrl}>
               Download for macOS
-            </a>
-            <a className="button ghost" href={sourceUrl}>
-              Read the source
             </a>
           </div>
         </div>
-        <BrowserMock />
+        <svg className="stamp" viewBox="0 0 220 120" aria-hidden="true">
+          <ellipse cx="110" cy="60" rx="104" ry="52" />
+          <text x="110" y="56">FOR MACOS 26</text>
+          <text x="110" y="76">AND LATER</text>
+        </svg>
+        <div className="hero-shot">
+          <BrowserMock />
+        </div>
+        <a className="more" href="#spaces">
+          More
+          <br />
+          Details
+        </a>
+      </section>
+      <div className="zigzag zigzag-top" aria-hidden="true" />
+
+      <section className="feature" id="spaces" aria-labelledby="calm-title">
+        <h2 id="calm-title">A browser that stays out of your way.</h2>
+        <p className="sub">
+          A <strong>sidebar</strong> instead of a tab strip, and nothing on screen but the page you came for.
+        </p>
       </section>
 
-      <section className="band band-paper" id="spaces" aria-labelledby="spaces-title">
-        <div className="band-text">
-          <h2 id="spaces-title">Your internet, in rooms.</h2>
-          <p>
-            A Space for work and another for everything else, each with its own color, its own pins and its own
-            profile if you want. Tabs tidy themselves up when you stop needing them, and nothing you pinned goes
-            anywhere.
-          </p>
+      <section className="feature" aria-labelledby="spaces-title">
+        <h2 id="spaces-title">A Space for every side of you.</h2>
+        <p className="sub">
+          Work, study and everything else in one window, each with its own pins, color and profile, using{" "}
+          <strong>Spaces</strong>.
+        </p>
+        <div className="space-chips" aria-hidden="true">
+          {spaces.map((space) => (
+            <span key={space.name} style={{ background: space.from }}>
+              {space.name}
+            </span>
+          ))}
         </div>
-        <ul className="sticker-row" aria-label="What a Space keeps">
-          <li className="sticker sticker-violet">Pinned tabs</li>
-          <li className="sticker sticker-coral">Folders</li>
-          <li className="sticker sticker-green">Favorites</li>
-          <li className="sticker sticker-sun">Auto-archive</li>
-        </ul>
       </section>
 
-      <section className="band band-ink" aria-labelledby="command-title">
-        <div className="band-text">
-          <h2 id="command-title">One bar. Everything.</h2>
-          <p>
-            Press ⌘T and type. Open tabs in every Space, your whole history, bookmarks, site searches and every command
-            in the browser, ranked as you type and forgiving of typos.
-          </p>
+      <section className="feature" aria-labelledby="command-title">
+        <h2 id="command-title">Everything is one keystroke away.</h2>
+        <p className="sub">
+          Press <strong>⌘T</strong> for tabs in every Space, your history, bookmarks and every command, ranked as you
+          type.
+        </p>
+        <div className="demo demo-dark">
+          <CommandDemo />
         </div>
-        <CommandDemo />
       </section>
 
-      <section className="band band-coral" aria-labelledby="split-title">
-        <div className="band-text">
-          <h2 id="split-title">Two pages. One window.</h2>
-          <p>Split a tab with ⌃⇧=, up to four panes, and drag anything into place. Hover a pane and it leans in.</p>
-        </div>
+      <section className="feature" aria-labelledby="split-title">
+        <h2 id="split-title">Set it up your way.</h2>
+        <p className="sub">
+          Arrange pages with <strong>Split View</strong>, color each Space, and drag only the buttons you want onto the{" "}
+          <strong>toolbar</strong>.
+        </p>
         <div className="split" aria-hidden="true">
           <div>
             <b />
@@ -375,14 +392,12 @@ function App() {
         </div>
       </section>
 
-      <section className="band band-paper" aria-labelledby="import-title">
-        <div className="band-text">
-          <h2 id="import-title">Move in over lunch.</h2>
-          <p>
-            The welcome window finds Arc, Chrome and Dia on your Mac and copies what you pick. Your other browser stays
-            exactly as it was, and everything stays on your Mac.
-          </p>
-        </div>
+      <section className="feature" aria-labelledby="import-title">
+        <h2 id="import-title">Bring your Arc with you.</h2>
+        <p className="sub">
+          The welcome window finds <strong>Arc</strong>, <strong>Chrome</strong> and <strong>Dia</strong> and copies
+          what you pick. Your other browser stays exactly as it was.
+        </p>
         <ul className="checklist">
           {importItems.map((item) => (
             <li key={item}>{item}</li>
@@ -390,15 +405,12 @@ function App() {
         </ul>
       </section>
 
-      <section className="band band-ink" id="agents" aria-labelledby="agents-title">
-        <div className="band-text">
-          <h2 id="agents-title">Lend your browser to an agent.</h2>
-          <p>
-            Turn it on in Settings and agents can open, read and click through the <code>openarc</code> command or its
-            MCP server, with your real sign-ins. Passwords are typed by the browser after you agree, so they never
-            reach the agent. Nothing listens on the network.
-          </p>
-        </div>
+      <section className="feature" id="agents" aria-labelledby="agents-title">
+        <h2 id="agents-title">Lend it to an agent.</h2>
+        <p className="sub">
+          Agents can open, read and click through the <strong>openarc</strong> command or its MCP server, with your
+          sign-ins. Passwords are typed by the browser after you agree, and never reach the agent.
+        </p>
         <pre className="terminal" aria-label="An agent using the openarc command">
           {agentLines.map(([command, output]) => (
             <span className={command ? "terminal-command" : "terminal-output"} key={command + output}>
@@ -409,19 +421,31 @@ function App() {
         </pre>
       </section>
 
-      <section className="band band-paper" aria-labelledby="details-title">
-        <div className="band-text">
-          <h2 id="details-title">And the rest of a real browser.</h2>
-          <p>Chromium underneath, a native Mac app on top, and no account to make.</p>
+      <section className="feature feature-last" aria-labelledby="own-title">
+        <h2 id="own-title">The comfort of owning it.</h2>
+        <p className="sub">
+          OpenArc is open source and needs no account. Your tabs, history and passwords stay on your Mac.
+        </p>
+        <a className="text-link" href={sourceUrl}>
+          Read the source →
+        </a>
+      </section>
+
+      <div className="zigzag zigzag-cream-top" aria-hidden="true" />
+      <section className="facts" aria-label="What comes with it">
+        <div className="facts-icons" aria-hidden="true">
+          <span>✦</span>
+          <span>♥</span>
+          <span>☺</span>
         </div>
-        <dl className="details">
-          {details.map(([term, description]) => (
-            <div key={term}>
-              <dt>{term}</dt>
-              <dd>{description}</dd>
-            </div>
+        <div className="facts-grid">
+          {facts.map(([text, tag]) => (
+            <figure key={tag}>
+              <p>{text}</p>
+              <figcaption>{tag}</figcaption>
+            </figure>
           ))}
-        </dl>
+        </div>
       </section>
 
       <section className="releases" id="releases" aria-labelledby="releases-title">
@@ -431,23 +455,36 @@ function App() {
         <ReleaseList releases={releases} state={releasesState} />
       </section>
 
-      <section className="download" aria-labelledby="download-title">
-        <div>
-          <h2 id="download-title">Open it.</h2>
-          <p>Free and MIT-licensed, for macOS. You can read every line.</p>
-        </div>
-        <a className="button primary download-button" href={latestDownloadUrl}>
-          Download latest
-        </a>
-      </section>
-
       <footer className="site-footer">
-        <a href="/privacy/">Privacy</a>
-        <a href="/terms/">Terms</a>
-        <a href={sourceUrl}>GitHub</a>
-        <span>OpenArc is an independent project, not affiliated with The Browser Company.</span>
+        <div className="zigzag zigzag-blue-top" aria-hidden="true" />
+        <section className="download" aria-labelledby="download-title">
+          <h2 id="download-title">
+            Make yourself at <em>home</em> again.
+          </h2>
+          <a className="button" href={latestDownloadUrl}>
+            Download latest
+          </a>
+        </section>
+        <div className="footer-row">
+          <LogoMark />
+          <div className="footer-links">
+            <a href="/privacy/">Privacy policy</a>
+            <a href="/terms/">Terms</a>
+            <a href="#releases">Releases</a>
+            <a href={sourceUrl}>GitHub</a>
+          </div>
+          <span>Not affiliated with The Browser Company</span>
+        </div>
       </footer>
     </main>
+  );
+}
+
+function LogoMark() {
+  return (
+    <svg className="logo-mark" viewBox="0 0 40 36" aria-hidden="true">
+      <path d="M20 3c4 0 6 3 7.5 7l7.5 18c1 2.5-.5 5-3 5-2 0-3-1.2-4-3.4L20 12l-8 17.6c-1 2.2-2 3.4-4 3.4-2.5 0-4-2.5-3-5l7.5-18C14 6 16 3 20 3Z" />
+    </svg>
   );
 }
 
