@@ -148,7 +148,18 @@ sign_app_bundle() {
   if [[ -d "$SENTRY_FRAMEWORK_DEST" ]]; then
     /usr/bin/codesign --force --sign "$identity" --timestamp=none "$SENTRY_FRAMEWORK_DEST"
   fi
-  /usr/bin/codesign --force --sign "$identity" --timestamp=none --entitlements "$APP_ENTITLEMENTS" "$APP_BUNDLE"
+  # Xcode has expanded its build settings in the .xcent file and added the identifiers
+  # a profile needs. macOS kills an app signed with the raw file's keychain group.
+  signing_entitlements="$APP_ENTITLEMENTS"
+  processed_entitlements="${TARGET_TEMP_DIR:-}/${FULL_PRODUCT_NAME:-}.xcent"
+  if [[ -f "$processed_entitlements" ]]; then
+    signing_entitlements="$processed_entitlements"
+  elif /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups' "$APP_ENTITLEMENTS" >/dev/null 2>&1; then
+    signing_entitlements="$(mktemp -t openarc-entitlements)"
+    cp "$APP_ENTITLEMENTS" "$signing_entitlements"
+    /usr/libexec/PlistBuddy -c 'Delete :keychain-access-groups' "$signing_entitlements"
+  fi
+  /usr/bin/codesign --force --sign "$identity" --timestamp=none --entitlements "$signing_entitlements" "$APP_BUNDLE"
 }
 
 validate_cef_configuration
