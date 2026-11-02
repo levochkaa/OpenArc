@@ -19,6 +19,14 @@ using RunExtensionActionFunction = char* (*)(const char* profile_path,
 using RemoveExtensionFunction = int (*)(const char* profile_path,
                                         const char* extension_id);
 using FreeStringFunction = void (*)(char* value);
+using ExtensionTabActionCallback = void (*)(int browser_id, int action);
+using SetExtensionTabActionFunction = void (*)(ExtensionTabActionCallback);
+using SetExtensionTabsFunction = void (*)(const char* window_key,
+                                          bool focused,
+                                          const char* tabs_json);
+using TranslatePageFunction = int (*)(int browser_id, const char* language);
+using RevertTranslationFunction = void (*)(int browser_id);
+using TranslationStateFunction = int (*)(int browser_id);
 
 struct ExtensionBridgeSymbols {
   CopyInstalledExtensionsJSONFunction copy_installed_extensions_json = nullptr;
@@ -26,6 +34,11 @@ struct ExtensionBridgeSymbols {
   RunExtensionActionFunction run_extension_action = nullptr;
   RemoveExtensionFunction remove_extension = nullptr;
   FreeStringFunction free_string = nullptr;
+  SetExtensionTabActionFunction set_extension_tab_action = nullptr;
+  SetExtensionTabsFunction set_extension_tabs = nullptr;
+  TranslatePageFunction translate_page = nullptr;
+  RevertTranslationFunction revert_translation = nullptr;
+  TranslationStateFunction translation_state = nullptr;
 };
 
 void* ChromiumEmbeddedFrameworkHandle() {
@@ -69,6 +82,17 @@ ExtensionBridgeSymbols LoadExtensionBridgeSymbols() {
       dlsym(handle, "OpenArcRemoveExtension"));
   symbols.free_string = reinterpret_cast<FreeStringFunction>(
       dlsym(handle, "OpenArcFreeString"));
+  symbols.set_extension_tab_action =
+      reinterpret_cast<SetExtensionTabActionFunction>(
+          dlsym(handle, "OpenArcSetExtensionTabAction"));
+  symbols.set_extension_tabs = reinterpret_cast<SetExtensionTabsFunction>(
+      dlsym(handle, "OpenArcSetExtensionTabs"));
+  symbols.translate_page = reinterpret_cast<TranslatePageFunction>(
+      dlsym(handle, "OpenArcTranslatePage"));
+  symbols.revert_translation = reinterpret_cast<RevertTranslationFunction>(
+      dlsym(handle, "OpenArcRevertTranslation"));
+  symbols.translation_state = reinterpret_cast<TranslationStateFunction>(
+      dlsym(handle, "OpenArcTranslationState"));
   return symbols;
 }
 
@@ -77,7 +101,52 @@ const ExtensionBridgeSymbols& GetExtensionBridgeSymbols() {
   return symbols;
 }
 
+void (^g_extension_tab_action_handler)(int, int) = nil;
+
+void ForwardExtensionTabAction(int browser_id, int action) {
+  if (g_extension_tab_action_handler) {
+    g_extension_tab_action_handler(browser_id, action);
+  }
+}
+
 }  // namespace
+
+void BrowserSetExtensionTabs(NSString* window_key, BOOL focused,
+                             NSString* tabs_json) {
+  const ExtensionBridgeSymbols& symbols = GetExtensionBridgeSymbols();
+  if (!symbols.set_extension_tabs || !window_key || !tabs_json) {
+    return;
+  }
+  if (symbols.set_extension_tab_action) {
+    symbols.set_extension_tab_action(&ForwardExtensionTabAction);
+  }
+  symbols.set_extension_tabs(window_key.UTF8String, focused,
+                             tabs_json.UTF8String);
+}
+
+void BrowserSetExtensionTabActionHandler(void (^handler)(int browser_id,
+                                                         int action)) {
+  g_extension_tab_action_handler = [handler copy];
+}
+
+int BrowserTranslatePage(int browser_id, NSString* language) {
+  const ExtensionBridgeSymbols& symbols = GetExtensionBridgeSymbols();
+  return symbols.translate_page && language
+             ? symbols.translate_page(browser_id, language.UTF8String)
+             : 0;
+}
+
+void BrowserRevertTranslation(int browser_id) {
+  const ExtensionBridgeSymbols& symbols = GetExtensionBridgeSymbols();
+  if (symbols.revert_translation) {
+    symbols.revert_translation(browser_id);
+  }
+}
+
+int BrowserTranslationState(int browser_id) {
+  const ExtensionBridgeSymbols& symbols = GetExtensionBridgeSymbols();
+  return symbols.translation_state ? symbols.translation_state(browser_id) : 0;
+}
 
 NSString* BrowserCopyInstalledExtensionsJSON(NSString* profile_path) {
   const ExtensionBridgeSymbols& symbols = GetExtensionBridgeSymbols();

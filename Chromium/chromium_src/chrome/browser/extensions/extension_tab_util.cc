@@ -457,6 +457,19 @@ api::tabs::Tab ExtensionTabUtil::CreateTabObject(
     }
   }
 
+#if BUILDFLAG(ENABLE_CEF)
+  if (!tab_interface) {
+    if (const auto alloy_tab = cef::GetAlloyExtensionTab(contents)) {
+      tab_object.index = alloy_tab->index;
+      tab_object.window_id = alloy_tab->window_id;
+      tab_object.active = alloy_tab->active;
+      tab_object.selected = alloy_tab->active;
+      tab_object.highlighted = alloy_tab->active;
+      tab_object.pinned = alloy_tab->pinned;
+    }
+  }
+#endif
+
   ScrubTabForExtension(extension, contents, &tab_object, scrub_tab_behavior);
   return tab_object;
 }
@@ -669,10 +682,15 @@ bool ExtensionTabUtil::GetTabById(int tab_id,
   }
 
 #if BUILDFLAG(ENABLE_CEF)
-  if (!out_window && !out_tab_index &&
-      cef::GetAlloyTabById(tab_id, profile, include_incognito, out_contents)) {
-    // |out_window| and |out_tab_index| are tied to a specific Browser window,
-    // which doesn't exist for an Alloy style browser.
+  // |out_window| and |out_tab_index| are tied to a specific Browser window,
+  // which doesn't exist for an Alloy style browser. They stay empty, as they do
+  // for the prerendering tabs below, and callers handle that.
+  content::WebContents* alloy_contents = nullptr;
+  if (cef::GetAlloyTabById(tab_id, profile, include_incognito,
+                           &alloy_contents)) {
+    if (out_contents) {
+      *out_contents = alloy_contents;
+    }
     return true;
   }
 #endif

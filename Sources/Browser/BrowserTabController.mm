@@ -6,6 +6,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import "OpenArc-Swift.h"
+#import "Browser/SwiftBridge.h"
 #include "Shared/BrowserMediaMessages.h"
 #include "Shared/BrowserSchemes.h"
 #include "Shared/ClientManager.h"
@@ -1670,7 +1671,6 @@ class RegionScreenshotObserver final : public CefDevToolsMessageObserver {
 };
 
 /// Evaluates an expression in the page and returns its string value.
-class RuntimeEvaluateObserver final : public CefDevToolsMessageObserver {
 // Runs one DevTools method and hands back its result as JSON, or nil.
 class DevToolsMethodObserver final : public CefDevToolsMessageObserver {
  public:
@@ -1712,9 +1712,26 @@ class DevToolsMethodObserver final : public CefDevToolsMessageObserver {
     Finish(success ? payload : nil);
   }
 
+ private:
+  void Finish(NSString *payload) {
+    registration_ = nullptr;
+    void (^completion)(NSString *) = completion_;
+    completion_ = nil;
+    if (completion) {
+      completion(payload);
+    }
+  }
+
+  std::string method_;
+  std::string params_json_;
+  void (^completion_)(NSString *);
+  CefRefPtr<CefRegistration> registration_;
+  int message_id_ = 0;
+
   IMPLEMENT_REFCOUNTING(DevToolsMethodObserver);
 };
 
+class RuntimeEvaluateObserver final : public CefDevToolsMessageObserver {
  public:
   RuntimeEvaluateObserver(const char *expression, void (^completion)(NSString *))
       : expression_(expression), completion_([completion copy]) {}
@@ -3519,9 +3536,9 @@ struct TabRecord {
                            origin:(NSString *)origin
                          callback:(CefRefPtr<CefAuthCallback>)callback;
 - (void)cancelDialogsForTabID:(NSString *)tabID;
-- (void)noteRendererProcessID:(int)processID forTabID:(NSString *)tabID;
 - (BOOL)isDialogTabVisible:(NSString *)tabID;
 - (void)presentWaitingDialogs;
+- (void)noteRendererProcessID:(int)processID forTabID:(NSString *)tabID;
 - (void)finishCloseDialogForTabID:(NSString *)tabID
                       requestID:(NSString *)requestID
                         browser:(CefRefPtr<CefBrowser>)browser
@@ -3823,6 +3840,8 @@ std::string BrowserMediaVolumeScript(double volume) {
   NSMutableDictionary<NSNumber *, BrowserPeekSession *> *_peekSessions;
   NSMutableDictionary<NSString *, BrowserJavaScriptDialog *> *_pageDialogs;
   NSMutableDictionary<NSString *, BrowserAuthDialog *> *_authDialogs;
+  NSString *_lastExtensionTabsJSON;
+  BOOL _lastExtensionTabsFocused;
   int _nextPeekSessionID;
   int _peekCardSessionID;
   std::map<int, PendingSitePermission> _sitePermissions;
@@ -4538,17 +4557,41 @@ std::string BrowserMediaVolumeScript(double volume) {
       }
     }
   }
-  CefRefPtr<RuntimeEvaluateObserver> observer =
-      new RuntimeEvaluateObserver(code.UTF8String, completion);
-  observer->Start(it->second.browser->GetHost());
+  if (!manager) {
+    return 0;
+  }
+  NSInteger count = 0;
+  for (NSDictionary<NSString *, id> *item in cookies) {
+    CefCookie cookie;
+    CefString(&cookie.name) = ToStdString(item[@"name"]);
+    CefString(&cookie.value) = ToStdString(item[@"value"]);
+    CefString(&cookie.domain) = ToStdString(item[@"host"]);
+    CefString(&cookie.path) = ToStdString(item[@"path"]);
+    cookie.secure = [item[@"secure"] boolValue] ? 1 : 0;
+    cookie.httponly = [item[@"httpOnly"] boolValue] ? 1 : 0;
+    cookie.has_expires = 1;
+    cookie.expires.val = [item[@"expires"] longLongValue];
+    switch ([item[@"sameSite"] integerValue]) {
+      case 0:
+        cookie.same_site = CEF_COOKIE_SAME_SITE_NO_RESTRICTION;
+        break;
+      case 1:
+        cookie.same_site = CEF_COOKIE_SAME_SITE_LAX_MODE;
+        break;
+      case 2:
+        cookie.same_site = CEF_COOKIE_SAME_SITE_STRICT_MODE;
+        break;
+      default:
+        cookie.same_site = CEF_COOKIE_SAME_SITE_UNSPECIFIED;
+        break;
+    }
+    if (manager->SetCookie(ToStdString(item[@"url"]), cookie, nullptr)) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
-- (void)goBackActiveTab {
-  std::string activeKey = ToStdString(_activeTabID);
-  auto it = _tabRecords.find(activeKey);
-  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
-    return;
-  }
 - (void)executeDevToolsMethod:(NSString *)method
                        params:(NSString *)paramsJSON
                   inTabWithID:(NSString *)tabID
@@ -4581,6 +4624,25 @@ std::string BrowserMediaVolumeScript(double volume) {
   return YES;
 }
 
+- (void)evaluateJavaScript:(NSString *)code
+              inTabWithID:(NSString *)tabID
+               completion:(void (^)(NSString *))completion {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    completion(nil);
+    return;
+  }
+  CefRefPtr<RuntimeEvaluateObserver> observer =
+      new RuntimeEvaluateObserver(code.UTF8String, completion);
+  observer->Start(it->second.browser->GetHost());
+}
+
+- (void)goBackActiveTab {
+  std::string activeKey = ToStdString(_activeTabID);
+  auto it = _tabRecords.find(activeKey);
+  if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
+    return;
+  }
 
   if (it->second.browser && it->second.browser->CanGoBack()) {
     it->second.navigationPending = false;
@@ -5692,6 +5754,69 @@ std::string BrowserMediaVolumeScript(double volume) {
   [_pageDialogs[tabID] cancel];
 }
 
+- (void)reportExtensionTabsForWindowKey:(NSString *)windowKey
+                                focused:(BOOL)focused
+                                   tabs:(NSArray<NSDictionary<NSString *, id> *> *)tabs {
+  NSMutableArray<NSDictionary<NSString *, id> *> *entries = [NSMutableArray array];
+  for (NSDictionary<NSString *, id> *tab in tabs) {
+    auto it = _tabRecords.find(ToStdString(tab[@"tabID"]));
+    if (it == _tabRecords.end() || !it->second.browser) {
+      continue;
+    }
+    [entries addObject:@{
+      @"browserId" : @(it->second.browser->GetIdentifier()),
+      @"index" : tab[@"index"],
+      @"active" : tab[@"active"],
+      @"pinned" : tab[@"pinned"],
+    }];
+  }
+  NSData *data = [NSJSONSerialization dataWithJSONObject:entries
+                                                 options:NSJSONWritingSortedKeys
+                                                   error:nil];
+  NSString *json = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+  if (!json) {
+    return;
+  }
+  if (_lastExtensionTabsFocused == focused && [_lastExtensionTabsJSON isEqualToString:json]) {
+    return;
+  }
+  _lastExtensionTabsFocused = focused;
+  _lastExtensionTabsJSON = json;
+  BrowserSetExtensionTabs(windowKey, focused, json);
+}
+
+- (nullable NSString *)tabIDForBrowserIdentifier:(int)browserIdentifier {
+  for (const auto &entry : _tabRecords) {
+    if (entry.second.browser && entry.second.browser->GetIdentifier() == browserIdentifier) {
+      return ToNSString(entry.first);
+    }
+  }
+  return nil;
+}
+
+- (NSInteger)translateTabWithID:(NSString *)tabID toLanguage:(NSString *)language {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return 0;
+  }
+  return BrowserTranslatePage(it->second.browser->GetIdentifier(), language);
+}
+
+- (void)revertTranslationForTabWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && it->second.browser) {
+    BrowserRevertTranslation(it->second.browser->GetIdentifier());
+  }
+}
+
+- (NSInteger)translationStateForTabWithID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return 0;
+  }
+  return BrowserTranslationState(it->second.browser->GetIdentifier());
+}
+
 - (NSDictionary<NSString *, NSNumber *> *)rendererProcessIDsByTabID {
   NSMutableDictionary<NSString *, NSNumber *> *result = [NSMutableDictionary dictionary];
   for (const auto &entry : _tabRecords) {
@@ -6047,6 +6172,9 @@ std::string BrowserMediaVolumeScript(double volume) {
 }
 
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self presentWaitingDialogs];
+  });
   const std::string activeKey = ToStdString(_activeTabID);
   const std::vector<std::string> visibleKeys = [self visiblePaneKeys];
   for (auto &entry : _tabRecords) {
@@ -6113,9 +6241,6 @@ void BrowserTabClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
                                      const CefString &title) {
   CEF_REQUIRE_UI_THREAD();
 
-  dispatch_async(dispatch_get_main_queue(), ^{
-    [self presentWaitingDialogs];
-  });
   BrowserTabController *controller = controller_;
   if (controller == nil) {
     return;

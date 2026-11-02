@@ -39,6 +39,32 @@ enum BrowserPageContextCommand: String {
     case viewSource
 }
 
+// MARK: - BrowserExtensionTabReport
+
+/// One tab as extensions see it through `chrome.tabs`.
+struct BrowserExtensionTabReport: Equatable {
+    let tabID: String
+    let index: Int
+    let isActive: Bool
+    let isPinned: Bool
+}
+
+// MARK: - BrowserPageTranslationStart
+
+enum BrowserPageTranslationStart: Int {
+    case unavailable
+    case started
+    case alreadyInLanguage
+}
+
+// MARK: - BrowserPageTranslationState
+
+enum BrowserPageTranslationState: Int {
+    case none
+    case translating
+    case translated
+}
+
 // MARK: - BrowserTabDriving
 
 @MainActor protocol BrowserTabDriving: AnyObject {
@@ -177,6 +203,20 @@ enum BrowserPageContextCommand: String {
     func showPeekSitePermissionRequests(_ requests: [BrowserSitePermissionRequest])
     func isPeekSessionOpen(_ sessionID: Int) -> Bool
     func rendererProcessIDsByTabID() -> [String: Int32]
+    func executeDevTools(
+        method: String,
+        paramsJSON: String,
+        tabID: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    )
+    func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool
+    @discardableResult func importCookies(_ cookies: [BrowserImportedCookie]) -> Int
+    /// Tells extensions which pages are this window's tabs.
+    func reportExtensionTabs(windowKey: String, focused: Bool, tabs: [BrowserExtensionTabReport])
+    func tabID(forBrowserIdentifier browserIdentifier: Int32) -> String?
+    func translateTab(withID tabID: String, toLanguage language: String) -> BrowserPageTranslationStart
+    func revertTranslation(ofTabWithID tabID: String)
+    func translationState(ofTabWithID tabID: String) -> BrowserPageTranslationState
     /// Puts a prompt over a Peek's page. False when the Peek is gone.
     func hostPrompt(_ prompt: NSView, height: CGFloat, inPeekSession sessionID: Int) -> Bool
     /// Chromium's settings for a page that differ from the profile default.
@@ -203,23 +243,6 @@ struct BrowserNavigationEntry: Equatable {
 
     var faviconURL: URL? {
         guard let url = URL(string: urlString), let scheme = url.scheme, let host = url.host else { return nil }
-    func executeDevTools(
-        method: String,
-        paramsJSON: String,
-        tabID: String,
-        completion: @escaping @MainActor (String?) -> Void,
-    )
-    func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool
-    @discardableResult func importCookies(_ cookies: [BrowserImportedCookie]) -> Int
-    /// Tells extensions which pages are this window's tabs.
-    func executeDevTools(
-        method: String,
-        paramsJSON: String,
-        tabID: String,
-        completion: @escaping @MainActor (String?) -> Void,
-    )
-    func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool
-    /// Tells extensions which pages are this window's tabs.
         return URL(string: "\(scheme)://\(host)/favicon.ico")
     }
 

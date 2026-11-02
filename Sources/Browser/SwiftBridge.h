@@ -37,6 +37,18 @@ BOOL BrowserSetExtensionEnabled(NSString* profile_path, NSString* extension_id,
 NSString* BrowserRunExtensionAction(NSString* profile_path,
                                     NSString* extension_id);
 BOOL BrowserRemoveExtension(NSString* profile_path, NSString* extension_id);
+/// Tells extensions which pages are the tabs of a window, as JSON:
+/// [{browserId, index, active, pinned}].
+void BrowserSetExtensionTabs(NSString* window_key, BOOL focused,
+                             NSString* tabs_json);
+/// `action` is 0 to select the tab and 1 to close it.
+void BrowserSetExtensionTabActionHandler(void (^handler)(int browser_id,
+                                                         int action));
+/// 0: cannot translate, 1: started, 2: already in that language.
+int BrowserTranslatePage(int browser_id, NSString* language);
+void BrowserRevertTranslation(int browser_id);
+/// 0: not translated, 1: translating, 2: translated.
+int BrowserTranslationState(int browser_id);
 
 #endif
 

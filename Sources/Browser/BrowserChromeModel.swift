@@ -507,6 +507,8 @@ enum BrowserWindowMode: Equatable {
 
     /// Answers this window's waiting requests that another window's answer covers.
     private var sitePermissionDecisionsObservation: AnyCancellable?
+    private var extensionTabsObservation: AnyCancellable?
+    private let extensionWindowKey = UUID().uuidString
 
     /// Spaces colored in this session; a stored projection never overrides them.
     private var locallyColoredSpaceIDs = Set<String>()
@@ -858,13 +860,13 @@ enum BrowserWindowMode: Equatable {
             : BrowserStrings.menuOpenPictureInPicture
     }
 
-    private var canAdmitLocalAutomaticArchive: Bool {
-        isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
     /// The bar's "Add Page" starts from the page on screen.
     var pageForNewBookmark: (title: String, urlString: String) {
         (currentTab?.title ?? "", currentTab?.urlString ?? "")
     }
 
+    private var canAdmitLocalAutomaticArchive: Bool {
+        isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
             !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
             !isApplyingRemoteSync && !isReconcilingRemoteProjection && !isArchiveOperationInFlight &&
             !isCompletingTabClose && !undoManager.isTabTransitionPending && pendingTabCloseRequests.isEmpty
@@ -1070,6 +1072,17 @@ enum BrowserWindowMode: Equatable {
                     resolveSitePermissionRequests(coveredBy: decisions)
                 }
             }
+        let center = NotificationCenter.default
+        self.extensionTabsObservation = $tabs.map { _ in () }
+            .merge(
+                with: $selectedTabID.map { _ in () },
+                center.publisher(for: NSWindow.didBecomeKeyNotification).map { _ in () },
+                center.publisher(for: NSWindow.didResignKeyNotification).map { _ in () },
+            )
+            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.reportExtensionTabs() }
+            }
         tabDriver.onOpenPeekInSpace = { [weak self] urlString, spaceID in
             guard let self, let url = URL(string: urlString), !openURL(url, inSpaceWithID: spaceID) else { return }
             openURLInNewTab(url)
@@ -1103,7 +1116,7 @@ enum BrowserWindowMode: Equatable {
         updateWindowTitle()
     }
 
-    /// The engine has no translator, so the page opens in Google's, in the system language.
+    /// For pages the engine cannot translate: they open in Google's, in the system language.
     static func translatedPageURL(for urlString: String, language: String) -> URL? {
         guard let scheme = URLComponents(string: urlString)?.scheme?.lowercased(),
               scheme == "http" || scheme == "https"
@@ -1115,6 +1128,28 @@ enum BrowserWindowMode: Equatable {
             .init(name: "u", value: urlString),
         ]
         return components?.url
+    }
+
+    /// Chromium names only Chinese with a region.
+    nonisolated static func translationLanguage(forPreferredLanguage language: String?) -> String {
+        guard let language, !language.isEmpty else { return "en" }
+        if language.hasPrefix("zh") {
+            return language.contains("Hant") || language.contains("TW") || language.contains("HK") ? "zh-TW" : "zh-CN"
+        }
+        return String(language.prefix(2))
+    }
+
+    /// Finished pages of this window, in sidebar order. Pages still being
+    /// created have nothing for an extension to reach.
+    nonisolated static func extensionTabReports(tabs: [Tab], selectedTabID: String?) -> [BrowserExtensionTabReport] {
+        tabs.filter { $0.creationState == .ready }.enumerated().map { index, tab in
+            BrowserExtensionTabReport(
+                tabID: tab.id,
+                index: index,
+                isActive: tab.id == selectedTabID,
+                isPinned: tab.placement != .temporary,
+            )
+        }
     }
 
     /// Use Selection to Find: the page copies its selection to the find
@@ -1221,6 +1256,7 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
+        historyStore.prepareSearchIndex()
         isContextReady = true
         extensionManager.enableDefaultExtensionsOnce()
         restoreSidebarWidthIfNeeded()
@@ -1256,7 +1292,6 @@ enum BrowserWindowMode: Equatable {
             persistCurrentSessionIfAllowed()
         }
         guard !hasUncommittedSessionWrites else { return }
-        historyStore.prepareSearchIndex()
         automaticArchivalTimer?.invalidate()
         automaticArchivalTimer = nil
         webAppManifestLoadTask?.cancel()
@@ -1385,41 +1420,19 @@ enum BrowserWindowMode: Equatable {
 
     func endToolbarCustomization() { isCustomizingToolbar = false }
 
-    /// A toolbar button runs its command as the command bar would.
-    func performToolbarCommand(_ id: BrowserCommandID) { commandHandler(id, self) }
-
-    func isBookmarked(urlString: String) -> Bool {
-        bookmarksModel.containsBookmark(urlString: urlString)
+    func executeDevTools(
+        method: String,
+        paramsJSON: String,
+        tabID: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        tabDriver.executeDevTools(method: method, paramsJSON: paramsJSON, tabID: tabID, completion: completion)
     }
 
-    /// Adds Arc's Spaces with their pinned tabs and folders, and its Favorites
-    /// up to the app tile capacity. Imported tabs are dormant, like pinned tabs
-    /// closed earlier: their pages load when first selected. The current Space
-    /// and selection stay as they are.
-    @discardableResult func importArcSidebar(_ sidebar: BrowserArcSidebar) -> BrowserArcSidebarImportResult {
-        guard canImportArcSidebar else { return .init() }
-        var result = BrowserArcSidebarImportResult()
-        let now = dateProvider()
-
-        func dormantTab(
-            _ node: BrowserArcSidebar.Node,
-            spaceID: String,
-            folderID: String?,
-            placement: BrowserTabPlacement,
-        )
-            -> Tab?
-        {
-    @discardableResult func moveBookmark(id: String, toFolderID: String?, atIndex index: Int) -> Bool {
-        bookmarksModel.moveBookmark(id: id, toFolderID: toFolderID, atIndex: index)
+    func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool {
+        tabDriver.fillPasswordInMainFrame(username: username, password: password, origin: origin, tabID: tabID)
     }
 
-    @discardableResult func insertBookmark(
-        title: String,
-        urlString: String,
-        toFolderID: String?,
-        atIndex index: Int? = nil,
-    ) -> Bool {
-        bookmarksModel.insertBookmark(title: title, urlString: urlString, toFolderID: toFolderID, atIndex: index) != nil
     /// Copies what the person chose from another browser, and reports it in one line.
     func importProfile(
         _ profile: BrowserProfileImporter,
@@ -1496,19 +1509,24 @@ enum BrowserWindowMode: Equatable {
         return BrowserStrings.onboardingImportResult(parts)
     }
 
-    func executeDevTools(
-        method: String,
-        paramsJSON: String,
-        tabID: String,
-        completion: @escaping @MainActor (String?) -> Void,
-    ) {
-        tabDriver.executeDevTools(method: method, paramsJSON: paramsJSON, tabID: tabID, completion: completion)
+    /// A toolbar button runs its command as the command bar would.
+    func performToolbarCommand(_ id: BrowserCommandID) { commandHandler(id, self) }
+
+    @discardableResult func deleteBookmark(id: String) -> Bool {
+        bookmarksModel.deleteBookmark(id: id)
     }
 
-    func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool {
-        tabDriver.fillPasswordInMainFrame(username: username, password: password, origin: origin, tabID: tabID)
+    @discardableResult func moveBookmark(id: String, toFolderID: String?, atIndex index: Int) -> Bool {
+        bookmarksModel.moveBookmark(id: id, toFolderID: toFolderID, atIndex: index)
     }
 
+    @discardableResult func insertBookmark(
+        title: String,
+        urlString: String,
+        toFolderID: String?,
+        atIndex index: Int? = nil,
+    ) -> Bool {
+        bookmarksModel.insertBookmark(title: title, urlString: urlString, toFolderID: toFolderID, atIndex: index) != nil
     }
 
     @discardableResult func insertBookmarkFolder(
@@ -1531,6 +1549,41 @@ enum BrowserWindowMode: Equatable {
         if let url = URL(string: urlString) { _ = openURLInSplitView(url) }
     }
 
+    func openBookmarks(_ urlStrings: [String]) {
+        for urlString in urlStrings where !urlString.isEmpty {
+            createTab(withURLString: urlString)
+        }
+    }
+
+    func openBookmarksManager() {
+        openURLInNewTab(BrowserInternalPageRouting.bookmarksURL)
+    }
+
+    @discardableResult func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult {
+        bookmarksModel.importBookmarks(from: source)
+    }
+
+    func isBookmarked(urlString: String) -> Bool {
+        bookmarksModel.containsBookmark(urlString: urlString)
+    }
+
+    /// Adds Arc's Spaces with their pinned tabs and folders, and its Favorites
+    /// up to the app tile capacity. Imported tabs are dormant, like pinned tabs
+    /// closed earlier: their pages load when first selected. The current Space
+    /// and selection stay as they are.
+    @discardableResult func importArcSidebar(_ sidebar: BrowserArcSidebar) -> BrowserArcSidebarImportResult {
+        guard canImportArcSidebar else { return .init() }
+        var result = BrowserArcSidebarImportResult()
+        let now = dateProvider()
+
+        func dormantTab(
+            _ node: BrowserArcSidebar.Node,
+            spaceID: String,
+            folderID: String?,
+            placement: BrowserTabPlacement,
+        )
+            -> Tab?
+        {
             guard case .tab(let title, let savedTitle, let urlString) = node else { return nil }
             let id = UUID().uuidString
             restoredTabCreationIDs.insert(id)
@@ -2652,6 +2705,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func presentCommandBar() {
+        historyStore.prepareSearchIndex()
         guard canCreateTab else {
             return
         }
@@ -2705,7 +2759,6 @@ enum BrowserWindowMode: Equatable {
     func presentFindBar() {
         guard canFindInPage else {
             return
-        historyStore.prepareSearchIndex()
         }
 
         commandBarModel.dismiss()
@@ -3180,12 +3233,41 @@ enum BrowserWindowMode: Equatable {
         tabDriver.fillPassword(username: username, password: password, frameID: frameID, origin: origin, tabID: tabID)
     }
 
+    /// Translates in place, or takes a translated page back to the original.
+    /// Pages the engine cannot translate open in Google's translator instead.
     @discardableResult func translateCurrentPage() -> Bool {
-        let language = Locale.preferredLanguages.first.map { String($0.prefix(2)) } ?? "en"
-        guard let tab = currentTab, let url = Self.translatedPageURL(for: tab.urlString, language: language) else {
-            return false
+        guard let tab = currentTab else { return false }
+        let language = Self.translationLanguage(forPreferredLanguage: Locale.preferredLanguages.first)
+        switch tabDriver.translationState(ofTabWithID: tab.id) {
+        case .translated:
+            tabDriver.revertTranslation(ofTabWithID: tab.id)
+            return true
+        case .translating:
+            return true
+        case .none:
+            break
         }
-        navigateTab(id: tab.id, toURLString: url.absoluteString)
+        switch tabDriver.translateTab(withID: tab.id, toLanguage: language) {
+        case .alreadyInLanguage:
+            return true
+        case .started:
+            fallBackToTranslatorIfNeeded(tabID: tab.id, urlString: tab.urlString, language: language, attempts: 2)
+            return true
+        case .unavailable:
+            return openPageInTranslator(tabID: tab.id, urlString: tab.urlString, language: language)
+        }
+    }
+
+    /// An extension asked to select or close a tab. False when it is not in this window.
+    @discardableResult func handleExtensionTabAction(browserIdentifier: Int32, closes: Bool) -> Bool {
+        guard let tabID = tabDriver.tabID(forBrowserIdentifier: browserIdentifier),
+              tabs.contains(where: { $0.id == tabID })
+        else { return false }
+        if closes {
+            closeTab(id: tabID)
+        } else {
+            selectTab(id: tabID)
+        }
         return true
     }
 
@@ -4091,6 +4173,41 @@ enum BrowserWindowMode: Equatable {
             tabDriver.deselectActiveTab()
         }
         updateWindowTitle()
+    }
+
+    /// An inline translation reports no failure, so check that it took effect.
+    private func fallBackToTranslatorIfNeeded(tabID: String, urlString: String, language: String, attempts: Int) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard let self, tabs.first(where: { $0.id == tabID })?.urlString == urlString else { return }
+            switch tabDriver.translationState(ofTabWithID: tabID) {
+            case .translated:
+                break
+            case .translating where attempts > 1:
+                fallBackToTranslatorIfNeeded(
+                    tabID: tabID,
+                    urlString: urlString,
+                    language: language,
+                    attempts: attempts - 1,
+                )
+            case .none, .translating:
+                _ = openPageInTranslator(tabID: tabID, urlString: urlString, language: language)
+            }
+        }
+    }
+
+    private func openPageInTranslator(tabID: String, urlString: String, language: String) -> Bool {
+        guard let url = Self.translatedPageURL(for: urlString, language: language) else { return false }
+        navigateTab(id: tabID, toURLString: url.absoluteString)
+        return true
+    }
+
+    private func reportExtensionTabs() {
+        tabDriver.reportExtensionTabs(
+            windowKey: extensionWindowKey,
+            focused: tabDriver.hostView.window?.isKeyWindow ?? false,
+            tabs: Self.extensionTabReports(tabs: tabs, selectedTabID: selectedTabID),
+        )
     }
 
     private func copyFolder(_ source: PinnedTabFolder) -> String? {
@@ -5422,6 +5539,27 @@ enum BrowserWindowMode: Equatable {
             }
     }
 
+    /// What an empty command bar lists: this Space's latest tabs, then history.
+    private func recentCommandBarPages(maximumCount: Int) -> [BrowserCommandSuggestion] {
+        let recentTabs = activeSpaceTabs
+            .filter { $0.id != selectedTabID && !$0.urlString.isEmpty && $0.creationState == .ready }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+            .prefix(maximumCount)
+            .map { tab in
+                BrowserCommandSuggestion(
+                    kind: .openTab,
+                    displayText: tab.displayTitle,
+                    resolvedURLString: tab.urlString,
+                    tabIDs: [tab.id],
+                )
+            }
+        let urls = Set(recentTabs.map(\.resolvedURLString))
+        let history = historyStore.recentSuggestions(maximumCount: maximumCount)
+            .filter { !urls.contains($0.resolvedURLString) }
+        return Array((recentTabs + history).prefix(maximumCount))
+    }
+
+    /// Tabs in every Space, those in the current one first, typos allowed.
     private func openTabSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
         let activeIDs = Set(activeSpaceTabs.map(\.id))
         let candidates = tabs.filter { $0.id != selectedTabID && !$0.urlString.isEmpty }
@@ -5538,27 +5676,6 @@ enum BrowserWindowMode: Equatable {
             spaceID: tab.spaceID,
             title: title ?? tab.title,
             userTitleOverride: tab.userTitleOverride,
-    /// What an empty command bar lists: this Space's latest tabs, then history.
-    private func recentCommandBarPages(maximumCount: Int) -> [BrowserCommandSuggestion] {
-        let recentTabs = activeSpaceTabs
-            .filter { $0.id != selectedTabID && !$0.urlString.isEmpty && $0.creationState == .ready }
-            .sorted { $0.lastActivityAt > $1.lastActivityAt }
-            .prefix(maximumCount)
-            .map { tab in
-                BrowserCommandSuggestion(
-                    kind: .openTab,
-                    displayText: tab.displayTitle,
-                    resolvedURLString: tab.urlString,
-                    tabIDs: [tab.id],
-                )
-            }
-        let urls = Set(recentTabs.map(\.resolvedURLString))
-        let history = historyStore.recentSuggestions(maximumCount: maximumCount)
-            .filter { !urls.contains($0.resolvedURLString) }
-        return Array((recentTabs + history).prefix(maximumCount))
-    }
-
-    /// Tabs in every Space, those in the current one first, typos allowed.
             urlString: urlString ?? tab.urlString,
             pinnedURLString: effectivePinnedURLString(forPinnedTab: tab),
             faviconURLString: tab.faviconURLString,
@@ -8025,6 +8142,8 @@ extension BrowserCommandID {
             ["bookmarks bar", "bookmark bar", "toggle bookmarks bar", "show bookmarks bar", "hide bookmarks bar"]
         case .toggleSiteToolbar:
             ["toolbar", "url bar", "address bar", "show toolbar", "hide toolbar"]
+        case .customizeToolbar:
+            ["customize toolbar", "edit toolbar", "toolbar buttons", "add button to toolbar"]
         }
     }
 
@@ -8142,8 +8261,6 @@ extension BrowserCommandID {
         case .collapseAllFolders:
             "folder"
         case .expandAllFolders:
-        case .customizeToolbar:
-            ["customize toolbar", "edit toolbar", "toolbar buttons", "add button to toolbar"]
             "folder.fill"
         case .newSpace:
             "plus.rectangle.on.rectangle"
@@ -8219,6 +8336,8 @@ extension BrowserCommandID {
             "book"
         case .toggleSiteToolbar:
             "menubar.rectangle"
+        case .customizeToolbar:
+            "slider.horizontal.below.rectangle"
         }
     }
 }
@@ -8336,8 +8455,6 @@ private enum BrowserTabPreviewCapture {
 
 // MARK: - BrowserQuoteLink
 
-        case .customizeToolbar:
-            "slider.horizontal.below.rectangle"
 enum BrowserQuoteLink {
     // MARK: Internal
 

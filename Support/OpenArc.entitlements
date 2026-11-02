@@ -15,5 +15,11 @@
   <true/>
   <key>com.apple.security.personal-information.photos-library</key>
   <true/>
+  <!-- Passkeys saved with Touch ID live in this keychain group. A team profile allows it,
+       so no entitlement needs Apple's approval. Developer ID builds need their own profile. -->
+  <key>keychain-access-groups</key>
+  <array>
+    <string>$(AppIdentifierPrefix)com.levochkaa.OpenArc.webauthn</string>
+  </array>
 </dict>
 </plist>

@@ -342,6 +342,33 @@ import Foundation
         controller.rendererProcessIDsByTabID().mapValues(\.int32Value)
     }
 
+    func reportExtensionTabs(windowKey: String, focused: Bool, tabs: [BrowserExtensionTabReport]) {
+        controller.reportExtensionTabs(
+            forWindowKey: windowKey,
+            focused: focused,
+            tabs: tabs.map {
+                ["tabID": $0.tabID, "index": $0.index, "active": $0.isActive, "pinned": $0.isPinned]
+            },
+        )
+    }
+
+    func tabID(forBrowserIdentifier browserIdentifier: Int32) -> String? {
+        controller.tabID(forBrowserIdentifier: browserIdentifier)
+    }
+
+    func translateTab(withID tabID: String, toLanguage language: String) -> BrowserPageTranslationStart {
+        BrowserPageTranslationStart(rawValue: controller.translateTab(withID: tabID, toLanguage: language)) ??
+            .unavailable
+    }
+
+    func revertTranslation(ofTabWithID tabID: String) {
+        controller.revertTranslationForTab(withID: tabID)
+    }
+
+    func translationState(ofTabWithID tabID: String) -> BrowserPageTranslationState {
+        BrowserPageTranslationState(rawValue: controller.translationStateForTab(withID: tabID)) ?? .none
+    }
+
     func isPeekSessionOpen(_ sessionID: Int) -> Bool {
         controller.peekPanel(forSessionID: sessionID) != nil
     }

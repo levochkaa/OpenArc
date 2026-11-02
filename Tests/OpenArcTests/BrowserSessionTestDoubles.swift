@@ -145,6 +145,14 @@ import Foundation
 
     // MARK: Private
 
+    var reportedExtensionTabs = [BrowserExtensionTabReport]()
+    var reportedExtensionWindowFocus = false
+    var tabIDsByBrowserIdentifier = [Int32: String]()
+    var translationRequests = [(tabID: String, language: String)]()
+    var nextTranslationStart = BrowserPageTranslationStart.unavailable
+    var revertedTranslations = [String]()
+    var currentTranslationState = BrowserPageTranslationState.none
+
     var importedCookies = [BrowserImportedCookie]()
     var devToolsMethods = [String]()
     var devToolsResults = [String: String]()
@@ -156,14 +164,6 @@ import Foundation
 
     func rendererProcessIDsByTabID() -> [String: Int32] { rendererProcessIDs }
 
-    func fillAddress(json: String, frameID: String, origin: String, tabID _: String) {
-        filledAddresses.append((json, frameID, origin))
-    }
-
-    @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool {
-        pageActions.append(action)
-        return pageActionResult
-    }
     func executeDevTools(
         method: String,
         paramsJSON _: String,
@@ -184,6 +184,33 @@ import Foundation
         return true
     }
 
+    func reportExtensionTabs(windowKey _: String, focused: Bool, tabs: [BrowserExtensionTabReport]) {
+        reportedExtensionTabs = tabs
+        reportedExtensionWindowFocus = focused
+    }
+
+    func tabID(forBrowserIdentifier browserIdentifier: Int32) -> String? { tabIDsByBrowserIdentifier[browserIdentifier]
+    }
+
+    func translateTab(withID tabID: String, toLanguage language: String) -> BrowserPageTranslationStart {
+        translationRequests.append((tabID, language))
+        return nextTranslationStart
+    }
+
+    func revertTranslation(ofTabWithID tabID: String) {
+        revertedTranslations.append(tabID)
+    }
+
+    func translationState(ofTabWithID _: String) -> BrowserPageTranslationState { currentTranslationState }
+
+    func fillAddress(json: String, frameID: String, origin: String, tabID _: String) {
+        filledAddresses.append((json, frameID, origin))
+    }
+
+    @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool {
+        pageActions.append(action)
+        return pageActionResult
+    }
 
     func focusActivePage() {
         pageFocusCount += 1

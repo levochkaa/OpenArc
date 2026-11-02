@@ -312,8 +312,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         hasReceivedBrowserContext = true
         startAgentAccessObservation()
         presentOnboardingIfNeeded()
+        BrowserSetExtensionTabActionHandler { [weak self] browserIdentifier, action in
             MainActor.assumeIsolated {
                 _ = self?.allChromeModels.first {
+                    $0.handleExtensionTabAction(browserIdentifier: browserIdentifier, closes: action == 1)
                 }
             }
         }
@@ -325,9 +327,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func handleApplicationWillTerminate() {
+        agentServer?.stop()
         recordAdditionalWindows()
         batterySaverController?.stop()
-        agentServer?.stop()
         for chromeModel in allChromeModels {
             chromeModel.prepareForTermination()
         }
@@ -416,6 +418,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         userPreferencesStore.siteURLToolbarEnabled.toggle()
     }
 
+    public func customizeToolbar(_: Any?) {
+        activeChromeModel?.beginToolbarCustomization()
+    }
+
     public func stopLoadingCurrentTab(_: Any?) {
         activeChromeModel?.stopLoadingCurrentTab()
     }
@@ -423,10 +429,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
     public func showDeveloperTools(_: Any?) {
         activeChromeModel?.showDeveloperTools()
     }
-    public func customizeToolbar(_: Any?) {
-        activeChromeModel?.beginToolbarCustomization()
-    }
-
 
     public func viewSource(_: Any?) {
         activeChromeModel?.viewSourceOfSelectedTab()
@@ -954,6 +956,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 menuItem.title = model.siteToolbarToggleTitle
             }
             return activeChromeModel?.isWebApp == false
+        case #selector(customizeToolbar(_:)):
+            return activeChromeModel?.isWebApp == false
         case #selector(selectNextSpace(_:)),
              #selector(selectPreviousSpace(_:)):
             return activeChromeModel.map { !$0.isWebApp && $0.supportsSpaces && $0.spaces.count > 1 } ?? false
@@ -961,8 +965,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canOpenExtensions ?? false
         case #selector(togglePinTab(_:)):
             if let menuItem = item as? NSMenuItem, let model = activeChromeModel {
-        case #selector(customizeToolbar(_:)):
-            return activeChromeModel?.isWebApp == false
                 menuItem.title = model.pinToggleTitle
             }
             return activeChromeModel?.canTogglePinSelectedTab ?? false
@@ -1146,6 +1148,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
         try? FileManager.default.createSymbolicLink(at: link, withDestinationURL: tool)
     }
 
+    /// GitHub's list changes slowly: coming back to the app looks again, at most every few minutes.
+    private func refreshLiveFoldersIfDue() {
         guard Date().timeIntervalSince(lastLiveFolderRefresh) > 300 else { return }
         lastLiveFolderRefresh = Date()
         for session in profileWindowSessions {
@@ -1603,6 +1607,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .toggleSiteToolbar),
             action: #selector(toggleSiteToolbar(_:)),
         ))
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .customizeToolbar),
+            action: #selector(customizeToolbar(_:)),
+        ))
         let toggleBookmarksBarItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .toggleBookmarksBar),
             action: #selector(toggleBookmarksBar(_:)),
@@ -1610,10 +1618,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
         toggleBookmarksBarItem.state = userPreferencesStore.bookmarksBarVisible ? .on : .off
         viewMenu.addItem(toggleBookmarksBarItem)
         let collapsePinnedItem = NSMenuItem(
-        viewMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .customizeToolbar),
-            action: #selector(customizeToolbar(_:)),
-        ))
             title: BrowserStrings.menuCollapsePinnedTabs,
             action: #selector(togglePinnedTabsCollapsed(_:)),
             keyEquivalent: "",
@@ -1968,13 +1972,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private func addHelpMenu(to menubar: NSMenu, app: NSApplication) {
         let menu = NSMenu(title: BrowserStrings.menuHelp)
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuShowWelcome) { [weak self] in
+            self?.showOnboarding()
+        })
         menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuGettingStarted) { [weak self] in
             if let url = Bundle.main.url(forResource: "GettingStarted", withExtension: "html") {
                 self?.activeChromeModel?.openURLInNewTab(url)
             }
-        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuShowWelcome) { [weak self] in
-            self?.showOnboarding()
-        })
         })
         menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuKeyboardShortcuts) { [weak self] in
             self?.presentSettingsWindow(pane: .shortcuts)
@@ -2905,6 +2909,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard activeChromeModel?.isWebApp == false else { return false }
             toggleSiteToolbar(nil)
             return true
+        case .customizeToolbar:
+            guard activeChromeModel?.isWebApp == false else { return false }
+            customizeToolbar(nil)
+            return true
         case .viewDownloads:
             return activeChromeModel?.toggleDownloads() ?? false
         case .viewLibrary:
@@ -2912,10 +2920,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel != nil
         case .selectNextSpace,
              .selectPreviousSpace:
-        case .customizeToolbar:
-            guard activeChromeModel?.isWebApp == false else { return false }
-            customizeToolbar(nil)
-            return true
             guard let model = activeChromeModel, !model.isWebApp, model.supportsSpaces, model.spaces.count > 1 else {
                 return false
             }

@@ -312,6 +312,84 @@ class ScopedPinBrowserAtFront {
 // Returns true if either |boolean| is disengaged, or if |boolean| and
 // |value| are equal. This function is used to check if a tab's parameters match
 // those of the browser.
+#if BUILDFLAG(ENABLE_CEF)
+// The Alloy window an API call acts on: the caller's own window when it runs in
+// a reported tab, otherwise the last focused one, as a popup or service worker
+// has no window of its own.
+int CurrentAlloyWindowId(Profile* profile,
+                         bool include_incognito,
+                         content::WebContents* sender) {
+  if (sender) {
+    if (const auto tab = cef::GetAlloyExtensionTab(sender)) {
+      return tab->window_id;
+    }
+  }
+  return cef::GetLastFocusedAlloyWindowId(profile, include_incognito);
+}
+
+content::WebContents* ActiveAlloyContents(Profile* profile,
+                                          bool include_incognito,
+                                          int window_id) {
+  for (const auto& tab :
+       cef::GetAlloyExtensionTabs(profile, include_incognito)) {
+    if (tab.window_id == window_id && tab.active) {
+      return tab.contents;
+    }
+  }
+  return nullptr;
+}
+
+// Same shape as WindowController::CreateWindowValueForExtension for a window
+// the embedder owns. Returns nullopt when no reported tab belongs to it.
+std::optional<base::DictValue> CreateAlloyWindowValue(
+    Profile* profile,
+    bool include_incognito,
+    int window_id,
+    bool populate_tabs,
+    const Extension* extension,
+    mojom::ContextType context_type) {
+  base::ListValue tabs_value;
+  content::WebContents* bounds_contents = nullptr;
+  bool incognito = false;
+  for (const auto& tab :
+       cef::GetAlloyExtensionTabs(profile, include_incognito)) {
+    if (tab.window_id != window_id) {
+      continue;
+    }
+    if (!bounds_contents || tab.active) {
+      bounds_contents = tab.contents;
+    }
+    incognito = tab.contents->GetBrowserContext()->IsOffTheRecord();
+    if (populate_tabs) {
+      tabs_value.Append(tabs_internal::CreateTabObjectHelper(
+                            tab.contents, extension, context_type,
+                            /*browser=*/nullptr, tab.index)
+                            .ToValue());
+    }
+  }
+  if (!bounds_contents) {
+    return std::nullopt;
+  }
+
+  base::DictValue value;
+  value.Set("id", window_id);
+  value.Set("focused", cef::IsAlloyWindowFocused(window_id));
+  value.Set("incognito", incognito);
+  value.Set("alwaysOnTop", false);
+  value.Set("type", "normal");
+  value.Set("state", "normal");
+  const gfx::Rect bounds = bounds_contents->GetContainerBounds();
+  value.Set("left", bounds.x());
+  value.Set("top", bounds.y());
+  value.Set("width", bounds.width());
+  value.Set("height", bounds.height());
+  if (populate_tabs) {
+    value.Set("tabs", std::move(tabs_value));
+  }
+  return value;
+}
+#endif  // BUILDFLAG(ENABLE_CEF)
+
 bool MatchesBool(const std::optional<bool>& boolean, bool value) {
   return !boolean || *boolean == value;
 }
@@ -698,6 +776,20 @@ ExtensionFunction::ResponseAction WindowsGetFunction::Run() {
   if (!windows_util::GetControllerFromWindowID(this, params->window_id,
                                                extractor.type_filters(),
                                                &window_controller, &error)) {
+#if BUILDFLAG(ENABLE_CEF)
+    Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
+    const bool alloy_incognito = include_incognito_information();
+    const int alloy_window_id =
+        params->window_id == extension_misc::kCurrentWindowId
+            ? CurrentAlloyWindowId(alloy_profile, alloy_incognito,
+                                   GetSenderWebContents())
+            : params->window_id;
+    if (auto alloy_window = CreateAlloyWindowValue(
+            alloy_profile, alloy_incognito, alloy_window_id,
+            extractor.populate_tabs(), extension(), source_context_type())) {
+      return RespondNow(WithArguments(std::move(*alloy_window)));
+    }
+#endif
     return RespondNow(Error(std::move(error)));
   }
 
@@ -721,6 +813,17 @@ ExtensionFunction::ResponseAction WindowsGetCurrentFunction::Run() {
   if (!windows_util::GetControllerFromWindowID(
           this, extension_misc::kCurrentWindowId, extractor.type_filters(),
           &window_controller, &error)) {
+#if BUILDFLAG(ENABLE_CEF)
+    Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
+    const bool alloy_incognito = include_incognito_information();
+    if (auto alloy_window = CreateAlloyWindowValue(
+            alloy_profile, alloy_incognito,
+            CurrentAlloyWindowId(alloy_profile, alloy_incognito,
+                                 GetSenderWebContents()),
+            extractor.populate_tabs(), extension(), source_context_type())) {
+      return RespondNow(WithArguments(std::move(*alloy_window)));
+    }
+#endif
     return RespondNow(Error(std::move(error)));
   }
 
@@ -752,6 +855,16 @@ ExtensionFunction::ResponseAction WindowsGetLastFocusedFunction::Run() {
         return true;  // Continue iterating.
       });
   if (!last_focused_browser) {
+#if BUILDFLAG(ENABLE_CEF)
+    Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
+    const bool alloy_incognito = include_incognito_information();
+    if (auto alloy_window = CreateAlloyWindowValue(
+            alloy_profile, alloy_incognito,
+            cef::GetLastFocusedAlloyWindowId(alloy_profile, alloy_incognito),
+            extractor.populate_tabs(), extension(), source_context_type())) {
+      return RespondNow(WithArguments(std::move(*alloy_window)));
+    }
+#endif
     return RespondNow(Error(tabs_constants::kNoLastFocusedWindowError));
   }
 
@@ -785,6 +898,23 @@ ExtensionFunction::ResponseAction WindowsGetAllFunction::Run() {
         *controller->GetBrowserWindowInterface(), extension(),
         populate_tab_behavior, source_context_type()));
   }
+
+#if BUILDFLAG(ENABLE_CEF)
+  Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
+  const bool alloy_incognito = include_incognito_information();
+  std::set<int> alloy_window_ids;
+  for (const auto& tab :
+       cef::GetAlloyExtensionTabs(alloy_profile, alloy_incognito)) {
+    alloy_window_ids.insert(tab.window_id);
+  }
+  for (int alloy_window_id : alloy_window_ids) {
+    if (auto alloy_window = CreateAlloyWindowValue(
+            alloy_profile, alloy_incognito, alloy_window_id,
+            extractor.populate_tabs(), extension(), source_context_type())) {
+      window_list.Append(std::move(*alloy_window));
+    }
+  }
+#endif
 
   return RespondNow(WithArguments(std::move(window_list)));
 }
@@ -1748,6 +1878,71 @@ base::ListValue TabsQueryFunction::BuildTabList(
                         .ToValue());
     }
   }
+
+#if BUILDFLAG(ENABLE_CEF)
+  // Alloy tabs have no Browser or tab strip. The embedder reports their order
+  // and selection, so filter them by the same query fields here.
+  if (window_type.empty() || window_type == "normal") {
+    Profile* profile = Profile::FromBrowserContext(browser_context());
+    const bool incognito = include_incognito_information();
+    const int current_window_id =
+        CurrentAlloyWindowId(profile, incognito, GetSenderWebContents());
+    const int last_focused_window_id =
+        cef::GetLastFocusedAlloyWindowId(profile, incognito);
+    for (const auto& tab : cef::GetAlloyExtensionTabs(profile, incognito)) {
+      content::WebContents* contents = tab.contents;
+      if ((window_id >= 0 && window_id != tab.window_id) ||
+          (window_id == extension_misc::kCurrentWindowId &&
+           tab.window_id != current_window_id) ||
+          (tab_index > -1 && tab.index != tab_index) ||
+          !MatchesBool(query_info_.current_window,
+                       tab.window_id == current_window_id) ||
+          !MatchesBool(query_info_.last_focused_window,
+                       tab.window_id == last_focused_window_id) ||
+          !MatchesBool(query_info_.active, tab.active) ||
+          !MatchesBool(query_info_.highlighted, tab.active) ||
+          !MatchesBool(query_info_.pinned, tab.pinned) ||
+          !MatchesBool(query_info_.muted, contents->IsAudioMuted()) ||
+          !MatchesBool(query_info_.audible, contents->IsCurrentlyAudible()) ||
+          !MatchesBool(query_info_.frozen, false) ||
+          !MatchesBool(query_info_.discarded, false)) {
+        continue;
+      }
+      if (query_info_.group_id.value_or(-1) != -1 ||
+          query_info_.split_view_id.value_or(-1) != -1) {
+        continue;
+      }
+      if (query_info_.status != tabs::TabStatus::kNone &&
+          query_info_.status != ExtensionTabUtil::GetLoadingStatus(contents)) {
+        continue;
+      }
+      const bool check_title = query_info_.title && !query_info_.title->empty();
+      if (check_title || !url_patterns.is_empty()) {
+        // As in MatchesTab: these are privileged, so without access the tab
+        // does not match.
+        if (!extension_->permissions_data()->HasAPIPermissionForTab(
+                ExtensionTabUtil::GetTabId(contents),
+                mojom::APIPermissionID::kTab) &&
+            !extension_->permissions_data()->HasHostPermission(
+                contents->GetURL())) {
+          continue;
+        }
+        if ((check_title &&
+             !base::MatchPattern(contents->GetTitle(),
+                                 base::UTF8ToUTF16(*query_info_.title))) ||
+            (!url_patterns.is_empty() &&
+             !url_patterns.MatchesURL(contents->GetURL()))) {
+          continue;
+        }
+      }
+      result.Append(tabs_internal::CreateTabObjectHelper(
+                        contents, extension(), source_context_type(),
+                        /*browser=*/nullptr, tab.index)
+                        .ToValue());
+    }
+  }
+#endif  // BUILDFLAG(ENABLE_CEF)
+
   return result;
 }
 
@@ -2447,6 +2642,13 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
     }
   }
 
+#if BUILDFLAG(ENABLE_CEF)
+  if (!window && (params->update_properties.active.value_or(false) ||
+                  params->update_properties.selected.value_or(false))) {
+    cef::ActivateAlloyExtensionTab(contents);
+  }
+#endif
+
   // Cache the original web contents.
   content::WebContents* original_contents = contents;
 
@@ -2457,7 +2659,7 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
         kCannotUpdateMuteCaptured, base::NumberToString(tab_id))));
   }
 
-  if (params->update_properties.opener_tab_id) {
+  if (window && target_tab && params->update_properties.opener_tab_id) {
     int opener_id = *params->update_properties.opener_tab_id;
     content::WebContents* opener_contents = nullptr;
     if (opener_id == tab_id) {
@@ -2552,6 +2754,18 @@ bool TabsUpdateFunction::ComputeDefaultTabId(int& tab_id,
   const auto* window_controller =
       ChromeExtensionFunctionDetails(this).GetCurrentWindowController();
   if (!window_controller) {
+#if BUILDFLAG(ENABLE_CEF)
+    Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
+    const bool alloy_incognito = include_incognito_information();
+    contents = ActiveAlloyContents(
+        alloy_profile, alloy_incognito,
+        CurrentAlloyWindowId(alloy_profile, alloy_incognito,
+                             GetSenderWebContents()));
+    if (contents) {
+      tab_id = ExtensionTabUtil::GetTabId(contents);
+      return true;
+    }
+#endif
     error = ExtensionTabUtil::kNoCurrentWindowError;
     return false;
   }
@@ -2950,7 +3164,17 @@ ExtensionFunction::ResponseAction TabsReloadFunction::Run() {
         return RespondNow(Error(tabs_constants::kNoSelectedTabError));
       }
     } else {
-      return RespondNow(Error(ExtensionTabUtil::kNoCurrentWindowError));
+#if BUILDFLAG(ENABLE_CEF)
+      Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
+      const bool alloy_incognito = include_incognito_information();
+      web_contents = ActiveAlloyContents(
+          alloy_profile, alloy_incognito,
+          CurrentAlloyWindowId(alloy_profile, alloy_incognito,
+                               GetSenderWebContents()));
+#endif
+      if (!web_contents) {
+        return RespondNow(Error(ExtensionTabUtil::kNoCurrentWindowError));
+      }
     }
   } else {
     int tab_id = *params->tab_id;
@@ -3030,8 +3254,19 @@ bool TabsRemoveFunction::RemoveTab(int tab_id, std::string* error) {
   content::WebContents* contents = nullptr;
   if (!tabs_internal::GetTabById(tab_id, browser_context(),
                                  include_incognito_information(), &window,
-                                 &contents, nullptr, error) ||
-      !window) {
+                                 &contents, nullptr, error)) {
+    return false;
+  }
+
+#if BUILDFLAG(ENABLE_CEF)
+  // The embedder owns the tab and closes it through its own model. The removal
+  // reaches listeners through tabs.onRemoved, so there is nothing to wait for.
+  if (!window && cef::CloseAlloyExtensionTab(contents)) {
+    return true;
+  }
+#endif
+
+  if (!window) {
     return false;
   }
 
@@ -3445,6 +3680,24 @@ content::WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(
       ExtensionTabUtil::GetControllerFromWindowID(chrome_details_, window_id,
                                                   error);
   if (!window_controller) {
+#if BUILDFLAG(ENABLE_CEF)
+    Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
+    const bool alloy_incognito = include_incognito_information();
+    content::WebContents* alloy_contents = ActiveAlloyContents(
+        alloy_profile, alloy_incognito,
+        window_id == extension_misc::kCurrentWindowId
+            ? CurrentAlloyWindowId(alloy_profile, alloy_incognito,
+                                   GetSenderWebContents())
+            : window_id);
+    if (alloy_contents &&
+        extension()->permissions_data()->CanCaptureVisiblePage(
+            alloy_contents->GetLastCommittedURL(),
+            sessions::SessionTabHelper::IdForTab(alloy_contents).id(), error,
+            extensions::CaptureRequirement::kActiveTabOrAllUrls)) {
+      error->clear();
+      return alloy_contents;
+    }
+#endif
     return nullptr;
   }
 

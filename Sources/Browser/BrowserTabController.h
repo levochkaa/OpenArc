@@ -223,6 +223,17 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                                                      NSInteger currentIndex))completion;
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset;
 /// The renderer behind each tab, for the Task Manager.
+/// `tabs` holds tabID, index, active and pinned. Pages without a live browser
+/// are left out. Repeating the same report does nothing.
+- (void)reportExtensionTabsForWindowKey:(NSString *)windowKey
+                                focused:(BOOL)focused
+                                   tabs:(NSArray<NSDictionary<NSString *, id> *> *)tabs;
+- (nullable NSString *)tabIDForBrowserIdentifier:(int)browserIdentifier;
+/// 0: cannot translate, 1: started, 2: already in that language.
+- (NSInteger)translateTabWithID:(NSString *)tabID toLanguage:(NSString *)language;
+- (void)revertTranslationForTabWithID:(NSString *)tabID;
+/// 0: not translated, 1: translating, 2: translated.
+- (NSInteger)translationStateForTabWithID:(NSString *)tabID;
 - (NSDictionary<NSString *, NSNumber *> *)rendererProcessIDsByTabID;
 /// Hands a saved address to a frame, if it is still on the origin in `urlPrefix`.
 - (void)fillAddressJSON:(NSString *)json
@@ -243,17 +254,6 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     firstPartyURLString:(NSString *)firstPartyURLString
             inTabWithID:(NSString *)tabID
              completion:(void (^)(NSString *_Nullable))completion;
-- (void)evaluateJavaScript:(NSString *)code
-              inTabWithID:(NSString *)tabID
-               completion:(void (^)(NSString *_Nullable value))completion;
-- (void)goForwardActiveTab;
-- (void)reloadActiveTab;
-- (void)reloadActiveTabIgnoringCache;
-- (void)clearCacheAndReloadActiveTab;
-- (void)clearCookiesAndReloadActiveTab;
-- (void)stopLoadingActiveTab;
-/// Where the next page keeps its data; nil uses the controller's own profile.
-@property(nonatomic, copy, nullable) NSString *profileCachePathForNewTabs;
 /// Sets cookies in this window's profile. Each holds url, host, name, value, path,
 /// expires (microseconds since 1601), secure, httpOnly and sameSite.
 - (NSInteger)importCookies:(NSArray<NSDictionary<NSString *, id> *> *)cookies;
@@ -266,15 +266,17 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                                    password:(NSString *)password
                                   urlPrefix:(NSString *)urlPrefix
                                forTabWithID:(NSString *)tabID;
-/// Runs a DevTools method on a tab's page. The result is JSON, or nil on failure.
-- (void)executeDevToolsMethod:(NSString *)method
-                       params:(NSString *)paramsJSON
-                  inTabWithID:(NSString *)tabID
-                   completion:(void (^)(NSString *_Nullable))completion;
-- (BOOL)fillPasswordInMainFrameWithUsername:(NSString *)username
-                                   password:(NSString *)password
-                                  urlPrefix:(NSString *)urlPrefix
-                               forTabWithID:(NSString *)tabID;
+- (void)evaluateJavaScript:(NSString *)code
+              inTabWithID:(NSString *)tabID
+               completion:(void (^)(NSString *_Nullable value))completion;
+- (void)goForwardActiveTab;
+- (void)reloadActiveTab;
+- (void)reloadActiveTabIgnoringCache;
+- (void)clearCacheAndReloadActiveTab;
+- (void)clearCookiesAndReloadActiveTab;
+- (void)stopLoadingActiveTab;
+/// Where the next page keeps its data; nil uses the controller's own profile.
+@property(nonatomic, copy, nullable) NSString *profileCachePathForNewTabs;
 - (void)showDevToolsForActiveTab;
 - (void)inspectElementsInActiveTab;
 - (void)showJavaScriptConsoleForActiveTab;
