@@ -1076,6 +1076,7 @@ enum BrowserWindowMode: Equatable {
         self.extensionTabsObservation = $tabs.map { _ in () }
             .merge(
                 with: $selectedTabID.map { _ in () },
+                $spaces.map { _ in () },
                 center.publisher(for: NSWindow.didBecomeKeyNotification).map { _ in () },
                 center.publisher(for: NSWindow.didResignKeyNotification).map { _ in () },
             )
@@ -1150,6 +1151,22 @@ enum BrowserWindowMode: Equatable {
                 isPinned: tab.placement != .temporary,
             )
         }
+    }
+
+    /// The shown tab of each other Space, most recently used first, up to four.
+    nonisolated static func warmTabIDs(
+        spaces: [Space],
+        selectedSpaceID: String?,
+        tabs: [Tab],
+    ) -> [String] {
+        let ready = Dictionary(tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return spaces
+            .filter { $0.id != selectedSpaceID }
+            .compactMap { space in space.selectedTabID.flatMap { ready[$0] } }
+            .filter { $0.creationState == .ready }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+            .prefix(4)
+            .map(\.id)
     }
 
     /// Use Selection to Find: the page copies its selection to the find
@@ -4203,6 +4220,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func reportExtensionTabs() {
+        tabDriver.setWarmTabs(Self.warmTabIDs(spaces: spaces, selectedSpaceID: selectedSpaceID, tabs: tabs))
         tabDriver.reportExtensionTabs(
             windowKey: extensionWindowKey,
             focused: tabDriver.hostView.window?.isKeyWindow ?? false,

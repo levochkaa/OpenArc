@@ -3845,6 +3845,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   NSMutableDictionary<NSString *, BrowserAuthDialog *> *_authDialogs;
   NSMutableDictionary<NSString *, BrowserScreenSharePicker *> *_screenSharePickers;
   NSString *_lastExtensionTabsJSON;
+  NSSet<NSString *> *_warmTabIDs;
   BOOL _lastExtensionTabsFocused;
   int _nextPeekSessionID;
   int _peekCardSessionID;
@@ -5758,6 +5759,15 @@ std::string BrowserMediaVolumeScript(double volume) {
   [_pageDialogs[tabID] cancel];
 }
 
+- (void)setWarmTabIDs:(NSArray<NSString *> *)tabIDs {
+  NSSet<NSString *> *next = [NSSet setWithArray:tabIDs];
+  if ([_warmTabIDs isEqualToSet:next]) {
+    return;
+  }
+  _warmTabIDs = next;
+  [self updateBrowserVisibilityFocusingActiveTab:NO];
+}
+
 - (void)reportExtensionTabsForWindowKey:(NSString *)windowKey
                                 focused:(BOOL)focused
                                    tabs:(NSArray<NSDictionary<NSString *, id> *> *)tabs {
@@ -6221,9 +6231,18 @@ std::string BrowserMediaVolumeScript(double volume) {
     NSView *browserView = BrowserViewForBrowser(entry.second.browser);
     if (browserView != nil) {
       const bool keptVisible = entry.second.keptVisibleForPictureInPicture;
-      browserView.hidden = !keptVisible;
-      if (keptVisible) {
+      // The shown tab of another Space stays drawn below the page on screen, so
+      // switching to it shows its page at once instead of a blank pane. Chromium
+      // stops drawing into a hidden or transparent view. Split View leaves gaps
+      // between panes that would show it, so only a single page keeps it.
+      const bool warm = !keptVisible && visibleKeys.size() == 1 &&
+                        [_warmTabIDs containsObject:ToNSString(entry.first)];
+      browserView.hidden = !keptVisible && !warm;
+      if (keptVisible || warm) {
         [browserView.superview addSubview:browserView positioned:NSWindowBelow relativeTo:nil];
+      }
+      if (warm && _hostView != nil) {
+        SyncBrowserViewFrame(_hostView, entry.second.browser);
       }
     }
   }

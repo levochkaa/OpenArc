@@ -223,6 +223,9 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                                                      NSInteger currentIndex))completion;
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset;
 /// The renderer behind each tab, for the Task Manager.
+/// Tabs kept drawn but unseen, so showing one needs no new frame: the shown tab
+/// of each other Space.
+- (void)setWarmTabIDs:(NSArray<NSString *> *)tabIDs;
 /// `tabs` holds tabID, index, active and pinned. Pages without a live browser
 /// are left out. Repeating the same report does nothing.
 - (void)reportExtensionTabsForWindowKey:(NSString *)windowKey

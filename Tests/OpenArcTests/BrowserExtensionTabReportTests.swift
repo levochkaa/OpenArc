@@ -79,3 +79,17 @@ import Testing
     #expect(BrowserChromeModel.translationLanguage(forPreferredLanguage: "zh-Hant-TW") == "zh-TW")
     #expect(BrowserChromeModel.translationLanguage(forPreferredLanguage: nil) == "en")
 }
+
+@Test @MainActor func eachOtherSpaceKeepsItsShownTabWarm() throws {
+    let (model, _) = makeModel()
+    let firstSpace = try #require(model.selectedSpaceID)
+    let firstTab = try #require(model.selectedTabID)
+    #expect(BrowserChromeModel.warmTabIDs(spaces: model.spaces, selectedSpaceID: firstSpace, tabs: model.tabs).isEmpty)
+    model.createNewSpace()
+    let second = try #require(model.selectedSpaceID)
+    #expect(second != firstSpace)
+    #expect(
+        BrowserChromeModel.warmTabIDs(spaces: model.spaces, selectedSpaceID: second, tabs: model.tabs) == [firstTab],
+        "The first Space's shown tab stays drawn while the second is on screen",
+    )
+}

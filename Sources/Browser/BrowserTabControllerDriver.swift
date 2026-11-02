@@ -342,6 +342,10 @@ import Foundation
         controller.rendererProcessIDsByTabID().mapValues(\.int32Value)
     }
 
+    func setWarmTabs(_ tabIDs: [String]) {
+        controller.setWarmTabIDs(tabIDs)
+    }
+
     func reportExtensionTabs(windowKey: String, focused: Bool, tabs: [BrowserExtensionTabReport]) {
         controller.reportExtensionTabs(
             forWindowKey: windowKey,

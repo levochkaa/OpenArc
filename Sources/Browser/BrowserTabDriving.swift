@@ -211,6 +211,8 @@ enum BrowserPageTranslationState: Int {
     )
     func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool
     @discardableResult func importCookies(_ cookies: [BrowserImportedCookie]) -> Int
+    /// Pages kept drawn below the shown one, for switches without a blank pane.
+    func setWarmTabs(_ tabIDs: [String])
     /// Tells extensions which pages are this window's tabs.
     func reportExtensionTabs(windowKey: String, focused: Bool, tabs: [BrowserExtensionTabReport])
     func tabID(forBrowserIdentifier browserIdentifier: Int32) -> String?

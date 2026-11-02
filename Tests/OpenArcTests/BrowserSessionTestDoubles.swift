@@ -146,6 +146,7 @@ import Foundation
     // MARK: Private
 
     var reportedExtensionTabs = [BrowserExtensionTabReport]()
+    var warmTabIDs = [String]()
     var reportedExtensionWindowFocus = false
     var tabIDsByBrowserIdentifier = [Int32: String]()
     var translationRequests = [(tabID: String, language: String)]()
@@ -182,6 +183,10 @@ import Foundation
     func fillPasswordInMainFrame(username: String, password: String, origin _: String, tabID _: String) -> Bool {
         mainFrameFills.append((username, password))
         return true
+    }
+
+    func setWarmTabs(_ tabIDs: [String]) {
+        warmTabIDs = tabIDs
     }
 
     func reportExtensionTabs(windowKey _: String, focused: Bool, tabs: [BrowserExtensionTabReport]) {
