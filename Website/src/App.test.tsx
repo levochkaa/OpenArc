@@ -73,7 +73,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: /a browser for\s*focused work/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /the browser you loved, still open/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
       "href",

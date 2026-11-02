@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 type ReleaseChannel = "stable" | "beta";
 
@@ -29,6 +29,7 @@ type ReleasesResponse = {
 
 type ReleasesState = "loading" | "ready" | "error";
 
+const sourceUrl = "https://github.com/levochkaa/OpenArc";
 const fallbackDownloadUrl = "https://github.com/levochkaa/OpenArc/releases/latest";
 const releasesApiUrl = import.meta.env.VITE_RELEASES_API_URL ?? "https://api.openarc.su/v1/releases";
 const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -38,56 +39,217 @@ const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
 });
 const ancillaryAssetNamePattern = /(^|[.\-_\s])(blockmap|checksum|checksums|debug|dsym|manifest|metadata|sha256|sha512|signature|symbols?)([.\-_\s]|$)/i;
 
-const focusCards = [
+const spaces = [
   {
-    label: "Today",
-    title: "Product launch",
-    meta: "12 tabs ready",
+    name: "Work",
+    from: "#3b2bd6",
+    to: "#c23bd8",
+    pinned: ["Calendar", "Mail", "Docs"],
+    tabs: ["Launch plan", "Design review", "Pull requests"],
   },
   {
-    label: "Command",
-    title: "Search tabs, history, URLs",
-    meta: "Instant jump",
+    name: "Home",
+    from: "#f2643d",
+    to: "#f7b733",
+    pinned: ["Bank", "Recipes", "Music"],
+    tabs: ["Flights to Lisbon", "Sofa, again", "Weekend trails"],
   },
   {
-    label: "Local",
-    title: "Workspace state stays yours",
-    meta: "No account required",
-  },
-];
-
-const workflow = [
-  {
-    title: "Spaces hold the context",
-    body: "Separate work, life, research, and reading without turning one window into a tab landfill.",
-    accent: "green",
-  },
-  {
-    title: "Pinned tools stay useful",
-    body: "Shared app tabs live across spaces, while project-specific pinned tabs stay exactly where they belong.",
-    accent: "amber",
-  },
-  {
-    title: "Command bar leads",
-    body: "Open, switch, search history, and recover pages from one fast keyboard-first flow.",
-    accent: "blue",
+    name: "Study",
+    from: "#0d8f7f",
+    to: "#7ad94f",
+    pinned: ["Notes", "Library", "Cards"],
+    tabs: ["Linear algebra", "Swift concurrency", "Reading list"],
   },
 ];
 
-const capabilities = [
-  "Chromium engine",
-  "Chrome extensions",
-  "Arc, Chrome, Safari import",
-  "Passkeys and modern login",
-  "Signed automatic updates",
-  "Local-first session state",
+const commandScenes = [
+  {
+    query: "split",
+    rows: [
+      { kind: "command", title: "Add Split View", key: "⌃⇧=" },
+      { kind: "search", title: "split" },
+      { kind: "tab", title: "Split View: notes from last week" },
+      { kind: "command", title: "Add Top Split" },
+    ],
+  },
+  {
+    query: "pull",
+    rows: [
+      { kind: "search", title: "pull" },
+      { kind: "tab", title: "Pull requests" },
+      { kind: "page", title: "Pull request #482", detail: "github.com" },
+      { kind: "page", title: "Pull-up progressions", detail: "example.com" },
+    ],
+  },
+  {
+    query: "@y lo-fi",
+    rows: [
+      { kind: "search", title: "lo-fi", detail: "Search YouTube" },
+      { kind: "page", title: "lofi hip hop radio", detail: "youtube.com" },
+      { kind: "page", title: "Lo-fi for coding", detail: "youtube.com" },
+    ],
+  },
 ];
 
-const stats = [
-  ["Mac-first", "native desktop product"],
-  ["Chromium", "real browser engine"],
-  ["Local-first", "workspace state on device"],
+const importItems = [
+  "Spaces and pinned tabs",
+  "Bookmarks",
+  "Passwords",
+  "History",
+  "Sign-ins",
+  "Extensions",
+  "Site searches",
 ];
+
+const agentLines = [
+  ["$ openarc open github.com/pulls", ""],
+  ["$ openarc snapshot -i", ""],
+  ["", '- link "Merge queue" [ref=e4]'],
+  ["", '- button "Review" [ref=e9]'],
+  ["$ openarc click @e9", ""],
+  ["$ openarc signin", ""],
+  ["", "OpenArc asks you. The agent never sees the password."],
+];
+
+const details = [
+  ["Chrome extensions", "Your extensions, from the Chrome Web Store, with the tabs API they expect."],
+  ["Passkeys", "Touch ID, your phone or a security key."],
+  ["Translation", "In place, on the page you are reading."],
+  ["Peek and Little windows", "Look at a link without losing where you were."],
+  ["Picture in Picture", "Video follows you across Spaces and tabs."],
+  ["Your toolbar", "Hide it, or drag exactly the buttons you want onto it."],
+];
+
+function usePrefersReducedMotion() {
+  const [reduced] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true,
+  );
+  return reduced;
+}
+
+function BrowserMock() {
+  const reduced = usePrefersReducedMotion();
+  const [index, setIndex] = useState(0);
+  const [held, setHeld] = useState(false);
+
+  useEffect(() => {
+    if (reduced || held) {
+      return;
+    }
+    const timer = window.setInterval(() => setIndex((value) => (value + 1) % spaces.length), 3600);
+    return () => window.clearInterval(timer);
+  }, [reduced, held]);
+
+  const space = spaces[index];
+  return (
+    <div
+      className="mock"
+      style={{ "--from": space.from, "--to": space.to } as CSSProperties}
+      role="img"
+      aria-label="OpenArc's window, with a sidebar of tabs that changes color with each Space"
+    >
+      <aside className="mock-sidebar">
+        <div className="mock-lights" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
+        <div className="mock-address">example.com</div>
+        <div className="mock-space-name">{space.name}</div>
+        <ul className="mock-pinned">
+          {space.pinned.map((title) => (
+            <li key={title}>
+              <b />
+              {title}
+            </li>
+          ))}
+        </ul>
+        <div className="mock-divider" />
+        <div className="mock-new">+ New Tab</div>
+        <ul className="mock-tabs">
+          {space.tabs.map((title, position) => (
+            <li className={position === 0 ? "selected" : undefined} key={title}>
+              <b />
+              {title}
+            </li>
+          ))}
+        </ul>
+        <div className="mock-dots">
+          {spaces.map((item, position) => (
+            <button
+              aria-label={`Show the ${item.name} Space`}
+              className={position === index ? "on" : undefined}
+              key={item.name}
+              onClick={() => {
+                setHeld(true);
+                setIndex(position);
+              }}
+              type="button"
+            />
+          ))}
+        </div>
+      </aside>
+      <div className="mock-page" aria-hidden="true">
+        <h3>{space.tabs[0]}</h3>
+        <p />
+        <p />
+        <p className="short" />
+        <div className="mock-page-cards">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommandDemo() {
+  const reduced = usePrefersReducedMotion();
+  const [scene, setScene] = useState(0);
+  const [typed, setTyped] = useState(reduced ? commandScenes[0].query.length : 0);
+
+  useEffect(() => {
+    if (reduced) {
+      return;
+    }
+    const query = commandScenes[scene].query;
+    const delay = typed < query.length ? 110 : 2600;
+    const timer = window.setTimeout(() => {
+      if (typed < query.length) {
+        setTyped(typed + 1);
+      } else {
+        setScene((scene + 1) % commandScenes.length);
+        setTyped(0);
+      }
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [reduced, scene, typed]);
+
+  const current = commandScenes[scene];
+  const done = typed >= current.query.length;
+  return (
+    <div className="command" aria-hidden="true">
+      <div className="command-field">
+        <span className="command-glass" />
+        {current.query.slice(0, typed)}
+        <span className="command-caret" />
+      </div>
+      <ul className={done ? "command-rows shown" : "command-rows"}>
+        {current.rows.map((row, position) => (
+          <li className={position === 0 ? "selected" : undefined} key={row.title + position}>
+            <span className={`command-icon ${row.kind}`} />
+            <span className="command-title">{row.title}</span>
+            {"detail" in row && row.detail ? <span className="command-detail">{row.detail}</span> : null}
+            {"key" in row && row.key ? <kbd>{row.key}</kbd> : null}
+            {row.kind === "tab" ? <span className="command-switch">Switch to Tab →</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function App() {
   const [releases, setReleases] = useState<BrowserRelease[]>([]);
@@ -130,161 +292,149 @@ function App() {
   return (
     <main>
       <section className="hero" aria-labelledby="hero-title">
-        <div className="hero-art" aria-hidden="true" />
         <nav className="topbar" aria-label="Primary">
           <a className="brand" href="#top" aria-label="OpenArc home">
             <span className="brand-mark" aria-hidden="true" />
             <span>OpenArc</span>
           </a>
           <div className="nav-pill">
-            <a href="#workflow">Workflow</a>
-            <a href="#engine">Engine</a>
+            <a href="#spaces">Tour</a>
+            <a href="#agents">Agents</a>
             <a href="#releases">Releases</a>
             <a href={latestDownloadUrl}>Download</a>
           </div>
         </nav>
-
-        <div className="hero-copy">
-          <p className="kicker">Mac workspace browser</p>
-          <h1 id="hero-title">
-            A browser for
-            <span>focused work</span>
-          </h1>
+        <div className="hero-copy" id="top">
+          <h1 id="hero-title">The browser you loved, still open.</h1>
           <p className="hero-text">
-            OpenArc turns tabs into organized spaces, shared pinned tools,
-            and fast command navigation. Chromium power, local-first control,
-            and a calmer way to work on macOS.
+            A free, open-source browser for Mac with the sidebar, Spaces and command bar you already know. Bring your
+            whole Arc across in a minute and keep going.
           </p>
           <div className="hero-actions" aria-label="Download actions">
             <a className="button primary" href={latestDownloadUrl}>
               Download for macOS
             </a>
-            <a className="button secondary" href="#workflow">
-              Explore workflow
+            <a className="button ghost" href={sourceUrl}>
+              Read the source
             </a>
           </div>
         </div>
-
-        <div className="floating-card card-left" aria-hidden="true">
-          <span>Morning brief</span>
-          <strong>Open launch space</strong>
-          <small>5 pinned tools</small>
-        </div>
-        <div className="floating-card card-right" aria-hidden="true">
-          <span>Next action</span>
-          <strong>Find design notes</strong>
-          <small>Command bar</small>
-        </div>
+        <BrowserMock />
       </section>
 
-      <section className="intro-band" aria-label="Product summary">
-        <div className="intro-copy">
-          <p className="section-label">The idea</p>
-          <h2>Browser as workspace, without making the cloud the center.</h2>
-        </div>
-        <div className="stat-row">
-          {stats.map(([value, label]) => (
-            <div className="stat" key={value}>
-              <strong>{value}</strong>
-              <span>{label}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="workflow" id="workflow">
-        <div className="section-heading">
-          <p className="section-label">Workflow</p>
-          <h2>Built for the moment when browsing becomes work.</h2>
-        </div>
-        <div className="focus-row" aria-hidden="true">
-          {focusCards.map((card) => (
-            <article className="focus-card" key={card.title}>
-              <span>{card.label}</span>
-              <strong>{card.title}</strong>
-              <small>{card.meta}</small>
-            </article>
-          ))}
-        </div>
-        <div className="workflow-grid">
-          {workflow.map((item) => (
-            <article className={`workflow-card ${item.accent}`} key={item.title}>
-              <span />
-              <h3>{item.title}</h3>
-              <p>{item.body}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="engine" id="engine">
-        <div className="browser-shell" aria-hidden="true">
-          <div className="shell-sidebar">
-            <div className="window-dots">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className="space active" />
-            <div className="space" />
-            <div className="space" />
-            <div className="space short" />
-          </div>
-          <div className="shell-main">
-            <div className="command-strip" />
-            <div className="tab-strip">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className="pane-grid">
-              <div className="pane large" />
-              <div className="pane chart" />
-              <div className="pane table" />
-            </div>
-          </div>
-        </div>
-        <div className="engine-copy">
-          <p className="section-label">Inside the build</p>
-          <h2>Real browser power, Mac-native shape.</h2>
+      <section className="band band-paper" id="spaces" aria-labelledby="spaces-title">
+        <div className="band-text">
+          <h2 id="spaces-title">Your internet, in rooms.</h2>
           <p>
-            OpenArc starts with the daily-driver fundamentals: Chromium,
-            extension support, passkeys, downloads, page find, state that
-            survives relaunches, and workspace structure that does not require
-            a hosted account.
+            A Space for work and another for everything else, each with its own color, its own pins and its own
+            profile if you want. Tabs tidy themselves up when you stop needing them, and nothing you pinned goes
+            anywhere.
           </p>
         </div>
+        <ul className="sticker-row" aria-label="What a Space keeps">
+          <li className="sticker sticker-violet">Pinned tabs</li>
+          <li className="sticker sticker-coral">Folders</li>
+          <li className="sticker sticker-green">Favorites</li>
+          <li className="sticker sticker-sun">Auto-archive</li>
+        </ul>
       </section>
 
-      <section className="capabilities" aria-label="Capabilities">
-        <div className="section-heading">
-          <p className="section-label">Capabilities</p>
-          <h2>The useful parts of a modern browser, kept close to the surface.</h2>
+      <section className="band band-ink" aria-labelledby="command-title">
+        <div className="band-text">
+          <h2 id="command-title">One bar. Everything.</h2>
+          <p>
+            Press ⌘T and type. Open tabs in every Space, your whole history, bookmarks, site searches and every command
+            in the browser, ranked as you type and forgiving of typos.
+          </p>
         </div>
-        <ul className="capability-list">
-          {capabilities.map((detail) => (
-            <li key={detail}>{detail}</li>
+        <CommandDemo />
+      </section>
+
+      <section className="band band-coral" aria-labelledby="split-title">
+        <div className="band-text">
+          <h2 id="split-title">Two pages. One window.</h2>
+          <p>Split a tab with ⌃⇧=, up to four panes, and drag anything into place. Hover a pane and it leans in.</p>
+        </div>
+        <div className="split" aria-hidden="true">
+          <div>
+            <b />
+            <p />
+            <p />
+            <p className="short" />
+          </div>
+          <div>
+            <b />
+            <p />
+            <p className="short" />
+          </div>
+          <div>
+            <b />
+            <p />
+            <p />
+          </div>
+        </div>
+      </section>
+
+      <section className="band band-paper" aria-labelledby="import-title">
+        <div className="band-text">
+          <h2 id="import-title">Move in over lunch.</h2>
+          <p>
+            The welcome window finds Arc, Chrome and Dia on your Mac and copies what you pick. Your other browser stays
+            exactly as it was, and everything stays on your Mac.
+          </p>
+        </div>
+        <ul className="checklist">
+          {importItems.map((item) => (
+            <li key={item}>{item}</li>
           ))}
         </ul>
       </section>
 
+      <section className="band band-ink" id="agents" aria-labelledby="agents-title">
+        <div className="band-text">
+          <h2 id="agents-title">Lend your browser to an agent.</h2>
+          <p>
+            Turn it on in Settings and agents can open, read and click through the <code>openarc</code> command or its
+            MCP server, with your real sign-ins. Passwords are typed by the browser after you agree, so they never
+            reach the agent. Nothing listens on the network.
+          </p>
+        </div>
+        <pre className="terminal" aria-label="An agent using the openarc command">
+          {agentLines.map(([command, output]) => (
+            <span className={command ? "terminal-command" : "terminal-output"} key={command + output}>
+              {command || output}
+              {"\n"}
+            </span>
+          ))}
+        </pre>
+      </section>
+
+      <section className="band band-paper" aria-labelledby="details-title">
+        <div className="band-text">
+          <h2 id="details-title">And the rest of a real browser.</h2>
+          <p>Chromium underneath, a native Mac app on top, and no account to make.</p>
+        </div>
+        <dl className="details">
+          {details.map(([term, description]) => (
+            <div key={term}>
+              <dt>{term}</dt>
+              <dd>{description}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
       <section className="releases" id="releases" aria-labelledby="releases-title">
         <div className="section-heading">
-          <p className="section-label">Release notes</p>
-          <h2 id="releases-title">Every build, with previous downloads kept available.</h2>
+          <h2 id="releases-title">Every build, and every download.</h2>
         </div>
         <ReleaseList releases={releases} state={releasesState} />
       </section>
 
       <section className="download" aria-labelledby="download-title">
         <div>
-          <p className="section-label">Get it</p>
-          <h2 id="download-title">Download the latest macOS build.</h2>
-          <p>
-            Install the current stable release, keep automatic updates on, or
-            switch the app to the beta channel when you want GitHub pre-release
-            builds.
-          </p>
+          <h2 id="download-title">Open it.</h2>
+          <p>Free and MIT-licensed, for macOS. You can read every line.</p>
         </div>
         <a className="button primary download-button" href={latestDownloadUrl}>
           Download latest
@@ -294,6 +444,7 @@ function App() {
       <footer className="site-footer">
         <a href="/privacy/">Privacy</a>
         <a href="/terms/">Terms</a>
+        <a href={sourceUrl}>GitHub</a>
         <span>OpenArc is an independent project, not affiliated with The Browser Company.</span>
       </footer>
     </main>
