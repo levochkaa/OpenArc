@@ -169,7 +169,7 @@ function App() {
           <img
             alt="OpenArc with a Work Space open: a sidebar of tabs beside a page"
             height={860}
-            src="/videos/hero.jpg"
+            src="/videos/hero.webp"
             width={1360}
           />
         </div>

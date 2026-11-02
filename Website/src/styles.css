@@ -265,7 +265,8 @@ a {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 12px;
+  /* The recorded window's own corner: 34 px of a 2720 x 1720 frame. */
+  border-radius: 1.25% / 1.977%;
   background: #e9e9f2;
 }
 
