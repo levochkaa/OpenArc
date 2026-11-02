@@ -161,7 +161,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             height: style.symbolSize,
         )
         let spacing = BrowserChromeLayout.commandBarRowContentSpacing
-        var queryX = symbol.frame.maxX + spacing
+        var queryX = symbol.frame.maxX + spacing - 1.5
         if !siteChip.isHidden {
             let height = style.fontSize > 16 ? 24.0 : 20.0
             let width = ceil(siteChipLabel.attributedStringValue.size().width) + 20

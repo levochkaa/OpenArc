@@ -22,6 +22,9 @@ final class BrowserCommandSuggestionNSView: NSButton {
     // MARK: Private
 
     private let tile = BrowserNativeSurface()
+    private let switchLabel = NSTextField(labelWithString: "")
+    private let switchTile = BrowserNativeSurface()
+    private let switchArrow = NSImageView()
     private let icon = NSImageView()
     private let primary = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
@@ -41,17 +44,24 @@ final class BrowserCommandSuggestionNSView: NSButton {
         tile.strokeWidth = 0
         tile.cornerRadius = 6
         addSubview(tile, positioned: .below, relativeTo: nil)
-        primary.font = .systemFont(ofSize: 15, weight: .semibold)
+        primary.font = .systemFont(ofSize: 13, weight: .medium)
         primary.textColor = BrowserChromeColors.primaryText
         detail.font = .systemFont(ofSize: 12, weight: .medium)
         detail.textColor = BrowserChromeColors.secondaryText
         badgeLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         badgeLabel.textColor = BrowserChromeColors.secondaryText
-        badge.cornerRadius = 10
+        badge.cornerRadius = 5
         badge.fillColor = Self.badgeFill
         badge.addSubview(badgeLabel)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        for view in [icon, primary, detail, badge] {
+        switchLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        switchLabel.stringValue = BrowserStrings.commandBarSwitchToTab
+        switchTile.strokeWidth = 0
+        switchTile.cornerRadius = 6
+        switchTile.addSubview(switchArrow)
+        switchArrow.image = NSImage(systemSymbolName: "arrow.right", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        for view in [icon, primary, detail, badge, switchLabel, switchTile] {
             view.setAccessibilityElement(false)
             addSubview(view)
         }
@@ -113,16 +123,26 @@ final class BrowserCommandSuggestionNSView: NSButton {
         let badgeWidth = badge.isHidden ? 0 : textWidth(badgeLabel) + 14
         badge.frame = NSRect(
             x: bounds.width - padding - badgeWidth,
-            y: (bounds.height - 20) / 2,
+            y: (bounds.height - 22) / 2,
             width: badgeWidth,
-            height: 20,
+            height: 22,
         )
-        badgeLabel.frame = NSRect(x: 7, y: 3, width: max(badgeWidth - 14, 0), height: 14)
-        let x = icon.frame.maxX + spacing
-        let available = max(bounds.width - padding - x - (badgeWidth > 0 ? badgeWidth + spacing : 0), 0)
+        badgeLabel.frame = NSRect(x: 7, y: 4, width: max(badgeWidth - 14, 0), height: 14)
+        switchTile.frame = NSRect(x: bounds.width - 12 - 24, y: (bounds.height - 24) / 2, width: 24, height: 24)
+        switchArrow.frame = switchTile.bounds.insetBy(dx: 4, dy: 4)
+        let switchWidth = switchLabel.isHidden ? 0 : textWidth(switchLabel) + 2
+        switchLabel.frame = NSRect(
+            x: switchTile.frame.minX - 9 - switchWidth,
+            y: (bounds.height - 18) / 2,
+            width: switchWidth,
+            height: 18,
+        )
+        let trailingWidth = switchLabel.isHidden ? badgeWidth : switchWidth + 9 + 24
+        let x: CGFloat = 41
+        let available = max(bounds.width - padding - x - (trailingWidth > 0 ? trailingWidth + spacing : 0), 0)
         let hasDetail = !detail.stringValue.isEmpty
         let titleWidth = min(textWidth(primary), hasDetail ? available * 0.72 : available)
-        primary.frame = NSRect(x: x, y: (bounds.height - 20) / 2, width: titleWidth, height: 20)
+        primary.frame = NSRect(x: x, y: (bounds.height - 20) / 2 + 0.5, width: titleWidth, height: 20)
         detail.frame = NSRect(
             x: primary.frame.maxX + spacing,
             y: (bounds.height - 16) / 2,
@@ -154,12 +174,18 @@ final class BrowserCommandSuggestionNSView: NSButton {
         detail.stringValue = suggestion.detailText ?? ""
         badgeLabel.stringValue = suggestion.shortcut?.displayText ?? ""
         badge.isHidden = suggestion.shortcut == nil
+        let isTab = suggestion.kind == .openTab
+        switchLabel.isHidden = !isTab
+        switchTile.isHidden = !isTab
+        switchLabel.textColor = tinted ? .white : BrowserChromeColors.secondaryText
+        switchTile.fillColor = tinted ? .white : BrowserCommandSuggestionNSView.badgeFill
+        switchArrow.contentTintColor = tinted ? selectionColor : BrowserChromeColors.primaryText
         if let image = favicon ?? suggestion.iconData.flatMap(NSImage.init(data:)) {
             icon.image = image
             icon.contentTintColor = nil
         } else {
             icon.image = NSImage(systemSymbolName: suggestion.systemImageName, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: BrowserChromeLayout.commandBarSymbolSize, weight: .semibold))
+                .withSymbolConfiguration(.init(pointSize: BrowserChromeLayout.commandBarSymbolSize, weight: .regular))
             icon.contentTintColor = tinted ? (isCommand ? selectionColor : .white) : BrowserChromeColors.primaryText
         }
         setAccessibilityLabel(suggestion.displayText)

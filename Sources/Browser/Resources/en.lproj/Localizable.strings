@@ -83,6 +83,7 @@
 "browser.agent.signin_detail" = "An agent is asking to sign in with this saved password. OpenArc fills it in, and the agent never sees it.";
 "browser.agent.signin_allow" = "Sign In";
 "browser.agent.signin_deny" = "Don't Allow";
+"browser.command_bar.switch_to_tab" = "Switch to Tab";
 "browser.menu.customize_toolbar" = "Customize Toolbar...";
 "browser.toolbar.customize_hint" = "Drag items onto the toolbar to add them, along it to reorder, or off it to remove.";
 "browser.toolbar.restore_defaults" = "Restore Defaults";

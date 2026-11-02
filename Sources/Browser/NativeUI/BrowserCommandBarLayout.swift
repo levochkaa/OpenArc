@@ -14,7 +14,7 @@ enum BrowserCommandBarOverlayStyle: Equatable {
     var fontSize: CGFloat {
         switch self {
         case .standard:
-            20
+            18
         case .compact:
             BrowserChromeLayout.compactCommandBarFontSize
         }

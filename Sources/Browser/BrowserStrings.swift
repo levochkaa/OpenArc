@@ -1312,6 +1312,11 @@ enum BrowserStrings {
         comment: "Button refusing an agent's sign-in.",
     )
 
+    static let commandBarSwitchToTab = NSLocalizedString(
+        "browser.command_bar.switch_to_tab",
+        comment: "Trailing label on a command bar row for an open tab.",
+    )
+
     static let menuCustomizeToolbar = NSLocalizedString(
         "browser.menu.customize_toolbar",
         comment: "View menu command that starts customizing the top toolbar.",

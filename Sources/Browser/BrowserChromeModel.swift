@@ -268,7 +268,7 @@ enum BrowserWindowMode: Equatable {
             self?.userPreferencesStore.showsAISearchSuggestion ?? false
         },
         recentPagesProvider: { [weak self] maximumCount in
-            self?.historyStore.recentSuggestions(maximumCount: maximumCount) ?? []
+            self?.recentCommandBarPages(maximumCount: maximumCount) ?? []
         },
         siteSearchesProvider: { [weak self] in
             self?.userPreferencesStore.siteSearches ?? []
@@ -300,7 +300,7 @@ enum BrowserWindowMode: Equatable {
             self?.userPreferencesStore.showsAISearchSuggestion ?? false
         },
         recentPagesProvider: { [weak self] maximumCount in
-            self?.historyStore.recentSuggestions(maximumCount: maximumCount) ?? []
+            self?.recentCommandBarPages(maximumCount: maximumCount) ?? []
         },
         siteSearchesProvider: { [weak self] in
             self?.userPreferencesStore.siteSearches ?? []
@@ -5358,7 +5358,6 @@ enum BrowserWindowMode: Equatable {
             return BrowserCommandSuggestion(
                 kind: .openTab,
                 displayText: tab.displayTitle,
-                detailText: BrowserURLDisplayFormatter.displayString(for: tab.urlString),
                 resolvedURLString: tab.urlString,
                 tabIDs: [tab.id],
             )
@@ -5463,6 +5462,27 @@ enum BrowserWindowMode: Equatable {
             spaceID: tab.spaceID,
             title: title ?? tab.title,
             userTitleOverride: tab.userTitleOverride,
+    /// What an empty command bar lists: this Space's latest tabs, then history.
+    private func recentCommandBarPages(maximumCount: Int) -> [BrowserCommandSuggestion] {
+        let recentTabs = activeSpaceTabs
+            .filter { $0.id != selectedTabID && !$0.urlString.isEmpty && $0.creationState == .ready }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+            .prefix(maximumCount)
+            .map { tab in
+                BrowserCommandSuggestion(
+                    kind: .openTab,
+                    displayText: tab.displayTitle,
+                    resolvedURLString: tab.urlString,
+                    tabIDs: [tab.id],
+                )
+            }
+        let urls = Set(recentTabs.map(\.resolvedURLString))
+        let history = historyStore.recentSuggestions(maximumCount: maximumCount)
+            .filter { !urls.contains($0.resolvedURLString) }
+        return Array((recentTabs + history).prefix(maximumCount))
+    }
+
+    /// Tabs in every Space, those in the current one first, typos allowed.
             urlString: urlString ?? tab.urlString,
             pinnedURLString: effectivePinnedURLString(forPinnedTab: tab),
             faviconURLString: tab.faviconURLString,
@@ -7961,13 +7981,13 @@ extension BrowserCommandID {
         case .translatePage:
             "character.book.closed"
         case .addBottomSplit:
-            "rectangle.bottomhalf.inset.filled"
+            "rectangle.split.1x2"
         case .addTopSplit:
-            "rectangle.tophalf.inset.filled"
+            "rectangle.split.1x2"
         case .addRightSplit:
-            "rectangle.righthalf.inset.filled"
+            "rectangle.split.2x1"
         case .addLeftSplit:
-            "rectangle.lefthalf.inset.filled"
+            "rectangle.split.2x1"
         case .capturePortrait:
             "person.crop.rectangle"
         case .blankWindow:

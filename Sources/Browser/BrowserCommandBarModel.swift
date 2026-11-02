@@ -44,7 +44,7 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
         case .history:
             "clock"
         case .openTab:
-            "rectangle.on.rectangle"
+            "globe"
         case .url:
             "globe"
         case .googleSuggestion,
@@ -533,7 +533,11 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             appendSuggestion(aiSearchSuggestion(for: query))
         }
 
-        for localSuggestion in localSuggestions {
+        // Pages come before the commands that matched less well.
+        for localSuggestion in localSuggestions where localSuggestion.kind != .command {
+            appendSuggestion(localSuggestion)
+        }
+        for localSuggestion in localSuggestions where localSuggestion.kind == .command {
             appendSuggestion(localSuggestion)
         }
 
