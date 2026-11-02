@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type ReleaseChannel = "stable" | "beta";
 
@@ -39,59 +39,6 @@ const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
 });
 const ancillaryAssetNamePattern = /(^|[.\-_\s])(blockmap|checksum|checksums|debug|dsym|manifest|metadata|sha256|sha512|signature|symbols?)([.\-_\s]|$)/i;
 
-const spaces = [
-  {
-    name: "Work",
-    from: "#3b2bd6",
-    to: "#c23bd8",
-    pinned: ["Calendar", "Mail", "Docs"],
-    tabs: ["Launch plan", "Design review", "Pull requests"],
-  },
-  {
-    name: "Home",
-    from: "#f2643d",
-    to: "#f7b733",
-    pinned: ["Bank", "Recipes", "Music"],
-    tabs: ["Flights to Lisbon", "Sofa, again", "Weekend trails"],
-  },
-  {
-    name: "Study",
-    from: "#0d8f7f",
-    to: "#7ad94f",
-    pinned: ["Notes", "Library", "Cards"],
-    tabs: ["Linear algebra", "Swift concurrency", "Reading list"],
-  },
-];
-
-const commandScenes = [
-  {
-    query: "split",
-    rows: [
-      { kind: "command", title: "Add Split View", key: "⌃⇧=" },
-      { kind: "search", title: "split" },
-      { kind: "tab", title: "Split View: notes from last week" },
-      { kind: "command", title: "Add Top Split" },
-    ],
-  },
-  {
-    query: "pull",
-    rows: [
-      { kind: "search", title: "pull" },
-      { kind: "tab", title: "Pull requests" },
-      { kind: "page", title: "Pull request #482", detail: "github.com" },
-      { kind: "page", title: "Pull-up progressions", detail: "example.com" },
-    ],
-  },
-  {
-    query: "@y lo-fi",
-    rows: [
-      { kind: "search", title: "lo-fi", detail: "Search YouTube" },
-      { kind: "page", title: "lofi hip hop radio", detail: "youtube.com" },
-      { kind: "page", title: "Lo-fi for coding", detail: "youtube.com" },
-    ],
-  },
-];
-
 const importItems = [
   "Spaces and pinned tabs",
   "Bookmarks",
@@ -126,126 +73,22 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
-function BrowserMock() {
+/** A clip recorded from OpenArc itself. Motion stays still for people who ask for less. */
+function Clip({ name, label }: { name: string; label: string }) {
   const reduced = usePrefersReducedMotion();
-  const [index, setIndex] = useState(0);
-  const [held, setHeld] = useState(false);
-
-  useEffect(() => {
-    if (reduced || held) {
-      return;
-    }
-    const timer = window.setInterval(() => setIndex((value) => (value + 1) % spaces.length), 3600);
-    return () => window.clearInterval(timer);
-  }, [reduced, held]);
-
-  const space = spaces[index];
   return (
-    <div
-      className="mock"
-      style={{ "--from": space.from, "--to": space.to } as CSSProperties}
-      role="img"
-      aria-label="OpenArc's window, with a sidebar of tabs that changes color with each Space"
-    >
-      <aside className="mock-sidebar">
-        <div className="mock-lights" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </div>
-        <div className="mock-address">example.com</div>
-        <div className="mock-space-name">{space.name}</div>
-        <ul className="mock-pinned">
-          {space.pinned.map((title) => (
-            <li key={title}>
-              <b />
-              {title}
-            </li>
-          ))}
-        </ul>
-        <div className="mock-divider" />
-        <div className="mock-new">+ New Tab</div>
-        <ul className="mock-tabs">
-          {space.tabs.map((title, position) => (
-            <li className={position === 0 ? "selected" : undefined} key={title}>
-              <b />
-              {title}
-            </li>
-          ))}
-        </ul>
-        <div className="mock-dots">
-          {spaces.map((item, position) => (
-            <button
-              aria-label={`Show the ${item.name} Space`}
-              className={position === index ? "on" : undefined}
-              key={item.name}
-              onClick={() => {
-                setHeld(true);
-                setIndex(position);
-              }}
-              type="button"
-            />
-          ))}
-        </div>
-      </aside>
-      <div className="mock-page" aria-hidden="true">
-        <h3>{space.tabs[0]}</h3>
-        <p />
-        <p />
-        <p className="short" />
-        <div className="mock-page-cards">
-          <span />
-          <span />
-          <span />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CommandDemo() {
-  const reduced = usePrefersReducedMotion();
-  const [scene, setScene] = useState(0);
-  const [typed, setTyped] = useState(reduced ? commandScenes[0].query.length : 0);
-
-  useEffect(() => {
-    if (reduced) {
-      return;
-    }
-    const query = commandScenes[scene].query;
-    const delay = typed < query.length ? 110 : 2600;
-    const timer = window.setTimeout(() => {
-      if (typed < query.length) {
-        setTyped(typed + 1);
-      } else {
-        setScene((scene + 1) % commandScenes.length);
-        setTyped(0);
-      }
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [reduced, scene, typed]);
-
-  const current = commandScenes[scene];
-  const done = typed >= current.query.length;
-  return (
-    <div className="command" aria-hidden="true">
-      <div className="command-field">
-        <span className="command-glass" />
-        {current.query.slice(0, typed)}
-        <span className="command-caret" />
-      </div>
-      <ul className={done ? "command-rows shown" : "command-rows"}>
-        {current.rows.map((row, position) => (
-          <li className={position === 0 ? "selected" : undefined} key={row.title + position}>
-            <span className={`command-icon ${row.kind}`} />
-            <span className="command-title">{row.title}</span>
-            {"detail" in row && row.detail ? <span className="command-detail">{row.detail}</span> : null}
-            {"key" in row && row.key ? <kbd>{row.key}</kbd> : null}
-            {row.kind === "tab" ? <span className="command-switch">Switch to Tab →</span> : null}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <video
+      className="clip"
+      aria-label={label}
+      autoPlay={!reduced}
+      controls={reduced}
+      loop
+      muted
+      playsInline
+      poster={`/videos/${name}.jpg`}
+      preload="metadata"
+      src={`/videos/${name}.mp4`}
+    />
   );
 }
 
@@ -323,7 +166,12 @@ function App() {
           <text x="110" y="76">AND LATER</text>
         </svg>
         <div className="hero-shot">
-          <BrowserMock />
+          <img
+            alt="OpenArc with a Work Space open: a sidebar of tabs beside a page"
+            height={860}
+            src="/videos/hero.jpg"
+            width={1360}
+          />
         </div>
         <a className="more" href="#spaces">
           More
@@ -338,6 +186,7 @@ function App() {
         <p className="sub">
           A <strong>sidebar</strong> instead of a tab strip, and nothing on screen but the page you came for.
         </p>
+        <Clip name="sidebar" label="OpenArc hides its sidebar so the page fills the window, then brings it back" />
       </section>
 
       <section className="feature" aria-labelledby="spaces-title">
@@ -346,13 +195,7 @@ function App() {
           Work, study and everything else in one window, each with its own pins, color and profile, using{" "}
           <strong>Spaces</strong>.
         </p>
-        <div className="space-chips" aria-hidden="true">
-          {spaces.map((space) => (
-            <span key={space.name} style={{ background: space.from }}>
-              {space.name}
-            </span>
-          ))}
-        </div>
+        <Clip name="spaces" label="Switching between Work, Personal and Study Spaces, each in its own color" />
       </section>
 
       <section className="feature" aria-labelledby="command-title">
@@ -361,9 +204,7 @@ function App() {
           Press <strong>⌘T</strong> for tabs in every Space, your history, bookmarks and every command, ranked as you
           type.
         </p>
-        <div className="demo demo-dark">
-          <CommandDemo />
-        </div>
+        <Clip name="command" label="Typing split and then figma into OpenArc's command bar" />
       </section>
 
       <section className="feature" aria-labelledby="split-title">
@@ -372,24 +213,7 @@ function App() {
           Arrange pages with <strong>Split View</strong>, color each Space, and drag only the buttons you want onto the{" "}
           <strong>toolbar</strong>.
         </p>
-        <div className="split" aria-hidden="true">
-          <div>
-            <b />
-            <p />
-            <p />
-            <p className="short" />
-          </div>
-          <div>
-            <b />
-            <p />
-            <p className="short" />
-          </div>
-          <div>
-            <b />
-            <p />
-            <p />
-          </div>
-        </div>
+        <Clip name="split" label="Opening a second page beside the first in Split View" />
       </section>
 
       <section className="feature" aria-labelledby="import-title">
