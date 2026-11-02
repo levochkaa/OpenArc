@@ -48,6 +48,16 @@ struct BrowserAgentError: Error {
             .map { String($0.dropFirst().dropLast()) }
     }
 
+    private static func color(hex: String) -> BrowserSpaceTheme.Color? {
+        let digits = hex.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        guard digits.count == 6, let value = Int(digits, radix: 16) else { return nil }
+        return BrowserSpaceTheme.Color(
+            Double((value >> 16) & 0xFF) / 255,
+            Double((value >> 8) & 0xFF) / 255,
+            Double(value & 0xFF) / 255,
+        )
+    }
+
     /// Answers one line of the socket protocol.
     func respond(toLine line: String) async -> String {
         guard let data = line.data(using: .utf8),
@@ -91,6 +101,13 @@ struct BrowserAgentError: Error {
         case "logins": logins(params)
         case "signin": try await signIn(params)
         case "bookmarks": bookmarks(params)
+        case "spaces": spaceList()
+        case "space.new": try newSpace(params)
+        case "space.select": try selectSpace(params)
+        case "space.update": try updateSpace(params)
+        case "pin": try pin(params)
+        case "split": try split(params)
+        case "commandbar": try commandBar(params)
         case "commands": commands()
         case "command": try command(params)
         default: throw BrowserAgentError("Unknown command \(method). Run `openarc help`.")
@@ -552,6 +569,94 @@ struct BrowserAgentError: Error {
             }
         }
         return flatten(models().first?.bookmarksModel.bookmarkBarItems ?? [], folder: "")
+    }
+
+    // MARK: Spaces and layout
+
+    private func spaceList() -> [[String: Any]] {
+        guard let model = models().first else { return [] }
+        return model.spaces.map {
+            ["id": $0.id, "title": $0.title, "icon": $0.systemImageName, "selected": $0.id == model.selectedSpaceID]
+        }
+    }
+
+    private func space(_ params: [String: Any], _ model: BrowserChromeModel) throws -> BrowserChromeModel.Space {
+        let wanted = try requiredString(params, "space")
+        guard let space = model.spaces.first(where: { $0.id == wanted || $0.title.lowercased() == wanted.lowercased() })
+        else { throw BrowserAgentError("No Space \(wanted). See `openarc spaces`.") }
+        return space
+    }
+
+    /// A Space with a title, an optional icon and a theme from one color, as #rrggbb.
+    private func newSpace(_ params: [String: Any]) throws -> [String: Any] {
+        guard let model = models().first,
+              model.supportsSpaces else { throw BrowserAgentError("This window has no Spaces.") }
+        model.createNewSpace()
+        guard let id = model.selectedSpaceID else { throw BrowserAgentError("The Space was not made.") }
+        if let title = params["title"] as? String {
+            model.setTitle(title, forSpaceID: id)
+        }
+        if let icon = params["icon"] as? String {
+            model.setIcon(icon, forSpaceID: id)
+        }
+        if let hex = params["color"] as? String, let color = Self.color(hex: hex) {
+            _ = model.setTheme(BrowserSpaceTheme(key: color, colorCount: 3, wheel: .analogous), forSpaceID: id)
+        }
+        return ["id": id]
+    }
+
+    private func updateSpace(_ params: [String: Any]) throws -> [String: Any] {
+        guard let model = models().first else { throw BrowserAgentError("OpenArc has no window open.") }
+        let space = try space(params, model)
+        if let title = params["title"] as? String {
+            model.setTitle(title, forSpaceID: space.id)
+        }
+        if let icon = params["icon"] as? String {
+            model.setIcon(icon, forSpaceID: space.id)
+        }
+        if let hex = params["color"] as? String, let color = Self.color(hex: hex) {
+            _ = model.setTheme(BrowserSpaceTheme(key: color, colorCount: 3, wheel: .analogous), forSpaceID: space.id)
+        }
+        return ["updated": space.id]
+    }
+
+    private func selectSpace(_ params: [String: Any]) throws -> [String: Any] {
+        guard let model = models().first else { throw BrowserAgentError("OpenArc has no window open.") }
+        let space = try space(params, model)
+        model.selectSpace(id: space.id)
+        return ["selected": space.id]
+    }
+
+    private func pin(_ params: [String: Any]) throws -> [String: Any] {
+        let (model, tab) = try target(params)
+        model.togglePinned(forTabID: tab.id)
+        let pinned = model.tabs.first { $0.id == tab.id }?.placement != .temporary
+        return ["tab": tab.id, "pinned": pinned]
+    }
+
+    private func split(_ params: [String: Any]) throws -> [String: Any] {
+        let url = try webURL(requiredString(params, "url"))
+        guard let model = models().first, model.openURLInSplitView(url) else {
+            throw BrowserAgentError("Split View is not available here.")
+        }
+        return ["split": url.absoluteString]
+    }
+
+    /// Shows the command bar with `query` typed in it, or closes it.
+    private func commandBar(_ params: [String: Any]) throws -> [String: Any] {
+        guard let model = models().first else { throw BrowserAgentError("OpenArc has no window open.") }
+        if params["close"] as? Bool == true {
+            model.dismissCommandBar()
+            return ["open": false]
+        }
+        if !model.commandBarModel.isPresented {
+            model.presentCommandBar()
+        }
+        model.commandBarModel.query = params["query"] as? String ?? ""
+        return [
+            "open": model.commandBarModel.isPresented,
+            "results": model.commandBarModel.suggestions.map(\.displayText),
+        ]
     }
 
     private func commands() -> [[String: Any]] {

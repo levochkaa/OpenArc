@@ -159,6 +159,15 @@ Sign-ins
   logins [host]            Saved sign-ins, without passwords
   signin [username]        Fill the saved password for this page; OpenArc asks you first
 
+Spaces and layout
+  spaces                   List Spaces
+  space new <title> [--color #rrggbb] [--icon symbol]
+  space select <space>     By id or title
+  space set <space> [--title t] [--color #rrggbb] [--icon symbol]
+  pin [tab]                Pin or unpin a tab in the shown Space
+  split <url>              Open beside the current page in Split View
+  commandbar [text]        Show the command bar with text typed in; --close hides it
+
 Browser
   bookmarks [query]
   commands                 Everything the command bar can run
@@ -210,8 +219,12 @@ func parse(_ arguments: [String]) throws -> (method: String, params: [String: An
             guard index < arguments.count else { throw AgentClientError.message("\(argument) needs a value.") }
             if argument == "--text" { params["text"] = arguments[index] }
             else { params["ms"] = Double(arguments[index]) ?? 0 }
-        case "--full", "-i":
+        case "--close", "--full", "-i":
             flags.insert(argument)
+        case "--color", "--icon", "--title":
+            index += 1
+            guard index < arguments.count else { throw AgentClientError.message("\(argument) needs a value.") }
+            params[String(argument.dropFirst(2))] = arguments[index]
         default:
             rest.append(argument)
         }
@@ -271,6 +284,21 @@ func parse(_ arguments: [String]) throws -> (method: String, params: [String: An
     case "command":
         try require(1)
         params["id"] = args[0]
+    case "space":
+        try require(2)
+        if args[0] == "new" {
+            params["title"] = params["title"] ?? args[1...].joined(separator: " ")
+            return ("space.new", params, json)
+        }
+        params["space"] = args[1...].joined(separator: " ")
+        return (args[0] == "set" ? "space.update" : "space.select", params, json)
+    case "pin":
+        if let tab = args.first { params["tab"] = tab }
+    case "split":
+        try require(1)
+        params["url"] = args[0]
+    case "commandbar":
+        if flags.contains("--close") { params["close"] = true } else { params["query"] = args.joined(separator: " ") }
     default:
         break
     }

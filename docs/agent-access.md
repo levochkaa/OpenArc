@@ -9,6 +9,8 @@
     openarc screenshot page.png
     openarc close <tab>
 
+Spaces and layout: `openarc spaces`, `openarc space new Work --color '#5B5BF0' --icon briefcase.fill`, `openarc space select Work`, `openarc pin`, `openarc split <url>`, `openarc commandbar <text>`. The website's videos were recorded this way, with the window in the background and no pointer or keyboard input.
+
 `openarc help` lists everything, and `openarc skill` prints a guide for agents.
 
 ## MCP
