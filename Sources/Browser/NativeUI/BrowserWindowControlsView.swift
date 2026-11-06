@@ -452,7 +452,7 @@ final class BrowserWindowControlsHostView: NSView {
 
 // MARK: - BrowserTrafficLightButton
 
-private final class BrowserTrafficLightButton: NSButton {
+final class BrowserTrafficLightButton: NSButton {
     // MARK: Private
 
     private enum VisualState {
@@ -476,6 +476,10 @@ private final class BrowserTrafficLightButton: NSButton {
     }
 
     private static var imageCache = [AssetName: NSImage]()
+
+    /// The fill of the normal assets (#5A5A57).
+    private static let unfocusedFill = NSColor(srgbRed: 90 / 255, green: 90 / 255, blue: 87 / 255, alpha: 1)
+    private static let unfocusedEdge = NSColor.black.withAlphaComponent(0.25)
 
     // MARK: Internal
 
@@ -595,6 +599,17 @@ private final class BrowserTrafficLightButton: NSButton {
     }
 
     override func draw(_: NSRect) {
+        if !isWindowFocused, !showsHoverState {
+            // Buttons in a window in the background: the same gray disc
+            // without its colored rim, edged a little darker than the sidebar.
+            let disc = NSBezierPath(ovalIn: bounds.insetBy(dx: 0.3, dy: 0.3))
+            Self.unfocusedFill.setFill()
+            disc.fill()
+            Self.unfocusedEdge.setStroke()
+            disc.lineWidth = 0.6
+            disc.stroke()
+            return
+        }
         guard let image = Self.image(named: currentAssetName) else {
             return
         }
