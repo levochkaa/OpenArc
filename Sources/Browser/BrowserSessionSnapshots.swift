@@ -3,7 +3,7 @@
 import Foundation
 import GRDB
 
-/// Dated copies of a profile's sidebar and tabs.
+/// Dated copies of a profile's sidebar and tabs, restored from Help > Restore Data.
 /// One is taken at launch, at most once a day. A restore happens at the next launch, before the
 /// database opens, and first keeps a copy of what it replaces, so it can be undone the same way.
 struct BrowserSessionSnapshots {

@@ -1711,7 +1711,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         ))
         viewMenuItem.submenu = viewMenu
 
-        // Tabs menu with the tab actions, led by New Tab with ⌘T.
+        // Tabs menu with OpenArc's tab actions, led by New Tab with ⌘T.
         let tabsMenu = NSMenu(title: BrowserStrings.menuTabs)
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newTab),

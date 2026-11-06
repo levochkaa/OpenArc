@@ -671,7 +671,7 @@ final class BrowserRootView: NSView {
         let pointer = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         let source = CGPoint(x: pointer.x, y: pointer.y - 19)
         let tint = model.selectedSpaceTheme?.palette?.tintedLight.nsColor ?? .white
-        // Above and to the right of the archive button, or the window's corner without a sidebar.
+        // The bin sits above and to the right of the archive button, or the window's corner without a sidebar.
         var binCenter = CGPoint(x: 34, y: bounds.height - 37)
         if let button = sidebar.descendant(withIdentifier: "browser.sidebar.library"),
            !button.isHiddenOrHasHiddenAncestor
