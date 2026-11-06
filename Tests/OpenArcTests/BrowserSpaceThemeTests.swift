@@ -116,6 +116,9 @@ import Testing
     }
 
     @Test func theSpaceMenuOpensTheEditor() throws {
+        // NSMenu sends the action through NSApp, which a lone run of this suite
+        // has not created yet.
+        _ = NSApplication.shared
         let space = BrowserChromeModel.Space(
             id: "s", title: "Work", systemImageName: "star", isPinnedSectionCollapsed: false, selectedTabID: nil,
         )
