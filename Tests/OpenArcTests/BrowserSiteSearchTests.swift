@@ -197,7 +197,7 @@ private let gitLab = BrowserSiteSearch(
     model.present()
     model.query = "git"
     #expect(model.beginSiteSearch())
-    #expect(model.suggestions.map(\.displayText) == ["Code search results"], "Lists the site's earlier results")
+    #expect(model.suggestions.map(\.displayText) == ["Code search results"], "The site's earlier results")
     #expect(model.suggestions.first?.resolvedURLString == earlier.resolvedURLString)
     #expect(model.suggestions.first?.kind == .search, "Shown as a search, without its address")
     #expect(model.selectedSuggestionIndex == 0)

@@ -10,8 +10,8 @@ import QuartzCore
 final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFieldDelegate {
     enum Kind { case tab, appTab, folder, space, newTab, split }
 
-    /// From the icon's trailing edge: the slash's middle
-    /// 5 pt after it, the title 11.5 pt after it.
+    /// From the icon's trailing edge: the slash's middle 5 pt after it, the
+    /// title 11.5 pt after it.
     private static let pinnedSlashOffset: CGFloat = 5
     private static let pinnedSlashTitleOffset: CGFloat = 11.5
 
@@ -927,9 +927,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
 // MARK: - BrowserNativeSidebarPinnedSlashView
 
-/// A line corner to corner, 1 pt in from each,
-/// 2 pt wide with round caps, leaning forward; 15 pt tall and 3 pt across in
-/// the sidebar.
+/// A line corner to corner, 1 pt in from each, 2 pt wide with round caps,
+/// leaning forward: 15 pt tall and 3 pt across.
 final class BrowserNativeSidebarPinnedSlashView: NSView {
     // MARK: Internal
 

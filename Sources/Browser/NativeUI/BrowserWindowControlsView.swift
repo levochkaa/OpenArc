@@ -616,7 +616,7 @@ final class BrowserTrafficLightButton: NSButton {
 
     override func draw(_: NSRect) {
         if !isWindowFocused, !showsHoverState {
-            // Buttons in a window in the background: the same gray disc
+            // Buttons of a window in the background: the same gray disc
             // without its colored rim, edged a little darker than the sidebar.
             let disc = NSBezierPath(ovalIn: bounds.insetBy(dx: 0.3, dy: 0.3))
             Self.unfocusedFill.setFill()

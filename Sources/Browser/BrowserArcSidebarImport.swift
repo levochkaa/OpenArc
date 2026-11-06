@@ -75,7 +75,7 @@ struct BrowserArcSidebar: Equatable {
         }
     }
 
-    /// The icon names Arc's sidebar file stores, as the closest symbols.
+    /// Arc's sidebar icon names, as the closest symbols.
     /// Arc's skull and its GitHub, Linear and Figma logos have no symbol and
     /// fall back to the default icon.
     static let arcIconSymbols = [

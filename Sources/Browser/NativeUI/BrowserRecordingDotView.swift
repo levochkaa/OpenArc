@@ -5,10 +5,8 @@ import QuartzCore
 
 // MARK: - BrowserRecordingDotView
 
-/// A red dot on a tab whose page uses the
-/// camera, the microphone or screen capture. It pulses unless Reduce Motion
-/// is on. Its size and timing are fixed here;
-/// 8 pt and a 1 s pulse are OpenArc's.
+/// A red dot on a tab whose page uses the camera, the microphone or screen
+/// capture: 8 pt, pulsing once a second unless Reduce Motion is on.
 final class BrowserRecordingDotView: NSView {
     // MARK: Internal
 

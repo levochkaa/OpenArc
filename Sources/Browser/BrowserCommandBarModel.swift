@@ -408,7 +408,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if let site = activeSiteSearch {
             // Lists only the query, which opens the site's results. Before
-            // anything is typed, it lists the site's earlier results pages.
+            // anything is typed, the site's earlier results pages.
             if trimmedQuery.isEmpty {
                 // Shown as searches: a magnifier, the page's title, no address.
                 suggestions = siteRecentPagesProvider(site, Self.maximumRecentPages).map {

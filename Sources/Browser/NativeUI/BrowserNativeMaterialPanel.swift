@@ -22,8 +22,7 @@ final class BrowserNativeMaterialPanel: NSView {
     private let clip = NSView()
     private let material = NSVisualEffectView()
     /// The site search flash: a glow in the site's color that spreads out
-    /// from the card, and a tint over its material (measured from 60 fps
-    /// recordings, see `flash(color:)`).
+    /// from the card, and a tint over its material (see `flash(color:)`).
     private let glow = CALayer()
     private let tint = CALayer()
 
