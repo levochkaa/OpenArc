@@ -101,6 +101,25 @@ import Testing
         #expect(row.muteButton.isHidden)
     }
 
+    @Test func voiceOverHearsTheSelectedRowAndCanOpenItsMenu() throws {
+        _ = NSApplication.shared
+        let f = SidebarDragFixture(temporary: ["x"])
+        let tab = try #require(f.model.tabs.first { $0.id == f.id("x") })
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        row.update(tab: tab, selected: true, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        #expect(row.isAccessibilitySelected())
+        row.update(tab: tab, selected: false, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        #expect(!row.isAccessibilitySelected())
+        #expect(!row.accessibilityPerformShowMenu(), "No menu, nothing to show")
+        var built = 0
+        row.menuProvider = {
+            built += 1
+            return NSMenu()
+        }
+        #expect(!row.accessibilityPerformShowMenu(), "An empty menu is not shown")
+        #expect(built == 1, "It asks the same provider as a right click")
+    }
+
     @Test func formatFontRunsThePagesEditingCommandInTheShownTab() {
         let f = SidebarDragFixture(temporary: ["x"])
         let x = f.id("x")

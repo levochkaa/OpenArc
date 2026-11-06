@@ -108,6 +108,15 @@ class BrowserNativePressableView: BrowserNativeSurface {
         return menuProvider?()
     }
 
+    /// VoiceOver's Show Menu (VO-Shift-M) opens the same menu as a right click,
+    /// under the view's leading edge.
+    override func accessibilityPerformShowMenu() -> Bool {
+        guard isInteractionEnabled, let menu = menuProvider?(), !menu.items.isEmpty else { return false }
+        BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
+        menu.popUp(positioning: nil, at: NSPoint(x: bounds.minX, y: isFlipped ? bounds.maxY : bounds.minY), in: self)
+        return true
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking {

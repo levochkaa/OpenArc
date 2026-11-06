@@ -817,6 +817,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         titleLabel.isHidden = kind == .appTab || (kind == .split && splitName == nil) || isRenaming
         renameField.isHidden = !isRenaming
         folderIcon.isHidden = kind != .folder
+        // VoiceOver hears which tab is shown or selected.
+        setAccessibilitySelected((kind == .tab || kind == .appTab || kind == .split) && (selected || multiSelected))
         if pinnedSlash.isHidden == showsPinnedSlash {
             pinnedSlash.isHidden = !showsPinnedSlash
             needsLayout = true
