@@ -2,8 +2,8 @@
 
 import AppKit
 
-/// A folder drawn in layers so it can swing open in perspective: flat while its tabs
-/// show, tilted open once they are tucked away.
+/// A folder drawn in layers so it can swing open in perspective: flat while collapsed,
+/// tilted open while its tabs show.
 final class BrowserFolderIconView: NSView {
     // MARK: Internal
 
@@ -69,12 +69,13 @@ final class BrowserFolderIconView: NSView {
 
     override var intrinsicContentSize: NSSize { NSSize(width: Self.side, height: Self.side) }
 
+    private(set) var isTilted = false
+
     private let back = CAShapeLayer()
     private let backShade = CAGradientLayer()
     private let front = CALayer()
     private let frontPanel = CAShapeLayer()
     private let frontShade = CAGradientLayer()
-    private var isTilted = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)

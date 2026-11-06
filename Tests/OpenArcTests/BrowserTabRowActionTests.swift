@@ -101,6 +101,60 @@ import Testing
         #expect(row.muteButton.isHidden)
     }
 
+    @Test func aPinnedTabAwayFromItsPageShowsASlashBetweenIconAndTitle() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        var pinned = try #require(f.model.tabs.first { $0.placement == .spacePinned })
+        pinned.pinnedURLString = pinned.urlString
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        row.update(tab: pinned, selected: false, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        row.layoutSubtreeIfNeeded()
+        #expect(row.pinnedSlash.isHidden, "A pinned tab on its pinned page has no slash")
+        let titleOnPinnedPage = row.titleLabel.frame.minX
+
+        pinned.pinnedURLString = "https://example.com/pinned"
+        #expect(pinned.canResetToPinnedURL)
+        for selected in [false, true] {
+            row.update(tab: pinned, selected: selected, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+            row.layoutSubtreeIfNeeded()
+            #expect(!row.pinnedSlash.isHidden, "Shown without hover, selected or not")
+            #expect(row.pinnedSlash.frame.minX >= BrowserChromeLayout.sidebarRowLeadingColumnWidth / 2 + 8)
+            #expect(row.pinnedSlash.frame.maxX < row.titleLabel.frame.minX)
+            #expect(row.titleLabel.frame.minX > titleOnPinnedPage)
+        }
+
+        row.update(
+            tab: pinned,
+            selected: true,
+            renaming: true,
+            isResizing: false,
+            closeDescriptor: BrowserCommands.archiveTab,
+        )
+        #expect(row.pinnedSlash.isHidden, "Renaming hides it")
+    }
+
+    @Test func aFolderIconIsFlatWhileCollapsedAndTiltedOpenWhileExpanded() {
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        for expanded in [false, true, false] {
+            row.update(
+                folder: .init(
+                    id: "folder",
+                    spaceID: "space",
+                    parentFolderID: nil,
+                    title: "Folder",
+                    systemImageName: nil,
+                    isExpanded: expanded,
+                    pinnedSiblingRank: nil,
+                ),
+                renaming: false,
+                indentLevel: 0,
+                dropTargeted: false,
+                isResizing: false,
+                resetID: 0,
+            )
+            #expect(row.folderIcon.isTilted == expanded)
+        }
+    }
+
     @Test func aSplitMovesToAnotherSpaceWholeAndArchivesAsOneItem() throws {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
         let x = f.id("x")

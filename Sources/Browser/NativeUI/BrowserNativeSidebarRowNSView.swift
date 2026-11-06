@@ -10,6 +10,10 @@ import QuartzCore
 final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFieldDelegate {
     enum Kind { case tab, appTab, folder, space, newTab, split }
 
+    /// Where the icon's and the title's hover pills meet.
+    private static let pinnedSlashCenterX = BrowserChromeLayout.sidebarPinnedURLIconButtonSize
+        - BrowserChromeLayout.sidebarPinnedURLTextHoverOverlap / 2
+
     // MARK: Internal
 
     override var tooltipTarget: BrowserTooltipCoordinator.Target { .row }
@@ -76,12 +80,16 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     var dragOpacity: CGFloat = 1 { didSet { alphaValue = dragOpacity * appearanceProgress } }
 
+    /// A pinned tab away from its pinned page shows a slash
+    /// between its icon, which goes back, and its title.
+    let pinnedSlash = BrowserNativeSidebarPinnedSlashView()
+    let folderIcon = BrowserFolderIconView()
+
     private let unreadDot = NSView()
 
     // MARK: Private
 
     private let selectionSurface = BrowserNativeSidebarSelectionSurface()
-    private let folderIcon = BrowserFolderIconView()
     private var folderIconID: String?
     private let favicon = BrowserFaviconNSView()
     private var splitChips = [BrowserNativeSidebarSplitChipView]()
@@ -136,11 +144,14 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             != initialRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var showsPinnedSlash: Bool { kind == .tab && splitPinnedControls && !isRenaming }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         pressCurve = .rowPress
         for view in [
             selectionSurface,
+            pinnedSlash,
             folderIcon,
             favicon,
             symbol,
@@ -265,6 +276,13 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         symbol.frame = iconFrame
         folderIcon.frame = iconFrame
         let badgeSize = BrowserChromeLayout.sidebarPinnedFolderBadgeIconSize
+        let slashSize = BrowserNativeSidebarPinnedSlashView.size
+        pinnedSlash.frame = NSRect(
+            x: indent + Self.pinnedSlashCenterX - slashSize.width / 2,
+            y: (height - slashSize.height) / 2,
+            width: slashSize.width,
+            height: slashSize.height,
+        )
         badge.frame = NSRect(
             x: iconFrame.midX - badgeSize / 2,
             y: iconFrame.midY - badgeSize / 2 + 1,
@@ -275,6 +293,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         if kind == .space, showsSpaceTitleAtLeadingEdge {
             // A Space without its own icon shows only its name, until hovered.
             titleX = BrowserChromeLayout.sidebarSpaceTitleXWithoutIcon
+        }
+        if showsPinnedSlash {
+            titleX = indent + Self.pinnedSlashCenterX + BrowserNativeSidebarPinnedSlashView.size.width / 2 + 3
         }
         if !muteButton.isHidden {
             // The speaker sits between the icon and the title.
@@ -481,7 +502,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             backFill: BrowserChromeColors.sidebarFolderBack,
             frontFill: BrowserChromeColors.sidebarFolderFill,
         )
-        folderIcon.setTilted(!folder.isExpanded, animated: window != nil && folderIconID == folder.id)
+        folderIcon.setTilted(folder.isExpanded, animated: window != nil && folderIconID == folder.id)
         folderIconID = folder.id
         badge.image = folder.systemImageName.map { Self.symbol(
             $0,
@@ -776,6 +797,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         titleLabel.isHidden = kind == .appTab || (kind == .split && splitName == nil) || isRenaming
         renameField.isHidden = !isRenaming
         folderIcon.isHidden = kind != .folder
+        if pinnedSlash.isHidden == showsPinnedSlash {
+            pinnedSlash.isHidden = !showsPinnedSlash
+            needsLayout = true
+        }
         updateSurface()
         let isTab = kind == .tab || kind == .appTab
         favicon.isHidden = !isTab || tabIcon != nil
@@ -826,6 +851,37 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         refreshTooltip()
         needsLayout = true
         needsDisplay = true
+    }
+}
+
+// MARK: - BrowserNativeSidebarPinnedSlashView
+
+/// A line corner to corner, 1 pt in from each,
+/// 2 pt wide with round caps, leaning forward.
+final class BrowserNativeSidebarPinnedSlashView: NSView {
+    // MARK: Internal
+
+    static let size = NSSize(width: 6, height: 14)
+
+    override var isFlipped: Bool { true }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        isHidden = true
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func draw(_: NSRect) {
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: 1, y: bounds.height - 1))
+        path.line(to: NSPoint(x: bounds.width - 1, y: 1))
+        path.lineWidth = 2
+        path.lineCapStyle = .round
+        BrowserChromeColors.secondaryText.setStroke()
+        path.stroke()
     }
 }
 
