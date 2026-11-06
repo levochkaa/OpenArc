@@ -58,3 +58,18 @@ The next commit skips that rewrite when the projection equals the stored snapsho
 | drain | 1,000 | 100 | 7,571.2 | 6,310.4 |
 
 Capture is unchanged (it always writes a new snapshot). The remaining drain cost is replaying the queue tail on every ACK; that needs an incremental projection, not attempted.
+
+## Re-measured 2026-11-07
+
+Same probe, Xcode 27.1, Debug. A sample of the 100-row drain put most of each ACK in replaying the queue tail, and most of that in `BrowserSyncSemanticProjection.list`: its sort read every rank through the optional payloads inside the comparator, copying their strings on each comparison. `list` now reads each rank once, tests the container before building a key, and `publish` leaves entries that already hold their rank. Queue fingerprints match before and after. Medians in milliseconds:
+
+| Operation | Tabs | Pending rows | Before | After |
+| --- | ---: | ---: | ---: | ---: |
+| empty_pull | 1,000 | 100 | 114.2 | 80.4 |
+| empty_pull | 5,000 | 100 | 595.8 | 437.4 |
+| first_ack | 1,000 | 100 | 110.8 | 79.6 |
+| first_ack | 5,000 | 100 | 579.0 | 431.4 |
+| drain | 1,000 | 10 | 318.8 | 288.2 |
+| drain | 1,000 | 100 | 6,702.2 | 5,188.5 |
+
+The drain is still quadratic: every ACK replays the rest of the queue. An incremental projection remains the next step.

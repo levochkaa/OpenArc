@@ -422,22 +422,45 @@ enum BrowserSyncSemanticProjection {
         return live(Container.spaces.key(spaceID), values: values, deleted: deleted)?.spaceData != nil
     }
 
+    /// `container(change) == container` without building the container. Replay
+    /// lists a container once per queued move, over every entity.
+    private static func belongs(_ change: BrowserSyncChange, to container: Container) -> Bool {
+        guard let data = change.tabData else { return container == .spaces }
+        switch container {
+        case .spaces: return false
+        case .apps: return data.placement == .app
+        case .tabs(let spaceID, let pinned):
+            return data.placement != .app && (data.placement == .spacePinned) == pinned && data.spaceID == spaceID
+        }
+    }
+
     private static func list(
         _ container: Container, values: [String: BrowserSyncChange], deleted: Set<String>,
     ) -> [BrowserSyncChange] {
+        // Each rank is read once: reading it in the comparator copied the
+        // payloads on every comparison, the most of a queue drain.
         values.values
-            .filter { change in
-                change.op == .upsert && !deleted.contains(key(change)) && self.container(change) == container
+            .compactMap { change -> (rank: Double, id: String, change: BrowserSyncChange)? in
+                guard change.op == .upsert, belongs(change, to: container), !deleted.contains(key(change)) else {
+                    return nil
+                }
+                return (change.spaceData?.rank ?? change.tabData?.rank ?? 0, change.entityID, change)
             }
-            .sorted { left, right in
-                let leftRank = left.spaceData?.rank ?? left.tabData?.rank ?? 0
-                let rightRank = right.spaceData?.rank ?? right.tabData?.rank ?? 0
-                return leftRank == rightRank ? left.entityID < right.entityID : leftRank < rightRank
-            }
+            .sorted { left, right in left.rank == right.rank ? left.id < right.id : left.rank < right.rank }
+            .map(\.change)
     }
 
-    private static func publish(_ ordered: [BrowserSyncChange], values: inout [String: BrowserSyncChange]) {
+    /// Ranks the container in order. Entries listed from `values` that already
+    /// hold their rank stay as they are; `written` names the moved or new ones,
+    /// which always go in.
+    private static func publish(
+        _ ordered: [BrowserSyncChange], values: inout [String: BrowserSyncChange], written: Set<String> = [],
+    ) {
         for (rank, change) in ordered.enumerated() {
+            let current = change.spaceData?.rank ?? change.tabData?.rank
+            if current == Double(rank), !written.contains(change.entityID) {
+                continue
+            }
             values[key(change)] = BrowserSyncOutboxProjection.replacingRank(of: change, with: Double(rank))
         }
     }
@@ -446,12 +469,13 @@ enum BrowserSyncSemanticProjection {
         _ group: [BrowserSyncChange], into destination: Container, beforeID: String?, afterID: String?,
         values: inout [String: BrowserSyncChange], deleted: Set<String>,
     ) {
-        let movedKeys = Set(group.map(key))
-        var siblings = list(destination, values: values, deleted: deleted).filter { !movedKeys.contains(key($0)) }
+        // One container holds one entity type, so IDs tell its entries apart.
+        let movedIDs = Set(group.map(\.entityID))
+        var siblings = list(destination, values: values, deleted: deleted).filter { !movedIDs.contains($0.entityID) }
         let before = beforeID.flatMap { id in siblings.firstIndex { $0.entityID == id } }
         let after = afterID.flatMap { id in siblings.firstIndex { $0.entityID == id }.map { $0 + 1 } }
         siblings.insert(contentsOf: group, at: before ?? after ?? siblings.count)
-        publish(siblings, values: &values)
+        publish(siblings, values: &values, written: movedIDs)
     }
 
     private static func move(
@@ -465,11 +489,11 @@ enum BrowserSyncSemanticProjection {
             return live(destination.key(id), values: values, deleted: deleted)
         }
         guard !survivors.isEmpty else { return }
-        let movedKeys = Set(survivors.map(key))
+        let movedIDs = Set(survivors.map(\.entityID))
         let sourceContainers = Set(survivors.map(container))
         for source in sourceContainers where source != destination {
             publish(
-                list(source, values: values, deleted: deleted).filter { !movedKeys.contains(key($0)) },
+                list(source, values: values, deleted: deleted).filter { !movedIDs.contains($0.entityID) },
                 values: &values,
             )
         }
