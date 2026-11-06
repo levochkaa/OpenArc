@@ -250,6 +250,7 @@ final class BrowserScreenShareTile: NSView {
     var isChosen = false {
         didSet {
             layer?.borderColor = isChosen ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
+            setAccessibilitySelected(isChosen)
         }
     }
 
@@ -266,7 +267,8 @@ final class BrowserScreenShareTile: NSView {
         layer?.borderColor = NSColor.clear.cgColor
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel(source.title)
+        setAccessibilityLabel([source.title, source.detail ?? ""].filter { !$0.isEmpty }.joined(separator: ", "))
+        picture.setAccessibilityElement(false)
         picture.frame = NSRect(x: 8, y: 44, width: Self.size.width - 16, height: Self.size.height - 52)
         picture.imageScaling = .scaleProportionallyUpOrDown
         picture.wantsLayer = true
@@ -277,12 +279,14 @@ final class BrowserScreenShareTile: NSView {
         title.font = .systemFont(ofSize: 12, weight: .medium)
         title.lineBreakMode = .byTruncatingTail
         title.frame = NSRect(x: 8, y: 22, width: Self.size.width - 16, height: 16)
+        title.setAccessibilityElement(false)
         addSubview(title)
         let detail = NSTextField(labelWithString: source.detail ?? "")
         detail.font = .systemFont(ofSize: 11)
         detail.textColor = .secondaryLabelColor
         detail.lineBreakMode = .byTruncatingTail
         detail.frame = NSRect(x: 8, y: 6, width: Self.size.width - 16, height: 14)
+        detail.setAccessibilityElement(false)
         addSubview(detail)
     }
 
@@ -292,6 +296,12 @@ final class BrowserScreenShareTile: NSView {
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) { onChoose(self, event.clickCount >= 2) }
+
+    /// VoiceOver and other assistive apps choose the source like a single click.
+    override func accessibilityPerformPress() -> Bool {
+        onChoose(self, false)
+        return true
+    }
 
     func setPicture(_ image: NSImage) { picture.image = image }
 }
