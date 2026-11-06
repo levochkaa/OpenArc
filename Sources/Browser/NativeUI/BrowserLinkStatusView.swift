@@ -35,7 +35,7 @@ final class BrowserLinkStatusView: BrowserNativeSurface {
 
     override func layout() {
         super.layout()
-        label.frame = bounds.insetBy(dx: 10, dy: 3)
+        label.frame = bounds.insetClamped(dx: 10, dy: 3)
     }
 
     static func displayText(for status: String) -> String {

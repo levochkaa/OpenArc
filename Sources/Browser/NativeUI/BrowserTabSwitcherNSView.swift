@@ -94,7 +94,7 @@ final class BrowserTabSwitcherNSView: NSView {
             height: layout.panelHeight,
         )
         tint.frame = panel.bounds
-        scrollView.frame = panel.bounds.insetBy(dx: layout.panelPadding, dy: layout.panelPadding)
+        scrollView.frame = panel.bounds.insetClamped(dx: layout.panelPadding, dy: layout.panelPadding)
         let documentWidth = max(CGFloat(cards.count) * (layout.cardWidth + layout.cardSpacing) - layout.cardSpacing, 0)
         cardsContainer.frame = NSRect(x: 0, y: 0, width: documentWidth, height: layout.cardHeight)
         for (index, card) in cards.enumerated() {

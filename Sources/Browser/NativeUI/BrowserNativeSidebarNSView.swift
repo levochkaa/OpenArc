@@ -720,7 +720,7 @@ final class BrowserNativeSidebarNSView: NSView {
             width: width,
             height: showsEmptyAppGuide ? BrowserChromeLayout.sidebarEmptySectionDropZoneHeight : 0,
         )
-        emptyAppGuideLabel.frame = emptyAppGuide.bounds.insetBy(
+        emptyAppGuideLabel.frame = emptyAppGuide.bounds.insetClamped(
             dx: 8,
             dy: (emptyAppGuide.bounds.height - 16) / 2,
         )
@@ -1976,7 +1976,7 @@ private final class BrowserNativeSidebarPage: NSView, BrowserSpaceThemedChrome {
             if let view {
                 let rect: NSRect =
                     if case .incognito = entry {
-                        frame.insetBy(
+                        frame.insetClamped(
                             dx: BrowserChromeLayout.sidebarRowHorizontalPadding,
                             dy: 0,
                         )

@@ -189,7 +189,7 @@ final class BrowserMiniPlayerNSView: NSView {
             width: bounds.width - inset * 2,
             height: 24,
         )
-        favicon.frame = tabButton.bounds.insetBy(dx: 4, dy: 4)
+        favicon.frame = tabButton.bounds.insetClamped(dx: 4, dy: 4)
         let titleRowY = (BrowserChromeLayout.sidebarMiniPlayerHeight - size) / 2
         closeButton.frame = NSRect(x: bounds.width - inset - size, y: titleRowY, width: size, height: size)
         titleLabel.frame = NSRect(

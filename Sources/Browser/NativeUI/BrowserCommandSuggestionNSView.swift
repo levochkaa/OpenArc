@@ -129,7 +129,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         )
         badgeLabel.frame = NSRect(x: 7, y: 4, width: max(badgeWidth - 14, 0), height: 14)
         switchTile.frame = NSRect(x: bounds.width - 12 - 24, y: (bounds.height - 24) / 2, width: 24, height: 24)
-        switchArrow.frame = switchTile.bounds.insetBy(dx: 4, dy: 4)
+        switchArrow.frame = switchTile.bounds.insetClamped(dx: 4, dy: 4)
         let switchWidth = switchLabel.isHidden ? 0 : textWidth(switchLabel) + 2
         switchLabel.frame = NSRect(
             x: switchTile.frame.minX - 9 - switchWidth,

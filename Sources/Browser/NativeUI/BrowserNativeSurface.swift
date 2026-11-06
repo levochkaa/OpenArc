@@ -3,6 +3,20 @@
 import AppKit
 import QuartzCore
 
+// MARK: - CGRect + insetClamped
+
+extension CGRect {
+    /// `insetBy` for subview frames: a rect smaller than its insets, such as a
+    /// view's bounds before its first layout, collapses to an empty rect at its
+    /// center. `insetBy` returns `CGRect.null` there, whose infinite origin
+    /// Auto Layout rejects with "exceeds internal limits".
+    func insetClamped(dx: CGFloat, dy: CGFloat) -> CGRect {
+        let width = max(size.width - 2 * dx, 0)
+        let height = max(size.height - 2 * dy, 0)
+        return CGRect(x: midX - width / 2, y: midY - height / 2, width: width, height: height)
+    }
+}
+
 // MARK: - BrowserNativeSurface
 
 /// Shared AppKit surface. Dynamic colors are resolved again when the window appearance changes.
